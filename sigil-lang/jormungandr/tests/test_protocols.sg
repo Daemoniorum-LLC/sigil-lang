@@ -4,8 +4,8 @@
 //! with evidence boundaries and trust propagation.
 //! Target: 100% protocol coverage for regression detection.
 
-use crate::parser::Parser;
-use crate::typeck::TypeChecker;
+use crate·parser·Parser;
+use crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers
@@ -13,15 +13,15 @@ use crate::typeck::TypeChecker;
 
 /// Parse and type check protocol code
 fn check_source(source: !&str) -> !bool {
-    let mut parser = Parser::new(source.to_string());
+    let mut parser = Parser·new(source.to_string());
     let ast = match parser.parse_file() {
-        Result::Ok(a) => a,
-        Result::Err(_) => return false,
+        Result·Ok(a) => a,
+        Result·Err(_) => return false,
     };
-    let mut checker = TypeChecker::new();
+    let mut checker = TypeChecker·new();
     match checker.check_file(ast) {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 
@@ -47,14 +47,14 @@ fn test_http_get() -> !bool {
     // Basic GET
     assert_checks("
         async fn fetch() -> ~Response {
-            return http::get(\"https://api.example.com/data\").await;
+            return http·get(\"https://api.example.com/data\").await;
         }
     ", "http_get_basic");
 
     // GET with headers
     assert_checks("
         async fn fetch_auth() -> ~Response {
-            return http::get(\"https://api.example.com/data\")
+            return http·get(\"https://api.example.com/data\")
                 .header(\"Authorization\", \"Bearer token\")
                 .await;
         }
@@ -63,7 +63,7 @@ fn test_http_get() -> !bool {
     // GET with timeout
     assert_checks("
         async fn fetch_timeout() -> ~Response {
-            return http::get(\"https://api.example.com/data\")
+            return http·get(\"https://api.example.com/data\")
                 .timeout(5000)
                 .await;
         }
@@ -72,7 +72,7 @@ fn test_http_get() -> !bool {
     // GET with query params
     assert_checks("
         async fn fetch_query() -> ~Response {
-            return http::get(\"https://api.example.com/search\")
+            return http·get(\"https://api.example.com/search\")
                 .query(\"q\", \"sigil\")
                 .query(\"limit\", \"10\")
                 .await;
@@ -82,7 +82,7 @@ fn test_http_get() -> !bool {
     // Response is reported evidence (external data)
     assert_checks("
         async fn process() -> !String {
-            let response: ~Response = http::get(\"https://api.example.com\").await;
+            let response: ~Response = http·get(\"https://api.example.com\").await;
             // Must validate before using as known
             let body: ~String = response.text().await;
             return body.validate()!;  // Explicit trust boundary
@@ -103,7 +103,7 @@ fn test_http_post() -> !bool {
     // Basic POST
     assert_checks("
         async fn create() -> ~Response {
-            return http::post(\"https://api.example.com/items\")
+            return http·post(\"https://api.example.com/items\")
                 .json({ \"name\": \"item\" })
                 .await;
         }
@@ -112,7 +112,7 @@ fn test_http_post() -> !bool {
     // POST with form data
     assert_checks("
         async fn submit_form() -> ~Response {
-            return http::post(\"https://api.example.com/form\")
+            return http·post(\"https://api.example.com/form\")
                 .form([
                     (\"username\", \"user\"),
                     (\"password\", \"pass\"),
@@ -124,7 +124,7 @@ fn test_http_post() -> !bool {
     // POST with raw body
     assert_checks("
         async fn send_raw() -> ~Response {
-            return http::post(\"https://api.example.com/raw\")
+            return http·post(\"https://api.example.com/raw\")
                 .body(\"raw data\")
                 .header(\"Content-Type\", \"text/plain\")
                 .await;
@@ -135,7 +135,7 @@ fn test_http_post() -> !bool {
     assert_checks("
         struct Item { name: !String, value: !i32 }
         async fn create_item(item: !Item) -> ~Response {
-            return http::post(\"https://api.example.com/items\")
+            return http·post(\"https://api.example.com/items\")
                 .json(item)
                 .await;
         }
@@ -155,7 +155,7 @@ fn test_http_other() -> !bool {
     // PUT
     assert_checks("
         async fn update() -> ~Response {
-            return http::put(\"https://api.example.com/items/1\")
+            return http·put(\"https://api.example.com/items/1\")
                 .json({ \"name\": \"updated\" })
                 .await;
         }
@@ -164,14 +164,14 @@ fn test_http_other() -> !bool {
     // DELETE
     assert_checks("
         async fn delete() -> ~Response {
-            return http::delete(\"https://api.example.com/items/1\").await;
+            return http·delete(\"https://api.example.com/items/1\").await;
         }
     ", "http_delete");
 
     // PATCH
     assert_checks("
         async fn patch() -> ~Response {
-            return http::patch(\"https://api.example.com/items/1\")
+            return http·patch(\"https://api.example.com/items/1\")
                 .json({ \"status\": \"active\" })
                 .await;
         }
@@ -180,14 +180,14 @@ fn test_http_other() -> !bool {
     // HEAD
     assert_checks("
         async fn check_exists() -> ~Response {
-            return http::head(\"https://api.example.com/items/1\").await;
+            return http·head(\"https://api.example.com/items/1\").await;
         }
     ", "http_head");
 
     // OPTIONS
     assert_checks("
         async fn get_options() -> ~Response {
-            return http::options(\"https://api.example.com/items\").await;
+            return http·options(\"https://api.example.com/items\").await;
         }
     ", "http_options");
 
@@ -205,14 +205,14 @@ fn test_websocket() -> !bool {
     // Connect
     assert_checks("
         async fn connect() -> ~WebSocket {
-            return ws::connect(\"wss://echo.websocket.org\").await;
+            return ws·connect(\"wss://echo.websocket.org\").await;
         }
     ", "ws_connect");
 
     // Connect with protocols
     assert_checks("
         async fn connect_proto() -> ~WebSocket {
-            return ws::connect(\"wss://example.com/socket\")
+            return ws·connect(\"wss://example.com/socket\")
                 .protocol(\"graphql-ws\")
                 .await;
         }
@@ -260,7 +260,7 @@ fn test_grpc() -> !bool {
     // Unary call
     assert_checks("
         async fn grpc_unary() -> ~Response {
-            return grpc::call(\"localhost:50051\", \"greeter.Greeter/SayHello\")
+            return grpc·call(\"localhost:50051\", \"greeter.Greeter/SayHello\")
                 .message({ \"name\": \"World\" })
                 .await;
         }
@@ -269,7 +269,7 @@ fn test_grpc() -> !bool {
     // With metadata
     assert_checks("
         async fn grpc_metadata() -> ~Response {
-            return grpc::call(\"localhost:50051\", \"service/Method\")
+            return grpc·call(\"localhost:50051\", \"service/Method\")
                 .metadata(\"authorization\", \"Bearer token\")
                 .message({})
                 .await;
@@ -279,7 +279,7 @@ fn test_grpc() -> !bool {
     // With timeout
     assert_checks("
         async fn grpc_timeout() -> ~Response {
-            return grpc::call(\"localhost:50051\", \"service/Method\")
+            return grpc·call(\"localhost:50051\", \"service/Method\")
                 .timeout(10000)
                 .message({})
                 .await;
@@ -289,7 +289,7 @@ fn test_grpc() -> !bool {
     // Streaming (server-side)
     assert_checks("
         async fn grpc_stream() -> ~Stream<Response> {
-            return grpc::stream(\"localhost:50051\", \"service/StreamMethod\")
+            return grpc·stream(\"localhost:50051\", \"service/StreamMethod\")
                 .message({})
                 .await;
         }
@@ -309,7 +309,7 @@ fn test_kafka() -> !bool {
     // Produce message
     assert_checks("
         async fn produce() -> !() {
-            kafka::produce(\"my-topic\")
+            kafka·produce(\"my-topic\")
                 .message(\"hello kafka\")
                 .key(\"key1\")
                 .await;
@@ -319,7 +319,7 @@ fn test_kafka() -> !bool {
     // Produce with partition
     assert_checks("
         async fn produce_partition() -> !() {
-            kafka::produce(\"my-topic\")
+            kafka·produce(\"my-topic\")
                 .message(\"hello\")
                 .partition(0)
                 .await;
@@ -329,7 +329,7 @@ fn test_kafka() -> !bool {
     // Consume messages
     assert_checks("
         async fn consume() -> ~Stream<Message> {
-            return kafka::consume(\"my-topic\")
+            return kafka·consume(\"my-topic\")
                 .group(\"my-group\")
                 .await;
         }
@@ -338,7 +338,7 @@ fn test_kafka() -> !bool {
     // Consume from offset
     assert_checks("
         async fn consume_offset() -> ~Stream<Message> {
-            return kafka::consume(\"my-topic\")
+            return kafka·consume(\"my-topic\")
                 .offset(100)
                 .await;
         }
@@ -358,7 +358,7 @@ fn test_graphql() -> !bool {
     // Query
     assert_checks("
         async fn query() -> ~Response {
-            return graphql::query(\"https://api.example.com/graphql\")
+            return graphql·query(\"https://api.example.com/graphql\")
                 .document(\"query { users { id name } }\")
                 .await;
         }
@@ -367,7 +367,7 @@ fn test_graphql() -> !bool {
     // Query with variables
     assert_checks("
         async fn query_vars() -> ~Response {
-            return graphql::query(\"https://api.example.com/graphql\")
+            return graphql·query(\"https://api.example.com/graphql\")
                 .document(\"query($id: ID!) { user(id: $id) { name } }\")
                 .variables({ \"id\": \"123\" })
                 .await;
@@ -377,7 +377,7 @@ fn test_graphql() -> !bool {
     // Mutation
     assert_checks("
         async fn mutate() -> ~Response {
-            return graphql::mutation(\"https://api.example.com/graphql\")
+            return graphql·mutation(\"https://api.example.com/graphql\")
                 .document(\"mutation { createUser(name: \\\"Test\\\") { id } }\")
                 .await;
         }
@@ -386,7 +386,7 @@ fn test_graphql() -> !bool {
     // Subscription
     assert_checks("
         async fn subscribe() -> ~Stream<Response> {
-            return graphql::subscription(\"wss://api.example.com/graphql\")
+            return graphql·subscription(\"wss://api.example.com/graphql\")
                 .document(\"subscription { newMessage { text } }\")
                 .await;
         }
@@ -395,7 +395,7 @@ fn test_graphql() -> !bool {
     // With operation name
     assert_checks("
         async fn named_op() -> ~Response {
-            return graphql::query(\"https://api.example.com/graphql\")
+            return graphql·query(\"https://api.example.com/graphql\")
                 .document(\"query GetUser { user { id } } query GetPosts { posts { id } }\")
                 .operation_name(\"GetUser\")
                 .await;
@@ -416,7 +416,7 @@ fn test_trust_boundaries() -> !bool {
     // External data is reported
     assert_checks("
         async fn get_external() -> ~String {
-            let response = http::get(\"https://api.example.com\").await;
+            let response = http·get(\"https://api.example.com\").await;
             return response.text().await;  // Returns ~String (reported)
         }
     ", "external_reported");
@@ -424,7 +424,7 @@ fn test_trust_boundaries() -> !bool {
     // Validation promotes to known
     assert_checks("
         async fn validate_input() -> !i32 {
-            let response = http::get(\"https://api.example.com/number\").await;
+            let response = http·get(\"https://api.example.com/number\").await;
             let text: ~String = response.text().await;
             let num: ~i32 = text.parse();
             // Validate before promoting to known
@@ -438,8 +438,8 @@ fn test_trust_boundaries() -> !bool {
     // Paradox on conflicting data
     assert_checks("
         async fn check_paradox() -> ‽bool {
-            let a = http::get(\"https://api1.example.com/value\").await.json::<i32>();
-            let b = http::get(\"https://api2.example.com/value\").await.json::<i32>();
+            let a = http·get(\"https://api1.example.com/value\").await.json·<i32>();
+            let b = http·get(\"https://api2.example.com/value\").await.json·<i32>();
             // If sources disagree, result is paradox
             return a == b;
         }
@@ -459,9 +459,9 @@ fn test_protocol_errors() -> !bool {
     // HTTP error handling
     assert_checks("
         async fn handle_error() -> !String {
-            match http::get(\"https://api.example.com\").await {
-                Response::Ok(r) => r.text().await.validate()!,
-                Response::Err(e) => format!(\"Error: {}\", e),
+            match http·get(\"https://api.example.com\").await {
+                Response·Ok(r) => r.text().await.validate()!,
+                Response·Err(e) => format!(\"Error: {}\", e),
             }
         }
     ", "http_error_handling");
@@ -469,13 +469,13 @@ fn test_protocol_errors() -> !bool {
     // Timeout handling
     assert_checks("
         async fn with_timeout() -> ?String {
-            let result = http::get(\"https://api.example.com\")
+            let result = http·get(\"https://api.example.com\")
                 .timeout(1000)
                 .await;
             match result {
-                Response::Ok(r) => ?r.text().await,
-                Response::Timeout => null,
-                Response::Err(_) => null,
+                Response·Ok(r) => ?r.text().await,
+                Response·Timeout => null,
+                Response·Err(_) => null,
             }
         }
     ", "timeout_handling");
@@ -483,7 +483,7 @@ fn test_protocol_errors() -> !bool {
     // Retry logic
     assert_checks("
         async fn with_retry() -> ~Response {
-            return http::get(\"https://api.example.com\")
+            return http·get(\"https://api.example.com\")
                 .retry(3)
                 .backoff(1000)
                 .await;
@@ -493,7 +493,7 @@ fn test_protocol_errors() -> !bool {
     // Circuit breaker
     assert_checks("
         async fn with_circuit_breaker() -> ~Response {
-            return http::get(\"https://api.example.com\")
+            return http·get(\"https://api.example.com\")
                 .circuit_breaker(\"api-service\", 5, 30000)
                 .await;
         }
@@ -513,12 +513,12 @@ fn test_protocol_composition() -> !bool {
     // Chained requests
     assert_checks("
         async fn chained() -> ~Data {
-            let auth = http::post(\"https://auth.example.com/token\")
+            let auth = http·post(\"https://auth.example.com/token\")
                 .json({ \"client_id\": \"xxx\" })
                 .await;
-            let token = auth.json::<TokenResponse>().access_token;
+            let token = auth.json·<TokenResponse>().access_token;
 
-            return http::get(\"https://api.example.com/data\")
+            return http·get(\"https://api.example.com/data\")
                 .header(\"Authorization\", format!(\"Bearer {}\", token))
                 .await
                 .json();
@@ -529,8 +529,8 @@ fn test_protocol_composition() -> !bool {
     assert_checks("
         async fn parallel() -> !(~A, ~B) {
             let (a, b) = join!(
-                http::get(\"https://api.example.com/a\").await.json(),
-                http::get(\"https://api.example.com/b\").await.json(),
+                http·get(\"https://api.example.com/a\").await.json(),
+                http·get(\"https://api.example.com/b\").await.json(),
             );
             return (a, b);
         }
@@ -539,9 +539,9 @@ fn test_protocol_composition() -> !bool {
     // Protocol pipeline
     assert_checks("
         async fn pipeline() -> ![~Item] {
-            return http::get(\"https://api.example.com/items\")
+            return http·get(\"https://api.example.com/items\")
                 .await
-                .json::<[Item]>()
+                .json·<[Item]>()
                 |τ{item => item.enrich().await}
                 |φ{item => item.is_valid()};
         }
@@ -551,13 +551,13 @@ fn test_protocol_composition() -> !bool {
     assert_checks("
         async fn mixed() -> !() {
             // Get config from HTTP
-            let config = http::get(\"https://config.example.com\").await.json();
+            let config = http·get(\"https://config.example.com\").await.json();
 
             // Connect WebSocket with config
-            let ws = ws::connect(config.ws_url).await;
+            let ws = ws·connect(config.ws_url).await;
 
             // Publish to Kafka
-            kafka::produce(\"events\")
+            kafka·produce(\"events\")
                 .message({ \"connected\": true })
                 .await;
         }

@@ -10,7 +10,7 @@
 
 pub trait Container {
     type Item;
-    fn get(self) -> Self::Item;
+    fn get(self) -> Self·Item;
 }
 
 pub struct Box {

@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let hll: HyperLogLog<14> = HyperLogLog::new();
+    let hll: HyperLogLog<14> = HyperLogLog·new();
     hll.insert("a");
     hll.insert("b");
     hll.insert("a");  // Duplicate

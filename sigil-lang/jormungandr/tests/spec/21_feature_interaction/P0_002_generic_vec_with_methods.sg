@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let mut v: Vec<i32> = Vec::new();
+    let mut v: Vec<i32> = Vec·new();
     v.push(10);
     v.push(20);
     v.push(30);

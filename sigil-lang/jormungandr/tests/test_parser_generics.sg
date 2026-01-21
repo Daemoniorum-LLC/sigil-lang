@@ -3,17 +3,17 @@
 //! Tests generic syntax parsing for functions, structs, enums, traits, and impls.
 //! Target: 100% generic syntax coverage for regression detection.
 
-use crate::parser::Parser;
+use crate·parser·Parser;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 fn parse_file(source: !&str) -> !bool {
-    let mut parser = Parser::new(source.to_string());
+    let mut parser = Parser·new(source.to_string());
     match parser.parse_file() {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 
@@ -118,10 +118,10 @@ fn test_generic_impl_trait() -> !bool {
     assert_parses("trait Clone {} struct Box<T> {} impl<T: Clone> Clone for Box<T> {}", "impl_trait_generic");
 
     // Turbofish in expression
-    assert_parses("fn test() { let x = Vec::<i32>::new(); }", "turbofish_expr");
+    assert_parses("fn test() { let x = Vec·<i32>·new(); }", "turbofish_expr");
 
     // Turbofish in method
-    assert_parses("fn test() { let x = iter.collect::<Vec<_>>(); }", "turbofish_method");
+    assert_parses("fn test() { let x = iter.collect·<Vec<_>>(); }", "turbofish_method");
 
     println("PASS (5 cases)");
     true

@@ -4691,7 +4691,11 @@ impl Interpreter {
                         Ok(Value::Null)
                     }
                 }
-                other => {
+                Value::Map(m) => {
+                    // Handle field access on Map (e.g., url.scheme for URL objects)
+                    Ok(m.borrow().get(field_name).cloned().unwrap_or(Value::Null))
+                }
+                _other => {
                     // Fallback for field access on non-struct types: return null
                     crate::sigil_warn!("WARN: Cannot access field '{}' on non-struct - returning null", field_name);
                     Ok(Value::Null)
@@ -4720,7 +4724,6 @@ impl Interpreter {
         method: &Ident,
         args: &[Expr],
     ) -> Result<Value, RuntimeError> {
-        eprintln!("[DEBUG eval_method_call] method='{}', receiver={:?}", method.name, std::mem::discriminant(receiver));
         // Try "Type·method" as a combined function name for unresolved receiver patterns
         // This allows syntax like fs·read_to_string(path) to resolve to "fs·read_to_string" function
         if let Expr::Path(path) = receiver {
@@ -4932,6 +4935,11 @@ impl Interpreter {
                 let target = &arg_values[0];
                 let found = arr.borrow().iter().any(|v| self.values_equal(v, target));
                 Ok(Value::Bool(found))
+            }
+            (Value::Array(arr), "to_vec") | (Value::Array(arr), "clone") => {
+                // Clone the array
+                let cloned = arr.borrow().clone();
+                Ok(Value::Array(Rc::new(RefCell::new(cloned))))
             }
             // Tuple methods
             (Value::Tuple(t), "to_string") | (Value::Tuple(t), "string") => {
@@ -5416,49 +5424,76 @@ impl Interpreter {
                     .collect();
                 Ok(Value::String(Rc::new(parts.join(&separator))))
             }
-            // Map methods
-            (Value::Map(m), "insert") => {
-                if arg_values.len() != 2 {
-                    return Err(RuntimeError::new("insert expects 2 arguments"));
+            // Map type-aware method dispatch (for HttpClient, WebSocket, etc.)
+            // Check if Map has __type__ and dispatch to Type·method if available
+            (Value::Map(m), method_name) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(type_name)) = borrowed.get("__type__") {
+                    let qualified_method = format!("{}·{}", type_name, method_name);
+                    drop(borrowed); // Release borrow before looking up globals
+
+                    // Look up the method in globals (clone to avoid borrow issues)
+                    let func_val_opt = self.globals.borrow().get(&qualified_method).map(|v| v.clone());
+                    if let Some(func_val) = func_val_opt {
+                        // Call Type·method(self, args...)
+                        let mut full_args = vec![Value::Map(m.clone())];
+                        full_args.extend(arg_values);
+                        return match func_val {
+                            Value::Function(f) => self.call_function(&f, full_args),
+                            Value::BuiltIn(b) => self.call_builtin(&b, full_args),
+                            _ => Err(RuntimeError::new(format!("{} is not a function", qualified_method))),
+                        };
+                    }
+                    // Fall through to generic Map methods
                 }
-                let key = match &arg_values[0] {
-                    Value::String(s) => (**s).clone(),
-                    _ => format!("{}", arg_values[0]),
-                };
-                m.borrow_mut().insert(key, arg_values[1].clone());
-                Ok(Value::Null)
-            }
-            (Value::Map(m), "get") => {
-                if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("get expects 1 argument"));
+
+                // Generic Map methods
+                match method_name {
+                    "insert" => {
+                        if arg_values.len() != 2 {
+                            return Err(RuntimeError::new("insert expects 2 arguments"));
+                        }
+                        let key = match &arg_values[0] {
+                            Value::String(s) => (**s).clone(),
+                            _ => format!("{}", arg_values[0]),
+                        };
+                        m.borrow_mut().insert(key, arg_values[1].clone());
+                        Ok(Value::Null)
+                    }
+                    "get" => {
+                        if arg_values.len() != 1 {
+                            return Err(RuntimeError::new("get expects 1 argument"));
+                        }
+                        let key = match &arg_values[0] {
+                            Value::String(s) => (**s).clone(),
+                            _ => format!("{}", arg_values[0]),
+                        };
+                        Ok(m.borrow().get(&key).cloned().unwrap_or(Value::Null))
+                    }
+                    "contains_key" => {
+                        if arg_values.len() != 1 {
+                            return Err(RuntimeError::new("contains_key expects 1 argument"));
+                        }
+                        let key = match &arg_values[0] {
+                            Value::String(s) => (**s).clone(),
+                            _ => format!("{}", arg_values[0]),
+                        };
+                        Ok(Value::Bool(m.borrow().contains_key(&key)))
+                    }
+                    "len" => Ok(Value::Int(m.borrow().len() as i64)),
+                    "is_empty" => Ok(Value::Bool(m.borrow().is_empty())),
+                    "keys" => {
+                        let keys: Vec<Value> = m.borrow().keys()
+                            .map(|k| Value::String(Rc::new(k.clone())))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(keys))))
+                    }
+                    "values" => {
+                        let values: Vec<Value> = m.borrow().values().cloned().collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(values))))
+                    }
+                    _ => Err(RuntimeError::new(format!("Map has no method: {}", method_name)))
                 }
-                let key = match &arg_values[0] {
-                    Value::String(s) => (**s).clone(),
-                    _ => format!("{}", arg_values[0]),
-                };
-                Ok(m.borrow().get(&key).cloned().unwrap_or(Value::Null))
-            }
-            (Value::Map(m), "contains_key") => {
-                if arg_values.len() != 1 {
-                    return Err(RuntimeError::new("contains_key expects 1 argument"));
-                }
-                let key = match &arg_values[0] {
-                    Value::String(s) => (**s).clone(),
-                    _ => format!("{}", arg_values[0]),
-                };
-                Ok(Value::Bool(m.borrow().contains_key(&key)))
-            }
-            (Value::Map(m), "len") => Ok(Value::Int(m.borrow().len() as i64)),
-            (Value::Map(m), "is_empty") => Ok(Value::Bool(m.borrow().is_empty())),
-            (Value::Map(m), "keys") => {
-                let keys: Vec<Value> = m.borrow().keys()
-                    .map(|k| Value::String(Rc::new(k.clone())))
-                    .collect();
-                Ok(Value::Array(Rc::new(RefCell::new(keys))))
-            }
-            (Value::Map(m), "values") => {
-                let values: Vec<Value> = m.borrow().values().cloned().collect();
-                Ok(Value::Array(Rc::new(RefCell::new(values))))
             }
             // Ref methods
             (Value::Ref(r), "cloned") => {
@@ -5676,6 +5711,11 @@ impl Interpreter {
                     match method.name.as_str() {
                         "len" => return Ok(Value::Int(arr.borrow().len() as i64)),
                         "is_empty" => return Ok(Value::Bool(arr.borrow().is_empty())),
+                        "to_vec" | "clone" => {
+                            // Clone the array
+                            let cloned = arr.borrow().clone();
+                            return Ok(Value::Array(Rc::new(RefCell::new(cloned))));
+                        }
                         "push" => {
                             if arg_values.len() != 1 {
                                 return Err(RuntimeError::new("push expects 1 argument"));
@@ -7464,6 +7504,10 @@ impl Interpreter {
                 };
                 let v: Vec<Value> = arr.borrow().iter().step_by(n).cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(v))))
+            }
+            (Value::Array(arr), "to_vec") | (Value::Array(arr), "clone") => {
+                let cloned = arr.borrow().clone();
+                Ok(Value::Array(Rc::new(RefCell::new(cloned))))
             }
 
             // Number methods

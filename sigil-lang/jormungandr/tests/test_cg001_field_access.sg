@@ -3,23 +3,23 @@
 //! Tests that field access generates proper C without spurious spaces.
 //! Bug: codegen emits "x. field" instead of "sigil_struct_field(x, field)"
 
-use crate::lexer::Lexer;
-use crate::parser::Parser;
-use crate::typeck::TypeChecker;
-use crate::lower::lower_file;
-use crate::codegen::CodeGen;
+use crate·lexer·Lexer;
+use crate·parser·Parser;
+use crate·typeck·TypeChecker;
+use crate·lower·lower_file;
+use crate·codegen·CodeGen;
 
 /// Compile source to C code
 fn compile_to_c(source: !String) -> !String {
-    let mut parser = Parser::new(source.clone());
+    let mut parser = Parser·new(source.clone());
     let ast = parser.parse_file().unwrap();
 
-    let mut checker = TypeChecker::new();
+    let mut checker = TypeChecker·new();
     checker.check_file(ast.clone()).unwrap();
 
     let ir = lower_file(ast, checker, "test.sg".to_string()).unwrap();
 
-    let mut codegen = CodeGen::new();
+    let mut codegen = CodeGen·new();
     codegen.generate(ir)
 }
 

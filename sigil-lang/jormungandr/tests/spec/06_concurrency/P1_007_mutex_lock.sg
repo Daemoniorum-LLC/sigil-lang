@@ -3,7 +3,7 @@
 // Priority: P1 - Standard Feature
 
 fn main() {
-    let m = Mutex::new(100);
+    let m = Mutex·new(100);
 
     // Lock and read the value
     let guard = m.lock();

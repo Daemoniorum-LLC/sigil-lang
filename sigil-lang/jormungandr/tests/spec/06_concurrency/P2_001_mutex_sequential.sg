@@ -3,7 +3,7 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let m: Mutex<i32> = Mutex::new(0);
+    let m: Mutex<i32> = Mutex·new(0);
 
     {
         let guard = m.lock();

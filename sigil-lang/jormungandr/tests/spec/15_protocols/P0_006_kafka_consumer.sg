@@ -2,11 +2,11 @@
 // Spec: 15-PROTOCOLS.md § 7 Kafka Support
 // Priority: P0 - Bootstrap Critical
 
-use protocol::kafka::{Consumer, Topic};
+use protocol·kafka·{Consumer, Topic};
 
 async fn main() {
-    let consumer = Consumer::connect("localhost:9092")|await~;
-    consumer.subscribe(Topic::new("events"));
+    let consumer = Consumer·connect("localhost:9092")|await~;
+    consumer.subscribe(Topic·new("events"));
     let msg~ = consumer.recv()|await;
     println(msg~.value);
 }

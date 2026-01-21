@@ -5,6 +5,6 @@
 pub enum R { A, B }
 
 fn main() {
-    let _x: !R = R::A;
+    let _x: !R = R·A;
     println(42);
 }

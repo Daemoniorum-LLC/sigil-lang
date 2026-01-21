@@ -14,9 +14,9 @@ pub enum Status {
 }
 
 fn main() {
-    let s: !Status = Status::Ok;
+    let s: !Status = Status·Ok;
     match s {
-        Status::Ok => println(42),
-        Status::Error => println(99)
+        Status·Ok => println(42),
+        Status·Error => println(99)
     }
 }

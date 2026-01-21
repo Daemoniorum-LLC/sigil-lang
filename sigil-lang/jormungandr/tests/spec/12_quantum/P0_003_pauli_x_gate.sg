@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let q: linear Qubit = Qubit::zero();
+    let q: linear Qubit = Qubit·zero();
     let q2: linear Qubit = q|X;  // Bit flip: |0⟩ → |1⟩
     let result: Cbit = q2|measure;
     println(result);

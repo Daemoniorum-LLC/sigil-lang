@@ -5,7 +5,7 @@
 // Qubit is a LINEAR type - must be used exactly once
 
 fn main() {
-    let q: linear Qubit = Qubit::zero();
+    let q: linear Qubit = Qubit·zero();
     let result: Cbit = q|measure;  // Consumes q
     println(result);
 }

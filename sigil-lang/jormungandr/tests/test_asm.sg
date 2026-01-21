@@ -3,17 +3,17 @@
 //! Tests inline assembly syntax and constraints.
 //! Target: 100% inline assembly coverage for regression detection.
 
-use crate::parser::Parser;
+use crate·parser·Parser;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 fn parse_file(source: !&str) -> !bool {
-    let mut parser = Parser::new(source.to_string());
+    let mut parser = Parser·new(source.to_string());
     match parser.parse_file() {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 

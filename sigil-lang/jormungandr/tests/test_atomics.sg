@@ -3,23 +3,23 @@
 //! Tests atomic types, operations, and memory ordering.
 //! Target: 100% atomic coverage for regression detection.
 
-use crate::parser::Parser;
-use crate::typeck::TypeChecker;
+use crate·parser·Parser;
+use crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 fn check_source(source: !&str) -> !bool {
-    let mut parser = Parser::new(source.to_string());
+    let mut parser = Parser·new(source.to_string());
     let ast = match parser.parse_file() {
-        Result::Ok(a) => a,
-        Result::Err(_) => return false,
+        Result·Ok(a) => a,
+        Result·Err(_) => return false,
     };
-    let mut checker = TypeChecker::new();
+    let mut checker = TypeChecker·new();
     match checker.check_file(ast) {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 
@@ -63,32 +63,32 @@ fn test_atomic_load_store() -> !bool {
     // Load with ordering
     assert_checks("
         fn test(a: &Atomic<i32>) -> !i32 {
-            return a.load(Ordering::SeqCst);
+            return a.load(Ordering·SeqCst);
         }
     ", "atomic_load_seqcst");
 
     assert_checks("
         fn test(a: &Atomic<i32>) -> !i32 {
-            return a.load(Ordering::Acquire);
+            return a.load(Ordering·Acquire);
         }
     ", "atomic_load_acquire");
 
     assert_checks("
         fn test(a: &Atomic<i32>) -> !i32 {
-            return a.load(Ordering::Relaxed);
+            return a.load(Ordering·Relaxed);
         }
     ", "atomic_load_relaxed");
 
     // Store with ordering
     assert_checks("
         fn test(a: &Atomic<i32>, val: !i32) {
-            a.store(val, Ordering::SeqCst);
+            a.store(val, Ordering·SeqCst);
         }
     ", "atomic_store_seqcst");
 
     assert_checks("
         fn test(a: &Atomic<i32>, val: !i32) {
-            a.store(val, Ordering::Release);
+            a.store(val, Ordering·Release);
         }
     ", "atomic_store_release");
 
@@ -106,42 +106,42 @@ fn test_atomic_rmw() -> !bool {
     // Fetch-add
     assert_checks("
         fn test(a: &Atomic<i32>) -> !i32 {
-            return a.fetch_add(1, Ordering::SeqCst);
+            return a.fetch_add(1, Ordering·SeqCst);
         }
     ", "atomic_fetch_add");
 
     // Fetch-sub
     assert_checks("
         fn test(a: &Atomic<i32>) -> !i32 {
-            return a.fetch_sub(1, Ordering::SeqCst);
+            return a.fetch_sub(1, Ordering·SeqCst);
         }
     ", "atomic_fetch_sub");
 
     // Fetch-and
     assert_checks("
         fn test(a: &Atomic<u32>) -> !u32 {
-            return a.fetch_and(0xFF, Ordering::SeqCst);
+            return a.fetch_and(0xFF, Ordering·SeqCst);
         }
     ", "atomic_fetch_and");
 
     // Fetch-or
     assert_checks("
         fn test(a: &Atomic<u32>) -> !u32 {
-            return a.fetch_or(0x100, Ordering::SeqCst);
+            return a.fetch_or(0x100, Ordering·SeqCst);
         }
     ", "atomic_fetch_or");
 
     // Fetch-xor
     assert_checks("
         fn test(a: &Atomic<u32>) -> !u32 {
-            return a.fetch_xor(0xFF, Ordering::SeqCst);
+            return a.fetch_xor(0xFF, Ordering·SeqCst);
         }
     ", "atomic_fetch_xor");
 
     // Swap
     assert_checks("
         fn test(a: &Atomic<i32>, new: !i32) -> !i32 {
-            return a.swap(new, Ordering::SeqCst);
+            return a.swap(new, Ordering·SeqCst);
         }
     ", "atomic_swap");
 
@@ -159,14 +159,14 @@ fn test_atomic_cas() -> !bool {
     // Compare-exchange strong
     assert_checks("
         fn test(a: &Atomic<i32>, expected: !i32, new: !i32) -> !Result<i32, i32> {
-            return a.compare_exchange(expected, new, Ordering::SeqCst, Ordering::SeqCst);
+            return a.compare_exchange(expected, new, Ordering·SeqCst, Ordering·SeqCst);
         }
     ", "atomic_cmpxchg_strong");
 
     // Compare-exchange weak
     assert_checks("
         fn test(a: &Atomic<i32>, expected: !i32, new: !i32) -> !Result<i32, i32> {
-            return a.compare_exchange_weak(expected, new, Ordering::SeqCst, Ordering::Relaxed);
+            return a.compare_exchange_weak(expected, new, Ordering·SeqCst, Ordering·Relaxed);
         }
     ", "atomic_cmpxchg_weak");
 
@@ -174,11 +174,11 @@ fn test_atomic_cas() -> !bool {
     assert_checks("
         fn increment(a: &Atomic<i32>) -> !i32 {
             loop {
-                let current = a.load(Ordering::Relaxed);
+                let current = a.load(Ordering·Relaxed);
                 let new = current + 1;
-                match a.compare_exchange_weak(current, new, Ordering::Release, Ordering::Relaxed) {
-                    Result::Ok(v) => return v,
-                    Result::Err(_) => continue,
+                match a.compare_exchange_weak(current, new, Ordering·Release, Ordering·Relaxed) {
+                    Result·Ok(v) => return v,
+                    Result·Err(_) => continue,
                 }
             }
         }
@@ -198,20 +198,20 @@ fn test_memory_fences() -> !bool {
     // Fence
     assert_checks("
         fn test() {
-            atomic::fence(Ordering::SeqCst);
+            atomic·fence(Ordering·SeqCst);
         }
     ", "atomic_fence_seqcst");
 
     assert_checks("
         fn test() {
-            atomic::fence(Ordering::AcqRel);
+            atomic·fence(Ordering·AcqRel);
         }
     ", "atomic_fence_acqrel");
 
     // Compiler fence
     assert_checks("
         fn test() {
-            atomic::compiler_fence(Ordering::SeqCst);
+            atomic·compiler_fence(Ordering·SeqCst);
         }
     ", "compiler_fence");
 
@@ -222,12 +222,12 @@ fn test_memory_fences() -> !bool {
         }
         impl SpinLock {
             fn lock(self) {
-                while self.locked.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+                while self.locked.compare_exchange_weak(false, true, Ordering·Acquire, Ordering·Relaxed).is_err() {
                     // Spin
                 }
             }
             fn unlock(self) {
-                self.locked.store(false, Ordering::Release);
+                self.locked.store(false, Ordering·Release);
             }
         }
     ", "spin_lock_pattern");

@@ -7,7 +7,7 @@ fn takes_ref(x: &i32) -> !i32 {
 }
 
 fn main() {
-    let boxed: Box<i32> = Box::new(42);
+    let boxed: Box<i32> = Box·new(42);
 
     // Deref with *
     println(*boxed);

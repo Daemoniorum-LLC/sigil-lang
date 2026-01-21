@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let bloom: BloomFilter<10000, 7> = BloomFilter::new();
+    let bloom: BloomFilter<10000, 7> = BloomFilter·new();
     bloom.insert("hello");
     let maybe◊ = bloom|◊contains("hello");
     println(maybe◊);  // Should be true (possibly false positive)

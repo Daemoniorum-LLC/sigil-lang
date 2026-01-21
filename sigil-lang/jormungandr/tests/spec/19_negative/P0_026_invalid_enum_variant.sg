@@ -10,6 +10,6 @@ enum Color {
 }
 
 fn main() {
-    let c = Color::Yellow;  // ERROR: no variant Yellow
+    let c = Color·Yellow;  // ERROR: no variant Yellow
     println(c);
 }

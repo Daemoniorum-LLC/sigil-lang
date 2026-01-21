@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let q: linear Qubit = Qubit::zero();
+    let q: linear Qubit = Qubit·zero();
     let q2: linear Qubit = q|H;  // Hadamard creates superposition
     let result: Cbit = q2|measure;
     println(result);  // 0 or 1 with equal probability

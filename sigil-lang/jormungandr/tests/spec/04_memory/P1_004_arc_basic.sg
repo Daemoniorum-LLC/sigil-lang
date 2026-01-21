@@ -3,7 +3,7 @@
 // Priority: P1 - Production Ready
 
 fn main() {
-    let arc1: Arc<i32> = Arc::new(42);
+    let arc1: Arc<i32> = Arc·new(42);
 
     // Clone creates new reference
     let arc2 = arc1.clone();

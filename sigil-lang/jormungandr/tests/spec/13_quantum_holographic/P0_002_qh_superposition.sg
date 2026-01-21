@@ -4,9 +4,9 @@
 
 fn main() {
     let sup: Superposition<Hologram<i32, 3, 5>> = uniform([
-        Hologram::encode(1),
-        Hologram::encode(2),
-        Hologram::encode(3),
+        Hologram·encode(1),
+        Hologram·encode(2),
+        Hologram·encode(3),
     ]);
     let observed! = sup|observe;
     let value = observed!|∀;

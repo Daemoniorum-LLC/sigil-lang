@@ -3,14 +3,14 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let mut opt: Option<i32> = Option::Some(3);
+    let mut opt: Option<i32> = Option·Some(3);
 
-    while let Option::Some(x) = opt {
+    while let Option·Some(x) = opt {
         println(x);
         if x > 1 {
-            opt = Option::Some(x - 1);
+            opt = Option·Some(x - 1);
         } else {
-            opt = Option::None;
+            opt = Option·None;
         }
     }
 }

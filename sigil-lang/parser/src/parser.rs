@@ -4149,6 +4149,7 @@ impl<'a> Parser<'a> {
                 | Expr::Loop { .. }
                 | Expr::For { .. }
                 | Expr::Block(_)
+                | Expr::Unsafe(_)
         )
     }
 

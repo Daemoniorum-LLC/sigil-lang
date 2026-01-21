@@ -843,8 +843,9 @@ pub enum Token {
     DotDotEq,
     #[token("++")]
     PlusPlus, // Concatenation
-    #[token("::")]
-    ColonColon,
+    // DISABLED: Rust compatibility removed - use middledot (·) instead
+    // #[token("::")]
+    ColonColon,  // Keep variant for compiler compatibility, but lexer won't produce it
     #[token(":")]
     Colon,
     #[token(";")]

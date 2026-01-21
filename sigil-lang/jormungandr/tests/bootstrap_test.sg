@@ -14,7 +14,7 @@
 //!
 //! When compiler1.c equals compiler2.c, we have achieved self-hosting.
 
-use super::*;
+use super·*;
 
 /// List of all compiler source files
 pub const COMPILER_SOURCES: ![&str] = [
@@ -72,8 +72,8 @@ impl BootstrapTest {
     pub fn new(config: !BootstrapConfig) -> !BootstrapTest {
         BootstrapTest {
             config: config,
-            phase1_outputs: Map::new(),
-            phase2_outputs: Map::new(),
+            phase1_outputs: Map·new(),
+            phase2_outputs: Map·new(),
         }
     }
 
@@ -169,8 +169,8 @@ impl BootstrapTest {
     fn compile_with_rust(self, path: !String) -> !CompileResult {
         // Read source file
         let source = match file·read(path) {
-            Result::Ok(s) => s,
-            Result::Err(e) => {
+            Result·Ok(s) => s,
+            Result·Err(e) => {
                 return CompileResult {
                     success: false,
                     output_file: null,
@@ -190,8 +190,8 @@ impl BootstrapTest {
     fn compile_with_sigil(self, path: !String) -> !CompileResult {
         // Read source file
         let source = match file·read(path) {
-            Result::Ok(s) => s,
-            Result::Err(e) => {
+            Result·Ok(s) => s,
+            Result·Err(e) => {
                 return CompileResult {
                     success: false,
                     output_file: null,
@@ -211,10 +211,10 @@ impl BootstrapTest {
         let mut errors: ![String] = [];
 
         // Stage 1: Lexing
-        let mut lexer = Lexer::new(source);
+        let mut lexer = Lexer·new(source);
         let tokens = match lexer.tokenize() {
-            Result::Ok(t) => t,
-            Result::Err(e) => {
+            Result·Ok(t) => t,
+            Result·Err(e) => {
                 return CompileResult {
                     success: false,
                     output_file: null,
@@ -226,10 +226,10 @@ impl BootstrapTest {
         };
 
         // Stage 2: Parsing
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser·new(tokens);
         let ast = match parser.parse_file() {
-            Result::Ok(a) => a,
-            Result::Err(e) => {
+            Result·Ok(a) => a,
+            Result·Err(e) => {
                 return CompileResult {
                     success: false,
                     output_file: null,
@@ -241,10 +241,10 @@ impl BootstrapTest {
         };
 
         // Stage 3: Type checking
-        let mut checker = TypeChecker::new();
+        let mut checker = TypeChecker·new();
         match checker.check_file(ast) {
-            Result::Ok(_) => {},
-            Result::Err(e) => {
+            Result·Ok(_) => {},
+            Result·Err(e) => {
                 return CompileResult {
                     success: false,
                     output_file: null,
@@ -256,10 +256,10 @@ impl BootstrapTest {
         };
 
         // Stage 4: Lower to IR
-        let mut ctx = LoweringContext::new();
+        let mut ctx = LoweringContext·new();
         let ir_module = match lower_file(ast, ctx) {
-            Result::Ok(ir) => ir,
-            Result::Err(e) => {
+            Result·Ok(ir) => ir,
+            Result·Err(e) => {
                 return CompileResult {
                     success: false,
                     output_file: null,
@@ -271,7 +271,7 @@ impl BootstrapTest {
         };
 
         // Stage 5: Generate C code
-        let mut codegen = CodeGen::new();
+        let mut codegen = CodeGen·new();
         let c_code = codegen.generate(ir_module);
 
         // Serialize IR for comparison
@@ -373,18 +373,18 @@ pub fn run_smoke_tests() -> !bool {
         print("  Testing {}... ", file);
 
         let source = match file·read(file) {
-            Result::Ok(s) => s,
-            Result::Err(_) => {
+            Result·Ok(s) => s,
+            Result·Err(_) => {
                 println("SKIP (file not found)");
                 continue;
             },
         };
 
         // Try to lex
-        let mut lexer = Lexer::new(source);
+        let mut lexer = Lexer·new(source);
         match lexer.tokenize() {
-            Result::Ok(_) => {},
-            Result::Err(e) => {
+            Result·Ok(_) => {},
+            Result·Err(e) => {
                 println("FAIL (lex): {}", e);
                 return false;
             },
@@ -399,7 +399,7 @@ pub fn run_smoke_tests() -> !bool {
 
 /// Main entry point
 pub fn main(args: ![String]) -> !i32 {
-    let mut config = BootstrapConfig::default();
+    let mut config = BootstrapConfig·default();
 
     // Parse arguments
     for i in 1..args.len() {
@@ -419,7 +419,7 @@ pub fn main(args: ![String]) -> !i32 {
     }
 
     // Run the full bootstrap test
-    let test = BootstrapTest::new(config);
+    let test = BootstrapTest·new(config);
     if test.run() {
         return 0;
     } else {

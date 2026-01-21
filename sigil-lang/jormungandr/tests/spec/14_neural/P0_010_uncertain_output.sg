@@ -3,10 +3,10 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let model = Sequential::new([
-        Linear::<784, 256>::new(),
-        ReLU::new(),
-        Linear::<256, 10>::new(),
+    let model = Sequential·new([
+        Linear·<784, 256>·new(),
+        ReLU·new(),
+        Linear·<256, 10>·new(),
     ]);
     let input: Tensor<[784]> = randn();
     let output◊: Tensor<[10]> = model.forward(input);  // Predictions are uncertain

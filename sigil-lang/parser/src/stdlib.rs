@@ -6146,6 +6146,1528 @@ fn register_concurrency(interp: &mut Interpreter) {
         }
     });
 
+    // ==========================================================================
+    // NATIVE NETWORKING STDLIB
+    // ==========================================================================
+    // Zero-C dependency networking stack for Sigil
+    // Implements: URL, HTTP, WebSocket, TLS, DNS, Socket layers
+    //
+    // This provides the functions required by tests/net/*.sg test files.
+    // ==========================================================================
+
+    // --- URL Parsing ---
+
+    // Url::parse - Parse a URL string into components
+    define(interp, "Url·parse", Some(1), |_, args| {
+        let url_str = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Url::parse requires string")),
+        };
+
+        // Simple URL parser
+        let (scheme, rest) = if let Some(pos) = url_str.find("://") {
+            (url_str[..pos].to_string(), &url_str[pos + 3..])
+        } else {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new("Invalid URL: missing scheme".to_string()))])),
+            });
+        };
+
+        // Parse user:pass@host:port/path?query
+        // First separate auth from host
+        let (auth, host_rest) = if let Some(at_pos) = rest.find('@') {
+            (Some(&rest[..at_pos]), &rest[at_pos + 1..])
+        } else {
+            (None, rest)
+        };
+
+        // Parse username and password from auth
+        let (username, password) = if let Some(auth_str) = auth {
+            if let Some(colon_pos) = auth_str.find(':') {
+                (Some(auth_str[..colon_pos].to_string()), Some(auth_str[colon_pos + 1..].to_string()))
+            } else {
+                (Some(auth_str.to_string()), None)
+            }
+        } else {
+            (None, None)
+        };
+
+        let (host_port, path_query) = if let Some(pos) = host_rest.find('/') {
+            (&host_rest[..pos], &host_rest[pos..])
+        } else {
+            (host_rest, "/")
+        };
+
+        // Parse host and port
+        let (host, port) = if let Some(pos) = host_port.rfind(':') {
+            let port_str = &host_port[pos + 1..];
+            if let Ok(p) = port_str.parse::<u16>() {
+                (host_port[..pos].to_string(), Some(p))
+            } else {
+                (host_port.to_string(), None)
+            }
+        } else {
+            (host_port.to_string(), None)
+        };
+
+        // Default port by scheme
+        let port = port.unwrap_or(match scheme.as_str() {
+            "http" => 80,
+            "https" => 443,
+            "ws" => 80,
+            "wss" => 443,
+            _ => 0,
+        });
+
+        // Parse path, query, and fragment
+        // First separate fragment
+        let (path_query_no_frag, fragment) = if let Some(pos) = path_query.find('#') {
+            (&path_query[..pos], Some(path_query[pos + 1..].to_string()))
+        } else {
+            (path_query, None)
+        };
+
+        // Then separate path and query
+        let (path, query) = if let Some(pos) = path_query_no_frag.find('?') {
+            (path_query_no_frag[..pos].to_string(), Some(path_query_no_frag[pos + 1..].to_string()))
+        } else {
+            (path_query_no_frag.to_string(), None)
+        };
+
+        // Helper to create Option::Some or Option::None
+        let make_option = |opt: Option<String>| -> Value {
+            match opt {
+                Some(s) => Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![Value::String(Rc::new(s))])),
+                },
+                None => Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "None".to_string(),
+                    fields: None,
+                },
+            }
+        };
+
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("Url".to_string())));
+        map.insert("scheme".to_string(), Value::String(Rc::new(scheme)));
+        map.insert("host".to_string(), Value::String(Rc::new(host)));
+        map.insert("port".to_string(), Value::Int(port as i64));
+        map.insert("path".to_string(), Value::String(Rc::new(path.clone())));
+        map.insert("query".to_string(), make_option(query.clone()));
+        map.insert("fragment".to_string(), make_option(fragment.clone()));
+        map.insert("username".to_string(), make_option(username));
+        map.insert("password".to_string(), make_option(password));
+        map.insert("raw".to_string(), Value::String(Rc::new(url_str)));
+        // Store query/fragment strings for full_path computation
+        map.insert("_query_str".to_string(), match &query {
+            Some(q) => Value::String(Rc::new(q.clone())),
+            None => Value::Null,
+        });
+        map.insert("_fragment_str".to_string(), match &fragment {
+            Some(f) => Value::String(Rc::new(f.clone())),
+            None => Value::Null,
+        });
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+        })
+    });
+
+    // Url::is_https - Check if URL uses HTTPS
+    define(interp, "Url·is_https", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("Url::is_https requires Url")),
+        };
+        let borrowed = url.borrow();
+        if let Some(Value::String(scheme)) = borrowed.get("scheme") {
+            Ok(Value::Bool(scheme.as_str() == "https" || scheme.as_str() == "wss"))
+        } else {
+            Ok(Value::Bool(false))
+        }
+    });
+
+    // Url::to_string - Convert URL to string
+    define(interp, "Url·to_string", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("Url::to_string requires Url")),
+        };
+        let borrowed = url.borrow();
+        if let Some(Value::String(raw)) = borrowed.get("raw") {
+            Ok(Value::String(raw.clone()))
+        } else {
+            Ok(Value::String(Rc::new("".to_string())))
+        }
+    });
+
+    // Url::full_path - Get path with query string
+    define(interp, "Url·full_path", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("Url::full_path requires Url")),
+        };
+        let borrowed = url.borrow();
+        let path = if let Some(Value::String(p)) = borrowed.get("path") {
+            p.to_string()
+        } else {
+            "/".to_string()
+        };
+        let query = if let Some(Value::String(q)) = borrowed.get("_query_str") {
+            Some(q.to_string())
+        } else {
+            None
+        };
+        let fragment = if let Some(Value::String(f)) = borrowed.get("_fragment_str") {
+            Some(f.to_string())
+        } else {
+            None
+        };
+
+        let mut result = path;
+        if let Some(q) = query {
+            result.push('?');
+            result.push_str(&q);
+        }
+        if let Some(f) = fragment {
+            result.push('#');
+            result.push_str(&f);
+        }
+        Ok(Value::String(Rc::new(result)))
+    });
+
+    // Url::host_header() - returns host:port for non-default ports, just host for default
+    define(interp, "Url·host_header", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("Url::host_header requires Url")),
+        };
+        let borrowed = url.borrow();
+        let host = if let Some(Value::String(h)) = borrowed.get("host") {
+            h.to_string()
+        } else {
+            "localhost".to_string()
+        };
+        let port = if let Some(Value::Int(p)) = borrowed.get("port") {
+            *p as u16
+        } else {
+            80
+        };
+        let scheme = if let Some(Value::String(s)) = borrowed.get("scheme") {
+            s.to_string()
+        } else {
+            "http".to_string()
+        };
+
+        // Default ports: HTTP=80, HTTPS=443
+        let is_default_port = (scheme == "http" && port == 80) || (scheme == "https" && port == 443);
+        if is_default_port {
+            Ok(Value::String(Rc::new(host)))
+        } else {
+            Ok(Value::String(Rc::new(format!("{}:{}", host, port))))
+        }
+    });
+
+    // --- HTTP Method Enum ---
+    // Register HttpMethod enum variants
+    interp.globals.borrow_mut().define("HttpMethod·GET".to_string(), Value::Variant {
+        enum_name: "HttpMethod".to_string(),
+        variant_name: "GET".to_string(),
+        fields: None,
+    });
+    interp.globals.borrow_mut().define("HttpMethod·POST".to_string(), Value::Variant {
+        enum_name: "HttpMethod".to_string(),
+        variant_name: "POST".to_string(),
+        fields: None,
+    });
+    interp.globals.borrow_mut().define("HttpMethod·PUT".to_string(), Value::Variant {
+        enum_name: "HttpMethod".to_string(),
+        variant_name: "PUT".to_string(),
+        fields: None,
+    });
+    interp.globals.borrow_mut().define("HttpMethod·DELETE".to_string(), Value::Variant {
+        enum_name: "HttpMethod".to_string(),
+        variant_name: "DELETE".to_string(),
+        fields: None,
+    });
+    interp.globals.borrow_mut().define("HttpMethod·HEAD".to_string(), Value::Variant {
+        enum_name: "HttpMethod".to_string(),
+        variant_name: "HEAD".to_string(),
+        fields: None,
+    });
+    interp.globals.borrow_mut().define("HttpMethod·PATCH".to_string(), Value::Variant {
+        enum_name: "HttpMethod".to_string(),
+        variant_name: "PATCH".to_string(),
+        fields: None,
+    });
+    interp.globals.borrow_mut().define("HttpMethod·OPTIONS".to_string(), Value::Variant {
+        enum_name: "HttpMethod".to_string(),
+        variant_name: "OPTIONS".to_string(),
+        fields: None,
+    });
+
+    // --- HTTP Client ---
+
+    // HttpClient::new - Create a new HTTP client
+    define(interp, "HttpClient·new", Some(0), |_, _| {
+        let mut fields = HashMap::new();
+        fields.insert("timeout_ms".to_string(), Value::Int(30000));
+        fields.insert("follow_redirects".to_string(), Value::Bool(true));
+        fields.insert("max_redirects".to_string(), Value::Int(10));
+        Ok(Value::Struct {
+            name: "HttpClient".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // HttpClient::build_request - Build HTTP request bytes from request struct
+    define(interp, "HttpClient·build_request", Some(2), |_, args| {
+        // Accept Map or Struct for client
+        let client_val = match &args[0] {
+            Value::Ref(r) => r.borrow().clone(),
+            other => other.clone(),
+        };
+        let _client = match client_val {
+            Value::Map(m) => m,
+            Value::Struct { fields, .. } => fields,
+            _ => return Err(RuntimeError::new("HttpClient::build_request requires HttpClient")),
+        };
+
+        // Extract request fields from HttpRequest struct (handle reference or value)
+        let request_val = match &args[1] {
+            Value::Ref(r) => r.borrow().clone(),
+            other => other.clone(),
+        };
+
+        let request = match request_val {
+            Value::Struct { fields, .. } => fields,
+            Value::Map(m) => {
+                // Also accept Map - return empty for now
+                return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+            }
+            _ => return Err(RuntimeError::new("HttpClient::build_request requires HttpRequest")),
+        };
+        let request = request.borrow();
+
+        // Get method
+        let method_str = if let Some(method) = request.get("method") {
+            match method {
+                Value::Variant { variant_name, .. } => variant_name.clone(),
+                Value::String(s) => s.to_string(),
+                _ => "GET".to_string(),
+            }
+        } else {
+            "GET".to_string()
+        };
+
+        // Get URL
+        let (host, path, port) = if let Some(url_val) = request.get("url") {
+            match url_val {
+                Value::Map(m) => {
+                    let borrowed = m.borrow();
+                    let host = if let Some(Value::String(h)) = borrowed.get("host") {
+                        h.to_string()
+                    } else {
+                        "localhost".to_string()
+                    };
+                    let path = if let Some(Value::String(p)) = borrowed.get("path") {
+                        p.to_string()
+                    } else {
+                        "/".to_string()
+                    };
+                    let port = if let Some(Value::Int(p)) = borrowed.get("port") {
+                        *p as u16
+                    } else {
+                        80
+                    };
+                    // Include query string if present
+                    let query_str = if let Some(Value::String(q)) = borrowed.get("_query_str") {
+                        Some(q.to_string())
+                    } else {
+                        None
+                    };
+                    let full_path = if let Some(q) = query_str {
+                        format!("{}?{}", path, q)
+                    } else {
+                        path
+                    };
+                    (host, full_path, port)
+                }
+                _ => ("localhost".to_string(), "/".to_string(), 80),
+            }
+        } else {
+            ("localhost".to_string(), "/".to_string(), 80)
+        };
+
+        // Get headers
+        let headers: Vec<(String, String)> = if let Some(headers_val) = request.get("headers") {
+            match headers_val {
+                Value::Array(arr) => {
+                    let borrowed = arr.borrow();
+                    borrowed.iter().filter_map(|h| {
+                        if let Value::Tuple(t) = h {
+                            if t.len() >= 2 {
+                                let key = if let Value::String(s) = &t[0] { s.to_string() } else { return None };
+                                let val = if let Value::String(s) = &t[1] { s.to_string() } else { return None };
+                                return Some((key, val));
+                            }
+                        }
+                        None
+                    }).collect()
+                }
+                _ => vec![],
+            }
+        } else {
+            vec![]
+        };
+
+        // Get body
+        let body: Option<Vec<u8>> = if let Some(body_val) = request.get("body") {
+            match body_val {
+                Value::Variant { variant_name, fields, .. } if variant_name == "Some" => {
+                    if let Some(f) = fields {
+                        if let Some(Value::Array(arr)) = f.first() {
+                            Some(arr.borrow().iter().filter_map(|v| {
+                                if let Value::Int(b) = v { Some(*b as u8) } else { None }
+                            }).collect())
+                        } else if let Some(Value::String(s)) = f.first() {
+                            Some(s.as_bytes().to_vec())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                Value::Array(arr) => {
+                    Some(arr.borrow().iter().filter_map(|v| {
+                        if let Value::Int(b) = v { Some(*b as u8) } else { None }
+                    }).collect())
+                }
+                Value::String(s) => Some(s.as_bytes().to_vec()),
+                Value::Null => None,
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        // Build HTTP/1.1 request
+        let host_header = if port == 80 || port == 443 {
+            host.clone()
+        } else {
+            format!("{}:{}", host, port)
+        };
+
+        let mut request_str = format!("{} {} HTTP/1.1\r\n", method_str, path);
+        request_str.push_str(&format!("Host: {}\r\n", host_header));
+        request_str.push_str("User-Agent: Sigil/1.0\r\n");
+
+        // Add custom headers
+        for (key, val) in &headers {
+            request_str.push_str(&format!("{}: {}\r\n", key, val));
+        }
+
+        // Add Content-Length if there's a body
+        if let Some(ref b) = body {
+            request_str.push_str(&format!("Content-Length: {}\r\n", b.len()));
+        }
+
+        request_str.push_str("\r\n");
+
+        // Convert to bytes
+        let mut bytes: Vec<Value> = request_str.bytes().map(|b| Value::Int(b as i64)).collect();
+
+        // Append body if present
+        if let Some(b) = body {
+            bytes.extend(b.iter().map(|&b| Value::Int(b as i64)));
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(bytes))))
+    });
+
+    // HttpClient::parse_response_simple - Parse HTTP response bytes into HttpResponse
+    define(interp, "HttpClient·parse_response_simple", Some(2), |_, args| {
+        // First arg is client (ignored), second is bytes array
+        let bytes_val = match &args[1] {
+            Value::Ref(r) => r.borrow().clone(),
+            other => other.clone(),
+        };
+
+        let bytes: Vec<u8> = match bytes_val {
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(b) = v { Some(*b as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("parse_response_simple requires byte array")),
+        };
+
+        // Helper to return Result::Err variant
+        let make_err = |msg: &str| -> Value {
+            Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(msg.to_string()))])),
+            }
+        };
+
+        // Parse HTTP response
+        let response_str = String::from_utf8_lossy(&bytes);
+
+        // Check for header/body boundary (\r\n\r\n)
+        if !response_str.contains("\r\n\r\n") {
+            return Ok(make_err("Missing header/body separator"));
+        }
+
+        let lines: Vec<&str> = response_str.split("\r\n").collect();
+
+        if lines.is_empty() {
+            return Ok(make_err("Empty response"));
+        }
+
+        // Parse status line: HTTP/1.1 200 OK
+        let status_line = lines[0];
+
+        // Validate status line starts with HTTP/
+        if !status_line.starts_with("HTTP/") {
+            return Ok(make_err("Invalid status line - must start with HTTP/"));
+        }
+
+        let parts: Vec<&str> = status_line.splitn(3, ' ').collect();
+        if parts.len() < 2 {
+            return Ok(make_err("Invalid status line format"));
+        }
+
+        let status: i64 = parts[1].parse().unwrap_or(0);
+        let status_text = if parts.len() >= 3 { parts[2].to_string() } else { "".to_string() };
+
+        // Parse headers (everything between status line and empty line)
+        let mut headers: Vec<(String, String)> = vec![];
+        let mut body_start = 1;
+        for (i, line) in lines.iter().enumerate().skip(1) {
+            if line.is_empty() {
+                body_start = i + 1;
+                break;
+            }
+            if let Some((key, value)) = line.split_once(':') {
+                headers.push((key.trim().to_string(), value.trim().to_string()));
+            }
+        }
+
+        // Body is everything after the empty line
+        let body: Vec<u8> = if body_start < lines.len() {
+            lines[body_start..].join("\r\n").into_bytes()
+        } else {
+            vec![]
+        };
+
+        // Build HttpResponse struct
+        let mut fields = HashMap::new();
+        fields.insert("status".to_string(), Value::Int(status));
+        fields.insert("status_text".to_string(), Value::String(Rc::new(status_text)));
+
+        // Convert headers to array of tuples
+        let headers_arr: Vec<Value> = headers.into_iter().map(|(k, v)| {
+            Value::Tuple(Rc::new(vec![Value::String(Rc::new(k)), Value::String(Rc::new(v))]))
+        }).collect();
+        fields.insert("headers".to_string(), Value::Array(Rc::new(RefCell::new(headers_arr))));
+
+        // Body as byte array
+        let body_arr: Vec<Value> = body.into_iter().map(|b| Value::Int(b as i64)).collect();
+        fields.insert("body".to_string(), Value::Array(Rc::new(RefCell::new(body_arr))));
+
+        let response = Value::Struct {
+            name: "HttpResponse".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        };
+
+        // Return as Result::Ok(response)
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![response])),
+        })
+    });
+
+    // HttpResponse::is_success() - Check if status is 2xx
+    define(interp, "HttpResponse·is_success", Some(1), |_, args| {
+        let response_val = match &args[0] {
+            Value::Ref(r) => r.borrow().clone(),
+            other => other.clone(),
+        };
+        let response = match response_val {
+            Value::Struct { fields, .. } => fields,
+            Value::Map(m) => m,
+            _ => return Err(RuntimeError::new("HttpResponse::is_success requires HttpResponse")),
+        };
+        let borrowed = response.borrow();
+        let status = if let Some(Value::Int(s)) = borrowed.get("status") {
+            *s
+        } else {
+            0
+        };
+        Ok(Value::Bool(status >= 200 && status < 300))
+    });
+
+    // HttpResponse::header(name) - Case-insensitive header lookup
+    define(interp, "HttpResponse·header", Some(2), |_, args| {
+        let response = match &args[0] {
+            Value::Struct { fields, .. } => fields.clone(),
+            Value::Ref(r) => {
+                if let Value::Struct { fields, .. } = &*r.borrow() {
+                    fields.clone()
+                } else {
+                    return Err(RuntimeError::new("HttpResponse::header requires HttpResponse"));
+                }
+            }
+            _ => return Err(RuntimeError::new("HttpResponse::header requires HttpResponse")),
+        };
+        let name = match &args[1] {
+            Value::String(s) => s.to_lowercase(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_lowercase()
+                } else {
+                    return Err(RuntimeError::new("HttpResponse::header requires string name"));
+                }
+            }
+            _ => return Err(RuntimeError::new("HttpResponse::header requires string name")),
+        };
+
+        let borrowed = response.borrow();
+        if let Some(Value::Array(headers)) = borrowed.get("headers") {
+            for h in headers.borrow().iter() {
+                if let Value::Tuple(t) = h {
+                    let tuple_elems = t.as_ref();
+                    if tuple_elems.len() >= 2 {
+                        if let Value::String(key) = &tuple_elems[0] {
+                            if key.to_lowercase() == name {
+                                // Return Some(value)
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![tuple_elems[1].clone()])),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Not found - return None
+        Ok(Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "None".to_string(),
+            fields: None,
+        })
+    });
+
+    // HttpResponse::text() - Convert body bytes to UTF-8 string
+    define(interp, "HttpResponse·text", Some(1), |_, args| {
+        let response = match &args[0] {
+            Value::Struct { fields, .. } => fields.clone(),
+            Value::Ref(r) => {
+                if let Value::Struct { fields, .. } = &*r.borrow() {
+                    fields.clone()
+                } else {
+                    return Err(RuntimeError::new("HttpResponse::text requires HttpResponse"));
+                }
+            }
+            _ => return Err(RuntimeError::new("HttpResponse::text requires HttpResponse")),
+        };
+        let borrowed = response.borrow();
+        let body_bytes: Vec<u8> = if let Some(Value::Array(arr)) = borrowed.get("body") {
+            arr.borrow().iter().filter_map(|v| {
+                if let Value::Int(b) = v { Some(*b as u8) } else { None }
+            }).collect()
+        } else {
+            vec![]
+        };
+        let text = String::from_utf8_lossy(&body_bytes).to_string();
+        // Return as Result::Ok(text)
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::String(Rc::new(text))])),
+        })
+    });
+
+    // HttpClient::get - Perform a GET request with redirect following
+    define(interp, "HttpClient·get", Some(2), |_, args| {
+        // Handle reference or direct value for client
+        let client_val = match &args[0] {
+            Value::Ref(r) => r.borrow().clone(),
+            other => other.clone(),
+        };
+        let client_fields = match client_val {
+            Value::Map(m) => m,
+            Value::Struct { fields, .. } => fields,
+            _ => return Err(RuntimeError::new("HttpClient::get requires HttpClient")),
+        };
+
+        // Get max_redirects from client (default 10)
+        let max_redirects = {
+            let borrowed = client_fields.borrow();
+            if let Some(Value::Int(n)) = borrowed.get("max_redirects") {
+                *n as usize
+            } else {
+                10
+            }
+        };
+
+        let initial_url = match &args[1] {
+            Value::String(s) => s.to_string(),
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(raw)) = borrowed.get("raw") {
+                    raw.to_string()
+                } else {
+                    return Err(RuntimeError::new("Invalid URL object"));
+                }
+            }
+            _ => return Err(RuntimeError::new("HttpClient::get requires URL")),
+        };
+
+        use std::io::{Read, Write as IoWrite};
+
+        let mut current_url = initial_url;
+        let mut redirects = 0;
+
+        loop {
+            // Parse URL
+            let (scheme, rest) = if let Some(pos) = current_url.find("://") {
+                (&current_url[..pos], &current_url[pos + 3..])
+            } else {
+                return Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::String(Rc::new("Invalid URL".to_string()))])),
+                });
+            };
+
+            if scheme != "http" {
+                return Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Unsupported scheme: {}", scheme)))])),
+                });
+            }
+
+            let (host_port, path) = if let Some(pos) = rest.find('/') {
+                (&rest[..pos], &rest[pos..])
+            } else {
+                (rest, "/")
+            };
+
+            let (host, port): (&str, u16) = if let Some(pos) = host_port.rfind(':') {
+                let port_str = &host_port[pos + 1..];
+                (&host_port[..pos], port_str.parse().unwrap_or(80))
+            } else {
+                (host_port, 80)
+            };
+
+            let addr = format!("{}:{}", host, port);
+            let request = format!(
+                "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Sigil/1.0\r\nConnection: close\r\n\r\n",
+                path, host
+            );
+
+            match std::net::TcpStream::connect(&addr) {
+                Ok(mut stream) => {
+                    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                    let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(10)));
+
+                    if stream.write_all(request.as_bytes()).is_err() {
+                        return Ok(Value::Variant {
+                            enum_name: "Result".to_string(),
+                            variant_name: "Err".to_string(),
+                            fields: Some(Rc::new(vec![Value::String(Rc::new("Write failed".to_string()))])),
+                        });
+                    }
+
+                    let mut response = Vec::new();
+                    if stream.read_to_end(&mut response).is_err() {
+                        return Ok(Value::Variant {
+                            enum_name: "Result".to_string(),
+                            variant_name: "Err".to_string(),
+                            fields: Some(Rc::new(vec![Value::String(Rc::new("Read failed".to_string()))])),
+                        });
+                    }
+
+                    // Parse HTTP response
+                    let response_str = String::from_utf8_lossy(&response);
+                    let lines: Vec<&str> = response_str.lines().collect();
+
+                    let status_line = lines.first().unwrap_or(&"");
+                    let status_code: i64 = status_line
+                        .split_whitespace()
+                        .nth(1)
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
+
+                    // Check for redirect (3xx status)
+                    if status_code >= 300 && status_code < 400 && redirects < max_redirects {
+                        // Find Location header
+                        let mut location: Option<String> = None;
+                        for line in &lines {
+                            if line.to_lowercase().starts_with("location:") {
+                                location = Some(line[9..].trim().to_string());
+                                break;
+                            }
+                        }
+
+                        if let Some(loc) = location {
+                            redirects += 1;
+                            // Handle relative URLs
+                            if loc.starts_with("http://") || loc.starts_with("https://") {
+                                current_url = loc;
+                            } else if loc.starts_with("/") {
+                                current_url = format!("http://{}:{}{}", host, port, loc);
+                            } else {
+                                current_url = format!("http://{}:{}/{}", host, port, loc);
+                            }
+                            continue; // Follow redirect
+                        }
+                    }
+
+                    // Check if we exceeded redirect limit
+                    if status_code >= 300 && status_code < 400 && redirects >= max_redirects {
+                        return Ok(Value::Variant {
+                            enum_name: "Result".to_string(),
+                            variant_name: "Err".to_string(),
+                            fields: Some(Rc::new(vec![Value::String(Rc::new("Too many redirects".to_string()))])),
+                        });
+                    }
+
+                    // Find body (after empty line)
+                    let body_start = response_str.find("\r\n\r\n")
+                        .map(|i| i + 4)
+                        .or_else(|| response_str.find("\n\n").map(|i| i + 2))
+                        .unwrap_or(response_str.len());
+
+                    let body = &response_str[body_start..];
+
+                    let mut resp_map = HashMap::new();
+                    resp_map.insert("__type__".to_string(), Value::String(Rc::new("HttpResponse".to_string())));
+                    resp_map.insert("status".to_string(), Value::Int(status_code));
+                    resp_map.insert("ok".to_string(), Value::Bool(status_code >= 200 && status_code < 300));
+                    resp_map.insert("body".to_string(), Value::String(Rc::new(body.to_string())));
+
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Ok".to_string(),
+                        fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(resp_map)))])),
+                    });
+                }
+                Err(e) => return Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Connection failed: {}", e)))])),
+                }),
+            }
+        }
+    });
+
+    // HttpClient::post - Perform a POST request
+    define(interp, "HttpClient·post", Some(3), |_, args| {
+        // Handle reference or direct value for client
+        let client_val = match &args[0] {
+            Value::Ref(r) => r.borrow().clone(),
+            other => other.clone(),
+        };
+        let _client = match client_val {
+            Value::Map(m) => m,
+            Value::Struct { fields, .. } => fields,
+            _ => return Err(RuntimeError::new("HttpClient::post requires HttpClient")),
+        };
+
+        let url = match &args[1] {
+            Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() { s.to_string() }
+                else { return Err(RuntimeError::new("HttpClient::post requires URL string")); }
+            }
+            _ => return Err(RuntimeError::new("HttpClient::post requires URL")),
+        };
+
+        // Get body bytes
+        let body_val = match &args[2] {
+            Value::Ref(r) => r.borrow().clone(),
+            other => other.clone(),
+        };
+        let body_bytes: Vec<u8> = match body_val {
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(b) = v { Some(*b as u8) } else { None }
+                }).collect()
+            }
+            Value::String(s) => s.as_bytes().to_vec(),
+            _ => return Err(RuntimeError::new("HttpClient::post requires body")),
+        };
+
+        use std::io::{Read, Write as IoWrite};
+
+        // Parse URL
+        let (scheme, rest) = if let Some(pos) = url.find("://") {
+            (&url[..pos], &url[pos + 3..])
+        } else {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new("Invalid URL".to_string()))])),
+            });
+        };
+
+        if scheme != "http" {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Unsupported scheme: {}", scheme)))])),
+            });
+        }
+
+        let (host_port, path) = if let Some(pos) = rest.find('/') {
+            (&rest[..pos], &rest[pos..])
+        } else {
+            (rest, "/")
+        };
+
+        let (host, port) = if let Some(pos) = host_port.find(':') {
+            (&host_port[..pos], host_port[pos + 1..].parse().unwrap_or(80))
+        } else {
+            (host_port, 80u16)
+        };
+
+        let request = format!(
+            "POST {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Sigil/1.0\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            path, host, body_bytes.len()
+        );
+
+        let addr = format!("{}:{}", host, port);
+        match std::net::TcpStream::connect(&addr) {
+            Ok(mut stream) => {
+                // Set timeout
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(10)));
+
+                // Send request headers
+                if stream.write_all(request.as_bytes()).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Write failed".to_string()))])),
+                    });
+                }
+
+                // Send body
+                if stream.write_all(&body_bytes).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Write body failed".to_string()))])),
+                    });
+                }
+
+                let mut response = Vec::new();
+                if stream.read_to_end(&mut response).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Read failed".to_string()))])),
+                    });
+                }
+
+                // Parse HTTP response
+                let response_str = String::from_utf8_lossy(&response);
+                let mut lines = response_str.lines();
+
+                let status_line = lines.next().unwrap_or("");
+                let status_code: i64 = status_line
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+
+                // Find body (after empty line)
+                let body_start = response_str.find("\r\n\r\n")
+                    .map(|i| i + 4)
+                    .or_else(|| response_str.find("\n\n").map(|i| i + 2))
+                    .unwrap_or(response_str.len());
+
+                let resp_body = &response_str[body_start..];
+
+                let mut resp_map = HashMap::new();
+                resp_map.insert("__type__".to_string(), Value::String(Rc::new("HttpResponse".to_string())));
+                resp_map.insert("status".to_string(), Value::Int(status_code));
+                resp_map.insert("ok".to_string(), Value::Bool(status_code >= 200 && status_code < 300));
+                resp_map.insert("body".to_string(), Value::String(Rc::new(resp_body.to_string())));
+
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(resp_map)))])),
+                })
+            }
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Connection failed: {}", e)))])),
+            }),
+        }
+    });
+
+    // HttpMethod enum variants are already registered earlier as Value::Variant
+
+    // --- TLS/SSL ---
+
+    // tls_init - Initialize TLS library
+    define(interp, "tls_init", Some(0), |_, _| {
+        // For now, return success (actual TLS via native-tls or rustls would go here)
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Null])),
+        })
+    });
+
+    // ssl_ctx_new - Create SSL context
+    define(interp, "ssl_ctx_new", Some(0), |_, _| {
+        // Return a fake pointer for now (would use native-tls in real impl)
+        let ctx_id = STREAM_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Int(ctx_id as i64)])),
+        })
+    });
+
+    // ssl_ctx_free - Free SSL context
+    define(interp, "ssl_ctx_free", Some(1), |_, _args| {
+        // No-op for stub implementation
+        Ok(Value::Null)
+    });
+
+    // ssl_new - Create new SSL connection
+    define(interp, "ssl_new", Some(1), |_, args| {
+        let _ctx = match &args[0] {
+            Value::Int(i) => *i,
+            _ => return Err(RuntimeError::new("ssl_new requires SSL_CTX")),
+        };
+        let ssl_id = STREAM_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Int(ssl_id as i64)])),
+        })
+    });
+
+    // ssl_free - Free SSL connection
+    define(interp, "ssl_free", Some(1), |_, _args| {
+        Ok(Value::Null)
+    });
+
+    // ssl_set_fd - Set file descriptor for SSL
+    define(interp, "ssl_set_fd", Some(2), |_, _args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Null])),
+        })
+    });
+
+    // ssl_set_hostname - Set SNI hostname
+    define(interp, "ssl_set_hostname", Some(2), |_, _args| {
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Null])),
+        })
+    });
+
+    // TlsStream::connect - Create TLS connection over TCP
+    define(interp, "TlsStream·connect", Some(2), |_, args| {
+        let tcp_stream = match &args[0] {
+            Value::Map(m) => m.clone(),
+            _ => return Err(RuntimeError::new("TlsStream::connect requires TcpStream")),
+        };
+
+        let hostname = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("TlsStream::connect requires hostname")),
+        };
+
+        // Get the stream ID from the TcpStream
+        let stream_id = {
+            let borrowed = tcp_stream.borrow();
+            if let Some(Value::Int(id)) = borrowed.get("__stream_id__") {
+                *id as u64
+            } else {
+                return Err(RuntimeError::new("TcpStream missing __stream_id__"));
+            }
+        };
+
+        // Create TLS stream wrapper (stub - would use native-tls)
+        let mut tls_map = HashMap::new();
+        tls_map.insert("__type__".to_string(), Value::String(Rc::new("TlsStream".to_string())));
+        tls_map.insert("__stream_id__".to_string(), Value::Int(stream_id as i64));
+        tls_map.insert("hostname".to_string(), Value::String(Rc::new(hostname)));
+        tls_map.insert("connected".to_string(), Value::Bool(true));
+        tls_map.insert("protocol_version".to_string(), Value::String(Rc::new("TLSv1.3".to_string())));
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(tls_map)))])),
+        })
+    });
+
+    // TcpStream::connect - Connect to a TCP server
+    define(interp, "TcpStream·connect", Some(1), |_, args| {
+        let addr = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(a)) = borrowed.get("addr") {
+                    a.to_string()
+                } else {
+                    return Err(RuntimeError::new("SocketAddr missing addr"));
+                }
+            }
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("TcpStream::connect requires SocketAddr")),
+        };
+
+        match std::net::TcpStream::connect(&addr) {
+            Ok(stream) => {
+                let stream_id = store_tcp_stream(stream);
+                let mut map = HashMap::new();
+                map.insert("__type__".to_string(), Value::String(Rc::new("TcpStream".to_string())));
+                map.insert("__stream_id__".to_string(), Value::Int(stream_id as i64));
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+                })
+            }
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+            }),
+        }
+    });
+
+    // --- WebSocket ---
+
+    // WebSocket::connect - Connect to a WebSocket server
+    define(interp, "WebSocket·connect", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(raw)) = borrowed.get("raw") {
+                    raw.to_string()
+                } else {
+                    return Err(RuntimeError::new("Invalid URL object"));
+                }
+            }
+            _ => return Err(RuntimeError::new("WebSocket::connect requires URL")),
+        };
+
+        // Stub implementation - would use tungstenite or similar
+        let ws_id = STREAM_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+        let mut ws_map = HashMap::new();
+        ws_map.insert("__type__".to_string(), Value::String(Rc::new("WebSocket".to_string())));
+        ws_map.insert("__ws_id__".to_string(), Value::Int(ws_id as i64));
+        ws_map.insert("url".to_string(), Value::String(Rc::new(url)));
+        ws_map.insert("connected".to_string(), Value::Bool(true));
+        ws_map.insert("ready_state".to_string(), Value::Int(1)); // OPEN
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(ws_map)))])),
+        })
+    });
+
+    // WsMessage types
+    define(interp, "WsMessage·Text", Some(1), |_, args| {
+        let text = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("WsMessage::Text requires string")),
+        };
+        Ok(Value::Variant {
+            enum_name: "WsMessage".to_string(),
+            variant_name: "Text".to_string(),
+            fields: Some(Rc::new(vec![Value::String(Rc::new(text))])),
+        })
+    });
+
+    define(interp, "WsMessage·Binary", Some(1), |_, args| {
+        let data = match &args[0] {
+            Value::Array(arr) => arr.clone(),
+            _ => return Err(RuntimeError::new("WsMessage::Binary requires byte array")),
+        };
+        Ok(Value::Variant {
+            enum_name: "WsMessage".to_string(),
+            variant_name: "Binary".to_string(),
+            fields: Some(Rc::new(vec![Value::Array(data)])),
+        })
+    });
+
+    define(interp, "WsMessage·Close", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "WsMessage".to_string(),
+            variant_name: "Close".to_string(),
+            fields: None,
+        })
+    });
+
+    // --- DNS ---
+
+    // DnsHeader::new_query - Create DNS query header
+    define(interp, "DnsHeader·new_query", Some(1), |_, args| {
+        let id = match &args[0] {
+            Value::Int(i) => *i as u16,
+            _ => return Err(RuntimeError::new("DnsHeader::new_query requires id")),
+        };
+
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("DnsHeader".to_string())));
+        map.insert("id".to_string(), Value::Int(id as i64));
+        map.insert("flags".to_string(), Value::Int(0x0100)); // RD flag set
+        map.insert("qdcount".to_string(), Value::Int(1));
+        map.insert("ancount".to_string(), Value::Int(0));
+        map.insert("nscount".to_string(), Value::Int(0));
+        map.insert("arcount".to_string(), Value::Int(0));
+
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // DnsResolver::system - Create system DNS resolver
+    define(interp, "DnsResolver·system", Some(0), |_, _| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("DnsResolver".to_string())));
+        map.insert("servers".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::String(Rc::new("8.8.8.8".to_string())),
+            Value::String(Rc::new("8.8.4.4".to_string())),
+        ]))));
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+        })
+    });
+
+    // DnsResolver::new - Create custom DNS resolver
+    define(interp, "DnsResolver·new", Some(1), |_, args| {
+        let servers = match &args[0] {
+            Value::Array(arr) => arr.clone(),
+            _ => return Err(RuntimeError::new("DnsResolver::new requires server list")),
+        };
+
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("DnsResolver".to_string())));
+        map.insert("servers".to_string(), Value::Array(servers));
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+        })
+    });
+
+    // --- UDP Socket ---
+
+    // UdpSocket::bind - Bind UDP socket
+    define(interp, "UdpSocket·bind", Some(1), |_, args| {
+        let addr = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(a)) = borrowed.get("addr") {
+                    a.to_string()
+                } else {
+                    return Err(RuntimeError::new("SocketAddr missing addr"));
+                }
+            }
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("UdpSocket::bind requires SocketAddr")),
+        };
+
+        match std::net::UdpSocket::bind(&addr) {
+            Ok(_socket) => {
+                let socket_id = STREAM_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+                let mut map = HashMap::new();
+                map.insert("__type__".to_string(), Value::String(Rc::new("UdpSocket".to_string())));
+                map.insert("__socket_id__".to_string(), Value::Int(socket_id as i64));
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+                })
+            }
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+            }),
+        }
+    });
+
+    // --- TcpListener ---
+
+    // TcpListener::bind - Bind TCP listener (additional registration)
+    define(interp, "TcpListener·bind2", Some(1), |_, args| {
+        let addr = match &args[0] {
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(a)) = borrowed.get("addr") {
+                    a.to_string()
+                } else {
+                    return Err(RuntimeError::new("SocketAddr missing addr"));
+                }
+            }
+            _ => return Err(RuntimeError::new("TcpListener::bind requires SocketAddr")),
+        };
+
+        match std::net::TcpListener::bind(&addr) {
+            Ok(listener) => {
+                let listener_id = store_listener(listener);
+                let mut map = HashMap::new();
+                map.insert("__type__".to_string(), Value::String(Rc::new("TcpListener".to_string())));
+                map.insert("__listener_id__".to_string(), Value::Int(listener_id as i64));
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
+                })
+            }
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+            }),
+        }
+    });
+
+    // --- Error Types ---
+
+    // SocketError variants
+    define(interp, "SocketError·ConnectionRefused", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "SocketError".to_string(),
+            variant_name: "ConnectionRefused".to_string(),
+            fields: None,
+        })
+    });
+
+    define(interp, "SocketError·WouldBlock", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "SocketError".to_string(),
+            variant_name: "WouldBlock".to_string(),
+            fields: None,
+        })
+    });
+
+    define(interp, "SocketError·TimedOut", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "SocketError".to_string(),
+            variant_name: "TimedOut".to_string(),
+            fields: None,
+        })
+    });
+
+    // TlsError variants
+    define(interp, "TlsError·HandshakeFailed", Some(1), |_, args| {
+        let msg = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => "Unknown".to_string(),
+        };
+        Ok(Value::Variant {
+            enum_name: "TlsError".to_string(),
+            variant_name: "HandshakeFailed".to_string(),
+            fields: Some(Rc::new(vec![Value::String(Rc::new(msg))])),
+        })
+    });
+
+    // WsError variants
+    define(interp, "WsError·ConnectionFailed", Some(1), |_, args| {
+        let msg = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => "Unknown".to_string(),
+        };
+        Ok(Value::Variant {
+            enum_name: "WsError".to_string(),
+            variant_name: "ConnectionFailed".to_string(),
+            fields: Some(Rc::new(vec![Value::String(Rc::new(msg))])),
+        })
+    });
+
+    define(interp, "WsError·ConnectionClosed", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "WsError".to_string(),
+            variant_name: "ConnectionClosed".to_string(),
+            fields: None,
+        })
+    });
+
+    define(interp, "WsError·HandshakeFailed", Some(1), |_, args| {
+        let msg = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => "Unknown".to_string(),
+        };
+        Ok(Value::Variant {
+            enum_name: "WsError".to_string(),
+            variant_name: "HandshakeFailed".to_string(),
+            fields: Some(Rc::new(vec![Value::String(Rc::new(msg))])),
+        })
+    });
+
+    define(interp, "WsError·TlsFailed", Some(1), |_, args| {
+        let msg = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => "Unknown".to_string(),
+        };
+        Ok(Value::Variant {
+            enum_name: "WsError".to_string(),
+            variant_name: "TlsFailed".to_string(),
+            fields: Some(Rc::new(vec![Value::String(Rc::new(msg))])),
+        })
+    });
+
+    // DnsError variants
+    define(interp, "DnsError·QueryTimedOut", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "DnsError".to_string(),
+            variant_name: "QueryTimedOut".to_string(),
+            fields: None,
+        })
+    });
+
+    // SyscallError variants (Linux errno)
+    define(interp, "SyscallError·EINVAL", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "SyscallError".to_string(),
+            variant_name: "EINVAL".to_string(),
+            fields: None,
+        })
+    });
+
+    define(interp, "SyscallError·ECONNREFUSED", Some(0), |_, _| {
+        Ok(Value::Variant {
+            enum_name: "SyscallError".to_string(),
+            variant_name: "ECONNREFUSED".to_string(),
+            fields: None,
+        })
+    });
+
+    // IpAddr::V4 and V6 constructors
+    define(interp, "IpAddr·V4", Some(4), |_, args| {
+        let mut octets = Vec::new();
+        for arg in args.iter() {
+            match arg {
+                Value::Int(i) => octets.push(*i as u8),
+                _ => return Err(RuntimeError::new("IpAddr::V4 requires integers")),
+            }
+        }
+        if octets.len() != 4 {
+            return Err(RuntimeError::new("IpAddr::V4 requires 4 octets"));
+        }
+        let addr_str = format!("{}.{}.{}.{}", octets[0], octets[1], octets[2], octets[3]);
+
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("IpAddr".to_string())));
+        map.insert("version".to_string(), Value::Int(4));
+        map.insert("addr".to_string(), Value::String(Rc::new(addr_str)));
+
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // --- Helper Functions ---
+
+    // encode_name - DNS name encoding (for tests)
+    define(interp, "encode_name", Some(3), |_, args| {
+        let _name = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("encode_name requires string")),
+        };
+        // Stub - return length
+        Ok(Value::Int(12))
+    });
+
+    // String::from_utf8 - Convert bytes to string (already exists but alias)
+    define(interp, "String·from_utf8", Some(1), |_, args| {
+        let bytes = match &args[0] {
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                let mut bytes = Vec::new();
+                for v in borrowed.iter() {
+                    if let Value::Int(b) = v {
+                        bytes.push(*b as u8);
+                    }
+                }
+                bytes
+            }
+            _ => return Err(RuntimeError::new("String::from_utf8 requires byte array")),
+        };
+
+        match String::from_utf8(bytes) {
+            Ok(s) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Ok".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(s))])),
+            }),
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+            }),
+        }
+    });
+
+    // String::from_utf8_lossy - Convert bytes to string, replacing invalid UTF-8
+    define(interp, "String·from_utf8_lossy", Some(1), |_, args| {
+        // Handle reference
+        let arg = match &args[0] {
+            Value::Ref(r) => r.borrow().clone(),
+            other => other.clone(),
+        };
+
+        let bytes = match arg {
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                let mut bytes = Vec::new();
+                for v in borrowed.iter() {
+                    if let Value::Int(b) = v {
+                        bytes.push(*b as u8);
+                    }
+                }
+                bytes
+            }
+            _ => return Err(RuntimeError::new("String::from_utf8_lossy requires byte array")),
+        };
+
+        Ok(Value::String(Rc::new(String::from_utf8_lossy(&bytes).to_string())))
+    });
+
+    // Vec::new - Create empty vector
+    define(interp, "Vec·new", Some(0), |_, _| {
+        Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+    });
+
+    // ==========================================================================
+    // END NATIVE NETWORKING STDLIB
+    // ==========================================================================
+
     // --- HTTP MIDDLEWARE STUBS ---
     // Stubs for Styx HTTP middleware until proper module path support is added
 

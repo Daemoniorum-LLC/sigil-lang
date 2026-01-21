@@ -6,5 +6,5 @@ pub struct Math {}
 impl Math { pub fn answer() -> !i32 { 42 } }
 
 fn main() {
-    println(Math::answer());
+    println(Math·answer());
 }

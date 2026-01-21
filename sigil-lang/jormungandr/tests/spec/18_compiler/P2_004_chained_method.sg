@@ -22,7 +22,7 @@ impl Builder {
 }
 
 fn main() {
-    let mut b = Builder::new();
+    let mut b = Builder·new();
     b.add(10);
     b.add(20);
     println(b.build());

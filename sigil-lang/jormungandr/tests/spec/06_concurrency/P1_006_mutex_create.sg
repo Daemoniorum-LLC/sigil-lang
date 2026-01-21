@@ -4,6 +4,6 @@
 
 fn main() {
     // Create a mutex wrapping a value
-    let m = Mutex::new(42);
+    let m = Mutex·new(42);
     println("mutex created");
 }

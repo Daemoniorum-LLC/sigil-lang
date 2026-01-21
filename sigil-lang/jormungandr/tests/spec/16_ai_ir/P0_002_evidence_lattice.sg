@@ -4,7 +4,7 @@
 
 fn main() {
     let known: !i32 = 42;
-    let uncertain: ?i32 = Option::Some(1);
+    let uncertain: ?i32 = Option·Some(1);
     let reported: ~i32 = external_data();
 
     let ir = __export_ir();

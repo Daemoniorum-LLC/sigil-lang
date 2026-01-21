@@ -3,8 +3,8 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let a: linear Qubit = Qubit::zero();
-    let b: linear Qubit = Qubit::one();
+    let a: linear Qubit = Qubit·zero();
+    let b: linear Qubit = Qubit·one();
     let combined: linear QRegister<2> = a ⊗ b;  // Tensor product
     let results = combined|measure_all;
     println(results[0]);

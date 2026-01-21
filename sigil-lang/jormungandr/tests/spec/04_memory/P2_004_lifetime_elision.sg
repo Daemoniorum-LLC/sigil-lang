@@ -7,7 +7,7 @@ fn first(s: &String) -> &String {
 }
 
 fn main() {
-    let s = String::from("hello");
+    let s = String·from("hello");
     let r = first(&s);
     println(r);
 }

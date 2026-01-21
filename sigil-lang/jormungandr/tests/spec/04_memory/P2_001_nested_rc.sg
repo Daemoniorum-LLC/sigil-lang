@@ -7,8 +7,8 @@ struct Node {
 }
 
 fn main() {
-    let inner = Rc::new(Node { value: 42 });
-    let outer = Rc::new(inner.clone());
+    let inner = Rc·new(Node { value: 42 });
+    let outer = Rc·new(inner.clone());
 
     println((*inner).value);
     println((*(*outer)).value);

@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let tree: MerkleTree<String> = MerkleTree::from(["a", "b", "c", "d"]);
+    let tree: MerkleTree<String> = MerkleTree·from(["a", "b", "c", "d"]);
     let proof = tree.prove_inclusion(0);
     let valid! = proof|□verify;
     println(valid!);

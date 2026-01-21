@@ -3,7 +3,7 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let mut m: HashMap<String, i32> = HashMap::new();
+    let mut m: HashMap<String, i32> = HashMap·new();
     m.insert("key", 1);
 
     if m.contains_key("key") {

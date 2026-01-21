@@ -1,8 +1,8 @@
 //! Test the Try (?) operator for Result error propagation
 //!
 //! The Try operator (`?`) is used to propagate errors from Result types:
-//! - On Result::Ok(value), unwrap and return the value
-//! - On Result::Err(e), return early with the error
+//! - On Result·Ok(value), unwrap and return the value
+//! - On Result·Err(e), return early with the error
 //!
 //! This is essential for the self-hosted compiler which uses Result
 //! extensively for error handling (parsing, type checking, lowering, etc.)
@@ -16,8 +16,8 @@ pub enum Result<T, E> {
 impl<T, E> Result<T, E> {
     pub fn is_ok(self) -> !bool {
         match self {
-            Result::Ok(_) => true,
-            Result::Err(_) => false,
+            Result·Ok(_) => true,
+            Result·Err(_) => false,
         }
     }
 
@@ -27,15 +27,15 @@ impl<T, E> Result<T, E> {
 
     pub fn unwrap(self) -> !T {
         match self {
-            Result::Ok(v) => v,
-            Result::Err(_) => panic("called unwrap on Err"),
+            Result·Ok(v) => v,
+            Result·Err(_) => panic("called unwrap on Err"),
         }
     }
 
     pub fn unwrap_err(self) -> !E {
         match self {
-            Result::Ok(_) => panic("called unwrap_err on Ok"),
-            Result::Err(e) => e,
+            Result·Ok(_) => panic("called unwrap_err on Ok"),
+            Result·Err(e) => e,
         }
     }
 }
@@ -47,21 +47,21 @@ impl<T, E> Result<T, E> {
 /// A function that can fail
 fn might_fail(should_fail: !bool) -> !Result<i32, String> {
     if should_fail {
-        return Result::Err("intentional failure".to_string());
+        return Result·Err("intentional failure".to_string());
     }
-    return Result::Ok(42);
+    return Result·Ok(42);
 }
 
 /// Test basic try operator with success
 fn test_try_success() -> !Result<i32, String> {
     let value = might_fail(false)?;  // Should unwrap to 42
-    return Result::Ok(value + 1);    // Should return Ok(43)
+    return Result·Ok(value + 1);    // Should return Ok(43)
 }
 
 /// Test basic try operator with failure
 fn test_try_failure() -> !Result<i32, String> {
     let value = might_fail(true)?;   // Should return early with Err
-    return Result::Ok(value + 1);    // This line should not be reached
+    return Result·Ok(value + 1);    // This line should not be reached
 }
 
 /// Test chained try operators
@@ -69,13 +69,13 @@ fn test_try_chain() -> !Result<i32, String> {
     let a = might_fail(false)?;  // Ok(42)
     let b = might_fail(false)?;  // Ok(42)
     let c = might_fail(false)?;  // Ok(42)
-    return Result::Ok(a + b + c);  // Ok(126)
+    return Result·Ok(a + b + c);  // Ok(126)
 }
 
 /// Test try in expression position
 fn test_try_in_expression() -> !Result<i32, String> {
     let result = might_fail(false)? + might_fail(false)?;
-    return Result::Ok(result);  // Ok(84)
+    return Result·Ok(result);  // Ok(84)
 }
 
 // ============================================================================
@@ -86,26 +86,26 @@ fn test_try_in_expression() -> !Result<i32, String> {
 fn parse_int(s: !&str) -> !Result<i32, String> {
     // Simplified: only handles single digits for testing
     if s.len() == 0 {
-        return Result::Err("empty string".to_string());
+        return Result·Err("empty string".to_string());
     }
     let c = s.chars().next().unwrap();
     if c >= '0' && c <= '9' {
-        return Result::Ok((c as i32) - ('0' as i32));
+        return Result·Ok((c as i32) - ('0' as i32));
     }
-    return Result::Err(format!("invalid digit: {}", c));
+    return Result·Err(format!("invalid digit: {}", c));
 }
 
 /// Read and parse (simulated)
 fn read_and_parse(input: !&str) -> !Result<i32, String> {
     let value = parse_int(input)?;
-    return Result::Ok(value * 10);
+    return Result·Ok(value * 10);
 }
 
 /// Test try with parsing
 fn test_try_parsing() -> !Result<(), String> {
     let result = read_and_parse("5")?;
     assert(result == 50, "parsed 5 * 10 should be 50");
-    return Result::Ok(());
+    return Result·Ok(());
 }
 
 // ============================================================================
@@ -118,11 +118,11 @@ fn process_list(items: ![i32]) -> !Result<i32, String> {
     for item in items {
         // Fail if any item is negative
         if item < 0 {
-            return Result::Err(format!("negative value: {}", item));
+            return Result·Err(format!("negative value: {}", item));
         }
         sum = sum + item;
     }
-    return Result::Ok(sum);
+    return Result·Ok(sum);
 }
 
 /// Test try with loops
@@ -130,7 +130,7 @@ fn test_try_with_loop() -> !Result<(), String> {
     let good_list: ![i32] = [1, 2, 3, 4, 5];
     let sum = process_list(good_list)?;
     assert(sum == 15, "sum of 1..5 should be 15");
-    return Result::Ok(());
+    return Result·Ok(());
 }
 
 // ============================================================================
@@ -140,22 +140,22 @@ fn test_try_with_loop() -> !Result<(), String> {
 /// Inner function that can fail
 fn inner_operation(x: !i32) -> !Result<i32, String> {
     if x == 0 {
-        return Result::Err("division by zero".to_string());
+        return Result·Err("division by zero".to_string());
     }
-    return Result::Ok(100 / x);
+    return Result·Ok(100 / x);
 }
 
 /// Outer function using try
 fn outer_operation(x: !i32) -> !Result<i32, String> {
     let result = inner_operation(x)?;
-    return Result::Ok(result + 1);
+    return Result·Ok(result + 1);
 }
 
 /// Test nested try
 fn test_nested_try() -> !Result<(), String> {
     let result = outer_operation(10)?;
     assert(result == 11, "100/10 + 1 should be 11");
-    return Result::Ok(());
+    return Result·Ok(());
 }
 
 // ============================================================================
@@ -173,15 +173,15 @@ impl Calculator {
 
     pub fn add(mut self, x: !i32) -> !Result<Calculator, String> {
         self.value = self.value + x;
-        return Result::Ok(self);
+        return Result·Ok(self);
     }
 
     pub fn divide(mut self, x: !i32) -> !Result<Calculator, String> {
         if x == 0 {
-            return Result::Err("division by zero".to_string());
+            return Result·Err("division by zero".to_string());
         }
         self.value = self.value / x;
-        return Result::Ok(self);
+        return Result·Ok(self);
     }
 
     pub fn result(self) -> !i32 {
@@ -191,13 +191,13 @@ impl Calculator {
 
 /// Test try with method chaining
 fn test_try_method_chain() -> !Result<(), String> {
-    let calc = Calculator::new()
+    let calc = Calculator·new()
         .add(100)?
         .divide(10)?
         .add(5)?;
 
     assert(calc.result() == 15, "100/10 + 5 should be 15");
-    return Result::Ok(());
+    return Result·Ok(());
 }
 
 // ============================================================================
@@ -212,11 +212,11 @@ pub fn main() -> !i32 {
     // Test 1: Basic success
     print("  [1/8] test_try_success... ");
     match test_try_success() {
-        Result::Ok(v) => {
+        Result·Ok(v) => {
             assert(v == 43, "should return Ok(43)");
             println("PASS");
         },
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("FAIL: unexpected error: {}", e);
             return 1;
         },
@@ -225,11 +225,11 @@ pub fn main() -> !i32 {
     // Test 2: Basic failure
     print("  [2/8] test_try_failure... ");
     match test_try_failure() {
-        Result::Ok(_) => {
+        Result·Ok(_) => {
             println("FAIL: should have returned Err");
             return 1;
         },
-        Result::Err(e) => {
+        Result·Err(e) => {
             assert(e == "intentional failure", "error message should match");
             println("PASS");
         },
@@ -238,11 +238,11 @@ pub fn main() -> !i32 {
     // Test 3: Chained try
     print("  [3/8] test_try_chain... ");
     match test_try_chain() {
-        Result::Ok(v) => {
+        Result·Ok(v) => {
             assert(v == 126, "42 + 42 + 42 should be 126");
             println("PASS");
         },
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("FAIL: unexpected error: {}", e);
             return 1;
         },
@@ -251,11 +251,11 @@ pub fn main() -> !i32 {
     // Test 4: Try in expression
     print("  [4/8] test_try_in_expression... ");
     match test_try_in_expression() {
-        Result::Ok(v) => {
+        Result·Ok(v) => {
             assert(v == 84, "42 + 42 should be 84");
             println("PASS");
         },
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("FAIL: unexpected error: {}", e);
             return 1;
         },
@@ -264,8 +264,8 @@ pub fn main() -> !i32 {
     // Test 5: Try with parsing
     print("  [5/8] test_try_parsing... ");
     match test_try_parsing() {
-        Result::Ok(_) => println("PASS"),
-        Result::Err(e) => {
+        Result·Ok(_) => println("PASS"),
+        Result·Err(e) => {
             println("FAIL: {}", e);
             return 1;
         },
@@ -274,8 +274,8 @@ pub fn main() -> !i32 {
     // Test 6: Try with loops
     print("  [6/8] test_try_with_loop... ");
     match test_try_with_loop() {
-        Result::Ok(_) => println("PASS"),
-        Result::Err(e) => {
+        Result·Ok(_) => println("PASS"),
+        Result·Err(e) => {
             println("FAIL: {}", e);
             return 1;
         },
@@ -284,8 +284,8 @@ pub fn main() -> !i32 {
     // Test 7: Nested try
     print("  [7/8] test_nested_try... ");
     match test_nested_try() {
-        Result::Ok(_) => println("PASS"),
-        Result::Err(e) => {
+        Result·Ok(_) => println("PASS"),
+        Result·Err(e) => {
             println("FAIL: {}", e);
             return 1;
         },
@@ -294,8 +294,8 @@ pub fn main() -> !i32 {
     // Test 8: Method chain with try
     print("  [8/8] test_try_method_chain... ");
     match test_try_method_chain() {
-        Result::Ok(_) => println("PASS"),
-        Result::Err(e) => {
+        Result·Ok(_) => println("PASS"),
+        Result·Err(e) => {
             println("FAIL: {}", e);
             return 1;
         },

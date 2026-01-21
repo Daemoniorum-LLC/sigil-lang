@@ -2,11 +2,11 @@
 // Spec: 15-PROTOCOLS.md § 4 HTTP Support
 // Priority: P0 - Bootstrap Critical
 
-use protocol::http::{Client, Request, Method};
+use protocol·http·{Client, Request, Method};
 
 async fn main() {
-    let client = Client::new();
-    let req = Request::get("https://api.example.com/data");
+    let client = Client·new();
+    let req = Request·get("https://api.example.com/data");
     let response~ = client.send(req)|await;
     println(response~.status);
 }

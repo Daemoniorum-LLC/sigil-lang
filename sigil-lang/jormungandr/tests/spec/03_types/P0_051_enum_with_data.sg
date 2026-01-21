@@ -14,9 +14,9 @@ pub enum Value {
 }
 
 fn main() {
-    let v: !Value = Value::Number(42);
+    let v: !Value = Value·Number(42);
     match v {
-        Value::Number(x) => println(x),
-        Value::Empty => println(0)
+        Value·Number(x) => println(x),
+        Value·Empty => println(0)
     }
 }

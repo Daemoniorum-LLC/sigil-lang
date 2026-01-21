@@ -3,7 +3,7 @@
 // Priority: P1 - Production Ready
 
 fn main() {
-    let rc1: Rc<i32> = Rc::new(42);
+    let rc1: Rc<i32> = Rc·new(42);
 
     {
         let rc2 = rc1.clone();

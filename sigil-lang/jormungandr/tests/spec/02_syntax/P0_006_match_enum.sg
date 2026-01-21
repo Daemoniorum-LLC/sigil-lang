@@ -18,10 +18,10 @@ pub enum Option {
 }
 
 fn main() {
-    let x: !Option = Option::Some(42);
+    let x: !Option = Option·Some(42);
     let y: !i32 = match x {
-        Option::Some(v) => v,
-        Option::None => 0,
+        Option·Some(v) => v,
+        Option·None => 0,
     };
     println(y);
 }

@@ -1,0 +1,14 @@
+// Test input operands with function parameters
+fn add_one(x: i64) -> i64 {
+    let result: i64 = 0;
+    unsafe {
+        asm!("inc rax",
+            inout("rax") x => result,
+            options(nostack));
+    }
+    result
+}
+
+fn main() -> i64 {
+    add_one(41)  // Should return 42
+}

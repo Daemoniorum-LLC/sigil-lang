@@ -7,13 +7,13 @@ pub enum Color {
 
 fn color_value(c: !Color) -> !i32 {
     match c {
-        Color::Red => 1,
-        Color::Green => 2,
-        Color::Blue => 3
+        Color·Red => 1,
+        Color·Green => 2,
+        Color·Blue => 3
     }
 }
 
 fn main() {
-    let c: !Color = Color::Green;
+    let c: !Color = Color·Green;
     println(color_value(c));
 }

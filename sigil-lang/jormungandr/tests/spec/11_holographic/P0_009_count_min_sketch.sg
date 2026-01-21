@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let cms: CountMinSketch<1024, 4> = CountMinSketch::new();
+    let cms: CountMinSketch<1024, 4> = CountMinSketch·new();
     cms.insert("item");
     cms.insert("item");
     cms.insert("item");

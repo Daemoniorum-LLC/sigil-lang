@@ -7,7 +7,7 @@ struct Item {
 }
 
 fn main() {
-    let mut items: Vec<Item> = Vec::new();
+    let mut items: Vec<Item> = Vec·new();
     items.push(Item { value: 10 });
     items.push(Item { value: 20 });
     println(items.len());

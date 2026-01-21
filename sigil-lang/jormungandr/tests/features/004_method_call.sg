@@ -22,7 +22,7 @@ impl Calculator {
 }
 
 fn main() {
-    let mut calc: !Calculator = Calculator::new();
+    let mut calc: !Calculator = Calculator·new();
     calc.add(5);
     calc.add(3);
     calc.multiply(2);

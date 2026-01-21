@@ -1677,6 +1677,14 @@ impl Optimizer {
             return false;
         }
 
+        // Don't inline functions containing inline assembly
+        // (inline asm operands need special parameter substitution handling)
+        if let Some(body) = &func.body {
+            if self.contains_inline_asm_in_block(body) {
+                return false;
+            }
+        }
+
         // Count the number of statements/expressions in the body
         if let Some(body) = &func.body {
             let stmt_count = self.count_stmts_in_block(body);
@@ -1684,6 +1692,102 @@ impl Optimizer {
             stmt_count <= 10
         } else {
             false
+        }
+    }
+
+    /// Check if a block contains inline assembly
+    fn contains_inline_asm_in_block(&self, block: &Block) -> bool {
+        for stmt in &block.stmts {
+            if self.contains_inline_asm_in_stmt(stmt) {
+                return true;
+            }
+        }
+        if let Some(ref expr) = block.expr {
+            if self.contains_inline_asm_in_expr(expr) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn contains_inline_asm_in_stmt(&self, stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Expr(e) | Stmt::Semi(e) => self.contains_inline_asm_in_expr(e),
+            Stmt::Let { init: Some(e), .. } => self.contains_inline_asm_in_expr(e),
+            Stmt::LetElse { init, else_branch, .. } => {
+                self.contains_inline_asm_in_expr(init) || self.contains_inline_asm_in_expr(else_branch)
+            }
+            _ => false,
+        }
+    }
+
+    fn contains_inline_asm_in_expr(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::InlineAsm(_) => true,
+
+            // Block-containing expressions
+            Expr::Unsafe(block) | Expr::Block(block) => self.contains_inline_asm_in_block(block),
+            Expr::Loop { body, .. } | Expr::While { body, .. } | Expr::For { body, .. } => {
+                self.contains_inline_asm_in_block(body)
+            }
+
+            // Branching expressions
+            Expr::If { condition, then_branch, else_branch } => {
+                self.contains_inline_asm_in_expr(condition)
+                    || self.contains_inline_asm_in_block(then_branch)
+                    || else_branch.as_ref().map_or(false, |e| self.contains_inline_asm_in_expr(e))
+            }
+            Expr::Match { expr, arms } => {
+                self.contains_inline_asm_in_expr(expr)
+                    || arms.iter().any(|arm| self.contains_inline_asm_in_expr(&arm.body))
+            }
+
+            // Binary/unary expressions
+            Expr::Binary { left, right, .. } => {
+                self.contains_inline_asm_in_expr(left) || self.contains_inline_asm_in_expr(right)
+            }
+            Expr::Unary { expr, .. } => self.contains_inline_asm_in_expr(expr),
+            Expr::Assign { target, value } => {
+                self.contains_inline_asm_in_expr(target) || self.contains_inline_asm_in_expr(value)
+            }
+
+            // Call expressions
+            Expr::Call { func, args } => {
+                self.contains_inline_asm_in_expr(func)
+                    || args.iter().any(|a| self.contains_inline_asm_in_expr(a))
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                self.contains_inline_asm_in_expr(receiver)
+                    || args.iter().any(|a| self.contains_inline_asm_in_expr(a))
+            }
+
+            // Field/index access
+            Expr::Field { expr, .. } | Expr::Index { expr, .. } | Expr::Cast { expr, .. } => {
+                self.contains_inline_asm_in_expr(expr)
+            }
+
+            // Wrapper expressions
+            Expr::Try(inner) | Expr::Await { expr: inner, .. } => {
+                self.contains_inline_asm_in_expr(inner)
+            }
+            Expr::Return(Some(inner)) => self.contains_inline_asm_in_expr(inner),
+
+            // Collection literals
+            Expr::Tuple(exprs) | Expr::Array(exprs) => {
+                exprs.iter().any(|e| self.contains_inline_asm_in_expr(e))
+            }
+
+            // Closure - check the body
+            Expr::Closure { body, .. } => self.contains_inline_asm_in_expr(body),
+
+            // Expressions that cannot contain inline asm
+            Expr::Path(_) | Expr::Literal(_) | Expr::Return(None) |
+            Expr::Break { .. } | Expr::Continue { .. } | Expr::Range { .. } |
+            Expr::Struct { .. } => false,
+
+            // Catch-all for any other expressions - be conservative and return false
+            // These are unlikely to contain inline asm
+            _ => false,
         }
     }
 
@@ -2050,6 +2154,7 @@ impl Optimizer {
                 target: target.clone(),
                 value: Box::new(self.pass_loop_unroll_expr(value)),
             },
+            Expr::Unsafe(block) => Expr::Unsafe(self.pass_loop_unroll_block(block)),
             other => other.clone(),
         }
     }
@@ -2057,6 +2162,11 @@ impl Optimizer {
     /// Try to unroll a loop with known bounds
     /// Pattern: while i < CONST { body; i = i + 1; }
     fn try_unroll_loop(&self, condition: &Expr, body: &Block) -> Option<Expr> {
+        // Don't unroll loops containing inline assembly
+        if self.contains_inline_asm_in_block(body) {
+            return None;
+        }
+
         // Check for pattern: var < constant
         let (loop_var, upper_bound) = self.extract_loop_bounds(condition)?;
 
@@ -2248,7 +2358,8 @@ impl Optimizer {
                     .map(|e| Box::new(self.substitute_loop_var_in_expr(e, var_name, value))),
             ),
             Expr::Assign { target, value: v } => Expr::Assign {
-                target: Box::new(self.substitute_loop_var_in_expr(target, var_name, value)),
+                // Don't substitute in the assignment target - that's what we're assigning TO
+                target: target.clone(),
                 value: Box::new(self.substitute_loop_var_in_expr(v, var_name, value)),
             },
             Expr::Index { expr: e, index } => Expr::Index {
@@ -2301,6 +2412,16 @@ impl Optimizer {
     fn pass_licm_expr(&mut self, expr: &Expr) -> Expr {
         match expr {
             Expr::While { label, condition, body } => {
+                // Don't apply LICM to loops containing inline assembly
+                // Inline asm can have side effects we can't track properly
+                if self.contains_inline_asm_in_block(body) || self.contains_inline_asm_in_expr(condition) {
+                    return Expr::While {
+                        label: label.clone(),
+                        condition: Box::new(self.pass_licm_expr(condition)),
+                        body: self.pass_licm_block(body),
+                    };
+                }
+
                 // Find variables modified in the loop
                 let mut modified_vars = HashSet::new();
                 self.collect_modified_vars_block(body, &mut modified_vars);
@@ -2382,6 +2503,7 @@ impl Optimizer {
                 target: target.clone(),
                 value: Box::new(self.pass_licm_expr(value)),
             },
+            Expr::Unsafe(inner) => Expr::Unsafe(self.pass_licm_block(inner)),
             other => other.clone(),
         }
     }
@@ -2451,6 +2573,17 @@ impl Optimizer {
                 }
             }
             Expr::Return(Some(e)) => self.collect_modified_vars_expr(e, modified),
+            Expr::Unsafe(inner) => self.collect_modified_vars_block(inner, modified),
+            Expr::InlineAsm(asm) => {
+                // Inline asm output operands modify variables
+                for operand in &asm.outputs {
+                    if let Expr::Path(path) = &operand.expr {
+                        if path.segments.len() == 1 {
+                            modified.insert(path.segments[0].ident.name.clone());
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -2672,6 +2805,12 @@ impl Optimizer {
     // ========================================================================
 
     fn pass_cse_block(&mut self, block: &Block) -> Block {
+        // Skip CSE for blocks containing inline assembly
+        // Inline asm can have side effects we can't track properly
+        if self.contains_inline_asm_in_block(block) {
+            return self.pass_cse_nested(block);
+        }
+
         // Step 1: Collect all expressions in this block
         let mut collected = Vec::new();
         collect_exprs_from_block(block, &mut collected);
@@ -2701,10 +2840,24 @@ impl Optimizer {
             }
         }
 
-        // Step 3: Find expressions that occur 2+ times
+        // Collect ALL variables declared in this block and any nested blocks.
+        // We can't CSE expressions that reference these, because the CSE binding
+        // would be prepended before the variable declaration, and nested variables
+        // (e.g., from inlined functions) wouldn't be in scope.
+        let mut declared_vars: HashSet<String> = HashSet::new();
+        self.collect_declared_vars_in_block(block, &mut declared_vars);
+
+        // Step 3: Find expressions that occur 2+ times AND don't reference
+        // variables declared in this block
         let candidates: Vec<Expr> = occurrence_counts
             .into_iter()
-            .filter(|(_, count)| *count >= 2)
+            .filter(|(expr, count)| {
+                if *count < 2 {
+                    return false;
+                }
+                // Check if expression references any variable declared in this block
+                !self.expr_references_vars(expr, &declared_vars)
+            })
             .map(|(expr, _)| expr)
             .collect();
 
@@ -2740,6 +2893,137 @@ impl Optimizer {
             expr: result_block.expr,
         };
         self.pass_cse_nested(&result)
+    }
+
+    /// Recursively collect all variable declarations in a block and nested blocks
+    fn collect_declared_vars_in_block(&self, block: &Block, vars: &mut HashSet<String>) {
+        for stmt in &block.stmts {
+            match stmt {
+                Stmt::Let { pattern, init, .. } => {
+                    // Collect the variable name
+                    if let Pattern::Ident { name, .. } = pattern {
+                        vars.insert(name.name.clone());
+                    }
+                    // Also check init expression for nested blocks
+                    if let Some(init_expr) = init {
+                        self.collect_declared_vars_in_expr(init_expr, vars);
+                    }
+                }
+                Stmt::LetElse { pattern, init, else_branch, .. } => {
+                    if let Pattern::Ident { name, .. } = pattern {
+                        vars.insert(name.name.clone());
+                    }
+                    self.collect_declared_vars_in_expr(init, vars);
+                    self.collect_declared_vars_in_expr(else_branch, vars);
+                }
+                Stmt::Expr(expr) | Stmt::Semi(expr) => {
+                    self.collect_declared_vars_in_expr(expr, vars);
+                }
+                Stmt::Item(_) => {}
+            }
+        }
+        if let Some(expr) = &block.expr {
+            self.collect_declared_vars_in_expr(expr, vars);
+        }
+    }
+
+    /// Recursively collect variable declarations from expressions (e.g., block expressions)
+    fn collect_declared_vars_in_expr(&self, expr: &Expr, vars: &mut HashSet<String>) {
+        match expr {
+            Expr::Block(inner_block) | Expr::Unsafe(inner_block) => {
+                self.collect_declared_vars_in_block(inner_block, vars);
+            }
+            Expr::If { condition, then_branch, else_branch } => {
+                self.collect_declared_vars_in_expr(condition, vars);
+                self.collect_declared_vars_in_block(then_branch, vars);
+                if let Some(else_expr) = else_branch {
+                    self.collect_declared_vars_in_expr(else_expr, vars);
+                }
+            }
+            Expr::While { condition, body, .. } => {
+                self.collect_declared_vars_in_expr(condition, vars);
+                self.collect_declared_vars_in_block(body, vars);
+            }
+            Expr::Loop { body, .. } => {
+                self.collect_declared_vars_in_block(body, vars);
+            }
+            Expr::For { pattern, iter, body, .. } => {
+                if let Pattern::Ident { name, .. } = pattern {
+                    vars.insert(name.name.clone());
+                }
+                self.collect_declared_vars_in_expr(iter, vars);
+                self.collect_declared_vars_in_block(body, vars);
+            }
+            Expr::Match { expr: match_expr, arms } => {
+                self.collect_declared_vars_in_expr(match_expr, vars);
+                for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        self.collect_declared_vars_in_expr(guard, vars);
+                    }
+                    self.collect_declared_vars_in_expr(&arm.body, vars);
+                }
+            }
+            Expr::Binary { left, right, .. } => {
+                self.collect_declared_vars_in_expr(left, vars);
+                self.collect_declared_vars_in_expr(right, vars);
+            }
+            Expr::Unary { expr: inner, .. } => {
+                self.collect_declared_vars_in_expr(inner, vars);
+            }
+            Expr::Call { func, args } => {
+                self.collect_declared_vars_in_expr(func, vars);
+                for arg in args {
+                    self.collect_declared_vars_in_expr(arg, vars);
+                }
+            }
+            Expr::Assign { target, value } => {
+                self.collect_declared_vars_in_expr(target, vars);
+                self.collect_declared_vars_in_expr(value, vars);
+            }
+            Expr::Return(Some(inner)) => {
+                self.collect_declared_vars_in_expr(inner, vars);
+            }
+            Expr::Closure { body, .. } => {
+                self.collect_declared_vars_in_expr(body, vars);
+            }
+            _ => {}
+        }
+    }
+
+    /// Check if an expression references any variable in the given set
+    fn expr_references_vars(&self, expr: &Expr, vars: &HashSet<String>) -> bool {
+        match expr {
+            Expr::Path(path) => {
+                if path.segments.len() == 1 {
+                    vars.contains(&path.segments[0].ident.name)
+                } else {
+                    false
+                }
+            }
+            Expr::Binary { left, right, .. } => {
+                self.expr_references_vars(left, vars) || self.expr_references_vars(right, vars)
+            }
+            Expr::Unary { expr: inner, .. } => self.expr_references_vars(inner, vars),
+            Expr::Call { func, args } => {
+                self.expr_references_vars(func, vars)
+                    || args.iter().any(|a| self.expr_references_vars(a, vars))
+            }
+            Expr::Index { expr: e, index } => {
+                self.expr_references_vars(e, vars) || self.expr_references_vars(index, vars)
+            }
+            Expr::Field { expr: e, .. } => self.expr_references_vars(e, vars),
+            Expr::MethodCall { receiver, args, .. } => {
+                self.expr_references_vars(receiver, vars)
+                    || args.iter().any(|a| self.expr_references_vars(a, vars))
+            }
+            Expr::Cast { expr: e, .. } => self.expr_references_vars(e, vars),
+            Expr::Deref(e) => self.expr_references_vars(e, vars),
+            Expr::Tuple(elems) | Expr::Array(elems) => {
+                elems.iter().any(|e| self.expr_references_vars(e, vars))
+            }
+            // Literals and other expressions that don't reference variables
+            _ => false,
+        }
     }
 
     /// Recurse CSE into nested blocks (if, while, block expressions)

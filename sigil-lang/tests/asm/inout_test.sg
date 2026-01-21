@@ -1,0 +1,10 @@
+// Test inout operand - just increment a value
+fn main() -> i64 {
+    let value: i64 = 41;
+    unsafe {
+        asm!("inc rax",
+            inout("rax") value => value,
+            options(nostack));
+    }
+    value
+}

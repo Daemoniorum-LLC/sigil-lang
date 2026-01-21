@@ -1,0 +1,15 @@
+// Test: simplest possible parameter in asm
+fn identity(x: i64) -> i64 {
+    let result: i64 = 0;
+    unsafe {
+        asm!("mov rax, rdi",
+            in("rdi") x,
+            out("rax") result,
+            options(nostack));
+    }
+    result
+}
+
+fn main() -> i64 {
+    identity(42)
+}

@@ -3,12 +3,12 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let some: Option<i32> = Option::Some(21);
+    let some: Option<i32> = Option·Some(21);
 
     let doubled = some.map(|x| x * 2);
 
     match doubled {
-        Option::Some(v) => println(v),
-        Option::None => println(0),
+        Option·Some(v) => println(v),
+        Option·None => println(0),
     }
 }

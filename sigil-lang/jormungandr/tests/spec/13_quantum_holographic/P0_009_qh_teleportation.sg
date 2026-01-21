@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let data: QHState<i32> = QHState::encode(99);
+    let data: QHState<i32> = QHState·encode(99);
     let (alice, bob) = create_epr_pair();
     let teleported = data|teleport(alice, bob);
     let received = teleported|measure;

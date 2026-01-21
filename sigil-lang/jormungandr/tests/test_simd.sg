@@ -3,23 +3,23 @@
 //! Tests SIMD vector types, intrinsics, and operations.
 //! Target: 100% SIMD coverage for regression detection.
 
-use crate::parser::Parser;
-use crate::typeck::TypeChecker;
+use crate·parser·Parser;
+use crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 fn check_source(source: !&str) -> !bool {
-    let mut parser = Parser::new(source.to_string());
+    let mut parser = Parser·new(source.to_string());
     let ast = match parser.parse_file() {
-        Result::Ok(a) => a,
-        Result::Err(_) => return false,
+        Result·Ok(a) => a,
+        Result·Err(_) => return false,
     };
-    let mut checker = TypeChecker::new();
+    let mut checker = TypeChecker·new();
     match checker.check_file(ast) {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 
@@ -56,7 +56,7 @@ fn test_simd_literals() -> !bool {
     print("  [2/6] SIMD literals... ");
 
     // Splat literal
-    assert_checks("fn test() -> !simd<f32, 4> { return simd::splat(1.0f32); }", "simd_splat");
+    assert_checks("fn test() -> !simd<f32, 4> { return simd·splat(1.0f32); }", "simd_splat");
 
     // Array-style literal
     assert_checks("fn test() -> !simd<f32, 4> { return simd[1.0, 2.0, 3.0, 4.0]; }", "simd_array");
@@ -65,15 +65,15 @@ fn test_simd_literals() -> !bool {
     assert_checks("
         fn test() -> !simd<i32, 4> {
             let arr: ![i32; 4] = [1, 2, 3, 4];
-            return simd::from_array(arr);
+            return simd·from_array(arr);
         }
     ", "simd_from_array");
 
     // Zero vector
-    assert_checks("fn test() -> !simd<f32, 4> { return simd::zeros(); }", "simd_zeros");
+    assert_checks("fn test() -> !simd<f32, 4> { return simd·zeros(); }", "simd_zeros");
 
     // Ones vector
-    assert_checks("fn test() -> !simd<f32, 4> { return simd::ones(); }", "simd_ones");
+    assert_checks("fn test() -> !simd<f32, 4> { return simd·ones(); }", "simd_ones");
 
     println("PASS (5 cases)");
     true
@@ -117,7 +117,7 @@ fn test_simd_arithmetic() -> !bool {
     // Fused multiply-add
     assert_checks("
         fn test(a: !simd<f32, 4>, b: !simd<f32, 4>, c: !simd<f32, 4>) -> !simd<f32, 4> {
-            return simd::fma(a, b, c);
+            return simd·fma(a, b, c);
         }
     ", "simd_fma");
 
@@ -148,13 +148,13 @@ fn test_simd_comparison() -> !bool {
     // Min/max
     assert_checks("
         fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
-            return simd::min(a, b);
+            return simd·min(a, b);
         }
     ", "simd_min");
 
     assert_checks("
         fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
-            return simd::max(a, b);
+            return simd·max(a, b);
         }
     ", "simd_max");
 
@@ -240,7 +240,7 @@ fn test_simd_shuffle() -> !bool {
     // Shuffle
     assert_checks("
         fn test(a: !simd<f32, 4>, b: !simd<f32, 4>) -> !simd<f32, 4> {
-            return simd::shuffle(a, b, [0, 4, 1, 5]);
+            return simd·shuffle(a, b, [0, 4, 1, 5]);
         }
     ", "simd_shuffle");
 

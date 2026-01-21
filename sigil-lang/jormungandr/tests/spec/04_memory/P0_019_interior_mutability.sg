@@ -9,7 +9,7 @@
 // Should print 99 (after set)
 
 fn main() {
-    let c: !Cell<!i32> = Cell::new(42);
+    let c: !Cell<!i32> = Cell·new(42);
     c.set(99);
     println(c.get());
 }

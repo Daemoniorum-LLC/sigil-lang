@@ -1,17 +1,17 @@
-// Test: Result::Ok variant
+// Test: Result·Ok variant
 // Spec: 09-STDLIB.md § 3.2 Result Type
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate Result::Ok works correctly.
+// Validate Result·Ok works correctly.
 //
 // Expected behavior:
 // Should print 42
 
 fn main() {
-    let res: !Result<!i32, String> = Result::Ok(42);
+    let res: !Result<!i32, String> = Result·Ok(42);
     match res {
-        Result::Ok(x) => println(x),
-        Result::Err(_) => println(0)
+        Result·Ok(x) => println(x),
+        Result·Err(_) => println(0)
     }
 }

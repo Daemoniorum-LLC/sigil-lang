@@ -27,7 +27,7 @@ impl Counter {
 }
 
 fn main() {
-    let mut c: !Counter = Counter::new(42);
+    let mut c: !Counter = Counter·new(42);
     c.increment(10);
     println(c.get());
 }

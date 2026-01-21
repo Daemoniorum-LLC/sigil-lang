@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let q: linear Qubit = Qubit::zero();
+    let q: linear Qubit = Qubit·zero();
     let q2 = q|H|H†;  // H followed by H† (adjoint) = identity
     let result: Cbit = q2|measure;
     println(result);  // Should be 0 (back to |0⟩)

@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let qh: QHState<i32> = QHState::superpose([1, 2, 3]);
+    let qh: QHState<i32> = QHState·superpose([1, 2, 3]);
     let measured! = qh|measure;  // Collapses and reconstructs
     println(measured!);
 }

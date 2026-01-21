@@ -3,8 +3,8 @@
 //! Tests all pattern forms used in let bindings, match arms, and function parameters.
 //! Target: 100% pattern parsing coverage for regression detection.
 
-use crate::parser::Parser;
-use crate::ast::{Pattern, FieldPattern};
+use crate·parser·Parser;
+use crate·ast·{Pattern, FieldPattern};
 
 // ============================================================================
 // Test Helpers
@@ -13,20 +13,20 @@ use crate::ast::{Pattern, FieldPattern};
 /// Parse a match expression and verify it succeeds
 fn parse_match(source: !&str) -> !bool {
     let full = format!("fn test() {{ match x {{ {} }} }}", source);
-    let mut parser = Parser::new(full);
+    let mut parser = Parser·new(full);
     match parser.parse_file() {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 
 /// Parse a let binding with pattern
 fn parse_let(source: !&str) -> !bool {
     let full = format!("fn test() {{ let {} = x; }}", source);
-    let mut parser = Parser::new(full);
+    let mut parser = Parser·new(full);
     match parser.parse_file() {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 
@@ -188,7 +188,7 @@ fn test_struct_patterns() -> !bool {
     assert_pattern("Point { x, y } => x + y", "struct_match_binding");
 
     // Qualified path
-    assert_let_pattern("module::Point { x, y }", "qualified_struct");
+    assert_let_pattern("module·Point { x, y }", "qualified_struct");
 
     println("PASS (9 cases)");
     true
@@ -224,8 +224,8 @@ fn test_tuple_struct_patterns() -> !bool {
     assert_pattern("Ok(v) => v, Err(_) => -1", "result_match");
 
     // Qualified path
-    assert_let_pattern("Option::Some(x)", "qualified_some");
-    assert_let_pattern("Result::Ok(v)", "qualified_ok");
+    assert_let_pattern("Option·Some(x)", "qualified_some");
+    assert_let_pattern("Result·Ok(v)", "qualified_ok");
 
     println("PASS (14 cases)");
     true

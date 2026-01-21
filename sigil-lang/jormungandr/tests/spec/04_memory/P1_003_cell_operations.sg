@@ -3,7 +3,7 @@
 // Priority: P1 - Production Ready
 
 fn main() {
-    let cell: Cell<i32> = Cell::new(10);
+    let cell: Cell<i32> = Cell·new(10);
 
     // Get initial value
     println(cell.get());

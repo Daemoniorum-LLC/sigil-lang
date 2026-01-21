@@ -4,7 +4,7 @@
 
 fn main() {
     let a: !i32 = 10;
-    let b: ?i32 = Option::Some(20);
+    let b: ?i32 = Option·Some(20);
     let c = a + b.unwrap();  // ! join ? = ?
 
     let ir = __export_ir();

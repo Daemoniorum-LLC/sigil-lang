@@ -23,6 +23,6 @@ impl Value {
 }
 
 fn main() {
-    let v: !Value = Value::new(42);
+    let v: !Value = Value·new(42);
     println(v.get());
 }

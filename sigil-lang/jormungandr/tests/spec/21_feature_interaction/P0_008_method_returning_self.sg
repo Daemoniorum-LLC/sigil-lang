@@ -17,6 +17,6 @@ impl Builder {
 }
 
 fn main() {
-    let b = Builder::new().with_value(42);
+    let b = Builder·new().with_value(42);
     println(b.value);
 }

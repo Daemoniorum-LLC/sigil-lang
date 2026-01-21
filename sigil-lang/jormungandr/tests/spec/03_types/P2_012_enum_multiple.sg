@@ -9,10 +9,10 @@ enum Status {
 }
 
 fn main() {
-    let s: Status = Status::Active;
+    let s: Status = Status·Active;
     match s {
-        Status::Active => println(1),
-        Status::Inactive => println(2),
-        Status::Pending => println(3)
+        Status·Active => println(1),
+        Status·Inactive => println(2),
+        Status·Pending => println(3)
     }
 }

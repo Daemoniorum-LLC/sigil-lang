@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let qh: QHState<i32> = QHState::new(42);
+    let qh: QHState<i32> = QHState·new(42);
     let shards = qh|scatter(7, 4);  // 7 shards, 4 needed
     let recovered = shards[0..4]|∀;  // Reconstruct
     println(recovered);

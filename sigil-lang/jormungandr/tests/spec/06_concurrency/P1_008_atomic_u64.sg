@@ -4,7 +4,7 @@
 
 fn main() {
     // Create atomic with initial value
-    let counter = AtomicU64::new(0);
+    let counter = AtomicU64·new(0);
 
     // Load the value
     let val = counter.load();

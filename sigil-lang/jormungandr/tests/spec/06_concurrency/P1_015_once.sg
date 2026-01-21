@@ -3,7 +3,7 @@
 // Priority: P1 - Production Ready
 
 fn main() {
-    let flag: AtomicBool = AtomicBool::new(false);
+    let flag: AtomicBool = AtomicBool·new(false);
 
     // Initial
     if flag.load() {

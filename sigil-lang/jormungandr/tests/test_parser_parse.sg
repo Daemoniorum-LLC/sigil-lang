@@ -1,7 +1,7 @@
 //! Test parsing parser.sg with the self-hosted parser
 
-use crate::lexer::Lexer;
-use crate::parser::Parser;
+use crate·lexer·Lexer;
+use crate·parser·Parser;
 
 pub fn main() -> !i32 {
     // Read parser.sg content
@@ -11,7 +11,7 @@ pub fn main() -> !i32 {
     // Test lexer first
     println("");
     println("Testing lexer on parser.sg around position 85262...");
-    let mut lexer = Lexer::new(source.clone());
+    let mut lexer = Lexer·new(source.clone());
 
     let mut last_pos = 0;
     loop {
@@ -34,13 +34,13 @@ pub fn main() -> !i32 {
     // Now try to parse
     println("");
     println("Testing parser on parser.sg...");
-    let mut parser = Parser::new(source);
+    let mut parser = Parser·new(source);
     match parser.parse_file() {
-        Result::Ok(ast) => {
+        Result·Ok(ast) => {
             println(format!("SUCCESS! Parsed {} items", ast.items.len()));
             return 0;
         },
-        Result::Err(e) => {
+        Result·Err(e) => {
             println(format!("Parse error at {}-{}: {}", e.span.start, e.span.end, e.message));
             return 1;
         }

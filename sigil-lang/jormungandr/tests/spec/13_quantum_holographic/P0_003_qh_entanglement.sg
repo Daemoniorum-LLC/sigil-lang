@@ -4,8 +4,8 @@
 
 fn main() {
     let (a, b) = entangle_holograms(
-        Hologram::encode(42),
-        Hologram::encode(42),
+        Hologram·encode(42),
+        Hologram·encode(42),
     );
     // Observing one affects the other
     let val_a = a|observe|∀;

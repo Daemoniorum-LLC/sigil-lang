@@ -4,7 +4,7 @@
 //! modules, use declarations, constants, statics, actors, and extern blocks.
 //! Target: 100% item parsing coverage for regression detection.
 
-use crate::parser::Parser;
+use crate·parser·Parser;
 
 // ============================================================================
 // Test Helpers
@@ -12,10 +12,10 @@ use crate::parser::Parser;
 
 /// Parse a file containing the given item
 fn parse_item(source: !&str) -> !bool {
-    let mut parser = Parser::new(source.to_string());
+    let mut parser = Parser·new(source.to_string());
     match parser.parse_file() {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 
@@ -175,7 +175,7 @@ fn test_trait_items() -> !bool {
     assert_item("trait ToString { fn to_string(self) -> !String { return \"\"; } }", "trait_default_method");
 
     // Associated types
-    assert_item("trait Iterator { type Item; fn next(mut self) -> ?Self::Item; }", "trait_assoc_type");
+    assert_item("trait Iterator { type Item; fn next(mut self) -> ?Self·Item; }", "trait_assoc_type");
 
     // Associated constants
     assert_item("trait Constants { const MAX: i32; }", "trait_assoc_const");
@@ -239,11 +239,11 @@ fn test_type_alias_items() -> !bool {
 
     // Simple alias
     assert_item("type Int = i32;", "type_simple");
-    assert_item("pub type String = std::string::String;", "type_pub");
+    assert_item("pub type String = std·string·String;", "type_pub");
 
     // Generic alias
-    assert_item("type Result<T> = std::result::Result<T, Error>;", "type_generic_one");
-    assert_item("type Map<K, V> = std::collections::HashMap<K, V>;", "type_generic_two");
+    assert_item("type Result<T> = std·result·Result<T, Error>;", "type_generic_one");
+    assert_item("type Map<K, V> = std·collections·HashMap<K, V>;", "type_generic_two");
 
     // With where clause
     assert_item("type Container<T> where T: Clone = Vec<T>;", "type_where");
@@ -290,30 +290,30 @@ fn test_use_items() -> !bool {
     print("  [8/12] Use declarations... ");
 
     // Simple use
-    assert_item("use std::io;", "use_simple");
-    assert_item("use crate::module;", "use_crate");
-    assert_item("use super::parent;", "use_super");
-    assert_item("use self::local;", "use_self");
+    assert_item("use std·io;", "use_simple");
+    assert_item("use crate·module;", "use_crate");
+    assert_item("use super·parent;", "use_super");
+    assert_item("use self·local;", "use_self");
 
     // Use with alias
-    assert_item("use std::io as stdio;", "use_alias");
-    assert_item("use std::collections::HashMap as Map;", "use_alias_long");
+    assert_item("use std·io as stdio;", "use_alias");
+    assert_item("use std·collections·HashMap as Map;", "use_alias_long");
 
     // Use glob
-    assert_item("use std::io::*;", "use_glob");
-    assert_item("use crate::prelude::*;", "use_glob_crate");
+    assert_item("use std·io·*;", "use_glob");
+    assert_item("use crate·prelude·*;", "use_glob_crate");
 
     // Use group
-    assert_item("use std::{io, fs};", "use_group_two");
-    assert_item("use std::{io, fs, path};", "use_group_three");
-    assert_item("use std::collections::{HashMap, HashSet, BTreeMap};", "use_group_collections");
+    assert_item("use std·{io, fs};", "use_group_two");
+    assert_item("use std·{io, fs, path};", "use_group_three");
+    assert_item("use std·collections·{HashMap, HashSet, BTreeMap};", "use_group_collections");
 
     // Nested groups
-    assert_item("use std::{io::{Read, Write}, fs::File};", "use_nested_group");
+    assert_item("use std·{io·{Read, Write}, fs·File};", "use_nested_group");
 
     // Pub use
-    assert_item("pub use crate::module::Item;", "use_pub");
-    assert_item("pub use super::*;", "use_pub_glob");
+    assert_item("pub use crate·module·Item;", "use_pub");
+    assert_item("pub use super·*;", "use_pub_glob");
 
     println("PASS (14 cases)");
     true

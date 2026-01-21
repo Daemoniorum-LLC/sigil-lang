@@ -3,8 +3,8 @@
 // Priority: P1 - Production Ready
 
 fn main() {
-    let ok: Result<i32, String> = Result::Ok(42);
-    let err: Result<i32, String> = Result::Err("error");
+    let ok: Result<i32, String> = Result·Ok(42);
+    let err: Result<i32, String> = Result·Err("error");
 
     if ok.is_ok() {
         println(1);

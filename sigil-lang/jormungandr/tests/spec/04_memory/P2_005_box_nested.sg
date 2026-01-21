@@ -3,6 +3,6 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let outer: Box<i32> = Box::new(100);
+    let outer: Box<i32> = Box·new(100);
     println(*outer);
 }

@@ -1,7 +1,7 @@
 //! Test CG-011: Infinite loop (loop { ... }) codegen
 //!
 //! The `loop` keyword should generate `while(1) { ... }` with break support.
-//! Bug: Expr::Loop is not handled in lower.sg, causing loop bodies to be skipped.
+//! Bug: Expr·Loop is not handled in lower.sg, causing loop bodies to be skipped.
 
 /// Count up to limit using infinite loop with break
 pub fn count_to(limit: !i32) -> !i32 {

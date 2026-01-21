@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 //
 // FIXED: Drop trait now works! (Jan 15, 2026)
-// Rust compiler automatically calls Drop::drop() when values go out of scope.
+// Rust compiler automatically calls Drop·drop() when values go out of scope.
 //
 // Purpose:
 // Validate Drop trait executes cleanup correctly.

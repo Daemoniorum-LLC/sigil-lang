@@ -3,8 +3,8 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let a1 = AtomicU64::new(100);
-    let a2 = AtomicU64::new(200);
+    let a1 = AtomicU64·new(100);
+    let a2 = AtomicU64·new(200);
 
     // Compare values
     if a1.load() < a2.load() {

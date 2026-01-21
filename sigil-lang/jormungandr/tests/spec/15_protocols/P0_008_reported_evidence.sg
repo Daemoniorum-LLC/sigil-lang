@@ -4,10 +4,10 @@
 //
 // All data from external protocols has ~ (reported) evidence
 
-use protocol::http::Client;
+use protocol·http·Client;
 
 async fn main() {
-    let client = Client::new();
+    let client = Client·new();
     let response~ = client.get("https://api.example.com")|await;
     // response~ has reported evidence - cannot be trusted without verification
     let verified! = response~|□verify;  // Must explicitly verify

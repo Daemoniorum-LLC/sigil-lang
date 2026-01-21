@@ -3,8 +3,8 @@
 // Priority: P1 - Production Ready
 
 fn main() {
-    let some: Option<i32> = Option::Some(42);
-    let none: Option<i32> = Option::None;
+    let some: Option<i32> = Option·Some(42);
+    let none: Option<i32> = Option·None;
 
     println(some.unwrap_or(0));
     println(none.unwrap_or(99));

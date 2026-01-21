@@ -4,7 +4,7 @@
 
 fn main() {
     // Create atomic bool
-    let flag = AtomicBool::new(false);
+    let flag = AtomicBool·new(false);
 
     // Load initial value
     println(flag.load());

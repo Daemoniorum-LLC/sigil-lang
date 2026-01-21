@@ -15,12 +15,12 @@ pub mod llvm {
     };
     use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType};
     use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, IntValue, PointerValue, StructValue};
-    use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
+    use inkwell::{AddressSpace, IntPredicate, OptimizationLevel, InlineAsmDialect};
 
     use std::collections::HashMap;
     use std::path::Path;
 
-    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp};
+    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp, InlineAsm, AsmOperandKind};
     use crate::optimize::{OptLevel, Optimizer};
     use crate::parser::Parser;
 
@@ -89,6 +89,8 @@ pub mod llvm {
         string_counter: std::cell::Cell<u32>,
         /// Evidential wrapper types: maps base type name to {tag: i8, value: T} struct
         evidential_types: HashMap<String, StructType<'ctx>>,
+        /// Constant values (compile-time evaluated)
+        constants: HashMap<String, i64>,
     }
 
     // ============================================
@@ -108,6 +110,24 @@ pub mod llvm {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0)
+    }
+
+    /// Strip type suffix from integer literal (e.g., "39_i64" -> "39", "1_000" -> "1000")
+    fn strip_int_suffix(value: &str) -> String {
+        // Find the suffix position: last underscore followed by a letter (type suffix)
+        let without_suffix = if let Some(pos) = value.rfind('_') {
+            let suffix = &value[pos+1..];
+            // Check if the part after _ is a type suffix (starts with letter)
+            if suffix.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) {
+                &value[..pos]
+            } else {
+                value
+            }
+        } else {
+            value
+        };
+        // Remove remaining underscores (for digit grouping like 1_000)
+        without_suffix.replace('_', "")
     }
 
     // Runtime helper: print an integer (for JIT mode)
@@ -336,6 +356,7 @@ pub mod llvm {
                 impl_methods: HashMap::new(),
                 string_counter: std::cell::Cell::new(0),
                 evidential_types: HashMap::new(),
+                constants: HashMap::new(),
             })
         }
 
@@ -351,11 +372,12 @@ pub mod llvm {
             // Declare runtime functions
             self.declare_runtime_functions();
 
-            // First pass: register types
+            // First pass: register types and constants
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
                     Item::Struct(s) => self.register_struct(s)?,
                     Item::Enum(e) => self.register_enum(e)?,
+                    Item::Const(c) => self.register_const(c)?,
                     _ => {}
                 }
             }
@@ -613,6 +635,59 @@ pub mod llvm {
                 i64_type.into(), i64_type.into(), ptr_type.into(), i64_type.into()
             ], false);
             self.module.add_function("sigil_cuda_launch_kernel_2d", cuda_launch_2d_type, None);
+
+            // TLS/SSL Functions (OpenSSL wrapper)
+            // sigil_tls_init() -> i64
+            let tls_init_type = i64_type.fn_type(&[], false);
+            self.module.add_function("sigil_tls_init", tls_init_type, None);
+
+            // sigil_tls_ctx_new() -> ptr
+            let tls_ctx_new_type = ptr_type.fn_type(&[], false);
+            self.module.add_function("sigil_tls_ctx_new", tls_ctx_new_type, None);
+
+            // sigil_tls_ctx_free(ctx: ptr) -> void
+            let tls_ctx_free_type = void_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_tls_ctx_free", tls_ctx_free_type, None);
+
+            // sigil_tls_new(ctx: ptr) -> ptr
+            let tls_new_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_tls_new", tls_new_type, None);
+
+            // sigil_tls_set_fd(ssl: ptr, fd: i64) -> i64
+            let tls_set_fd_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_tls_set_fd", tls_set_fd_type, None);
+
+            // sigil_tls_set_hostname(ssl: ptr, hostname: ptr) -> i64
+            let tls_set_hostname_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+            self.module.add_function("sigil_tls_set_hostname", tls_set_hostname_type, None);
+
+            // sigil_tls_connect(ssl: ptr) -> i64
+            let tls_connect_type = i64_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_tls_connect", tls_connect_type, None);
+
+            // sigil_tls_read(ssl: ptr, buf: ptr, len: i64) -> i64
+            let tls_read_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_tls_read", tls_read_type, None);
+
+            // sigil_tls_write(ssl: ptr, buf: ptr, len: i64) -> i64
+            let tls_write_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_tls_write", tls_write_type, None);
+
+            // sigil_tls_shutdown(ssl: ptr) -> i64
+            let tls_shutdown_type = i64_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_tls_shutdown", tls_shutdown_type, None);
+
+            // sigil_tls_free(ssl: ptr) -> void
+            let tls_free_type = void_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_tls_free", tls_free_type, None);
+
+            // sigil_tls_error_string() -> ptr
+            let tls_error_string_type = ptr_type.fn_type(&[], false);
+            self.module.add_function("sigil_tls_error_string", tls_error_string_type, None);
+
+            // sigil_tls_verify_result(ssl: ptr) -> i64
+            let tls_verify_result_type = i64_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_tls_verify_result", tls_verify_result_type, None);
         }
 
         /// Register a struct type in the type registry
@@ -974,6 +1049,90 @@ pub mod llvm {
 
             self.enum_types.insert(name.clone(), EnumInfo { variants });
             Ok(())
+        }
+
+        /// Register a constant value (compile-time evaluated)
+        fn register_const(&mut self, const_def: &ast::ConstDef) -> Result<(), String> {
+            let name = &const_def.name.name;
+
+            // Evaluate the constant expression at compile time
+            // For now, only support integer literals and simple expressions
+            let value = self.eval_const_expr(&const_def.value)?;
+            self.constants.insert(name.clone(), value);
+            Ok(())
+        }
+
+        /// Evaluate a constant expression at compile time
+        fn eval_const_expr(&self, expr: &Expr) -> Result<i64, String> {
+            match expr {
+                Expr::Literal(lit) => {
+                    match lit {
+                        Literal::Int { value, .. } => {
+                            let clean_value = strip_int_suffix(value);
+                            clean_value.parse::<i64>()
+                                .map_err(|_| format!("Invalid integer constant: {}", value))
+                        }
+                        Literal::Bool(b) => Ok(if *b { 1 } else { 0 }),
+                        _ => Err("Unsupported constant literal type".to_string()),
+                    }
+                }
+                Expr::Path(path) => {
+                    // Reference to another constant
+                    if path.segments.len() == 1 {
+                        let name = &path.segments[0].ident.name;
+                        self.constants.get(name).copied()
+                            .ok_or_else(|| format!("Unknown constant: {}", name))
+                    } else {
+                        Err("Complex paths not supported in constant expressions".to_string())
+                    }
+                }
+                Expr::Unary { op, expr } => {
+                    let val = self.eval_const_expr(expr)?;
+                    match op {
+                        ast::UnaryOp::Neg => Ok(val.wrapping_neg()),
+                        ast::UnaryOp::Not => Ok(!val),
+                        _ => Err("Unsupported unary operator in constant".to_string()),
+                    }
+                }
+                Expr::Binary { op, left, right } => {
+                    let lhs = self.eval_const_expr(left)?;
+                    let rhs = self.eval_const_expr(right)?;
+                    match op {
+                        ast::BinOp::Add => Ok(lhs.wrapping_add(rhs)),
+                        ast::BinOp::Sub => Ok(lhs.wrapping_sub(rhs)),
+                        ast::BinOp::Mul => Ok(lhs.wrapping_mul(rhs)),
+                        ast::BinOp::Div => {
+                            if rhs == 0 {
+                                Err("Division by zero in constant".to_string())
+                            } else {
+                                Ok(lhs.wrapping_div(rhs))
+                            }
+                        }
+                        ast::BinOp::Rem => {
+                            if rhs == 0 {
+                                Err("Division by zero in constant".to_string())
+                            } else {
+                                Ok(lhs.wrapping_rem(rhs))
+                            }
+                        }
+                        ast::BinOp::BitOr => Ok(lhs | rhs),
+                        ast::BinOp::BitAnd => Ok(lhs & rhs),
+                        ast::BinOp::BitXor => Ok(lhs ^ rhs),
+                        ast::BinOp::Shl => {
+                            // Safe shift: mask to valid range (0-63 for i64)
+                            let shift = (rhs as u32) & 63;
+                            Ok(lhs.wrapping_shl(shift))
+                        }
+                        ast::BinOp::Shr => {
+                            // Safe shift: mask to valid range (0-63 for i64)
+                            let shift = (rhs as u32) & 63;
+                            Ok(lhs.wrapping_shr(shift))
+                        }
+                        _ => Err("Unsupported binary operator in constant".to_string()),
+                    }
+                }
+                _ => Err(format!("Unsupported constant expression: {:?}", std::mem::discriminant(expr))),
+            }
         }
 
         /// Declare methods from an impl block
@@ -1379,6 +1538,9 @@ pub mod llvm {
                             .build_load(self.context.i64_type(), ptr, name)
                             .map_err(|e| e.to_string())?;
                         Ok(val.into_int_value())
+                    } else if let Some(&const_val) = self.constants.get(name) {
+                        // Found a constant
+                        Ok(self.context.i64_type().const_int(const_val as u64, true))
                     } else {
                         // Check if it's an unqualified enum variant (search all enums)
                         for (_, enum_info) in &self.enum_types {
@@ -1386,7 +1548,7 @@ pub mod llvm {
                                 return Ok(self.context.i64_type().const_int(discriminant, false));
                             }
                         }
-                        Err(format!("Unknown variable: {}", name))
+                        Err(format!("Unknown variable: {} (in fn {})", name, fn_value.get_name().to_str().unwrap_or("?")))
                     }
                 }
                 Expr::Binary { op, left, right } => {
@@ -1841,6 +2003,11 @@ pub mod llvm {
                     self.compile_expr(fn_value, scope, expr)
                 }
 
+                // Inline assembly
+                Expr::InlineAsm(asm) => {
+                    self.compile_inline_asm(fn_value, scope, asm)
+                }
+
                 _ => {
                     // Unsupported expression - return error instead of silent 0
                     Err(format!("LLVM codegen: unsupported expression {:?}",
@@ -1853,7 +2020,8 @@ pub mod llvm {
         fn compile_literal(&mut self, lit: &Literal) -> Result<IntValue<'ctx>, String> {
             match lit {
                 Literal::Int { value, .. } => {
-                    let v: i64 = value.parse().map_err(|_| "Invalid integer")?;
+                    let clean_value = strip_int_suffix(value);
+                    let v: i64 = clean_value.parse().map_err(|_| format!("Invalid integer: {}", value))?;
                     Ok(self.context.i64_type().const_int(v as u64, false))
                 }
                 Literal::Bool(b) => Ok(self
@@ -1896,6 +2064,281 @@ pub mod llvm {
                     Ok(self.context.i64_type().const_int(*c as u64, false))
                 }
                 _ => Ok(self.context.i64_type().const_int(0, false)),
+            }
+        }
+
+        /// Compile inline assembly expression
+        ///
+        /// Translates Sigil's asm!() syntax to LLVM inline assembly.
+        ///
+        /// Example Sigil:
+        /// ```sigil
+        /// asm!("syscall",
+        ///     inout("rax") num => ret,
+        ///     in("rdi") arg0,
+        ///     out("rcx") _,
+        ///     clobber("r11"),
+        ///     options(nostack))
+        /// ```
+        ///
+        /// Becomes LLVM IR like:
+        /// ```llvm
+        /// %ret = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11}"(i64 %num, i64 %arg0)
+        /// ```
+        fn compile_inline_asm(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            asm: &InlineAsm,
+        ) -> Result<IntValue<'ctx>, String> {
+            let i64_type = self.context.i64_type();
+
+            // Build the constraint string and collect input values
+            // LLVM constraint format: "outputs,inputs,clobbers"
+            // Output constraints start with "=" (or "=&" for early clobber)
+            // Input constraints are just the constraint
+            // Clobbers start with "~"
+
+            let mut constraints = Vec::new();
+            let mut input_values: Vec<BasicMetadataValueEnum<'ctx>> = Vec::new();
+            let mut output_vars: Vec<Option<PointerValue<'ctx>>> = Vec::new();
+            let mut has_output = false;
+
+            // Process outputs first (LLVM requires outputs before inputs in constraint string)
+            // Note: The parser puts both `out` and `inout` operands in asm.outputs
+            for operand in &asm.outputs {
+                has_output = true;
+                let constraint = Self::translate_constraint(&operand.constraint, true);
+                constraints.push(constraint);
+
+                // Get the variable pointer for the output
+                // For InOut operands, the output goes to `operand.output` if present,
+                // otherwise the input expr must be a variable (same for both)
+                let output_expr = if operand.kind == AsmOperandKind::InOut {
+                    operand.output.as_deref().unwrap_or(&operand.expr)
+                } else {
+                    &operand.expr
+                };
+                let var_ptr = self.get_output_var_ptr(scope, output_expr)?;
+                output_vars.push(var_ptr);
+            }
+
+            // Track which output indices are inout so we can tie inputs to them
+            let mut inout_indices: Vec<usize> = Vec::new();
+            for (i, operand) in asm.outputs.iter().enumerate() {
+                if operand.kind == AsmOperandKind::InOut {
+                    inout_indices.push(i);
+                }
+            }
+
+            // Process inputs from asm.inputs (pure inputs only)
+            for operand in &asm.inputs {
+                let constraint = Self::translate_constraint(&operand.constraint, false);
+                constraints.push(constraint);
+
+                // Compile the input expression
+                let val = self.compile_expr(fn_value, scope, &operand.expr)?;
+                input_values.push(val.into());
+            }
+
+            // Process inputs from InOut operands in asm.outputs
+            // InOut operands have both an output constraint (already added) and need their input value
+            // The input must be tied to the output using a numbered constraint (e.g., "0" ties to output 0)
+            for &output_idx in &inout_indices {
+                let operand = &asm.outputs[output_idx];
+                // Add tied input constraint: "N" where N is the output index
+                constraints.push(output_idx.to_string());
+
+                // Compile the input expression
+                let val = self.compile_expr(fn_value, scope, &operand.expr)?;
+                input_values.push(val.into());
+            }
+
+            // Process clobbers
+            for clobber in &asm.clobbers {
+                let clobber_name = clobber.trim_matches('"');
+                constraints.push(format!("~{{{}}}", clobber_name));
+            }
+
+            // Add implicit clobbers for memory if not nomem
+            if !asm.options.nomem {
+                constraints.push("~{memory}".to_string());
+            }
+
+            // Build the constraint string
+            let constraint_str = constraints.join(",");
+
+            // Count actual outputs (including tied outputs for inout)
+            let num_outputs = output_vars.len();
+
+            // Determine return type based on outputs
+            let (fn_type, return_type_is_void) = if num_outputs == 0 {
+                // No outputs - void function
+                let param_types: Vec<BasicMetadataTypeEnum<'ctx>> =
+                    input_values.iter().map(|_| i64_type.into()).collect();
+                (self.context.void_type().fn_type(&param_types, false), true)
+            } else if num_outputs == 1 {
+                // Single output - return i64
+                let param_types: Vec<BasicMetadataTypeEnum<'ctx>> =
+                    input_values.iter().map(|_| i64_type.into()).collect();
+                (i64_type.fn_type(&param_types, false), false)
+            } else {
+                // Multiple outputs - return struct
+                let output_types: Vec<BasicTypeEnum<'ctx>> = (0..num_outputs)
+                    .map(|_| i64_type.into())
+                    .collect();
+                let struct_type = self.context.struct_type(&output_types, false);
+                let param_types: Vec<BasicMetadataTypeEnum<'ctx>> =
+                    input_values.iter().map(|_| i64_type.into()).collect();
+                (struct_type.fn_type(&param_types, false), false)
+            };
+
+            // Determine side effects (volatile)
+            // Assembly has side effects unless pure_asm is set
+            let has_side_effects = !asm.options.pure_asm || asm.options.volatile;
+
+            // Determine alignment
+            // Align stack unless nostack is set
+            let align_stack = !asm.options.nostack;
+
+            // Determine dialect (AT&T vs Intel)
+            let dialect = if asm.options.att_syntax {
+                Some(InlineAsmDialect::ATT)
+            } else {
+                // Default to Intel syntax for x86
+                Some(InlineAsmDialect::Intel)
+            };
+
+            // Create the inline assembly
+            let asm_ptr = self.context.create_inline_asm(
+                fn_type,
+                asm.template.clone(),
+                constraint_str,
+                has_side_effects,
+                align_stack,
+                dialect,
+                false, // can_throw - LLVM 13+
+            );
+
+            // Call the inline assembly
+            let call_result = self.builder.build_indirect_call(
+                fn_type,
+                asm_ptr,
+                &input_values,
+                "asm_result",
+            ).map_err(|e| format!("Failed to build inline asm call: {}", e))?;
+
+            // Handle outputs: store the result into output variables
+            if !return_type_is_void {
+                let asm_return_value = call_result.try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| "Inline asm call did not return a value".to_string())?;
+
+                if num_outputs == 1 {
+                    // Single output - store directly
+                    if let Some(Some(var_ptr)) = output_vars.first() {
+                        self.builder.build_store(*var_ptr, asm_return_value)
+                            .map_err(|e| format!("Failed to store asm output: {}", e))?;
+                    }
+                    // Return the value
+                    asm_return_value.into_int_value()
+                        .try_into()
+                        .map_err(|_| "Inline asm did not return int value".to_string())
+                } else {
+                    // Multiple outputs - extract each field from the struct
+                    let struct_value = asm_return_value.into_struct_value();
+                    let mut first_value_opt = None;
+
+                    for (i, var_ptr_opt) in output_vars.iter().enumerate() {
+                        let field_value = self.builder
+                            .build_extract_value(struct_value, i as u32, &format!("asm_out_{}", i))
+                            .map_err(|e| format!("Failed to extract asm output {}: {}", i, e))?;
+
+                        // Store first value for return
+                        if i == 0 {
+                            first_value_opt = Some(field_value);
+                        }
+
+                        // Store to variable if not discarded
+                        if let Some(var_ptr) = var_ptr_opt {
+                            self.builder.build_store(*var_ptr, field_value)
+                                .map_err(|e| format!("Failed to store asm output {}: {}", i, e))?;
+                        }
+                    }
+
+                    // Return the first output value
+                    first_value_opt
+                        .ok_or_else(|| "No outputs to return".to_string())?
+                        .into_int_value()
+                        .try_into()
+                        .map_err(|_| "Inline asm first output not int".to_string())
+                }
+            } else {
+                Ok(i64_type.const_int(0, false))
+            }
+        }
+
+        /// Get the pointer to a variable for asm output storage
+        fn get_output_var_ptr(
+            &self,
+            scope: &CompileScope<'ctx>,
+            expr: &Expr,
+        ) -> Result<Option<PointerValue<'ctx>>, String> {
+            match expr {
+                Expr::Path(path) => {
+                    if path.segments.len() == 1 {
+                        let name = &path.segments[0].ident.name;
+                        // Check if it's a discard (_)
+                        if name == "_" {
+                            return Ok(None);
+                        }
+                        // Look up in scope
+                        scope.vars.get(name).copied().map(Some)
+                            .ok_or_else(|| format!("Unknown output variable: {}", name))
+                    } else {
+                        Err("Complex paths not supported for asm output".to_string())
+                    }
+                }
+                _ => Err("Only variables supported for asm output".to_string()),
+            }
+        }
+
+        /// Translate Sigil constraint syntax to LLVM constraint syntax
+        ///
+        /// Sigil uses Rust-like syntax:
+        /// - `"rax"` or `rax` → `{rax}` (specific register)
+        /// - `"r"` → `r` (any general purpose register)
+        /// - `"m"` → `m` (memory)
+        ///
+        /// For outputs, prefix with `=` (or `=&` for early clobber)
+        fn translate_constraint(constraint: &str, is_output: bool) -> String {
+            let constraint = constraint.trim_matches('"');
+
+            // Check if it's a specific register name
+            let is_register = matches!(constraint,
+                "rax" | "rbx" | "rcx" | "rdx" | "rsi" | "rdi" |
+                "r8" | "r9" | "r10" | "r11" | "r12" | "r13" | "r14" | "r15" |
+                "rsp" | "rbp" |
+                "eax" | "ebx" | "ecx" | "edx" | "esi" | "edi" |
+                "ax" | "bx" | "cx" | "dx" | "si" | "di" |
+                "al" | "bl" | "cl" | "dl" |
+                "ah" | "bh" | "ch" | "dh" |
+                // ARM registers
+                "x0" | "x1" | "x2" | "x3" | "x4" | "x5" | "x6" | "x7" |
+                "x8" | "x9" | "x10" | "x11" | "x12" | "x13" | "x14" | "x15"
+            );
+
+            let llvm_constraint = if is_register {
+                format!("{{{}}}", constraint)
+            } else {
+                // Generic constraint (r, m, i, etc.)
+                constraint.to_string()
+            };
+
+            if is_output {
+                format!("={}", llvm_constraint)
+            } else {
+                llvm_constraint
             }
         }
 

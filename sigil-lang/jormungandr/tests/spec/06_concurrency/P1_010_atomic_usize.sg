@@ -3,7 +3,7 @@
 // Priority: P1 - Standard Feature
 
 fn main() {
-    let size = AtomicUsize::new(100);
+    let size = AtomicUsize·new(100);
 
     println(size.load());
 

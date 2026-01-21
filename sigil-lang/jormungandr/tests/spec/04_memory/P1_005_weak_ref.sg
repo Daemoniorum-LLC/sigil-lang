@@ -3,10 +3,10 @@
 // Priority: P1 - Production Ready
 
 fn main() {
-    let rc: Rc<i32> = Rc::new(100);
+    let rc: Rc<i32> = Rc·new(100);
 
     // Downgrade to weak
-    let weak: Weak<i32> = Rc::downgrade(&rc);
+    let weak: Weak<i32> = Rc·downgrade(&rc);
 
     // Weak exists (doesn't prevent drop, but exists)
     println(*rc);

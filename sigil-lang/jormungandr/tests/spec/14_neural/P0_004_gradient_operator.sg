@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 fn main() {
-    let x: Tensor<[]> = Tensor::from(3.0)|requires_grad(true);
+    let x: Tensor<[]> = Tensor·from(3.0)|requires_grad(true);
     let y = x * x;  // y = x^2
     let grad = ∇(y, x);  // dy/dx = 2x = 6
     println(grad);

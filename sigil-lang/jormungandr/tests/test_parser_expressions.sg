@@ -3,8 +3,8 @@
 //! Tests all 40+ expression forms, operator precedence, and associativity.
 //! Target: 100% expression parsing coverage for regression detection.
 
-use crate::parser::Parser;
-use crate::ast::{Expr, BinOp, UnaryOp, Literal, Block};
+use crate·parser·Parser;
+use crate·ast·{Expr, BinOp, UnaryOp, Literal, Block};
 
 // ============================================================================
 // Test Helpers
@@ -12,19 +12,19 @@ use crate::ast::{Expr, BinOp, UnaryOp, Literal, Block};
 
 /// Parse a string and return the expression AST
 fn parse_expr(source: !&str) -> ?Expr {
-    let mut parser = Parser::new(source.to_string());
+    let mut parser = Parser·new(source.to_string());
     match parser.parse_expr() {
-        Result::Ok(expr) => ?expr,
-        Result::Err(_) => null,
+        Result·Ok(expr) => ?expr,
+        Result·Err(_) => null,
     }
 }
 
 /// Parse as a file (for testing items that require full context)
 fn parse_file(source: !&str) -> !bool {
-    let mut parser = Parser::new(source.to_string());
+    let mut parser = Parser·new(source.to_string());
     match parser.parse_file() {
-        Result::Ok(_) => true,
-        Result::Err(_) => false,
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
     }
 }
 
@@ -126,20 +126,20 @@ fn test_paths() -> !bool {
     assert_parses("r#type", "raw_identifier");
 
     // Qualified paths
-    assert_parses("std::io::Read", "qualified_path");
-    assert_parses("crate::module::func", "crate_path");
-    assert_parses("super::parent", "super_path");
-    assert_parses("self::local", "self_path");
+    assert_parses("std·io·Read", "qualified_path");
+    assert_parses("crate·module·func", "crate_path");
+    assert_parses("super·parent", "super_path");
+    assert_parses("self·local", "self_path");
 
     // Generic paths
-    assert_parses("Vec::<i32>", "turbofish_one_arg");
-    assert_parses("HashMap::<String, i32>", "turbofish_two_args");
-    assert_parses("Result::<T, E>", "turbofish_type_params");
+    assert_parses("Vec·<i32>", "turbofish_one_arg");
+    assert_parses("HashMap·<String, i32>", "turbofish_two_args");
+    assert_parses("Result·<T, E>", "turbofish_type_params");
 
     // Enum variants
-    assert_parses("Option::Some", "enum_variant");
-    assert_parses("Result::Ok", "result_ok");
-    assert_parses("Result::Err", "result_err");
+    assert_parses("Option·Some", "enum_variant");
+    assert_parses("Result·Ok", "result_ok");
+    assert_parses("Result·Err", "result_err");
 
     println("PASS (14 cases)");
     true
@@ -330,8 +330,8 @@ fn test_calls() -> !bool {
     assert_parses("x.foo().bar().baz()", "long_method_chain");
 
     // Turbofish method calls
-    assert_parses("x.collect::<Vec<_>>()", "turbofish_method");
-    assert_parses("iter.map::<i32>(f)", "turbofish_with_arg");
+    assert_parses("x.collect·<Vec<_>>()", "turbofish_method");
+    assert_parses("iter.map·<i32>(f)", "turbofish_with_arg");
 
     // Complex receivers
     assert_parses("(a + b).foo()", "parens_method");
@@ -456,8 +456,8 @@ fn test_struct_literals() -> !bool {
     assert_parses("Point { ..default() }", "struct_update_only");
 
     // Qualified struct paths
-    assert_parses("module::Point { x: 1, y: 2 }", "qualified_struct");
-    assert_parses("self::Inner { value: 42 }", "self_struct");
+    assert_parses("module·Point { x: 1, y: 2 }", "qualified_struct");
+    assert_parses("self·Inner { value: 42 }", "self_struct");
 
     // Nested structs
     assert_parses("Outer { inner: Inner { x: 1 } }", "nested_struct");

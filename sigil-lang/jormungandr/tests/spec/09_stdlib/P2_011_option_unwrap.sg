@@ -3,7 +3,7 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let opt: Option<i32> = Option::Some(42);
+    let opt: Option<i32> = Option·Some(42);
     let val: !i32 = opt.unwrap();
     println(val);
 }

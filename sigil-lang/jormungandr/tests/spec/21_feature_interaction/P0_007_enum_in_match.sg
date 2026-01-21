@@ -9,11 +9,11 @@ enum Message {
 }
 
 fn main() {
-    let msg = Message::Move { x: 10, y: 20 };
+    let msg = Message·Move { x: 10, y: 20 };
     let result = match msg {
-        Message::Quit => 0,
-        Message::Move { x, y } => x + y,
-        Message::Write(_) => -1,
+        Message·Quit => 0,
+        Message·Move { x, y } => x + y,
+        Message·Write(_) => -1,
     };
     println(result);
 }
