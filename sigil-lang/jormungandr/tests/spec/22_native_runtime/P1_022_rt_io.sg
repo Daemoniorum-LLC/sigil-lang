@@ -5,8 +5,8 @@
 //
 // @spec docs/specs/NATIVE-RUNTIME-SPEC.md#module-4-io
 
-use crate·rt·io·{print, println, File, FileMode};
-use crate·rt·sys·Errno;
+invoke tome·rt·io·{print, println, File, FileMode};
+invoke tome·rt·sys·Errno;
 
 // ============================================================================
 // Print Functions

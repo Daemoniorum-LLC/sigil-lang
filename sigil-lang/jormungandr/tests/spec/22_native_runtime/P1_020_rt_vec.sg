@@ -5,7 +5,7 @@
 //
 // @spec docs/specs/NATIVE-RUNTIME-SPEC.md#module-3-core-types
 
-use crate·rt·types·Vec;
+invoke tome·rt·types·Vec;
 
 // ============================================================================
 // Construction

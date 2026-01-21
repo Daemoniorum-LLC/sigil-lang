@@ -5,14 +5,14 @@
 // This test verifies math functions work using LLVM intrinsics
 // instead of libm.
 
-use rt::math::{
+invoke tome·rt·math·{
     sqrt, sin, cos, tan, exp, ln, log2, log10, pow,
     floor, ceil, round, trunc, fabs, fmod,
     sinh, cosh, tanh, asin, acos, atan, atan2, hypot,
     abs, min, max, clamp, sign, gcd, lcm,
     PI, E
 };
-use rt::alloc::init_allocator;
+invoke tome·rt·alloc·init_allocator;
 
 fn approx_eq(a: f64, b: f64, epsilon: f64) → bool {
     fabs(a - b) < epsilon

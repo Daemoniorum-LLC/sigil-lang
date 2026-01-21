@@ -5,8 +5,8 @@
 // This test verifies that we can get current time using
 // clock_gettime syscall instead of gettimeofday from libc.
 
-use rt::sys;
-use rt::time::{Timespec, Duration, Instant};
+invoke tome·rt·sys;
+invoke tome·rt·time·{Timespec, Duration, Instant};
 
 fn main() {
     // Test 1: Get realtime clock (wall clock)

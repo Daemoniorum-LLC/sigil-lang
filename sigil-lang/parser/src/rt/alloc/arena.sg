@@ -7,7 +7,7 @@
 //   Block: [prev_block_ptr: *u8 | data...]
 //   Arena tracks current block and allocation pointer
 
-use crate·rt·sys·{mmap_anon, munmap, Errno};
+invoke tome·rt·sys·{mmap_anon, munmap, Errno};
 
 /// Default block size: 64KB
 const DEFAULT_BLOCK_SIZE: u64 = 64 * 1024;

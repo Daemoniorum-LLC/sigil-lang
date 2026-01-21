@@ -5,8 +5,8 @@
 // This test verifies Vec<T> works correctly using
 // the native allocator instead of libc.
 
-use rt::types::{Vec};
-use rt::alloc::init_allocator;
+invoke tome·rt·types·{Vec};
+invoke tome·rt·alloc·init_allocator;
 
 fn main() {
     init_allocator();

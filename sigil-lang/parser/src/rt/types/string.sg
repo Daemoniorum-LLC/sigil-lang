@@ -6,8 +6,8 @@
 // @spec docs/specs/NATIVE-RUNTIME-SPEC.md#32-string
 // @evidentiality docs/specs/EVIDENTIALITY-RULES.md
 
-use crate·rt·types·vec·Vec;
-use crate·rt·alloc·{sigil_alloc, sigil_free};
+invoke tome·rt·types·vec·Vec;
+invoke tome·rt·alloc·{sigil_alloc, sigil_free};
 
 /// UTF-8 encoded growable string
 ///

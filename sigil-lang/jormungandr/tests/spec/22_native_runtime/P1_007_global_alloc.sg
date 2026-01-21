@@ -5,7 +5,7 @@
 // This test verifies the global allocator functions that
 // replace malloc/free/realloc from libc.
 
-use rt::alloc::{init_allocator, sigil_alloc, sigil_free, sigil_realloc};
+invoke tome·rt·alloc·{init_allocator, sigil_alloc, sigil_free, sigil_realloc};
 
 fn main() {
     // Initialize global allocator

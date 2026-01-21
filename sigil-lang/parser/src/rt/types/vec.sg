@@ -6,7 +6,7 @@
 // @spec docs/specs/NATIVE-RUNTIME-SPEC.md#31-vect
 // @evidentiality docs/specs/EVIDENTIALITY-RULES.md
 
-use crate·rt·alloc·{sigil_alloc, sigil_free, sigil_realloc};
+invoke tome·rt·alloc·{sigil_alloc, sigil_free, sigil_realloc};
 
 /// Growable array type
 ///

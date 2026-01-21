@@ -5,8 +5,8 @@
 // This test verifies print functions work without
 // printf/puts from libc.
 
-use rt::io::{print, println, sigil_print_int, sigil_print_float, sigil_print_str};
-use rt::alloc::init_allocator;
+invoke tome·rt·io·{print, println, sigil_print_int, sigil_print_float, sigil_print_str};
+invoke tome·rt·alloc·init_allocator;
 
 fn main() {
     init_allocator();

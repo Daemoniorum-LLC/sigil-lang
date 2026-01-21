@@ -5,7 +5,7 @@
 // This test verifies the arena allocator works correctly
 // for sequential memory allocation.
 
-use rt::alloc::{Arena};
+invoke tome·rt·alloc·{Arena};
 
 fn main() {
     // Test 1: Create arena and allocate

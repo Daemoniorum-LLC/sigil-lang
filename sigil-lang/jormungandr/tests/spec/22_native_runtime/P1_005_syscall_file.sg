@@ -5,7 +5,7 @@
 // This test verifies basic file operations using
 // raw syscalls instead of fopen/fread/fwrite from libc.
 
-use rt::sys;
+invoke tome·rt·sys;
 
 fn main() {
     ≔ test_path = "/tmp/sigil_rt_test.txt";

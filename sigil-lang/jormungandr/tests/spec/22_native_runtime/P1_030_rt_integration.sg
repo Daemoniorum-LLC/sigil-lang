@@ -11,12 +11,12 @@
 // Import all runtime modules
 // ============================================================================
 
-use crate·rt·sys·{write, Errno};
-use crate·rt·alloc·{sigil_alloc, sigil_free};
-use crate·rt·types·{Vec, String};
-use crate·rt·io·{print, println, println_int, File, FileMode};
-use crate·rt·math·{sqrt, abs, PI, sin, cos};
-use crate·rt·time·{now, Instant, Duration};
+invoke tome·rt·sys·{write, Errno};
+invoke tome·rt·alloc·{sigil_alloc, sigil_free};
+invoke tome·rt·types·{Vec, String};
+invoke tome·rt·io·{print, println, println_int, File, FileMode};
+invoke tome·rt·math·{sqrt, abs, PI, sin, cos};
+invoke tome·rt·time·{now, Instant, Duration};
 
 // ============================================================================
 // Test: Memory Allocation

@@ -5,7 +5,7 @@
 // @spec docs/specs/NATIVE-RUNTIME-SPEC.md#module-6-time
 // @evidentiality docs/specs/EVIDENTIALITY-RULES.md
 
-use crate·rt·sys·{clock_gettime, Errno};
+invoke tome·rt·sys·{clock_gettime, Errno};
 
 // ============================================================================
 // Time Types

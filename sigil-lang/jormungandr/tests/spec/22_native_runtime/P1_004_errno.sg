@@ -5,7 +5,7 @@
 // This test verifies that errno values are correctly
 // mapped and can provide meaningful error messages.
 
-use rt::sys::{Errno};
+invoke tome·rt·sys·{Errno};
 
 fn main() {
     // Test 1: Errno from code

@@ -5,7 +5,7 @@
 //
 // @spec docs/specs/NATIVE-RUNTIME-SPEC.md#32-string
 
-use crate·rt·types·String;
+invoke tome·rt·types·String;
 
 // ============================================================================
 // Construction

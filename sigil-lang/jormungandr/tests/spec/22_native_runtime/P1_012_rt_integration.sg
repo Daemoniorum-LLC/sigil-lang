@@ -5,12 +5,12 @@
 // This test exercises all runtime components together
 // to verify the complete native runtime works.
 
-use rt::sys;
-use rt::alloc::{init_allocator, Arena, sigil_alloc, sigil_free};
-use rt::types::{Vec, String};
-use rt::io::{println, File, read_file, write_file};
-use rt::math::{sqrt, sin, cos, PI};
-use rt::time::{Instant, sigil_now};
+invoke tome·rt·sys;
+invoke tome·rt·alloc·{init_allocator, Arena, sigil_alloc, sigil_free};
+invoke tome·rt·types·{Vec, String};
+invoke tome·rt·io·{println, File, read_file, write_file};
+invoke tome·rt·math·{sqrt, sin, cos, PI};
+invoke tome·rt·time·{Instant, sigil_now};
 
 fn main() {
     // Phase A: Syscalls

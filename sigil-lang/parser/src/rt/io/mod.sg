@@ -6,8 +6,8 @@
 // @spec docs/specs/NATIVE-RUNTIME-SPEC.md#module-4-io
 // @evidentiality docs/specs/EVIDENTIALITY-RULES.md
 
-use crate·rt·sys·{write, read, open, close, Errno};
-use crate·rt·types·String;
+invoke tome·rt·sys·{write, read, open, close, Errno};
+invoke tome·rt·types·String;
 
 // ============================================================================
 // File Descriptors
