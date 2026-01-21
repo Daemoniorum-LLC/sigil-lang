@@ -1,8 +1,8 @@
 # Sigil Interpreter Specification & TDD Roadmap
 
-**Version:** 1.4.0
+**Version:** 1.5.0
 **Date:** 2026-01-21
-**Status:** Waves 1-3 Complete, Wave 4 (Native Runtime) Next
+**Status:** Waves 1-4 Complete, Module Resolution Next
 **Component:** `parser/src/interpreter.rs`
 
 ---
@@ -27,8 +27,9 @@ This document defines the specification and TDD roadmap for the Sigil interprete
 | **Wave 1** | P0 Type Validation & Traits | ✅ Complete | All P0 passing |
 | **Wave 2** | P1 Memory Features | ✅ Complete | +4 tests |
 | **Wave 3** | P1 Stdlib Completion | ✅ Complete | +3 tests |
-| **Wave 4** | P1-BOOTSTRAP Native Runtime | 🔜 Next | Shed C runtime |
-| **Wave 5** | P2 Experimental | Deferred | 65 remaining |
+| **Wave 4** | P1-BOOTSTRAP Native Runtime | ✅ Complete | 12 modules |
+| **Wave 5** | Module Resolution | 🔜 Next | Enable `invoke tome·` |
+| **Wave 6** | P2 Experimental | Deferred | 65 remaining |
 
 ---
 
@@ -69,7 +70,7 @@ Features that improve developer experience and code safety.
 
 **Total P1 Gaps: 2 tests** (7/9 complete)
 
-### P1-BOOTSTRAP: Native Runtime (Self-Hosting)
+### P1-BOOTSTRAP: Native Runtime (Self-Hosting) ✅ COMPLETE
 
 Replace the C runtime with pure Sigil to achieve full self-hosting.
 
@@ -77,14 +78,54 @@ Replace the C runtime with pure Sigil to achieve full self-hosting.
 
 **Current C Runtime:** `parser/runtime/sigil_runtime.c` (741 lines, 76 functions)
 
-| Phase | Focus | Duration | Status |
-|-------|-------|----------|--------|
-| **A** | Platform Syscalls | 2 weeks | Pending |
-| **B** | Memory Allocator | 2 weeks | Pending |
-| **C** | Core Types (Vec, String) | 2 weeks | Pending |
-| **D** | I/O (print, file) | 2 weeks | Pending |
-| **E** | Math (LLVM intrinsics) | 2 weeks | Pending |
-| **F** | Integration & Bootstrap | 2 weeks | Pending |
+| Phase | Focus | Modules | Status |
+|-------|-------|---------|--------|
+| **A** | Platform Syscalls | `rt/sys/` (4 files, 111+ syscalls) | ✅ Complete |
+| **B** | Memory Allocator | `rt/alloc/` (arena, global) | ✅ Complete |
+| **C** | Core Types | `rt/types/` (Vec, String) | ✅ Complete |
+| **D** | I/O | `rt/io/` (print, File) | ✅ Complete |
+| **E** | Math | `rt/math/` (36 LLVM intrinsics) | ✅ Complete |
+| **F** | Integration | `P1_030_rt_integration.sg` | ✅ Complete |
+
+**Native Runtime Modules (12 files, all parsing):**
+```
+parser/src/rt/
+├── mod.sg              # Root module
+├── sys/
+│   ├── mod.sg          # Platform dispatch
+│   ├── linux_x64.sg    # Linux syscalls (111 items)
+│   ├── darwin_x64.sg   # macOS Intel
+│   └── darwin_arm64.sg # macOS ARM
+├── alloc/
+│   ├── mod.sg          # Allocator exports
+│   └── arena.sg        # Arena allocator
+├── types/
+│   ├── mod.sg          # Type exports
+│   ├── vec.sg          # Vec<T>
+│   └── string.sg       # String (UTF-8)
+├── io/
+│   └── mod.sg          # I/O operations
+├── math/
+│   └── mod.sg          # Math functions
+└── time/
+    └── mod.sg          # Time operations
+```
+
+**Next Step:** Wave 5 - Module Resolution to enable `invoke tome·` linking
+
+### Wave 5: Module Resolution (Current)
+
+Enable the compiler to resolve `invoke tome·` statements and link modules together.
+
+| Task | Description | Status |
+|------|-------------|--------|
+| Parse `invoke`/`tome` | Lexer/parser support | ✅ Done |
+| Module path resolution | Find `.sg` files from paths | 🔜 Next |
+| Symbol export/import | Track pub symbols across modules | Pending |
+| Circular dependency detection | Prevent infinite loops | Pending |
+| Integration test | Run native runtime end-to-end | Pending |
+
+**Implementation Location:** `parser/src/interpreter.rs`, `parser/src/module_resolver.rs` (new)
 
 **Architecture:**
 ```
@@ -506,3 +547,4 @@ cd jormungandr/tests && ./run_tests_rust.sh
 | 1.2.0 | 2026-01-21 | Claude Code | Wave 2 complete: Memory features (reborrow, Box deref, slice coercion) |
 | 1.3.0 | 2026-01-21 | Claude Code | Wave 3 complete: Stdlib (math functions, Vec::clear, static vars) |
 | 1.4.0 | 2026-01-21 | Claude Code | Added P1-BOOTSTRAP: Native Runtime roadmap (shed C runtime) |
+| 1.5.0 | 2026-01-21 | Claude Code | Wave 4 complete: Native Runtime (12 modules, all phases A-F) |
