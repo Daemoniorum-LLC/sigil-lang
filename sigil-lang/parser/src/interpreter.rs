@@ -1180,6 +1180,217 @@ impl Interpreter {
             _ => Err(RuntimeError::new("cos() requires number")),
         });
 
+        // ========================================================================
+        // LLVM Intrinsics - For native runtime math module compatibility
+        // ========================================================================
+
+        // Absolute value
+        self.define_builtin("__llvm_fabs_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).abs())),
+            Value::Float(n) => Ok(Value::Float(n.abs())),
+            _ => Err(RuntimeError::new("__llvm_fabs_f64 requires number")),
+        });
+
+        // Floor
+        self.define_builtin("__llvm_floor_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float(*n as f64)),
+            Value::Float(n) => Ok(Value::Float(n.floor())),
+            _ => Err(RuntimeError::new("__llvm_floor_f64 requires number")),
+        });
+
+        // Ceiling
+        self.define_builtin("__llvm_ceil_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float(*n as f64)),
+            Value::Float(n) => Ok(Value::Float(n.ceil())),
+            _ => Err(RuntimeError::new("__llvm_ceil_f64 requires number")),
+        });
+
+        // Round
+        self.define_builtin("__llvm_round_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float(*n as f64)),
+            Value::Float(n) => Ok(Value::Float(n.round())),
+            _ => Err(RuntimeError::new("__llvm_round_f64 requires number")),
+        });
+
+        // Truncate
+        self.define_builtin("__llvm_trunc_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float(*n as f64)),
+            Value::Float(n) => Ok(Value::Float(n.trunc())),
+            _ => Err(RuntimeError::new("__llvm_trunc_f64 requires number")),
+        });
+
+        // Square root
+        self.define_builtin("__llvm_sqrt_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).sqrt())),
+            Value::Float(n) => Ok(Value::Float(n.sqrt())),
+            _ => Err(RuntimeError::new("__llvm_sqrt_f64 requires number")),
+        });
+
+        // Exponential e^x
+        self.define_builtin("__llvm_exp_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).exp())),
+            Value::Float(n) => Ok(Value::Float(n.exp())),
+            _ => Err(RuntimeError::new("__llvm_exp_f64 requires number")),
+        });
+
+        // Exponential 2^x
+        self.define_builtin("__llvm_exp2_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).exp2())),
+            Value::Float(n) => Ok(Value::Float(n.exp2())),
+            _ => Err(RuntimeError::new("__llvm_exp2_f64 requires number")),
+        });
+
+        // Natural logarithm
+        self.define_builtin("__llvm_log_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).ln())),
+            Value::Float(n) => Ok(Value::Float(n.ln())),
+            _ => Err(RuntimeError::new("__llvm_log_f64 requires number")),
+        });
+
+        // Log base 2
+        self.define_builtin("__llvm_log2_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).log2())),
+            Value::Float(n) => Ok(Value::Float(n.log2())),
+            _ => Err(RuntimeError::new("__llvm_log2_f64 requires number")),
+        });
+
+        // Log base 10
+        self.define_builtin("__llvm_log10_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).log10())),
+            Value::Float(n) => Ok(Value::Float(n.log10())),
+            _ => Err(RuntimeError::new("__llvm_log10_f64 requires number")),
+        });
+
+        // Power x^y
+        self.define_builtin("__llvm_pow_f64", Some(2), |_, args| {
+            let base = match &args[0] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_pow_f64 requires numbers")),
+            };
+            let exp = match &args[1] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_pow_f64 requires numbers")),
+            };
+            Ok(Value::Float(base.powf(exp)))
+        });
+
+        // Sine
+        self.define_builtin("__llvm_sin_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).sin())),
+            Value::Float(n) => Ok(Value::Float(n.sin())),
+            _ => Err(RuntimeError::new("__llvm_sin_f64 requires number")),
+        });
+
+        // Cosine
+        self.define_builtin("__llvm_cos_f64", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).cos())),
+            Value::Float(n) => Ok(Value::Float(n.cos())),
+            _ => Err(RuntimeError::new("__llvm_cos_f64 requires number")),
+        });
+
+        // Arc sine
+        self.define_builtin("__libm_asin", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).asin())),
+            Value::Float(n) => Ok(Value::Float(n.asin())),
+            _ => Err(RuntimeError::new("__libm_asin requires number")),
+        });
+
+        // Arc cosine
+        self.define_builtin("__libm_acos", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).acos())),
+            Value::Float(n) => Ok(Value::Float(n.acos())),
+            _ => Err(RuntimeError::new("__libm_acos requires number")),
+        });
+
+        // Arc tangent
+        self.define_builtin("__libm_atan", Some(1), |_, args| match &args[0] {
+            Value::Int(n) => Ok(Value::Float((*n as f64).atan())),
+            Value::Float(n) => Ok(Value::Float(n.atan())),
+            _ => Err(RuntimeError::new("__libm_atan requires number")),
+        });
+
+        // Arc tangent 2 (atan2)
+        self.define_builtin("__libm_atan2", Some(2), |_, args| {
+            let y = match &args[0] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__libm_atan2 requires numbers")),
+            };
+            let x = match &args[1] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__libm_atan2 requires numbers")),
+            };
+            Ok(Value::Float(y.atan2(x)))
+        });
+
+        // Minimum
+        self.define_builtin("__llvm_minnum_f64", Some(2), |_, args| {
+            let a = match &args[0] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_minnum_f64 requires numbers")),
+            };
+            let b = match &args[1] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_minnum_f64 requires numbers")),
+            };
+            Ok(Value::Float(a.min(b)))
+        });
+
+        // Maximum
+        self.define_builtin("__llvm_maxnum_f64", Some(2), |_, args| {
+            let a = match &args[0] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_maxnum_f64 requires numbers")),
+            };
+            let b = match &args[1] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_maxnum_f64 requires numbers")),
+            };
+            Ok(Value::Float(a.max(b)))
+        });
+
+        // Fused multiply-add: a*b + c
+        self.define_builtin("__llvm_fma_f64", Some(3), |_, args| {
+            let a = match &args[0] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_fma_f64 requires numbers")),
+            };
+            let b = match &args[1] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_fma_f64 requires numbers")),
+            };
+            let c = match &args[2] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_fma_f64 requires numbers")),
+            };
+            Ok(Value::Float(a.mul_add(b, c)))
+        });
+
+        // Copy sign: |x| with sign of y
+        self.define_builtin("__llvm_copysign_f64", Some(2), |_, args| {
+            let x = match &args[0] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_copysign_f64 requires numbers")),
+            };
+            let y = match &args[1] {
+                Value::Int(n) => *n as f64,
+                Value::Float(n) => *n,
+                _ => return Err(RuntimeError::new("__llvm_copysign_f64 requires numbers")),
+            };
+            Ok(Value::Float(x.copysign(y)))
+        });
+
         // Evidence operations
         self.define_builtin("known", Some(1), |_, args| {
             Ok(Value::Evidential {
