@@ -2717,11 +2717,23 @@ impl<'a> Parser<'a> {
                 };
 
                 self.expect_gt()?; // consume >
-                self.expect(Token::ColonColon)?; // must have :: after >
+                // Accept either middledot (·) or :: for path separator after >
+                if !self.consume_if(&Token::MiddleDot) && !self.consume_if(&Token::ColonColon) {
+                    match self.current_token().cloned() {
+                        Some(found) => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "path separator (`·` or `::`) after `>`".to_string(),
+                                found,
+                                span: self.current_span(),
+                            });
+                        }
+                        None => return Err(ParseError::UnexpectedEof),
+                    }
+                }
 
                 // Parse the associated type/const path
                 let mut segments = vec![self.parse_path_segment()?];
-                while self.consume_if(&Token::ColonColon) {
+                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
                     segments.push(self.parse_path_segment()?);
                 }
 
