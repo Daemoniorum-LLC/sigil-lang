@@ -965,6 +965,126 @@ impl Interpreter {
         Ok(true)
     }
 
+    /// Load a module from the current crate (tome) by path.
+    ///
+    /// For `invoke tome·rt·sys·{write, Errno}`, this resolves:
+    /// - module_path = ["rt", "sys"]
+    /// - Tries: src/rt/sys/mod.sg, src/rt/sys.sg, rt/sys/mod.sg, rt/sys.sg
+    pub fn load_tome_module(&mut self, module_path: &[String]) -> Result<bool, RuntimeError> {
+        if module_path.is_empty() {
+            return Ok(false);
+        }
+
+        // Build the qualified module name for tracking
+        let module_key = format!("tome·{}", module_path.join("·"));
+
+        // Check if already loaded
+        if self.loaded_crates.contains(&module_key) {
+            return Ok(true);
+        }
+
+        // Check for circular dependency
+        if self.loading_crates.contains(&module_key) {
+            return Err(RuntimeError::new(format!(
+                "Circular dependency detected: module '{}' is already being loaded", module_key
+            )));
+        }
+
+        // Determine base directory for tome modules
+        // For 'tome' (current crate), we need the crate's src/ directory
+        // Priority: project_root/src > current_source_dir
+        let base_dir = if let Some(ref root) = self.project_root {
+            // If project root has a src/ directory, use it
+            let src_dir = root.join("src");
+            if src_dir.exists() {
+                src_dir
+            } else {
+                // Fall back to project root itself
+                root.clone()
+            }
+        } else if let Some(ref source_dir) = self.current_source_dir {
+            // Fall back to current source directory
+            std::path::PathBuf::from(source_dir)
+        } else {
+            crate::sigil_debug!("DEBUG load_tome_module: no source directory available");
+            return Ok(false);
+        };
+
+        // Build path from module segments: ["rt", "sys"] -> "rt/sys"
+        let mut module_file_path = base_dir.clone();
+        for segment in module_path {
+            module_file_path = module_file_path.join(segment);
+        }
+
+        // Try multiple file patterns:
+        // 1. rt/sys/mod.sg (directory with mod.sg)
+        // 2. rt/sys/mod.sigil
+        // 3. rt/sys.sg (file)
+        // 4. rt/sys.sigil
+        let candidates = [
+            module_file_path.join("mod.sg"),
+            module_file_path.join("mod.sigil"),
+            module_file_path.with_extension("sg"),
+            module_file_path.with_extension("sigil"),
+        ];
+
+        let found_path = candidates.iter().find(|p| p.exists());
+
+        let actual_path = match found_path {
+            Some(p) => p.clone(),
+            None => {
+                crate::sigil_debug!("DEBUG load_tome_module: module not found, tried: {:?}", candidates);
+                return Ok(false);
+            }
+        };
+
+        crate::sigil_debug!("DEBUG load_tome_module: loading '{}' from {:?}", module_key, actual_path);
+
+        // Mark as loading
+        self.loading_crates.insert(module_key.clone());
+
+        // Read and parse
+        let source = std::fs::read_to_string(&actual_path)
+            .map_err(|e| RuntimeError::new(format!("Failed to read {:?}: {}", actual_path, e)))?;
+
+        // Save current state
+        let prev_module = self.current_module.clone();
+        let prev_source_dir = self.current_source_dir.clone();
+
+        // Set module context - use the full path without "tome" prefix
+        let module_name = module_path.join("·");
+        self.current_module = Some(module_name.clone());
+        self.current_source_dir = actual_path.parent().map(|p| p.to_string_lossy().to_string());
+
+        // Parse the module
+        let mut parser = crate::Parser::new(&source);
+
+        match parser.parse_file() {
+            Ok(parsed_file) => {
+                for item in &parsed_file.items {
+                    if let Err(e) = self.execute_item(&item.node) {
+                        crate::sigil_warn!("Warning: error loading module '{}': {}", module_key, e);
+                    }
+                }
+            }
+            Err(e) => {
+                crate::sigil_warn!("Warning: failed to parse module '{}': {:?}", module_key, e);
+            }
+        }
+
+        // Restore state
+        self.current_module = prev_module;
+        self.current_source_dir = prev_source_dir;
+
+        // Mark as loaded
+        self.loading_crates.remove(&module_key);
+        self.loaded_crates.insert(module_key.clone());
+
+        crate::sigil_debug!("DEBUG load_tome_module: successfully loaded '{}'", module_key);
+
+        Ok(true)
+    }
+
     fn register_builtins(&mut self) {
         // PhantomData - zero-sized type marker
         self.globals.borrow_mut().define("PhantomData".to_string(), Value::Null);
@@ -2262,17 +2382,33 @@ impl Interpreter {
                 let qualified = path.join("·");
                 let simple_name = name.name.clone();
 
-                // If the type/function isn't found, try loading the crate first
-                // The crate name is the first segment of the path
+                // If the type/function isn't found, try loading the module/crate first
+                // The first segment determines how to load: "tome" = current crate, else external
                 if !prefix.is_empty() {
-                    let crate_name = &prefix[0];
+                    let first_segment = &prefix[0];
+                    let module_key = if first_segment == "tome" || first_segment == "crate" {
+                        // Internal module: invoke tome·rt·sys·write
+                        // Module path is everything between "tome" and the final name
+                        format!("tome·{}", prefix[1..].join("·"))
+                    } else {
+                        first_segment.clone()
+                    };
+
                     if !self.types.contains_key(&qualified)
                        && self.globals.borrow().get(&qualified).is_none()
-                       && !self.loaded_crates.contains(crate_name)
+                       && !self.loaded_crates.contains(&module_key)
                     {
-                        // Try to load the crate
-                        if let Err(e) = self.load_crate(crate_name) {
-                            crate::sigil_debug!("DEBUG process_use_tree: failed to load crate '{}': {}", crate_name, e);
+                        if first_segment == "tome" || first_segment == "crate" {
+                            // Load internal module: tome·rt·sys -> load_tome_module(["rt", "sys"])
+                            let module_path: Vec<String> = prefix[1..].to_vec();
+                            if let Err(e) = self.load_tome_module(&module_path) {
+                                crate::sigil_debug!("DEBUG process_use_tree: failed to load tome module '{:?}': {}", module_path, e);
+                            }
+                        } else {
+                            // Load external crate
+                            if let Err(e) = self.load_crate(first_segment) {
+                                crate::sigil_debug!("DEBUG process_use_tree: failed to load crate '{}': {}", first_segment, e);
+                            }
                         }
                     }
                 }
