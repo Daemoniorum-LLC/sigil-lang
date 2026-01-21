@@ -1,8 +1,8 @@
 # Sigil Interpreter Specification & TDD Roadmap
 
-**Version:** 1.5.0
+**Version:** 1.6.0
 **Date:** 2026-01-21
-**Status:** Waves 1-4 Complete, Module Resolution Next
+**Status:** Waves 1-5 Complete, P2 Experimental Deferred
 **Component:** `parser/src/interpreter.rs`
 
 ---
@@ -28,7 +28,7 @@ This document defines the specification and TDD roadmap for the Sigil interprete
 | **Wave 2** | P1 Memory Features | ✅ Complete | +4 tests |
 | **Wave 3** | P1 Stdlib Completion | ✅ Complete | +3 tests |
 | **Wave 4** | P1-BOOTSTRAP Native Runtime | ✅ Complete | 12 modules |
-| **Wave 5** | Module Resolution | 🔜 Next | Enable `invoke tome·` |
+| **Wave 5** | Module Resolution | ✅ Complete | `invoke tome·` + 22 intrinsics |
 | **Wave 6** | P2 Experimental | Deferred | 65 remaining |
 
 ---
@@ -113,7 +113,7 @@ parser/src/rt/
 
 **Next Step:** Wave 5 - Module Resolution to enable `invoke tome·` linking
 
-### Wave 5: Module Resolution (In Progress)
+### Wave 5: Module Resolution ✅ COMPLETE
 
 Enable the compiler to resolve `invoke tome·` statements and link modules together.
 
@@ -123,8 +123,8 @@ Enable the compiler to resolve `invoke tome·` statements and link modules toget
 | Module path resolution | Find `.sg` files from paths | ✅ Done |
 | Circular dependency detection | Prevent infinite loops | ✅ Done |
 | Symbol export/import | Track pub symbols across modules | ✅ Done |
-| LLVM intrinsics in interpreter | Enable native math in interpreter | 🔜 Next |
-| Integration test | Run native runtime end-to-end | Pending |
+| LLVM intrinsics in interpreter | 22 math intrinsics added | ✅ Done |
+| Integration test | Native math working via tome | ✅ Done |
 
 **Implementation Location:** `parser/src/interpreter.rs` - `load_tome_module()` function
 
@@ -565,3 +565,4 @@ cd jormungandr/tests && ./run_tests_rust.sh
 | 1.3.0 | 2026-01-21 | Claude Code | Wave 3 complete: Stdlib (math functions, Vec::clear, static vars) |
 | 1.4.0 | 2026-01-21 | Claude Code | Added P1-BOOTSTRAP: Native Runtime roadmap (shed C runtime) |
 | 1.5.0 | 2026-01-21 | Claude Code | Wave 4 complete: Native Runtime (12 modules, all phases A-F) |
+| 1.6.0 | 2026-01-21 | Claude Code | Wave 5 complete: Module resolution + 22 LLVM intrinsics |
