@@ -1,0 +1,360 @@
+//! OpenSSL FFI Implementation
+//!
+//! FFI bindings to OpenSSL for TLS on Linux.
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 8.4
+
+use super::TlsError;
+
+// ============================================================================
+// OpenSSL FFI Declarations
+// ============================================================================
+
+// Library initialization
+extern "C" rite SSL_library_init() -> i32;
+extern "C" rite SSL_load_error_strings();
+extern "C" rite OpenSSL_add_all_algorithms();
+extern "C" rite OPENSSL_init_ssl(opts: u64, settings: *void) -> i32;
+
+// TLS method
+extern "C" rite TLS_client_method() -> *void;
+extern "C" rite TLSv1_2_client_method() -> *void;
+
+// Context management
+extern "C" rite SSL_CTX_new(method: *void) -> *void;
+extern "C" rite SSL_CTX_free(ctx: *void);
+extern "C" rite SSL_CTX_set_verify(ctx: *void, mode: i32, callback: *void);
+extern "C" rite SSL_CTX_set_default_verify_paths(ctx: *void) -> i32;
+
+// Connection management
+extern "C" rite SSL_new(ctx: *void) -> *void;
+extern "C" rite SSL_free(ssl: *void);
+extern "C" rite SSL_set_fd(ssl: *void, fd: i32) -> i32;
+extern "C" rite SSL_set_tlsext_host_name(ssl: *void, name: *u8) -> i32;
+extern "C" rite SSL_connect(ssl: *void) -> i32;
+extern "C" rite SSL_read(ssl: *void, buf: *u8, num: i32) -> i32;
+extern "C" rite SSL_write(ssl: *void, buf: *u8, num: i32) -> i32;
+extern "C" rite SSL_shutdown(ssl: *void) -> i32;
+
+// Protocol info
+extern "C" rite SSL_get_version(ssl: *void) -> *u8;
+
+// Error handling
+extern "C" rite SSL_get_error(ssl: *void, ret: i32) -> i32;
+extern "C" rite ERR_get_error() -> u64;
+extern "C" rite ERR_error_string(e: u64, buf: *u8) -> *u8;
+extern "C" rite ERR_clear_error();
+
+// ============================================================================
+// OpenSSL Constants
+// ============================================================================
+
+≔ SSL_VERIFY_NONE: i32 = 0;
+≔ SSL_VERIFY_PEER: i32 = 1;
+≔ SSL_VERIFY_FAIL_IF_NO_PEER_CERT: i32 = 2;
+
+≔ SSL_ERROR_NONE: i32 = 0;
+≔ SSL_ERROR_SSL: i32 = 1;
+≔ SSL_ERROR_WANT_READ: i32 = 2;
+≔ SSL_ERROR_WANT_WRITE: i32 = 3;
+≔ SSL_ERROR_SYSCALL: i32 = 5;
+≔ SSL_ERROR_ZERO_RETURN: i32 = 6;
+
+// OPENSSL_init_ssl flags
+≔ OPENSSL_INIT_LOAD_SSL_STRINGS: u64 = 0x00200000;
+≔ OPENSSL_INIT_LOAD_CRYPTO_STRINGS: u64 = 0x00000002;
+
+// ============================================================================
+// Static State
+// ============================================================================
+
+static vary TLS_INITIALIZED: bool = false;
+
+// ============================================================================
+// Implementation
+// ============================================================================
+
+/// Initialize OpenSSL library
+☉ rite tls_init() -> Result<(), TlsError>! {
+    ⎇ TLS_INITIALIZED {
+        ret Ok(());
+    }
+
+    unsafe {
+        // Modern OpenSSL 1.1+ initialization
+        ≔ result = OPENSSL_init_ssl(
+            OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS,
+            0 as *void
+        );
+
+        ⎇ result == 0 {
+            ret Err(TlsError::LibraryError {
+                code: result,
+                message: "OPENSSL_init_ssl failed".to_string(),
+            });
+        }
+
+        TLS_INITIALIZED = true;
+    }
+
+    Ok(())
+}
+
+/// Create SSL context for TLS client
+☉ rite ssl_ctx_new() -> Result<*void, TlsError>! {
+    unsafe {
+        ≔ method = TLS_client_method();
+        ⎇ method as usize == 0 {
+            ret Err(TlsError::LibraryError {
+                code: -1,
+                message: "TLS_client_method() failed".to_string(),
+            });
+        }
+
+        ≔ ctx = SSL_CTX_new(method);
+        ⎇ ctx as usize == 0 {
+            ret Err(TlsError::LibraryError {
+                code: -1,
+                message: get_openssl_error(),
+            });
+        }
+
+        // Enable certificate verification
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, 0 as *void);
+
+        // Load default CA certificates
+        ⎇ SSL_CTX_set_default_verify_paths(ctx) != 1 {
+            // Warning but don't fail - some systems don't have default paths
+        }
+
+        Ok(ctx)
+    }
+}
+
+/// Free SSL context
+☉ rite ssl_ctx_free(ctx: *void)! {
+    unsafe {
+        ⎇ ctx as usize != 0 {
+            SSL_CTX_free(ctx);
+        }
+    }
+}
+
+/// Create SSL connection object
+☉ rite ssl_new(ctx: *void) -> Result<*void, TlsError>! {
+    unsafe {
+        ≔ ssl = SSL_new(ctx);
+        ⎇ ssl as usize == 0 {
+            ret Err(TlsError::LibraryError {
+                code: -1,
+                message: get_openssl_error(),
+            });
+        }
+        Ok(ssl)
+    }
+}
+
+/// Free SSL connection object
+☉ rite ssl_free(ssl: *void)! {
+    unsafe {
+        ⎇ ssl as usize != 0 {
+            SSL_free(ssl);
+        }
+    }
+}
+
+/// Set file descriptor for SSL connection
+☉ rite ssl_set_fd(ssl: *void, fd: i32) -> Result<(), TlsError>! {
+    unsafe {
+        ≔ result = SSL_set_fd(ssl, fd);
+        ⎇ result != 1 {
+            ret Err(TlsError::LibraryError {
+                code: result,
+                message: "SSL_set_fd failed".to_string(),
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Set SNI hostname
+☉ rite ssl_set_hostname(ssl: *void, hostname: &str) -> Result<(), TlsError>! {
+    unsafe {
+        // Need null-terminated string
+        vary buf: [u8; 256] = [0; 256];
+        for (i, c) in hostname.bytes().enumerate() {
+            ⎇ i >= 255 {
+                break;
+            }
+            buf[i] = c;
+        }
+
+        ≔ result = SSL_set_tlsext_host_name(ssl, &buf as *u8);
+        ⎇ result != 1 {
+            ret Err(TlsError::LibraryError {
+                code: result,
+                message: "SSL_set_tlsext_host_name failed".to_string(),
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Perform TLS handshake
+☉ rite ssl_connect(ssl: *void) -> Result<(), TlsError>! {
+    unsafe {
+        ERR_clear_error();
+
+        ≔ result = SSL_connect(ssl);
+
+        ⎇ result == 1 {
+            Ok(())
+        } ⎉ {
+            ≔ err = SSL_get_error(ssl, result);
+            ≔ msg = get_openssl_error();
+
+            match err {
+                SSL_ERROR_SSL => {
+                    Err(TlsError::HandshakeFailed { message: msg })
+                }
+                SSL_ERROR_SYSCALL => {
+                    Err(TlsError::IoError {
+                        inner: SocketError::BrokenPipe
+                    })
+                }
+                _ => {
+                    Err(TlsError::HandshakeFailed {
+                        message: format!("SSL_connect error {}: {}", err, msg)
+                    })
+                }
+            }
+        }
+    }
+}
+
+/// Read from TLS connection
+☉ rite ssl_read(ssl: *void, buf: &vary [u8]) -> Result<usize, TlsError>! {
+    unsafe {
+        ERR_clear_error();
+
+        ≔ result = SSL_read(ssl, buf.as_mut_ptr(), buf.len() as i32);
+
+        ⎇ result > 0 {
+            Ok(result as usize)
+        } ⎉ ⎇ result == 0 {
+            Ok(0)  // Connection closed
+        } ⎉ {
+            ≔ err = SSL_get_error(ssl, result);
+
+            match err {
+                SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => {
+                    // Would block - return 0 for now
+                    Ok(0)
+                }
+                SSL_ERROR_ZERO_RETURN => {
+                    Ok(0)  // Clean shutdown
+                }
+                _ => {
+                    Err(TlsError::ProtocolError {
+                        message: get_openssl_error()
+                    })
+                }
+            }
+        }
+    }
+}
+
+/// Write to TLS connection
+☉ rite ssl_write(ssl: *void, buf: &[u8]) -> Result<usize, TlsError>! {
+    unsafe {
+        ERR_clear_error();
+
+        ≔ result = SSL_write(ssl, buf.as_ptr(), buf.len() as i32);
+
+        ⎇ result > 0 {
+            Ok(result as usize)
+        } ⎉ {
+            ≔ err = SSL_get_error(ssl, result);
+
+            match err {
+                SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => {
+                    Ok(0)
+                }
+                _ => {
+                    Err(TlsError::ProtocolError {
+                        message: get_openssl_error()
+                    })
+                }
+            }
+        }
+    }
+}
+
+/// Shutdown TLS connection
+☉ rite ssl_shutdown(ssl: *void) -> Result<(), TlsError>! {
+    unsafe {
+        // May need to call twice for bidirectional shutdown
+        ≔ result = SSL_shutdown(ssl);
+
+        ⎇ result < 0 {
+            // Error during shutdown - log but don't fail
+        }
+
+        ⎇ result == 0 {
+            // Need to call again
+            SSL_shutdown(ssl);
+        }
+
+        Ok(())
+    }
+}
+
+/// Get TLS version string
+☉ rite ssl_get_version(ssl: *void) -> Result<String, TlsError>! {
+    unsafe {
+        ≔ version_ptr = SSL_get_version(ssl);
+        ⎇ version_ptr as usize == 0 {
+            ret Err(TlsError::NotConnected);
+        }
+
+        // Convert C string to Sigil string
+        vary version = String::new();
+        vary i: usize = 0;
+        loop {
+            ≔ c = *(version_ptr.offset(i as isize));
+            ⎇ c == 0 {
+                break;
+            }
+            version.push(c as char);
+            i += 1;
+            ⎇ i > 32 {
+                break;
+            }
+        }
+
+        Ok(version)
+    }
+}
+
+/// Get human-readable error from OpenSSL error queue
+rite get_openssl_error() -> String! {
+    unsafe {
+        ≔ err = ERR_get_error();
+        ⎇ err == 0 {
+            ret "Unknown error".to_string();
+        }
+
+        vary buf: [u8; 256] = [0; 256];
+        ERR_error_string(err, &buf as *u8);
+
+        // Convert to string
+        vary msg = String::new();
+        for c in buf {
+            ⎇ c == 0 {
+                break;
+            }
+            msg.push(c as char);
+        }
+        msg
+    }
+}

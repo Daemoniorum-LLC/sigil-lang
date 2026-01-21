@@ -1,0 +1,146 @@
+//! Net Tome - Sigil Native Networking Stack
+//!
+//! This tome provides pure-Sigil networking capabilities built directly
+//! on platform syscalls without external dependencies (except TLS).
+//!
+//! # Architecture
+//!
+//! ```
+//! ┌─────────────────────────────────────────────────────┐
+//! │                   Application                       │
+//! ├─────────────────────────────────────────────────────┤
+//! │   ws     │   http    │   dns     │   (future)      │
+//! ├──────────┴───────────┴───────────┴──────────────────┤
+//! │                    tls (OpenSSL FFI)                │
+//! ├─────────────────────────────────────────────────────┤
+//! │                      socket                          │
+//! ├─────────────────────────────────────────────────────┤
+//! │         sys (Linux x86_64 / aarch64 / macOS)        │
+//! └─────────────────────────────────────────────────────┘
+//! ```
+//!
+//! # Quick Start
+//!
+//! ```sigil
+//! use net·{http, ws};
+//!
+//! // HTTP GET
+//! ≔ response = http·get("https://example.com/api").await?;
+//! println!("Status: {}", response.status);
+//! println!("Body: {}", response.body_text()?);
+//!
+//! // WebSocket
+//! ≔ ws = ws·connect("wss://example.com/ws").await?;
+//! ws.send_text("Hello, WebSocket!").await?;
+//! ≔ msg = ws.recv().await?;
+//! ```
+//!
+//! # Supported Platforms
+//!
+//! - Linux x86_64 (primary)
+//! - Linux aarch64 (ARM64)
+//! - macOS x86_64
+//!
+//! # Tomes
+//!
+//! - `sys` - Platform-specific syscall layer
+//! - `socket` - TCP/UDP socket abstractions
+//! - `tls` - TLS/SSL encryption (OpenSSL FFI)
+//! - `dns` - DNS resolution
+//! - `http` - HTTP/1.1 client
+//! - `ws` - WebSocket client (RFC 6455)
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md
+
+// ============================================================================
+// Tome Exports
+// ============================================================================
+
+/// Platform syscall layer
+☉ tome sys;
+
+/// TCP/UDP socket abstractions
+☉ tome socket;
+
+/// TLS/SSL encryption
+☉ tome tls;
+
+/// DNS resolution
+☉ tome dns;
+
+/// HTTP/1.1 client
+☉ tome http;
+
+/// Connection pooling
+☉ tome pool;
+
+/// WebSocket client (RFC 6455)
+☉ tome ws;
+
+// ============================================================================
+// Re-exports for convenience
+// ============================================================================
+
+// Socket types
+☉ use socket·{TcpStream, TcpListener, UdpSocket};
+☉ use socket·{IpAddr, SocketAddr, SocketError};
+
+// HTTP types
+☉ use http·{HttpClient, HttpRequest, HttpResponse, HttpError};
+☉ use http·{Method, Header, Url};
+
+// WebSocket types
+☉ use ws·{WebSocket, WsMessage, WsError};
+
+// Connection pool types
+☉ use pool·{ConnectionPool, PooledHttpClient, PoolConfig, PoolStats};
+
+// TLS types
+☉ use tls·{TlsStream, TlsConfig, TlsError};
+
+// DNS types
+☉ use dns·{DnsResolver, DnsError};
+
+// ============================================================================
+// Tome-level convenience functions
+// ============================================================================
+
+/// Perform an HTTP GET request
+///
+/// # Example
+/// ```sigil
+/// ≔ response = net·get("https://api.example.com/data").await?;
+/// ```
+☉ async rite get(url: &str) -> Result<HttpResponse, HttpError>! {
+    http·HttpClient·new().get(url).await
+}
+
+/// Perform an HTTP POST request
+///
+/// # Example
+/// ```sigil
+/// ≔ response = net·post("https://api.example.com/data", body).await?;
+/// ```
+☉ async rite post(url: &str, body: &[u8]) -> Result<HttpResponse, HttpError>! {
+    http·HttpClient·new().post(url, body).await
+}
+
+/// Connect to a WebSocket server
+///
+/// # Example
+/// ```sigil
+/// ≔ ws = net·ws_connect("wss://example.com/ws").await?;
+/// ```
+☉ async rite ws_connect(url: &str) -> Result<WebSocket, WsError>! {
+    ws·WebSocket·connect(url).await
+}
+
+/// Resolve a hostname to IP addresses
+///
+/// # Example
+/// ```sigil
+/// ≔ ips = net·lookup_host("example.com").await?;
+/// ```
+☉ async rite lookup_host(hostname: &str) -> Result<Vec<IpAddr>, DnsError>! {
+    dns·DnsResolver·new().resolve(hostname).await
+}

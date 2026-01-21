@@ -88,13 +88,20 @@ fn main() -> ExitCode {
                 eprintln!("Error: missing file argument");
                 return ExitCode::from(1);
             }
+            // Check for --no-typecheck flag
+            let skip_typecheck = args.iter().any(|a| a == "--no-typecheck");
+            // Get the file argument (first non-flag arg after "run")
+            let file_arg = args[2..].iter()
+                .find(|a| !a.starts_with("--") && !a.starts_with("-"))
+                .map(|s| s.as_str())
+                .unwrap_or(&args[2]);
             // Collect program args (after --)
             let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
                 args[pos+1..].to_vec()
             } else {
                 vec![]
             };
-            run_file(&args[2], &program_args)
+            run_file(file_arg, &program_args, skip_typecheck)
         }
         "run-dir" => {
             if args.len() < 3 {
@@ -154,11 +161,25 @@ fn main() -> ExitCode {
         "compile" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto]");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--tls] [-O0|-O1|-O2|-O3|-Os]");
                 return ExitCode::from(1);
             }
             // Parse flags
             let use_lto = args.iter().any(|a| a == "--lto");
+            let use_tls = args.iter().any(|a| a == "--tls");
+            // Parse optimization level
+            let opt_level = if args.iter().any(|a| a == "-O0" || a == "-Onone") {
+                OptLevel::None
+            } else if args.iter().any(|a| a == "-O1" || a == "-Obasic") {
+                OptLevel::Basic
+            } else if args.iter().any(|a| a == "-O2" || a == "-Ostandard") {
+                OptLevel::Standard
+            } else if args.iter().any(|a| a == "-Os" || a == "-Osize") {
+                OptLevel::Size
+            } else {
+                // Default: Aggressive (-O3)
+                OptLevel::Aggressive
+            };
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
                 if pos + 1 < args.len() {
                     args[pos + 1].clone()
@@ -175,7 +196,7 @@ fn main() -> ExitCode {
                     .trim_end_matches(".sg")
                     .to_string()
             };
-            compile_file(&args[2], &output, use_lto)
+            compile_file(&args[2], &output, use_lto, use_tls, opt_level)
         }
         #[cfg(not(feature = "llvm"))]
         "compile" => {
@@ -357,7 +378,7 @@ fn main() -> ExitCode {
                 } else {
                     vec![]
                 };
-                run_file(&args[1], &program_args)
+                run_file(&args[1], &program_args, false)
             } else {
                 eprintln!("Unknown command: {}", args[1]);
                 ExitCode::from(1)
@@ -366,7 +387,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_file(path: &str, program_args: &[String]) -> ExitCode {
+fn run_file(path: &str, program_args: &[String], skip_typecheck: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -385,16 +406,18 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
         }
     };
 
-    // Type check
-    let mut type_checker = TypeChecker::new();
-    if let Err(type_errors) = type_checker.check_file(&ast) {
-        for err in type_errors {
-            eprintln!("Type error in '{}': {}", path, err.message);
-            for note in &err.notes {
-                eprintln!("  note: {}", note);
+    // Type check (can be skipped with --no-typecheck for bootstrapping/testing)
+    if !skip_typecheck {
+        let mut type_checker = TypeChecker::new();
+        if let Err(type_errors) = type_checker.check_file(&ast) {
+            for err in type_errors {
+                eprintln!("Type error in '{}': {}", path, err.message);
+                for note in &err.notes {
+                    eprintln!("  note: {}", note);
+                }
             }
+            return ExitCode::from(1);
         }
-        return ExitCode::from(1);
     }
 
     // Execute with full stdlib
@@ -972,7 +995,7 @@ fn llvm_file(path: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
+fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, opt_level: OptLevel) -> ExitCode {
     use inkwell::context::Context;
     use std::path::Path;
     use std::process::Command;
@@ -988,7 +1011,7 @@ fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
     // Create LLVM context and compiler in AOT mode
     let context = Context::create();
     let mut compiler =
-        match LlvmCompiler::with_mode(&context, OptLevel::Aggressive, CompileMode::Aot) {
+        match LlvmCompiler::with_mode(&context, opt_level, CompileMode::Aot) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("Failed to initialize LLVM compiler: {}", e);
@@ -1015,13 +1038,18 @@ fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
     }
 
     // Find the runtime (static library or C source)
-    let runtime_result = find_runtime(use_lto);
+    let runtime_result = find_runtime(use_lto, use_tls);
     if runtime_result.is_none() {
         eprintln!("Error: Could not find sigil runtime");
         eprintln!("Expected locations:");
-        eprintln!("  - ./runtime/libsigil_runtime.a (pre-built, faster)");
-        eprintln!("  - ./runtime/sigil_runtime.c (source, required for --lto)");
-        eprintln!("Run 'make' in the runtime directory to build.");
+        if use_tls {
+            eprintln!("  - ./runtime/libsigil_runtime_tls.a (TLS-enabled runtime)");
+            eprintln!("Run 'make tls' in the runtime directory to build.");
+        } else {
+            eprintln!("  - ./runtime/libsigil_runtime.a (pre-built, faster)");
+            eprintln!("  - ./runtime/sigil_runtime.c (source, required for --lto)");
+            eprintln!("Run 'make' in the runtime directory to build.");
+        }
         return ExitCode::from(1);
     }
     let (runtime, should_use_lto) = runtime_result.unwrap();
@@ -1049,6 +1077,12 @@ fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
         args.insert(0, "-O3");
     }
 
+    // Add TLS/OpenSSL libraries when using --tls
+    if use_tls {
+        args.push("-lssl");
+        args.push("-lcrypto");
+    }
+
     let link_result = Command::new(&linker).args(&args).status();
 
     // Clean up object file
@@ -1071,7 +1105,34 @@ fn compile_file(path: &str, output: &str, use_lto: bool) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn find_runtime(use_lto: bool) -> Option<(String, bool)> {
+fn find_runtime(use_lto: bool, use_tls: bool) -> Option<(String, bool)> {
+    // For TLS, we must use the pre-compiled TLS runtime (can't compile from source easily)
+    if use_tls {
+        let tls_lib_candidates = [
+            "runtime/libsigil_runtime_tls.a",
+            "../runtime/libsigil_runtime_tls.a",
+            "sigil/parser/runtime/libsigil_runtime_tls.a",
+        ];
+
+        for candidate in tls_lib_candidates {
+            if std::path::Path::new(candidate).exists() {
+                return Some((candidate.to_string(), false));
+            }
+        }
+
+        // Try relative to executable
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let lib_path = dir.join("runtime/libsigil_runtime_tls.a");
+                if lib_path.exists() {
+                    return Some((lib_path.to_string_lossy().into_owned(), false));
+                }
+            }
+        }
+
+        return None;
+    }
+
     // For LTO, prefer C source so it can be compiled with -flto
     // This enables cross-module optimization between Sigil code and runtime
     if use_lto {
@@ -2999,7 +3060,7 @@ fn build_project() -> ExitCode {
         let output_path = target_dir.join(name);
         let output_str = output_path.to_string_lossy();
         println!("Compiling to native executable...");
-        return compile_file(&main_file.to_string_lossy(), &output_str, false);
+        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, OptLevel::Standard);
     }
 
     #[cfg(not(feature = "llvm"))]

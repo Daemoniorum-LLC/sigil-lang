@@ -579,6 +579,137 @@ int64_t sigil_file_exists(const char* path) {
 }
 
 /* ============================================================================
+ * TLS/SSL Functions (OpenSSL wrapper)
+ * ============================================================================ */
+
+#ifdef SIGIL_TLS_SUPPORT
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+/* Initialize OpenSSL library (call once at startup) */
+int64_t sigil_tls_init(void) {
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+    return 1;
+}
+
+/* Create a new TLS context for client connections */
+void* sigil_tls_ctx_new(void) {
+    const SSL_METHOD* method = TLS_client_method();
+    SSL_CTX* ctx = SSL_CTX_new(method);
+    if (!ctx) {
+        return NULL;
+    }
+    /* Set reasonable defaults */
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+    SSL_CTX_set_default_verify_paths(ctx);
+    return ctx;
+}
+
+/* Free a TLS context */
+void sigil_tls_ctx_free(void* ctx) {
+    if (ctx) {
+        SSL_CTX_free((SSL_CTX*)ctx);
+    }
+}
+
+/* Create a new TLS connection from context */
+void* sigil_tls_new(void* ctx) {
+    if (!ctx) return NULL;
+    return SSL_new((SSL_CTX*)ctx);
+}
+
+/* Attach TLS to a socket file descriptor */
+int64_t sigil_tls_set_fd(void* ssl, int64_t fd) {
+    if (!ssl) return -1;
+    return SSL_set_fd((SSL*)ssl, (int)fd);
+}
+
+/* Set the hostname for SNI (Server Name Indication) */
+int64_t sigil_tls_set_hostname(void* ssl, const char* hostname) {
+    if (!ssl || !hostname) return -1;
+    return SSL_set_tlsext_host_name((SSL*)ssl, hostname);
+}
+
+/* Perform TLS handshake (connect) */
+int64_t sigil_tls_connect(void* ssl) {
+    if (!ssl) return -1;
+    int ret = SSL_connect((SSL*)ssl);
+    if (ret <= 0) {
+        int err = SSL_get_error((SSL*)ssl, ret);
+        return -err;
+    }
+    return ret;
+}
+
+/* Read data from TLS connection */
+int64_t sigil_tls_read(void* ssl, void* buf, int64_t len) {
+    if (!ssl || !buf || len <= 0) return -1;
+    int ret = SSL_read((SSL*)ssl, buf, (int)len);
+    if (ret <= 0) {
+        int err = SSL_get_error((SSL*)ssl, ret);
+        if (err == SSL_ERROR_ZERO_RETURN) return 0; /* Clean shutdown */
+        return -err;
+    }
+    return ret;
+}
+
+/* Write data to TLS connection */
+int64_t sigil_tls_write(void* ssl, const void* buf, int64_t len) {
+    if (!ssl || !buf || len <= 0) return -1;
+    int ret = SSL_write((SSL*)ssl, buf, (int)len);
+    if (ret <= 0) {
+        int err = SSL_get_error((SSL*)ssl, ret);
+        return -err;
+    }
+    return ret;
+}
+
+/* Shutdown TLS connection gracefully */
+int64_t sigil_tls_shutdown(void* ssl) {
+    if (!ssl) return -1;
+    return SSL_shutdown((SSL*)ssl);
+}
+
+/* Free TLS connection */
+void sigil_tls_free(void* ssl) {
+    if (ssl) {
+        SSL_free((SSL*)ssl);
+    }
+}
+
+/* Get last TLS error as string (for debugging) */
+const char* sigil_tls_error_string(void) {
+    unsigned long err = ERR_get_error();
+    if (err == 0) return "No error";
+    return ERR_error_string(err, NULL);
+}
+
+/* Get peer certificate verification result */
+int64_t sigil_tls_verify_result(void* ssl) {
+    if (!ssl) return -1;
+    return SSL_get_verify_result((SSL*)ssl);
+}
+
+#else
+/* Stubs when TLS is not compiled in */
+int64_t sigil_tls_init(void) { return 0; }
+void* sigil_tls_ctx_new(void) { return NULL; }
+void sigil_tls_ctx_free(void* ctx) { (void)ctx; }
+void* sigil_tls_new(void* ctx) { (void)ctx; return NULL; }
+int64_t sigil_tls_set_fd(void* ssl, int64_t fd) { (void)ssl; (void)fd; return -1; }
+int64_t sigil_tls_set_hostname(void* ssl, const char* h) { (void)ssl; (void)h; return -1; }
+int64_t sigil_tls_connect(void* ssl) { (void)ssl; return -1; }
+int64_t sigil_tls_read(void* ssl, void* b, int64_t l) { (void)ssl; (void)b; (void)l; return -1; }
+int64_t sigil_tls_write(void* ssl, const void* b, int64_t l) { (void)ssl; (void)b; (void)l; return -1; }
+int64_t sigil_tls_shutdown(void* ssl) { (void)ssl; return -1; }
+void sigil_tls_free(void* ssl) { (void)ssl; }
+const char* sigil_tls_error_string(void) { return "TLS not compiled"; }
+int64_t sigil_tls_verify_result(void* ssl) { (void)ssl; return -1; }
+#endif /* SIGIL_TLS_SUPPORT */
+
+/* ============================================================================
  * System Functions
  * ============================================================================ */
 

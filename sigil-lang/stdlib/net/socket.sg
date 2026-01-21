@@ -1,0 +1,614 @@
+//! Socket Layer - TCP and UDP Abstractions
+//!
+//! This module provides high-level socket types built on the syscall layer.
+//! Includes SocketAddr parsing, TcpStream, TcpListener, and UdpSocket.
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 4
+
+use sys::*;
+
+// ============================================================================
+// Address Types
+// ============================================================================
+
+/// IP address (IPv4 or IPv6)
+☉ enum IpAddr {
+    V4([u8; 4])!,
+    V6([u8; 16])!,
+}
+
+☉ impl IpAddr {
+    /// Parse IPv4 address from string "a.b.c.d"
+    ☉ rite parse_v4(s: &str) -> Result<IpAddr, SocketError>! {
+        vary parts: [u8; 4] = [0; 4];
+        vary part_idx: usize = 0;
+        vary current: u16 = 0;
+
+        for c in s.chars() {
+            ⎇ c == '.' {
+                ⎇ part_idx >= 3 {
+                    ret Err(SocketError::InvalidAddress);
+                }
+                ⎇ current > 255 {
+                    ret Err(SocketError::InvalidAddress);
+                }
+                parts[part_idx] = current as u8;
+                part_idx += 1;
+                current = 0;
+            } ⎉ ⎇ c >= '0' && c <= '9' {
+                current = current * 10 + (c as u16 - '0' as u16);
+            } ⎉ {
+                ret Err(SocketError::InvalidAddress);
+            }
+        }
+
+        ⎇ part_idx != 3 || current > 255 {
+            ret Err(SocketError::InvalidAddress);
+        }
+        parts[3] = current as u8;
+
+        Ok(IpAddr::V4(parts))
+    }
+
+    /// Parse IPv6 address (simplified - full parsing is complex)
+    ☉ rite parse_v6(s: &str) -> Result<IpAddr, SocketError>! {
+        // Handle ::1 (localhost)
+        ⎇ s == "::1" {
+            vary addr: [u8; 16] = [0; 16];
+            addr[15] = 1;
+            ret Ok(IpAddr::V6(addr));
+        }
+
+        // Handle :: (any)
+        ⎇ s == "::" {
+            ret Ok(IpAddr::V6([0; 16]));
+        }
+
+        // Full IPv6 parsing is complex - stub for now
+        Err(SocketError::InvalidAddress)
+    }
+
+    /// Check if this is IPv4
+    ☉ rite is_v4(&self) -> bool! {
+        match self {
+            IpAddr::V4(_) => true,
+            IpAddr::V6(_) => false,
+        }
+    }
+
+    /// Check if this is IPv6
+    ☉ rite is_v6(&self) -> bool! {
+        match self {
+            IpAddr::V4(_) => false,
+            IpAddr::V6(_) => true,
+        }
+    }
+}
+
+☉ impl Display for IpAddr {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        match self {
+            IpAddr::V4(octets) => {
+                write!(f, "{}.{}.{}.{}", octets[0], octets[1], octets[2], octets[3])
+            }
+            IpAddr::V6(bytes) => {
+                // Simplified display for IPv6
+                write!(f, "[IPv6]")
+            }
+        }
+    }
+}
+
+/// Socket address (IP + port)
+☉ sigil SocketAddr {
+    ip: IpAddr!,
+    port: u16!,
+}
+
+☉ impl SocketAddr {
+    /// Create new socket address
+    ☉ rite new(ip: IpAddr, port: u16) -> SocketAddr! {
+        SocketAddr { ip, port }
+    }
+
+    /// Parse from string "host:port" or "[host]:port" for IPv6
+    ☉ rite parse(s: &str) -> Result<SocketAddr, SocketError>! {
+        // Check for IPv6 format: [addr]:port
+        ⎇ s.starts_with('[') {
+            ≔ end_bracket = s.find(']').ok_or(SocketError::InvalidAddress)?;
+            ≔ ip_str = &s[1..end_bracket];
+            ≔ rest = &s[end_bracket + 1..];
+
+            ⎇ !rest.starts_with(':') {
+                ret Err(SocketError::InvalidAddress);
+            }
+
+            ≔ port_str = &rest[1..];
+            ≔ port = port_str.parse::<u16>().map_err(|_| SocketError::InvalidAddress)?;
+            ≔ ip = IpAddr::parse_v6(ip_str)?;
+
+            Ok(SocketAddr { ip, port })
+        } ⎉ {
+            // IPv4 format: addr:port
+            ≔ colon = s.rfind(':').ok_or(SocketError::InvalidAddress)?;
+            ≔ ip_str = &s[..colon];
+            ≔ port_str = &s[colon + 1..];
+
+            ≔ port = port_str.parse::<u16>().map_err(|_| SocketError::InvalidAddress)?;
+            ≔ ip = IpAddr::parse_v4(ip_str)?;
+
+            Ok(SocketAddr { ip, port })
+        }
+    }
+
+    /// Convert to raw sockaddr bytes for syscalls
+    ☉ rite to_raw(&self) -> ([u8; 28], u32)! {
+        vary raw: [u8; 28] = [0; 28];
+
+        match &self.ip {
+            IpAddr::V4(octets) => {
+                // sockaddr_in (16 bytes)
+                raw[0] = AF_INET as u8;  // sin_family (little endian on x86)
+                raw[1] = 0;
+                raw[2] = (self.port >> 8) as u8;   // sin_port (network byte order = big endian)
+                raw[3] = (self.port & 0xFF) as u8;
+                raw[4] = octets[0];  // sin_addr
+                raw[5] = octets[1];
+                raw[6] = octets[2];
+                raw[7] = octets[3];
+                (raw, 16)
+            }
+            IpAddr::V6(bytes) => {
+                // sockaddr_in6 (28 bytes)
+                raw[0] = AF_INET6 as u8;  // sin6_family
+                raw[1] = 0;
+                raw[2] = (self.port >> 8) as u8;   // sin6_port
+                raw[3] = (self.port & 0xFF) as u8;
+                // sin6_flowinfo (4 bytes) = 0
+                // sin6_addr (16 bytes)
+                for i in 0..16 {
+                    raw[8 + i] = bytes[i];
+                }
+                // sin6_scope_id (4 bytes) = 0
+                (raw, 28)
+            }
+        }
+    }
+
+    /// Parse from raw sockaddr bytes
+    ☉ rite from_raw(raw: &[u8], len: u32) -> Result<SocketAddr, SocketError>! {
+        ⎇ len < 4 {
+            ret Err(SocketError::InvalidAddress);
+        }
+
+        ≔ family = raw[0] as i32;
+
+        ⎇ family == AF_INET && len >= 8 {
+            ≔ port = ((raw[2] as u16) << 8) | (raw[3] as u16);
+            ≔ octets: [u8; 4] = [raw[4], raw[5], raw[6], raw[7]];
+            Ok(SocketAddr { ip: IpAddr::V4(octets), port })
+        } ⎉ ⎇ family == AF_INET6 && len >= 24 {
+            ≔ port = ((raw[2] as u16) << 8) | (raw[3] as u16);
+            vary bytes: [u8; 16] = [0; 16];
+            for i in 0..16 {
+                bytes[i] = raw[8 + i];
+            }
+            Ok(SocketAddr { ip: IpAddr::V6(bytes), port })
+        } ⎉ {
+            Err(SocketError::InvalidAddress)
+        }
+    }
+
+    /// Get the IP address
+    ☉ rite ip(&self) -> &IpAddr! {
+        &self.ip
+    }
+
+    /// Get the port
+    ☉ rite port(&self) -> u16! {
+        self.port
+    }
+}
+
+☉ impl Display for SocketAddr {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        match &self.ip {
+            IpAddr::V4(_) => write!(f, "{}:{}", self.ip, self.port),
+            IpAddr::V6(_) => write!(f, "[{}]:{}", self.ip, self.port),
+        }
+    }
+}
+
+// ============================================================================
+// Socket Errors
+// ============================================================================
+
+☉ enum SocketError {
+    ConnectionRefused!,
+    ConnectionReset!,
+    ConnectionTimedOut!,
+    HostUnreachable!,
+    NetworkUnreachable!,
+    AddressInUse!,
+    AddressNotAvailable!,
+    InvalidAddress!,
+    NotConnected!,
+    BrokenPipe!,
+    WouldBlock!,
+    UnexpectedEof!,
+    Syscall { errno: i32, message: String }!,
+}
+
+☉ impl SocketError {
+    /// Convert from SyscallError
+    ☉ rite from_syscall(err: SyscallError) -> SocketError! {
+        match err {
+            SyscallError::ECONNREFUSED => SocketError::ConnectionRefused,
+            SyscallError::ECONNRESET => SocketError::ConnectionReset,
+            SyscallError::ETIMEDOUT => SocketError::ConnectionTimedOut,
+            SyscallError::EHOSTUNREACH => SocketError::HostUnreachable,
+            SyscallError::ENETUNREACH => SocketError::NetworkUnreachable,
+            SyscallError::EADDRINUSE => SocketError::AddressInUse,
+            SyscallError::EADDRNOTAVAIL => SocketError::AddressNotAvailable,
+            SyscallError::ENOTCONN => SocketError::NotConnected,
+            SyscallError::EPIPE => SocketError::BrokenPipe,
+            SyscallError::EAGAIN | SyscallError::EWOULDBLOCK => SocketError::WouldBlock,
+            _ => SocketError::Syscall {
+                errno: err.as_errno(),
+                message: format!("{}", err),
+            },
+        }
+    }
+}
+
+☉ impl Display for SocketError {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        match self {
+            SocketError::ConnectionRefused => write!(f, "Connection refused"),
+            SocketError::ConnectionReset => write!(f, "Connection reset by peer"),
+            SocketError::ConnectionTimedOut => write!(f, "Connection timed out"),
+            SocketError::HostUnreachable => write!(f, "Host unreachable"),
+            SocketError::NetworkUnreachable => write!(f, "Network unreachable"),
+            SocketError::AddressInUse => write!(f, "Address already in use"),
+            SocketError::AddressNotAvailable => write!(f, "Address not available"),
+            SocketError::InvalidAddress => write!(f, "Invalid address"),
+            SocketError::NotConnected => write!(f, "Not connected"),
+            SocketError::BrokenPipe => write!(f, "Broken pipe"),
+            SocketError::WouldBlock => write!(f, "Operation would block"),
+            SocketError::UnexpectedEof => write!(f, "Unexpected end of file"),
+            SocketError::Syscall { errno, message } => write!(f, "Syscall error {}: {}", errno, message),
+        }
+    }
+}
+
+// ============================================================================
+// TcpStream
+// ============================================================================
+
+/// A TCP connection to a remote host
+☉ sigil TcpStream {
+    fd: i32!,
+    peer_addr: SocketAddr!,
+    connected: bool!,
+}
+
+☉ impl TcpStream {
+    /// Connect to a remote address
+    ☉ rite connect(addr: &SocketAddr) -> Result<TcpStream, SocketError>! {
+        ≔ family = ⎇ addr.ip.is_v4() { AF_INET } ⎉ { AF_INET6 };
+
+        // Create socket
+        ≔ fd = sys_socket(family, SOCK_STREAM, 0)
+            .map_err(SocketError::from_syscall)? as i32;
+
+        // Convert address to raw format
+        ≔ (raw_addr, addrlen) = addr.to_raw();
+
+        // Connect
+        match sys_connect(fd, &raw_addr as *u8, addrlen) {
+            Result::Ok(_) => {
+                Ok(TcpStream {
+                    fd,
+                    peer_addr: addr.clone(),
+                    connected: true,
+                })
+            }
+            Result::Err(err) => {
+                sys_close(fd);
+                Err(SocketError::from_syscall(err))
+            }
+        }
+    }
+
+    /// Connect by hostname and port (requires DNS resolution)
+    ☉ rite connect_host(host: &str, port: u16) -> Result<TcpStream, SocketError>! {
+        // Try parsing as IP address first
+        ⎇ let Result::Ok(ip) = IpAddr::parse_v4(host) {
+            ≔ addr = SocketAddr::new(ip, port);
+            ret TcpStream::connect(&addr);
+        }
+
+        // DNS resolution needed - not implemented yet
+        Err(SocketError::InvalidAddress)
+    }
+
+    /// Read data into buffer, returns bytes read
+    ☉ rite read(&vary self, buf: &vary [u8]) -> Result<usize, SocketError>! {
+        ⎇ !self.connected {
+            ret Err(SocketError::NotConnected);
+        }
+
+        sys_read(self.fd, buf.as_mut_ptr(), buf.len())
+            .map_err(SocketError::from_syscall)
+    }
+
+    /// Read exactly `buf.len()` bytes, blocking until complete
+    ☉ rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), SocketError>! {
+        vary total_read: usize = 0;
+        vary remaining = buf;
+
+        while total_read < buf.len() {
+            match self.read(remaining) {
+                Result::Ok(0) => ret Err(SocketError::UnexpectedEof),
+                Result::Ok(n) => {
+                    total_read += n;
+                    remaining = &vary remaining[n..];
+                }
+                Result::Err(SocketError::WouldBlock) => {
+                    // Continue trying
+                }
+                Result::Err(e) => ret Err(e),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Write all bytes from buffer
+    ☉ rite write_all(&vary self, buf: &[u8]) -> Result<(), SocketError>! {
+        ⎇ !self.connected {
+            ret Err(SocketError::NotConnected);
+        }
+
+        vary total_written: usize = 0;
+
+        while total_written < buf.len() {
+            ≔ remaining = &buf[total_written..];
+            match sys_write(self.fd, remaining.as_ptr(), remaining.len()) {
+                Result::Ok(n) => total_written += n,
+                Result::Err(err) => ret Err(SocketError::from_syscall(err)),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Close the connection
+    ☉ rite close(&vary self) -> Result<(), SocketError>! {
+        ⎇ self.connected {
+            sys_close(self.fd).map_err(SocketError::from_syscall)?;
+            self.connected = false;
+        }
+        Ok(())
+    }
+
+    /// Set read timeout in milliseconds (0 = no timeout)
+    ☉ rite set_read_timeout(&vary self, ms: u32) -> Result<(), SocketError>! {
+        vary tv_sec: i64 = (ms / 1000) as i64;
+        vary tv_usec: i64 = ((ms % 1000) * 1000) as i64;
+        vary timeval: [i64; 2] = [tv_sec, tv_usec];
+
+        sys_setsockopt(self.fd, SOL_SOCKET, SO_RCVTIMEO, &timeval as *u8, 16)
+            .map_err(SocketError::from_syscall)?;
+        Ok(())
+    }
+
+    /// Set write timeout in milliseconds (0 = no timeout)
+    ☉ rite set_write_timeout(&vary self, ms: u32) -> Result<(), SocketError>! {
+        vary tv_sec: i64 = (ms / 1000) as i64;
+        vary tv_usec: i64 = ((ms % 1000) * 1000) as i64;
+        vary timeval: [i64; 2] = [tv_sec, tv_usec];
+
+        sys_setsockopt(self.fd, SOL_SOCKET, SO_SNDTIMEO, &timeval as *u8, 16)
+            .map_err(SocketError::from_syscall)?;
+        Ok(())
+    }
+
+    /// Get the peer address
+    ☉ rite peer_addr(&self) -> &SocketAddr! {
+        &self.peer_addr
+    }
+
+    /// Get the local address
+    ☉ rite local_addr(&self) -> Result<SocketAddr, SocketError>! {
+        vary raw: [u8; 28] = [0; 28];
+        vary len: u32 = 28;
+
+        sys_getsockname(self.fd, &raw as *u8, &len)
+            .map_err(SocketError::from_syscall)?;
+
+        SocketAddr::from_raw(&raw, len)
+    }
+}
+
+☉ impl Drop for TcpStream {
+    ☉ rite drop(&vary self) {
+        ⎇ self.connected {
+            sys_close(self.fd);
+        }
+    }
+}
+
+// ============================================================================
+// TcpListener
+// ============================================================================
+
+/// A TCP socket server, listening for connections
+☉ sigil TcpListener {
+    fd: i32!,
+    local_addr: SocketAddr!,
+}
+
+☉ impl TcpListener {
+    /// Bind to a local address and start listening
+    ☉ rite bind(addr: &SocketAddr) -> Result<TcpListener, SocketError>! {
+        ≔ family = ⎇ addr.ip.is_v4() { AF_INET } ⎉ { AF_INET6 };
+
+        // Create socket
+        ≔ fd = sys_socket(family, SOCK_STREAM, 0)
+            .map_err(SocketError::from_syscall)? as i32;
+
+        // Set SO_REUSEADDR
+        vary optval: i32 = 1;
+        sys_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval as *u8, 4);
+
+        // Bind
+        ≔ (raw_addr, addrlen) = addr.to_raw();
+        match sys_bind(fd, &raw_addr as *u8, addrlen) {
+            Result::Ok(_) => {}
+            Result::Err(err) => {
+                sys_close(fd);
+                ret Err(SocketError::from_syscall(err));
+            }
+        }
+
+        // Listen
+        match sys_listen(fd, 128) {
+            Result::Ok(_) => {}
+            Result::Err(err) => {
+                sys_close(fd);
+                ret Err(SocketError::from_syscall(err));
+            }
+        }
+
+        // Get actual bound address (in case port was 0)
+        vary actual_addr: [u8; 28] = [0; 28];
+        vary actual_len: u32 = 28;
+        sys_getsockname(fd, &actual_addr as *u8, &actual_len);
+        ≔ local_addr = SocketAddr::from_raw(&actual_addr, actual_len)
+            .unwrap_or(addr.clone());
+
+        Ok(TcpListener { fd, local_addr })
+    }
+
+    /// Accept a new connection
+    ☉ rite accept(&self) -> Result<(TcpStream, SocketAddr), SocketError>! {
+        vary client_addr: [u8; 28] = [0; 28];
+        vary addrlen: u32 = 28;
+
+        ≔ client_fd = sys_accept(self.fd, &client_addr as *u8, &addrlen)
+            .map_err(SocketError::from_syscall)? as i32;
+
+        ≔ peer_addr = SocketAddr::from_raw(&client_addr, addrlen)?;
+
+        ≔ stream = TcpStream {
+            fd: client_fd,
+            peer_addr: peer_addr.clone(),
+            connected: true,
+        };
+
+        Ok((stream, peer_addr))
+    }
+
+    /// Get the local address
+    ☉ rite local_addr(&self) -> &SocketAddr! {
+        &self.local_addr
+    }
+
+    /// Set non-blocking mode
+    ☉ rite set_nonblocking(&vary self, nonblocking: bool) -> Result<(), SocketError>! {
+        ≔ flags = sys_fcntl(self.fd, F_GETFL, 0)
+            .map_err(SocketError::from_syscall)? as i64;
+
+        ≔ new_flags = ⎇ nonblocking {
+            flags | O_NONBLOCK as i64
+        } ⎉ {
+            flags & !(O_NONBLOCK as i64)
+        };
+
+        sys_fcntl(self.fd, F_SETFL, new_flags)
+            .map_err(SocketError::from_syscall)?;
+        Ok(())
+    }
+}
+
+☉ impl Drop for TcpListener {
+    ☉ rite drop(&vary self) {
+        sys_close(self.fd);
+    }
+}
+
+// ============================================================================
+// UdpSocket
+// ============================================================================
+
+/// A UDP socket
+☉ sigil UdpSocket {
+    fd: i32!,
+    bound_addr: SocketAddr?,
+}
+
+☉ impl UdpSocket {
+    /// Bind to a local address
+    ☉ rite bind(addr: &SocketAddr) -> Result<UdpSocket, SocketError>! {
+        ≔ family = ⎇ addr.ip.is_v4() { AF_INET } ⎉ { AF_INET6 };
+
+        // Create UDP socket
+        ≔ fd = sys_socket(family, SOCK_DGRAM, 0)
+            .map_err(SocketError::from_syscall)? as i32;
+
+        // Bind
+        ≔ (raw_addr, addrlen) = addr.to_raw();
+        match sys_bind(fd, &raw_addr as *u8, addrlen) {
+            Result::Ok(_) => {}
+            Result::Err(err) => {
+                sys_close(fd);
+                ret Err(SocketError::from_syscall(err));
+            }
+        }
+
+        // Get actual bound address
+        vary actual_addr: [u8; 28] = [0; 28];
+        vary actual_len: u32 = 28;
+        sys_getsockname(fd, &actual_addr as *u8, &actual_len);
+        ≔ bound_addr = SocketAddr::from_raw(&actual_addr, actual_len).ok();
+
+        Ok(UdpSocket { fd, bound_addr })
+    }
+
+    /// Send data to a specific address
+    ☉ rite send_to(&self, buf: &[u8], addr: &SocketAddr) -> Result<usize, SocketError>! {
+        ≔ (raw_addr, addrlen) = addr.to_raw();
+        sys_sendto(self.fd, buf.as_ptr(), buf.len(), 0, &raw_addr as *u8, addrlen)
+            .map_err(SocketError::from_syscall)
+    }
+
+    /// Receive data and the sender's address
+    ☉ rite recv_from(&self, buf: &vary [u8]) -> Result<(usize, SocketAddr), SocketError>! {
+        vary sender_addr: [u8; 28] = [0; 28];
+        vary addrlen: u32 = 28;
+
+        ≔ n = sys_recvfrom(self.fd, buf.as_mut_ptr(), buf.len(), 0, &sender_addr as *u8, &addrlen)
+            .map_err(SocketError::from_syscall)?;
+
+        ≔ addr = SocketAddr::from_raw(&sender_addr, addrlen)?;
+        Ok((n, addr))
+    }
+
+    /// Close the socket
+    ☉ rite close(&vary self) -> Result<(), SocketError>! {
+        sys_close(self.fd).map_err(SocketError::from_syscall)?;
+        Ok(())
+    }
+
+    /// Get the bound address
+    ☉ rite local_addr(&self) -> Option<&SocketAddr>? {
+        self.bound_addr.as_ref()
+    }
+}
+
+☉ impl Drop for UdpSocket {
+    ☉ rite drop(&vary self) {
+        sys_close(self.fd);
+    }
+}

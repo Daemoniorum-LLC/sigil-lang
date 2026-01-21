@@ -1,0 +1,855 @@
+//! Socket Abstraction Layer
+//!
+//! High-level socket abstractions built on the raw syscall layer.
+//! Provides: SocketAddr, IpAddr, TcpStream, TcpListener, UdpSocket
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 4
+
+// ============================================================================
+// Linux x86_64 Syscall Numbers (inline for standalone testing)
+// ============================================================================
+
+const SYS_READ: i64 = 0;
+const SYS_WRITE: i64 = 1;
+const SYS_CLOSE: i64 = 3;
+const SYS_SOCKET: i64 = 41;
+const SYS_CONNECT: i64 = 42;
+const SYS_ACCEPT: i64 = 43;
+const SYS_SENDTO: i64 = 44;
+const SYS_RECVFROM: i64 = 45;
+const SYS_BIND: i64 = 49;
+const SYS_LISTEN: i64 = 50;
+const SYS_SETSOCKOPT: i64 = 54;
+const SYS_GETSOCKOPT: i64 = 55;
+const SYS_GETSOCKNAME: i64 = 51;
+const SYS_FCNTL: i64 = 72;
+
+// Address families
+const AF_INET: i64 = 2;
+const AF_INET6: i64 = 10;
+
+// Socket types
+const SOCK_STREAM: i64 = 1;  // TCP
+const SOCK_DGRAM: i64 = 2;   // UDP
+
+// Socket options
+const SOL_SOCKET: i64 = 1;
+const SO_REUSEADDR: i64 = 2;
+
+// fcntl commands
+const F_GETFL: i64 = 3;
+const F_SETFL: i64 = 4;
+const O_NONBLOCK: i64 = 2048;
+
+// Error codes (as negative values)
+const EAGAIN: i64 = -11;
+const EWOULDBLOCK: i64 = -11;  // Same as EAGAIN on Linux
+const ECONNREFUSED: i64 = -111;
+const EINPROGRESS: i64 = -115;
+
+// ============================================================================
+// Raw Syscall Wrappers (same as linux_x86_64.sg)
+// ============================================================================
+
+fn syscall1(num: i64, arg1: i64) -> i64 {
+    let ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+fn syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+    let ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+    let ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+fn syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+    let ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+fn syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+    let ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            in("r9") arg6,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+// ============================================================================
+// Error Type
+// ============================================================================
+
+// Error codes as constants (will use for comparison)
+const ERR_NONE: i64 = 0;
+const ERR_CONNECTION_REFUSED: i64 = 1;
+const ERR_WOULD_BLOCK: i64 = 2;
+const ERR_INVALID_ADDRESS: i64 = 3;
+const ERR_SYSCALL: i64 = 4;
+const ERR_ADDRESS_IN_USE: i64 = 5;
+
+// Convert syscall errno to our error code
+fn errno_to_error(errno: i64) -> i64 {
+    if errno == ECONNREFUSED {
+        ERR_CONNECTION_REFUSED
+    } else if errno == EAGAIN {
+        ERR_WOULD_BLOCK
+    } else if errno == -98 {  // EADDRINUSE
+        ERR_ADDRESS_IN_USE
+    } else {
+        ERR_SYSCALL
+    }
+}
+
+// ============================================================================
+// SocketAddr - IP address + port
+//
+// Layout: 16 bytes for sockaddr_in (IPv4) or 28 bytes for sockaddr_in6 (IPv6)
+// For simplicity, we use a 28-byte buffer that can hold either
+// ============================================================================
+
+// sockaddr_in layout (16 bytes):
+//   bytes 0-1: sin_family (AF_INET = 2)
+//   bytes 2-3: sin_port (network byte order - big endian)
+//   bytes 4-7: sin_addr (4 bytes, network byte order)
+//   bytes 8-15: padding (zeros)
+
+// We'll store the raw sockaddr bytes + the address length
+// For now, use 32 bytes to hold everything
+
+// Parse an IPv4 address string like "192.168.1.1" into 4 octets
+// Returns packed octets in lower 32 bits (octet0 | octet1<<8 | octet2<<16 | octet3<<24)
+// Returns -1 on error
+fn parse_ipv4_addr(s: i64, len: i64) -> i64 {
+    // s is pointer to string, len is length
+    // Parse format: "a.b.c.d"
+    let octet0: i64 = 0;
+    let octet1: i64 = 0;
+    let octet2: i64 = 0;
+    let octet3: i64 = 0;
+    let current: i64 = 0;
+    let octet_idx: i64 = 0;
+    let i: i64 = 0;
+    let byte: i64 = 0;
+
+    while i < len {
+        // Read byte at position
+        unsafe {
+            let ptr = s + i;
+            asm!("movzx rax, byte ptr [rdi]",
+                in("rdi") ptr,
+                out("rax") byte,
+                options(nostack, readonly));
+        }
+
+        if byte == 46 {  // '.'
+            // End of octet
+            if current > 255 {
+                return -1;  // Invalid octet
+            }
+            if octet_idx == 0 {
+                octet0 = current;
+            } else if octet_idx == 1 {
+                octet1 = current;
+            } else if octet_idx == 2 {
+                octet2 = current;
+            } else {
+                return -1;  // Too many dots
+            }
+            octet_idx = octet_idx + 1;
+            current = 0;
+        } else if byte >= 48 && byte <= 57 {  // '0'-'9'
+            current = current * 10 + (byte - 48);
+        } else {
+            return -1;  // Invalid character
+        }
+        i = i + 1;
+    }
+
+    // Last octet
+    if current > 255 {
+        return -1;
+    }
+    if octet_idx != 3 {
+        return -1;  // Not exactly 4 octets
+    }
+    octet3 = current;
+
+    // Pack into result (network byte order for struct)
+    octet0 | (octet1 << 8) | (octet2 << 16) | (octet3 << 24)
+}
+
+// Parse port number from string
+// Returns -1 on error
+fn parse_port(s: i64, len: i64) -> i64 {
+    let port: i64 = 0;
+    let i: i64 = 0;
+    let byte: i64 = 0;
+
+    while i < len {
+        unsafe {
+            let ptr = s + i;
+            asm!("movzx rax, byte ptr [rdi]",
+                in("rdi") ptr,
+                out("rax") byte,
+                options(nostack, readonly));
+        }
+
+        if byte >= 48 && byte <= 57 {
+            port = port * 10 + (byte - 48);
+            if port > 65535 {
+                return -1;
+            }
+        } else {
+            return -1;  // Invalid character
+        }
+        i = i + 1;
+    }
+
+    port
+}
+
+// Find position of character in string
+// Returns -1 if not found
+fn find_char(s: i64, len: i64, ch: i64) -> i64 {
+    let i: i64 = 0;
+    let byte: i64 = 0;
+    while i < len {
+        unsafe {
+            let ptr = s + i;
+            asm!("movzx rax, byte ptr [rdi]",
+                in("rdi") ptr,
+                out("rax") byte,
+                options(nostack, readonly));
+        }
+        if byte == ch {
+            return i;
+        }
+        i = i + 1;
+    }
+    -1
+}
+
+// Find last position of character in string
+fn find_char_last(s: i64, len: i64, ch: i64) -> i64 {
+    let i: i64 = len - 1;
+    let byte: i64 = 0;
+    while i >= 0 {
+        unsafe {
+            let ptr = s + i;
+            asm!("movzx rax, byte ptr [rdi]",
+                in("rdi") ptr,
+                out("rax") byte,
+                options(nostack, readonly));
+        }
+        if byte == ch {
+            return i;
+        }
+        i = i - 1;
+    }
+    -1
+}
+
+// ============================================================================
+// SocketAddr implementation using stack-allocated buffer
+// Returns error code in high 32 bits if non-zero, otherwise valid
+// ============================================================================
+
+// Create sockaddr_in from IPv4 octets and port
+// Buffer must be at least 16 bytes
+// Returns length of sockaddr (16 for IPv4)
+fn sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
+    // Clear buffer first
+    let i: i64 = 0;
+    while i < 16 {
+        unsafe {
+            let ptr = buf + i;
+            asm!("mov byte ptr [rdi], 0",
+                in("rdi") ptr,
+                options(nostack));
+        }
+        i = i + 1;
+    }
+
+    // sin_family = AF_INET (2)
+    unsafe {
+        asm!("mov word ptr [rdi], 2",
+            in("rdi") buf,
+            options(nostack));
+    }
+
+    // sin_port (bytes 2-3, network byte order = big endian)
+    let port_hi = (port >> 8) & 255;
+    let port_lo = port & 255;
+    unsafe {
+        let ptr2 = buf + 2;
+        let ptr3 = buf + 3;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr2,
+            in("al") port_hi as i8,
+            options(nostack));
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr3,
+            in("al") port_lo as i8,
+            options(nostack));
+    }
+
+    // sin_addr (bytes 4-7, already in network byte order from parse)
+    unsafe {
+        let ptr4 = buf + 4;
+        asm!("mov dword ptr [rdi], eax",
+            in("rdi") ptr4,
+            in("eax") ip_packed as i32,
+            options(nostack));
+    }
+
+    16  // sizeof(sockaddr_in)
+}
+
+// Get port from sockaddr_in (network to host byte order)
+fn sockaddr_in_get_port(buf: i64) -> i64 {
+    let port_hi: i64 = 0;
+    let port_lo: i64 = 0;
+    unsafe {
+        let ptr2 = buf + 2;
+        let ptr3 = buf + 3;
+        asm!("movzx rax, byte ptr [rdi]",
+            in("rdi") ptr2,
+            out("rax") port_hi,
+            options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]",
+            in("rdi") ptr3,
+            out("rax") port_lo,
+            options(nostack, readonly));
+    }
+    (port_hi << 8) | port_lo
+}
+
+// Get IPv4 address octets from sockaddr_in
+// Returns packed octets (native order for display)
+fn sockaddr_in_get_addr(buf: i64) -> i64 {
+    let addr: i64 = 0;
+    unsafe {
+        let ptr4 = buf + 4;
+        asm!("mov eax, dword ptr [rdi]",
+            in("rdi") ptr4,
+            out("eax") addr,
+            options(nostack, readonly));
+    }
+    addr
+}
+
+// ============================================================================
+// TcpSocket - Low-level TCP socket operations
+// ============================================================================
+
+// Create a TCP socket
+// Returns fd on success, negative errno on error
+fn tcp_socket_create() -> i64 {
+    syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0)
+}
+
+// Connect to address
+fn tcp_socket_connect(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
+    syscall3(SYS_CONNECT, fd, sockaddr, sockaddr_len)
+}
+
+// Bind to address
+fn tcp_socket_bind(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
+    syscall3(SYS_BIND, fd, sockaddr, sockaddr_len)
+}
+
+// Listen for connections
+fn tcp_socket_listen(fd: i64, backlog: i64) -> i64 {
+    syscall2(SYS_LISTEN, fd, backlog)
+}
+
+// Accept connection
+// addr_buf and addr_len are pointers
+fn tcp_socket_accept(fd: i64, addr_buf: i64, addr_len: i64) -> i64 {
+    syscall3(SYS_ACCEPT, fd, addr_buf, addr_len)
+}
+
+// Read from socket
+fn tcp_socket_read(fd: i64, buf: i64, count: i64) -> i64 {
+    syscall3(SYS_READ, fd, buf, count)
+}
+
+// Write to socket
+fn tcp_socket_write(fd: i64, buf: i64, count: i64) -> i64 {
+    syscall3(SYS_WRITE, fd, buf, count)
+}
+
+// Close socket
+fn tcp_socket_close(fd: i64) -> i64 {
+    syscall1(SYS_CLOSE, fd)
+}
+
+// Set socket option (SO_REUSEADDR)
+// Note: Requires passing pointer to value, not implemented yet
+fn tcp_socket_set_reuseaddr(fd: i64) -> i64 {
+    // Skip for now - would need stack pointer access
+    0
+}
+
+// Set non-blocking mode
+fn tcp_socket_set_nonblocking(fd: i64, nonblock: i64) -> i64 {
+    let flags = syscall3(SYS_FCNTL, fd, F_GETFL, 0);
+    if flags < 0 {
+        return flags;
+    }
+
+    let new_flags: i64 = 0;
+    if nonblock != 0 {
+        new_flags = flags | O_NONBLOCK;
+    } else {
+        new_flags = flags & (0 - O_NONBLOCK - 1);
+    }
+
+    syscall3(SYS_FCNTL, fd, F_SETFL, new_flags)
+}
+
+// Get local address
+fn tcp_socket_getsockname(fd: i64, addr_buf: i64, addr_len_ptr: i64) -> i64 {
+    syscall3(SYS_GETSOCKNAME, fd, addr_buf, addr_len_ptr)
+}
+
+// ============================================================================
+// UdpSocket - Low-level UDP socket operations
+// ============================================================================
+
+fn udp_socket_create() -> i64 {
+    syscall3(SYS_SOCKET, AF_INET, SOCK_DGRAM, 0)
+}
+
+fn udp_socket_bind(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
+    syscall3(SYS_BIND, fd, sockaddr, sockaddr_len)
+}
+
+fn udp_socket_sendto(fd: i64, buf: i64, len: i64, flags: i64, dest_addr: i64, addrlen: i64) -> i64 {
+    syscall6(SYS_SENDTO, fd, buf, len, flags, dest_addr, addrlen)
+}
+
+fn udp_socket_recvfrom(fd: i64, buf: i64, len: i64, flags: i64, src_addr: i64, addrlen_ptr: i64) -> i64 {
+    syscall6(SYS_RECVFROM, fd, buf, len, flags, src_addr, addrlen_ptr)
+}
+
+fn udp_socket_close(fd: i64) -> i64 {
+    syscall1(SYS_CLOSE, fd)
+}
+
+// ============================================================================
+// Test Functions
+// ============================================================================
+
+// Test 1: Parse IPv4 address
+fn test_parse_ipv4() -> i64 {
+    // Test string "127.0.0.1" - we'll use inline assembly to get string pointer
+    // For testing, use a hardcoded equivalent
+
+    // Parse "127.0.0.1" manually by putting bytes in memory
+    // Actually, let's test with a simpler approach - test the parser with known values
+
+    // Manually encode "192.168.1.1" as a test
+    // 192.168.1.1 should give us: 192 | (168 << 8) | (1 << 16) | (1 << 24)
+    // = 192 + 43008 + 65536 + 16777216 = 16885952
+
+    // Create test buffer on stack
+    let test_buf: i64 = 0;
+    unsafe {
+        // Allocate 16 bytes on stack for test string
+        asm!("sub rsp, 16
+              lea rax, [rsp]",
+            out("rax") test_buf,
+            options(nostack));
+    }
+
+    // Write "127.0.0.1" to buffer (9 bytes + null)
+    // 127 = 0x31 0x32 0x37, . = 0x2e, 0 = 0x30, 1 = 0x31
+    unsafe {
+        // "127.0.0.1" = 0x31 0x32 0x37 0x2e 0x30 0x2e 0x30 0x2e 0x31
+        asm!("mov byte ptr [rdi], 0x31",     in("rdi") test_buf, options(nostack));      // '1'
+        asm!("mov byte ptr [rdi], 0x32",     in("rdi") test_buf + 1, options(nostack));  // '2'
+        asm!("mov byte ptr [rdi], 0x37",     in("rdi") test_buf + 2, options(nostack));  // '7'
+        asm!("mov byte ptr [rdi], 0x2e",     in("rdi") test_buf + 3, options(nostack));  // '.'
+        asm!("mov byte ptr [rdi], 0x30",     in("rdi") test_buf + 4, options(nostack));  // '0'
+        asm!("mov byte ptr [rdi], 0x2e",     in("rdi") test_buf + 5, options(nostack));  // '.'
+        asm!("mov byte ptr [rdi], 0x30",     in("rdi") test_buf + 6, options(nostack));  // '0'
+        asm!("mov byte ptr [rdi], 0x2e",     in("rdi") test_buf + 7, options(nostack));  // '.'
+        asm!("mov byte ptr [rdi], 0x31",     in("rdi") test_buf + 8, options(nostack));  // '1'
+    }
+
+    let result = parse_ipv4_addr(test_buf, 9);
+
+    // Restore stack
+    unsafe {
+        asm!("add rsp, 16", options(nostack));
+    }
+
+    // Expected: 127 | (0 << 8) | (0 << 16) | (1 << 24) = 127 + 16777216 = 16777343
+    if result == 16777343 {
+        0  // Pass
+    } else {
+        1  // Fail
+    }
+}
+
+// Test 2: Create and close TCP socket
+fn test_tcp_create_close() -> i64 {
+    let fd = tcp_socket_create();
+    if fd < 0 {
+        return 1;  // Failed to create
+    }
+
+    let close_result = tcp_socket_close(fd);
+    if close_result < 0 {
+        return 2;  // Failed to close
+    }
+
+    0  // Pass
+}
+
+// Test 3: TCP connect to localhost (should fail with connection refused)
+fn test_tcp_connect_refused() -> i64 {
+    let fd = tcp_socket_create();
+    if fd < 0 {
+        return 1;
+    }
+
+    // Create sockaddr for 127.0.0.1:12345
+    let sockaddr_buf: i64 = 0;
+    unsafe {
+        asm!("sub rsp, 32
+              lea rax, [rsp]",
+            out("rax") sockaddr_buf,
+            options(nostack));
+    }
+
+    // 127.0.0.1 packed = 127 | (0 << 8) | (0 << 16) | (1 << 24) = 16777343
+    let len = sockaddr_in_create(sockaddr_buf, 16777343, 12345);
+
+    let connect_result = tcp_socket_connect(fd, sockaddr_buf, len);
+
+    // Restore stack
+    unsafe {
+        asm!("add rsp, 32", options(nostack));
+    }
+
+    tcp_socket_close(fd);
+
+    // Should get ECONNREFUSED (-111)
+    if connect_result == ECONNREFUSED {
+        0  // Pass - got expected error
+    } else if connect_result < 0 {
+        0  // Pass - got some error (could be EINPROGRESS on non-blocking)
+    } else {
+        3  // Fail - unexpected success
+    }
+}
+
+// Test 4: UDP socket create, bind, close
+fn test_udp_bind() -> i64 {
+    let fd = udp_socket_create();
+    if fd < 0 {
+        return 1;
+    }
+
+    // Create sockaddr for 127.0.0.1:0 (OS assigns port)
+    let sockaddr_buf: i64 = 0;
+    unsafe {
+        asm!("sub rsp, 32
+              lea rax, [rsp]",
+            out("rax") sockaddr_buf,
+            options(nostack));
+    }
+
+    let len = sockaddr_in_create(sockaddr_buf, 16777343, 0);
+
+    let bind_result = udp_socket_bind(fd, sockaddr_buf, len);
+
+    // Restore stack
+    unsafe {
+        asm!("add rsp, 32", options(nostack));
+    }
+
+    if bind_result < 0 {
+        udp_socket_close(fd);
+        return 2;
+    }
+
+    udp_socket_close(fd);
+    0  // Pass
+}
+
+// Test 5: UDP loopback send/receive
+fn test_udp_loopback() -> i64 {
+    // Create two UDP sockets
+    let fd1 = udp_socket_create();
+    if fd1 < 0 {
+        return 1;
+    }
+
+    let fd2 = udp_socket_create();
+    if fd2 < 0 {
+        udp_socket_close(fd1);
+        return 2;
+    }
+
+    // Allocate buffers on stack
+    let buf: i64 = 0;
+    unsafe {
+        asm!("sub rsp, 128
+              lea rax, [rsp]",
+            out("rax") buf,
+            options(nostack));
+    }
+
+    let sockaddr1 = buf;          // bytes 0-31: sockaddr for socket 1
+    let sockaddr2 = buf + 32;     // bytes 32-63: sockaddr for socket 2
+    let data_buf = buf + 64;      // bytes 64-95: data buffer
+    let recv_buf = buf + 96;      // bytes 96-127: receive buffer
+
+    // Bind socket 1 to 127.0.0.1:0
+    let len1 = sockaddr_in_create(sockaddr1, 16777343, 0);
+    let bind1 = udp_socket_bind(fd1, sockaddr1, len1);
+    if bind1 < 0 {
+        unsafe { asm!("add rsp, 128", options(nostack)); }
+        udp_socket_close(fd1);
+        udp_socket_close(fd2);
+        return 3;
+    }
+
+    // Get socket 1's assigned port
+    let addrlen1: i64 = 16;
+    let addrlen1_ptr = buf + 100;  // Use part of recv_buf area for length
+    unsafe {
+        asm!("mov qword ptr [rdi], 16",
+            in("rdi") addrlen1_ptr,
+            options(nostack));
+    }
+    tcp_socket_getsockname(fd1, sockaddr1, addrlen1_ptr);
+    let port1 = sockaddr_in_get_port(sockaddr1);
+
+    // Bind socket 2 to 127.0.0.1:0
+    let len2 = sockaddr_in_create(sockaddr2, 16777343, 0);
+    let bind2 = udp_socket_bind(fd2, sockaddr2, len2);
+    if bind2 < 0 {
+        unsafe { asm!("add rsp, 128", options(nostack)); }
+        udp_socket_close(fd1);
+        udp_socket_close(fd2);
+        return 4;
+    }
+
+    // Write test data "Hi" to data_buf
+    unsafe {
+        asm!("mov byte ptr [rdi], 0x48",     in("rdi") data_buf, options(nostack));      // 'H'
+        asm!("mov byte ptr [rdi], 0x69",     in("rdi") data_buf + 1, options(nostack));  // 'i'
+    }
+
+    // Create destination address (socket 1's address)
+    let dest_addr = buf + 108;  // Use remaining space
+    let dest_len = sockaddr_in_create(dest_addr, 16777343, port1);
+
+    // Send from socket 2 to socket 1
+    let sent = udp_socket_sendto(fd2, data_buf, 2, 0, dest_addr, dest_len);
+    if sent < 0 {
+        unsafe { asm!("add rsp, 128", options(nostack)); }
+        udp_socket_close(fd1);
+        udp_socket_close(fd2);
+        return 5;
+    }
+
+    // Receive on socket 1
+    let src_addr = sockaddr2;  // Reuse sockaddr2 area for source address
+    let src_addrlen_ptr = addrlen1_ptr;
+    unsafe {
+        asm!("mov qword ptr [rdi], 16",
+            in("rdi") src_addrlen_ptr,
+            options(nostack));
+    }
+
+    let received = udp_socket_recvfrom(fd1, recv_buf, 32, 0, src_addr, src_addrlen_ptr);
+
+    // Restore stack and cleanup
+    unsafe { asm!("add rsp, 128", options(nostack)); }
+    udp_socket_close(fd1);
+    udp_socket_close(fd2);
+
+    if received < 0 {
+        return 6;
+    }
+
+    if received != 2 {
+        return 7;
+    }
+
+    // Verify data (can't easily check in this simplified version)
+
+    0  // Pass
+}
+
+// Test 6: TcpListener bind and accept (non-blocking)
+fn test_tcp_listener() -> i64 {
+    let fd = tcp_socket_create();
+    if fd < 0 {
+        return 1;
+    }
+
+    // Create sockaddr for 127.0.0.1:0
+    let buf: i64 = 0;
+    unsafe {
+        asm!("sub rsp, 64
+              lea rax, [rsp]",
+            out("rax") buf,
+            options(nostack));
+    }
+
+    let sockaddr_buf = buf;
+    let len = sockaddr_in_create(sockaddr_buf, 16777343, 0);
+
+    // Bind
+    let bind_result = tcp_socket_bind(fd, sockaddr_buf, len);
+    if bind_result < 0 {
+        unsafe { asm!("add rsp, 64", options(nostack)); }
+        tcp_socket_close(fd);
+        return 2;
+    }
+
+    // Listen
+    let listen_result = tcp_socket_listen(fd, 5);
+    if listen_result < 0 {
+        unsafe { asm!("add rsp, 64", options(nostack)); }
+        tcp_socket_close(fd);
+        return 3;
+    }
+
+    // Set non-blocking
+    let nb_result = tcp_socket_set_nonblocking(fd, 1);
+    if nb_result < 0 {
+        unsafe { asm!("add rsp, 64", options(nostack)); }
+        tcp_socket_close(fd);
+        return 4;
+    }
+
+    // Accept (should return EAGAIN/EWOULDBLOCK)
+    let peer_addr = buf + 32;
+    let addrlen_ptr = buf + 48;
+    unsafe {
+        asm!("mov qword ptr [rdi], 16",
+            in("rdi") addrlen_ptr,
+            options(nostack));
+    }
+
+    let accept_result = tcp_socket_accept(fd, peer_addr, addrlen_ptr);
+
+    unsafe { asm!("add rsp, 64", options(nostack)); }
+    tcp_socket_close(fd);
+
+    // Should get EAGAIN (-11) since no connections pending
+    if accept_result == EAGAIN {
+        0  // Pass - got expected EWOULDBLOCK
+    } else if accept_result < 0 {
+        0  // Pass - got some error
+    } else {
+        5  // Fail - unexpected success
+    }
+}
+
+// ============================================================================
+// Main - Run all tests
+// ============================================================================
+
+fn main() -> i64 {
+    let failed: i64 = 0;
+
+    // Test 1: IPv4 parsing
+    let r1 = test_parse_ipv4();
+    if r1 != 0 {
+        failed = failed + 1;
+    }
+
+    // Test 2: TCP create/close
+    let r2 = test_tcp_create_close();
+    if r2 != 0 {
+        failed = failed + 1;
+    }
+
+    // Test 3: TCP connect refused
+    let r3 = test_tcp_connect_refused();
+    if r3 != 0 {
+        failed = failed + 1;
+    }
+
+    // Test 4: UDP bind
+    let r4 = test_udp_bind();
+    if r4 != 0 {
+        failed = failed + 1;
+    }
+
+    // Test 5: UDP loopback
+    let r5 = test_udp_loopback();
+    if r5 != 0 {
+        failed = failed + 1;
+    }
+
+    // Test 6: TCP listener
+    let r6 = test_tcp_listener();
+    if r6 != 0 {
+        failed = failed + 1;
+    }
+
+    // Return number of failures (0 = all passed)
+    failed
+}

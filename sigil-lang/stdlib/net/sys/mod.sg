@@ -1,0 +1,193 @@
+//! Syscall Layer - Platform Detection and Common Types
+//!
+//! This module provides the syscall abstraction layer for Sigil's native networking.
+//! Platform-specific implementations are in separate modules.
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 3
+
+// Platform-specific syscall implementations
+#[cfg(target_os = "linux", target_arch = "x86_64")]
+pub use linux_x86_64::*;
+
+#[cfg(target_os = "macos", target_arch = "x86_64")]
+pub use darwin_x86_64::*;
+
+#[cfg(target_os = "linux", target_arch = "aarch64")]
+pub use linux_aarch64::*;
+
+// ============================================================================
+// Common Error Types
+// ============================================================================
+
+/// Syscall error codes (Linux errno values)
+///
+/// Syscalls return negative values on error where the absolute value
+/// is the errno. This enum provides named constants for common errors.
+☉ enum SyscallError {
+    EPERM           = 1,    // Operation not permitted
+    ENOENT          = 2,    // No such file or directory
+    EINTR           = 4,    // Interrupted system call
+    EIO             = 5,    // I/O error
+    EBADF           = 9,    // Bad file descriptor
+    EAGAIN          = 11,   // Try again (also EWOULDBLOCK)
+    EWOULDBLOCK     = 11,   // Same as EAGAIN
+    ENOMEM          = 12,   // Out of memory
+    EACCES          = 13,   // Permission denied
+    EFAULT          = 14,   // Bad address
+    ENOTCONN        = 107,  // Transport endpoint is not connected
+    EINVAL          = 22,   // Invalid argument
+    EPIPE           = 32,   // Broken pipe
+    EAFNOSUPPORT    = 97,   // Address family not supported
+    EADDRINUSE      = 98,   // Address already in use
+    EADDRNOTAVAIL   = 99,   // Cannot assign requested address
+    ENETUNREACH     = 101,  // Network is unreachable
+    ECONNRESET      = 104,  // Connection reset by peer
+    ETIMEDOUT       = 110,  // Connection timed out
+    ECONNREFUSED    = 111,  // Connection refused
+    EHOSTUNREACH    = 113,  // No route to host
+    EINPROGRESS     = 115,  // Operation now in progress
+    Unknown(i32)!,          // Unknown error code
+}
+
+☉ impl SyscallError {
+    /// Create SyscallError from errno value
+    ☉ rite from_errno(errno: i32) -> SyscallError! {
+        match errno {
+            1 => SyscallError::EPERM,
+            2 => SyscallError::ENOENT,
+            4 => SyscallError::EINTR,
+            5 => SyscallError::EIO,
+            9 => SyscallError::EBADF,
+            11 => SyscallError::EAGAIN,
+            12 => SyscallError::ENOMEM,
+            13 => SyscallError::EACCES,
+            14 => SyscallError::EFAULT,
+            22 => SyscallError::EINVAL,
+            32 => SyscallError::EPIPE,
+            97 => SyscallError::EAFNOSUPPORT,
+            98 => SyscallError::EADDRINUSE,
+            99 => SyscallError::EADDRNOTAVAIL,
+            101 => SyscallError::ENETUNREACH,
+            104 => SyscallError::ECONNRESET,
+            107 => SyscallError::ENOTCONN,
+            110 => SyscallError::ETIMEDOUT,
+            111 => SyscallError::ECONNREFUSED,
+            113 => SyscallError::EHOSTUNREACH,
+            115 => SyscallError::EINPROGRESS,
+            _ => SyscallError::Unknown(errno),
+        }
+    }
+}
+
+☉ impl Display for SyscallError {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        match self {
+            SyscallError::EPERM => write!(f, "EPERM: Operation not permitted"),
+            SyscallError::ENOENT => write!(f, "ENOENT: No such file or directory"),
+            SyscallError::EINTR => write!(f, "EINTR: Interrupted system call"),
+            SyscallError::EIO => write!(f, "EIO: I/O error"),
+            SyscallError::EBADF => write!(f, "EBADF: Bad file descriptor"),
+            SyscallError::EAGAIN => write!(f, "EAGAIN: Resource temporarily unavailable"),
+            SyscallError::ENOMEM => write!(f, "ENOMEM: Out of memory"),
+            SyscallError::EACCES => write!(f, "EACCES: Permission denied"),
+            SyscallError::EFAULT => write!(f, "EFAULT: Bad address"),
+            SyscallError::EINVAL => write!(f, "EINVAL: Invalid argument"),
+            SyscallError::EPIPE => write!(f, "EPIPE: Broken pipe"),
+            SyscallError::EAFNOSUPPORT => write!(f, "EAFNOSUPPORT: Address family not supported"),
+            SyscallError::EADDRINUSE => write!(f, "EADDRINUSE: Address already in use"),
+            SyscallError::EADDRNOTAVAIL => write!(f, "EADDRNOTAVAIL: Cannot assign requested address"),
+            SyscallError::ENETUNREACH => write!(f, "ENETUNREACH: Network is unreachable"),
+            SyscallError::ENOTCONN => write!(f, "ENOTCONN: Transport endpoint is not connected"),
+            SyscallError::ECONNRESET => write!(f, "ECONNRESET: Connection reset by peer"),
+            SyscallError::ETIMEDOUT => write!(f, "ETIMEDOUT: Connection timed out"),
+            SyscallError::ECONNREFUSED => write!(f, "ECONNREFUSED: Connection refused"),
+            SyscallError::EHOSTUNREACH => write!(f, "EHOSTUNREACH: No route to host"),
+            SyscallError::EINPROGRESS => write!(f, "EINPROGRESS: Operation now in progress"),
+            SyscallError::Unknown(code) => write!(f, "Unknown error: {}", code),
+        }
+    }
+}
+
+☉ impl Eq for SyscallError {
+    ☉ rite eq(&self, other: &SyscallError) -> bool! {
+        match (self, other) {
+            (SyscallError::EPERM, SyscallError::EPERM) => true,
+            (SyscallError::ENOENT, SyscallError::ENOENT) => true,
+            (SyscallError::EINTR, SyscallError::EINTR) => true,
+            (SyscallError::EIO, SyscallError::EIO) => true,
+            (SyscallError::EBADF, SyscallError::EBADF) => true,
+            (SyscallError::EAGAIN, SyscallError::EAGAIN) => true,
+            (SyscallError::EWOULDBLOCK, SyscallError::EWOULDBLOCK) => true,
+            (SyscallError::EAGAIN, SyscallError::EWOULDBLOCK) => true,
+            (SyscallError::EWOULDBLOCK, SyscallError::EAGAIN) => true,
+            (SyscallError::ENOMEM, SyscallError::ENOMEM) => true,
+            (SyscallError::EACCES, SyscallError::EACCES) => true,
+            (SyscallError::EFAULT, SyscallError::EFAULT) => true,
+            (SyscallError::EINVAL, SyscallError::EINVAL) => true,
+            (SyscallError::EPIPE, SyscallError::EPIPE) => true,
+            (SyscallError::EAFNOSUPPORT, SyscallError::EAFNOSUPPORT) => true,
+            (SyscallError::EADDRINUSE, SyscallError::EADDRINUSE) => true,
+            (SyscallError::EADDRNOTAVAIL, SyscallError::EADDRNOTAVAIL) => true,
+            (SyscallError::ENETUNREACH, SyscallError::ENETUNREACH) => true,
+            (SyscallError::ENOTCONN, SyscallError::ENOTCONN) => true,
+            (SyscallError::ECONNRESET, SyscallError::ECONNRESET) => true,
+            (SyscallError::ETIMEDOUT, SyscallError::ETIMEDOUT) => true,
+            (SyscallError::ECONNREFUSED, SyscallError::ECONNREFUSED) => true,
+            (SyscallError::EHOSTUNREACH, SyscallError::EHOSTUNREACH) => true,
+            (SyscallError::EINPROGRESS, SyscallError::EINPROGRESS) => true,
+            (SyscallError::Unknown(a), SyscallError::Unknown(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// Result Helper
+// ============================================================================
+
+/// Convert raw syscall return value to Result
+///
+/// Linux syscalls return:
+/// - Positive or zero: success (value has syscall-specific meaning)
+/// - Negative: error (-errno)
+☉ rite syscall_result(raw: isize) -> Result<usize, SyscallError>! {
+    ⎇ raw >= 0 {
+        Ok(raw as usize)
+    } ⎉ {
+        Err(SyscallError::from_errno((-raw) as i32))
+    }
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+// Address families
+☉ ≔ AF_INET: i32 = 2;
+☉ ≔ AF_INET6: i32 = 10;
+
+// Socket types
+☉ ≔ SOCK_STREAM: i32 = 1;
+☉ ≔ SOCK_DGRAM: i32 = 2;
+
+// Socket levels
+☉ ≔ SOL_SOCKET: i32 = 1;
+☉ ≔ IPPROTO_TCP: i32 = 6;
+
+// Socket options
+☉ ≔ SO_REUSEADDR: i32 = 2;
+☉ ≔ SO_KEEPALIVE: i32 = 9;
+☉ ≔ SO_RCVTIMEO: i32 = 20;
+☉ ≔ SO_SNDTIMEO: i32 = 21;
+☉ ≔ TCP_NODELAY: i32 = 1;
+
+// fcntl commands
+☉ ≔ F_GETFL: i32 = 3;
+☉ ≔ F_SETFL: i32 = 4;
+☉ ≔ O_NONBLOCK: i32 = 2048;
+
+// poll events
+☉ ≔ POLLIN: i16 = 1;
+☉ ≔ POLLOUT: i16 = 4;
+☉ ≔ POLLERR: i16 = 8;
+☉ ≔ POLLHUP: i16 = 16;

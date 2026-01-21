@@ -1,0 +1,315 @@
+//! Linux x86_64 Syscall Implementation
+//!
+//! This module provides direct syscall access via inline assembly.
+//! Zero libc dependency - uses raw `syscall` instruction.
+//!
+//! Syscall ABI (Linux x86_64):
+//!   - Syscall number: RAX
+//!   - Arguments: RDI, RSI, RDX, R10, R8, R9
+//!   - Return: RAX (negative = -errno)
+//!   - Clobbered: RCX, R11
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 3
+
+use super::{SyscallError, syscall_result};
+
+// ============================================================================
+// Syscall Numbers (Linux x86_64)
+// ============================================================================
+
+≔ SYS_READ: i64 = 0;
+≔ SYS_WRITE: i64 = 1;
+≔ SYS_CLOSE: i64 = 3;
+≔ SYS_POLL: i64 = 7;
+≔ SYS_SOCKET: i64 = 41;
+≔ SYS_CONNECT: i64 = 42;
+≔ SYS_ACCEPT: i64 = 43;
+≔ SYS_SENDTO: i64 = 44;
+≔ SYS_RECVFROM: i64 = 45;
+≔ SYS_BIND: i64 = 49;
+≔ SYS_LISTEN: i64 = 50;
+≔ SYS_GETSOCKNAME: i64 = 51;
+≔ SYS_GETPEERNAME: i64 = 52;
+≔ SYS_SETSOCKOPT: i64 = 54;
+≔ SYS_GETSOCKOPT: i64 = 55;
+≔ SYS_FCNTL: i64 = 72;
+
+// ============================================================================
+// Raw Syscall Helpers
+// ============================================================================
+
+/// Execute syscall with 0 arguments
+rite syscall0(nr: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 1 argument
+rite syscall1(nr: i64, a1: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 2 arguments
+rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 3 arguments
+rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 4 arguments
+rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            in("r10") a4,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 5 arguments
+rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            in("r10") a4,
+            in("r8") a5,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 6 arguments
+rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            in("r10") a4,
+            in("r8") a5,
+            in("r9") a6,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+// ============================================================================
+// Socket Syscalls
+// ============================================================================
+
+/// Create a socket
+///
+/// # Arguments
+/// - `domain`: Address family (AF_INET=2, AF_INET6=10)
+/// - `socket_type`: Socket type (SOCK_STREAM=1, SOCK_DGRAM=2)
+/// - `protocol`: Protocol (usually 0)
+///
+/// # Returns
+/// - Ok(fd): File descriptor for the new socket
+/// - Err: Syscall error
+☉ rite sys_socket(domain: i32, socket_type: i32, protocol: i32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_SOCKET, domain as i64, socket_type as i64, protocol as i64);
+    syscall_result(raw)
+}
+
+/// Connect a socket to an address
+///
+/// # Arguments
+/// - `fd`: Socket file descriptor
+/// - `addr`: Pointer to sockaddr structure
+/// - `addrlen`: Length of the address structure
+☉ rite sys_connect(fd: i32, addr: *u8, addrlen: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_CONNECT, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+/// Bind a socket to an address
+☉ rite sys_bind(fd: i32, addr: *u8, addrlen: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_BIND, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+/// Listen for connections on a socket
+☉ rite sys_listen(fd: i32, backlog: i32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall2(SYS_LISTEN, fd as i64, backlog as i64);
+    syscall_result(raw)
+}
+
+/// Accept a connection on a socket
+☉ rite sys_accept(fd: i32, addr: *u8, addrlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_ACCEPT, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+// ============================================================================
+// I/O Syscalls
+// ============================================================================
+
+/// Read from a file descriptor
+☉ rite sys_read(fd: i32, buf: *u8, count: usize) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_READ, fd as i64, buf as i64, count as i64);
+    syscall_result(raw)
+}
+
+/// Write to a file descriptor
+☉ rite sys_write(fd: i32, buf: *u8, count: usize) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_WRITE, fd as i64, buf as i64, count as i64);
+    syscall_result(raw)
+}
+
+/// Close a file descriptor
+☉ rite sys_close(fd: i32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall1(SYS_CLOSE, fd as i64);
+    syscall_result(raw)
+}
+
+// ============================================================================
+// Socket Datagram Syscalls (for UDP and DNS)
+// ============================================================================
+
+/// Send data to an address
+☉ rite sys_sendto(fd: i32, buf: *u8, len: usize, flags: i32, addr: *u8, addrlen: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall6(SYS_SENDTO, fd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+/// Receive data from an address
+☉ rite sys_recvfrom(fd: i32, buf: *u8, len: usize, flags: i32, addr: *u8, addrlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall6(SYS_RECVFROM, fd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+// ============================================================================
+// Socket Options
+// ============================================================================
+
+/// Set socket option
+☉ rite sys_setsockopt(fd: i32, level: i32, optname: i32, optval: *u8, optlen: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall5(SYS_SETSOCKOPT, fd as i64, level as i64, optname as i64, optval as i64, optlen as i64);
+    syscall_result(raw)
+}
+
+/// Get socket option
+☉ rite sys_getsockopt(fd: i32, level: i32, optname: i32, optval: *u8, optlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall5(SYS_GETSOCKOPT, fd as i64, level as i64, optname as i64, optval as i64, optlen as i64);
+    syscall_result(raw)
+}
+
+// ============================================================================
+// Socket Address Queries
+// ============================================================================
+
+/// Get socket name (local address)
+☉ rite sys_getsockname(fd: i32, addr: *u8, addrlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_GETSOCKNAME, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+/// Get peer name (remote address)
+☉ rite sys_getpeername(fd: i32, addr: *u8, addrlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_GETPEERNAME, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+// ============================================================================
+// File Control
+// ============================================================================
+
+/// File control operations
+☉ rite sys_fcntl(fd: i32, cmd: i32, arg: i64) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_FCNTL, fd as i64, cmd as i64, arg);
+    syscall_result(raw)
+}
+
+// ============================================================================
+// Polling
+// ============================================================================
+
+/// Poll file descriptors for events
+///
+/// # Arguments
+/// - `fds`: Pointer to array of pollfd structures
+/// - `nfds`: Number of file descriptors to poll
+/// - `timeout_ms`: Timeout in milliseconds (-1 = infinite, 0 = immediate)
+☉ rite sys_poll(fds: *u8, nfds: usize, timeout_ms: i32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_POLL, fds as i64, nfds as i64, timeout_ms as i64);
+    syscall_result(raw)
+}
