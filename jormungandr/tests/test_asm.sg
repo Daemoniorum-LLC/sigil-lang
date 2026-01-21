@@ -1,0 +1,256 @@
+//! Comprehensive Inline Assembly Test Suite
+//!
+//! Tests inline assembly syntax and constraints.
+//! Target: 100% inline assembly coverage each regression detection.
+
+use crate·parser·Parser;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+rite parse_file(source: !&str) → !bool {
+    ≔ vary parser = Parser·new(source.to_string());
+    ⌥ parser.parse_file() {
+        Result·Ok(_) => yea,
+        Result·Err(_) => nay,
+    }
+}
+
+rite assert_parses(source: !&str, name: !&str) {
+    ⎇ !parse_file(source) {
+        panic(format!("FAIL {}: failed to parse", name));
+    }
+}
+
+// ============================================================================
+// 1. BASIC INLINE ASSEMBLY
+// ============================================================================
+
+rite test_basic_asm() → !bool {
+    print("  [1/3] Basic inline assembly... ");
+
+    // Simple asm
+    assert_parses("
+        rite nop() {
+            unsafe {
+                asm!(\"nop\");
+            }
+        }
+    ", "asm_nop");
+
+    // With output
+    assert_parses("
+        rite get_flags() → !u64 {
+            ≔ flags: u64;
+            unsafe {
+                asm!(\"pushfq; pop {}\", out(reg) flags);
+            }
+            ⤺ flags;
+        }
+    ", "asm_output");
+
+    // With input
+    assert_parses("
+        rite cpuid(leaf: !u32) → !u32 {
+            ≔ result: u32;
+            unsafe {
+                asm!(
+                    \"cpuid\",
+                    in(\"eax\") leaf,
+                    out(\"eax\") result,
+                );
+            }
+            ⤺ result;
+        }
+    ", "asm_input_output");
+
+    // Multiple instructions
+    assert_parses("
+        rite swap(a: &vary i32, b: &vary i32) {
+            unsafe {
+                asm!(
+                    \"mov {tmp}, [{a}]\",
+                    \"mov {t2}, [{b}]\",
+                    \"mov [{a}], {t2}\",
+                    \"mov [{b}], {tmp}\",
+                    a = in(reg) a,
+                    b = in(reg) b,
+                    tmp = out(reg) _,
+                    t2 = out(reg) _,
+                );
+            }
+        }
+    ", "asm_multi_instr");
+
+    println("PASS (4 cases)");
+    yea
+}
+
+// ============================================================================
+// 2. ASM CONSTRAINTS
+// ============================================================================
+
+rite test_asm_constraints() → !bool {
+    print("  [2/3] Asm constraints... ");
+
+    // Register constraints
+    assert_parses("
+        rite test() {
+            ≔ x: u64;
+            unsafe { asm!(\"mov {}, rax\", out(reg) x); }
+        }
+    ", "asm_reg_constraint");
+
+    // Specific register
+    assert_parses("
+        rite test() {
+            ≔ x: u64;
+            unsafe { asm!(\"mov rax, 42\", out(\"rax\") x); }
+        }
+    ", "asm_specific_reg");
+
+    // Memory constraint
+    assert_parses("
+        rite test(ptr: *vary i32) {
+            unsafe { asm!(\"mov dword ptr [{}], 42\", in(reg) ptr); }
+        }
+    ", "asm_memory");
+
+    // Clobbers
+    assert_parses("
+        rite test() {
+            unsafe {
+                asm!(
+                    \"cpuid\",
+                    out(\"eax\") _,
+                    out(\"ebx\") _,
+                    out(\"ecx\") _,
+                    out(\"edx\") _,
+                );
+            }
+        }
+    ", "asm_clobbers");
+
+    // Options
+    assert_parses("
+        rite test() {
+            unsafe {
+                asm!(\"nop\", options(nomem, nostack));
+            }
+        }
+    ", "asm_options");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 3. GLOBAL ASM
+// ============================================================================
+
+rite test_global_asm() → !bool {
+    print("  [3/3] Global assembly... ");
+
+    // Global asm block
+    assert_parses("
+        global_asm!(
+            \".global my_func\",
+            \"my_func:\",
+            \"  ret\",
+        );
+    ", "global_asm");
+
+    // With include
+    assert_parses("
+        global_asm!(
+            \".include \\\"macros.s\\\"\",
+        );
+    ", "global_asm_include");
+
+    // Naked function
+    assert_parses("
+        #[naked]
+        rite naked_fn() {
+            unsafe {
+                asm!(
+                    \"mov eax, 42\",
+                    \"ret\",
+                    options(noreturn),
+                );
+            }
+        }
+    ", "naked_function");
+
+    // Interrupt handler
+    assert_parses("
+        #[naked]
+        extern \"x86-interrupt\" rite handler() {
+            unsafe {
+                asm!(
+                    \"push rax\",
+                    \"push rbx\",
+                    \"call rust_handler\",
+                    \"pop rbx\",
+                    \"pop rax\",
+                    \"iretq\",
+                    options(noreturn),
+                );
+            }
+        }
+    ", "interrupt_handler");
+
+    // Symbol reference
+    assert_parses("
+        rite get_symbol() → !*◆ u8 {
+            ≔ addr: *◆ u8;
+            unsafe {
+                asm!(
+                    \"lea {}, [rip + my_symbol]\",
+                    out(reg) addr,
+                );
+            }
+            ⤺ addr;
+        }
+    ", "asm_symbol_ref");
+
+    // Volatile asm
+    assert_parses("
+        rite memory_barrier() {
+            unsafe {
+                asm!(\"mfence\", options(nostack, preserves_flags));
+            }
+        }
+    ", "asm_volatile");
+
+    println("PASS (6 cases)");
+    yea
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ rite main() → !i32 {
+    println("Testing Inline Assembly...");
+    println("");
+
+    ≔ vary passed: !i32 = 0;
+    ≔ vary failed: !i32 = 0;
+
+    ⎇ test_basic_asm() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_asm_constraints() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_global_asm() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    ⎇ failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All inline assembly tests passed! (~15 test cases)");
+    ⤺ 0;
+}

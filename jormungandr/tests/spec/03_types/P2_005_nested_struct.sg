@@ -1,0 +1,21 @@
+// Test: Nested sigil initialization
+// Spec: 03-TYPES.md § 4.1 Structs
+// Priority: P2 - Enhancement
+
+sigil Inner {
+    value: !i32,
+}
+
+sigil Outer {
+    inner: Inner,
+    label: !i32,
+}
+
+rite main() {
+    ≔ o = Outer {
+        inner: Inner { value: 42 },
+        label: 1,
+    };
+    println(o.inner.value);
+    println(o.label);
+}

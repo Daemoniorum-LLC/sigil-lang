@@ -1,0 +1,610 @@
+//! Token definitions for the Sigil lexer.
+//!
+//! This module defines all token types produced by the lexer.
+//! Includes polysynthetic morphemes, evidentiality markers, and Unicode symbols.
+//!
+//! Self-hosted conversion: lexer.rs (Token enum) -> token.sg
+//! Original: ~800 lines of token definitions
+//! Status: Complete
+
+use crate::span::Span;
+
+/// Token types for the Sigil programming language.
+/// Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Token {
+    // ========================================
+    // Comments
+    // ========================================
+    /// Line comment: `// ...`
+    LineComment(!String),
+    /// Documentation comment: `//! ...`
+    DocComment(!String),
+
+    // ========================================
+    // Keywords - Definitions
+    // ========================================
+    Fn,         // fn
+    Async,      // async
+    Let,        // let
+    Mut,        // mut
+    Const,      // const
+    Type,       // type
+    Struct,     // struct
+    Enum,       // enum
+    Trait,      // trait
+    Impl,       // impl
+    Mod,        // mod
+    Use,        // use
+    Pub,        // pub
+    Actor,      // actor
+    Saga,       // saga
+    Scope,      // scope
+    Rune,       // rune
+
+    // ========================================
+    // Keywords - Control Flow
+    // ========================================
+    If,         // if
+    Else,       // else
+    Match,      // match
+    Loop,       // loop
+    While,      // while
+    For,        // for
+    In,         // in
+    Break,      // break
+    Continue,   // continue
+    Return,     // return
+    Yield,      // yield
+    Await,      // await
+
+    // ========================================
+    // Keywords - Other
+    // ========================================
+    SelfLower,  // self
+    SelfUpper,  // Self
+    Super,      // super
+    Crate,      // crate
+    Where,      // where
+    As,         // as
+    Dyn,        // dyn
+    Move,       // move
+    Ref,        // ref
+    Static,     // static
+    Unsafe,     // unsafe
+    Extern,     // extern
+    Asm,        // asm
+    Volatile,   // volatile
+    Naked,      // naked
+    Packed,     // packed
+    Simd,       // simd
+    Atomic,     // atomic
+    Derive,     // derive
+    On,         // on
+
+    // ========================================
+    // Boolean Literals
+    // ========================================
+    True,       // true
+    False,      // false
+    Null,       // null
+
+    // ========================================
+    // Morphemes (Greek letters)
+    // ========================================
+    Tau,        // τ, Τ - Transform/map
+    Phi,        // φ, Φ - Filter
+    Sigma,      // σ, Σ - Sort/Sum
+    Rho,        // ρ, Ρ - Reduce
+    Lambda,     // λ, Λ - Lambda
+    Pi,         // Π - Product
+    Delta,      // δ, Δ - Difference/change
+    Epsilon,    // ε - Empty/null
+    Omega,      // ω, Ω - End/terminal
+    Alpha,      // α - First element
+    Combiner,   // ζ - Zip/combine (renamed to avoid codegen bug)
+    Mu,         // μ, Μ - Middle/median
+    Chi,        // χ, Χ - Random/choice
+    Nu,         // ν, Ν - Nth element
+    Xi,         // ξ, Ξ - Next in sequence
+    Hourglass,  // ⌛ - Await symbol
+
+    // ========================================
+    // Parallel/Concurrency Morphemes
+    // ========================================
+    Parallel,   // ∥, parallel - Parallel execution
+    Gpu,        // ⊛, gpu - GPU compute shader
+
+    // ========================================
+    // Quantifiers (for AI-native set operations)
+    // ========================================
+    ForAll,         // ∀ - Universal quantification
+    Exists,         // ∃ - Existential quantification
+    ElementOf,      // ∈ - Membership test
+    NotElementOf,   // ∉ - Non-membership
+
+    // ========================================
+    // Set Operations
+    // ========================================
+    Union,          // ∪ - Set union
+    Intersection,   // ∩ - Set intersection
+    SetMinus,       // ∖ - Set difference
+    Subset,         // ⊂ - Proper subset
+    SubsetEq,       // ⊆ - Subset or equal
+    Superset,       // ⊃ - Proper superset
+    SupersetEq,     // ⊇ - Superset or equal
+
+    // ========================================
+    // Logic Operators
+    // ========================================
+    LogicAnd,       // ∧ - Logical conjunction
+    LogicOr,        // ∨ - Logical disjunction
+    LogicNot,       // ¬ - Logical negation
+    LogicXor,       // ⊻ - Exclusive or
+    Top,            // ⊤ - True/any type
+    Bottom,         // ⊥ - False/never type
+
+    // ========================================
+    // Bitwise Operators (Unicode)
+    // ========================================
+    BitwiseAndSymbol,   // ⋏ - Bitwise AND
+    BitwiseOrSymbol,    // ⋎ - Bitwise OR
+
+    // ========================================
+    // Type Theory
+    // ========================================
+    TypeAnnotation,     // ∷ - Type annotation (alternative to :)
+
+    // ========================================
+    // Analysis/Calculus
+    // ========================================
+    Integral,       // ∫ - Cumulative sum
+    Partial,        // ∂ - Discrete derivative
+    Sqrt,           // √ - Square root
+    Cbrt,           // ∛ - Cube root
+    Nabla,          // ∇ - Gradient
+
+    // ========================================
+    // APL-Inspired Symbols
+    // ========================================
+    GradeUp,        // ⍋ - Sort ascending
+    GradeDown,      // ⍒ - Sort descending
+    Rotate,         // ⌽ - Reverse/rotate
+    CycleArrow,     // ↻ - Cycle/repeat
+    QuadDiamond,    // ⌺ - Windows/stencil
+    SquaredPlus,    // ⊞ - Chunks
+    Iota,           // ⍳ - Enumerate/index
+
+    // ========================================
+    // Category Theory
+    // ========================================
+    Compose,        // ∘ - Function composition
+    Tensor,         // ⊗ - Tensor product
+    DirectSum,      // ⊕ - Direct sum / XOR
+
+    // ========================================
+    // Data Operations
+    // ========================================
+    Bowtie,                     // ⋈ - Join/zip combining
+    ElementSmallVerticalBar,    // ⋳ - Flatten
+    SquareCup,                  // ⊔ - Lattice join / supremum
+    SquareCap,                  // ⊓ - Lattice meet / infimum
+
+    // ========================================
+    // Evidentiality Markers
+    // ========================================
+    Interrobang,    // ‽ - Paradox/trust boundary
+
+    // ========================================
+    // Affective Markers (Sentiment & Emotion)
+    // ========================================
+    AffectNegative,     // ⊖ - Negative sentiment
+    AffectNeutral,      // ⊜ - Neutral sentiment
+    IronyMark,          // ⸮ - Irony/sarcasm marker
+    IntensityUp,        // ↑ - Intensifier
+    IntensityDown,      // ↓ - Dampener
+    IntensityMax,       // ⇈ - Maximum intensity
+    FormalRegister,     // ♔ - Formal
+    InformalRegister,   // ♟ - Informal
+
+    // Emotion markers (Plutchik's wheel)
+    EmotionJoy,         // ☺
+    EmotionSadness,     // ☹
+    EmotionAnger,       // ⚡
+    EmotionFear,        // ❄
+    EmotionSurprise,    // ✦
+    EmotionLove,        // ♡
+
+    // Confidence markers
+    ConfidenceHigh,     // ◉
+    ConfidenceMedium,   // ◎
+    ConfidenceLow,      // ○
+
+    // ========================================
+    // Aspect Morphemes (verb aspects)
+    // ========================================
+    AspectProgressive,  // ·ing - Ongoing/streaming
+    AspectPerfective,   // ·ed - Completed
+    AspectPotential,    // ·able - Capability
+    AspectResultative,  // ·ive - Result-producing
+
+    // ========================================
+    // Operators
+    // ========================================
+    Pipe,           // |
+    MiddleDot,      // · - Incorporation
+    Arrow,          // ->
+    FatArrow,       // =>
+    LeftArrow,      // <-
+    EqEq,           // ==
+    NotEq,          // !=
+    LtEq,           // <=
+    GtEq,           // >=
+    Lt,             // <
+    Gt,             // >
+    Plus,           // +
+    Minus,          // -
+    Star,           // *
+    Slash,          // /
+    Percent,        // %
+    StarStar,       // ** - Exponentiation
+    AndAnd,         // &&
+    OrOr,           // ||
+    Bang,           // ! - Evidentiality: known / logical not
+    Question,       // ? - Evidentiality: uncertain / try
+    Tilde,          // ~ - Evidentiality: reported
+    Lozenge,        // ◊ - Evidentiality: prediction
+    Amp,            // &
+    Caret,          // ^
+    Shl,            // <<
+    Shr,            // >>
+    Eq,             // =
+    PlusEq,         // +=
+    MinusEq,        // -=
+    StarEq,         // *=
+    SlashEq,        // /=
+    PercentEq,      // %=
+    ShlEq,          // <<=
+    ShrEq,          // >>=
+    AmpEq,          // &=
+    PipeEq,         // |=
+    CaretEq,        // ^=
+    DotDot,         // ..
+    DotDotEq,       // ..=
+    PlusPlus,       // ++ - Concatenation
+    ColonColon,     // ::
+    Colon,          // :
+    Semi,           // ;
+    Comma,          // ,
+    Dot,            // .
+    At,             // @
+    HashBang,       // #! - Inner attribute prefix
+    Hash,           // #
+    Dollar,         // $
+    Underscore,     // _
+    Quote,          // ' - Single quote (lifetimes)
+    /// Lifetime: 'static, 'a, etc.
+    Lifetime(!String),
+
+    // ========================================
+    // Delimiters
+    // ========================================
+    LParen,         // (
+    RParen,         // )
+    LBrace,         // {
+    RBrace,         // }
+    LBracket,       // [
+    RBracket,       // ]
+
+    // ========================================
+    // Special Symbols
+    // ========================================
+    Empty,          // ∅ - Void/emptiness
+    Circle,         // ◯ - Geometric zero
+    Infinity,       // ∞ - Ananta
+
+    // ========================================
+    // Protocol Operations
+    // ========================================
+    ProtoSend,      // ⇒ - Send data
+    ProtoRecv,      // ⇐ - Receive data
+    ProtoStream,    // ≋ - Stream data
+    ProtoConnect,   // ⊸ - Connect
+    ProtoTimeout,   // ⏱ - Timeout
+
+    // Protocol keywords
+    Send,           // send
+    Recv,           // recv
+    Stream,         // stream
+    Connect,        // connect
+    Close,          // close
+    Timeout,        // timeout
+    Retry,          // retry
+    Header,         // header
+    Body,           // body
+
+    // Protocol identifiers
+    Http,           // http
+    Https,          // https
+    Ws,             // ws
+    Wss,            // wss
+    Grpc,           // grpc
+    Kafka,          // kafka
+    Amqp,           // amqp
+    GraphQL,        // graphql
+
+    // ========================================
+    // Literals
+    // ========================================
+    /// Binary literal: 0b...
+    BinaryLit(!String),
+    /// Octal literal: 0o...
+    OctalLit(!String),
+    /// Hexadecimal literal: 0x...
+    HexLit(!String),
+    /// Vigesimal literal: 0v... (base 20)
+    VigesimalLit(!String),
+    /// Sexagesimal literal: 0s... (base 60)
+    SexagesimalLit(!String),
+    /// Duodecimal literal: 0z... (base 12)
+    DuodecimalLit(!String),
+    /// Float literal: 123.456 or 1.23e10
+    FloatLit(!String),
+    /// Integer literal: 123
+    IntLit(!String),
+    /// String literal: "..."
+    StringLit(!String),
+    /// Multi-line string: """..."""
+    MultiLineStringLit(!String),
+    /// Byte string: b"..."
+    ByteStringLit(![u8]),
+    /// Byte literal: b'a'
+    ByteLit(!u8),
+    /// Interpolated string: f"... {expr} ..."
+    InterpolatedStringLit(!String),
+    /// SQL sigil string: σ"..."
+    SigilStringSql(!String),
+    /// Route sigil string: ρ"..."
+    SigilStringRoute(!String),
+    /// Character literal: 'c'
+    CharLit(!char),
+    /// Raw string: r"..."
+    RawStringLit(!String),
+    /// Raw delimited string: r#"..."#
+    RawStringDelimited(!String),
+
+    // ========================================
+    // Identifiers
+    // ========================================
+    /// Identifier: [a-zA-Z_][a-zA-Z0-9_]*
+    Ident(!String),
+    /// Rune annotation: //@rune: name
+    RuneAnnotation(!String),
+
+    // ========================================
+    // Attribute keywords
+    // ========================================
+    Repr,           // repr (for #[repr(...)])
+    Align,          // align (for #[align(...)])
+    Test,           // test (for #[test])
+    Default,        // default (for default implementations)
+
+    // ========================================
+    // Special
+    // ========================================
+    /// End of file marker
+    Eof,
+}
+
+impl Token {
+    /// Check if this token is a keyword.
+    pub fn is_keyword(self) -> !bool {
+        match self {
+            Token::Fn | Token::Async | Token::Let | Token::Mut |
+            Token::Const | Token::Type | Token::Struct | Token::Enum |
+            Token::Trait | Token::Impl | Token::Mod | Token::Use |
+            Token::Pub | Token::Actor | Token::Saga | Token::Scope |
+            Token::Rune | Token::If | Token::Else | Token::Match |
+            Token::Loop | Token::While | Token::For | Token::In |
+            Token::Break | Token::Continue | Token::Return |
+            Token::Yield | Token::Await => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a morpheme (Greek letter operator).
+    pub fn is_morpheme(self) -> !bool {
+        match self {
+            Token::Tau | Token::Phi | Token::Sigma | Token::Rho |
+            Token::Lambda | Token::Pi | Token::Hourglass |
+            Token::Delta | Token::Epsilon | Token::Omega |
+            Token::Alpha | Token::Combiner | Token::Mu | Token::Chi |
+            Token::Nu | Token::Xi | Token::Parallel | Token::Gpu |
+            Token::Integral | Token::Partial | Token::Sqrt |
+            Token::Cbrt | Token::Compose => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a verb aspect marker.
+    pub fn is_aspect(self) -> !bool {
+        match self {
+            Token::AspectProgressive | Token::AspectPerfective |
+            Token::AspectPotential | Token::AspectResultative => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a data operation.
+    pub fn is_data_op(self) -> !bool {
+        match self {
+            Token::Bowtie | Token::ElementSmallVerticalBar |
+            Token::SquareCup | Token::SquareCap => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a bitwise symbol.
+    pub fn is_bitwise_symbol(self) -> !bool {
+        match self {
+            Token::BitwiseAndSymbol | Token::BitwiseOrSymbol => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a quantifier.
+    pub fn is_quantifier(self) -> !bool {
+        match self {
+            Token::ForAll | Token::Exists |
+            Token::ElementOf | Token::NotElementOf => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a set operation.
+    pub fn is_set_op(self) -> !bool {
+        match self {
+            Token::Union | Token::Intersection | Token::SetMinus |
+            Token::Subset | Token::SubsetEq |
+            Token::Superset | Token::SupersetEq => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a logic operator.
+    pub fn is_logic_op(self) -> !bool {
+        match self {
+            Token::LogicAnd | Token::LogicOr | Token::LogicNot |
+            Token::LogicXor | Token::Top | Token::Bottom => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is an evidentiality marker.
+    pub fn is_evidentiality(self) -> !bool {
+        match self {
+            Token::Bang | Token::Question |
+            Token::Tilde | Token::Interrobang | Token::Lozenge => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is an affective marker.
+    pub fn is_affective(self) -> !bool {
+        match self {
+            Token::DirectSum | Token::AffectNegative | Token::AffectNeutral |
+            Token::IronyMark | Token::IntensityUp | Token::IntensityDown |
+            Token::IntensityMax | Token::FormalRegister | Token::InformalRegister |
+            Token::EmotionJoy | Token::EmotionSadness | Token::EmotionAnger |
+            Token::EmotionFear | Token::EmotionSurprise | Token::EmotionLove |
+            Token::ConfidenceHigh | Token::ConfidenceMedium | Token::ConfidenceLow => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a sentiment marker.
+    pub fn is_sentiment(self) -> !bool {
+        match self {
+            Token::DirectSum | Token::AffectNegative | Token::AffectNeutral => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is an emotion marker.
+    pub fn is_emotion(self) -> !bool {
+        match self {
+            Token::EmotionJoy | Token::EmotionSadness | Token::EmotionAnger |
+            Token::EmotionFear | Token::EmotionSurprise | Token::EmotionLove => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is an intensity marker.
+    pub fn is_intensity(self) -> !bool {
+        match self {
+            Token::IntensityUp | Token::IntensityDown | Token::IntensityMax => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a literal.
+    pub fn is_literal(self) -> !bool {
+        match self {
+            Token::BinaryLit(_) | Token::OctalLit(_) | Token::HexLit(_) |
+            Token::VigesimalLit(_) | Token::SexagesimalLit(_) | Token::DuodecimalLit(_) |
+            Token::FloatLit(_) | Token::IntLit(_) | Token::StringLit(_) |
+            Token::MultiLineStringLit(_) | Token::ByteStringLit(_) | Token::ByteLit(_) |
+            Token::InterpolatedStringLit(_) | Token::SigilStringSql(_) |
+            Token::SigilStringRoute(_) | Token::CharLit(_) |
+            Token::RawStringLit(_) | Token::RawStringDelimited(_) |
+            Token::True | Token::False | Token::Null => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a delimiter.
+    pub fn is_delimiter(self) -> !bool {
+        match self {
+            Token::LParen | Token::RParen |
+            Token::LBrace | Token::RBrace |
+            Token::LBracket | Token::RBracket => true,
+            _ => false,
+        }
+    }
+
+    /// Check if this token is a protocol keyword.
+    pub fn is_protocol(self) -> !bool {
+        match self {
+            Token::Send | Token::Recv | Token::Stream |
+            Token::Connect | Token::Close | Token::Timeout |
+            Token::Retry | Token::Header | Token::Body |
+            Token::Http | Token::Https | Token::Ws | Token::Wss |
+            Token::Grpc | Token::Kafka | Token::Amqp | Token::GraphQL |
+            Token::ProtoSend | Token::ProtoRecv | Token::ProtoStream |
+            Token::ProtoConnect | Token::ProtoTimeout => true,
+            _ => false,
+        }
+    }
+}
+
+/// A token with its source span.
+pub type SpannedToken = (Token, Span);
+
+// ============================================
+// Tests
+// ============================================
+
+#[test]
+fn test_token_is_keyword() {
+    assert!(Token::Fn.is_keyword());
+    assert!(Token::Let.is_keyword());
+    assert!(Token::If.is_keyword());
+    assert!(!Token::Ident("foo".to_string()).is_keyword());
+    assert!(!Token::Plus.is_keyword());
+}
+
+#[test]
+fn test_token_is_morpheme() {
+    assert!(Token::Tau.is_morpheme());
+    assert!(Token::Phi.is_morpheme());
+    assert!(Token::Sigma.is_morpheme());
+    assert!(Token::Rho.is_morpheme());
+    assert!(!Token::Plus.is_morpheme());
+}
+
+#[test]
+fn test_token_is_evidentiality() {
+    assert!(Token::Bang.is_evidentiality());
+    assert!(Token::Question.is_evidentiality());
+    assert!(Token::Tilde.is_evidentiality());
+    assert!(Token::Interrobang.is_evidentiality());
+    assert!(!Token::Plus.is_evidentiality());
+}
+
+#[test]
+fn test_token_is_literal() {
+    assert!(Token::IntLit("42".to_string()).is_literal());
+    assert!(Token::StringLit("hello".to_string()).is_literal());
+    assert!(Token::True.is_literal());
+    assert!(!Token::Ident("x".to_string()).is_literal());
+}

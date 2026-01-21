@@ -1,0 +1,10 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Generic type mismatch
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ v: Vec<i32> = vec![1, 2, 3];
+    v.push("hello");  // ERROR: pushing String into Vec<i32>
+    println(v.len());
+}

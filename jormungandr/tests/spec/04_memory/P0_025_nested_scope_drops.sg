@@ -1,0 +1,29 @@
+// Test: Nested scope drops
+// Spec: 04-MEMORY.md § 3.1 Drop Trait
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validates Drop respects nested scope boundaries.
+//
+// Expected behavior:
+// Inner scope values dropped before outer continues
+
+sigil Logger {
+    msg: String
+}
+
+⊢ Logger : Drop {
+    rite drop(&vary this) {
+        println(this.msg);
+    }
+}
+
+rite main() {
+    ≔ outer = Logger { msg: "outer".to_string() };
+    println("start");
+    {
+        ≔ inner = Logger { msg: "inner".to_string() };
+        println("inside");
+    }
+    println("after inner");
+}

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Sigil: Evidentiality lattice (light theme) -->
+  <defs>
+    <linearGradient id="k" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0A5C4D"/>
+      <stop offset="100%" style="stop-color:#073D33"/>
+    </linearGradient>
+    <linearGradient id="p" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#B22222"/>
+      <stop offset="100%" style="stop-color:#8B0000"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(32,32)">
+    <path d="M 0,-22 L -18,0 L 0,22 L 18,0 Z" fill="none" stroke="url(#k)" stroke-width="3" opacity="0.5"/>
+    <line x1="0" y1="-22" x2="0" y2="22" stroke="url(#k)" stroke-width="2" stroke-dasharray="3,2" opacity="0.4"/>
+    <circle cy="-22" r="6" fill="url(#k)"/>
+    <text y="-19" fill="#f5f5f5" font-family="monospace" font-size="8" font-weight="bold" text-anchor="middle">!</text>
+    <circle cx="-18" r="5" fill="#3D7A7A" opacity="0.8"/>
+    <circle cx="18" r="5" fill="#606060" opacity="0.8"/>
+    <circle cy="22" r="6" fill="url(#p)"/>
+  </g>
+</svg>

@@ -1,0 +1,48 @@
+//! Test parsing parser.sg with the this-hosted parser
+
+use crate·lexer·Lexer;
+use crate·parser·Parser;
+
+☉ rite main() → !i32 {
+    // Read parser.sg content
+    ≔ source = read_file("this-hosted/src/parser.sg");
+    println(format!("Loaded parser.sg ({} bytes)", source.len()));
+
+    // Test lexer first
+    println("");
+    println("Testing lexer on parser.sg around position 85262...");
+    ≔ vary lexer = Lexer·new(source.clone());
+
+    ≔ vary last_pos = 0;
+    forever {
+        ⌥ lexer.next_token() {
+            ?(token, span) => {
+                // Print tokens around position 85200-85350
+                ⎇ span.start > 85200 ∧ span.start < 85350 {
+                    println(format!("  Token at {}-{}: {:?}", span.start, span.end, token));
+                }
+                last_pos = span.end;
+                ⎇ span.start > 85350 {
+                    ⊲;
+                }
+            },
+            null => ⊲,
+        }
+    }
+    println(format!("Lexer reached position {}", last_pos));
+
+    // Now try to parse
+    println("");
+    println("Testing parser on parser.sg...");
+    ≔ vary parser = Parser·new(source);
+    ⌥ parser.parse_file() {
+        Result·Ok(ast) => {
+            println(format!("SUCCESS! Parsed {} items", ast.items.len()));
+            ⤺ 0;
+        },
+        Result·Err(e) => {
+            println(format!("Parse error at {}-{}: {}", e.span.start, e.span.end, e.message));
+            ⤺ 1;
+        }
+    }
+}

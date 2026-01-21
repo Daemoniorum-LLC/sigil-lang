@@ -1,0 +1,10 @@
+// Test: this parameter of methods
+// Spec: 03-TYPES.md § 4.3 This Parameter
+// Priority: P0
+
+☉ sigil Counter { val: !i32 }
+⊢ Counter { ☉ rite get(&this) → !i32 { this.val } }
+
+rite main() {
+    println(Counter { val: 42 }.get());
+}

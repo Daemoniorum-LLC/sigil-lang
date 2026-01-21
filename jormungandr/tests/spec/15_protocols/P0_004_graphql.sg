@@ -1,0 +1,18 @@
+// Test: GraphQL (mock)
+// Spec: 15-PROTOCOLS.md § 6 GraphQL Support
+// Priority: P0 - Bootstrap Critical
+//
+// Tests GraphQL response handling concept with mock data
+
+sigil User {
+    name: String
+}
+
+rite mock_graphql_query() → User {
+    User { name: "Alice".to_string() }
+}
+
+rite main() {
+    ≔ result = mock_graphql_query();
+    println(result.name);
+}

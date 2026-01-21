@@ -1,0 +1,20 @@
+// Test: Unary minus operator
+// Spec: 05-MATHEMATICS.md § Arithmetic
+// Priority: P0
+//
+// Purpose:
+// Validates the unary minus operator.
+//
+// Expected behavior:
+// Should negate numbers
+
+rite main() {
+    ≔ x = 42;
+    ≔ y = -x;
+    println(y);
+    println(-(-x));
+    println(--x);
+    
+    ≔ f = 3.14;
+    println(-f);
+}

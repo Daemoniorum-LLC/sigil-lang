@@ -1,0 +1,26 @@
+// Test function inlining optimization
+fn add(a, b) {
+    return a + b;
+}
+
+fn mul(a, b) {
+    return a * b;
+}
+
+fn compute(x) {
+    return add(mul(x, 2), 1);
+}
+
+fn main() {
+    let start = now();
+    let i = 0;
+    let result = 0;
+    while i < 1000000 {
+        result = compute(i);
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print(elapsed);
+    print(result);
+    return 0;
+}

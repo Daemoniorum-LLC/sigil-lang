@@ -1,0 +1,14 @@
+// Test: Use imports with alias (rename)
+// Expected output: 15
+
+mod utils {
+    pub fn add(a: i64, b: i64) -> i64 {
+        a + b
+    }
+}
+
+use utils::add as sum;
+
+fn main() -> i64 {
+    sum(10, 5)
+}

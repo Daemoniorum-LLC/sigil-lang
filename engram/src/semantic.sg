@@ -1,0 +1,470 @@
+// Semantic Memory Module
+// Knowledge memory - facts and relationships
+
+module engram::semantic
+
+use engram::types::*
+use engram::config::SemanticConfig
+
+// ============================================================================
+// Semantic Memory
+// ============================================================================
+
+/// Semantic Memory - the agent's factual knowledge
+///
+/// Stores knowledge as a graph of entities (nodes) connected by
+/// relationships (edges). Supports both graph traversal and
+/// semantic similarity search via vector embeddings.
+pub struct SemanticMemory {
+    /// Knowledge graph nodes
+    nodes: HashMap<NodeId, Node>,
+
+    /// Knowledge graph edges
+    edges: HashMap<EdgeId, Edge>,
+
+    /// Index: label -> node id
+    by_label: HashMap<String, NodeId>,
+
+    /// Index: type -> node ids
+    by_type: HashMap<NodeType, Vec<NodeId>>,
+
+    /// Adjacency list: source -> [(target, edge)]
+    outgoing: HashMap<NodeId, Vec<(NodeId, EdgeId)>>,
+
+    /// Reverse adjacency: target -> [(source, edge)]
+    incoming: HashMap<NodeId, Vec<(NodeId, EdgeId)>>,
+
+    /// Configuration
+    config: SemanticConfig,
+}
+
+impl SemanticMemory {
+    // ========================================================================
+    // Construction
+    // ========================================================================
+
+    pub fn new(config: SemanticConfig) -> EngramResult<Self>! {
+        Ok(Self {
+            nodes: HashMap::new(),
+            edges: HashMap::new(),
+            by_label: HashMap::new(),
+            by_type: HashMap::new(),
+            outgoing: HashMap::new(),
+            incoming: HashMap::new(),
+            config,
+        })
+    }
+
+    // ========================================================================
+    // Core Operations
+    // ========================================================================
+
+    /// Learn a new fact
+    pub fn learn(fact: Fact) -> EngramResult<Vec<EngramId>>! {
+        let mut created = vec![]
+
+        // Get or create subject node
+        let subject_id = self.get_or_create_node(
+            &fact.subject,
+            fact.subject_type.unwrap_or(NodeType::Concept)
+        )
+        created.push(subject_id.clone().into())
+
+        // Process each claim
+        for claim in &fact.claims {
+            let object_id = self.get_or_create_node(
+                &claim.object,
+                claim.object_type.unwrap_or(NodeType::Concept)
+            )
+            created.push(object_id.clone().into())
+
+            // Create edge
+            let edge_id = self.create_edge(
+                subject_id.clone(),
+                object_id.clone(),
+                claim.relation.clone(),
+                fact.epistemic.clone(),
+                fact.confidence,
+            )?
+
+            created.push(edge_id.into())
+        }
+
+        Ok(created)
+    }
+
+    /// Query by semantic meaning
+    pub fn query(text: &str, limit: usize) -> Vec<QueryResult> {
+        let query_lower = text.to_lowercase()
+        let query_words: HashSet<_> = query_lower.split_whitespace().collect()
+
+        // Score all nodes by relevance
+        let mut scored: Vec<_> = self.nodes.values()
+            .map(|node| {
+                let relevance = self.compute_relevance(&query_words, node)
+                QueryResult {
+                    node_id: node.id.clone(),
+                    node: node.clone(),
+                    relevance,
+                    confidence: node.confidence,
+                    epistemic: node.epistemic.clone(),
+                    path: None,
+                }
+            })
+            .filter(|r| r.relevance > 0.0)
+            .collect()
+
+        // Sort by relevance * confidence
+        scored.sort_by(|a, b| {
+            let score_a = a.relevance * a.confidence.max(0.1)
+            let score_b = b.relevance * b.confidence.max(0.1)
+            score_b.partial_cmp(&score_a).unwrap()
+        })
+
+        scored.into_iter().take(limit).collect()
+    }
+
+    /// Get a specific node
+    pub fn get_node(id: NodeId) -> Option<&Node> {
+        self.nodes.get(&id)
+    }
+
+    /// Get a specific edge
+    pub fn get_edge(id: EdgeId) -> Option<&Edge> {
+        self.edges.get(&id)
+    }
+
+    /// Get or create an entity node
+    pub fn entity(label: &str) -> &mut Node {
+        let id = self.get_or_create_node(label, NodeType::Concept)
+        self.nodes.get_mut(&id).unwrap()
+    }
+
+    /// Traverse the graph from a starting node
+    pub fn traverse(start: NodeId, path: GraphPath) -> Vec<TraversalResult> {
+        let mut current = vec![(start, vec![])]
+
+        for step in &path.steps {
+            let mut next = vec![]
+
+            for (node_id, visited_path) in current {
+                let neighbors = self.follow_step(&node_id, step)
+
+                for (next_id, edge_id) in neighbors {
+                    let mut new_path = visited_path.clone()
+                    new_path.push(edge_id)
+                    next.push((next_id, new_path))
+                }
+            }
+
+            current = next
+        }
+
+        current.into_iter()
+            .map(|(node_id, path)| TraversalResult {
+                node: self.nodes.get(&node_id).cloned(),
+                path,
+            })
+            .filter(|r| r.node.is_some())
+            .collect()
+    }
+
+    /// Get neighbors of a node
+    pub fn neighbors(node: NodeId, relation: Option<Relation>) -> Vec<NodeId> {
+        let edges = self.outgoing.get(&node).unwrap_or(&vec![]);
+
+        edges.iter()
+            .filter(|(_, edge_id)| {
+                if let Some(rel) = &relation {
+                    self.edges.get(edge_id)
+                        .map(|e| &e.relation == rel)
+                        .unwrap_or(false)
+                } else {
+                    true
+                }
+            })
+            .map(|(target, _)| target.clone())
+            .collect()
+    }
+
+    /// Archive nodes matching predicate
+    pub fn archive(predicate: fn(&Memory) -> bool) -> usize {
+        // In real implementation, move to cold storage
+        0  // Placeholder
+    }
+
+    // ========================================================================
+    // Usage Information
+    // ========================================================================
+
+    pub fn usage() -> MemorySystemUsage {
+        MemorySystemUsage {
+            item_count: self.nodes.len() + self.edges.len(),
+            bytes_used: self.nodes.len() * std::mem::size_of::<Node>()
+                + self.edges.len() * std::mem::size_of::<Edge>(),
+            capacity: self.config.max_nodes,
+        }
+    }
+
+    // ========================================================================
+    // Internal Helpers
+    // ========================================================================
+
+    fn get_or_create_node(label: &str, node_type: NodeType) -> NodeId {
+        // Check if exists
+        if let Some(id) = self.by_label.get(label) {
+            return id.clone()
+        }
+
+        // Create new
+        let id = NodeId::new().unwrap()
+        let node = Node {
+            id: id.clone(),
+            node_type: node_type.clone(),
+            label: label.to_string(),
+            aliases: vec![],
+            properties: HashMap::new(),
+            epistemic: Epistemic::Unknown,
+            confidence: 0.0,
+            sources: vec![],
+            created_at: Instant::now(),
+            updated_at: Instant::now(),
+            access_count: 0,
+        }
+
+        self.nodes.insert(id.clone(), node)
+        self.by_label.insert(label.to_string(), id.clone())
+        self.by_type.entry(node_type).or_default().push(id.clone())
+
+        id
+    }
+
+    fn create_edge(
+        source: NodeId,
+        target: NodeId,
+        relation: Relation,
+        epistemic: Epistemic,
+        confidence: f64,
+    ) -> EngramResult<EdgeId>! {
+        let id = EdgeId::new()!
+
+        let edge = Edge {
+            id: id.clone(),
+            source: source.clone(),
+            target: target.clone(),
+            relation,
+            properties: HashMap::new(),
+            weight: 1.0,
+            epistemic,
+            confidence,
+            sources: vec![],
+            valid_from: Some(Instant::now()),
+            valid_until: None,
+        }
+
+        self.edges.insert(id.clone(), edge)
+        self.outgoing.entry(source.clone()).or_default().push((target.clone(), id.clone()))
+        self.incoming.entry(target).or_default().push((source, id.clone()))
+
+        Ok(id)
+    }
+
+    fn compute_relevance(query_words: &HashSet<&str>, node: &Node) -> f64 {
+        let label_lower = node.label.to_lowercase()
+        let label_words: HashSet<_> = label_lower.split_whitespace().collect()
+
+        // Exact match bonus
+        if query_words.iter().any(|w| *w == label_lower.as_str()) {
+            return 1.0
+        }
+
+        // Word overlap
+        let intersection = query_words.intersection(&label_words).count()
+        if intersection > 0 {
+            return intersection as f64 / query_words.len().max(1) as f64
+        }
+
+        // Substring match
+        for word in query_words {
+            if label_lower.contains(*word) || word.contains(label_lower.as_str()) {
+                return 0.5
+            }
+        }
+
+        0.0
+    }
+
+    fn follow_step(node: &NodeId, step: &PathStep) -> Vec<(NodeId, EdgeId)> {
+        let edges = match step.direction {
+            Direction::Outgoing => self.outgoing.get(node).cloned().unwrap_or_default(),
+            Direction::Incoming => self.incoming.get(node).cloned().unwrap_or_default(),
+            Direction::Both => {
+                let mut both = self.outgoing.get(node).cloned().unwrap_or_default();
+                both.extend(self.incoming.get(node).cloned().unwrap_or_default());
+                both
+            }
+        }
+
+        edges.into_iter()
+            .filter(|(_, edge_id)| {
+                self.edges.get(edge_id)
+                    .map(|e| e.relation == step.relation)
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+}
+
+// ============================================================================
+// Supporting Types
+// ============================================================================
+
+/// A node in the knowledge graph
+pub struct Node {
+    pub id: NodeId,
+    pub node_type: NodeType,
+    pub label: String,
+    pub aliases: Vec<String>,
+    pub properties: HashMap<String, Value>,
+    pub epistemic: Epistemic,
+    pub confidence: f64,
+    pub sources: Vec<Source>,
+    pub created_at: Instant,
+    pub updated_at: Instant,
+    pub access_count: u32,
+}
+
+/// An edge in the knowledge graph
+pub struct Edge {
+    pub id: EdgeId,
+    pub source: NodeId,
+    pub target: NodeId,
+    pub relation: Relation,
+    pub properties: HashMap<String, Value>,
+    pub weight: f64,
+    pub epistemic: Epistemic,
+    pub confidence: f64,
+    pub sources: Vec<Source>,
+    pub valid_from: Option<Instant>,
+    pub valid_until: Option<Instant>,
+}
+
+/// A fact to learn
+pub struct Fact {
+    pub subject: String,
+    pub subject_type: Option<NodeType>,
+    pub claims: Vec<Claim>,
+    pub epistemic: Epistemic,
+    pub confidence: f64,
+    pub sources: Vec<Source>,
+}
+
+impl Fact {
+    pub fn new(subject: &str) -> Self {
+        Self {
+            subject: subject.to_string(),
+            subject_type: None,
+            claims: vec![],
+            epistemic: Epistemic::Unknown,
+            confidence: 0.5,
+            sources: vec![],
+        }
+    }
+
+    pub fn claim(mut self, relation: Relation, object: &str) -> Self {
+        self.claims.push(Claim {
+            relation,
+            object: object.to_string(),
+            object_type: None,
+            properties: HashMap::new(),
+        })
+        self
+    }
+
+    pub fn observed(mut self) -> Self {
+        self.epistemic = Epistemic::Observed {
+            observer: "self".to_string(),
+            timestamp: Instant::now(),
+        }
+        self.confidence = 0.95
+        self
+    }
+
+    pub fn significance() -> f64 {
+        self.confidence * self.epistemic.strength()
+    }
+
+    pub fn to_value() -> Value {
+        json!({
+            "subject": self.subject,
+            "claims": self.claims.iter().map(|c| {
+                json!({
+                    "relation": format!("{:?}", c.relation),
+                    "object": c.object,
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// A claim within a fact
+pub struct Claim {
+    pub relation: Relation,
+    pub object: String,
+    pub object_type: Option<NodeType>,
+    pub properties: HashMap<String, Value>,
+}
+
+/// Result of a semantic query
+pub struct QueryResult {
+    pub node_id: NodeId,
+    pub node: Node,
+    pub relevance: f64,
+    pub confidence: f64,
+    pub epistemic: Epistemic,
+    pub path: Option<Vec<EdgeId>>,
+}
+
+/// Path for graph traversal
+pub struct GraphPath {
+    pub steps: Vec<PathStep>,
+}
+
+impl GraphPath {
+    pub fn new() -> Self {
+        Self { steps: vec![] }
+    }
+
+    pub fn follow(mut self, relation: Relation) -> Self {
+        self.steps.push(PathStep {
+            relation,
+            direction: Direction::Outgoing,
+        })
+        self
+    }
+
+    pub fn follow_incoming(mut self, relation: Relation) -> Self {
+        self.steps.push(PathStep {
+            relation,
+            direction: Direction::Incoming,
+        })
+        self
+    }
+}
+
+pub struct PathStep {
+    pub relation: Relation,
+    pub direction: Direction,
+}
+
+pub enum Direction {
+    Outgoing,
+    Incoming,
+    Both,
+}
+
+/// Result of graph traversal
+pub struct TraversalResult {
+    pub node: Option<Node>,
+    pub path: Vec<EdgeId>,
+}

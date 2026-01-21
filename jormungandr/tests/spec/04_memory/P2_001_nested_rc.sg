@@ -1,0 +1,15 @@
+// Test: Nested Rc references
+// Spec: 04-MEMORY.md § 4.2 Rc
+// Priority: P2 - Enhancement
+
+sigil Node {
+    value: !i32,
+}
+
+rite main() {
+    ≔ inner = Rc·new(Node { value: 42 });
+    ≔ outer = Rc·new(inner.clone());
+
+    println((*inner).value);
+    println((*(*outer)).value);
+}

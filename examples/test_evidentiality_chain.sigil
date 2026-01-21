@@ -1,0 +1,23 @@
+// Test evidentiality promotion chain
+// Data flows from: unknown -> reported~ -> validated!
+
+fn fetch_external() -> i32 {
+    42  // Simulating external data
+}
+
+fn main() {
+    // Get data from "external source" (simulated)
+    let external_data = fetch_external();
+
+    // Chain: get data, validate it, use it
+    let validated = external_data
+        |validate!{x => x > 0 && x < 100}; // Validate it's in valid range
+
+    println("Validated data:");
+    println(validated);
+
+    // Use validated data in computation
+    let doubled = validated * 2;
+    println("Doubled:");
+    println(doubled);
+}

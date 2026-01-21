@@ -1,0 +1,12 @@
+// Test: String contains method
+rite main() {
+    ≔ s: !String = "Hello, World!";
+
+    ⎇ s.contains("World") {
+        println("found");
+    }
+
+    ⎇ !s.contains("Goodbye") {
+        println("not found");
+    }
+}

@@ -1,0 +1,14 @@
+// Test: Comparison operator <
+// Spec: 03-TYPES.md § 3.6 Comparison Operators
+// Priority: P0
+//
+// Purpose:
+// Validates that less-than comparison works correctly.
+//
+// Expected behavior:
+// Should compile and print yea
+
+rite main() {
+    ≔ x: !bool = 10 < 20;
+    println(x);
+}

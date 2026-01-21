@@ -1,0 +1,11 @@
+// Test: Try receive on empty channel
+// Spec: 06-CONCURRENCY.md § 2.4 Non-blocking Receive
+// Priority: P1 - Standard Feature
+
+rite main() {
+    ≔ ch = channel_new();
+
+    // Try to receive from empty channel - should ⤺ None
+    ≔ result = channel_try_recv(ch);
+    println(result);
+}

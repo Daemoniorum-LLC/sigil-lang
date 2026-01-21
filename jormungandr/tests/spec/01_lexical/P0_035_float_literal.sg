@@ -1,0 +1,14 @@
+// Test: Floating point literal
+// Spec: 01-LEXICAL.md § 2.2 Float Literals
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate float literals work correctly.
+//
+// Expected behavior:
+// Should print 3.14
+
+rite main() {
+    ≔ x: !f64 = 3.14;
+    println(x);
+}

@@ -1,0 +1,95 @@
+// Sigil Performance Benchmarks
+
+fn fib(n) {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn benchmark_fib() {
+    let start = now();
+    let result = fib(25);
+    let elapsed = now() - start;
+    print("Fibonacci(25):");
+    print(result);
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn benchmark_pipes() {
+    let start = now();
+    let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let i = 0;
+    while i < 1000 {
+        let result = data|τ{_ * 2}|φ{_ > 5}|τ{_ + 1};
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("Pipe transforms (1000 iterations):");
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn benchmark_math() {
+    let start = now();
+    let i = 0;
+    let total = 0.0;
+    while i < 10000 {
+        total = total + sqrt(i * 1.0) + sin(i * 1.0);
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("Math operations (10k iterations):");
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn benchmark_strings() {
+    let start = now();
+    let s = "hello";
+    let i = 0;
+    while i < 1000 {
+        let u = upper(s);
+        let l = lower(u);
+        let r = replace(l, "l", "L");
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("String ops (1000 iterations):");
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn benchmark_evidence() {
+    let start = now();
+    let i = 0;
+    while i < 10000 {
+        let k = known(42);
+        let u = uncertain(100);
+        let e1 = evidence_of(k);
+        let e2 = evidence_of(u);
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("Evidence ops (10k iterations):");
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn main() {
+    print("=== Sigil Benchmarks ===");
+    print("");
+    benchmark_fib();
+    print("");
+    benchmark_pipes();
+    print("");
+    benchmark_math();
+    print("");
+    benchmark_strings();
+    print("");
+    benchmark_evidence();
+    print("");
+    print("=== Complete ===");
+    return 0;
+}

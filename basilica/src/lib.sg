@@ -1,0 +1,166 @@
+//! Basilica - Evidentiality-Native Web Framework for Sigil
+//!
+//! Basilica is a web framework designed from first principles to embrace
+//! Sigil's unique features: evidentiality, daemon services, covenant
+//! collaboration, and oracle explainability.
+//!
+//! # Core Principles
+//!
+//! 1. **Evidentiality Flows Through Everything**
+//!    - Request data enters as `~` (external/reported)
+//!    - Validation gates promote `~` to `!` (known/verified)
+//!    - Responses carry evidence metadata
+//!
+//! 2. **Services Are Daemons, Not Beans**
+//!    - Long-lived processes with memory (Engram)
+//!    - Heartbeat cycles for proactive work
+//!    - Learning from experience
+//!
+//! 3. **Human-in-the-Loop by Design**
+//!    - Covenant boundaries enforced in middleware
+//!    - Handoffs for approval when needed
+//!    - Trust tracking built in
+//!
+//! 4. **Explainable by Default**
+//!    - Oracle traces every decision
+//!    - Confidence in responses
+//!    - Counterfactual reasoning available
+//!
+//! # Example
+//!
+//! ```sigil
+//! use basilica::prelude::*;
+//!
+//! #[route(GET, "/")]
+//! fn hello() -> Response<String!> {
+//!     Response::ok("Hello, Basilica!"!)
+//! }
+//!
+//! fn main() {
+//!     Nave::new()
+//!         .route(routes![hello])
+//!         .listen("0.0.0.0:8080")
+//!         .run();
+//! }
+//! ```
+
+// Re-export shared types
+pub use shared::{
+    Timestamp, Duration, Value, Confidence, TrustLevel,
+    Priority, AgentId, HumanId, Metadata, AgentError, AgentResult,
+    BoundedDeque,
+};
+
+// Core modules
+pub mod evidence;
+pub mod request;
+pub mod response;
+pub mod route;
+pub mod middleware;
+pub mod validation;
+pub mod context;
+pub mod nave;
+pub mod service;
+pub mod repository;
+pub mod query;
+pub mod error;
+
+// Real-time streaming
+pub mod stream;
+
+// Security middleware
+pub mod cors;
+pub mod auth;
+
+// Re-exports for convenience
+pub use evidence::*;
+pub use request::*;
+pub use response::*;
+pub use route::*;
+pub use middleware::*;
+pub use validation::*;
+pub use context::*;
+pub use nave::*;
+pub use service::*;
+pub use repository::*;
+pub use query::*;
+pub use error::*;
+pub use stream::*;
+pub use cors::*;
+pub use auth::*;
+
+// External integrations
+pub use daemon::{Daemon, DaemonConfig, Goal, GoalStack};
+pub use engram::{Engram, Query as MemoryQuery, Event};
+pub use covenant::{Covenant, Pact, Mode, Boundary, BoundaryCheck, HandoffType};
+pub use oracle::{Oracle, Explanation, ExplanationLevel, ReasoningStep};
+pub use anima::{Anima, Expression, Resonance};
+
+/// Prelude module for common imports
+pub mod prelude {
+    pub use super::{
+        // Core types
+        Nave, Route, Request, Response, Context,
+        Middleware, MiddlewareResult, ValidationGate,
+
+        // Evidence
+        HttpEvidence, Evidence, EvidenceLevel,
+
+        // Service
+        Service, ServiceConfig,
+
+        // Repository
+        Repository, QueryBuilder,
+
+        // Errors
+        BasilicaError, BasilicaResult,
+
+        // From shared
+        Timestamp, Duration, Value, Confidence, TrustLevel, Priority,
+
+        // From daemon
+        Daemon, DaemonConfig,
+
+        // From engram
+        Engram, Event,
+
+        // From covenant
+        Covenant, Mode, BoundaryCheck,
+
+        // From oracle
+        Oracle, Explanation, ExplanationLevel,
+
+        // Common traits
+        Validate, IntoResponse, FromRequest,
+
+        // Streaming (SSE)
+        SseEvent, SseStream,
+
+        // CORS
+        CorsMiddleware, CorsConfig,
+
+        // Authentication
+        AuthMiddleware, AuthConfig, JwtConfig,
+        CurrentUser, AuthenticatedUser, AuthContext,
+    };
+
+    // Macro re-exports
+    pub use super::routes;
+    pub use super::route;
+}
+
+/// Route collection macro
+#[macro_export]
+macro_rules! routes {
+    ($($route:path),* $(,)?) => {
+        vec![$($route.into_route()),*]
+    };
+}
+
+/// Route attribute macro (placeholder - implemented by compiler)
+#[macro_export]
+macro_rules! route {
+    ($method:ident, $path:literal) => {
+        // Compiler implements this
+    };
+}

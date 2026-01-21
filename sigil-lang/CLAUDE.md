@@ -2,9 +2,9 @@
 
 ## The Canonical Compiler
 
-The **Rust-based Sigil compiler** at `parser/` is the canonical, production-ready compiler.
+The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 233/233 P0 tests passing (100% pass rate) ✅🔥
+**Test Results**: 414/414 P0 tests passing (100%)
 
 ```bash
 cd parser
@@ -20,11 +20,10 @@ cd ../jormungandr/tests
 
 ## Why Rust Compiler?
 
-The Rust compiler is:
-- ✅ **PERFECT** - 100% test pass rate on bootstrap-critical tests (233/233)
-- ✅ **Complete** - Full lexer, parser, interpreter, JIT (Cranelift), and LLVM backend
-- ✅ **Optimized** - Days of optimization work, outperforms hand-written Rust in some cases
-- ✅ **Maintained** - 3.1MB of production code with full stdlib including Rc<T>, Cell<T>, Drop
+The Rust compiler:
+- 100% test pass rate (414/414 P0 tests)
+- Full lexer, parser, interpreter, JIT (Cranelift), and LLVM backend
+- Includes stdlib with Rc<T>, Cell<T>, Drop, HTTP, WebSocket
 
 ## Commands
 
@@ -34,6 +33,12 @@ The Rust compiler is:
 
 # Compile to native binary (LLVM backend)
 ./target/release/sigil compile file.sg -o output
+
+# Compile with CUDA support (GPU compute)
+./target/release/sigil compile file.sg -o output --cuda
+
+# Compile with LTO (link-time optimization)
+./target/release/sigil compile file.sg -o output --lto
 
 # JIT execution (Cranelift backend)
 ./target/release/sigil jit file.sg
@@ -48,10 +53,13 @@ The Rust compiler is:
 - `parser/src/llvm_codegen.rs` - LLVM AOT backend (195KB)
 - `parser/src/stdlib.rs` - Standard library (1.2MB)
 - `parser/src/typeck.rs` - Type checker (122KB)
+- `parser/runtime/sigil_runtime.c` - C runtime (SIMD intrinsics, memory management)
+- `parser/runtime/libsigil_runtime.a` - Standard runtime library
+- `parser/runtime/libsigil_runtime_cuda.a` - CUDA-enabled runtime library
 
 ## Test Suite
 
-The test suite is located at `jormungandr/tests/` with 233 bootstrap-critical (P0) tests.
+The test suite is located at `jormungandr/tests/`.
 
 ```bash
 cd jormungandr/tests
@@ -60,17 +68,17 @@ cd jormungandr/tests
 ./run_tests_rust.sh --priority P0      # Run P0 tests only
 ```
 
-**Current Status**: 233/233 passing (100%) 🏆
+**Current Status**: 414/414 passing (100%)
 
-**No Limitations** - All features work, including:
-- `P0_007_mutable_borrow` - ✅ Mutable reference semantics via sync-back mechanism
-- `P0_013_drop_trait` - ✅ Automatic Drop::drop() calls when values go out of scope
+Notable implementations:
+- Mutable reference semantics via sync-back mechanism
+- Automatic Drop::drop() calls when values go out of scope
 
 ## Jormungandr (Legacy Self-Hosted Compiler)
 
 The `jormungandr/` directory contains the legacy self-hosted compiler written in Sigil.
 
-**Status**: Development/experimental. Use the Rust compiler for production work.
+**Status**: Experimental. Use the Rust compiler for actual work.
 
 ```bash
 cd jormungandr/build
@@ -100,13 +108,85 @@ These can be used for testing the compiler with real-world code.
 3. **Test your changes**: `../../parser/target/release/sigil run your_test.sg`
 4. **Check coverage**: Test results show which features work
 
-## Recent Achievements (January 2026)
+## Compute Backends
 
-- ✅ Restored Rust compiler from git history (was deleted Jan 10)
-- ✅ Fixed 11 critical bugs across two epic sessions
-- ✅ Implemented Rc<T> and Cell<T> stdlib types
-- ✅ Implemented mutable reference sync-back mechanism
-- ✅ Implemented Drop trait with automatic destructor calls
-- ✅ **Achieved 100% pass rate on P0 bootstrap tests** 🏆
+The LLVM backend supports compute primitives for numerical workloads.
 
-The Rust compiler is **PERFECT** - 233/233 tests passing!
+### SIMD Backend (AVX-512)
+
+Native 512-bit vector operations using AVX-512 intrinsics.
+
+**Type:** `F32x16` - 16-lane packed f32 vector
+
+```sigil
+// Allocate aligned memory (64-byte for AVX-512)
+≔ a = F32x16·alloc(16);
+≔ b = F32x16·alloc(16);
+≔ result = F32x16·alloc(16);
+
+// Initialize vectors
+F32x16·splat(a, 2.0);
+F32x16·splat(b, 3.0);
+
+// Vector operations
+F32x16·add(result, a, b);      // result = a + b
+F32x16·mul(result, a, b);      // result = a * b
+F32x16·fmadd(result, a, b, c); // result = a * b + c
+
+// Reductions
+≔ sum = F32x16·reduce_add(a);  // horizontal sum
+≔ dot = F32x16·dot(a, b);      // dot product
+```
+
+**Requirements:** AVX-512 capable CPU. Falls back to scalar on unsupported hardware.
+
+### CUDA Backend
+
+GPU compute via CUDA Driver API. Compile with `--cuda` flag.
+
+```bash
+./sigil compile program.sg -o program --cuda
+```
+
+**Module:** `Cuda`
+
+```sigil
+// Initialize CUDA
+≔ ok = Cuda·init();
+≔ devices = Cuda·device_count();
+
+// Device memory management
+≔ d_ptr = Cuda·malloc(1024);
+Cuda·free(d_ptr);
+
+// Memory transfers
+Cuda·memcpy_h2d(d_ptr, h_ptr, size);  // Host → Device
+Cuda·memcpy_d2h(h_ptr, d_ptr, size);  // Device → Host
+
+// Synchronization
+Cuda·sync();
+
+// Kernel compilation (NVRTC)
+≔ kernel = Cuda·compile_kernel(cuda_source, "kernel_name");
+≔ result = Cuda·launch_1d(kernel, grid_x, block_x, args_ptr, num_args);
+
+// Cleanup
+Cuda·cleanup();
+```
+
+**Requirements:** NVIDIA GPU, CUDA toolkit. Links `-lcuda -lnvrtc`.
+
+**Runtime:** Uses `libsigil_runtime_cuda.a` instead of standard runtime.
+
+## Recent Changes (January 2026)
+
+- Restored Rust compiler from git history
+- Fixed critical bugs in type system and codegen
+- Implemented Rc<T> and Cell<T> stdlib types
+- Implemented mutable reference sync-back mechanism
+- Implemented Drop trait with automatic destructor calls
+- Added native symbol vocabulary (middledot syntax, arrows, etc.)
+- Added SIMD backend (AVX-512 F32x16 operations)
+- Added CUDA backend (GPU compute via Driver API)
+- Added LSP server, formatter, linter, package manager
+- Added HTTP and WebSocket clients

@@ -1,0 +1,22 @@
+// Test: Nested scopes and variable shadowing
+// Spec: 18-COMPILER.md § 2.1 Scopes
+// Priority: P1 - Standard Feature
+
+rite main() {
+    ≔ x: !i32 = 1;
+    println(x);
+
+    {
+        ≔ x: !i32 = 2;
+        println(x);
+
+        {
+            ≔ x: !i32 = 3;
+            println(x);
+        }
+
+        println(x);
+    }
+
+    println(x);
+}

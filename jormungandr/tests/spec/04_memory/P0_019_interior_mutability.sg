@@ -1,0 +1,15 @@
+// Test: Interior mutability with Cell
+// Spec: 04-MEMORY.md § 6.1 Cell Type
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate Cell allows mutation through shared ref.
+//
+// Expected behavior:
+// Should print 99 (after set)
+
+rite main() {
+    ≔ c: !Cell<!i32> = Cell·new(42);
+    c.set(99);
+    println(c.get());
+}

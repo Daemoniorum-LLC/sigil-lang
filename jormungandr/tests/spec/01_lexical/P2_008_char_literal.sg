@@ -1,0 +1,13 @@
+// Test: Character literals
+// Spec: 01-LEXICAL.md § 4.4 Character Literals
+// Priority: P2 - Enhancement
+
+rite main() {
+    ≔ a: char = 'a';
+    ≔ b: char = 'Z';
+    ≔ c: char = '9';
+
+    println(a);
+    println(b);
+    println(c);
+}

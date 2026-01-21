@@ -1,0 +1,11 @@
+// Test: Option with Some and None
+// Expected output: 42
+
+fn main() -> i64 {
+    let x = Some(42);
+    let y = None();
+    
+    // unwrap_or: if x is Some, return value; else return default
+    let result = unwrap_or(x, 0);
+    result
+}

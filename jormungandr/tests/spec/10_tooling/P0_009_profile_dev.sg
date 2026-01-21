@@ -1,0 +1,11 @@
+// Test: Dev profile (debug mode)
+// Spec: 10-TOOLING.md § 2.4 Profiles
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    #[cfg(debug_assertions)]
+    println(1);
+
+    #[cfg(not(debug_assertions))]
+    println(0);
+}

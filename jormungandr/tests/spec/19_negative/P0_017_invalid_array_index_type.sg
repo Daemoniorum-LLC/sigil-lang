@@ -1,0 +1,9 @@
+// Negative Test: Invalid array index type
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ arr: Vec<i32> = vec![1, 2, 3];
+    ≔ val = arr["hello"];  // ERROR: index must be integer
+    println(val);
+}

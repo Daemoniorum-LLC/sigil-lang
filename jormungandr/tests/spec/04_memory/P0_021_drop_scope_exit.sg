@@ -1,0 +1,28 @@
+// Test: Drop called on scope exit
+// Spec: 04-MEMORY.md § 3.1 Drop Trait
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validates Drop·drop is called when values leave scope.
+//
+// Expected behavior:
+// Drop message prints when scope exits
+
+sigil Dropper {
+    name: String
+}
+
+⊢ Dropper : Drop {
+    rite drop(&vary this) {
+        println("dropped");
+    }
+}
+
+rite main() {
+    println("start");
+    {
+        ≔ d = Dropper { name: "test".to_string() };
+        println("in scope");
+    }
+    println("end");
+}

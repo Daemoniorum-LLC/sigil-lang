@@ -1,0 +1,468 @@
+//! Tests for Omen Core Types
+//!
+//! Verifies ID types, epistemic status, and utility types.
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+pub struct BeliefId { bytes: [u8; 16] }
+pub struct GoalId { bytes: [u8; 16] }
+pub struct PlanId { bytes: [u8; 16] }
+pub struct StepId { bytes: [u8; 16] }
+pub struct RiskId { bytes: [u8; 16] }
+
+fn uuid_v7() -> [u8; 16] { [0u8; 16] }
+
+impl BeliefId {
+    pub fn new() -> Self { Self { bytes: uuid_v7() } }
+    pub fn from_bytes(bytes: [u8; 16]) -> Self { Self { bytes } }
+}
+
+impl GoalId {
+    pub fn new() -> Self { Self { bytes: uuid_v7() } }
+    pub fn from_bytes(bytes: [u8; 16]) -> Self { Self { bytes } }
+}
+
+impl PlanId {
+    pub fn new() -> Self { Self { bytes: uuid_v7() } }
+    pub fn from_bytes(bytes: [u8; 16]) -> Self { Self { bytes } }
+}
+
+impl StepId {
+    pub fn new() -> Self { Self { bytes: uuid_v7() } }
+    pub fn from_bytes(bytes: [u8; 16]) -> Self { Self { bytes } }
+}
+
+impl RiskId {
+    pub fn new() -> Self { Self { bytes: uuid_v7() } }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Epistemic {
+    Axiomatic,
+    Observed,
+    Reported,
+    Inferred,
+    Contested,
+    Unknown,
+}
+
+impl Epistemic {
+    pub fn rank(&self) -> u8 {
+        match self {
+            Epistemic::Axiomatic => 5,
+            Epistemic::Observed => 4,
+            Epistemic::Reported => 3,
+            Epistemic::Inferred => 2,
+            Epistemic::Contested => 1,
+            Epistemic::Unknown => 0,
+        }
+    }
+
+    pub fn is_trustworthy(&self) -> bool {
+        self.rank() >= 3
+    }
+
+    pub fn stronger_than(&self, other: &Epistemic) -> bool {
+        self.rank() > other.rank()
+    }
+}
+
+pub struct Duration { nanos: u64 }
+
+impl Duration {
+    pub fn zero() -> Self { Self { nanos: 0 } }
+    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    pub fn hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    pub fn as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
+    pub fn as_millis(&self) -> u64 { self.nanos / 1_000_000 }
+}
+
+impl Copy for Duration {}
+impl Clone for Duration {
+    fn clone(&self) -> Self { *self }
+}
+
+pub struct Timestamp { nanos: u64 }
+
+impl Timestamp {
+    pub fn now() -> Self { Self { nanos: 1000 } }
+    pub fn epoch() -> Self { Self { nanos: 0 } }
+    pub fn from_secs(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    pub fn as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
+}
+
+impl std::ops::Add<Duration> for Timestamp {
+    type Output = Self;
+    fn add(self, d: Duration) -> Self {
+        Self { nanos: self.nanos + d.nanos }
+    }
+}
+
+pub struct Value {
+    inner: Vec<u8>,
+}
+
+impl Value {
+    pub fn empty() -> Self { Self { inner: vec![] } }
+    pub fn from_int(n: i64) -> Self {
+        Self { inner: n.to_le_bytes().to_vec() }
+    }
+    pub fn from_float(f: f64) -> Self {
+        Self { inner: f.to_le_bytes().to_vec() }
+    }
+    pub fn from_bool(b: bool) -> Self {
+        Self { inner: vec![if b { 1 } else { 0 }] }
+    }
+    pub fn from_string(s: &str) -> Self {
+        Self { inner: s.as_bytes().to_vec() }
+    }
+    pub fn is_empty(&self) -> bool { self.inner.is_empty() }
+    pub fn len(&self) -> usize { self.inner.len() }
+}
+
+impl Clone for Value {
+    fn clone(&self) -> Self {
+        Self { inner: self.inner.clone() }
+    }
+}
+
+use std::collections::HashMap;
+
+pub struct State {
+    pub variables: HashMap<String, Value>,
+}
+
+impl State {
+    pub fn new() -> Self {
+        Self { variables: HashMap::new() }
+    }
+
+    pub fn with_var(mut self, name: &str, value: Value) -> Self {
+        self.variables.insert(name.to_string(), value);
+        self
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Value> {
+        self.variables.get(name)
+    }
+
+    pub fn set(&mut self, name: &str, value: Value) {
+        self.variables.insert(name.to_string(), value);
+    }
+
+    pub fn has(&self, name: &str) -> bool {
+        self.variables.contains_key(name)
+    }
+}
+
+// ============================================================================
+// Tests: ID Types
+// ============================================================================
+
+#[test]
+fn test_belief_id_new() {
+    let id = BeliefId::new();
+    assert_eq(id.bytes.len(), 16);
+}
+
+#[test]
+fn test_belief_id_from_bytes() {
+    let bytes = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+    let id = BeliefId::from_bytes(bytes);
+    assert_eq(id.bytes[0], 1);
+    assert_eq(id.bytes[15], 16);
+}
+
+#[test]
+fn test_goal_id_new() {
+    let id = GoalId::new();
+    assert_eq(id.bytes.len(), 16);
+}
+
+#[test]
+fn test_plan_id_new() {
+    let id = PlanId::new();
+    assert_eq(id.bytes.len(), 16);
+}
+
+#[test]
+fn test_step_id_new() {
+    let id = StepId::new();
+    assert_eq(id.bytes.len(), 16);
+}
+
+#[test]
+fn test_risk_id_new() {
+    let id = RiskId::new();
+    assert_eq(id.bytes.len(), 16);
+}
+
+// ============================================================================
+// Tests: Epistemic Status
+// ============================================================================
+
+#[test]
+fn test_epistemic_axiomatic_rank() {
+    let e = Epistemic::Axiomatic;
+    assert_eq(e.rank(), 5);
+}
+
+#[test]
+fn test_epistemic_observed_rank() {
+    let e = Epistemic::Observed;
+    assert_eq(e.rank(), 4);
+}
+
+#[test]
+fn test_epistemic_reported_rank() {
+    let e = Epistemic::Reported;
+    assert_eq(e.rank(), 3);
+}
+
+#[test]
+fn test_epistemic_inferred_rank() {
+    let e = Epistemic::Inferred;
+    assert_eq(e.rank(), 2);
+}
+
+#[test]
+fn test_epistemic_contested_rank() {
+    let e = Epistemic::Contested;
+    assert_eq(e.rank(), 1);
+}
+
+#[test]
+fn test_epistemic_unknown_rank() {
+    let e = Epistemic::Unknown;
+    assert_eq(e.rank(), 0);
+}
+
+#[test]
+fn test_epistemic_is_trustworthy_axiomatic() {
+    assert(Epistemic::Axiomatic.is_trustworthy());
+}
+
+#[test]
+fn test_epistemic_is_trustworthy_observed() {
+    assert(Epistemic::Observed.is_trustworthy());
+}
+
+#[test]
+fn test_epistemic_is_trustworthy_reported() {
+    assert(Epistemic::Reported.is_trustworthy());
+}
+
+#[test]
+fn test_epistemic_not_trustworthy_inferred() {
+    assert(!Epistemic::Inferred.is_trustworthy());
+}
+
+#[test]
+fn test_epistemic_not_trustworthy_contested() {
+    assert(!Epistemic::Contested.is_trustworthy());
+}
+
+#[test]
+fn test_epistemic_not_trustworthy_unknown() {
+    assert(!Epistemic::Unknown.is_trustworthy());
+}
+
+#[test]
+fn test_epistemic_stronger_than() {
+    assert(Epistemic::Axiomatic.stronger_than(&Epistemic::Observed));
+    assert(Epistemic::Observed.stronger_than(&Epistemic::Reported));
+    assert(Epistemic::Reported.stronger_than(&Epistemic::Inferred));
+}
+
+#[test]
+fn test_epistemic_equality() {
+    let e1 = Epistemic::Observed;
+    let e2 = Epistemic::Observed;
+    assert(e1 == e2);
+}
+
+#[test]
+fn test_epistemic_inequality() {
+    let e1 = Epistemic::Observed;
+    let e2 = Epistemic::Inferred;
+    assert(e1 != e2);
+}
+
+// ============================================================================
+// Tests: Duration
+// ============================================================================
+
+#[test]
+fn test_duration_zero() {
+    let d = Duration::zero();
+    assert_eq(d.as_secs(), 0);
+}
+
+#[test]
+fn test_duration_seconds() {
+    let d = Duration::seconds(42);
+    assert_eq(d.as_secs(), 42);
+}
+
+#[test]
+fn test_duration_minutes() {
+    let d = Duration::minutes(5);
+    assert_eq(d.as_secs(), 300);
+}
+
+#[test]
+fn test_duration_hours() {
+    let d = Duration::hours(2);
+    assert_eq(d.as_secs(), 7200);
+}
+
+#[test]
+fn test_duration_as_millis() {
+    let d = Duration::seconds(1);
+    assert_eq(d.as_millis(), 1000);
+}
+
+#[test]
+fn test_duration_copy() {
+    let d1 = Duration::seconds(10);
+    let d2 = d1;  // Copy
+    assert_eq(d1.as_secs(), 10);
+    assert_eq(d2.as_secs(), 10);
+}
+
+// ============================================================================
+// Tests: Timestamp
+// ============================================================================
+
+#[test]
+fn test_timestamp_now() {
+    let t = Timestamp::now();
+    assert(t.nanos > 0);
+}
+
+#[test]
+fn test_timestamp_epoch() {
+    let t = Timestamp::epoch();
+    assert_eq(t.as_secs(), 0);
+}
+
+#[test]
+fn test_timestamp_from_secs() {
+    let t = Timestamp::from_secs(1000);
+    assert_eq(t.as_secs(), 1000);
+}
+
+#[test]
+fn test_timestamp_add_duration() {
+    let t = Timestamp::from_secs(100);
+    let d = Duration::seconds(50);
+    let result = t + d;
+    assert_eq(result.as_secs(), 150);
+}
+
+// ============================================================================
+// Tests: Value
+// ============================================================================
+
+#[test]
+fn test_value_empty() {
+    let v = Value::empty();
+    assert(v.is_empty());
+    assert_eq(v.len(), 0);
+}
+
+#[test]
+fn test_value_from_int() {
+    let v = Value::from_int(42);
+    assert(!v.is_empty());
+    assert_eq(v.len(), 8);  // i64 is 8 bytes
+}
+
+#[test]
+fn test_value_from_float() {
+    let v = Value::from_float(3.14);
+    assert(!v.is_empty());
+    assert_eq(v.len(), 8);  // f64 is 8 bytes
+}
+
+#[test]
+fn test_value_from_bool_true() {
+    let v = Value::from_bool(true);
+    assert_eq(v.len(), 1);
+}
+
+#[test]
+fn test_value_from_bool_false() {
+    let v = Value::from_bool(false);
+    assert_eq(v.len(), 1);
+}
+
+#[test]
+fn test_value_from_string() {
+    let v = Value::from_string("hello");
+    assert_eq(v.len(), 5);
+}
+
+#[test]
+fn test_value_clone() {
+    let v1 = Value::from_int(100);
+    let v2 = v1.clone();
+    assert_eq(v1.len(), v2.len());
+}
+
+// ============================================================================
+// Tests: State
+// ============================================================================
+
+#[test]
+fn test_state_new() {
+    let s = State::new();
+    assert(!s.has("anything"));
+}
+
+#[test]
+fn test_state_with_var() {
+    let s = State::new()
+        .with_var("x", Value::from_int(10));
+    assert(s.has("x"));
+}
+
+#[test]
+fn test_state_get() {
+    let s = State::new()
+        .with_var("y", Value::from_string("test"));
+    let v = s.get("y");
+    assert(v.is_some());
+}
+
+#[test]
+fn test_state_get_missing() {
+    let s = State::new();
+    let v = s.get("missing");
+    assert(v.is_none());
+}
+
+#[test]
+fn test_state_set() {
+    let mut s = State::new();
+    s.set("z", Value::from_float(1.5));
+    assert(s.has("z"));
+}
+
+#[test]
+fn test_state_multiple_vars() {
+    let s = State::new()
+        .with_var("a", Value::from_int(1))
+        .with_var("b", Value::from_int(2))
+        .with_var("c", Value::from_int(3));
+    assert(s.has("a"));
+    assert(s.has("b"));
+    assert(s.has("c"));
+}
+
+fn main() {
+    print("Omen types tests");
+}

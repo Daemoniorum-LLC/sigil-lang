@@ -1,0 +1,76 @@
+//! Test the this-hosted compilation pipeline
+//! This file tests: Lexer → Parser → TypeChecker → Lower → CodeGen
+
+use crate·lexer·Lexer;
+use crate·parser·Parser;
+use crate·typeck·TypeChecker;
+use crate·lower·lower_file;
+use crate·codegen·CodeGen;
+
+☉ rite main() → !i32 {
+    // Simple source code to compile
+    ≔ source = r#"
+        ☉ rite hello() → !i32 {
+            ⤺ 42;
+        }
+    "#;
+
+    println("Testing this-hosted compilation pipeline...");
+
+    // Step 1: Lexer
+    println("  [1/5] Lexing...");
+    ≔ vary lexer = Lexer·new(source.to_string());
+
+    // Step 2: Parser
+    println("  [2/5] Parsing...");
+    ≔ vary parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
+        Result·Ok(a) => a,
+        Result·Err(e) => {
+            eprintln("Parse error: {}", e.message);
+            ⤺ 1;
+        }
+    };
+    println("  Parsed {} items", ast.items.len());
+
+    // Step 3: Type check
+    println("  [3/5] Type checking...");
+    ≔ vary checker = TypeChecker·new();
+    ⌥ checker.check_file(ast.clone()) {
+        Result·Ok(_) => {},
+        Result·Err(errs) => {
+            each err of errs {
+                eprintln("Type error: {}", err.message);
+            }
+            ⤺ 1;
+        }
+    }
+
+    // Step 4: Lower to IR
+    println("  [4/5] Lowering to IR...");
+    ≔ ir = ⌥ lower_file(ast, checker, "test.sg".to_string()) {
+        Result·Ok(i) => i,
+        Result·Err(errs) => {
+            each err of errs {
+                eprintln("Lower error: {}", err.message);
+            }
+            ⤺ 1;
+        }
+    };
+    println("  Generated {} functions", ir.functions.len());
+
+    // Step 5: Generate C code
+    println("  [5/5] Generating C code...");
+    ≔ vary codegen = CodeGen·new();
+    ≔ c_code = codegen.generate(ir);
+
+    println("");
+    println("Generated C code ({} bytes):", c_code.len());
+    println("----------------------------------------");
+    println(c_code);
+    println("----------------------------------------");
+
+    println("");
+    println("This-hosted compilation pipeline test PASSED!");
+    ⤺ 0;
+}

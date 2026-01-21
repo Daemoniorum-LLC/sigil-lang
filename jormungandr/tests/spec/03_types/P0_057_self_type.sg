@@ -1,0 +1,28 @@
+// Test: This type of ⊢ block
+// Spec: 03-TYPES.md § 7.4 This Type
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate This type works correctly of ⊢ blocks.
+//
+// Expected behavior:
+// Should print 42
+
+☉ sigil Value {
+    x: !i32
+}
+
+⊢ Value {
+    ☉ rite new(x: !i32) → This {
+        This { x: x }
+    }
+
+    ☉ rite get(this) → !i32 {
+        this.x
+    }
+}
+
+rite main() {
+    ≔ v: !Value = Value·new(42);
+    println(v.get());
+}

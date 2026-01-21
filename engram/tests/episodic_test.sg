@@ -1,0 +1,992 @@
+//! Tests for Engram Episodic Memory (Experience Memory)
+//!
+//! Verifies time-bounded experience storage with decay and consolidation.
+
+// ============================================================================
+// Self-contained Test Types (matching episodic.sg API)
+// ============================================================================
+
+pub struct EpisodeId(usize);
+
+impl EpisodeId {
+    fn new(id: usize) -> Self { Self(id) }
+}
+
+impl PartialEq for EpisodeId {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Clone for EpisodeId {
+    fn clone(&self) -> Self {
+        EpisodeId(self.0)
+    }
+}
+
+pub enum Outcome {
+    Ongoing,
+    Success { goal_alignment: f64, effects: Vec<String> },
+    Failure { reason: String, recoverable: bool },
+    Partial { achieved: f64, notes: String },
+    Abandoned { reason: String },
+}
+
+impl Outcome {
+    pub fn confidence(&self) -> f64 {
+        match self {
+            Outcome::Success { goal_alignment, .. } => *goal_alignment,
+            Outcome::Failure { .. } => 1.0,
+            Outcome::Partial { achieved, .. } => *achieved,
+            Outcome::Ongoing => 0.5,
+            Outcome::Abandoned { .. } => 0.0,
+        }
+    }
+
+    pub fn summarize(&self) -> String {
+        match self {
+            Outcome::Ongoing => "ongoing".to_string(),
+            Outcome::Success { .. } => "success".to_string(),
+            Outcome::Failure { reason, .. } => format!("failed: {}", reason),
+            Outcome::Partial { achieved, .. } => format!("partial: {:.0}%", achieved * 100.0),
+            Outcome::Abandoned { reason } => format!("abandoned: {}", reason),
+        }
+    }
+}
+
+pub enum EventType {
+    UserMessage,
+    AgentResponse,
+    SystemMessage,
+    ToolCall,
+    ToolResult,
+    StateChange,
+    Decision,
+    Error,
+}
+
+pub struct Event {
+    pub timestamp: u64,
+    pub sequence: u32,
+    pub event_type: EventType,
+    pub content: String,
+    pub actor: Option<String>,
+    pub success: Option<bool>,
+}
+
+impl Event {
+    pub fn user_message(content: &str) -> Self {
+        Self {
+            timestamp: 0,
+            sequence: 0,
+            event_type: EventType::UserMessage,
+            content: content.to_string(),
+            actor: Some("user".to_string()),
+            success: None,
+        }
+    }
+
+    pub fn agent_response(content: &str) -> Self {
+        Self {
+            timestamp: 0,
+            sequence: 0,
+            event_type: EventType::AgentResponse,
+            content: content.to_string(),
+            actor: Some("agent".to_string()),
+            success: None,
+        }
+    }
+
+    pub fn tool_call(tool: &str) -> Self {
+        Self {
+            timestamp: 0,
+            sequence: 0,
+            event_type: EventType::ToolCall,
+            content: tool.to_string(),
+            actor: Some("agent".to_string()),
+            success: None,
+        }
+    }
+
+    pub fn error_event(error: &str) -> Self {
+        Self {
+            timestamp: 0,
+            sequence: 0,
+            event_type: EventType::Error,
+            content: error.to_string(),
+            actor: None,
+            success: Some(false),
+        }
+    }
+}
+
+pub enum ParticipantRole {
+    Self_,
+    User,
+    OtherAgent,
+    System,
+    Tool,
+}
+
+pub struct Participant {
+    pub id: String,
+    pub role: ParticipantRole,
+    pub name: Option<String>,
+}
+
+impl Participant {
+    pub fn user(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            role: ParticipantRole::User,
+            name: None,
+        }
+    }
+
+    pub fn agent(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            role: ParticipantRole::Self_,
+            name: None,
+        }
+    }
+
+    pub fn tool(name: &str) -> Self {
+        Self {
+            id: name.to_string(),
+            role: ParticipantRole::Tool,
+            name: Some(name.to_string()),
+        }
+    }
+}
+
+pub struct Context {
+    pub goal: Option<String>,
+    pub task: Option<String>,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self { goal: None, task: None }
+    }
+
+    pub fn with_goal(goal: &str) -> Self {
+        Self {
+            goal: Some(goal.to_string()),
+            task: None,
+        }
+    }
+
+    pub fn with_task(mut self, task: &str) -> Self {
+        self.task = Some(task.to_string());
+        self
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(goal) = &self.goal {
+            parts.push(format!("Goal: {}", goal));
+        }
+        if let Some(task) = &self.task {
+            parts.push(format!("Task: {}", task));
+        }
+        let mut result = String::new();
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 { result.push_str(", "); }
+            result.push_str(part);
+        }
+        result
+    }
+}
+
+pub struct Episode {
+    pub id: EpisodeId,
+    pub started_at: u64,
+    pub ended_at: Option<u64>,
+    pub context: Context,
+    pub participants: Vec<Participant>,
+    pub events: Vec<Event>,
+    pub outcome: Outcome,
+    pub valence: f64,
+    pub significance: f64,
+    pub surprise: f64,
+    pub strength: f64,
+    pub access_count: u32,
+    pub last_accessed: u64,
+    pub consolidated: bool,
+    pub caused_by: Vec<EpisodeId>,
+    pub leads_to: Vec<EpisodeId>,
+}
+
+impl Episode {
+    pub fn new(id: usize, context: Context) -> Self {
+        Self {
+            id: EpisodeId::new(id),
+            started_at: 0,
+            ended_at: None,
+            context,
+            participants: Vec::new(),
+            events: Vec::new(),
+            outcome: Outcome::Ongoing,
+            valence: 0.0,
+            significance: 0.0,
+            surprise: 0.0,
+            strength: 1.0,
+            access_count: 0,
+            last_accessed: 0,
+            consolidated: false,
+            caused_by: Vec::new(),
+            leads_to: Vec::new(),
+        }
+    }
+
+    pub fn with_start_time(mut self, time: u64) -> Self {
+        self.started_at = time;
+        self
+    }
+
+    pub fn add_event(&mut self, event: Event) {
+        self.events.push(event);
+    }
+
+    pub fn add_participant(&mut self, participant: Participant) {
+        self.participants.push(participant);
+    }
+
+    pub fn complete(&mut self, outcome: Outcome, end_time: u64) {
+        self.outcome = outcome;
+        self.ended_at = Some(end_time);
+    }
+
+    pub fn duration(&self) -> Option<u64> {
+        self.ended_at.map(|end| end - self.started_at)
+    }
+
+    pub fn is_ongoing(&self) -> bool {
+        self.ended_at.is_none()
+    }
+
+    pub fn summarize(&self) -> String {
+        let outcome_str = self.outcome.summarize();
+        let event_count = self.events.len();
+        format!("Episode {}: {} events, {}", self.id.0, event_count, outcome_str)
+    }
+}
+
+impl Clone for Episode {
+    fn clone(&self) -> Self {
+        Episode {
+            id: self.id.clone(),
+            started_at: self.started_at,
+            ended_at: self.ended_at,
+            context: Context {
+                goal: self.context.goal.clone(),
+                task: self.context.task.clone(),
+            },
+            participants: Vec::new(),  // Simplified clone
+            events: Vec::new(),  // Simplified clone
+            outcome: Outcome::Ongoing,  // Simplified clone
+            valence: self.valence,
+            significance: self.significance,
+            surprise: self.surprise,
+            strength: self.strength,
+            access_count: self.access_count,
+            last_accessed: self.last_accessed,
+            consolidated: self.consolidated,
+            caused_by: Vec::new(),
+            leads_to: Vec::new(),
+        }
+    }
+}
+
+pub struct EpisodicConfig {
+    pub decay_rate: f64,
+    pub consolidation_threshold: f64,
+    pub max_active_episodes: usize,
+    pub min_significance_for_retention: f64,
+}
+
+impl EpisodicConfig {
+    pub fn default_config() -> Self {
+        Self {
+            decay_rate: 0.1,
+            consolidation_threshold: 0.3,
+            max_active_episodes: 1000,
+            min_significance_for_retention: 0.1,
+        }
+    }
+
+    pub fn with_decay_rate(mut self, rate: f64) -> Self {
+        self.decay_rate = rate;
+        self
+    }
+
+    pub fn with_consolidation_threshold(mut self, threshold: f64) -> Self {
+        self.consolidation_threshold = threshold;
+        self
+    }
+}
+
+pub struct EpisodicMemory {
+    episodes: Vec<Episode>,
+    config: EpisodicConfig,
+    next_id: usize,
+}
+
+impl EpisodicMemory {
+    pub fn new(config: EpisodicConfig) -> Self {
+        Self {
+            episodes: Vec::new(),
+            config,
+            next_id: 0,
+        }
+    }
+
+    pub fn default_memory() -> Self {
+        Self::new(EpisodicConfig::default_config())
+    }
+
+    pub fn record(&mut self, mut episode: Episode) -> EpisodeId {
+        // Enrich episode
+        if episode.significance == 0.0 {
+            episode.significance = self.compute_significance(&episode);
+        }
+        episode.strength = 1.0;
+        episode.access_count = 0;
+
+        let id = episode.id.clone();
+        self.episodes.push(episode);
+
+        // Sort by time descending
+        self.episodes.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+
+        id
+    }
+
+    pub fn get(&self, id: &EpisodeId) -> Option<&Episode> {
+        self.episodes.iter().find(|e| e.id == *id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.episodes.len()
+    }
+
+    pub fn recall_similar(&self, context: &Context, limit: usize) -> Vec<&Episode> {
+        let context_text = context.to_string().to_lowercase();
+
+        let mut scored: Vec<_> = self.episodes.iter()
+            .filter(|e| e.strength > 0.1)
+            .map(|e| {
+                let score = self.compute_similarity(&context_text, e);
+                (e, score)
+            })
+            .filter(|(_, score)| *score > 0.0)
+            .collect();
+
+        // Sort by score descending (bubble sort)
+        for i in 0..scored.len() {
+            for j in (i + 1)..scored.len() {
+                if scored[j].1 > scored[i].1 {
+                    let temp = scored[i];
+                    scored[i] = scored[j];
+                    scored[j] = temp;
+                }
+            }
+        }
+
+        let mut result = Vec::new();
+        for i in 0..limit.min(scored.len()) {
+            result.push(scored[i].0);
+        }
+        result
+    }
+
+    pub fn recall_before(&self, time: u64, limit: usize) -> Vec<&Episode> {
+        let mut result = Vec::new();
+        for episode in &self.episodes {
+            if episode.started_at < time && episode.strength > 0.1 {
+                result.push(episode);
+                if result.len() >= limit {
+                    break;
+                }
+            }
+        }
+        result
+    }
+
+    pub fn recall_in_range(&self, start: u64, end: u64) -> Vec<&Episode> {
+        self.episodes.iter()
+            .filter(|e| e.started_at >= start && e.started_at <= end)
+            .filter(|e| e.strength > 0.1)
+            .collect()
+    }
+
+    pub fn apply_decay(&mut self, decay_factor: f64) {
+        for episode in &mut self.episodes {
+            episode.strength = episode.strength * decay_factor;
+
+            // Significant episodes decay slower
+            if episode.significance > 0.7 {
+                episode.strength = episode.strength.max(0.3);
+            }
+        }
+
+        // Remove episodes below minimum strength
+        let threshold = 0.1;
+        self.episodes.retain(|e| e.strength > threshold);
+    }
+
+    pub fn consolidation_candidates(&self) -> Vec<&Episode> {
+        self.episodes.iter()
+            .filter(|e| !e.consolidated)
+            .filter(|e| e.strength < self.config.consolidation_threshold)
+            .filter(|e| e.significance > 0.3)
+            .collect()
+    }
+
+    pub fn mark_consolidated(&mut self, id: &EpisodeId) {
+        for episode in &mut self.episodes {
+            if episode.id == *id {
+                episode.consolidated = true;
+                break;
+            }
+        }
+    }
+
+    fn compute_significance(&self, episode: &Episode) -> f64 {
+        let mut score = 0.0;
+
+        // Outcome contributes to significance
+        match &episode.outcome {
+            Outcome::Success { goal_alignment, .. } => {
+                score = score + 0.3 + goal_alignment * 0.2;
+            },
+            Outcome::Failure { .. } => {
+                score = score + 0.4;  // Failures are significant
+            },
+            Outcome::Partial { achieved, .. } => {
+                score = score + 0.2 + achieved * 0.1;
+            },
+            _ => {}
+        }
+
+        // More events = more significant
+        let event_factor = (episode.events.len() as f64 / 20.0).min(0.3);
+        score = score + event_factor;
+
+        // Valence extremes are significant
+        let valence_factor = episode.valence.abs() * 0.2;
+        score = score + valence_factor;
+
+        score.min(1.0)
+    }
+
+    fn compute_similarity(&self, context: &str, episode: &Episode) -> f64 {
+        let episode_text = episode.summarize().to_lowercase();
+
+        // Simple word overlap
+        let context_words: Vec<&str> = context.split_whitespace().collect();
+        let episode_words: Vec<&str> = episode_text.split_whitespace().collect();
+
+        let mut matches = 0;
+        for cw in &context_words {
+            for ew in &episode_words {
+                if *cw == *ew {
+                    matches = matches + 1;
+                    break;
+                }
+            }
+        }
+
+        let total = context_words.len() + episode_words.len();
+        if total == 0 { 0.0 } else { 2.0 * matches as f64 / total as f64 }
+    }
+}
+
+// ============================================================================
+// Tests: Episode Construction
+// ============================================================================
+
+#[test]
+fn test_episode_creation() {
+    let context = Context::with_goal("Complete the task");
+    let episode = Episode::new(1, context);
+
+    assert(episode.is_ongoing());
+    assert_eq(episode.events.len(), 0);
+    assert_eq(episode.participants.len(), 0);
+}
+
+#[test]
+fn test_episode_with_context() {
+    let context = Context::with_goal("Help user")
+        .with_task("Answer question");
+    let episode = Episode::new(1, context);
+
+    let ctx_str = episode.context.to_string();
+    assert(ctx_str.contains("Help user"));
+    assert(ctx_str.contains("Answer question"));
+}
+
+#[test]
+fn test_episode_add_event() {
+    let mut episode = Episode::new(1, Context::new());
+
+    episode.add_event(Event::user_message("Hello"));
+    episode.add_event(Event::agent_response("Hi there!"));
+
+    assert_eq(episode.events.len(), 2);
+}
+
+#[test]
+fn test_episode_add_participant() {
+    let mut episode = Episode::new(1, Context::new());
+
+    episode.add_participant(Participant::user("user_123"));
+    episode.add_participant(Participant::agent("agent_456"));
+
+    assert_eq(episode.participants.len(), 2);
+}
+
+#[test]
+fn test_episode_completion() {
+    let mut episode = Episode::new(1, Context::new())
+        .with_start_time(100);
+
+    assert(episode.is_ongoing());
+    assert(episode.duration().is_none());
+
+    episode.complete(Outcome::Success {
+        goal_alignment: 0.9,
+        effects: vec!["Task completed".to_string()],
+    }, 200);
+
+    assert(!episode.is_ongoing());
+    assert_eq(episode.duration().unwrap(), 100);
+}
+
+#[test]
+fn test_episode_summarize() {
+    let mut episode = Episode::new(42, Context::with_goal("Test"));
+    episode.add_event(Event::user_message("Hello"));
+    episode.add_event(Event::agent_response("Hi"));
+    episode.complete(Outcome::Success {
+        goal_alignment: 0.9,
+        effects: Vec::new(),
+    }, 100);
+
+    let summary = episode.summarize();
+    assert(summary.contains("42"));
+    assert(summary.contains("2 events"));
+    assert(summary.contains("success"));
+}
+
+// ============================================================================
+// Tests: Episodic Memory Operations
+// ============================================================================
+
+#[test]
+fn test_episodic_memory_creation() {
+    let memory = EpisodicMemory::default_memory();
+    assert_eq(memory.len(), 0);
+}
+
+#[test]
+fn test_record_episode() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    let episode = Episode::new(1, Context::with_goal("Test goal"));
+    let id = memory.record(episode);
+
+    assert_eq(memory.len(), 1);
+}
+
+#[test]
+fn test_record_multiple_episodes() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    memory.record(Episode::new(1, Context::with_goal("First")));
+    memory.record(Episode::new(2, Context::with_goal("Second")));
+    memory.record(Episode::new(3, Context::with_goal("Third")));
+
+    assert_eq(memory.len(), 3);
+}
+
+#[test]
+fn test_get_episode_by_id() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    let episode = Episode::new(42, Context::with_goal("Find me"));
+    let id = memory.record(episode);
+
+    let retrieved = memory.get(&id);
+    assert(retrieved.is_some());
+    assert_eq(retrieved.unwrap().id.0, 42);
+}
+
+#[test]
+fn test_get_nonexistent_episode() {
+    let memory = EpisodicMemory::default_memory();
+
+    let fake_id = EpisodeId::new(999);
+    let retrieved = memory.get(&fake_id);
+    assert(retrieved.is_none());
+}
+
+// ============================================================================
+// Tests: Recall Operations
+// ============================================================================
+
+#[test]
+fn test_recall_similar_context() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    // Record episodes with different goals
+    memory.record(Episode::new(1, Context::with_goal("Help with coding")));
+    memory.record(Episode::new(2, Context::with_goal("Write documentation")));
+    memory.record(Episode::new(3, Context::with_goal("Debug code error")));
+
+    let query = Context::with_goal("coding help");
+    let results = memory.recall_similar(&query, 5);
+
+    // Should find some relevant episodes
+    assert(results.len() > 0);
+}
+
+#[test]
+fn test_recall_before_time() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    memory.record(Episode::new(1, Context::new()).with_start_time(100));
+    memory.record(Episode::new(2, Context::new()).with_start_time(200));
+    memory.record(Episode::new(3, Context::new()).with_start_time(300));
+
+    let results = memory.recall_before(250, 10);
+
+    // Should find episodes before time 250
+    for episode in &results {
+        assert(episode.started_at < 250);
+    }
+}
+
+#[test]
+fn test_recall_in_range() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    memory.record(Episode::new(1, Context::new()).with_start_time(100));
+    memory.record(Episode::new(2, Context::new()).with_start_time(200));
+    memory.record(Episode::new(3, Context::new()).with_start_time(300));
+    memory.record(Episode::new(4, Context::new()).with_start_time(400));
+
+    let results = memory.recall_in_range(150, 350);
+
+    // Should find episodes in range [150, 350]
+    for episode in &results {
+        assert(episode.started_at >= 150);
+        assert(episode.started_at <= 350);
+    }
+}
+
+#[test]
+fn test_recall_respects_strength_threshold() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    let mut episode = Episode::new(1, Context::with_goal("Weak episode"));
+    episode.strength = 0.05;  // Below threshold
+    memory.episodes.push(episode);
+
+    let results = memory.recall_before(1000, 10);
+
+    // Weak episode should not be returned
+    assert_eq(results.len(), 0);
+}
+
+// ============================================================================
+// Tests: Decay and Consolidation
+// ============================================================================
+
+#[test]
+fn test_apply_decay_reduces_strength() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    let episode = Episode::new(1, Context::new());
+    memory.record(episode);
+
+    let before = memory.episodes[0].strength;
+    memory.apply_decay(0.8);  // 20% decay
+    let after = memory.episodes[0].strength;
+
+    assert(after < before);
+}
+
+#[test]
+fn test_decay_preserves_significant_episodes() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    let mut episode = Episode::new(1, Context::new());
+    episode.significance = 0.9;  // Very significant
+    episode.strength = 1.0;
+    memory.episodes.push(episode);
+
+    // Heavy decay
+    memory.apply_decay(0.1);
+
+    // Significant episodes maintain minimum strength
+    assert(memory.episodes[0].strength >= 0.3);
+}
+
+#[test]
+fn test_decay_removes_weak_episodes() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    let mut episode = Episode::new(1, Context::new());
+    episode.strength = 0.2;  // Already weak
+    episode.significance = 0.1;  // Not significant
+    memory.episodes.push(episode);
+
+    // Heavy decay should remove it
+    memory.apply_decay(0.3);
+
+    assert_eq(memory.len(), 0);
+}
+
+#[test]
+fn test_consolidation_candidates() {
+    let mut memory = EpisodicMemory::new(
+        EpisodicConfig::default_config().with_consolidation_threshold(0.5)
+    );
+
+    // Strong episode - not a candidate
+    let mut e1 = Episode::new(1, Context::new());
+    e1.strength = 0.8;
+    e1.significance = 0.5;
+    memory.episodes.push(e1);
+
+    // Weak but significant - candidate
+    let mut e2 = Episode::new(2, Context::new());
+    e2.strength = 0.3;
+    e2.significance = 0.5;
+    memory.episodes.push(e2);
+
+    // Weak and insignificant - not a candidate
+    let mut e3 = Episode::new(3, Context::new());
+    e3.strength = 0.2;
+    e3.significance = 0.1;
+    memory.episodes.push(e3);
+
+    let candidates = memory.consolidation_candidates();
+
+    // Only e2 should be a candidate
+    assert_eq(candidates.len(), 1);
+    assert_eq(candidates[0].id.0, 2);
+}
+
+#[test]
+fn test_mark_consolidated() {
+    let mut memory = EpisodicMemory::default_memory();
+
+    let episode = Episode::new(1, Context::new());
+    let id = memory.record(episode);
+
+    assert(!memory.episodes[0].consolidated);
+
+    memory.mark_consolidated(&id);
+
+    assert(memory.episodes[0].consolidated);
+}
+
+// ============================================================================
+// Tests: Outcome Types
+// ============================================================================
+
+#[test]
+fn test_outcome_success_confidence() {
+    let outcome = Outcome::Success {
+        goal_alignment: 0.85,
+        effects: Vec::new(),
+    };
+    let conf = outcome.confidence();
+    let diff = (conf - 0.85).abs();
+    assert(diff < 0.001);
+}
+
+#[test]
+fn test_outcome_failure_confidence() {
+    let outcome = Outcome::Failure {
+        reason: "Error occurred".to_string(),
+        recoverable: true,
+    };
+    // Failures have high confidence (we know what happened)
+    let conf = outcome.confidence();
+    let diff = (conf - 1.0).abs();
+    assert(diff < 0.001);
+}
+
+#[test]
+fn test_outcome_partial_confidence() {
+    let outcome = Outcome::Partial {
+        achieved: 0.6,
+        notes: "Partially done".to_string(),
+    };
+    let conf = outcome.confidence();
+    let diff = (conf - 0.6).abs();
+    assert(diff < 0.001);
+}
+
+#[test]
+fn test_outcome_summarize() {
+    let success = Outcome::Success { goal_alignment: 0.9, effects: Vec::new() };
+    assert_eq(success.summarize(), "success");
+
+    let failure = Outcome::Failure { reason: "test".to_string(), recoverable: false };
+    assert(failure.summarize().contains("failed"));
+
+    let ongoing = Outcome::Ongoing;
+    assert_eq(ongoing.summarize(), "ongoing");
+}
+
+// ============================================================================
+// Tests: Event Types
+// ============================================================================
+
+#[test]
+fn test_event_user_message() {
+    let event = Event::user_message("Hello world");
+    assert_eq(event.content, "Hello world");
+    assert(event.actor.is_some());
+    assert_eq(event.actor.unwrap(), "user");
+}
+
+#[test]
+fn test_event_agent_response() {
+    let event = Event::agent_response("I can help");
+    assert_eq(event.content, "I can help");
+    assert_eq(event.actor.unwrap(), "agent");
+}
+
+#[test]
+fn test_event_tool_call() {
+    let event = Event::tool_call("search");
+    assert_eq(event.content, "search");
+}
+
+#[test]
+fn test_event_error() {
+    let event = Event::error_event("Connection failed");
+    assert_eq(event.content, "Connection failed");
+    assert_eq(event.success.unwrap(), false);
+}
+
+// ============================================================================
+// Tests: Participant Types
+// ============================================================================
+
+#[test]
+fn test_participant_user() {
+    let p = Participant::user("user_123");
+    assert_eq(p.id, "user_123");
+}
+
+#[test]
+fn test_participant_agent() {
+    let p = Participant::agent("agent_456");
+    assert_eq(p.id, "agent_456");
+}
+
+#[test]
+fn test_participant_tool() {
+    let p = Participant::tool("web_search");
+    assert_eq(p.id, "web_search");
+    assert(p.name.is_some());
+}
+
+// ============================================================================
+// Tests: Context
+// ============================================================================
+
+#[test]
+fn test_context_empty() {
+    let ctx = Context::new();
+    assert(ctx.goal.is_none());
+    assert(ctx.task.is_none());
+}
+
+#[test]
+fn test_context_with_goal() {
+    let ctx = Context::with_goal("Help user");
+    assert_eq(ctx.goal.unwrap(), "Help user");
+}
+
+#[test]
+fn test_context_with_task() {
+    let ctx = Context::with_goal("Main goal").with_task("Subtask");
+    assert_eq(ctx.goal.unwrap(), "Main goal");
+    assert_eq(ctx.task.unwrap(), "Subtask");
+}
+
+#[test]
+fn test_context_to_string() {
+    let ctx = Context::with_goal("Goal").with_task("Task");
+    let s = ctx.to_string();
+    assert(s.contains("Goal"));
+    assert(s.contains("Task"));
+}
+
+// ============================================================================
+// Tests: Significance Calculation
+// ============================================================================
+
+#[test]
+fn test_significance_from_success() {
+    let memory = EpisodicMemory::default_memory();
+    let mut episode = Episode::new(1, Context::new());
+    episode.outcome = Outcome::Success {
+        goal_alignment: 0.9,
+        effects: Vec::new(),
+    };
+
+    let sig = memory.compute_significance(&episode);
+    assert(sig > 0.3);
+}
+
+#[test]
+fn test_significance_from_failure() {
+    let memory = EpisodicMemory::default_memory();
+    let mut episode = Episode::new(1, Context::new());
+    episode.outcome = Outcome::Failure {
+        reason: "test".to_string(),
+        recoverable: false,
+    };
+
+    let sig = memory.compute_significance(&episode);
+    // Failures should be significant (learning opportunity)
+    assert(sig >= 0.4);
+}
+
+#[test]
+fn test_significance_from_events() {
+    let memory = EpisodicMemory::default_memory();
+    let mut episode = Episode::new(1, Context::new());
+
+    // Add many events
+    for _ in 0..15 {
+        episode.add_event(Event::user_message("msg"));
+    }
+
+    let sig = memory.compute_significance(&episode);
+    assert(sig > 0.2);  // More events = more significance
+}
+
+#[test]
+fn test_significance_from_valence() {
+    let memory = EpisodicMemory::default_memory();
+    let mut episode = Episode::new(1, Context::new());
+    episode.valence = 0.9;  // Strong positive emotion
+
+    let sig = memory.compute_significance(&episode);
+    assert(sig > 0.1);
+}
+
+fn main() {
+    print("Engram episodic memory tests");
+}

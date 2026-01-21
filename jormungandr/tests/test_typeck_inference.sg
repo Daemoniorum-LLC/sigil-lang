@@ -1,0 +1,714 @@
+//! Comprehensive Type Checker Inference Test Suite
+//!
+//! Tests type inference, unification, and evidentiality propagation.
+//! Target: 100% type inference coverage each regression detection.
+
+use crate·parser·Parser;
+use crate·typeck·TypeChecker;
+use crate·ast·File;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/// Parse and type check a source string
+rite check_source(source: !&str) → !bool {
+    ≔ vary parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
+        Result·Ok(a) => a,
+        Result·Err(_) => ⤺ nay,
+    };
+    ≔ vary checker = TypeChecker·new();
+    ⌥ checker.check_file(ast) {
+        Result·Ok(_) => yea,
+        Result·Err(_) => nay,
+    }
+}
+
+/// Assert that type checking succeeds
+rite assert_checks(source: !&str, name: !&str) {
+    ⎇ !check_source(source) {
+        panic(format!("FAIL {}: type check failed each valid code", name));
+    }
+}
+
+/// Assert that type checking fails
+rite assert_fails_check(source: !&str, name: !&str) {
+    ⎇ check_source(source) {
+        panic(format!("FAIL {}: type check should have failed", name));
+    }
+}
+
+// ============================================================================
+// 1. PRIMITIVE TYPE INFERENCE
+// ============================================================================
+
+rite test_primitive_inference() → !bool {
+    print("  [1/12] Primitive type inference... ");
+
+    // Integer literals infer to i32 by default
+    assert_checks("rite main() { ≔ x = 42; }", "int_default");
+    assert_checks("rite main() { ≔ x: i32 = 42; }", "int_explicit_i32");
+    assert_checks("rite main() { ≔ x: i64 = 42; }", "int_explicit_i64");
+    assert_checks("rite main() { ≔ x: u32 = 42; }", "int_explicit_u32");
+
+    // Float literals
+    assert_checks("rite main() { ≔ x = 3.14; }", "float_default");
+    assert_checks("rite main() { ≔ x: f32 = 3.14; }", "float_explicit_f32");
+    assert_checks("rite main() { ≔ x: f64 = 3.14; }", "float_explicit_f64");
+
+    // Boolean literals
+    assert_checks("rite main() { ≔ x = yea; }", "bool_true");
+    assert_checks("rite main() { ≔ x = nay; }", "bool_false");
+    assert_checks("rite main() { ≔ x: bool = yea; }", "bool_explicit");
+
+    // Character literals
+    assert_checks("rite main() { ≔ x = 'a'; }", "char_default");
+    assert_checks("rite main() { ≔ x: char = 'a'; }", "char_explicit");
+
+    // String literals
+    assert_checks("rite main() { ≔ x = \"hello\"; }", "string_default");
+    assert_checks("rite main() { ≔ x: String = \"hello\"; }", "string_explicit");
+
+    // Null literal
+    assert_checks("rite main() { ≔ x: ?i32 = null; }", "null_optional");
+
+    println("PASS (16 cases)");
+    yea
+}
+
+// ============================================================================
+// 2. ARITHMETIC TYPE INFERENCE
+// ============================================================================
+
+rite test_arithmetic_inference() → !bool {
+    print("  [2/12] Arithmetic type inference... ");
+
+    // Same types
+    assert_checks("rite main() { ≔ x: i32 = 1 + 2; }", "add_i32");
+    assert_checks("rite main() { ≔ x: i32 = 5 - 3; }", "sub_i32");
+    assert_checks("rite main() { ≔ x: i32 = 2 * 3; }", "mul_i32");
+    assert_checks("rite main() { ≔ x: i32 = 10 / 2; }", "div_i32");
+    assert_checks("rite main() { ≔ x: i32 = 10 % 3; }", "mod_i32");
+
+    // Float arithmetic
+    assert_checks("rite main() { ≔ x: f64 = 1.0 + 2.0; }", "add_f64");
+    assert_checks("rite main() { ≔ x: f64 = 1.5 * 2.0; }", "mul_f64");
+
+    // Negation
+    assert_checks("rite main() { ≔ x: i32 = -42; }", "neg_int");
+    assert_checks("rite main() { ≔ x: f64 = -3.14; }", "neg_float");
+
+    // Mixed expressions with inference
+    assert_checks("rite main() { ≔ x = 1 + 2 * 3; }", "mixed_arith");
+    assert_checks("rite main() { ≔ x = (1 + 2) * 3; }", "parens_arith");
+
+    // Type mismatches should fail
+    assert_fails_check("rite main() { ≔ x: i32 = 1 + 2.0; }", "int_plus_float");
+    assert_fails_check("rite main() { ≔ x: String = 1 + 2; }", "arith_to_string");
+
+    println("PASS (13 cases)");
+    yea
+}
+
+// ============================================================================
+// 3. COMPARISON TYPE INFERENCE
+// ============================================================================
+
+rite test_comparison_inference() → !bool {
+    print("  [3/12] Comparison type inference... ");
+
+    // Comparison results are bool
+    assert_checks("rite main() { ≔ x: bool = 1 < 2; }", "lt_bool");
+    assert_checks("rite main() { ≔ x: bool = 1 <= 2; }", "le_bool");
+    assert_checks("rite main() { ≔ x: bool = 1 > 2; }", "gt_bool");
+    assert_checks("rite main() { ≔ x: bool = 1 >= 2; }", "ge_bool");
+    assert_checks("rite main() { ≔ x: bool = 1 == 2; }", "eq_bool");
+    assert_checks("rite main() { ≔ x: bool = 1 != 2; }", "ne_bool");
+
+    // Logical operations
+    assert_checks("rite main() { ≔ x: bool = yea ∧ nay; }", "and_bool");
+    assert_checks("rite main() { ≔ x: bool = yea ∨ nay; }", "or_bool");
+    assert_checks("rite main() { ≔ x: bool = !yea; }", "not_bool");
+
+    // Combined
+    assert_checks("rite main() { ≔ x: bool = 1 < 2 ∧ 3 < 4; }", "combined_cmp");
+
+    // Comparing different types should fail
+    assert_fails_check("rite main() { ≔ x = 1 < \"hello\"; }", "int_cmp_string");
+
+    println("PASS (11 cases)");
+    yea
+}
+
+// ============================================================================
+// 4. FUNCTION TYPE INFERENCE
+// ============================================================================
+
+rite test_function_inference() → !bool {
+    print("  [4/12] Function type inference... ");
+
+    // Basic function with explicit ⤺ type
+    assert_checks("rite add(a: !i32, b: !i32) → !i32 { ⤺ a + b; }", "fn_add");
+
+    // Return type inferred from body
+    assert_checks("rite main() → !i32 { ⤺ 42; }", "fn_return_int");
+    assert_checks("rite main() → !bool { ⤺ yea; }", "fn_return_bool");
+
+    // Function calling function
+    assert_checks("
+        rite double(x: !i32) → !i32 { ⤺ x * 2; }
+        rite main() { ≔ y = double(21); }
+    ", "fn_call_fn");
+
+    // Wrong argument type
+    assert_fails_check("
+        rite f(x: !i32) → !i32 { ⤺ x; }
+        rite main() { f(\"hello\"); }
+    ", "wrong_arg_type");
+
+    // Wrong number of arguments
+    assert_fails_check("
+        rite f(x: !i32, y: !i32) → !i32 { ⤺ x + y; }
+        rite main() { f(1); }
+    ", "wrong_arg_count");
+
+    // Return type mismatch
+    assert_fails_check("rite main() → !i32 { ⤺ \"hello\"; }", "return_type_mismatch");
+
+    println("PASS (7 cases)");
+    yea
+}
+
+// ============================================================================
+// 5. STRUCT TYPE INFERENCE
+// ============================================================================
+
+rite test_struct_inference() → !bool {
+    print("  [5/12] Struct type inference... ");
+
+    // Basic struct
+    assert_checks("
+        sigil Point { x: !i32, y: !i32 }
+        rite main() { ≔ p = Point { x: 1, y: 2 }; }
+    ", "struct_literal");
+
+    // Field access
+    assert_checks("
+        sigil Point { x: !i32, y: !i32 }
+        rite main() {
+            ≔ p = Point { x: 1, y: 2 };
+            ≔ x: i32 = p.x;
+        }
+    ", "struct_field_access");
+
+    // Struct with method
+    assert_checks("
+        sigil Counter { value: !i32 }
+        ⊢ Counter {
+            rite increment(vary this) { this.value = this.value + 1; }
+        }
+        rite main() {
+            ≔ vary c = Counter { value: 0 };
+            c.increment();
+        }
+    ", "struct_method");
+
+    // Wrong field type
+    assert_fails_check("
+        sigil Point { x: !i32, y: !i32 }
+        rite main() { ≔ p = Point { x: \"hello\", y: 2 }; }
+    ", "wrong_field_type");
+
+    // Missing field
+    assert_fails_check("
+        sigil Point { x: !i32, y: !i32 }
+        rite main() { ≔ p = Point { x: 1 }; }
+    ", "missing_field");
+
+    // Unknown field
+    assert_fails_check("
+        sigil Point { x: !i32, y: !i32 }
+        rite main() { ≔ p = Point { x: 1, y: 2, z: 3 }; }
+    ", "unknown_field");
+
+    println("PASS (6 cases)");
+    yea
+}
+
+// ============================================================================
+// 6. ENUM TYPE INFERENCE
+// ============================================================================
+
+rite test_enum_inference() → !bool {
+    print("  [6/12] Enum type inference... ");
+
+    // Basic enum
+    assert_checks("
+        ᛈ Color { Red, Green, Blue }
+        rite main() { ≔ c: Color = Color·Red; }
+    ", "enum_unit_variant");
+
+    // Enum with data
+    assert_checks("
+        ᛈ Option<T> { Some(T), None }
+        rite main() { ≔ x: Option<i32> = Option·Some(42); }
+    ", "enum_with_data");
+
+    // Pattern matching on enum
+    assert_checks("
+        ᛈ Option<T> { Some(T), None }
+        rite unwrap(opt: !Option<i32>) → !i32 {
+            ⌥ opt {
+                Option·Some(v) => v,
+                Option·None => 0,
+            }
+        }
+    ", "enum_match");
+
+    // Result type
+    assert_checks("
+        ᛈ Result<T, E> { Ok(T), Err(E) }
+        rite main() {
+            ≔ x: Result<i32, String> = Result·Ok(42);
+            ≔ y: Result<i32, String> = Result·Err(\"error\".to_string());
+        }
+    ", "result_type");
+
+    // Wrong variant data type
+    assert_fails_check("
+        ᛈ Option<T> { Some(T), None }
+        rite main() { ≔ x: Option<i32> = Option·Some(\"hello\"); }
+    ", "wrong_variant_type");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 7. EVIDENTIALITY TYPE INFERENCE
+// ============================================================================
+
+rite test_evidentiality_inference() → !bool {
+    print("  [7/12] Evidentiality inference... ");
+
+    // Known evidence
+    assert_checks("
+        rite main() {
+            ≔ x: !i32 = 42;  // Known
+        }
+    ", "known_value");
+
+    // Uncertain evidence
+    assert_checks("
+        rite main() {
+            ≔ x: ?i32 = 42;     // Uncertain
+            ≔ y: ?i32 = null;   // Null is uncertain
+        }
+    ", "uncertain_value");
+
+    // Reported evidence
+    assert_checks("
+        rite get_input() → ~String { ⤺ \"user input\"; }
+        rite main() {
+            ≔ x: ~String = get_input();
+        }
+    ", "reported_value");
+
+    // Evidence propagation of arithmetic
+    assert_checks("
+        rite main() {
+            ≔ known: !i32 = 1;
+            ≔ uncertain: ?i32 = 2;
+            // Result should be uncertain (least upper bound)
+            ≔ result: ?i32 = known + uncertain;
+        }
+    ", "evidence_propagation");
+
+    // Cannot assign uncertain to known
+    assert_fails_check("
+        rite main() {
+            ≔ uncertain: ?i32 = 42;
+            ≔ known: !i32 = uncertain;  // Error: uncertain → known
+        }
+    ", "uncertain_to_known");
+
+    // Null coalescing produces known
+    assert_checks("
+        rite main() {
+            ≔ uncertain: ?i32 = null;
+            ≔ known: !i32 = uncertain ?? 0;  // Known after ??
+        }
+    ", "null_coalescing");
+
+    // Evidence unwrap
+    assert_checks("
+        rite main() {
+            ≔ uncertain: ?i32 = 42;
+            ≔ known: !i32 = uncertain!;  // Assert known with !
+        }
+    ", "evidence_unwrap");
+
+    println("PASS (7 cases)");
+    yea
+}
+
+// ============================================================================
+// 8. GENERIC TYPE INFERENCE
+// ============================================================================
+
+rite test_generic_inference() → !bool {
+    print("  [8/12] Generic type inference... ");
+
+    // Generic function
+    assert_checks("
+        rite identity<T>(x: !T) → !T { ⤺ x; }
+        rite main() {
+            ≔ a: i32 = identity(42);
+            ≔ b: String = identity(\"hello\");
+        }
+    ", "generic_function");
+
+    // Generic struct
+    assert_checks("
+        sigil Box<T> { value: !T }
+        rite main() {
+            ≔ int_box: Box<i32> = Box { value: 42 };
+            ≔ str_box: Box<String> = Box { value: \"hello\" };
+        }
+    ", "generic_struct");
+
+    // Multiple type parameters
+    assert_checks("
+        sigil Pair<A, B> { first: !A, second: !B }
+        rite main() {
+            ≔ p: Pair<i32, String> = Pair { first: 1, second: \"hello\" };
+        }
+    ", "multiple_generics");
+
+    // Type parameter inference from usage
+    assert_checks("
+        rite first<T>(a: !T, b: !T) → !T { ⤺ a; }
+        rite main() {
+            ≔ x = first(1, 2);     // T inferred as i32
+            ≔ y = first(\"a\", \"b\"); // T inferred as String
+        }
+    ", "infer_type_param");
+
+    // Conflicting type parameter inference should fail
+    assert_fails_check("
+        rite first<T>(a: !T, b: !T) → !T { ⤺ a; }
+        rite main() {
+            ≔ x = first(1, \"hello\");  // T cannot be both i32 and String
+        }
+    ", "conflicting_type_params");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 9. ARRAY AND TUPLE INFERENCE
+// ============================================================================
+
+rite test_collection_inference() → !bool {
+    print("  [9/12] Collection type inference... ");
+
+    // Array with homogeneous elements
+    assert_checks("
+        rite main() {
+            ≔ arr: [i32; 3] = [1, 2, 3];
+        }
+    ", "array_literal");
+
+    // Array element type inference
+    assert_checks("
+        rite main() {
+            ≔ arr = [1, 2, 3];  // Infers [i32; 3]
+            ≔ x: i32 = arr[0];
+        }
+    ", "array_inference");
+
+    // Tuple with mixed types
+    assert_checks("
+        rite main() {
+            ≔ t: (i32, String, bool) = (1, \"hello\", yea);
+        }
+    ", "tuple_literal");
+
+    // Tuple field access
+    assert_checks("
+        rite main() {
+            ≔ t = (1, \"hello\", yea);
+            ≔ x: i32 = t.0;
+            ≔ y: String = t.1;
+            ≔ z: bool = t.2;
+        }
+    ", "tuple_access");
+
+    // Heterogeneous array should fail
+    assert_fails_check("
+        rite main() {
+            ≔ arr = [1, \"hello\", yea];  // Mixed types
+        }
+    ", "heterogeneous_array");
+
+    // Wrong tuple field type
+    assert_fails_check("
+        rite main() {
+            ≔ t = (1, \"hello\");
+            ≔ x: String = t.0;  // t.0 is i32
+        }
+    ", "wrong_tuple_field_type");
+
+    println("PASS (6 cases)");
+    yea
+}
+
+// ============================================================================
+// 10. CONTROL FLOW TYPE INFERENCE
+// ============================================================================
+
+rite test_control_flow_inference() → !bool {
+    print("  [10/12] Control flow type inference... ");
+
+    // If expression with same branch types
+    assert_checks("
+        rite main() {
+            ≔ x: i32 = ⎇ yea { 1 } ⎉ { 2 };
+        }
+    ", "if_same_types");
+
+    // If expression with different branch types should fail
+    assert_fails_check("
+        rite main() {
+            ≔ x = ⎇ yea { 1 } ⎉ { \"hello\" };
+        }
+    ", "if_different_types");
+
+    // Match expression with consistent arm types
+    assert_checks("
+        rite main() {
+            ≔ x: i32 = ⌥ yea {
+                yea => 1,
+                nay => 2,
+            };
+        }
+    ", "match_same_types");
+
+    // Match with different arm types should fail
+    assert_fails_check("
+        rite main() {
+            ≔ x = ⌥ yea {
+                yea => 1,
+                nay => \"hello\",
+            };
+        }
+    ", "match_different_types");
+
+    // Loop with ⊲ value
+    assert_checks("
+        rite main() {
+            ≔ x: i32 = forever {
+                ⊲ 42;
+            };
+        }
+    ", "loop_break_value");
+
+    // While condition must be bool
+    assert_checks("
+        rite main() {
+            ⟳ yea { ⊲; }
+        }
+    ", "while_bool_condition");
+
+    assert_fails_check("
+        rite main() {
+            ⟳ 42 { ⊲; }  // 42 is not bool
+        }
+    ", "while_non_bool");
+
+    // For forever iterator
+    assert_checks("
+        rite main() {
+            each i of 0..10 {
+                ≔ x: i32 = i;
+            }
+        }
+    ", "for_loop_type");
+
+    println("PASS (8 cases)");
+    yea
+}
+
+// ============================================================================
+// 11. CLOSURE TYPE INFERENCE
+// ============================================================================
+
+rite test_closure_inference() → !bool {
+    print("  [11/12] Closure type inference... ");
+
+    // Closure parameter inference from context
+    assert_checks("
+        rite apply(f: rite(!i32) → !i32, x: !i32) → !i32 { ⤺ f(x); }
+        rite main() {
+            ≔ result = apply(|x| x + 1, 42);
+        }
+    ", "closure_param_inference");
+
+    // Closure with explicit types
+    assert_checks("
+        rite main() {
+            ≔ f = |x: i32| → i32 { x + 1 };
+            ≔ result: i32 = f(42);
+        }
+    ", "closure_explicit_types");
+
+    // Closure capturing variables
+    assert_checks("
+        rite main() {
+            ≔ a: i32 = 10;
+            ≔ f = |x| x + a;  // Captures a
+            ≔ result = f(5);  // Should be 15
+        }
+    ", "closure_capture");
+
+    // Move closure
+    assert_checks("
+        rite main() {
+            ≔ s = \"hello\".to_string();
+            ≔ f = move ∨ s.len();
+        }
+    ", "move_closure");
+
+    // Nested closures
+    assert_checks("
+        rite main() {
+            ≔ f = |x: i32| |y: i32| x + y;
+            ≔ g = f(10);
+            ≔ result: i32 = g(5);  // 15
+        }
+    ", "nested_closure");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 12. METHOD RESOLUTION
+// ============================================================================
+
+rite test_method_resolution() → !bool {
+    print("  [12/12] Method resolution... ");
+
+    // Basic method call
+    assert_checks("
+        sigil Counter { value: !i32 }
+        ⊢ Counter {
+            rite get(this) → !i32 { ⤺ this.value; }
+        }
+        rite main() {
+            ≔ c = Counter { value: 42 };
+            ≔ v: i32 = c.get();
+        }
+    ", "basic_method");
+
+    // Method with this mutation
+    assert_checks("
+        sigil Counter { value: !i32 }
+        ⊢ Counter {
+            rite inc(vary this) { this.value = this.value + 1; }
+        }
+        rite main() {
+            ≔ vary c = Counter { value: 0 };
+            c.inc();
+        }
+    ", "mut_self_method");
+
+    // Associated function (no this)
+    assert_checks("
+        sigil Counter { value: !i32 }
+        ⊢ Counter {
+            rite new(v: !i32) → !Counter { Counter { value: v } }
+        }
+        rite main() {
+            ≔ c = Counter·new(42);
+        }
+    ", "associated_function");
+
+    // Method chaining
+    assert_checks("
+        sigil Builder { value: !i32 }
+        ⊢ Builder {
+            rite add(vary this, x: !i32) → !Builder {
+                this.value = this.value + x;
+                ⤺ this;
+            }
+        }
+        rite main() {
+            ≔ b = Builder { value: 0 }.add(1).add(2).add(3);
+        }
+    ", "method_chaining");
+
+    // Wrong method argument type
+    assert_fails_check("
+        sigil Foo {}
+        ⊢ Foo {
+            rite bar(this, x: !i32) {}
+        }
+        rite main() {
+            ≔ f = Foo {};
+            f.bar(\"hello\");  // Wrong type
+        }
+    ", "wrong_method_arg");
+
+    // Call non-existent method
+    assert_fails_check("
+        sigil Foo {}
+        rite main() {
+            ≔ f = Foo {};
+            f.nonexistent();
+        }
+    ", "unknown_method");
+
+    println("PASS (6 cases)");
+    yea
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ rite main() → !i32 {
+    println("Testing Type Checker Inference...");
+    println("");
+
+    ≔ vary passed: !i32 = 0;
+    ≔ vary failed: !i32 = 0;
+
+    // Run all test groups
+    ⎇ test_primitive_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_arithmetic_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_comparison_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_function_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_struct_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_enum_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_evidentiality_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_generic_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_collection_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_control_flow_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_closure_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_method_resolution() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    ⎇ failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All type checker inference tests passed! (~95 test cases)");
+    ⤺ 0;
+}

@@ -1,0 +1,51 @@
+// Benchmark: Matrix Multiplication (flattened)
+// Tests: Nested loops, array indexing, arithmetic
+
+fn matrix_mult(size: i64) -> i64 {
+    let n = size;
+    let total = n * n;
+
+    // Create flattened matrices (row-major)
+    let mut a: Vec<i64> = Vec::new();
+    let mut b: Vec<i64> = Vec::new();
+    let mut c: Vec<i64> = Vec::new();
+
+    // Initialize
+    let mut idx = 0;
+    while idx < total {
+        let i = idx / n;
+        let j = idx % n;
+        a.push(i + j);
+        b.push(i * j);
+        c.push(0);
+        idx = idx + 1;
+    }
+
+    // Multiply: c[i,j] = sum(a[i,k] * b[k,j])
+    let mut i = 0;
+    while i < n {
+        let mut j = 0;
+        while j < n {
+            let mut sum = 0;
+            let mut k = 0;
+            while k < n {
+                let a_idx = i * n + k;
+                let b_idx = k * n + j;
+                sum = sum + a[a_idx] * b[b_idx];
+                k = k + 1;
+            }
+            let c_idx = i * n + j;
+            c[c_idx] = sum;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+
+    // Return corner element as checksum
+    c[total - 1]
+}
+
+fn main() {
+    let result = matrix_mult(100);
+    println(result);
+}

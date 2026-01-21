@@ -1,0 +1,35 @@
+// Test: Mathematical constants
+// Spec: 05-MATHEMATICS.md § 4.1 Constants
+// Priority: P1 - Standard Feature
+
+rite main() {
+    // PI - approximately 3.14159...
+    ≔ pi: !f64 = PI();
+    ⎇ pi > 3.14 {
+        ⎇ pi < 3.15 {
+            println("PI ok");
+        }
+    }
+
+    // E - approximately 2.71828...
+    ≔ e: !f64 = E();
+    ⎇ e > 2.71 {
+        ⎇ e < 2.72 {
+            println("E ok");
+        }
+    }
+
+    // TAU = 2*PI - approximately 6.28318...
+    ≔ tau: !f64 = TAU();
+    ⎇ tau > 6.28 {
+        ⎇ tau < 6.29 {
+            println("TAU ok");
+        }
+    }
+
+    // Verify TAU = 2*PI
+    ≔ diff: !f64 = abs(tau - 2.0 * pi);
+    ⎇ diff < 0.0001 {
+        println("TAU = 2*PI verified");
+    }
+}

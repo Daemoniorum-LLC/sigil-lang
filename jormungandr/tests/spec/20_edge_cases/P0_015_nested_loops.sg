@@ -1,0 +1,17 @@
+// Test: Nested loops with ⊲
+// Spec: Edge Cases - Control Flow
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ vary count = 0;
+    ≔ vary i = 0;
+    ⟳ i < 3 {
+        ≔ vary j = 0;
+        ⟳ j < 3 {
+            count = count + 1;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println(count);  // 3 * 3 = 9
+}

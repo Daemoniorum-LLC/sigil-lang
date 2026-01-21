@@ -1,0 +1,18 @@
+// Test: Array iteration
+// Spec: 03-TYPES.md § Arrays
+// Priority: P0
+//
+// Purpose:
+// Validates array iteration with for-in.
+//
+// Expected behavior:
+// Should iterate over array elements
+
+rite main() {
+    ≔ arr = [10, 20, 30, 40, 50];
+
+    // Direct iteration over elements
+    each x of arr {
+        println(x);
+    }
+}

@@ -1,0 +1,14 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Missing required sigil field
+// Should fail with missing field error
+// Priority: P0 - Bootstrap Critical
+
+sigil Point {
+    x: i32,
+    y: i32,
+}
+
+rite main() {
+    ≔ p = Point { x: 1 };  // ERROR: missing field 'y'
+    println(p.x);
+}

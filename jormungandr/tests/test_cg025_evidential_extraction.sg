@@ -1,0 +1,148 @@
+/// Test CG-025: Evidential pattern (?x) should extract inner value from Option
+///
+/// This test verifies that ⌥ arms with ?name patterns correctly bind
+/// the INNER value of the Option, not the whole Option wrapper.
+///
+/// The bug: ⌥ opt { ?v => v }
+/// Currently: v binds to the whole Option (crashes when used as inner type)
+/// Should: v binds to the extracted inner value
+///
+/// Related to CG-009 which tests the condition check (TAG_NULL).
+/// This test focuses on the value EXTRACTION after the check passes.
+
+/// Simple extraction - ⤺ the inner value directly
+☉ rite extract_simple(opt: ?i32) → !i32 {
+    ⌥ opt {
+        ?v => v,        // v should be i32, not ?i32
+        null => 0,
+    }
+}
+
+/// Extraction with arithmetic - proves v is the actual inner type
+☉ rite extract_and_add(opt: ?i32, addend: !i32) → !i32 {
+    ⌥ opt {
+        ?v => v + addend,   // v + addend only works ⎇ v is i32
+        null => addend,
+    }
+}
+
+/// Nested sigil to test field access on extracted value
+☉ sigil Point {
+    ☉ x: !i32,
+    ☉ y: !i32,
+}
+
+☉ rite extract_struct_field(opt: ?Point) → !i32 {
+    ⌥ opt {
+        ?p => p.x + p.y,    // p.x only works ⎇ p is Point, not ?Point
+        null => 0,
+    }
+}
+
+/// Test extraction of ≔ binding (⎇ supported)
+☉ rite test_let_extraction() → !bool {
+    ≔ opt: ?i32 = ?42;
+
+    // This should extract the inner value
+    ≔ extracted = ⌥ opt {
+        ?v => v,
+        null => 0,
+    };
+
+    // extracted should be 42, not an Option wrapping 42
+    ⎇ extracted != 42 {
+        println("FAIL: extracted value should be 42, got {}", extracted);
+        ⤺ nay;
+    }
+
+    ⤺ yea;
+}
+
+/// Test that null case still works correctly
+☉ rite test_null_case() → !bool {
+    ≔ nothing: ?i32 = null;
+
+    ≔ result = ⌥ nothing {
+        ?v => v + 100,  // Should not be reached
+        null => -1,
+    };
+
+    ⎇ result != -1 {
+        println("FAIL: null case should ⤺ -1, got {}", result);
+        ⤺ nay;
+    }
+
+    ⤺ yea;
+}
+
+/// Test with more complex value to ensure proper extraction
+☉ rite test_complex_extraction() → !bool {
+    ≔ opt: ?i32 = ?100;
+
+    ≔ result = ⌥ opt {
+        ?v => {
+            // Multiple operations on extracted value
+            ≔ doubled = v * 2;
+            ≔ incremented = doubled + 1;
+            incremented
+        },
+        null => 0,
+    };
+
+    // 100 * 2 + 1 = 201
+    ⎇ result != 201 {
+        println("FAIL: complex extraction should yield 201, got {}", result);
+        ⤺ nay;
+    }
+
+    ⤺ yea;
+}
+
+☉ rite main() → !i32 {
+    // Test 1: Simple extraction
+    ≔ r1 = extract_simple(?42);
+    ⎇ r1 != 42 {
+        println("FAIL: extract_simple(?42) should ⤺ 42, got {}", r1);
+        ⤺ 1;
+    }
+
+    // Test 2: Extraction with null
+    ≔ r2 = extract_simple(null);
+    ⎇ r2 != 0 {
+        println("FAIL: extract_simple(null) should ⤺ 0, got {}", r2);
+        ⤺ 2;
+    }
+
+    // Test 3: Arithmetic on extracted value
+    ≔ r3 = extract_and_add(?10, 5);
+    ⎇ r3 != 15 {
+        println("FAIL: extract_and_add(?10, 5) should ⤺ 15, got {}", r3);
+        ⤺ 3;
+    }
+
+    // Test 4: Struct field access on extracted value
+    ≔ pt = Point { x: 3, y: 4 };
+    ≔ r4 = extract_struct_field(?pt);
+    ⎇ r4 != 7 {
+        println("FAIL: extract_struct_field(?Point{3,4}) should ⤺ 7, got {}", r4);
+        ⤺ 4;
+    }
+
+    // Test 5: Let extraction
+    ⎇ !test_let_extraction() {
+        ⤺ 5;
+    }
+
+    // Test 6: Null case
+    ⎇ !test_null_case() {
+        ⤺ 6;
+    }
+
+    // Test 7: Complex extraction
+    ⎇ !test_complex_extraction() {
+        ⤺ 7;
+    }
+
+    println("PASS: CG-025 evidential pattern extraction test");
+    ⤺ 0;
+}

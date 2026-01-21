@@ -1,0 +1,17 @@
+// Test: Function with no ⤺ type (unit)
+// Spec: 02-SYNTAX.md § 5.2 Function Signatures
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate functions without ⤺ type work.
+//
+// Expected behavior:
+// Should print 42
+
+rite print_value(x: !i32) {
+    println(x);
+}
+
+rite main() {
+    print_value(42);
+}

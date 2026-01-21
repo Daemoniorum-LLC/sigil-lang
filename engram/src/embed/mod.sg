@@ -1,0 +1,498 @@
+// Embedding Module
+// Text to vector embedding generation
+
+module engram::embed
+
+use engram::types::*
+use std::collections::HashMap
+
+// ============================================================================
+// Embedder Trait
+// ============================================================================
+
+/// Trait for text embedding generation
+pub trait Embedder {
+    /// Generate embedding for a single text
+    fn embed(text: &str) -> Vector<f32>;
+
+    /// Generate embeddings for multiple texts (batch)
+    fn embed_batch(texts: &[&str]) -> Vec<Vector<f32>> {
+        texts.iter().map(|t| self.embed(t)).collect()
+    }
+
+    /// Get embedding dimensions
+    fn dimensions() -> usize;
+
+    /// Get model name/identifier
+    fn model_name() -> &str;
+}
+
+// ============================================================================
+// Hash Embedder (Development/Testing)
+// ============================================================================
+
+/// Simple hash-based embedder for development and testing
+///
+/// Generates deterministic pseudo-embeddings based on text hashing.
+/// NOT suitable for production semantic search - use for testing only.
+pub struct HashEmbedder {
+    dimensions: usize,
+}
+
+impl HashEmbedder {
+    pub fn new(dimensions: usize) -> Self {
+        Self { dimensions }
+    }
+
+    pub fn default() -> Self {
+        Self { dimensions: 384 }
+    }
+
+    /// Hash a string to a u64
+    fn hash_str(s: &str) -> u64 {
+        // Simple FNV-1a hash
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for byte in s.bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash
+    }
+}
+
+impl Embedder for HashEmbedder {
+    fn embed(text: &str) -> Vector<f32> {
+        let mut result = vec![0.0f32; self.dimensions];
+
+        // Normalize text
+        let normalized = text.to_lowercase();
+
+        // Generate deterministic values for each dimension
+        for (i, chunk) in result.iter_mut().enumerate() {
+            let hash = Self::hash_str(&format!("{}:{}", i, normalized));
+            // Convert to float in range [-1, 1]
+            *chunk = ((hash as f64 / u64::MAX as f64) * 2.0 - 1.0) as f32;
+        }
+
+        // Add word-level features
+        for word in normalized.split_whitespace() {
+            let word_hash = Self::hash_str(word);
+            let idx = (word_hash as usize) % self.dimensions;
+            result[idx] += 0.1;
+
+            // Also affect nearby dimensions for smoothness
+            if idx > 0 {
+                result[idx - 1] += 0.05;
+            }
+            if idx < self.dimensions - 1 {
+                result[idx + 1] += 0.05;
+            }
+        }
+
+        // Normalize to unit vector
+        Vector::new(result).normalize()
+    }
+
+    fn dimensions() -> usize {
+        self.dimensions
+    }
+
+    fn model_name() -> &str {
+        "hash-embedder-dev"
+    }
+}
+
+// ============================================================================
+// Bag of Words Embedder
+// ============================================================================
+
+/// Bag of Words embedder with TF-IDF weighting
+///
+/// Better than hash embedder for actual semantic similarity,
+/// but requires vocabulary building.
+pub struct BagOfWordsEmbedder {
+    /// Vocabulary: word -> index
+    vocab: HashMap<String, usize>,
+
+    /// Inverse document frequency weights
+    idf: Vec<f64>,
+
+    /// Total documents seen (for IDF calculation)
+    doc_count: usize,
+
+    /// Document frequency for each term
+    doc_freq: Vec<usize>,
+
+    /// Target dimensions (will truncate/pad vocabulary)
+    dimensions: usize,
+
+    /// Whether vocabulary is frozen
+    frozen: bool,
+}
+
+impl BagOfWordsEmbedder {
+    pub fn new(dimensions: usize) -> Self {
+        Self {
+            vocab: HashMap::new(),
+            idf: Vec::new(),
+            doc_count: 0,
+            doc_freq: Vec::new(),
+            dimensions,
+            frozen: false,
+        }
+    }
+
+    /// Add documents to build vocabulary
+    pub fn add_documents(docs: &[&str]) {
+        if self.frozen {
+            return;
+        }
+
+        for doc in docs {
+            self.doc_count += 1;
+
+            // Tokenize
+            let words: std::collections::HashSet<_> = doc.to_lowercase()
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect();
+
+            for word in words {
+                // Add to vocabulary if new
+                if !self.vocab.contains_key(&word) && self.vocab.len() < self.dimensions {
+                    let idx = self.vocab.len();
+                    self.vocab.insert(word.clone(), idx);
+                    self.doc_freq.push(0);
+                }
+
+                // Update document frequency
+                if let Some(&idx) = self.vocab.get(&word) {
+                    self.doc_freq[idx] += 1;
+                }
+            }
+        }
+    }
+
+    /// Freeze vocabulary and compute IDF weights
+    pub fn freeze() {
+        self.frozen = true;
+
+        // Compute IDF: log(N / df)
+        self.idf = self.doc_freq.iter()
+            .map(|&df| {
+                if df == 0 {
+                    0.0
+                } else {
+                    (self.doc_count as f64 / df as f64).ln()
+                }
+            })
+            .collect();
+    }
+
+    /// Tokenize text into terms
+    fn tokenize(text: &str) -> Vec<String> {
+        text.to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect()
+    }
+}
+
+impl Embedder for BagOfWordsEmbedder {
+    fn embed(text: &str) -> Vector<f32> {
+        let mut result = vec![0.0f32; self.dimensions];
+
+        // Tokenize
+        let tokens = Self::tokenize(text);
+        let total_terms = tokens.len() as f64;
+
+        if total_terms == 0.0 {
+            return Vector::new(result);
+        }
+
+        // Count term frequencies
+        let mut tf: HashMap<&str, usize> = HashMap::new();
+        for token in &tokens {
+            *tf.entry(token).or_insert(0) += 1;
+        }
+
+        // Compute TF-IDF
+        for (term, count) in tf {
+            if let Some(&idx) = self.vocab.get(term) {
+                if idx < self.dimensions {
+                    let term_freq = count as f64 / total_terms;
+                    let idf = self.idf.get(idx).copied().unwrap_or(1.0);
+                    result[idx] = (term_freq * idf) as f32;
+                }
+            }
+        }
+
+        // Normalize
+        Vector::new(result).normalize()
+    }
+
+    fn dimensions() -> usize {
+        self.dimensions
+    }
+
+    fn model_name() -> &str {
+        "bow-tfidf"
+    }
+}
+
+// ============================================================================
+// Semantic Hash Embedder
+// ============================================================================
+
+/// Semantic hash embedder using locality-sensitive hashing
+///
+/// Creates embeddings where similar texts have similar hashes.
+/// Uses random projections (simhash-like approach).
+pub struct SemanticHashEmbedder {
+    dimensions: usize,
+    /// Random projection matrix (pre-generated)
+    projections: Vec<Vec<f32>>,
+    /// Number of shingles (n-grams)
+    shingle_size: usize,
+}
+
+impl SemanticHashEmbedder {
+    pub fn new(dimensions: usize) -> Self {
+        // Generate random projections deterministically
+        let shingle_size = 3;
+        let num_projections = dimensions;
+
+        let mut projections = Vec::with_capacity(num_projections);
+        let mut rng_state: u64 = 0xdeadbeef;
+
+        for _ in 0..num_projections {
+            let mut projection = Vec::with_capacity(256); // Max shingle hash values
+            for _ in 0..256 {
+                // Simple PRNG
+                rng_state ^= rng_state << 13;
+                rng_state ^= rng_state >> 7;
+                rng_state ^= rng_state << 17;
+                let val = ((rng_state as f64 / u64::MAX as f64) * 2.0 - 1.0) as f32;
+                projection.push(val);
+            }
+            projections.push(projection);
+        }
+
+        Self {
+            dimensions,
+            projections,
+            shingle_size,
+        }
+    }
+
+    pub fn default() -> Self {
+        Self::new(384)
+    }
+
+    /// Extract character n-grams (shingles)
+    fn shingles(text: &str) -> Vec<u8> {
+        let chars: Vec<char> = text.to_lowercase().chars().collect();
+        let mut result = Vec::new();
+
+        if chars.len() < self.shingle_size {
+            // Hash the whole thing if too short
+            let hash = HashEmbedder::hash_str(text);
+            result.push((hash % 256) as u8);
+        } else {
+            for window in chars.windows(self.shingle_size) {
+                let s: String = window.iter().collect();
+                let hash = HashEmbedder::hash_str(&s);
+                result.push((hash % 256) as u8);
+            }
+        }
+
+        result
+    }
+}
+
+impl Embedder for SemanticHashEmbedder {
+    fn embed(text: &str) -> Vector<f32> {
+        let shingles = self.shingles(text);
+
+        if shingles.is_empty() {
+            return Vector::zeros(self.dimensions);
+        }
+
+        let mut result = vec![0.0f32; self.dimensions];
+
+        // For each dimension, compute weighted sum of projections
+        for (dim, projection) in self.projections.iter().enumerate() {
+            let mut sum = 0.0f32;
+            for &shingle in &shingles {
+                sum += projection[shingle as usize];
+            }
+            result[dim] = sum / shingles.len() as f32;
+        }
+
+        Vector::new(result).normalize()
+    }
+
+    fn dimensions() -> usize {
+        self.dimensions
+    }
+
+    fn model_name() -> &str {
+        "semantic-hash"
+    }
+}
+
+// ============================================================================
+// External Embedder (API-based)
+// ============================================================================
+
+/// Placeholder for external embedding APIs (OpenAI, etc.)
+///
+/// In production, this would make HTTP calls to embedding services.
+pub struct ExternalEmbedder {
+    endpoint: String,
+    model: String,
+    dimensions: usize,
+    api_key: Option<String>,
+
+    /// Cache for embeddings
+    cache: HashMap<String, Vector<f32>>,
+}
+
+impl ExternalEmbedder {
+    pub fn new(endpoint: &str, model: &str, dimensions: usize) -> Self {
+        Self {
+            endpoint: endpoint.to_string(),
+            model: model.to_string(),
+            dimensions,
+            api_key: None,
+            cache: HashMap::new(),
+        }
+    }
+
+    pub fn with_api_key(mut self, key: &str) -> Self {
+        self.api_key = Some(key.to_string());
+        self
+    }
+
+    /// OpenAI configuration
+    pub fn openai(model: &str) -> Self {
+        let dimensions = match model {
+            "text-embedding-3-small" => 1536,
+            "text-embedding-3-large" => 3072,
+            "text-embedding-ada-002" => 1536,
+            _ => 1536,
+        };
+
+        Self::new("https://api.openai.com/v1/embeddings", model, dimensions)
+    }
+}
+
+impl Embedder for ExternalEmbedder {
+    fn embed(text: &str) -> Vector<f32> {
+        // Check cache
+        if let Some(cached) = self.cache.get(text) {
+            return cached.clone();
+        }
+
+        // In production, this would make an HTTP request
+        // For now, fall back to hash embedding
+        let fallback = SemanticHashEmbedder::new(self.dimensions);
+        let result = fallback.embed(text);
+
+        // Cache result
+        self.cache.insert(text.to_string(), result.clone());
+
+        result
+    }
+
+    fn dimensions() -> usize {
+        self.dimensions
+    }
+
+    fn model_name() -> &str {
+        &self.model
+    }
+}
+
+// ============================================================================
+// Default Embedder
+// ============================================================================
+
+/// Get the default embedder for the system
+pub fn default_embedder() -> impl Embedder {
+    SemanticHashEmbedder::default()
+}
+
+/// Embed text using the default embedder
+pub fn embed(text: &str) -> Vector<f32> {
+    default_embedder().embed(text)
+}
+
+/// Embed multiple texts using the default embedder
+pub fn embed_batch(texts: &[&str]) -> Vec<Vector<f32>> {
+    let embedder = default_embedder();
+    texts.iter().map(|t| embedder.embed(t)).collect()
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hash_embedder() {
+        let embedder = HashEmbedder::default();
+
+        let v1 = embedder.embed("hello world");
+        let v2 = embedder.embed("hello world");
+        let v3 = embedder.embed("goodbye world");
+
+        // Same text should give same embedding
+        assert_eq!(v1.as_slice(), v2.as_slice());
+
+        // Different text should give different embedding
+        assert_ne!(v1.as_slice(), v3.as_slice());
+
+        // Should be normalized
+        let norm: f32 = v1.as_slice().iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((norm - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_semantic_hash_similarity() {
+        let embedder = SemanticHashEmbedder::default();
+
+        let v1 = embedder.embed("the quick brown fox");
+        let v2 = embedder.embed("the quick brown dog");
+        let v3 = embedder.embed("completely unrelated text about programming");
+
+        // Similar texts should have higher similarity
+        let sim_12 = v1.cosine_similarity(&v2);
+        let sim_13 = v1.cosine_similarity(&v3);
+
+        // v1 and v2 share most words, should be more similar
+        assert!(sim_12 > sim_13);
+    }
+
+    #[test]
+    fn test_bow_embedder() {
+        let mut embedder = BagOfWordsEmbedder::new(100);
+
+        embedder.add_documents(&[
+            "hello world",
+            "goodbye world",
+            "hello goodbye",
+        ]);
+        embedder.freeze();
+
+        let v1 = embedder.embed("hello world");
+        let v2 = embedder.embed("hello goodbye");
+
+        // Both contain "hello", should have some similarity
+        let sim = v1.cosine_similarity(&v2);
+        assert!(sim > 0.0);
+    }
+}

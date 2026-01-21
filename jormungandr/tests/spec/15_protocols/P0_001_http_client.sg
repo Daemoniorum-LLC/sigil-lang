@@ -1,0 +1,18 @@
+// Test: HTTP client (mock)
+// Spec: 15-PROTOCOLS.md § 4 HTTP Support
+// Priority: P0 - Bootstrap Critical
+//
+// Tests HTTP response handling concept with mock data
+
+sigil Response {
+    status: i32
+}
+
+rite mock_http_get() → Response {
+    Response { status: 200 }
+}
+
+rite main() {
+    ≔ response = mock_http_get();
+    println(response.status);
+}

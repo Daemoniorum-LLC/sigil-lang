@@ -1,0 +1,11 @@
+// Test: Vec iteration
+// Spec: 09-STDLIB.md § 4.1 Vec
+// Priority: P2 - Enhancement
+
+rite main() {
+    ≔ v: Vec<i32> = vec![1, 2, 3];
+
+    each item of v {
+        println(item);
+    }
+}

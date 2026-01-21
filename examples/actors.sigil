@@ -1,0 +1,218 @@
+//! Actor System Example
+//! Concurrent actors for a chat application.
+
+use concurrency·market·{Actor, Address, Supervisor, Strategy}
+use concurrency·voice·Channel
+use collections·HashMap
+
+// === Message Types ===
+
+enum ChatMessage {
+    Join { user: str, room: str },
+    Leave { user: str, room: str },
+    Send { user: str, room: str, text: str },
+    Broadcast { room: str, text: str },
+    DirectMessage { from: str, to: str, text: str },
+}
+
+enum RoomMessage {
+    UserJoined(str),
+    UserLeft(str),
+    Message { from: str, text: str },
+    GetUsers -> [str],
+}
+
+enum UserMessage {
+    Receive { from: str, text: str },
+    Notify(str),
+    GetHistory -> [ChatEntry],
+}
+
+struct ChatEntry {
+    timestamp: u64,
+    from: str,
+    text: str,
+}
+
+// === Room Actor ===
+
+actor Room {
+    name: str,
+    users: HashMap<str, Address<UserActor>> = HashMap·new(),
+    history: Vec<ChatEntry> = Vec·new(),
+
+    on UserJoined(username: str) {
+        // Notify all users
+        self.users|values|for_each{addr =>
+            addr|tell(UserMessage·Notify("{username} joined the room"))
+        }
+
+        // Add to user list (address will be provided by supervisor)
+        print!("{username} joined {self.name}")
+    }
+
+    on UserLeft(username: str) {
+        self.users|remove(username)
+
+        self.users|values|for_each{addr =>
+            addr|tell(UserMessage·Notify("{username} left the room"))
+        }
+    }
+
+    on Message { from, text } {
+        let entry = ChatEntry {
+            timestamp: time·now(),
+            from: from·clone,
+            text: text·clone,
+        }
+        self.history|push(entry)
+
+        // Broadcast to all users except sender
+        self.users
+            |φ{(name, _) => name != from}
+            |for_each{(_, addr) =>
+                addr|tell(UserMessage·Receive { from: from·clone, text: text·clone })
+            }
+    }
+
+    on GetUsers -> [str] {
+        self.users|keys|collect
+    }
+}
+
+// === User Actor ===
+
+actor UserActor {
+    username: str,
+    inbox: Vec<ChatEntry> = Vec·new(),
+    notifications: Vec<str> = Vec·new(),
+
+    on Receive { from, text } {
+        let entry = ChatEntry {
+            timestamp: time·now(),
+            from,
+            text,
+        }
+        self.inbox|push(entry)
+
+        // Could trigger UI notification here
+        print!("[{self.username}] New message from {from}: {text}")
+    }
+
+    on Notify(message: str) {
+        self.notifications|push(message)
+        print!("[{self.username}] {message}")
+    }
+
+    on GetHistory -> [ChatEntry] {
+        self.inbox·clone
+    }
+}
+
+// === Chat Server Actor ===
+
+actor ChatServer {
+    rooms: HashMap<str, Address<Room>> = HashMap·new(),
+    users: HashMap<str, Address<UserActor>> = HashMap·new(),
+
+    on Join { user, room } {
+        // Get or create room
+        let room_addr = self.rooms
+            |get(room)
+            |unwrap_or_else{|| self.create_room(room)}
+
+        // Get or create user
+        let user_addr = self.users
+            |get(user)
+            |unwrap_or_else{|| self.create_user(user)}
+
+        // Notify room
+        room_addr|tell(RoomMessage·UserJoined(user))
+    }
+
+    on Leave { user, room } {
+        if let Some(room_addr) = self.rooms|get(room) {
+            room_addr|tell(RoomMessage·UserLeft(user))
+        }
+    }
+
+    on Send { user, room, text } {
+        if let Some(room_addr) = self.rooms|get(room) {
+            room_addr|tell(RoomMessage·Message { from: user, text })
+        }
+    }
+
+    on DirectMessage { from, to, text } {
+        if let Some(user_addr) = self.users|get(to) {
+            user_addr|tell(UserMessage·Receive { from, text })
+        }
+    }
+
+    fn create_room(self, name: str) -> Address<Room> {
+        let room = Room { name: name·clone() }|open
+        self.rooms|insert(name, room·clone)
+        room
+    }
+
+    fn create_user(self, username: str) -> Address<UserActor> {
+        let user = UserActor { username: username·clone() }|open
+        self.users|insert(username, user·clone)
+        user
+    }
+}
+
+// === Supervision ===
+
+fn create_supervised_chat() -> Address<ChatServer> {
+    let supervisor = Supervisor·new()
+        |strategy(Strategy·OneForOne)
+        |max_restarts(5, per: 1·minute)
+
+    // Create chat server under supervision
+    let server = supervisor|apprentice(ChatServer·new)
+
+    server
+}
+
+// === Main ===
+
+async fn main() {
+    // Start supervised chat server
+    let server = create_supervised_chat()
+
+    // Simulate users joining
+    server|tell(ChatMessage·Join { user: "Alice", room: "general" })
+    server|tell(ChatMessage·Join { user: "Bob", room: "general" })
+    server|tell(ChatMessage·Join { user: "Charlie", room: "general" })
+
+    // Wait a bit for actors to process
+    sleep(100·ms)|await
+
+    // Send some messages
+    server|tell(ChatMessage·Send {
+        user: "Alice",
+        room: "general",
+        text: "Hello everyone!",
+    })
+
+    server|tell(ChatMessage·Send {
+        user: "Bob",
+        room: "general",
+        text: "Hi Alice!",
+    })
+
+    // Direct message
+    server|tell(ChatMessage·DirectMessage {
+        from: "Charlie",
+        to: "Alice",
+        text: "Hey, can we chat privately?",
+    })
+
+    // Keep running
+    sleep(1·sec)|await
+
+    // Cleanup
+    server|tell(ChatMessage·Leave { user: "Alice", room: "general" })
+    server|tell(ChatMessage·Leave { user: "Bob", room: "general" })
+    server|tell(ChatMessage·Leave { user: "Charlie", room: "general" })
+}

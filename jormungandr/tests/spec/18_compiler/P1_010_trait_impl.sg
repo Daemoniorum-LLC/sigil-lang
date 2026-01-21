@@ -1,0 +1,22 @@
+// Test: Trait implementation compilation
+// Spec: 18-COMPILER.md § 4.3 Traits
+// Priority: P1 - Production Ready
+
+aspect Printable {
+    rite print(&this);
+}
+
+sigil Value {
+    n: !i32,
+}
+
+⊢ Value : Printable {
+    rite print(&this) {
+        println(this.n);
+    }
+}
+
+rite main() {
+    ≔ v = Value { n: 42 };
+    v.print();
+}

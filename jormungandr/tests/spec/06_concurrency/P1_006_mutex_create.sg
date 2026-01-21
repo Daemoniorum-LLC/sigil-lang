@@ -1,0 +1,9 @@
+// Test: Mutex creation
+// Spec: 06-CONCURRENCY.md § 3.1 Mutex
+// Priority: P1 - Standard Feature
+
+rite main() {
+    // Create a mutex wrapping a value
+    ≔ m = Mutex·new(42);
+    println("mutex created");
+}

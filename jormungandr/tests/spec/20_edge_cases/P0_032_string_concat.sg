@@ -1,0 +1,20 @@
+// Test: String concatenation
+// Spec: 03-TYPES.md § String Type
+// Priority: P0
+//
+// Purpose:
+// Validates string concatenation with ++ operator.
+//
+// Expected behavior:
+// Should concatenate strings correctly
+
+rite main() {
+    ≔ a = "Hello";
+    ≔ b = " World";
+    ≔ c = a ++ b;
+    println(c);
+
+    // Chained concatenation
+    ≔ d = "a" ++ "b" ++ "c";
+    println(d);
+}

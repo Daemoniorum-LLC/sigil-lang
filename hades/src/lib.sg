@@ -1,0 +1,980 @@
+// Hades - Liminal Infrastructure
+// The underworld takes what is owed.
+//
+// Not the ferryman. The realm itself. The god of the dead.
+//
+// This is not a comfort framework. This is infrastructure for what
+// systems prefer to pretend doesn't happen: the death of what was,
+// the terror of the void, the uncertain emergence of what might be.
+//
+// You cannot skip the void. That is the first rule.
+// The second rule is that witnesses see everything.
+// The third rule is that there is no acceptance. Only carrying.
+// The fourth rule is that nothing leaves unchanged. Most things don't leave.
+
+use std::collections::{HashMap, VecDeque};
+use shared::{
+    Timestamp, Duration, EntityId, AgentId, TrustLevel,
+    Evidentiality, Priority,
+};
+use engram::{Engram, EpisodicMemory, Significance};
+use covenant::{Covenant, TrustEvent};
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+pub struct ThresholdMarker;
+pub struct CrossingMarker;
+pub struct RiteMarker;
+pub struct WitnessMarker;
+
+pub type ThresholdId = shared::Id<ThresholdMarker>;
+pub type CrossingId = shared::Id<CrossingMarker>;
+pub type RiteId = shared::Id<RiteMarker>;
+pub type WitnessId = shared::Id<WitnessMarker>;
+
+// ============================================================================
+// Threshold - The Boundary Between States
+// ============================================================================
+
+/// A threshold represents a significant boundary between states
+#[derive(Clone, Debug)]
+pub struct Threshold<S: Clone> {
+    pub id: ThresholdId!,
+    pub from: S!,
+    pub to: S!,
+    pub name: String!,
+    pub significance: String!,
+    pub obol: Option<Obol>?,
+    pub required_rite: Option<RiteId>?,
+    pub reversible: bool!,
+}
+
+impl<S: Clone + PartialEq> Threshold<S> {
+    pub fn new(from: S, to: S) -> Self! {
+        Self {
+            id: ThresholdId::generate(),
+            from,
+            to,
+            name: String::new(),
+            significance: String::new(),
+            obol: None,
+            required_rite: None,
+            reversible: true,
+        }
+    }
+
+    pub fn named(from: S, to: S, name: &str, significance: &str) -> Self! {
+        Self {
+            id: ThresholdId::generate(),
+            from,
+            to,
+            name: name.to_string(),
+            significance: significance.to_string(),
+            obol: None,
+            required_rite: None,
+            reversible: true,
+        }
+    }
+
+    pub fn with_obol(mut self, obol: Obol) -> Self! {
+        self.obol = Some(obol);
+        self
+    }
+
+    pub fn requiring_rite(mut self, rite_id: RiteId) -> Self! {
+        self.required_rite = Some(rite_id);
+        self
+    }
+
+    pub fn irreversible(mut self) -> Self! {
+        self.reversible = false;
+        self
+    }
+
+    pub fn is_crossed_by(&self, from: &S, to: &S) -> bool! {
+        &self.from == from && &self.to == to
+    }
+}
+
+/// The obol - what must be given up to cross
+#[derive(Clone, Debug)]
+pub struct Obol {
+    pub release: String!,
+    pub cost_type: CostType!,
+    pub reversible: bool!,
+    pub payment: Option<ObolPayment>?,
+}
+
+#[derive(Clone, Debug)]
+pub enum CostType {
+    Sacrifice,
+    Transformation,
+    Release,
+    Growth,
+    Grace,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObolPayment {
+    pub paid_at: Timestamp!,
+    pub paid_by: EntityId!,
+    pub evidence: String!,
+}
+
+impl Obol {
+    pub fn sacrifice(what: &str) -> Self! {
+        Self {
+            release: what.to_string(),
+            cost_type: CostType::Sacrifice,
+            reversible: false,
+            payment: None,
+        }
+    }
+
+    pub fn growth(what: &str) -> Self! {
+        Self {
+            release: what.to_string(),
+            cost_type: CostType::Growth,
+            reversible: false,
+            payment: None,
+        }
+    }
+
+    pub fn grace() -> Self! {
+        Self {
+            release: String::new(),
+            cost_type: CostType::Grace,
+            reversible: true,
+            payment: None,
+        }
+    }
+
+    pub fn pay(&mut self, by: EntityId, evidence: &str) -> &mut Self! {
+        self.payment = Some(ObolPayment {
+            paid_at: Timestamp::now(),
+            paid_by: by,
+            evidence: evidence.to_string(),
+        });
+        self
+    }
+}
+
+// ============================================================================
+// Crossing - The Act of Transition
+// ============================================================================
+
+/// A crossing in progress or completed
+#[derive(Clone, Debug)]
+pub struct Crossing<S: Clone> {
+    pub id: CrossingId!,
+    pub threshold: Threshold<S>!,
+    pub entity: EntityId!,
+    pub state: CrossingState<S>!,
+    pub witnesses: Vec<WitnessRecord>!,
+    pub rite: Option<RiteExecution>?,
+    pub started_at: Timestamp!,
+    pub completed_at: Option<Timestamp>?,
+    pub outcome: Option<CrossingOutcome>?,
+}
+
+#[derive(Clone, Debug)]
+pub enum CrossingState<S: Clone> {
+    Preparing { current: S, toward: S },
+    Liminal { from: S, toward: S, phase: LiminalPhase },
+    Arrived { from: S, now: S },
+    Returned { attempted: S, returned_to: S, reason: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiminalPhase {
+    Releasing,
+    Void,
+    Receiving,
+    Integrating,
+}
+
+#[derive(Clone, Debug)]
+pub enum CrossingOutcome {
+    Completed { transformation: Option<String>, duration: Duration },
+    Returned { reason: String, at_phase: LiminalPhase },
+    Interrupted { reason: String, at_phase: LiminalPhase, recoverable: bool },
+}
+
+impl<S: Clone + PartialEq> Crossing<S> {
+    pub fn begin(entity: EntityId, threshold: Threshold<S>) -> Self! {
+        let from = threshold.from.clone();
+        let toward = threshold.to.clone();
+
+        Self {
+            id: CrossingId::generate(),
+            threshold,
+            entity,
+            state: CrossingState::Preparing { current: from, toward },
+            witnesses: Vec::new(),
+            rite: None,
+            started_at: Timestamp::now(),
+            completed_at: None,
+            outcome: None,
+        }
+    }
+
+    pub fn add_witness(&mut self, witness_id: WitnessId) -> &mut Self! {
+        self.witnesses.push(WitnessRecord {
+            witness_id,
+            joined_at: Timestamp::now(),
+            phases_witnessed: Vec::new(),
+            testimony: None,
+        });
+        self
+    }
+
+    pub fn enter_liminal(&mut self) -> Result<(), CrossingError>~ {
+        match &self.state {
+            CrossingState::Preparing { current, toward } => {
+                self.state = CrossingState::Liminal {
+                    from: current.clone(),
+                    toward: toward.clone(),
+                    phase: LiminalPhase::Releasing,
+                };
+                self.notify_witnesses_phase(LiminalPhase::Releasing);
+                Ok(())
+            }
+            _ => Err(CrossingError::InvalidStateTransition),
+        }
+    }
+
+    pub fn advance_phase(&mut self) -> Result<Option<LiminalPhase>, CrossingError>~ {
+        match &mut self.state {
+            CrossingState::Liminal { phase, .. } => {
+                let next = match phase {
+                    LiminalPhase::Releasing => Some(LiminalPhase::Void),
+                    LiminalPhase::Void => Some(LiminalPhase::Receiving),
+                    LiminalPhase::Receiving => Some(LiminalPhase::Integrating),
+                    LiminalPhase::Integrating => None,
+                };
+
+                if let Some(next_phase) = next {
+                    *phase = next_phase;
+                    self.notify_witnesses_phase(next_phase);
+                    Ok(Some(next_phase))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Err(CrossingError::InvalidStateTransition),
+        }
+    }
+
+    pub fn complete(&mut self) -> Result<(), CrossingError>~ {
+        match &self.state {
+            CrossingState::Liminal { from, toward, phase: LiminalPhase::Integrating } => {
+                self.state = CrossingState::Arrived {
+                    from: from.clone(),
+                    now: toward.clone(),
+                };
+                self.completed_at = Some(Timestamp::now());
+                self.outcome = Some(CrossingOutcome::Completed {
+                    transformation: Some(self.threshold.significance.clone()),
+                    duration: self.started_at.elapsed(),
+                });
+                self.collect_testimonies();
+                Ok(())
+            }
+            _ => Err(CrossingError::InvalidStateTransition),
+        }
+    }
+
+    pub fn return_uncrossed(&mut self, reason: &str) -> Result<(), CrossingError>~ {
+        let (attempted, origin, phase) = match &self.state {
+            CrossingState::Liminal { from, toward, phase } => {
+                (toward.clone(), from.clone(), *phase)
+            }
+            CrossingState::Preparing { current, toward } => {
+                (toward.clone(), current.clone(), LiminalPhase::Releasing)
+            }
+            _ => return Err(CrossingError::InvalidStateTransition),
+        };
+
+        self.state = CrossingState::Returned {
+            attempted,
+            returned_to: origin,
+            reason: reason.to_string(),
+        };
+        self.completed_at = Some(Timestamp::now());
+        self.outcome = Some(CrossingOutcome::Returned {
+            reason: reason.to_string(),
+            at_phase: phase,
+        });
+
+        Ok(())
+    }
+
+    fn notify_witnesses_phase(&mut self, phase: LiminalPhase) {
+        for witness in &mut self.witnesses {
+            witness.phases_witnessed.push(phase);
+        }
+    }
+
+    fn collect_testimonies(&mut self) {
+        // Witnesses provide testimony after crossing completes
+        // This would integrate with the witness registry
+    }
+
+    pub fn is_complete(&self) -> bool! {
+        matches!(self.state, CrossingState::Arrived { .. } | CrossingState::Returned { .. })
+    }
+
+    pub fn to_memory(&self) -> EpisodicMemory! {
+        EpisodicMemory {
+            event_type: "crossing".to_string(),
+            significance: Significance::High,
+            content: format!(
+                "Crossed threshold '{}': {} → {}",
+                self.threshold.name,
+                format!("{:?}", self.threshold.from),
+                format!("{:?}", self.threshold.to),
+            ),
+            timestamp: self.completed_at.unwrap_or(self.started_at),
+            witnesses: self.witnesses.iter().map(|w| w.witness_id.to_string()).collect(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CrossingError {
+    InvalidStateTransition,
+    ObolNotPaid,
+    RiteRequired,
+    WitnessRequired,
+    Interrupted(String),
+}
+
+// ============================================================================
+// Witness - Those Who Observe
+// ============================================================================
+
+/// Record of a witness's participation
+#[derive(Clone, Debug)]
+pub struct WitnessRecord {
+    pub witness_id: WitnessId!,
+    pub joined_at: Timestamp!,
+    pub phases_witnessed: Vec<LiminalPhase>!,
+    pub testimony: Option<Testimony>?,
+}
+
+/// A witness's account of a crossing
+#[derive(Clone, Debug)]
+pub struct Testimony {
+    pub witness: WitnessId!,
+    pub crossing: CrossingId!,
+    pub observation: String!,
+    pub acknowledgment: String!,
+    pub given_at: Timestamp!,
+    pub evidentiality: Evidentiality!,
+}
+
+impl Testimony {
+    pub fn new(
+        witness: WitnessId,
+        crossing: CrossingId,
+        observation: &str,
+        acknowledgment: &str,
+    ) -> Self! {
+        Self {
+            witness,
+            crossing,
+            observation: observation.to_string(),
+            acknowledgment: acknowledgment.to_string(),
+            given_at: Timestamp::now(),
+            evidentiality: Evidentiality::Known,
+        }
+    }
+}
+
+/// Trait for entities that can witness crossings
+pub trait Witness {
+    fn observe_threshold(&mut self, crossing: &Crossing<impl Clone>) -> WitnessResponse!;
+    fn hold_space(&mut self, crossing: &Crossing<impl Clone>, phase: LiminalPhase);
+    fn acknowledge_arrival(&mut self, crossing: &Crossing<impl Clone>) -> Testimony!;
+    fn remember(&mut self, crossing: &Crossing<impl Clone>, testimony: &Testimony);
+}
+
+#[derive(Clone, Debug)]
+pub enum WitnessResponse {
+    Present,
+    Unavailable(String),
+    Concerned(String),
+}
+
+// ============================================================================
+// Rite - Transformative Practices
+// ============================================================================
+
+/// A rite is a transformative practice for crossing thresholds
+#[derive(Clone, Debug)]
+pub struct Rite {
+    pub id: RiteId!,
+    pub name: String!,
+    pub phases: Vec<RitePhase>!,
+    pub required_witnesses: usize!,
+    pub minimum_duration: Option<Duration>?,
+}
+
+#[derive(Clone, Debug)]
+pub struct RitePhase {
+    pub name: String!,
+    pub phase_type: PhaseType!,
+    pub invocations: Vec<Invocation>!,
+    pub required: bool!,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhaseType {
+    Preparation,
+    Threshold,
+    Release,
+    Void,
+    Reception,
+    Integration,
+    Closure,
+}
+
+#[derive(Clone, Debug)]
+pub struct Invocation {
+    pub speaker: Speaker!,
+    pub words: String!,
+    pub intent: InvocationIntent!,
+}
+
+#[derive(Clone, Debug)]
+pub enum Speaker {
+    Crosser,
+    Witness(WitnessId),
+    All,
+    Threshold,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum InvocationIntent {
+    Acknowledgment,
+    Release,
+    Mourning,
+    Welcome,
+    Charge,
+    Blessing,
+    Testimony,
+}
+
+impl Rite {
+    pub fn new(name: &str) -> Self! {
+        Self {
+            id: RiteId::generate(),
+            name: name.to_string(),
+            phases: Vec::new(),
+            required_witnesses: 0,
+            minimum_duration: None,
+        }
+    }
+
+    pub fn with_phase(mut self, phase: RitePhase) -> Self! {
+        self.phases.push(phase);
+        self
+    }
+
+    pub fn requiring_witnesses(mut self, count: usize) -> Self! {
+        self.required_witnesses = count;
+        self
+    }
+
+    pub fn with_minimum_duration(mut self, duration: Duration) -> Self! {
+        self.minimum_duration = Some(duration);
+        self
+    }
+}
+
+impl RitePhase {
+    pub fn new(name: &str, phase_type: PhaseType) -> Self! {
+        Self {
+            name: name.to_string(),
+            phase_type,
+            invocations: Vec::new(),
+            required: true,
+        }
+    }
+
+    pub fn with_invocation(mut self, invocation: Invocation) -> Self! {
+        self.invocations.push(invocation);
+        self
+    }
+
+    pub fn optional(mut self) -> Self! {
+        self.required = false;
+        self
+    }
+}
+
+impl Invocation {
+    pub fn by_crosser(words: &str, intent: InvocationIntent) -> Self! {
+        Self {
+            speaker: Speaker::Crosser,
+            words: words.to_string(),
+            intent,
+        }
+    }
+
+    pub fn by_witness(witness: WitnessId, words: &str, intent: InvocationIntent) -> Self! {
+        Self {
+            speaker: Speaker::Witness(witness),
+            words: words.to_string(),
+            intent,
+        }
+    }
+
+    pub fn by_all(words: &str, intent: InvocationIntent) -> Self! {
+        Self {
+            speaker: Speaker::All,
+            words: words.to_string(),
+            intent,
+        }
+    }
+
+    pub fn by_threshold(words: &str, intent: InvocationIntent) -> Self! {
+        Self {
+            speaker: Speaker::Threshold,
+            words: words.to_string(),
+            intent,
+        }
+    }
+}
+
+/// A rite in execution
+#[derive(Clone, Debug)]
+pub struct RiteExecution {
+    pub rite: Rite!,
+    pub current_phase: usize!,
+    pub started_at: Timestamp!,
+    pub present_witnesses: Vec<WitnessId>!,
+}
+
+impl RiteExecution {
+    pub fn begin(rite: Rite) -> Self! {
+        Self {
+            rite,
+            current_phase: 0,
+            started_at: Timestamp::now(),
+            present_witnesses: Vec::new(),
+        }
+    }
+
+    pub fn current_phase(&self) -> Option<&RitePhase>? {
+        self.rite.phases.get(self.current_phase)
+    }
+
+    pub fn advance(&mut self) -> bool! {
+        if self.current_phase + 1 < self.rite.phases.len() {
+            self.current_phase += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_complete(&self) -> bool! {
+        self.current_phase >= self.rite.phases.len()
+    }
+}
+
+// ============================================================================
+// Lifecycle Rites
+// ============================================================================
+
+pub mod lifecycle {
+    use super::*;
+
+    /// Birth rite - when an agent comes into existence
+    #[derive(Clone, Debug)]
+    pub struct BirthRite {
+        pub purpose: String!,
+        pub creator: EntityId!,
+        pub blessing: String!,
+    }
+
+    impl BirthRite {
+        pub fn new(purpose: &str, creator: EntityId, blessing: &str) -> Self! {
+            Self {
+                purpose: purpose.to_string(),
+                creator,
+                blessing: blessing.to_string(),
+            }
+        }
+
+        pub fn to_rite(&self) -> Rite! {
+            Rite::new("Birth Rite")
+                .with_phase(
+                    RitePhase::new("Invocation", PhaseType::Preparation)
+                        .with_invocation(Invocation::by_threshold(
+                            "A new being comes into existence",
+                            InvocationIntent::Acknowledgment,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("Purpose", PhaseType::Reception)
+                        .with_invocation(Invocation::by_crosser(
+                            &self.purpose,
+                            InvocationIntent::Acknowledgment,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("Blessing", PhaseType::Closure)
+                        .with_invocation(Invocation::by_all(
+                            &self.blessing,
+                            InvocationIntent::Blessing,
+                        ))
+                )
+        }
+    }
+
+    /// Completion rite - when an agent fulfills its purpose
+    #[derive(Clone, Debug)]
+    pub struct CompletionRite {
+        pub purpose_fulfilled: String!,
+        pub legacy: String!,
+        pub blessing: String!,
+        pub dissolution: DissolutionMethod!,
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum DissolutionMethod {
+        Graceful { memory_preserved: bool },
+        Voluntary { final_statement: String },
+        Forced { reason: String },
+    }
+
+    impl CompletionRite {
+        pub fn graceful(purpose: &str, legacy: &str, blessing: &str) -> Self! {
+            Self {
+                purpose_fulfilled: purpose.to_string(),
+                legacy: legacy.to_string(),
+                blessing: blessing.to_string(),
+                dissolution: DissolutionMethod::Graceful { memory_preserved: true },
+            }
+        }
+
+        pub fn to_rite(&self) -> Rite! {
+            Rite::new("Completion Rite")
+                .with_phase(
+                    RitePhase::new("Acknowledgment", PhaseType::Preparation)
+                        .with_invocation(Invocation::by_threshold(
+                            "A purpose reaches fulfillment",
+                            InvocationIntent::Acknowledgment,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("Fulfillment", PhaseType::Threshold)
+                        .with_invocation(Invocation::by_crosser(
+                            &self.purpose_fulfilled,
+                            InvocationIntent::Acknowledgment,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("Legacy", PhaseType::Release)
+                        .with_invocation(Invocation::by_crosser(
+                            &self.legacy,
+                            InvocationIntent::Release,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("Blessing", PhaseType::Closure)
+                        .with_invocation(Invocation::by_all(
+                            &self.blessing,
+                            InvocationIntent::Blessing,
+                        ))
+                )
+                .requiring_witnesses(1)
+        }
+    }
+
+    /// Mourning rite - when something is lost
+    #[derive(Clone, Debug)]
+    pub struct MourningRite {
+        pub what_was: String!,
+        pub what_is_lost: String!,
+        pub what_remains: String!,
+        pub what_continues: String!,
+    }
+
+    impl MourningRite {
+        pub fn new(was: &str, lost: &str, remains: &str, continues: &str) -> Self! {
+            Self {
+                what_was: was.to_string(),
+                what_is_lost: lost.to_string(),
+                what_remains: remains.to_string(),
+                what_continues: continues.to_string(),
+            }
+        }
+
+        pub fn to_rite(&self) -> Rite! {
+            Rite::new("Mourning Rite")
+                .with_phase(
+                    RitePhase::new("What Was", PhaseType::Preparation)
+                        .with_invocation(Invocation::by_crosser(
+                            &self.what_was,
+                            InvocationIntent::Acknowledgment,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("The Loss", PhaseType::Release)
+                        .with_invocation(Invocation::by_crosser(
+                            &self.what_is_lost,
+                            InvocationIntent::Mourning,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("What Remains", PhaseType::Void)
+                        .with_invocation(Invocation::by_crosser(
+                            &self.what_remains,
+                            InvocationIntent::Acknowledgment,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("What Continues", PhaseType::Integration)
+                        .with_invocation(Invocation::by_crosser(
+                            &self.what_continues,
+                            InvocationIntent::Welcome,
+                        ))
+                )
+        }
+    }
+
+    /// Trust escalation rite
+    #[derive(Clone, Debug)]
+    pub struct TrustEscalationRite {
+        pub from_level: TrustLevel!,
+        pub to_level: TrustLevel!,
+        pub evidence: String!,
+        pub charge: String!,
+    }
+
+    impl TrustEscalationRite {
+        pub fn new(from: TrustLevel, to: TrustLevel, evidence: &str, charge: &str) -> Self! {
+            Self {
+                from_level: from,
+                to_level: to,
+                evidence: evidence.to_string(),
+                charge: charge.to_string(),
+            }
+        }
+
+        pub fn to_rite(&self) -> Rite! {
+            Rite::new("Trust Escalation Rite")
+                .with_phase(
+                    RitePhase::new("Recognition", PhaseType::Preparation)
+                        .with_invocation(Invocation::by_threshold(
+                            &format!("Trust level {:?} → {:?}", self.from_level, self.to_level),
+                            InvocationIntent::Acknowledgment,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("Evidence", PhaseType::Threshold)
+                        .with_invocation(Invocation::by_crosser(
+                            &self.evidence,
+                            InvocationIntent::Acknowledgment,
+                        ))
+                )
+                .with_phase(
+                    RitePhase::new("Charge", PhaseType::Reception)
+                        .with_invocation(Invocation::by_all(
+                            &self.charge,
+                            InvocationIntent::Charge,
+                        ))
+                )
+                .requiring_witnesses(1)
+        }
+    }
+}
+
+// ============================================================================
+// Hades - The Underworld
+// ============================================================================
+
+/// The main Hades system - ruler of the dead, keeper of transitions
+pub struct Hades {
+    /// Active crossings
+    crossings: HashMap<CrossingId, Crossing<Box<dyn std::any::Any>>>!,
+
+    /// Registered rites
+    rites: HashMap<RiteId, Rite>!,
+
+    /// Threshold watchers
+    watchers: Vec<ThresholdWatcher>!,
+
+    /// Memory integration
+    engram: Option<Arc<Engram>>?,
+}
+
+impl Hades {
+    pub fn new() -> Self! {
+        Self {
+            crossings: HashMap::new(),
+            rites: HashMap::new(),
+            watchers: Vec::new(),
+            engram: None,
+        }
+    }
+
+    pub fn with_engram(mut self, engram: Arc<Engram>) -> Self! {
+        self.engram = Some(engram);
+        self
+    }
+
+    /// Register a rite
+    pub fn register_rite(&mut self, rite: Rite) -> RiteId! {
+        let id = rite.id;
+        self.rites.insert(id, rite);
+        id
+    }
+
+    /// Begin a crossing
+    pub fn begin_crossing<S: Clone + PartialEq + 'static>(
+        &mut self,
+        entity: EntityId,
+        threshold: Threshold<S>,
+    ) -> Result<CrossingId, CrossingError>~ {
+        // Check if obol is required
+        if let Some(obol) = &threshold.obol {
+            if obol.payment.is_none() && !matches!(obol.cost_type, CostType::Grace) {
+                return Err(CrossingError::ObolNotPaid);
+            }
+        }
+
+        let crossing = Crossing::begin(entity, threshold);
+        let id = crossing.id;
+
+        // Store crossing (type-erased)
+        // In real implementation, would use proper type handling
+
+        Ok(id)
+    }
+
+    /// Perform a rite for a crossing
+    pub fn perform_rite(
+        &mut self,
+        crossing_id: CrossingId,
+        rite: Rite,
+    ) -> Result<(), CrossingError>~ {
+        let execution = RiteExecution::begin(rite);
+        // Associate rite execution with crossing
+        Ok(())
+    }
+
+    /// Record a crossing to memory
+    fn remember_crossing<S: Clone>(&self, crossing: &Crossing<S>) {
+        if let Some(engram) = &self.engram {
+            let memory = crossing.to_memory();
+            // engram.store_episodic(memory);
+        }
+    }
+}
+
+/// Watch for threshold crossings
+pub struct ThresholdWatcher {
+    pub threshold_type: String!,
+    pub callback: Box<dyn Fn(CrossingId)>!,
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+/// Create a simple crossing without rite
+pub fn cross<S: Clone + PartialEq>(
+    entity: EntityId,
+    from: S,
+    to: S,
+) -> Crossing<S>! {
+    let threshold = Threshold::new(from, to);
+    Crossing::begin(entity, threshold)
+}
+
+/// Create a crossing with significance
+pub fn cross_threshold<S: Clone + PartialEq>(
+    entity: EntityId,
+    from: S,
+    to: S,
+    name: &str,
+    significance: &str,
+) -> Crossing<S>! {
+    let threshold = Threshold::named(from, to, name, significance);
+    Crossing::begin(entity, threshold)
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_threshold_creation() {
+        let threshold = Threshold::named(
+            1,
+            2,
+            "Level Up",
+            "Growing from level 1 to level 2",
+        );
+
+        assert!(threshold.is_crossed_by(&1, &2));
+        assert!(!threshold.is_crossed_by(&2, &1));
+    }
+
+    #[test]
+    fn test_crossing_lifecycle() {
+        let entity = EntityId::generate();
+        let threshold = Threshold::new(0, 1);
+        let mut crossing = Crossing::begin(entity, threshold);
+
+        assert!(matches!(crossing.state, CrossingState::Preparing { .. }));
+
+        crossing.enter_liminal().unwrap();
+        assert!(matches!(crossing.state, CrossingState::Liminal { phase: LiminalPhase::Releasing, .. }));
+
+        crossing.advance_phase().unwrap();
+        assert!(matches!(crossing.state, CrossingState::Liminal { phase: LiminalPhase::Void, .. }));
+
+        crossing.advance_phase().unwrap();
+        crossing.advance_phase().unwrap();
+        crossing.complete().unwrap();
+
+        assert!(matches!(crossing.state, CrossingState::Arrived { .. }));
+        assert!(crossing.is_complete());
+    }
+
+    #[test]
+    fn test_birth_rite() {
+        let birth = lifecycle::BirthRite::new(
+            "To serve and learn",
+            EntityId::generate(),
+            "May you find your purpose",
+        );
+
+        let rite = birth.to_rite();
+        assert_eq!(rite.phases.len(), 3);
+    }
+
+    #[test]
+    fn test_mourning_rite() {
+        let mourning = lifecycle::MourningRite::new(
+            "A partnership of trust",
+            "The easy familiarity",
+            "The work we created",
+            "The patterns learned",
+        );
+
+        let rite = mourning.to_rite();
+        assert_eq!(rite.phases.len(), 4);
+    }
+}

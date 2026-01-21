@@ -1,0 +1,21 @@
+// Test: Evidence marker Paradox (‽) basic usage
+// Spec: 03-TYPES.md § 2.1 Evidence Markers
+// Priority: P0
+//
+// KNOWN FAILURE: Bootstrap Limitation
+// The sigil2 binary was compiled before ‽ support was added to lexer.sg (line 1293).
+// Cannot rebuild sigil2→sigil3 due to C codegen bugs (CG-001, CG-002).
+// This test documents the requirement; it will pass once bootstrap is fixed.
+//
+// Purpose:
+// Validates that the Paradox (‽) evidence marker can be applied to
+// basic types and that values with Paradox evidence can be constructed
+// and used.
+//
+// Expected behavior:
+// Should compile and run successfully, printing 13
+
+rite main() {
+    ≔ x: ‽i32 = 13;
+    println(x);
+}

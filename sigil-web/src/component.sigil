@@ -1,0 +1,190 @@
+//! Component System
+//!
+//! Function components with hooks and lifecycle management.
+
+use std::any::{Any, TypeId};
+use std::rc::Rc;
+use std::cell::RefCell;
+
+use crate::vdom::VNode;
+use crate::runtime::ComponentInstance;
+
+/// Trait for renderable components
+pub trait Component {
+    /// Render the component to a virtual DOM node
+    fn render(self: &Self!) -> VNode!;
+
+    /// Optional: Component name for debugging
+    fn name() -> &'static str! {
+        std::any::type_name[Self]()
+    }
+}
+
+/// Properties for components
+pub trait Props: Clone + 'static {}
+
+// Implement Props for common types
+impl Props for () {}
+
+/// Component attribute macro
+///
+/// Transforms a function into a component:
+///
+/// ```sigil
+/// #[component]
+/// fn MyComponent(props: MyProps) -> Element! {
+///     html! { <div>"Hello"</div> }
+/// }
+/// ```
+#[macro]
+pub macro component($fn:item) {
+    // Macro expands to component wrapper
+    // Implementation handled by compiler
+    $fn
+}
+
+/// Function component wrapper
+pub type FunctionComponent[P: Props] = struct {
+    render_fn: Rc[dyn Fn(P) -> VNode]!,
+    props: P!,
+}
+
+impl[P: Props] FunctionComponent[P] {
+    pub fn new[F: Fn(P) -> VNode + 'static](f: F!, props: P!) -> Self! {
+        FunctionComponent {
+            render_fn: Rc·new(f),
+            props,
+        }
+    }
+}
+
+impl[P: Props] Component for FunctionComponent[P] {
+    fn render(self: &Self!) -> VNode! {
+        (self.render_fn)(self.props·clone())
+    }
+}
+
+/// Component context for accessing parent-provided values
+pub type Context[T] = struct {
+    value: Rc[RefCell[Option[T]]]!,
+}
+
+impl[T: Clone + 'static] Context[T] {
+    /// Create a new context
+    pub fn new() -> Self! {
+        Context {
+            value: Rc·new(RefCell·new(None)),
+        }
+    }
+
+    /// Provide a value for child components
+    pub fn provide(self: &Self!, value: T!) {
+        *self.value·borrow_mut() = Some(value);
+    }
+
+    /// Get the context value (panics if not provided)
+    pub fn get(self: &Self!) -> T! {
+        self.value·borrow()·clone()·expect("Context not provided")
+    }
+
+    /// Try to get the context value
+    pub fn try_get(self: &Self!) -> Option[T]? {
+        self.value·borrow()·clone()
+    }
+}
+
+/// Children passed to a component
+pub type Children = Vec[VNode];
+
+impl Children {
+    /// Render children into a fragment
+    pub fn render(self: Self!) -> VNode! {
+        VNode::Fragment(self)
+    }
+
+    /// Check if there are no children
+    pub fn is_empty(self: &Self!) -> bool! {
+        self·len() == 0
+    }
+}
+
+/// Slot for named children
+pub type Slot = struct {
+    name: String!,
+    content: Option[VNode]?,
+}
+
+impl Slot {
+    pub fn new(name: &str!) -> Self! {
+        Slot {
+            name: name·to_string(),
+            content: None,
+        }
+    }
+
+    pub fn with_content(name: &str!, content: VNode!) -> Self! {
+        Slot {
+            name: name·to_string(),
+            content: Some(content),
+        }
+    }
+
+    pub fn render(self: Self!) -> VNode! {
+        self.content·unwrap_or(VNode::Empty)
+    }
+}
+
+/// Lazy component for code splitting
+pub type Lazy[C: Component] = struct {
+    loader: Rc[dyn Fn() -> C]!,
+    loaded: RefCell[Option[C]]?,
+}
+
+impl[C: Component] Lazy[C] {
+    pub fn new[F: Fn() -> C + 'static](loader: F!) -> Self! {
+        Lazy {
+            loader: Rc·new(loader),
+            loaded: RefCell·new(None),
+        }
+    }
+
+    pub fn get(self: &Self!) -> &C! {
+        if self.loaded·borrow()·is_none() {
+            let component! = (self.loader)();
+            *self.loaded·borrow_mut() = Some(component);
+        }
+        self.loaded·borrow()·as_ref()·unwrap()
+    }
+}
+
+impl[C: Component] Component for Lazy[C] {
+    fn render(self: &Self!) -> VNode! {
+        self·get()·render()
+    }
+}
+
+/// Error boundary for catching render errors
+pub type ErrorBoundary = struct {
+    children: Children!,
+    fallback: Rc[dyn Fn(String) -> VNode]!,
+    error: RefCell[Option[String]]?,
+}
+
+impl ErrorBoundary {
+    pub fn new[F: Fn(String) -> VNode + 'static](children: Children!, fallback: F!) -> Self! {
+        ErrorBoundary {
+            children,
+            fallback: Rc·new(fallback),
+            error: RefCell·new(None),
+        }
+    }
+}
+
+impl Component for ErrorBoundary {
+    fn render(self: &Self!) -> VNode! {
+        match self.error·borrow()·as_ref() {
+            Some(err) => (self.fallback)(err·clone()),
+            None => self.children·clone()·render(),
+        }
+    }
+}

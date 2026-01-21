@@ -1,0 +1,8 @@
+// Test: Result·Err handling
+// Spec: Edge Cases - Error Values
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ res: Result<i32, String> = Err("error message".to_string());
+    println(res.is_err());
+}

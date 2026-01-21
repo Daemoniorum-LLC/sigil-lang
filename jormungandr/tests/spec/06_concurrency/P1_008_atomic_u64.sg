@@ -1,0 +1,21 @@
+// Test: AtomicU64 operations
+// Spec: 06-CONCURRENCY.md § 4.1 Atomics
+// Priority: P1 - Standard Feature
+
+rite main() {
+    // Create atomic with initial value
+    ≔ counter = AtomicU64·new(0);
+
+    // Load the value
+    ≔ val = counter.load();
+    println(val);
+
+    // Store a new value
+    counter.store(42);
+    println(counter.load());
+
+    // Fetch and add
+    ≔ old = counter.fetch_add(10);
+    println(old);
+    println(counter.load());
+}

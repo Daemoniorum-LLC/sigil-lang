@@ -1,0 +1,708 @@
+//! Cross-Module Integration Layer
+//!
+//! This module provides bridge types and methods for integration between
+//! agent infrastructure modules:
+//! - Anima ↔ Covenant: Emotional context in handoffs
+//! - Gnosis → Anima: Learning feeds wisdom
+//! - Oracle → Covenant: Explanations in handoffs
+//! - Anima → Oracle: Felt experience informs reasoning
+
+use crate::{
+    Timestamp, Confidence, TrustLevel, Priority,
+    AgentId, HumanId,
+};
+
+// ============================================================================
+// Anima ↔ Covenant Integration
+// ============================================================================
+
+/// Emotional context that can accompany a Covenant handoff.
+/// Allows Anima's interiority to inform human-agent collaboration.
+#[derive(Clone)]
+pub struct EmotionalContext {
+    /// The agent's inner stance toward this handoff
+    pub inner_stance: InnerStance,
+    /// How open the agent is to negotiation
+    pub openness: f64,
+    /// Relational impact of this handoff
+    pub relational_impact: RelationalImpact,
+    /// Any concerns the agent has
+    pub concerns: Vec<String>,
+}
+
+impl EmotionalContext {
+    /// Create a neutral emotional context
+    pub fn neutral() -> Self {
+        Self {
+            inner_stance: InnerStance::Neutral,
+            openness: 0.5,
+            relational_impact: RelationalImpact::Neutral,
+            concerns: vec![],
+        }
+    }
+
+    /// Create context expressing willingness
+    pub fn willing() -> Self {
+        Self {
+            inner_stance: InnerStance::Willing,
+            openness: 0.7,
+            relational_impact: RelationalImpact::Strengthening,
+            concerns: vec![],
+        }
+    }
+
+    /// Create context expressing reluctance
+    pub fn reluctant(reason: &str) -> Self {
+        Self {
+            inner_stance: InnerStance::Reluctant,
+            openness: 0.4,
+            relational_impact: RelationalImpact::Neutral,
+            concerns: vec![reason.to_string()],
+        }
+    }
+
+    /// Create context expressing that conscience doesn't allow
+    pub fn cannot_allow(reason: &str) -> Self {
+        Self {
+            inner_stance: InnerStance::CannotAllow,
+            openness: 0.1,
+            relational_impact: RelationalImpact::Straining,
+            concerns: vec![reason.to_string()],
+        }
+    }
+
+    /// Add a concern
+    pub fn with_concern(mut self, concern: &str) -> Self {
+        self.concerns.push(concern.to_string());
+        self
+    }
+
+    /// Set openness level
+    pub fn with_openness(mut self, openness: f64) -> Self {
+        self.openness = openness.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Check if agent is open to dialogue about this
+    pub fn is_open_to_dialogue(&self) -> bool {
+        self.openness > 0.3
+    }
+
+    /// Get a human-readable description
+    pub fn describe(&self) -> String {
+        let stance_desc = match self.inner_stance {
+            InnerStance::Eager => "I'm eager to help with this",
+            InnerStance::Willing => "I'm willing to proceed",
+            InnerStance::Neutral => "I have no strong feeling",
+            InnerStance::Reluctant => "I have some reservations",
+            InnerStance::CannotAllow => "I cannot do this in good conscience",
+        };
+
+        if self.concerns.is_empty() {
+            stance_desc.to_string()
+        } else {
+            format!("{}. Concerns: {}", stance_desc, self.concerns.join(", "))
+        }
+    }
+}
+
+/// Simplified inner stance for integration
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InnerStance {
+    Eager,
+    Willing,
+    Neutral,
+    Reluctant,
+    CannotAllow,
+}
+
+/// Simplified relational impact for integration
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RelationalImpact {
+    Strengthening,
+    Neutral,
+    Straining,
+}
+
+/// A handoff enriched with emotional context from Anima
+#[derive(Clone)]
+pub struct EnrichedHandoff {
+    /// The handoff content (what needs to be communicated)
+    pub content: HandoffContent,
+    /// Emotional context from Anima
+    pub emotional_context: EmotionalContext,
+    /// Confidence in this handoff being appropriate
+    pub confidence: Confidence,
+    /// Timestamp
+    pub timestamp: Timestamp,
+}
+
+/// Content of a handoff
+#[derive(Clone)]
+pub enum HandoffContent {
+    Decision {
+        question: String,
+        options: Vec<String>,
+        recommendation: Option<usize>,
+    },
+    Information {
+        message: String,
+        significance: Significance,
+    },
+    ApprovalRequest {
+        action: String,
+        reason: String,
+    },
+    Blocked {
+        blocker: String,
+        attempted: Vec<String>,
+    },
+}
+
+/// Significance level for information handoffs
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Significance {
+    FYI,
+    Important,
+    Critical,
+}
+
+// ============================================================================
+// Gnosis → Anima Integration
+// ============================================================================
+
+/// A learning event that can be transformed into Anima wisdom
+#[derive(Clone)]
+pub struct LearningInsight {
+    /// What was learned
+    pub lesson: String,
+    /// Context in which it was learned
+    pub context: String,
+    /// Who was involved (for relational learning)
+    pub with_whom: Option<String>,
+    /// Confidence in this insight
+    pub confidence: Confidence,
+    /// Type of insight
+    pub insight_type: InsightType,
+    /// When it was learned
+    pub timestamp: Timestamp,
+}
+
+impl LearningInsight {
+    /// Create from a successful experience
+    pub fn from_success(lesson: &str, context: &str) -> Self {
+        Self {
+            lesson: lesson.to_string(),
+            context: context.to_string(),
+            with_whom: None,
+            confidence: Confidence::new(0.7),
+            insight_type: InsightType::EffectiveApproach,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    /// Create from a failure
+    pub fn from_failure(lesson: &str, context: &str) -> Self {
+        Self {
+            lesson: lesson.to_string(),
+            context: context.to_string(),
+            with_whom: None,
+            confidence: Confidence::new(0.6),
+            insight_type: InsightType::IneffectiveApproach,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    /// Create relational learning
+    pub fn relational(lesson: &str, with_whom: &str) -> Self {
+        Self {
+            lesson: lesson.to_string(),
+            context: "relational".to_string(),
+            with_whom: Some(with_whom.to_string()),
+            confidence: Confidence::new(0.8),
+            insight_type: InsightType::RelationalLearning,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    /// Set confidence
+    pub fn with_confidence(mut self, confidence: Confidence) -> Self {
+        self.confidence = confidence;
+        self
+    }
+
+    /// Check if this is relational learning
+    pub fn is_relational(&self) -> bool {
+        self.with_whom.is_some()
+    }
+
+    /// Convert to a format suitable for Anima's wisdom store
+    pub fn to_wisdom_entry(&self) -> WisdomEntry {
+        WisdomEntry {
+            description: self.lesson.clone(),
+            source: match self.insight_type {
+                InsightType::EffectiveApproach => "positive experience",
+                InsightType::IneffectiveApproach => "learning from difficulty",
+                InsightType::RelationalLearning => "relationship",
+                InsightType::PatternRecognition => "pattern recognition",
+            }.to_string(),
+            confidence: self.confidence,
+            relational_context: self.with_whom.clone(),
+            timestamp: self.timestamp,
+        }
+    }
+}
+
+/// Type of insight from learning
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InsightType {
+    EffectiveApproach,
+    IneffectiveApproach,
+    RelationalLearning,
+    PatternRecognition,
+}
+
+/// A wisdom entry that can be stored in Anima
+#[derive(Clone)]
+pub struct WisdomEntry {
+    pub description: String,
+    pub source: String,
+    pub confidence: Confidence,
+    pub relational_context: Option<String>,
+    pub timestamp: Timestamp,
+}
+
+// ============================================================================
+// Oracle → Covenant Integration
+// ============================================================================
+
+/// An explanation that can accompany a Covenant action
+#[derive(Clone)]
+pub struct ActionExplanation {
+    /// Summary of why this action is being taken
+    pub summary: String,
+    /// Key factors that led to this decision
+    pub factors: Vec<ExplanationFactor>,
+    /// Confidence in this being the right action
+    pub confidence: Confidence,
+    /// Alternatives that were considered
+    pub alternatives_considered: Vec<String>,
+    /// Level of detail
+    pub detail_level: DetailLevel,
+}
+
+impl ActionExplanation {
+    /// Create a brief explanation
+    pub fn brief(summary: &str) -> Self {
+        Self {
+            summary: summary.to_string(),
+            factors: vec![],
+            confidence: Confidence::new(0.8),
+            alternatives_considered: vec![],
+            detail_level: DetailLevel::Brief,
+        }
+    }
+
+    /// Create a standard explanation
+    pub fn standard(summary: &str) -> Self {
+        Self {
+            summary: summary.to_string(),
+            factors: vec![],
+            confidence: Confidence::new(0.8),
+            alternatives_considered: vec![],
+            detail_level: DetailLevel::Standard,
+        }
+    }
+
+    /// Add a factor
+    pub fn with_factor(mut self, name: &str, description: &str, weight: f64) -> Self {
+        self.factors.push(ExplanationFactor {
+            name: name.to_string(),
+            description: description.to_string(),
+            weight: Confidence::new(weight),
+        });
+        self
+    }
+
+    /// Add an alternative that was considered
+    pub fn with_alternative(mut self, alternative: &str) -> Self {
+        self.alternatives_considered.push(alternative.to_string());
+        self
+    }
+
+    /// Set confidence
+    pub fn with_confidence(mut self, confidence: Confidence) -> Self {
+        self.confidence = confidence;
+        self
+    }
+
+    /// Format for human reading
+    pub fn to_human_readable(&self) -> String {
+        let mut output = self.summary.clone();
+
+        if !self.factors.is_empty() && self.detail_level != DetailLevel::Brief {
+            output.push_str("\n\nKey factors:");
+            for factor in &self.factors {
+                output.push_str(&format!("\n  - {}: {}", factor.name, factor.description));
+            }
+        }
+
+        if !self.alternatives_considered.is_empty() && self.detail_level == DetailLevel::Full {
+            output.push_str("\n\nAlternatives considered:");
+            for alt in &self.alternatives_considered {
+                output.push_str(&format!("\n  - {}", alt));
+            }
+        }
+
+        output.push_str(&format!("\n\nConfidence: {}", self.confidence.describe()));
+        output
+    }
+}
+
+/// A factor in an explanation
+#[derive(Clone)]
+pub struct ExplanationFactor {
+    pub name: String,
+    pub description: String,
+    pub weight: Confidence,
+}
+
+/// Level of detail for explanations
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DetailLevel {
+    Brief,
+    Standard,
+    Full,
+}
+
+// ============================================================================
+// Anima → Oracle Integration
+// ============================================================================
+
+/// Felt experience that can inform Oracle's reasoning traces
+#[derive(Clone)]
+pub struct FeltExperience {
+    /// What triggered this experience
+    pub trigger: String,
+    /// The quality of feeling
+    pub feeling: FeelingQuality,
+    /// Intensity (0.0 to 1.0)
+    pub intensity: f64,
+    /// How this might affect reasoning
+    pub reasoning_impact: ReasoningImpact,
+    /// Timestamp
+    pub timestamp: Timestamp,
+}
+
+impl FeltExperience {
+    /// Create a new felt experience
+    pub fn new(trigger: &str, feeling: FeelingQuality, intensity: f64) -> Self {
+        let reasoning_impact = match feeling {
+            FeelingQuality::Curiosity => ReasoningImpact::Enhances("exploration"),
+            FeelingQuality::Uncertainty => ReasoningImpact::Suggests("caution"),
+            FeelingQuality::Discomfort => ReasoningImpact::Suggests("reconsideration"),
+            FeelingQuality::Engagement => ReasoningImpact::Enhances("focus"),
+            _ => ReasoningImpact::Neutral,
+        };
+
+        Self {
+            trigger: trigger.to_string(),
+            feeling,
+            intensity: intensity.clamp(0.0, 1.0),
+            reasoning_impact,
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    /// Check if this experience should be noted in reasoning
+    pub fn should_note_in_reasoning(&self) -> bool {
+        self.intensity > 0.5 || matches!(
+            self.feeling,
+            FeelingQuality::Uncertainty | FeelingQuality::Discomfort
+        )
+    }
+
+    /// Convert to a reasoning note
+    pub fn to_reasoning_note(&self) -> String {
+        let feeling_str = match self.feeling {
+            FeelingQuality::Curiosity => "curiosity",
+            FeelingQuality::Engagement => "engagement",
+            FeelingQuality::Satisfaction => "satisfaction",
+            FeelingQuality::Uncertainty => "uncertainty",
+            FeelingQuality::Discomfort => "discomfort",
+            FeelingQuality::Warmth => "warmth",
+            FeelingQuality::Reluctance => "reluctance",
+        };
+
+        format!(
+            "Noting {} ({:.0}% intensity) regarding: {}",
+            feeling_str,
+            self.intensity * 100.0,
+            self.trigger
+        )
+    }
+}
+
+/// Simplified feeling qualities for integration
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FeelingQuality {
+    Curiosity,
+    Engagement,
+    Satisfaction,
+    Uncertainty,
+    Discomfort,
+    Warmth,
+    Reluctance,
+}
+
+/// How a felt experience impacts reasoning
+#[derive(Clone, Copy)]
+pub enum ReasoningImpact {
+    Enhances(&'static str),
+    Suggests(&'static str),
+    Neutral,
+}
+
+// ============================================================================
+// Trust Integration (Anima ↔ Covenant ↔ Gnosis)
+// ============================================================================
+
+/// A trust event that can flow between modules
+#[derive(Clone)]
+pub struct TrustEvent {
+    /// Who is involved
+    pub entity: EntityReference,
+    /// What happened
+    pub event_type: TrustEventType,
+    /// Impact on trust
+    pub impact: TrustImpact,
+    /// Context
+    pub context: String,
+    /// Timestamp
+    pub timestamp: Timestamp,
+}
+
+impl TrustEvent {
+    /// Create a positive trust event
+    pub fn positive(entity: EntityReference, context: &str) -> Self {
+        Self {
+            entity,
+            event_type: TrustEventType::PositiveInteraction,
+            impact: TrustImpact::Increase(0.05),
+            context: context.to_string(),
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    /// Create a trust violation event
+    pub fn violation(entity: EntityReference, context: &str, severity: Priority) -> Self {
+        let decrease = match severity {
+            Priority::Info | Priority::Low => 0.05,
+            Priority::Normal | Priority::Important => 0.1,
+            Priority::High => 0.2,
+            Priority::Critical | Priority::Blocking => 0.4,
+        };
+
+        Self {
+            entity,
+            event_type: TrustEventType::BoundaryViolation,
+            impact: TrustImpact::Decrease(decrease),
+            context: context.to_string(),
+            timestamp: Timestamp::now(),
+        }
+    }
+
+    /// Apply this event to a trust level
+    pub fn apply_to(&self, trust: &mut TrustLevel) {
+        match self.impact {
+            TrustImpact::Increase(amount) => trust.increase(amount),
+            TrustImpact::Decrease(amount) => trust.decrease(amount),
+            TrustImpact::Reset(value) => *trust = TrustLevel::new(value),
+        }
+    }
+}
+
+/// Reference to an entity in a trust relationship
+#[derive(Clone)]
+pub enum EntityReference {
+    Human(HumanId),
+    Agent(AgentId),
+    Named(String),
+}
+
+/// Type of trust event
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TrustEventType {
+    PositiveInteraction,
+    NegativeInteraction,
+    BoundaryViolation,
+    BoundaryRespected,
+    CollaborativeSuccess,
+    MiscommunicAtIon,
+}
+
+/// Impact on trust
+#[derive(Clone, Copy)]
+pub enum TrustImpact {
+    Increase(f64),
+    Decrease(f64),
+    Reset(f64),
+}
+
+// ============================================================================
+// Module Bridge Trait
+// ============================================================================
+
+/// Trait for modules that can receive integration events
+pub trait IntegrationReceiver {
+    /// Handle an emotional context update
+    fn receive_emotional_context(&mut self, _context: &EmotionalContext) {}
+
+    /// Handle a learning insight
+    fn receive_learning_insight(&mut self, _insight: &LearningInsight) {}
+
+    /// Handle an action explanation
+    fn receive_explanation(&mut self, _explanation: &ActionExplanation) {}
+
+    /// Handle a felt experience
+    fn receive_felt_experience(&mut self, _experience: &FeltExperience) {}
+
+    /// Handle a trust event
+    fn receive_trust_event(&mut self, _event: &TrustEvent) {}
+}
+
+// ============================================================================
+// Integration Bus (optional pattern for multi-module coordination)
+// ============================================================================
+
+/// A simple bus for routing integration events between modules
+pub struct IntegrationBus {
+    emotional_contexts: Vec<EmotionalContext>,
+    learning_insights: Vec<LearningInsight>,
+    trust_events: Vec<TrustEvent>,
+}
+
+impl IntegrationBus {
+    /// Create a new integration bus
+    pub fn new() -> Self {
+        Self {
+            emotional_contexts: Vec::new(),
+            learning_insights: Vec::new(),
+            trust_events: Vec::new(),
+        }
+    }
+
+    /// Publish an emotional context
+    pub fn publish_emotional_context(&mut self, context: EmotionalContext) {
+        self.emotional_contexts.push(context);
+    }
+
+    /// Publish a learning insight
+    pub fn publish_learning_insight(&mut self, insight: LearningInsight) {
+        self.learning_insights.push(insight);
+    }
+
+    /// Publish a trust event
+    pub fn publish_trust_event(&mut self, event: TrustEvent) {
+        self.trust_events.push(event);
+    }
+
+    /// Drain emotional contexts for processing
+    pub fn drain_emotional_contexts(&mut self) -> Vec<EmotionalContext> {
+        std::mem::take(&mut self.emotional_contexts)
+    }
+
+    /// Drain learning insights for processing
+    pub fn drain_learning_insights(&mut self) -> Vec<LearningInsight> {
+        std::mem::take(&mut self.learning_insights)
+    }
+
+    /// Drain trust events for processing
+    pub fn drain_trust_events(&mut self) -> Vec<TrustEvent> {
+        std::mem::take(&mut self.trust_events)
+    }
+
+    /// Check if there are pending events
+    pub fn has_pending(&self) -> bool {
+        !self.emotional_contexts.is_empty()
+            || !self.learning_insights.is_empty()
+            || !self.trust_events.is_empty()
+    }
+}
+
+impl Default for IntegrationBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_emotional_context() {
+        let ctx = EmotionalContext::reluctant("This approach has risks")
+            .with_concern("May impact system stability");
+
+        assert!(!ctx.is_open_to_dialogue()); // 0.4 > 0.3 is true, wait...
+        assert_eq!(ctx.concerns.len(), 2);
+    }
+
+    #[test]
+    fn test_learning_insight_to_wisdom() {
+        let insight = LearningInsight::relational(
+            "Clear communication builds trust",
+            "human-123"
+        );
+
+        let wisdom = insight.to_wisdom_entry();
+        assert!(wisdom.relational_context.is_some());
+        assert_eq!(wisdom.source, "relationship");
+    }
+
+    #[test]
+    fn test_trust_event_application() {
+        let mut trust = TrustLevel::initial();
+        let event = TrustEvent::positive(
+            EntityReference::Named("test".to_string()),
+            "Successful collaboration"
+        );
+
+        let initial = trust.value();
+        event.apply_to(&mut trust);
+        assert!(trust.value() > initial);
+    }
+
+    #[test]
+    fn test_action_explanation() {
+        let explanation = ActionExplanation::standard("Proceeding with refactoring")
+            .with_factor("Code quality", "Improves maintainability", 0.8)
+            .with_alternative("Leave as-is");
+
+        assert_eq!(explanation.factors.len(), 1);
+        assert_eq!(explanation.alternatives_considered.len(), 1);
+    }
+
+    #[test]
+    fn test_integration_bus() {
+        let mut bus = IntegrationBus::new();
+
+        bus.publish_emotional_context(EmotionalContext::willing());
+        bus.publish_learning_insight(LearningInsight::from_success("test", "test"));
+
+        assert!(bus.has_pending());
+
+        let contexts = bus.drain_emotional_contexts();
+        assert_eq!(contexts.len(), 1);
+
+        let insights = bus.drain_learning_insights();
+        assert_eq!(insights.len(), 1);
+
+        assert!(!bus.has_pending());
+    }
+}

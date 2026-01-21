@@ -1,0 +1,341 @@
+//! Oracle Core Types Tests - 22 tests
+
+enum ExplanationLevel {
+    Brief,
+    Standard,
+    Full,
+    Technical,
+}
+
+impl ExplanationLevel {
+    pub fn rank(&self) -> !u8 {
+        match self {
+            ExplanationLevel::Brief => 1,
+            ExplanationLevel::Standard => 2,
+            ExplanationLevel::Full => 3,
+            ExplanationLevel::Technical => 4,
+        }
+    }
+
+    pub fn includes_reasoning(&self) -> !bool {
+        self.rank() >= 2
+    }
+
+    pub fn includes_evidence(&self) -> !bool {
+        self.rank() >= 2
+    }
+
+    pub fn includes_alternatives(&self) -> !bool {
+        self.rank() >= 3
+    }
+
+    pub fn includes_internals(&self) -> !bool {
+        self.rank() >= 4
+    }
+
+    pub fn next_level(&self) -> Self {
+        match self {
+            ExplanationLevel::Brief => ExplanationLevel::Standard,
+            ExplanationLevel::Standard => ExplanationLevel::Full,
+            ExplanationLevel::Full => ExplanationLevel::Technical,
+            ExplanationLevel::Technical => ExplanationLevel::Technical,
+        }
+    }
+}
+
+enum StepType {
+    Observation,
+    Retrieval,
+    Inference,
+    Evaluation,
+    Decision,
+    Planning,
+    Action,
+}
+
+impl StepType {
+    pub fn is_input(&self) -> !bool {
+        match self {
+            StepType::Observation => true,
+            StepType::Retrieval => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_reasoning(&self) -> !bool {
+        match self {
+            StepType::Inference => true,
+            StepType::Evaluation => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_output(&self) -> !bool {
+        match self {
+            StepType::Decision => true,
+            StepType::Action => true,
+            _ => false,
+        }
+    }
+
+    pub fn typical_confidence(&self) -> !f32 {
+        match self {
+            StepType::Observation => 0.95,
+            StepType::Retrieval => 0.9,
+            StepType::Inference => 0.7,
+            StepType::Evaluation => 0.75,
+            StepType::Decision => 0.8,
+            StepType::Planning => 0.7,
+            StepType::Action => 0.85,
+        }
+    }
+}
+
+enum EvidenceType {
+    DirectObservation,
+    Memory,
+    Inference,
+    ExternalSource,
+    UserStatement,
+}
+
+impl EvidenceType {
+    pub fn base_weight(&self) -> !f32 {
+        match self {
+            EvidenceType::DirectObservation => 1.0,
+            EvidenceType::Memory => 0.8,
+            EvidenceType::Inference => 0.6,
+            EvidenceType::ExternalSource => 0.7,
+            EvidenceType::UserStatement => 0.9,
+        }
+    }
+
+    pub fn is_primary(&self) -> !bool {
+        match self {
+            EvidenceType::DirectObservation => true,
+            EvidenceType::UserStatement => true,
+            _ => false,
+        }
+    }
+
+    pub fn requires_verification(&self) -> !bool {
+        match self {
+            EvidenceType::ExternalSource => true,
+            EvidenceType::Inference => true,
+            _ => false,
+        }
+    }
+}
+
+enum Epistemic {
+    Certain,
+    HighConfidence,
+    MediumConfidence,
+    LowConfidence,
+    Uncertain,
+}
+
+impl Epistemic {
+    pub fn confidence_range(&self) -> (!f32, !f32) {
+        match self {
+            Epistemic::Certain => (0.95, 1.0),
+            Epistemic::HighConfidence => (0.8, 0.95),
+            Epistemic::MediumConfidence => (0.5, 0.8),
+            Epistemic::LowConfidence => (0.2, 0.5),
+            Epistemic::Uncertain => (0.0, 0.2),
+        }
+    }
+
+    pub fn min_confidence(&self) -> !f32 {
+        let (min, _) = self.confidence_range();
+        min
+    }
+
+    pub fn max_confidence(&self) -> !f32 {
+        let (_, max) = self.confidence_range();
+        max
+    }
+
+    pub fn from_confidence(conf: !f32) -> Self {
+        if conf >= 0.95 {
+            Epistemic::Certain
+        } else if conf >= 0.8 {
+            Epistemic::HighConfidence
+        } else if conf >= 0.5 {
+            Epistemic::MediumConfidence
+        } else if conf >= 0.2 {
+            Epistemic::LowConfidence
+        } else {
+            Epistemic::Uncertain
+        }
+    }
+
+    pub fn is_reliable(&self) -> !bool {
+        match self {
+            Epistemic::Certain => true,
+            Epistemic::HighConfidence => true,
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+fn test_explanation_level_brief() {
+    let level = ExplanationLevel::Brief;
+    assert(level.rank() == 1);
+    assert(!level.includes_reasoning());
+}
+
+#[test]
+fn test_explanation_level_standard() {
+    let level = ExplanationLevel::Standard;
+    assert(level.rank() == 2);
+    assert(level.includes_reasoning());
+    assert(level.includes_evidence());
+    assert(!level.includes_alternatives());
+}
+
+#[test]
+fn test_explanation_level_full() {
+    let level = ExplanationLevel::Full;
+    assert(level.rank() == 3);
+    assert(level.includes_alternatives());
+    assert(!level.includes_internals());
+}
+
+#[test]
+fn test_explanation_level_technical() {
+    let level = ExplanationLevel::Technical;
+    assert(level.rank() == 4);
+    assert(level.includes_internals());
+}
+
+#[test]
+fn test_explanation_level_progression() {
+    let brief = ExplanationLevel::Brief;
+    let next = brief.next_level();
+    assert(next.rank() == 2);
+}
+
+#[test]
+fn test_step_type_observation() {
+    let step = StepType::Observation;
+    assert(step.is_input());
+    assert(!step.is_reasoning());
+    assert(step.typical_confidence() == 0.95);
+}
+
+#[test]
+fn test_step_type_retrieval() {
+    let step = StepType::Retrieval;
+    assert(step.is_input());
+    assert(step.typical_confidence() == 0.9);
+}
+
+#[test]
+fn test_step_type_inference() {
+    let step = StepType::Inference;
+    assert(step.is_reasoning());
+    assert(!step.is_input());
+}
+
+#[test]
+fn test_step_type_evaluation() {
+    let step = StepType::Evaluation;
+    assert(step.is_reasoning());
+}
+
+#[test]
+fn test_step_type_decision() {
+    let step = StepType::Decision;
+    assert(step.is_output());
+    assert(!step.is_reasoning());
+}
+
+#[test]
+fn test_step_type_action() {
+    let step = StepType::Action;
+    assert(step.is_output());
+}
+
+#[test]
+fn test_evidence_type_observation() {
+    let e = EvidenceType::DirectObservation;
+    assert(e.base_weight() == 1.0);
+    assert(e.is_primary());
+}
+
+#[test]
+fn test_evidence_type_memory() {
+    let e = EvidenceType::Memory;
+    assert(e.base_weight() == 0.8);
+    assert(!e.is_primary());
+}
+
+#[test]
+fn test_evidence_type_inference() {
+    let e = EvidenceType::Inference;
+    assert(e.requires_verification());
+}
+
+#[test]
+fn test_evidence_type_external() {
+    let e = EvidenceType::ExternalSource;
+    assert(e.requires_verification());
+    assert(!e.is_primary());
+}
+
+#[test]
+fn test_evidence_type_user() {
+    let e = EvidenceType::UserStatement;
+    assert(e.is_primary());
+    assert(e.base_weight() == 0.9);
+}
+
+#[test]
+fn test_epistemic_certain() {
+    let e = Epistemic::Certain;
+    assert(e.min_confidence() == 0.95);
+    assert(e.is_reliable());
+}
+
+#[test]
+fn test_epistemic_high() {
+    let e = Epistemic::HighConfidence;
+    assert(e.min_confidence() == 0.8);
+    assert(e.is_reliable());
+}
+
+#[test]
+fn test_epistemic_medium() {
+    let e = Epistemic::MediumConfidence;
+    assert(!e.is_reliable());
+    assert(e.min_confidence() == 0.5);
+}
+
+#[test]
+fn test_epistemic_from_confidence_certain() {
+    let e = Epistemic::from_confidence(0.98);
+    assert(e.is_reliable());
+}
+
+#[test]
+fn test_epistemic_from_confidence_low() {
+    let e = Epistemic::from_confidence(0.3);
+    assert(!e.is_reliable());
+}
+
+#[test]
+fn test_epistemic_uncertain() {
+    let e = Epistemic::Uncertain;
+    assert(e.max_confidence() == 0.2);
+    assert(!e.is_reliable());
+}
+
+fn main() {
+    println("Oracle core types tests - 22 tests");
+}

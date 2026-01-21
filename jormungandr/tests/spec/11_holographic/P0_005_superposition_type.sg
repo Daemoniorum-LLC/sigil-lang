@@ -1,0 +1,9 @@
+// Test: Superposition type
+// Spec: 11-HOLOGRAPHIC.md § 5.1 Quantum-Inspired Semantics
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ sup: Superposition<i32> = uniform([1, 2, 3]);
+    ≔ observed! = sup|observe;  // Collapse to definite value
+    println(observed!);
+}

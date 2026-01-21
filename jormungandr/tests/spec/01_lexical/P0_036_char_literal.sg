@@ -1,0 +1,14 @@
+// Test: Character literal
+// Spec: 01-LEXICAL.md § 2.4 Character Literals
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate char literals work correctly.
+//
+// Expected behavior:
+// Should print A
+
+rite main() {
+    ≔ c: !char = 'A';
+    println(c);
+}

@@ -1,0 +1,28 @@
+// Test: Impl block with multiple methods
+// Spec: 03-TYPES.md § 7.2 Implementation Blocks
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate ⊢ blocks can have multiple methods.
+//
+// Expected behavior:
+// Should print 52 (42 + 10)
+
+☉ sigil Value {
+    x: !i32
+}
+
+⊢ Value {
+    ☉ rite get(this) → !i32 {
+        this.x
+    }
+
+    ☉ rite add(this, y: !i32) → !i32 {
+        this.x + y
+    }
+}
+
+rite main() {
+    ≔ v: !Value = Value { x: 42 };
+    println(v.add(10));
+}

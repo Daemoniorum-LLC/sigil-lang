@@ -1,0 +1,33 @@
+// Test: Method chaining
+// Spec: 03-TYPES.md § 7.5 Method Chaining
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate method chaining works correctly.
+//
+// Expected behavior:
+// Should print 52 (42 + 10)
+
+☉ sigil Value {
+    x: !i32
+}
+
+⊢ Value {
+    ☉ rite new(x: !i32) → This {
+        This { x: x }
+    }
+
+    ☉ rite add(vary this, y: !i32) → This {
+        this.x = this.x + y;
+        this
+    }
+
+    ☉ rite get(this) → !i32 {
+        this.x
+    }
+}
+
+rite main() {
+    ≔ result = Value·new(42).add(10).get();
+    println(result);
+}

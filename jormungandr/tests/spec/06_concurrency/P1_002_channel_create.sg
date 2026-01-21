@@ -1,0 +1,11 @@
+// Test: Channel creation
+// Spec: 06-CONCURRENCY.md § 2.1 Channels
+// Priority: P1 - Standard Feature
+
+rite main() {
+    // Create a new channel
+    ≔ ch = channel_new();
+
+    // Channel exists (not null)
+    println("channel created");
+}

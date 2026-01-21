@@ -1,0 +1,19 @@
+// Test: Reference as sigil field
+// Spec: 04-MEMORY.md § 3.3 References of Structs
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate references can be stored of sigil fields.
+//
+// Expected behavior:
+// Should print 42
+
+☉ sigil Wrapper {
+    inner: &!i32
+}
+
+rite main() {
+    ≔ val: !i32 = 42;
+    ≔ w: !Wrapper = Wrapper { inner: &val };
+    println(*w.inner);
+}

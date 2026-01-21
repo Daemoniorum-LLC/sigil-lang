@@ -1,0 +1,68 @@
+// Stdlib Tests: trig
+// Trigonometric functions with REAL assertions
+
+rite main() {
+    println("=== Testing trig ===");
+
+    // sin - at key values
+    ≔ s0 = sin(0.0);
+    assert_true(s0 > -0.01 ∧ s0 < 0.01);
+
+    ≔ s90 = sin(PI() / 2.0);
+    assert_true(s90 > 0.99 ∧ s90 < 1.01);
+
+    // cos - at key values
+    ≔ c0 = cos(0.0);
+    assert_true(c0 > 0.99 ∧ c0 < 1.01);
+
+    ≔ c90 = cos(PI() / 2.0);
+    assert_true(c90 > -0.01 ∧ c90 < 0.01);
+
+    // tan - at key values
+    ≔ t0 = tan(0.0);
+    assert_true(t0 > -0.01 ∧ t0 < 0.01);
+
+    // Pythagorean identity: sin^2 + cos^2 = 1
+    ≔ angle = 0.7;
+    ≔ s = sin(angle);
+    ≔ c = cos(angle);
+    ≔ sum = s * s + c * c;
+    assert_true(sum > 0.99 ∧ sum < 1.01);
+
+    // asin - inverse sine
+    ≔ as = asin(0.5);
+    assert_true(as > 0.52 ∧ as < 0.53);
+
+    // acos - inverse cosine
+    ≔ ac = acos(0.5);
+    assert_true(ac > 1.04 ∧ ac < 1.05);
+
+    // atan - inverse tangent
+    ≔ at = atan(1.0);
+    assert_true(at > 0.78 ∧ at < 0.79);
+
+    // atan2 - two-argument arctan
+    ≔ at2 = atan2(1.0, 1.0);
+    assert_true(at2 > 0.78 ∧ at2 < 0.79);
+
+    // sinh - hyperbolic sine
+    ≔ sh0 = sinh(0.0);
+    assert_true(sh0 > -0.01 ∧ sh0 < 0.01);
+
+    // cosh - hyperbolic cosine
+    ≔ ch0 = cosh(0.0);
+    assert_true(ch0 > 0.99 ∧ ch0 < 1.01);
+
+    // tanh - hyperbolic tangent
+    ≔ th0 = tanh(0.0);
+    assert_true(th0 > -0.01 ∧ th0 < 0.01);
+
+    // cosine_similarity
+    ≔ cs_perpendicular = cosine_similarity([1.0, 0.0], [0.0, 1.0]);
+    assert_true(cs_perpendicular > -0.01 ∧ cs_perpendicular < 0.01);
+
+    ≔ cs_same = cosine_similarity([1.0, 0.0], [1.0, 0.0]);
+    assert_true(cs_same > 0.99 ∧ cs_same < 1.01);
+
+    println("ALL TRIG TESTS PASSED!");
+}

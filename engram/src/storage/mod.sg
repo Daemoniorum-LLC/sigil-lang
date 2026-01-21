@@ -1,0 +1,578 @@
+// Storage Module
+// Persistence layer for Engram
+
+module engram::storage
+
+use engram::types::*
+use std::collections::HashMap
+use std::fs::{File, OpenOptions}
+use std::io::{Read, Write, BufReader, BufWriter}
+use std::path::{Path, PathBuf}
+
+// ============================================================================
+// Storage Backend Trait
+// ============================================================================
+
+/// Trait for storage backends
+pub trait StorageBackend {
+    /// Store a value
+    fn put(key: &str, value: &[u8]) -> Result<(), StorageError>;
+
+    /// Retrieve a value
+    fn get(key: &str) -> Result<Option<Vec<u8>>, StorageError>;
+
+    /// Delete a value
+    fn delete(key: &str) -> Result<bool, StorageError>;
+
+    /// Check if key exists
+    fn exists(key: &str) -> bool;
+
+    /// List all keys with prefix
+    fn list_prefix(prefix: &str) -> Result<Vec<String>, StorageError>;
+
+    /// Flush to disk
+    fn flush() -> Result<(), StorageError>;
+
+    /// Close the backend
+    fn close() -> Result<(), StorageError>;
+}
+
+#[derive(Debug)]
+pub enum StorageError {
+    IoError(String),
+    SerializationError(String),
+    NotFound(String),
+    Corrupted(String),
+    Full,
+}
+
+// ============================================================================
+// Memory Backend
+// ============================================================================
+
+/// In-memory storage backend (no persistence)
+pub struct MemoryBackend {
+    data: HashMap<String, Vec<u8>>,
+}
+
+impl MemoryBackend {
+    pub fn new() -> Self {
+        Self {
+            data: HashMap::new(),
+        }
+    }
+}
+
+impl StorageBackend for MemoryBackend {
+    fn put(key: &str, value: &[u8]) -> Result<(), StorageError> {
+        self.data.insert(key.to_string(), value.to_vec());
+        Ok(())
+    }
+
+    fn get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
+        Ok(self.data.get(key).cloned())
+    }
+
+    fn delete(key: &str) -> Result<bool, StorageError> {
+        Ok(self.data.remove(key).is_some())
+    }
+
+    fn exists(key: &str) -> bool {
+        self.data.contains_key(key)
+    }
+
+    fn list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
+        Ok(self.data.keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect())
+    }
+
+    fn flush() -> Result<(), StorageError> {
+        Ok(()) // No-op for memory backend
+    }
+
+    fn close() -> Result<(), StorageError> {
+        self.data.clear();
+        Ok(())
+    }
+}
+
+// ============================================================================
+// File Backend
+// ============================================================================
+
+/// Simple file-based storage backend
+///
+/// Each key-value pair is stored in a separate file.
+/// Good for development, not optimized for production.
+pub struct FileBackend {
+    base_path: PathBuf,
+    write_buffer: HashMap<String, Vec<u8>>,
+    buffer_size: usize,
+}
+
+impl FileBackend {
+    pub fn new(base_path: &str) -> Result<Self, StorageError> {
+        let path = PathBuf::from(base_path);
+
+        // Create directory if it doesn't exist
+        std::fs::create_dir_all(&path)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        Ok(Self {
+            base_path: path,
+            write_buffer: HashMap::new(),
+            buffer_size: 0,
+        })
+    }
+
+    fn key_to_path(key: &str) -> PathBuf {
+        // Sanitize key for filesystem
+        let safe_key = key.replace("/", "_").replace("\\", "_");
+        self.base_path.join(format!("{}.engram", safe_key))
+    }
+}
+
+impl StorageBackend for FileBackend {
+    fn put(key: &str, value: &[u8]) -> Result<(), StorageError> {
+        let path = self.key_to_path(key);
+
+        // Buffer small writes
+        self.write_buffer.insert(key.to_string(), value.to_vec());
+        self.buffer_size += value.len();
+
+        // Flush if buffer too large
+        if self.buffer_size > 1024 * 1024 {  // 1MB
+            self.flush()?;
+        }
+
+        Ok(())
+    }
+
+    fn get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
+        // Check buffer first
+        if let Some(data) = self.write_buffer.get(key) {
+            return Ok(Some(data.clone()));
+        }
+
+        let path = self.key_to_path(key);
+
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let mut file = File::open(&path)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        Ok(Some(data))
+    }
+
+    fn delete(key: &str) -> Result<bool, StorageError> {
+        self.write_buffer.remove(key);
+
+        let path = self.key_to_path(key);
+
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn exists(key: &str) -> bool {
+        self.write_buffer.contains_key(key) || self.key_to_path(key).exists()
+    }
+
+    fn list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
+        let mut keys = Vec::new();
+
+        // From buffer
+        for key in self.write_buffer.keys() {
+            if key.starts_with(prefix) {
+                keys.push(key.clone());
+            }
+        }
+
+        // From filesystem
+        let dir_entries = std::fs::read_dir(&self.base_path)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        for entry in dir_entries {
+            let entry = entry.map_err(|e| StorageError::IoError(e.to_string()))?;
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            if name.ends_with(".engram") {
+                let key = name.trim_end_matches(".engram");
+                if key.starts_with(prefix) && !keys.contains(&key.to_string()) {
+                    keys.push(key.to_string());
+                }
+            }
+        }
+
+        Ok(keys)
+    }
+
+    fn flush() -> Result<(), StorageError> {
+        for (key, data) in self.write_buffer.drain() {
+            let path = self.key_to_path(&key);
+
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&path)
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+            file.write_all(&data)
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+        }
+
+        self.buffer_size = 0;
+        Ok(())
+    }
+
+    fn close() -> Result<(), StorageError> {
+        self.flush()
+    }
+}
+
+// ============================================================================
+// Append-Only Log Backend
+// ============================================================================
+
+/// Append-only log storage backend
+///
+/// All writes are appended to a log file. Supports compaction.
+/// More efficient for write-heavy workloads.
+pub struct AppendLogBackend {
+    log_path: PathBuf,
+    index: HashMap<String, LogEntry>,
+    log_file: Option<BufWriter<File>>,
+    current_offset: u64,
+    deleted_bytes: u64,
+}
+
+struct LogEntry {
+    offset: u64,
+    length: u64,
+    deleted: bool,
+}
+
+impl AppendLogBackend {
+    pub fn new(path: &str) -> Result<Self, StorageError> {
+        let log_path = PathBuf::from(path);
+
+        // Create parent directory
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+        }
+
+        let mut backend = Self {
+            log_path: log_path.clone(),
+            index: HashMap::new(),
+            log_file: None,
+            current_offset: 0,
+            deleted_bytes: 0,
+        };
+
+        // Load existing log if present
+        if log_path.exists() {
+            backend.rebuild_index()?;
+        }
+
+        // Open for append
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        backend.log_file = Some(BufWriter::new(file));
+
+        Ok(backend)
+    }
+
+    fn rebuild_index() -> Result<(), StorageError> {
+        let file = File::open(&self.log_path)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        let mut reader = BufReader::new(file);
+        let mut offset = 0u64;
+
+        loop {
+            // Read record header: [key_len: u32][value_len: u32][deleted: u8]
+            let mut header = [0u8; 9];
+            match reader.read_exact(&mut header) {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(StorageError::IoError(e.to_string())),
+            }
+
+            let key_len = u32::from_le_bytes([header[0], header[1], header[2], header[3]]) as usize;
+            let value_len = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
+            let deleted = header[8] != 0;
+
+            // Read key
+            let mut key_bytes = vec![0u8; key_len];
+            reader.read_exact(&mut key_bytes)
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+            let key = String::from_utf8_lossy(&key_bytes).to_string();
+
+            // Skip value
+            let mut value_bytes = vec![0u8; value_len];
+            reader.read_exact(&mut value_bytes)
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+            let record_len = 9 + key_len as u64 + value_len as u64;
+
+            if deleted {
+                self.index.remove(&key);
+                self.deleted_bytes += record_len;
+            } else {
+                self.index.insert(key, LogEntry {
+                    offset: offset + 9 + key_len as u64,  // Offset to value
+                    length: value_len as u64,
+                    deleted: false,
+                });
+            }
+
+            offset += record_len;
+        }
+
+        self.current_offset = offset;
+        Ok(())
+    }
+
+    /// Compact the log by removing deleted entries
+    pub fn compact() -> Result<(), StorageError> {
+        let temp_path = self.log_path.with_extension("tmp");
+
+        {
+            let temp_file = File::create(&temp_path)
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+            let mut writer = BufWriter::new(temp_file);
+
+            // Write all non-deleted entries
+            for (key, entry) in &self.index {
+                if entry.deleted {
+                    continue;
+                }
+
+                // Read value from old log
+                let value = self.read_value(entry)?;
+
+                // Write to new log
+                Self::write_record(&mut writer, key, &value, false)?;
+            }
+
+            writer.flush()
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+        }
+
+        // Replace old log with new
+        std::fs::rename(&temp_path, &self.log_path)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        // Rebuild index
+        self.index.clear();
+        self.current_offset = 0;
+        self.deleted_bytes = 0;
+        self.rebuild_index()?;
+
+        // Reopen for append
+        let file = OpenOptions::new()
+            .append(true)
+            .open(&self.log_path)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        self.log_file = Some(BufWriter::new(file));
+
+        Ok(())
+    }
+
+    fn read_value(entry: &LogEntry) -> Result<Vec<u8>, StorageError> {
+        let file = File::open(&self.log_path)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        let mut reader = BufReader::new(file);
+
+        std::io::Seek::seek(&mut reader, std::io::SeekFrom::Start(entry.offset))
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        let mut value = vec![0u8; entry.length as usize];
+        reader.read_exact(&mut value)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        Ok(value)
+    }
+
+    fn write_record(
+        writer: &mut BufWriter<File>,
+        key: &str,
+        value: &[u8],
+        deleted: bool,
+    ) -> Result<u64, StorageError> {
+        let key_bytes = key.as_bytes();
+
+        // Header
+        let mut header = [0u8; 9];
+        header[0..4].copy_from_slice(&(key_bytes.len() as u32).to_le_bytes());
+        header[4..8].copy_from_slice(&(value.len() as u32).to_le_bytes());
+        header[8] = if deleted { 1 } else { 0 };
+
+        writer.write_all(&header)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+        writer.write_all(key_bytes)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+        writer.write_all(value)
+            .map_err(|e| StorageError::IoError(e.to_string()))?;
+
+        Ok(9 + key_bytes.len() as u64 + value.len() as u64)
+    }
+}
+
+impl StorageBackend for AppendLogBackend {
+    fn put(key: &str, value: &[u8]) -> Result<(), StorageError> {
+        let writer = self.log_file.as_mut()
+            .ok_or(StorageError::IoError("Log not open".to_string()))?;
+
+        let key_bytes = key.as_bytes();
+        let record_len = Self::write_record(writer, key, value, false)?;
+
+        // Update index
+        self.index.insert(key.to_string(), LogEntry {
+            offset: self.current_offset + 9 + key_bytes.len() as u64,
+            length: value.len() as u64,
+            deleted: false,
+        });
+
+        self.current_offset += record_len;
+
+        Ok(())
+    }
+
+    fn get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
+        match self.index.get(key) {
+            Some(entry) if !entry.deleted => {
+                let value = self.read_value(entry)?;
+                Ok(Some(value))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn delete(key: &str) -> Result<bool, StorageError> {
+        if let Some(entry) = self.index.get_mut(key) {
+            if !entry.deleted {
+                entry.deleted = true;
+                self.deleted_bytes += entry.length + 9;  // Approximate
+
+                // Write tombstone
+                let writer = self.log_file.as_mut()
+                    .ok_or(StorageError::IoError("Log not open".to_string()))?;
+
+                let record_len = Self::write_record(writer, key, &[], true)?;
+                self.current_offset += record_len;
+
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn exists(key: &str) -> bool {
+        self.index.get(key)
+            .map(|e| !e.deleted)
+            .unwrap_or(false)
+    }
+
+    fn list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
+        Ok(self.index.iter()
+            .filter(|(k, e)| k.starts_with(prefix) && !e.deleted)
+            .map(|(k, _)| k.clone())
+            .collect())
+    }
+
+    fn flush() -> Result<(), StorageError> {
+        if let Some(writer) = &mut self.log_file {
+            writer.flush()
+                .map_err(|e| StorageError::IoError(e.to_string()))?;
+        }
+
+        // Auto-compact if too much dead space
+        if self.deleted_bytes > self.current_offset / 2 {
+            self.compact()?;
+        }
+
+        Ok(())
+    }
+
+    fn close() -> Result<(), StorageError> {
+        self.flush()?;
+        self.log_file = None;
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Serialization Helpers
+// ============================================================================
+
+pub mod serde {
+    use super::*;
+
+    /// Serialize a value to bytes (simple JSON)
+    pub fn serialize<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, StorageError> {
+        serde_json::to_vec(value)
+            .map_err(|e| StorageError::SerializationError(e.to_string()))
+    }
+
+    /// Deserialize bytes to a value
+    pub fn deserialize<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, StorageError> {
+        serde_json::from_slice(bytes)
+            .map_err(|e| StorageError::SerializationError(e.to_string()))
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_backend() {
+        let mut backend = MemoryBackend::new();
+
+        backend.put("key1", b"value1").unwrap();
+        assert!(backend.exists("key1"));
+
+        let value = backend.get("key1").unwrap();
+        assert_eq!(value, Some(b"value1".to_vec()));
+
+        backend.delete("key1").unwrap();
+        assert!(!backend.exists("key1"));
+    }
+
+    #[test]
+    fn test_memory_backend_list_prefix() {
+        let mut backend = MemoryBackend::new();
+
+        backend.put("users/1", b"alice").unwrap();
+        backend.put("users/2", b"bob").unwrap();
+        backend.put("posts/1", b"post1").unwrap();
+
+        let users = backend.list_prefix("users/").unwrap();
+        assert_eq!(users.len(), 2);
+    }
+}

@@ -1,0 +1,15 @@
+// Test: Tuple destructuring of ≔ binding
+// Spec: 03-TYPES.md § 4.3 Tuple Types
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate tuple destructuring works correctly.
+//
+// Expected behavior:
+// Should print 42
+
+rite main() {
+    ≔ t: !(i32, i32) = (42, 99);
+    ≔ (x, y) = t;
+    println(x);
+}

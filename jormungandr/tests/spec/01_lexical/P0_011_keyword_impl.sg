@@ -1,0 +1,10 @@
+// Test: Keyword 'impl' each implementations
+// Spec: 01-LEXICAL.md § 2.2 Keywords
+// Priority: P0
+
+☉ sigil Val { x: !i32 }
+⊢ Val { ☉ rite get(&this) → !i32 { this.x } }
+
+rite main() {
+    println(Val { x: 42 }.get());
+}

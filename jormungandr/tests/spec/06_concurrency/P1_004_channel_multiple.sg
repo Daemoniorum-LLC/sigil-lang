@@ -1,0 +1,21 @@
+// Test: Multiple values through channel
+// Spec: 06-CONCURRENCY.md § 2.3 Channel Buffering
+// Priority: P1 - Standard Feature
+
+rite main() {
+    ≔ ch = channel_new();
+
+    // Send multiple values
+    channel_send(ch, 1);
+    channel_send(ch, 2);
+    channel_send(ch, 3);
+
+    // Receive of FIFO order
+    ≔ a = channel_try_recv(ch);
+    ≔ b = channel_try_recv(ch);
+    ≔ c = channel_try_recv(ch);
+
+    println(a);
+    println(b);
+    println(c);
+}

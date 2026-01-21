@@ -1,0 +1,14 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Match arms ⤺ different types
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ x = 5;
+    ≔ result = ⌥ x {
+        1 => 10,
+        2 => "twenty",  // ERROR: String vs i32
+        _ => 0,
+    };
+    println(result);
+}

@@ -1,0 +1,434 @@
+// Graph Index
+// Adjacency-based index for knowledge graph traversal
+
+module engram::index::graph
+
+use engram::types::*
+use std::collections::{HashMap, HashSet, VecDeque}
+
+// ============================================================================
+// Graph Index
+// ============================================================================
+
+/// Graph Index - efficient adjacency structure for knowledge graph traversal
+///
+/// Supports:
+/// - O(1) neighbor lookup
+/// - Bidirectional traversal
+/// - Filtered traversal by relation type
+/// - BFS/DFS traversal patterns
+pub struct GraphIndex {
+    /// Forward edges: source -> [(target, edge_id, relation)]
+    outgoing: HashMap<NodeId, Vec<EdgeEntry>>,
+
+    /// Reverse edges: target -> [(source, edge_id, relation)]
+    incoming: HashMap<NodeId, Vec<EdgeEntry>>,
+
+    /// Edges by relation type
+    by_relation: HashMap<Relation, Vec<EdgeId>>,
+
+    /// Node existence set
+    nodes: HashSet<NodeId>,
+
+    /// Statistics
+    edge_count: usize,
+}
+
+#[derive(Clone)]
+struct EdgeEntry {
+    node: NodeId,
+    edge: EdgeId,
+    relation: Relation,
+}
+
+impl GraphIndex {
+    // ========================================================================
+    // Construction
+    // ========================================================================
+
+    pub fn new() -> Self {
+        Self {
+            outgoing: HashMap::new(),
+            incoming: HashMap::new(),
+            by_relation: HashMap::new(),
+            nodes: HashSet::new(),
+            edge_count: 0,
+        }
+    }
+
+    // ========================================================================
+    // Mutation
+    // ========================================================================
+
+    /// Add a node to the index
+    pub fn add_node(id: NodeId) {
+        self.nodes.insert(id);
+    }
+
+    /// Add an edge to the index
+    pub fn add_edge(
+        source: NodeId,
+        target: NodeId,
+        edge_id: EdgeId,
+        relation: Relation,
+    ) {
+        // Ensure nodes exist
+        self.nodes.insert(source.clone());
+        self.nodes.insert(target.clone());
+
+        // Add forward edge
+        self.outgoing.entry(source.clone())
+            .or_insert_with(Vec::new)
+            .push(EdgeEntry {
+                node: target.clone(),
+                edge: edge_id.clone(),
+                relation: relation.clone(),
+            });
+
+        // Add reverse edge
+        self.incoming.entry(target)
+            .or_insert_with(Vec::new)
+            .push(EdgeEntry {
+                node: source,
+                edge: edge_id.clone(),
+                relation: relation.clone(),
+            });
+
+        // Index by relation
+        self.by_relation.entry(relation)
+            .or_insert_with(Vec::new)
+            .push(edge_id);
+
+        self.edge_count += 1;
+    }
+
+    /// Remove an edge
+    pub fn remove_edge(source: &NodeId, target: &NodeId, edge_id: &EdgeId) -> bool {
+        let mut removed = false;
+
+        // Remove from outgoing
+        if let Some(edges) = self.outgoing.get_mut(source) {
+            let before = edges.len();
+            edges.retain(|e| &e.edge != edge_id);
+            if edges.len() < before {
+                removed = true;
+            }
+        }
+
+        // Remove from incoming
+        if let Some(edges) = self.incoming.get_mut(target) {
+            edges.retain(|e| &e.edge != edge_id);
+        }
+
+        // Remove from by_relation
+        for (_, edges) in self.by_relation.iter_mut() {
+            edges.retain(|e| e != edge_id);
+        }
+
+        if removed {
+            self.edge_count -= 1;
+        }
+
+        removed
+    }
+
+    /// Remove a node and all its edges
+    pub fn remove_node(id: &NodeId) -> bool {
+        if !self.nodes.remove(id) {
+            return false;
+        }
+
+        // Collect edges to remove
+        let outgoing_edges: Vec<_> = self.outgoing.remove(id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| (id.clone(), e.node, e.edge))
+            .collect();
+
+        let incoming_edges: Vec<_> = self.incoming.remove(id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| (e.node, id.clone(), e.edge))
+            .collect();
+
+        // Remove from other adjacency lists
+        for (_, edges) in self.outgoing.iter_mut() {
+            edges.retain(|e| &e.node != id);
+        }
+        for (_, edges) in self.incoming.iter_mut() {
+            edges.retain(|e| &e.node != id);
+        }
+
+        // Update edge count and relation index
+        let removed_count = outgoing_edges.len() + incoming_edges.len();
+        self.edge_count -= removed_count;
+
+        for (_, _, edge_id) in outgoing_edges.iter().chain(incoming_edges.iter()) {
+            for (_, edges) in self.by_relation.iter_mut() {
+                edges.retain(|e| e != edge_id);
+            }
+        }
+
+        true
+    }
+
+    // ========================================================================
+    // Traversal
+    // ========================================================================
+
+    /// Get outgoing neighbors of a node
+    pub fn neighbors_out(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
+        self.outgoing.get(node)
+            .map(|edges| edges.iter()
+                .map(|e| (e.node.clone(), e.edge.clone(), e.relation.clone()))
+                .collect())
+            .unwrap_or_default()
+    }
+
+    /// Get incoming neighbors of a node
+    pub fn neighbors_in(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
+        self.incoming.get(node)
+            .map(|edges| edges.iter()
+                .map(|e| (e.node.clone(), e.edge.clone(), e.relation.clone()))
+                .collect())
+            .unwrap_or_default()
+    }
+
+    /// Get all neighbors (both directions)
+    pub fn neighbors(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
+        let mut result = self.neighbors_out(node);
+        result.extend(self.neighbors_in(node));
+        result
+    }
+
+    /// Follow a specific relation from a node
+    pub fn follow(node: &NodeId, relation: &Relation) -> Vec<NodeId> {
+        self.outgoing.get(node)
+            .map(|edges| edges.iter()
+                .filter(|e| &e.relation == relation)
+                .map(|e| e.node.clone())
+                .collect())
+            .unwrap_or_default()
+    }
+
+    /// Follow reverse relation to a node
+    pub fn follow_reverse(node: &NodeId, relation: &Relation) -> Vec<NodeId> {
+        self.incoming.get(node)
+            .map(|edges| edges.iter()
+                .filter(|e| &e.relation == relation)
+                .map(|e| e.node.clone())
+                .collect())
+            .unwrap_or_default()
+    }
+
+    /// BFS traversal from a starting node
+    pub fn bfs(start: &NodeId, max_depth: usize) -> Vec<(NodeId, usize)> {
+        let mut visited: HashSet<NodeId> = HashSet::new();
+        let mut queue: VecDeque<(NodeId, usize)> = VecDeque::new();
+        let mut result: Vec<(NodeId, usize)> = Vec::new();
+
+        visited.insert(start.clone());
+        queue.push_back((start.clone(), 0));
+
+        while let Some((node, depth)) = queue.pop_front() {
+            result.push((node.clone(), depth));
+
+            if depth < max_depth {
+                for (neighbor, _, _) in self.neighbors_out(&node) {
+                    if visited.insert(neighbor.clone()) {
+                        queue.push_back((neighbor, depth + 1));
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    /// DFS traversal from a starting node
+    pub fn dfs(start: &NodeId, max_depth: usize) -> Vec<(NodeId, usize)> {
+        let mut visited: HashSet<NodeId> = HashSet::new();
+        let mut result: Vec<(NodeId, usize)> = Vec::new();
+
+        self.dfs_visit(start, 0, max_depth, &mut visited, &mut result);
+
+        result
+    }
+
+    fn dfs_visit(
+        node: &NodeId,
+        depth: usize,
+        max_depth: usize,
+        visited: &mut HashSet<NodeId>,
+        result: &mut Vec<(NodeId, usize)>,
+    ) {
+        if !visited.insert(node.clone()) {
+            return;
+        }
+
+        result.push((node.clone(), depth));
+
+        if depth < max_depth {
+            for (neighbor, _, _) in self.neighbors_out(node) {
+                self.dfs_visit(&neighbor, depth + 1, max_depth, visited, result);
+            }
+        }
+    }
+
+    /// Find all paths between two nodes (up to max_depth)
+    pub fn paths(from: &NodeId, to: &NodeId, max_depth: usize) -> Vec<Vec<EdgeId>> {
+        let mut result: Vec<Vec<EdgeId>> = Vec::new();
+        let mut current_path: Vec<EdgeId> = Vec::new();
+        let mut visited: HashSet<NodeId> = HashSet::new();
+
+        self.find_paths(from, to, max_depth, &mut visited, &mut current_path, &mut result);
+
+        result
+    }
+
+    fn find_paths(
+        current: &NodeId,
+        target: &NodeId,
+        remaining_depth: usize,
+        visited: &mut HashSet<NodeId>,
+        current_path: &mut Vec<EdgeId>,
+        result: &mut Vec<Vec<EdgeId>>,
+    ) {
+        if current == target {
+            result.push(current_path.clone());
+            return;
+        }
+
+        if remaining_depth == 0 {
+            return;
+        }
+
+        visited.insert(current.clone());
+
+        for (neighbor, edge_id, _) in self.neighbors_out(current) {
+            if !visited.contains(&neighbor) {
+                current_path.push(edge_id);
+                self.find_paths(&neighbor, target, remaining_depth - 1, visited, current_path, result);
+                current_path.pop();
+            }
+        }
+
+        visited.remove(current);
+    }
+
+    /// Get neighborhood within n hops
+    pub fn neighborhood(node: &NodeId, hops: usize) -> HashSet<NodeId> {
+        self.bfs(node, hops)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect()
+    }
+
+    // ========================================================================
+    // Queries
+    // ========================================================================
+
+    /// Check if node exists
+    pub fn has_node(id: &NodeId) -> bool {
+        self.nodes.contains(id)
+    }
+
+    /// Check if edge exists between two nodes
+    pub fn has_edge(from: &NodeId, to: &NodeId) -> bool {
+        self.outgoing.get(from)
+            .map(|edges| edges.iter().any(|e| &e.node == to))
+            .unwrap_or(false)
+    }
+
+    /// Get all edges with a specific relation
+    pub fn edges_by_relation(relation: &Relation) -> Vec<EdgeId> {
+        self.by_relation.get(relation)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Get degree of a node (outgoing edges)
+    pub fn out_degree(node: &NodeId) -> usize {
+        self.outgoing.get(node)
+            .map(|e| e.len())
+            .unwrap_or(0)
+    }
+
+    /// Get degree of a node (incoming edges)
+    pub fn in_degree(node: &NodeId) -> usize {
+        self.incoming.get(node)
+            .map(|e| e.len())
+            .unwrap_or(0)
+    }
+
+    /// Get total degree of a node
+    pub fn degree(node: &NodeId) -> usize {
+        self.out_degree(node) + self.in_degree(node)
+    }
+
+    // ========================================================================
+    // Stats
+    // ========================================================================
+
+    pub fn node_count() -> usize {
+        self.nodes.len()
+    }
+
+    pub fn edge_count() -> usize {
+        self.edge_count
+    }
+
+    pub fn is_empty() -> bool {
+        self.nodes.is_empty()
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_id(n: u8) -> NodeId {
+        NodeId::from_bytes([n; 16])
+    }
+
+    #[test]
+    fn test_add_and_traverse() {
+        let mut index = GraphIndex::new();
+
+        let a = make_id(1);
+        let b = make_id(2);
+        let c = make_id(3);
+        let e1 = EdgeId::from_bytes([10; 16]);
+        let e2 = EdgeId::from_bytes([11; 16]);
+
+        index.add_edge(a.clone(), b.clone(), e1, Relation::RelatedTo);
+        index.add_edge(b.clone(), c.clone(), e2, Relation::RelatedTo);
+
+        let neighbors = index.neighbors_out(&a);
+        assert_eq!(neighbors.len(), 1);
+        assert_eq!(neighbors[0].0, b);
+
+        let reachable = index.bfs(&a, 2);
+        assert_eq!(reachable.len(), 3);
+    }
+
+    #[test]
+    fn test_paths() {
+        let mut index = GraphIndex::new();
+
+        let a = make_id(1);
+        let b = make_id(2);
+        let c = make_id(3);
+
+        index.add_edge(a.clone(), b.clone(), EdgeId::from_bytes([1; 16]), Relation::RelatedTo);
+        index.add_edge(b.clone(), c.clone(), EdgeId::from_bytes([2; 16]), Relation::RelatedTo);
+        index.add_edge(a.clone(), c.clone(), EdgeId::from_bytes([3; 16]), Relation::RelatedTo);
+
+        let paths = index.paths(&a, &c, 3);
+        assert_eq!(paths.len(), 2); // Direct and via b
+    }
+}

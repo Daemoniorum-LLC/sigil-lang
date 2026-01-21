@@ -1,0 +1,20 @@
+# Build artifacts - compiled binaries
+sigil
+sigil_debug
+sigil_combined
+sigil_combined_debug
+sigil_new
+sigil_new2
+sigil_v2
+sigil6_test
+
+# Generated C files (ignore all except bootstrap)
+sigil*.c
+!sigil_bootstrap.c
+stage2_complete.c
+runtime_section.c
+
+# Build subdirectories
+c/
+test_cases/
+sigil2_fixed

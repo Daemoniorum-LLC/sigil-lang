@@ -1,0 +1,12 @@
+// Test: Function pointer type
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 5.1 Function Pointers
+// Priority: P2 - Enhancement
+
+rite add_one(x: !i32) → !i32 {
+    x + 1
+}
+
+rite main() {
+    ≔ f: rite(i32) → i32 = add_one;
+    println(f(41));
+}

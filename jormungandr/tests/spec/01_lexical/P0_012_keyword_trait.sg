@@ -1,0 +1,11 @@
+// Test: Keyword 'trait' each aspect definitions
+// Spec: 01-LEXICAL.md § 2.2 Keywords
+// Priority: P0
+
+☉ aspect Show { rite show(&this) → !i32; }
+☉ sigil X { v: !i32 }
+⊢ X : Show { rite show(&this) → !i32 { this.v } }
+
+rite main() {
+    println(X { v: 42 }.show());
+}

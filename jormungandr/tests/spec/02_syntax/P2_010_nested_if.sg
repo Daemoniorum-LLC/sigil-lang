@@ -1,0 +1,23 @@
+// Test: Deeply nested if
+// Spec: 02-SYNTAX.md § 5.1 If
+// Priority: P2 - Enhancement
+
+rite main() {
+    ≔ a: !i32 = 1;
+    ≔ b: !i32 = 2;
+    ≔ c: !i32 = 3;
+
+    ⎇ a > 0 {
+        ⎇ b > 1 {
+            ⎇ c > 2 {
+                println(1);
+            } ⎉ {
+                println(0);
+            }
+        } ⎉ {
+            println(0);
+        }
+    } ⎉ {
+        println(0);
+    }
+}

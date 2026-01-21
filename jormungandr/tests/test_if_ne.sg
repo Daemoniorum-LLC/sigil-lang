@@ -1,0 +1,6 @@
+rite main() {
+    ≔ x = 5;
+    ⎇ x != 3 {
+        print("x is not 3");
+    }
+}

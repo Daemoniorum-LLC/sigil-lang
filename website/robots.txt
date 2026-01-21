@@ -1,0 +1,8 @@
+# Sigil Language Website
+# https://sigil-lang.com
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://sigil-lang.com/sitemap.xml

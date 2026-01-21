@@ -1,0 +1,6 @@
+fn main() {
+    let i = 0;
+    i = i + 1;
+    print(i);
+    return 0;
+}

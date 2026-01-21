@@ -1,0 +1,457 @@
+// ============================================================================
+// PHASE 9 BENCHMARKS: Geometric Algebra, Dimensional Analysis, ECS
+// ============================================================================
+
+fn main() {
+    println("═══════════════════════════════════════════════════════════════");
+    println("  SIGIL PHASE 9 BENCHMARKS");
+    println("═══════════════════════════════════════════════════════════════");
+    println("");
+
+    // Run all benchmarks
+    benchmark_geometric_algebra();
+    benchmark_dimensional_analysis();
+    benchmark_ecs();
+
+    println("");
+    println("═══════════════════════════════════════════════════════════════");
+    println("  ALL BENCHMARKS COMPLETE");
+    println("═══════════════════════════════════════════════════════════════");
+}
+
+// ============================================================================
+// GEOMETRIC ALGEBRA BENCHMARKS
+// ============================================================================
+
+fn benchmark_geometric_algebra() {
+    println("┌─────────────────────────────────────────────────────────────┐");
+    println("│  GEOMETRIC ALGEBRA (GA3D - Cl(3,0,0))                       │");
+    println("└─────────────────────────────────────────────────────────────┘");
+
+    // Benchmark 1: Multivector creation
+    let iterations = 10000;
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let mv = mv_new(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  mv_new (" + str(iterations) + "x):           " + format_ns(elapsed));
+
+    // Benchmark 2: Vector creation
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let v = mv_vector(1.0, 2.0, 3.0);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  mv_vector (" + str(iterations) + "x):        " + format_ns(elapsed));
+
+    // Benchmark 3: Geometric product (the fundamental operation)
+    let a = mv_new(1.0, 2.0, 3.0, 4.0, 0.5, 0.6, 0.7, 0.1);
+    let b = mv_new(0.5, 1.5, 2.5, 3.5, 0.2, 0.3, 0.4, 0.05);
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let result = mv_geometric(a, b);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  mv_geometric (" + str(iterations) + "x):     " + format_ns(elapsed));
+
+    // Benchmark 4: Wedge product
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let result = mv_wedge(a, b);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  mv_wedge (" + str(iterations) + "x):         " + format_ns(elapsed));
+
+    // Benchmark 5: Inner product
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let result = mv_inner(a, b);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  mv_inner (" + str(iterations) + "x):         " + format_ns(elapsed));
+
+    // Benchmark 6: Rotor creation from axis-angle
+    let axis = [0.0, 1.0, 0.0];
+    let angle = 3.14159 / 4.0;
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let rotor = rotor_from_axis_angle(axis, angle);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  rotor_from_axis_angle (" + str(iterations) + "x): " + format_ns(elapsed));
+
+    // Benchmark 7: Rotor application (sandwich product)
+    let rotor = rotor_from_axis_angle([0.0, 1.0, 0.0], 3.14159 / 4.0);
+    let vec = [1.0, 0.0, 0.0];
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let rotated = rotor_apply(rotor, vec);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  rotor_apply (" + str(iterations) + "x):      " + format_ns(elapsed));
+
+    // Benchmark 8: Rotor composition
+    let r1 = rotor_from_axis_angle([1.0, 0.0, 0.0], 0.5);
+    let r2 = rotor_from_axis_angle([0.0, 1.0, 0.0], 0.3);
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let composed = rotor_compose(r1, r2);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  rotor_compose (" + str(iterations) + "x):    " + format_ns(elapsed));
+
+    // Benchmark 9: Reflection
+    let v = [1.0, 2.0, 3.0];
+    let n = [0.0, 1.0, 0.0];
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let reflected = mv_reflect(v, n);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  mv_reflect (" + str(iterations) + "x):       " + format_ns(elapsed));
+
+    // Benchmark 10: Full rotation pipeline (create rotor + apply)
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let r = rotor_from_axis_angle([0.0, 0.0, 1.0], 0.1 * float(i));
+        let result = rotor_apply(r, [1.0, 0.0, 0.0]);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  full rotation (" + str(iterations) + "x):    " + format_ns(elapsed));
+
+    println("");
+}
+
+// ============================================================================
+// DIMENSIONAL ANALYSIS BENCHMARKS
+// ============================================================================
+
+fn benchmark_dimensional_analysis() {
+    println("┌─────────────────────────────────────────────────────────────┐");
+    println("│  DIMENSIONAL ANALYSIS (SI Units)                           │");
+    println("└─────────────────────────────────────────────────────────────┘");
+
+    let iterations = 10000;
+
+    // Benchmark 1: Quantity creation
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let q = qty(9.81, "m");
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  qty() create (" + str(iterations) + "x):     " + format_ns(elapsed));
+
+    // Benchmark 2: Quantity multiplication (units combine)
+    let mass = qty(10.0, "kg");
+    let accel = qty(9.81, "m");
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let force = qty_mul(mass, accel);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  qty_mul (" + str(iterations) + "x):          " + format_ns(elapsed));
+
+    // Benchmark 3: Quantity division
+    let distance = qty(100.0, "m");
+    let time_qty = qty(10.0, "s");
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let velocity = qty_div(distance, time_qty);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  qty_div (" + str(iterations) + "x):          " + format_ns(elapsed));
+
+    // Benchmark 4: Quantity addition (unit checking)
+    let d1 = qty(50.0, "m");
+    let d2 = qty(30.0, "m");
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let total = qty_add(d1, d2);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  qty_add (" + str(iterations) + "x):          " + format_ns(elapsed));
+
+    // Benchmark 5: Quantity power
+    let length = qty(5.0, "m");
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let area = qty_pow(length, 2);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  qty_pow (" + str(iterations) + "x):          " + format_ns(elapsed));
+
+    // Benchmark 6: Quantity sqrt
+    let area = qty(100.0, "m");
+    let area2 = qty_pow(area, 2);
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let side = qty_sqrt(area2);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  qty_sqrt (" + str(iterations) + "x):         " + format_ns(elapsed));
+
+    // Benchmark 7: Get value
+    let q = qty(299792458.0, "m");
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let v = qty_value(q);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  qty_value (" + str(iterations) + "x):        " + format_ns(elapsed));
+
+    // Benchmark 8: Physics calculation (F = ma)
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let m = qty(float(i % 100) + 1.0, "kg");
+        let a = qty(9.81, "m");
+        let f = qty_mul(m, a);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  F=ma calc (" + str(iterations) + "x):        " + format_ns(elapsed));
+
+    // Benchmark 9: Kinetic energy (KE = 0.5 * m * v^2)
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let m = qty(10.0, "kg");
+        let v = qty(5.0, "m");
+        let v2 = qty_pow(v, 2);
+        let mv2 = qty_mul(m, v2);
+        let ke = qty_mul(qty(0.5, ""), mv2);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  KE calc (" + str(iterations) + "x):          " + format_ns(elapsed));
+
+    // Benchmark 10: Physical constants access
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let c = c_light();
+        let g = G_gravity();
+        let h = h_planck();
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  constants (" + str(iterations) + "x):        " + format_ns(elapsed));
+
+    println("");
+}
+
+// ============================================================================
+// ECS BENCHMARKS
+// ============================================================================
+
+fn benchmark_ecs() {
+    println("┌─────────────────────────────────────────────────────────────┐");
+    println("│  ENTITY COMPONENT SYSTEM (ECS)                             │");
+    println("└─────────────────────────────────────────────────────────────┘");
+
+    // Benchmark 1: World creation
+    let iterations = 1000;
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let w = ecs_world();
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_world (" + str(iterations) + "x):        " + format_ns(elapsed));
+
+    // Benchmark 2: Entity spawning
+    let world = ecs_world();
+    let spawn_count = 10000;
+    let start = time_ns();
+    let i = 0;
+    while i < spawn_count {
+        let e = ecs_spawn(world);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_spawn (" + str(spawn_count) + "x):       " + format_ns(elapsed));
+
+    // Benchmark 3: Component attachment
+    let world = ecs_world();
+    let entities = [];
+    let i = 0;
+    while i < 1000 {
+        let e = ecs_spawn(world);
+        entities = push(entities, e);
+        i = i + 1;
+    }
+
+    let start = time_ns();
+    let i = 0;
+    while i < len(entities) {
+        let e = get(entities, i);
+        ecs_attach(world, e, "Position", { x: float(i), y: float(i * 2), z: 0.0 });
+        ecs_attach(world, e, "Velocity", { dx: 1.0, dy: 0.5, dz: 0.0 });
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_attach (2000x):       " + format_ns(elapsed));
+
+    // Benchmark 4: Component retrieval
+    let start = time_ns();
+    let i = 0;
+    while i < len(entities) {
+        let e = get(entities, i);
+        let pos = ecs_get(world, e, "Position");
+        let vel = ecs_get(world, e, "Velocity");
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_get (2000x):          " + format_ns(elapsed));
+
+    // Benchmark 5: Has component check
+    let start = time_ns();
+    let i = 0;
+    while i < len(entities) {
+        let e = get(entities, i);
+        let has_pos = ecs_has(world, e, "Position");
+        let has_vel = ecs_has(world, e, "Velocity");
+        let has_health = ecs_has(world, e, "Health");
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_has (3000x):          " + format_ns(elapsed));
+
+    // Benchmark 6: Query (find entities with components)
+    let start = time_ns();
+    let query_iterations = 100;
+    let i = 0;
+    while i < query_iterations {
+        let matching = ecs_query(world, "Position", "Velocity");
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_query (" + str(query_iterations) + "x):          " + format_ns(elapsed));
+
+    // Benchmark 7: Entity count
+    let start = time_ns();
+    let i = 0;
+    while i < iterations {
+        let count = ecs_count(world);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_count (" + str(iterations) + "x):        " + format_ns(elapsed));
+
+    // Benchmark 8: Alive check
+    let start = time_ns();
+    let i = 0;
+    while i < len(entities) {
+        let e = get(entities, i);
+        let alive = ecs_alive(world, e);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_alive (1000x):        " + format_ns(elapsed));
+
+    // Benchmark 9: Component removal
+    let start = time_ns();
+    let i = 0;
+    while i < 500 {
+        let e = get(entities, i);
+        ecs_remove(world, e, "Velocity");
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_remove (500x):        " + format_ns(elapsed));
+
+    // Benchmark 10: Entity despawn
+    let start = time_ns();
+    let i = 0;
+    while i < 500 {
+        let e = get(entities, i);
+        ecs_despawn(world, e);
+        i = i + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  ecs_despawn (500x):       " + format_ns(elapsed));
+
+    // Benchmark 11: Full game loop simulation
+    let world = ecs_world();
+    let i = 0;
+    while i < 100 {
+        let e = ecs_spawn(world);
+        ecs_attach(world, e, "Position", { x: float(i), y: 0.0, z: 0.0 });
+        ecs_attach(world, e, "Velocity", { dx: 1.0, dy: 0.0, dz: 0.0 });
+        ecs_attach(world, e, "Health", { hp: 100 });
+        i = i + 1;
+    }
+
+    let start = time_ns();
+    let frames = 100;
+    let f = 0;
+    while f < frames {
+        // Query all entities with Position and Velocity
+        let movers = ecs_query(world, "Position", "Velocity");
+        // Simulate position update (would normally modify)
+        let m = 0;
+        while m < len(movers) {
+            let e = get(movers, m);
+            let pos = ecs_get(world, e, "Position");
+            let vel = ecs_get(world, e, "Velocity");
+            m = m + 1;
+        }
+        f = f + 1;
+    }
+    let elapsed = time_ns() - start;
+    println("  game loop (100 frames):   " + format_ns(elapsed));
+
+    println("");
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+fn format_ns(ns) {
+    if ns >= 1000000000 {
+        return str(float(ns) / 1000000000.0) + " s";
+    } else if ns >= 1000000 {
+        return str(float(ns) / 1000000.0) + " ms";
+    } else if ns >= 1000 {
+        return str(float(ns) / 1000.0) + " μs";
+    } else {
+        return str(ns) + " ns";
+    }
+}

@@ -1,0 +1,10 @@
+// Test: Hadamard gate
+// Spec: 12-QUANTUM.md § 3.1 Single-Qubit Gates
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ q: linear Qubit = Qubit·zero();
+    ≔ q2: linear Qubit = q|H;  // Hadamard creates superposition
+    ≔ result: Cbit = q2|measure;
+    println(result);  // 0 or 1 with equal probability
+}

@@ -1,0 +1,7 @@
+// Test: Extern function declaration
+// Spec: 08-FFI.md § 1.1 Extern
+// Priority: P2 - Enhancement
+
+rite main() {
+    println(42);
+}

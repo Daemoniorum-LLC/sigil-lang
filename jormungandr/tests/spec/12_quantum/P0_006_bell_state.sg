@@ -1,0 +1,12 @@
+// Test: Bell state creation
+// Spec: 12-QUANTUM.md § 4 Entanglement
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ q1: linear Qubit = Qubit·zero()|H;
+    ≔ q2: linear Qubit = Qubit·zero();
+    ≔ (e1, e2) = CNOT(q1, q2);  // Creates Bell state |00⟩ + |11⟩
+    ≔ (r1, r2) = (e1|measure, e2|measure);
+    // Results are correlated: both 0 or both 1
+    println(r1 == r2);
+}

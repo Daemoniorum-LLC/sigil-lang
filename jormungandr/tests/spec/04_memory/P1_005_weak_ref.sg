@@ -1,0 +1,17 @@
+// Test: Weak references with Rc
+// Spec: 04-MEMORY.md § 4.4 Weak
+// Priority: P1 - Production Ready
+
+rite main() {
+    ≔ rc: Rc<i32> = Rc·new(100);
+
+    // Downgrade to weak
+    ≔ weak: Weak<i32> = Rc·downgrade(&rc);
+
+    // Weak exists (doesn't prevent drop, but exists)
+    println(*rc);
+
+    // Clone the Rc
+    ≔ rc2 = rc.clone();
+    println(*rc2);
+}

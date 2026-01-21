@@ -1,0 +1,17 @@
+// Test: AtomicUsize operations
+// Spec: 06-CONCURRENCY.md § 4.3 Atomic Usize
+// Priority: P1 - Standard Feature
+
+rite main() {
+    ≔ size = AtomicUsize·new(100);
+
+    println(size.load());
+
+    size.store(200);
+    println(size.load());
+
+    // fetch_sub
+    ≔ old = size.fetch_sub(50);
+    println(old);
+    println(size.load());
+}

@@ -1,0 +1,84 @@
+// Stdlib Tests: bitwise
+// Bitwise operations with REAL assertions
+
+rite main() {
+    println("=== Testing bitwise ===");
+
+    // hex - convert to hex string
+    assert_eq(hex(255), "ff");
+    assert_eq(hex(16), "10");
+    assert_eq(hex(0), "0");
+
+    // oct - convert to octal string
+    assert_eq(oct(8), "10");
+    assert_eq(oct(64), "100");
+
+    // bin - convert to binary string
+    assert_eq(bin(255), "11111111");
+    assert_eq(bin(8), "1000");
+    assert_eq(bin(0), "0");
+
+    // hex_encode - encode bytes to hex
+    assert_eq(hex_encode("hello"), "68656c6c6f");
+
+    // hex_decode - decode hex to bytes array
+    ≔ decoded = hex_decode("68656c6c6f");
+    assert_eq(len(decoded), 5);
+    assert_eq(decoded[0], 104);  // 'h'
+
+    // bit_and - bitwise AND
+    assert_eq(bit_and(0xFF, 0x0F), 0x0F);
+    assert_eq(bit_and(0b1100, 0b1010), 0b1000);
+
+    // bit_or - bitwise OR
+    assert_eq(bit_or(0xF0, 0x0F), 0xFF);
+    assert_eq(bit_or(0b1100, 0b0011), 0b1111);
+
+    // bit_xor - bitwise XOR
+    assert_eq(bit_xor(0xFF, 0x0F), 0xF0);
+    assert_eq(bit_xor(0b1100, 0b1010), 0b0110);
+
+    // bit_shl - shift left
+    assert_eq(bit_shl(1, 4), 16);
+    assert_eq(bit_shl(1, 0), 1);
+    assert_eq(bit_shl(3, 2), 12);
+
+    // bit_shr - shift right
+    assert_eq(bit_shr(16, 2), 4);
+    assert_eq(bit_shr(255, 4), 15);
+
+    // bit_test - test if bit is set
+    assert_true(bit_test(8, 3));   // 8 = 0b1000, bit 3 is set
+    assert_false(bit_test(8, 2));  // bit 2 is not set
+
+    // bit_set - set a bit
+    assert_eq(bit_set(0, 3), 8);
+    assert_eq(bit_set(1, 1), 3);
+
+    // bit_clear - clear a bit
+    assert_eq(bit_clear(0xFF, 0), 0xFE);
+    assert_eq(bit_clear(8, 3), 0);
+
+    // bit_toggle - toggle a bit
+    assert_eq(bit_toggle(0, 3), 8);
+    assert_eq(bit_toggle(8, 3), 0);
+
+    // hex_to_rgb - convert hex color to RGB map
+    ≔ rgb = hex_to_rgb("#FF0000");
+    assert_eq(type_of(rgb), "map");
+    // Note: map indexing not supported, verified output shows {r: 255, g: 0, b: 0}
+
+    // popcount - count set bits
+    assert_eq(popcount(255), 8);
+    assert_eq(popcount(0), 0);
+    assert_eq(popcount(7), 3);
+
+    // leading_zeros
+    assert_eq(leading_zeros(1), 63);
+
+    // trailing_zeros
+    assert_eq(trailing_zeros(8), 3);
+    assert_eq(trailing_zeros(16), 4);
+
+    println("ALL BITWISE TESTS PASSED!");
+}

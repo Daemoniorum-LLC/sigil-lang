@@ -1,0 +1,12 @@
+// Test: assert! macro
+// Spec: 07-METAPROGRAMMING.md § 1.5 Assert Macro
+// Priority: P1 - Standard Feature
+
+rite main() {
+    // True assertions pass silently
+    assert!(yea);
+    assert!(1 == 1);
+    assert!(5 > 3);
+
+    println("all assertions passed");
+}

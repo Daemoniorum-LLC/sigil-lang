@@ -1,0 +1,371 @@
+//! CORS (Cross-Origin Resource Sharing) Middleware
+//!
+//! Handles CORS preflight requests and adds appropriate headers
+//! for cross-origin API access from browsers.
+//!
+//! # Example
+//!
+//! ```sigil
+//! use basilica::prelude::*;
+//! use basilica::cors::{CorsMiddleware, CorsConfig};
+//!
+//! let cors = CorsMiddleware::new(
+//!     CorsConfig::new()
+//!         .allow_origin("https://app.sanctum.dev")
+//!         .allow_methods(&["GET", "POST", "PUT", "DELETE"])
+//!         .allow_credentials(true)
+//! );
+//!
+//! Nave::new()
+//!     .middleware(cors)
+//!     .run();
+//! ```
+
+use crate::middleware::{Middleware, MiddlewareResult};
+use crate::request::Request;
+use crate::response::{Response, StatusCode, Headers};
+use crate::context::Context;
+
+// ============================================================================
+// CORS Configuration
+// ============================================================================
+
+/// Configuration for CORS handling
+#[derive(Clone, Debug)]
+pub struct CorsConfig {
+    /// Allowed origins (use "*" for any)
+    pub allowed_origins: Vec<String>,
+
+    /// Allow any origin
+    pub allow_any_origin: bool,
+
+    /// Allowed HTTP methods
+    pub allowed_methods: Vec<String>,
+
+    /// Allowed headers
+    pub allowed_headers: Vec<String>,
+
+    /// Headers to expose to the client
+    pub exposed_headers: Vec<String>,
+
+    /// Whether to allow credentials
+    pub allow_credentials: bool,
+
+    /// Max age for preflight cache (seconds)
+    pub max_age: Option<u32>,
+}
+
+impl Default for CorsConfig {
+    fn default() -> Self {
+        Self {
+            allowed_origins: vec![],
+            allow_any_origin: false,
+            allowed_methods: vec![
+                "GET".to_string(),
+                "POST".to_string(),
+                "PUT".to_string(),
+                "PATCH".to_string(),
+                "DELETE".to_string(),
+                "OPTIONS".to_string(),
+            ],
+            allowed_headers: vec![
+                "content-type".to_string(),
+                "authorization".to_string(),
+                "x-requested-with".to_string(),
+                "x-correlation-id".to_string(),
+            ],
+            exposed_headers: vec![
+                "x-evidence-level".to_string(),
+                "x-evidence-confidence".to_string(),
+                "x-evidence-source".to_string(),
+                "x-evidence-warnings".to_string(),
+                "x-explanation".to_string(),
+                "x-handoff-id".to_string(),
+            ],
+            allow_credentials: false,
+            max_age: Some(86400), // 24 hours
+        }
+    }
+}
+
+impl CorsConfig {
+    /// Create a new CORS configuration
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Allow any origin (for development)
+    pub fn allow_any(mut self) -> Self {
+        self.allow_any_origin = true;
+        self
+    }
+
+    /// Add an allowed origin
+    pub fn allow_origin(mut self, origin: &str) -> Self {
+        self.allowed_origins.push(origin.to_string());
+        self
+    }
+
+    /// Add multiple allowed origins
+    pub fn allow_origins(mut self, origins: &[&str]) -> Self {
+        for origin in origins {
+            self.allowed_origins.push(origin.to_string());
+        }
+        self
+    }
+
+    /// Set allowed methods
+    pub fn allow_methods(mut self, methods: &[&str]) -> Self {
+        self.allowed_methods = methods.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Add allowed headers
+    pub fn allow_headers(mut self, headers: &[&str]) -> Self {
+        for header in headers {
+            self.allowed_headers.push(header.to_lowercase());
+        }
+        self
+    }
+
+    /// Add exposed headers
+    pub fn expose_headers(mut self, headers: &[&str]) -> Self {
+        for header in headers {
+            self.exposed_headers.push(header.to_lowercase());
+        }
+        self
+    }
+
+    /// Enable credentials
+    pub fn allow_credentials(mut self, allow: bool) -> Self {
+        self.allow_credentials = allow;
+        self
+    }
+
+    /// Set max age for preflight cache
+    pub fn max_age(mut self, seconds: u32) -> Self {
+        self.max_age = Some(seconds);
+        self
+    }
+
+    /// Development configuration (allow all)
+    pub fn development() -> Self {
+        Self::new()
+            .allow_any()
+            .allow_credentials(true)
+    }
+
+    /// Production configuration with specific origins
+    pub fn production(origins: &[&str]) -> Self {
+        Self::new()
+            .allow_origins(origins)
+            .allow_credentials(true)
+    }
+}
+
+// ============================================================================
+// CORS Middleware
+// ============================================================================
+
+/// Middleware for handling CORS requests
+pub struct CorsMiddleware {
+    config: CorsConfig,
+}
+
+impl CorsMiddleware {
+    /// Create a new CORS middleware with configuration
+    pub fn new(config: CorsConfig) -> Self {
+        Self { config }
+    }
+
+    /// Create with default configuration
+    pub fn default() -> Self {
+        Self::new(CorsConfig::default())
+    }
+
+    /// Create for development (allow all origins)
+    pub fn development() -> Self {
+        Self::new(CorsConfig::development())
+    }
+
+    /// Check if origin is allowed
+    fn is_origin_allowed(&self, origin: &str) -> bool {
+        if self.config.allow_any_origin {
+            return true;
+        }
+
+        self.config.allowed_origins.iter().any(|allowed| {
+            // Exact match
+            if allowed == origin {
+                return true;
+            }
+
+            // Wildcard subdomain match (e.g., "*.sanctum.dev")
+            if allowed.starts_with("*.") {
+                let suffix = &allowed[1..]; // ".sanctum.dev"
+                if origin.ends_with(suffix) {
+                    return true;
+                }
+            }
+
+            false
+        })
+    }
+
+    /// Build CORS headers for a response
+    fn build_cors_headers(&self, origin: &str) -> Headers {
+        let mut headers = Headers::new();
+
+        // Origin
+        if self.config.allow_any_origin && !self.config.allow_credentials {
+            headers.set("access-control-allow-origin".to_string(), "*".to_string());
+        } else {
+            headers.set("access-control-allow-origin".to_string(), origin.to_string());
+        }
+
+        // Vary header (important for caching)
+        headers.set("vary".to_string(), "Origin".to_string());
+
+        // Methods
+        headers.set(
+            "access-control-allow-methods".to_string(),
+            self.config.allowed_methods.join(", ")
+        );
+
+        // Headers
+        if !self.config.allowed_headers.is_empty() {
+            headers.set(
+                "access-control-allow-headers".to_string(),
+                self.config.allowed_headers.join(", ")
+            );
+        }
+
+        // Exposed headers
+        if !self.config.exposed_headers.is_empty() {
+            headers.set(
+                "access-control-expose-headers".to_string(),
+                self.config.exposed_headers.join(", ")
+            );
+        }
+
+        // Credentials
+        if self.config.allow_credentials {
+            headers.set(
+                "access-control-allow-credentials".to_string(),
+                "true".to_string()
+            );
+        }
+
+        // Max age
+        if let Some(max_age) = self.config.max_age {
+            headers.set(
+                "access-control-max-age".to_string(),
+                max_age.to_string()
+            );
+        }
+
+        headers
+    }
+
+    /// Handle OPTIONS preflight request
+    fn handle_preflight(&self, req: &Request) -> Response<Vec<u8>> {
+        let origin = req.headers().get("origin").unwrap_or("");
+
+        if !self.is_origin_allowed(origin) {
+            return Response::new(StatusCode::FORBIDDEN, vec![])
+                .header("content-type", "text/plain")
+                .header("content-length", "0");
+        }
+
+        let cors_headers = self.build_cors_headers(origin);
+        let mut response = Response::no_content();
+
+        // Apply CORS headers
+        for (key, value) in cors_headers.iter() {
+            response = response.header(key, value);
+        }
+
+        response.into_response()
+    }
+}
+
+impl Middleware for CorsMiddleware {
+    fn before(&self, req: &mut Request, ctx: &mut Context) -> MiddlewareResult {
+        // Get origin header
+        let origin = req.headers().get("origin");
+
+        // No origin = not a CORS request
+        if origin.is_none() {
+            return MiddlewareResult::Continue;
+        }
+
+        let origin = origin.unwrap();
+
+        // Check if origin is allowed
+        if !self.is_origin_allowed(origin) {
+            // Origin not allowed - could reject or just not add CORS headers
+            // We'll continue but the response won't have CORS headers
+            return MiddlewareResult::Continue;
+        }
+
+        // Handle preflight OPTIONS requests
+        if req.method() == "OPTIONS" {
+            return MiddlewareResult::Response(self.handle_preflight(req));
+        }
+
+        // Store origin in context for after() to use
+        ctx.set("cors_origin", origin.to_string());
+
+        MiddlewareResult::Continue
+    }
+
+    fn after(&self, req: &Request, res: &mut Response<Vec<u8>>, ctx: &Context) {
+        // Get origin from context (set in before())
+        if let Some(origin) = ctx.get::<String>("cors_origin") {
+            let cors_headers = self.build_cors_headers(origin);
+
+            // Apply CORS headers to response
+            for (key, value) in cors_headers.iter() {
+                res.headers_mut().set(key.clone(), value.clone());
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+/// Create a CORS middleware that allows any origin (development only)
+pub fn cors_any() -> CorsMiddleware {
+    CorsMiddleware::development()
+}
+
+/// Create a CORS middleware for specific origins
+pub fn cors_origins(origins: &[&str]) -> CorsMiddleware {
+    CorsMiddleware::new(CorsConfig::production(origins))
+}
+
+/// Create a CORS middleware for Sanctum
+pub fn cors_sanctum() -> CorsMiddleware {
+    CorsMiddleware::new(
+        CorsConfig::new()
+            .allow_origins(&[
+                "http://localhost:5173",    // Vite dev
+                "http://localhost:5180",    // Docker dev
+                "https://sanctum.dev",      // Production
+                "https://app.sanctum.dev",  // Production app
+            ])
+            .allow_credentials(true)
+            .expose_headers(&[
+                "x-evidence-level",
+                "x-evidence-confidence",
+                "x-evidence-source",
+                "x-evidence-chain",
+                "x-evidence-warnings",
+                "x-explanation",
+                "x-handoff-id",
+                "x-request-id",
+            ])
+    )
+}

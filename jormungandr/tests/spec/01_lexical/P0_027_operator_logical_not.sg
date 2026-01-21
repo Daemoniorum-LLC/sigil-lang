@@ -1,0 +1,14 @@
+// Test: Logical NOT operator (!)
+// Spec: 01-LEXICAL.md § 3.2 Operators
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate logical NOT works correctly.
+//
+// Expected behavior:
+// Should print nay (!yea)
+
+rite main() {
+    ≔ x: !bool = yea;
+    println(!x);
+}

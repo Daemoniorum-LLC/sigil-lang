@@ -1,0 +1,19 @@
+// Test: Early ⤺ statement
+// Spec: 02-SYNTAX.md § 6.1 Return
+// Priority: P2 - Enhancement
+
+rite check(x: !i32) → !i32 {
+    ⎇ x < 0 {
+        ⤺ -1;
+    }
+    ⎇ x > 100 {
+        ⤺ 100;
+    }
+    x
+}
+
+rite main() {
+    println(check(-5));
+    println(check(50));
+    println(check(200));
+}

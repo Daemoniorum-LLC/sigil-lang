@@ -1,0 +1,11 @@
+// Test: Qubit linear type
+// Spec: 12-QUANTUM.md § 1.1 Core Types
+// Priority: P0 - Bootstrap Critical
+//
+// Qubit is a LINEAR type - must be used exactly once
+
+rite main() {
+    ≔ q: linear Qubit = Qubit·zero();
+    ≔ result: Cbit = q|measure;  // Consumes q
+    println(result);
+}

@@ -1,0 +1,12 @@
+// Negative Test: Wrong number of arguments
+// Should fail with argument count error
+// Priority: P0 - Bootstrap Critical
+
+rite add(a: i32, b: i32) → i32 {
+    ⤺ a + b;
+}
+
+rite main() {
+    ≔ result = add(1);  // ERROR: missing argument
+    println(result);
+}

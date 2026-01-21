@@ -1,0 +1,15 @@
+// Test: Greater than operator (>)
+// Spec: 01-LEXICAL.md § 3.2 Operators
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate greater than comparison operator.
+//
+// Expected behavior:
+// Should print nay (5 > 10)
+
+rite main() {
+    ≔ x: !i32 = 5;
+    ≔ y: !i32 = 10;
+    println(x > y);
+}

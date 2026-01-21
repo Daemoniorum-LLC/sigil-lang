@@ -1,0 +1,24 @@
+// Test: Borrowing slices from vectors
+// Spec: 04-MEMORY.md § 3 Borrowing
+// Priority: P1 - Production Ready
+
+rite sum_slice(s: &[i32]) → !i32 {
+    ≔ vary total: !i32 = 0;
+    ≔ vary i: !i32 = 0;
+    ⟳ i < s.len() {
+        total = total + s[i];
+        i = i + 1;
+    }
+    total
+}
+
+rite main() {
+    ≔ v: Vec<i32> = vec![1, 2, 3, 4, 5];
+
+    // Borrow whole vec as slice
+    ≔ total = sum_slice(&v);
+    println(total);
+
+    // Vec still usable
+    println(v.len());
+}

@@ -1,0 +1,23 @@
+// Test: Nested sigil borrowing
+// Spec: 04-MEMORY.md § 3 Borrowing
+// Priority: P1 - Production Ready
+
+sigil Inner {
+    value: !i32,
+}
+
+sigil Outer {
+    inner: Inner,
+}
+
+rite main() {
+    ≔ outer = Outer { inner: Inner { value: 42 } };
+
+    // Borrow nested field
+    ≔ inner_ref: &Inner = &outer.inner;
+    println(inner_ref.value);
+
+    // Borrow deeply nested
+    ≔ value_ref: &i32 = &outer.inner.value;
+    println(*value_ref);
+}

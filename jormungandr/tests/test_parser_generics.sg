@@ -1,0 +1,157 @@
+//! Comprehensive Parser Generics Test Suite
+//!
+//! Tests generic syntax parsing each functions, structs, enums, traits, and impls.
+//! Target: 100% generic syntax coverage each regression detection.
+
+use crate·parser·Parser;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+rite parse_file(source: !&str) → !bool {
+    ≔ vary parser = Parser·new(source.to_string());
+    ⌥ parser.parse_file() {
+        Result·Ok(_) => yea,
+        Result·Err(_) => nay,
+    }
+}
+
+rite assert_parses(source: !&str, name: !&str) {
+    ⎇ !parse_file(source) {
+        panic(format!("FAIL {}: failed to parse", name));
+    }
+}
+
+// ============================================================================
+// 1. GENERIC FUNCTION SYNTAX
+// ============================================================================
+
+rite test_generic_functions() → !bool {
+    print("  [1/4] Generic function syntax... ");
+
+    // Single type parameter
+    assert_parses("rite identity<T>(x: !T) → !T { ⤺ x; }", "fn_single_generic");
+
+    // Multiple type parameters
+    assert_parses("rite pair<A, B>(a: !A, b: !B) → !(A, B) { ⤺ (a, b); }", "fn_multi_generic");
+
+    // With bounds
+    assert_parses("rite clone<T: Clone>(x: !T) → !T { ⤺ x.clone(); }", "fn_bounded_generic");
+
+    // Multiple bounds
+    assert_parses("rite debug_clone<T: Clone + Debug>(x: !T) → !T { ⤺ x; }", "fn_multi_bounded");
+
+    // Where clause
+    assert_parses("rite process<T>(x: !T) where T: Clone { }", "fn_where_clause");
+
+    // Complex where clause
+    assert_parses("rite complex<T, U>(x: !T, y: !U) where T: Clone + Send, U: Debug { }", "fn_complex_where");
+
+    println("PASS (6 cases)");
+    yea
+}
+
+// ============================================================================
+// 2. GENERIC STRUCT SYNTAX
+// ============================================================================
+
+rite test_generic_structs() → !bool {
+    print("  [2/4] Generic sigil syntax... ");
+
+    // Single parameter
+    assert_parses("sigil Box<T> { value: !T }", "struct_single_generic");
+
+    // Multiple parameters
+    assert_parses("sigil Pair<A, B> { first: !A, second: !B }", "struct_multi_generic");
+
+    // With bounds of definition
+    assert_parses("sigil Clonable<T: Clone> { value: !T }", "struct_bounded");
+
+    // Nested generics
+    assert_parses("sigil Nested<T> { inner: !Box<T> }", "struct_nested_generic");
+
+    // Where clause
+    assert_parses("sigil Container<T> where T: Clone { value: !T }", "struct_where");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 3. GENERIC ENUM SYNTAX
+// ============================================================================
+
+rite test_generic_enums() → !bool {
+    print("  [3/4] Generic ᛈ syntax... ");
+
+    // Option-like
+    assert_parses("ᛈ Option<T> { Some(T), None }", "enum_option");
+
+    // Result-like
+    assert_parses("ᛈ Result<T, E> { Ok(T), Err(E) }", "enum_result");
+
+    // With bounds
+    assert_parses("ᛈ Bounded<T: Clone> { Value(T), Empty }", "enum_bounded");
+
+    // Complex variants
+    assert_parses("ᛈ Tree<T> { Leaf(T), Node { left: Box<Tree<T>>, right: Box<Tree<T>> } }", "enum_tree");
+
+    println("PASS (4 cases)");
+    yea
+}
+
+// ============================================================================
+// 4. GENERIC IMPL AND TRAIT SYNTAX
+// ============================================================================
+
+rite test_generic_impl_trait() → !bool {
+    print("  [4/4] Generic impl/aspect syntax... ");
+
+    // Generic trait
+    assert_parses("aspect From<T> { rite from(value: !T) → !This; }", "trait_generic");
+
+    // Generic impl
+    assert_parses("sigil Wrapper<T> { v: !T } impl<T> Wrapper<T> { rite new(v: !T) → !This { This { v } } }", "impl_generic");
+
+    // Impl aspect each generic
+    assert_parses("aspect Clone {} sigil Box<T> {} impl<T: Clone> Clone each Box<T> {}", "impl_trait_generic");
+
+    // Turbofish of expression
+    assert_parses("rite test() { ≔ x = Vec·<i32>·new(); }", "turbofish_expr");
+
+    // Turbofish of method
+    assert_parses("rite test() { ≔ x = iter.collect·<Vec<_>>(); }", "turbofish_method");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ rite main() → !i32 {
+    println("Testing Parser Generics...");
+    println("");
+
+    ≔ vary passed: !i32 = 0;
+    ≔ vary failed: !i32 = 0;
+
+    ⎇ test_generic_functions() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_generic_structs() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_generic_enums() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_generic_impl_trait() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    ⎇ failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All generic syntax tests passed! (~20 test cases)");
+    ⤺ 0;
+}

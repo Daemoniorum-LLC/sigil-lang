@@ -1,0 +1,26 @@
+// Testing valid evidentiality usage
+
+fn get_known() -> i64! {
+    // Local computation is known
+    42
+}
+
+fn requires_known(x: i64!) -> i64! {
+    x * 2
+}
+
+fn accepts_reported(x: i64~) -> i64~ {
+    x + 1
+}
+
+fn main() {
+    // This should pass - known satisfies known
+    let known_value = get_known();
+    let result1 = requires_known(known_value);
+
+    // This should also pass - known can be passed where reported is expected
+    // (downgrading certainty is safe)
+    let result2 = accepts_reported(known_value);
+
+    return 0;
+}

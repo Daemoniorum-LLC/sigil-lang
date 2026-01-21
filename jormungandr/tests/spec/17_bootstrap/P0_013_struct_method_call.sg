@@ -1,0 +1,25 @@
+// Test: Struct method call generates correct C
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § CG-002 Method Calls
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate sigil method calls generate valid C code.
+//
+// Expected behavior:
+// Should print 52 (42 + 10)
+
+☉ sigil Counter {
+    value: !i32
+}
+
+⊢ Counter {
+    ☉ rite increment(this, amount: !i32) → !i32 {
+        this.value + amount
+    }
+}
+
+rite main() {
+    ≔ c: !Counter = Counter { value: 42 };
+    ≔ result: !i32 = c.increment(10);
+    println(result);
+}

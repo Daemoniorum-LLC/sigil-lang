@@ -1,0 +1,11 @@
+// Test: Tensor reshape
+// Spec: 14-NEURAL.md § 2.3 Shape Operations
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ a: Tensor<[2, 3, 4]> = randn();
+    ≔ b: Tensor<[6, 4]> = a|reshape([6, 4]);
+    ≔ c: Tensor<[24]> = a|flatten;
+    println(b.shape[0]);
+    println(c.shape[0]);
+}

@@ -1,0 +1,13 @@
+// Test: Empty block handling
+// Spec: 18-COMPILER.md § 3.1 Blocks
+// Priority: P2 - Enhancement
+
+rite main() {
+    {
+    }
+    println(1);
+    {
+        {}
+    }
+    println(2);
+}

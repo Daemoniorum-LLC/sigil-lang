@@ -1,0 +1,8 @@
+// Test: String chars count
+// Spec: 09-STDLIB.md § 2.1 String
+// Priority: P2 - Enhancement
+
+rite main() {
+    ≔ s: String = "hello";
+    println(s.len());
+}

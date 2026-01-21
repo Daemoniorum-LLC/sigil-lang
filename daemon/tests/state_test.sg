@@ -1,0 +1,386 @@
+//! Daemon State Tests - 25 tests
+
+// ============================================================================
+// Lifecycle State
+// ============================================================================
+
+enum LifecycleState {
+    Initializing,
+    Ready,
+    Running,
+    Suspended { reason: String },
+    Terminating { reason: String },
+    Terminated,
+}
+
+impl LifecycleState {
+    pub fn is_operational(&self) -> !bool {
+        match self {
+            LifecycleState::Ready => true,
+            LifecycleState::Running => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_running(&self) -> !bool {
+        match self {
+            LifecycleState::Running => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_terminated(&self) -> !bool {
+        match self {
+            LifecycleState::Terminated => true,
+            _ => false,
+        }
+    }
+
+    pub fn can_accept_work(&self) -> !bool {
+        match self {
+            LifecycleState::Running => true,
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// Terminate Reason
+// ============================================================================
+
+enum TerminateReason {
+    GoalsComplete,
+    Shutdown,
+    Fatal { error: String },
+    ResourceExhaustion,
+    Manual,
+}
+
+impl TerminateReason {
+    pub fn is_error(&self) -> !bool {
+        match self {
+            TerminateReason::Fatal { .. } => true,
+            TerminateReason::ResourceExhaustion => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_graceful(&self) -> !bool {
+        match self {
+            TerminateReason::GoalsComplete => true,
+            TerminateReason::Shutdown => true,
+            TerminateReason::Manual => true,
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// Operational Metrics
+// ============================================================================
+
+struct OperationalMetrics {
+    uptime_secs: !u64,
+    heartbeats: !u64,
+    actions_taken: !u64,
+    goals_completed: !u64,
+    goals_failed: !u64,
+    errors: !u64,
+}
+
+impl OperationalMetrics {
+    pub fn new() -> Self {
+        OperationalMetrics {
+            uptime_secs: 0,
+            heartbeats: 0,
+            actions_taken: 0,
+            goals_completed: 0,
+            goals_failed: 0,
+            errors: 0,
+        }
+    }
+
+    pub fn record_heartbeat(&mut self) {
+        self.heartbeats = self.heartbeats + 1;
+    }
+
+    pub fn record_action(&mut self) {
+        self.actions_taken = self.actions_taken + 1;
+    }
+
+    pub fn record_goal_completed(&mut self) {
+        self.goals_completed = self.goals_completed + 1;
+    }
+
+    pub fn record_goal_failed(&mut self) {
+        self.goals_failed = self.goals_failed + 1;
+    }
+
+    pub fn record_error(&mut self) {
+        self.errors = self.errors + 1;
+    }
+
+    pub fn success_rate(&self) -> !f32 {
+        let total = self.goals_completed + self.goals_failed;
+        if total == 0 {
+            return 1.0;
+        }
+        self.goals_completed as !f32 / total as !f32
+    }
+
+    pub fn error_rate(&self) -> !f32 {
+        if self.heartbeats == 0 {
+            return 0.0;
+        }
+        self.errors as !f32 / self.heartbeats as !f32
+    }
+}
+
+// ============================================================================
+// Resource Usage
+// ============================================================================
+
+struct ResourceUsage {
+    memory_bytes: !usize,
+    cpu_time_ms: !u64,
+    tokens_used: !u64,
+    api_calls: !u64,
+}
+
+impl ResourceUsage {
+    pub fn new() -> Self {
+        ResourceUsage {
+            memory_bytes: 0,
+            cpu_time_ms: 0,
+            tokens_used: 0,
+            api_calls: 0,
+        }
+    }
+
+    pub fn record_memory(&mut self, bytes: !usize) {
+        self.memory_bytes = bytes;
+    }
+
+    pub fn record_tokens(&mut self, tokens: !u64) {
+        self.tokens_used = self.tokens_used + tokens;
+    }
+
+    pub fn record_api_call(&mut self) {
+        self.api_calls = self.api_calls + 1;
+    }
+
+    pub fn exceeds_memory(&self, limit: !usize) -> !bool {
+        self.memory_bytes > limit
+    }
+
+    pub fn exceeds_tokens(&self, limit: !u64) -> !bool {
+        self.tokens_used > limit
+    }
+}
+
+// ============================================================================
+// Agent State
+// ============================================================================
+
+struct AgentState {
+    lifecycle: LifecycleState,
+    metrics: OperationalMetrics,
+    resources: ResourceUsage,
+}
+
+impl AgentState {
+    pub fn new() -> Self {
+        AgentState {
+            lifecycle: LifecycleState::Initializing,
+            metrics: OperationalMetrics::new(),
+            resources: ResourceUsage::new(),
+        }
+    }
+
+    pub fn initialize(&mut self) {
+        self.lifecycle = LifecycleState::Ready;
+    }
+
+    pub fn start(&mut self) {
+        self.lifecycle = LifecycleState::Running;
+    }
+
+    pub fn suspend(&mut self, reason: String) {
+        self.lifecycle = LifecycleState::Suspended { reason };
+    }
+
+    pub fn terminate(&mut self, reason: String) {
+        self.lifecycle = LifecycleState::Terminating { reason };
+    }
+
+    pub fn is_healthy(&self) -> !bool {
+        self.lifecycle.is_operational() && self.metrics.error_rate() < 0.1
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+fn test_lifecycle_initializing() {
+    let state = LifecycleState::Initializing;
+    assert(!state.is_operational());
+    assert(!state.can_accept_work());
+}
+
+#[test]
+fn test_lifecycle_ready() {
+    let state = LifecycleState::Ready;
+    assert(state.is_operational());
+    assert(!state.is_running());
+}
+
+#[test]
+fn test_lifecycle_running() {
+    let state = LifecycleState::Running;
+    assert(state.is_operational());
+    assert(state.is_running());
+    assert(state.can_accept_work());
+}
+
+#[test]
+fn test_lifecycle_suspended() {
+    let state = LifecycleState::Suspended { reason: "Maintenance".to_string() };
+    assert(!state.is_operational());
+    assert(!state.can_accept_work());
+}
+
+#[test]
+fn test_lifecycle_terminated() {
+    let state = LifecycleState::Terminated;
+    assert(state.is_terminated());
+    assert(!state.is_operational());
+}
+
+#[test]
+fn test_terminate_reason_graceful() {
+    let reason = TerminateReason::GoalsComplete;
+    assert(reason.is_graceful());
+    assert(!reason.is_error());
+}
+
+#[test]
+fn test_terminate_reason_fatal() {
+    let reason = TerminateReason::Fatal { error: "Crash".to_string() };
+    assert(reason.is_error());
+    assert(!reason.is_graceful());
+}
+
+#[test]
+fn test_terminate_reason_resource() {
+    let reason = TerminateReason::ResourceExhaustion;
+    assert(reason.is_error());
+}
+
+#[test]
+fn test_metrics_creation() {
+    let metrics = OperationalMetrics::new();
+    assert(metrics.heartbeats == 0);
+    assert(metrics.errors == 0);
+}
+
+#[test]
+fn test_metrics_heartbeat() {
+    let mut metrics = OperationalMetrics::new();
+    metrics.record_heartbeat();
+    metrics.record_heartbeat();
+    assert(metrics.heartbeats == 2);
+}
+
+#[test]
+fn test_metrics_actions() {
+    let mut metrics = OperationalMetrics::new();
+    metrics.record_action();
+    metrics.record_action();
+    metrics.record_action();
+    assert(metrics.actions_taken == 3);
+}
+
+#[test]
+fn test_metrics_success_rate_perfect() {
+    let mut metrics = OperationalMetrics::new();
+    metrics.record_goal_completed();
+    metrics.record_goal_completed();
+    assert(metrics.success_rate() == 1.0);
+}
+
+#[test]
+fn test_metrics_success_rate_mixed() {
+    let mut metrics = OperationalMetrics::new();
+    metrics.record_goal_completed();
+    metrics.record_goal_failed();
+    assert(metrics.success_rate() == 0.5);
+}
+
+#[test]
+fn test_metrics_error_rate() {
+    let mut metrics = OperationalMetrics::new();
+    metrics.record_heartbeat();
+    metrics.record_heartbeat();
+    metrics.record_heartbeat();
+    metrics.record_heartbeat();
+    metrics.record_error();
+    assert(metrics.error_rate() == 0.25);
+}
+
+#[test]
+fn test_resource_usage_creation() {
+    let usage = ResourceUsage::new();
+    assert(usage.memory_bytes == 0);
+    assert(usage.tokens_used == 0);
+}
+
+#[test]
+fn test_resource_usage_memory() {
+    let mut usage = ResourceUsage::new();
+    usage.record_memory(1024 * 1024);
+    assert(usage.memory_bytes == 1024 * 1024);
+}
+
+#[test]
+fn test_resource_usage_tokens() {
+    let mut usage = ResourceUsage::new();
+    usage.record_tokens(100);
+    usage.record_tokens(200);
+    assert(usage.tokens_used == 300);
+}
+
+#[test]
+fn test_resource_exceeds_memory() {
+    let mut usage = ResourceUsage::new();
+    usage.record_memory(1000);
+    assert(usage.exceeds_memory(500));
+    assert(!usage.exceeds_memory(2000));
+}
+
+#[test]
+fn test_agent_state_creation() {
+    let state = AgentState::new();
+    assert(!state.lifecycle.is_operational());
+}
+
+#[test]
+fn test_agent_state_lifecycle() {
+    let mut state = AgentState::new();
+    state.initialize();
+    assert(state.lifecycle.is_operational());
+    state.start();
+    assert(state.lifecycle.is_running());
+}
+
+#[test]
+fn test_agent_state_healthy() {
+    let mut state = AgentState::new();
+    state.start();
+    assert(state.is_healthy());
+}
+
+fn main() {
+    println("Daemon state tests - 21 tests");
+}

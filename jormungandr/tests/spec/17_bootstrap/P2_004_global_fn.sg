@@ -1,0 +1,21 @@
+// Test: Global function declaration
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.1 Functions
+// Priority: P2 - Enhancement
+
+rite add(a: !i32, b: !i32) → !i32 {
+    a + b
+}
+
+rite sub(a: !i32, b: !i32) → !i32 {
+    a - b
+}
+
+rite mul(a: !i32, b: !i32) → !i32 {
+    a * b
+}
+
+rite main() {
+    println(add(10, 20));
+    println(sub(30, 10));
+    println(mul(5, 6));
+}

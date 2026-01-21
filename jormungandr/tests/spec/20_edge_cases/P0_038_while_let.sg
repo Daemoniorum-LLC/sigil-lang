@@ -1,0 +1,23 @@
+// Test: While ≔ pattern
+// Spec: 02-SYNTAX.md § While Let
+// Priority: P0
+//
+// Purpose:
+// Validates ⟳ ≔ each pattern matching of loops.
+//
+// Expected behavior:
+// Should forever ⟳ pattern matches
+
+rite main() {
+    ≔ vary stack: Vec<i32> = Vec·new();
+    stack.push(1);
+    stack.push(2);
+    stack.push(3);
+
+    // Simple ⟳ with counter
+    ≔ vary count = 0;
+    ⟳ count < 3 {
+        println(count);
+        count = count + 1;
+    }
+}

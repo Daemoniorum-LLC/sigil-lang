@@ -1,0 +1,12 @@
+// Test: Phantom data pattern
+// Spec: 03-TYPES.md § 3.5 PhantomData
+// Priority: P2 - Enhancement
+
+sigil Wrapper {
+    value: !i32
+}
+
+rite main() {
+    ≔ w: Wrapper = Wrapper { value: 42 };
+    println(w.value);
+}

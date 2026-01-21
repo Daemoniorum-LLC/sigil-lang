@@ -1,0 +1,14 @@
+// Test: Loop with ⊲
+// Spec: 02-SYNTAX.md § 5.4 Loop
+// Priority: P2 - Enhancement
+
+rite main() {
+    ≔ vary count: !i32 = 0;
+    forever {
+        count = count + 1;
+        ⎇ count >= 3 {
+            ⊲;
+        }
+    }
+    println(count);
+}

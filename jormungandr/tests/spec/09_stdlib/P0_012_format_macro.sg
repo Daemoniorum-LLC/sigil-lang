@@ -1,0 +1,18 @@
+// Test: format! macro
+// Spec: 09-STDLIB.md § 4.2 Format Macros
+// Priority: P0 - Bootstrap Critical
+//
+// KNOWN FAILURE: format! Macro Not Implemented
+// sigil2 doesn't expand format! macro properly.
+// Outputs "Value is ()" instead of "Value is 42".
+//
+// Purpose:
+// Validate format! macro creates formatted strings.
+//
+// Expected behavior:
+// Should print: Value is 42
+
+rite main() {
+    ≔ s: !String = format!("Value is {}", 42);
+    println(s);
+}

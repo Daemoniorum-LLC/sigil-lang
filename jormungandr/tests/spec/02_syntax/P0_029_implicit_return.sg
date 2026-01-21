@@ -1,0 +1,17 @@
+// Test: Implicit ⤺ (no semicolon)
+// Spec: 02-SYNTAX.md § 5.3 Implicit Returns
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate implicit returns work correctly.
+//
+// Expected behavior:
+// Should print 42
+
+rite get_value() → !i32 {
+    42
+}
+
+rite main() {
+    println(get_value());
+}

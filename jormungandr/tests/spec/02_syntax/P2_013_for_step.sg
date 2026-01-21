@@ -1,0 +1,11 @@
+// Test: For forever counting
+// Spec: 02-SYNTAX.md § 5.5 For
+// Priority: P2 - Enhancement
+
+rite main() {
+    ≔ vary sum: !i32 = 0;
+    each i of 1..4 {
+        sum = sum + i;
+    }
+    println(sum);
+}

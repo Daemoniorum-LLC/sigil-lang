@@ -1,0 +1,36 @@
+// Stdlib Tests: math_minmax
+// Min, max, clamp functions with REAL assertions
+
+rite main() {
+    println("=== Testing math_minmax ===");
+
+    // min - minimum of two values
+    assert_eq(min(3, 7), 3);
+    assert_eq(min(7, 3), 3);
+    assert_eq(min(-5, 5), -5);
+    assert_eq(min(0, 0), 0);
+    assert_eq(min(3.14, 2.71), 2.71);
+
+    // max - maximum of two values
+    assert_eq(max(3, 7), 7);
+    assert_eq(max(7, 3), 7);
+    assert_eq(max(-5, 5), 5);
+    assert_eq(max(0, 0), 0);
+    assert_eq(max(3.14, 2.71), 3.14);
+
+    // clamp - constrain value to range
+    assert_eq(clamp(15, 0, 10), 10);  // above max
+    assert_eq(clamp(-5, 0, 10), 0);   // below min
+    assert_eq(clamp(5, 0, 10), 5);    // in range
+    assert_eq(clamp(0, 0, 10), 0);    // at min
+    assert_eq(clamp(10, 0, 10), 10);  // at max
+
+    // between - check if value is in range
+    assert_true(between(5, 0, 10));
+    assert_true(between(0, 0, 10));
+    assert_true(between(10, 0, 10));
+    assert_false(between(-1, 0, 10));
+    assert_false(between(11, 0, 10));
+
+    println("ALL MATH_MINMAX TESTS PASSED!");
+}

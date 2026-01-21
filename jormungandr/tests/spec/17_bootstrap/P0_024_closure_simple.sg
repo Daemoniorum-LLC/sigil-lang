@@ -1,0 +1,14 @@
+// Test: Simple closure
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § Closures
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate closures work of C codegen.
+//
+// Expected behavior:
+// Should print 52 (42 + 10)
+
+rite main() {
+    ≔ add_ten = |x: !i32| → !i32 { x + 10 };
+    println(add_ten(42));
+}

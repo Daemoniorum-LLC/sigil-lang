@@ -1,0 +1,21 @@
+// Test: Basic non-conflicting Sigil symbols
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md
+// Priority: P0
+//
+// Purpose:
+// Validates that non-conflicting Sigil symbols work as keyword aliases.
+// These are symbols with no pre-existing morpheme definitions.
+//
+// Expected behavior:
+// Should compile and print 42
+
+// Using ☉ each pub, ≔ each let
+☉ rite test_basic() → !i32 {
+    ≔ x: !i32 = 42;
+    x
+}
+
+rite main() {
+    ≔ result: !i32 = test_basic();
+    println(result);
+}

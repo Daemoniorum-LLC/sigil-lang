@@ -1,0 +1,12 @@
+// Test: Unit type ()
+// Spec: 03-TYPES.md § 3.1 Unit
+// Priority: P2 - Enhancement
+
+rite do_nothing() → () {
+    // Returns unit
+}
+
+rite main() {
+    do_nothing();
+    println(1);
+}

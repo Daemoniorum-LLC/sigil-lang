@@ -1,0 +1,15 @@
+// Test: Vec length tracking
+// Expected output: 103 (100 + 3)
+
+fn main() -> i64 {
+    let v = vec_new(10);
+    
+    vec_push(v, 100);
+    vec_push(v, 200);
+    vec_push(v, 300);
+    
+    let first = vec_get(v, 0);  // 100
+    let len = vec_len(v);       // 3
+    
+    first + len
+}

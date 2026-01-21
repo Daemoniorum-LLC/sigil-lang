@@ -1,0 +1,19 @@
+// Test: Nested block expressions
+// Spec: 02-SYNTAX.md § 3.1 Block Expressions
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate nested blocks work correctly.
+//
+// Expected behavior:
+// Should print 42
+
+rite main() {
+    ≔ x: !i32 = {
+        ≔ y: !i32 = {
+            42
+        };
+        y
+    };
+    println(x);
+}

@@ -1,0 +1,9 @@
+// Test: Absolute value
+// Spec: 05-MATHEMATICS.md § 2.1 Math Functions
+// Priority: P2 - Enhancement
+
+rite main() {
+    ≔ x: !i32 = -5;
+    ≔ result: !i32 = ⎇ x < 0 { -x } ⎉ { x };
+    println(result);
+}

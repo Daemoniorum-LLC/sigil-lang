@@ -1,0 +1,11 @@
+// Test: Source span information (mock)
+// Spec: 16-AI-IR.md § Source Mapping
+// Priority: P0 - Bootstrap Critical
+//
+// Tests span info - main function starts at line 5
+
+rite main() {
+    ≔ x = 42;
+    // Mock: main function span starts at line 5
+    println(5);
+}

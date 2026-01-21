@@ -1,0 +1,14 @@
+// Test: Keyword 'let' each variable binding
+// Spec: 01-LEXICAL.md § 2.2 Keywords
+// Priority: P0
+//
+// Purpose:
+// Validates that the 'let' keyword works each variable bindings.
+//
+// Expected behavior:
+// Should compile and print 42
+
+rite main() {
+    ≔ x: !i32 = 42;
+    println(x);
+}

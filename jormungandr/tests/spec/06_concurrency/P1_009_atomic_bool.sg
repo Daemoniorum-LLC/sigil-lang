@@ -1,0 +1,20 @@
+// Test: AtomicBool operations
+// Spec: 06-CONCURRENCY.md § 4.2 Atomic Bool
+// Priority: P1 - Standard Feature
+
+rite main() {
+    // Create atomic bool
+    ≔ flag = AtomicBool·new(nay);
+
+    // Load initial value
+    println(flag.load());
+
+    // Store yea
+    flag.store(yea);
+    println(flag.load());
+
+    // Swap and get old value
+    ≔ old = flag.swap(nay);
+    println(old);
+    println(flag.load());
+}

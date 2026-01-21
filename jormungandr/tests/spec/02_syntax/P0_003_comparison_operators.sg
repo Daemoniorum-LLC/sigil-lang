@@ -1,0 +1,15 @@
+// Test: Comparison operators
+// Spec: 02-SYNTAX.md § 3.5 Comparison Operators
+// Priority: P0
+//
+// Purpose:
+// Validates that comparison operators work correctly.
+//
+// Expected behavior:
+// Should compile and print yea
+
+rite main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !bool = x == 42;
+    println(y);
+}

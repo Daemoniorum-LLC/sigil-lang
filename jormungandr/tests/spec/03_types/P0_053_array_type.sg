@@ -1,0 +1,14 @@
+// Test: Array type basic usage
+// Spec: 03-TYPES.md § 4.5 Array Types
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate array types work correctly.
+//
+// Expected behavior:
+// Should print 42 (first element)
+
+rite main() {
+    ≔ arr: ![i32; 3] = [42, 99, 13];
+    println(arr[0]);
+}

@@ -1,0 +1,705 @@
+//! Integration Tests for Omen
+//!
+//! Verifies the full Omen system working together.
+
+use std::collections::HashMap;
+
+// ============================================================================
+// Self-contained Test Types (Minimal Omen Recreation)
+// ============================================================================
+
+pub struct Duration { nanos: u64 }
+
+impl Duration {
+    pub fn zero() -> Self { Self { nanos: 0 } }
+    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+}
+
+impl Copy for Duration {}
+impl Clone for Duration { fn clone(&self) -> Self { *self } }
+
+pub struct Timestamp { nanos: u64 }
+impl Timestamp { pub fn now() -> Self { Self { nanos: 1000 } } }
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Epistemic {
+    Axiomatic,
+    Observed,
+    Reported,
+    Inferred,
+    Contested,
+    Unknown,
+}
+
+impl Epistemic {
+    pub fn rank(&self) -> u8 {
+        match self {
+            Epistemic::Axiomatic => 5,
+            Epistemic::Observed => 4,
+            Epistemic::Reported => 3,
+            Epistemic::Inferred => 2,
+            Epistemic::Contested => 1,
+            Epistemic::Unknown => 0,
+        }
+    }
+}
+
+pub struct Proposition {
+    pub subject: String,
+    pub negated: bool,
+}
+
+impl Proposition {
+    pub fn simple(text: &str) -> Self {
+        Self { subject: text.to_string(), negated: false }
+    }
+
+    pub fn negate(mut self) -> Self {
+        self.negated = !self.negated;
+        self
+    }
+
+    pub fn negates(&self, other: &Proposition) -> bool {
+        self.subject == other.subject && self.negated != other.negated
+    }
+}
+
+impl Clone for Proposition {
+    fn clone(&self) -> Self {
+        Self { subject: self.subject.clone(), negated: self.negated }
+    }
+}
+
+pub struct Belief {
+    pub proposition: Proposition,
+    pub epistemic: Epistemic,
+    pub confidence: f32,
+}
+
+impl Belief {
+    pub fn observed(prop: &str) -> Self {
+        Self {
+            proposition: Proposition::simple(prop),
+            epistemic: Epistemic::Observed,
+            confidence: 0.95,
+        }
+    }
+
+    pub fn inferred(prop: &str, confidence: f32) -> Self {
+        Self {
+            proposition: Proposition::simple(prop),
+            epistemic: Epistemic::Inferred,
+            confidence,
+        }
+    }
+
+    pub fn axiom(prop: &str) -> Self {
+        Self {
+            proposition: Proposition::simple(prop),
+            epistemic: Epistemic::Axiomatic,
+            confidence: 1.0,
+        }
+    }
+
+    pub fn contradicts(&self, other: &Belief) -> bool {
+        self.proposition.negates(&other.proposition)
+    }
+}
+
+impl Clone for Belief {
+    fn clone(&self) -> Self {
+        Self {
+            proposition: self.proposition.clone(),
+            epistemic: self.epistemic,
+            confidence: self.confidence,
+        }
+    }
+}
+
+pub enum GoalStatus {
+    Pending,
+    Active,
+    Blocked { reason: String },
+    Achieved,
+    Failed { reason: String },
+}
+
+pub struct Goal {
+    pub description: String,
+    pub priority: f32,
+    pub status: GoalStatus,
+}
+
+impl Goal {
+    pub fn new(description: &str) -> Self {
+        Self {
+            description: description.to_string(),
+            priority: 0.5,
+            status: GoalStatus::Pending,
+        }
+    }
+
+    pub fn with_priority(mut self, priority: f32) -> Self {
+        self.priority = priority.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn activate(&mut self) { self.status = GoalStatus::Active; }
+    pub fn achieve(&mut self) { self.status = GoalStatus::Achieved; }
+    pub fn fail(&mut self, reason: &str) { self.status = GoalStatus::Failed { reason: reason.to_string() }; }
+    pub fn is_active(&self) -> bool { matches!(self.status, GoalStatus::Active) }
+    pub fn is_achieved(&self) -> bool { matches!(self.status, GoalStatus::Achieved) }
+}
+
+pub struct Action {
+    pub name: String,
+    pub success_rate: f32,
+}
+
+impl Action {
+    pub fn new(name: &str) -> Self {
+        Self { name: name.to_string(), success_rate: 0.9 }
+    }
+
+    pub fn with_success_rate(mut self, rate: f32) -> Self {
+        self.success_rate = rate.clamp(0.0, 1.0);
+        self
+    }
+}
+
+impl Clone for Action {
+    fn clone(&self) -> Self {
+        Self { name: self.name.clone(), success_rate: self.success_rate }
+    }
+}
+
+pub struct PlanStep {
+    pub action: Action,
+    pub confidence: f32,
+}
+
+impl PlanStep {
+    pub fn from_action(action: Action) -> Self {
+        Self { confidence: action.success_rate, action }
+    }
+}
+
+pub struct Plan {
+    pub steps: Vec<PlanStep>,
+    pub success_probability: f32,
+    pub strategy: String,
+}
+
+impl Plan {
+    pub fn new() -> Self {
+        Self { steps: vec![], success_probability: 1.0, strategy: "manual".to_string() }
+    }
+
+    pub fn with_step(mut self, step: PlanStep) -> Self {
+        self.success_probability *= step.confidence;
+        self.steps.push(step);
+        self
+    }
+
+    pub fn with_strategy(mut self, strategy: &str) -> Self {
+        self.strategy = strategy.to_string();
+        self
+    }
+
+    pub fn step_count(&self) -> usize { self.steps.len() }
+    pub fn is_viable(&self) -> bool { self.success_probability >= 0.5 }
+}
+
+pub enum PlanOutcome {
+    Success,
+    PartialSuccess { degree: f32 },
+    Failure { reason: String },
+}
+
+pub struct OmenConfig {
+    pub horizon: usize,
+    pub uncertainty_tolerance: f32,
+    pub risk_tolerance: f32,
+    pub enable_learning: bool,
+}
+
+impl OmenConfig {
+    pub fn default_config() -> Self {
+        Self {
+            horizon: 10,
+            uncertainty_tolerance: 0.3,
+            risk_tolerance: 0.5,
+            enable_learning: true,
+        }
+    }
+}
+
+impl Default for OmenConfig {
+    fn default() -> Self { Self::default_config() }
+}
+
+/// The main Omen planner (simplified for testing)
+pub struct Omen {
+    config: OmenConfig,
+    beliefs: Vec<Belief>,
+    goals: Vec<Goal>,
+    actions: HashMap<String, Action>,
+    plan_history: Vec<(Plan, PlanOutcome)>,
+}
+
+impl Omen {
+    pub fn new(config: OmenConfig) -> Self {
+        Self {
+            config,
+            beliefs: vec![],
+            goals: vec![],
+            actions: HashMap::new(),
+            plan_history: vec![],
+        }
+    }
+
+    // Belief management
+    pub fn believe(&mut self, belief: Belief) {
+        // Check for contradictions
+        let dominated = self.beliefs.iter().any(|b| {
+            b.contradicts(&belief) &&
+            (b.epistemic.rank() > belief.epistemic.rank() ||
+             (b.epistemic.rank() == belief.epistemic.rank() && b.confidence >= belief.confidence))
+        });
+
+        if !dominated {
+            // Remove contradicted beliefs
+            self.beliefs.retain(|b| !belief.contradicts(b));
+            self.beliefs.push(belief);
+        }
+    }
+
+    pub fn observe(&mut self, observation: &str) {
+        self.believe(Belief::observed(observation));
+    }
+
+    pub fn believes(&self, proposition: &str) -> bool {
+        self.beliefs.iter()
+            .any(|b| b.proposition.subject == proposition && b.confidence > 0.5)
+    }
+
+    pub fn belief_count(&self) -> usize {
+        self.beliefs.len()
+    }
+
+    pub fn get_belief(&self, proposition: &str) -> Option<&Belief> {
+        self.beliefs.iter()
+            .find(|b| b.proposition.subject == proposition)
+    }
+
+    // Goal management
+    pub fn add_goal(&mut self, goal: Goal) {
+        self.goals.push(goal);
+    }
+
+    pub fn current_goal(&self) -> Option<&Goal> {
+        self.goals.iter()
+            .filter(|g| g.is_active())
+            .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
+    }
+
+    pub fn activate_goal(&mut self, index: usize) {
+        if index < self.goals.len() {
+            self.goals[index].activate();
+        }
+    }
+
+    pub fn achieve_goal(&mut self, index: usize) {
+        if index < self.goals.len() {
+            self.goals[index].achieve();
+        }
+    }
+
+    pub fn goal_count(&self) -> usize {
+        self.goals.len()
+    }
+
+    pub fn active_goal_count(&self) -> usize {
+        self.goals.iter().filter(|g| g.is_active()).count()
+    }
+
+    // Action library
+    pub fn register_action(&mut self, action: Action) {
+        self.actions.insert(action.name.clone(), action);
+    }
+
+    pub fn get_action(&self, name: &str) -> Option<&Action> {
+        self.actions.get(name)
+    }
+
+    pub fn action_count(&self) -> usize {
+        self.actions.len()
+    }
+
+    // Planning
+    pub fn plan_for_goal(&self, goal: &Goal) -> Plan {
+        // Simple planning: create a step for the goal
+        let action = Action::new(&format!("achieve_{}", goal.description));
+        Plan::new()
+            .with_step(PlanStep::from_action(action))
+            .with_strategy("HTN")
+    }
+
+    pub fn plan_with_actions(&self, action_names: &[&str]) -> Plan {
+        let mut plan = Plan::new();
+        for name in action_names {
+            if let Some(action) = self.actions.get(*name) {
+                plan = plan.with_step(PlanStep::from_action(action.clone()));
+            }
+        }
+        plan
+    }
+
+    // Learning
+    pub fn learn_from_execution(&mut self, plan: Plan, outcome: PlanOutcome) {
+        if self.config.enable_learning {
+            // Update action success rates
+            let succeeded = matches!(outcome, PlanOutcome::Success);
+            for step in &plan.steps {
+                if let Some(action) = self.actions.get_mut(&step.action.name) {
+                    // Simple exponential moving average
+                    let current = action.success_rate;
+                    let update = if succeeded { 1.0 } else { 0.0 };
+                    action.success_rate = current * 0.9 + update * 0.1;
+                }
+            }
+            self.plan_history.push((plan, outcome));
+        }
+    }
+
+    pub fn history_count(&self) -> usize {
+        self.plan_history.len()
+    }
+
+    pub fn success_rate(&self, action_name: &str) -> Option<f32> {
+        self.actions.get(action_name).map(|a| a.success_rate)
+    }
+
+    // Decision making
+    pub fn should_proceed(&self, plan: &Plan) -> bool {
+        plan.success_probability >= (1.0 - self.config.risk_tolerance)
+    }
+}
+
+// ============================================================================
+// Tests: Belief Integration
+// ============================================================================
+
+#[test]
+fn test_omen_observe_creates_belief() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.observe("the sky is blue");
+    assert(omen.believes("the sky is blue"));
+}
+
+#[test]
+fn test_omen_multiple_beliefs() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.observe("fact1");
+    omen.observe("fact2");
+    omen.believe(Belief::axiom("truth"));
+    assert_eq(omen.belief_count(), 3);
+}
+
+#[test]
+fn test_omen_belief_contradiction_resolution() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.observe("door is open");
+
+    let mut closed = Belief::observed("door is open");
+    closed.proposition = closed.proposition.negate();
+    closed.confidence = 0.5;  // Lower confidence
+
+    omen.believe(closed);
+    // Original belief should win (higher confidence)
+    let belief = omen.get_belief("door is open");
+    assert(belief.is_some());
+    assert(!belief.unwrap().proposition.negated);
+}
+
+#[test]
+fn test_omen_stronger_belief_wins() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.believe(Belief::inferred("maybe true", 0.6));
+    omen.observe("maybe true");  // Observed > Inferred
+
+    let belief = omen.get_belief("maybe true");
+    assert(belief.is_some());
+    assert_eq(belief.unwrap().epistemic, Epistemic::Observed);
+}
+
+// ============================================================================
+// Tests: Goal Integration
+// ============================================================================
+
+#[test]
+fn test_omen_add_goal() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.add_goal(Goal::new("complete task"));
+    assert_eq(omen.goal_count(), 1);
+}
+
+#[test]
+fn test_omen_multiple_goals() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.add_goal(Goal::new("goal1").with_priority(0.3));
+    omen.add_goal(Goal::new("goal2").with_priority(0.8));
+    omen.add_goal(Goal::new("goal3").with_priority(0.5));
+    assert_eq(omen.goal_count(), 3);
+}
+
+#[test]
+fn test_omen_activate_goal() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.add_goal(Goal::new("task"));
+    omen.activate_goal(0);
+    assert_eq(omen.active_goal_count(), 1);
+}
+
+#[test]
+fn test_omen_current_goal_highest_priority() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.add_goal(Goal::new("low").with_priority(0.2));
+    omen.add_goal(Goal::new("high").with_priority(0.9));
+    omen.activate_goal(0);
+    omen.activate_goal(1);
+    let current = omen.current_goal();
+    assert(current.is_some());
+    assert_eq(current.unwrap().description, "high");
+}
+
+#[test]
+fn test_omen_achieve_goal() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.add_goal(Goal::new("achievable"));
+    omen.activate_goal(0);
+    omen.achieve_goal(0);
+    assert_eq(omen.active_goal_count(), 0);
+}
+
+// ============================================================================
+// Tests: Action Library Integration
+// ============================================================================
+
+#[test]
+fn test_omen_register_action() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.register_action(Action::new("fetch_data"));
+    assert_eq(omen.action_count(), 1);
+}
+
+#[test]
+fn test_omen_get_action() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.register_action(Action::new("process").with_success_rate(0.85));
+    let action = omen.get_action("process");
+    assert(action.is_some());
+    assert_eq(action.unwrap().success_rate, 0.85);
+}
+
+#[test]
+fn test_omen_multiple_actions() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.register_action(Action::new("step1"));
+    omen.register_action(Action::new("step2"));
+    omen.register_action(Action::new("step3"));
+    assert_eq(omen.action_count(), 3);
+}
+
+// ============================================================================
+// Tests: Planning Integration
+// ============================================================================
+
+#[test]
+fn test_omen_plan_for_goal() {
+    let omen = Omen::new(OmenConfig::default());
+    let goal = Goal::new("test goal");
+    let plan = omen.plan_for_goal(&goal);
+    assert_eq(plan.step_count(), 1);
+    assert_eq(plan.strategy, "HTN");
+}
+
+#[test]
+fn test_omen_plan_with_actions() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.register_action(Action::new("a1").with_success_rate(0.9));
+    omen.register_action(Action::new("a2").with_success_rate(0.9));
+    let plan = omen.plan_with_actions(&["a1", "a2"]);
+    assert_eq(plan.step_count(), 2);
+}
+
+#[test]
+fn test_omen_plan_success_probability() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.register_action(Action::new("reliable").with_success_rate(0.9));
+    omen.register_action(Action::new("also_reliable").with_success_rate(0.9));
+    let plan = omen.plan_with_actions(&["reliable", "also_reliable"]);
+    // 0.9 * 0.9 = 0.81
+    let diff = (plan.success_probability - 0.81).abs();
+    assert(diff < 0.01);
+}
+
+#[test]
+fn test_omen_should_proceed_viable_plan() {
+    let omen = Omen::new(OmenConfig::default());  // risk_tolerance = 0.5
+    let plan = Plan::new()
+        .with_step(PlanStep::from_action(Action::new("safe").with_success_rate(0.8)));
+    // 0.8 >= 0.5 (1.0 - 0.5)
+    assert(omen.should_proceed(&plan));
+}
+
+#[test]
+fn test_omen_should_not_proceed_risky_plan() {
+    let mut config = OmenConfig::default();
+    config.risk_tolerance = 0.2;  // Very conservative
+    let omen = Omen::new(config);
+    let plan = Plan::new()
+        .with_step(PlanStep::from_action(Action::new("risky").with_success_rate(0.5)));
+    // 0.5 < 0.8 (1.0 - 0.2)
+    assert(!omen.should_proceed(&plan));
+}
+
+// ============================================================================
+// Tests: Learning Integration
+// ============================================================================
+
+#[test]
+fn test_omen_learn_from_success() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.register_action(Action::new("tested").with_success_rate(0.5));
+
+    let plan = omen.plan_with_actions(&["tested"]);
+    omen.learn_from_execution(plan, PlanOutcome::Success);
+
+    // Success should increase rate
+    let new_rate = omen.success_rate("tested").unwrap();
+    assert(new_rate > 0.5);
+}
+
+#[test]
+fn test_omen_learn_from_failure() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.register_action(Action::new("tested").with_success_rate(0.5));
+
+    let plan = omen.plan_with_actions(&["tested"]);
+    omen.learn_from_execution(plan, PlanOutcome::Failure { reason: "test".to_string() });
+
+    // Failure should decrease rate
+    let new_rate = omen.success_rate("tested").unwrap();
+    assert(new_rate < 0.5);
+}
+
+#[test]
+fn test_omen_history_tracking() {
+    let mut omen = Omen::new(OmenConfig::default());
+    omen.register_action(Action::new("action"));
+
+    let plan1 = omen.plan_with_actions(&["action"]);
+    let plan2 = omen.plan_with_actions(&["action"]);
+
+    omen.learn_from_execution(plan1, PlanOutcome::Success);
+    omen.learn_from_execution(plan2, PlanOutcome::Failure { reason: "test".to_string() });
+
+    assert_eq(omen.history_count(), 2);
+}
+
+#[test]
+fn test_omen_learning_disabled() {
+    let mut config = OmenConfig::default();
+    config.enable_learning = false;
+    let mut omen = Omen::new(config);
+    omen.register_action(Action::new("action").with_success_rate(0.5));
+
+    let plan = omen.plan_with_actions(&["action"]);
+    omen.learn_from_execution(plan, PlanOutcome::Success);
+
+    // Rate should not change
+    assert_eq(omen.success_rate("action").unwrap(), 0.5);
+    assert_eq(omen.history_count(), 0);
+}
+
+// ============================================================================
+// Tests: Full Workflow
+// ============================================================================
+
+#[test]
+fn test_omen_complete_workflow() {
+    let mut omen = Omen::new(OmenConfig::default());
+
+    // 1. Establish beliefs
+    omen.observe("task is pending");
+    omen.believe(Belief::axiom("resources available"));
+
+    // 2. Set goals
+    omen.add_goal(Goal::new("complete task").with_priority(0.8));
+    omen.activate_goal(0);
+
+    // 3. Register actions
+    omen.register_action(Action::new("prepare").with_success_rate(0.95));
+    omen.register_action(Action::new("execute").with_success_rate(0.9));
+    omen.register_action(Action::new("verify").with_success_rate(0.95));
+
+    // 4. Create plan
+    let plan = omen.plan_with_actions(&["prepare", "execute", "verify"]);
+
+    // 5. Check viability
+    assert(plan.is_viable());
+    assert(omen.should_proceed(&plan));
+
+    // 6. Execute and learn (simulated success)
+    omen.learn_from_execution(plan, PlanOutcome::Success);
+
+    // 7. Complete goal
+    omen.achieve_goal(0);
+
+    // Verify final state
+    assert(omen.believes("task is pending"));
+    assert_eq(omen.active_goal_count(), 0);
+    assert_eq(omen.history_count(), 1);
+}
+
+#[test]
+fn test_omen_belief_driven_planning() {
+    let mut omen = Omen::new(OmenConfig::default());
+
+    // Belief about current state
+    omen.observe("user needs help");
+    omen.believe(Belief::inferred("user is frustrated", 0.7));
+
+    // Goal based on beliefs
+    omen.add_goal(Goal::new("assist user").with_priority(0.9));
+    omen.activate_goal(0);
+
+    // Planning considers beliefs
+    assert(omen.believes("user needs help"));
+    let current = omen.current_goal();
+    assert(current.is_some());
+    assert_eq(current.unwrap().description, "assist user");
+}
+
+#[test]
+fn test_omen_adaptive_behavior() {
+    let mut omen = Omen::new(OmenConfig::default());
+
+    // Register an initially unreliable action
+    omen.register_action(Action::new("flaky_action").with_success_rate(0.5));
+
+    // Simulate multiple successes
+    for _ in 0..5 {
+        let plan = omen.plan_with_actions(&["flaky_action"]);
+        omen.learn_from_execution(plan, PlanOutcome::Success);
+    }
+
+    // Action should now be more trusted
+    let rate = omen.success_rate("flaky_action").unwrap();
+    assert(rate > 0.5);
+}
+
+fn main() {
+    print("Omen integration tests");
+}

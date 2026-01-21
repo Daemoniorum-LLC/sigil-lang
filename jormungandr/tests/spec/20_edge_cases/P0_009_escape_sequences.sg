@@ -1,0 +1,8 @@
+// Test: String escape sequences
+// Spec: Edge Cases - String Escapes
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ s: String = "Line1\nLine2\tTabbed";
+    println(s);
+}

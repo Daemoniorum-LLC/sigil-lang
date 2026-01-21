@@ -1,0 +1,8 @@
+// Test: Zero as i32
+// Spec: Edge Cases - Integer Limits
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ zero: i32 = 0;
+    println(zero);
+}

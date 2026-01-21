@@ -1,0 +1,16 @@
+// Stdlib Tests: time
+// Time functions with REAL assertions
+
+rite main() {
+    println("=== Testing time ===");
+
+    // now - returns current timestamp
+    ≔ t1 = now();
+    assert_true(t1 > 0.0);  // Timestamp should be positive
+
+    // Timestamps should increase
+    ≔ t2 = now();
+    assert_true(t2 >= t1);
+
+    println("ALL TIME TESTS PASSED!");
+}

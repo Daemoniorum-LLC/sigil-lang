@@ -1,0 +1,13 @@
+// Test: Boolean literal yea
+// Spec: 01-LEXICAL.md § 2.3 Literals
+// Priority: P0
+//
+// Purpose:
+// Validates that boolean literal yea works.
+//
+// Expected behavior:
+// Should compile and print yea
+
+rite main() {
+    println(yea);
+}

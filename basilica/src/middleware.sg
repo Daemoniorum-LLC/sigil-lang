@@ -1,0 +1,92 @@
+//! Middleware Chain
+
+use crate::request::Request;
+use crate::response::Response;
+use crate::context::Context;
+use crate::error::BasilicaError;
+
+/// Result of middleware processing
+pub enum MiddlewareResult {
+    /// Continue to next middleware/handler
+    Continue,
+
+    /// Continue but report action afterward
+    ContinueWithReport(String),
+
+    /// Suspend and wait for human response
+    Suspend {
+        handoff_id: String,
+        reason: String,
+    },
+
+    /// Reject the request
+    Reject(BasilicaError),
+
+    /// Short-circuit with a response
+    Response(Response<Vec<u8>>),
+}
+
+/// Middleware trait
+pub trait Middleware: Send + Sync {
+    /// Process request before handler
+    fn before(&self, req: &mut Request, ctx: &mut Context) -> MiddlewareResult {
+        MiddlewareResult::Continue
+    }
+
+    /// Process response after handler
+    fn after(&self, req: &Request, res: &mut Response<Vec<u8>>, ctx: &Context) {}
+
+    /// Handle errors
+    fn on_error(&self, req: &Request, err: &BasilicaError, ctx: &Context) -> Option<Response<Vec<u8>>> {
+        None
+    }
+}
+
+/// Chain of middleware
+pub struct MiddlewareChain {
+    middleware: Vec<Box<dyn Middleware>>,
+}
+
+impl MiddlewareChain {
+    pub fn new() -> Self {
+        Self { middleware: vec![] }
+    }
+
+    /// Add middleware to the end
+    pub fn add(&mut self, m: Box<dyn Middleware>) {
+        self.middleware.push(m);
+    }
+
+    /// Add middleware to the beginning
+    pub fn add_first(&mut self, m: Box<dyn Middleware>) {
+        self.middleware.insert(0, m);
+    }
+
+    /// Run the before chain
+    pub fn run_before(&self, req: &mut Request, ctx: &mut Context) -> MiddlewareResult {
+        for m in &self.middleware {
+            match m.before(req, ctx) {
+                MiddlewareResult::Continue => continue,
+                other => return other,
+            }
+        }
+        MiddlewareResult::Continue
+    }
+
+    /// Run the after chain (in reverse order)
+    pub fn run_after(&self, req: &Request, res: &mut Response<Vec<u8>>, ctx: &Context) {
+        for m in self.middleware.iter().rev() {
+            m.after(req, res, ctx);
+        }
+    }
+
+    /// Run error handlers
+    pub fn handle_error(&self, req: &Request, err: &BasilicaError, ctx: &Context) -> Option<Response<Vec<u8>>> {
+        for m in &self.middleware {
+            if let Some(res) = m.on_error(req, err, ctx) {
+                return Some(res);
+            }
+        }
+        None
+    }
+}

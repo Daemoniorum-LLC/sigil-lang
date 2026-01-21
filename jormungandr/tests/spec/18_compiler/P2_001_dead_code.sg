@@ -1,0 +1,12 @@
+// Test: Dead code handling
+// Spec: 18-COMPILER.md § 6.1 Optimizations
+// Priority: P2 - Enhancement
+
+rite unused() {
+    println(0);
+}
+
+rite main() {
+    // unused() is never called, but program should still work
+    println(1);
+}

@@ -1,0 +1,29 @@
+// Test: Struct with method compilation
+// Spec: 18-COMPILER.md § 4.1 Struct Methods
+// Priority: P1 - Production Ready
+
+sigil Counter {
+    value: !i32,
+}
+
+⊢ Counter {
+    rite get(&this) → !i32 {
+        this.value
+    }
+
+    rite increment(&vary this) {
+        this.value = this.value + 1;
+    }
+}
+
+rite main() {
+    ≔ vary c = Counter { value: 0 };
+    println(c.get());
+
+    c.increment();
+    println(c.get());
+
+    c.increment();
+    c.increment();
+    println(c.get());
+}

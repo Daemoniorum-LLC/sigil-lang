@@ -1,0 +1,186 @@
+// Commune - Multi-Agent Communication Infrastructure for Sigil
+// Public API
+
+pub mod types;
+pub mod commune;
+
+// Re-export core types
+pub use types::{
+    // Identity
+    AgentId,
+    MessageId,
+    ChannelId,
+    SwarmId,
+    ProposalId,
+
+    // Messages
+    Message,
+    MessageHeader,
+    Recipient,
+    Payload,
+    Priority,
+
+    // Intents
+    Intent,
+    Urgency,
+    Importance,
+    Task,
+    TaskStatus,
+    Proposal,
+    VoteValue,
+
+    // Epistemic
+    Epistemic,
+    Knowledge,
+
+    // Trust
+    TrustProfile,
+    AccuracyTracker,
+    Vouch,
+    TrustFlags,
+
+    // Channels
+    Channel,
+    ChannelType,
+    AccessControl,
+    Permission,
+
+    // Swarms
+    Swarm,
+    SwarmState,
+    SwarmGoal,
+    Behavior,
+    Obstacle,
+
+    // Consensus
+    ProposalState,
+    Vote,
+    ProposalStatus,
+    ConsensusResult,
+
+    // Configuration
+    CommuneConfig,
+    Topology,
+    TrustModelConfig,
+
+    // Utilities
+    Vector,
+};
+
+pub use commune::{
+    Commune,
+    AgentInfo,
+    AgentStatus,
+    IntentBuilder,
+    TrustManager,
+    ChannelRouter,
+    CollectiveMemory,
+    Fact,
+    FactId,
+    SwarmCoordinator,
+    ConsensusEngine,
+    ConsensusConfig,
+    ConsensusError,
+    CommuneError,
+};
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+/// Create a local commune (in-process communication)
+pub fn local() -> Commune {
+    Commune::local()
+}
+
+/// Create a commune with custom configuration
+pub fn with_config(config: CommuneConfig) -> Commune {
+    Commune::new(config)
+}
+
+/// Create a simple intent
+pub fn inform(to: AgentId, topic: &str, content: Value) -> Intent {
+    Intent::Inform {
+        topic: topic.to_string(),
+        content,
+    }
+}
+
+/// Create a query intent
+pub fn query(question: &str) -> Intent {
+    Intent::Query {
+        question: question.to_string(),
+        context: Value::empty(),
+    }
+}
+
+/// Create a delegate intent
+pub fn delegate(task: Task) -> Intent {
+    Intent::Delegate {
+        task,
+        constraints: vec![],
+    }
+}
+
+/// Create a proposal
+pub fn propose(description: &str, content: Value) -> Proposal {
+    Proposal::new(description, content, Duration::hours(24))
+}
+
+// ============================================================================
+// Agent Macro
+// ============================================================================
+
+/// Macro for defining communicating agents
+#[macro_export]
+macro_rules! communicating_agent {
+    (
+        name: $name:expr,
+        capabilities: [$($cap:expr),*],
+        $(on_message: |$msg_self:ident, $msg:ident| $msg_body:block)?
+    ) => {
+        {
+            let info = AgentInfo {
+                id: AgentId::new(),
+                name: $name.to_string(),
+                capabilities: vec![$($cap.to_string()),*],
+                status: AgentStatus::Online,
+            };
+            info
+        }
+    };
+}
+
+// ============================================================================
+// Helper Types
+// ============================================================================
+
+use std::time::Duration as StdDuration;
+
+pub struct Duration {
+    nanos: u64,
+}
+
+impl Duration {
+    pub fn zero() -> Self { Self { nanos: 0 } }
+    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    pub fn hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    pub fn days(d: u64) -> Self { Self { nanos: d * 86_400_000_000_000 } }
+
+    pub fn as_nanos(&self) -> u64 { self.nanos }
+}
+
+impl Copy for Duration {}
+impl Clone for Duration {
+    fn clone(&self) -> Self { *self }
+}
+
+pub struct Value {
+    inner: Vec<u8>,
+}
+
+impl Value {
+    pub fn empty() -> Self { Self { inner: vec![] } }
+    pub fn string(s: &str) -> Self { Self { inner: s.as_bytes().to_vec() } }
+}

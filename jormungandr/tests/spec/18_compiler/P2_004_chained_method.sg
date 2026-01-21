@@ -1,0 +1,29 @@
+// Test: Chained method calls
+// Spec: 18-COMPILER.md § 4.4 Method Resolution
+// Priority: P2 - Enhancement
+
+sigil Builder {
+    value: !i32,
+}
+
+⊢ Builder {
+    rite new() → Builder {
+        Builder { value: 0 }
+    }
+
+    rite add(&vary this, n: !i32) → &vary Builder {
+        this.value = this.value + n;
+        this
+    }
+
+    rite build(&this) → !i32 {
+        this.value
+    }
+}
+
+rite main() {
+    ≔ vary b = Builder·new();
+    b.add(10);
+    b.add(20);
+    println(b.build());
+}

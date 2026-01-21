@@ -1,0 +1,25 @@
+// Test: ⊢ block with methods
+☉ sigil Counter {
+    value: !i32
+}
+
+⊢ Counter {
+    rite new() → !Counter {
+        Counter { value: 0 }
+    }
+
+    rite increment(&vary this) {
+        this.value = this.value + 1;
+    }
+
+    rite get(&this) → !i32 {
+        this.value
+    }
+}
+
+rite main() {
+    ≔ vary c: !Counter = Counter·new();
+    c.increment();
+    c.increment();
+    println(c.get());
+}

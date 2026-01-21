@@ -1,0 +1,20 @@
+// Test: Zero-sized type (unit struct)
+// Spec: 03-TYPES.md § 10.2 Zero-Sized Types
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate zero-sized types work correctly.
+//
+// Expected behavior:
+// Should print 42
+
+☉ sigil Marker;
+
+rite process(_m: Marker) → !i32 {
+    42
+}
+
+rite main() {
+    ≔ m: Marker = Marker;
+    println(process(m));
+}

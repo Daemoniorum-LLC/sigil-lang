@@ -1,0 +1,17 @@
+// Test: Implicit ⤺ from function
+// Spec: 02-SYNTAX.md § 3.2 Return Statements
+// Priority: P0
+//
+// Purpose:
+// Validates that functions can ⤺ values implicitly (without ⤺ keyword).
+//
+// Expected behavior:
+// Should compile and print 42
+
+rite get_value() → !i32 {
+    42
+}
+
+rite main() {
+    println(get_value());
+}

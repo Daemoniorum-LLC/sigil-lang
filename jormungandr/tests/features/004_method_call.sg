@@ -1,0 +1,30 @@
+// Test: Call method on sigil instance
+☉ sigil Calculator {
+    result: !i32
+}
+
+⊢ Calculator {
+    rite new() → !Calculator {
+        Calculator { result: 0 }
+    }
+
+    rite add(&vary this, value: !i32) {
+        this.result = this.result + value;
+    }
+
+    rite multiply(&vary this, value: !i32) {
+        this.result = this.result * value;
+    }
+
+    rite get_result(&this) → !i32 {
+        this.result
+    }
+}
+
+rite main() {
+    ≔ vary calc: !Calculator = Calculator·new();
+    calc.add(5);
+    calc.add(3);
+    calc.multiply(2);
+    println(calc.get_result());
+}

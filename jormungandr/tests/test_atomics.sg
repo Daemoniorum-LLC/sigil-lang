@@ -1,0 +1,267 @@
+//! Comprehensive Atomic Operations Test Suite
+//!
+//! Tests atomic types, operations, and memory ordering.
+//! Target: 100% atomic coverage each regression detection.
+
+use crate·parser·Parser;
+use crate·typeck·TypeChecker;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+rite check_source(source: !&str) → !bool {
+    ≔ vary parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
+        Result·Ok(a) => a,
+        Result·Err(_) => ⤺ nay,
+    };
+    ≔ vary checker = TypeChecker·new();
+    ⌥ checker.check_file(ast) {
+        Result·Ok(_) => yea,
+        Result·Err(_) => nay,
+    }
+}
+
+rite assert_checks(source: !&str, name: !&str) {
+    ⎇ !check_source(source) {
+        panic(format!("FAIL {}: check failed", name));
+    }
+}
+
+// ============================================================================
+// 1. ATOMIC TYPE DECLARATIONS
+// ============================================================================
+
+rite test_atomic_types() → !bool {
+    print("  [1/5] Atomic type declarations... ");
+
+    // Integer atomics
+    assert_checks("rite test() { ≔ a: Atomic<i32>; }", "atomic_i32");
+    assert_checks("rite test() { ≔ a: Atomic<i64>; }", "atomic_i64");
+    assert_checks("rite test() { ≔ a: Atomic<u32>; }", "atomic_u32");
+    assert_checks("rite test() { ≔ a: Atomic<u64>; }", "atomic_u64");
+    assert_checks("rite test() { ≔ a: Atomic<usize>; }", "atomic_usize");
+
+    // Boolean atomic
+    assert_checks("rite test() { ≔ a: Atomic<bool>; }", "atomic_bool");
+
+    // Pointer atomic
+    assert_checks("rite test() { ≔ a: Atomic<*vary i32>; }", "atomic_ptr");
+
+    println("PASS (7 cases)");
+    yea
+}
+
+// ============================================================================
+// 2. ATOMIC LOAD/STORE
+// ============================================================================
+
+rite test_atomic_load_store() → !bool {
+    print("  [2/5] Atomic load/store... ");
+
+    // Load with ordering
+    assert_checks("
+        rite test(a: &Atomic<i32>) → !i32 {
+            ⤺ a.load(Ordering·SeqCst);
+        }
+    ", "atomic_load_seqcst");
+
+    assert_checks("
+        rite test(a: &Atomic<i32>) → !i32 {
+            ⤺ a.load(Ordering·Acquire);
+        }
+    ", "atomic_load_acquire");
+
+    assert_checks("
+        rite test(a: &Atomic<i32>) → !i32 {
+            ⤺ a.load(Ordering·Relaxed);
+        }
+    ", "atomic_load_relaxed");
+
+    // Store with ordering
+    assert_checks("
+        rite test(a: &Atomic<i32>, val: !i32) {
+            a.store(val, Ordering·SeqCst);
+        }
+    ", "atomic_store_seqcst");
+
+    assert_checks("
+        rite test(a: &Atomic<i32>, val: !i32) {
+            a.store(val, Ordering·Release);
+        }
+    ", "atomic_store_release");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 3. ATOMIC READ-MODIFY-WRITE
+// ============================================================================
+
+rite test_atomic_rmw() → !bool {
+    print("  [3/5] Atomic read-modify-write... ");
+
+    // Fetch-add
+    assert_checks("
+        rite test(a: &Atomic<i32>) → !i32 {
+            ⤺ a.fetch_add(1, Ordering·SeqCst);
+        }
+    ", "atomic_fetch_add");
+
+    // Fetch-sub
+    assert_checks("
+        rite test(a: &Atomic<i32>) → !i32 {
+            ⤺ a.fetch_sub(1, Ordering·SeqCst);
+        }
+    ", "atomic_fetch_sub");
+
+    // Fetch-and
+    assert_checks("
+        rite test(a: &Atomic<u32>) → !u32 {
+            ⤺ a.fetch_and(0xFF, Ordering·SeqCst);
+        }
+    ", "atomic_fetch_and");
+
+    // Fetch-or
+    assert_checks("
+        rite test(a: &Atomic<u32>) → !u32 {
+            ⤺ a.fetch_or(0x100, Ordering·SeqCst);
+        }
+    ", "atomic_fetch_or");
+
+    // Fetch-xor
+    assert_checks("
+        rite test(a: &Atomic<u32>) → !u32 {
+            ⤺ a.fetch_xor(0xFF, Ordering·SeqCst);
+        }
+    ", "atomic_fetch_xor");
+
+    // Swap
+    assert_checks("
+        rite test(a: &Atomic<i32>, new: !i32) → !i32 {
+            ⤺ a.swap(new, Ordering·SeqCst);
+        }
+    ", "atomic_swap");
+
+    println("PASS (6 cases)");
+    yea
+}
+
+// ============================================================================
+// 4. COMPARE-AND-SWAP
+// ============================================================================
+
+rite test_atomic_cas() → !bool {
+    print("  [4/5] Compare-and-swap... ");
+
+    // Compare-exchange strong
+    assert_checks("
+        rite test(a: &Atomic<i32>, expected: !i32, new: !i32) → !Result<i32, i32> {
+            ⤺ a.compare_exchange(expected, new, Ordering·SeqCst, Ordering·SeqCst);
+        }
+    ", "atomic_cmpxchg_strong");
+
+    // Compare-exchange weak
+    assert_checks("
+        rite test(a: &Atomic<i32>, expected: !i32, new: !i32) → !Result<i32, i32> {
+            ⤺ a.compare_exchange_weak(expected, new, Ordering·SeqCst, Ordering·Relaxed);
+        }
+    ", "atomic_cmpxchg_weak");
+
+    // CAS forever pattern
+    assert_checks("
+        rite increment(a: &Atomic<i32>) → !i32 {
+            forever {
+                ≔ current = a.load(Ordering·Relaxed);
+                ≔ new = current + 1;
+                ⌥ a.compare_exchange_weak(current, new, Ordering·Release, Ordering·Relaxed) {
+                    Result·Ok(v) => ⤺ v,
+                    Result·Err(_) => ⊳,
+                }
+            }
+        }
+    ", "atomic_cas_loop");
+
+    println("PASS (3 cases)");
+    yea
+}
+
+// ============================================================================
+// 5. MEMORY FENCES
+// ============================================================================
+
+rite test_memory_fences() → !bool {
+    print("  [5/5] Memory fences... ");
+
+    // Fence
+    assert_checks("
+        rite test() {
+            atomic·fence(Ordering·SeqCst);
+        }
+    ", "atomic_fence_seqcst");
+
+    assert_checks("
+        rite test() {
+            atomic·fence(Ordering·AcqRel);
+        }
+    ", "atomic_fence_acqrel");
+
+    // Compiler fence
+    assert_checks("
+        rite test() {
+            atomic·compiler_fence(Ordering·SeqCst);
+        }
+    ", "compiler_fence");
+
+    // Spin lock pattern
+    assert_checks("
+        sigil SpinLock {
+            locked: !Atomic<bool>,
+        }
+        ⊢ SpinLock {
+            rite lock(this) {
+                ⟳ this.locked.compare_exchange_weak(nay, yea, Ordering·Acquire, Ordering·Relaxed).is_err() {
+                    // Spin
+                }
+            }
+            rite unlock(this) {
+                this.locked.store(nay, Ordering·Release);
+            }
+        }
+    ", "spin_lock_pattern");
+
+    println("PASS (4 cases)");
+    yea
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ rite main() → !i32 {
+    println("Testing Atomic Operations...");
+    println("");
+
+    ≔ vary passed: !i32 = 0;
+    ≔ vary failed: !i32 = 0;
+
+    ⎇ test_atomic_types() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_atomic_load_store() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_atomic_rmw() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_atomic_cas() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_memory_fences() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    ⎇ failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All atomic tests passed! (~25 test cases)");
+    ⤺ 0;
+}

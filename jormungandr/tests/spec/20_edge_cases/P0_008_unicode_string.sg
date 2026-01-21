@@ -1,0 +1,8 @@
+// Test: Unicode of strings
+// Spec: Edge Cases - Unicode Support
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ s: String = "Hello, 世界! 🌍";
+    println(s);
+}

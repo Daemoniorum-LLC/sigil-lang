@@ -1,0 +1,9 @@
+// Test: Power operation
+// Spec: 05-MATHEMATICS.md § 1.3 Operators
+// Priority: P2 - Enhancement
+
+rite main() {
+    ≔ x: !i32 = 2;
+    ≔ y: !i32 = x * x * x;
+    println(y);
+}

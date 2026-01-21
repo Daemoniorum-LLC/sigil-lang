@@ -1,0 +1,17 @@
+// Test: Result·Err variant
+// Spec: 09-STDLIB.md § 3.2 Result Type
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate Result·Err works correctly.
+//
+// Expected behavior:
+// Should print 0
+
+rite main() {
+    ≔ res: !Result<!i32, String> = Result·Err("error");
+    ⌥ res {
+        Result·Ok(x) => println(x),
+        Result·Err(_) => println(0)
+    }
+}

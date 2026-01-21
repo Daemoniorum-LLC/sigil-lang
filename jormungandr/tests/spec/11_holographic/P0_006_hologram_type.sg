@@ -1,0 +1,9 @@
+// Test: Hologram erasure-coded type
+// Spec: 11-HOLOGRAPHIC.md § 2.1 Hologram Type
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ data: String = "secret";
+    ≔ hologram: Hologram<String, 4, 7> = data|encode(ReedSolomon);
+    println(hologram.shards.len());
+}

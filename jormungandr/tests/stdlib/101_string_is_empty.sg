@@ -1,0 +1,13 @@
+// Test: String is_empty method
+rite main() {
+    ≔ s1: !String = "";
+    ≔ s2: !String = "not empty";
+
+    ⎇ s1.is_empty() {
+        println("empty");
+    }
+
+    ⎇ !s2.is_empty() {
+        println("not empty");
+    }
+}

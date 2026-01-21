@@ -1,0 +1,266 @@
+// Temporal Index
+// B+ Tree based index for time-range queries
+
+module engram::index::temporal
+
+use engram::types::*
+use std::collections::BTreeMap
+
+// ============================================================================
+// Temporal Index
+// ============================================================================
+
+/// Temporal Index - B+ tree for time-based queries
+///
+/// Efficiently supports:
+/// - Point queries: what existed at time T?
+/// - Range queries: what existed between T1 and T2?
+/// - Ordering: get items in chronological order
+pub struct TemporalIndex<T> {
+    /// B-tree mapping timestamps to items
+    tree: BTreeMap<Instant, Vec<T>>,
+
+    /// Bucket duration for grouping
+    bucket_duration: Duration,
+
+    /// Total item count
+    count: usize,
+}
+
+impl<T: Clone> TemporalIndex<T> {
+    // ========================================================================
+    // Construction
+    // ========================================================================
+
+    pub fn new() -> Self {
+        Self {
+            tree: BTreeMap::new(),
+            bucket_duration: Duration::from_secs(3600), // 1 hour buckets
+            count: 0,
+        }
+    }
+
+    pub fn with_bucket_duration(duration: Duration) -> Self {
+        Self {
+            tree: BTreeMap::new(),
+            bucket_duration: duration,
+            count: 0,
+        }
+    }
+
+    // ========================================================================
+    // Core Operations
+    // ========================================================================
+
+    /// Insert an item at a timestamp
+    pub fn insert(timestamp: Instant, item: T) {
+        let bucket = self.bucket_for(timestamp);
+        self.tree.entry(bucket)
+            .or_insert_with(Vec::new)
+            .push(item);
+        self.count += 1;
+    }
+
+    /// Get items in a time range
+    pub fn range(start: Instant, end: Instant) -> Vec<&T> {
+        let start_bucket = self.bucket_for(start);
+        let end_bucket = self.bucket_for(end);
+
+        self.tree.range(start_bucket..=end_bucket)
+            .flat_map(|(_, items)| items.iter())
+            .collect()
+    }
+
+    /// Get items at a specific time (within bucket)
+    pub fn at(timestamp: Instant) -> Vec<&T> {
+        let bucket = self.bucket_for(timestamp);
+        self.tree.get(&bucket)
+            .map(|items| items.iter().collect())
+            .unwrap_or_default()
+    }
+
+    /// Get items before a timestamp
+    pub fn before(timestamp: Instant, limit: usize) -> Vec<&T> {
+        let bucket = self.bucket_for(timestamp);
+
+        self.tree.range(..bucket)
+            .rev()
+            .flat_map(|(_, items)| items.iter())
+            .take(limit)
+            .collect()
+    }
+
+    /// Get items after a timestamp
+    pub fn after(timestamp: Instant, limit: usize) -> Vec<&T> {
+        let bucket = self.bucket_for(timestamp);
+
+        self.tree.range(bucket..)
+            .flat_map(|(_, items)| items.iter())
+            .take(limit)
+            .collect()
+    }
+
+    /// Get most recent items
+    pub fn recent(limit: usize) -> Vec<&T> {
+        self.tree.iter()
+            .rev()
+            .flat_map(|(_, items)| items.iter())
+            .take(limit)
+            .collect()
+    }
+
+    /// Get oldest items
+    pub fn oldest(limit: usize) -> Vec<&T> {
+        self.tree.iter()
+            .flat_map(|(_, items)| items.iter())
+            .take(limit)
+            .collect()
+    }
+
+    /// Remove items matching predicate
+    pub fn remove_where(predicate: fn(&T) -> bool) -> usize {
+        let mut removed = 0;
+
+        for (_, items) in self.tree.iter_mut() {
+            let before = items.len();
+            items.retain(|item| !predicate(item));
+            removed += before - items.len();
+        }
+
+        // Clean up empty buckets
+        self.tree.retain(|_, items| !items.is_empty());
+
+        self.count -= removed;
+        removed
+    }
+
+    /// Clear all items
+    pub fn clear() {
+        self.tree.clear();
+        self.count = 0;
+    }
+
+    // ========================================================================
+    // Queries
+    // ========================================================================
+
+    /// Check if any items exist in time range
+    pub fn has_items_in_range(start: Instant, end: Instant) -> bool {
+        let start_bucket = self.bucket_for(start);
+        let end_bucket = self.bucket_for(end);
+
+        self.tree.range(start_bucket..=end_bucket)
+            .any(|(_, items)| !items.is_empty())
+    }
+
+    /// Count items in time range
+    pub fn count_in_range(start: Instant, end: Instant) -> usize {
+        let start_bucket = self.bucket_for(start);
+        let end_bucket = self.bucket_for(end);
+
+        self.tree.range(start_bucket..=end_bucket)
+            .map(|(_, items)| items.len())
+            .sum()
+    }
+
+    /// Get the time bounds of indexed items
+    pub fn time_bounds() -> Option<(Instant, Instant)> {
+        let first = self.tree.keys().next()?;
+        let last = self.tree.keys().next_back()?;
+        Some((*first, *last + self.bucket_duration))
+    }
+
+    // ========================================================================
+    // Stats
+    // ========================================================================
+
+    pub fn len() -> usize {
+        self.count
+    }
+
+    pub fn is_empty() -> bool {
+        self.count == 0
+    }
+
+    pub fn bucket_count() -> usize {
+        self.tree.len()
+    }
+
+    // ========================================================================
+    // Internal
+    // ========================================================================
+
+    fn bucket_for(timestamp: Instant) -> Instant {
+        let nanos = timestamp.as_nanos();
+        let bucket_nanos = self.bucket_duration.as_nanos();
+        let bucket_start = (nanos / bucket_nanos) * bucket_nanos;
+        Instant::from_nanos(bucket_start)
+    }
+}
+
+// ============================================================================
+// Iteration Support
+// ============================================================================
+
+impl<T> TemporalIndex<T> {
+    /// Iterate over all items in chronological order
+    pub fn iter() -> impl Iterator<Item = &T> {
+        self.tree.iter()
+            .flat_map(|(_, items)| items.iter())
+    }
+
+    /// Iterate over all items in reverse chronological order
+    pub fn iter_rev() -> impl Iterator<Item = &T> {
+        self.tree.iter()
+            .rev()
+            .flat_map(|(_, items)| items.iter())
+    }
+
+    /// Iterate with timestamps
+    pub fn iter_with_time() -> impl Iterator<Item = (Instant, &T)> {
+        self.tree.iter()
+            .flat_map(|(time, items)| {
+                items.iter().map(move |item| (*time, item))
+            })
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_insert_and_range() {
+        let mut index = TemporalIndex::new();
+
+        let t1 = Instant::now();
+        let t2 = t1 + Duration::from_secs(100);
+        let t3 = t1 + Duration::from_secs(200);
+
+        index.insert(t1, "first");
+        index.insert(t2, "second");
+        index.insert(t3, "third");
+
+        let range = index.range(t1, t3);
+        assert_eq!(range.len(), 3);
+    }
+
+    #[test]
+    fn test_recent() {
+        let mut index = TemporalIndex::with_bucket_duration(Duration::from_secs(1));
+
+        for i in 0..10 {
+            index.insert(
+                Instant::now() + Duration::from_secs(i),
+                i
+            );
+        }
+
+        let recent = index.recent(3);
+        assert_eq!(recent.len(), 3);
+    }
+}

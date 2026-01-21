@@ -1,0 +1,11 @@
+// Test: Static variables
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 4.2 Statics
+// Priority: P2 - Enhancement
+
+static vary COUNTER: !i32 = 0;
+
+rite main() {
+    println(COUNTER);
+    COUNTER = 10;
+    println(COUNTER);
+}

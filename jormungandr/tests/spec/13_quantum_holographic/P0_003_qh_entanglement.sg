@@ -1,0 +1,14 @@
+// Test: Entangled holographic shards
+// Spec: 13-QUANTUM-HOLOGRAPHIC.md § 3 Entanglement
+// Priority: P0 - Bootstrap Critical
+
+rite main() {
+    ≔ (a, b) = entangle_holograms(
+        Hologram·encode(42),
+        Hologram·encode(42),
+    );
+    // Observing one affects the other
+    ≔ val_a = a|observe|∀;
+    ≔ val_b = b|observe|∀;
+    println(val_a == val_b);
+}

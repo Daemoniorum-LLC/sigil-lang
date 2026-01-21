@@ -1,0 +1,361 @@
+//! JavaScript interop types
+
+/// Generic JavaScript value
+#[wasm_bindgen]
+extern "js" {
+    pub type JsValue;
+
+    #[wasm_bindgen(js_name = "undefined")]
+    pub static UNDEFINED: JsValue;
+
+    #[wasm_bindgen(js_name = "null")]
+    pub static NULL: JsValue;
+
+    pub fn is_undefined(value: &JsValue!) -> bool!;
+    pub fn is_null(value: &JsValue!) -> bool!;
+    pub fn is_object(value: &JsValue!) -> bool!;
+    pub fn is_array(value: &JsValue!) -> bool!;
+    pub fn is_function(value: &JsValue!) -> bool!;
+    pub fn is_string(value: &JsValue!) -> bool!;
+    pub fn is_number(value: &JsValue!) -> bool!;
+    pub fn is_boolean(value: &JsValue!) -> bool!;
+    pub fn is_symbol(value: &JsValue!) -> bool!;
+    pub fn is_bigint(value: &JsValue!) -> bool!;
+}
+
+impl JsValue {
+    /// Create from Sigil value
+    pub fn from[T: Into[JsValue]](value: T!) -> Self! {
+        value·into()
+    }
+
+    /// Convert to string
+    pub fn as_string(self: &Self!) -> Option[String]? {
+        if is_string(self) {
+            Some(js_string_to_sigil(self))
+        } else {
+            None
+        }
+    }
+
+    /// Convert to number
+    pub fn as_f64(self: &Self!) -> Option[f64]? {
+        if is_number(self) {
+            Some(js_number_to_f64(self))
+        } else {
+            None
+        }
+    }
+
+    /// Convert to bool
+    pub fn as_bool(self: &Self!) -> Option[bool]? {
+        if is_boolean(self) {
+            Some(js_bool_to_sigil(self))
+        } else {
+            None
+        }
+    }
+
+    /// Check if undefined
+    pub fn is_undefined(self: &Self!) -> bool! {
+        is_undefined(self)
+    }
+
+    /// Check if null
+    pub fn is_null(self: &Self!) -> bool! {
+        is_null(self)
+    }
+
+    /// Check if null or undefined
+    pub fn is_nullish(self: &Self!) -> bool! {
+        is_null(self) || is_undefined(self)
+    }
+
+    /// Check if truthy
+    pub fn is_truthy(self: &Self!) -> bool! {
+        js_truthy(self)
+    }
+
+    /// Check if falsy
+    pub fn is_falsy(self: &Self!) -> bool! {
+        !js_truthy(self)
+    }
+
+    /// Get typeof
+    pub fn js_typeof(self: &Self!) -> String! {
+        js_typeof_internal(self)
+    }
+
+    /// Dynamic cast
+    pub fn dyn_into[T: JsCast](self: Self!) -> Result[T, Self]? {
+        if T::instanceof(&self) {
+            Ok(T::unchecked_from_js(self))
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Dynamic reference cast
+    pub fn dyn_ref[T: JsCast](self: &Self!) -> Option[&T]? {
+        if T::instanceof(self) {
+            Some(T::unchecked_from_js_ref(self))
+        } else {
+            None
+        }
+    }
+
+    /// Unchecked cast
+    pub fn unchecked_into[T: JsCast](self: Self!) -> T! {
+        T::unchecked_from_js(self)
+    }
+
+    /// Unchecked reference cast
+    pub fn unchecked_ref[T: JsCast](self: &Self!) -> &T! {
+        T::unchecked_from_js_ref(self)
+    }
+}
+
+/// Trait for types that can be cast from JavaScript
+pub trait JsCast: Sized {
+    fn instanceof(val: &JsValue!) -> bool!;
+    fn unchecked_from_js(val: JsValue!) -> Self!;
+    fn unchecked_from_js_ref(val: &JsValue!) -> &Self!;
+}
+
+// Implementation for various types via wasm_bindgen
+
+/// JavaScript Array
+#[wasm_bindgen]
+extern "js" {
+    pub type Array;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Array!;
+
+    #[wasm_bindgen(constructor, js_name = "Array")]
+    pub fn new_with_length(length: u32!) -> Array!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn length(this: &Array!) -> u32!;
+
+    #[wasm_bindgen(method)]
+    pub fn get(this: &Array!, index: u32!) -> JsValue!;
+
+    #[wasm_bindgen(method)]
+    pub fn set(this: &Array!, index: u32!, value: &JsValue!);
+
+    #[wasm_bindgen(method)]
+    pub fn push(this: &Array!, value: &JsValue!) -> u32!;
+
+    #[wasm_bindgen(method)]
+    pub fn pop(this: &Array!) -> JsValue!;
+
+    #[wasm_bindgen(method)]
+    pub fn shift(this: &Array!) -> JsValue!;
+
+    #[wasm_bindgen(method)]
+    pub fn unshift(this: &Array!, value: &JsValue!) -> u32!;
+
+    #[wasm_bindgen(method)]
+    pub fn concat(this: &Array!, other: &Array!) -> Array!;
+
+    #[wasm_bindgen(method)]
+    pub fn slice(this: &Array!, start: i32!, end: i32!) -> Array!;
+
+    #[wasm_bindgen(method)]
+    pub fn splice(this: &Array!, start: u32!, delete_count: u32!) -> Array!;
+
+    #[wasm_bindgen(method)]
+    pub fn reverse(this: &Array!) -> Array!;
+
+    #[wasm_bindgen(method)]
+    pub fn sort(this: &Array!) -> Array!;
+
+    #[wasm_bindgen(method, js_name = "indexOf")]
+    pub fn index_of(this: &Array!, value: &JsValue!) -> i32!;
+
+    #[wasm_bindgen(method)]
+    pub fn includes(this: &Array!, value: &JsValue!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn join(this: &Array!, separator: &str!) -> String!;
+
+    #[wasm_bindgen(method, js_name = "forEach")]
+    pub fn for_each(this: &Array!, callback: &Closure!);
+
+    #[wasm_bindgen(method)]
+    pub fn map(this: &Array!, callback: &Closure!) -> Array!;
+
+    #[wasm_bindgen(method)]
+    pub fn filter(this: &Array!, callback: &Closure!) -> Array!;
+
+    #[wasm_bindgen(method)]
+    pub fn reduce(this: &Array!, callback: &Closure!, initial: &JsValue!) -> JsValue!;
+
+    #[wasm_bindgen(method)]
+    pub fn find(this: &Array!, callback: &Closure!) -> JsValue!;
+
+    #[wasm_bindgen(method, js_name = "findIndex")]
+    pub fn find_index(this: &Array!, callback: &Closure!) -> i32!;
+
+    #[wasm_bindgen(method)]
+    pub fn some(this: &Array!, callback: &Closure!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn every(this: &Array!, callback: &Closure!) -> bool!;
+
+    #[wasm_bindgen(static_method_of = Array, js_name = "isArray")]
+    pub fn is_array(value: &JsValue!) -> bool!;
+
+    #[wasm_bindgen(static_method_of = Array)]
+    pub fn from(iterable: &JsValue!) -> Array!;
+
+    #[wasm_bindgen(static_method_of = Array)]
+    pub fn of(items: &[JsValue]!) -> Array!;
+}
+
+/// JavaScript Object
+#[wasm_bindgen]
+extern "js" {
+    pub type Object;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Object!;
+
+    #[wasm_bindgen(static_method_of = Object)]
+    pub fn keys(obj: &Object!) -> Array!;
+
+    #[wasm_bindgen(static_method_of = Object)]
+    pub fn values(obj: &Object!) -> Array!;
+
+    #[wasm_bindgen(static_method_of = Object)]
+    pub fn entries(obj: &Object!) -> Array!;
+
+    #[wasm_bindgen(static_method_of = Object, js_name = "fromEntries")]
+    pub fn from_entries(iterable: &Array!) -> Object!;
+
+    #[wasm_bindgen(static_method_of = Object)]
+    pub fn assign(target: &Object!, source: &Object!) -> Object!;
+
+    #[wasm_bindgen(static_method_of = Object)]
+    pub fn freeze(obj: &Object!) -> Object!;
+
+    #[wasm_bindgen(static_method_of = Object)]
+    pub fn seal(obj: &Object!) -> Object!;
+
+    #[wasm_bindgen(static_method_of = Object, js_name = "isFrozen")]
+    pub fn is_frozen(obj: &Object!) -> bool!;
+
+    #[wasm_bindgen(static_method_of = Object, js_name = "isSealed")]
+    pub fn is_sealed(obj: &Object!) -> bool!;
+
+    #[wasm_bindgen(static_method_of = Object, js_name = "hasOwn")]
+    pub fn has_own(obj: &Object!, prop: &str!) -> bool!;
+}
+
+/// JavaScript Iterator
+#[wasm_bindgen]
+extern "js" {
+    pub type JsIterator;
+
+    #[wasm_bindgen(method)]
+    pub fn next(this: &JsIterator!) -> IteratorResult!;
+}
+
+/// Iterator result
+#[wasm_bindgen]
+extern "js" {
+    pub type IteratorResult;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn done(this: &IteratorResult!) -> bool!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn value(this: &IteratorResult!) -> JsValue!;
+}
+
+/// ReadableStream
+#[wasm_bindgen]
+extern "js" {
+    pub type ReadableStream;
+
+    #[wasm_bindgen(method, js_name = "getReader")]
+    pub fn get_reader(this: &ReadableStream!) -> ReadableStreamDefaultReader!;
+
+    #[wasm_bindgen(method)]
+    pub fn cancel(this: &ReadableStream!) -> Promise!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn locked(this: &ReadableStream!) -> bool!;
+}
+
+/// ReadableStreamDefaultReader
+#[wasm_bindgen]
+extern "js" {
+    pub type ReadableStreamDefaultReader;
+
+    #[wasm_bindgen(method)]
+    pub fn read(this: &ReadableStreamDefaultReader!) -> Promise!;
+
+    #[wasm_bindgen(method, js_name = "releaseLock")]
+    pub fn release_lock(this: &ReadableStreamDefaultReader!);
+
+    #[wasm_bindgen(method)]
+    pub fn cancel(this: &ReadableStreamDefaultReader!) -> Promise!;
+}
+
+// Internal conversion helpers
+#[wasm_bindgen]
+extern "js" {
+    fn js_string_to_sigil(val: &JsValue!) -> String!;
+    fn js_number_to_f64(val: &JsValue!) -> f64!;
+    fn js_bool_to_sigil(val: &JsValue!) -> bool!;
+    fn js_truthy(val: &JsValue!) -> bool!;
+    fn js_typeof_internal(val: &JsValue!) -> String!;
+}
+
+// Into implementations
+impl Into[JsValue] for String {
+    fn into(self: Self!) -> JsValue! {
+        sigil_string_to_js(&self)
+    }
+}
+
+impl Into[JsValue] for &str {
+    fn into(self: Self!) -> JsValue! {
+        sigil_string_to_js(self)
+    }
+}
+
+impl Into[JsValue] for bool {
+    fn into(self: Self!) -> JsValue! {
+        sigil_bool_to_js(self)
+    }
+}
+
+impl Into[JsValue] for f64 {
+    fn into(self: Self!) -> JsValue! {
+        sigil_f64_to_js(self)
+    }
+}
+
+impl Into[JsValue] for i32 {
+    fn into(self: Self!) -> JsValue! {
+        sigil_i32_to_js(self)
+    }
+}
+
+impl Into[JsValue] for u32 {
+    fn into(self: Self!) -> JsValue! {
+        sigil_u32_to_js(self)
+    }
+}
+
+#[wasm_bindgen]
+extern "js" {
+    fn sigil_string_to_js(s: &str!) -> JsValue!;
+    fn sigil_bool_to_js(b: bool!) -> JsValue!;
+    fn sigil_f64_to_js(n: f64!) -> JsValue!;
+    fn sigil_i32_to_js(n: i32!) -> JsValue!;
+    fn sigil_u32_to_js(n: u32!) -> JsValue!;
+}

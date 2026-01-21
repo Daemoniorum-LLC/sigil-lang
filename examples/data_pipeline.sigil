@@ -1,0 +1,135 @@
+//! Data Pipeline Example
+//!
+//! Demonstrates Sigil's morpheme-based data transformations
+//! for processing structured data with type safety.
+
+use std::io
+use std::json
+
+/// A user record from our data source.
+struct User {
+    id: i64,
+    name: str,
+    email: str,
+    age: i32,
+    department: str,
+    active: bool,
+    salary: f64,
+}
+
+/// Validation rules for user data.
+fn validate_user(u~: User) -> Result<User!, ValidationError> {
+    u|validate!{
+        name: non_empty && max_len(100),
+        email: email_format,
+        age: range(18, 120),
+        salary: positive,
+    }
+}
+
+/// Department statistics.
+struct DeptStats {
+    name: str,
+    count: i32,
+    avg_salary: f64,
+    avg_age: f64,
+}
+
+/// Calculate statistics by department.
+fn department_stats(users: [User!]) -> [DeptStats] {
+    users
+        |group_by{_.department}
+        |tau{(dept, members) =>
+            DeptStats {
+                name: dept,
+                count: members|len,
+                avg_salary: members|tau{_.salary}|average,
+                avg_age: members|tau{_.age as f64}|average,
+            }
+        }
+        |sigma.avg_salary  // Sort by salary descending
+        |reverse
+}
+
+/// Find high performers by department.
+fn high_performers(users: [User!], threshold: f64) -> Map<str, [User!]> {
+    users
+        |phi{_.active && _.salary > threshold}
+        |group_by{_.department}
+}
+
+/// Email list for a marketing campaign.
+fn marketing_emails(users: [User!], min_age: i32, departments: [str]) -> [str] {
+    users
+        |phi{_.active}
+        |phi{_.age >= min_age}
+        |phi{departments|contains(_.department)}
+        |tau{_.email}
+        |unique
+        |sigma  // Sort alphabetically
+}
+
+/// Main processing pipeline.
+async fn process_user_data(source_url: str) -> Result<Report, Error> {
+    // Fetch raw data (marked as reported/untrusted)
+    let raw_data~ = http.get(source_url)|await?
+
+    // Parse JSON (still untrusted)
+    let parsed~: [User~] = raw_data~|json.parse?
+
+    // Validate each user, collecting errors
+    let (valid!, errors) = parsed~
+        |tau{validate_user(_)}
+        |partition_results
+
+    if errors|len > 0 {
+        log.warn("Validation errors: {}", errors|len)
+    }
+
+    // Now we have trusted, validated data
+    let stats = department_stats(valid!)
+    let top_earners = high_performers(valid!, 100000.0)
+    let email_list = marketing_emails(valid!, 25, ["Engineering", "Sales"])
+
+    Report {
+        total_users: valid!|len,
+        department_stats: stats,
+        high_performers: top_earners,
+        marketing_list: email_list,
+        error_count: errors|len,
+    }
+}
+
+/// Generate a formatted report.
+fn format_report(r: Report) -> str {
+    let lines = [
+        "=== User Data Report ===",
+        "",
+        "Total Valid Users: " ++ r.total_users|to_str,
+        "Validation Errors: " ++ r.error_count|to_str,
+        "",
+        "Department Statistics:",
+    ]
+
+    let dept_lines = r.department_stats
+        |tau{s => "  " ++ s.name ++ ": " ++
+            s.count|to_str ++ " employees, " ++
+            "$" ++ s.avg_salary|round(2)|to_str ++ " avg salary"}
+
+    (lines ++ dept_lines ++ ["", "Marketing Emails: " ++ r.marketing_list|len|to_str])
+        |join("\n")
+}
+
+fn main() {
+    let report = process_user_data("https://api.example.com/users")|await
+
+    match report {
+        Ok(r!) => {
+            println(format_report(r))
+        }
+        Err(e) => {
+            eprintln("Error processing data: " ++ e|to_str)
+            exit(1)
+        }
+    }
+}

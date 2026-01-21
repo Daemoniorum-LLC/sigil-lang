@@ -1,0 +1,14 @@
+// Test: Right shift operator (>>)
+// Spec: 01-LEXICAL.md § 3.2 Operators
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate right shift works correctly.
+//
+// Expected behavior:
+// Should print 10 (42 >> 2 = 10)
+
+rite main() {
+    ≔ x: !i32 = 42;
+    println(x >> 2);
+}

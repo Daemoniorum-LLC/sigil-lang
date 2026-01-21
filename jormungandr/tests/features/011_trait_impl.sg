@@ -1,0 +1,20 @@
+// Test: ⊢ Trait for Type
+☉ aspect Summable {
+    rite sum(&this) → !i32;
+}
+
+☉ sigil Pair {
+    a: !i32,
+    b: !i32
+}
+
+⊢ Pair : Summable {
+    rite sum(&this) → !i32 {
+        this.a + this.b
+    }
+}
+
+rite main() {
+    ≔ p: !Pair = Pair { a: 42, b: 58 };
+    println(p.sum());
+}
