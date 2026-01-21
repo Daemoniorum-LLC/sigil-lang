@@ -113,19 +113,36 @@ parser/src/rt/
 
 **Next Step:** Wave 5 - Module Resolution to enable `invoke tome·` linking
 
-### Wave 5: Module Resolution (Current)
+### Wave 5: Module Resolution (In Progress)
 
 Enable the compiler to resolve `invoke tome·` statements and link modules together.
 
 | Task | Description | Status |
 |------|-------------|--------|
 | Parse `invoke`/`tome` | Lexer/parser support | ✅ Done |
-| Module path resolution | Find `.sg` files from paths | 🔜 Next |
-| Symbol export/import | Track pub symbols across modules | Pending |
-| Circular dependency detection | Prevent infinite loops | Pending |
+| Module path resolution | Find `.sg` files from paths | ✅ Done |
+| Circular dependency detection | Prevent infinite loops | ✅ Done |
+| Symbol export/import | Track pub symbols across modules | ✅ Done |
+| LLVM intrinsics in interpreter | Enable native math in interpreter | 🔜 Next |
 | Integration test | Run native runtime end-to-end | Pending |
 
-**Implementation Location:** `parser/src/interpreter.rs`, `parser/src/module_resolver.rs` (new)
+**Implementation Location:** `parser/src/interpreter.rs` - `load_tome_module()` function
+
+**Module Resolution Algorithm:**
+```
+invoke tome·rt·sys·{write, Errno}
+           ↓
+    module_path = ["rt", "sys"]
+           ↓
+    Try: src/rt/sys/mod.sg
+         src/rt/sys/mod.sigil
+         src/rt/sys.sg
+         src/rt/sys.sigil
+           ↓
+    Parse and execute module items
+           ↓
+    Register symbols with qualified names
+```
 
 **Architecture:**
 ```
