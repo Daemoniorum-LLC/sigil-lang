@@ -1,0 +1,115 @@
+// P1_007_global_alloc.sg
+// Test: Global allocator (sigil_alloc, sigil_free, sigil_realloc)
+// Phase B: Memory Allocator
+//
+// This test verifies the global allocator functions that
+// replace malloc/free/realloc from libc.
+
+use rt::alloc::{init_allocator, sigil_alloc, sigil_free, sigil_realloc};
+
+fn main() {
+    // Initialize global allocator
+    init_allocator();
+    println("init_ok");
+
+    // Test 1: Basic allocation
+    ≔ p1 = sigil_alloc(256);
+    assert!(!p1.is_null());
+    println("alloc_ok");
+
+    // Test 2: Write and verify
+    unsafe {
+        for i in 0..256 {
+            *(p1.offset(i as isize)) = (i & 0xFF) as u8;
+        }
+    }
+
+    vary pattern_ok = true;
+    unsafe {
+        for i in 0..256 {
+            ⎇ *(p1.offset(i as isize)) != (i & 0xFF) as u8 {
+                pattern_ok = false;
+                break;
+            }
+        }
+    }
+    ⎇ pattern_ok {
+        println("pattern_ok");
+    } ⎉ {
+        println("pattern_fail");
+    }
+
+    // Test 3: Free (no-op for arena, but should not crash)
+    sigil_free(p1);
+    println("free_ok");
+
+    // Test 4: Multiple allocations
+    ≔ ptrs: [*mut u8; 10] = [null_mut(); 10];
+    for i in 0..10 {
+        ptrs[i] = sigil_alloc(64);
+        assert!(!ptrs[i].is_null());
+    }
+    println("multi_alloc_ok");
+
+    // Test 5: Realloc - grow
+    ≔ p2 = sigil_alloc(100);
+    unsafe {
+        for i in 0..100 {
+            *(p2.offset(i as isize)) = 42u8;
+        }
+    }
+
+    ≔ p3 = sigil_realloc(p2, 100, 200);
+    assert!(!p3.is_null());
+
+    // Original data should be preserved
+    vary preserved = true;
+    unsafe {
+        for i in 0..100 {
+            ⎇ *(p3.offset(i as isize)) != 42u8 {
+                preserved = false;
+                break;
+            }
+        }
+    }
+    ⎇ preserved {
+        println("realloc_preserved_ok");
+    } ⎉ {
+        println("realloc_preserved_fail");
+    }
+
+    // New memory is accessible
+    unsafe {
+        for i in 100..200 {
+            *(p3.offset(i as isize)) = 99u8;
+        }
+    }
+    println("realloc_extend_ok");
+
+    // Test 6: Realloc - shrink
+    ≔ p4 = sigil_realloc(p3, 200, 50);
+    assert!(!p4.is_null());
+    println("realloc_shrink_ok");
+
+    // Test 7: Zero-size allocation (implementation defined, but should not crash)
+    ≔ p5 = sigil_alloc(0);
+    // May be null or non-null depending on implementation
+    println("zero_alloc_ok");
+
+    // Test 8: Large allocation
+    ≔ large = sigil_alloc(1024 * 1024);  // 1MB
+    assert!(!large.is_null());
+    println("large_alloc_ok");
+
+    // Write to edges of large allocation
+    unsafe {
+        *large = 1u8;
+        *(large.offset(1024 * 1024 - 1)) = 2u8;
+    }
+    println("large_write_ok");
+
+    sigil_free(large);
+    println("large_free_ok");
+
+    println("done");
+}

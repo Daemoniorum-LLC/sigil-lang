@@ -1,0 +1,118 @@
+// P1_006_arena_alloc.sg
+// Test: Arena allocator
+// Phase B: Memory Allocator
+//
+// This test verifies the arena allocator works correctly
+// for sequential memory allocation.
+
+use rt::alloc::{Arena};
+
+fn main() {
+    // Test 1: Create arena and allocate
+    vary arena = Arena::new();
+
+    ≔ p1 = arena.alloc(100);
+    assert!(!p1.is_null());
+    println("alloc_100_ok");
+
+    ≔ p2 = arena.alloc(200);
+    assert!(!p2.is_null());
+    println("alloc_200_ok");
+
+    // p2 should come after p1 (sequential allocation)
+    assert!(p2 as u64 > p1 as u64);
+    println("sequential_ok");
+
+    // Test 2: Alignment
+    // All allocations should be 8-byte aligned
+    ≔ p3 = arena.alloc(1);  // Request 1 byte
+    ≔ p4 = arena.alloc(1);  // Request 1 byte
+
+    assert_eq!((p3 as u64) % 8, 0);
+    assert_eq!((p4 as u64) % 8, 0);
+
+    // Gap between p3 and p4 should be at least 8 bytes (due to alignment padding)
+    assert!((p4 as u64 - p3 as u64) >= 8);
+    println("alignment_ok");
+
+    // Test 3: Write and read back
+    unsafe {
+        for i in 0..100 {
+            *(p1.offset(i as isize)) = (i & 0xFF) as u8;
+        }
+        for i in 0..200 {
+            *(p2.offset(i as isize)) = ((i * 2) & 0xFF) as u8;
+        }
+    }
+
+    vary write_ok = true;
+    unsafe {
+        for i in 0..100 {
+            ⎇ *(p1.offset(i as isize)) != (i & 0xFF) as u8 {
+                write_ok = false;
+                break;
+            }
+        }
+        for i in 0..200 {
+            ⎇ *(p2.offset(i as isize)) != ((i * 2) & 0xFF) as u8 {
+                write_ok = false;
+                break;
+            }
+        }
+    }
+    ⎇ write_ok {
+        println("write_read_ok");
+    } ⎉ {
+        println("write_read_fail");
+    }
+
+    // Test 4: Allocate zeroed memory
+    ≔ p5 = arena.alloc_zeroed(64);
+    vary zeroed_ok = true;
+    unsafe {
+        for i in 0..64 {
+            ⎇ *(p5.offset(i as isize)) != 0 {
+                zeroed_ok = false;
+                break;
+            }
+        }
+    }
+    ⎇ zeroed_ok {
+        println("alloc_zeroed_ok");
+    } ⎉ {
+        println("alloc_zeroed_fail");
+    }
+
+    // Test 5: Reset arena
+    ≔ before_reset = arena.alloc(8);
+    arena.reset();
+    ≔ after_reset = arena.alloc(8);
+
+    // After reset, allocation should start from the beginning again
+    assert_eq!(before_reset, after_reset);
+    println("reset_ok");
+
+    // Test 6: Large allocation (larger than block size)
+    vary arena2 = Arena::with_block_size(1024);
+    ≔ large = arena2.alloc(2048);  // Larger than block size
+    assert!(!large.is_null());
+    println("large_alloc_ok");
+
+    // Test 7: Many small allocations
+    vary arena3 = Arena::new();
+    vary all_valid = true;
+    for i in 0..1000 {
+        ≔ p = arena3.alloc(16);
+        ⎇ p.is_null() {
+            all_valid = false;
+            break;
+        }
+    }
+    ⎇ all_valid {
+        println("many_allocs_ok");
+    } ⎉ {
+        println("many_allocs_fail");
+    }
+
+    println("done");
+}

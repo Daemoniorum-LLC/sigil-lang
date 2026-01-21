@@ -1,0 +1,24 @@
+// TDD Test: ? tuple return
+// Test if tuple auto-wraps for ?T return
+
+struct Token {
+    value: i32,
+}
+
+struct Span {
+    start: u64,
+    end: u64,
+}
+
+fn maybe_get_tuple() -> ?(Token, Span) {
+    let token = Token { value: 42 };
+    let span = Span { start: 0, end: 10 };
+    (token, span)  // Does this auto-wrap?
+}
+
+fn main() {
+    match maybe_get_tuple() {
+        ?(t, s) => println(t.value),
+        null => println(0),
+    }
+}

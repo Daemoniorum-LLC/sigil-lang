@@ -1,0 +1,56 @@
+// P1_001_syscall_write.sg
+// Test: Direct syscall write to stdout without libc
+// Phase A: Platform Syscalls
+//
+// This test verifies that we can write to stdout using
+// raw syscalls instead of printf/puts from libc.
+
+use rt::sys;
+
+fn main() {
+    // Test 1: Write simple string to stdout (fd=1)
+    ≔ msg = "Hello from syscall\n";
+    ≔ result = sys::write(1, msg.as_bytes());
+
+    match result {
+        Ok(n) => {
+            // Should have written all 19 bytes
+            assert_eq!(n, 19);
+            println(n);
+        },
+        Err(e) => {
+            println(-1);
+            panic!("write failed");
+        }
+    }
+
+    // Test 2: Write to stderr (fd=2)
+    ≔ err_msg = "Error output\n";
+    ≔ result2 = sys::write(2, err_msg.as_bytes());
+
+    match result2 {
+        Ok(n) => {
+            assert_eq!(n, 13);
+            println(n);
+        },
+        Err(_) => {
+            println(-1);
+        }
+    }
+
+    // Test 3: Write empty buffer (should succeed with 0 bytes)
+    ≔ empty: [u8; 0] = [];
+    ≔ result3 = sys::write(1, &empty);
+
+    match result3 {
+        Ok(n) => {
+            assert_eq!(n, 0);
+            println(n);
+        },
+        Err(_) => {
+            println(-1);
+        }
+    }
+
+    println("done");
+}

@@ -1,0 +1,148 @@
+// P1_005_syscall_file.sg
+// Test: File I/O syscalls (open, read, write, close)
+// Phase A: Platform Syscalls
+//
+// This test verifies basic file operations using
+// raw syscalls instead of fopen/fread/fwrite from libc.
+
+use rt::sys;
+
+fn main() {
+    ≔ test_path = "/tmp/sigil_rt_test.txt";
+    ≔ test_content = "Hello, Native Runtime!";
+
+    // Test 1: Create and write file
+    // O_WRONLY | O_CREAT | O_TRUNC = 1 | 64 | 512 = 577
+    ≔ create_result = sys::open(test_path, 577, 0o644);
+
+    match create_result {
+        Ok(fd) => {
+            println("open_create_ok");
+
+            // Write content
+            ≔ write_result = sys::write(fd, test_content.as_bytes());
+            match write_result {
+                Ok(n) => {
+                    assert_eq!(n, 22);
+                    println("write_ok");
+                },
+                Err(_) => println("write_fail"),
+            }
+
+            // Close file
+            ≔ close_result = sys::close(fd);
+            match close_result {
+                Ok(_) => println("close_ok"),
+                Err(_) => println("close_fail"),
+            }
+        },
+        Err(e) => {
+            println("open_create_fail");
+            println(e.code());
+        }
+    }
+
+    // Test 2: Open and read file
+    // O_RDONLY = 0
+    ≔ open_result = sys::open(test_path, 0, 0);
+
+    match open_result {
+        Ok(fd) => {
+            println("open_read_ok");
+
+            // Read content
+            vary buf: [u8; 64] = [0; 64];
+            ≔ read_result = sys::read(fd, &mut buf);
+            match read_result {
+                Ok(n) => {
+                    assert_eq!(n, 22);
+                    println("read_ok");
+
+                    // Verify content matches
+                    vary matches = true;
+                    for i in 0..22 {
+                        ⎇ buf[i] != test_content.as_bytes()[i] {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    ⎇ matches {
+                        println("content_match");
+                    } ⎉ {
+                        println("content_mismatch");
+                    }
+                },
+                Err(_) => println("read_fail"),
+            }
+
+            sys::close(fd);
+        },
+        Err(_) => {
+            println("open_read_fail");
+        }
+    }
+
+    // Test 3: Append to file
+    // O_WRONLY | O_APPEND = 1 | 1024 = 1025
+    ≔ append_result = sys::open(test_path, 1025, 0);
+
+    match append_result {
+        Ok(fd) => {
+            println("open_append_ok");
+
+            ≔ append_content = " Appended!";
+            ≔ write_result = sys::write(fd, append_content.as_bytes());
+            match write_result {
+                Ok(n) => {
+                    assert_eq!(n, 10);
+                    println("append_ok");
+                },
+                Err(_) => println("append_fail"),
+            }
+
+            sys::close(fd);
+        },
+        Err(_) => println("open_append_fail"),
+    }
+
+    // Test 4: Read full file after append
+    ≔ final_result = sys::open(test_path, 0, 0);
+
+    match final_result {
+        Ok(fd) => {
+            vary buf: [u8; 64] = [0; 64];
+            ≔ read_result = sys::read(fd, &mut buf);
+            match read_result {
+                Ok(n) => {
+                    assert_eq!(n, 32);  // 22 + 10 = 32
+                    println("final_read_ok");
+                },
+                Err(_) => println("final_read_fail"),
+            }
+            sys::close(fd);
+        },
+        Err(_) => println("final_open_fail"),
+    }
+
+    // Test 5: Delete file (unlink)
+    ≔ unlink_result = sys::unlink(test_path);
+    match unlink_result {
+        Ok(_) => println("unlink_ok"),
+        Err(_) => println("unlink_fail"),
+    }
+
+    // Test 6: Verify file is gone
+    ≔ gone_result = sys::open(test_path, 0, 0);
+    match gone_result {
+        Ok(fd) => {
+            sys::close(fd);
+            println("file_still_exists");
+        },
+        Err(e) => {
+            assert_eq!(e.code(), 2);  // ENOENT
+            println("file_deleted");
+        }
+    }
+
+    println("done");
+}

@@ -1,0 +1,86 @@
+// P1_002_syscall_mmap.sg
+// Test: Anonymous memory mapping via syscall
+// Phase A: Platform Syscalls
+//
+// This test verifies that we can allocate memory using
+// mmap syscall instead of malloc from libc.
+
+use rt::sys;
+
+fn main() {
+    // Test 1: Allocate a single page (4096 bytes)
+    ≔ result = sys::mmap_anon(4096);
+
+    match result {
+        Ok(ptr) => {
+            // Pointer should not be null
+            assert!(ptr as u64 != 0);
+            println("alloc_ok");
+
+            // Test 2: Write to the memory
+            unsafe {
+                *ptr = 42u8;
+                *(ptr.offset(4095)) = 255u8;
+            }
+            println("write_ok");
+
+            // Test 3: Read back
+            unsafe {
+                ≔ val1 = *ptr;
+                ≔ val2 = *(ptr.offset(4095));
+                assert_eq!(val1, 42);
+                assert_eq!(val2, 255);
+            }
+            println("read_ok");
+
+            // Test 4: Unmap the memory
+            ≔ unmap_result = sys::munmap(ptr, 4096);
+            match unmap_result {
+                Ok(_) => println("unmap_ok"),
+                Err(_) => println("unmap_fail"),
+            }
+        },
+        Err(e) => {
+            println("alloc_fail");
+            println(e.code());
+        }
+    }
+
+    // Test 5: Allocate larger region (1MB)
+    ≔ large_result = sys::mmap_anon(1024 * 1024);
+    match large_result {
+        Ok(ptr) => {
+            println("large_alloc_ok");
+            // Write pattern across the region
+            unsafe {
+                for i in 0..1024 {
+                    *(ptr.offset((i * 1024) as isize)) = (i & 0xFF) as u8;
+                }
+            }
+            println("large_write_ok");
+
+            // Verify pattern
+            unsafe {
+                vary ok = true;
+                for i in 0..1024 {
+                    ⎇ *(ptr.offset((i * 1024) as isize)) != (i & 0xFF) as u8 {
+                        ok = false;
+                        break;
+                    }
+                }
+                ⎇ ok {
+                    println("large_verify_ok");
+                } ⎉ {
+                    println("large_verify_fail");
+                }
+            }
+
+            sys::munmap(ptr, 1024 * 1024);
+        },
+        Err(_) => {
+            println("large_alloc_fail");
+        }
+    }
+
+    println("done");
+}

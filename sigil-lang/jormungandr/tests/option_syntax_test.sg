@@ -1,0 +1,36 @@
+// TDD Test: Option syntax patterns
+// Test what option syntax works with Rust compiler
+
+// Test 1: Standard Option<T> with Some/None
+#[test]
+fn test_option_standard() {
+    let opt: Option<i32> = Some(42);
+    match opt {
+        Some(x) => assert_eq!(x, 42),
+        None => assert!(false),
+    }
+}
+
+// Test 2: Option function return
+#[test]
+fn test_option_return() {
+    fn maybe(cond: bool) -> Option<i32> {
+        if cond {
+            Some(42)
+        } else {
+            None
+        }
+    }
+
+    match maybe(true) {
+        Some(x) => assert_eq!(x, 42),
+        None => assert!(false),
+    }
+}
+
+// Test 3: Uncertain evidence (?) - different from Option
+#[test]
+fn test_uncertain_evidence() {
+    let uncertain: ?i32 = 42;  // Uncertain evidence, not Option
+    println(uncertain);
+}

@@ -1,0 +1,75 @@
+// P1_003_syscall_clock.sg
+// Test: Clock/time syscalls
+// Phase A: Platform Syscalls
+//
+// This test verifies that we can get current time using
+// clock_gettime syscall instead of gettimeofday from libc.
+
+use rt::sys;
+use rt::time::{Timespec, Duration, Instant};
+
+fn main() {
+    // Test 1: Get realtime clock (wall clock)
+    ≔ result = sys::clock_gettime_realtime();
+
+    match result {
+        Ok(ts) => {
+            // Timestamp should be after 2024-01-01 (1704067200 seconds)
+            assert!(ts.tv_sec > 1704067200);
+            println("realtime_ok");
+
+            // Nanoseconds should be in valid range [0, 999999999]
+            assert!(ts.tv_nsec >= 0);
+            assert!(ts.tv_nsec < 1000000000);
+            println("nsec_valid");
+        },
+        Err(e) => {
+            println("realtime_fail");
+            println(e.code());
+        }
+    }
+
+    // Test 2: Get monotonic clock (for measuring intervals)
+    ≔ mono_result = sys::clock_gettime_monotonic();
+
+    match mono_result {
+        Ok(ts) => {
+            // Monotonic clock value is system-dependent but should be positive
+            assert!(ts.tv_sec >= 0);
+            println("monotonic_ok");
+        },
+        Err(_) => {
+            println("monotonic_fail");
+        }
+    }
+
+    // Test 3: Measure elapsed time
+    ≔ start = Instant::now();
+
+    // Busy wait to consume some time
+    vary count: u64 = 0;
+    while count < 100000 {
+        count += 1;
+    }
+
+    ≔ elapsed = start.elapsed();
+
+    // Should have elapsed at least some nanoseconds
+    assert!(elapsed.as_nanos() > 0);
+    println("elapsed_ok");
+
+    // Test 4: sigil_now() compatibility function
+    ≔ now_ms = sigil_now();
+
+    // Should be after 2024-01-01 in milliseconds (1704067200000)
+    assert!(now_ms > 1704067200000);
+    println("sigil_now_ok");
+
+    // Test 5: Two calls should be monotonically increasing (or equal)
+    ≔ t1 = sigil_now();
+    ≔ t2 = sigil_now();
+    assert!(t2 >= t1);
+    println("monotonic_increasing");
+
+    println("done");
+}

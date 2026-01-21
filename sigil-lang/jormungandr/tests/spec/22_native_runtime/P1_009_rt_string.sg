@@ -1,0 +1,101 @@
+// P1_009_rt_string.sg
+// Test: Native runtime String implementation
+// Phase C: Core Types
+//
+// This test verifies String works correctly using
+// the native allocator instead of libc.
+
+use rt::types::{String};
+use rt::alloc::init_allocator;
+
+fn main() {
+    init_allocator();
+
+    // Test 1: Create empty String
+    vary s1 = String::new();
+    assert_eq!(s1.len(), 0);
+    assert!(s1.is_empty());
+    println("new_ok");
+
+    // Test 2: Create from &str
+    ≔ s2 = String::from("Hello");
+    assert_eq!(s2.len(), 5);
+    assert_eq!(s2.as_str(), "Hello");
+    println("from_str_ok");
+
+    // Test 3: Push string slice
+    vary s3 = String::from("Hello");
+    s3.push_str(", World!");
+    assert_eq!(s3.len(), 13);
+    assert_eq!(s3.as_str(), "Hello, World!");
+    println("push_str_ok");
+
+    // Test 4: Push single character
+    vary s4 = String::from("AB");
+    s4.push('C');
+    assert_eq!(s4.len(), 3);
+    assert_eq!(s4.as_str(), "ABC");
+    println("push_char_ok");
+
+    // Test 5: With capacity
+    vary s5 = String::with_capacity(100);
+    assert_eq!(s5.len(), 0);
+    assert!(s5.capacity() >= 100);
+    println("with_capacity_ok");
+
+    // Test 6: Clear
+    vary s6 = String::from("Hello");
+    ≔ cap_before = s6.capacity();
+    s6.clear();
+    assert_eq!(s6.len(), 0);
+    assert!(s6.is_empty());
+    assert_eq!(s6.capacity(), cap_before);
+    println("clear_ok");
+
+    // Test 7: Concat
+    ≔ s7a = String::from("Hello");
+    ≔ s7b = String::from(" World");
+    ≔ s7c = s7a.concat(&s7b);
+    assert_eq!(s7c.as_str(), "Hello World");
+    println("concat_ok");
+
+    // Test 8: As bytes
+    ≔ s8 = String::from("ABC");
+    ≔ bytes = s8.as_bytes();
+    assert_eq!(bytes.len(), 3);
+    assert_eq!(bytes[0], 65);  // 'A'
+    assert_eq!(bytes[1], 66);  // 'B'
+    assert_eq!(bytes[2], 67);  // 'C'
+    println("as_bytes_ok");
+
+    // Test 9: Build large string
+    vary s9 = String::new();
+    for i in 0..100 {
+        s9.push_str("x");
+    }
+    assert_eq!(s9.len(), 100);
+    println("build_large_ok");
+
+    // Test 10: Unicode (basic test)
+    vary s10 = String::from("Hello ");
+    s10.push_str("世界");  // "World" in Chinese
+    // UTF-8 encoding: 世 = 3 bytes, 界 = 3 bytes
+    assert_eq!(s10.len(), 6 + 6);  // "Hello " (6) + 6 UTF-8 bytes
+    println("unicode_ok");
+
+    // Test 11: Empty string operations
+    ≔ empty = String::new();
+    assert_eq!(empty.as_str(), "");
+    ≔ empty2 = String::from("");
+    assert_eq!(empty2.len(), 0);
+    println("empty_ops_ok");
+
+    // Test 12: Add operator (if implemented)
+    ≔ s12a = String::from("Hello");
+    ≔ s12b = String::from(" World");
+    ≔ s12c = s12a + &s12b;  // Uses Add trait
+    assert_eq!(s12c.as_str(), "Hello World");
+    println("add_op_ok");
+
+    println("done");
+}

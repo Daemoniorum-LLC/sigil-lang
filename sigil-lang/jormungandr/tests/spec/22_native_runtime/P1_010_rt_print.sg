@@ -1,0 +1,69 @@
+// P1_010_rt_print.sg
+// Test: Native runtime print functions
+// Phase D: I/O
+//
+// This test verifies print functions work without
+// printf/puts from libc.
+
+use rt::io::{print, println, sigil_print_int, sigil_print_float, sigil_print_str};
+use rt::alloc::init_allocator;
+
+fn main() {
+    init_allocator();
+
+    // Test 1: Print string without newline
+    print("Hello");
+    print(" ");
+    print("World");
+    println("");  // newline
+    println("print_ok");
+
+    // Test 2: Print integer - positive
+    sigil_print_int(42);
+    sigil_print_int(12345);
+    sigil_print_int(9223372036854775807);  // i64::MAX
+    println("int_positive_ok");
+
+    // Test 3: Print integer - negative
+    sigil_print_int(-42);
+    sigil_print_int(-12345);
+    sigil_print_int(-9223372036854775807);  // near i64::MIN
+    println("int_negative_ok");
+
+    // Test 4: Print integer - zero
+    sigil_print_int(0);
+    println("int_zero_ok");
+
+    // Test 5: Print float - positive
+    sigil_print_float(3.14159);
+    sigil_print_float(2.71828);
+    sigil_print_float(1000000.5);
+    println("float_positive_ok");
+
+    // Test 6: Print float - negative
+    sigil_print_float(-3.14159);
+    sigil_print_float(-0.001);
+    println("float_negative_ok");
+
+    // Test 7: Print float - special values
+    sigil_print_float(0.0);
+    sigil_print_float(1.0);
+    sigil_print_float(-1.0);
+    println("float_special_ok");
+
+    // Test 8: Print string pointer
+    sigil_print_str("Hello from sigil_print_str");
+    println("print_str_ok");
+
+    // Test 9: Print empty string
+    sigil_print_str("");
+    println("print_empty_ok");
+
+    // Test 10: Print multiline
+    println("Line 1");
+    println("Line 2");
+    println("Line 3");
+    println("multiline_ok");
+
+    println("done");
+}
