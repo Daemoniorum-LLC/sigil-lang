@@ -1,0 +1,248 @@
+// rt/sys/errno.sg - POSIX Error Numbers
+//
+// Platform-independent error codes matching POSIX errno values.
+
+/// POSIX error codes
+#[repr(i32)]
+pub enum Errno {
+    /// Success (not an error)
+    SUCCESS = 0,
+    /// Operation not permitted
+    EPERM = 1,
+    /// No such file or directory
+    ENOENT = 2,
+    /// No such process
+    ESRCH = 3,
+    /// Interrupted system call
+    EINTR = 4,
+    /// I/O error
+    EIO = 5,
+    /// No such device or address
+    ENXIO = 6,
+    /// Argument list too long
+    E2BIG = 7,
+    /// Exec format error
+    ENOEXEC = 8,
+    /// Bad file descriptor
+    EBADF = 9,
+    /// No child processes
+    ECHILD = 10,
+    /// Resource temporarily unavailable
+    EAGAIN = 11,
+    /// Out of memory
+    ENOMEM = 12,
+    /// Permission denied
+    EACCES = 13,
+    /// Bad address
+    EFAULT = 14,
+    /// Block device required
+    ENOTBLK = 15,
+    /// Device or resource busy
+    EBUSY = 16,
+    /// File exists
+    EEXIST = 17,
+    /// Invalid cross-device link
+    EXDEV = 18,
+    /// No such device
+    ENODEV = 19,
+    /// Not a directory
+    ENOTDIR = 20,
+    /// Is a directory
+    EISDIR = 21,
+    /// Invalid argument
+    EINVAL = 22,
+    /// Too many open files in system
+    ENFILE = 23,
+    /// Too many open files
+    EMFILE = 24,
+    /// Inappropriate ioctl for device
+    ENOTTY = 25,
+    /// Text file busy
+    ETXTBSY = 26,
+    /// File too large
+    EFBIG = 27,
+    /// No space left on device
+    ENOSPC = 28,
+    /// Illegal seek
+    ESPIPE = 29,
+    /// Read-only file system
+    EROFS = 30,
+    /// Too many links
+    EMLINK = 31,
+    /// Broken pipe
+    EPIPE = 32,
+    /// Numerical argument out of domain
+    EDOM = 33,
+    /// Numerical result out of range
+    ERANGE = 34,
+    /// Resource deadlock avoided
+    EDEADLK = 35,
+    /// File name too long
+    ENAMETOOLONG = 36,
+    /// No locks available
+    ENOLCK = 37,
+    /// Function not implemented
+    ENOSYS = 38,
+    /// Directory not empty
+    ENOTEMPTY = 39,
+    /// Too many levels of symbolic links
+    ELOOP = 40,
+    /// Unknown error
+    UNKNOWN = 9999,
+}
+
+impl Errno {
+    /// Create Errno from raw code
+    pub fn from(code: i32) -> !Self {
+        match code {
+            0 => Errno·SUCCESS,
+            1 => Errno·EPERM,
+            2 => Errno·ENOENT,
+            3 => Errno·ESRCH,
+            4 => Errno·EINTR,
+            5 => Errno·EIO,
+            6 => Errno·ENXIO,
+            7 => Errno·E2BIG,
+            8 => Errno·ENOEXEC,
+            9 => Errno·EBADF,
+            10 => Errno·ECHILD,
+            11 => Errno·EAGAIN,
+            12 => Errno·ENOMEM,
+            13 => Errno·EACCES,
+            14 => Errno·EFAULT,
+            15 => Errno·ENOTBLK,
+            16 => Errno·EBUSY,
+            17 => Errno·EEXIST,
+            18 => Errno·EXDEV,
+            19 => Errno·ENODEV,
+            20 => Errno·ENOTDIR,
+            21 => Errno·EISDIR,
+            22 => Errno·EINVAL,
+            23 => Errno·ENFILE,
+            24 => Errno·EMFILE,
+            25 => Errno·ENOTTY,
+            26 => Errno·ETXTBSY,
+            27 => Errno·EFBIG,
+            28 => Errno·ENOSPC,
+            29 => Errno·ESPIPE,
+            30 => Errno·EROFS,
+            31 => Errno·EMLINK,
+            32 => Errno·EPIPE,
+            33 => Errno·EDOM,
+            34 => Errno·ERANGE,
+            35 => Errno·EDEADLK,
+            36 => Errno·ENAMETOOLONG,
+            37 => Errno·ENOLCK,
+            38 => Errno·ENOSYS,
+            39 => Errno·ENOTEMPTY,
+            40 => Errno·ELOOP,
+            _ => Errno·UNKNOWN,
+        }
+    }
+
+    /// Get raw error code
+    pub fn code(&self) -> !i32 {
+        match self {
+            Errno·SUCCESS => 0,
+            Errno·EPERM => 1,
+            Errno·ENOENT => 2,
+            Errno·ESRCH => 3,
+            Errno·EINTR => 4,
+            Errno·EIO => 5,
+            Errno·ENXIO => 6,
+            Errno·E2BIG => 7,
+            Errno·ENOEXEC => 8,
+            Errno·EBADF => 9,
+            Errno·ECHILD => 10,
+            Errno·EAGAIN => 11,
+            Errno·ENOMEM => 12,
+            Errno·EACCES => 13,
+            Errno·EFAULT => 14,
+            Errno·ENOTBLK => 15,
+            Errno·EBUSY => 16,
+            Errno·EEXIST => 17,
+            Errno·EXDEV => 18,
+            Errno·ENODEV => 19,
+            Errno·ENOTDIR => 20,
+            Errno·EISDIR => 21,
+            Errno·EINVAL => 22,
+            Errno·ENFILE => 23,
+            Errno·EMFILE => 24,
+            Errno·ENOTTY => 25,
+            Errno·ETXTBSY => 26,
+            Errno·EFBIG => 27,
+            Errno·ENOSPC => 28,
+            Errno·ESPIPE => 29,
+            Errno·EROFS => 30,
+            Errno·EMLINK => 31,
+            Errno·EPIPE => 32,
+            Errno·EDOM => 33,
+            Errno·ERANGE => 34,
+            Errno·EDEADLK => 35,
+            Errno·ENAMETOOLONG => 36,
+            Errno·ENOLCK => 37,
+            Errno·ENOSYS => 38,
+            Errno·ENOTEMPTY => 39,
+            Errno·ELOOP => 40,
+            Errno·UNKNOWN => 9999,
+        }
+    }
+
+    /// Get human-readable error message
+    pub fn message(&self) -> !&str {
+        match self {
+            Errno·SUCCESS => "Success",
+            Errno·EPERM => "Operation not permitted",
+            Errno·ENOENT => "No such file or directory",
+            Errno·ESRCH => "No such process",
+            Errno·EINTR => "Interrupted system call",
+            Errno·EIO => "I/O error",
+            Errno·ENXIO => "No such device or address",
+            Errno·E2BIG => "Argument list too long",
+            Errno·ENOEXEC => "Exec format error",
+            Errno·EBADF => "Bad file descriptor",
+            Errno·ECHILD => "No child processes",
+            Errno·EAGAIN => "Resource temporarily unavailable",
+            Errno·ENOMEM => "Out of memory",
+            Errno·EACCES => "Permission denied",
+            Errno·EFAULT => "Bad address",
+            Errno·ENOTBLK => "Block device required",
+            Errno·EBUSY => "Device or resource busy",
+            Errno·EEXIST => "File exists",
+            Errno·EXDEV => "Invalid cross-device link",
+            Errno·ENODEV => "No such device",
+            Errno·ENOTDIR => "Not a directory",
+            Errno·EISDIR => "Is a directory",
+            Errno·EINVAL => "Invalid argument",
+            Errno·ENFILE => "Too many open files in system",
+            Errno·EMFILE => "Too many open files",
+            Errno·ENOTTY => "Inappropriate ioctl for device",
+            Errno·ETXTBSY => "Text file busy",
+            Errno·EFBIG => "File too large",
+            Errno·ENOSPC => "No space left on device",
+            Errno·ESPIPE => "Illegal seek",
+            Errno·EROFS => "Read-only file system",
+            Errno·EMLINK => "Too many links",
+            Errno·EPIPE => "Broken pipe",
+            Errno·EDOM => "Numerical argument out of domain",
+            Errno·ERANGE => "Numerical result out of range",
+            Errno·EDEADLK => "Resource deadlock avoided",
+            Errno·ENAMETOOLONG => "File name too long",
+            Errno·ENOLCK => "No locks available",
+            Errno·ENOSYS => "Function not implemented",
+            Errno·ENOTEMPTY => "Directory not empty",
+            Errno·ELOOP => "Too many levels of symbolic links",
+            Errno·UNKNOWN => "Unknown error",
+        }
+    }
+
+    /// Check if this represents success
+    pub fn is_success(&self) -> !bool {
+        self.code() == 0
+    }
+
+    /// Check if this is a real error
+    pub fn is_error(&self) -> !bool {
+        self.code() != 0
+    }
+}
