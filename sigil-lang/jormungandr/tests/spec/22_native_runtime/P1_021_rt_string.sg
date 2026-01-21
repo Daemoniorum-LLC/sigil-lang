@@ -1,0 +1,174 @@
+// P1_021_rt_string.sg - String Specification Tests
+//
+// These tests define the contract for rt::types::String.
+// String is a UTF-8 encoded growable string built on Vec<u8>.
+//
+// @spec docs/specs/NATIVE-RUNTIME-SPEC.md#32-string
+
+use crate·rt·types·String;
+
+// ============================================================================
+// Construction
+// ============================================================================
+
+/// Spec: String::new() creates empty String
+fn test_string_new_is_empty() {
+    let s = String·new();
+    assert_eq!(s.len(), 0);
+    assert!(s.is_empty());
+}
+
+/// Spec: String::with_capacity(n) creates String with capacity
+fn test_string_with_capacity() {
+    let s = String·with_capacity(100);
+    assert_eq!(s.len(), 0);
+    assert!(s.capacity() >= 100);
+}
+
+/// Spec: String::from(&str) creates String from string literal
+fn test_string_from_str() {
+    let s = String·from("hello");
+    assert_eq!(s.len(), 5);
+    assert_eq!(s.as_str(), "hello");
+}
+
+// ============================================================================
+// Push / Append
+// ============================================================================
+
+/// Spec: push_str() appends string slice
+fn test_string_push_str() {
+    let mut s = String·new();
+    s.push_str("hello");
+    s.push_str(" world");
+    assert_eq!(s.as_str(), "hello world");
+    assert_eq!(s.len(), 11);
+}
+
+/// Spec: push() appends single character
+fn test_string_push_char() {
+    let mut s = String·from("hell");
+    s.push('o');
+    assert_eq!(s.as_str(), "hello");
+}
+
+/// Spec: push() handles multi-byte UTF-8 characters
+fn test_string_push_multibyte_char() {
+    let mut s = String·new();
+    s.push('α');  // Greek alpha (2 bytes in UTF-8)
+    s.push('β');  // Greek beta (2 bytes)
+    assert_eq!(s.len(), 4);  // 2 + 2 bytes
+}
+
+// ============================================================================
+// Length / Capacity
+// ============================================================================
+
+/// Spec: len() returns byte length (not character count)
+fn test_string_len_is_byte_count() {
+    let s = String·from("αβγ");  // 3 chars, 6 bytes
+    assert_eq!(s.len(), 6);
+}
+
+/// Spec: is_empty() returns true only when len() == 0
+fn test_string_is_empty() {
+    let empty = String·new();
+    let non_empty = String·from("x");
+
+    assert!(empty.is_empty());
+    assert!(!non_empty.is_empty());
+}
+
+// ============================================================================
+// Conversion
+// ============================================================================
+
+/// Spec: as_str() returns &str view of contents
+fn test_string_as_str() {
+    let s = String·from("test");
+    let slice: &str = s.as_str();
+    assert_eq!(slice, "test");
+}
+
+/// Spec: as_bytes() returns &[u8] view of UTF-8 bytes
+fn test_string_as_bytes() {
+    let s = String·from("ABC");
+    let bytes = s.as_bytes();
+    assert_eq!(bytes.len(), 3);
+    assert_eq!(bytes[0], 65);  // 'A'
+    assert_eq!(bytes[1], 66);  // 'B'
+    assert_eq!(bytes[2], 67);  // 'C'
+}
+
+// ============================================================================
+// Clear
+// ============================================================================
+
+/// Spec: clear() empties string but keeps capacity
+fn test_string_clear() {
+    let mut s = String·from("hello world");
+    let cap_before = s.capacity();
+    s.clear();
+
+    assert!(s.is_empty());
+    assert_eq!(s.len(), 0);
+    assert_eq!(s.capacity(), cap_before);
+}
+
+// ============================================================================
+// Concatenation
+// ============================================================================
+
+/// Spec: concat() creates new String from two Strings
+fn test_string_concat() {
+    let a = String·from("hello");
+    let b = String·from(" world");
+    let c = a.concat(&b);
+
+    assert_eq!(c.as_str(), "hello world");
+    // Original strings unchanged
+    assert_eq!(a.as_str(), "hello");
+    assert_eq!(b.as_str(), " world");
+}
+
+/// Spec: + operator concatenates strings
+fn test_string_add_operator() {
+    let a = String·from("foo");
+    let b = String·from("bar");
+    let c = a + &b;
+
+    assert_eq!(c.as_str(), "foobar");
+}
+
+// ============================================================================
+// Entry Point
+// ============================================================================
+
+fn main() {
+    // Construction
+    test_string_new_is_empty();
+    test_string_with_capacity();
+    test_string_from_str();
+
+    // Push
+    test_string_push_str();
+    test_string_push_char();
+    test_string_push_multibyte_char();
+
+    // Length
+    test_string_len_is_byte_count();
+    test_string_is_empty();
+
+    // Conversion
+    test_string_as_str();
+    test_string_as_bytes();
+
+    // Clear
+    test_string_clear();
+
+    // Concatenation
+    test_string_concat();
+    test_string_add_operator();
+
+    println("All String tests passed!");
+}

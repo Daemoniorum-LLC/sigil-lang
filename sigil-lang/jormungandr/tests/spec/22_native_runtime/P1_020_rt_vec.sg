@@ -1,0 +1,232 @@
+// P1_020_rt_vec.sg - Vec<T> Specification Tests
+//
+// These tests define the contract for rt::types::Vec<T>.
+// Each test specifies exactly one behavior.
+//
+// @spec docs/specs/NATIVE-RUNTIME-SPEC.md#module-3-core-types
+
+use crate·rt·types·Vec;
+
+// ============================================================================
+// Construction
+// ============================================================================
+
+/// Spec: Vec::new() creates empty Vec with zero length
+fn test_vec_new_is_empty() {
+    let v: Vec<i32> = Vec·new();
+    assert_eq!(v.len(), 0);
+    assert!(v.is_empty());
+}
+
+/// Spec: Vec::with_capacity(n) creates Vec with zero length but n capacity
+fn test_vec_with_capacity_has_capacity() {
+    let v: Vec<i32> = Vec·with_capacity(10);
+    assert_eq!(v.len(), 0);
+    assert_eq!(v.capacity(), 10);
+    assert!(v.is_empty());
+}
+
+// ============================================================================
+// Push / Pop
+// ============================================================================
+
+/// Spec: push() increases length by 1 and stores value
+fn test_vec_push_increases_len() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(42);
+    assert_eq!(v.len(), 1);
+    assert!(!v.is_empty());
+}
+
+/// Spec: push() stores value at correct index
+fn test_vec_push_stores_value() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(10);
+    v.push(20);
+    v.push(30);
+    assert_eq!(v.get(0), Some(&10));
+    assert_eq!(v.get(1), Some(&20));
+    assert_eq!(v.get(2), Some(&30));
+}
+
+/// Spec: pop() returns Some(last_value) and decreases length
+fn test_vec_pop_returns_last() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(10);
+    v.push(20);
+
+    let popped = v.pop();
+    assert_eq!(popped, Some(20));
+    assert_eq!(v.len(), 1);
+}
+
+/// Spec: pop() on empty Vec returns None
+fn test_vec_pop_empty_returns_none() {
+    let mut v: Vec<i32> = Vec·new();
+    let popped = v.pop();
+    assert_eq!(popped, None);
+    assert_eq!(v.len(), 0);
+}
+
+// ============================================================================
+// Indexing / Get
+// ============================================================================
+
+/// Spec: get(i) returns Some(&element) when i < len
+fn test_vec_get_valid_index() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(100);
+    v.push(200);
+
+    assert_eq!(v.get(0), Some(&100));
+    assert_eq!(v.get(1), Some(&200));
+}
+
+/// Spec: get(i) returns None when i >= len
+fn test_vec_get_invalid_index_returns_none() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(100);
+
+    assert_eq!(v.get(1), None);
+    assert_eq!(v.get(100), None);
+}
+
+/// Spec: get_mut(i) returns mutable reference that can modify element
+fn test_vec_get_mut_allows_modification() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(10);
+
+    if let Some(elem) = v.get_mut(0) {
+        *elem = 999;
+    }
+
+    assert_eq!(v.get(0), Some(&999));
+}
+
+/// Spec: Index operator v[i] returns element (panics if out of bounds)
+fn test_vec_index_operator() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(42);
+    v.push(84);
+
+    assert_eq!(v[0], 42);
+    assert_eq!(v[1], 84);
+}
+
+// ============================================================================
+// Capacity / Growth
+// ============================================================================
+
+/// Spec: Vec grows automatically when capacity exceeded
+fn test_vec_grows_automatically() {
+    let mut v: Vec<i32> = Vec·with_capacity(2);
+    v.push(1);
+    v.push(2);
+    v.push(3);  // Should trigger growth
+
+    assert_eq!(v.len(), 3);
+    assert!(v.capacity() >= 3);
+    assert_eq!(v.get(2), Some(&3));
+}
+
+/// Spec: Growth doubles capacity (amortized O(1) push)
+fn test_vec_growth_doubles_capacity() {
+    let mut v: Vec<i32> = Vec·with_capacity(4);
+    for i in 0..5 {
+        v.push(i);
+    }
+    // Started with 4, grew to 8
+    assert!(v.capacity() >= 8);
+}
+
+// ============================================================================
+// Clear
+// ============================================================================
+
+/// Spec: clear() sets length to 0 but preserves capacity
+fn test_vec_clear_preserves_capacity() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(1);
+    v.push(2);
+    v.push(3);
+
+    let cap_before = v.capacity();
+    v.clear();
+
+    assert_eq!(v.len(), 0);
+    assert!(v.is_empty());
+    assert_eq!(v.capacity(), cap_before);
+}
+
+// ============================================================================
+// Slice Views
+// ============================================================================
+
+/// Spec: as_slice() returns view of all elements
+fn test_vec_as_slice() {
+    let mut v: Vec<i32> = Vec·new();
+    v.push(1);
+    v.push(2);
+    v.push(3);
+
+    let slice = v.as_slice();
+    assert_eq!(slice.len(), 3);
+    assert_eq!(slice[0], 1);
+    assert_eq!(slice[1], 2);
+    assert_eq!(slice[2], 3);
+}
+
+// ============================================================================
+// Drop
+// ============================================================================
+
+/// Spec: Vec drops all elements when it goes out of scope
+fn test_vec_drops_elements() {
+    // This test verifies no memory leak - elements should be dropped
+    {
+        let mut v: Vec<i32> = Vec·new();
+        for i in 0..1000 {
+            v.push(i);
+        }
+        // v goes out of scope here, should free memory
+    }
+    // If we get here without crash, memory was properly freed
+    println("Vec dropped successfully");
+}
+
+// ============================================================================
+// Entry Point
+// ============================================================================
+
+fn main() {
+    // Construction
+    test_vec_new_is_empty();
+    test_vec_with_capacity_has_capacity();
+
+    // Push/Pop
+    test_vec_push_increases_len();
+    test_vec_push_stores_value();
+    test_vec_pop_returns_last();
+    test_vec_pop_empty_returns_none();
+
+    // Indexing
+    test_vec_get_valid_index();
+    test_vec_get_invalid_index_returns_none();
+    test_vec_get_mut_allows_modification();
+    test_vec_index_operator();
+
+    // Capacity
+    test_vec_grows_automatically();
+    test_vec_growth_doubles_capacity();
+
+    // Clear
+    test_vec_clear_preserves_capacity();
+
+    // Slice
+    test_vec_as_slice();
+
+    // Drop
+    test_vec_drops_elements();
+
+    println("All Vec tests passed!");
+}

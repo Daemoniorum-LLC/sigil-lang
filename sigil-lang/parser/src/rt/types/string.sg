@@ -1,0 +1,243 @@
+// rt/types/string.sg - UTF-8 String Type
+//
+// Pure Sigil String implementation built on Vec<u8>.
+// Guarantees valid UTF-8 encoding.
+//
+// @spec docs/specs/NATIVE-RUNTIME-SPEC.md#32-string
+// @evidentiality docs/specs/EVIDENTIALITY-RULES.md
+
+use crate·rt·types·vec·Vec;
+use crate·rt·alloc·{sigil_alloc, sigil_free};
+
+/// UTF-8 encoded growable string
+///
+/// Evidentiality:
+/// - Contents: Known (!) when created from literals
+/// - Contents: Reported (~) when from external input
+/// - The String type itself tracks the provenance
+pub struct String {
+    /// Internal byte storage (guaranteed UTF-8)
+    vec: Vec<u8>,
+}
+
+impl String {
+    // ========================================================================
+    // Construction
+    // ========================================================================
+
+    /// Create empty String
+    ///
+    /// Returns Known (!) - fresh empty string
+    pub fn new() -> Self! {
+        String {
+            vec: Vec·new(1),  // elem_size = 1 byte
+        }
+    }
+
+    /// Create String with pre-allocated capacity
+    ///
+    /// Returns Known (!) - capacity is known
+    pub fn with_capacity(cap: u64) -> Self! {
+        String {
+            vec: Vec·with_capacity(cap, 1),
+        }
+    }
+
+    /// Create String from string slice
+    ///
+    /// Returns Known (!) when s is a literal
+    pub fn from(s: &str) -> Self! {
+        let mut string = String·with_capacity(s.len() as u64);
+        string.push_str(s);
+        string
+    }
+
+    // ========================================================================
+    // Push / Append
+    // ========================================================================
+
+    /// Append a string slice
+    pub fn push_str(&mut self, s: &str) {
+        let bytes = s.as_bytes();
+        let mut i: u64 = 0;
+        while i < bytes.len() as u64 {
+            self.vec.push(bytes[i]);
+            i = i + 1;
+        }
+    }
+
+    /// Append a single character
+    ///
+    /// Encodes the char as UTF-8 bytes
+    pub fn push(&mut self, ch: char) {
+        let code = ch as u32;
+
+        if code < 0x80 {
+            // 1-byte: 0xxxxxxx
+            self.vec.push(code as u8);
+        } else if code < 0x800 {
+            // 2-byte: 110xxxxx 10xxxxxx
+            self.vec.push((0xC0 | (code >> 6)) as u8);
+            self.vec.push((0x80 | (code & 0x3F)) as u8);
+        } else if code < 0x10000 {
+            // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
+            self.vec.push((0xE0 | (code >> 12)) as u8);
+            self.vec.push((0x80 | ((code >> 6) & 0x3F)) as u8);
+            self.vec.push((0x80 | (code & 0x3F)) as u8);
+        } else {
+            // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+            self.vec.push((0xF0 | (code >> 18)) as u8);
+            self.vec.push((0x80 | ((code >> 12) & 0x3F)) as u8);
+            self.vec.push((0x80 | ((code >> 6) & 0x3F)) as u8);
+            self.vec.push((0x80 | (code & 0x3F)) as u8);
+        }
+    }
+
+    // ========================================================================
+    // Length / Capacity
+    // ========================================================================
+
+    /// Length in bytes (not characters)
+    ///
+    /// Returns Known (!) - internal counter
+    pub fn len(&self) -> u64! {
+        self.vec.len()
+    }
+
+    /// Capacity in bytes
+    pub fn capacity(&self) -> u64! {
+        self.vec.capacity()
+    }
+
+    /// Check if string is empty
+    pub fn is_empty(&self) -> bool! {
+        self.vec.is_empty()
+    }
+
+    // ========================================================================
+    // Conversion
+    // ========================================================================
+
+    /// Get as &str
+    ///
+    /// Returns Known (!) - UTF-8 is guaranteed valid
+    pub fn as_str(&self) -> &str! {
+        unsafe {
+            // We guarantee UTF-8 validity by construction
+            str_from_utf8_unchecked(self.vec.as_ptr(), self.vec.len())
+        }
+    }
+
+    /// Get as byte slice
+    pub fn as_bytes(&self) -> &[u8]! {
+        unsafe {
+            slice_from_raw_parts(self.vec.as_ptr(), self.vec.len())
+        }
+    }
+
+    /// Get raw pointer to bytes
+    pub fn as_ptr(&self) -> *const u8! {
+        self.vec.as_ptr() as *const u8
+    }
+
+    // ========================================================================
+    // Modification
+    // ========================================================================
+
+    /// Clear contents (keeps capacity)
+    pub fn clear(&mut self) {
+        self.vec.clear();
+    }
+
+    /// Reserve capacity for additional bytes
+    pub fn reserve(&mut self, additional: u64) {
+        self.vec.reserve(additional);
+    }
+
+    // ========================================================================
+    // Concatenation
+    // ========================================================================
+
+    /// Create new String by concatenating with another
+    ///
+    /// Returns Known (!) - newly allocated
+    pub fn concat(&self, other: &String) -> String! {
+        let mut result = String·with_capacity(self.len() + other.len());
+        result.push_str(self.as_str());
+        result.push_str(other.as_str());
+        result
+    }
+}
+
+// ============================================================================
+// Trait Implementations
+// ============================================================================
+
+impl Drop for String {
+    fn drop(&mut self) {
+        // Vec's drop will handle freeing memory
+    }
+}
+
+impl Add<&String> for String {
+    type Output = String;
+
+    fn add(self, other: &String) -> String! {
+        self.concat(other)
+    }
+}
+
+impl PartialEq for String {
+    fn eq(&self, other: &String) -> bool! {
+        if self.len() != other.len() {
+            false
+        } else {
+            // Compare bytes
+            let a = self.as_bytes();
+            let b = other.as_bytes();
+            let mut i: u64 = 0;
+            while i < self.len() {
+                if a[i] != b[i] {
+                    return false;
+                }
+                i = i + 1;
+            }
+            true
+        }
+    }
+}
+
+impl PartialEq<&str> for String {
+    fn eq(&self, other: &&str) -> bool! {
+        let other_bytes = (*other).as_bytes();
+        if self.len() != other_bytes.len() as u64 {
+            false
+        } else {
+            let a = self.as_bytes();
+            let mut i: u64 = 0;
+            while i < self.len() {
+                if a[i] != other_bytes[i] {
+                    return false;
+                }
+                i = i + 1;
+            }
+            true
+        }
+    }
+}
+
+// ============================================================================
+// Helper functions (compiler intrinsics)
+// ============================================================================
+
+/// Create &str from raw pointer and length (unchecked UTF-8)
+#[inline]
+unsafe fn str_from_utf8_unchecked(ptr: *const u8, len: u64) -> &str! {
+    __builtin_str_from_raw_parts(ptr, len)
+}
+
+/// Create slice from raw parts
+#[inline]
+unsafe fn slice_from_raw_parts(ptr: *const u8, len: u64) -> &[u8]! {
+    __builtin_slice_from_raw_parts_u8(ptr, len)
+}
