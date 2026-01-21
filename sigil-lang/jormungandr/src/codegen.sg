@@ -44,18 +44,18 @@
 //! sigil_Ok/sigil_Err store values in `.v.ptr` but generated code accesses `.v.e.data[0]`.
 //! **Fix**: Change sigil_Ok/sigil_Err to use `.v.e = { .data = ... }` representation.
 //!
-//! ### CG-126: Vec::is_empty generates String::is_empty
+//! ### CG-126: Vec·is_empty generates String·is_empty
 //! Method resolution doesn't track receiver type, so `vec.is_empty()` becomes
 //! `sigil_String____is_empty(vec)` which fails for arrays.
 //! **Fix**: Make sigil_String____is_empty handle TAG_ARRAY.
 //!
 //! ### CG-127: struct.field.push() doesn't write back
 //! When pushing to a struct field like `config.input_files.push(s)`, the generated
-//! code calls Vec::push but doesn't write the result back to the struct.
+//! code calls Vec·push but doesn't write the result back to the struct.
 //! **Fix**: Generate `sigil_struct_set_field(&config, "input_files", result)` after push.
 
-use crate::ir::*;
-use crate::typeck::EvidenceLevel;
+invoke tome·ir·*;
+invoke tome·typeck·EvidenceLevel;
 
 // ============================================================================
 // Code Generator
@@ -88,7 +88,7 @@ pub struct CodeGen {
     closure_buffer: !String,
 
     /// CG-015: Method signatures for determining mut self at call sites
-    /// Maps qualified method name (e.g., "Lexer::advance") to whether it has mut self
+    /// Maps qualified method name (e.g., "Lexer·advance") to whether it has mut self
     method_signatures: !Map<String, bool>,
 
     /// CG-015: Whether the current function being emitted has `mut self`
@@ -109,15 +109,15 @@ impl CodeGen {
     /// Create a new code generator
     pub fn new() -> !CodeGen {
         CodeGen {
-            output: String::new(),
+            output: String·new(),
             indent: 0,
-            type_names: Map::new(),
+            type_names: Map·new(),
             temp_counter: 0,
             label_counter: 0,
             current_function: null,
             in_expr: false,
-            closure_buffer: String::new(),
-            method_signatures: Map::new(),
+            closure_buffer: String·new(),
+            method_signatures: Map·new(),
             current_fn_has_mut_self: false,
             in_closure_body: false,
             current_mut_ref_params: [],
@@ -150,7 +150,7 @@ impl CodeGen {
 
         // Generate function bodies to a temporary buffer (this collects closures)
         let header_code = self.output.clone();
-        self.output = String::new();
+        self.output = String·new();
         for func in module.functions {
             self.emit_function(func);
         }
@@ -265,7 +265,7 @@ impl CodeGen {
     /// Helper: create a C compound literal like (SigilValue){ .tag = 1 }
     fn compound_lit(ty: !&str, inner: !&str) -> !String {
         // Use string concat to avoid format! issues with static calls
-        let init = CodeGen::struct_init(inner);
+        let init = CodeGen·struct_init(inner);
         "(" + ty + ")" + init
     }
 
@@ -2049,7 +2049,7 @@ impl CodeGen {
     fn emit_typedef(mut self, td: !IrTypeDef) {
         // Use match without struct destructuring, then access fields via td directly
         match td {
-            IrTypeDef::Struct { .. } => {
+            IrTypeDef·Struct { .. } => {
                 let name = td.name;
                 let fields = td.fields;
                 self.line(format!("/* Struct: {} */", name));
@@ -2064,7 +2064,7 @@ impl CodeGen {
                 self.line_close(format!(" {};", name));
                 self.line("");
             },
-            IrTypeDef::Enum { .. } => {
+            IrTypeDef·Enum { .. } => {
                 let name = td.name;
                 let variants = td.variants;
                 self.line(format!("/* Enum: {} */", name));
@@ -2104,7 +2104,7 @@ impl CodeGen {
                         // Use GUARD_ prefix to avoid post-processing regex matches
                         self.line(format!("#ifndef GUARD_{}_{}", name_upper, variant_name.to_uppercase()));
                         self.line(format!("#define GUARD_{}_{}", name_upper, variant_name.to_uppercase()));
-                        let init = CodeGen::struct_init(format!(
+                        let init = CodeGen·struct_init(format!(
                             ".tag = TAG_ENUM, .evidence = SIGIL_KNOWN, .v.e = {{ .enum_id = {}_ENUM_ID, .variant = {}, .data = NULL, .field_count = 0 }}",
                             name_upper, i));
                         self.line(format!("const SigilValue {}____{} = {};",
@@ -2119,7 +2119,7 @@ impl CodeGen {
                     match variant.fields {
                         ?vfields if !vfields.is_empty() => {
                             // Tuple variant - generate constructor using TAG_ENUM
-                            let mut params: ![String] = [];
+                            let mut params = Vec·new();
                             let num_fields = vfields.len();  // Extract len() before format!
                             for (j, _) in vfields.iter().enumerate() {
                                 params.push(format!("SigilValue arg{}", j));
@@ -2141,7 +2141,7 @@ impl CodeGen {
                                 self.line(format!("fields[{}] = arg{};", j, j));
                             }
                             // Use TAG_ENUM with enum_id, variant index, and field data
-                            let v_init = CodeGen::struct_init(format!(
+                            let v_init = CodeGen·struct_init(format!(
                                 ".tag = TAG_ENUM, .evidence = SIGIL_KNOWN, .v.e = {{ .enum_id = {}_ENUM_ID, .variant = {}, .data = fields, .field_count = {} }}",
                                 name_upper, i, num_fields));
                             self.line(format!("SigilValue v = {};", v_init));
@@ -2156,7 +2156,7 @@ impl CodeGen {
                 }
                 self.line("");
             },
-            IrTypeDef::TypeAlias { .. } => {
+            IrTypeDef·TypeAlias { .. } => {
                 let name = td.name;
                 let target = td.target;
                 let c_type = self.ir_type_to_c(target);
@@ -2173,12 +2173,12 @@ impl CodeGen {
         match ty {
             // All types, including Unit, return SigilValue for consistency
             // This avoids "void value not ignored" errors at call sites
-            IrType::Unit => "SigilValue",
+            IrType·Unit => "SigilValue",
             // All primitive types use SigilValue wrapper for type safety
-            IrType::Primitive { .. } => "SigilValue",
-            IrType::Array { .. } | IrType::Slice { .. } => "SigilValue",
-            IrType::Tuple { .. } => "SigilValue",
-            IrType::Named { .. } => {
+            IrType·Primitive { .. } => "SigilValue",
+            IrType·Array { .. } | IrType·Slice { .. } => "SigilValue",
+            IrType·Tuple { .. } => "SigilValue",
+            IrType·Named { .. } => {
                 let name = ty.name;
                 // Generic type parameters (single uppercase letters) should be SigilValue
                 // Since we use boxed representation for all values
@@ -2188,10 +2188,10 @@ impl CodeGen {
                     name
                 }
             },
-            IrType::Reference { .. } => "SigilValue",
-            IrType::Pointer { .. } => "SigilValue",
-            IrType::Function { .. } => "void*",
-            IrType::Evidential { .. } => "SigilValue",
+            IrType·Reference { .. } => "SigilValue",
+            IrType·Pointer { .. } => "SigilValue",
+            IrType·Function { .. } => "void*",
+            IrType·Evidential { .. } => "SigilValue",
             _ => "SigilValue",
         }
     }
@@ -2210,7 +2210,7 @@ impl CodeGen {
             self.ir_type_to_c(func.return_type)
         };
         // Build params string with for-loop to avoid closure capture
-        let mut params = String::new();
+        let mut params = String·new();
         let mut is_first = true;
         for p in func.params.iter() {
             if !params.is_empty() { params = params + ", "; }
@@ -2263,7 +2263,7 @@ impl CodeGen {
             self.ir_type_to_c(func.return_type)
         };
         // Build params string with for-loop to avoid closure capture
-        let mut params = String::new();
+        let mut params = String·new();
         let mut is_first = true;
         for p in func.params.iter() {
             if !params.is_empty() { params = params + ", "; }
@@ -2336,7 +2336,7 @@ impl CodeGen {
         // that hits the native compiler's depth limit (~14 levels)
         let is_c_keyword = self.is_c_keyword(stripped.as_str());
 
-        let mut result = String::new();
+        let mut result = String·new();
         if is_c_keyword {
             result = result + "sg_";
         }
@@ -2398,11 +2398,11 @@ impl CodeGen {
 
     /// Strip evidentiality prefixes from type names (e.g., "UncertainToken" -> "Token")
     fn strip_evidentiality_prefix(self, name: !&str) -> !String {
-        // Handle qualified names like "UncertainToken::is_keyword"
+        // Handle qualified names like "UncertainToken·is_keyword"
         if name.contains("::") {
             let parts: ![&str] = name.split("::").collect();
             // Build stripped_parts with for-loop to avoid closure capture
-            let mut stripped_parts: ![String] = [];
+            let mut stripped_parts = Vec·new();
             for p in parts.iter() {
                 stripped_parts.push(self.strip_single_prefix(p));
             }
@@ -2436,20 +2436,20 @@ impl CodeGen {
     /// Emit code for an operation, returning the C expression
     fn emit_operation(mut self, op: !IrOperation) -> !String {
         match op {
-            IrOperation::Literal { .. } => {
+            IrOperation·Literal { .. } => {
                 let value = op.value;
                 let evidence = op.evidence;
                 let val = match value {
-                    LiteralValue::Int(n) => format!("sigil_int({}LL)", n),
-                    LiteralValue::Float(f) => format!("sigil_float({})", f),
-                    LiteralValue::Bool(b) => {
+                    LiteralValue·Int(n) => format!("sigil_int({}LL)", n),
+                    LiteralValue·Float(f) => format!("sigil_float({})", f),
+                    LiteralValue·Bool(b) => {
                         if b {
                             "sigil_bool(true)".to_string()
                         } else {
                             "sigil_bool(false)".to_string()
                         }
                     },
-                    LiteralValue::Char(c) => {
+                    LiteralValue·Char(c) => {
                         // For ASCII chars, use character literal; for Unicode, use integer cast
                         let code = c as u32;
                         if code < 128 {
@@ -2461,17 +2461,17 @@ impl CodeGen {
                             format!("sigil_char((char){})", code)
                         }
                     },
-                    LiteralValue::String(s) => {
+                    LiteralValue·String(s) => {
                         // Pre-compute escape to avoid method call in format!
                         let escaped = self.escape_string(s);
                         format!("sigil_string(\"{}\")", escaped)
                     },
-                    LiteralValue::Null => "sigil_null()",
+                    LiteralValue·Null => "sigil_null()",
                 };
                 self.with_evidence(val, evidence)
             },
 
-            IrOperation::Var { .. } => {
+            IrOperation·Var { .. } => {
                 let name = op.name;
                 // CG-015: Dereference self when it's a pointer (in mut self methods)
                 // CG-147: In closures, captured self is always a value, not a pointer
@@ -2479,14 +2479,14 @@ impl CodeGen {
                     "(*self)".to_string()
                 } else if name == "_" {
                     // CG-017: Wildcard pattern - emit placeholder value
-                    // This occurs when _ is used as an argument (e.g., Token::LineComment(_))
+                    // This occurs when _ is used as an argument (e.g., Token·LineComment(_))
                     "sigil_null()".to_string()
                 } else {
                     self.mangle_name(name)
                 }
             },
 
-            IrOperation::Let { .. } => {
+            IrOperation·Let { .. } => {
                 let pattern = op.pattern;
                 let init = op.init;
                 let init_code = self.emit_operation(*init);
@@ -2494,7 +2494,7 @@ impl CodeGen {
                 "sigil_unit()"
             },
 
-            IrOperation::LetElse { .. } => {
+            IrOperation·LetElse { .. } => {
                 let pattern = op.pattern;
                 let init = op.init;
                 let else_branch = op.else_branch;
@@ -2522,7 +2522,7 @@ impl CodeGen {
                 "sigil_unit()"
             },
 
-            IrOperation::Binary { .. } => {
+            IrOperation·Binary { .. } => {
                 let operator = op.operator;
                 let left = op.left;
                 let right = op.right;
@@ -2531,7 +2531,7 @@ impl CodeGen {
                 // CG-125: Handle short-circuit operators BEFORE emitting operands
                 // For && and ||, we must not evaluate the right operand unconditionally
                 match operator {
-                    BinaryOp::And => {
+                    BinaryOp·And => {
                         // Short-circuit &&: only evaluate right if left is true
                         let l_code = self.emit_operation(*left);
                         let result_temp = self.fresh_temp();
@@ -2548,7 +2548,7 @@ impl CodeGen {
                         let expr = format!("sigil_bool(sigil_truthy({}) && sigil_truthy({}))", result_temp, r_temp);
                         return self.with_evidence(expr, evidence);
                     },
-                    BinaryOp::Or => {
+                    BinaryOp·Or => {
                         // Short-circuit ||: only evaluate right if left is false
                         let l_code = self.emit_operation(*left);
                         let result_temp = self.fresh_temp();
@@ -2578,7 +2578,7 @@ impl CodeGen {
                 // CG-140: For comparison operators that access .tag/.v.i/.v.f, we MUST use temps
                 // for any function call result, regardless of length.
                 let is_comparison = match operator {
-                    BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => true,
+                    BinaryOp·Lt | BinaryOp·Le | BinaryOp·Gt | BinaryOp·Ge => true,
                     _ => false,
                 };
                 let l = if l_raw.contains("(") && (l_raw.len() > 30 || is_comparison) {
@@ -2597,52 +2597,52 @@ impl CodeGen {
                 };
 
                 let expr = match operator {
-                    BinaryOp::Add => self.emit_binary_add(l, r),
-                    BinaryOp::Sub => self.emit_binary_sub(l, r),
-                    BinaryOp::Mul => self.emit_binary_mul(l, r),
-                    BinaryOp::Div => self.emit_binary_div(l, r),
-                    BinaryOp::Rem => self.emit_binary_rem(l, r),
-                    BinaryOp::Pow => format!("sigil_pow({}, {})", l, r),
-                    BinaryOp::Eq => format!("sigil_bool(sigil_eq({}, {}))", l, r),
-                    BinaryOp::Ne => self.emit_binary_ne(l, r),
-                    BinaryOp::Lt => self.emit_binary_lt(l, r),
-                    BinaryOp::Le => self.emit_binary_le(l, r),
-                    BinaryOp::Gt => self.emit_binary_gt(l, r),
-                    BinaryOp::Ge => self.emit_binary_ge(l, r),
+                    BinaryOp·Add => self.emit_binary_add(l, r),
+                    BinaryOp·Sub => self.emit_binary_sub(l, r),
+                    BinaryOp·Mul => self.emit_binary_mul(l, r),
+                    BinaryOp·Div => self.emit_binary_div(l, r),
+                    BinaryOp·Rem => self.emit_binary_rem(l, r),
+                    BinaryOp·Pow => format!("sigil_pow({}, {})", l, r),
+                    BinaryOp·Eq => format!("sigil_bool(sigil_eq({}, {}))", l, r),
+                    BinaryOp·Ne => self.emit_binary_ne(l, r),
+                    BinaryOp·Lt => self.emit_binary_lt(l, r),
+                    BinaryOp·Le => self.emit_binary_le(l, r),
+                    BinaryOp·Gt => self.emit_binary_gt(l, r),
+                    BinaryOp·Ge => self.emit_binary_ge(l, r),
                     // CG-125: And/Or handled above with short-circuit logic
-                    BinaryOp::And => "sigil_bool(false)".to_string(), // unreachable
-                    BinaryOp::Or => "sigil_bool(false)".to_string(),  // unreachable
-                    BinaryOp::BitAnd => format!("sigil_int({}.v.i & {}.v.i)", l, r),
-                    BinaryOp::BitOr => format!("sigil_int({}.v.i | {}.v.i)", l, r),
-                    BinaryOp::BitXor => format!("sigil_int({}.v.i ^ {}.v.i)", l, r),
-                    BinaryOp::Shl => format!("sigil_int({}.v.i << {}.v.i)", l, r),
-                    BinaryOp::Shr => format!("sigil_int({}.v.i >> {}.v.i)", l, r),
-                    BinaryOp::Concat => format!("sigil_concat({}, {})", l, r),
+                    BinaryOp·And => "sigil_bool(false)".to_string(), // unreachable
+                    BinaryOp·Or => "sigil_bool(false)".to_string(),  // unreachable
+                    BinaryOp·BitAnd => format!("sigil_int({}.v.i & {}.v.i)", l, r),
+                    BinaryOp·BitOr => format!("sigil_int({}.v.i | {}.v.i)", l, r),
+                    BinaryOp·BitXor => format!("sigil_int({}.v.i ^ {}.v.i)", l, r),
+                    BinaryOp·Shl => format!("sigil_int({}.v.i << {}.v.i)", l, r),
+                    BinaryOp·Shr => format!("sigil_int({}.v.i >> {}.v.i)", l, r),
+                    BinaryOp·Concat => format!("sigil_concat({}, {})", l, r),
                 };
                 self.with_evidence(expr, evidence)
             },
 
-            IrOperation::Unary { .. } => {
+            IrOperation·Unary { .. } => {
                 let operator = op.operator;
                 let operand = op.operand;
                 let evidence = op.evidence;
                 let op_code = self.emit_operation(*operand);
 
                 let expr = match operator {
-                    UnaryOp::Neg => format!("({}.tag == TAG_INT ? sigil_int(-{}.v.i) : sigil_float(-{}.v.f))", op_code, op_code, op_code),
-                    UnaryOp::Not => format!("sigil_bool(!sigil_truthy({}))", op_code),
-                    UnaryOp::Ref | UnaryOp::RefMut => {
+                    UnaryOp·Neg => format!("({}.tag == TAG_INT ? sigil_int(-{}.v.i) : sigil_float(-{}.v.f))", op_code, op_code, op_code),
+                    UnaryOp·Not => format!("sigil_bool(!sigil_truthy({}))", op_code),
+                    UnaryOp·Ref | UnaryOp·RefMut => {
                         // Need to store in a temp if it's a complex expression
                         // to avoid "lvalue required" errors with &function_call()
                         if op_code.contains("(") || op_code.contains("{") {
                             let temp = self.fresh_temp();
                             self.line(format!("SigilValue {} = {};", temp, op_code));
-                            CodeGen::compound_lit("SigilValue", format!(".tag = TAG_REF, .v.ptr = &{}", temp))
+                            CodeGen·compound_lit("SigilValue", format!(".tag = TAG_REF, .v.ptr = &{}", temp))
                         } else {
-                            CodeGen::compound_lit("SigilValue", format!(".tag = TAG_REF, .v.ptr = &{}", op_code))
+                            CodeGen·compound_lit("SigilValue", format!(".tag = TAG_REF, .v.ptr = &{}", op_code))
                         }
                     },
-                    UnaryOp::Deref => {
+                    UnaryOp·Deref => {
                         // CG-FIX: Safe dereference - check TAG_REF before dereferencing pointer
                         let temp = self.fresh_temp();
                         self.line(format!("SigilValue {} = {};", temp, op_code));
@@ -2653,12 +2653,12 @@ impl CodeGen {
                 self.with_evidence(expr, evidence)
             },
 
-            IrOperation::Call { .. } => {
+            IrOperation·Call { .. } => {
                 let function = op.function;
                 let args = op.args;
                 let evidence = op.evidence;
 
-                // CG-015: Check if this is a qualified method call (Type::method)
+                // CG-015: Check if this is a qualified method call (Type·method)
                 // If so, the first arg is the receiver and we need to handle mut self methods
                 let is_qualified_call = function.contains("::");
 
@@ -2685,10 +2685,10 @@ impl CodeGen {
                 // CG-147: Also check EvidenceCoerce wrapping Var "self"
                 let first_arg_is_self = if args.len() > 0 {
                     match args[0] {
-                        IrOperation::Var { .. } => args[0].name == "self",
-                        IrOperation::EvidenceCoerce { .. } => {
+                        IrOperation·Var { .. } => args[0].name == "self",
+                        IrOperation·EvidenceCoerce { .. } => {
                             match *args[0].expr {
-                                IrOperation::Var { .. } => args[0].expr.name == "self",
+                                IrOperation·Var { .. } => args[0].expr.name == "self",
                                 _ => false,
                             }
                         },
@@ -2701,7 +2701,7 @@ impl CodeGen {
                 // Build arg_codes with for-loop to avoid closure capture
                 // CG-015: For mut self qualified calls, handle first arg specially
                 // CG-147: In closures, captured self is a value not a pointer
-                let mut arg_codes: ![String] = [];
+                let mut arg_codes = Vec·new();
                 for (i, a) in args.iter().enumerate() {
                     if i == 0 && is_qualified_call && target_expects_mut_self {
                         // CG-015: Pass receiver as pointer for mut self methods
@@ -2738,7 +2738,7 @@ impl CodeGen {
                         format!("((SigilValue (*)(SigilValue, SigilValue)){}.v.ptr)({})", fn_var, args_str)
                     } else {
                         // For more args, build signature manually
-                        let mut sig_parts: ![String] = [];
+                        let mut sig_parts = Vec·new();
                         for _ in arg_codes {
                             sig_parts.push("SigilValue".to_string());
                         }
@@ -2783,8 +2783,8 @@ impl CodeGen {
                     }
                 };
 
-                // CG-202: Writeback for qualified mutating method calls (Vec::push, String::push, etc.)
-                // When lowerer converts items.push(x) to Vec::push(items, x), first arg is the receiver
+                // CG-202: Writeback for qualified mutating method calls (Vec·push, String·push, etc.)
+                // When lowerer converts items.push(x) to Vec·push(items, x), first arg is the receiver
                 // We need to write back the result to the receiver variable
                 let is_qualified_mutating = is_qualified_call &&
                     (call_method == "push" || call_method == "push_str" || call_method == "pop" ||
@@ -2794,12 +2794,12 @@ impl CodeGen {
                 if is_qualified_mutating && args.len() > 0 {
                     // Check if first arg is a variable (not self) that needs writeback
                     let var_name_for_writeback: !String = match args[0] {
-                        IrOperation::Var { name: vname, .. } => {
+                        IrOperation·Var { name: vname, .. } => {
                             if vname != "self" { vname.clone() } else { "".to_string() }
                         },
-                        IrOperation::EvidenceCoerce { expr: inner_box, .. } => {
+                        IrOperation·EvidenceCoerce { expr: inner_box, .. } => {
                             match *inner_box {
-                                IrOperation::Var { name: vname, .. } => {
+                                IrOperation·Var { name: vname, .. } => {
                                     if vname != "self" { vname.clone() } else { "".to_string() }
                                 },
                                 _ => "".to_string(),
@@ -2819,7 +2819,7 @@ impl CodeGen {
                 self.with_evidence(call, evidence)
             },
 
-            IrOperation::If { .. } => {
+            IrOperation·If { .. } => {
                 let condition = op.condition;
                 let then_branch = op.then_branch;
                 let else_branch = op.else_branch;
@@ -2831,7 +2831,7 @@ impl CodeGen {
 
                 // Check if condition is a LetMatch (for if let patterns)
                 match *condition {
-                    IrOperation::LetMatch { .. } => {
+                    IrOperation·LetMatch { .. } => {
                         let pattern = condition.pattern;
                         let value = condition.value;
                         // Emit the value being matched
@@ -2880,7 +2880,7 @@ impl CodeGen {
                 result_var
             },
 
-            IrOperation::Block { .. } => {
+            IrOperation·Block { .. } => {
                 let statements = op.statements;
                 let mut last_result = "sigil_unit()".to_string();
                 let n = statements.len();
@@ -2889,10 +2889,10 @@ impl CodeGen {
                     if i < n - 1 {
                         // Not the last statement - emit as side effect if not a let binding
                         match stmt {
-                            IrOperation::Let { .. } => {},  // Already emitted by emit_operation
-                            IrOperation::LetElse { .. } => {},  // Already emitted by emit_operation
-                            IrOperation::Return { .. } => {},  // Already emitted
-                            IrOperation::Block { .. } => {},  // Already emitted
+                            IrOperation·Let { .. } => {},  // Already emitted by emit_operation
+                            IrOperation·LetElse { .. } => {},  // Already emitted by emit_operation
+                            IrOperation·Return { .. } => {},  // Already emitted
+                            IrOperation·Block { .. } => {},  // Already emitted
                             _ => {
                                 // Emit expression statements as side effects
                                 if !result.is_empty() && result != "sigil_unit()" {
@@ -2906,7 +2906,7 @@ impl CodeGen {
                 last_result
             },
 
-            IrOperation::Return { .. } => {
+            IrOperation·Return { .. } => {
                 let value = op.value;
                 match value {
                     ?v => {
@@ -2920,7 +2920,7 @@ impl CodeGen {
                 "sigil_unit()" // Unreachable
             },
 
-            IrOperation::Array { .. } => {
+            IrOperation·Array { .. } => {
                 let elements = op.elements;
                 let evidence = op.evidence;
                 let len = elements.len();
@@ -2938,7 +2938,7 @@ impl CodeGen {
                 self.with_evidence(arr_var, evidence)
             },
 
-            IrOperation::Repeat { .. } => {
+            IrOperation·Repeat { .. } => {
                 let value = op.value;
                 let count = op.count;
                 let evidence = op.evidence;
@@ -2965,7 +2965,7 @@ impl CodeGen {
                 self.with_evidence(arr_var, evidence)
             },
 
-            IrOperation::Index { .. } => {
+            IrOperation·Index { .. } => {
                 let expr = op.expr;
                 let index = op.index;
                 let evidence = op.evidence;
@@ -2976,7 +2976,7 @@ impl CodeGen {
                 self.with_evidence(result, evidence)
             },
 
-            IrOperation::Loop { .. } => {
+            IrOperation·Loop { .. } => {
                 let variant = op.variant;
                 let condition = op.condition;
                 let iterator = op.iterator;
@@ -2985,7 +2985,7 @@ impl CodeGen {
                 self.line(format!("SigilValue {} = sigil_unit();", result_var));
 
                 match variant {
-                    LoopVariant::Infinite => {
+                    LoopVariant·Infinite => {
                         self.line("while (1) {");
                         self.indent_push();
                         self.line("tick(__func__);");  // Prevent infinite loops
@@ -2994,7 +2994,7 @@ impl CodeGen {
                         self.indent_pop();
                         self.line("}");
                     },
-                    LoopVariant::While => {
+                    LoopVariant·While => {
                         // CG-013 FIX: Evaluate condition at START of each iteration
                         // This ensures continue doesn't skip condition re-evaluation
                         self.line("while (1) {");
@@ -3012,11 +3012,11 @@ impl CodeGen {
                         self.indent_pop();
                         self.line("}");
                     },
-                    LoopVariant::For => {
+                    LoopVariant·For => {
                         if let ?iter = iterator {
                             // Check if iterable is a range
                             match *iter.iterable {
-                                IrOperation::Range { .. } => {
+                                IrOperation·Range { .. } => {
                                     let range_op = *iter.iterable;
                                     let start = range_op.start;
                                     let end = range_op.end;
@@ -3066,7 +3066,7 @@ impl CodeGen {
                 result_var
             },
 
-            IrOperation::Break { .. } => {
+            IrOperation·Break { .. } => {
                 let value = op.value;
                 match value {
                     ?v => {
@@ -3079,12 +3079,12 @@ impl CodeGen {
                 "sigil_unit()"
             },
 
-            IrOperation::Continue { .. } => {
+            IrOperation·Continue { .. } => {
                 self.line("continue;");
                 "sigil_unit()"
             },
 
-            IrOperation::Closure { .. } => {
+            IrOperation·Closure { .. } => {
                 let params = op.params;
                 let body = op.body;
                 let captures = op.captures;
@@ -3099,11 +3099,11 @@ impl CodeGen {
 
                 // Build parameter list - only explicit params, not captures
                 // Captured variables are accessed via __closure_* globals
-                let mut param_names: ![String] = [];
+                let mut param_names = Vec·new();
                 for p in params.iter() {
                     param_names.push(self.mangle_name(p.name.clone()));
                 }
-                let mut param_decls = String::new();
+                let mut param_decls = String·new();
                 for name in param_names.iter() {
                     if !param_decls.is_empty() { param_decls = param_decls + ", "; }
                     param_decls = param_decls + "SigilValue ";
@@ -3116,7 +3116,7 @@ impl CodeGen {
                 let saved_output = self.output.clone();
                 let saved_indent = self.indent;
                 let saved_in_closure = self.in_closure_body;
-                self.output = String::new();
+                self.output = String·new();
                 self.indent = 1;
                 self.in_closure_body = true;  // CG-029: Mark that we're in a closure
 
@@ -3141,10 +3141,10 @@ impl CodeGen {
 
                 // Add closure function to closure_buffer
                 // Note: Must reassign push_str result since it returns new string value
-                let closure_open = format!("static SigilValue {}({}) ", closure_name, param_decls) + CodeGen::open_brace() + "\n";
+                let closure_open = format!("static SigilValue {}({}) ", closure_name, param_decls) + CodeGen·open_brace() + "\n";
                 self.closure_buffer = self.closure_buffer + closure_open;
                 self.closure_buffer = self.closure_buffer + body_code;
-                self.closure_buffer = self.closure_buffer + CodeGen::close_brace();
+                self.closure_buffer = self.closure_buffer + CodeGen·close_brace();
                 self.closure_buffer = self.closure_buffer + "\n\n";
 
                 // CG-005 FIX: Set up captured variables in __closure_* globals before returning closure
@@ -3155,10 +3155,10 @@ impl CodeGen {
                 }
 
                 // Return the function pointer cast to SigilValue
-                CodeGen::compound_lit("SigilValue", format!(".tag = TAG_CLOSURE, .evidence = SIGIL_KNOWN, .v.ptr = (void*){}", closure_name))
+                CodeGen·compound_lit("SigilValue", format!(".tag = TAG_CLOSURE, .evidence = SIGIL_KNOWN, .v.ptr = (void*){}", closure_name))
             },
 
-            IrOperation::Pipeline { .. } => {
+            IrOperation·Pipeline { .. } => {
                 let input = op.input;
                 let steps = op.steps;
                 let evidence = op.evidence;
@@ -3171,7 +3171,7 @@ impl CodeGen {
                 self.with_evidence(current, evidence)
             },
 
-            IrOperation::EvidenceCoerce { .. } => {
+            IrOperation·EvidenceCoerce { .. } => {
                 let expr = op.expr;
                 let to_evidence = op.to_evidence;
                 let val = self.emit_operation(*expr);
@@ -3185,12 +3185,12 @@ impl CodeGen {
                 format!("sigil_with_evidence({}, {})", val_safe, ev)
             },
 
-            IrOperation::Assign { .. } => {
+            IrOperation·Assign { .. } => {
                 let target = op.target;
                 let value = op.value;
                 // Check if target is a field access - need to use struct setter
                 match *target.clone() {
-                    IrOperation::Field { .. } => {
+                    IrOperation·Field { .. } => {
                         // Field assignment: obj.field = value
                         // Need to set the field in the struct, not just a local copy
                         let field = (*target).field;
@@ -3250,14 +3250,14 @@ impl CodeGen {
                         }
                         "sigil_unit()"
                     },
-                    IrOperation::Var { .. } => {
+                    IrOperation·Var { .. } => {
                         // Simple variable assignment - use name directly without evidence wrapper
                         let target_code = self.mangle_name((*target).name.clone());
                         let value_code = self.emit_operation(*value);
                         self.line(format!("{} = {};", target_code, value_code));
                         "sigil_unit()"
                     },
-                    IrOperation::EvidenceCoerce { .. } => {
+                    IrOperation·EvidenceCoerce { .. } => {
                         // Evidence coercion on assignment - unwrap and assign to inner expr
                         let inner_expr = (*target).expr;
                         let inner_target = self.emit_operation(*inner_expr);
@@ -3275,7 +3275,7 @@ impl CodeGen {
                 }
             },
 
-            IrOperation::Field { .. } => {
+            IrOperation·Field { .. } => {
                 let expr = op.expr;
                 let field = op.field;
                 let evidence = op.evidence;
@@ -3289,12 +3289,12 @@ impl CodeGen {
                 self.with_evidence(temp, evidence)
             },
 
-            IrOperation::Index { .. } if false => {
+            IrOperation·Index { .. } if false => {
                 // Duplicate case - handled above
                 "sigil_unit()"
             },
 
-            IrOperation::StructInit { .. } => {
+            IrOperation·StructInit { .. } => {
                 let name = op.name;
                 let fields = op.fields;
                 let evidence = op.evidence;
@@ -3304,7 +3304,7 @@ impl CodeGen {
                 let n = fields.len();
 
                 // Build field names and values by index
-                let mut field_names_parts: ![String] = [];
+                let mut field_names_parts = Vec·new();
                 let mut i = 0;
                 self.line(format!("SigilValue {}__values[{}];", temp, n));
                 while i < n {
@@ -3320,7 +3320,7 @@ impl CodeGen {
                 let field_names_str = field_names_parts.join(", ");
 
                 // Emit field names array
-                let names_init = CodeGen::struct_init(field_names_str);
+                let names_init = CodeGen·struct_init(field_names_str);
                 self.line(format!("static const char* {}__names[{}] = {};",
                     temp, n, names_init));
 
@@ -3329,7 +3329,7 @@ impl CodeGen {
                 self.with_evidence(result, evidence)
             },
 
-            IrOperation::Tuple { .. } => {
+            IrOperation·Tuple { .. } => {
                 let elements = op.elements;
                 let evidence = op.evidence;
                 // Generate tuple
@@ -3346,7 +3346,7 @@ impl CodeGen {
                 self.with_evidence(result, evidence)
             },
 
-            IrOperation::Cast { .. } => {
+            IrOperation·Cast { .. } => {
                 let expr = op.expr;
                 let target_type = op.target_type;
                 let evidence = op.evidence;
@@ -3355,7 +3355,7 @@ impl CodeGen {
 
                 // Generate appropriate cast based on target type
                 let cast_code = match target_type {
-                    IrType::Primitive { .. } => {
+                    IrType·Primitive { .. } => {
                         let name = target_type.name;
                         match name.as_str() {
                             "i8" | "i16" | "i32" | "i64" | "isize" |
@@ -3380,14 +3380,14 @@ impl CodeGen {
                 self.with_evidence(cast_code, evidence)
             },
 
-            IrOperation::FormatCall { .. } => {
+            IrOperation·FormatCall { .. } => {
                 // FormatCall is the lowered form of format! macro with properly translated arguments
                 let format_string = op.format_string;
                 let args = op.args;
                 let evidence = op.evidence;
 
                 // Build the argument list by emitting each lowered IR operation
-                let mut arg_codes: ![String] = [];
+                let mut arg_codes = Vec·new();
                 for a in args.iter() {
                     arg_codes.push(self.emit_operation(a.clone()));
                 }
@@ -3401,7 +3401,7 @@ impl CodeGen {
                 self.with_evidence(result, evidence)
             },
 
-            IrOperation::MacroExpansion { .. } => {
+            IrOperation·MacroExpansion { .. } => {
                 let name = op.name;
                 let tokens = op.tokens;
                 // Generate macro expansion based on macro name
@@ -3443,7 +3443,7 @@ impl CodeGen {
                 }
             },
 
-            IrOperation::MethodCall { .. } => {
+            IrOperation·MethodCall { .. } => {
                 let receiver = op.receiver;
                 let method = op.method;
                 let args = op.args;
@@ -3452,10 +3452,10 @@ impl CodeGen {
                 // CG-015: Check if receiver is `self` variable for special handling
                 // CG-147: Also check EvidenceCoerce wrapping Var "self"
                 let receiver_is_self = match *receiver {
-                    IrOperation::Var { .. } => receiver.name == "self",
-                    IrOperation::EvidenceCoerce { .. } => {
+                    IrOperation·Var { .. } => receiver.name == "self",
+                    IrOperation·EvidenceCoerce { .. } => {
                         match *receiver.expr {
-                            IrOperation::Var { .. } => receiver.expr.name == "self",
+                            IrOperation·Var { .. } => receiver.expr.name == "self",
                             _ => false,
                         }
                     },
@@ -3465,14 +3465,14 @@ impl CodeGen {
                 // CG-021: Check if receiver is a Field access (for writeback on mutating methods)
                 // Methods like push/pop/clear can reallocate arrays, requiring writeback to struct field
                 // Use empty string to indicate "no field access" since ?String.is_some() has issues
-                let mut field_base_code: !String = "".to_string();
-                let mut field_name_for_writeback: !String = "".to_string();
+                let mut field_base_code: String = String·new();
+                let mut field_name_for_writeback: String = String·new();
                 // CG-099: Track variable name for writeback on mutating methods (e.g., result.push(c))
-                let mut var_name_for_writeback: !String = "".to_string();
+                let mut var_name_for_writeback: String = String·new();
                 // CG-100: Track receiver type name for disambiguating push (String vs Vec)
-                let mut receiver_type_name: !String = "".to_string();
+                let mut receiver_type_name: String = String·new();
                 let recv_code = match *receiver {
-                    IrOperation::Field { expr: base_box, field: fname, .. } => {
+                    IrOperation·Field { expr: base_box, field: fname, .. } => {
                         let base_code = self.emit_operation(*base_box);
                         field_base_code = base_code.clone();
                         field_name_for_writeback = fname.clone();
@@ -3480,24 +3480,24 @@ impl CodeGen {
                         self.line(format!("SigilValue {} = sigil_struct_field({}, \"{}\");", temp, base_code, fname));
                         temp
                     },
-                    IrOperation::Var { name: vname, ty: vty, .. } => {
+                    IrOperation·Var { name: vname, ty: vty, .. } => {
                         // CG-099: Track variable name for writeback
                         var_name_for_writeback = vname.clone();
                         // CG-100: Track type name for method disambiguation
                         // CG-161: Handle MutRef/Ref wrappers for mut self methods
                         match vty {
-                            IrType::Named { name: tname, .. } => {
+                            IrType·Named { name: tname, .. } => {
                                 receiver_type_name = tname.clone();
                             },
-                            IrType::Reference { inner, .. } => {
+                            IrType·Reference { inner, .. } => {
                                 match *inner {
-                                    IrType::Named { name: tname, .. } => {
+                                    IrType·Named { name: tname, .. } => {
                                         receiver_type_name = tname.clone();
                                     },
                                     _ => {},
                                 }
                             },
-                            IrType::Primitive { name: pname } => {
+                            IrType·Primitive { name: pname } => {
                                 // str -> String
                                 if pname == "str" {
                                     receiver_type_name = "String".to_string();
@@ -3509,7 +3509,7 @@ impl CodeGen {
                         }
                         // CG-099 FIX: Directly emit the variable reference instead of calling
                         // emit_operation(*receiver) which would try to use the consumed receiver.
-                        // This mirrors the IrOperation::Var handling in emit_operation.
+                        // This mirrors the IrOperation·Var handling in emit_operation.
                         if vname == "self" && self.current_fn_has_mut_self && !self.in_closure_body {
                             "(*self)".to_string()
                         } else if vname == "_" {
@@ -3519,10 +3519,10 @@ impl CodeGen {
                         }
                     },
                     // CG-100: Handle EvidenceCoerce wrapping a Var or Field
-                    IrOperation::EvidenceCoerce { expr: inner_box, .. } => {
+                    IrOperation·EvidenceCoerce { expr: inner_box, .. } => {
                         match *inner_box {
                             // CG-121: Handle EvidenceCoerce wrapping Field (for struct field writeback)
-                            IrOperation::Field { expr: base_box, field: fname, .. } => {
+                            IrOperation·Field { expr: base_box, field: fname, .. } => {
                                 let base_code = self.emit_operation(*base_box);
                                 field_base_code = base_code.clone();
                                 field_name_for_writeback = fname.clone();
@@ -3530,22 +3530,22 @@ impl CodeGen {
                                 self.line(format!("SigilValue {} = sigil_struct_field({}, \"{}\");", temp, base_code, fname));
                                 temp
                             },
-                            IrOperation::Var { name: vname, ty: vty, .. } => {
+                            IrOperation·Var { name: vname, ty: vty, .. } => {
                                 var_name_for_writeback = vname.clone();
                                 // CG-161: Handle Reference wrappers
                                 match vty {
-                                    IrType::Named { name: tname, .. } => {
+                                    IrType·Named { name: tname, .. } => {
                                         receiver_type_name = tname.clone();
                                     },
-                                    IrType::Reference { inner, .. } => {
+                                    IrType·Reference { inner, .. } => {
                                         match *inner {
-                                            IrType::Named { name: tname, .. } => {
+                                            IrType·Named { name: tname, .. } => {
                                                 receiver_type_name = tname.clone();
                                             },
                                             _ => {},
                                         }
                                     },
-                                    IrType::Primitive { name: pname } => {
+                                    IrType·Primitive { name: pname } => {
                                         if pname == "str" {
                                             receiver_type_name = "String".to_string();
                                         } else {
@@ -3565,12 +3565,12 @@ impl CodeGen {
                                 }
                             },
                             // CG-015: Handle EvidenceCoerce wrapping Call (for method chaining)
-                            IrOperation::Call { ty: call_ty, .. } => {
+                            IrOperation·Call { ty: call_ty, .. } => {
                                 match call_ty {
-                                    IrType::Named { name: tname, .. } => {
+                                    IrType·Named { name: tname, .. } => {
                                         receiver_type_name = tname.clone();
                                     },
-                                    IrType::Primitive { name: pname } => {
+                                    IrType·Primitive { name: pname } => {
                                         if pname == "str" {
                                             receiver_type_name = "String".to_string();
                                         } else {
@@ -3582,12 +3582,12 @@ impl CodeGen {
                                 self.emit_operation(*receiver)
                             },
                             // CG-015: Handle EvidenceCoerce wrapping MethodCall (for method chaining)
-                            IrOperation::MethodCall { ty: mc_ty, .. } => {
+                            IrOperation·MethodCall { ty: mc_ty, .. } => {
                                 match mc_ty {
-                                    IrType::Named { name: tname, .. } => {
+                                    IrType·Named { name: tname, .. } => {
                                         receiver_type_name = tname.clone();
                                     },
-                                    IrType::Primitive { name: pname } => {
+                                    IrType·Primitive { name: pname } => {
                                         if pname == "str" {
                                             receiver_type_name = "String".to_string();
                                         } else {
@@ -3599,12 +3599,12 @@ impl CodeGen {
                                 self.emit_operation(*receiver)
                             },
                             // CG-015: Handle EvidenceCoerce wrapping Try (for method chaining after ?)
-                            IrOperation::Try { ty: try_ty, .. } => {
+                            IrOperation·Try { ty: try_ty, .. } => {
                                 match try_ty {
-                                    IrType::Named { name: tname, .. } => {
+                                    IrType·Named { name: tname, .. } => {
                                         receiver_type_name = tname.clone();
                                     },
-                                    IrType::Primitive { name: pname } => {
+                                    IrType·Primitive { name: pname } => {
                                         if pname == "str" {
                                             receiver_type_name = "String".to_string();
                                         } else {
@@ -3619,12 +3619,12 @@ impl CodeGen {
                         }
                     },
                     // CG-015: Handle Call as receiver - extract type from return type for mut self lookup
-                    IrOperation::Call { ty: call_ty, .. } => {
+                    IrOperation·Call { ty: call_ty, .. } => {
                         match call_ty {
-                            IrType::Named { name: tname, .. } => {
+                            IrType·Named { name: tname, .. } => {
                                 receiver_type_name = tname.clone();
                             },
-                            IrType::Primitive { name: pname } => {
+                            IrType·Primitive { name: pname } => {
                                 if pname == "str" {
                                     receiver_type_name = "String".to_string();
                                 } else {
@@ -3636,12 +3636,12 @@ impl CodeGen {
                         self.emit_operation(*receiver)
                     },
                     // CG-015: Handle MethodCall as receiver - extract type from return type
-                    IrOperation::MethodCall { ty: mc_ty, .. } => {
+                    IrOperation·MethodCall { ty: mc_ty, .. } => {
                         match mc_ty {
-                            IrType::Named { name: tname, .. } => {
+                            IrType·Named { name: tname, .. } => {
                                 receiver_type_name = tname.clone();
                             },
-                            IrType::Primitive { name: pname } => {
+                            IrType·Primitive { name: pname } => {
                                 if pname == "str" {
                                     receiver_type_name = "String".to_string();
                                 } else {
@@ -3653,12 +3653,12 @@ impl CodeGen {
                         self.emit_operation(*receiver)
                     },
                     // CG-015: Handle Try as receiver - unwrapped type for method chaining after ?
-                    IrOperation::Try { ty: try_ty, .. } => {
+                    IrOperation·Try { ty: try_ty, .. } => {
                         match try_ty {
-                            IrType::Named { name: tname, .. } => {
+                            IrType·Named { name: tname, .. } => {
                                 receiver_type_name = tname.clone();
                             },
-                            IrType::Primitive { name: pname } => {
+                            IrType·Primitive { name: pname } => {
                                 if pname == "str" {
                                     receiver_type_name = "String".to_string();
                                 } else {
@@ -3672,7 +3672,7 @@ impl CodeGen {
                     _ => self.emit_operation(*receiver),
                 };
                 // Build arg_codes with for-loop to avoid closure capture
-                let mut arg_codes: ![String] = [];
+                let mut arg_codes = Vec·new();
                 for a in args.iter() {
                     arg_codes.push(self.emit_operation(a.clone()));
                 }
@@ -3775,7 +3775,7 @@ impl CodeGen {
                             let total_len = recv_code.len();
                             let var_len = total_len - prefix_len - 2;
                             // Build the var name by taking substring
-                            let mut entry_var = String::new();
+                            let mut entry_var = String·new();
                             let mut i = 0;
                             while i < var_len {
                                 let c = recv_code.chars().nth(prefix_len + i).unwrap_or('_');
@@ -3801,7 +3801,7 @@ impl CodeGen {
                             let prefix_len = 21;
                             let total_len = recv_code.len();
                             let var_len = total_len - prefix_len - 2;
-                            let mut entry_var = String::new();
+                            let mut entry_var = String·new();
                             let mut i = 0;
                             while i < var_len {
                                 let c = recv_code.chars().nth(prefix_len + i).unwrap_or('_');
@@ -3828,7 +3828,7 @@ impl CodeGen {
                             let prefix_len = 21;
                             let total_len = recv_code.len();
                             let var_len = total_len - prefix_len - 2;
-                            let mut entry_var = String::new();
+                            let mut entry_var = String·new();
                             let mut i = 0;
                             while i < var_len {
                                 let c = recv_code.chars().nth(prefix_len + i).unwrap_or('_');
@@ -3852,22 +3852,22 @@ impl CodeGen {
                         // This handles user-defined types not in the hardcoded method table
                         if receiver_type_name.len() == 0 || receiver_type_name == "" {
                             match op.receiver.ty {
-                                IrType::Named { name: tname, .. } => {
+                                IrType·Named { name: tname, .. } => {
                                     receiver_type_name = tname.clone();
                                 },
-                                IrType::Primitive { name: pname } => {
+                                IrType·Primitive { name: pname } => {
                                     if pname == "str" {
                                         receiver_type_name = "String".to_string();
                                     } else {
                                         receiver_type_name = pname.clone();
                                     }
                                 },
-                                IrType::Reference { inner, .. } => {
+                                IrType·Reference { inner, .. } => {
                                     match *inner {
-                                        IrType::Named { name: tname, .. } => {
+                                        IrType·Named { name: tname, .. } => {
                                             receiver_type_name = tname.clone();
                                         },
-                                        IrType::Primitive { name: pname } => {
+                                        IrType·Primitive { name: pname } => {
                                             if pname == "str" {
                                                 receiver_type_name = "String".to_string();
                                             } else {
@@ -4107,7 +4107,7 @@ impl CodeGen {
 
                 // CG-021: Write back result to struct field if receiver was a field and method is mutating
                 // Vec methods that can reallocate: push, pop, clear, extend, insert, remove, reserve
-                // CG-022: String::push_str also returns new value (not in-place mutation in C)
+                // CG-022: String·push_str also returns new value (not in-place mutation in C)
                 let is_mutating_method = method == "push" || method == "pop" || method == "clear" ||
                     method == "extend" || method == "insert" || method == "remove" || method == "reserve" ||
                     method == "push_str";
@@ -4183,7 +4183,7 @@ impl CodeGen {
                 }
             },
 
-            IrOperation::Match { .. } => {
+            IrOperation·Match { .. } => {
                 let scrutinee = op.scrutinee;
                 let arms = op.arms;
                 let evidence = op.evidence;
@@ -4256,8 +4256,8 @@ impl CodeGen {
             },
 
 // Try expression: expr?
-            // Evaluates inner expression, returns early if Result::Err, unwraps if Result::Ok
-            IrOperation::Try { .. } => {
+            // Evaluates inner expression, returns early if Result·Err, unwraps if Result·Ok
+            IrOperation·Try { .. } => {
                 let expr = op.expr;
                 let evidence = op.evidence;
                 let inner_code = self.emit_operation(*expr);
@@ -4274,7 +4274,7 @@ impl CodeGen {
                 self.with_evidence(result, evidence)
             },
 
-            IrOperation::LetMatch { .. } => {
+            IrOperation·LetMatch { .. } => {
                 let pattern = op.pattern;
                 let value = op.value;
                 // Generate pattern match condition as a boolean
@@ -4298,19 +4298,19 @@ impl CodeGen {
     fn has_evidential_pattern(self, arms: !Vec<IrMatchArm>) -> bool {
         for arm in arms.iter() {
             match arm.pattern {
-                IrPattern::Ident { .. } => {
+                IrPattern·Ident { .. } => {
                     let ev = arm.pattern.evidence;
                     match ev {
                         ?_ => { return true; },  // Has evidential marker (?x)
                         null => {},
                     }
                 },
-                IrPattern::Literal { .. } => {
+                IrPattern·Literal { .. } => {
                     // Check for null literal pattern
                     // null pattern indicates we're matching on a nullable type
                     let lit = arm.pattern.value;
                     match lit {
-                        LiteralValue::Null => { return true; },
+                        LiteralValue·Null => { return true; },
                         _ => {},
                     }
                 },
@@ -4323,13 +4323,13 @@ impl CodeGen {
     /// Emit pattern binding
     fn emit_pattern_binding(mut self, pattern: !IrPattern, value: !String) {
         match pattern {
-            IrPattern::Ident { .. } => {
+            IrPattern·Ident { .. } => {
                 let name = pattern.name;
                 // CG-025 FIX: Evidential patterns (?x) bind directly to the value
                 //
                 // Evidential values from sigil_with_evidence() are direct values with
-                // evidence metadata set - they're NOT pointer-wrapped like Option::Some.
-                // The evidence field on IrPattern::Ident is used for CONDITION generation
+                // evidence metadata set - they're NOT pointer-wrapped like Option·Some.
+                // The evidence field on IrPattern·Ident is used for CONDITION generation
                 // (checking the value has evidence), not for changing how we bind.
                 //
                 // Both regular and evidential patterns use direct binding:
@@ -4344,17 +4344,17 @@ impl CodeGen {
                 };
                 self.line(format!("SigilValue {} = {};", var_name, value));
             },
-            IrPattern::Tuple { .. } => {
+            IrPattern·Tuple { .. } => {
                 let elements = pattern.elements;
                 for (i, elem) in elements.iter().enumerate() {
                     let elem_val = format!("{}.v.tup.fields[{}]", value, i);
                     self.emit_pattern_binding(elem, elem_val);
                 }
             },
-            IrPattern::TupleStruct { .. } => {
+            IrPattern·TupleStruct { .. } => {
                 let path = pattern.path;
                 let fields = pattern.fields;
-                // For Option::Some(v), Result::Ok(v), Result::Err(e), extract inner value from the pointer
+                // For Option·Some(v), Result·Ok(v), Result·Err(e), extract inner value from the pointer
                 // These types store their wrapped value in .v.ptr, not .v.e.data[]
                 if path.contains("Some") || path.contains("Ok") || path.contains("Err") {
                     for (i, elem) in fields.iter().enumerate() {
@@ -4376,7 +4376,7 @@ impl CodeGen {
                     }
                 }
             },
-            IrPattern::Struct { .. } => {
+            IrPattern·Struct { .. } => {
                 // Named field patterns: Foo { x, y, .. }
                 let fields = pattern.fields;
                 for (field_name, field_pattern) in fields.iter() {
@@ -4384,7 +4384,7 @@ impl CodeGen {
                     self.emit_pattern_binding(field_pattern, field_val);
                 }
             },
-            IrPattern::Slice { .. } => {
+            IrPattern·Slice { .. } => {
                 // Slice patterns: [a, b, c]
                 let elements = pattern.elements;
                 for (i, elem) in elements.iter().enumerate() {
@@ -4392,17 +4392,17 @@ impl CodeGen {
                     self.emit_pattern_binding(elem, elem_val);
                 }
             },
-            IrPattern::Or { .. } => {
+            IrPattern·Or { .. } => {
                 // Or patterns: just bind the first alternative (all should bind same names)
                 let patterns = pattern.patterns;
                 if !patterns.is_empty() {
                     self.emit_pattern_binding(patterns[0].clone(), value);
                 }
             },
-            IrPattern::Wildcard => {
+            IrPattern·Wildcard => {
                 // No binding needed
             },
-            IrPattern::Struct { .. } => {
+            IrPattern·Struct { .. } => {
                 // Struct pattern: extract named fields
                 let fields = pattern.fields;
                 for field in fields.iter() {
@@ -4412,7 +4412,7 @@ impl CodeGen {
                     self.emit_pattern_binding(field_pattern, field_val);
                 }
             },
-            IrPattern::Or { .. } => {
+            IrPattern·Or { .. } => {
                 // Or pattern - bind from first alternative (assumes all have same bindings)
                 let patterns = pattern.patterns;
                 if patterns.len() > 0 {
@@ -4432,38 +4432,38 @@ impl CodeGen {
     // Emits `SigilValue name;` for each variable bound by the pattern
     fn emit_pattern_declarations(mut self, pattern: !IrPattern) {
         match pattern {
-            IrPattern::Ident { .. } => {
+            IrPattern·Ident { .. } => {
                 let name = pattern.name;
                 // Skip wildcards - they don't need declarations
                 if name != "_" {
                     self.line(format!("SigilValue {};", self.mangle_name(name)));
                 }
             },
-            IrPattern::Tuple { .. } => {
+            IrPattern·Tuple { .. } => {
                 let elements = pattern.elements;
                 for elem in elements.iter() {
                     self.emit_pattern_declarations(elem);
                 }
             },
-            IrPattern::TupleStruct { .. } => {
+            IrPattern·TupleStruct { .. } => {
                 let fields = pattern.fields;
                 for elem in fields.iter() {
                     self.emit_pattern_declarations(elem);
                 }
             },
-            IrPattern::Struct { .. } => {
+            IrPattern·Struct { .. } => {
                 let fields = pattern.fields;
                 for field in fields.iter() {
                     self.emit_pattern_declarations(field.1);
                 }
             },
-            IrPattern::Slice { .. } => {
+            IrPattern·Slice { .. } => {
                 let elements = pattern.elements;
                 for elem in elements.iter() {
                     self.emit_pattern_declarations(elem);
                 }
             },
-            IrPattern::Or { .. } => {
+            IrPattern·Or { .. } => {
                 let patterns = pattern.patterns;
                 if !patterns.is_empty() {
                     self.emit_pattern_declarations(patterns[0].clone());
@@ -4479,21 +4479,21 @@ impl CodeGen {
     // Emits `name = value;` for each variable bound by the pattern
     fn emit_pattern_assignments(mut self, pattern: !IrPattern, value: !String) {
         match pattern {
-            IrPattern::Ident { .. } => {
+            IrPattern·Ident { .. } => {
                 let name = pattern.name;
                 // Skip wildcards - they don't need assignments
                 if name != "_" {
                     self.line(format!("{} = {};", self.mangle_name(name), value));
                 }
             },
-            IrPattern::Tuple { .. } => {
+            IrPattern·Tuple { .. } => {
                 let elements = pattern.elements;
                 for (i, elem) in elements.iter().enumerate() {
                     let elem_val = format!("{}.v.tup.fields[{}]", value, i);
                     self.emit_pattern_assignments(elem, elem_val);
                 }
             },
-            IrPattern::TupleStruct { .. } => {
+            IrPattern·TupleStruct { .. } => {
                 let path = pattern.path;
                 let fields = pattern.fields;
                 if path.contains("Some") {
@@ -4513,7 +4513,7 @@ impl CodeGen {
                     }
                 }
             },
-            IrPattern::Struct { .. } => {
+            IrPattern·Struct { .. } => {
                 let fields = pattern.fields;
                 for field in fields.iter() {
                     let field_name = field.0;
@@ -4522,14 +4522,14 @@ impl CodeGen {
                     self.emit_pattern_assignments(field_pattern, field_val);
                 }
             },
-            IrPattern::Slice { .. } => {
+            IrPattern·Slice { .. } => {
                 let elements = pattern.elements;
                 for (i, elem) in elements.iter().enumerate() {
                     let elem_val = format!("{}.v.arr.data[{}]", value, i);
                     self.emit_pattern_assignments(elem, elem_val);
                 }
             },
-            IrPattern::Or { .. } => {
+            IrPattern·Or { .. } => {
                 let patterns = pattern.patterns;
                 if !patterns.is_empty() {
                     self.emit_pattern_assignments(patterns[0].clone(), value);
@@ -4544,8 +4544,8 @@ impl CodeGen {
     /// Emit condition check for a pattern (used in match expressions)
     fn emit_pattern_condition(self, pattern: !IrPattern, value: !String) -> !String {
         match pattern {
-            IrPattern::Wildcard => "1".to_string(),  // Always matches
-            IrPattern::Ident { .. } => {
+            IrPattern·Wildcard => "1".to_string(),  // Always matches
+            IrPattern·Ident { .. } => {
                 // Check if this is an evidential pattern (?name)
                 // If evidence is set, we need to check that value is not null
                 let ev = pattern.evidence;
@@ -4554,19 +4554,19 @@ impl CodeGen {
                     null => "1".to_string(),  // Regular: binds any value
                 }
             }
-            IrPattern::Literal { .. } => {
+            IrPattern·Literal { .. } => {
                 let lit_val = pattern.value;
                 // Compare against literal
                 match lit_val {
-                    LiteralValue::Int(n) => format!("({}.tag == TAG_INT && {}.v.i == {}LL)", value, value, n),
-                    LiteralValue::Bool(b) => {
+                    LiteralValue·Int(n) => format!("({}.tag == TAG_INT && {}.v.i == {}LL)", value, value, n),
+                    LiteralValue·Bool(b) => {
                         if b {
                             format!("({}.tag == TAG_BOOL && {}.v.b == true)", value, value)
                         } else {
                             format!("({}.tag == TAG_BOOL && {}.v.b == false)", value, value)
                         }
                     },
-                    LiteralValue::Char(c) => {
+                    LiteralValue·Char(c) => {
                         // For ASCII chars, use char literal; for Unicode, use integer
                         let code = c as u32;
                         if code < 128 {
@@ -4577,16 +4577,16 @@ impl CodeGen {
                             format!("({}.tag == TAG_CHAR && {}.v.c == {})", value, value, code)
                         }
                     },
-                    LiteralValue::String(s) => {
+                    LiteralValue·String(s) => {
                         // Pre-compute escape to avoid method call in format!
                         let escaped = self.escape_string(s);
                         format!("({}.tag == TAG_STRING && strcmp({}.v.s, \"{}\") == 0)", value, value, escaped)
                     },
-                    LiteralValue::Null => format!("{}.tag == TAG_NULL", value),
+                    LiteralValue·Null => format!("{}.tag == TAG_NULL", value),
                     _ => "1".to_string(),
                 }
             },
-            IrPattern::TupleStruct { .. } => {
+            IrPattern·TupleStruct { .. } => {
                 let path = pattern.path;
                 // Match on variant constructors
                 if path.contains("None") || path.ends_with("::None") {
@@ -4594,15 +4594,15 @@ impl CodeGen {
                 } else if path.contains("Some") || path.ends_with("::Some") {
                     format!("({}.tag == TAG_OPTION_SOME)", value)
                 } else if path.contains("Ok") || path.ends_with("::Ok") {
-                    // Result::Ok - use sigil_is_ok helper
+                    // Result·Ok - use sigil_is_ok helper
                     format!("sigil_is_ok({})", value)
                 } else if path.contains("Err") || path.ends_with("::Err") {
-                    // Result::Err - use sigil_is_err helper
+                    // Result·Err - use sigil_is_err helper
                     format!("sigil_is_err({})", value)
                 } else if path.contains("::") {
-                    // User-defined tuple variant: EnumName::VariantName(data)
+                    // User-defined tuple variant: EnumName·VariantName(data)
                     // For tuple variants (with data), use enum_id and variant constant
-                    // CG-200: Fix path splitting for module-qualified paths like "ast::UnaryOp::Not"
+                    // CG-200: Fix path splitting for module-qualified paths like "ast::UnaryOp·Not"
                     // enum_name should be second-to-last element, variant_name should be last
                     let parts = path.split("::");
                     if parts.len() >= 2 {
@@ -4623,13 +4623,13 @@ impl CodeGen {
                     "1".to_string()  // Default: always matches
                 }
             },
-            IrPattern::Path { .. } => {
+            IrPattern·Path { .. } => {
                 let path = pattern.path;
                 // Match on unit variants like None
                 if path.contains("None") || path.ends_with("::None") {
                     format!("({}.tag == TAG_NULL)", value)
                 } else if path.contains("::") {
-                    // User-defined unit variant: EnumName::VariantName (no data)
+                    // User-defined unit variant: EnumName·VariantName (no data)
                     // For unit variants, use sigil_enum_eq with the global constant
                     let parts = path.split("::");
                     let c_const_name = parts.join("____");
@@ -4639,10 +4639,10 @@ impl CodeGen {
                     "1".to_string()
                 }
             },
-            IrPattern::Tuple { .. } => {
+            IrPattern·Tuple { .. } => {
                 let elements = pattern.elements;
                 // Check tuple tag and recursively check elements
-                let mut conditions: ![String] = [];
+                let mut conditions = Vec·new();
                 conditions.push(format!("{}.tag == TAG_TUPLE", value));
                 for (i, elem) in elements.iter().enumerate() {
                     let elem_val = format!("{}.v.tup.fields[{}]", value, i);
@@ -4650,17 +4650,17 @@ impl CodeGen {
                 }
                 format!("({})", conditions.join(" && "))
             },
-            IrPattern::Struct { .. } => {
+            IrPattern·Struct { .. } => {
                 // Struct patterns match by checking the struct variant name
                 let path = pattern.path;
                 let fields = pattern.fields;
-                let mut conditions: ![String] = [];
+                let mut conditions = Vec·new();
                 // CG-027: Check BOTH TAG_STRUCT and TAG_ENUM representations
                 // Native compiler creates enum variants as TAG_ENUM but matching code
                 // was only checking TAG_STRUCT. Need both checks for self-compilation.
                 if path.contains("::") {
-                    // CG-200: Extract enum name and variant name from path like "IrPattern::Ident"
-                    // or module-qualified path like "ast::UnaryOp::Not"
+                    // CG-200: Extract enum name and variant name from path like "IrPattern·Ident"
+                    // or module-qualified path like "ast::UnaryOp·Not"
                     // enum_name is second-to-last element, variant_name is last element
                     let parts = path.split("::");
                     let enum_name = parts[parts.len() - 2];
@@ -4687,16 +4687,16 @@ impl CodeGen {
                 }
                 format!("({})", conditions.join(" && "))
             },
-            IrPattern::Or { .. } => {
+            IrPattern·Or { .. } => {
                 // Or pattern: match if any alternative matches
                 let patterns = pattern.patterns;
-                let mut conditions: ![String] = [];
+                let mut conditions = Vec·new();
                 for p in patterns.iter() {
                     conditions.push(self.emit_pattern_condition(p, value.clone()));
                 }
                 format!("({})", conditions.join(" || "))
             },
-            IrPattern::Range { .. } => {
+            IrPattern·Range { .. } => {
                 // CG-019: Char range patterns like 'a'..'z'
                 let start_pat = pattern.start;
                 let end_pat = pattern.end;
@@ -4707,9 +4707,9 @@ impl CodeGen {
                     ?boxed => {
                         let inner = *boxed;
                         match inner {
-                            IrPattern::Literal { .. } => {
+                            IrPattern·Literal { .. } => {
                                 match inner.value {
-                                    LiteralValue::Char(c) => {
+                                    LiteralValue·Char(c) => {
                                         let code = c as u32;
                                         if code < 128 {
                                             let escaped = self.escape_char(c);
@@ -4732,9 +4732,9 @@ impl CodeGen {
                     ?boxed => {
                         let inner = *boxed;
                         match inner {
-                            IrPattern::Literal { .. } => {
+                            IrPattern·Literal { .. } => {
                                 match inner.value {
-                                    LiteralValue::Char(c) => {
+                                    LiteralValue·Char(c) => {
                                         let code = c as u32;
                                         if code < 128 {
                                             let escaped = self.escape_char(c);
@@ -4764,10 +4764,10 @@ impl CodeGen {
     /// Emit pipeline step
     fn emit_pipeline_step(mut self, step: !IrPipelineStep, input: !String) -> !String {
         match step {
-            IrPipelineStep::Morpheme { morpheme, body, .. } => {
+            IrPipelineStep·Morpheme { morpheme, body, .. } => {
                 self.emit_morpheme(morpheme, input, body)
             },
-            IrPipelineStep::Call { function, args } => {
+            IrPipelineStep·Call { function, args } => {
                 let fn_name = self.mangle_name(function);
                 let mut all_args = [input.clone()];
                 for arg in args {
@@ -4775,14 +4775,14 @@ impl CodeGen {
                 }
                 format!("sigil_{}({})", fn_name, all_args.join(", "))
             },
-            IrPipelineStep::Method { name, args } => {
+            IrPipelineStep·Method { name, args } => {
                 let mut all_args = [input.clone()];
                 for arg in args {
                     all_args.push(self.emit_operation(arg));
                 }
                 format!("sigil_{}({})", self.mangle_name(name), all_args.join(", "))
             },
-            IrPipelineStep::Identity => input,
+            IrPipelineStep·Identity => input,
             _ => input,
         }
     }
@@ -4809,7 +4809,7 @@ impl CodeGen {
         let result = self.fresh_temp();
 
         match kind {
-            MorphemeKind::Transform => {
+            MorphemeKind·Transform => {
                 self.line(format!("SigilValue {} = sigil_array({}.v.arr.len);", result, input));
                 let i_var = self.fresh_temp();
                 self.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
@@ -4819,7 +4819,7 @@ impl CodeGen {
                     ?b => {
                         // Check if body is a closure - if so, inline it
                         let body_result = match *b.clone() {
-                            IrOperation::Closure { .. } => self.emit_closure_body_inline(*b, "it".to_string()),
+                            IrOperation·Closure { .. } => self.emit_closure_body_inline(*b, "it".to_string()),
                             _ => self.emit_operation(*b),
                         };
                         self.line(format!("{}.v.arr.data[{}] = {};", result, i_var, body_result));
@@ -4832,7 +4832,7 @@ impl CodeGen {
                 self.line("}");
                 result
             },
-            MorphemeKind::Filter => {
+            MorphemeKind·Filter => {
                 self.line(format!("SigilValue {} = sigil_array(0);", result));
                 self.line(format!("{}.v.arr.data = (SigilValue*)malloc({}.v.arr.len * sizeof(SigilValue));", result, input));
                 self.line(format!("{}.v.arr.cap = {}.v.arr.len;", result, input));
@@ -4844,7 +4844,7 @@ impl CodeGen {
                     ?b => {
                         // Check if body is a closure - if so, inline it
                         let pred = match *b.clone() {
-                            IrOperation::Closure { .. } => self.emit_closure_body_inline(*b, "it".to_string()),
+                            IrOperation·Closure { .. } => self.emit_closure_body_inline(*b, "it".to_string()),
                             _ => self.emit_operation(*b),
                         };
                         self.line_open(format!("if (sigil_truthy({}))", pred));
@@ -4861,7 +4861,7 @@ impl CodeGen {
                 self.line("}");
                 result
             },
-            MorphemeKind::Sum => {
+            MorphemeKind·Sum => {
                 self.line(format!("SigilValue {} = sigil_float(0);", result));
                 let i_var = self.fresh_temp();
                 self.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
@@ -4872,7 +4872,7 @@ impl CodeGen {
                 self.line("}");
                 result
             },
-            MorphemeKind::Product => {
+            MorphemeKind·Product => {
                 self.line(format!("SigilValue {} = sigil_float(1);", result));
                 let i_var = self.fresh_temp();
                 self.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
@@ -4883,10 +4883,10 @@ impl CodeGen {
                 self.line("}");
                 result
             },
-            MorphemeKind::First => {
+            MorphemeKind·First => {
                 format!("({}.v.arr.len > 0 ? {}.v.arr.data[0] : sigil_null())", input, input)
             },
-            MorphemeKind::Last => {
+            MorphemeKind·Last => {
                 format!("({}.v.arr.len > 0 ? {}.v.arr.data[{}.v.arr.len-1] : sigil_null())", input, input, input)
             },
             _ => input,
@@ -4962,10 +4962,10 @@ impl CodeGen {
 
     fn evidence_to_c(self, ev: !IrEvidence) -> !&str {
         match ev {
-            IrEvidence::Known => "SIGIL_KNOWN",
-            IrEvidence::Uncertain => "SIGIL_UNCERTAIN",
-            IrEvidence::Reported => "SIGIL_REPORTED",
-            IrEvidence::Paradox => "SIGIL_PARADOX",
+            IrEvidence·Known => "SIGIL_KNOWN",
+            IrEvidence·Uncertain => "SIGIL_UNCERTAIN",
+            IrEvidence·Reported => "SIGIL_REPORTED",
+            IrEvidence·Paradox => "SIGIL_PARADOX",
             // Fallback for cross-module enum ID mismatch
             _ => "SIGIL_KNOWN",
         }
@@ -4978,7 +4978,7 @@ impl CodeGen {
         } else {
             expr
         };
-        let is_known = match ev { IrEvidence::Known => true, _ => false };
+        let is_known = match ev { IrEvidence·Known => true, _ => false };
         if is_known {
             expr_safe
         } else {
@@ -4993,7 +4993,7 @@ impl CodeGen {
     fn strip_evidence_markers(self, input: !String) -> !String {
         let chars: ![char] = input.chars().collect();
         let len = chars.len() as i64;
-        let mut result = String::new();
+        let mut result = String·new();
         let mut i: i64 = 0;
         while i < len {
             let c = chars[i as usize];
@@ -5040,8 +5040,8 @@ impl CodeGen {
 
     /// Encode a byte as \xHH using format! to avoid push mutation issues
     fn encode_hex_byte(byte: !u32) -> !String {
-        let h0 = CodeGen::hex_digit(byte / 16);
-        let h1 = CodeGen::hex_digit(byte % 16);
+        let h0 = CodeGen·hex_digit(byte / 16);
+        let h1 = CodeGen·hex_digit(byte % 16);
         format!("\\x{}{}", h0, h1)
     }
 
@@ -5052,9 +5052,9 @@ impl CodeGen {
         let b0: !u32 = 224 + (code >> 12);
         let b1: !u32 = 128 + ((code >> 6) & 63);
         let b2: !u32 = 128 + (code & 63);
-        let s0 = CodeGen::encode_hex_byte(b0);
-        let s1 = CodeGen::encode_hex_byte(b1);
-        let s2 = CodeGen::encode_hex_byte(b2);
+        let s0 = CodeGen·encode_hex_byte(b0);
+        let s1 = CodeGen·encode_hex_byte(b1);
+        let s2 = CodeGen·encode_hex_byte(b2);
         format!("{}{}{}", s0, s1, s2)
     }
 
@@ -5080,16 +5080,16 @@ impl CodeGen {
                     // For safety, use octal for values over 255
                     if code <= 255 {
                         // Avoid format! with static method calls - use string concat
-                        let h1 = CodeGen::hex_digit(d1);
-                        let h0 = CodeGen::hex_digit(d0);
-                        let mut hex_str = String::new();
+                        let h1 = CodeGen·hex_digit(d1);
+                        let h0 = CodeGen·hex_digit(d0);
+                        let mut hex_str = String·new();
                         hex_str = hex_str + "\\x";
                         hex_str.push(h1);
                         hex_str.push(h0);
                         hex_str
                     } else {
                         // For unicode > 255, encode as UTF-8 hex escapes
-                        CodeGen::encode_utf8(code)
+                        CodeGen·encode_utf8(code)
                     }
                 }
             },
@@ -5098,7 +5098,7 @@ impl CodeGen {
 
     fn escape_string(self, s: !String) -> !String {
         // Build escaped string with for-loop to avoid closure capture
-        let mut result = String::new();
+        let mut result = String·new();
         for c in s.chars() {
             result = result + self.escape_char(c).as_str();
         }
@@ -5114,7 +5114,7 @@ impl CodeGen {
     /// Uses manual string building since replace() isn't in the interpreter
     fn translate_format_tokens(self, tokens: !String) -> !String {
         // Build result by scanning through the string
-        let mut result = String::new();
+        let mut result = String·new();
         let chars: ![char] = tokens.chars().collect();
         let len = chars.len();
         let mut i: !i64 = 0;
@@ -5292,7 +5292,7 @@ impl CodeGen {
                         let is_method_call = field_end < len && chars[field_end] == '(';
                         if !is_method_call {
                             // It's a field access - convert to sigil_struct_field
-                            let mut field_name = String::new();
+                            let mut field_name = String·new();
                             let mut fk = after_self;
                             while fk < field_end {
                                 field_name.push(chars[fk]);
@@ -5366,13 +5366,13 @@ impl CodeGen {
                         }
                     }
                     // Extract identifier and field/method names
-                    let mut ident = String::new();
+                    let mut ident = String·new();
                     let mut fi = ident_start;
                     while fi < ident_end {
                         ident.push(chars[fi]);
                         fi = fi + 1;
                     }
-                    let mut field = String::new();
+                    let mut field = String·new();
                     let mut fj = field_start;
                     while fj < field_end {
                         field.push(chars[fj]);
@@ -5454,7 +5454,7 @@ impl CodeGen {
                             continue;
                         }
                         if field == "name" {
-                            // Skip the empty () after name - IrEvidence::name()
+                            // Skip the empty () after name - IrEvidence·name()
                             let mut call_end = field_end + 1;
                             if call_end < len && chars[call_end] == ')' {
                                 call_end = call_end + 1;
@@ -5484,7 +5484,7 @@ impl CodeGen {
                             // Extract the separator argument and wrap in sigil_string
                             let mut sep_arg = "sigil_string(\", \")".to_string();
                             if call_end > arg_start {
-                                let mut sep_str = String::new();
+                                let mut sep_str = String·new();
                                 let mut k = arg_start;
                                 while k < call_end {
                                     sep_str.push(chars[k]);
@@ -5538,13 +5538,13 @@ impl CodeGen {
                     }
                     if bracket_depth == 0 {
                         // Extract identifier and index
-                        let mut arr_name = String::new();
+                        let mut arr_name = String·new();
                         let mut ak = arr_start;
                         while ak < arr_end {
                             arr_name.push(chars[ak]);
                             ak = ak + 1;
                         }
-                        let mut index_expr = String::new();
+                        let mut index_expr = String·new();
                         let mut ik = idx_start;
                         while ik < idx_end {
                             index_expr.push(chars[ik]);
@@ -5602,7 +5602,7 @@ impl CodeGen {
                                 }
                             }
                             if chain_end > chain_start {
-                                let mut chain_name = String::new();
+                                let mut chain_name = String·new();
                                 let mut ck = chain_start;
                                 while ck < chain_end {
                                     chain_name.push(chars[ck]);
@@ -5702,13 +5702,13 @@ impl CodeGen {
                         }
                         if num_end > num_start {
                             // Found pattern: identifier + number
-                            let mut arith_ident = String::new();
+                            let mut arith_ident = String·new();
                             let mut ai = arith_start;
                             while ai < arith_ident_end {
                                 arith_ident.push(chars[ai]);
                                 ai = ai + 1;
                             }
-                            let mut arith_num = String::new();
+                            let mut arith_num = String·new();
                             let mut an = num_start;
                             while an < num_end {
                                 arith_num.push(chars[an]);
@@ -5775,7 +5775,7 @@ impl CodeGen {
         let mut pos: !i64 = 0;
         let fr_chars: ![char] = final_result.chars().collect();
         let fr_len = fr_chars.len();
-        let mut new_result = String::new();
+        let mut new_result = String·new();
 
         while pos < fr_len {
             // Look for ).to_string()
@@ -5827,13 +5827,13 @@ impl CodeGen {
                     }
                     // Extract the function call and wrap it
                     let nr_chars: ![char] = new_result.chars().collect();
-                    let mut prefix = String::new();
+                    let mut prefix = String·new();
                     let mut fi: !i64 = 0;
                     while fi < func_start {
                         prefix.push(nr_chars[fi as usize]);
                         fi = fi + 1;
                     }
-                    let mut func_call = String::new();
+                    let mut func_call = String·new();
                     let mut fj: !i64 = func_start;
                     while fj < nr_chars.len() as i64 {
                         func_call.push(nr_chars[fj as usize]);
@@ -5888,13 +5888,13 @@ impl CodeGen {
                         }
                     }
                     let nr_chars: ![char] = new_result.chars().collect();
-                    let mut prefix = String::new();
+                    let mut prefix = String·new();
                     let mut fi: !i64 = 0;
                     while fi < func_start {
                         prefix.push(nr_chars[fi as usize]);
                         fi = fi + 1;
                     }
-                    let mut func_call = String::new();
+                    let mut func_call = String·new();
                     let mut fj: !i64 = func_start;
                     while fj < nr_chars.len() as i64 {
                         func_call.push(nr_chars[fj as usize]);
@@ -5953,13 +5953,13 @@ impl CodeGen {
                         }
                     }
                     let nr_chars: ![char] = new_result.chars().collect();
-                    let mut prefix = String::new();
+                    let mut prefix = String·new();
                     let mut pi: !i64 = 0;
                     while pi < expr_start {
                         prefix.push(nr_chars[pi as usize]);
                         pi = pi + 1;
                     }
-                    let mut arr_expr = String::new();
+                    let mut arr_expr = String·new();
                     let mut ai: !i64 = expr_start;
                     while ai < nr_chars.len() as i64 {
                         arr_expr.push(nr_chars[ai as usize]);
@@ -5992,7 +5992,7 @@ impl CodeGen {
                     let after = if ident_end < fr_len { fr_chars[ident_end as usize] } else { ' ' };
                     // If followed by '(' it's a method call, not a field - skip
                     // Also skip known methods that we handle above
-                    let mut field_name = String::new();
+                    let mut field_name = String·new();
                     let mut fi: !i64 = pos + 2;
                     while fi < ident_end {
                         field_name.push(fr_chars[fi as usize]);
@@ -6035,13 +6035,13 @@ impl CodeGen {
                                 }
                             }
                             let nr_chars: ![char] = new_result.chars().collect();
-                            let mut prefix = String::new();
+                            let mut prefix = String·new();
                             let mut fii: !i64 = 0;
                             while fii < func_start {
                                 prefix.push(nr_chars[fii as usize]);
                                 fii = fii + 1;
                             }
-                            let mut func_call = String::new();
+                            let mut func_call = String·new();
                             let mut fj: !i64 = func_start;
                             while fj < nr_chars.len() as i64 {
                                 func_call.push(nr_chars[fj as usize]);
@@ -6091,13 +6091,13 @@ impl CodeGen {
                             }
                         }
                         let nr_chars: ![char] = new_result.chars().collect();
-                        let mut prefix = String::new();
+                        let mut prefix = String·new();
                         let mut fii: !i64 = 0;
                         while fii < func_start {
                             prefix.push(nr_chars[fii as usize]);
                             fii = fii + 1;
                         }
-                        let mut func_call = String::new();
+                        let mut func_call = String·new();
                         let mut fj: !i64 = func_start;
                         while fj < nr_chars.len() as i64 {
                             func_call.push(nr_chars[fj as usize]);
@@ -6151,7 +6151,7 @@ impl CodeGen {
         // IMPORTANT: Do NOT strip ? followed by space - could be ternary operator
         let nr_chars: ![char] = new_result.chars().collect();
         let nr_len = nr_chars.len() as i64;
-        let mut cleaned = String::new();
+        let mut cleaned = String·new();
         let mut ci: i64 = 0;
         while ci < nr_len {
             let c = nr_chars[ci as usize];
@@ -7082,7 +7082,7 @@ impl CodeGen {
         self.line("if (v.tag == TAG_ENUM) {");
         self.indent_push();
         self.line("/* For enums, we can only do a best-effort match on variant name */");
-        self.line("/* The name format is 'EnumName::VariantName' */");
+        self.line("/* The name format is 'EnumName·VariantName' */");
         self.line("return 1; /* TODO: proper enum variant matching */");
         self.indent_pop();
         self.line("}");
@@ -7806,7 +7806,7 @@ impl CodeGen {
         // sigil_next - stub for iterator protocol
         self.line("SigilValue sigil_next(SigilValue iter) {");
         self.indent_push();
-        self.line("/* Iterator next - return Option::None for stub */");
+        self.line("/* Iterator next - return Option·None for stub */");
         self.line("return Option____None;");
         self.indent_pop();
         self.line("}");
@@ -7870,7 +7870,7 @@ impl CodeGen {
         self.line("SigilValue sigil_map_err(SigilValue result, SigilValue mapper) {");
         self.indent_push();
         self.line("/* Map error in Result - if Err, apply mapper */");
-        self.line("if (sigil_is_struct_variant(result, \"Result::Err\") || sigil_is_struct_variant(result, \"Err\")) {");
+        self.line("if (sigil_is_struct_variant(result, \"Result·Err\") || sigil_is_struct_variant(result, \"Err\")) {");
         self.indent_push();
         self.line("if (result.v.ptr && mapper.tag == TAG_CLOSURE) {");
         self.indent_push();
@@ -7923,8 +7923,8 @@ impl CodeGen {
         self.line("for (size_t i = 0; i < arr.v.arr.len; i++) {");
         self.indent_push();
         self.line("SigilValue item = arr.v.arr.data[i];");
-        self.line("if (sigil_is_struct_variant(item, \"Result::Err\") || sigil_is_struct_variant(item, \"Err\")) return item;");
-        self.line("if (sigil_is_struct_variant(item, \"Result::Ok\") || sigil_is_struct_variant(item, \"Ok\")) {");
+        self.line("if (sigil_is_struct_variant(item, \"Result·Err\") || sigil_is_struct_variant(item, \"Err\")) return item;");
+        self.line("if (sigil_is_struct_variant(item, \"Result·Ok\") || sigil_is_struct_variant(item, \"Ok\")) {");
         self.indent_push();
         self.line("if (item.v.ptr) result = sigil_Vec____push(result, *(SigilValue*)item.v.ptr);");
         self.indent_pop();
@@ -7947,11 +7947,11 @@ impl CodeGen {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    invoke super·*;
 
     #[test]
     fn test_mangle_name() {
-        let gen = CodeGen::new();
+        let gen = CodeGen·new();
         assert_eq!(gen.mangle_name("hello"), "hello");
         assert_eq!(gen.mangle_name("foo::bar"), "foo__bar");
         assert_eq!(gen.mangle_name("my_func"), "my_func");
@@ -7959,16 +7959,16 @@ mod tests {
 
     #[test]
     fn test_ir_type_to_c() {
-        let gen = CodeGen::new();
-        assert_eq!(gen.ir_type_to_c(IrType::Unit), "void");
-        assert_eq!(gen.ir_type_to_c(IrType::Primitive { name: "i64" }), "int64_t");
-        assert_eq!(gen.ir_type_to_c(IrType::Primitive { name: "bool" }), "bool");
+        let gen = CodeGen·new();
+        assert_eq!(gen.ir_type_to_c(IrType·Unit), "void");
+        assert_eq!(gen.ir_type_to_c(IrType·Primitive { name: "i64" }), "int64_t");
+        assert_eq!(gen.ir_type_to_c(IrType·Primitive { name: "bool" }), "bool");
     }
 
     #[test]
     fn test_generate_empty_module() {
-        let mut gen = CodeGen::new();
-        let module = IrModule::new("test.sigil");
+        let mut gen = CodeGen·new();
+        let module = IrModule·new("test.sigil".to_string());
         let code = gen.generate(module);
         assert!(code.contains("Generated by Sigil Compiler"));
         assert!(code.contains("typedef struct SigilValue"));

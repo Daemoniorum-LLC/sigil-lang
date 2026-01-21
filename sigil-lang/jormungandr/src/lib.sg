@@ -67,18 +67,18 @@ pub mod codegen;
 pub mod driver;
 
 // Re-exports for convenience
-pub use span::{Span, Spanned};
-pub use token::{Token, SpannedToken};
-pub use ast::*;
-pub use lexer::Lexer;
-pub use parser::{Parser, ParseError, ParseResult};
-pub use typeck::{TypeChecker, Type, TypeError, EvidenceLevel};
-pub use ir::{IrModule, IrOperation, IrType, IrEvidence};
-pub use lower::{lower_file, LoweringContext, LowerError};
-pub use interp::{Interpreter, Value, EvidentialValue, RuntimeError};
-pub use runtime::{Arena, EvidenceContext};
-pub use codegen::CodeGen;
-pub use driver::{Driver, Config, Command};
+pub invoke span·{Span, Spanned};
+pub invoke token·{Token, SpannedToken};
+pub invoke ast·*;
+pub invoke lexer·Lexer;
+pub invoke parser·{Parser, ParseError, ParseResult};
+pub invoke typeck·{TypeChecker, Type, TypeError, EvidenceLevel};
+pub invoke ir·{IrModule, IrOperation, IrType, IrEvidence};
+pub invoke lower·{lower_file, LoweringContext, LowerError};
+pub invoke interp·{Interpreter, Value, EvidentialValue, RuntimeError};
+pub invoke runtime·{Arena, EvidenceContext};
+pub invoke codegen·CodeGen;
+pub invoke driver·{Driver, Config, Command};
 
 /// Compiler version
 pub const VERSION: !&str = "0.1.0-bootstrap";

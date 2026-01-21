@@ -17,8 +17,8 @@
 //! 3. **Pipeline-Native**: First-class representation of morpheme chains
 //! 4. **Protocol-Aware**: Network operations are explicit with trust boundaries
 
-use crate::span::Span;
-use crate::typeck::EvidenceLevel;
+invoke tome·span·Span;
+invoke tome·typeck·EvidenceLevel;
 
 // ============================================================================
 // Version
@@ -50,7 +50,7 @@ pub struct IrModule {
     /// The evidentiality lattice structure
     pub evidentiality_lattice: !EvidentialityLattice,
     /// CG-015: Method signatures for call-site lookup
-    /// Maps qualified method name (e.g., "Lexer::advance") to whether it has mut self
+    /// Maps qualified method name (e.g., "Lexer·advance") to whether it has mut self
     pub method_signatures: !Map<String, bool>,
 }
 
@@ -65,8 +65,8 @@ impl IrModule {
             traits: [],
             impls: [],
             constants: [],
-            evidentiality_lattice: EvidentialityLattice::default(),
-            method_signatures: Map::new(),
+            evidentiality_lattice: EvidentialityLattice·default(),
+            method_signatures: Map·new(),
         }
     }
 
@@ -165,20 +165,20 @@ impl EvidentialityLattice {
                 },
             ],
             join_rules: [
-                LatticeRule::new("known", "uncertain", "uncertain"),
-                LatticeRule::new("known", "reported", "reported"),
-                LatticeRule::new("known", "paradox", "paradox"),
-                LatticeRule::new("uncertain", "reported", "reported"),
-                LatticeRule::new("uncertain", "paradox", "paradox"),
-                LatticeRule::new("reported", "paradox", "paradox"),
+                LatticeRule·new("known", "uncertain", "uncertain"),
+                LatticeRule·new("known", "reported", "reported"),
+                LatticeRule·new("known", "paradox", "paradox"),
+                LatticeRule·new("uncertain", "reported", "reported"),
+                LatticeRule·new("uncertain", "paradox", "paradox"),
+                LatticeRule·new("reported", "paradox", "paradox"),
             ],
             meet_rules: [
-                LatticeRule::new("known", "uncertain", "known"),
-                LatticeRule::new("known", "reported", "known"),
-                LatticeRule::new("known", "paradox", "known"),
-                LatticeRule::new("uncertain", "reported", "uncertain"),
-                LatticeRule::new("uncertain", "paradox", "uncertain"),
-                LatticeRule::new("reported", "paradox", "reported"),
+                LatticeRule·new("known", "uncertain", "known"),
+                LatticeRule·new("known", "reported", "known"),
+                LatticeRule·new("known", "paradox", "known"),
+                LatticeRule·new("uncertain", "reported", "uncertain"),
+                LatticeRule·new("uncertain", "paradox", "uncertain"),
+                LatticeRule·new("reported", "paradox", "reported"),
             ],
         }
     }
@@ -225,50 +225,50 @@ impl IrEvidence {
     /// Convert from type checker evidence level
     pub fn from_typeck(ev: !EvidenceLevel) -> !IrEvidence {
         match ev {
-            EvidenceLevel::Known => IrEvidence::Known,
-            EvidenceLevel::Uncertain => IrEvidence::Uncertain,
-            EvidenceLevel::Reported => IrEvidence::Reported,
-            EvidenceLevel::Paradox => IrEvidence::Paradox,
+            EvidenceLevel·Known => IrEvidence·Known,
+            EvidenceLevel·Uncertain => IrEvidence·Uncertain,
+            EvidenceLevel·Reported => IrEvidence·Reported,
+            EvidenceLevel·Paradox => IrEvidence·Paradox,
         }
     }
 
     /// Join two evidence levels (pessimistic)
     pub fn join(self, other: !IrEvidence) -> !IrEvidence {
         match (self, other) {
-            (IrEvidence::Paradox, _) | (_, IrEvidence::Paradox) => IrEvidence::Paradox,
-            (IrEvidence::Reported, _) | (_, IrEvidence::Reported) => IrEvidence::Reported,
-            (IrEvidence::Uncertain, _) | (_, IrEvidence::Uncertain) => IrEvidence::Uncertain,
-            (IrEvidence::Known, IrEvidence::Known) => IrEvidence::Known,
+            (IrEvidence·Paradox, _) | (_, IrEvidence·Paradox) => IrEvidence·Paradox,
+            (IrEvidence·Reported, _) | (_, IrEvidence·Reported) => IrEvidence·Reported,
+            (IrEvidence·Uncertain, _) | (_, IrEvidence·Uncertain) => IrEvidence·Uncertain,
+            (IrEvidence·Known, IrEvidence·Known) => IrEvidence·Known,
         }
     }
 
     /// Meet two evidence levels (optimistic)
     pub fn meet(self, other: !IrEvidence) -> !IrEvidence {
         match (self, other) {
-            (IrEvidence::Known, _) | (_, IrEvidence::Known) => IrEvidence::Known,
-            (IrEvidence::Uncertain, _) | (_, IrEvidence::Uncertain) => IrEvidence::Uncertain,
-            (IrEvidence::Reported, _) | (_, IrEvidence::Reported) => IrEvidence::Reported,
-            (IrEvidence::Paradox, IrEvidence::Paradox) => IrEvidence::Paradox,
+            (IrEvidence·Known, _) | (_, IrEvidence·Known) => IrEvidence·Known,
+            (IrEvidence·Uncertain, _) | (_, IrEvidence·Uncertain) => IrEvidence·Uncertain,
+            (IrEvidence·Reported, _) | (_, IrEvidence·Reported) => IrEvidence·Reported,
+            (IrEvidence·Paradox, IrEvidence·Paradox) => IrEvidence·Paradox,
         }
     }
 
     /// Get the symbol for this evidence level
     pub fn symbol(self) -> !&str {
         match self {
-            IrEvidence::Known => "!",
-            IrEvidence::Uncertain => "?",
-            IrEvidence::Reported => "~",
-            IrEvidence::Paradox => "‽",
+            IrEvidence·Known => "!",
+            IrEvidence·Uncertain => "?",
+            IrEvidence·Reported => "~",
+            IrEvidence·Paradox => "‽",
         }
     }
 
     /// Get the name for this evidence level
     pub fn name(self) -> !&str {
         match self {
-            IrEvidence::Known => "known",
-            IrEvidence::Uncertain => "uncertain",
-            IrEvidence::Reported => "reported",
-            IrEvidence::Paradox => "paradox",
+            IrEvidence·Known => "known",
+            IrEvidence·Uncertain => "uncertain",
+            IrEvidence·Reported => "reported",
+            IrEvidence·Paradox => "paradox",
         }
     }
 }
@@ -312,7 +312,7 @@ pub enum IrVisibility {
 
 impl IrVisibility {
     pub fn default() -> !IrVisibility {
-        IrVisibility::Private
+        IrVisibility·Private
     }
 }
 
@@ -444,27 +444,27 @@ pub enum IrType {
 
 impl IrType {
     pub fn unit() -> !IrType {
-        IrType::Unit
+        IrType·Unit
     }
 
     pub fn never() -> !IrType {
-        IrType::Never
+        IrType·Never
     }
 
     pub fn bool_type() -> !IrType {
-        IrType::Primitive { name: "bool" }
+        IrType·Primitive { name: "bool" }
     }
 
     pub fn i64_type() -> !IrType {
-        IrType::Primitive { name: "i64" }
+        IrType·Primitive { name: "i64" }
     }
 
     pub fn f64_type() -> !IrType {
-        IrType::Primitive { name: "f64" }
+        IrType·Primitive { name: "f64" }
     }
 
     pub fn str_type() -> !IrType {
-        IrType::Primitive { name: "str" }
+        IrType·Primitive { name: "str" }
     }
 }
 
@@ -498,9 +498,9 @@ impl IrTypeDef {
     /// Get the name of this type definition
     pub fn get_name(self) -> !String {
         match self {
-            IrTypeDef::Struct { name, .. } => name,
-            IrTypeDef::Enum { name, .. } => name,
-            IrTypeDef::TypeAlias { name, .. } => name,
+            IrTypeDef·Struct { name, .. } => name,
+            IrTypeDef·Enum { name, .. } => name,
+            IrTypeDef·TypeAlias { name, .. } => name,
         }
     }
 }
@@ -508,9 +508,9 @@ impl IrTypeDef {
 /// Free function to get type name (avoids method dispatch issues)
 pub fn ir_typedef_name(tdef: !IrTypeDef) -> !String {
     match tdef {
-        IrTypeDef::Struct { name, .. } => name,
-        IrTypeDef::Enum { name, .. } => name,
-        IrTypeDef::TypeAlias { name, .. } => name,
+        IrTypeDef·Struct { name, .. } => name,
+        IrTypeDef·Enum { name, .. } => name,
+        IrTypeDef·TypeAlias { name, .. } => name,
     }
 }
 
@@ -992,7 +992,7 @@ pub enum IrPattern {
 
     Wildcard,
 
-    /// Path pattern for unit variants (e.g., None, MyEnum::Variant)
+    /// Path pattern for unit variants (e.g., None, MyEnum·Variant)
     Path { path: !String },
 
     /// Rest pattern (..)
@@ -1058,24 +1058,24 @@ pub enum MorphemeKind {
 impl MorphemeKind {
     pub fn symbol(self) -> !&str {
         match self {
-            MorphemeKind::Transform => "τ",
-            MorphemeKind::Filter => "φ",
-            MorphemeKind::Sort => "σ",
-            MorphemeKind::Reduce => "ρ",
-            MorphemeKind::Lambda => "λ",
-            MorphemeKind::Sum => "Σ",
-            MorphemeKind::Product => "Π",
-            MorphemeKind::Min => "ρ_min",
-            MorphemeKind::Max => "ρ_max",
-            MorphemeKind::Concat => "ρ++",
-            MorphemeKind::All => "ρ&",
-            MorphemeKind::Any => "ρ|",
-            MorphemeKind::First => "α",
-            MorphemeKind::Last => "ω",
-            MorphemeKind::Middle => "μ",
-            MorphemeKind::Choice => "χ",
-            MorphemeKind::Nth => "ν",
-            MorphemeKind::Next => "ξ",
+            MorphemeKind·Transform => "τ",
+            MorphemeKind·Filter => "φ",
+            MorphemeKind·Sort => "σ",
+            MorphemeKind·Reduce => "ρ",
+            MorphemeKind·Lambda => "λ",
+            MorphemeKind·Sum => "Σ",
+            MorphemeKind·Product => "Π",
+            MorphemeKind·Min => "ρ_min",
+            MorphemeKind·Max => "ρ_max",
+            MorphemeKind·Concat => "ρ++",
+            MorphemeKind·All => "ρ&",
+            MorphemeKind·Any => "ρ|",
+            MorphemeKind·First => "α",
+            MorphemeKind·Last => "ω",
+            MorphemeKind·Middle => "μ",
+            MorphemeKind·Choice => "χ",
+            MorphemeKind·Nth => "ν",
+            MorphemeKind·Next => "ξ",
         }
     }
 }
@@ -1170,44 +1170,44 @@ impl IrDumpOptions {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    invoke super·*;
 
     #[test]
     fn test_evidence_join() {
-        assert_eq!(IrEvidence::Known.join(IrEvidence::Known), IrEvidence::Known);
-        assert_eq!(IrEvidence::Known.join(IrEvidence::Uncertain), IrEvidence::Uncertain);
-        assert_eq!(IrEvidence::Known.join(IrEvidence::Reported), IrEvidence::Reported);
-        assert_eq!(IrEvidence::Known.join(IrEvidence::Paradox), IrEvidence::Paradox);
-        assert_eq!(IrEvidence::Reported.join(IrEvidence::Paradox), IrEvidence::Paradox);
+        assert_eq!(IrEvidence·Known.join(IrEvidence·Known), IrEvidence·Known);
+        assert_eq!(IrEvidence·Known.join(IrEvidence·Uncertain), IrEvidence·Uncertain);
+        assert_eq!(IrEvidence·Known.join(IrEvidence·Reported), IrEvidence·Reported);
+        assert_eq!(IrEvidence·Known.join(IrEvidence·Paradox), IrEvidence·Paradox);
+        assert_eq!(IrEvidence·Reported.join(IrEvidence·Paradox), IrEvidence·Paradox);
     }
 
     #[test]
     fn test_evidence_meet() {
-        assert_eq!(IrEvidence::Paradox.meet(IrEvidence::Paradox), IrEvidence::Paradox);
-        assert_eq!(IrEvidence::Paradox.meet(IrEvidence::Reported), IrEvidence::Reported);
-        assert_eq!(IrEvidence::Paradox.meet(IrEvidence::Uncertain), IrEvidence::Uncertain);
-        assert_eq!(IrEvidence::Paradox.meet(IrEvidence::Known), IrEvidence::Known);
+        assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Paradox), IrEvidence·Paradox);
+        assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Reported), IrEvidence·Reported);
+        assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Uncertain), IrEvidence·Uncertain);
+        assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Known), IrEvidence·Known);
     }
 
     #[test]
     fn test_ir_module_creation() {
-        let module = IrModule::new("test.sigil");
+        let module = IrModule·new("test.sigil");
         assert_eq!(module.version, IR_VERSION);
         assert_eq!(module.source, "test.sigil");
     }
 
     #[test]
     fn test_morpheme_symbols() {
-        assert_eq!(MorphemeKind::Transform.symbol(), "τ");
-        assert_eq!(MorphemeKind::Filter.symbol(), "φ");
-        assert_eq!(MorphemeKind::Reduce.symbol(), "ρ");
-        assert_eq!(MorphemeKind::First.symbol(), "α");
-        assert_eq!(MorphemeKind::Last.symbol(), "ω");
+        assert_eq!(MorphemeKind·Transform.symbol(), "τ");
+        assert_eq!(MorphemeKind·Filter.symbol(), "φ");
+        assert_eq!(MorphemeKind·Reduce.symbol(), "ρ");
+        assert_eq!(MorphemeKind·First.symbol(), "α");
+        assert_eq!(MorphemeKind·Last.symbol(), "ω");
     }
 
     #[test]
     fn test_lattice_default() {
-        let lattice = EvidentialityLattice::default();
+        let lattice = EvidentialityLattice·default();
         assert_eq!(lattice.levels.len(), 4);
         assert_eq!(lattice.levels[0].name, "known");
         assert_eq!(lattice.levels[3].name, "paradox");

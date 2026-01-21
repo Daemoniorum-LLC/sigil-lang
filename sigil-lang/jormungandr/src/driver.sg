@@ -26,15 +26,15 @@
 //! diff sigil2.c sigil3.c  # Should be identical (fixed point!)
 //! ```
 
-use crate::lexer::Lexer;
-use crate::parser::{Parser, ParseError};
-use crate::typeck::{TypeChecker, TypeError};
-use crate::lower::{lower_file, LowerError};
-use crate::ir::IrModule;
-use crate::interp::{Interpreter, RuntimeError};
-use crate::codegen::CodeGen;
-use crate::span::Span;
-use crate::ast::{SourceFile, UseTree, UseDecl, Ident, Item, Module};
+invoke tome·lexer·Lexer;
+invoke tome·parser·{Parser, ParseError};
+invoke tome·typeck·{TypeChecker, TypeError};
+invoke tome·lower·{lower_file, LowerError};
+invoke tome·ir·IrModule;
+invoke tome·interp·{Interpreter, RuntimeError};
+invoke tome·codegen·CodeGen;
+invoke tome·span·Span;
+invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 
 // ============================================================================
 // Compiler Configuration
@@ -83,7 +83,7 @@ impl Config {
         Config {
             input_files: [],
             output_file: null,
-            mode: CompileMode::Compile,
+            mode: CompileMode·Compile,
             verbose: false,
             debug: false,
             opt_level: 0,
@@ -95,7 +95,7 @@ impl Config {
 
     /// Parse command line arguments
     pub fn from_args(argv: ![String]) -> !Result<Config, String> {
-        let mut config = Config::default();
+        let mut config = Config·default();
         let mut expect_output = false;
 
         for arg in argv.iter() {
@@ -105,17 +105,17 @@ impl Config {
                 config.output_file = ?s;
                 expect_output = false;
             } else if s == "compile" {
-                config.mode = CompileMode::Compile;
+                config.mode = CompileMode·Compile;
             } else if s == "run" {
-                config.mode = CompileMode::Run;
+                config.mode = CompileMode·Run;
             } else if s == "check" {
-                config.mode = CompileMode::Check;
+                config.mode = CompileMode·Check;
             } else if s == "dump-ir" {
-                config.mode = CompileMode::DumpIr;
+                config.mode = CompileMode·DumpIr;
             } else if s == "dump-ast" {
-                config.mode = CompileMode::DumpAst;
+                config.mode = CompileMode·DumpAst;
             } else if s == "dump-tokens" {
-                config.mode = CompileMode::DumpTokens;
+                config.mode = CompileMode·DumpTokens;
             } else if s == "-o" || s == "--output" {
                 expect_output = true;
             } else if s == "-v" || s == "--verbose" {
@@ -136,24 +136,24 @@ impl Config {
                 config.resolve_tomes = false;
             } else if s.starts_with("--tome-path=") {
                 // Extract path after '='
-                let path = s.chars().skip(12).collect::<String>();
+                let path: String = s.chars().skip(12).collect();
                 config.tome_paths.push(path);
             } else if s == "-h" || s == "--help" {
-                return Result::Err(Self::help_text());
+                return Result·Err(Self·help_text());
             } else if s == "--version" {
-                return Result::Err(format!("Sigil Compiler {}", crate::VERSION));
+                return Result·Err(format!("Sigil Compiler {}", tome·VERSION));
             } else if s.starts_with("-") {
-                return Result::Err(format!("unknown option: {}", s));
+                return Result·Err(format!("unknown option: {}", s));
             } else {
                 config.input_files.push(s);
             }
         }
 
         if config.input_files.is_empty() {
-            return Result::Err("no input files specified");
+            return Result·Err("no input files specified");
         }
 
-        Result::Ok(config)
+        Result·Ok(config)
     }
 
     fn help_text() -> !String {
@@ -276,7 +276,7 @@ impl CompileError {
     }
 
     pub fn display(self) -> !String {
-        let mut result = String::new();
+        let mut result = String·new();
 
         // Error header
         result.push_str("error: ");
@@ -324,9 +324,9 @@ pub struct CompileWarning {
 
 /// Extract tome names from a UseTree
 fn extract_tome_names(tree: !UseTree) -> ![String] {
-    let mut names: ![String] = [];
+    let mut names = Vec·new();
     match tree {
-        UseTree::Path { prefix, suffix } => {
+        UseTree·Path { prefix, suffix } => {
             // The first segment is the tome name
             let tome_name = prefix.name.clone();
             // Skip "crate", "self", "super", "tome" - these are local references
@@ -334,14 +334,14 @@ fn extract_tome_names(tree: !UseTree) -> ![String] {
                 names.push(tome_name);
             }
         },
-        UseTree::Name(ident) => {
+        UseTree·Name(ident) => {
             // Single name import - could be a tome
             let tome_name = ident.name.clone();
             if tome_name != "crate" && tome_name != "self" && tome_name != "super" && tome_name != "tome" {
                 names.push(tome_name);
             }
         },
-        UseTree::Group(trees) => {
+        UseTree·Group(trees) => {
             // Group import - recurse
             for t in trees.iter() {
                 let sub_names = extract_tome_names(t.clone());
@@ -371,29 +371,29 @@ fn find_tome_source(tome_name: !String, search_paths: ![String]) -> ?String {
 fn infer_tome_path(input_file: !String) -> ?String {
     // If input is /path/to/mytome/src/lib.sg, search path is /path/to
     // Look for "/src/" in the path and go two levels up
-    let mut chars: ![char] = [];
+    let mut chars = Vec·new();
     for c in input_file.chars() {
         chars.push(c);
     }
 
     // Find last occurrence of "/src/"
-    let mut last_src_pos: ?i64 = null;
+    let mut last_src_pos: Option<i64> = None;
     let mut i = 0;
     while i + 4 < chars.len() {
         if chars[i] == '/' && chars[i+1] == 's' && chars[i+2] == 'r' && chars[i+3] == 'c' && chars[i+4] == '/' {
-            last_src_pos = ?i;
+            last_src_pos = Some(i);
         }
         i = i + 1;
     }
 
     match last_src_pos {
-        ?pos => {
+        Some(pos) => {
             // Find the slash before /src/
             let mut j = pos - 1;
             while j >= 0 {
                 if chars[j] == '/' {
                     // Return path up to this point
-                    let mut result = String::new();
+                    let mut result = String·new();
                     let mut k = 0;
                     while k < j {
                         result.push(chars[k]);
@@ -405,7 +405,7 @@ fn infer_tome_path(input_file: !String) -> ?String {
             }
             null
         },
-        null => null,
+        None => null,
     }
 }
 
@@ -422,27 +422,27 @@ impl Driver {
     /// Run the compiler
     pub fn run(mut self) -> !Result<(), i32> {
         match self.config.mode {
-            CompileMode::Compile => self.compile(),
-            CompileMode::Run => self.interpret(),
-            CompileMode::Check => self.check(),
-            CompileMode::DumpIr => self.dump_ir(),
-            CompileMode::DumpAst => self.dump_ast(),
-            CompileMode::DumpTokens => self.dump_tokens(),
+            CompileMode·Compile => self.compile(),
+            CompileMode·Run => self.interpret(),
+            CompileMode·Check => self.check(),
+            CompileMode·DumpIr => self.dump_ir(),
+            CompileMode·DumpAst => self.dump_ast(),
+            CompileMode·DumpTokens => self.dump_tokens(),
         }
     }
 
     /// Resolve tome imports from AST and return additional files to compile
     fn resolve_tome_imports(mut self, asts: ![SourceFile], file_paths: ![String]) -> ![String] {
-        let mut additional_files: ![String] = [];
-        let mut resolved_tomes: ![String] = [];  // Track which tomes we've already resolved
-        let mut local_modules: ![String] = [];   // Track locally defined modules
+        let mut additional_files = Vec·new();
+        let mut resolved_tomes = Vec·new();  // Track which tomes we've already resolved
+        let mut local_modules = Vec·new();   // Track locally defined modules
 
         // First pass: collect all locally defined module names
         // This prevents us from trying to resolve `use span::...` when `mod span;` is local
         for ast in asts.iter() {
             for item in ast.items.iter() {
                 match item.node {
-                    Item::Module(mod_def) => {
+                    Item·Module(mod_def) => {
                         local_modules.push(mod_def.name.name.clone());
                     },
                     _ => {},
@@ -483,7 +483,7 @@ impl Driver {
         for ast in asts.iter() {
             for item in ast.items.iter() {
                 match item.node {
-                    Item::Use(decl) => {
+                    Item·Use(decl) => {
                         let tome_names = extract_tome_names(decl.tree.clone());
                         for tome_name in tome_names.iter() {
                             // Skip local modules - they're not external tomes
@@ -561,8 +561,8 @@ impl Driver {
         // ================================================================
         // Phase 1: Parse ALL files first (including resolved tomes)
         // ================================================================
-        let mut file_paths: ![String] = [];
-        let mut asts: ![SourceFile] = [];
+        let mut file_paths = Vec·new();
+        let mut asts = Vec·new();
 
         let mut i = 0;
         while i < self.config.input_files.len() {
@@ -572,17 +572,17 @@ impl Driver {
             }
 
             let source = match self.read_file(file_path.clone()) {
-                Result::Ok(s) => s,
-                Result::Err(code) => {
+                Result·Ok(s) => s,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             let ast = match self.parse(file_path.clone(), source) {
-                Result::Ok(a) => a,
-                Result::Err(code) => {
+                Result·Ok(a) => a,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             file_paths.push(file_path);
@@ -611,8 +611,8 @@ impl Driver {
                     }
 
                     let source = match self.read_file(additional_path.clone()) {
-                        Result::Ok(s) => s,
-                        Result::Err(_code) => {
+                        Result·Ok(s) => s,
+                        Result·Err(_code) => {
                             // File doesn't exist - skip silently for now
                             // This handles the case where tome paths are guessed but don't exist
                             continue;
@@ -620,10 +620,10 @@ impl Driver {
                     };
 
                     let ast = match self.parse(additional_path.clone(), source) {
-                        Result::Ok(a) => a,
-                        Result::Err(code) => {
+                        Result·Ok(a) => a,
+                        Result·Err(code) => {
                             self.print_errors();
-                            return Result::Err(code);
+                            return Result·Err(code);
                         },
                     };
 
@@ -642,7 +642,7 @@ impl Driver {
             println("  Building unified type environment...");
         }
 
-        let mut checker = TypeChecker::new();
+        let mut checker = TypeChecker·new();
 
         // Pass 1: Collect type definitions from ALL files
         let mut j = 0;
@@ -680,7 +680,7 @@ impl Driver {
         // ================================================================
         // Phase 3: Lower each file using the shared type checker
         // ================================================================
-        let mut modules: ![IrModule] = [];
+        let mut modules = Vec·new();
 
         j = 0;
         while j < asts.len() {
@@ -693,14 +693,14 @@ impl Driver {
 
             // Lower to IR using the shared checker
             match lower_file(ast, checker.clone(), file_path.clone()) {
-                Result::Ok(ir) => modules.push(ir),
-                Result::Err(errs) => {
+                Result·Ok(ir) => modules.push(ir),
+                Result·Err(errs) => {
                     for err in errs {
-                        self.errors.push(CompileError::new(err.message)
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
                     self.print_errors();
-                    return Result::Err(1);
+                    return Result·Err(1);
                 },
             };
             j = j + 1;
@@ -760,7 +760,7 @@ impl Driver {
             }
             merged
         } else {
-            return Result::Err(1);
+            return Result·Err(1);
         };
 
         // ================================================================
@@ -770,17 +770,17 @@ impl Driver {
             println("  Generating C code...");
         }
 
-        let mut codegen = CodeGen::new();
+        let mut codegen = CodeGen·new();
         let c_code = codegen.generate(main_module);
 
         // Write output
         if self.config.output_file.is_some() {
             let output = self.config.output_file.unwrap();
             match self.write_file(output, c_code) {
-                Result::Ok(_) => {},
-                Result::Err(code) => {
+                Result·Ok(_) => {},
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             if self.config.verbose {
@@ -795,10 +795,10 @@ impl Driver {
         }
 
         if self.errors.is_empty() {
-            Result::Ok(())
+            Result·Ok(())
         } else {
             self.print_errors();
-            Result::Err(1)
+            Result·Err(1)
         }
     }
 
@@ -811,24 +811,24 @@ impl Driver {
         }
 
         // Phase 1: Parse ALL files first
-        let mut file_paths: ![String] = [];
-        let mut asts: ![SourceFile] = [];
+        let mut file_paths = Vec·new();
+        let mut asts = Vec·new();
 
         let mut i = 0;
         while i < self.config.input_files.len() {
             let file_path = self.config.input_files[i].clone();
             let source = match self.read_file(file_path.clone()) {
-                Result::Ok(s) => s,
-                Result::Err(code) => {
+                Result·Ok(s) => s,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             let ast = match self.parse(file_path.clone(), source) {
-                Result::Ok(a) => a,
-                Result::Err(code) => {
+                Result·Ok(a) => a,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             file_paths.push(file_path);
@@ -837,7 +837,7 @@ impl Driver {
         }
 
         // Phase 2: Build unified type environment
-        let mut checker = TypeChecker::new();
+        let mut checker = TypeChecker·new();
 
         let mut j = 0;
         while j < asts.len() {
@@ -868,21 +868,21 @@ impl Driver {
         }
 
         // Phase 3: Lower and load modules
-        let mut interpreter = Interpreter::new();
+        let mut interpreter = Interpreter·new();
 
         j = 0;
         while j < asts.len() {
             let file_path = file_paths[j].clone();
             let ast = asts[j].clone();
             match lower_file(ast, checker.clone(), file_path.clone()) {
-                Result::Ok(ir) => interpreter.load_module(ir),
-                Result::Err(errs) => {
+                Result·Ok(ir) => interpreter.load_module(ir),
+                Result·Err(errs) => {
                     for err in errs {
-                        self.errors.push(CompileError::new(err.message)
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
                     self.print_errors();
-                    return Result::Err(1);
+                    return Result·Err(1);
                 },
             };
             j = j + 1;
@@ -890,16 +890,16 @@ impl Driver {
 
         // Run main
         match interpreter.run() {
-            Result::Ok(result) => {
+            Result·Ok(result) => {
                 if self.config.verbose {
                     println(format!("Result: {}", result.value.to_string()));
                 }
-                Result::Ok(())
+                Result·Ok(())
             },
-            Result::Err(err) => {
-                self.errors.push(CompileError::new(format!("runtime error: {}", err.message)));
+            Result·Err(err) => {
+                self.errors.push(CompileError·new(format!("runtime error: {}", err.message)));
                 self.print_errors();
-                Result::Err(1)
+                Result·Err(1)
             },
         }
     }
@@ -913,24 +913,24 @@ impl Driver {
         }
 
         // Phase 1: Parse ALL files first
-        let mut file_paths: ![String] = [];
-        let mut asts: ![SourceFile] = [];
+        let mut file_paths = Vec·new();
+        let mut asts = Vec·new();
 
         let mut i = 0;
         while i < self.config.input_files.len() {
             let file_path = self.config.input_files[i].clone();
             let source = match self.read_file(file_path.clone()) {
-                Result::Ok(s) => s,
-                Result::Err(code) => {
+                Result·Ok(s) => s,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             let ast = match self.parse(file_path.clone(), source) {
-                Result::Ok(a) => a,
-                Result::Err(code) => {
+                Result·Ok(a) => a,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             file_paths.push(file_path);
@@ -939,7 +939,7 @@ impl Driver {
         }
 
         // Phase 2: Build unified type environment and check
-        let mut checker = TypeChecker::new();
+        let mut checker = TypeChecker·new();
 
         // Pass 1: Collect type definitions from ALL files
         let mut j = 0;
@@ -980,10 +980,10 @@ impl Driver {
 
         if self.errors.is_empty() {
             println("All files type check successfully!");
-            Result::Ok(())
+            Result·Ok(())
         } else {
             self.print_errors();
-            Result::Err(1)
+            Result·Err(1)
         }
     }
 
@@ -992,24 +992,24 @@ impl Driver {
     /// Uses multi-file compilation for cross-module support.
     fn dump_ir(mut self) -> !Result<(), i32> {
         // Phase 1: Parse ALL files first
-        let mut file_paths: ![String] = [];
-        let mut asts: ![SourceFile] = [];
+        let mut file_paths = Vec·new();
+        let mut asts = Vec·new();
 
         let mut i = 0;
         while i < self.config.input_files.len() {
             let file_path = self.config.input_files[i].clone();
             let source = match self.read_file(file_path.clone()) {
-                Result::Ok(s) => s,
-                Result::Err(code) => {
+                Result·Ok(s) => s,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             let ast = match self.parse(file_path.clone(), source) {
-                Result::Ok(a) => a,
-                Result::Err(code) => {
+                Result·Ok(a) => a,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    return Result·Err(code);
                 },
             };
             file_paths.push(file_path);
@@ -1018,7 +1018,7 @@ impl Driver {
         }
 
         // Phase 2: Build unified type environment
-        let mut checker = TypeChecker::new();
+        let mut checker = TypeChecker·new();
 
         let mut j = 0;
         while j < asts.len() {
@@ -1054,30 +1054,30 @@ impl Driver {
             let file_path = file_paths[j].clone();
             let ast = asts[j].clone();
             match lower_file(ast, checker.clone(), file_path.clone()) {
-                Result::Ok(ir) => {
+                Result·Ok(ir) => {
                     let json = ir.to_json(true);
                     match self.config.output_file {
                         ?output => {
                             match self.write_file(output, json) {
-                                Result::Ok(_) => {},
-                                Result::Err(code) => return Result::Err(code),
+                                Result·Ok(_) => {},
+                                Result·Err(code) => return Result·Err(code),
                             };
                         },
                         null => println(json),
                     }
                 },
-                Result::Err(errs) => {
+                Result·Err(errs) => {
                     for err in errs {
-                        self.errors.push(CompileError::new(err.message)
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
                     self.print_errors();
-                    return Result::Err(1);
+                    return Result·Err(1);
                 },
             };
             j = j + 1;
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     /// Dump AST
@@ -1093,7 +1093,7 @@ impl Driver {
                 println(format!("  - {}", name));
             }
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     /// Dump tokens
@@ -1102,7 +1102,7 @@ impl Driver {
             let source = self.read_file(file_path)?;
 
             println(format!("=== Tokens for {} ===", file_path));
-            let mut lexer = Lexer::new(source);
+            let mut lexer = Lexer·new(source);
 
             loop {
                 match lexer.next_token() {
@@ -1113,7 +1113,7 @@ impl Driver {
                 }
             }
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     // ========================================================================
@@ -1132,12 +1132,12 @@ impl Driver {
         unsafe {
             let content_ptr = sigil_read_file(path.as_ptr(), path.len());
             if content_ptr.is_null() {
-                self.errors.push(CompileError::new(format!("cannot read file: {}", path)));
-                return Result::Err(1);
+                self.errors.push(CompileError·new(format!("cannot read file: {}", path)));
+                return Result·Err(1);
             }
             let len = sigil_file_len();
-            let content = String::from_raw_parts(content_ptr, len, len);
-            Result::Ok(content)
+            let content = String·from_raw_parts(content_ptr, len, len);
+            Result·Ok(content)
         }
     }
 
@@ -1154,21 +1154,21 @@ impl Driver {
                 content.as_ptr(), content.len()
             );
             if !ok {
-                self.errors.push(CompileError::new(format!("cannot write file: {}", path)));
-                return Result::Err(1);
+                self.errors.push(CompileError·new(format!("cannot write file: {}", path)));
+                return Result·Err(1);
             }
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     /// Parse source code
     fn parse(mut self, file: !&str, source: !String) -> !Result<SourceFile, i32> {
-        let mut parser = Parser::new(source.clone());
+        let mut parser = Parser·new(source.clone());
 
         match parser.parse_file() {
-            Result::Ok(ast) => Result::Ok(ast),
-            Result::Err(err) => {
-                let mut compile_err = CompileError::new(err.message());
+            Result·Ok(ast) => Result·Ok(ast),
+            Result·Err(err) => {
+                let mut compile_err = CompileError·new(err.message());
                 compile_err = compile_err.with_file(file.to_string());
                 compile_err = compile_err.with_source(source);
                 // Add span if available
@@ -1176,7 +1176,7 @@ impl Driver {
                     compile_err = compile_err.with_span(span);
                 }
                 self.errors.push(compile_err);
-                Result::Err(1)
+                Result·Err(1)
             },
         }
     }
@@ -1184,28 +1184,28 @@ impl Driver {
     /// Lower AST to IR
     fn lower(mut self, file: !&str, ast: !SourceFile) -> !Result<IrModule, i32> {
         // Type check first
-        let mut checker = TypeChecker::new();
+        let mut checker = TypeChecker·new();
         match checker.check_file(ast.clone()) {
-            Result::Ok(_) => {},
-            Result::Err(errs) => {
+            Result·Ok(_) => {},
+            Result·Err(errs) => {
                 for err in errs {
                     eprintln(format!("Type error: {}", err.message));
-                    self.errors.push(CompileError::new(err.message)
+                    self.errors.push(CompileError·new(err.message)
                         .with_file(file.to_string()));
                 }
-                return Result::Err(1);
+                return Result·Err(1);
             },
         }
 
         // Lower to IR
         match lower_file(ast, checker, file.to_string()) {
-            Result::Ok(ir) => Result::Ok(ir),
-            Result::Err(errs) => {
+            Result·Ok(ir) => Result·Ok(ir),
+            Result·Err(errs) => {
                 for err in errs {
-                    self.errors.push(CompileError::new(err.message)
+                    self.errors.push(CompileError·new(err.message)
                         .with_file(file.to_string()));
                 }
-                Result::Err(1)
+                Result·Err(1)
             },
         }
     }
@@ -1228,19 +1228,19 @@ impl Driver {
 /// Main entry point for the compiler
 pub fn main(args: ![String]) -> !i32 {
     // Parse configuration
-    let config = match Config::from_args(args) {
-        Result::Ok(c) => c,
-        Result::Err(msg) => {
+    let config = match Config·from_args(args) {
+        Result·Ok(c) => c,
+        Result·Err(msg) => {
             eprintln(msg);
             return 1;
         },
     };
 
     // Run compiler
-    let mut driver = Driver::new(config);
+    let mut driver = Driver·new(config);
     match driver.run() {
-        Result::Ok(_) => 0,
-        Result::Err(code) => code,
+        Result·Ok(_) => 0,
+        Result·Err(code) => code,
     }
 }
 
@@ -1262,13 +1262,13 @@ extern "C" {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    invoke super·*;
 
     #[test]
     fn test_config_parse_compile() {
         let args = ["compile", "test.sg", "-o", "test.c"];
-        let config = Config::from_args(args).unwrap();
-        let is_compile = match config.mode { CompileMode::Compile => true, _ => false };
+        let config = Config·from_args(args).unwrap();
+        let is_compile = match config.mode { CompileMode·Compile => true, _ => false };
         assert!(is_compile);
         assert_eq!(config.input_files, ["test.sg"]);
         assert_eq!(config.output_file, ?"test.c");
@@ -1277,21 +1277,21 @@ mod tests {
     #[test]
     fn test_config_parse_run() {
         let args = ["run", "test.sg"];
-        let config = Config::from_args(args).unwrap();
-        let is_run = match config.mode { CompileMode::Run => true, _ => false };
+        let config = Config·from_args(args).unwrap();
+        let is_run = match config.mode { CompileMode·Run => true, _ => false };
         assert!(is_run);
     }
 
     #[test]
     fn test_config_verbose() {
         let args = ["check", "-v", "test.sg"];
-        let config = Config::from_args(args).unwrap();
+        let config = Config·from_args(args).unwrap();
         assert!(config.verbose);
     }
 
     #[test]
     fn test_error_display() {
-        let err = CompileError::new("type mismatch")
+        let err = CompileError·new("type mismatch")
             .with_file("test.sg")
             .with_note("expected i64, found string");
 

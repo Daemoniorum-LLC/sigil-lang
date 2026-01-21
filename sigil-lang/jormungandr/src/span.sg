@@ -107,7 +107,7 @@ impl<T> Spanned<T> {
 
 #[test]
 fn test_span_new() {
-    let span = Span::new(0, 10);
+    let span = Span·new(0, 10);
     assert_eq!(span.start, 0);
     assert_eq!(span.end, 10);
     assert_eq!(span.len(), 10);
@@ -115,8 +115,8 @@ fn test_span_new() {
 
 #[test]
 fn test_span_merge() {
-    let a = Span::new(5, 10);
-    let b = Span::new(8, 15);
+    let a = Span·new(5, 10);
+    let b = Span·new(8, 15);
     let merged = a.merge(b);
     assert_eq!(merged.start, 5);
     assert_eq!(merged.end, 15);
@@ -124,14 +124,14 @@ fn test_span_merge() {
 
 #[test]
 fn test_span_empty() {
-    let empty = Span::empty_at(5);
+    let empty = Span·empty_at(5);
     assert!(empty.is_empty());
     assert_eq!(empty.len(), 0);
 }
 
 #[test]
 fn test_span_contains() {
-    let span = Span::new(5, 10);
+    let span = Span·new(5, 10);
     assert!(span.contains(5));
     assert!(span.contains(7));
     assert!(!span.contains(10)); // end is exclusive
@@ -140,9 +140,9 @@ fn test_span_contains() {
 
 #[test]
 fn test_span_overlaps() {
-    let a = Span::new(5, 10);
-    let b = Span::new(8, 15);
-    let c = Span::new(10, 15);
+    let a = Span·new(5, 10);
+    let b = Span·new(8, 15);
+    let c = Span·new(10, 15);
 
     assert!(a.overlaps(b));
     assert!(!a.overlaps(c)); // adjacent, not overlapping
@@ -150,8 +150,8 @@ fn test_span_overlaps() {
 
 #[test]
 fn test_spanned_map() {
-    let spanned = Spanned::new(42, Span::new(0, 2));
+    let spanned = Spanned·new(42, Span·new(0, 2));
     let doubled = spanned.map({x => x * 2});
     assert_eq!(doubled.node, 84);
-    assert_eq!(doubled.span, Span::new(0, 2));
+    assert_eq!(doubled.span, Span·new(0, 2));
 }

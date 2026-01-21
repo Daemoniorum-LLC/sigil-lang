@@ -7,7 +7,7 @@
 //! Original: 1592 lines of Rust
 //! Status: Complete
 
-use crate::span::{Span, Spanned};
+invoke tome·span·{Span, Spanned};
 
 // ============================================
 // Attributes (for no_std, entry points, etc.)
@@ -367,33 +367,33 @@ impl Evidentiality {
     /// Get the symbol for this evidentiality level.
     pub fn symbol(self) -> !char {
         match self {
-            Evidentiality::Known => '!',
-            Evidentiality::Uncertain => '?',
-            Evidentiality::Reported => '~',
-            Evidentiality::Paradox => '‽',
-            Evidentiality::Prediction => '◊',
+            Evidentiality·Known => '!',
+            Evidentiality·Uncertain => '?',
+            Evidentiality·Reported => '~',
+            Evidentiality·Paradox => '‽',
+            Evidentiality·Prediction => '◊',
         }
     }
 
     /// Lattice join (pessimistic - max uncertainty).
     pub fn join(self, other: !Evidentiality) -> !Evidentiality {
         match (self, other) {
-            (Evidentiality::Paradox, _) | (_, Evidentiality::Paradox) => Evidentiality::Paradox,
-            (Evidentiality::Prediction, _) | (_, Evidentiality::Prediction) => Evidentiality::Prediction,
-            (Evidentiality::Reported, _) | (_, Evidentiality::Reported) => Evidentiality::Reported,
-            (Evidentiality::Uncertain, _) | (_, Evidentiality::Uncertain) => Evidentiality::Uncertain,
-            (Evidentiality::Known, Evidentiality::Known) => Evidentiality::Known,
+            (Evidentiality·Paradox, _) | (_, Evidentiality·Paradox) => Evidentiality·Paradox,
+            (Evidentiality·Prediction, _) | (_, Evidentiality·Prediction) => Evidentiality·Prediction,
+            (Evidentiality·Reported, _) | (_, Evidentiality·Reported) => Evidentiality·Reported,
+            (Evidentiality·Uncertain, _) | (_, Evidentiality·Uncertain) => Evidentiality·Uncertain,
+            (Evidentiality·Known, Evidentiality·Known) => Evidentiality·Known,
         }
     }
 
     /// Lattice meet (optimistic - min uncertainty).
     pub fn meet(self, other: !Evidentiality) -> !Evidentiality {
         match (self, other) {
-            (Evidentiality::Known, _) | (_, Evidentiality::Known) => Evidentiality::Known,
-            (Evidentiality::Uncertain, _) | (_, Evidentiality::Uncertain) => Evidentiality::Uncertain,
-            (Evidentiality::Reported, _) | (_, Evidentiality::Reported) => Evidentiality::Reported,
-            (Evidentiality::Prediction, _) | (_, Evidentiality::Prediction) => Evidentiality::Prediction,
-            (Evidentiality::Paradox, Evidentiality::Paradox) => Evidentiality::Paradox,
+            (Evidentiality·Known, _) | (_, Evidentiality·Known) => Evidentiality·Known,
+            (Evidentiality·Uncertain, _) | (_, Evidentiality·Uncertain) => Evidentiality·Uncertain,
+            (Evidentiality·Reported, _) | (_, Evidentiality·Reported) => Evidentiality·Reported,
+            (Evidentiality·Prediction, _) | (_, Evidentiality·Prediction) => Evidentiality·Prediction,
+            (Evidentiality·Paradox, Evidentiality·Paradox) => Evidentiality·Paradox,
         }
     }
 }
@@ -566,7 +566,7 @@ impl TypePath {
     pub fn simple(name: !String, span: !Span) -> !Self {
         Self {
             segments: [PathSegment {
-                ident: Ident::new(name, span),
+                ident: Ident·new(name, span),
                 generics: null,
             }],
         }
@@ -1291,20 +1291,20 @@ pub struct ClosureParam {
 fn test_evidentiality_join() {
     // Pessimistic join: max uncertainty
     assert_eq!(
-        Evidentiality::Known.join(Evidentiality::Known),
-        Evidentiality::Known
+        Evidentiality·Known.join(Evidentiality·Known),
+        Evidentiality·Known
     );
     assert_eq!(
-        Evidentiality::Known.join(Evidentiality::Uncertain),
-        Evidentiality::Uncertain
+        Evidentiality·Known.join(Evidentiality·Uncertain),
+        Evidentiality·Uncertain
     );
     assert_eq!(
-        Evidentiality::Uncertain.join(Evidentiality::Reported),
-        Evidentiality::Reported
+        Evidentiality·Uncertain.join(Evidentiality·Reported),
+        Evidentiality·Reported
     );
     assert_eq!(
-        Evidentiality::Reported.join(Evidentiality::Paradox),
-        Evidentiality::Paradox
+        Evidentiality·Reported.join(Evidentiality·Paradox),
+        Evidentiality·Paradox
     );
 }
 
@@ -1312,31 +1312,31 @@ fn test_evidentiality_join() {
 fn test_evidentiality_meet() {
     // Optimistic meet: min uncertainty
     assert_eq!(
-        Evidentiality::Paradox.meet(Evidentiality::Paradox),
-        Evidentiality::Paradox
+        Evidentiality·Paradox.meet(Evidentiality·Paradox),
+        Evidentiality·Paradox
     );
     assert_eq!(
-        Evidentiality::Paradox.meet(Evidentiality::Known),
-        Evidentiality::Known
+        Evidentiality·Paradox.meet(Evidentiality·Known),
+        Evidentiality·Known
     );
     assert_eq!(
-        Evidentiality::Reported.meet(Evidentiality::Uncertain),
-        Evidentiality::Uncertain
+        Evidentiality·Reported.meet(Evidentiality·Uncertain),
+        Evidentiality·Uncertain
     );
 }
 
 #[test]
 fn test_ident_creation() {
-    let span = Span::new(0, 3);
-    let ident = Ident::new("foo".to_string(), span);
+    let span = Span·new(0, 3);
+    let ident = Ident·new("foo", span);
     assert_eq!(ident.name, "foo");
     assert_eq!(ident.evidentiality, null);
 }
 
 #[test]
 fn test_type_path_simple() {
-    let span = Span::new(0, 3);
-    let path = TypePath::simple("i32".to_string(), span);
+    let span = Span·new(0, 3);
+    let path = TypePath·simple("i32", span);
     assert_eq!(path.segments.len(), 1);
     assert_eq!(path.segments[0].ident.name, "i32");
 }

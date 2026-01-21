@@ -17,8 +17,8 @@
 //! - `known + reported` → `reported`
 //! - Any operation with paradox → `paradox`
 
-use crate::ast::*;
-use crate::span::Span;
+invoke tome·ast·*;
+invoke tome·span·Span;
 
 // ============================================================================
 // Core Types
@@ -101,33 +101,33 @@ pub enum Type {
 impl Type {
     /// Create a unit type
     pub fn unit() -> !Type {
-        Type::Unit
+        Type·Unit
     }
 
     /// Create a bool type
     pub fn bool_type() -> !Type {
-        Type::Bool
+        Type·Bool
     }
 
     /// Create a string type
     pub fn str_type() -> !Type {
-        Type::Str
+        Type·Str
     }
 
     /// Create a never type
     pub fn never() -> !Type {
-        Type::Never
+        Type·Never
     }
 
     /// Create an error type
     pub fn error() -> !Type {
-        Type::Error
+        Type·Error
     }
 
     /// Check if this is an error type
     pub fn is_error(self) -> !bool {
         match self {
-            Type::Error => true,
+            Type·Error => true,
             _ => false,
         }
     }
@@ -135,7 +135,7 @@ impl Type {
     /// Check if this is a never type
     pub fn is_never(self) -> !bool {
         match self {
-            Type::Never => true,
+            Type·Never => true,
             _ => false,
         }
     }
@@ -143,13 +143,13 @@ impl Type {
     /// Display the type as a string
     pub fn to_string(self) -> !String {
         match self {
-            Type::Unit => "()",
-            Type::Bool => "bool",
-            Type::Int(size) => size.to_string(),
-            Type::Float(size) => size.to_string(),
-            Type::Char => "char",
-            Type::Str => "str",
-            Type::Array { .. } => {
+            Type·Unit => "()",
+            Type·Bool => "bool",
+            Type·Int(size) => size.to_string(),
+            Type·Float(size) => size.to_string(),
+            Type·Char => "char",
+            Type·Str => "str",
+            Type·Array { .. } => {
                 let element = self.element;
                 let length = self.length;
                 match length {
@@ -157,12 +157,12 @@ impl Type {
                     null => format!("[{}]", element.to_string()),
                 }
             },
-            Type::Slice(inner) => format!("[{}]", inner.to_string()),
-            Type::Tuple(elems) => {
+            Type·Slice(inner) => format!("[{}]", inner.to_string()),
+            Type·Tuple(elems) => {
                 let parts = elems|τ{e => e.to_string()}|join(", ");
                 format!("({})", parts)
             },
-            Type::Named { .. } => {
+            Type·Named { .. } => {
                 let name = self.name;
                 let generics = self.generics;
                 if generics.is_empty() {
@@ -172,7 +172,7 @@ impl Type {
                     format!("{}<{}>", name, params)
                 }
             },
-            Type::Function { .. } => {
+            Type·Function { .. } => {
                 let params = self.params;
                 let return_type = self.return_type;
                 let is_async = self.is_async;
@@ -180,36 +180,36 @@ impl Type {
                 let param_str = params|τ{p => p.to_string()}|join(", ");
                 format!("{}fn({}) -> {}", prefix, param_str, return_type.to_string())
             },
-            Type::Ref { .. } => {
+            Type·Ref { .. } => {
                 let mutable = self.mutable;
                 let inner = self.inner;
                 let mut_str = if mutable { "mut " } else { "" };
                 format!("&{}{}", mut_str, inner.to_string())
             },
-            Type::Ptr { .. } => {
+            Type·Ptr { .. } => {
                 let mutable = self.mutable;
                 let inner = self.inner;
                 let mut_str = if mutable { "mut " } else { "const " };
                 format!("*{}{}", mut_str, inner.to_string())
             },
-            Type::Evidential { .. } => {
+            Type·Evidential { .. } => {
                 let inner = self.inner;
                 let evidence = self.evidence;
                 format!("{}{}", inner.to_string(), evidence.symbol())
             },
-            Type::Cycle { .. } => {
+            Type·Cycle { .. } => {
                 let modulus = self.modulus;
                 format!("Cycle<{}>", modulus)
             },
-            Type::Simd { .. } => {
+            Type·Simd { .. } => {
                 let element = self.element;
                 let lanes = self.lanes;
                 format!("simd<{}, {}>", element.to_string(), lanes)
             },
-            Type::Atomic(inner) => format!("atomic<{}>", inner.to_string()),
-            Type::Var(v) => format!("?{}", v.0),
-            Type::Error => "<error>",
-            Type::Never => "!",
+            Type·Atomic(inner) => format!("atomic<{}>", inner.to_string()),
+            Type·Var(v) => format!("?{}", v.0),
+            Type·Error => "<error>",
+            Type·Never => "!",
         }
     }
 }
@@ -234,18 +234,18 @@ pub enum IntWidth {
 impl IntWidth {
     pub fn to_string(self) -> !&str {
         match self {
-            IntWidth::I8 => "i8",
-            IntWidth::I16 => "i16",
-            IntWidth::I32 => "i32",
-            IntWidth::I64 => "i64",
-            IntWidth::I128 => "i128",
-            IntWidth::U8 => "u8",
-            IntWidth::U16 => "u16",
-            IntWidth::U32 => "u32",
-            IntWidth::U64 => "u64",
-            IntWidth::U128 => "u128",
-            IntWidth::IWord => "iword",
-            IntWidth::UWord => "uword",
+            IntWidth·I8 => "i8",
+            IntWidth·I16 => "i16",
+            IntWidth·I32 => "i32",
+            IntWidth·I64 => "i64",
+            IntWidth·I128 => "i128",
+            IntWidth·U8 => "u8",
+            IntWidth·U16 => "u16",
+            IntWidth·U32 => "u32",
+            IntWidth·U64 => "u64",
+            IntWidth·U128 => "u128",
+            IntWidth·IWord => "iword",
+            IntWidth·UWord => "uword",
         }
     }
 }
@@ -259,8 +259,8 @@ pub enum FloatWidth {
 impl FloatWidth {
     pub fn to_string(self) -> !&str {
         match self {
-            FloatWidth::F32 => "f32",
-            FloatWidth::F64 => "f64",
+            FloatWidth·F32 => "f32",
+            FloatWidth·F64 => "f64",
         }
     }
 }
@@ -296,10 +296,10 @@ impl EvidenceLevel {
     /// Get numeric rank for comparison (lower = more certain)
     fn rank(self) -> !i32 {
         match self {
-            EvidenceLevel::Known => 0,
-            EvidenceLevel::Uncertain => 1,
-            EvidenceLevel::Reported => 2,
-            EvidenceLevel::Paradox => 3,
+            EvidenceLevel·Known => 0,
+            EvidenceLevel·Uncertain => 1,
+            EvidenceLevel·Reported => 2,
+            EvidenceLevel·Paradox => 3,
         }
     }
 
@@ -326,32 +326,32 @@ impl EvidenceLevel {
     /// Convert from AST representation
     pub fn from_ast(e: !Evidentiality) -> !EvidenceLevel {
         match e {
-            Evidentiality::Known => EvidenceLevel::Known,
-            Evidentiality::Uncertain => EvidenceLevel::Uncertain,
-            Evidentiality::Reported => EvidenceLevel::Reported,
-            Evidentiality::Paradox => EvidenceLevel::Paradox,
+            Evidentiality·Known => EvidenceLevel·Known,
+            Evidentiality·Uncertain => EvidenceLevel·Uncertain,
+            Evidentiality·Reported => EvidenceLevel·Reported,
+            Evidentiality·Paradox => EvidenceLevel·Paradox,
             // Handle null or unexpected values - default to Known (most certain)
-            _ => EvidenceLevel::Known,
+            _ => EvidenceLevel·Known,
         }
     }
 
     /// Symbol representation
     pub fn symbol(self) -> !&str {
         match self {
-            EvidenceLevel::Known => "!",
-            EvidenceLevel::Uncertain => "?",
-            EvidenceLevel::Reported => "~",
-            EvidenceLevel::Paradox => "‽",
+            EvidenceLevel·Known => "!",
+            EvidenceLevel·Uncertain => "?",
+            EvidenceLevel·Reported => "~",
+            EvidenceLevel·Paradox => "‽",
         }
     }
 
     /// Human-readable name
     pub fn name(self) -> !&str {
         match self {
-            EvidenceLevel::Known => "known",
-            EvidenceLevel::Uncertain => "uncertain",
-            EvidenceLevel::Reported => "reported",
-            EvidenceLevel::Paradox => "paradox",
+            EvidenceLevel·Known => "known",
+            EvidenceLevel·Uncertain => "uncertain",
+            EvidenceLevel·Reported => "reported",
+            EvidenceLevel·Paradox => "paradox",
         }
     }
 
@@ -371,9 +371,9 @@ impl EvidenceLevel {
     pub fn cmp(self, other: !EvidenceLevel) -> !Ordering {
         let a = self.rank();
         let b = other.rank();
-        if a < b { Ordering::Less }
-        else if a > b { Ordering::Greater }
-        else { Ordering::Equal }
+        if a < b { Ordering·Less }
+        else if a > b { Ordering·Greater }
+        else { Ordering·Equal }
     }
 }
 
@@ -464,7 +464,7 @@ impl TypeEnv {
     /// Create a new empty environment
     pub fn new() -> !TypeEnv {
         TypeEnv {
-            bindings: Map::new(),
+            bindings: Map·new(),
             parent: null,
         }
     }
@@ -472,8 +472,8 @@ impl TypeEnv {
     /// Create a child environment with this as parent
     pub fn with_parent(parent: !TypeEnv) -> !TypeEnv {
         TypeEnv {
-            bindings: Map::new(),
-            parent: ?Box::new(parent),
+            bindings: Map·new(),
+            parent: ?Box·new(parent),
         }
     }
 
@@ -500,7 +500,7 @@ impl TypeEnv {
         TypeEnv {
             bindings: self.bindings.clone(),
             parent: match self.parent {
-                ?p => ?Box::new(p.clone()),
+                ?p => ?Box·new(p.clone()),
                 null => null,
             },
         }
@@ -559,11 +559,11 @@ impl TypeChecker {
     /// Create a new type checker with built-in types and functions
     pub fn new() -> !TypeChecker {
         let mut checker = TypeChecker {
-            env: TypeEnv::new(),
-            types: Map::new(),
-            functions: Map::new(),
+            env: TypeEnv·new(),
+            types: Map·new(),
+            functions: Map·new(),
             next_var: 0,
-            substitutions: Map::new(),
+            substitutions: Map·new(),
             errors: [],
             current_self_type: null,
         };
@@ -590,53 +590,53 @@ impl TypeChecker {
     fn register_builtins(mut self) {
         // Helper to create a function type (as a closure)
         let func = |params: ![Type], ret: !Type| {
-            Type::Function {
+            Type·Function {
                 params,
-                return_type: Box::new(ret),
+                return_type: Box·new(ret),
                 is_async: false,
             }
         };
 
         // Type variable for polymorphic functions
-        let any = Type::Var(TypeVar::new(9999));
-        let f64_ty = Type::Float(FloatWidth::F64);
-        let i64_ty = Type::Int(IntWidth::I64);
+        let any = Type·Var(TypeVar·new(9999));
+        let f64_ty = Type·Float(FloatWidth·F64);
+        let i64_ty = Type·Int(IntWidth·I64);
 
         // ===================
         // Core I/O
         // ===================
-        self.functions.insert("print", func([any.clone()], Type::Unit));
-        self.functions.insert("println", func([any.clone()], Type::Unit));
-        self.functions.insert("input", func([], Type::Str));
-        self.functions.insert("input_line", func([], Type::Str));
+        self.functions.insert("print", func([any.clone()], Type·Unit));
+        self.functions.insert("println", func([any.clone()], Type·Unit));
+        self.functions.insert("input", func([], Type·Str));
+        self.functions.insert("input_line", func([], Type·Str));
         // write! macro support - takes formatter and variadic args, returns Result
-        self.functions.insert("write", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("write", func([any.clone(), any.clone()], Type·Unit));
 
         // ===================
         // Type inspection
         // ===================
-        self.functions.insert("type_of", func([any.clone()], Type::Str));
-        self.functions.insert("len", func([any.clone()], Type::Int(IntWidth::UWord)));
+        self.functions.insert("type_of", func([any.clone()], Type·Str));
+        self.functions.insert("len", func([any.clone()], Type·Int(IntWidth·UWord)));
 
         // ===================
         // String functions
         // ===================
-        self.functions.insert("str", func([any.clone()], Type::Str));
-        self.functions.insert("upper", func([Type::Str], Type::Str));
-        self.functions.insert("lower", func([Type::Str], Type::Str));
-        self.functions.insert("trim", func([Type::Str], Type::Str));
-        self.functions.insert("split", func([Type::Str, Type::Str],
-            Type::Array { element: Box::new(Type::Str), length: null }));
+        self.functions.insert("str", func([any.clone()], Type·Str));
+        self.functions.insert("upper", func([Type·Str], Type·Str));
+        self.functions.insert("lower", func([Type·Str], Type·Str));
+        self.functions.insert("trim", func([Type·Str], Type·Str));
+        self.functions.insert("split", func([Type·Str, Type·Str],
+            Type·Array { element: Box·new(Type·Str), length: null }));
         self.functions.insert("join", func([
-            Type::Array { element: Box::new(Type::Str), length: null },
-            Type::Str
-        ], Type::Str));
-        self.functions.insert("contains", func([Type::Str, Type::Str], Type::Bool));
-        self.functions.insert("starts_with", func([Type::Str, Type::Str], Type::Bool));
-        self.functions.insert("ends_with", func([Type::Str, Type::Str], Type::Bool));
-        self.functions.insert("replace", func([Type::Str, Type::Str, Type::Str], Type::Str));
-        self.functions.insert("char_at", func([Type::Str, i64_ty.clone()], Type::Str));
-        self.functions.insert("substring", func([Type::Str, i64_ty.clone(), i64_ty.clone()], Type::Str));
+            Type·Array { element: Box·new(Type·Str), length: null },
+            Type·Str
+        ], Type·Str));
+        self.functions.insert("contains", func([Type·Str, Type·Str], Type·Bool));
+        self.functions.insert("starts_with", func([Type·Str, Type·Str], Type·Bool));
+        self.functions.insert("ends_with", func([Type·Str, Type·Str], Type·Bool));
+        self.functions.insert("replace", func([Type·Str, Type·Str, Type·Str], Type·Str));
+        self.functions.insert("char_at", func([Type·Str, i64_ty.clone()], Type·Str));
+        self.functions.insert("substring", func([Type·Str, i64_ty.clone(), i64_ty.clone()], Type·Str));
 
         // ===================
         // Math functions
@@ -660,31 +660,31 @@ impl TypeChecker {
         // ===================
         self.functions.insert("sum", func([any.clone()], f64_ty.clone()));
         self.functions.insert("avg", func([any.clone()], f64_ty.clone()));
-        self.functions.insert("push", func([any.clone(), any.clone()], Type::Unit));
+        self.functions.insert("push", func([any.clone(), any.clone()], Type·Unit));
         self.functions.insert("pop", func([any.clone()], any.clone()));
         self.functions.insert("first", func([any.clone()], any.clone()));
         self.functions.insert("last", func([any.clone()], any.clone()));
         self.functions.insert("reverse", func([any.clone()], any.clone()));
         self.functions.insert("sort", func([any.clone()], any.clone()));
         self.functions.insert("range", func([i64_ty.clone(), i64_ty.clone()],
-            Type::Array { element: Box::new(i64_ty.clone()), length: null }));
+            Type·Array { element: Box·new(i64_ty.clone()), length: null }));
 
         // ===================
         // Assertions
         // ===================
-        self.functions.insert("assert", func([Type::Bool], Type::Unit));
-        self.functions.insert("assert_eq", func([any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_ne", func([any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_lt", func([any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_le", func([any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_gt", func([any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_ge", func([any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_true", func([Type::Bool], Type::Unit));
-        self.functions.insert("assert_false", func([Type::Bool], Type::Unit));
-        self.functions.insert("assert_null", func([any.clone()], Type::Unit));
-        self.functions.insert("assert_not_null", func([any.clone()], Type::Unit));
-        self.functions.insert("assert_contains", func([any.clone(), any.clone()], Type::Unit));
-        self.functions.insert("assert_len", func([any.clone(), i64_ty.clone()], Type::Unit));
+        self.functions.insert("assert", func([Type·Bool], Type·Unit));
+        self.functions.insert("assert_eq", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_ne", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_lt", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_le", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_gt", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_ge", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_true", func([Type·Bool], Type·Unit));
+        self.functions.insert("assert_false", func([Type·Bool], Type·Unit));
+        self.functions.insert("assert_null", func([any.clone()], Type·Unit));
+        self.functions.insert("assert_not_null", func([any.clone()], Type·Unit));
+        self.functions.insert("assert_contains", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_len", func([any.clone(), i64_ty.clone()], Type·Unit));
 
         // ===================
         // Random
@@ -697,50 +697,50 @@ impl TypeChecker {
         // Time
         // ===================
         self.functions.insert("now", func([], f64_ty.clone()));
-        self.functions.insert("sleep", func([f64_ty.clone()], Type::Unit));
+        self.functions.insert("sleep", func([f64_ty.clone()], Type·Unit));
 
         // ===================
         // Conversion
         // ===================
         self.functions.insert("int", func([any.clone()], i64_ty.clone()));
         self.functions.insert("float", func([any.clone()], f64_ty.clone()));
-        self.functions.insert("bool", func([any.clone()], Type::Bool));
+        self.functions.insert("bool", func([any.clone()], Type·Bool));
 
         // ===================
         // Error handling
         // ===================
-        self.functions.insert("panic", func([Type::Str], Type::Never));
-        self.functions.insert("todo", func([], Type::Never));
-        self.functions.insert("unreachable", func([], Type::Never));
+        self.functions.insert("panic", func([Type·Str], Type·Never));
+        self.functions.insert("todo", func([], Type·Never));
+        self.functions.insert("unreachable", func([], Type·Never));
 
         // ===================
         // Evidentiality functions
         // ===================
         self.functions.insert("known", func([any.clone()],
-            Type::Evidential {
-                inner: Box::new(any.clone()),
-                evidence: EvidenceLevel::Known
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Known
             }));
         self.functions.insert("uncertain", func([any.clone()],
-            Type::Evidential {
-                inner: Box::new(any.clone()),
-                evidence: EvidenceLevel::Uncertain
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Uncertain
             }));
         self.functions.insert("reported", func([any.clone()],
-            Type::Evidential {
-                inner: Box::new(any.clone()),
-                evidence: EvidenceLevel::Reported
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Reported
             }));
-        self.functions.insert("evidence_of", func([any.clone()], Type::Str));
+        self.functions.insert("evidence_of", func([any.clone()], Type·Str));
         self.functions.insert("validate", func([any.clone()],
-            Type::Evidential {
-                inner: Box::new(any.clone()),
-                evidence: EvidenceLevel::Uncertain
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Uncertain
             }));
         self.functions.insert("verify", func([any.clone()],
-            Type::Evidential {
-                inner: Box::new(any.clone()),
-                evidence: EvidenceLevel::Known
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Known
             }));
 
         // ===================
@@ -754,21 +754,21 @@ impl TypeChecker {
 
     /// Generate a fresh type variable
     fn fresh_var(mut self) -> !Type {
-        let var = TypeVar::new(self.next_var);
+        let var = TypeVar·new(self.next_var);
         self.next_var += 1;
-        Type::Var(var)
+        Type·Var(var)
     }
 
     /// Freshen a type by replacing all type variables with fresh ones
     /// This is used for polymorphic built-in functions
     fn freshen(mut self, ty: !Type) -> !Type {
-        let mut mapping: !Map<u32, Type> = Map::new();
+        let mut mapping: !Map<u32, Type> = Map·new();
         self.freshen_inner(ty, mapping)
     }
 
     fn freshen_inner(mut self, ty: !Type, mut mapping: !Map<u32, Type>) -> !Type {
         match ty {
-            Type::Var(v) => {
+            Type·Var(v) => {
                 if let ?fresh = mapping.get(v.id) {
                     fresh.clone()
                 } else {
@@ -777,48 +777,48 @@ impl TypeChecker {
                     fresh
                 }
             },
-            Type::Array { .. } => {
+            Type·Array { .. } => {
                 let element = ty.element;
                 let length = ty.length;
-                Type::Array {
-                    element: Box::new(self.freshen_inner(*element, mapping)),
+                Type·Array {
+                    element: Box·new(self.freshen_inner(*element, mapping)),
                     length,
                 }
             },
-            Type::Slice(inner) => Type::Slice(Box::new(self.freshen_inner(*inner, mapping))),
-            Type::Ref { .. } => {
+            Type·Slice(inner) => Type·Slice(Box·new(self.freshen_inner(*inner, mapping))),
+            Type·Ref { .. } => {
                 let mutable = ty.mutable;
                 let inner = ty.inner;
-                Type::Ref {
+                Type·Ref {
                     mutable,
-                    inner: Box::new(self.freshen_inner(*inner, mapping)),
+                    inner: Box·new(self.freshen_inner(*inner, mapping)),
                 }
             },
-            Type::Tuple(elems) => Type::Tuple(
+            Type·Tuple(elems) => Type·Tuple(
                 elems|τ{e => self.freshen_inner(e, mapping)}|collect()
             ),
-            Type::Function { .. } => {
+            Type·Function { .. } => {
                 let params = ty.params;
                 let return_type = ty.return_type;
                 let is_async = ty.is_async;
-                Type::Function {
+                Type·Function {
                     params: params|τ{p => self.freshen_inner(p, mapping)}|collect(),
-                    return_type: Box::new(self.freshen_inner(*return_type, mapping)),
+                    return_type: Box·new(self.freshen_inner(*return_type, mapping)),
                     is_async,
                 }
             },
-            Type::Evidential { .. } => {
+            Type·Evidential { .. } => {
                 let inner = ty.inner;
                 let evidence = ty.evidence;
-                Type::Evidential {
-                    inner: Box::new(self.freshen_inner(*inner, mapping)),
+                Type·Evidential {
+                    inner: Box·new(self.freshen_inner(*inner, mapping)),
                     evidence,
                 }
             },
-            Type::Named { .. } => {
+            Type·Named { .. } => {
                 let name = ty.name;
                 let generics = ty.generics;
-                Type::Named {
+                Type·Named {
                     name,
                     generics: generics|τ{g => self.freshen_inner(g, mapping)}|collect(),
                 }
@@ -830,7 +830,7 @@ impl TypeChecker {
 
     /// Push a new scope
     fn push_scope(mut self) {
-        let new_env = TypeEnv::with_parent(self.env);
+        let new_env = TypeEnv·with_parent(self.env);
         self.env = new_env;
     }
 
@@ -851,7 +851,7 @@ impl TypeChecker {
         if actual.satisfies(expected) {
             true
         } else {
-            let mut err = TypeError::new(format!(
+            let mut err = TypeError·new(format!(
                 "evidence mismatch {}: expected {} ({}), found {} ({})",
                 context,
                 expected.name(),
@@ -862,15 +862,15 @@ impl TypeChecker {
 
             // Add helpful notes based on the specific mismatch
             match (expected, actual) {
-                (EvidenceLevel::Known, EvidenceLevel::Reported) => {
+                (EvidenceLevel·Known, EvidenceLevel·Reported) => {
                     err = err.with_note("reported data (~) cannot be used where known data (!) is required");
                     err = err.with_note("help: use |validate!{...} to verify and promote evidence level");
                 },
-                (EvidenceLevel::Known, EvidenceLevel::Uncertain) => {
+                (EvidenceLevel·Known, EvidenceLevel·Uncertain) => {
                     err = err.with_note("uncertain data (?) cannot be used where known data (!) is required");
                     err = err.with_note("help: use pattern matching or unwrap to handle the uncertainty");
                 },
-                (EvidenceLevel::Uncertain, EvidenceLevel::Reported) => {
+                (EvidenceLevel·Uncertain, EvidenceLevel·Reported) => {
                     err = err.with_note("reported data (~) cannot be used where uncertain data (?) is required");
                     err = err.with_note("help: use |validate?{...} to verify external data");
                 },
@@ -887,8 +887,8 @@ impl TypeChecker {
     /// Extract evidence level from a type, defaulting to Known
     fn get_evidence(self, ty: !Type) -> !EvidenceLevel {
         match ty {
-            Type::Evidential { evidence, .. } => evidence,
-            _ => EvidenceLevel::Known,
+            Type·Evidential { evidence, .. } => evidence,
+            _ => EvidenceLevel·Known,
         }
     }
 
@@ -921,7 +921,7 @@ impl TypeChecker {
             // eprintln is not available from this module - skip debug output for bootstrap
             // eprintln(msg);
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     /// Collect type definitions from an item (first pass of type checking).
@@ -929,12 +929,12 @@ impl TypeChecker {
     /// collect types from all files before checking any file.
     pub fn collect_type_def(mut self, item: !Item) {
         match item {
-            Item::Struct(s) => {
+            Item·Struct(s) => {
                 let generics = match s.generics {
                     ?g => g.params
-                        |φ{p => match p { GenericParam::Type { .. } => true, _ => false }}
+                        |φ{p => match p { GenericParam·Type { .. } => true, _ => false }}
                         |τ{p => match p {
-                            GenericParam::Type { .. } => p.name.name,
+                            GenericParam·Type { .. } => p.name.name,
                             _ => "",
                         }}
                         |φ{n => n != ""}
@@ -943,22 +943,22 @@ impl TypeChecker {
                 };
 
                 let fields = match s.fields {
-                    StructFields::Named(fs) => fs|τ{f => (f.name.name, self.convert_type(f.ty))}|collect(),
-                    StructFields::Tuple(ts) => ts
+                    StructFields·Named(fs) => fs|τ{f => (f.name.name, self.convert_type(f.ty))}|collect(),
+                    StructFields·Tuple(ts) => ts
                         |enumerate()
                         |τ{pair => (pair.0.to_string(), self.convert_type(pair.1))}
                         |collect(),
-                    StructFields::Unit => [],
+                    StructFields·Unit => [],
                 };
 
-                self.types.insert(s.name.name, TypeDef::Struct { generics, fields });
+                self.types.insert(s.name.name, TypeDef·Struct { generics, fields });
             },
-            Item::Enum(e) => {
+            Item·Enum(e) => {
                 let generics = match e.generics {
                     ?g => g.params
-                        |φ{p => match p { GenericParam::Type { .. } => true, _ => false }}
+                        |φ{p => match p { GenericParam·Type { .. } => true, _ => false }}
                         |τ{p => match p {
-                            GenericParam::Type { .. } => p.name.name,
+                            GenericParam·Type { .. } => p.name.name,
                             _ => "",
                         }}
                         |φ{n => n != ""}
@@ -968,21 +968,21 @@ impl TypeChecker {
 
                 let variants = e.variants|τ{v => {
                     let fields = match v.fields {
-                        StructFields::Tuple(ts) => ?ts|τ{t => self.convert_type(t)}|collect(),
-                        StructFields::Named(fs) => ?fs|τ{f => self.convert_type(f.ty)}|collect(),
-                        StructFields::Unit => null,
+                        StructFields·Tuple(ts) => ?ts|τ{t => self.convert_type(t)}|collect(),
+                        StructFields·Named(fs) => ?fs|τ{f => self.convert_type(f.ty)}|collect(),
+                        StructFields·Unit => null,
                     };
                     (v.name.name, fields)
                 }}|collect();
 
-                self.types.insert(e.name.name, TypeDef::Enum { generics, variants });
+                self.types.insert(e.name.name, TypeDef·Enum { generics, variants });
             },
-            Item::TypeAlias(t) => {
+            Item·TypeAlias(t) => {
                 let generics = match t.generics {
                     ?g => g.params
-                        |φ{p => match p { GenericParam::Type { .. } => true, _ => false }}
+                        |φ{p => match p { GenericParam·Type { .. } => true, _ => false }}
                         |τ{p => match p {
-                            GenericParam::Type { .. } => p.name.name,
+                            GenericParam·Type { .. } => p.name.name,
                             _ => "",
                         }}
                         |φ{n => n != ""}
@@ -991,7 +991,7 @@ impl TypeChecker {
                 };
 
                 let target = self.convert_type(t.ty);
-                self.types.insert(t.name.name, TypeDef::Alias { generics, target });
+                self.types.insert(t.name.name, TypeDef·Alias { generics, target });
             },
             _ => {},
         }
@@ -1001,26 +1001,26 @@ impl TypeChecker {
     /// This is public to support multi-file compilation.
     pub fn collect_fn_sig(mut self, item: !Item) {
         match item {
-            Item::Function(f) => {
+            Item·Function(f) => {
                 let params = f.params|τ{p => self.convert_type(p.ty)}|collect();
 
                 let return_type = match f.return_type {
                     ?t => self.convert_type(t),
-                    null => Type::Unit,
+                    null => Type·Unit,
                 };
 
-                let fn_type = Type::Function {
+                let fn_type = Type·Function {
                     params,
-                    return_type: Box::new(return_type),
+                    return_type: Box·new(return_type),
                     is_async: f.is_async,
                 };
 
                 self.functions.insert(f.name.name, fn_type);
             },
-            Item::Impl(impl_block) => {
+            Item·Impl(impl_block) => {
                 // Extract type name from self_ty
                 let type_name = match impl_block.self_ty {
-                    TypeExpr::Path(p) => {
+                    TypeExpr·Path(p) => {
                         if p.segments.len() > 0 {
                             p.segments[0].ident.name
                         } else {
@@ -1033,23 +1033,23 @@ impl TypeChecker {
                 // Set current Self type for convert_type to resolve Self
                 self.current_self_type = ?type_name;
 
-                // Register each function with qualified name Type::method
+                // Register each function with qualified name Type·method
                 for impl_item in impl_block.items {
-                    if let ImplItem::Function(f) = impl_item {
+                    if let ImplItem·Function(f) = impl_item {
                         let params = f.params|τ{p => self.convert_type(p.ty)}|collect();
 
                         let return_type = match f.return_type {
                             ?t => self.convert_type(t),
-                            null => Type::Unit,
+                            null => Type·Unit,
                         };
 
-                        let fn_type = Type::Function {
+                        let fn_type = Type·Function {
                             params,
-                            return_type: Box::new(return_type),
+                            return_type: Box·new(return_type),
                             is_async: f.is_async,
                         };
 
-                        // Register with qualified name like "Span::new"
+                        // Register with qualified name like "Span·new"
                         let qualified_name = format!("{}::{}", type_name, f.name.name);
                         self.functions.insert(qualified_name, fn_type);
                     }
@@ -1067,11 +1067,11 @@ impl TypeChecker {
     /// and functions are collected before checking item bodies.
     pub fn check_item(mut self, item: !Item) {
         match item {
-            Item::Function(f) => self.check_function(f),
-            Item::Impl(impl_block) => {
+            Item·Function(f) => self.check_function(f),
+            Item·Impl(impl_block) => {
                 // Extract type name for Self resolution
                 let type_name = match impl_block.self_ty {
-                    TypeExpr::Path(p) => {
+                    TypeExpr·Path(p) => {
                         if p.segments.len() > 0 {
                             ?p.segments[0].ident.name
                         } else {
@@ -1086,7 +1086,7 @@ impl TypeChecker {
 
                 // Check each function in the impl block
                 for impl_item in impl_block.items {
-                    if let ImplItem::Function(f) = impl_item {
+                    if let ImplItem·Function(f) = impl_item {
                         self.check_function(f);
                     }
                 }
@@ -1094,21 +1094,21 @@ impl TypeChecker {
                 // Clear Self type
                 self.current_self_type = null;
             },
-            Item::Const(c) => {
+            Item·Const(c) => {
                 let declared = self.convert_type(c.ty);
                 let inferred = self.infer_expr(c.value);
                 if !self.unify(declared, inferred) {
-                    self.error(TypeError::new(format!(
+                    self.error(TypeError·new(format!(
                         "type mismatch in const '{}': expected {}, found {}",
                         c.name.name, declared.to_string(), inferred.to_string()
                     )).with_span(c.name.span));
                 }
             },
-            Item::Static(s) => {
+            Item·Static(s) => {
                 let declared = self.convert_type(s.ty);
                 let inferred = self.infer_expr(s.value);
                 if !self.unify(declared, inferred) {
-                    self.error(TypeError::new(format!(
+                    self.error(TypeError·new(format!(
                         "type mismatch in static '{}': expected {}, found {}",
                         s.name.name, declared.to_string(), inferred.to_string()
                     )).with_span(s.name.span));
@@ -1127,7 +1127,7 @@ impl TypeChecker {
             let ty = self.convert_type(param.ty);
             let type_evidence = self.get_evidence(ty);
             let evidence = match param.pattern.evidentiality() {
-                ?e => EvidenceLevel::from_ast(e),
+                ?e => EvidenceLevel·from_ast(e),
                 null => type_evidence,
             };
 
@@ -1143,12 +1143,12 @@ impl TypeChecker {
             // Check return type
             let expected_return = match func.return_type {
                 ?t => self.convert_type(t),
-                null => Type::Unit,
+                null => Type·Unit,
             };
 
             // Check structural type compatibility
             if !self.unify(expected_return, body_type) {
-                self.error(TypeError::new(format!(
+                self.error(TypeError·new(format!(
                     "return type mismatch in '{}': expected {}, found {}",
                     func.name.name, expected_return.to_string(), body_type.to_string()
                 )).with_span(func.name.span));
@@ -1167,9 +1167,9 @@ impl TypeChecker {
                 );
             } else {
                 // For public functions, warn about missing evidence annotation
-                if func.visibility == Visibility::Public
-                    && actual_evidence.rank() > EvidenceLevel::Known.rank() {
-                    self.error(TypeError::new(format!(
+                if func.visibility == Visibility·Public
+                    && actual_evidence.rank() > EvidenceLevel·Known.rank() {
+                    self.error(TypeError·new(format!(
                         "public function '{}' returns {} ({}) data but has no explicit evidence annotation",
                         func.name.name,
                         actual_evidence.name(),
@@ -1193,14 +1193,14 @@ impl TypeChecker {
     /// Check if a type expression has an explicit evidence annotation
     fn type_has_explicit_evidence(self, ty: ?TypeExpr) -> !bool {
         match ty {
-            ?TypeExpr::Evidential { .. } => true,
-            ?TypeExpr::Reference { inner, .. }
-            | ?TypeExpr::Pointer { inner, .. }
-            | ?TypeExpr::Slice(inner)
-            | ?TypeExpr::Array { element: inner, .. } => {
+            ?TypeExpr·Evidential { .. } => true,
+            ?TypeExpr·Reference { inner, .. }
+            | ?TypeExpr·Pointer { inner, .. }
+            | ?TypeExpr·Slice(inner)
+            | ?TypeExpr·Array { element: inner, .. } => {
                 self.type_has_explicit_evidence(?*inner)
             },
-            ?TypeExpr::Tuple(elements) => {
+            ?TypeExpr·Tuple(elements) => {
                 elements|any{e => self.type_has_explicit_evidence(?e)}
             },
             _ => false,
@@ -1221,7 +1221,7 @@ impl TypeChecker {
 
         let result = match block.expr {
             ?expr => self.infer_expr(expr),
-            null => if diverges { Type::Never } else { Type::Unit },
+            null => if diverges { Type·Never } else { Type·Unit },
         };
 
         self.pop_scope();
@@ -1231,7 +1231,7 @@ impl TypeChecker {
     /// Check a statement and return its type
     fn check_stmt(mut self, stmt: !Stmt) -> !Type {
         match stmt {
-            Stmt::Let { pattern, ty, init } => {
+            Stmt·Let { pattern, ty, init } => {
                 let declared_ty = match ty {
                     ?t => ?self.convert_type(t),
                     null => null,
@@ -1244,7 +1244,7 @@ impl TypeChecker {
                 let final_ty = match (declared_ty, init_ty) {
                     (?d, ?i) => {
                         if !self.unify(d, i) {
-                            self.error(TypeError::new(format!(
+                            self.error(TypeError·new(format!(
                                 "type mismatch in let binding: expected {}, found {}",
                                 d.to_string(), i.to_string()
                             )));
@@ -1258,10 +1258,10 @@ impl TypeChecker {
 
                 // Evidence inference
                 let evidence = match pattern.evidentiality() {
-                    ?e => EvidenceLevel::from_ast(e),
+                    ?e => EvidenceLevel·from_ast(e),
                     null => match init_ty {
                         ?ty => self.get_evidence(ty),
-                        null => EvidenceLevel::Known,
+                        null => EvidenceLevel·Known,
                     },
                 };
 
@@ -1269,9 +1269,9 @@ impl TypeChecker {
                     self.env.define(name, final_ty, evidence);
                 }
 
-                Type::Unit
+                Type·Unit
             },
-            Stmt::LetElse { pattern, ty, init, else_branch } => {
+            Stmt·LetElse { pattern, ty, init, else_branch } => {
                 // Let-else: let Pattern = expr else { ... }
                 let declared_ty = match ty {
                     ?t => ?self.convert_type(t),
@@ -1282,7 +1282,7 @@ impl TypeChecker {
                 let final_ty = match (declared_ty, init_ty) {
                     (?d, ?i) => {
                         if !self.unify(d, i) {
-                            self.error(TypeError::new(format!(
+                            self.error(TypeError·new(format!(
                                 "type mismatch in let-else binding: expected {}, found {}",
                                 d.to_string(), i.to_string()
                             )));
@@ -1296,10 +1296,10 @@ impl TypeChecker {
 
                 // Evidence inference
                 let evidence = match pattern.evidentiality() {
-                    ?e => EvidenceLevel::from_ast(e),
+                    ?e => EvidenceLevel·from_ast(e),
                     null => match init_ty {
                         ?ty => self.get_evidence(ty),
-                        null => EvidenceLevel::Known,
+                        null => EvidenceLevel·Known,
                     },
                 };
 
@@ -1309,12 +1309,12 @@ impl TypeChecker {
                 // Check else branch (must diverge)
                 self.infer_expr(else_branch);
 
-                Type::Unit
+                Type·Unit
             },
-            Stmt::Expr(e) | Stmt::Semi(e) => self.infer_expr(e),
-            Stmt::Item(item) => {
+            Stmt·Expr(e) | Stmt·Semi(e) => self.infer_expr(e),
+            Stmt·Item(item) => {
                 self.check_item(item);
-                Type::Unit
+                Type·Unit
             },
         }
     }
@@ -1326,9 +1326,9 @@ impl TypeChecker {
     /// Infer the type of an expression
     pub fn infer_expr(mut self, expr: !Expr) -> !Type {
         match expr {
-            Expr::Literal(lit) => self.infer_literal(lit),
+            Expr·Literal(lit) => self.infer_literal(lit),
 
-            Expr::Path(path) => {
+            Expr·Path(path) => {
                 if path.segments.len() == 1 {
                     // Single segment: variable or function lookup
                     let name = path.segments[0].ident.name;
@@ -1339,7 +1339,7 @@ impl TypeChecker {
                         return self.freshen(ty);
                     }
                 } else if path.segments.len() == 2 {
-                    // Two segments: Type::method lookup (associated function)
+                    // Two segments: Type·method lookup (associated function)
                     let type_name = path.segments[0].ident.name;
                     let method_name = path.segments[1].ident.name;
                     let qualified_name = format!("{}::{}", type_name, method_name);
@@ -1354,11 +1354,11 @@ impl TypeChecker {
                         return self.freshen(ty);
                     }
                 }
-                self.error(TypeError::new(format!("undefined: {}", path.to_string())));
-                Type::Error
+                self.error(TypeError·new(format!("undefined: {}", path.to_string())));
+                Type·Error
             },
 
-            Expr::Binary { .. } => {
+            Expr·Binary { .. } => {
                 let left = expr.left;
                 let op = expr.op;
                 let right = expr.right;
@@ -1367,14 +1367,14 @@ impl TypeChecker {
                 self.infer_binary_op(op, lt, rt)
             },
 
-            Expr::Unary { .. } => {
+            Expr·Unary { .. } => {
                 let op = expr.op;
                 let inner_expr = expr.expr;
                 let inner = self.infer_expr(*inner_expr);
                 self.infer_unary_op(op, inner)
             },
 
-            Expr::Call { .. } => {
+            Expr·Call { .. } => {
                 let func = expr.func;
                 let args = expr.args;
                 let fn_type = self.infer_expr(*func);
@@ -1382,12 +1382,12 @@ impl TypeChecker {
                 let (fn_inner, _) = self.strip_evidence(fn_type);
 
                 match fn_inner {
-                    Type::Function { .. } => {
+                    Type·Function { .. } => {
                         let params = fn_inner.params;
                         let return_type = fn_inner.return_type;
                         // Check argument count
                         if params.len() != arg_types.len() {
-                            self.error(TypeError::new(format!(
+                            self.error(TypeError·new(format!(
                                 "expected {} arguments, found {}",
                                 params.len(), arg_types.len()
                             )));
@@ -1396,14 +1396,14 @@ impl TypeChecker {
                         // Check argument types and evidence
                         for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
                             if !self.unify(param, arg) {
-                                self.error(TypeError::new(format!(
+                                self.error(TypeError·new(format!(
                                     "argument type mismatch: expected {}, found {}",
                                     param.to_string(), arg.to_string()
                                 )));
                             }
 
                             // Check evidence for non-polymorphic parameters
-                            let is_var = match param { Type::Var(_) => true, _ => false };
+                            let is_var = match param { Type·Var(_) => true, _ => false };
                             if !is_var {
                                 let expected_ev = self.get_evidence(param);
                                 let actual_ev = self.get_evidence(arg);
@@ -1414,31 +1414,31 @@ impl TypeChecker {
                         *return_type
                     },
                     // Type variables can be called - assume it's a function, return fresh var
-                    Type::Var(_) => self.fresh_var(),
+                    Type·Var(_) => self.fresh_var(),
                     // Generic type parameters (like F where F: fn(T) -> U) can be called
                     // Check if it looks like a single-letter type param
-                    Type::Named { .. } => {
+                    Type·Named { .. } => {
                         let type_name = fn_inner.name;
                         // Single letter uppercase names are typically generic type params
                         if type_name.len() == 1 {
                             self.fresh_var()
                         } else {
-                            self.error(TypeError::new("cannot call non-function"));
-                            Type::Error
+                            self.error(TypeError·new("cannot call non-function"));
+                            Type·Error
                         }
                     },
                     // Any other type - error
                     _ => {
-                        self.error(TypeError::new("cannot call non-function"));
-                        Type::Error
+                        self.error(TypeError·new("cannot call non-function"));
+                        Type·Error
                     },
                 }
             },
 
-            Expr::Array(elements) => {
+            Expr·Array(elements) => {
                 if elements.is_empty() {
-                    Type::Array {
-                        element: Box::new(self.fresh_var()),
+                    Type·Array {
+                        element: Box·new(self.fresh_var()),
                         size: ?0,
                     }
                 } else {
@@ -1447,40 +1447,40 @@ impl TypeChecker {
                     while idx < elements.len() {
                         let t = self.infer_expr(elements[idx]);
                         if !self.unify(elem_ty, t) {
-                            self.error(TypeError::new("array elements must have same type"));
+                            self.error(TypeError·new("array elements must have same type"));
                         }
                         idx = idx + 1;
                     }
-                    Type::Array {
-                        element: Box::new(elem_ty),
+                    Type·Array {
+                        element: Box·new(elem_ty),
                         size: ?elements.len(),
                     }
                 }
             },
 
-            Expr::Repeat { value, count } => {
+            Expr·Repeat { value, count } => {
                 // [value; count] - array repeat syntax
                 let elem_ty = self.infer_expr(*value);
                 // Count should be an integer
                 let count_ty = self.infer_expr(*count);
                 // We'll assume the count is evaluated at compile time to get the size
                 // For now, return an array with unknown size
-                Type::Array {
-                    element: Box::new(elem_ty),
+                Type·Array {
+                    element: Box·new(elem_ty),
                     size: null,  // Size determined at compile time
                 }
             },
 
-            Expr::Tuple(elements) => {
-                Type::Tuple(elements|τ{e => self.infer_expr(e)}|collect())
+            Expr·Tuple(elements) => {
+                Type·Tuple(elements|τ{e => self.infer_expr(e)}|collect())
             },
 
-            Expr::Block(block) => self.check_block(block),
+            Expr·Block(block) => self.check_block(block),
 
-            Expr::If { condition, then_branch, else_branch } => {
+            Expr·If { condition, then_branch, else_branch } => {
                 let cond_ty = self.infer_expr(*condition);
-                if !self.unify(Type::Bool, cond_ty) {
-                    self.error(TypeError::new("if condition must be bool"));
+                if !self.unify(Type·Bool, cond_ty) {
+                    self.error(TypeError·new("if condition must be bool"));
                 }
 
                 let then_ty = self.check_block(then_branch);
@@ -1488,12 +1488,12 @@ impl TypeChecker {
                 match else_branch {
                     ?else_expr => {
                         let else_ty = match *else_expr {
-                            Expr::Block(block) => self.check_block(block),
+                            Expr·Block(block) => self.check_block(block),
                             other => self.infer_expr(other),
                         };
 
                         if !self.unify(then_ty, else_ty) {
-                            self.error(TypeError::new("if branches must have same type"));
+                            self.error(TypeError·new("if branches must have same type"));
                         }
 
                         // Join evidence from both branches
@@ -1502,54 +1502,54 @@ impl TypeChecker {
                         let joined_ev = then_ev.join(else_ev);
 
                         let (inner_ty, _) = self.strip_evidence(then_ty);
-                        if joined_ev.rank() > EvidenceLevel::Known.rank() {
-                            Type::Evidential {
-                                inner: Box::new(inner_ty),
+                        if joined_ev.rank() > EvidenceLevel·Known.rank() {
+                            Type·Evidential {
+                                inner: Box·new(inner_ty),
                                 evidence: joined_ev,
                             }
                         } else {
                             inner_ty
                         }
                     },
-                    null => Type::Unit,
+                    null => Type·Unit,
                 }
             },
 
-            Expr::While { .. } => {
+            Expr·While { .. } => {
                 let condition = expr.condition;
                 let body = expr.body;
                 let cond_ty = self.infer_expr(*condition);
-                if !self.unify(Type::Bool, cond_ty) {
-                    self.error(TypeError::new("while condition must be bool"));
+                if !self.unify(Type·Bool, cond_ty) {
+                    self.error(TypeError·new("while condition must be bool"));
                 }
                 self.check_block(body);
-                Type::Unit
+                Type·Unit
             },
 
-            Expr::For { .. } => {
+            Expr·For { .. } => {
                 let iter = expr.iter;
                 let body = expr.body;
                 let iter_ty = self.infer_expr(*iter);
                 // TODO: extract element type from iterator
                 self.check_block(body);
-                Type::Unit
+                Type·Unit
             },
 
-            Expr::Assign { .. } => {
+            Expr·Assign { .. } => {
                 let target = expr.target;
                 let value = expr.value;
                 let target_ty = self.infer_expr(*target);
                 let value_ty = self.infer_expr(*value);
                 if !self.unify(target_ty, value_ty) {
-                    self.error(TypeError::new(format!(
+                    self.error(TypeError·new(format!(
                         "type mismatch in assignment: expected {}, found {}",
                         target_ty.to_string(), value_ty.to_string()
                     )));
                 }
-                Type::Unit
+                Type·Unit
             },
 
-            Expr::Pipe { .. } => {
+            Expr·Pipe { .. } => {
                 let pipe_expr = expr.expr;
                 let operations = expr.operations;
                 let mut current = self.infer_expr(*pipe_expr);
@@ -1559,66 +1559,66 @@ impl TypeChecker {
                 current
             },
 
-            Expr::Index { .. } => {
+            Expr·Index { .. } => {
                 let index_expr = expr.expr;
                 let index = expr.index;
                 let coll_ty = self.infer_expr(*index_expr);
                 let idx_ty = self.infer_expr(*index);
 
                 match coll_ty {
-                    Type::Array { .. } => {
+                    Type·Array { .. } => {
                         let element = coll_ty.element;
-                        let is_int = match idx_ty { Type::Int(_) => true, _ => false };
+                        let is_int = match idx_ty { Type·Int(_) => true, _ => false };
                         if !is_int {
-                            self.error(TypeError::new("index must be integer"));
+                            self.error(TypeError·new("index must be integer"));
                         };
                         let result = *element;
                         result
                     },
-                    Type::Slice(element) => {
-                        let is_int = match idx_ty { Type::Int(_) => true, _ => false };
+                    Type·Slice(element) => {
+                        let is_int = match idx_ty { Type·Int(_) => true, _ => false };
                         if !is_int {
-                            self.error(TypeError::new("index must be integer"));
+                            self.error(TypeError·new("index must be integer"));
                         };
                         let result = *element;
                         result
                     },
                     _ => {
-                        self.error(TypeError::new("cannot index non-array"));
-                        Type::Error
+                        self.error(TypeError·new("cannot index non-array"));
+                        Type·Error
                     },
                 }
             },
 
-            Expr::Return(val) => {
+            Expr·Return(val) => {
                 if let ?e = val {
                     self.infer_expr(*e);
                 }
-                Type::Never
+                Type·Never
             },
 
-            Expr::Evidential { .. } => {
+            Expr·Evidential { .. } => {
                 let ev_expr = expr.expr;
                 let evidentiality = expr.evidentiality;
                 let inner = self.infer_expr(*ev_expr);
-                Type::Evidential {
-                    inner: Box::new(inner),
-                    evidence: EvidenceLevel::from_ast(evidentiality),
+                Type·Evidential {
+                    inner: Box·new(inner),
+                    evidence: EvidenceLevel·from_ast(evidentiality),
                 }
             },
 
-            Expr::Match { .. } => {
+            Expr·Match { .. } => {
                 let match_expr = expr.expr;
                 let arms = expr.arms;
                 let scrutinee = self.infer_expr(*match_expr);
                 let scrutinee_ev = self.get_evidence(scrutinee);
 
                 if arms.is_empty() {
-                    return Type::Never;
+                    return Type·Never;
                 }
 
-                let mut arm_types: ![Type] = [];
-                let mut max_evidence = EvidenceLevel::Known;
+                let mut arm_types = Vec·new();
+                let mut max_evidence = EvidenceLevel·Known;
 
                 for arm in arms {
                     self.push_scope();
@@ -1629,8 +1629,8 @@ impl TypeChecker {
                     // Check guard
                     if let ?guard = arm.guard {
                         let guard_ty = self.infer_expr(guard);
-                        if !self.unify(Type::Bool, guard_ty) {
-                            self.error(TypeError::new("match guard must be bool"));
+                        if !self.unify(Type·Bool, guard_ty) {
+                            self.error(TypeError·new("match guard must be bool"));
                         }
                     }
 
@@ -1648,7 +1648,7 @@ impl TypeChecker {
                 let first_ty = arm_types[0];
                 for (i, ty) in arm_types.iter().enumerate().skip(1) {
                     if !self.unify(first_ty, ty) {
-                        self.error(TypeError::new(format!(
+                        self.error(TypeError·new(format!(
                             "match arm {} has incompatible type", i + 1
                         )));
                     }
@@ -1656,9 +1656,9 @@ impl TypeChecker {
 
                 // Result has joined evidence
                 let (inner_ty, _) = self.strip_evidence(first_ty);
-                if max_evidence.rank() > EvidenceLevel::Known.rank() {
-                    Type::Evidential {
-                        inner: Box::new(inner_ty),
+                if max_evidence.rank() > EvidenceLevel·Known.rank() {
+                    Type·Evidential {
+                        inner: Box·new(inner_ty),
                         evidence: max_evidence,
                     }
                 } else {
@@ -1666,7 +1666,7 @@ impl TypeChecker {
                 }
             },
 
-            Expr::MethodCall { receiver, method, args } => {
+            Expr·MethodCall { receiver, method, args } => {
                 let recv_ty = self.infer_expr(*receiver);
                 let arg_types: ![Type] = args|τ{a => self.infer_expr(a)}|collect();
                 let (inner_recv_ty, _) = self.strip_evidence(recv_ty);
@@ -1674,36 +1674,36 @@ impl TypeChecker {
                 // Handle common methods on primitive types
                 match (inner_recv_ty, method.name) {
                     // Integer methods
-                    (Type::Int(_), "min") | (Type::Int(_), "max") |
-                    (Type::Int(_), "abs") | (Type::Int(_), "pow") |
-                    (Type::Int(_), "saturating_add") | (Type::Int(_), "saturating_sub") |
-                    (Type::Int(_), "wrapping_add") | (Type::Int(_), "wrapping_sub") => recv_ty,
+                    (Type·Int(_), "min") | (Type·Int(_), "max") |
+                    (Type·Int(_), "abs") | (Type·Int(_), "pow") |
+                    (Type·Int(_), "saturating_add") | (Type·Int(_), "saturating_sub") |
+                    (Type·Int(_), "wrapping_add") | (Type·Int(_), "wrapping_sub") => recv_ty,
 
                     // String methods
-                    (Type::Str, "len") => Type::Int(IntWidth::UWord),
-                    (Type::Str, "is_empty") => Type::Bool,
-                    (Type::Str, "to_string") | (Type::Str, "clone") |
-                    (Type::Str, "trim") | (Type::Str, "to_uppercase") |
-                    (Type::Str, "to_lowercase") => Type::Str,
-                    (Type::Str, "chars") => Type::Array { element: Box::new(Type::Char), length: null },
-                    (Type::Str, "starts_with") | (Type::Str, "ends_with") |
-                    (Type::Str, "contains") => Type::Bool,
+                    (Type·Str, "len") => Type·Int(IntWidth·UWord),
+                    (Type·Str, "is_empty") => Type·Bool,
+                    (Type·Str, "to_string") | (Type·Str, "clone") |
+                    (Type·Str, "trim") | (Type·Str, "to_uppercase") |
+                    (Type·Str, "to_lowercase") => Type·Str,
+                    (Type·Str, "chars") => Type·Array { element: Box·new(Type·Char), length: null },
+                    (Type·Str, "starts_with") | (Type·Str, "ends_with") |
+                    (Type·Str, "contains") => Type·Bool,
 
                     // Array methods
-                    (Type::Array { element, .. }, "len") => Type::Int(IntWidth::UWord),
-                    (Type::Array { element, .. }, "is_empty") => Type::Bool,
-                    (Type::Array { element, .. }, "first") |
-                    (Type::Array { element, .. }, "last") => *element,
-                    (Type::Array { element, .. }, "get") => *element,
-                    (Type::Array { element, .. }, "iter") => recv_ty,
-                    (Type::Array { element, .. }, "push") => Type::Unit,
-                    (Type::Array { element, .. }, "pop") => *element,
+                    (Type·Array { element, .. }, "len") => Type·Int(IntWidth·UWord),
+                    (Type·Array { element, .. }, "is_empty") => Type·Bool,
+                    (Type·Array { element, .. }, "first") |
+                    (Type·Array { element, .. }, "last") => *element,
+                    (Type·Array { element, .. }, "get") => *element,
+                    (Type·Array { element, .. }, "iter") => recv_ty,
+                    (Type·Array { element, .. }, "push") => Type·Unit,
+                    (Type·Array { element, .. }, "pop") => *element,
 
                     // HashMap/Map methods
-                    (Type::Named { name, generics }, "entry") => {
+                    (Type·Named { name, generics }, "entry") => {
                         if (name == "HashMap" || name == "Map") && generics.len() >= 2 {
                             // entry() returns Entry<K, V> - represent as Named type
-                            Type::Named {
+                            Type·Named {
                                 name: "Entry".to_string(),
                                 generics: generics.clone(),
                             }
@@ -1711,7 +1711,7 @@ impl TypeChecker {
                             self.fresh_var()
                         }
                     },
-                    (Type::Named { name, generics }, "get") => {
+                    (Type·Named { name, generics }, "get") => {
                         if (name == "HashMap" || name == "Map") && generics.len() >= 2 {
                             // get() returns Option<&V>
                             generics[1].clone()
@@ -1719,50 +1719,50 @@ impl TypeChecker {
                             self.fresh_var()
                         }
                     },
-                    (Type::Named { name, generics }, "insert") => {
+                    (Type·Named { name, generics }, "insert") => {
                         if name == "HashMap" || name == "Map" {
-                            Type::Unit
+                            Type·Unit
                         } else {
                             self.fresh_var()
                         }
                     },
-                    (Type::Named { name, generics }, "contains_key") => {
+                    (Type·Named { name, generics }, "contains_key") => {
                         if name == "HashMap" || name == "Map" {
-                            Type::Bool
+                            Type·Bool
                         } else {
                             self.fresh_var()
                         }
                     },
 
                     // Entry methods (for HashMap entry API)
-                    (Type::Named { name, generics }, "or_default") => {
+                    (Type·Named { name, generics }, "or_default") => {
                         if name == "Entry" && generics.len() >= 2 {
                             // or_default() returns &mut V
-                            Type::Ref {
+                            Type·Ref {
                                 mutable: true,
-                                inner: Box::new(generics[1].clone()),
+                                inner: Box·new(generics[1].clone()),
                             }
                         } else {
                             self.fresh_var()
                         }
                     },
-                    (Type::Named { name, generics }, "or_insert") => {
+                    (Type·Named { name, generics }, "or_insert") => {
                         if name == "Entry" && generics.len() >= 2 {
                             // or_insert(v) returns &mut V
-                            Type::Ref {
+                            Type·Ref {
                                 mutable: true,
-                                inner: Box::new(generics[1].clone()),
+                                inner: Box·new(generics[1].clone()),
                             }
                         } else {
                             self.fresh_var()
                         }
                     },
-                    (Type::Named { name, generics }, "or_insert_with") => {
+                    (Type·Named { name, generics }, "or_insert_with") => {
                         if name == "Entry" && generics.len() >= 2 {
                             // or_insert_with(f) returns &mut V
-                            Type::Ref {
+                            Type·Ref {
                                 mutable: true,
-                                inner: Box::new(generics[1].clone()),
+                                inner: Box·new(generics[1].clone()),
                             }
                         } else {
                             self.fresh_var()
@@ -1771,7 +1771,7 @@ impl TypeChecker {
 
                     // Common methods that return self type
                     (_, "clone") => recv_ty,
-                    (_, "to_string") => Type::Str,
+                    (_, "to_string") => Type·Str,
                     (_, "into") => self.fresh_var(),
 
                     // Default: return fresh var for unrecognized methods
@@ -1779,18 +1779,18 @@ impl TypeChecker {
                 }
             },
 
-            Expr::Field { .. } => {
+            Expr·Field { .. } => {
                 let field_expr = expr.expr;
                 let field = expr.field;
                 let recv_ty = self.infer_expr(*field_expr);
 
                 // Look up field type in struct definition
                 match recv_ty {
-                    Type::Named { .. } => {
+                    Type·Named { .. } => {
                         let name = recv_ty.name;
-                        if let ?TypeDef::Struct { .. } = self.types.get(name) {
+                        if let ?TypeDef·Struct { .. } = self.types.get(name) {
                             let def = self.types.get(name);
-                            if let ?TypeDef::Struct { .. } = def {
+                            if let ?TypeDef·Struct { .. } = def {
                                 let fields = def.fields;
                                 for (field_name, field_ty) in fields {
                                     if field_name == field.name {
@@ -1801,15 +1801,15 @@ impl TypeChecker {
                         }
                         self.fresh_var()
                     },
-                    Type::Ref { .. } => {
+                    Type·Ref { .. } => {
                         let inner = recv_ty.inner;
                         // Deref and look up field
                         match *inner {
-                            Type::Named { .. } => {
+                            Type·Named { .. } => {
                                 let name = inner.name;
-                                if let ?TypeDef::Struct { .. } = self.types.get(name) {
+                                if let ?TypeDef·Struct { .. } = self.types.get(name) {
                                     let def = self.types.get(name);
-                                    if let ?TypeDef::Struct { .. } = def {
+                                    if let ?TypeDef·Struct { .. } = def {
                                         let fields = def.fields;
                                         for (field_name, field_ty) in fields {
                                             if field_name == field.name {
@@ -1827,7 +1827,7 @@ impl TypeChecker {
                 }
             },
 
-            Expr::Struct { .. } => {
+            Expr·Struct { .. } => {
                 let path = expr.path;
                 let fields = expr.fields;
                 // Look up struct type
@@ -1863,7 +1863,7 @@ impl TypeChecker {
                     name
                 };
 
-                if let ?TypeDef::Struct { generics, fields: def_fields } = self.types.get(lookup_name) {
+                if let ?TypeDef·Struct { generics, fields: def_fields } = self.types.get(lookup_name) {
                     // Check that all fields are provided and have correct types
                     for field_init in fields {
                         if let ?val = field_init.value {
@@ -1872,7 +1872,7 @@ impl TypeChecker {
                             for (def_name, def_ty) in def_fields {
                                 if def_name == field_init.name.name {
                                     if !self.unify(def_ty, val_ty) {
-                                        self.error(TypeError::new(format!(
+                                        self.error(TypeError·new(format!(
                                             "field '{}' type mismatch",
                                             field_init.name.name
                                         )));
@@ -1883,14 +1883,14 @@ impl TypeChecker {
                         }
                     }
                     // Return the canonical type name (base_name), not the evidential-prefixed one
-                    Type::Named { name: lookup_name, generics: [] }
+                    Type·Named { name: lookup_name, generics: [] }
                 } else {
-                    self.error(TypeError::new(format!("undefined struct: {}", lookup_name)));
-                    Type::Error
+                    self.error(TypeError·new(format!("undefined struct: {}", lookup_name)));
+                    Type·Error
                 }
             },
 
-            Expr::Closure { params, body, .. } => {
+            Expr·Closure { params, body, .. } => {
                 self.push_scope();
 
                 // Create param types
@@ -1904,7 +1904,7 @@ impl TypeChecker {
                 // Bind params
                 for (i, param) in params.iter().enumerate() {
                     if let ?name = param.pattern.binding_name() {
-                        self.env.define(name, param_types[i], EvidenceLevel::Known);
+                        self.env.define(name, param_types[i], EvidenceLevel·Known);
                     }
                 }
 
@@ -1913,21 +1913,21 @@ impl TypeChecker {
 
                 self.pop_scope();
 
-                Type::Function {
+                Type·Function {
                     params: param_types,
-                    return_type: Box::new(body_ty),
+                    return_type: Box·new(body_ty),
                     is_async: false,
                 }
             },
 
-            Expr::Try(inner) => {
+            Expr·Try(inner) => {
                 // Try expression unwraps Result/Option
                 let inner_ty = self.infer_expr(*inner);
                 // For now, return a fresh var since we don't track Result/Option properly
                 self.fresh_var()
             },
 
-            Expr::Range { .. } => {
+            Expr·Range { .. } => {
                 let start = expr.start;
                 let end = expr.end;
                 // Range type
@@ -1938,45 +1938,45 @@ impl TypeChecker {
                     self.infer_expr(*e);
                 }
                 // Return a range type
-                Type::Named { name: "Range", generics: [] }
+                Type·Named { name: "Range", generics: [] }
             },
 
-            Expr::Reference { .. } => {
+            Expr·Reference { .. } => {
                 let mutable = expr.mutable;
                 let ref_expr = expr.expr;
                 let inner = self.infer_expr(*ref_expr);
-                Type::Ref {
+                Type·Ref {
                     mutable,
-                    inner: Box::new(inner),
+                    inner: Box·new(inner),
                 }
             },
 
-            Expr::Cast { .. } => {
+            Expr·Cast { .. } => {
                 let cast_expr = expr.expr;
                 let ty = expr.ty;
                 self.infer_expr(*cast_expr);
                 self.convert_type(ty)
             },
 
-            Expr::Let { .. } => {
+            Expr·Let { .. } => {
                 let pattern = expr.pattern;
                 let value = expr.value;
                 // Let expression in if-let returns bool
                 let init_ty = self.infer_expr(*value);
-                self.bind_pattern(pattern, init_ty, EvidenceLevel::Known);
-                Type::Bool
+                self.bind_pattern(pattern, init_ty, EvidenceLevel·Known);
+                Type·Bool
             },
 
-            Expr::Break(val) => {
+            Expr·Break(val) => {
                 if let ?v = val {
                     self.infer_expr(*v);
                 }
-                Type::Never
+                Type·Never
             },
 
-            Expr::Continue => Type::Never,
+            Expr·Continue => Type·Never,
 
-            Expr::Macro { .. } => {
+            Expr·Macro { .. } => {
                 let path = expr.path;
                 // Macro invocations - type depends on macro
                 // Get macro name from path
@@ -1986,9 +1986,9 @@ impl TypeChecker {
                     ""
                 };
                 match name {
-                    "format" | "println" | "print" => Type::Str,
-                    "vec" => Type::Array { element: Box::new(self.fresh_var()), length: null },
-                    "assert" | "assert_eq" | "debug_assert" => Type::Unit,
+                    "format" | "println" | "print" => Type·Str,
+                    "vec" => Type·Array { element: Box·new(self.fresh_var()), length: null },
+                    "assert" | "assert_eq" | "debug_assert" => Type·Unit,
                     _ => self.fresh_var(),
                 }
             },
@@ -2000,25 +2000,25 @@ impl TypeChecker {
     /// Infer type from literal
     fn infer_literal(self, lit: !Literal) -> !Type {
         match lit {
-            Literal::Int { .. } => Type::Int(IntWidth::I64),
-            Literal::Float { .. } => Type::Float(FloatWidth::F64),
-            Literal::Bool(_) => Type::Bool,
-            Literal::Char(_) => Type::Char,
-            Literal::String(_) => Type::Str,
-            Literal::MultiLineString(_) => Type::Str,
-            Literal::RawString(_) => Type::Str,
-            Literal::ByteString(bytes) => Type::Array {
-                element: Box::new(Type::Int(IntWidth::U8)),
+            Literal·Int { .. } => Type·Int(IntWidth·I64),
+            Literal·Float { .. } => Type·Float(FloatWidth·F64),
+            Literal·Bool(_) => Type·Bool,
+            Literal·Char(_) => Type·Char,
+            Literal·String(_) => Type·Str,
+            Literal·MultiLineString(_) => Type·Str,
+            Literal·RawString(_) => Type·Str,
+            Literal·ByteString(bytes) => Type·Array {
+                element: Box·new(Type·Int(IntWidth·U8)),
                 size: ?bytes.len(),
             },
-            Literal::ByteChar(_) => Type::Int(IntWidth::U8),
-            Literal::InterpolatedString { .. } => Type::Str,
-            Literal::SigilStringSql(_) => Type::Str,
-            Literal::SigilStringRoute(_) => Type::Str,
-            Literal::Null => Type::Unit,
-            Literal::Empty => Type::Unit,
-            Literal::Infinity => Type::Float(FloatWidth::F64),
-            Literal::Circle => Type::Float(FloatWidth::F64),
+            Literal·ByteChar(_) => Type·Int(IntWidth·U8),
+            Literal·InterpolatedString { .. } => Type·Str,
+            Literal·SigilStringSql(_) => Type·Str,
+            Literal·SigilStringRoute(_) => Type·Str,
+            Literal·Null => Type·Unit,
+            Literal·Empty => Type·Unit,
+            Literal·Infinity => Type·Float(FloatWidth·F64),
+            Literal·Circle => Type·Float(FloatWidth·F64),
         }
     }
 
@@ -2029,45 +2029,45 @@ impl TypeChecker {
 
         let result_ty = match op {
             // Arithmetic
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::Pow => {
+            BinOp·Add | BinOp·Sub | BinOp·Mul | BinOp·Div | BinOp·Rem | BinOp·Pow => {
                 if !self.unify(left_inner, right_inner) {
-                    self.error(TypeError::new("arithmetic operands must have same type"));
+                    self.error(TypeError·new("arithmetic operands must have same type"));
                 }
                 left_inner
             },
 
             // Comparison
-            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+            BinOp·Eq | BinOp·Ne | BinOp·Lt | BinOp·Le | BinOp·Gt | BinOp·Ge => {
                 if !self.unify(left_inner, right_inner) {
-                    self.error(TypeError::new("comparison operands must have same type"));
+                    self.error(TypeError·new("comparison operands must have same type"));
                 }
-                Type::Bool
+                Type·Bool
             },
 
             // Logical
-            BinOp::And | BinOp::Or => {
-                if !self.unify(Type::Bool, left_inner) {
-                    self.error(TypeError::new("logical operand must be bool"));
+            BinOp·And | BinOp·Or => {
+                if !self.unify(Type·Bool, left_inner) {
+                    self.error(TypeError·new("logical operand must be bool"));
                 }
-                if !self.unify(Type::Bool, right_inner) {
-                    self.error(TypeError::new("logical operand must be bool"));
+                if !self.unify(Type·Bool, right_inner) {
+                    self.error(TypeError·new("logical operand must be bool"));
                 }
-                Type::Bool
+                Type·Bool
             },
 
             // Bitwise
-            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => left_inner,
+            BinOp·BitAnd | BinOp·BitOr | BinOp·BitXor | BinOp·Shl | BinOp·Shr => left_inner,
 
             // String concatenation
-            BinOp::Concat => {
-                if !self.unify(Type::Str, left_inner) {
-                    self.error(TypeError::new("concat operand must be string"));
+            BinOp·Concat => {
+                if !self.unify(Type·Str, left_inner) {
+                    self.error(TypeError·new("concat operand must be string"));
                 }
-                Type::Str
+                Type·Str
             },
 
             // Matrix multiplication - returns tensor type
-            BinOp::MatMul => {
+            BinOp·MatMul => {
                 // For now, accept any types and return left type
                 // Real implementation would check tensor shapes
                 left_inner
@@ -2077,9 +2077,9 @@ impl TypeChecker {
         // Combine evidence levels
         let combined_ev = left_ev.join(right_ev);
 
-        if combined_ev.rank() > EvidenceLevel::Known.rank() {
-            Type::Evidential {
-                inner: Box::new(result_ty),
+        if combined_ev.rank() > EvidenceLevel·Known.rank() {
+            Type·Evidential {
+                inner: Box·new(result_ty),
                 evidence: combined_ev,
             }
         } else {
@@ -2092,35 +2092,35 @@ impl TypeChecker {
         let (inner_ty, evidence) = self.strip_evidence(inner);
 
         let result = match op {
-            UnaryOp::Neg => inner_ty,
-            UnaryOp::Not => {
-                if !self.unify(Type::Bool, inner_ty) {
-                    self.error(TypeError::new("! operand must be bool"));
+            UnaryOp·Neg => inner_ty,
+            UnaryOp·Not => {
+                if !self.unify(Type·Bool, inner_ty) {
+                    self.error(TypeError·new("! operand must be bool"));
                 }
-                Type::Bool
+                Type·Bool
             },
-            UnaryOp::Ref => Type::Ref {
+            UnaryOp·Ref => Type·Ref {
                 mutable: false,
-                inner: Box::new(inner_ty),
+                inner: Box·new(inner_ty),
             },
-            UnaryOp::RefMut => Type::Ref {
+            UnaryOp·RefMut => Type·Ref {
                 mutable: true,
-                inner: Box::new(inner_ty),
+                inner: Box·new(inner_ty),
             },
-            UnaryOp::Deref => {
+            UnaryOp·Deref => {
                 match inner_ty {
-                    Type::Ref { inner, .. } | Type::Ptr { inner, .. } => *inner,
+                    Type·Ref { inner, .. } | Type·Ptr { inner, .. } => *inner,
                     _ => {
-                        self.error(TypeError::new("cannot dereference non-pointer"));
-                        Type::Error
+                        self.error(TypeError·new("cannot dereference non-pointer"));
+                        Type·Error
                     },
                 }
             },
         };
 
-        if evidence.rank() > EvidenceLevel::Known.rank() {
-            Type::Evidential {
-                inner: Box::new(result),
+        if evidence.rank() > EvidenceLevel·Known.rank() {
+            Type·Evidential {
+                inner: Box·new(result),
                 evidence,
             }
         } else {
@@ -2134,105 +2134,105 @@ impl TypeChecker {
 
         let result = match op {
             // Transform: [T] -> [U]
-            PipeOp::Transform(_) => {
+            PipeOp·Transform(_) => {
                 match inner {
-                    Type::Array { .. } => {
+                    Type·Array { .. } => {
                         let element = inner.element;
                         let length = inner.length;
-                        Type::Array { element, length }
+                        Type·Array { element, length }
                     },
-                    Type::Slice(element) => Type::Slice(element),
+                    Type·Slice(element) => Type·Slice(element),
                     _ => {
-                        self.error(TypeError::new("transform requires array or slice"));
-                        Type::Error
+                        self.error(TypeError·new("transform requires array or slice"));
+                        Type·Error
                     },
                 }
             },
 
             // Filter: [T] -> [T]
-            PipeOp::Filter(_) => inner,
+            PipeOp·Filter(_) => inner,
 
             // Sort: [T] -> [T]
-            PipeOp::Sort(_) => inner,
+            PipeOp·Sort(_) => inner,
 
             // Reduce: [T] -> T
-            PipeOp::Reduce(_) => {
+            PipeOp·Reduce(_) => {
                 match inner {
-                    Type::Array { .. } => {
+                    Type·Array { .. } => {
                         let element = inner.element;
                         *element
                     },
-                    Type::Slice(element) => *element,
+                    Type·Slice(element) => *element,
                     _ => {
-                        self.error(TypeError::new("reduce requires array or slice"));
-                        Type::Error
+                        self.error(TypeError·new("reduce requires array or slice"));
+                        Type·Error
                     },
                 }
             },
 
             // Numeric reductions
-            PipeOp::ReduceSum | PipeOp::ReduceProd | PipeOp::ReduceMin | PipeOp::ReduceMax => {
+            PipeOp·ReduceSum | PipeOp·ReduceProd | PipeOp·ReduceMin | PipeOp·ReduceMax => {
                 match inner {
-                    Type::Array { element, .. } | Type::Slice(element) => {
+                    Type·Array { element, .. } | Type·Slice(element) => {
                         match *element {
-                            Type::Int(_) | Type::Float(_) => *element,
+                            Type·Int(_) | Type·Float(_) => *element,
                             _ => {
-                                self.error(TypeError::new("numeric reduction requires numeric array"));
-                                Type::Error
+                                self.error(TypeError·new("numeric reduction requires numeric array"));
+                                Type·Error
                             },
                         }
                     },
                     _ => {
-                        self.error(TypeError::new("reduction requires array or slice"));
-                        Type::Error
+                        self.error(TypeError·new("reduction requires array or slice"));
+                        Type·Error
                     },
                 }
             },
 
             // Boolean reductions
-            PipeOp::ReduceAll | PipeOp::ReduceAny => {
+            PipeOp·ReduceAll | PipeOp·ReduceAny => {
                 match inner {
-                    Type::Array { element, .. } | Type::Slice(element) => {
+                    Type·Array { element, .. } | Type·Slice(element) => {
                         match *element {
-                            Type::Bool => Type::Bool,
+                            Type·Bool => Type·Bool,
                             _ => {
-                                self.error(TypeError::new("boolean reduction requires array of booleans"));
-                                Type::Error
+                                self.error(TypeError·new("boolean reduction requires array of booleans"));
+                                Type·Error
                             },
                         }
                     },
                     _ => {
-                        self.error(TypeError::new("boolean reduction requires array or slice"));
-                        Type::Error
+                        self.error(TypeError·new("boolean reduction requires array or slice"));
+                        Type·Error
                     },
                 }
             },
 
             // Concat reduction
-            PipeOp::ReduceConcat => {
+            PipeOp·ReduceConcat => {
                 match inner {
-                    Type::Array { element, .. } | Type::Slice(element) => {
+                    Type·Array { element, .. } | Type·Slice(element) => {
                         match *element {
-                            Type::Str => Type::Str,
-                            Type::Array { .. } => *element,
+                            Type·Str => Type·Str,
+                            Type·Array { .. } => *element,
                             _ => {
-                                self.error(TypeError::new("concat reduction requires array of strings or arrays"));
-                                Type::Error
+                                self.error(TypeError·new("concat reduction requires array of strings or arrays"));
+                                Type·Error
                             },
                         }
                     },
                     _ => {
-                        self.error(TypeError::new("concat reduction requires array or slice"));
-                        Type::Error
+                        self.error(TypeError·new("concat reduction requires array or slice"));
+                        Type·Error
                     },
                 }
             },
 
             // Match morpheme
-            PipeOp::Match(arms) => {
+            PipeOp·Match(arms) => {
                 if arms.is_empty() {
-                    self.error(TypeError::new("match expression has no arms"));
-                    Type::Error
+                    self.error(TypeError·new("match expression has no arms"));
+                    Type·Error
                 } else {
                     let result_type = self.infer_expr(arms[0].body);
                     let mut idx: usize = 1;
@@ -2246,15 +2246,15 @@ impl TypeChecker {
             },
 
             // Try/Error transformation
-            PipeOp::TryMap(_) => self.fresh_var(),
+            PipeOp·TryMap(_) => self.fresh_var(),
 
             // Method call
-            PipeOp::Method { name, args: _ } => {
+            PipeOp·Method { name, args: _ } => {
                 if let ?fn_ty = self.functions.get(name.name) {
                     let fresh_ty = self.freshen(fn_ty);
                     match fresh_ty {
-                        Type::Function { return_type, .. } => *return_type,
-                        _ => Type::Error,
+                        Type·Function { return_type, .. } => *return_type,
+                        _ => Type·Error,
                     }
                 } else {
                     self.fresh_var()
@@ -2262,15 +2262,15 @@ impl TypeChecker {
             },
 
             // Named operation
-            PipeOp::Named { prefix, body: _ } => {
+            PipeOp·Named { prefix, body: _ } => {
                 if let ?first = prefix.first() {
                     match first.name {
                         "sum" | "product" => {
                             match inner {
-                                Type::Array { element, .. } | Type::Slice(element) => *element,
+                                Type·Array { element, .. } | Type·Slice(element) => *element,
                                 _ => {
-                                    self.error(TypeError::new("sum/product requires array"));
-                                    Type::Error
+                                    self.error(TypeError·new("sum/product requires array"));
+                                    Type·Error
                                 },
                             }
                         },
@@ -2282,83 +2282,83 @@ impl TypeChecker {
             },
 
             // Await: unwrap future
-            PipeOp::Await => inner,
+            PipeOp·Await => inner,
 
             // Access morphemes: [T] -> T
-            PipeOp::First | PipeOp::Last | PipeOp::Middle | PipeOp::Choice
-            | PipeOp::Nth(_) | PipeOp::Next => {
+            PipeOp·First | PipeOp·Last | PipeOp·Middle | PipeOp·Choice
+            | PipeOp·Nth(_) | PipeOp·Next => {
                 match inner {
-                    Type::Array { element, .. } | Type::Slice(element) => *element,
-                    Type::Tuple(elements) => {
+                    Type·Array { element, .. } | Type·Slice(element) => *element,
+                    Type·Tuple(elements) => {
                         match elements.first() {
                             ?first => first.clone(),
-                            null => Type::Unit,
+                            null => Type·Unit,
                         }
                     },
                     _ => {
-                        self.error(TypeError::new("access morpheme requires array, slice, or tuple"));
-                        Type::Error
+                        self.error(TypeError·new("access morpheme requires array, slice, or tuple"));
+                        Type·Error
                     },
                 }
             },
 
             // Parallel/GPU morphemes
-            PipeOp::Parallel(inner_op) | PipeOp::Gpu(inner_op) => {
+            PipeOp·Parallel(inner_op) | PipeOp·Gpu(inner_op) => {
                 self.infer_pipe_op(*inner_op, input)
             },
 
             // Protocol operations - all have Reported evidence
-            PipeOp::Send(_) | PipeOp::Recv => {
-                return Type::Evidential {
-                    inner: Box::new(self.fresh_var()),
-                    evidence: EvidenceLevel::Reported,
+            PipeOp·Send(_) | PipeOp·Recv => {
+                return Type·Evidential {
+                    inner: Box·new(self.fresh_var()),
+                    evidence: EvidenceLevel·Reported,
                 };
             },
 
-            PipeOp::Stream(_) | PipeOp::Connect(_) => self.fresh_var(),
-            PipeOp::Close => Type::Unit,
-            PipeOp::Header { .. } | PipeOp::Body(_) | PipeOp::Timeout(_) | PipeOp::Retry { .. } => inner,
+            PipeOp·Stream(_) | PipeOp·Connect(_) => self.fresh_var(),
+            PipeOp·Close => Type·Unit,
+            PipeOp·Header { .. } | PipeOp·Body(_) | PipeOp·Timeout(_) | PipeOp·Retry { .. } => inner,
 
             // Evidence promotion operations
-            PipeOp::Validate { predicate: _, target_evidence } => {
-                let target_ev = EvidenceLevel::from_ast(target_evidence);
+            PipeOp·Validate { predicate: _, target_evidence } => {
+                let target_ev = EvidenceLevel·from_ast(target_evidence);
 
                 if evidence.rank() < target_ev.rank() {
-                    self.error(TypeError::new(format!(
+                    self.error(TypeError·new(format!(
                         "cannot demote evidence from {} ({}) to {} ({}) using validate",
                         evidence.name(), evidence.symbol(),
                         target_ev.name(), target_ev.symbol()
                     )).with_note("validate! can only promote evidence to a more certain level"));
                 }
 
-                return Type::Evidential {
-                    inner: Box::new(inner.clone()),
+                return Type·Evidential {
+                    inner: Box·new(inner.clone()),
                     evidence: target_ev,
                 };
             },
 
-            PipeOp::Assume { reason: _, target_evidence } => {
-                let target_ev = EvidenceLevel::from_ast(target_evidence);
+            PipeOp·Assume { reason: _, target_evidence } => {
+                let target_ev = EvidenceLevel·from_ast(target_evidence);
 
                 if evidence.rank() < target_ev.rank() {
-                    self.error(TypeError::new(format!(
+                    self.error(TypeError·new(format!(
                         "assume! cannot demote evidence from {} ({}) to {} ({})",
                         evidence.name(), evidence.symbol(),
                         target_ev.name(), target_ev.symbol()
                     )).with_note("assume! is for promoting evidence, not demoting"));
                 }
 
-                return Type::Evidential {
-                    inner: Box::new(inner.clone()),
+                return Type·Evidential {
+                    inner: Box·new(inner.clone()),
                     evidence: target_ev,
                 };
             },
 
-            PipeOp::AssertEvidence(expected_ast) => {
-                let expected = EvidenceLevel::from_ast(expected_ast);
+            PipeOp·AssertEvidence(expected_ast) => {
+                let expected = EvidenceLevel·from_ast(expected_ast);
 
                 if !evidence.satisfies(expected) {
-                    self.error(TypeError::new(format!(
+                    self.error(TypeError·new(format!(
                         "evidence assertion failed: expected {} ({}) or more certain, found {} ({})",
                         expected.name(), expected.symbol(),
                         evidence.name(), evidence.symbol()
@@ -2369,55 +2369,55 @@ impl TypeChecker {
             },
 
             // Scope functions
-            PipeOp::Also(_) | PipeOp::Apply(_) => input.clone(),
+            PipeOp·Also(_) | PipeOp·Apply(_) => input.clone(),
 
-            PipeOp::TakeIf(_) | PipeOp::TakeUnless(_) => {
-                return Type::Named {
+            PipeOp·TakeIf(_) | PipeOp·TakeUnless(_) => {
+                return Type·Named {
                     name: "Option",
                     generics: [input.clone()],
                 };
             },
 
-            PipeOp::Let(func) => {
+            PipeOp·Let(func) => {
                 self.infer_expr(*func);
                 self.fresh_var()
             },
 
             // Mathematical operations
-            PipeOp::All(_) | PipeOp::Any(_) => Type::Bool,
-            PipeOp::Compose(f) | PipeOp::Scan(f) | PipeOp::Gradient(f) => {
+            PipeOp·All(_) | PipeOp·Any(_) => Type·Bool,
+            PipeOp·Compose(f) | PipeOp·Scan(f) | PipeOp·Gradient(f) => {
                 self.infer_expr(*f);
                 self.fresh_var()
             },
-            PipeOp::Zip(other) => {
+            PipeOp·Zip(other) => {
                 self.infer_expr(*other);
                 self.fresh_var()
             },
-            PipeOp::Diff => self.fresh_var(),
-            PipeOp::SortAsc | PipeOp::SortDesc | PipeOp::Reverse => inner.clone(),
-            PipeOp::Cycle(n) | PipeOp::Windows(n) | PipeOp::Chunks(n) => {
+            PipeOp·Diff => self.fresh_var(),
+            PipeOp·SortAsc | PipeOp·SortDesc | PipeOp·Reverse => inner.clone(),
+            PipeOp·Cycle(n) | PipeOp·Windows(n) | PipeOp·Chunks(n) => {
                 self.infer_expr(*n);
                 self.fresh_var()
             },
-            PipeOp::Flatten | PipeOp::Unique | PipeOp::Enumerate => self.fresh_var(),
+            PipeOp·Flatten | PipeOp·Unique | PipeOp·Enumerate => self.fresh_var(),
 
             // Call expression as pipe target: |&func or |expr
-            PipeOp::Call(expr) => {
+            PipeOp·Call(expr) => {
                 let callee_ty = self.infer_expr(*expr);
                 match callee_ty {
-                    Type::Function { return_type, .. } => *return_type,
+                    Type·Function { return_type, .. } => *return_type,
                     _ => self.fresh_var(),
                 }
             },
 
             // Macro invocation in pipe: |macro!{...}
-            PipeOp::Macro { name: _, tokens: _ } => self.fresh_var(),
+            PipeOp·Macro { name: _, tokens: _ } => self.fresh_var(),
         };
 
         // Preserve evidence through pipe
-        if evidence.rank() > EvidenceLevel::Known.rank() {
-            Type::Evidential {
-                inner: Box::new(result),
+        if evidence.rank() > EvidenceLevel·Known.rank() {
+            Type·Evidential {
+                inner: Box·new(result),
                 evidence,
             }
         } else {
@@ -2428,12 +2428,12 @@ impl TypeChecker {
     /// Strip evidence wrapper, returning (inner_type, evidence_level)
     fn strip_evidence(self, ty: !Type) -> !(Type, EvidenceLevel) {
         match ty {
-            Type::Evidential { .. } => {
+            Type·Evidential { .. } => {
                 let inner = ty.inner;
                 let evidence = ty.evidence;
                 (*inner, evidence)
             },
-            _ => (ty, EvidenceLevel::Known),
+            _ => (ty, EvidenceLevel·Known),
         }
     }
 
@@ -2443,23 +2443,23 @@ impl TypeChecker {
         let final_ev = evidence.join(ty_ev);
 
         match pattern {
-            Pattern::Ident { .. } => {
+            Pattern·Ident { .. } => {
                 let name = pattern.name;
                 let evidentiality = pattern.evidentiality;
                 let ev = match evidentiality {
-                    ?e => EvidenceLevel::from_ast(e),
+                    ?e => EvidenceLevel·from_ast(e),
                     null => final_ev,
                 };
                 self.env.define(name.name, inner_ty, ev);
             },
-            Pattern::Tuple(patterns) => {
-                if let Type::Tuple(types) = inner_ty {
+            Pattern·Tuple(patterns) => {
+                if let Type·Tuple(types) = inner_ty {
                     for (pat, ty) in patterns.iter().zip(types.iter()) {
                         self.bind_pattern(pat, ty, final_ev);
                     }
                 }
             },
-            Pattern::Struct { fields, .. } => {
+            Pattern·Struct { fields, .. } => {
                 for field in fields {
                     let fresh = self.fresh_var();
                     match field.pattern {
@@ -2468,46 +2468,46 @@ impl TypeChecker {
                     }
                 }
             },
-            Pattern::TupleStruct { fields, .. } => {
+            Pattern·TupleStruct { fields, .. } => {
                 for pat in fields {
                     let fresh = self.fresh_var();
                     self.bind_pattern(pat, fresh, final_ev);
                 }
             },
-            Pattern::Slice(patterns) => {
+            Pattern·Slice(patterns) => {
                 let elem_ty = match inner_ty {
-                    Type::Array { element, .. } | Type::Slice(element) => *element,
+                    Type·Array { element, .. } | Type·Slice(element) => *element,
                     _ => self.fresh_var(),
                 };
                 for pat in patterns {
                     self.bind_pattern(pat, elem_ty, final_ev);
                 }
             },
-            Pattern::Or(patterns) => {
+            Pattern·Or(patterns) => {
                 if let ?first = patterns.first() {
                     self.bind_pattern(first, ty, evidence);
                 }
             },
-            Pattern::Evidential { pattern: inner, evidentiality } => {
+            Pattern·Evidential { pattern: inner, evidentiality } => {
                 // Evidential patterns like ?(x, y) - process the inner pattern
                 let ev = match evidentiality {
-                    ?e => EvidenceLevel::from_ast(e),
+                    ?e => EvidenceLevel·from_ast(e),
                     null => final_ev,
                 };
                 self.bind_pattern(*inner, ty, ev);
             },
-            Pattern::Path(_) => {
+            Pattern·Path(_) => {
                 // Path patterns like None don't introduce bindings
             },
-            Pattern::Ref { pattern: inner, .. } => {
+            Pattern·Ref { pattern: inner, .. } => {
                 // Ref patterns like &x bind the inner pattern to dereferenced type
                 let elem_ty = match inner_ty {
-                    Type::Ref { inner, .. } => *inner,
+                    Type·Ref { inner, .. } => *inner,
                     _ => self.fresh_var(),
                 };
                 self.bind_pattern(*inner, elem_ty, final_ev);
             },
-            Pattern::Wildcard | Pattern::Rest | Pattern::Literal(_) | Pattern::Range { .. } => {
+            Pattern·Wildcard | Pattern·Rest | Pattern·Literal(_) | Pattern·Range { .. } => {
                 // No bindings introduced
             },
         }
@@ -2521,12 +2521,12 @@ impl TypeChecker {
     /// Detects cycles and returns the last variable in the chain if a cycle is found
     fn resolve_type(self, ty: !Type) -> !Type {
         match ty {
-            Type::Var(v) => {
-                let mut seen: ![i64] = [];
-                let mut current = Type::Var(v);
+            Type·Var(v) => {
+                let mut seen = Vec·new();
+                let mut current = Type·Var(v);
                 loop {
                     match current {
-                        Type::Var(cv) => {
+                        Type·Var(cv) => {
                             // Check for cycle
                             if seen.contains(cv.id) {
                                 // Cycle detected, return the current variable
@@ -2558,20 +2558,20 @@ impl TypeChecker {
     fn unify(mut self, a: !Type, b: !Type) -> !bool {
         match (a, b) {
             // Same primitive types
-            (Type::Unit, Type::Unit) => true,
-            (Type::Bool, Type::Bool) => true,
-            (Type::Char, Type::Char) => true,
-            (Type::Str, Type::Str) => true,
-            (Type::Never, Type::Never) => true,
-            (Type::Error, _) | (_, Type::Error) => true,
-            (Type::Never, _) | (_, Type::Never) => true,
+            (Type·Unit, Type·Unit) => true,
+            (Type·Bool, Type·Bool) => true,
+            (Type·Char, Type·Char) => true,
+            (Type·Str, Type·Str) => true,
+            (Type·Never, Type·Never) => true,
+            (Type·Error, _) | (_, Type·Error) => true,
+            (Type·Never, _) | (_, Type·Never) => true,
 
             // Allow integer types to unify with each other (for literal coercion)
-            (Type::Int(_), Type::Int(_)) => true,
-            (Type::Float(a), Type::Float(b)) => a == b,
+            (Type·Int(_), Type·Int(_)) => true,
+            (Type·Float(a), Type·Float(b)) => a == b,
 
             // Arrays
-            (Type::Array { element: a, length: sa }, Type::Array { element: b, length: sb }) => {
+            (Type·Array { element: a, length: sa }, Type·Array { element: b, length: sb }) => {
                 let size_ok = match (sa, sb) {
                     (?na, ?nb) => na == nb,
                     _ => true,
@@ -2580,54 +2580,54 @@ impl TypeChecker {
             },
 
             // Slices
-            (Type::Slice(a), Type::Slice(b)) => self.unify(*a, *b),
+            (Type·Slice(a), Type·Slice(b)) => self.unify(*a, *b),
 
             // Tuples
-            (Type::Tuple(a), Type::Tuple(b)) => {
+            (Type·Tuple(a), Type·Tuple(b)) => {
                 a.len() == b.len() &&
                 a.iter().zip(b.iter())|all{pair => self.unify(pair.0, pair.1)}
             },
 
             // References
-            (Type::Ref { mutable: ma, inner: a }, Type::Ref { mutable: mb, inner: b }) => {
+            (Type·Ref { mutable: ma, inner: a }, Type·Ref { mutable: mb, inner: b }) => {
                 ma == mb && self.unify(*a, *b)
             },
 
             // Functions
-            (Type::Function { params: pa, return_type: ra, is_async: aa },
-             Type::Function { params: pb, return_type: rb, is_async: ab }) => {
+            (Type·Function { params: pa, return_type: ra, is_async: aa },
+             Type·Function { params: pb, return_type: rb, is_async: ab }) => {
                 aa == ab && pa.len() == pb.len() &&
                 pa.iter().zip(pb.iter())|all{pair => self.unify(pair.0, pair.1)} &&
                 self.unify(*ra, *rb)
             },
 
             // Named types
-            (Type::Named { name: na, generics: ga }, Type::Named { name: nb, generics: gb }) => {
+            (Type·Named { name: na, generics: ga }, Type·Named { name: nb, generics: gb }) => {
                 na == nb && ga.len() == gb.len() &&
                 ga.iter().zip(gb.iter())|all{pair => self.unify(pair.0, pair.1)}
             },
 
             // Evidential types: inner must unify, evidence can differ
-            (Type::Evidential { inner: a, .. }, Type::Evidential { inner: b, .. }) => {
+            (Type·Evidential { inner: a, .. }, Type·Evidential { inner: b, .. }) => {
                 self.unify(*a, *b)
             },
-            (Type::Evidential { inner: a, .. }, b) => self.unify(*a, b),
-            (a, Type::Evidential { inner: b, .. }) => self.unify(a, *b),
+            (Type·Evidential { inner: a, .. }, b) => self.unify(*a, b),
+            (a, Type·Evidential { inner: b, .. }) => self.unify(a, *b),
 
             // Type variables - use resolve to break cycles
-            (Type::Var(v), t) => {
-                let resolved_a = self.resolve_type(Type::Var(v.clone()));
+            (Type·Var(v), t) => {
+                let resolved_a = self.resolve_type(Type·Var(v.clone()));
                 match resolved_a {
-                    Type::Var(rv) => {
+                    Type·Var(rv) => {
                         // Check if t is also a Var and if they're the same
                         let resolved_b = self.resolve_type(t.clone());
                         match resolved_b {
-                            Type::Var(rb) => {
+                            Type·Var(rb) => {
                                 if rv.id == rb.id {
                                     true  // Same variable
                                 } else {
                                     // Bind one to the other
-                                    self.substitutions.insert(rv.id, Type::Var(rb));
+                                    self.substitutions.insert(rv.id, Type·Var(rb));
                                     true
                                 }
                             },
@@ -2641,19 +2641,19 @@ impl TypeChecker {
                     _ => self.unify(resolved_a, t)  // Already resolved, unify directly
                 }
             },
-            (t, Type::Var(v)) => {
-                let resolved_b = self.resolve_type(Type::Var(v.clone()));
+            (t, Type·Var(v)) => {
+                let resolved_b = self.resolve_type(Type·Var(v.clone()));
                 match resolved_b {
-                    Type::Var(rv) => {
+                    Type·Var(rv) => {
                         // Check if t is also a Var and if they're the same
                         let resolved_a = self.resolve_type(t.clone());
                         match resolved_a {
-                            Type::Var(ra) => {
+                            Type·Var(ra) => {
                                 if ra.id == rv.id {
                                     true  // Same variable
                                 } else {
                                     // Bind one to the other
-                                    self.substitutions.insert(rv.id, Type::Var(ra));
+                                    self.substitutions.insert(rv.id, Type·Var(ra));
                                     true
                                 }
                             },
@@ -2669,7 +2669,7 @@ impl TypeChecker {
             },
 
             // Cycles
-            (Type::Cycle { modulus: a }, Type::Cycle { modulus: b }) => a == b,
+            (Type·Cycle { modulus: a }, Type·Cycle { modulus: b }) => a == b,
 
             _ => false,
         }
@@ -2679,37 +2679,37 @@ impl TypeChecker {
     fn convert_type(self, ty: !TypeExpr) -> !Type {
         match ty {
             // Handle null TypeExpr gracefully
-            null => Type::Var(TypeVar::new(0)),
+            null => Type·Var(TypeVar·new(0)),
 
-            TypeExpr::Path(path) => {
+            TypeExpr·Path(path) => {
                 if path.segments.len() == 1 {
                     let name = path.segments[0].ident.name;
                     match name {
                         // Handle Self type
                         "Self" => {
                             if let ?self_type = self.current_self_type {
-                                return Type::Named { name: self_type, generics: [] };
+                                return Type·Named { name: self_type, generics: [] };
                             } else {
-                                return Type::Named { name: "Self", generics: [] };
+                                return Type·Named { name: "Self", generics: [] };
                             }
                         },
-                        "bool" => return Type::Bool,
-                        "char" => return Type::Char,
-                        "str" | "String" => return Type::Str,
-                        "i8" => return Type::Int(IntWidth::I8),
-                        "i16" => return Type::Int(IntWidth::I16),
-                        "i32" => return Type::Int(IntWidth::I32),
-                        "i64" => return Type::Int(IntWidth::I64),
-                        "i128" => return Type::Int(IntWidth::I128),
-                        "isize" => return Type::Int(IntWidth::IWord),
-                        "u8" => return Type::Int(IntWidth::U8),
-                        "u16" => return Type::Int(IntWidth::U16),
-                        "u32" => return Type::Int(IntWidth::U32),
-                        "u64" => return Type::Int(IntWidth::U64),
-                        "u128" => return Type::Int(IntWidth::U128),
-                        "usize" => return Type::Int(IntWidth::UWord),
-                        "f32" => return Type::Float(FloatWidth::F32),
-                        "f64" => return Type::Float(FloatWidth::F64),
+                        "bool" => return Type·Bool,
+                        "char" => return Type·Char,
+                        "str" | "String" => return Type·Str,
+                        "i8" => return Type·Int(IntWidth·I8),
+                        "i16" => return Type·Int(IntWidth·I16),
+                        "i32" => return Type·Int(IntWidth·I32),
+                        "i64" => return Type·Int(IntWidth·I64),
+                        "i128" => return Type·Int(IntWidth·I128),
+                        "isize" => return Type·Int(IntWidth·IWord),
+                        "u8" => return Type·Int(IntWidth·U8),
+                        "u16" => return Type·Int(IntWidth·U16),
+                        "u32" => return Type·Int(IntWidth·U32),
+                        "u64" => return Type·Int(IntWidth·U64),
+                        "u128" => return Type·Int(IntWidth·U128),
+                        "usize" => return Type·Int(IntWidth·UWord),
+                        "f32" => return Type·Float(FloatWidth·F32),
+                        "f64" => return Type·Float(FloatWidth·F64),
                         _ => {},
                     }
                 }
@@ -2723,104 +2723,104 @@ impl TypeChecker {
                     null => [],
                 };
 
-                Type::Named { name, generics }
+                Type·Named { name, generics }
             },
 
-            TypeExpr::Reference { .. } => {
+            TypeExpr·Reference { .. } => {
                 let mutable = ty.mutable;
                 let inner = ty.inner;
-                Type::Ref {
+                Type·Ref {
                     mutable,
-                    inner: Box::new(self.convert_type(*inner)),
+                    inner: Box·new(self.convert_type(*inner)),
                 }
             },
 
-            TypeExpr::Pointer { .. } => {
+            TypeExpr·Pointer { .. } => {
                 let mutable = ty.mutable;
                 let inner = ty.inner;
-                Type::Ptr {
+                Type·Ptr {
                     mutable,
-                    inner: Box::new(self.convert_type(*inner)),
+                    inner: Box·new(self.convert_type(*inner)),
                 }
             },
 
-            TypeExpr::Array { .. } => {
+            TypeExpr·Array { .. } => {
                 let element = ty.element;
-                Type::Array {
-                    element: Box::new(self.convert_type(*element)),
+                Type·Array {
+                    element: Box·new(self.convert_type(*element)),
                     size: null,
                 }
             },
 
-            TypeExpr::Slice(inner) => Type::Slice(Box::new(self.convert_type(*inner))),
+            TypeExpr·Slice(inner) => Type·Slice(Box·new(self.convert_type(*inner))),
 
-            TypeExpr::Tuple(elements) => {
-                Type::Tuple(elements|τ{t => self.convert_type(t)}|collect())
+            TypeExpr·Tuple(elements) => {
+                Type·Tuple(elements|τ{t => self.convert_type(t)}|collect())
             },
 
-            TypeExpr::Function { .. } => {
+            TypeExpr·Function { .. } => {
                 let params = ty.params;
                 let return_type = ty.return_type;
-                Type::Function {
+                Type·Function {
                     params: params|τ{t => self.convert_type(t)}|collect(),
-                    return_type: Box::new(match return_type {
+                    return_type: Box·new(match return_type {
                         ?t => self.convert_type(*t),
-                        null => Type::Unit,
+                        null => Type·Unit,
                     }),
                     is_async: false,
                 }
             },
 
-            TypeExpr::Evidential { .. } => {
+            TypeExpr·Evidential { .. } => {
                 let inner = ty.inner;
                 let evidentiality = ty.evidentiality;
-                Type::Evidential {
-                    inner: Box::new(self.convert_type(*inner)),
-                    evidence: EvidenceLevel::from_ast(evidentiality),
+                Type·Evidential {
+                    inner: Box·new(self.convert_type(*inner)),
+                    evidence: EvidenceLevel·from_ast(evidentiality),
                 }
             },
 
-            TypeExpr::Cycle { modulus: _ } => Type::Cycle { modulus: 12 },
+            TypeExpr·Cycle { modulus: _ } => Type·Cycle { modulus: 12 },
 
-            TypeExpr::Simd { .. } => {
+            TypeExpr·Simd { .. } => {
                 let element = ty.element;
                 let lanes = ty.lanes;
-                Type::Simd {
-                    element: Box::new(self.convert_type(*element)),
+                Type·Simd {
+                    element: Box·new(self.convert_type(*element)),
                     lanes,
                 }
             },
 
-            TypeExpr::Atomic(inner) => Type::Atomic(Box::new(self.convert_type(*inner))),
+            TypeExpr·Atomic(inner) => Type·Atomic(Box·new(self.convert_type(*inner))),
 
-            TypeExpr::Never => Type::Never,
-            TypeExpr::Infer => Type::Var(TypeVar::new(0)),
+            TypeExpr·Never => Type·Never,
+            TypeExpr·Infer => Type·Var(TypeVar·new(0)),
 
             // impl Trait and dyn Trait - for now, treat as opaque types
-            TypeExpr::ImplTrait { bounds } => {
+            TypeExpr·ImplTrait { bounds } => {
                 // Use the first bound as the type, or Any if empty
                 if bounds.is_empty() {
-                    Type::Any
+                    Type·Any
                 } else {
                     self.convert_type(bounds[0].clone())
                 }
             }
-            TypeExpr::DynTrait { bounds } => {
+            TypeExpr·DynTrait { bounds } => {
                 // Use the first bound as the type, or Any if empty
                 if bounds.is_empty() {
-                    Type::Any
+                    Type·Any
                 } else {
                     self.convert_type(bounds[0].clone())
                 }
             }
 
-            TypeExpr::QualifiedPath { base, trait_path, item, args } => {
+            TypeExpr·QualifiedPath { base, trait_path, item, args } => {
                 // <Type as Trait>::Item - construct qualified name
                 let base_str = self.type_to_name(*base);
                 let trait_str = trait_path.segments|τ{s => s.ident.name}|join("::");
                 let name = format!("<{} as {}>::{}", base_str, trait_str, item);
                 let generics = args|τ{t => self.convert_type(t)}|collect();
-                Type::Named { name, generics }
+                Type·Named { name, generics }
             }
         }
     }
@@ -2828,7 +2828,7 @@ impl TypeChecker {
     /// Convert a type expression to a name string
     fn type_to_name(self, ty: !TypeExpr) -> !String {
         match ty {
-            TypeExpr::Path(path) => path.segments|τ{s => s.ident.name}|join("::"),
+            TypeExpr·Path(path) => path.segments|τ{s => s.ident.name}|join("::"),
             _ => "_".to_string(),
         }
     }
@@ -2848,7 +2848,7 @@ impl Pattern {
     /// Get the evidentiality annotation if present
     pub fn evidentiality(self) -> ?Evidentiality {
         match self {
-            Pattern::Ident { evidentiality, .. } => evidentiality,
+            Pattern·Ident { evidentiality, .. } => evidentiality,
             _ => null,
         }
     }
@@ -2856,7 +2856,7 @@ impl Pattern {
     /// Get the binding name if this is an identifier pattern
     pub fn binding_name(self) -> ?String {
         match self {
-            Pattern::Ident { name, .. } => ?name.name,
+            Pattern·Ident { name, .. } => ?name.name,
             _ => null,
         }
     }
@@ -2868,13 +2868,13 @@ impl Pattern {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::parser::Parser;
+    invoke super·*;
+    invoke tome·parser·Parser;
 
     fn check(source: !&str) -> !Result<(), [TypeError]> {
-        let mut parser = Parser::new(source);
+        let mut parser = Parser·new(source);
         let file = parser.parse_file().expect("parse failed");
-        let mut checker = TypeChecker::new();
+        let mut checker = TypeChecker·new();
         checker.check_file(file)
     }
 
@@ -2905,18 +2905,18 @@ mod tests {
     #[test]
     fn test_evidence_lattice() {
         // Test lattice operations
-        let known = EvidenceLevel::Known;
-        let uncertain = EvidenceLevel::Uncertain;
-        let reported = EvidenceLevel::Reported;
+        let known = EvidenceLevel·Known;
+        let uncertain = EvidenceLevel·Uncertain;
+        let reported = EvidenceLevel·Reported;
 
         // Join (least upper bound)
-        assert_eq!(known.join(uncertain), EvidenceLevel::Uncertain);
-        assert_eq!(known.join(reported), EvidenceLevel::Reported);
-        assert_eq!(uncertain.join(reported), EvidenceLevel::Reported);
+        assert_eq!(known.join(uncertain), EvidenceLevel·Uncertain);
+        assert_eq!(known.join(reported), EvidenceLevel·Reported);
+        assert_eq!(uncertain.join(reported), EvidenceLevel·Reported);
 
         // Meet (greatest lower bound)
-        assert_eq!(known.meet(uncertain), EvidenceLevel::Known);
-        assert_eq!(uncertain.meet(reported), EvidenceLevel::Uncertain);
+        assert_eq!(known.meet(uncertain), EvidenceLevel·Known);
+        assert_eq!(uncertain.meet(reported), EvidenceLevel·Uncertain);
 
         // Satisfies
         assert!(known.satisfies(uncertain));
