@@ -381,9 +381,19 @@ pub fn Hero() -> Element! {
                             " — might be absent or invalid"
                         </li>
                         <li style={evidence_item_style}>
+                            <span class="ev ev-predicted">"◊"</span>
+                            <strong>"Predicted"</strong>
+                            " — AI/ML output, probabilistic"
+                        </li>
+                        <li style={evidence_item_style}>
                             <span class="ev ev-reported">"~"</span>
                             <strong>"Reported"</strong>
                             " — from external source, untrusted"
+                        </li>
+                        <li style={evidence_item_style}>
+                            <span class="ev ev-paradox">"‽"</span>
+                            <strong>"Paradox"</strong>
+                            " — explicit trust boundary"
                         </li>
                     </ul>
                 </div>
@@ -605,6 +615,7 @@ pub type EvidenceProps = struct {
 pub type EvidenceLevel = enum {
     Known,
     Uncertain,
+    Predicted,
     Reported,
     Paradox,
 }
@@ -614,6 +625,7 @@ pub fn EvidenceMarker(props: EvidenceProps!) -> Element! {
     let (symbol, class) = match props.level {
         EvidenceLevel::Known => ("!", "ev ev-known"),
         EvidenceLevel::Uncertain => ("?", "ev ev-uncertain"),
+        EvidenceLevel::Predicted => ("◊", "ev ev-predicted"),
         EvidenceLevel::Reported => ("~", "ev ev-reported"),
         EvidenceLevel::Paradox => ("‽", "ev ev-paradox"),
     };

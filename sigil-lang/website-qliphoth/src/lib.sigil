@@ -43,6 +43,7 @@ mod theme {
         /// Evidentiality markers - WCAG AA compliant
         pub const KNOWN: &str = "#14A088";        // ! green
         pub const UNCERTAIN: &str = "#D4A017";    // ? gold
+        pub const PREDICTED: &str = "#B87ACC";    // ◊ purple (AI/ML outputs)
         pub const REPORTED: &str = "#6B9BD1";     // ~ blue
         pub const PARADOX: &str = "#D47171";      // ‽ red
 
@@ -91,6 +92,10 @@ code, pre, .code-block {{
 .ev-uncertain {{
     color: {uncertain};
     background: rgba(212, 160, 23, 0.12);
+}}
+.ev-predicted {{
+    color: {predicted};
+    background: rgba(184, 122, 204, 0.12);
 }}
 .ev-reported {{
     color: {reported};
@@ -156,6 +161,7 @@ code, pre, .code-block {{
             font_mono = typography::FONT_MONO,
             known = colors::KNOWN,
             uncertain = colors::UNCERTAIN,
+            predicted = colors::PREDICTED,
             reported = colors::REPORTED,
             paradox = colors::PARADOX,
             accent = colors::ACCENT,

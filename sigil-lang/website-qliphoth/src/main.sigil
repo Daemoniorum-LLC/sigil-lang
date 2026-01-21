@@ -87,7 +87,7 @@ fn hero() -> i32! {
     append_child(sub, sub_text);
     append_child(section, sub);
 
-    // Evidentiality markers display
+    // Evidentiality markers display - all 5 markers
     let markers! = create_element("div");
     set_class(markers, "ev-display");
 
@@ -103,11 +103,23 @@ fn hero() -> i32! {
     append_child(uncertain, uncertain_text);
     append_child(markers, uncertain);
 
+    let predicted! = create_element("span");
+    set_class(predicted, "ev ev-predicted");
+    let predicted_text! = create_text("◊ predicted");
+    append_child(predicted, predicted_text);
+    append_child(markers, predicted);
+
     let reported! = create_element("span");
     set_class(reported, "ev ev-reported");
     let reported_text! = create_text("~ reported");
     append_child(reported, reported_text);
     append_child(markers, reported);
+
+    let paradox! = create_element("span");
+    set_class(paradox, "ev ev-paradox");
+    let paradox_text! = create_text("‽ paradox");
+    append_child(paradox, paradox_text);
+    append_child(markers, paradox);
 
     append_child(section, markers);
     section
@@ -151,7 +163,7 @@ fn features_section() -> i32! {
     append_child(f1_title, f1_title_text);
     append_child(f1, f1_title);
     let f1_desc! = create_element("p");
-    let f1_desc_text! = create_text("Track data provenance at the type level with !, ?, ~, and markers.");
+    let f1_desc_text! = create_text("Track data provenance at the type level with !, ?, ◊, ~, and ‽ markers.");
     append_child(f1_desc, f1_desc_text);
     append_child(f1, f1_desc);
     append_child(grid, f1);
