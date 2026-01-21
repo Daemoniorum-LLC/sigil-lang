@@ -509,6 +509,43 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
 
+    // Get absolute path for source directory
+    let abs_dir = match Path::new(dir_path).canonicalize() {
+        Ok(p) => p,
+        Err(_) => Path::new(dir_path).to_path_buf(),
+    };
+
+    // Derive crate name from directory name
+    // If directory is "src", use parent directory name instead
+    let dir_name = abs_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("crate");
+
+    let crate_name = if dir_name == "src" {
+        // Use parent directory name
+        abs_dir
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("crate")
+            .to_string()
+    } else {
+        dir_name.to_string()
+    };
+
+    eprintln!("Crate name: {}", crate_name);
+
+    // Set up interpreter state for multi-module project
+    interpreter.set_source_dir(abs_dir.to_string_lossy().to_string());
+    interpreter.set_crate_name(crate_name.clone());
+
+    // For Jormungandr compatibility, also register "tome" as an alias
+    // (Jormungandr uses `invoke tome::*` patterns)
+    if crate_name != "tome" {
+        interpreter.set_crate_alias("tome".to_string());
+    }
+
     // Parse and execute each file to register its definitions
     for file_path in &files {
         let source = match fs::read_to_string(file_path) {
@@ -518,6 +555,21 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
                 return ExitCode::from(1);
             }
         };
+
+        // Get module name from filename (without extension)
+        let module_name = Path::new(file_path)
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+
+        // Set current module context for this file
+        // For lib.sg, use the crate name itself; for others, use the module name
+        if module_name == "lib" {
+            interpreter.set_current_module(None);
+        } else {
+            // Register module name so `crate·module·*` works
+            interpreter.register_module(module_name.to_string());
+        }
 
         let mut parser = Parser::new(&source);
         let ast = match parser.parse_file() {

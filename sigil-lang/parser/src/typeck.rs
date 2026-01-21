@@ -321,6 +321,8 @@ pub struct TypeChecker {
     types: HashMap<String, TypeDef>,
     /// Function signatures
     functions: HashMap<String, Type>,
+    /// Stdlib function names (can be shadowed by user code)
+    stdlib_functions: std::collections::HashSet<String>,
     /// Associated functions/methods per type: type_name -> (method_name -> method_type)
     impl_methods: HashMap<String, HashMap<String, Type>>,
     /// Current Self type when inside an impl block
@@ -343,6 +345,7 @@ impl TypeChecker {
             env: Rc::new(RefCell::new(TypeEnv::new())),
             types: HashMap::new(),
             functions: HashMap::new(),
+            stdlib_functions: std::collections::HashSet::new(),
             impl_methods: HashMap::new(),
             current_self_type: None,
             current_generics: HashMap::new(),
@@ -355,6 +358,12 @@ impl TypeChecker {
         // Register built-in types and functions
         checker.register_builtins();
         checker
+    }
+
+    /// Add a stdlib function (these can be shadowed by user code)
+    fn add_stdlib_fn(&mut self, name: &str, fn_type: Type) {
+        self.functions.insert(name.to_string(), fn_type);
+        self.stdlib_functions.insert(name.to_string());
     }
 
     fn register_builtins(&mut self) {
@@ -497,6 +506,18 @@ impl TypeChecker {
         );
         self.functions.insert(
             "log".to_string(),
+            func(vec![f64_ty.clone(), f64_ty.clone()], f64_ty.clone()),  // log(value, base)
+        );
+        self.functions.insert(
+            "log10".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "log2".to_string(),
+            func(vec![f64_ty.clone()], f64_ty.clone()),
+        );
+        self.functions.insert(
+            "ln".to_string(),
             func(vec![f64_ty.clone()], f64_ty.clone()),
         );
         self.functions.insert(
@@ -725,6 +746,9 @@ impl TypeChecker {
             "mod_cycle".to_string(),
             func(vec![i64_ty.clone(), i64_ty.clone()], i64_ty.clone()),
         );
+
+        // Mark all registered functions as stdlib (can be shadowed by user code)
+        self.stdlib_functions = self.functions.keys().cloned().collect();
     }
 
     /// Fresh type variable
@@ -1067,6 +1091,16 @@ impl TypeChecker {
     fn collect_fn_sig(&mut self, item: &Item) {
         match item {
             Item::Function(f) => {
+                // Set up generic type parameters as type variables
+                if let Some(ref generics) = f.generics {
+                    for param in &generics.params {
+                        if let crate::ast::GenericParam::Type { name, .. } = param {
+                            let type_var = self.fresh_var();
+                            self.current_generics.insert(name.name.clone(), type_var);
+                        }
+                    }
+                }
+
                 let params: Vec<Type> = f.params.iter().map(|p| self.convert_type(&p.ty)).collect();
 
                 let return_type = f
@@ -1081,14 +1115,19 @@ impl TypeChecker {
                     is_async: f.is_async,
                 };
 
-                // Check for duplicate function definition
-                if self.functions.contains_key(&f.name.name) {
+                // Check for duplicate function definition (allow shadowing stdlib functions)
+                if self.functions.contains_key(&f.name.name)
+                    && !self.stdlib_functions.contains(&f.name.name)
+                {
                     self.error(TypeError::new(format!(
                         "duplicate function definition: '{}'",
                         f.name.name
                     )));
                 }
                 self.functions.insert(f.name.name.clone(), fn_type);
+
+                // Clear generics after processing
+                self.current_generics.clear();
             }
             Item::Impl(impl_block) => {
                 // Get the type name being implemented
@@ -1219,6 +1258,16 @@ impl TypeChecker {
     fn check_function(&mut self, func: &Function) {
         self.push_scope();
 
+        // Set up generic type parameters as type variables
+        if let Some(ref generics) = func.generics {
+            for param in &generics.params {
+                if let crate::ast::GenericParam::Type { name, .. } = param {
+                    let type_var = self.fresh_var();
+                    self.current_generics.insert(name.name.clone(), type_var);
+                }
+            }
+        }
+
         // Bind parameters with evidence inference
         for param in &func.params {
             let ty = self.convert_type(&param.ty);
@@ -1314,6 +1363,8 @@ impl TypeChecker {
             }
         }
 
+        // Clear generics after processing
+        self.current_generics.clear();
         self.pop_scope();
     }
 
@@ -1515,8 +1566,11 @@ impl TypeChecker {
                         if !self.unify(param, arg) {
                             // Allow implicit numeric coercion: int → float
                             let is_numeric_coercion = Self::is_numeric_coercion(param, arg);
+                            // Allow reference coercions: &mut T → &T, &Box<T> → &T, &Vec<T> → &[T]
+                            let is_reference_coercion = Self::is_reference_coercion(param, arg);
                             // Only report error for concrete type mismatches, not type variables
-                            if !matches!(param, Type::Var(_)) && !matches!(arg, Type::Var(_)) && !is_numeric_coercion {
+                            if !matches!(param, Type::Var(_)) && !matches!(arg, Type::Var(_))
+                                && !is_numeric_coercion && !is_reference_coercion {
                                 self.error(TypeError::new(format!(
                                     "type mismatch in argument {}: expected {}, found {}",
                                     i + 1, param, arg
@@ -1785,8 +1839,29 @@ impl TypeChecker {
                 let (recv_inner, recv_ev) = self.strip_evidence(&recv_ty);
                 let _arg_types: Vec<Type> = args.iter().map(|a| self.infer_expr(a)).collect();
 
-                // Resolve known methods based on receiver type and method name
-                let result_ty = match method.name.as_str() {
+                // FIRST: Check user-defined methods in impl_methods
+                // This takes priority over hardcoded patterns
+                let user_method_result = if let Type::Named { name: ref type_name, .. } = recv_inner {
+                    self.impl_methods.get(type_name)
+                        .and_then(|methods| methods.get(&method.name))
+                        .cloned()
+                        .and_then(|fn_type| {
+                            if let Type::Function { return_type, .. } = self.freshen(&fn_type) {
+                                Some(*return_type)
+                            } else {
+                                None
+                            }
+                        })
+                } else {
+                    None
+                };
+
+                // If user-defined method found, use it; otherwise fall back to hardcoded patterns
+                let result_ty = if let Some(user_ty) = user_method_result {
+                    user_ty
+                } else {
+                    // Resolve known methods based on receiver type and method name
+                    match method.name.as_str() {
                     // Collection methods returning usize
                     "len" | "count" | "size" => Type::Int(IntSize::USize),
 
@@ -1892,11 +1967,33 @@ impl TypeChecker {
                     "duration_since" | "elapsed" | "as_secs" | "as_millis" | "as_micros"
                     | "as_nanos" | "from_secs" | "from_millis" => recv_inner.clone(),
 
-                    // Path methods returning PathBuf/String
-                    "to_path_buf" | "join" | "with_extension" | "with_file_name" => {
+                    // Path methods returning PathBuf (only for Path/PathBuf receivers)
+                    "to_path_buf" | "with_extension" | "with_file_name" => {
                         Type::Named {
                             name: "PathBuf".to_string(),
                             generics: vec![],
+                        }
+                    }
+
+                    // join: Path::join returns PathBuf, but Vec::join/Iterator::join returns String
+                    "join" => {
+                        // Check if receiver is Path or PathBuf
+                        let is_path_type = if let Type::Named { name, .. } = &recv_inner {
+                            name == "Path" || name == "PathBuf"
+                        } else {
+                            false
+                        };
+                        if is_path_type {
+                            Type::Named {
+                                name: "PathBuf".to_string(),
+                                generics: vec![],
+                            }
+                        } else {
+                            // Vec::join and Iterator::join return String
+                            Type::Named {
+                                name: "String".to_string(),
+                                generics: vec![],
+                            }
                         }
                     }
 
@@ -1937,7 +2034,9 @@ impl TypeChecker {
                     "and" | "or" => recv_inner.clone(),
 
                     // Default: return fresh type variable
+                    // (user-defined methods were already checked above)
                     _ => self.fresh_var(),
+                    }
                 };
 
                 // Propagate evidence from receiver
@@ -2838,6 +2937,13 @@ impl TypeChecker {
             (Type::Ref { mutable: false, inner: a, .. }, Type::Str) if matches!(a.as_ref(), Type::Str) => true,
             (Type::Str, Type::Ref { mutable: false, inner: b, .. }) if matches!(b.as_ref(), Type::Str) => true,
 
+            // For bootstrapping: allow String to coerce to &str (via Deref)
+            // This allows passing String where &str is expected
+            (Type::Named { name: n, .. }, Type::Ref { mutable: false, inner, .. })
+                if n == "String" && matches!(inner.as_ref(), Type::Str) => true,
+            (Type::Ref { mutable: false, inner, .. }, Type::Named { name: n, .. })
+                if n == "String" && matches!(inner.as_ref(), Type::Str) => true,
+
             // Arrays
             (Type::Array { element: a, size: sa }, Type::Array { element: b, size: sb }) => {
                 (sa == sb || sa.is_none() || sb.is_none()) && self.unify(a, b)
@@ -2926,6 +3032,78 @@ impl TypeChecker {
             }
             (Type::Float(_), Type::Evidential { inner: act, .. }) => {
                 matches!(act.as_ref(), Type::Int(_))
+            }
+            _ => false,
+        }
+    }
+
+    /// Check for reference coercions (reborrow, deref coercion, unsized coercion)
+    fn is_reference_coercion(expected: &Type, actual: &Type) -> bool {
+        // Extract inner types from references
+        let (exp_inner, exp_mutable) = match expected {
+            Type::Ref { inner, mutable, .. } => (inner.as_ref(), *mutable),
+            _ => return false,
+        };
+        let (act_inner, act_mutable) = match actual {
+            Type::Ref { inner, mutable, .. } => (inner.as_ref(), *mutable),
+            _ => return false,
+        };
+
+        // 1. Reborrow: &mut T → &T (mutable ref can become immutable ref)
+        if !exp_mutable && act_mutable {
+            // Compare inner types (ignoring mutability)
+            if Self::types_structurally_equal(exp_inner, act_inner) {
+                return true;
+            }
+        }
+
+        // 2. Deref coercion: &Box<T> → &T
+        if let Type::Named { name, generics, .. } = act_inner {
+            if name == "Box" && !generics.is_empty() {
+                if Self::types_structurally_equal(exp_inner, &generics[0]) {
+                    return true;
+                }
+            }
+        }
+
+        // 3. Unsized coercion: &Vec<T> → &[T]
+        if let Type::Named { name, generics, .. } = act_inner {
+            if name == "Vec" && !generics.is_empty() {
+                if let Type::Slice(element) = exp_inner {
+                    if Self::types_structurally_equal(element.as_ref(), &generics[0]) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Helper to compare types structurally (ignoring small differences)
+    fn types_structurally_equal(a: &Type, b: &Type) -> bool {
+        match (a, b) {
+            (Type::Int(a_bits), Type::Int(b_bits)) => a_bits == b_bits,
+            (Type::Float(a_bits), Type::Float(b_bits)) => a_bits == b_bits,
+            (Type::Bool, Type::Bool) => true,
+            (Type::Str, Type::Str) => true,
+            (Type::Named { name: a_name, generics: a_gen, .. },
+             Type::Named { name: b_name, generics: b_gen, .. }) => {
+                a_name == b_name && a_gen.len() == b_gen.len() &&
+                a_gen.iter().zip(b_gen.iter()).all(|(a, b)| Self::types_structurally_equal(a, b))
+            }
+            (Type::Slice(a_el), Type::Slice(b_el)) => {
+                Self::types_structurally_equal(a_el, b_el)
+            }
+            (Type::Ref { inner: a_in, .. }, Type::Ref { inner: b_in, .. }) => {
+                Self::types_structurally_equal(a_in, b_in)
+            }
+            (Type::Evidential { inner: a_in, .. }, Type::Evidential { inner: b_in, .. }) => {
+                Self::types_structurally_equal(a_in, b_in)
+            }
+            // Allow evidential to match non-evidential for inner comparison
+            (Type::Evidential { inner, .. }, other) | (other, Type::Evidential { inner, .. }) => {
+                Self::types_structurally_equal(inner, other)
             }
             _ => false,
         }
