@@ -110,6 +110,7 @@ impl WasmCompiler {
                 params,
                 body,
                 is_move,
+                return_type: _,
             } => self.compile_closure(params, body, *is_move),
 
             // Pipe expression (morphemes)
@@ -202,6 +203,9 @@ impl WasmCompiler {
             Expr::LegionBroadcast { .. } => Err(WasmError::unsupported("Legion broadcast")),
             Expr::LegionConsensus { .. } => Err(WasmError::unsupported("Legion consensus")),
             Expr::LegionDecay { .. } => Err(WasmError::unsupported("Legion decay")),
+
+            // Named arguments are handled at call sites, not as standalone expressions
+            Expr::NamedArg { value, .. } => self.compile_expr(value),
         }
     }
 

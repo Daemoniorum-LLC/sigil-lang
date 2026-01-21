@@ -164,6 +164,9 @@ impl WasmCompiler {
                 Err(WasmError::unsupported("possibility method call"))
             }
             PipeOp::NecessityMethod { .. } => Err(WasmError::unsupported("necessity method call")),
+
+            // Call arbitrary expression as function on piped value
+            PipeOp::Call(expr) => self.compile_apply_to_stack(expr),
         }
     }
 
@@ -797,6 +800,7 @@ impl WasmCompiler {
                 params,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // Create a new function for this closure (is_move handled in closure compilation)
                 let fn_name = format!("__closure_{}", self.functions.len());
@@ -1088,6 +1092,7 @@ impl WasmCompiler {
                 params,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // Inline closure: bind parameter and compile body (is_move irrelevant for inline)
                 if params.len() != 1 {
@@ -1146,6 +1151,7 @@ impl WasmCompiler {
                 params,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // is_move irrelevant for inline binary closure application
                 if params.len() != 2 {

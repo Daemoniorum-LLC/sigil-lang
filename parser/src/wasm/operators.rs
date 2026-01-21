@@ -94,6 +94,12 @@ impl WasmCompiler {
                 // Result is i32, extend to i64
                 func.push(Instruction::I64ExtendI32U);
             }
+
+            // Tensor/matrix operations - require SIMD or GPU runtime
+            BinOp::MatMul => return Err(WasmError::unsupported("matrix multiplication (⊗) requires SIMD/GPU runtime")),
+            BinOp::Hadamard => return Err(WasmError::unsupported("Hadamard product (⊙) requires SIMD/GPU runtime")),
+            BinOp::TensorProd => return Err(WasmError::unsupported("tensor product (⊗) requires SIMD/GPU runtime")),
+            BinOp::Convolve => return Err(WasmError::unsupported("convolution (⊛) requires SIMD/GPU runtime")),
         }
         Ok(())
     }
