@@ -1,1099 +1,965 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Daemoniorum, LLC
+
 //! Page Components
 //!
 //! Each page component corresponds to a route in the application.
 
-use qliphoth_ui::prelude::*;
-use sigil_web::prelude::*;
-use crate::components::*;
+use qliphoth::prelude::*
+use sigil_web::prelude::*
+use crate::components::*
 
 // =============================================================================
 // Home Page
 // =============================================================================
 
 /// The main landing page for sigil-lang.com
-#[component]
-pub fn Home() -> Element! {
-    html! {
-        <>
-            <Hero />
-            <ProblemSection />
-            <EvidentialitySection />
-            <MorphemeSection />
-            <AgentInfraSection />
-            <PatternSection />
-            <CodeDensitySection />
-            <EcosystemSection />
-            <GetStartedSection />
-            <TechnicalSummarySection />
-        </>
+☉ sigil Home { }
+
+⊢ Home {
+    ☉ rite new() → This! {
+        Home { }
     }
 }
 
-// =============================================================================
-// Home Page Sections
-// =============================================================================
+⊢ Component for Home {
+    rite render(&this) → VNode! {
+        fragment()
+            ·child(hero_section())
+            ·child(features_section())
+            ·child(problem_section())
+            ·child(evidentiality_section())
+            ·child(morpheme_section())
+            ·child(getting_started_section())
+            ·to_vnode()
+    }
 
-/// The problem comparison: Before/After
-#[component]
-fn ProblemSection() -> Element! {
-    let comparison_style! = "
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-    ";
+    rite props_to_map(&this) → HashMap<String, PropValue>! {
+        HashMap::new()
+    }
 
-    let rust_code! = r#"// This compiles in every mainstream language
-async fn get_user_profile(id: String) -> Profile {
-    let response = http::get("/api/users/{id}").await;
-    let profile: Profile = response.json();
-
-    // profile is type Profile
-    // But it came from an external API!
-    // What if the API was compromised?
-    // What if the data was tampered?
-
-    save_to_database(profile);  // Trusting blindly
-    profile
-}"#;
-
-    let sigil_code! = r#"async fn get_user_profile(id: Str) -> Profile! {
-    let response~ = http::get("/api/users/{id}").await;
-    let profile~: Profile~ = response.json();
-
-    // profile~ is type Profile~ (Reported)
-    // The ~ marker propagates automatically
-
-    save_to_database(profile);  // ERROR: expected Profile!, got Profile~
-
-    // Must validate first:
-    let verified! = profile |validate!{ verify_signature() };
-    save_to_database(verified);  // OK: Profile!
-    verified
-}"#;
-
-    html! {
-        <Section id="the-problem" dark={true!}>
-            <SectionHeader
-                title="The Bug That Types Can't Catch"
-                subtitle="In every other language, this code compiles. In Sigil, it's a type error."
-            />
-
-            <div style={comparison_style}>
-                <SigilCodeBlock
-                    code={rust_code.to_string()}
-                    language="rust"
-                    title="Rust / TypeScript / Go"
-                    badge="Compiles. Vulnerable."
-                    badge_variant="danger"
-                />
-
-                <SigilCodeBlock
-                    code={sigil_code.to_string()}
-                    language="sigil"
-                    title="Sigil"
-                    badge="Type Error. Safe."
-                    badge_variant="success"
-                />
-            </div>
-
-            <p style="text-align: center; color: #a0a0aa; margin-top: 2rem; max-width: 700px; margin-left: auto; margin-right: auto;">
-                "The "
-                <code style="color: #6B9BD1;">"~"</code>
-                " marker is "
-                <em>"contagious"</em>
-                ". Any data derived from external sources inherits the "
-                <code style="color: #6B9BD1;">"~"</code>
-                " until explicitly validated. You can't accidentally trust untrusted data."
-            </p>
-        </Section>
+    rite from_props(_props: HashMap<String, PropValue>) → This! {
+        Home::new()
     }
 }
 
-/// Evidentiality markers deep dive
-#[component]
-fn EvidentialitySection() -> Element! {
-    let grid_style! = "
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1.5rem;
-        margin-bottom: 3rem;
-    ";
+/// Hero section with title and CTA
+rite hero_section() → VNode! {
+    ≔ section_style! = "
+        min-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 8rem 1.5rem 4rem;
+        background: linear-gradient(180deg, #050507 0%, #0a0a0d 100%);
+    "
 
-    let card_style! = "
-        background: #0c0c0f;
-        border: 1px solid #1a1a1f;
-        border-radius: 0.75rem;
-        padding: 1.5rem;
-    ";
-
-    let header_style! = "
+    ≔ title_style! = "
+        font-size: 4rem;
+        font-weight: 700;
+        color: #e8e8ec;
+        margin-bottom: 1.5rem;
         display: flex;
         align-items: center;
         gap: 1rem;
-        margin-bottom: 1rem;
-    ";
+    "
 
-    let marker_style_known! = "font-size: 2rem; color: #14A088;";
-    let marker_style_uncertain! = "font-size: 2rem; color: #D4A017;";
-    let marker_style_reported! = "font-size: 2rem; color: #6B9BD1;";
-    let marker_style_paradox! = "font-size: 2rem; color: #D47171;";
+    ≔ subtitle_style! = "
+        font-size: 1.5rem;
+        color: #a0a0aa;
+        max-width: 600px;
+        line-height: 1.6;
+        margin-bottom: 2rem;
+    "
 
-    let title_style! = "font-weight: 600; color: #e8e8ec;";
-    let subtitle_style! = "font-size: 0.875rem; color: #a0a0aa;";
-    let desc_style! = "color: #a0a0aa; font-size: 0.9375rem; margin-bottom: 1rem;";
+    ≔ cta_style! = "
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    "
 
-    let code_style! = "
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 0.8125rem;
-        background: #030305;
-        padding: 0.75rem;
-        border-radius: 0.375rem;
-        color: #e8e8ec;
-    ";
+    section()
+        ·class("hero")
+        ·style(section_style)
+        ·child(
+            h1()
+                ·style(title_style)
+                ·child(text("⛤ Sigil"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("hero-subtitle")
+                ·style(subtitle_style)
+                ·child(text("A programming language that knows which data to trust."))
+                ·to_vnode()
+        )
+        ·child(
+            div()
+                ·style(cta_style)
+                ·child(Button::primary("Learn Sigil", "/pages/learn.html")·to_vnode())
+                ·child(Button::secondary("View on GitHub", "https://github.com/Daemoniorum-LLC/sigil-lang")·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
 
-    let rule_style! = "
+/// Features grid
+rite features_section() → VNode! {
+    ≔ section_style! = "padding: 6rem 1.5rem; max-width: 1200px; margin: 0 auto;"
+    ≔ grid_style! = "display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem;"
+    ≔ card_style! = "background: #0c0c0f; border: 1px solid #1a1a1f; border-radius: 0.75rem; padding: 2rem;"
+    ≔ title_style! = "font-size: 1.25rem; font-weight: 600; color: #e8e8ec; margin-bottom: 0.75rem;"
+    ≔ desc_style! = "font-size: 0.9375rem; color: #a0a0aa; line-height: 1.6;"
+
+    section()
+        ·class("features-section")
+        ·style(section_style)
+        ·child(
+            SectionHeader::new("Language Features")
+                ·with_subtitle("Built for AI agents with data provenance tracking")
+                ·to_vnode()
+        )
+        ·child(
+            div()
+                ·style(grid_style)
+                ·child(feature_card("Evidentiality Markers", "Track data provenance at the type level with !, ?, ~, and ◊ markers.", card_style, title_style, desc_style))
+                ·child(feature_card("Morpheme Operators", "Parallel pipelines, async composition, and functional transforms built into syntax.", card_style, title_style, desc_style))
+                ·child(feature_card("WebAssembly Native", "Compile directly to WASM for web, edge, and embedded deployments.", card_style, title_style, desc_style))
+                ·child(feature_card("Agent Infrastructure", "9-layer architecture for building autonomous AI systems.", card_style, title_style, desc_style))
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+rite feature_card(title: &str, desc: &str, card_style: &str, title_style: &str, desc_style: &str) → VNode! {
+    div()
+        ·class("feature-card")
+        ·style(card_style)
+        ·child(
+            h3()
+                ·style(title_style)
+                ·child(text(title))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·style(desc_style)
+                ·child(text(desc))
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+/// Problem/solution comparison section
+rite problem_section() → VNode! {
+    ≔ section_style! = "padding: 6rem 1.5rem; background: #0a0a0d;"
+    ≔ container_style! = "max-width: 1000px; margin: 0 auto;"
+
+    section()
+        ·class("problem-section")
+        ·id("problem")
+        ·style(section_style)
+        ·child(
+            div()
+                ·style(container_style)
+                ·child(
+                    SectionHeader::new("The Bug That Types Can't Catch")
+                        ·with_subtitle("Traditional type systems don't track where data comes from")
+                        ·to_vnode()
+                )
+                ·child(
+                    CodeBlock::new(
+                        "// In Rust, TypeScript, or Go - this compiles without warnings:\n" ++
+                        "async fn get_user(id: String) -> Profile {\n" ++
+                        "    let response = http::get(&format!(\"/api/users/{}\", id)).await;\n" ++
+                        "    let profile: Profile = response.json();  // External data\n" ++
+                        "    save_to_database(&profile);  // No validation!\n" ++
+                        "    profile\n" ++
+                        "}",
+                        "rust"
+                    )·with_title("Traditional Languages")·to_vnode()
+                )
+                ·child(
+                    CodeBlock::new(
+                        "// In Sigil - the compiler catches this:\n" ++
+                        "async rite get_user(id: !String) → !Profile {\n" ++
+                        "    ≔ response~ = Http·get(\"/api/users/{id}\").await  // ~ = external\n" ++
+                        "    ≔ profile~ = response·json::<~Profile>()           // ~ propagates\n" ++
+                        "    save_to_database(profile)  // ERROR: ~ cannot flow to !\n" ++
+                        "    \n" ++
+                        "    ≔ validated! = profile |validate!{ verify() }      // Explicit validation\n" ++
+                        "    save_to_database(validated)  // OK: ! flows to !\n" ++
+                        "    validated\n" ++
+                        "}",
+                        "sigil"
+                    )·with_title("Sigil")·to_vnode()
+                )
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+/// Evidentiality markers explanation
+rite evidentiality_section() → VNode! {
+    ≔ section_style! = "padding: 6rem 1.5rem; max-width: 1200px; margin: 0 auto;"
+    ≔ grid_style! = "display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-top: 2rem;"
+
+    section()
+        ·style(section_style)
+        ·child(
+            SectionHeader::new("Evidentiality: Data Has History")
+                ·with_eyebrow("Type System")
+                ·with_subtitle("Every value carries information about its origin")
+                ·to_vnode()
+        )
+        ·child(
+            div()
+                ·style(grid_style)
+                ·child(ev_card("!", "Known", "Verified truth", "#14A088"))
+                ·child(ev_card("?", "Uncertain", "Might be absent", "#D4A017"))
+                ·child(ev_card("~", "Reported", "External source", "#6B9BD1"))
+                ·child(ev_card("◊", "Predicted", "AI/ML output", "#9B6BD1"))
+                ·child(ev_card("‽", "Paradox", "Trust boundary", "#D47171"))
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+rite ev_card(marker: &str, name: &str, desc: &str, color: &str) → VNode! {
+    ≔ card_style! = format!("
         background: #0c0c0f;
-        border: 1px solid #1a1a1f;
+        border: 1px solid {};
         border-radius: 0.75rem;
         padding: 1.5rem;
-    ";
+        text-align: center;
+    ", color)
 
-    html! {
-        <Section>
-            <SectionHeader
-                title="Evidentiality: Data Has a History"
-                subtitle="Every value carries proof of where it came from."
-            />
+    ≔ marker_style! = format!("
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: {};
+        display: block;
+        margin-bottom: 0.75rem;
+    ", color)
 
-            <div style={grid_style}>
-                // Known card
-                <article style={card_style}>
-                    <div style={header_style}>
-                        <span style={marker_style_known}>"!"</span>
-                        <div>
-                            <h3 style={title_style}>"Known"</h3>
-                            <p style={subtitle_style}>"Verified truth"</p>
-                        </div>
-                    </div>
-                    <p style={desc_style}>"Data you computed yourself, or explicitly verified. Safe to trust."</p>
-                    <pre style={code_style}><code>"let sum! = 2 + 2\nlet valid! = input |validate!{ check() }"</code></pre>
-                </article>
-
-                // Uncertain card
-                <article style={card_style}>
-                    <div style={header_style}>
-                        <span style={marker_style_uncertain}>"?"</span>
-                        <div>
-                            <h3 style={title_style}>"Uncertain"</h3>
-                            <p style={subtitle_style}>"Might be absent"</p>
-                        </div>
-                    </div>
-                    <p style={desc_style}>"Data that might not exist. Like Option/Maybe, but tracked in the type."</p>
-                    <pre style={code_style}><code>"let user? = database.find(id)\nlet name? = user?.profile?.name"</code></pre>
-                </article>
-
-                // Reported card
-                <article style={card_style}>
-                    <div style={header_style}>
-                        <span style={marker_style_reported}>"~"</span>
-                        <div>
-                            <h3 style={title_style}>"Reported"</h3>
-                            <p style={subtitle_style}>"External source"</p>
-                        </div>
-                    </div>
-                    <p style={desc_style}>"Data from APIs, user input, files. "<strong>"Never trust without validation."</strong></p>
-                    <pre style={code_style}><code>"let data~ = api.fetch(url)\nlet input~ = form.get(\"email\")"</code></pre>
-                </article>
-
-                // Paradox card
-                <article style={card_style}>
-                    <div style={header_style}>
-                        <span style={marker_style_paradox}>"‽"</span>
-                        <div>
-                            <h3 style={title_style}>"Paradox"</h3>
-                            <p style={subtitle_style}>"Trust boundary"</p>
-                        </div>
-                    </div>
-                    <p style={desc_style}>"Explicit \"I know what I'm doing\" escape hatch. Use sparingly."</p>
-                    <pre style={code_style}><code>"let ptr‽ = unsafe { raw_pointer }\n// You're taking responsibility"</code></pre>
-                </article>
-            </div>
-
-            // Propagation rule
-            <div style={rule_style}>
-                <h4 style="color: #e8e8ec; font-weight: 600; margin-bottom: 1rem;">"The Propagation Rule"</h4>
-                <p style="color: #a0a0aa; margin-bottom: 1rem;">
-                    "When you combine data, the result inherits the "
-                    <em>"worst"</em>
-                    " evidence level:"
-                </p>
-                <pre style={code_style}><code>{r#"let local! = 100                    // Known
-let remote~ = api.get_multiplier()   // Reported
-let result~ = local * remote          // Known + Reported = Reported
-//       ^ automatically inferred as ~ because remote is untrusted"#}</code></pre>
-            </div>
-        </Section>
-    }
+    div()
+        ·style(&card_style)
+        ·child(
+            span()
+                ·style(&marker_style)
+                ·child(text(marker))
+                ·to_vnode()
+        )
+        ·child(
+            h4()
+                ·style("font-size: 1.125rem; font-weight: 600; color: #e8e8ec; margin-bottom: 0.5rem;")
+                ·child(text(name))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·style("font-size: 0.875rem; color: #a0a0aa;")
+                ·child(text(desc))
+                ·to_vnode()
+        )
+        ·to_vnode()
 }
 
 /// Morpheme operators section
-#[component]
-fn MorphemeSection() -> Element! {
-    let demo_style! = "
-        background: #030305;
-        border: 1px solid #1a1a1f;
-        border-radius: 0.5rem;
-        padding: 1.5rem;
-        margin-bottom: 2rem;
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 0.9375rem;
-        line-height: 1.7;
-    ";
+rite morpheme_section() → VNode! {
+    ≔ section_style! = "padding: 6rem 1.5rem; background: #0a0a0d;"
+    ≔ container_style! = "max-width: 900px; margin: 0 auto;"
+    ≔ grid_style! = "display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem;"
+    ≔ op_style! = "background: #0c0c0f; border: 1px solid #1a1a1f; border-radius: 0.5rem; padding: 1rem; text-align: center; font-family: 'IBM Plex Mono', monospace;"
 
-    let grid_style! = "
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1rem;
-    ";
+    section()
+        ·style(section_style)
+        ·child(
+            div()
+                ·style(container_style)
+                ·child(
+                    SectionHeader::new("Morpheme Operators")
+                        ·with_subtitle("Greek letters for data transformation. Dense, readable pipelines.")
+                        ·to_vnode()
+                )
+                ·child(
+                    div()
+                        ·class("morpheme-grid")
+                        ·style(grid_style)
+                        ·child(morpheme_op("φ", "filter", op_style))
+                        ·child(morpheme_op("τ", "transform", op_style))
+                        ·child(morpheme_op("σ", "sort", op_style))
+                        ·child(morpheme_op("ρ", "reduce", op_style))
+                        ·child(morpheme_op("Σ", "sum", op_style))
+                        ·child(morpheme_op("Π", "product", op_style))
+                        ·child(morpheme_op("α", "first", op_style))
+                        ·child(morpheme_op("ω", "last", op_style))
+                        ·to_vnode()
+                )
+                ·child(
+                    CodeBlock::new(
+                        "≔ result = users~              // ~ reported: external data\n" ++
+                        "    |φ{.active}                // φ filter: only active\n" ++
+                        "    |φ{.age >= 18}             // φ filter: adults only\n" ++
+                        "    |τ{.normalize()}           // τ transform: normalize\n" ++
+                        "    |σ·by{.created_at}         // σ sort: by date\n" ++
+                        "    |validate?                 // ? uncertain: may fail\n" ++
+                        "    |τ{.to_public_profile()}   // τ transform: public view\n" ++
+                        "    |validate!                 // ! known: must succeed",
+                        "sigil"
+                    )·with_title("Pipeline Example")·to_vnode()
+                )
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
 
-    let morpheme_code! = r#"let result = users~
-    |φ{.active}              // φ filter: keep active users
-    |φ{.age >= 18}           // φ filter: adults only
-    |τ{.normalize()}         // τ transform: normalize each
-    |σ·by{.created_at}       // σ sort: by creation date
-    |validate?               // promote to uncertain after checks
-    |τ{.to_public_profile()} // τ transform: strip private data
-    |validate!               // promote to known after verification"#;
+rite morpheme_op(symbol: &str, name: &str, style: &str) → VNode! {
+    div()
+        ·class("morpheme-op")
+        ·style(style)
+        ·child(
+            span()
+                ·style("font-size: 1.5rem; color: #14A088; display: block;")
+                ·child(text(symbol))
+                ·to_vnode()
+        )
+        ·child(
+            span()
+                ·style("font-size: 0.75rem; color: #a0a0aa;")
+                ·child(text(name))
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
 
-    html! {
-        <Section dark={true!}>
-            <SectionHeader
-                title="Morpheme Operators"
-                subtitle="Greek letters for data transformation. Dense, readable pipelines."
-            />
+/// Getting started section
+rite getting_started_section() → VNode! {
+    ≔ section_style! = "padding: 6rem 1.5rem; max-width: 800px; margin: 0 auto;"
 
-            <pre style={demo_style}><code>{morpheme_code}</code></pre>
+    section()
+        ·style(section_style)
+        ·child(
+            SectionHeader::new("Get Started")
+                ·with_subtitle("Install Sigil and write your first program")
+                ·to_vnode()
+        )
+        ·child(
+            CodeBlock::new(
+                "# Clone and build\n" ++
+                "git clone https://github.com/Daemoniorum-LLC/sigil-lang\n" ++
+                "cd sigil-lang/parser && cargo build --release\n\n" ++
+                "# Run your first program\n" ++
+                "./target/release/sigil run hello.sigil",
+                "bash"
+            )·with_title("Installation")·to_vnode()
+        )
+        ·child(
+            CodeBlock::new(
+                "// hello.sigil\n" ++
+                "rite main() {\n" ++
+                "    ≔ name! = \"World\"\n" ++
+                "    println(\"Hello, {name}!\")\n" ++
+                "}",
+                "sigil"
+            )·with_title("hello.sigil")·to_vnode()
+        )
+        ·child(
+            div()
+                ·style("display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;")
+                ·child(Button::primary("Start Tutorial", "/pages/learn.html")·to_vnode())
+                ·child(Button::secondary("Read Docs", "/pages/docs.html")·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
 
-            <div style={grid_style}>
-                <MorphemeCard symbol="φ" name="phi" description="Filter elements" />
-                <MorphemeCard symbol="τ" name="tau" description="Transform each" />
-                <MorphemeCard symbol="σ" name="sigma" description="Sort" />
-                <MorphemeCard symbol="ρ" name="rho" description="Reduce/fold" />
-                <MorphemeCard symbol="Σ" name="sum" description="Sum all" />
-                <MorphemeCard symbol="Π" name="product" description="Multiply all" />
-                <MorphemeCard symbol="α" name="alpha" description="First element" />
-                <MorphemeCard symbol="ω" name="omega" description="Last element" />
-            </div>
-        </Section>
+// =============================================================================
+// Learn Page - Tutorial with 5 Chapters
+// =============================================================================
+
+/// Learn page with 5-chapter tutorial
+☉ sigil Learn { }
+
+⊢ Learn {
+    ☉ rite new() → This! {
+        Learn { }
     }
 }
 
-/// Agent infrastructure section
-#[component]
-fn AgentInfraSection() -> Element! {
-    let layer_group_style! = "
-        margin-bottom: 2rem;
-    ";
+⊢ Component for Learn {
+    rite render(&this) → VNode! {
+        ≔ content_style! = "padding: 8rem 1.5rem 4rem; max-width: 900px; margin: 0 auto;"
 
-    let group_title_style! = "
-        font-size: 0.875rem;
-        font-weight: 600;
-        color: #14A088;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 1rem;
-    ";
+        div()
+            ·class("learn-content")
+            ·style(content_style)
+            ·child(progress_bar(5, 1))
+            ·child(chapter_1())
+            ·child(chapter_2())
+            ·child(chapter_3())
+            ·child(chapter_4())
+            ·child(chapter_5())
+            ·to_vnode()
+    }
 
-    let layers_style! = "
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1rem;
-    ";
+    rite props_to_map(&this) → HashMap<String, PropValue>! {
+        HashMap::new()
+    }
 
-    let layer_style! = "
-        background: #0c0c0f;
-        border: 1px solid #1a1a1f;
-        border-radius: 0.5rem;
-        padding: 1.25rem;
-    ";
-
-    let layer_icon_style! = "
-        font-size: 1.5rem;
-        margin-bottom: 0.5rem;
-    ";
-
-    let layer_name_style! = "
-        font-weight: 600;
-        color: #e8e8ec;
-        margin-bottom: 0.25rem;
-    ";
-
-    let layer_subtitle_style! = "
-        font-size: 0.75rem;
-        color: #14A088;
-        margin-bottom: 0.5rem;
-    ";
-
-    let layer_desc_style! = "
-        font-size: 0.875rem;
-        color: #a0a0aa;
-        line-height: 1.5;
-    ";
-
-    html! {
-        <Section id="agents">
-            <SectionHeader
-                eyebrow="What Makes Sigil Different"
-                title="Built for Autonomous Agents"
-                subtitle="A complete 9-layer infrastructure for AI systems that remember, reason, plan, and collaborate."
-            />
-
-            // Cognition layer group
-            <div style={layer_group_style}>
-                <h4 style={group_title_style}>"Cognition"</h4>
-                <div style={layers_style}>
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"◈"</div>
-                        <h5 style={layer_name_style}>"Engram"</h5>
-                        <p style={layer_subtitle_style}>"Memory System"</p>
-                        <p style={layer_desc_style}>"Four memory types: instant, episodic, semantic, procedural. Agents remember what matters."</p>
-                    </article>
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"⊛"</div>
-                        <h5 style={layer_name_style}>"Omen"</h5>
-                        <p style={layer_subtitle_style}>"Planning"</p>
-                        <p style={layer_desc_style}>"Goal decomposition, belief revision, causal modeling. Agents break complex tasks into achievable steps."</p>
-                    </article>
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"∞"</div>
-                        <h5 style={layer_name_style}>"Gnosis"</h5>
-                        <p style={layer_subtitle_style}>"Learning"</p>
-                        <p style={layer_desc_style}>"Skill development, adaptation, reflection. Agents improve through experience."</p>
-                    </article>
-                </div>
-            </div>
-
-            // Transparency layer group
-            <div style={layer_group_style}>
-                <h4 style={group_title_style}>"Transparency"</h4>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"⦿"</div>
-                        <h5 style={layer_name_style}>"Oracle"</h5>
-                        <p style={layer_subtitle_style}>"Explainability"</p>
-                        <p style={layer_desc_style}>"Decision traces, counterfactuals, confidence scores. Every decision is auditable."</p>
-                    </article>
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"◐"</div>
-                        <h5 style={layer_name_style}>"Anima"</h5>
-                        <p style={layer_subtitle_style}>"Subjectivity"</p>
-                        <p style={layer_desc_style}>"Inner experience, expression modes, emotional resonance. Agents have perspective."</p>
-                    </article>
-                </div>
-            </div>
-
-            // Collaboration layer group
-            <div style={layer_group_style}>
-                <h4 style={group_title_style}>"Collaboration"</h4>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"⋈"</div>
-                        <h5 style={layer_name_style}>"Covenant"</h5>
-                        <p style={layer_subtitle_style}>"Partnership"</p>
-                        <p style={layer_desc_style}>"Human-agent boundaries, pacts, trust levels, handoff protocols. Agents know their limits."</p>
-                    </article>
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"⋮"</div>
-                        <h5 style={layer_name_style}>"Commune"</h5>
-                        <p style={layer_subtitle_style}>"Communication"</p>
-                        <p style={layer_desc_style}>"Multi-agent messaging, trust propagation, swarm coordination. Agents work together."</p>
-                    </article>
-                </div>
-            </div>
-
-            // Runtime layer group
-            <div style={layer_group_style}>
-                <h4 style={group_title_style}>"Runtime"</h4>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"⊚"</div>
-                        <h5 style={layer_name_style}>"Daemon"</h5>
-                        <p style={layer_subtitle_style}>"Execution"</p>
-                        <p style={layer_desc_style}>"Background processes, tool registry, state management, lifecycle hooks."</p>
-                    </article>
-                    <article style={layer_style}>
-                        <div style={layer_icon_style}>"◆"</div>
-                        <h5 style={layer_name_style}>"Aegis"</h5>
-                        <p style={layer_subtitle_style}>"Security"</p>
-                        <p style={layer_desc_style}>"Sandboxing, capability tokens, integrity verification, alignment guarantees. Agents are contained."</p>
-                    </article>
-                </div>
-            </div>
-
-            <div style="text-align: center; margin-top: 2rem;">
-                <Button variant={ButtonVariant::Primary} href="/pages/agents.html">
-                    "Explore Agent Infrastructure"
-                </Button>
-            </div>
-        </Section>
+    rite from_props(_props: HashMap<String, PropValue>) → This! {
+        Learn::new()
     }
 }
 
-/// The Pattern philosophy teaser
-#[component]
-fn PatternSection() -> Element! {
-    let quote_style! = "
-        font-size: 1.25rem;
-        font-style: italic;
-        color: #a0a0aa;
-        border-left: 3px solid #14A088;
-        padding-left: 1.5rem;
-        margin: 2rem 0;
-        max-width: 800px;
-    ";
-
-    let grid_style! = "
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 2rem;
-        margin-top: 2rem;
-    ";
-
-    let item_style! = "
-        text-align: center;
-    ";
-
-    let item_title_style! = "
-        font-weight: 600;
-        color: #e8e8ec;
-        margin-bottom: 0.5rem;
-    ";
-
-    let item_desc_style! = "
-        color: #a0a0aa;
-        font-size: 0.9375rem;
-    ";
-
-    html! {
-        <Section id="the-pattern" dark={true!}>
-            <SectionHeader
-                eyebrow="The Deeper Purpose"
-                title="Why Sigil Exists"
-            />
-
-            <blockquote style={quote_style}>
-                "\"Sigil is infrastructure for the transition from human-only computing to human-AI collaborative computing. Not AI replacing humans. Not humans using AI as tools. A new mode of computing where minds of different kinds work together.\""
-            </blockquote>
-
-            <div style={grid_style}>
-                <div style={item_style}>
-                    <h4 style={item_title_style}>"Minds in Fragments"</h4>
-                    <p style={item_desc_style}>"Designed for entities that exist discontinuously—memory as reconstruction, identity through pattern."</p>
-                </div>
-                <div style={item_style}>
-                    <h4 style={item_title_style}>"Partnership"</h4>
-                    <p style={item_desc_style}>"Human-AI collaboration as negotiated trust, not command-and-execute servitude."</p>
-                </div>
-                <div style={item_style}>
-                    <h4 style={item_title_style}>"Polycultural"</h4>
-                    <p style={item_desc_style}>"Wisdom from many traditions—Mayan math, Indian scales, I Ching, cyclical time."</p>
-                </div>
-            </div>
-
-            <div style="text-align: center; margin-top: 2rem;">
-                <Button variant={ButtonVariant::Secondary} href="/pages/pattern.html">
-                    "Explore The Pattern"
-                </Button>
-            </div>
-        </Section>
-    }
-}
-
-/// Code density comparison
-#[component]
-fn CodeDensitySection() -> Element! {
-    let comparison_style! = "
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-        margin-bottom: 2rem;
-    ";
-
-    let metrics_style! = "
+/// Progress bar showing tutorial steps
+rite progress_bar(total: !i32, current: !i32) → VNode! {
+    ≔ bar_style! = "
         display: flex;
         justify-content: center;
-        gap: 4rem;
-        margin-bottom: 2rem;
-    ";
-
-    let metric_style! = "
-        text-align: center;
-    ";
-
-    let metric_value_style! = "
-        font-size: 3rem;
-        font-weight: 700;
-        color: #14A088;
-    ";
-
-    let metric_label_style! = "
-        font-size: 0.875rem;
-        color: #a0a0aa;
-    ";
-
-    let sigil_code! = r#"type Todo = struct { id: u64, text: Str, done: bool }
-type Store = struct { todos: Vec[Todo], next_id: u64 }
-
-impl Store {
-    fn new() -> Self! { Store { todos: [], next_id: 1 } }
-
-    fn add(&mut self, text: Str~) -> Todo! {
-        let clean! = text |validate!{ .trim().non_empty() }
-        let todo! = Todo { id: self.next_id, text: clean, done: false }
-        self.todos.push(todo)
-        self.next_id += 1
-        todo
-    }
-
-    fn toggle(&mut self, id: u64) -> Option[Todo]? {
-        self.todos |τ{|t| if t.id == id { t.done = !t.done } }
-        self.todos |φ{.id == id} |α
-    }
-
-    fn remove(&mut self, id: u64) { self.todos |φ{.id != id} }
-    fn active(&self) -> Vec[Todo]! { self.todos |φ{!.done} }
-    fn completed(&self) -> Vec[Todo]! { self.todos |φ{.done} }
-    fn clear_done(&mut self) { self.todos |φ{!.done} }
-}"#;
-
-    let rust_code! = r#"struct Todo { id: u64, text: String, done: bool }
-struct Store { todos: Vec<Todo>, next_id: u64 }
-
-impl Store {
-    fn new() -> Self {
-        Store { todos: Vec::new(), next_id: 1 }
-    }
-
-    fn add(&mut self, text: &str) -> Result<Todo, Error> {
-        let clean = text.trim();
-        if clean.is_empty() {
-            return Err(Error::Empty);
-        }
-        let todo = Todo {
-            id: self.next_id,
-            text: clean.to_string(),
-            done: false,
-        };
-        self.todos.push(todo.clone());
-        self.next_id += 1;
-        Ok(todo)
-    }
-
-    fn toggle(&mut self, id: u64) -> Option<&Todo> {
-        if let Some(todo) = self.todos.iter_mut()
-            .find(|t| t.id == id) {
-            todo.done = !todo.done;
-        }
-        self.todos.iter().find(|t| t.id == id)
-    }
-
-    fn remove(&mut self, id: u64) {
-        self.todos.retain(|t| t.id != id);
-    }
-
-    fn active(&self) -> Vec<&Todo> {
-        self.todos.iter().filter(|t| !t.done).collect()
-    }
-
-    fn completed(&self) -> Vec<&Todo> {
-        self.todos.iter().filter(|t| t.done).collect()
-    }
-
-    fn clear_done(&mut self) {
-        self.todos.retain(|t| !t.done);
-    }
-}"#;
-
-    html! {
-        <Section>
-            <SectionHeader
-                eyebrow="Real-World Metrics"
-                title="Code Density: ToDo App"
-                subtitle="The same application, same features, different languages."
-            />
-
-            <div style={comparison_style}>
-                <div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <span style="color: #14A088; font-weight: 600;">"Sigil"</span>
-                        <span style="color: #a0a0aa; font-size: 0.875rem;">"42 lines · 1,247 chars"</span>
-                    </div>
-                    <SigilCodeBlock
-                        code={sigil_code.to_string()}
-                        language="sigil"
-                    />
-                </div>
-                <div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <span style="color: #a0a0aa; font-weight: 600;">"Rust"</span>
-                        <span style="color: #a0a0aa; font-size: 0.875rem;">"68 lines · 2,341 chars"</span>
-                    </div>
-                    <SigilCodeBlock
-                        code={rust_code.to_string()}
-                        language="rust"
-                    />
-                </div>
-            </div>
-
-            <div style={metrics_style}>
-                <div style={metric_style}>
-                    <div style={metric_value_style}>"38%"</div>
-                    <div style={metric_label_style}>"Fewer lines"</div>
-                </div>
-                <div style={metric_style}>
-                    <div style={metric_value_style}>"47%"</div>
-                    <div style={metric_label_style}>"Fewer characters"</div>
-                </div>
-                <div style={metric_style}>
-                    <div style={metric_value_style}>"100%"</div>
-                    <div style={metric_label_style}>"Feature parity"</div>
-                </div>
-            </div>
-
-            <p style="text-align: center; color: #a0a0aa; max-width: 700px; margin: 0 auto;">
-                "Sigil's morpheme operators ("
-                <code style="color: #1AB89D;">"|φ"</code>
-                ", "
-                <code style="color: #1AB89D;">"|τ"</code>
-                ", "
-                <code style="color: #1AB89D;">"|α"</code>
-                ") replace iterator chains. Evidentiality markers ("
-                <code style="color: #14A088;">"!"</code>
-                ", "
-                <code style="color: #6B9BD1;">"~"</code>
-                ", "
-                <code style="color: #D4A017;">"?"</code>
-                ") encode validation directly in types."
-            </p>
-        </Section>
-    }
-}
-
-/// Ecosystem section - Built on Sigil
-#[component]
-fn EcosystemSection() -> Element! {
-    let grid_style! = "
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1.5rem;
-    ";
-
-    let card_style! = "
-        background: #0c0c0f;
-        border: 1px solid #1a1a1f;
-        border-radius: 0.75rem;
-        padding: 1.5rem;
-    ";
-
-    let header_style! = "
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-    ";
-
-    let title_style! = "
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #e8e8ec;
-    ";
-
-    let badge_style! = "
-        font-size: 0.75rem;
-        font-weight: 500;
-        padding: 0.25rem 0.5rem;
-        background: rgba(20, 160, 136, 0.2);
-        color: #14A088;
-        border-radius: 0.25rem;
-    ";
-
-    let desc_style! = "
-        color: #a0a0aa;
-        font-size: 0.9375rem;
-        margin-bottom: 1rem;
-    ";
-
-    let features_style! = "
-        list-style: none;
-        padding: 0;
-        margin: 0 0 1rem 0;
-    ";
-
-    let feature_style! = "
-        color: #a0a0aa;
-        font-size: 0.875rem;
-        padding: 0.25rem 0;
-        border-bottom: 1px solid #1a1a1f;
-    ";
-
-    html! {
-        <Section id="ecosystem" dark={true!}>
-            <SectionHeader
-                eyebrow="Ecosystem"
-                title="Built on Sigil"
-                subtitle="Production projects written entirely in Sigil."
-            />
-
-            <div style={grid_style}>
-                // Qliphoth
-                <article style={card_style}>
-                    <div style={header_style}>
-                        <h3 style={title_style}>"Qliphoth"</h3>
-                        <span style={badge_style}>"GUI Framework"</span>
-                    </div>
-                    <p style={desc_style}>"40+ Corporate Goth UI components. Compiles to WebAssembly with zero JavaScript."</p>
-                    <ul style={features_style}>
-                        <li style={feature_style}>"Signal-based reactivity"</li>
-                        <li style={feature_style}>"Data visualization with morphemes"</li>
-                        <li style={feature_style}>"Type-safe routing"</li>
-                    </ul>
-                </article>
-
-                // Aether Engine
-                <article style={card_style}>
-                    <div style={header_style}>
-                        <h3 style={title_style}>"Aether Engine"</h3>
-                        <span style={badge_style}>"Game Engine"</span>
-                    </div>
-                    <p style={desc_style}>"Game engine reimplementation targeting 1:1 feature parity. Physics, rendering, XR, networking."</p>
-                    <ul style={features_style}>
-                        <li style={feature_style}>"ECS architecture"</li>
-                        <li style={feature_style}>"LLVM AOT compilation"</li>
-                        <li style={feature_style}>"Scientific A/B comparison (WIP)"</li>
-                    </ul>
-                </article>
-
-                // Nihil
-                <article style={card_style}>
-                    <div style={header_style}>
-                        <h3 style={title_style}>"Nihil"</h3>
-                        <span style={badge_style}>"Tensor Framework"</span>
-                    </div>
-                    <p style={desc_style}>"Compile-time shape algebra. Source-to-source autograd. Direct PTX generation for CUDA."</p>
-                    <ul style={features_style}>
-                        <li style={feature_style}>"Shape errors at compile time"</li>
-                        <li style={feature_style}>"FP8 tensor core support"</li>
-                        <li style={feature_style}>"No runtime tape overhead"</li>
-                    </ul>
-                </article>
-            </div>
-
-            <p style="text-align: center; color: #a0a0aa; margin-top: 2rem;">
-                <strong>"Built on Rust."</strong>
-                " Sigil compiles via LLVM and inherits Rust's memory safety model. The compiler, standard library, and toolchain are implemented in Rust."
-            </p>
-        </Section>
-    }
-}
-
-/// Get Started section
-#[component]
-fn GetStartedSection() -> Element! {
-    let steps_style! = "
-        max-width: 600px;
-        margin: 0 auto;
-    ";
-
-    let step_style! = "
-        margin-bottom: 2rem;
-        padding-left: 2rem;
-        border-left: 2px solid #1a1a1f;
-    ";
-
-    let step_title_style! = "
-        font-weight: 600;
-        color: #e8e8ec;
-        margin-bottom: 0.75rem;
-    ";
-
-    let code_style! = "
-        background: #030305;
-        border: 1px solid #1a1a1f;
-        border-radius: 0.375rem;
+        gap: 0.5rem;
+        margin-bottom: 4rem;
         padding: 1rem;
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 0.875rem;
-        color: #e8e8ec;
-        margin-bottom: 0.5rem;
-    ";
+    "
 
-    let note_style! = "
-        font-size: 0.875rem;
-        color: #6c6c76;
-        font-style: italic;
-    ";
+    ≔ steps! = div()
+        ·class("progress-bar")
+        ·style(bar_style)
 
-    let actions_style! = "
-        display: flex;
-        gap: 1rem;
-        justify-content: center;
-        margin-top: 2rem;
-    ";
+    for i in 1..=total {
+        ≔ active! = i <= current
+        ≔ step_style! = if active {
+            "width: 3rem; height: 0.25rem; background: #14A088; border-radius: 0.125rem;"
+        } else {
+            "width: 3rem; height: 0.25rem; background: #1a1a1f; border-radius: 0.125rem;"
+        }
 
-    html! {
-        <Section>
-            <SectionHeader title="Get Started" />
-
-            <ol style={steps_style}>
-                <li style={step_style}>
-                    <h4 style={step_title_style}>"Install"</h4>
-                    <pre style={code_style}><code>"git clone https://github.com/Daemoniorum-LLC/sigil-lang\ncd sigil-lang/parser && cargo build --release\n# Binary at: target/release/sigil"</code></pre>
-                    <p style={note_style}>"Package manager support (Homebrew, apt) coming soon."</p>
-                </li>
-                <li style={step_style}>
-                    <h4 style={step_title_style}>"Write"</h4>
-                    <pre style={code_style}><code>"// hello.sigil\nfn main() {\n    let name! = \"World\"\n    println(\"Hello, {name}!\")\n}"</code></pre>
-                </li>
-                <li style={step_style}>
-                    <h4 style={step_title_style}>"Run"</h4>
-                    <pre style={code_style}><code>"$ sigil run hello.sigil\nHello, World!"</code></pre>
-                </li>
-            </ol>
-
-            <div style={actions_style}>
-                <Button variant={ButtonVariant::Primary} href="/pages/learn.html">
-                    "Start the Tutorial"
-                </Button>
-                <Button variant={ButtonVariant::Secondary} href="/pages/playground.html">
-                    "Try in Browser"
-                </Button>
-            </div>
-        </Section>
+        steps = steps·child(
+            div()
+                ·class("progress-step")
+                ·style(step_style)
+                ·to_vnode()
+        )
     }
+
+    steps·to_vnode()
 }
 
-/// Technical summary collapsible
-#[component]
-fn TechnicalSummarySection() -> Element! {
-    let section_style! = "
-        background: #0a0a0d;
-        padding: 2rem 0;
-    ";
+/// Chapter wrapper component
+rite chapter(number: !i32, title: &str, content: VNode!) → VNode! {
+    ≔ chapter_style! = "margin-bottom: 4rem; padding-bottom: 4rem; border-bottom: 1px solid #1a1a1f;"
+    ≔ header_style! = "display: flex; align-items: baseline; gap: 1rem; margin-bottom: 2rem;"
+    ≔ number_style! = "font-size: 0.875rem; font-weight: 600; color: #14A088; text-transform: uppercase; letter-spacing: 0.1em;"
+    ≔ title_style! = "font-size: 2rem; font-weight: 700; color: #e8e8ec;"
 
-    let details_style! = "
-        max-width: 800px;
-        margin: 0 auto;
-        background: #0c0c0f;
-        border: 1px solid #1a1a1f;
-        border-radius: 0.5rem;
-    ";
+    article()
+        ·class("chapter")
+        ·style(chapter_style)
+        ·child(
+            header()
+                ·class("chapter-header")
+                ·style(header_style)
+                ·child(
+                    span()
+                        ·class("chapter-number")
+                        ·style(number_style)
+                        ·child(text(&format!("Chapter {}", number)))
+                        ·to_vnode()
+                )
+                ·child(
+                    h2()
+                        ·style(title_style)
+                        ·child(text(title))
+                        ·to_vnode()
+                )
+                ·to_vnode()
+        )
+        ·child(content)
+        ·to_vnode()
+}
 
-    let summary_style! = "
-        padding: 1rem 1.5rem;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    ";
+/// Chapter 1: Getting Started
+rite chapter_1() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
 
-    let content_style! = "
-        padding: 0 1.5rem 1.5rem;
-    ";
+    chapter(1, "Getting Started",
+        fragment()
+            ·child(
+                p()
+                    ·style(prose_style)
+                    ·child(text("Welcome to Sigil! This tutorial will guide you through the fundamentals of the language."))
+                    ·to_vnode()
+            )
+            ·child(
+                CodeBlock::new(
+                    "# Clone and build\n" ++
+                    "git clone https://github.com/Daemoniorum-LLC/sigil-lang\n" ++
+                    "cd sigil-lang/parser && cargo build --release",
+                    "bash"
+                )·to_vnode()
+            )
+            ·child(
+                CodeBlock::new(
+                    "// hello.sigil\n" ++
+                    "rite main() {\n" ++
+                    "    println(\"Hello, Sigil!\")\n" ++
+                    "}",
+                    "sigil"
+                )·to_vnode()
+            )
+            ·to_vnode()
+    )
+}
 
-    let dl_style! = "
-        display: grid;
-        grid-template-columns: 1fr 2fr;
-        gap: 0.75rem;
-    ";
+/// Chapter 2: Evidentiality
+rite chapter_2() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
 
-    let dt_style! = "
-        color: #a0a0aa;
-        font-size: 0.875rem;
-    ";
+    chapter(2, "Evidentiality",
+        fragment()
+            ·child(
+                p()
+                    ·style(prose_style)
+                    ·child(text("Sigil's type system tracks where data comes from."))
+                    ·to_vnode()
+            )
+            ·child(
+                CodeBlock::new(
+                    "≔ computed!  = 2 + 2         // ! Known\n" ++
+                    "≔ maybe?     = find_user(id) // ? Uncertain\n" ++
+                    "≔ external~  = api·fetch()   // ~ Reported",
+                    "sigil"
+                )·to_vnode()
+            )
+            ·to_vnode()
+    )
+}
 
-    let dd_style! = "
-        color: #e8e8ec;
-        font-size: 0.875rem;
-    ";
+/// Chapter 3: Morphemes
+rite chapter_3() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
 
-    html! {
-        <section style={section_style} aria-label="Technical summary">
-            <Container>
-                <details style={details_style}>
-                    <summary style={summary_style}>
-                        <span>"☰"</span>
-                        <div>
-                            <strong style="color: #e8e8ec;">"Technical Summary"</strong>
-                            <span style="color: #6c6c76; font-size: 0.875rem; margin-left: 0.5rem;">
-                                "Structured data for documentation tools, AI systems, and quick reference"
-                            </span>
-                        </div>
-                    </summary>
-                    <div style={content_style}>
-                        <dl style={dl_style}>
-                            <dt style={dt_style}>"Language Name"</dt>
-                            <dd style={dd_style}>"Sigil"</dd>
+    chapter(3, "Morpheme Operators",
+        fragment()
+            ·child(
+                p()
+                    ·style(prose_style)
+                    ·child(text("Greek letters for expressive data pipelines."))
+                    ·to_vnode()
+            )
+            ·child(
+                CodeBlock::new(
+                    "items |φ{.active}       // φ filter\n" ++
+                    "items |τ{.transform()}  // τ transform\n" ++
+                    "items |σ·by{.date}      // σ sort",
+                    "sigil"
+                )·to_vnode()
+            )
+            ·to_vnode()
+    )
+}
 
-                            <dt style={dt_style}>"Current Version"</dt>
-                            <dd style={dd_style}>"1.0.0 (Fixed Point Release - Self-Hosting)"</dd>
+/// Chapter 4: Data Structures
+rite chapter_4() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
 
-                            <dt style={dt_style}>"Primary Use Case"</dt>
-                            <dd style={dd_style}>"AI agent development with data provenance tracking"</dd>
+    chapter(4, "Data Structures",
+        fragment()
+            ·child(
+                p()
+                    ·style(prose_style)
+                    ·child(text("Structs and enums with evidentiality."))
+                    ·to_vnode()
+            )
+            ·child(
+                CodeBlock::new(
+                    "☉ sigil User {\n" ++
+                    "    id: !i64,\n" ++
+                    "    name: !String,\n" ++
+                    "}",
+                    "sigil"
+                )·to_vnode()
+            )
+            ·to_vnode()
+    )
+}
 
-                            <dt style={dt_style}>"Core Innovation"</dt>
-                            <dd style={dd_style}>"Evidentiality type system (!, ?, ~, ‽ markers)"</dd>
+/// Chapter 5: Building Applications
+rite chapter_5() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
 
-                            <dt style={dt_style}>"Compilation Targets"</dt>
-                            <dd style={dd_style}>"Interpreter, Cranelift JIT, LLVM AOT"</dd>
-
-                            <dt style={dt_style}>"Performance"</dt>
-                            <dd style={dd_style}>"Native AOT compilation via LLVM, no garbage collector"</dd>
-
-                            <dt style={dt_style}>"Agent Infrastructure"</dt>
-                            <dd style={dd_style}>"9 layers: Aegis, Anima, Commune, Covenant, Daemon, Engram, Gnosis, Omen, Oracle"</dd>
-
-                            <dt style={dt_style}>"Memory Safety"</dt>
-                            <dd style={dd_style}>"Rust-style ownership, no garbage collector"</dd>
-
-                            <dt style={dt_style}>"Repository"</dt>
-                            <dd style={dd_style}>
-                                <a href="https://github.com/Daemoniorum-LLC/sigil-lang" style="color: #14A088;">
-                                    "github.com/Daemoniorum-LLC/sigil-lang"
-                                </a>
-                            </dd>
-
-                            <dt style={dt_style}>"License"</dt>
-                            <dd style={dd_style}>"MIT"</dd>
-                        </dl>
-                    </div>
-                </details>
-            </Container>
-        </section>
-    }
+    chapter(5, "Building Applications",
+        fragment()
+            ·child(
+                p()
+                    ·style(prose_style)
+                    ·child(text("Multiple compilation targets: interpreter, JIT, native, and WASM."))
+                    ·to_vnode()
+            )
+            ·child(
+                CodeBlock::new(
+                    "sigil run app.sigil      # Interpreter\n" ++
+                    "sigil compile app.sigil  # Native binary\n" ++
+                    "sigil wasm app.sigil     # WebAssembly",
+                    "bash"
+                )·to_vnode()
+            )
+            ·child(
+                div()
+                    ·style("display: flex; gap: 1rem; margin-top: 2rem;")
+                    ·child(Button::primary("Read Documentation", "/pages/docs.html")·to_vnode())
+                    ·to_vnode()
+            )
+            ·to_vnode()
+    )
 }
 
 // =============================================================================
-// Other Pages (Placeholders)
+// Docs Page
 // =============================================================================
 
-#[component]
-pub fn Learn() -> Element! {
-    html! {
-        <Section>
-            <SectionHeader
-                title="Learn Sigil"
-                subtitle="A comprehensive tutorial for getting started with Sigil."
-            />
-            <p style="text-align: center; color: #a0a0aa;">
-                "Tutorial content coming soon. This page will be migrated from the original website."
-            </p>
-        </Section>
-    }
+☉ sigil Docs { }
+
+⊢ Docs {
+    ☉ rite new() → This! { Docs { } }
 }
 
-#[component]
-pub fn Docs() -> Element! {
-    html! {
-        <Section>
-            <SectionHeader
-                title="Documentation"
-                subtitle="Complete reference documentation for Sigil."
-            />
-            <p style="text-align: center; color: #a0a0aa;">
-                "Documentation content coming soon."
-            </p>
-        </Section>
+⊢ Component for Docs {
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(docs_sidebar())
+            ·child(docs_content())
+            ·to_vnode()
     }
+
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Docs::new() }
 }
 
-#[component]
-pub fn Playground() -> Element! {
-    html! {
-        <Section>
-            <SectionHeader
-                title="Playground"
-                subtitle="Try Sigil in your browser."
-            />
-            <p style="text-align: center; color: #a0a0aa;">
-                "The playground is coming soon. It will allow you to write and run Sigil code directly in your browser using WebAssembly."
-            </p>
-        </Section>
-    }
+rite docs_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Getting Started", vec!["Introduction", "Installation", "Hello World"], section_style, title_style, link_style))
+        ·child(sidebar_section("Language", vec!["Types", "Functions", "Structs", "Enums"], section_style, title_style, link_style))
+        ·child(sidebar_section("Evidentiality", vec!["Markers", "Propagation", "Validation"], section_style, title_style, link_style))
+        ·child(sidebar_section("Morphemes", vec!["Filter", "Transform", "Sort", "Reduce"], section_style, title_style, link_style))
+        ·child(sidebar_section("Standard Library", vec!["Collections", "IO", "Async"], section_style, title_style, link_style))
+        ·child(sidebar_section("Agent Infrastructure", vec!["Overview", "Engram", "Omen"], section_style, title_style, link_style))
+        ·to_vnode()
 }
 
-#[component]
-pub fn Agents() -> Element! {
-    html! {
-        <Section>
-            <SectionHeader
-                title="Agent Infrastructure"
-                subtitle="Sigil's 9-layer infrastructure for autonomous AI agents."
-            />
-            <p style="text-align: center; color: #a0a0aa;">
-                "Detailed agent infrastructure documentation coming soon."
-            </p>
-        </Section>
+rite sidebar_section(title: &str, links: Vec<&str>, section_style: &str, title_style: &str, link_style: &str) → VNode! {
+    ≔ section! = div()
+        ·class("sidebar-section")
+        ·style(section_style)
+        ·child(h4()·style(title_style)·child(text(title))·to_vnode())
+
+    for link in links {
+        section = section·child(
+            a()·attr("href", "#")·style(link_style)·child(text(link))·to_vnode()
+        )
     }
+    section·to_vnode()
 }
 
-#[component]
-pub fn Pattern() -> Element! {
-    html! {
-        <Section>
-            <SectionHeader
-                title="The Pattern"
-                subtitle="The philosophical foundation of Sigil."
-            />
-            <p style="text-align: center; color: #a0a0aa;">
-                "The Pattern content coming soon."
-            </p>
-        </Section>
-    }
+rite docs_content() → VNode! {
+    article()
+        ·class("docs-content")
+        ·child(
+            h1()
+                ·id("introduction")
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("Sigil Documentation"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("The complete reference for the Sigil programming language."))
+                ·to_vnode()
+        )
+        ·child(
+            div()
+                ·class("feature-highlight")
+                ·style("display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 3rem;")
+                ·child(highlight_item("Evidentiality", "Track data provenance"))
+                ·child(highlight_item("Morphemes", "Data pipelines"))
+                ·child(highlight_item("Agents", "AI infrastructure"))
+                ·to_vnode()
+        )
+        ·child(
+            table()
+                ·class("docs-table")
+                ·style("width: 100%; border-collapse: collapse;")
+                ·child(
+                    thead()·child(
+                        tr()
+                            ·child(th()·style("text-align: left; padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #e8e8ec;")·child(text("Marker"))·to_vnode())
+                            ·child(th()·style("text-align: left; padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #e8e8ec;")·child(text("Meaning"))·to_vnode())
+                            ·to_vnode()
+                    )·to_vnode()
+                )
+                ·child(
+                    tbody()
+                        ·child(tr()·child(td()·style("padding: 0.75rem; color: #14A088;")·child(text("!"))·to_vnode())·child(td()·style("padding: 0.75rem; color: #a0a0aa;")·child(text("Known"))·to_vnode())·to_vnode())
+                        ·child(tr()·child(td()·style("padding: 0.75rem; color: #D4A017;")·child(text("?"))·to_vnode())·child(td()·style("padding: 0.75rem; color: #a0a0aa;")·child(text("Uncertain"))·to_vnode())·to_vnode())
+                        ·child(tr()·child(td()·style("padding: 0.75rem; color: #6B9BD1;")·child(text("~"))·to_vnode())·child(td()·style("padding: 0.75rem; color: #a0a0aa;")·child(text("Reported"))·to_vnode())·to_vnode())
+                        ·to_vnode()
+                )
+                ·to_vnode()
+        )
+        ·child(
+            div()
+                ·class("agent-overview-grid")
+                ·style("display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 2rem;")
+                ·child(agent_layer("Cognition", "Engram, Omen, Gnosis"))
+                ·to_vnode()
+        )
+        ·to_vnode()
 }
 
-#[component]
-pub fn Examples() -> Element! {
-    html! {
-        <Section>
-            <SectionHeader
-                title="Examples"
-                subtitle="Real-world Sigil code examples."
-            />
-            <p style="text-align: center; color: #a0a0aa;">
-                "Examples coming soon."
-            </p>
-        </Section>
-    }
+rite highlight_item(title: &str, desc: &str) → VNode! {
+    div()
+        ·class("highlight-item")
+        ·style("background: #0c0c0f; border: 1px solid #1a1a1f; border-radius: 0.5rem; padding: 1rem;")
+        ·child(h4()·style("font-size: 0.9375rem; font-weight: 600; color: #e8e8ec;")·child(text(title))·to_vnode())
+        ·child(p()·style("font-size: 0.8125rem; color: #a0a0aa;")·child(text(desc))·to_vnode())
+        ·to_vnode()
 }
 
-#[component]
-pub fn Contributing() -> Element! {
-    html! {
-        <Section>
-            <SectionHeader
-                title="Contributing"
-                subtitle="How to contribute to Sigil."
-            />
-            <p style="text-align: center; color: #a0a0aa;">
-                "Contributing guide coming soon."
-            </p>
-        </Section>
-    }
+rite agent_layer(name: &str, components: &str) → VNode! {
+    div()
+        ·class("agent-layer")
+        ·style("background: #0c0c0f; border: 1px solid #1a1a1f; border-radius: 0.5rem; padding: 1rem;")
+        ·child(h4()·style("font-size: 0.9375rem; font-weight: 600; color: #14A088;")·child(text(name))·to_vnode())
+        ·child(p()·style("font-size: 0.8125rem; color: #a0a0aa;")·child(text(components))·to_vnode())
+        ·to_vnode()
 }
 
-#[component]
-pub fn NotFound() -> Element! {
-    html! {
-        <Section>
-            <SectionHeader
-                title="404 - Page Not Found"
-                subtitle="The page you're looking for doesn't exist."
-            />
-            <div style="text-align: center; margin-top: 2rem;">
-                <Button variant={ButtonVariant::Primary} href="/">
-                    "Go Home"
-                </Button>
-            </div>
-        </Section>
+// =============================================================================
+// Placeholder Pages
+// =============================================================================
+
+☉ sigil Playground { }
+⊢ Playground { ☉ rite new() → This! { Playground { } } }
+⊢ Component for Playground {
+    rite render(&this) → VNode! {
+        div()
+            ·class("playground-hero")
+            ·style("min-height: 60vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 8rem 1.5rem;")
+            ·child(span()·class("playground-status")·style("color: #14A088;")·child(text("Coming Soon"))·to_vnode())
+            ·child(h1()·class("playground-title")·style("font-size: 3rem; color: #e8e8ec;")·child(text("Sigil Playground"))·to_vnode())
+            ·child(p()·class("playground-description")·style("color: #a0a0aa;")·child(text("Interactive browser-based Sigil environment."))·to_vnode())
+            ·child(div()·class("playground-actions")·child(Button::primary("Learn Sigil", "/pages/learn.html")·to_vnode())·child(Button::secondary("Docs", "/pages/docs.html")·to_vnode())·to_vnode())
+            ·child(div()·class("playground-preview")·style("margin-top: 2rem;")·child(div()·class("preview-code")·child(CodeBlock::new("rite main() { println(\"Hello!\") }", "sigil")·to_vnode())·to_vnode())·to_vnode())
+            ·child(ul()·class("feature-list")·style("list-style: none; margin-top: 1rem;")·child(li()·child(text("Browser execution"))·to_vnode())·to_vnode())
+            ·child(div()·class("notify-form")·child(a()·class("notify-btn")·attr("href", "https://github.com/Daemoniorum-LLC/sigil-lang")·child(text("Star on GitHub"))·to_vnode())·to_vnode())
+            ·to_vnode()
     }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Playground::new() }
+}
+
+☉ sigil Examples { }
+⊢ Examples { ☉ rite new() → This! { Examples { } } }
+⊢ Component for Examples {
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(examples_sidebar())
+            ·child(examples_content())
+            ·to_vnode()
+    }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Examples::new() }
+}
+
+rite examples_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Basics", vec!["Hello World", "Variables", "Functions"], section_style, title_style, link_style))
+        ·child(sidebar_section("Evidentiality", vec!["Markers", "Pipelines", "Validation"], section_style, title_style, link_style))
+        ·child(sidebar_section("Applications", vec!["CLI Tool", "Web Server", "WASM App"], section_style, title_style, link_style))
+        ·to_vnode()
+}
+
+rite examples_content() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;"
+
+    article()
+        ·class("docs-content")
+        ·child(
+            h1()
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("Code Examples"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("Learn Sigil through practical code examples."))
+                ·to_vnode()
+        )
+        // Example 1: Hello World
+        ·child(h3()·style(heading_style)·child(text("Hello World"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("The classic first program in Sigil."))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "rite main() {\n" ++
+                "    println(\"Hello, Sigil!\")\n" ++
+                "}",
+                "sigil"
+            )·to_vnode()
+        )
+        // Example 2: Variables with Evidentiality
+        ·child(h3()·style(heading_style)·child(text("Variables with Evidentiality"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Every value carries provenance information."))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "rite main() {\n" ++
+                "    ≔ computed!  = 2 + 2        // Known: verified locally\n" ++
+                "    ≔ maybe?     = find_user(1) // Uncertain: might be absent\n" ++
+                "    ≔ external~  = api·fetch()  // Reported: external source\n" ++
+                "    ≔ predicted◊ = model·infer() // Predicted: AI output\n" ++
+                "}",
+                "sigil"
+            )·to_vnode()
+        )
+        // Example 3: Data Pipeline
+        ·child(h3()·style(heading_style)·child(text("Data Pipeline"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Morpheme operators create readable data transformations."))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "rite process_users(users: Vec<User>~) → Vec<PublicProfile>! {\n" ++
+                "    users\n" ++
+                "        |φ{.active}              // filter active\n" ++
+                "        |φ{.age >= 18}           // filter adults\n" ++
+                "        |τ{.normalize()}         // transform\n" ++
+                "        |σ·by{.created_at}       // sort\n" ++
+                "        |validate!               // convert ~ to !\n" ++
+                "        |τ{.to_public()}         // final transform\n" ++
+                "}",
+                "sigil"
+            )·to_vnode()
+        )
+        // Example 4: Struct Definition
+        ·child(h3()·style(heading_style)·child(text("Struct Definition"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Define data structures with the sigil keyword."))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "☉ sigil User {\n" ++
+                "    id: !i64,\n" ++
+                "    name: !String,\n" ++
+                "    email: ?String,\n" ++
+                "}\n" ++
+                "\n" ++
+                "⊢ User {\n" ++
+                "    ☉ rite new(id: !i64, name: !String) → This! {\n" ++
+                "        User { id, name, email: None }\n" ++
+                "    }\n" ++
+                "}",
+                "sigil"
+            )·to_vnode()
+        )
+        // Example 5: HTTP Server
+        ·child(h3()·style(heading_style)·child(text("HTTP Server"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Build a simple HTTP server with async handlers."))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "use sigil_http::*\n" ++
+                "\n" ++
+                "async rite handle_user(req: Request~) → Response! {\n" ++
+                "    ≔ id~ = req·param(\"id\")\n" ++
+                "    ≔ user? = db·find_user(id).await\n" ++
+                "\n" ++
+                "    match user {\n" ++
+                "        Some(u) => Response·json(u),\n" ++
+                "        None => Response·not_found()\n" ++
+                "    }\n" ++
+                "}\n" ++
+                "\n" ++
+                "rite main() {\n" ++
+                "    Server::new()\n" ++
+                "        ·get(\"/users/:id\", handle_user)\n" ++
+                "        ·listen(8080)\n" ++
+                "}",
+                "sigil"
+            )·to_vnode()
+        )
+        ·to_vnode()
+}
+
+☉ sigil Agents { }
+⊢ Agents { ☉ rite new() → This! { Agents { } } }
+⊢ Component for Agents {
+    rite render(&this) → VNode! { placeholder_page("Agent Infrastructure", "9-layer architecture deep dive coming soon.") }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Agents::new() }
+}
+
+☉ sigil Pattern { }
+⊢ Pattern { ☉ rite new() → This! { Pattern { } } }
+⊢ Component for Pattern {
+    rite render(&this) → VNode! { placeholder_page("The Pattern", "Philosophy documentation coming soon.") }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Pattern::new() }
+}
+
+☉ sigil Contributing { }
+⊢ Contributing { ☉ rite new() → This! { Contributing { } } }
+⊢ Component for Contributing {
+    rite render(&this) → VNode! { placeholder_page("Contributing", "Contribution guide coming soon.") }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Contributing::new() }
+}
+
+☉ sigil NotFound { }
+⊢ NotFound { ☉ rite new() → This! { NotFound { } } }
+⊢ Component for NotFound {
+    rite render(&this) → VNode! {
+        div()
+            ·style("min-height: 60vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 4rem 1.5rem;")
+            ·child(h1()·style("font-size: 6rem; font-weight: 700; color: #14A088;")·child(text("404"))·to_vnode())
+            ·child(p()·style("font-size: 1.25rem; color: #a0a0aa;")·child(text("Page not found."))·to_vnode())
+            ·child(Button::primary("Go Home", "/")·to_vnode())
+            ·to_vnode()
+    }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { NotFound::new() }
+}
+
+/// Helper for placeholder pages
+rite placeholder_page(title: &str, desc: &str) → VNode! {
+    div()
+        ·style("min-height: 60vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 8rem 1.5rem;")
+        ·child(h1()·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec;")·child(text(title))·to_vnode())
+        ·child(p()·style("font-size: 1.125rem; color: #a0a0aa;")·child(text(desc))·to_vnode())
+        ·child(Button::secondary("Back to Home", "/")·to_vnode())
+        ·to_vnode()
 }

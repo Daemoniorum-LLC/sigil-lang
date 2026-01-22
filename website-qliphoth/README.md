@@ -2,13 +2,13 @@
 
 The official website for [sigil-lang.com](https://sigil-lang.com), written entirely in Sigil and compiled to WebAssembly.
 
-## 🎉 Fixed Point Achievement
+## Built with Qliphoth
 
-This website demonstrates the complete Sigil self-hosting story:
+This website demonstrates the Sigil web framework:
 
-1. **The Sigil compiler compiles itself** (fixed point achieved Jan 2, 2026)
-2. **This website is written in Sigil** (~270 lines) and compiles to WASM
-3. **Proof of concept**: Sigil → WebAssembly compilation works
+1. **Written entirely in Sigil** using the Qliphoth UI framework
+2. **Compiles to WebAssembly** for zero-JavaScript execution
+3. **Proof of concept**: Sigil → WASM web applications
 
 ## Current Status
 
@@ -81,7 +81,7 @@ Sigil → WebAssembly (direct)
 
 ## Technology
 
-- **Language**: Sigil 1.0.0 (Fixed Point Release)
+- **Language**: Sigil 0.3.0 (Development)
 - **Compilation**: Direct WASM generation via Rust parser
 - **Runtime**: sigil_runtime.js (14 import modules, 116 functions)
 - **Output**: 6.3 KB WASM binary

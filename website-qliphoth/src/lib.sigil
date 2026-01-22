@@ -1,71 +1,73 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Daemoniorum, LLC
+
 //! Sigil Language Website
 //!
 //! The official website for the Sigil programming language, built entirely in Sigil
-//! using the Qliphoth framework. This is proof that Sigil 1.0 and its ecosystem work.
+//! using the Qliphoth framework.
 //!
 //! ## Architecture
 //!
-//! - `pages/` - Page components for each route
-//! - `components/` - Reusable site-specific components
+//! - `pages.sigil` - Page components for each route
+//! - `components.sigil` - Reusable site-specific components
 //!
-//! ## Fixed Point Achievement
+//! ## Qliphoth Framework
 //!
-//! This website represents the culmination of the Jormungandr bootstrap:
-//! - The Sigil compiler compiles itself (fixed point)
-//! - This website is compiled by that self-hosted compiler
-//! - Qliphoth renders it to WebAssembly with zero JavaScript
+//! Built with the React-inspired Qliphoth framework:
+//! - Signal-based reactivity
+//! - Component-based architecture
+//! - Compiles to WebAssembly with zero JavaScript
 
-// Core dependencies
-pub use qliphoth_core::*;
-pub use qliphoth_ui::prelude::*;
+// Core dependencies - Qliphoth framework
+☉ use qliphoth::prelude::*
 
 // Application modules
-pub mod pages;
-pub mod components;
+☉ mod pages;
+☉ mod components;
 
-use sigil_web::prelude::*;
-use qliphoth_core::routes::{Router, Route};
-use qliphoth_ui::theme::inject_styles;
+use sigil_web::prelude::*
+use qliphoth::routes::{Router, Route}
+use qliphoth::theme::inject_styles
 
 /// Custom theme overrides for sigil-lang.com
 /// Extends Qliphoth's Corporate Goth with IBM Plex fonts
 mod theme {
-    use qliphoth_ui::tokens::*;
+    use qliphoth::tokens::*
 
     /// Sigil-lang specific colors
-    pub mod colors {
+    ☉ mod colors {
         /// Primary accent - Phthalo Green (matches Qliphoth)
-        pub const ACCENT: &str = "#14A088";
-        pub const ACCENT_LIGHT: &str = "#1AB89D";
-        pub const ACCENT_DARK: &str = "#0E6B5C";
-        pub const ACCENT_GLOW: &str = "rgba(20, 160, 136, 0.25)";
+        ☉ const ACCENT: &str = "#14A088";
+        ☉ const ACCENT_LIGHT: &str = "#1AB89D";
+        ☉ const ACCENT_DARK: &str = "#0E6B5C";
+        ☉ const ACCENT_GLOW: &str = "rgba(20, 160, 136, 0.25)";
 
         /// Evidentiality markers - WCAG AA compliant
-        pub const KNOWN: &str = "#14A088";        // ! green
-        pub const UNCERTAIN: &str = "#D4A017";    // ? gold
-        pub const REPORTED: &str = "#6B9BD1";     // ~ blue
-        pub const PARADOX: &str = "#D47171";      // ‽ red
+        ☉ const KNOWN: &str = "#14A088";        // ! green
+        ☉ const UNCERTAIN: &str = "#D4A017";    // ? gold
+        ☉ const REPORTED: &str = "#6B9BD1";     // ~ blue
+        ☉ const PARADOX: &str = "#D47171";      // ‽ red
 
         /// Backgrounds - deep gothic blacks
-        pub const BG_PRIMARY: &str = "#050507";
-        pub const BG_SECONDARY: &str = "#0a0a0d";
-        pub const BG_TERTIARY: &str = "#0f0f12";
-        pub const BG_CARD: &str = "#0c0c0f";
+        ☉ const BG_PRIMARY: &str = "#050507";
+        ☉ const BG_SECONDARY: &str = "#0a0a0d";
+        ☉ const BG_TERTIARY: &str = "#0f0f12";
+        ☉ const BG_CARD: &str = "#0c0c0f";
 
         /// Text - readable on dark
-        pub const TEXT_PRIMARY: &str = "#e8e8ec";
-        pub const TEXT_SECONDARY: &str = "#a0a0aa";
-        pub const TEXT_MUTED: &str = "#6c6c76";
+        ☉ const TEXT_PRIMARY: &str = "#e8e8ec";
+        ☉ const TEXT_SECONDARY: &str = "#a0a0aa";
+        ☉ const TEXT_MUTED: &str = "#6c6c76";
     }
 
     /// Typography - IBM Plex family
-    pub mod typography {
-        pub const FONT_SANS: &str = "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-        pub const FONT_MONO: &str = "'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', monospace";
+    ☉ mod typography {
+        ☉ const FONT_SANS: &str = "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        ☉ const FONT_MONO: &str = "'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', monospace";
     }
 
     /// Generate site-specific CSS
-    pub fn generate_site_css() -> String! {
+    ☉ rite generate_site_css() → !String {
         format!(r#"
 /* Sigil Language Website - Custom Styles */
 
@@ -166,67 +168,87 @@ code, pre, .code-block {{
 }
 
 /// Main application component
-#[component]
-pub fn App() -> Element! {
-    // Initialize theme styles
-    use_effect(|| {
-        inject_styles();
-        inject_site_styles();
-        || {}
-    });
+☉ sigil App { }
 
-    // Router with page components
-    html! {
-        <>
-            <components::AnnouncementBanner />
-            <components::Nav />
-            <main id="main-content">
-                <Router>
-                    <Route path="/" component={pages::Home} />
-                    <Route path="/pages/learn.html" component={pages::Learn} />
-                    <Route path="/pages/docs.html" component={pages::Docs} />
-                    <Route path="/pages/playground.html" component={pages::Playground} />
-                    <Route path="/pages/agents.html" component={pages::Agents} />
-                    <Route path="/pages/pattern.html" component={pages::Pattern} />
-                    <Route path="/pages/examples.html" component={pages::Examples} />
-                    <Route path="/pages/contributing.html" component={pages::Contributing} />
-                    <Route path="*" component={pages::NotFound} />
-                </Router>
-            </main>
-            <components::Footer />
-        </>
+⊢ App {
+    ☉ rite new() → This! {
+        App { }
+    }
+}
+
+⊢ Component for App {
+    rite render(&this) → VNode! {
+        // Initialize theme styles on first render
+        use_effect(|| {
+            inject_styles()
+            inject_site_styles()
+            || { }
+        })
+
+        // Router with page components
+        fragment()
+            ·child(components::AnnouncementBanner::new()·to_vnode())
+            ·child(components::Nav::new()·to_vnode())
+            ·child(
+                main_elem()
+                    ·id("main-content")
+                    ·child(
+                        Router::new()
+                            ·route("/", pages::Home::new())
+                            ·route("/pages/learn.html", pages::Learn::new())
+                            ·route("/pages/docs.html", pages::Docs::new())
+                            ·route("/pages/playground.html", pages::Playground::new())
+                            ·route("/pages/agents.html", pages::Agents::new())
+                            ·route("/pages/pattern.html", pages::Pattern::new())
+                            ·route("/pages/examples.html", pages::Examples::new())
+                            ·route("/pages/contributing.html", pages::Contributing::new())
+                            ·route("*", pages::NotFound::new())
+                            ·to_vnode()
+                    )
+                    ·to_vnode()
+            )
+            ·child(components::Footer::new()·to_vnode())
+            ·to_vnode()
+    }
+
+    rite props_to_map(&this) → HashMap<String, PropValue>! {
+        HashMap::new()
+    }
+
+    rite from_props(_props: HashMap<String, PropValue>) → This! {
+        App::new()
     }
 }
 
 /// Inject site-specific styles into the DOM
-fn inject_site_styles() {
-    let document! = web_sys·window()
+rite inject_site_styles() {
+    ≔ document! = web_sys·window()
         ·and_then(|w| w·document())
-        ·expect("No document");
+        ·expect("No document")
 
-    let style! = document·create_element("style")·unwrap();
-    style·set_text_content(Some(&theme::generate_site_css()));
-    style·set_attribute("data-sigil-lang", "theme")·ok();
+    ≔ style! = document·create_element("style")·unwrap()
+    style·set_text_content(Some(&theme::generate_site_css()))
+    style·set_attribute("data-sigil-lang", "theme")·ok()
 
     document·head()
         ·expect("No head")
         ·append_child(&style)
-        ·ok();
+        ·ok()
 }
 
 /// WASM entry point
 #[wasm_bindgen(start)]
-pub fn main() {
+☉ rite main() {
     // Set panic hook for better error messages
-    console_error_panic_hook·set_once();
+    console_error_panic_hook·set_once()
 
     // Mount the application
-    sigil_web·mount[App](
+    sigil_web·mount::<App>(
         web_sys·window()
             ·unwrap()
             ·document()
             ·unwrap()
             ·get_element_by_id("app")
             ·unwrap()
-    );
+    )
 }
