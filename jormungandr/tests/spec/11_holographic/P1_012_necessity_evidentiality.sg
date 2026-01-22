@@ -1,0 +1,27 @@
+// Test: Necessity operator evidentiality promotion
+// Spec: 11-HOLOGRAPHIC.md § 11.2.3 (Gap Analysis) - IMPLEMENTATION MATCHES
+// Priority: P1 - Specification Compliance
+//
+// The □ operator should verify and promote to Known evidentiality.
+// This test verifies the evidentiality promotion works correctly.
+
+rite main() {
+    // Test 1: Array verification with necessity operator
+    ≔ values = [1, 2, 3];
+    ≔ verified! = values|□;  // Should verify and wrap in Known evidentiality
+
+    // The result should be the array
+    // AND should carry Known (!) evidentiality
+    println("verified");
+
+    // Test 2: Option verification
+    ≔ opt? = Some(42);
+    ≔ extracted! = opt?|□;  // Should verify and promote to Known
+    println(extracted!);
+
+    // Test 3: Empty should fail verification
+    ≔ empty: Vec<i32> = vec![];
+    // This should error: necessity verification failed
+    // ≔ bad = empty|□;
+    println("done");
+}
