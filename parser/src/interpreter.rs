@@ -4113,10 +4113,65 @@ impl Interpreter {
                     Ok(Value::Array(Rc::new(RefCell::new(result))))
                 }
                 BinOp::Convolve => {
-                    // Convolution/merge of two arrays: concatenate them (shard merging)
-                    let mut result = a.borrow().clone();
-                    result.extend(b.borrow().iter().cloned());
-                    Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    // Convolution/merge of two arrays
+                    // Per spec 11-HOLOGRAPHIC.md § 2.4:
+                    // For Shard arrays: deduplicate by index field
+                    // For other arrays: concatenate
+
+                    let arr_a = a.borrow();
+                    let arr_b = b.borrow();
+
+                    // Check if this is an array of Shard structs
+                    let is_shard_array = arr_a.first().map_or(false, |v| {
+                        matches!(v, Value::Struct { name, .. } if name == "Shard")
+                    });
+
+                    if is_shard_array {
+                        // Deduplicate by index field
+                        let mut seen_indices: std::collections::HashSet<i64> =
+                            std::collections::HashSet::new();
+                        let mut result = Vec::new();
+
+                        // Add shards from first array, tracking indices
+                        for shard in arr_a.iter() {
+                            if let Value::Struct { fields, .. } = shard {
+                                if let Some(Value::Int(idx)) = fields.borrow().get("index") {
+                                    if seen_indices.insert(*idx) {
+                                        result.push(shard.clone());
+                                    }
+                                } else {
+                                    // No index field or non-int, just add it
+                                    result.push(shard.clone());
+                                }
+                            } else {
+                                result.push(shard.clone());
+                            }
+                        }
+
+                        // Add shards from second array, skipping duplicates
+                        for shard in arr_b.iter() {
+                            if let Value::Struct { fields, .. } = shard {
+                                if let Some(Value::Int(idx)) = fields.borrow().get("index") {
+                                    if seen_indices.insert(*idx) {
+                                        result.push(shard.clone());
+                                    }
+                                    // Skip if index already seen (duplicate)
+                                } else {
+                                    // No index field, add it
+                                    result.push(shard.clone());
+                                }
+                            } else {
+                                result.push(shard.clone());
+                            }
+                        }
+
+                        Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    } else {
+                        // Non-shard arrays: simple concatenation
+                        let mut result = arr_a.clone();
+                        result.extend(arr_b.iter().cloned());
+                        Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    }
                 }
                 BinOp::Eq => Ok(Value::Bool(Rc::ptr_eq(&a, &b))),
                 BinOp::Ne => Ok(Value::Bool(!Rc::ptr_eq(&a, &b))),
@@ -12895,6 +12950,8 @@ impl Interpreter {
                         // === Quantum-Holographic pipe methods ===
 
                         // |scatter(n, k) - scatter into n shards, k needed for recovery
+                        // Implements Reed-Solomon-like encoding using polynomial evaluation
+                        // Per spec 11-HOLOGRAPHIC.md § 2.1-2.3
                         if name.name == "scatter" {
                             if arg_values.len() >= 2 {
                                 let n = match &arg_values[0] {
@@ -12905,22 +12962,50 @@ impl Interpreter {
                                     Value::Int(k) => *k as usize,
                                     _ => 4,
                                 };
-                                // Create n shards
-                                let inner_value = match &value {
-                                    Value::Struct { fields, .. } => fields
-                                        .borrow()
-                                        .get("value")
-                                        .cloned()
-                                        .unwrap_or(value.clone()),
-                                    _ => value.clone(),
+                                // Extract the integer value to encode
+                                let original_value: i64 = match &value {
+                                    Value::Int(v) => *v,
+                                    Value::Struct { fields, .. } => {
+                                        match fields.borrow().get("value") {
+                                            Some(Value::Int(v)) => *v,
+                                            _ => 0,
+                                        }
+                                    }
+                                    _ => 0,
                                 };
+
+                                // Reed-Solomon encoding: create polynomial of degree k-1
+                                // where p(0) = original_value
+                                // Coefficients: [original_value, c1, c2, ..., c_{k-1}]
+                                // For simplicity, use deterministic coefficients based on value
+                                let mut coeffs: Vec<i64> = vec![original_value];
+                                for i in 1..k {
+                                    // Deterministic "random" coefficients for reproducibility
+                                    coeffs.push((original_value.wrapping_mul(17).wrapping_add(i as i64 * 31)) % 997);
+                                }
+
+                                // Evaluate polynomial at points 1, 2, ..., n
+                                // p(x) = coeffs[0] + coeffs[1]*x + coeffs[2]*x^2 + ...
+                                fn eval_poly(coeffs: &[i64], x: i64) -> i64 {
+                                    let mut result: i64 = 0;
+                                    let mut x_power: i64 = 1;
+                                    for coeff in coeffs {
+                                        result = result.wrapping_add(coeff.wrapping_mul(x_power));
+                                        x_power = x_power.wrapping_mul(x);
+                                    }
+                                    result
+                                }
+
                                 let mut shards = Vec::new();
                                 for i in 0..n {
+                                    let x = (i + 1) as i64; // Evaluate at x = 1, 2, 3, ...
+                                    let encoded_data = eval_poly(&coeffs, x);
+
                                     let mut shard_fields = std::collections::HashMap::new();
-                                    shard_fields.insert("index".to_string(), Value::Int(i as i64));
-                                    shard_fields.insert("data".to_string(), inner_value.clone());
-                                    shard_fields
-                                        .insert("_k_threshold".to_string(), Value::Int(k as i64));
+                                    shard_fields.insert("index".to_string(), Value::Int(x));
+                                    shard_fields.insert("data".to_string(), Value::Int(encoded_data));
+                                    shard_fields.insert("_k_threshold".to_string(), Value::Int(k as i64));
+                                    shard_fields.insert("_original".to_string(), Value::Int(original_value));
                                     shards.push(Value::Struct {
                                         name: "Shard".to_string(),
                                         fields: Rc::new(RefCell::new(shard_fields)),
@@ -14279,17 +14364,101 @@ impl Interpreter {
                             return Ok(Value::Int(0));
                         }
                         // Check if this is an array of Shard structs
-                        if let Some(Value::Struct { name, fields }) = arr.first() {
+                        // Per spec 11-HOLOGRAPHIC.md § 2.3:
+                        // ∀ reconstructs whole from available shards
+                        if let Some(Value::Struct { name, .. }) = arr.first() {
                             if name == "Shard" {
-                                // Extract data from first shard (reconstruction)
-                                if let Some(data) = fields.borrow().get("data") {
-                                    return Ok(data.clone());
+                                // Collect all shard data values
+                                let mut data_values: Vec<Value> = Vec::new();
+                                for shard in arr.iter() {
+                                    if let Value::Struct { fields, .. } = shard {
+                                        if let Some(data) = fields.borrow().get("data") {
+                                            data_values.push(data.clone());
+                                        }
+                                    }
                                 }
+
+                                if data_values.is_empty() {
+                                    return Ok(Value::Int(0));
+                                }
+
+                                // Collect (x, y) points from shards
+                                let mut points: Vec<(i64, i64)> = Vec::new();
+                                let mut has_index_zero = false;
+                                for shard in arr.iter() {
+                                    if let Value::Struct { fields, .. } = shard {
+                                        let fields_ref = fields.borrow();
+                                        let idx = fields_ref.get("index");
+                                        let data = fields_ref.get("data");
+                                        if let (Some(Value::Int(x)), Some(Value::Int(y))) = (idx, data) {
+                                            if *x == 0 {
+                                                has_index_zero = true;
+                                            }
+                                            points.push((*x, *y));
+                                        }
+                                    }
+                                }
+
+                                if points.is_empty() {
+                                    return Ok(Value::Int(0));
+                                }
+
+                                // Check if all data values are identical (simple scatter without RS)
+                                let first_y = points[0].1;
+                                let all_same = points.iter().all(|(_, y)| *y == first_y);
+                                if all_same {
+                                    return Ok(Value::Int(first_y));
+                                }
+
+                                // Distinguish between RS-encoded shards and manual shards:
+                                // - RS-encoded shards (from scatter) have indices 1..n (never 0)
+                                // - Manual shards may have index 0
+                                // If index 0 is present, treat as manual shards → aggregate
+                                if has_index_zero {
+                                    // Manual shards: aggregate (sum for numerics)
+                                    let mut total: i64 = 0;
+                                    for (_, y) in &points {
+                                        total += y;
+                                    }
+                                    return Ok(Value::Int(total));
+                                }
+
+                                // Reed-Solomon reconstruction via Lagrange interpolation
+                                // Per spec 11-HOLOGRAPHIC.md § 2.5:
+                                // Given k or more shards with (index, data) pairs where
+                                // data = p(index) for some polynomial p, reconstruct p(0)
+                                //
+                                // Lagrange interpolation to find p(0)
+                                // p(0) = Σᵢ yᵢ × Πⱼ≠ᵢ (xⱼ / (xⱼ - xᵢ))
+                                // Using floating point for precision, then round
+                                let mut result: f64 = 0.0;
+                                let n = points.len();
+
+                                for i in 0..n {
+                                    let (xi, yi) = points[i];
+                                    let mut basis = 1.0f64;
+
+                                    for j in 0..n {
+                                        if i != j {
+                                            let xj = points[j].0 as f64;
+                                            let xi_f = xi as f64;
+                                            // Lagrange basis: xj / (xj - xi) for evaluating at x=0
+                                            basis *= xj / (xj - xi_f);
+                                        }
+                                    }
+
+                                    result += (yi as f64) * basis;
+                                }
+
+                                // Round to nearest integer (original value was integer)
+                                return Ok(Value::Int(result.round() as i64));
                             }
                             // For Hologram structs, extract value
                             if name == "Hologram" {
-                                if let Some(value) = fields.borrow().get("value") {
-                                    return Ok(value.clone());
+                                if let Value::Struct { fields, .. } = arr.first().unwrap() {
+                                    if let Some(value) = fields.borrow().get("value") {
+                                        return Ok(value.clone());
+                                    }
                                 }
                             }
                         }
@@ -14337,15 +14506,17 @@ impl Interpreter {
 
             PipeOp::Possibility => {
                 // |◊ - possibility extraction (get approximate value)
+                // Per spec 11-HOLOGRAPHIC.md § 11.2.2:
+                // Returns approximate values with Predicted (◊) evidentiality.
                 // For arrays: returns first element (best approximation)
                 // For optionals: extracts inner value or returns default
-                match &value {
+                let extracted = match &value {
                     Value::Array(arr) => {
                         let arr = arr.borrow();
                         if arr.is_empty() {
-                            Ok(Value::Null)
+                            Value::Null
                         } else {
-                            Ok(arr[0].clone())
+                            arr[0].clone()
                         }
                     }
                     // Handle Option::Some and Option::None variants
@@ -14357,20 +14528,27 @@ impl Interpreter {
                         if variant_name == "Some" {
                             if let Some(fields) = fields {
                                 if !fields.is_empty() {
-                                    Ok(fields[0].clone())
+                                    fields[0].clone()
                                 } else {
-                                    Ok(Value::Null)
+                                    Value::Null
                                 }
                             } else {
-                                Ok(Value::Null)
+                                Value::Null
                             }
                         } else {
                             // None
-                            Ok(Value::Null)
+                            Value::Null
                         }
                     }
-                    _ => Ok(value), // Pass through non-collection types
-                }
+                    _ => value, // Pass through non-collection types
+                };
+
+                // Wrap result in Predicted evidentiality per spec
+                // This marks the result as approximate/probabilistic
+                Ok(Value::Evidential {
+                    value: Box::new(extracted),
+                    evidence: Evidence::Predicted,
+                })
             }
 
             PipeOp::Necessity => {

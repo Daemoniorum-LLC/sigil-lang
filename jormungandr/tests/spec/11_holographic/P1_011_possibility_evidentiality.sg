@@ -1,0 +1,24 @@
+// Test: Possibility operator evidentiality propagation
+// Spec: 11-HOLOGRAPHIC.md § 11.2.2 (Gap Analysis)
+// Priority: P1 - Specification Compliance
+//
+// The ◊ operator should wrap results in Predicted evidentiality.
+// This test verifies the evidentiality is correctly propagated.
+//
+// @sdd_gap Section 11.2.2 - Possibility evidentiality missing
+// @expected_behavior Result should have Predicted/◊ evidence marker
+
+rite main() {
+    // Test 1: Array extraction with possibility operator
+    ≔ values = [1, 2, 3];
+    ≔ result◊ = values|◊;  // Should extract with Predicted evidentiality
+
+    // The result should be the first element (1)
+    // AND should carry Predicted (◊) evidentiality
+    println(result◊);
+
+    // Test 2: Option extraction with possibility
+    ≔ opt? = Some(42);
+    ≔ extracted◊ = opt?|◊;  // Should extract with Predicted evidentiality
+    println(extracted◊);
+}
