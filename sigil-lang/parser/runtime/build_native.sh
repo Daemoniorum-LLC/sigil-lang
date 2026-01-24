@@ -6,36 +6,95 @@
 #   ./build_native.sh test               # Build and run test
 #   ./build_native.sh <program.sg>       # Compile program with native runtime
 #
+# Supported platforms:
+#   - Linux x86_64
+#   - macOS x86_64 (Intel)
+#   - macOS ARM64 (Apple Silicon)
+#   - Windows x64 (via MinGW cross-compile)
+#
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUNTIME_S="$SCRIPT_DIR/sigil_runtime_linux_x86_64.s"
-RUNTIME_O="$SCRIPT_DIR/sigil_runtime_linux_x86_64.o"
-RUNTIME_A="$SCRIPT_DIR/libsigil_native.a"
 SIGIL="$SCRIPT_DIR/../target/release/sigil"
 
-# Detect architecture
+# Detect architecture and OS
 ARCH=$(uname -m)
-if [ "$ARCH" != "x86_64" ]; then
-    echo "Error: Native runtime only supports x86_64 (got $ARCH)"
-    exit 1
-fi
-
-# Detect OS
 OS=$(uname -s)
-if [ "$OS" != "Linux" ]; then
-    echo "Error: Native runtime only supports Linux (got $OS)"
-    exit 1
-fi
+
+# Map architecture names
+case "$ARCH" in
+    x86_64|amd64)
+        ARCH="x86_64"
+        ;;
+    arm64|aarch64)
+        ARCH="arm64"
+        ;;
+    *)
+        echo "Error: Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+esac
+
+# Map OS names and select runtime
+case "$OS" in
+    Linux)
+        if [ "$ARCH" != "x86_64" ]; then
+            echo "Error: Linux runtime only supports x86_64 (got $ARCH)"
+            exit 1
+        fi
+        RUNTIME_S="$SCRIPT_DIR/sigil_runtime_linux_x86_64.s"
+        RUNTIME_O="$SCRIPT_DIR/sigil_runtime_linux_x86_64.o"
+        AS_CMD="as"
+        LD_CMD="ld"
+        LD_FLAGS="-nostdlib -static"
+        ;;
+    Darwin)
+        if [ "$ARCH" = "x86_64" ]; then
+            RUNTIME_S="$SCRIPT_DIR/sigil_runtime_macos_x86_64.s"
+            RUNTIME_O="$SCRIPT_DIR/sigil_runtime_macos_x86_64.o"
+        elif [ "$ARCH" = "arm64" ]; then
+            RUNTIME_S="$SCRIPT_DIR/sigil_runtime_macos_arm64.s"
+            RUNTIME_O="$SCRIPT_DIR/sigil_runtime_macos_arm64.o"
+        else
+            echo "Error: Unsupported macOS architecture: $ARCH"
+            exit 1
+        fi
+        AS_CMD="as"
+        LD_CMD="ld"
+        LD_FLAGS="-e _start -static -macos_version_min 11.0"
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        OS="Windows"
+        RUNTIME_S="$SCRIPT_DIR/sigil_runtime_windows_x64.s"
+        RUNTIME_O="$SCRIPT_DIR/sigil_runtime_windows_x64.o"
+        AS_CMD="as"
+        LD_CMD="ld"
+        LD_FLAGS="-lkernel32"
+        ;;
+    *)
+        echo "Error: Unsupported OS: $OS"
+        echo "Supported: Linux, Darwin (macOS), Windows (MinGW)"
+        exit 1
+        ;;
+esac
+
+RUNTIME_A="$SCRIPT_DIR/libsigil_native.a"
 
 echo "=== Building Sigil Native Runtime ==="
 echo "Architecture: $ARCH"
 echo "OS: $OS"
+echo "Runtime: $(basename "$RUNTIME_S")"
+
+# Check if runtime source exists
+if [ ! -f "$RUNTIME_S" ]; then
+    echo "Error: Runtime source not found: $RUNTIME_S"
+    exit 1
+fi
 
 # Assemble the runtime
 echo "Assembling runtime..."
-as -o "$RUNTIME_O" "$RUNTIME_S"
+$AS_CMD -o "$RUNTIME_O" "$RUNTIME_S"
 
 # Create static library
 echo "Creating static library..."
@@ -43,8 +102,13 @@ ar rcs "$RUNTIME_A" "$RUNTIME_O"
 
 echo "Built: $RUNTIME_A"
 
-# Test mode
+# Test mode (Linux only for now)
 if [ "$1" = "test" ]; then
+    if [ "$OS" != "Linux" ]; then
+        echo "Warning: Test mode only supported on Linux"
+        exit 0
+    fi
+
     echo ""
     echo "=== Testing Native Runtime ==="
 
@@ -154,10 +218,10 @@ if [ -n "$1" ] && [ -f "$1" ]; then
     "$SIGIL" compile "$1" -o "/tmp/${BASENAME}.o" --emit-obj
 
     # Link with native runtime
-    ld -o "$OUTDIR/$BASENAME" \
+    $LD_CMD -o "$OUTDIR/$BASENAME" \
         "/tmp/${BASENAME}.o" \
         "$RUNTIME_O" \
-        -nostdlib -static
+        $LD_FLAGS
 
     echo "Built: $OUTDIR/$BASENAME"
     echo ""
