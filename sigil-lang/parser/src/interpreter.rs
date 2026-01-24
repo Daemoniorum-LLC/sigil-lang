@@ -523,34 +523,295 @@ impl fmt::Display for Value {
     }
 }
 
-/// Runtime error
+/// Runtime error categories for better diagnostics
+#[derive(Debug, Clone)]
+pub enum RuntimeErrorKind {
+    /// Type mismatch: expected one type, got another
+    TypeMismatch {
+        expected: String,
+        actual: String,
+        context: Option<String>,
+    },
+    /// Undefined variable or function
+    Undefined {
+        name: String,
+        kind: &'static str, // "variable", "function", "type", "field", "method"
+        suggestions: Vec<String>,
+    },
+    /// Index out of bounds
+    IndexOutOfBounds {
+        index: i64,
+        length: usize,
+    },
+    /// Division by zero
+    DivisionByZero,
+    /// Invalid argument count
+    ArgumentCount {
+        expected: usize,
+        actual: usize,
+        function: String,
+    },
+    /// Immutability violation
+    ImmutableAssignment {
+        name: String,
+    },
+    /// Control flow error (break/continue/return in wrong context)
+    ControlFlow {
+        kind: &'static str,
+        context: &'static str,
+    },
+    /// Assertion failure
+    AssertionFailed {
+        message: Option<String>,
+    },
+    /// Panic
+    Panic {
+        message: String,
+    },
+    /// Generic error with message (for backward compatibility)
+    Generic {
+        message: String,
+    },
+}
+
+/// Runtime error with rich context
 #[derive(Debug)]
 pub struct RuntimeError {
-    pub message: String,
+    pub kind: RuntimeErrorKind,
     pub span: Option<Span>,
+    /// Optional help message with suggestions
+    pub help: Option<String>,
+    /// Legacy message field for backward compatibility
+    pub message: String,
 }
 
 impl RuntimeError {
+    /// Create error from message (backward compatible)
     pub fn new(message: impl Into<String>) -> Self {
+        let msg = message.into();
         Self {
-            message: message.into(),
+            kind: RuntimeErrorKind::Generic { message: msg.clone() },
             span: None,
+            help: None,
+            message: msg,
         }
     }
 
+    /// Create error with span
     pub fn with_span(message: impl Into<String>, span: Span) -> Self {
+        let msg = message.into();
         Self {
-            message: message.into(),
+            kind: RuntimeErrorKind::Generic { message: msg.clone() },
             span: Some(span),
+            help: None,
+            message: msg,
+        }
+    }
+
+    /// Create a type mismatch error
+    pub fn type_mismatch(expected: impl Into<String>, actual: impl Into<String>) -> Self {
+        let exp = expected.into();
+        let act = actual.into();
+        let msg = format!("Type mismatch: expected `{}`, got `{}`", exp, act);
+        Self {
+            kind: RuntimeErrorKind::TypeMismatch {
+                expected: exp,
+                actual: act,
+                context: None,
+            },
+            span: None,
+            help: None,
+            message: msg,
+        }
+    }
+
+    /// Create an undefined variable/function error
+    pub fn undefined(name: impl Into<String>, kind: &'static str) -> Self {
+        let name_str = name.into();
+        let msg = format!("Undefined {}: `{}`", kind, name_str);
+        Self {
+            kind: RuntimeErrorKind::Undefined {
+                name: name_str,
+                kind,
+                suggestions: Vec::new(),
+            },
+            span: None,
+            help: None,
+            message: msg,
+        }
+    }
+
+    /// Create an undefined error with suggestions
+    pub fn undefined_with_suggestions(
+        name: impl Into<String>,
+        kind: &'static str,
+        suggestions: Vec<String>,
+    ) -> Self {
+        let name_str = name.into();
+        let msg = format!("Undefined {}: `{}`", kind, name_str);
+        let help = if !suggestions.is_empty() {
+            Some(format!("Did you mean: {}?", suggestions.join(", ")))
+        } else {
+            None
+        };
+        Self {
+            kind: RuntimeErrorKind::Undefined {
+                name: name_str,
+                kind,
+                suggestions,
+            },
+            span: None,
+            help,
+            message: msg,
+        }
+    }
+
+    /// Create an index out of bounds error
+    pub fn index_out_of_bounds(index: i64, length: usize) -> Self {
+        let msg = format!("Index {} out of bounds for length {}", index, length);
+        Self {
+            kind: RuntimeErrorKind::IndexOutOfBounds { index, length },
+            span: None,
+            help: Some(format!("Valid indices are 0..{}", length.saturating_sub(1))),
+            message: msg,
+        }
+    }
+
+    /// Create a division by zero error
+    pub fn division_by_zero() -> Self {
+        Self {
+            kind: RuntimeErrorKind::DivisionByZero,
+            span: None,
+            help: Some("Check divisor before dividing".to_string()),
+            message: "Division by zero".to_string(),
+        }
+    }
+
+    /// Create an argument count error
+    pub fn argument_count(expected: usize, actual: usize, function: impl Into<String>) -> Self {
+        let func = function.into();
+        let msg = format!(
+            "Function `{}` expected {} argument{}, got {}",
+            func,
+            expected,
+            if expected == 1 { "" } else { "s" },
+            actual
+        );
+        Self {
+            kind: RuntimeErrorKind::ArgumentCount {
+                expected,
+                actual,
+                function: func,
+            },
+            span: None,
+            help: None,
+            message: msg,
+        }
+    }
+
+    /// Create an immutable assignment error
+    pub fn immutable_assignment(name: impl Into<String>) -> Self {
+        let name_str = name.into();
+        let msg = format!("Cannot assign to immutable variable `{}`", name_str);
+        Self {
+            kind: RuntimeErrorKind::ImmutableAssignment { name: name_str.clone() },
+            span: None,
+            help: Some(format!("Declare with `≔ Δ {}` to make it mutable", name_str)),
+            message: msg,
+        }
+    }
+
+    /// Create a control flow error
+    pub fn control_flow(kind: &'static str, context: &'static str) -> Self {
+        let msg = format!("`{}` outside of {}", kind, context);
+        Self {
+            kind: RuntimeErrorKind::ControlFlow { kind, context },
+            span: None,
+            help: None,
+            message: msg,
+        }
+    }
+
+    /// Add span to error
+    pub fn at(mut self, span: Span) -> Self {
+        self.span = Some(span);
+        self
+    }
+
+    /// Add help message
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
+
+    /// Get the error code for documentation
+    pub fn code(&self) -> &'static str {
+        match &self.kind {
+            RuntimeErrorKind::TypeMismatch { .. } => "E001",
+            RuntimeErrorKind::Undefined { .. } => "E002",
+            RuntimeErrorKind::IndexOutOfBounds { .. } => "E003",
+            RuntimeErrorKind::DivisionByZero => "E004",
+            RuntimeErrorKind::ArgumentCount { .. } => "E005",
+            RuntimeErrorKind::ImmutableAssignment { .. } => "E006",
+            RuntimeErrorKind::ControlFlow { .. } => "E007",
+            RuntimeErrorKind::AssertionFailed { .. } => "E008",
+            RuntimeErrorKind::Panic { .. } => "E009",
+            RuntimeErrorKind::Generic { .. } => "E000",
+        }
+    }
+
+    /// Get the message string (for backward compatibility)
+    pub fn message(&self) -> String {
+        match &self.kind {
+            RuntimeErrorKind::TypeMismatch { expected, actual, context } => {
+                let base = format!("Type mismatch: expected `{}`, got `{}`", expected, actual);
+                match context {
+                    Some(ctx) => format!("{} in {}", base, ctx),
+                    None => base,
+                }
+            }
+            RuntimeErrorKind::Undefined { name, kind, .. } => {
+                format!("Undefined {}: `{}`", kind, name)
+            }
+            RuntimeErrorKind::IndexOutOfBounds { index, length } => {
+                format!("Index {} out of bounds for length {}", index, length)
+            }
+            RuntimeErrorKind::DivisionByZero => "Division by zero".to_string(),
+            RuntimeErrorKind::ArgumentCount { expected, actual, function } => {
+                format!(
+                    "Function `{}` expected {} argument{}, got {}",
+                    function,
+                    expected,
+                    if *expected == 1 { "" } else { "s" },
+                    actual
+                )
+            }
+            RuntimeErrorKind::ImmutableAssignment { name } => {
+                format!("Cannot assign to immutable variable `{}`", name)
+            }
+            RuntimeErrorKind::ControlFlow { kind, context } => {
+                format!("`{}` outside of {}", kind, context)
+            }
+            RuntimeErrorKind::AssertionFailed { message } => {
+                match message {
+                    Some(msg) => format!("Assertion failed: {}", msg),
+                    None => "Assertion failed".to_string(),
+                }
+            }
+            RuntimeErrorKind::Panic { message } => format!("Panic: {}", message),
+            RuntimeErrorKind::Generic { message } => message.clone(),
         }
     }
 }
 
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Runtime error: {}", self.message)?;
+        write!(f, "error[{}]: {}", self.code(), &self.message)?;
         if let Some(span) = self.span {
-            write!(f, " at {}", span)?;
+            write!(f, "\n  --> at {}", span)?;
+        }
+        if let Some(help) = &self.help {
+            write!(f, "\n  help: {}", help)?;
         }
         Ok(())
     }
@@ -567,9 +828,9 @@ pub enum ControlFlow {
 impl From<ControlFlow> for RuntimeError {
     fn from(cf: ControlFlow) -> Self {
         match cf {
-            ControlFlow::Return(_) => RuntimeError::new("return outside function"),
-            ControlFlow::Break(_) => RuntimeError::new("break outside loop"),
-            ControlFlow::Continue => RuntimeError::new("continue outside loop"),
+            ControlFlow::Return(_) => RuntimeError::control_flow("⤺ (return)", "function"),
+            ControlFlow::Break(_) => RuntimeError::control_flow("⊗ (break)", "loop"),
+            ControlFlow::Continue => RuntimeError::control_flow("↻ (continue)", "loop"),
         }
     }
 }
@@ -662,16 +923,14 @@ impl Environment {
     pub fn set(&mut self, name: &str, value: Value) -> Result<(), RuntimeError> {
         if let Some((_, mutable)) = self.values.get(name) {
             if !*mutable {
-                return Err(RuntimeError::new(format!(
-                    "Cannot assign to immutable variable '{}'. Use 'vary' to declare mutable variables.", name
-                )));
+                return Err(RuntimeError::immutable_assignment(name));
             }
             self.values.insert(name.to_string(), (value, true));
             Ok(())
         } else if let Some(ref parent) = self.parent {
             parent.borrow_mut().set(name, value)
         } else {
-            Err(RuntimeError::new(format!("Undefined variable: {}", name)))
+            Err(RuntimeError::undefined(name, "variable"))
         }
     }
 }
@@ -3500,7 +3759,7 @@ impl Interpreter {
                     if path.segments.len() == 1 {
                         let name = &path.segments[0].ident.name;
                         let current = self.environment.borrow().get(name).ok_or_else(|| {
-                            RuntimeError::new(format!("Undefined variable: {}", name))
+                            RuntimeError::undefined(name, "variable")
                         })?;
 
                         if let Value::Array(arr) = current {
@@ -3526,7 +3785,7 @@ impl Interpreter {
                     Expr::Path(path) if path.segments.len() == 1 => {
                         let var_name = &path.segments[0].ident.name;
                         let current = self.environment.borrow().get(var_name).ok_or_else(|| {
-                            RuntimeError::new(format!("Undefined variable: {}", var_name))
+                            RuntimeError::undefined(var_name, "variable")
                         })?;
 
                         match current {
@@ -3730,7 +3989,7 @@ impl Interpreter {
             if name.len() <= 2 {
                 crate::sigil_debug!("DEBUG Undefined variable '{}' (len={})", name, name.len());
             }
-            Err(RuntimeError::new(format!("Undefined variable: {}", name)))
+            Err(RuntimeError::undefined(name, "variable"))
         } else {
             // Multi-segment path (module::item or Type·method)
             // Try full qualified name first (joined with ·)
@@ -6452,12 +6711,13 @@ impl Interpreter {
                     )));
                 }
                 let arr = arr.borrow();
-                let i = i as usize;
-                let result = arr.get(i)
+                let len = arr.len();
+                let idx = i as usize;
+                let result = arr.get(idx)
                     .cloned()
-                    .ok_or_else(|| RuntimeError::new("Index out of bounds"));
+                    .ok_or_else(|| RuntimeError::index_out_of_bounds(i, len));
                 if let Ok(ref v) = result {
-                    crate::sigil_debug!("DEBUG eval_index: arr[{}] = {:?}", i, std::mem::discriminant(v));
+                    crate::sigil_debug!("DEBUG eval_index: arr[{}] = {:?}", idx, std::mem::discriminant(v));
                 }
                 result
             }
@@ -6467,17 +6727,19 @@ impl Interpreter {
                         "Tuple index cannot be negative: {}", i
                     )));
                 }
-                let i = i as usize;
-                t.get(i)
+                let len = t.len();
+                let idx = i as usize;
+                t.get(idx)
                     .cloned()
-                    .ok_or_else(|| RuntimeError::new("Index out of bounds"))
+                    .ok_or_else(|| RuntimeError::index_out_of_bounds(i, len))
             }
             (Value::String(s), Value::Int(i)) => {
-                let i = if i < 0 { s.len() as i64 + i } else { i } as usize;
+                let len = s.chars().count();
+                let idx = if i < 0 { len as i64 + i } else { i } as usize;
                 s.chars()
-                    .nth(i)
+                    .nth(idx)
                     .map(Value::Char)
-                    .ok_or_else(|| RuntimeError::new("Index out of bounds"))
+                    .ok_or_else(|| RuntimeError::index_out_of_bounds(i, len))
             }
             // Handle open-ended range slicing (from eval_range returning tuple)
             (Value::Array(arr), Value::Tuple(range_tuple)) if range_tuple.len() == 2 => {
