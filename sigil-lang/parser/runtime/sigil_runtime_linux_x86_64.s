@@ -488,9 +488,15 @@ sigil_now:
 # ============================================================================
 # String Functions
 # ============================================================================
+#
+# Sigil strings are heap-allocated with layout:
+#   [len: i64][capacity: i64][data: u8[]]
+#
+# For compatibility with C strings, we also support null-terminated strings.
+#
 
 # sigil_strlen(str: *const u8) -> i64
-# Get string length
+# Get length of null-terminated C string
 .global sigil_strlen
 sigil_strlen:
     xor rax, rax
@@ -502,6 +508,291 @@ sigil_strlen:
     inc rax
     jmp .strlen_count
 .strlen_ret:
+    ret
+
+# sigil_string_from(cstr: *const u8) -> *mut String
+# Create a Sigil string from a null-terminated C string
+.global sigil_string_from
+sigil_string_from:
+    push rbx
+    push r12
+    push r13
+
+    mov r12, rdi             # Save source pointer
+
+    # Get length of source string
+    call sigil_strlen
+    mov r13, rax             # Save length
+
+    # Allocate: 16 bytes header + len + 1 (for null terminator)
+    lea rdi, [rax + 17]
+    call sigil_alloc
+    test rax, rax
+    jz .string_from_failed
+
+    mov rbx, rax             # Save string pointer
+
+    # Set header
+    mov [rbx], r13           # len
+    lea rcx, [r13 + 1]
+    mov [rbx + 8], rcx       # capacity = len + 1
+
+    # Copy data
+    lea rdi, [rbx + 16]      # dest = data area
+    mov rsi, r12             # src = original string
+    mov rcx, r13             # count = len
+    rep movsb
+    mov byte ptr [rdi], 0    # null terminator
+
+    mov rax, rbx
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+.string_from_failed:
+    xor rax, rax
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+# sigil_string_len(str: *mut String) -> i64
+# Get length of Sigil string
+.global sigil_string_len
+sigil_string_len:
+    test rdi, rdi
+    jz .string_len_zero
+    mov rax, [rdi]           # Return len field
+    ret
+.string_len_zero:
+    xor rax, rax
+    ret
+
+# sigil_string_as_ptr(str: *mut String) -> *const u8
+# Get pointer to string data
+.global sigil_string_as_ptr
+sigil_string_as_ptr:
+    test rdi, rdi
+    jz .string_ptr_null
+    lea rax, [rdi + 16]      # Return pointer to data area
+    ret
+.string_ptr_null:
+    xor rax, rax
+    ret
+
+# sigil_string_print(str: *mut String)
+# Print Sigil string to stdout
+.global sigil_string_print
+sigil_string_print:
+    push rbx
+
+    test rdi, rdi
+    jz .string_print_done
+
+    mov rbx, rdi             # Save string pointer
+
+    # Write string data
+    mov rax, 1               # SYS_write
+    mov rdi, 1               # stdout
+    lea rsi, [rbx + 16]      # data pointer
+    mov rdx, [rbx]           # len
+    syscall
+
+.string_print_done:
+    pop rbx
+    ret
+
+# sigil_string_concat(a: *mut String, b: *mut String) -> *mut String
+# Concatenate two strings, returning new string
+.global sigil_string_concat
+sigil_string_concat:
+    push rbx
+    push r12
+    push r13
+    push r14
+
+    mov r12, rdi             # String a
+    mov r13, rsi             # String b
+
+    # Get lengths
+    xor r14, r14             # Total length
+
+    test r12, r12
+    jz .concat_no_a
+    add r14, [r12]           # a.len
+.concat_no_a:
+    test r13, r13
+    jz .concat_no_b
+    add r14, [r13]           # b.len
+.concat_no_b:
+
+    # Allocate new string: 16 header + total_len + 1
+    lea rdi, [r14 + 17]
+    call sigil_alloc
+    test rax, rax
+    jz .concat_failed
+
+    mov rbx, rax             # New string
+
+    # Set header
+    mov [rbx], r14           # len = total_len
+    lea rcx, [r14 + 1]
+    mov [rbx + 8], rcx       # capacity
+
+    # Copy first string
+    lea rdi, [rbx + 16]      # dest = new string data
+    test r12, r12
+    jz .concat_copy_b
+    mov rcx, [r12]           # len of a
+    lea rsi, [r12 + 16]      # src = a.data
+    rep movsb
+
+.concat_copy_b:
+    # Copy second string (rdi already at correct position)
+    test r13, r13
+    jz .concat_done
+    mov rcx, [r13]           # len of b
+    lea rsi, [r13 + 16]      # src = b.data
+    rep movsb
+
+.concat_done:
+    mov byte ptr [rdi], 0    # null terminator
+    mov rax, rbx
+
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+.concat_failed:
+    xor rax, rax
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+# sigil_string_eq(a: *mut String, b: *mut String) -> i64
+# Compare two strings, returns 1 if equal, 0 otherwise
+.global sigil_string_eq
+sigil_string_eq:
+    # Handle NULL cases
+    test rdi, rdi
+    jz .eq_check_b_null
+    test rsi, rsi
+    jz .eq_not_equal
+
+    # Compare lengths
+    mov rax, [rdi]           # a.len
+    cmp rax, [rsi]           # b.len
+    jne .eq_not_equal
+
+    # Compare data byte by byte
+    mov rcx, rax             # count = len
+    test rcx, rcx
+    jz .eq_equal             # Both empty strings
+
+    lea rdi, [rdi + 16]      # a.data
+    lea rsi, [rsi + 16]      # b.data
+    repe cmpsb
+    jne .eq_not_equal
+
+.eq_equal:
+    mov rax, 1
+    ret
+
+.eq_check_b_null:
+    test rsi, rsi
+    jnz .eq_not_equal
+    # Both NULL = equal
+    mov rax, 1
+    ret
+
+.eq_not_equal:
+    xor rax, rax
+    ret
+
+# sigil_string_clone(str: *mut String) -> *mut String
+# Create a copy of a string
+.global sigil_string_clone
+sigil_string_clone:
+    push rbx
+    push r12
+
+    test rdi, rdi
+    jz .clone_null
+
+    mov r12, rdi             # Save source
+
+    # Get source length
+    mov rbx, [r12]           # len
+
+    # Allocate new string
+    lea rdi, [rbx + 17]      # 16 header + len + 1
+    call sigil_alloc
+    test rax, rax
+    jz .clone_failed
+
+    # Set header
+    mov [rax], rbx           # len
+    lea rcx, [rbx + 1]
+    mov [rax + 8], rcx       # capacity
+
+    # Copy data
+    push rax                 # Save new string pointer
+    lea rdi, [rax + 16]      # dest
+    lea rsi, [r12 + 16]      # src
+    mov rcx, rbx             # count
+    rep movsb
+    mov byte ptr [rdi], 0    # null terminator
+    pop rax
+
+    pop r12
+    pop rbx
+    ret
+
+.clone_null:
+.clone_failed:
+    xor rax, rax
+    pop r12
+    pop rbx
+    ret
+
+# sigil_string_is_empty(str: *mut String) -> i64
+# Returns 1 if string is empty or NULL, 0 otherwise
+.global sigil_string_is_empty
+sigil_string_is_empty:
+    test rdi, rdi
+    jz .is_empty_true
+    cmp qword ptr [rdi], 0   # len == 0?
+    je .is_empty_true
+    xor rax, rax
+    ret
+.is_empty_true:
+    mov rax, 1
+    ret
+
+# sigil_string_char_at(str: *mut String, idx: i64) -> i64
+# Get character at index (as byte value), or -1 if out of bounds
+.global sigil_string_char_at
+sigil_string_char_at:
+    test rdi, rdi
+    jz .char_at_invalid
+
+    # Check bounds
+    cmp rsi, 0
+    jl .char_at_invalid
+    cmp rsi, [rdi]           # idx >= len?
+    jge .char_at_invalid
+
+    # Get character
+    movzx eax, byte ptr [rdi + 16 + rsi]
+    ret
+
+.char_at_invalid:
+    mov rax, -1
     ret
 
 # ============================================================================
