@@ -21,6 +21,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Diagnostics, FixSuggestion, Severity};
+use crate::parser::ParseError;
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -1137,12 +1138,10 @@ impl Baseline {
     pub fn from_directory_result(result: &DirectoryLintResult, sources: &HashMap<String, String>) -> Self {
         let mut baseline = Self::new();
 
-        for (path, diag_result) in &result.files {
-            if let Ok(diagnostics) = diag_result {
-                if let Some(source) = sources.get(path) {
-                    for diag in diagnostics.iter() {
-                        baseline.add(path, diag, source);
-                    }
+        for (path, diagnostics) in &result.files {
+            if let Some(source) = sources.get(path) {
+                for diag in diagnostics.iter() {
+                    baseline.add(path, diag, source);
                 }
             }
         }
@@ -1286,16 +1285,16 @@ pub fn lint_with_baseline(
     filename: &str,
     config: LintConfig,
     baseline: &Baseline,
-) -> Result<BaselineLintResult, String> {
-    let diagnostics = lint_source_with_config(source, filename, config)?;
+) -> BaselineLintResult {
+    let diagnostics = lint_source_with_config(source, filename, config);
     let total_before = diagnostics.iter().count();
     let (new_issues, baseline_matches) = baseline.filter(filename, &diagnostics, source);
 
-    Ok(BaselineLintResult {
+    BaselineLintResult {
         new_issues,
         baseline_matches,
         total_before,
-    })
+    }
 }
 
 // ============================================
@@ -1464,7 +1463,7 @@ pub fn lint_source_with_overrides(
     source: &str,
     filename: &str,
     overrides: &CliOverrides,
-) -> Result<Diagnostics, String> {
+) -> Diagnostics {
     let mut config = LintConfig::find_and_load();
     overrides.apply(&mut config);
     lint_source_with_config(source, filename, config)
@@ -1805,7 +1804,7 @@ pub fn lint_directory_incremental(
     // Collect cache updates: (path, source, cached_diagnostics, metadata)
     let cache_updates: Mutex<Vec<(String, String, Vec<CachedDiagnostic>, Option<std::fs::Metadata>)>> = Mutex::new(Vec::new());
 
-    let file_results: Vec<(String, Result<Diagnostics, String>)> = files
+    let file_results: Vec<(String, Diagnostics)> = files
         .par_iter()
         .filter_map(|path| {
             let source = fs::read_to_string(path).ok()?;
@@ -1823,40 +1822,42 @@ pub fn lint_directory_incremental(
                     .count();
                 total_warnings.fetch_add(warnings, Ordering::Relaxed);
                 total_errors.fetch_add(errors, Ordering::Relaxed);
-                return Some((path_str, Ok(cached_diags)));
+                return Some((path_str, cached_diags));
             }
 
             // Need to lint
             linted_count.fetch_add(1, Ordering::Relaxed);
-            match lint_source_with_config(&source, &path_str, config.clone()) {
-                Ok(diagnostics) => {
-                    let warnings = diagnostics.iter()
-                        .filter(|d| d.severity == Severity::Warning)
-                        .count();
-                    let errors = diagnostics.iter()
-                        .filter(|d| d.severity == Severity::Error)
-                        .count();
-                    total_warnings.fetch_add(warnings, Ordering::Relaxed);
-                    total_errors.fetch_add(errors, Ordering::Relaxed);
+            let diagnostics = lint_source_with_config(&source, &path_str, config.clone());
 
-                    // Collect cached diagnostics for cache update
-                    let cached_diags: Vec<CachedDiagnostic> = diagnostics
-                        .iter()
-                        .map(CachedDiagnostic::from_diagnostic)
-                        .collect();
+            let warnings = diagnostics.iter()
+                .filter(|d| d.severity == Severity::Warning)
+                .count();
+            let errors = diagnostics.iter()
+                .filter(|d| d.severity == Severity::Error)
+                .count();
 
-                    // Queue cache update
-                    if let Ok(mut updates) = cache_updates.lock() {
-                        updates.push((path_str.clone(), source.clone(), cached_diags, metadata));
-                    }
-
-                    Some((path_str, Ok(diagnostics)))
-                }
-                Err(e) => {
-                    parse_errors.fetch_add(1, Ordering::Relaxed);
-                    Some((path_str, Err(e)))
-                }
+            // Parse errors are detected by code prefix P0xx
+            let has_parse_error = diagnostics.iter()
+                .any(|d| d.code.as_ref().map_or(false, |c| c.starts_with("P0")));
+            if has_parse_error {
+                parse_errors.fetch_add(1, Ordering::Relaxed);
             }
+
+            total_warnings.fetch_add(warnings, Ordering::Relaxed);
+            total_errors.fetch_add(errors, Ordering::Relaxed);
+
+            // Collect cached diagnostics for cache update
+            let cached_diags: Vec<CachedDiagnostic> = diagnostics
+                .iter()
+                .map(CachedDiagnostic::from_diagnostic)
+                .collect();
+
+            // Queue cache update
+            if let Ok(mut updates) = cache_updates.lock() {
+                updates.push((path_str.clone(), source.clone(), cached_diags, metadata));
+            }
+
+            Some((path_str, diagnostics))
         })
         .collect();
 
@@ -3304,23 +3305,74 @@ pub fn lint_file(file: &SourceFile, source: &str) -> Diagnostics {
     linter.diagnostics
 }
 
+/// Convert a ParseError into a rich Diagnostic for LSP/CLI display.
+fn parse_error_to_diagnostic(error: &ParseError, source_len: usize) -> Diagnostic {
+    match error {
+        ParseError::DeprecatedRustSyntax { rust, sigil, span } => {
+            let code = match rust.as_str() {
+                "fn" | "let" | "mut" | "struct" | "impl" | "trait" | "enum" => "P001",
+                "pub" | "mod" | "use" => "P002",
+                "if" | "else" | "match" | "while" | "for" | "in" => "P003",
+                "return" | "break" | "continue" => "P004",
+                "&mut" => "P005",
+                "::" => "P006",
+                _ => "P000",
+            };
+
+            Diagnostic::error(format!("Deprecated Rust syntax: `{}`", rust), *span)
+                .with_code(code)
+                .with_label(*span, format!("Rust syntax not supported"))
+                .with_note(format!("Sigil has its own native syntax. Use: {}", sigil))
+                .with_note("Run `sigil migrate <file>` to auto-convert Rust syntax to Sigil".to_string())
+        }
+        ParseError::UnexpectedToken { expected, found, span } => {
+            Diagnostic::error(format!("Unexpected token: expected {}, found {:?}", expected, found), *span)
+                .with_code("P010")
+                .with_label(*span, format!("expected {}", expected))
+        }
+        ParseError::UnexpectedEof => {
+            let span = Span::new(source_len.saturating_sub(1), source_len);
+            Diagnostic::error("Unexpected end of file".to_string(), span)
+                .with_code("P011")
+                .with_note("The file ended unexpectedly. Check for missing closing braces, parentheses, or semicolons.".to_string())
+        }
+        ParseError::InvalidNumber(msg) => {
+            let span = Span::new(0, 1);
+            Diagnostic::error(format!("Invalid number literal: {}", msg), span)
+                .with_code("P012")
+        }
+        ParseError::Custom(msg) => {
+            let span = Span::new(0, 1);
+            Diagnostic::error(msg.clone(), span)
+                .with_code("P099")
+        }
+    }
+}
+
 /// Lint source code string (parses and lints).
-pub fn lint_source(source: &str, filename: &str) -> Result<Diagnostics, String> {
+///
+/// Parse errors are returned as diagnostics rather than Err, allowing
+/// them to be displayed in LSP and CLI with full context.
+pub fn lint_source(source: &str, _filename: &str) -> Diagnostics {
     use crate::parser::Parser;
 
     let mut parser = Parser::new(source);
 
     match parser.parse_file() {
-        Ok(file) => {
-            let diagnostics = lint_file(&file, source);
-            Ok(diagnostics)
+        Ok(file) => lint_file(&file, source),
+        Err(e) => {
+            let mut diagnostics = Diagnostics::new();
+            diagnostics.add(parse_error_to_diagnostic(&e, source.len()));
+            diagnostics
         }
-        Err(e) => Err(format!("Parse error in {}: {:?}", filename, e)),
     }
 }
 
 /// Lint source code with custom configuration.
-pub fn lint_source_with_config(source: &str, filename: &str, config: LintConfig) -> Result<Diagnostics, String> {
+///
+/// Parse errors are returned as diagnostics rather than Err, allowing
+/// them to be displayed in LSP and CLI with full context.
+pub fn lint_source_with_config(source: &str, _filename: &str, config: LintConfig) -> Diagnostics {
     use crate::parser::Parser;
 
     let mut parser = Parser::new(source);
@@ -3329,9 +3381,13 @@ pub fn lint_source_with_config(source: &str, filename: &str, config: LintConfig)
         Ok(file) => {
             let mut linter = Linter::new(config);
             linter.lint(&file, source);
-            Ok(linter.diagnostics)
+            linter.diagnostics
         }
-        Err(e) => Err(format!("Parse error in {}: {:?}", filename, e)),
+        Err(e) => {
+            let mut diagnostics = Diagnostics::new();
+            diagnostics.add(parse_error_to_diagnostic(&e, source.len()));
+            diagnostics
+        }
     }
 }
 
@@ -3339,12 +3395,12 @@ pub fn lint_source_with_config(source: &str, filename: &str, config: LintConfig)
 #[derive(Debug)]
 pub struct DirectoryLintResult {
     /// Results per file: (path, diagnostics)
-    pub files: Vec<(String, Result<Diagnostics, String>)>,
+    pub files: Vec<(String, Diagnostics)>,
     /// Total warnings across all files
     pub total_warnings: usize,
     /// Total errors across all files
     pub total_errors: usize,
-    /// Files that failed to parse
+    /// Files with parse errors (included in diagnostics with has_errors())
     pub parse_errors: usize,
 }
 
@@ -3385,23 +3441,25 @@ pub fn lint_directory(dir: &Path, config: LintConfig) -> DirectoryLintResult {
     for path in files {
         if let Ok(source) = fs::read_to_string(&path) {
             let path_str = path.display().to_string();
-            match lint_source_with_config(&source, &path_str, config.clone()) {
-                Ok(diagnostics) => {
-                    let warnings = diagnostics.iter()
-                        .filter(|d| d.severity == crate::diagnostic::Severity::Warning)
-                        .count();
-                    let errors = diagnostics.iter()
-                        .filter(|d| d.severity == crate::diagnostic::Severity::Error)
-                        .count();
-                    result.total_warnings += warnings;
-                    result.total_errors += errors;
-                    result.files.push((path_str, Ok(diagnostics)));
-                }
-                Err(e) => {
-                    result.parse_errors += 1;
-                    result.files.push((path_str, Err(e)));
-                }
+            let diagnostics = lint_source_with_config(&source, &path_str, config.clone());
+
+            let warnings = diagnostics.iter()
+                .filter(|d| d.severity == crate::diagnostic::Severity::Warning)
+                .count();
+            let errors = diagnostics.iter()
+                .filter(|d| d.severity == crate::diagnostic::Severity::Error)
+                .count();
+
+            // Parse errors are detected by code prefix P0xx
+            let has_parse_error = diagnostics.iter()
+                .any(|d| d.code.as_ref().map_or(false, |c| c.starts_with("P0")));
+            if has_parse_error {
+                result.parse_errors += 1;
             }
+
+            result.total_warnings += warnings;
+            result.total_errors += errors;
+            result.files.push((path_str, diagnostics));
         }
     }
 
@@ -3422,28 +3480,30 @@ pub fn lint_directory_parallel(dir: &Path, config: LintConfig) -> DirectoryLintR
     let total_errors = AtomicUsize::new(0);
     let parse_errors = AtomicUsize::new(0);
 
-    let file_results: Vec<(String, Result<Diagnostics, String>)> = files
+    let file_results: Vec<(String, Diagnostics)> = files
         .par_iter()
         .filter_map(|path| {
             let source = fs::read_to_string(path).ok()?;
             let path_str = path.display().to_string();
-            match lint_source_with_config(&source, &path_str, config.clone()) {
-                Ok(diagnostics) => {
-                    let warnings = diagnostics.iter()
-                        .filter(|d| d.severity == crate::diagnostic::Severity::Warning)
-                        .count();
-                    let errors = diagnostics.iter()
-                        .filter(|d| d.severity == crate::diagnostic::Severity::Error)
-                        .count();
-                    total_warnings.fetch_add(warnings, Ordering::Relaxed);
-                    total_errors.fetch_add(errors, Ordering::Relaxed);
-                    Some((path_str, Ok(diagnostics)))
-                }
-                Err(e) => {
-                    parse_errors.fetch_add(1, Ordering::Relaxed);
-                    Some((path_str, Err(e)))
-                }
+            let diagnostics = lint_source_with_config(&source, &path_str, config.clone());
+
+            let warnings = diagnostics.iter()
+                .filter(|d| d.severity == crate::diagnostic::Severity::Warning)
+                .count();
+            let errors = diagnostics.iter()
+                .filter(|d| d.severity == crate::diagnostic::Severity::Error)
+                .count();
+
+            // Parse errors are detected by code prefix P0xx
+            let has_parse_error = diagnostics.iter()
+                .any(|d| d.code.as_ref().map_or(false, |c| c.starts_with("P0")));
+            if has_parse_error {
+                parse_errors.fetch_add(1, Ordering::Relaxed);
             }
+
+            total_warnings.fetch_add(warnings, Ordering::Relaxed);
+            total_errors.fetch_add(errors, Ordering::Relaxed);
+            Some((path_str, diagnostics))
         })
         .collect();
 
@@ -3604,10 +3664,10 @@ pub fn apply_fixes(source: &str, diagnostics: &Diagnostics) -> FixResult {
 /// Lint and optionally apply fixes to source code.
 ///
 /// Returns (fixed_source, diagnostics, fix_result).
-pub fn lint_and_fix(source: &str, filename: &str, config: LintConfig) -> Result<(String, Diagnostics, FixResult), String> {
-    let diagnostics = lint_source_with_config(source, filename, config)?;
+pub fn lint_and_fix(source: &str, filename: &str, config: LintConfig) -> (String, Diagnostics, FixResult) {
+    let diagnostics = lint_source_with_config(source, filename, config);
     let fix_result = apply_fixes(source, &diagnostics);
-    Ok((fix_result.source.clone(), diagnostics, fix_result))
+    (fix_result.source.clone(), diagnostics, fix_result)
 }
 
 // ============================================
@@ -3889,11 +3949,9 @@ pub fn generate_sarif(filename: &str, diagnostics: &Diagnostics, source: &str) -
 pub fn generate_sarif_for_directory(result: &DirectoryLintResult, sources: &HashMap<String, String>) -> SarifReport {
     let mut report = SarifReport::new();
 
-    for (path, diag_result) in &result.files {
-        if let Ok(diagnostics) = diag_result {
-            if let Some(source) = sources.get(path) {
-                report.add_file(path, diagnostics, source);
-            }
+    for (path, diagnostics) in &result.files {
+        if let Some(source) = sources.get(path) {
+            report.add_file(path, diagnostics, source);
         }
     }
 
@@ -4130,13 +4188,11 @@ pub struct LspLintResult {
 
 /// Lint for LSP integration.
 pub fn lint_for_lsp(source: &str, uri: &str, config: LintConfig) -> LspLintResult {
-    let diagnostics = match lint_source_with_config(source, uri, config) {
-        Ok(diags) => diags
-            .iter()
-            .map(|d| LspDiagnostic::from_diagnostic(d, source))
-            .collect(),
-        Err(_) => Vec::new(),
-    };
+    let diags = lint_source_with_config(source, uri, config);
+    let diagnostics = diags
+        .iter()
+        .map(|d| LspDiagnostic::from_diagnostic(d, source))
+        .collect();
 
     LspLintResult {
         uri: uri.to_string(),
@@ -4313,7 +4369,7 @@ pub fn lint_changed_files(config: LintConfig) -> Result<DirectoryLintResult, Str
         });
     }
 
-    lint_files(&changed, config)
+    Ok(lint_files(&changed, config))
 }
 
 /// Lint files changed since a base ref.
@@ -4330,11 +4386,11 @@ pub fn lint_changed_since(base: &str, config: LintConfig) -> Result<DirectoryLin
         });
     }
 
-    lint_files(&changed, config)
+    Ok(lint_files(&changed, config))
 }
 
 /// Lint a list of specific files.
-pub fn lint_files(files: &[PathBuf], config: LintConfig) -> Result<DirectoryLintResult, String> {
+pub fn lint_files(files: &[PathBuf], config: LintConfig) -> DirectoryLintResult {
     use std::fs;
 
     let mut total_warnings = 0;
@@ -4345,38 +4401,35 @@ pub fn lint_files(files: &[PathBuf], config: LintConfig) -> Result<DirectoryLint
     for path in files {
         let path_str = path.display().to_string();
 
-        match fs::read_to_string(path) {
-            Ok(source) => {
-                match lint_source_with_config(&source, &path_str, config.clone()) {
-                    Ok(diagnostics) => {
-                        for diag in diagnostics.iter() {
-                            match diag.severity {
-                                Severity::Error => total_errors += 1,
-                                Severity::Warning => total_warnings += 1,
-                                _ => {}
-                            }
-                        }
-                        results.push((path_str, Ok(diagnostics)));
-                    }
-                    Err(e) => {
-                        parse_errors += 1;
-                        results.push((path_str, Err(e)));
-                    }
+        if let Ok(source) = fs::read_to_string(path) {
+            let diagnostics = lint_source_with_config(&source, &path_str, config.clone());
+
+            for diag in diagnostics.iter() {
+                match diag.severity {
+                    Severity::Error => total_errors += 1,
+                    Severity::Warning => total_warnings += 1,
+                    _ => {}
                 }
             }
-            Err(e) => {
+
+            // Parse errors are detected by code prefix P0xx
+            let has_parse_error = diagnostics.iter()
+                .any(|d| d.code.as_ref().map_or(false, |c| c.starts_with("P0")));
+            if has_parse_error {
                 parse_errors += 1;
-                results.push((path_str, Err(format!("Failed to read file: {}", e))));
             }
+
+            results.push((path_str, diagnostics));
         }
+        // Skip files that can't be read
     }
 
-    Ok(DirectoryLintResult {
+    DirectoryLintResult {
         files: results,
         total_warnings,
         total_errors,
         parse_errors,
-    })
+    }
 }
 
 /// Pre-commit hook script content.
@@ -4716,9 +4769,9 @@ pub fn lint_with_custom_rules(
     filename: &str,
     config: LintConfig,
     custom_rules: &[CustomRule],
-) -> Result<Diagnostics, String> {
+) -> Diagnostics {
     // Run standard linting
-    let mut diagnostics = lint_source_with_config(source, filename, config)?;
+    let mut diagnostics = lint_source_with_config(source, filename, config);
 
     // Run custom rules
     let checker = CustomRuleChecker::new(custom_rules.to_vec());
@@ -4729,7 +4782,7 @@ pub fn lint_with_custom_rules(
         diagnostics.add(diag.clone());
     }
 
-    Ok(diagnostics)
+    diagnostics
 }
 
 // ============================================
@@ -4877,29 +4930,30 @@ pub fn lint_directory_filtered(
     let total_errors = AtomicUsize::new(0);
     let parse_errors = AtomicUsize::new(0);
 
-    let file_results: Vec<(String, Result<Diagnostics, String>)> = files
+    let file_results: Vec<(String, Diagnostics)> = files
         .par_iter()
         .filter_map(|path| {
             let source = std::fs::read_to_string(path).ok()?;
             let path_str = path.display().to_string();
+            let diagnostics = lint_source_with_config(&source, &path_str, config.clone());
 
-            match lint_source_with_config(&source, &path_str, config.clone()) {
-                Ok(diagnostics) => {
-                    let warnings = diagnostics.iter()
-                        .filter(|d| d.severity == Severity::Warning)
-                        .count();
-                    let errors = diagnostics.iter()
-                        .filter(|d| d.severity == Severity::Error)
-                        .count();
-                    total_warnings.fetch_add(warnings, Ordering::Relaxed);
-                    total_errors.fetch_add(errors, Ordering::Relaxed);
-                    Some((path_str, Ok(diagnostics)))
-                }
-                Err(e) => {
-                    parse_errors.fetch_add(1, Ordering::Relaxed);
-                    Some((path_str, Err(e)))
-                }
+            let warnings = diagnostics.iter()
+                .filter(|d| d.severity == Severity::Warning)
+                .count();
+            let errors = diagnostics.iter()
+                .filter(|d| d.severity == Severity::Error)
+                .count();
+
+            // Parse errors are detected by code prefix P0xx
+            let has_parse_error = diagnostics.iter()
+                .any(|d| d.code.as_ref().map_or(false, |c| c.starts_with("P0")));
+            if has_parse_error {
+                parse_errors.fetch_add(1, Ordering::Relaxed);
             }
+
+            total_warnings.fetch_add(warnings, Ordering::Relaxed);
+            total_errors.fetch_add(errors, Ordering::Relaxed);
+            Some((path_str, diagnostics))
         })
         .collect();
 
@@ -4949,31 +5003,29 @@ impl LintReport {
         let mut by_category: HashMap<String, usize> = HashMap::new();
         let mut by_file: Vec<(String, usize)> = Vec::new();
 
-        for (path, diag_result) in &result.files {
-            if let Ok(diagnostics) = diag_result {
-                let count = diagnostics.iter().count();
-                if count > 0 {
-                    by_file.push((path.clone(), count));
-                }
+        for (path, diagnostics) in &result.files {
+            let count = diagnostics.iter().count();
+            if count > 0 {
+                by_file.push((path.clone(), count));
+            }
 
-                for diag in diagnostics.iter() {
-                    if let Some(ref code) = diag.code {
-                        *by_rule.entry(code.clone()).or_insert(0) += 1;
+            for diag in diagnostics.iter() {
+                if let Some(ref code) = diag.code {
+                    *by_rule.entry(code.clone()).or_insert(0usize) += 1;
 
-                        // Infer category from code
-                        let category = if code.starts_with('E') {
-                            "error"
-                        } else if code.starts_with('W') {
-                            match &code[1..3] {
-                                "01" | "02" => "style",
-                                "03" | "04" | "05" => "correctness",
-                                _ => "other",
-                            }
-                        } else {
-                            "other"
-                        };
-                        *by_category.entry(category.to_string()).or_insert(0) += 1;
-                    }
+                    // Infer category from code
+                    let category = if code.starts_with('E') {
+                        "error"
+                    } else if code.starts_with('W') {
+                        match &code[1..3] {
+                            "01" | "02" => "style",
+                            "03" | "04" | "05" => "correctness",
+                            _ => "other",
+                        }
+                    } else {
+                        "other"
+                    };
+                    *by_category.entry(category.to_string()).or_insert(0usize) += 1;
                 }
             }
         }
@@ -5381,55 +5433,53 @@ pub enum CiFormat {
 pub fn generate_ci_annotations(result: &DirectoryLintResult, format: CiFormat) -> String {
     let mut output = String::new();
 
-    for (path, diag_result) in &result.files {
-        if let Ok(diagnostics) = diag_result {
-            for diag in diagnostics.iter() {
-                let line = 1; // Would need source to calculate exact line
+    for (path, diagnostics) in &result.files {
+        for diag in diagnostics.iter() {
+            let line = 1; // Would need source to calculate exact line
 
-                match format {
-                    CiFormat::GitHub => {
-                        let level = match diag.severity {
-                            Severity::Error => "error",
-                            Severity::Warning => "warning",
-                            _ => "notice",
-                        };
-                        output.push_str(&format!(
-                            "::{} file={},line={}::{}\n",
-                            level,
-                            path,
-                            line,
-                            diag.message.replace('\n', "%0A")
-                        ));
-                    }
-                    CiFormat::GitLab => {
-                        output.push_str(&format!(
-                            "{}:{}:{}: {}\n",
-                            path,
-                            line,
-                            if diag.severity == Severity::Error { "error" } else { "warning" },
-                            diag.message
-                        ));
-                    }
-                    CiFormat::AzureDevOps => {
-                        let level = match diag.severity {
-                            Severity::Error => "error",
-                            Severity::Warning => "warning",
-                            _ => "debug",
-                        };
-                        output.push_str(&format!(
-                            "##vso[task.logissue type={};sourcepath={};linenumber={}]{}\n",
-                            level, path, line, diag.message
-                        ));
-                    }
-                    CiFormat::Generic => {
-                        output.push_str(&format!(
-                            "{}:{}: {}: {}\n",
-                            path,
-                            line,
-                            if diag.severity == Severity::Error { "error" } else { "warning" },
-                            diag.message
-                        ));
-                    }
+            match format {
+                CiFormat::GitHub => {
+                    let level = match diag.severity {
+                        Severity::Error => "error",
+                        Severity::Warning => "warning",
+                        _ => "notice",
+                    };
+                    output.push_str(&format!(
+                        "::{} file={},line={}::{}\n",
+                        level,
+                        path,
+                        line,
+                        diag.message.replace('\n', "%0A")
+                    ));
+                }
+                CiFormat::GitLab => {
+                    output.push_str(&format!(
+                        "{}:{}:{}: {}\n",
+                        path,
+                        line,
+                        if diag.severity == Severity::Error { "error" } else { "warning" },
+                        diag.message
+                    ));
+                }
+                CiFormat::AzureDevOps => {
+                    let level = match diag.severity {
+                        Severity::Error => "error",
+                        Severity::Warning => "warning",
+                        _ => "debug",
+                    };
+                    output.push_str(&format!(
+                        "##vso[task.logissue type={};sourcepath={};linenumber={}]{}\n",
+                        level, path, line, diag.message
+                    ));
+                }
+                CiFormat::Generic => {
+                    output.push_str(&format!(
+                        "{}:{}: {}: {}\n",
+                        path,
+                        line,
+                        if diag.severity == Severity::Error { "error" } else { "warning" },
+                        diag.message
+                    ));
                 }
             }
         }

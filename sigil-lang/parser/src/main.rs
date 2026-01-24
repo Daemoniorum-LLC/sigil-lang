@@ -68,6 +68,7 @@ fn main() -> ExitCode {
         eprintln!("  init            Initialize a Sigil project in current directory");
         eprintln!("  test            Run tests in the current project");
         eprintln!("  build           Build the current project");
+        eprintln!("  migrate <file>  Convert Rust syntax to native Sigil (--dry-run, --backup)");
         eprintln!();
         eprintln!("AI Agent Options (for 'check' command):");
         eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
@@ -370,6 +371,16 @@ fn main() -> ExitCode {
         "init" => init_project(),
         "test" => run_tests(),
         "build" => build_project(),
+        "migrate" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil migrate <file.sg> [--dry-run] [--backup]");
+                return ExitCode::from(1);
+            }
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            let backup = args.iter().any(|a| a == "--backup");
+            migrate_file(&args[2], dry_run, backup)
+        }
         _ => {
             // Treat as file if it ends with .sigil or .sg
             if args[1].ends_with(".sigil") || args[1].ends_with(".sg") {
@@ -1629,19 +1640,12 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
 
         match format {
             OutputFormat::Human => {
-                for (file_path, file_result) in &result.files {
-                    match file_result {
-                        Ok(diagnostics) => {
-                            if diagnostics.is_empty() {
-                                println!("✓ {} - no issues", file_path);
-                            } else {
-                                let source = fs::read_to_string(file_path).unwrap_or_default();
-                                diagnostics.eprint_all(file_path, &source);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("✗ {} - parse error: {}", file_path, e);
-                        }
+                for (file_path, diagnostics) in &result.files {
+                    if diagnostics.is_empty() {
+                        println!("✓ {} - no issues", file_path);
+                    } else {
+                        let source = fs::read_to_string(file_path).unwrap_or_default();
+                        diagnostics.eprint_all(file_path, &source);
                     }
                 }
                 println!();
@@ -1656,24 +1660,19 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
             OutputFormat::Json | OutputFormat::Compact => {
                 let json_result = serde_json::json!({
                     "directory": path,
-                    "files": result.files.iter().map(|(p, r)| {
-                        match r {
-                            Ok(diags) => serde_json::json!({
-                                "file": p,
-                                "success": true,
-                                "warning_count": diags.iter()
-                                    .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
-                                    .count(),
-                                "error_count": diags.iter()
-                                    .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
-                                    .count(),
-                            }),
-                            Err(e) => serde_json::json!({
-                                "file": p,
-                                "success": false,
-                                "error": e,
-                            }),
-                        }
+                    "files": result.files.iter().map(|(p, diags)| {
+                        let has_parse_error = diags.iter()
+                            .any(|d| d.code.as_ref().map_or(false, |c| c.starts_with("P0")));
+                        serde_json::json!({
+                            "file": p,
+                            "success": !has_parse_error,
+                            "warning_count": diags.iter()
+                                .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
+                                .count(),
+                            "error_count": diags.iter()
+                                .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
+                                .count(),
+                        })
                     }).collect::<Vec<_>>(),
                     "total_warnings": result.total_warnings,
                     "total_errors": result.total_errors,
@@ -1688,11 +1687,9 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
             OutputFormat::Sarif => {
                 use sigil_parser::lint::SarifReport;
                 let mut sarif = SarifReport::new();
-                for (file_path, file_result) in &result.files {
-                    if let Ok(diagnostics) = file_result {
-                        if let Ok(source) = fs::read_to_string(file_path) {
-                            sarif.add_file(file_path, diagnostics, &source);
-                        }
+                for (file_path, diagnostics) in &result.files {
+                    if let Ok(source) = fs::read_to_string(file_path) {
+                        sarif.add_file(file_path, diagnostics, &source);
                     }
                 }
                 match sarif.to_json() {
@@ -1739,97 +1736,69 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
         };
 
         // Run the linter with config
-        match lint_source_with_config(&source, path, config) {
-            Ok(diagnostics) => {
-                let warning_count = diagnostics.iter()
-                    .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
-                    .count();
-                let error_count = diagnostics.iter()
-                    .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
-                    .count();
+        let diagnostics = lint_source_with_config(&source, path, config);
+        let warning_count = diagnostics.iter()
+            .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
+            .count();
+        let error_count = diagnostics.iter()
+            .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
+            .count();
 
-                // Apply fixes if requested
-                if apply_fix {
-                    let fix_result = apply_fixes(&source, &diagnostics);
-                    if fix_result.fixes_applied > 0 {
-                        // Write fixed source back to file
-                        if let Err(e) = fs::write(path, &fix_result.source) {
-                            eprintln!("Error writing fixes to '{}': {}", path, e);
-                            return ExitCode::from(1);
-                        }
-                        if format == OutputFormat::Human {
-                            println!("✓ {} - applied {} fix(es)", path, fix_result.fixes_applied);
-                            if fix_result.fixes_skipped > 0 {
-                                println!("  ({} fix(es) skipped due to conflicts)", fix_result.fixes_skipped);
-                            }
-                        }
-                    } else if format == OutputFormat::Human {
-                        println!("✓ {} - no fixes to apply", path);
-                    }
-                    return ExitCode::SUCCESS;
+        // Apply fixes if requested
+        if apply_fix {
+            let fix_result = apply_fixes(&source, &diagnostics);
+            if fix_result.fixes_applied > 0 {
+                // Write fixed source back to file
+                if let Err(e) = fs::write(path, &fix_result.source) {
+                    eprintln!("Error writing fixes to '{}': {}", path, e);
+                    return ExitCode::from(1);
                 }
-
-                match format {
-                    OutputFormat::Human => {
-                        if diagnostics.is_empty() {
-                            println!("✓ {} - no issues found", path);
-                        } else {
-                            diagnostics.eprint_all(path, &source);
-                            println!();
-                            println!("Found {} warning(s), {} error(s)", warning_count, error_count);
-                        }
-                        if show_stats {
-                            println!();
-                            println!("── Statistics ──");
-                            println!("  Total: {} diagnostics", warning_count + error_count);
-                        }
-                    }
-                    OutputFormat::Json => {
-                        println!("{}", diagnostics.to_json_string(path, &source));
-                    }
-                    OutputFormat::Compact => {
-                        println!("{}", diagnostics.to_json_compact(path, &source));
-                    }
-                    OutputFormat::Sarif => {
-                        let sarif = generate_sarif(path, &diagnostics, &source);
-                        match sarif.to_json() {
-                            Ok(json) => println!("{}", json),
-                            Err(e) => eprintln!("Error generating SARIF: {}", e),
-                        }
-                    }
-                }
-
-                if error_count > 0 {
-                    ExitCode::from(1)
-                } else {
-                    ExitCode::SUCCESS
-                }
-            }
-            Err(e) => {
                 if format == OutputFormat::Human {
-                    eprintln!("Parse error in '{}': {}", path, e);
-                } else {
-                    let error_json = serde_json::json!({
-                        "file": path,
-                        "diagnostics": [{
-                            "severity": "error",
-                            "message": format!("Parse error: {}", e),
-                            "code": "E0002",
-                            "line": 1,
-                            "column": 1,
-                        }],
-                        "error_count": 1,
-                        "warning_count": 0,
-                        "success": false
-                    });
-                    if format == OutputFormat::Json {
-                        println!("{}", serde_json::to_string_pretty(&error_json).unwrap());
-                    } else {
-                        println!("{}", serde_json::to_string(&error_json).unwrap());
+                    println!("✓ {} - applied {} fix(es)", path, fix_result.fixes_applied);
+                    if fix_result.fixes_skipped > 0 {
+                        println!("  ({} fix(es) skipped due to conflicts)", fix_result.fixes_skipped);
                     }
                 }
-                ExitCode::from(1)
+            } else if format == OutputFormat::Human {
+                println!("✓ {} - no fixes to apply", path);
             }
+            return ExitCode::SUCCESS;
+        }
+
+        match format {
+            OutputFormat::Human => {
+                if diagnostics.is_empty() {
+                    println!("✓ {} - no issues found", path);
+                } else {
+                    diagnostics.eprint_all(path, &source);
+                    println!();
+                    println!("Found {} warning(s), {} error(s)", warning_count, error_count);
+                }
+                if show_stats {
+                    println!();
+                    println!("── Statistics ──");
+                    println!("  Total: {} diagnostics", warning_count + error_count);
+                }
+            }
+            OutputFormat::Json => {
+                println!("{}", diagnostics.to_json_string(path, &source));
+            }
+            OutputFormat::Compact => {
+                println!("{}", diagnostics.to_json_compact(path, &source));
+            }
+            OutputFormat::Sarif => {
+                let sarif = generate_sarif(path, &diagnostics, &source);
+                match sarif.to_json() {
+                    Ok(json) => println!("{}", json),
+                    Err(e) => eprintln!("Error generating SARIF: {}", e),
+                }
+            }
+        }
+
+        if error_count > 0 {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
         }
     }
 }
@@ -1875,19 +1844,12 @@ fn lint_watch(path: &str, format: OutputFormat, config_path: Option<&str>) -> Ex
 
         match format {
             OutputFormat::Human => {
-                for (file_path, file_result) in &result.files {
-                    match file_result {
-                        Ok(diagnostics) => {
-                            if diagnostics.is_empty() {
-                                println!("✓ {}", file_path);
-                            } else {
-                                let source = fs::read_to_string(file_path).unwrap_or_default();
-                                diagnostics.eprint_all(file_path, &source);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("✗ {} - {}", file_path, e);
-                        }
+                for (file_path, diagnostics) in &result.files {
+                    if diagnostics.is_empty() {
+                        println!("✓ {}", file_path);
+                    } else {
+                        let source = fs::read_to_string(file_path).unwrap_or_default();
+                        diagnostics.eprint_all(file_path, &source);
                     }
                 }
                 println!();
@@ -1918,11 +1880,9 @@ fn lint_watch(path: &str, format: OutputFormat, config_path: Option<&str>) -> Ex
             OutputFormat::Sarif => {
                 use sigil_parser::lint::SarifReport;
                 let mut sarif = SarifReport::new();
-                for (file_path, file_result) in &result.files {
-                    if let Ok(diagnostics) = file_result {
-                        if let Ok(source) = fs::read_to_string(file_path) {
-                            sarif.add_file(file_path, diagnostics, &source);
-                        }
+                for (file_path, diagnostics) in &result.files {
+                    if let Ok(source) = fs::read_to_string(file_path) {
+                        sarif.add_file(file_path, diagnostics, &source);
                     }
                 }
                 if let Ok(json) = sarif.to_json() {
@@ -3175,6 +3135,134 @@ fn build_project() -> ExitCode {
         println!("Run with: sigil run src/main.sigil");
         ExitCode::SUCCESS
     }
+}
+
+/// Migrate a file from Rust syntax to native Sigil syntax.
+///
+/// Converts deprecated Rust keywords to their Sigil equivalents:
+/// - fn → λ (lambda)
+/// - let → ≔ (definition)
+/// - mut → Δ (delta/mutable)
+/// - struct → Σ (sigma)
+/// - impl → ⊢ (turnstile)
+/// - trait → Θ (theta)
+/// - enum → ᛈ (perthro rune)
+/// - pub → ☉ (sun/public)
+/// - mod → scroll
+/// - use → invoke
+/// - if → ⎇ (branch)
+/// - else → ⎉ (alternative)
+/// - match → ⌥ (option)
+/// - while → ⟳ (cycle)
+/// - for → ∀ (forall)
+/// - in → ∈ (element-of)
+/// - return → ⤺ (return-arrow)
+/// - break → ⊗ (tensor/break)
+/// - continue → ↻ (cycle-arrow)
+/// - :: → · (middledot)
+/// - &mut → &Δ
+fn migrate_file(path: &str, dry_run: bool, backup: bool) -> ExitCode {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Define replacements (order matters - more specific first)
+    let replacements = [
+        // Multi-character patterns first
+        ("&mut ", "&Δ "),
+        ("&mut\t", "&Δ\t"),
+        ("&mut(", "&Δ("),
+        ("::", "·"),
+        // Keywords - use word boundaries (followed by space, newline, or paren)
+        ("fn ", "λ "),
+        ("fn(", "λ("),
+        ("let ", "≔ "),
+        ("let\t", "≔\t"),
+        ("mut ", "Δ "),
+        ("mut,", "Δ,"),
+        ("struct ", "Σ "),
+        ("impl ", "⊢ "),
+        ("impl<", "⊢<"),
+        ("trait ", "Θ "),
+        ("enum ", "ᛈ "),
+        ("pub ", "☉ "),
+        ("pub(", "☉("),
+        ("mod ", "scroll "),
+        ("use ", "invoke "),
+        ("if ", "⎇ "),
+        ("if(", "⎇("),
+        ("else ", "⎉ "),
+        ("else{", "⎉{"),
+        ("match ", "⌥ "),
+        ("match(", "⌥("),
+        ("while ", "⟳ "),
+        ("while(", "⟳("),
+        ("for ", "∀ "),
+        ("for(", "∀("),
+        (" in ", " ∈ "),
+        ("return ", "⤺ "),
+        ("return;", "⤺;"),
+        ("return(", "⤺("),
+        ("break;", "⊗;"),
+        ("break ", "⊗ "),
+        ("continue;", "↻;"),
+        ("continue ", "↻ "),
+    ];
+
+    let mut result = source.clone();
+    let mut changes = 0;
+
+    for (from, to) in &replacements {
+        let count = result.matches(from).count();
+        if count > 0 {
+            changes += count;
+            result = result.replace(from, to);
+        }
+    }
+
+    if changes == 0 {
+        println!("✓ {} - no Rust syntax found, already native Sigil", path);
+        return ExitCode::SUCCESS;
+    }
+
+    if dry_run {
+        println!("=== Dry run: {} changes would be made to {} ===", changes, path);
+        println!();
+        println!("{}", result);
+        println!();
+        println!("Run without --dry-run to apply changes.");
+        return ExitCode::SUCCESS;
+    }
+
+    // Create backup if requested
+    if backup {
+        let backup_path = format!("{}.bak", path);
+        if let Err(e) = fs::write(&backup_path, &source) {
+            eprintln!("Error creating backup '{}': {}", backup_path, e);
+            return ExitCode::from(1);
+        }
+        println!("Created backup: {}", backup_path);
+    }
+
+    // Write the migrated file
+    if let Err(e) = fs::write(path, &result) {
+        eprintln!("Error writing '{}': {}", path, e);
+        return ExitCode::from(1);
+    }
+
+    println!("✓ Migrated {} ({} replacements)", path, changes);
+    println!();
+    println!("Converted Rust syntax to native Sigil:");
+    println!("  λ (fn), ≔ (let), Δ (mut), Σ (struct), ⊢ (impl)");
+    println!("  Θ (trait), ᛈ (enum), ☉ (pub), · (::)");
+    println!("  ⎇/⎉ (if/else), ⌥ (match), ⟳ (while), ∀/∈ (for/in)");
+    println!("  ⤺ (return), ⊗ (break), ↻ (continue)");
+
+    ExitCode::SUCCESS
 }
 
 fn repl() -> ExitCode {
