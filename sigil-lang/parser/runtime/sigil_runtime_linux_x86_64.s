@@ -890,6 +890,269 @@ sigil_vec_len:
     ret
 
 # ============================================================================
+# File I/O Functions
+# ============================================================================
+#
+# Linux syscall numbers:
+#   0 = read     1 = write    2 = open     3 = close
+#  21 = access  80 = lseek
+#
+# Open flags (O_*):
+#   0 = O_RDONLY    1 = O_WRONLY    2 = O_RDWR
+#  64 = O_CREAT   512 = O_TRUNC  1024 = O_APPEND
+#
+
+# sigil_file_open(path: *const u8, flags: i64, mode: i64) -> i64
+# Open a file, returns fd or negative errno
+.global sigil_file_open
+sigil_file_open:
+    mov rax, 2               # SYS_open
+    # rdi = path, rsi = flags, rdx = mode already set
+    syscall
+    ret
+
+# sigil_file_close(fd: i64) -> i64
+# Close a file descriptor
+.global sigil_file_close
+sigil_file_close:
+    mov rax, 3               # SYS_close
+    syscall
+    ret
+
+# sigil_file_read(fd: i64, buf: *mut u8, count: i64) -> i64
+# Read from file, returns bytes read or negative errno
+.global sigil_file_read
+sigil_file_read:
+    mov rax, 0               # SYS_read
+    syscall
+    ret
+
+# sigil_file_write(fd: i64, buf: *const u8, count: i64) -> i64
+# Write to file, returns bytes written or negative errno
+.global sigil_file_write
+sigil_file_write:
+    mov rax, 1               # SYS_write
+    syscall
+    ret
+
+# sigil_file_exists(path: *const u8) -> i64
+# Check if file exists (1 = yes, 0 = no)
+.global sigil_file_exists
+sigil_file_exists:
+    mov rax, 21              # SYS_access
+    # rdi = path
+    xor rsi, rsi             # F_OK = 0 (check existence)
+    syscall
+    # access returns 0 on success, -1 on error
+    test rax, rax
+    jnz .file_not_exists
+    mov rax, 1
+    ret
+.file_not_exists:
+    xor rax, rax
+    ret
+
+# sigil_file_seek(fd: i64, offset: i64, whence: i64) -> i64
+# Seek in file, returns new position or negative errno
+# whence: 0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END
+.global sigil_file_seek
+sigil_file_seek:
+    mov rax, 8               # SYS_lseek
+    syscall
+    ret
+
+# sigil_file_read_all(path: *const u8) -> *mut String
+# Read entire file into a new string (uses arena allocator)
+.global sigil_file_read_all
+sigil_file_read_all:
+    push rbx
+    push r12
+    push r13
+    push r14
+
+    mov r12, rdi             # Save path
+
+    # Open file read-only
+    mov rax, 2               # SYS_open
+    xor rsi, rsi             # O_RDONLY
+    xor rdx, rdx             # mode (unused for read)
+    syscall
+
+    cmp rax, 0
+    jl .read_all_failed
+    mov r13, rax             # Save fd
+
+    # Seek to end to get file size
+    mov rdi, r13
+    xor rsi, rsi             # offset = 0
+    mov rdx, 2               # SEEK_END
+    mov rax, 8               # SYS_lseek
+    syscall
+
+    cmp rax, 0
+    jl .read_all_close_fail
+    mov r14, rax             # Save file size
+
+    # Seek back to beginning
+    mov rdi, r13
+    xor rsi, rsi             # offset = 0
+    xor rdx, rdx             # SEEK_SET
+    mov rax, 8               # SYS_lseek
+    syscall
+
+    # Allocate string: 16 header + size + 1 (null terminator)
+    lea rdi, [r14 + 17]
+    call sigil_alloc
+    test rax, rax
+    jz .read_all_close_fail
+    mov rbx, rax             # Save string pointer
+
+    # Set string header
+    mov [rbx], r14           # len = file size
+    lea rcx, [r14 + 1]
+    mov [rbx + 8], rcx       # capacity
+
+    # Read file contents
+    mov rdi, r13             # fd
+    lea rsi, [rbx + 16]      # buffer = string data area
+    mov rdx, r14             # count = file size
+    mov rax, 0               # SYS_read
+    syscall
+
+    # Null terminate
+    mov byte ptr [rbx + 16 + r14], 0
+
+    # Close file
+    mov rdi, r13
+    mov rax, 3               # SYS_close
+    syscall
+
+    mov rax, rbx             # Return string pointer
+
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+.read_all_close_fail:
+    # Close file before failing
+    mov rdi, r13
+    mov rax, 3
+    syscall
+.read_all_failed:
+    xor rax, rax
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+# sigil_file_write_all(path: *const u8, content: *mut String) -> i64
+# Write entire string to file, returns bytes written or negative errno
+.global sigil_file_write_all
+sigil_file_write_all:
+    push rbx
+    push r12
+    push r13
+
+    mov r12, rdi             # path
+    mov r13, rsi             # content string
+
+    # Handle NULL content
+    test r13, r13
+    jz .write_all_empty
+
+    # Open file for writing (create/truncate)
+    mov rdi, r12
+    mov rsi, 577             # O_WRONLY | O_CREAT | O_TRUNC (1 + 64 + 512)
+    mov rdx, 0644            # mode: rw-r--r--
+    mov rax, 2               # SYS_open
+    syscall
+
+    cmp rax, 0
+    jl .write_all_failed
+    mov rbx, rax             # Save fd
+
+    # Write content
+    mov rdi, rbx             # fd
+    lea rsi, [r13 + 16]      # buffer = string data
+    mov rdx, [r13]           # count = string len
+    mov rax, 1               # SYS_write
+    syscall
+
+    mov r12, rax             # Save bytes written
+
+    # Close file
+    mov rdi, rbx
+    mov rax, 3               # SYS_close
+    syscall
+
+    mov rax, r12             # Return bytes written
+
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+.write_all_empty:
+    xor rax, rax
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+.write_all_failed:
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+# sigil_file_size(path: *const u8) -> i64
+# Get file size, returns size or negative errno
+.global sigil_file_size
+sigil_file_size:
+    push rbx
+    push r12
+
+    mov r12, rdi             # Save path
+
+    # Open file read-only
+    mov rax, 2
+    xor rsi, rsi
+    xor rdx, rdx
+    syscall
+
+    cmp rax, 0
+    jl .size_failed
+    mov rbx, rax             # Save fd
+
+    # Seek to end
+    mov rdi, rbx
+    xor rsi, rsi
+    mov rdx, 2               # SEEK_END
+    mov rax, 8
+    syscall
+
+    mov r12, rax             # Save size
+
+    # Close file
+    mov rdi, rbx
+    mov rax, 3
+    syscall
+
+    mov rax, r12             # Return size
+
+    pop r12
+    pop rbx
+    ret
+
+.size_failed:
+    pop r12
+    pop rbx
+    ret
+
+# ============================================================================
 # Math Functions (using x87 FPU)
 # ============================================================================
 
