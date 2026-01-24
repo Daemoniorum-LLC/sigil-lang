@@ -63,6 +63,14 @@ static LISTENER_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 static STREAM_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 static BUFREADER_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+// Fake pointer infrastructure for interpreter syscall simulation
+// These allow the interpreter to simulate pointer-based syscall APIs
+thread_local! {
+    // Maps fake pointer IDs to string content
+    pub static FAKE_PTR_MAP: RefCell<HashMap<i64, String>> = RefCell::new(HashMap::new());
+}
+pub static FAKE_PTR_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1000);
+
 pub fn get_listener_registry() -> &'static Mutex<HashMap<u64, TcpListener>> {
     TCP_LISTENERS.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -212,6 +220,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_neural(interp);
     // Phase 23: AI IR intrinsics - compiler reflection for AI agents
     register_ai_ir(interp);
+    // Phase 24: Native Runtime - syscall layer for C-free execution
+    register_sys(interp);
 }
 
 // Helper to define a builtin
@@ -8744,13 +8754,10 @@ fn register_fs(interp: &mut Interpreter) {
     // ============================================================================
 
     // Store last read file content for sigil_file_len()
-    use std::cell::RefCell;
-    use std::collections::HashMap;
     thread_local! {
         static LAST_FILE_CONTENT: RefCell<String> = RefCell::new(String::new());
-        // Fake pointer map: stores strings that can be looked up by pointer ID
-        static FAKE_PTR_MAP: RefCell<HashMap<i64, String>> = RefCell::new(HashMap::new());
     }
+    // Use module-level FAKE_PTR_MAP and FAKE_PTR_COUNTER
 
     // sigil_read_file - read file content (FFI-compatible interface)
     // Takes path pointer and length, returns pointer to content
@@ -34811,6 +34818,323 @@ fn register_ai_ir(interp: &mut Interpreter) {
         })
     });
 }
+
+// ============================================================================
+// Phase 24: Native Runtime - Sys module
+// ============================================================================
+//
+// The Sys module provides low-level syscall abstractions for building a
+// C-free native runtime. In interpreter mode, these use Rust's std library.
+// When compiled via LLVM with --native-runtime, these become actual syscalls.
+//
+// Linux x86_64 syscall numbers:
+//   0: read      1: write     2: open      3: close
+//   9: mmap     11: munmap   60: exit    228: clock_gettime
+//
+// ============================================================================
+
+fn register_sys(interp: &mut Interpreter) {
+    // ========================================================================
+    // Sys·write(fd: i64, buf: ptr, len: i64) -> i64
+    // Write bytes to a file descriptor. Returns bytes written or negative errno.
+    // ========================================================================
+    define(interp, "Sys·write", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·write requires int fd")),
+        };
+
+        // Get content - support both strings and fake pointers
+        let content = match &args[1] {
+            Value::String(s) => s.to_string(),
+            Value::Int(ptr_id) => {
+                // Look up from fake pointer map
+                FAKE_PTR_MAP.with(|map| {
+                    map.borrow().get(ptr_id).cloned()
+                }).unwrap_or_else(|| format!("<ptr:{}>", ptr_id))
+            }
+            Value::Array(arr) => {
+                // Array of bytes - convert to string
+                let bytes: Vec<u8> = arr.borrow().iter()
+                    .filter_map(|v| match v {
+                        Value::Int(n) => Some(*n as u8),
+                        _ => None,
+                    })
+                    .collect();
+                String::from_utf8_lossy(&bytes).to_string()
+            }
+            _ => format!("{}", args[1]),
+        };
+
+        let len = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => content.len(),
+        };
+
+        let output = &content[..std::cmp::min(len, content.len())];
+
+        match fd {
+            1 => {
+                // stdout
+                use std::io::Write;
+                print!("{}", output);
+                std::io::stdout().flush().ok();
+                Ok(Value::Int(output.len() as i64))
+            }
+            2 => {
+                // stderr
+                use std::io::Write;
+                eprint!("{}", output);
+                std::io::stderr().flush().ok();
+                Ok(Value::Int(output.len() as i64))
+            }
+            _ => {
+                // For other fds, we'd need actual file handling
+                // In interpreter mode, return error
+                Ok(Value::Int(-9)) // -EBADF
+            }
+        }
+    });
+
+    // ========================================================================
+    // Sys·read(fd: i64, buf: ptr, len: i64) -> i64
+    // Read bytes from a file descriptor. Returns bytes read or negative errno.
+    // ========================================================================
+    define(interp, "Sys·read", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·read requires int fd")),
+        };
+
+        let len = match &args[2] {
+            Value::Int(n) => *n as usize,
+            _ => 4096,
+        };
+
+        match fd {
+            0 => {
+                // stdin - read up to len bytes
+                use std::io::{self, Read};
+                let mut buffer = vec![0u8; len];
+                match io::stdin().read(&mut buffer) {
+                    Ok(n) => {
+                        buffer.truncate(n);
+                        // Return as string for simplicity in interpreter
+                        let s = String::from_utf8_lossy(&buffer).to_string();
+                        // Store in fake pointer map and return pointer
+                        let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                        FAKE_PTR_MAP.with(|map| {
+                            map.borrow_mut().insert(ptr_id, s);
+                        });
+                        Ok(Value::Int(n as i64))
+                    }
+                    Err(_) => Ok(Value::Int(-5)), // -EIO
+                }
+            }
+            _ => Ok(Value::Int(-9)), // -EBADF
+        }
+    });
+
+    // ========================================================================
+    // Sys·exit(code: i64) -> !
+    // Exit the process with the given exit code.
+    // ========================================================================
+    define(interp, "Sys·exit", Some(1), |_, args| {
+        let code = match &args[0] {
+            Value::Int(n) => *n as i32,
+            _ => 1,
+        };
+        std::process::exit(code);
+    });
+
+    // ========================================================================
+    // Sys·mmap(len: i64) -> ptr
+    // Allocate anonymous memory. Simplified interface for runtime use.
+    // In interpreter mode, allocates a Rust Vec and returns a fake pointer.
+    // ========================================================================
+    define(interp, "Sys·mmap", Some(1), |_, args| {
+        let len = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("Sys·mmap requires int length")),
+        };
+
+        // Allocate memory and store in fake pointer map
+        let buffer = vec![0u8; len];
+        let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+
+        // Store the buffer - for interpreter, we track it separately
+        FAKE_MMAP_MAP.with(|map| {
+            map.borrow_mut().insert(ptr_id, buffer);
+        });
+
+        Ok(Value::Int(ptr_id))
+    });
+
+    // ========================================================================
+    // Sys·munmap(ptr: i64) -> i64
+    // Free memory allocated by Sys·mmap. Returns 0 on success.
+    // ========================================================================
+    define(interp, "Sys·munmap", Some(1), |_, args| {
+        let ptr_id = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·munmap requires ptr")),
+        };
+
+        let removed = FAKE_MMAP_MAP.with(|map| {
+            map.borrow_mut().remove(&ptr_id).is_some()
+        });
+
+        if removed {
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-22)) // -EINVAL
+        }
+    });
+
+    // ========================================================================
+    // Sys·clock_gettime() -> i64
+    // Get current time in nanoseconds since Unix epoch.
+    // ========================================================================
+    define(interp, "Sys·clock_gettime", Some(0), |_, _| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        Ok(Value::Int(now.as_nanos() as i64))
+    });
+
+    // ========================================================================
+    // Sys·open(path: str, flags: i64) -> i64
+    // Open a file. Returns fd or negative errno.
+    // Flags: 0=O_RDONLY, 1=O_WRONLY, 2=O_RDWR, 64=O_CREAT, 512=O_TRUNC
+    // ========================================================================
+    define(interp, "Sys·open", Some(2), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Int(ptr_id) => {
+                FAKE_PTR_MAP.with(|map| {
+                    map.borrow().get(ptr_id).cloned()
+                }).unwrap_or_default()
+            }
+            _ => return Err(RuntimeError::new("Sys·open requires string path")),
+        };
+
+        let flags = match &args[1] {
+            Value::Int(n) => *n,
+            _ => 0,
+        };
+
+        use std::fs::{File, OpenOptions};
+
+        let result = if flags & 1 != 0 || flags & 2 != 0 {
+            // Write mode
+            let mut opts = OpenOptions::new();
+            opts.write(true);
+            if flags & 64 != 0 {
+                opts.create(true);
+            }
+            if flags & 512 != 0 {
+                opts.truncate(true);
+            }
+            if flags & 2 != 0 {
+                opts.read(true);
+            }
+            opts.open(&path)
+        } else {
+            // Read-only mode
+            File::open(&path)
+        };
+
+        match result {
+            Ok(file) => {
+                // Store file handle in fake fd map
+                let fd = FAKE_FD_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                FAKE_FD_MAP.with(|map| {
+                    map.borrow_mut().insert(fd, std::sync::Arc::new(std::sync::Mutex::new(file)));
+                });
+                Ok(Value::Int(fd))
+            }
+            Err(e) => {
+                use std::io::ErrorKind;
+                let errno = match e.kind() {
+                    ErrorKind::NotFound => -2,      // ENOENT
+                    ErrorKind::PermissionDenied => -13, // EACCES
+                    _ => -5,                        // EIO
+                };
+                Ok(Value::Int(errno))
+            }
+        }
+    });
+
+    // ========================================================================
+    // Sys·close(fd: i64) -> i64
+    // Close a file descriptor. Returns 0 on success.
+    // ========================================================================
+    define(interp, "Sys·close", Some(1), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·close requires int fd")),
+        };
+
+        // Don't close stdin/stdout/stderr
+        if fd < 3 {
+            return Ok(Value::Int(0));
+        }
+
+        let removed = FAKE_FD_MAP.with(|map| {
+            map.borrow_mut().remove(&fd).is_some()
+        });
+
+        if removed {
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // ========================================================================
+    // Syscall constants (Linux x86_64)
+    // ========================================================================
+    define(interp, "SYS_READ", Some(0), |_, _| Ok(Value::Int(0)));
+    define(interp, "SYS_WRITE", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "SYS_OPEN", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "SYS_CLOSE", Some(0), |_, _| Ok(Value::Int(3)));
+    define(interp, "SYS_MMAP", Some(0), |_, _| Ok(Value::Int(9)));
+    define(interp, "SYS_MUNMAP", Some(0), |_, _| Ok(Value::Int(11)));
+    define(interp, "SYS_EXIT", Some(0), |_, _| Ok(Value::Int(60)));
+    define(interp, "SYS_CLOCK_GETTIME", Some(0), |_, _| Ok(Value::Int(228)));
+
+    // File access mode flags
+    define(interp, "O_RDONLY", Some(0), |_, _| Ok(Value::Int(0)));
+    define(interp, "O_WRONLY", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "O_RDWR", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "O_CREAT", Some(0), |_, _| Ok(Value::Int(64)));
+    define(interp, "O_TRUNC", Some(0), |_, _| Ok(Value::Int(512)));
+    define(interp, "O_APPEND", Some(0), |_, _| Ok(Value::Int(1024)));
+
+    // Memory protection flags for mmap
+    define(interp, "PROT_NONE", Some(0), |_, _| Ok(Value::Int(0)));
+    define(interp, "PROT_READ", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "PROT_WRITE", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "PROT_EXEC", Some(0), |_, _| Ok(Value::Int(4)));
+
+    // Memory mapping flags
+    define(interp, "MAP_PRIVATE", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "MAP_ANONYMOUS", Some(0), |_, _| Ok(Value::Int(32)));
+    define(interp, "MAP_FAILED", Some(0), |_, _| Ok(Value::Int(-1)));
+
+    // Standard file descriptors
+    define(interp, "STDIN_FILENO", Some(0), |_, _| Ok(Value::Int(0)));
+    define(interp, "STDOUT_FILENO", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "STDERR_FILENO", Some(0), |_, _| Ok(Value::Int(2)));
+}
+
+// Thread-local storage for fake mmap allocations
+thread_local! {
+    static FAKE_MMAP_MAP: RefCell<HashMap<i64, Vec<u8>>> = RefCell::new(HashMap::new());
+    static FAKE_FD_MAP: RefCell<HashMap<i64, std::sync::Arc<std::sync::Mutex<std::fs::File>>>> = RefCell::new(HashMap::new());
+}
+static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
 
 #[cfg(test)]
 mod tests {

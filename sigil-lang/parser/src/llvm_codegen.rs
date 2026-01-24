@@ -782,6 +782,60 @@ pub mod llvm {
 
             // sigil_vec_clear(vec: ptr) -> void
             self.module.add_function("sigil_vec_clear", vec_reverse_type, None);
+
+            // ================================================================
+            // Native Syscall Functions (for C-free runtime)
+            // ================================================================
+
+            // Sys_write(fd: i64, buf: ptr, len: i64) -> i64
+            let sys_write_type = i64_type.fn_type(&[i64_type.into(), ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("Sys_write", sys_write_type, None);
+
+            // Sys_read(fd: i64, buf: ptr, len: i64) -> i64
+            self.module.add_function("Sys_read", sys_write_type, None);
+
+            // Sys_open(path: ptr, flags: i64, mode: i64) -> i64
+            let sys_open_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module.add_function("Sys_open", sys_open_type, None);
+
+            // Sys_close(fd: i64) -> i64
+            let sys_close_type = i64_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("Sys_close", sys_close_type, None);
+
+            // Sys_mmap(addr: i64, len: i64, prot: i64, flags: i64, fd: i64, off: i64) -> i64
+            let sys_mmap_type = i64_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(),
+                i64_type.into(), i64_type.into(), i64_type.into()
+            ], false);
+            self.module.add_function("Sys_mmap", sys_mmap_type, None);
+
+            // Sys_munmap(addr: i64, len: i64) -> i64
+            let sys_munmap_type = i64_type.fn_type(&[i64_type.into(), i64_type.into()], false);
+            self.module.add_function("Sys_munmap", sys_munmap_type, None);
+
+            // Sys_exit(code: i64) -> void (noreturn)
+            let sys_exit_type = void_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("Sys_exit", sys_exit_type, None);
+
+            // Sys_clock_gettime(clock_id: i64, ts: ptr) -> i64
+            let sys_clock_type = i64_type.fn_type(&[i64_type.into(), ptr_type.into()], false);
+            self.module.add_function("Sys_clock_gettime", sys_clock_type, None);
+
+            // sigil_alloc(size: i64) -> ptr (mmap-based allocation)
+            let alloc_type = ptr_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_alloc", alloc_type, None);
+
+            // sigil_free(ptr: ptr) -> void
+            let free_type = void_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_free", free_type, None);
+
+            // sigil_realloc(ptr: ptr, new_size: i64) -> ptr
+            let realloc_type = ptr_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_realloc", realloc_type, None);
+
+            // sigil_strlen(str: ptr) -> i64
+            let strlen_type = i64_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_strlen", strlen_type, None);
         }
 
         /// Register a struct type in the type registry
