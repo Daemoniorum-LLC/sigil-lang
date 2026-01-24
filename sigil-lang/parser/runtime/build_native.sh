@@ -8,6 +8,7 @@
 #
 # Supported platforms:
 #   - Linux x86_64
+#   - Linux ARM64 (aarch64)
 #   - macOS x86_64 (Intel)
 #   - macOS ARM64 (Apple Silicon)
 #   - Windows x64 (via MinGW cross-compile)
@@ -39,12 +40,16 @@ esac
 # Map OS names and select runtime
 case "$OS" in
     Linux)
-        if [ "$ARCH" != "x86_64" ]; then
-            echo "Error: Linux runtime only supports x86_64 (got $ARCH)"
+        if [ "$ARCH" = "x86_64" ]; then
+            RUNTIME_S="$SCRIPT_DIR/sigil_runtime_linux_x86_64.s"
+            RUNTIME_O="$SCRIPT_DIR/sigil_runtime_linux_x86_64.o"
+        elif [ "$ARCH" = "arm64" ]; then
+            RUNTIME_S="$SCRIPT_DIR/sigil_runtime_linux_arm64.s"
+            RUNTIME_O="$SCRIPT_DIR/sigil_runtime_linux_arm64.o"
+        else
+            echo "Error: Unsupported Linux architecture: $ARCH"
             exit 1
         fi
-        RUNTIME_S="$SCRIPT_DIR/sigil_runtime_linux_x86_64.s"
-        RUNTIME_O="$SCRIPT_DIR/sigil_runtime_linux_x86_64.o"
         AS_CMD="as"
         LD_CMD="ld"
         LD_FLAGS="-nostdlib -static"
@@ -112,8 +117,9 @@ if [ "$1" = "test" ]; then
     echo ""
     echo "=== Testing Native Runtime ==="
 
-    # Create a minimal test program
-    cat > /tmp/sigil_native_test.s << 'EOF'
+    # Create architecture-specific test program
+    if [ "$ARCH" = "x86_64" ]; then
+        cat > /tmp/sigil_native_test.s << 'EOF'
 .intel_syntax noprefix
 .global main_sigil
 
@@ -191,6 +197,88 @@ done_msg:
 
 .section .note.GNU-stack,"",@progbits
 EOF
+    elif [ "$ARCH" = "arm64" ]; then
+        cat > /tmp/sigil_native_test.s << 'EOF'
+.global main_sigil
+
+main_sigil:
+    stp x29, x30, [sp, #-32]!
+    mov x29, sp
+    str x19, [sp, #16]
+
+    // Test 1: Print a string
+    adrp x0, test_msg
+    add x0, x0, :lo12:test_msg
+    bl sigil_println
+
+    // Test 2: Print an integer
+    mov x0, #42
+    bl sigil_print_int
+
+    // Test 3: Allocate memory
+    mov x0, #4096
+    bl sigil_alloc
+    cbz x0, alloc_failed
+
+    adrp x0, alloc_ok_msg
+    add x0, x0, :lo12:alloc_ok_msg
+    bl sigil_println
+    b test_time
+
+alloc_failed:
+    adrp x0, alloc_fail_msg
+    add x0, x0, :lo12:alloc_fail_msg
+    bl sigil_println
+
+test_time:
+    // Test 4: Get time
+    bl sigil_now
+    bl sigil_print_int
+
+    // Test 5: Test vec
+    mov x0, #10
+    bl sigil_vec_new
+    mov x19, x0
+
+    mov x0, x19
+    mov x1, #100
+    bl sigil_vec_push
+
+    mov x0, x19
+    mov x1, #200
+    bl sigil_vec_push
+
+    mov x0, x19
+    bl sigil_vec_len
+    bl sigil_print_int    // Should print 2
+
+    mov x0, x19
+    mov x1, #1
+    bl sigil_vec_get
+    bl sigil_print_int    // Should print 200
+
+    adrp x0, done_msg
+    add x0, x0, :lo12:done_msg
+    bl sigil_println
+
+    mov x0, #0
+    ldr x19, [sp, #16]
+    ldp x29, x30, [sp], #32
+    ret
+
+.section .rodata
+test_msg:
+    .asciz "Native Runtime Test"
+alloc_ok_msg:
+    .asciz "alloc: OK"
+alloc_fail_msg:
+    .asciz "alloc: FAILED"
+done_msg:
+    .asciz "All tests passed!"
+
+.section .note.GNU-stack,"",@progbits
+EOF
+    fi
 
     # Assemble test
     as -o /tmp/sigil_native_test.o /tmp/sigil_native_test.s
