@@ -188,6 +188,8 @@ alloc_fail_msg:
     .asciz "alloc: FAILED"
 done_msg:
     .asciz "All tests passed!"
+
+.section .note.GNU-stack,"",@progbits
 EOF
 
     # Assemble test
