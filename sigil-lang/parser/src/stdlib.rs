@@ -35093,6 +35093,57 @@ fn register_sys(interp: &mut Interpreter) {
     });
 
     // ========================================================================
+    // Arena Allocator Functions
+    // ========================================================================
+
+    // Arena·alloc(size: i64) -> ptr
+    // Fast bump allocation from arena pool
+    define(interp, "Arena·alloc", Some(1), |_, args| {
+        let size = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => return Err(RuntimeError::new("Arena·alloc requires int size")),
+        };
+
+        // In interpreter mode, use regular Vec allocation
+        let buffer = vec![0u8; size];
+        let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        FAKE_MMAP_MAP.with(|map| {
+            map.borrow_mut().insert(ptr_id, buffer);
+        });
+        Ok(Value::Int(ptr_id))
+    });
+
+    // Arena·reset()
+    // Reset arena, freeing all bump allocations (keeps arena memory)
+    define(interp, "Arena·reset", Some(0), |_, _| {
+        // In interpreter mode, clear all arena allocations
+        FAKE_MMAP_MAP.with(|map| {
+            map.borrow_mut().clear();
+        });
+        Ok(Value::Null)
+    });
+
+    // Arena·stats() -> (arenas: i64, bytes: i64)
+    // Get arena statistics
+    define(interp, "Arena·stats", Some(0), |_, _| {
+        let (arenas, bytes) = FAKE_MMAP_MAP.with(|map| {
+            let m = map.borrow();
+            let arenas = m.len() as i64;
+            let bytes: i64 = m.values().map(|v| v.len() as i64).sum();
+            (arenas, bytes)
+        });
+
+        // Return as struct
+        let mut fields = HashMap::new();
+        fields.insert("arenas".to_string(), Value::Int(arenas));
+        fields.insert("bytes".to_string(), Value::Int(bytes));
+        Ok(Value::Struct {
+            name: "ArenaStats".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // ========================================================================
     // Syscall constants (Linux x86_64)
     // ========================================================================
     define(interp, "SYS_READ", Some(0), |_, _| Ok(Value::Int(0)));
