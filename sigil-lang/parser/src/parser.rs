@@ -847,6 +847,13 @@ impl<'a> Parser<'a> {
                     span: *span,
                 })
             }
+            Some((Token::DeprecatedAmpMut, span)) => {
+                Err(ParseError::DeprecatedRustSyntax {
+                    rust: "&mut".to_string(),
+                    sigil: "&Δ (reference to mutable) or just Δ for mutable binding".to_string(),
+                    span: *span,
+                })
+            }
             _ => Ok(()),
         }
     }
@@ -2688,6 +2695,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_base(&mut self) -> ParseResult<TypeExpr> {
+        // Check for deprecated Rust syntax first
+        if let Some(Token::DeprecatedAmpMut) = self.current_token() {
+            let span = self.current_span();
+            return Err(ParseError::DeprecatedRustSyntax {
+                rust: "&mut".to_string(),
+                sigil: "&Δ (reference to mutable) or just Δ for mutable binding".to_string(),
+                span,
+            });
+        }
+
         match self.current_token() {
             Some(Token::AndAnd) => {
                 // Double reference: &&T -> &(&T)

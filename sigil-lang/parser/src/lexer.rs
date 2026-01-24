@@ -295,6 +295,10 @@ pub enum Token {
     #[token("return", |lex| lex.slice().to_string())]
     DeprecatedRustKeyword(String),
 
+    // Rust mutable reference &mut - use &Δ in Sigil
+    #[token("&mut")]
+    DeprecatedAmpMut,
+
     // === Keywords (Native Sigil Syntax Only) ===
     #[token("λ")]  // Lambda - function
     Fn,
