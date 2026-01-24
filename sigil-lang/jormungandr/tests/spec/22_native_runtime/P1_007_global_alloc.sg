@@ -4,14 +4,14 @@
 //
 // This test verifies allocation patterns using interpreter arrays.
 
-fn main() {
-    // Initialize (no-op in interpreter)
+λ main() {
+    // Initialize (no-op ∈ interpreter)
     println("init_ok");
 
     // Test 1: Basic allocation
-    let mut buffer = [];
-    let mut i = 0;
-    while i < 256 {
+    ≔ Δ buffer = [];
+    ≔ Δ i = 0;
+    ⟳ i < 256 {
         buffer.push(0);
         i = i + 1;
     }
@@ -19,79 +19,79 @@ fn main() {
     println("alloc_ok");
 
     // Test 2: Write pattern and verify
-    let mut j = 0;
-    while j < 256 {
+    ≔ Δ j = 0;
+    ⟳ j < 256 {
         buffer[j] = j;
         j = j + 1;
     }
-    let mut pattern_ok = true;
-    let mut k = 0;
-    while k < 256 {
-        if buffer[k] != k {
+    ≔ Δ pattern_ok = true;
+    ≔ Δ k = 0;
+    ⟳ k < 256 {
+        ⎇ buffer[k] != k {
             pattern_ok = false;
         }
         k = k + 1;
     }
-    if pattern_ok {
+    ⎇ pattern_ok {
         println("pattern_ok");
-    } else {
+    } ⎉ {
         println("pattern_fail");
     }
 
-    // Test 3: Free (clear in interpreter)
+    // Test 3: Free (clear ∈ interpreter)
     buffer.clear();
     println("free_ok");
 
     // Test 4: Multiple allocations
-    let mut all_ok = true;
-    let mut outer = 0;
-    while outer < 10 {
-        let mut arr = [];
-        let mut inner = 0;
-        while inner < 64 {
+    ≔ Δ all_ok = true;
+    ≔ Δ outer = 0;
+    ⟳ outer < 10 {
+        ≔ Δ arr = [];
+        ≔ Δ inner = 0;
+        ⟳ inner < 64 {
             arr.push(inner);
             inner = inner + 1;
         }
-        if arr.len() != 64 {
+        ⎇ arr.len() != 64 {
             all_ok = false;
         }
         outer = outer + 1;
     }
-    if all_ok {
+    ⎇ all_ok {
         println("multi_alloc_ok");
     }
 
     // Test 5: Realloc grow - copy and extend
-    let mut p2 = [];
-    let mut m = 0;
-    while m < 100 {
+    ≔ Δ p2 = [];
+    ≔ Δ m = 0;
+    ⟳ m < 100 {
         p2.push(42);
         m = m + 1;
     }
     // Extend to 200
-    let mut n = 0;
-    while n < 100 {
+    ≔ Δ n = 0;
+    ⟳ n < 100 {
         p2.push(0);
         n = n + 1;
     }
     // Check original preserved
-    let mut preserved = true;
-    let mut p = 0;
-    while p < 100 {
-        if p2[p] != 42 {
+    ≔ Δ preserved = true;
+    ≔ Δ p = 0;
+    ⟳ p < 100 {
+        ⎇ p2[p] != 42 {
             preserved = false;
         }
         p = p + 1;
     }
-    if preserved {
+    ⎇ preserved {
         println("realloc_preserved_ok");
-    } else {
+    } ⎉ {
         println("realloc_preserved_fail");
     }
 
     // New memory is accessible
-    let mut q = 100;
-    while q < 200 {
+    ≔ Δ q = 100;
+    ⟳ q < 200 {
         p2[q] = 99;
         q = q + 1;
     }
@@ -102,14 +102,14 @@ fn main() {
     println("realloc_shrink_ok");
 
     // Test 7: Zero-size allocation
-    let empty = [];
+    ≔ empty = [];
     assert_eq!(empty.len(), 0);
     println("zero_alloc_ok");
 
     // Test 8: Large allocation
-    let mut large = [];
-    let mut r = 0;
-    while r < 10000 {
+    ≔ Δ large = [];
+    ≔ Δ r = 0;
+    ⟳ r < 10000 {
         large.push(r);
         r = r + 1;
     }

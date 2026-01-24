@@ -1,7 +1,7 @@
-// P0_013: ⊗ (tensor/circled times) should parse as break in statement position
+// P0_013: ⊗ (tensor/circled times) should parse as ⊗ ∈ statement position
 // Priority: P0
 // Category: Native Symbols
-// Tests: ⊗ for break
+// Tests: ⊗ ∀ ⊗
 // Expected: Program compiles and runs, printing 0, 1, 2 then "escaped"
 
 λ main() {

@@ -8,6 +8,6 @@
 // Expected behavior:
 // Should compile and print true
 
-fn main() {
+λ main() {
     println(true);
 }

@@ -1,4 +1,4 @@
-// P0_002: λ (lowercase lambda) should parse as fn keyword
+// P0_002: λ (lowercase lambda) should parse as λ keyword
 // Priority: P0
 // Category: Native Symbols
 // Expected: Program compiles and runs, printing "42"

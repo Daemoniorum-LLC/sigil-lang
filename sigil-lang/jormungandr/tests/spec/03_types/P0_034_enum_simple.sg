@@ -1,4 +1,4 @@
-// Test: Simple enum without data
+// Test: Simple ᛈ without data
 // Spec: 03-TYPES.md § 6.1 Enum Types
 // Priority: P0
 //
@@ -8,12 +8,12 @@
 // Expected behavior:
 // Should compile and print 1
 
-pub enum Status {
+☉ ᛈ Status {
     Success,
     Failure
 }
 
-fn main() {
-    let s: !Status = Status·Success;
+λ main() {
+    ≔ s: !Status = Status·Success;
     println(1);
 }

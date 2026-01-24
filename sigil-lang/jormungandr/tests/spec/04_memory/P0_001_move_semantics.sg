@@ -1,4 +1,4 @@
-// Test: Move semantics for owned values
+// Test: Move semantics ∀ owned values
 // Spec: 04-MEMORY.md § 2.1 Move Semantics
 // Priority: P0
 //
@@ -8,15 +8,15 @@
 // Expected behavior:
 // Should compile and print 42
 
-pub struct Data {
+☉ Σ Data {
     value: !i32
 }
 
-fn consume(d: !Data) -> !i32 {
+λ consume(d: !Data) -> !i32 {
     d.value
 }
 
-fn main() {
-    let d: !Data = Data { value: 42 };
+λ main() {
+    ≔ d: !Data = Data { value: 42 };
     println(consume(d));
 }

@@ -2,19 +2,19 @@
 // Spec: 04-MEMORY.md § 3.3 Borrow Rules
 // Priority: P1 - Production Ready
 
-fn take_ref(r: &i32) -> !i32 {
+λ take_ref(r: &i32) -> !i32 {
     *r
 }
 
-fn main() {
-    let mut x: !i32 = 42;
-    let r: &mut i32 = &mut x;
+λ main() {
+    ≔ Δ x: !i32 = 42;
+    ≔ r: &Δ i32 = &Δ x;
 
     // Reborrow as immutable - should work
-    let val = take_ref(r);
+    ≔ val = take_ref(r);
     println(val);
 
-    // Can still use mutable ref after reborrow ends
+    // Can still invoke mutable ref after reborrow ends
     *r = 100;
     println(*r);
 }

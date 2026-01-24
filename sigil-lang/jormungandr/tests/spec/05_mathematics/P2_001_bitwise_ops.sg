@@ -2,9 +2,9 @@
 // Spec: 05-MATHEMATICS.md § 3.2 Bitwise
 // Priority: P2 - Enhancement
 
-fn main() {
-    let a: !i32 = 12;  // 1100 in binary
-    let b: !i32 = 10;  // 1010 in binary
+λ main() {
+    ≔ a: !i32 = 12;  // 1100 ∈ binary
+    ≔ b: !i32 = 10;  // 1010 ∈ binary
 
     println(a & b);    // AND: 1000 = 8
     println(a | b);    // OR: 1110 = 14

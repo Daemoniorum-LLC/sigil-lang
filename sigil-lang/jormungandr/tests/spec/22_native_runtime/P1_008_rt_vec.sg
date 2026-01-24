@@ -3,11 +3,11 @@
 // Phase C: Core Types
 //
 // This test verifies array operations work correctly.
-// Restructured for interpreter mode.
+// Restructured ∀ interpreter mode.
 
-fn main() {
+λ main() {
     // Test 1: Create empty Vec using array literal
-    let mut v = [];
+    ≔ Δ v = [];
     assert_eq!(v.len(), 0);
     assert!(v.is_empty());
     println("new_ok");
@@ -31,27 +31,27 @@ fn main() {
     println("bounds_check_ok");
 
     // Test 5: Pop elements (returns Option)
-    match v.pop() {
-        Option::Some(val) => assert_eq!(val, 30),
-        Option::None => assert!(false),
+    ⌥ v.pop() {
+        Option·Some(val) => assert_eq!(val, 30),
+        Option·None => assert!(false),
     }
-    match v.pop() {
-        Option::Some(val) => assert_eq!(val, 20),
-        Option::None => assert!(false),
+    ⌥ v.pop() {
+        Option·Some(val) => assert_eq!(val, 20),
+        Option·None => assert!(false),
     }
     assert_eq!(v.len(), 1);
     println("pop_ok");
 
     // Test 6: Pop from empty returns None
     v.pop();  // Remove last element
-    match v.pop() {
-        Option::Some(_) => assert!(false),
-        Option::None => assert!(true),
+    ⌥ v.pop() {
+        Option·Some(_) => assert!(false),
+        Option·None => assert!(true),
     }
     println("pop_empty_ok");
 
     // Test 7: Index operator
-    let mut v2 = [];
+    ≔ Δ v2 = [];
     v2.push(100);
     v2.push(200);
     v2.push(300);
@@ -61,13 +61,13 @@ fn main() {
     println("index_ok");
 
     // Test 8: Capacity is available
-    let v3 = [1, 2, 3];
+    ≔ v3 = [1, 2, 3];
     assert!(v3.capacity() >= 3);
     println("with_capacity_ok");
 
     // Test 9: Grow array
-    let mut v4 = [];
-    for i in 0..100 {
+    ≔ Δ v4 = [];
+    ∀ i ∈ 0..100 {
         v4.push(i);
     }
     assert_eq!(v4.len(), 100);
@@ -76,7 +76,7 @@ fn main() {
     println("grow_ok");
 
     // Test 10: Clear
-    let mut v5 = [];
+    ≔ Δ v5 = [];
     v5.push(1);
     v5.push(2);
     v5.push(3);
@@ -86,13 +86,13 @@ fn main() {
     println("clear_ok");
 
     // Test 11: Get element value
-    let v6 = [1, 2, 3];
+    ≔ v6 = [1, 2, 3];
     assert_eq!(v6[0], 1);
     println("get_mut_ok");
 
-    // Test 12: As slice (returns array in interpreter)
-    let v7 = [1, 2, 3];
-    let slice = v7.as_slice();
+    // Test 12: As slice (returns array ∈ interpreter)
+    ≔ v7 = [1, 2, 3];
+    ≔ slice = v7.as_slice();
     assert_eq!(slice.len(), 3);
     assert_eq!(slice[0], 1);
     assert_eq!(slice[1], 2);

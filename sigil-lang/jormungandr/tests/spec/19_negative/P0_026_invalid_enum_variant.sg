@@ -1,15 +1,15 @@
 // EXPECTED: Static type checking should catch this error
-// Negative Test: Invalid enum variant
+// Negative Test: Invalid ᛈ variant
 // Should fail with undefined variant error
 // Priority: P0 - Bootstrap Critical
 
-enum Color {
+ᛈ Color {
     Red,
     Green,
     Blue,
 }
 
-fn main() {
-    let c = Color·Yellow;  // ERROR: no variant Yellow
+λ main() {
+    ≔ c = Color·Yellow;  // ERROR: no variant Yellow
     println(c);
 }

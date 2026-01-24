@@ -2,16 +2,16 @@
 // Spec: 18-COMPILER.md § 4.2 Enums
 // Priority: P1 - Production Ready
 
-enum Status {
+ᛈ Status {
     Active,
     Inactive,
     Pending,
 }
 
-fn main() {
-    let s = Status·Active;
+λ main() {
+    ≔ s = Status·Active;
 
-    match s {
+    ⌥ s {
         Status·Active => println(1),
         Status·Inactive => println(0),
         Status·Pending => println(2),

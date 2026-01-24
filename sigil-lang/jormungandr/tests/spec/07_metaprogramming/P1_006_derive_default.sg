@@ -3,12 +3,12 @@
 // Priority: P1 - Standard Feature
 
 #[derive(Default)]
-pub struct Point {
+☉ Σ Point {
     x: !i32,
     y: !i32
 }
 
-fn main() {
+λ main() {
     // Test that derive(Default) is recognized
     println("derive recognized");
 }

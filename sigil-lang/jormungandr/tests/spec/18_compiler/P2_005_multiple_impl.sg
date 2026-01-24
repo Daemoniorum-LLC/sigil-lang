@@ -1,24 +1,24 @@
-// Test: Multiple impl blocks
+// Test: Multiple ⊢ blocks
 // Spec: 18-COMPILER.md § 4.1 Impl Blocks
 // Priority: P2 - Enhancement
 
-struct Value {
+Σ Value {
     n: !i32,
 }
 
-impl Value {
-    fn new(x: !i32) -> Value {
+⊢ Value {
+    λ new(x: !i32) -> Value {
         Value { n: x }
     }
 }
 
-impl Value {
-    fn get(&self) -> !i32 {
+⊢ Value {
+    λ get(&self) -> !i32 {
         self.n
     }
 }
 
-fn main() {
-    let v = Value·new(42);
+λ main() {
+    ≔ v = Value·new(42);
     println(v.get());
 }

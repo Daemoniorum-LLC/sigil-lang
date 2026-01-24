@@ -2,8 +2,8 @@
 // Spec: 09-STDLIB.md § 4.2 String
 // Priority: P1 - Production Ready
 
-fn main() {
-    let s: String = "hello";
+λ main() {
+    ≔ s: String = "hello";
     println(s.len());
     println(s);
 }

@@ -2,11 +2,11 @@
 // Spec: 03-TYPES.md § 3.1 Unit
 // Priority: P2 - Enhancement
 
-fn do_nothing() -> () {
+λ do_nothing() -> () {
     // Returns unit
 }
 
-fn main() {
+λ main() {
     do_nothing();
     println(1);
 }

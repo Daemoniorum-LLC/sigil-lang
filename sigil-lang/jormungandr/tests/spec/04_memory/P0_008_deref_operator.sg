@@ -2,9 +2,9 @@
 // Spec: 04-MEMORY.md § 3.3 Dereference
 // Priority: P0
 
-fn main() {
-    let x: !i32 = 42;
-    let r: &!i32 = &x;
-    let val: !i32 = *r;
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ r: &!i32 = &x;
+    ≔ val: !i32 = *r;
     println(val);
 }

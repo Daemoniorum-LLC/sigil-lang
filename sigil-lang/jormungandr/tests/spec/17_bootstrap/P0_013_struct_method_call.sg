@@ -3,23 +3,23 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate struct method calls generate valid C code.
+// Validate Σ method calls generate valid C code.
 //
 // Expected behavior:
 // Should print 52 (42 + 10)
 
-pub struct Counter {
+☉ Σ Counter {
     value: !i32
 }
 
-impl Counter {
-    pub fn increment(self, amount: !i32) -> !i32 {
+⊢ Counter {
+    ☉ λ increment(self, amount: !i32) -> !i32 {
         self.value + amount
     }
 }
 
-fn main() {
-    let c: !Counter = Counter { value: 42 };
-    let result: !i32 = c.increment(10);
+λ main() {
+    ≔ c: !Counter = Counter { value: 42 };
+    ≔ result: !i32 = c.increment(10);
     println(result);
 }

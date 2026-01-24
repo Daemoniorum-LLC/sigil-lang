@@ -2,13 +2,13 @@
 // Spec: Edge Cases - Control Flow Depth
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let x = 5;
-    if x > 0 {
-        if x > 1 {
-            if x > 2 {
-                if x > 3 {
-                    if x > 4 {
+λ main() {
+    ≔ x = 5;
+    ⎇ x > 0 {
+        ⎇ x > 1 {
+            ⎇ x > 2 {
+                ⎇ x > 3 {
+                    ⎇ x > 4 {
                         println("deep");
                     }
                 }

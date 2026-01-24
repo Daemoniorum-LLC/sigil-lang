@@ -1,40 +1,40 @@
 //! Comprehensive Type Checker Inference Test Suite
 //!
 //! Tests type inference, unification, and evidentiality propagation.
-//! Target: 100% type inference coverage for regression detection.
+//! Target: 100% type inference coverage ∀ regression detection.
 
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
-use crate·ast·File;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
+invoke crate·ast·File;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 /// Parse and type check a source string
-fn check_source(source: !&str) -> !bool {
-    let mut parser = Parser·new(source.to_string());
-    let ast = match parser.parse_file() {
+λ check_source(source: !&str) -> !bool {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
         Result·Ok(a) => a,
-        Result·Err(_) => return false,
+        Result·Err(_) => ⤺ false,
     };
-    let mut checker = TypeChecker·new();
-    match checker.check_file(ast) {
+    ≔ Δ checker = TypeChecker·new();
+    ⌥ checker.check_file(ast) {
         Result·Ok(_) => true,
         Result·Err(_) => false,
     }
 }
 
 /// Assert that type checking succeeds
-fn assert_checks(source: !&str, name: !&str) {
-    if !check_source(source) {
-        panic(format!("FAIL {}: type check failed for valid code", name));
+λ assert_checks(source: !&str, name: !&str) {
+    ⎇ !check_source(source) {
+        panic(format!("FAIL {}: type check failed ∀ valid code", name));
     }
 }
 
 /// Assert that type checking fails
-fn assert_fails_check(source: !&str, name: !&str) {
-    if check_source(source) {
+λ assert_fails_check(source: !&str, name: !&str) {
+    ⎇ check_source(source) {
         panic(format!("FAIL {}: type check should have failed", name));
     }
 }
@@ -43,35 +43,35 @@ fn assert_fails_check(source: !&str, name: !&str) {
 // 1. PRIMITIVE TYPE INFERENCE
 // ============================================================================
 
-fn test_primitive_inference() -> !bool {
+λ test_primitive_inference() -> !bool {
     print("  [1/12] Primitive type inference... ");
 
     // Integer literals infer to i32 by default
-    assert_checks("fn main() { let x = 42; }", "int_default");
-    assert_checks("fn main() { let x: i32 = 42; }", "int_explicit_i32");
-    assert_checks("fn main() { let x: i64 = 42; }", "int_explicit_i64");
-    assert_checks("fn main() { let x: u32 = 42; }", "int_explicit_u32");
+    assert_checks("λ main() { ≔ x = 42; }", "int_default");
+    assert_checks("λ main() { ≔ x: i32 = 42; }", "int_explicit_i32");
+    assert_checks("λ main() { ≔ x: i64 = 42; }", "int_explicit_i64");
+    assert_checks("λ main() { ≔ x: u32 = 42; }", "int_explicit_u32");
 
     // Float literals
-    assert_checks("fn main() { let x = 3.14; }", "float_default");
-    assert_checks("fn main() { let x: f32 = 3.14; }", "float_explicit_f32");
-    assert_checks("fn main() { let x: f64 = 3.14; }", "float_explicit_f64");
+    assert_checks("λ main() { ≔ x = 3.14; }", "float_default");
+    assert_checks("λ main() { ≔ x: f32 = 3.14; }", "float_explicit_f32");
+    assert_checks("λ main() { ≔ x: f64 = 3.14; }", "float_explicit_f64");
 
     // Boolean literals
-    assert_checks("fn main() { let x = true; }", "bool_true");
-    assert_checks("fn main() { let x = false; }", "bool_false");
-    assert_checks("fn main() { let x: bool = true; }", "bool_explicit");
+    assert_checks("λ main() { ≔ x = true; }", "bool_true");
+    assert_checks("λ main() { ≔ x = false; }", "bool_false");
+    assert_checks("λ main() { ≔ x: bool = true; }", "bool_explicit");
 
     // Character literals
-    assert_checks("fn main() { let x = 'a'; }", "char_default");
-    assert_checks("fn main() { let x: char = 'a'; }", "char_explicit");
+    assert_checks("λ main() { ≔ x = 'a'; }", "char_default");
+    assert_checks("λ main() { ≔ x: char = 'a'; }", "char_explicit");
 
     // String literals
-    assert_checks("fn main() { let x = \"hello\"; }", "string_default");
-    assert_checks("fn main() { let x: String = \"hello\"; }", "string_explicit");
+    assert_checks("λ main() { ≔ x = \"hello\"; }", "string_default");
+    assert_checks("λ main() { ≔ x: String = \"hello\"; }", "string_explicit");
 
     // Null literal
-    assert_checks("fn main() { let x: ?i32 = null; }", "null_optional");
+    assert_checks("λ main() { ≔ x: ?i32 = null; }", "null_optional");
 
     println("PASS (16 cases)");
     true
@@ -81,31 +81,31 @@ fn test_primitive_inference() -> !bool {
 // 2. ARITHMETIC TYPE INFERENCE
 // ============================================================================
 
-fn test_arithmetic_inference() -> !bool {
+λ test_arithmetic_inference() -> !bool {
     print("  [2/12] Arithmetic type inference... ");
 
     // Same types
-    assert_checks("fn main() { let x: i32 = 1 + 2; }", "add_i32");
-    assert_checks("fn main() { let x: i32 = 5 - 3; }", "sub_i32");
-    assert_checks("fn main() { let x: i32 = 2 * 3; }", "mul_i32");
-    assert_checks("fn main() { let x: i32 = 10 / 2; }", "div_i32");
-    assert_checks("fn main() { let x: i32 = 10 % 3; }", "mod_i32");
+    assert_checks("λ main() { ≔ x: i32 = 1 + 2; }", "add_i32");
+    assert_checks("λ main() { ≔ x: i32 = 5 - 3; }", "sub_i32");
+    assert_checks("λ main() { ≔ x: i32 = 2 * 3; }", "mul_i32");
+    assert_checks("λ main() { ≔ x: i32 = 10 / 2; }", "div_i32");
+    assert_checks("λ main() { ≔ x: i32 = 10 % 3; }", "mod_i32");
 
     // Float arithmetic
-    assert_checks("fn main() { let x: f64 = 1.0 + 2.0; }", "add_f64");
-    assert_checks("fn main() { let x: f64 = 1.5 * 2.0; }", "mul_f64");
+    assert_checks("λ main() { ≔ x: f64 = 1.0 + 2.0; }", "add_f64");
+    assert_checks("λ main() { ≔ x: f64 = 1.5 * 2.0; }", "mul_f64");
 
     // Negation
-    assert_checks("fn main() { let x: i32 = -42; }", "neg_int");
-    assert_checks("fn main() { let x: f64 = -3.14; }", "neg_float");
+    assert_checks("λ main() { ≔ x: i32 = -42; }", "neg_int");
+    assert_checks("λ main() { ≔ x: f64 = -3.14; }", "neg_float");
 
     // Mixed expressions with inference
-    assert_checks("fn main() { let x = 1 + 2 * 3; }", "mixed_arith");
-    assert_checks("fn main() { let x = (1 + 2) * 3; }", "parens_arith");
+    assert_checks("λ main() { ≔ x = 1 + 2 * 3; }", "mixed_arith");
+    assert_checks("λ main() { ≔ x = (1 + 2) * 3; }", "parens_arith");
 
     // Type mismatches should fail
-    assert_fails_check("fn main() { let x: i32 = 1 + 2.0; }", "int_plus_float");
-    assert_fails_check("fn main() { let x: String = 1 + 2; }", "arith_to_string");
+    assert_fails_check("λ main() { ≔ x: i32 = 1 + 2.0; }", "int_plus_float");
+    assert_fails_check("λ main() { ≔ x: String = 1 + 2; }", "arith_to_string");
 
     println("PASS (13 cases)");
     true
@@ -115,27 +115,27 @@ fn test_arithmetic_inference() -> !bool {
 // 3. COMPARISON TYPE INFERENCE
 // ============================================================================
 
-fn test_comparison_inference() -> !bool {
+λ test_comparison_inference() -> !bool {
     print("  [3/12] Comparison type inference... ");
 
     // Comparison results are bool
-    assert_checks("fn main() { let x: bool = 1 < 2; }", "lt_bool");
-    assert_checks("fn main() { let x: bool = 1 <= 2; }", "le_bool");
-    assert_checks("fn main() { let x: bool = 1 > 2; }", "gt_bool");
-    assert_checks("fn main() { let x: bool = 1 >= 2; }", "ge_bool");
-    assert_checks("fn main() { let x: bool = 1 == 2; }", "eq_bool");
-    assert_checks("fn main() { let x: bool = 1 != 2; }", "ne_bool");
+    assert_checks("λ main() { ≔ x: bool = 1 < 2; }", "lt_bool");
+    assert_checks("λ main() { ≔ x: bool = 1 <= 2; }", "le_bool");
+    assert_checks("λ main() { ≔ x: bool = 1 > 2; }", "gt_bool");
+    assert_checks("λ main() { ≔ x: bool = 1 >= 2; }", "ge_bool");
+    assert_checks("λ main() { ≔ x: bool = 1 == 2; }", "eq_bool");
+    assert_checks("λ main() { ≔ x: bool = 1 != 2; }", "ne_bool");
 
     // Logical operations
-    assert_checks("fn main() { let x: bool = true && false; }", "and_bool");
-    assert_checks("fn main() { let x: bool = true || false; }", "or_bool");
-    assert_checks("fn main() { let x: bool = !true; }", "not_bool");
+    assert_checks("λ main() { ≔ x: bool = true && false; }", "and_bool");
+    assert_checks("λ main() { ≔ x: bool = true || false; }", "or_bool");
+    assert_checks("λ main() { ≔ x: bool = !true; }", "not_bool");
 
     // Combined
-    assert_checks("fn main() { let x: bool = 1 < 2 && 3 < 4; }", "combined_cmp");
+    assert_checks("λ main() { ≔ x: bool = 1 < 2 && 3 < 4; }", "combined_cmp");
 
     // Comparing different types should fail
-    assert_fails_check("fn main() { let x = 1 < \"hello\"; }", "int_cmp_string");
+    assert_fails_check("λ main() { ≔ x = 1 < \"hello\"; }", "int_cmp_string");
 
     println("PASS (11 cases)");
     true
@@ -145,36 +145,36 @@ fn test_comparison_inference() -> !bool {
 // 4. FUNCTION TYPE INFERENCE
 // ============================================================================
 
-fn test_function_inference() -> !bool {
+λ test_function_inference() -> !bool {
     print("  [4/12] Function type inference... ");
 
-    // Basic function with explicit return type
-    assert_checks("fn add(a: !i32, b: !i32) -> !i32 { return a + b; }", "fn_add");
+    // Basic function with explicit ⤺ type
+    assert_checks("λ add(a: !i32, b: !i32) -> !i32 { ⤺ a + b; }", "fn_add");
 
     // Return type inferred from body
-    assert_checks("fn main() -> !i32 { return 42; }", "fn_return_int");
-    assert_checks("fn main() -> !bool { return true; }", "fn_return_bool");
+    assert_checks("λ main() -> !i32 { ⤺ 42; }", "fn_return_int");
+    assert_checks("λ main() -> !bool { ⤺ true; }", "fn_return_bool");
 
     // Function calling function
     assert_checks("
-        fn double(x: !i32) -> !i32 { return x * 2; }
-        fn main() { let y = double(21); }
+        λ double(x: !i32) -> !i32 { ⤺ x * 2; }
+        λ main() { ≔ y = double(21); }
     ", "fn_call_fn");
 
     // Wrong argument type
     assert_fails_check("
-        fn f(x: !i32) -> !i32 { return x; }
-        fn main() { f(\"hello\"); }
+        λ f(x: !i32) -> !i32 { ⤺ x; }
+        λ main() { f(\"hello\"); }
     ", "wrong_arg_type");
 
     // Wrong number of arguments
     assert_fails_check("
-        fn f(x: !i32, y: !i32) -> !i32 { return x + y; }
-        fn main() { f(1); }
+        λ f(x: !i32, y: !i32) -> !i32 { ⤺ x + y; }
+        λ main() { f(1); }
     ", "wrong_arg_count");
 
     // Return type mismatch
-    assert_fails_check("fn main() -> !i32 { return \"hello\"; }", "return_type_mismatch");
+    assert_fails_check("λ main() -> !i32 { ⤺ \"hello\"; }", "return_type_mismatch");
 
     println("PASS (7 cases)");
     true
@@ -184,52 +184,52 @@ fn test_function_inference() -> !bool {
 // 5. STRUCT TYPE INFERENCE
 // ============================================================================
 
-fn test_struct_inference() -> !bool {
+λ test_struct_inference() -> !bool {
     print("  [5/12] Struct type inference... ");
 
-    // Basic struct
+    // Basic Σ
     assert_checks("
-        struct Point { x: !i32, y: !i32 }
-        fn main() { let p = Point { x: 1, y: 2 }; }
+        Σ Point { x: !i32, y: !i32 }
+        λ main() { ≔ p = Point { x: 1, y: 2 }; }
     ", "struct_literal");
 
     // Field access
     assert_checks("
-        struct Point { x: !i32, y: !i32 }
-        fn main() {
-            let p = Point { x: 1, y: 2 };
-            let x: i32 = p.x;
+        Σ Point { x: !i32, y: !i32 }
+        λ main() {
+            ≔ p = Point { x: 1, y: 2 };
+            ≔ x: i32 = p.x;
         }
     ", "struct_field_access");
 
     // Struct with method
     assert_checks("
-        struct Counter { value: !i32 }
-        impl Counter {
-            fn increment(mut self) { self.value = self.value + 1; }
+        Σ Counter { value: !i32 }
+        ⊢ Counter {
+            λ increment(Δ self) { self.value = self.value + 1; }
         }
-        fn main() {
-            let mut c = Counter { value: 0 };
+        λ main() {
+            ≔ Δ c = Counter { value: 0 };
             c.increment();
         }
     ", "struct_method");
 
     // Wrong field type
     assert_fails_check("
-        struct Point { x: !i32, y: !i32 }
-        fn main() { let p = Point { x: \"hello\", y: 2 }; }
+        Σ Point { x: !i32, y: !i32 }
+        λ main() { ≔ p = Point { x: \"hello\", y: 2 }; }
     ", "wrong_field_type");
 
     // Missing field
     assert_fails_check("
-        struct Point { x: !i32, y: !i32 }
-        fn main() { let p = Point { x: 1 }; }
+        Σ Point { x: !i32, y: !i32 }
+        λ main() { ≔ p = Point { x: 1 }; }
     ", "missing_field");
 
     // Unknown field
     assert_fails_check("
-        struct Point { x: !i32, y: !i32 }
-        fn main() { let p = Point { x: 1, y: 2, z: 3 }; }
+        Σ Point { x: !i32, y: !i32 }
+        λ main() { ≔ p = Point { x: 1, y: 2, z: 3 }; }
     ", "unknown_field");
 
     println("PASS (6 cases)");
@@ -240,26 +240,26 @@ fn test_struct_inference() -> !bool {
 // 6. ENUM TYPE INFERENCE
 // ============================================================================
 
-fn test_enum_inference() -> !bool {
+λ test_enum_inference() -> !bool {
     print("  [6/12] Enum type inference... ");
 
-    // Basic enum
+    // Basic ᛈ
     assert_checks("
-        enum Color { Red, Green, Blue }
-        fn main() { let c: Color = Color·Red; }
+        ᛈ Color { Red, Green, Blue }
+        λ main() { ≔ c: Color = Color·Red; }
     ", "enum_unit_variant");
 
     // Enum with data
     assert_checks("
-        enum Option<T> { Some(T), None }
-        fn main() { let x: Option<i32> = Option·Some(42); }
+        ᛈ Option<T> { Some(T), None }
+        λ main() { ≔ x: Option<i32> = Option·Some(42); }
     ", "enum_with_data");
 
-    // Pattern matching on enum
+    // Pattern matching on ᛈ
     assert_checks("
-        enum Option<T> { Some(T), None }
-        fn unwrap(opt: !Option<i32>) -> !i32 {
-            match opt {
+        ᛈ Option<T> { Some(T), None }
+        λ unwrap(opt: !Option<i32>) -> !i32 {
+            ⌥ opt {
                 Option·Some(v) => v,
                 Option·None => 0,
             }
@@ -268,17 +268,17 @@ fn test_enum_inference() -> !bool {
 
     // Result type
     assert_checks("
-        enum Result<T, E> { Ok(T), Err(E) }
-        fn main() {
-            let x: Result<i32, String> = Result·Ok(42);
-            let y: Result<i32, String> = Result·Err(\"error\".to_string());
+        ᛈ Result<T, E> { Ok(T), Err(E) }
+        λ main() {
+            ≔ x: Result<i32, String> = Result·Ok(42);
+            ≔ y: Result<i32, String> = Result·Err(\"error\".to_string());
         }
     ", "result_type");
 
     // Wrong variant data type
     assert_fails_check("
-        enum Option<T> { Some(T), None }
-        fn main() { let x: Option<i32> = Option·Some(\"hello\"); }
+        ᛈ Option<T> { Some(T), None }
+        λ main() { ≔ x: Option<i32> = Option·Some(\"hello\"); }
     ", "wrong_variant_type");
 
     println("PASS (5 cases)");
@@ -289,63 +289,63 @@ fn test_enum_inference() -> !bool {
 // 7. EVIDENTIALITY TYPE INFERENCE
 // ============================================================================
 
-fn test_evidentiality_inference() -> !bool {
+λ test_evidentiality_inference() -> !bool {
     print("  [7/12] Evidentiality inference... ");
 
     // Known evidence
     assert_checks("
-        fn main() {
-            let x: !i32 = 42;  // Known
+        λ main() {
+            ≔ x: !i32 = 42;  // Known
         }
     ", "known_value");
 
     // Uncertain evidence
     assert_checks("
-        fn main() {
-            let x: ?i32 = 42;     // Uncertain
-            let y: ?i32 = null;   // Null is uncertain
+        λ main() {
+            ≔ x: ?i32 = 42;     // Uncertain
+            ≔ y: ?i32 = null;   // Null is uncertain
         }
     ", "uncertain_value");
 
     // Reported evidence
     assert_checks("
-        fn get_input() -> ~String { return \"user input\"; }
-        fn main() {
-            let x: ~String = get_input();
+        λ get_input() -> ~String { ⤺ \"user input\"; }
+        λ main() {
+            ≔ x: ~String = get_input();
         }
     ", "reported_value");
 
-    // Evidence propagation in arithmetic
+    // Evidence propagation ∈ arithmetic
     assert_checks("
-        fn main() {
-            let known: !i32 = 1;
-            let uncertain: ?i32 = 2;
+        λ main() {
+            ≔ known: !i32 = 1;
+            ≔ uncertain: ?i32 = 2;
             // Result should be uncertain (least upper bound)
-            let result: ?i32 = known + uncertain;
+            ≔ result: ?i32 = known + uncertain;
         }
     ", "evidence_propagation");
 
     // Cannot assign uncertain to known
     assert_fails_check("
-        fn main() {
-            let uncertain: ?i32 = 42;
-            let known: !i32 = uncertain;  // Error: uncertain -> known
+        λ main() {
+            ≔ uncertain: ?i32 = 42;
+            ≔ known: !i32 = uncertain;  // Error: uncertain -> known
         }
     ", "uncertain_to_known");
 
     // Null coalescing produces known
     assert_checks("
-        fn main() {
-            let uncertain: ?i32 = null;
-            let known: !i32 = uncertain ?? 0;  // Known after ??
+        λ main() {
+            ≔ uncertain: ?i32 = null;
+            ≔ known: !i32 = uncertain ?? 0;  // Known after ??
         }
     ", "null_coalescing");
 
     // Evidence unwrap
     assert_checks("
-        fn main() {
-            let uncertain: ?i32 = 42;
-            let known: !i32 = uncertain!;  // Assert known with !
+        λ main() {
+            ≔ uncertain: ?i32 = 42;
+            ≔ known: !i32 = uncertain!;  // Assert known with !
         }
     ", "evidence_unwrap");
 
@@ -357,49 +357,49 @@ fn test_evidentiality_inference() -> !bool {
 // 8. GENERIC TYPE INFERENCE
 // ============================================================================
 
-fn test_generic_inference() -> !bool {
+λ test_generic_inference() -> !bool {
     print("  [8/12] Generic type inference... ");
 
     // Generic function
     assert_checks("
-        fn identity<T>(x: !T) -> !T { return x; }
-        fn main() {
-            let a: i32 = identity(42);
-            let b: String = identity(\"hello\");
+        λ identity<T>(x: !T) -> !T { ⤺ x; }
+        λ main() {
+            ≔ a: i32 = identity(42);
+            ≔ b: String = identity(\"hello\");
         }
     ", "generic_function");
 
-    // Generic struct
+    // Generic Σ
     assert_checks("
-        struct Box<T> { value: !T }
-        fn main() {
-            let int_box: Box<i32> = Box { value: 42 };
-            let str_box: Box<String> = Box { value: \"hello\" };
+        Σ Box<T> { value: !T }
+        λ main() {
+            ≔ int_box: Box<i32> = Box { value: 42 };
+            ≔ str_box: Box<String> = Box { value: \"hello\" };
         }
     ", "generic_struct");
 
     // Multiple type parameters
     assert_checks("
-        struct Pair<A, B> { first: !A, second: !B }
-        fn main() {
-            let p: Pair<i32, String> = Pair { first: 1, second: \"hello\" };
+        Σ Pair<A, B> { first: !A, second: !B }
+        λ main() {
+            ≔ p: Pair<i32, String> = Pair { first: 1, second: \"hello\" };
         }
     ", "multiple_generics");
 
     // Type parameter inference from usage
     assert_checks("
-        fn first<T>(a: !T, b: !T) -> !T { return a; }
-        fn main() {
-            let x = first(1, 2);     // T inferred as i32
-            let y = first(\"a\", \"b\"); // T inferred as String
+        λ first<T>(a: !T, b: !T) -> !T { ⤺ a; }
+        λ main() {
+            ≔ x = first(1, 2);     // T inferred as i32
+            ≔ y = first(\"a\", \"b\"); // T inferred as String
         }
     ", "infer_type_param");
 
     // Conflicting type parameter inference should fail
     assert_fails_check("
-        fn first<T>(a: !T, b: !T) -> !T { return a; }
-        fn main() {
-            let x = first(1, \"hello\");  // T cannot be both i32 and String
+        λ first<T>(a: !T, b: !T) -> !T { ⤺ a; }
+        λ main() {
+            ≔ x = first(1, \"hello\");  // T cannot be both i32 and String
         }
     ", "conflicting_type_params");
 
@@ -411,53 +411,53 @@ fn test_generic_inference() -> !bool {
 // 9. ARRAY AND TUPLE INFERENCE
 // ============================================================================
 
-fn test_collection_inference() -> !bool {
+λ test_collection_inference() -> !bool {
     print("  [9/12] Collection type inference... ");
 
     // Array with homogeneous elements
     assert_checks("
-        fn main() {
-            let arr: [i32; 3] = [1, 2, 3];
+        λ main() {
+            ≔ arr: [i32; 3] = [1, 2, 3];
         }
     ", "array_literal");
 
     // Array element type inference
     assert_checks("
-        fn main() {
-            let arr = [1, 2, 3];  // Infers [i32; 3]
-            let x: i32 = arr[0];
+        λ main() {
+            ≔ arr = [1, 2, 3];  // Infers [i32; 3]
+            ≔ x: i32 = arr[0];
         }
     ", "array_inference");
 
     // Tuple with mixed types
     assert_checks("
-        fn main() {
-            let t: (i32, String, bool) = (1, \"hello\", true);
+        λ main() {
+            ≔ t: (i32, String, bool) = (1, \"hello\", true);
         }
     ", "tuple_literal");
 
     // Tuple field access
     assert_checks("
-        fn main() {
-            let t = (1, \"hello\", true);
-            let x: i32 = t.0;
-            let y: String = t.1;
-            let z: bool = t.2;
+        λ main() {
+            ≔ t = (1, \"hello\", true);
+            ≔ x: i32 = t.0;
+            ≔ y: String = t.1;
+            ≔ z: bool = t.2;
         }
     ", "tuple_access");
 
     // Heterogeneous array should fail
     assert_fails_check("
-        fn main() {
-            let arr = [1, \"hello\", true];  // Mixed types
+        λ main() {
+            ≔ arr = [1, \"hello\", true];  // Mixed types
         }
     ", "heterogeneous_array");
 
     // Wrong tuple field type
     assert_fails_check("
-        fn main() {
-            let t = (1, \"hello\");
-            let x: String = t.0;  // t.0 is i32
+        λ main() {
+            ≔ t = (1, \"hello\");
+            ≔ x: String = t.0;  // t.0 is i32
         }
     ", "wrong_tuple_field_type");
 
@@ -469,27 +469,27 @@ fn test_collection_inference() -> !bool {
 // 10. CONTROL FLOW TYPE INFERENCE
 // ============================================================================
 
-fn test_control_flow_inference() -> !bool {
+λ test_control_flow_inference() -> !bool {
     print("  [10/12] Control flow type inference... ");
 
     // If expression with same branch types
     assert_checks("
-        fn main() {
-            let x: i32 = if true { 1 } else { 2 };
+        λ main() {
+            ≔ x: i32 = ⎇ true { 1 } ⎉ { 2 };
         }
     ", "if_same_types");
 
     // If expression with different branch types should fail
     assert_fails_check("
-        fn main() {
-            let x = if true { 1 } else { \"hello\" };
+        λ main() {
+            ≔ x = ⎇ true { 1 } ⎉ { \"hello\" };
         }
     ", "if_different_types");
 
     // Match expression with consistent arm types
     assert_checks("
-        fn main() {
-            let x: i32 = match true {
+        λ main() {
+            ≔ x: i32 = ⌥ true {
                 true => 1,
                 false => 2,
             };
@@ -498,41 +498,41 @@ fn test_control_flow_inference() -> !bool {
 
     // Match with different arm types should fail
     assert_fails_check("
-        fn main() {
-            let x = match true {
+        λ main() {
+            ≔ x = ⌥ true {
                 true => 1,
                 false => \"hello\",
             };
         }
     ", "match_different_types");
 
-    // Loop with break value
+    // Loop with ⊗ value
     assert_checks("
-        fn main() {
-            let x: i32 = loop {
-                break 42;
+        λ main() {
+            ≔ x: i32 = loop {
+                ⊗ 42;
             };
         }
     ", "loop_break_value");
 
     // While condition must be bool
     assert_checks("
-        fn main() {
-            while true { break; }
+        λ main() {
+            ⟳ true { ⊗; }
         }
     ", "while_bool_condition");
 
     assert_fails_check("
-        fn main() {
-            while 42 { break; }  // 42 is not bool
+        λ main() {
+            ⟳ 42 { ⊗; }  // 42 is not bool
         }
     ", "while_non_bool");
 
     // For loop iterator
     assert_checks("
-        fn main() {
-            for i in 0..10 {
-                let x: i32 = i;
+        λ main() {
+            ∀ i ∈ 0..10 {
+                ≔ x: i32 = i;
             }
         }
     ", "for_loop_type");
@@ -545,48 +545,48 @@ fn test_control_flow_inference() -> !bool {
 // 11. CLOSURE TYPE INFERENCE
 // ============================================================================
 
-fn test_closure_inference() -> !bool {
+λ test_closure_inference() -> !bool {
     print("  [11/12] Closure type inference... ");
 
     // Closure parameter inference from context
     assert_checks("
-        fn apply(f: fn(!i32) -> !i32, x: !i32) -> !i32 { return f(x); }
-        fn main() {
-            let result = apply(|x| x + 1, 42);
+        λ apply(f: λ(!i32) -> !i32, x: !i32) -> !i32 { ⤺ f(x); }
+        λ main() {
+            ≔ result = apply(|x| x + 1, 42);
         }
     ", "closure_param_inference");
 
     // Closure with explicit types
     assert_checks("
-        fn main() {
-            let f = |x: i32| -> i32 { x + 1 };
-            let result: i32 = f(42);
+        λ main() {
+            ≔ f = |x: i32| -> i32 { x + 1 };
+            ≔ result: i32 = f(42);
         }
     ", "closure_explicit_types");
 
     // Closure capturing variables
     assert_checks("
-        fn main() {
-            let a: i32 = 10;
-            let f = |x| x + a;  // Captures a
-            let result = f(5);  // Should be 15
+        λ main() {
+            ≔ a: i32 = 10;
+            ≔ f = |x| x + a;  // Captures a
+            ≔ result = f(5);  // Should be 15
         }
     ", "closure_capture");
 
     // Move closure
     assert_checks("
-        fn main() {
-            let s = \"hello\".to_string();
-            let f = move || s.len();
+        λ main() {
+            ≔ s = \"hello\".to_string();
+            ≔ f = move || s.len();
         }
     ", "move_closure");
 
     // Nested closures
     assert_checks("
-        fn main() {
-            let f = |x: i32| |y: i32| x + y;
-            let g = f(10);
-            let result: i32 = g(5);  // 15
+        λ main() {
+            ≔ f = |x: i32| |y: i32| x + y;
+            ≔ g = f(10);
+            ≔ result: i32 = g(5);  // 15
         }
     ", "nested_closure");
 
@@ -598,75 +598,75 @@ fn test_closure_inference() -> !bool {
 // 12. METHOD RESOLUTION
 // ============================================================================
 
-fn test_method_resolution() -> !bool {
+λ test_method_resolution() -> !bool {
     print("  [12/12] Method resolution... ");
 
     // Basic method call
     assert_checks("
-        struct Counter { value: !i32 }
-        impl Counter {
-            fn get(self) -> !i32 { return self.value; }
+        Σ Counter { value: !i32 }
+        ⊢ Counter {
+            λ get(self) -> !i32 { ⤺ self.value; }
         }
-        fn main() {
-            let c = Counter { value: 42 };
-            let v: i32 = c.get();
+        λ main() {
+            ≔ c = Counter { value: 42 };
+            ≔ v: i32 = c.get();
         }
     ", "basic_method");
 
     // Method with self mutation
     assert_checks("
-        struct Counter { value: !i32 }
-        impl Counter {
-            fn inc(mut self) { self.value = self.value + 1; }
+        Σ Counter { value: !i32 }
+        ⊢ Counter {
+            λ inc(Δ self) { self.value = self.value + 1; }
         }
-        fn main() {
-            let mut c = Counter { value: 0 };
+        λ main() {
+            ≔ Δ c = Counter { value: 0 };
             c.inc();
         }
     ", "mut_self_method");
 
     // Associated function (no self)
     assert_checks("
-        struct Counter { value: !i32 }
-        impl Counter {
-            fn new(v: !i32) -> !Counter { Counter { value: v } }
+        Σ Counter { value: !i32 }
+        ⊢ Counter {
+            λ new(v: !i32) -> !Counter { Counter { value: v } }
         }
-        fn main() {
-            let c = Counter·new(42);
+        λ main() {
+            ≔ c = Counter·new(42);
         }
     ", "associated_function");
 
     // Method chaining
     assert_checks("
-        struct Builder { value: !i32 }
-        impl Builder {
-            fn add(mut self, x: !i32) -> !Builder {
+        Σ Builder { value: !i32 }
+        ⊢ Builder {
+            λ add(Δ self, x: !i32) -> !Builder {
                 self.value = self.value + x;
-                return self;
+                ⤺ self;
             }
         }
-        fn main() {
-            let b = Builder { value: 0 }.add(1).add(2).add(3);
+        λ main() {
+            ≔ b = Builder { value: 0 }.add(1).add(2).add(3);
         }
     ", "method_chaining");
 
     // Wrong method argument type
     assert_fails_check("
-        struct Foo {}
-        impl Foo {
-            fn bar(self, x: !i32) {}
+        Σ Foo {}
+        ⊢ Foo {
+            λ bar(self, x: !i32) {}
         }
-        fn main() {
-            let f = Foo {};
+        λ main() {
+            ≔ f = Foo {};
             f.bar(\"hello\");  // Wrong type
         }
     ", "wrong_method_arg");
 
     // Call non-existent method
     assert_fails_check("
-        struct Foo {}
-        fn main() {
-            let f = Foo {};
+        Σ Foo {}
+        λ main() {
+            ≔ f = Foo {};
             f.nonexistent();
         }
     ", "unknown_method");
@@ -679,36 +679,36 @@ fn test_method_resolution() -> !bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("Testing Type Checker Inference...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
 
     // Run all test groups
-    if test_primitive_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_arithmetic_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_comparison_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_function_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_struct_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_enum_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_evidentiality_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_generic_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_collection_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_control_flow_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_closure_inference() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_method_resolution() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_primitive_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_arithmetic_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_comparison_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_function_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_struct_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_enum_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_evidentiality_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_generic_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_collection_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_control_flow_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_closure_inference() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_method_resolution() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All type checker inference tests passed! (~95 test cases)");
-    return 0;
+    ⤺ 0;
 }

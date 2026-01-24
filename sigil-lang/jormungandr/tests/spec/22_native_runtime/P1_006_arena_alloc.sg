@@ -5,11 +5,11 @@
 // This test verifies sequential memory allocation patterns
 // using interpreter arrays.
 
-fn main() {
+λ main() {
     // Test 1: Create arena and allocate (using array)
-    let mut arena = [];
-    let mut i = 0;
-    while i < 100 {
+    ≔ Δ arena = [];
+    ≔ Δ i = 0;
+    ⟳ i < 100 {
         arena.push(0);
         i = i + 1;
     }
@@ -17,8 +17,8 @@ fn main() {
     println("alloc_100_ok");
 
     // Test 2: Allocate more
-    let mut j = 0;
-    while j < 200 {
+    ≔ Δ j = 0;
+    ⟳ j < 200 {
         arena.push(0);
         j = j + 1;
     }
@@ -38,50 +38,50 @@ fn main() {
     println("alignment_ok");
 
     // Test 5: Write and read patterns
-    let mut k = 0;
-    while k < 100 {
+    ≔ Δ k = 0;
+    ⟳ k < 100 {
         arena[k] = k;
         k = k + 1;
     }
-    let mut write_ok = true;
-    let mut m = 0;
-    while m < 100 {
-        if arena[m] != m {
+    ≔ Δ write_ok = true;
+    ≔ Δ m = 0;
+    ⟳ m < 100 {
+        ⎇ arena[m] != m {
             write_ok = false;
         }
         m = m + 1;
     }
-    if write_ok {
+    ⎇ write_ok {
         println("write_read_ok");
-    } else {
+    } ⎉ {
         println("write_read_fail");
     }
 
     // Test 6: Allocate zeroed (all zeros)
-    let mut zeroed = [];
-    let mut n = 0;
-    while n < 64 {
+    ≔ Δ zeroed = [];
+    ≔ Δ n = 0;
+    ⟳ n < 64 {
         zeroed.push(0);
         n = n + 1;
     }
-    let mut zeroed_ok = true;
-    let mut p = 0;
-    while p < 64 {
-        if zeroed[p] != 0 {
+    ≔ Δ zeroed_ok = true;
+    ≔ Δ p = 0;
+    ⟳ p < 64 {
+        ⎇ zeroed[p] != 0 {
             zeroed_ok = false;
         }
         p = p + 1;
     }
-    if zeroed_ok {
+    ⎇ zeroed_ok {
         println("alloc_zeroed_ok");
-    } else {
+    } ⎉ {
         println("alloc_zeroed_fail");
     }
 
     // Test 7: Reset (clear and reuse)
     arena.clear();
-    let mut q = 0;
-    while q < 8 {
+    ≔ Δ q = 0;
+    ⟳ q < 8 {
         arena.push(0);
         q = q + 1;
     }
@@ -89,9 +89,9 @@ fn main() {
     println("reset_ok");
 
     // Test 8: Large allocation
-    let mut large = [];
-    let mut r = 0;
-    while r < 2048 {
+    ≔ Δ large = [];
+    ≔ Δ r = 0;
+    ⟳ r < 2048 {
         large.push(r);
         r = r + 1;
     }
@@ -99,19 +99,19 @@ fn main() {
     println("large_alloc_ok");
 
     // Test 9: Many small allocations
-    let mut all_valid = true;
-    let mut small = [];
-    let mut s = 0;
-    while s < 1000 {
+    ≔ Δ all_valid = true;
+    ≔ Δ small = [];
+    ≔ Δ s = 0;
+    ⟳ s < 1000 {
         small.push(s);
-        if small.len() != s + 1 {
+        ⎇ small.len() != s + 1 {
             all_valid = false;
         }
         s = s + 1;
     }
-    if all_valid {
+    ⎇ all_valid {
         println("many_allocs_ok");
-    } else {
+    } ⎉ {
         println("many_allocs_fail");
     }
 

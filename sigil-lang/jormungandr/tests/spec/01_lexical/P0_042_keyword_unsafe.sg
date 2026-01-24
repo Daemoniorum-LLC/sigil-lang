@@ -8,10 +8,10 @@
 // Expected behavior:
 // Should print 42
 
-fn main() {
-    let x: !i32 = 42;
+λ main() {
+    ≔ x: !i32 = 42;
     unsafe {
-        let ptr: *!i32 = &x;
+        ≔ ptr: *!i32 = &x;
         println(*ptr);
     }
 }

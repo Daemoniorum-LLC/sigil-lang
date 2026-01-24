@@ -8,12 +8,12 @@
 // Expected behavior:
 // Should print 42
 
-fn consume(x: !i32) -> !i32 {
+λ consume(x: !i32) -> !i32 {
     x
 }
 
-fn main() {
-    let val: !i32 = 42;
-    let result: !i32 = consume(val);
+λ main() {
+    ≔ val: !i32 = 42;
+    ≔ result: !i32 = consume(val);
     println(result);
 }

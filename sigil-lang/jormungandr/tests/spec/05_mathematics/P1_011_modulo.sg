@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 1.6 Modulo
 // Priority: P1 - Standard Feature
 
-fn main() {
+λ main() {
     // Basic modulo
     println(10 % 3);
     println(15 % 4);

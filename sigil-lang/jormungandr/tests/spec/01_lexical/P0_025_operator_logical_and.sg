@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print true (true && true)
 
-fn main() {
-    let x: !bool = true;
-    let y: !bool = true;
+λ main() {
+    ≔ x: !bool = true;
+    ≔ y: !bool = true;
     println(x && y);
 }

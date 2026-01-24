@@ -3,10 +3,10 @@
 // Priority: P1 - Production Ready
 
 extern "C" {
-    fn abs(x: c_int) -> c_int;
+    λ abs(x: c_int) -> c_int;
 }
 
-fn main() {
+λ main() {
     // We can declare extern functions
     println(1);
 }

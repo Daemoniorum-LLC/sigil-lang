@@ -10,7 +10,7 @@
 // Expected behavior:
 // Should compile and run successfully, printing 99
 
-fn main() {
-    let x: ?i32 = 99;
+λ main() {
+    ≔ x: ?i32 = 99;
     println(x);
 }

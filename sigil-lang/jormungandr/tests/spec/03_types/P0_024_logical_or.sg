@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print true
 
-fn main() {
-    let x: !bool = true || false;
+λ main() {
+    ≔ x: !bool = true || false;
     println(x);
 }

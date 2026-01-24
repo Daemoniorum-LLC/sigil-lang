@@ -4,7 +4,7 @@
 // Priority: P0 - Bootstrap Critical
 // Note: Interpreter is dynamically typed - this succeeds at runtime
 
-fn main() {
-    let x: bool = 42;  // SHOULD ERROR: cannot assign i32 to bool
+λ main() {
+    ≔ x: bool = 42;  // SHOULD ERROR: cannot assign i32 to bool
     println(x);
 }

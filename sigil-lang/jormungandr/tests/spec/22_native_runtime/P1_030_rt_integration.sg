@@ -2,48 +2,48 @@
 //
 // Comprehensive test exercising all interpreter components together.
 
-fn fabs(x: f64) -> f64 {
-    if x < 0.0 { -x } else { x }
+λ fabs(x: f64) -> f64 {
+    ⎇ x < 0.0 { -x } ⎉ { x }
 }
 
 // ============================================================================
 // Test: Memory Allocation (simulated with arrays)
 // ============================================================================
 
-fn test_memory_allocation() {
+λ test_memory_allocation() {
     println("=== Memory Allocation ===");
 
     // Allocate some memory (using array)
-    let mut buffer = [];
-    let mut i = 0;
-    while i < 1024 {
+    ≔ Δ buffer = [];
+    ≔ Δ i = 0;
+    ⟳ i < 1024 {
         buffer.push(i % 256);
         i = i + 1;
     }
-    if buffer.len() > 0 {
+    ⎇ buffer.len() > 0 {
         println("  Allocated 1KB: OK");
     }
 
     // Write pattern
-    let mut j = 0;
-    while j < buffer.len() {
+    ≔ Δ j = 0;
+    ⟳ j < buffer.len() {
         buffer[j] = j % 256;
         j = j + 1;
     }
     println("  Write pattern: OK");
 
     // Verify pattern
-    let mut valid = true;
-    let mut k = 0;
-    while k < buffer.len() {
-        if buffer[k] != k % 256 {
+    ≔ Δ valid = true;
+    ≔ Δ k = 0;
+    ⟳ k < buffer.len() {
+        ⎇ buffer[k] != k % 256 {
             valid = false;
         }
         k = k + 1;
     }
-    if valid {
+    ⎇ valid {
         println("  Verify pattern: OK");
-    } else {
+    } ⎉ {
         println("  Verify pattern: FAIL");
     }
 
@@ -58,11 +58,11 @@ fn test_memory_allocation() {
 // Test: Vec Operations
 // ============================================================================
 
-fn test_vec_operations() {
+λ test_vec_operations() {
     println("=== Vec Operations ===");
 
     // Create and populate
-    let mut v = [];
+    ≔ Δ v = [];
     v.push(10);
     v.push(20);
     v.push(30);
@@ -71,38 +71,38 @@ fn test_vec_operations() {
 
     println("  Length: 5");
 
-    if v.capacity() >= 5 {
+    ⎇ v.capacity() >= 5 {
         println("  Capacity >= 5: OK");
-    } else {
+    } ⎉ {
         println("  Capacity >= 5: FAIL");
     }
 
     // Access elements
-    if v[2] == 30 {
+    ⎇ v[2] == 30 {
         println("  v[2] == 30: OK");
-    } else {
+    } ⎉ {
         println("  v[2] == 30: FAIL");
     }
 
     // Pop
-    match v.pop() {
-        Option::Some(val) => {
-            if val == 50 {
+    ⌥ v.pop() {
+        Option·Some(val) => {
+            ⎇ val == 50 {
                 println("  pop() == 50: OK");
-            } else {
+            } ⎉ {
                 println("  pop() == 50: FAIL");
             }
         },
-        Option::None => println("  pop() == 50: FAIL (None)"),
+        Option·None => println("  pop() == 50: FAIL (None)"),
     }
 
     println("  Length after pop: 4");
 
     // Clear
     v.clear();
-    if v.is_empty() {
+    ⎇ v.is_empty() {
         println("  After clear, is_empty: OK");
-    } else {
+    } ⎉ {
         println("  After clear, is_empty: FAIL");
     }
 
@@ -113,23 +113,23 @@ fn test_vec_operations() {
 // Test: String Operations
 // ============================================================================
 
-fn test_string_operations() {
+λ test_string_operations() {
     println("=== String Operations ===");
 
     // Create from literal
-    let s1 = "Hello";
-    println("  String::from length: 5");
+    ≔ s1 = "Hello";
+    println("  String·from length: 5");
 
     // Append (via concatenation)
-    let s2 = "Hello" + ", World!";
+    ≔ s2 = "Hello" + ", World!";
     println("  After push_str: Hello, World!");
 
     // Concatenate
-    let c = "Sigil" + " Native Runtime";
+    ≔ c = "Sigil" + " Native Runtime";
     println("  Concat result: Sigil Native Runtime");
 
     // UTF-8 multi-byte
-    let utf8 = "αβγ";
+    ≔ utf8 = "αβγ";
     println("  UTF-8 bytes (should be 6): 6");
 
     println("");
@@ -139,7 +139,7 @@ fn test_string_operations() {
 // Test: I/O Operations
 // ============================================================================
 
-fn test_io_operations() {
+λ test_io_operations() {
     println("=== I/O Operations ===");
 
     // Print functions
@@ -151,8 +151,8 @@ fn test_io_operations() {
     println("  Zero: 0");
 
     // File operations (simulated)
-    let content = "Integration test content\n";
-    let bytes = content.as_bytes();
+    ≔ content = "Integration test content\n";
+    ≔ bytes = content.as_bytes();
     println("  File write bytes: 25");
     println("  File read bytes: 25");
 
@@ -163,45 +163,45 @@ fn test_io_operations() {
 // Test: Math Operations
 // ============================================================================
 
-fn test_math_operations() {
+λ test_math_operations() {
     println("=== Math Operations ===");
 
     // Basic absolute value
-    let a = fabs(-42.5);
-    if a > 42.4 && a < 42.6 {
+    ≔ a = fabs(-42.5);
+    ⎇ a > 42.4 && a < 42.6 {
         println("  abs(-42.5): OK");
-    } else {
+    } ⎉ {
         println("  abs(-42.5): FAIL");
     }
 
     // Square root (simulated result)
-    let s = 4.0;  // sqrt(16.0) = 4.0
-    if s > 3.9 && s < 4.1 {
+    ≔ s = 4.0;  // sqrt(16.0) = 4.0
+    ⎇ s > 3.9 && s < 4.1 {
         println("  sqrt(16): OK (≈4)");
-    } else {
+    } ⎉ {
         println("  sqrt(16): FAIL");
     }
 
     // Trigonometry (simulated)
-    let sin0 = 0.0;  // sin(0) = 0
-    if sin0 > -0.001 && sin0 < 0.001 {
+    ≔ sin0 = 0.0;  // sin(0) = 0
+    ⎇ sin0 > -0.001 && sin0 < 0.001 {
         println("  sin(0): OK (≈0)");
-    } else {
+    } ⎉ {
         println("  sin(0): FAIL");
     }
 
-    let cos0 = 1.0;  // cos(0) = 1
-    if cos0 > 0.999 && cos0 < 1.001 {
+    ≔ cos0 = 1.0;  // cos(0) = 1
+    ⎇ cos0 > 0.999 && cos0 < 1.001 {
         println("  cos(0): OK (≈1)");
-    } else {
+    } ⎉ {
         println("  cos(0): FAIL");
     }
 
     // PI constant
-    let pi = 3.14159;
-    if pi > 3.14 {
+    ≔ pi = 3.14159;
+    ⎇ pi > 3.14 {
         println("  PI > 3.14: OK");
-    } else {
+    } ⎉ {
         println("  PI > 3.14: FAIL");
     }
 
@@ -212,29 +212,29 @@ fn test_math_operations() {
 // Test: Time Operations (simulated)
 // ============================================================================
 
-fn test_time_operations() {
+λ test_time_operations() {
     println("=== Time Operations ===");
 
     // Get current time (simulated)
-    let ts_sec = 1737452400;
+    ≔ ts_sec = 1737452400;
     println("  Unix timestamp: 1737452400");
 
     // Sanity check: should be after 2024
-    if ts_sec > 1704067200 {
+    ⎇ ts_sec > 1704067200 {
         println("  After year 2024: OK");
-    } else {
+    } ⎉ {
         println("  After year 2024: FAIL");
     }
 
     // Measure elapsed time (simulated)
-    let mut sum = 0;
-    let mut i = 0;
-    while i < 100000 {
+    ≔ Δ sum = 0;
+    ≔ Δ i = 0;
+    ⟳ i < 100000 {
         sum = sum + i;
         i = i + 1;
     }
 
-    if sum > 0 {
+    ⎇ sum > 0 {
         println("  Elapsed time measured: OK (>0 ns)");
     }
 
@@ -245,7 +245,7 @@ fn test_time_operations() {
 // Test: Syscall Layer (simulated)
 // ============================================================================
 
-fn test_syscall_layer() {
+λ test_syscall_layer() {
     println("=== Syscall Layer ===");
     println("  Direct syscall write: OK");
     println("");
@@ -255,7 +255,7 @@ fn test_syscall_layer() {
 // Entry Point
 // ============================================================================
 
-fn main() {
+λ main() {
     println("╔══════════════════════════════════════════════════════════════╗");
     println("║       SIGIL NATIVE RUNTIME - INTEGRATION TEST                ║");
     println("║       Replacing C Runtime with Pure Sigil                    ║");

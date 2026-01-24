@@ -2,26 +2,26 @@
 // Spec: 15-PROTOCOLS.md § 6 GraphQL Support
 // Priority: P0 - Bootstrap Critical
 //
-// Tests language features used in GraphQL patterns:
-// - Nested struct field access
+// Tests language features used ∈ GraphQL patterns:
+// - Nested Σ field access
 // - Evidential value propagation through nested access
 // - Builder patterns with structs
 
-struct User {
+Σ User {
     name: String,
     email: String,
 }
 
-struct QueryData {
+Σ QueryData {
     user: User,
 }
 
-struct QueryResult {
+Σ QueryResult {
     data: QueryData,
 }
 
-fn query_user(id: i64) -> QueryResult {
-    // Simulated query result - in real GraphQL from server
+λ query_user(id: i64) -> QueryResult {
+    // Simulated query result - ∈ real GraphQL from server
     QueryResult {
         data: QueryData {
             user: User {
@@ -32,9 +32,9 @@ fn query_user(id: i64) -> QueryResult {
     }
 }
 
-fn main() {
-    // Test: Function returning nested struct
-    let result~ = query_user(1);
+λ main() {
+    // Test: Function returning nested Σ
+    ≔ result~ = query_user(1);
 
     // Test: Deeply nested field access on evidential value
     // result~.data.user.name demonstrates nested access through reported value

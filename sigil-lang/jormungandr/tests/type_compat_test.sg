@@ -1,29 +1,29 @@
-// TDD Test: Type compatibility patterns for Jormungandr
+// TDD Test: Type compatibility patterns ∀ Jormungandr
 // RED: Define expected behavior
 // GREEN: These should all pass
 
 // Test 1: String literal to evidential String
 #[test]
-fn test_string_literal_to_evidential() {
+λ test_string_literal_to_evidential() {
     // String literals coerce to !String directly
-    let s: !String = "hello";
+    ≔ s: !String = "hello";
     assert_eq!(s, "hello");
 }
 
 // Test 2: Vec creation (not ![])
 #[test]
-fn test_vec_creation() {
-    let v: Vec<i32> = Vec·new();
+λ test_vec_creation() {
+    ≔ v: Vec<i32> = Vec·new();
     assert_eq!(v.len(), 0);
 }
 
-// Test 3: Optional return with null
+// Test 3: Optional ⤺ with null
 #[test]
-fn test_optional_return() {
-    fn maybe(cond: bool) -> i32? {
-        if cond {
+λ test_optional_return() {
+    λ maybe(cond: bool) -> i32? {
+        ⎇ cond {
             42
-        } else {
+        } ⎉ {
             null
         }
     }
@@ -33,7 +33,7 @@ fn test_optional_return() {
 
 // Test 4: Empty Vec is correct pattern
 #[test]
-fn test_empty_vec_typed() {
-    let items: Vec<String> = Vec·new();
+λ test_empty_vec_typed() {
+    ≔ items: Vec<String> = Vec·new();
     assert_eq!(items.len(), 0);
 }

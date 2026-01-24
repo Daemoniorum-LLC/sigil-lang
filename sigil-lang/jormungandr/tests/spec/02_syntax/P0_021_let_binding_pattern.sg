@@ -3,12 +3,12 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate let binding works with simple identifier.
+// Validate ≔ binding works with simple identifier.
 //
 // Expected behavior:
 // Should print 42
 
-fn main() {
-    let x: !i32 = 42;
+λ main() {
+    ≔ x: !i32 = 42;
     println(x);
 }

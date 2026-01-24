@@ -2,9 +2,9 @@
 // Spec: 03-TYPES.md § 4.4 Associated Functions
 // Priority: P0
 
-pub struct Math {}
-impl Math { pub fn answer() -> !i32 { 42 } }
+☉ Σ Math {}
+⊢ Math { ☉ λ answer() -> !i32 { 42 } }
 
-fn main() {
+λ main() {
     println(Math·answer());
 }

@@ -2,37 +2,37 @@
 //!
 //! Tests HTTP, WebSocket, gRPC, Kafka, and GraphQL protocol operations
 //! with evidence boundaries and trust propagation.
-//! Target: 100% protocol coverage for regression detection.
+//! Target: 100% protocol coverage ∀ regression detection.
 
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 /// Parse and type check protocol code
-fn check_source(source: !&str) -> !bool {
-    let mut parser = Parser·new(source.to_string());
-    let ast = match parser.parse_file() {
+λ check_source(source: !&str) -> !bool {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
         Result·Ok(a) => a,
-        Result·Err(_) => return false,
+        Result·Err(_) => ⤺ false,
     };
-    let mut checker = TypeChecker·new();
-    match checker.check_file(ast) {
+    ≔ Δ checker = TypeChecker·new();
+    ⌥ checker.check_file(ast) {
         Result·Ok(_) => true,
         Result·Err(_) => false,
     }
 }
 
-fn assert_checks(source: !&str, name: !&str) {
-    if !check_source(source) {
+λ assert_checks(source: !&str, name: !&str) {
+    ⎇ !check_source(source) {
         panic(format!("FAIL {}: type check failed", name));
     }
 }
 
-fn assert_fails(source: !&str, name: !&str) {
-    if check_source(source) {
+λ assert_fails(source: !&str, name: !&str) {
+    ⎇ check_source(source) {
         panic(format!("FAIL {}: should have failed", name));
     }
 }
@@ -41,20 +41,20 @@ fn assert_fails(source: !&str, name: !&str) {
 // 1. HTTP GET REQUESTS
 // ============================================================================
 
-fn test_http_get() -> !bool {
+λ test_http_get() -> !bool {
     print("  [1/10] HTTP GET requests... ");
 
     // Basic GET
     assert_checks("
-        async fn fetch() -> ~Response {
-            return http·get(\"https://api.example.com/data\").await;
+        async λ fetch() -> ~Response {
+            ⤺ http·get(\"https://api.example.com/data\").await;
         }
     ", "http_get_basic");
 
     // GET with headers
     assert_checks("
-        async fn fetch_auth() -> ~Response {
-            return http·get(\"https://api.example.com/data\")
+        async λ fetch_auth() -> ~Response {
+            ⤺ http·get(\"https://api.example.com/data\")
                 .header(\"Authorization\", \"Bearer token\")
                 .await;
         }
@@ -62,8 +62,8 @@ fn test_http_get() -> !bool {
 
     // GET with timeout
     assert_checks("
-        async fn fetch_timeout() -> ~Response {
-            return http·get(\"https://api.example.com/data\")
+        async λ fetch_timeout() -> ~Response {
+            ⤺ http·get(\"https://api.example.com/data\")
                 .timeout(5000)
                 .await;
         }
@@ -71,8 +71,8 @@ fn test_http_get() -> !bool {
 
     // GET with query params
     assert_checks("
-        async fn fetch_query() -> ~Response {
-            return http·get(\"https://api.example.com/search\")
+        async λ fetch_query() -> ~Response {
+            ⤺ http·get(\"https://api.example.com/search\")
                 .query(\"q\", \"sigil\")
                 .query(\"limit\", \"10\")
                 .await;
@@ -81,11 +81,11 @@ fn test_http_get() -> !bool {
 
     // Response is reported evidence (external data)
     assert_checks("
-        async fn process() -> !String {
-            let response: ~Response = http·get(\"https://api.example.com\").await;
+        async λ process() -> !String {
+            ≔ response: ~Response = http·get(\"https://api.example.com\").await;
             // Must validate before using as known
-            let body: ~String = response.text().await;
-            return body.validate()!;  // Explicit trust boundary
+            ≔ body: ~String = response.text().await;
+            ⤺ body.validate()!;  // Explicit trust boundary
         }
     ", "http_evidence_boundary");
 
@@ -97,13 +97,13 @@ fn test_http_get() -> !bool {
 // 2. HTTP POST REQUESTS
 // ============================================================================
 
-fn test_http_post() -> !bool {
+λ test_http_post() -> !bool {
     print("  [2/10] HTTP POST requests... ");
 
     // Basic POST
     assert_checks("
-        async fn create() -> ~Response {
-            return http·post(\"https://api.example.com/items\")
+        async λ create() -> ~Response {
+            ⤺ http·post(\"https://api.example.com/items\")
                 .json({ \"name\": \"item\" })
                 .await;
         }
@@ -111,8 +111,8 @@ fn test_http_post() -> !bool {
 
     // POST with form data
     assert_checks("
-        async fn submit_form() -> ~Response {
-            return http·post(\"https://api.example.com/form\")
+        async λ submit_form() -> ~Response {
+            ⤺ http·post(\"https://api.example.com/form\")
                 .form([
                     (\"username\", \"user\"),
                     (\"password\", \"pass\"),
@@ -123,8 +123,8 @@ fn test_http_post() -> !bool {
 
     // POST with raw body
     assert_checks("
-        async fn send_raw() -> ~Response {
-            return http·post(\"https://api.example.com/raw\")
+        async λ send_raw() -> ~Response {
+            ⤺ http·post(\"https://api.example.com/raw\")
                 .body(\"raw data\")
                 .header(\"Content-Type\", \"text/plain\")
                 .await;
@@ -133,9 +133,9 @@ fn test_http_post() -> !bool {
 
     // POST with JSON serialization
     assert_checks("
-        struct Item { name: !String, value: !i32 }
-        async fn create_item(item: !Item) -> ~Response {
-            return http·post(\"https://api.example.com/items\")
+        Σ Item { name: !String, value: !i32 }
+        async λ create_item(item: !Item) -> ~Response {
+            ⤺ http·post(\"https://api.example.com/items\")
                 .json(item)
                 .await;
         }
@@ -149,13 +149,13 @@ fn test_http_post() -> !bool {
 // 3. HTTP OTHER METHODS
 // ============================================================================
 
-fn test_http_other() -> !bool {
+λ test_http_other() -> !bool {
     print("  [3/10] HTTP other methods... ");
 
     // PUT
     assert_checks("
-        async fn update() -> ~Response {
-            return http·put(\"https://api.example.com/items/1\")
+        async λ update() -> ~Response {
+            ⤺ http·put(\"https://api.example.com/items/1\")
                 .json({ \"name\": \"updated\" })
                 .await;
         }
@@ -163,15 +163,15 @@ fn test_http_other() -> !bool {
 
     // DELETE
     assert_checks("
-        async fn delete() -> ~Response {
-            return http·delete(\"https://api.example.com/items/1\").await;
+        async λ delete() -> ~Response {
+            ⤺ http·delete(\"https://api.example.com/items/1\").await;
         }
     ", "http_delete");
 
     // PATCH
     assert_checks("
-        async fn patch() -> ~Response {
-            return http·patch(\"https://api.example.com/items/1\")
+        async λ patch() -> ~Response {
+            ⤺ http·patch(\"https://api.example.com/items/1\")
                 .json({ \"status\": \"active\" })
                 .await;
         }
@@ -179,15 +179,15 @@ fn test_http_other() -> !bool {
 
     // HEAD
     assert_checks("
-        async fn check_exists() -> ~Response {
-            return http·head(\"https://api.example.com/items/1\").await;
+        async λ check_exists() -> ~Response {
+            ⤺ http·head(\"https://api.example.com/items/1\").await;
         }
     ", "http_head");
 
     // OPTIONS
     assert_checks("
-        async fn get_options() -> ~Response {
-            return http·options(\"https://api.example.com/items\").await;
+        async λ get_options() -> ~Response {
+            ⤺ http·options(\"https://api.example.com/items\").await;
         }
     ", "http_options");
 
@@ -199,20 +199,20 @@ fn test_http_other() -> !bool {
 // 4. WEBSOCKET CONNECTIONS
 // ============================================================================
 
-fn test_websocket() -> !bool {
+λ test_websocket() -> !bool {
     print("  [4/10] WebSocket connections... ");
 
     // Connect
     assert_checks("
-        async fn connect() -> ~WebSocket {
-            return ws·connect(\"wss://echo.websocket.org\").await;
+        async λ connect() -> ~WebSocket {
+            ⤺ ws·connect(\"wss://echo.websocket.org\").await;
         }
     ", "ws_connect");
 
     // Connect with protocols
     assert_checks("
-        async fn connect_proto() -> ~WebSocket {
-            return ws·connect(\"wss://example.com/socket\")
+        async λ connect_proto() -> ~WebSocket {
+            ⤺ ws·connect(\"wss://example.com/socket\")
                 .protocol(\"graphql-ws\")
                 .await;
         }
@@ -220,28 +220,28 @@ fn test_websocket() -> !bool {
 
     // Send text message
     assert_checks("
-        async fn send_message(ws: ~WebSocket) -> !() {
+        async λ send_message(ws: ~WebSocket) -> !() {
             ws.send_text(\"hello\").await;
         }
     ", "ws_send_text");
 
     // Send binary message
     assert_checks("
-        async fn send_binary(ws: ~WebSocket, data: ![u8]) -> !() {
+        async λ send_binary(ws: ~WebSocket, data: ![u8]) -> !() {
             ws.send_binary(data).await;
         }
     ", "ws_send_binary");
 
     // Receive message
     assert_checks("
-        async fn receive(ws: ~WebSocket) -> ~Message {
-            return ws.recv().await;
+        async λ receive(ws: ~WebSocket) -> ~Message {
+            ⤺ ws.recv().await;
         }
     ", "ws_receive");
 
     // Close connection
     assert_checks("
-        async fn close(ws: ~WebSocket) -> !() {
+        async λ close(ws: ~WebSocket) -> !() {
             ws.close().await;
         }
     ", "ws_close");
@@ -254,13 +254,13 @@ fn test_websocket() -> !bool {
 // 5. GRPC CALLS
 // ============================================================================
 
-fn test_grpc() -> !bool {
+λ test_grpc() -> !bool {
     print("  [5/10] gRPC calls... ");
 
     // Unary call
     assert_checks("
-        async fn grpc_unary() -> ~Response {
-            return grpc·call(\"localhost:50051\", \"greeter.Greeter/SayHello\")
+        async λ grpc_unary() -> ~Response {
+            ⤺ grpc·call(\"localhost:50051\", \"greeter.Greeter/SayHello\")
                 .message({ \"name\": \"World\" })
                 .await;
         }
@@ -268,8 +268,8 @@ fn test_grpc() -> !bool {
 
     // With metadata
     assert_checks("
-        async fn grpc_metadata() -> ~Response {
-            return grpc·call(\"localhost:50051\", \"service/Method\")
+        async λ grpc_metadata() -> ~Response {
+            ⤺ grpc·call(\"localhost:50051\", \"service/Method\")
                 .metadata(\"authorization\", \"Bearer token\")
                 .message({})
                 .await;
@@ -278,8 +278,8 @@ fn test_grpc() -> !bool {
 
     // With timeout
     assert_checks("
-        async fn grpc_timeout() -> ~Response {
-            return grpc·call(\"localhost:50051\", \"service/Method\")
+        async λ grpc_timeout() -> ~Response {
+            ⤺ grpc·call(\"localhost:50051\", \"service/Method\")
                 .timeout(10000)
                 .message({})
                 .await;
@@ -288,8 +288,8 @@ fn test_grpc() -> !bool {
 
     // Streaming (server-side)
     assert_checks("
-        async fn grpc_stream() -> ~Stream<Response> {
-            return grpc·stream(\"localhost:50051\", \"service/StreamMethod\")
+        async λ grpc_stream() -> ~Stream<Response> {
+            ⤺ grpc·stream(\"localhost:50051\", \"service/StreamMethod\")
                 .message({})
                 .await;
         }
@@ -303,12 +303,12 @@ fn test_grpc() -> !bool {
 // 6. KAFKA OPERATIONS
 // ============================================================================
 
-fn test_kafka() -> !bool {
+λ test_kafka() -> !bool {
     print("  [6/10] Kafka operations... ");
 
     // Produce message
     assert_checks("
-        async fn produce() -> !() {
+        async λ produce() -> !() {
             kafka·produce(\"my-topic\")
                 .message(\"hello kafka\")
                 .key(\"key1\")
@@ -318,7 +318,7 @@ fn test_kafka() -> !bool {
 
     // Produce with partition
     assert_checks("
-        async fn produce_partition() -> !() {
+        async λ produce_partition() -> !() {
             kafka·produce(\"my-topic\")
                 .message(\"hello\")
                 .partition(0)
@@ -328,8 +328,8 @@ fn test_kafka() -> !bool {
 
     // Consume messages
     assert_checks("
-        async fn consume() -> ~Stream<Message> {
-            return kafka·consume(\"my-topic\")
+        async λ consume() -> ~Stream<Message> {
+            ⤺ kafka·consume(\"my-topic\")
                 .group(\"my-group\")
                 .await;
         }
@@ -337,8 +337,8 @@ fn test_kafka() -> !bool {
 
     // Consume from offset
     assert_checks("
-        async fn consume_offset() -> ~Stream<Message> {
-            return kafka·consume(\"my-topic\")
+        async λ consume_offset() -> ~Stream<Message> {
+            ⤺ kafka·consume(\"my-topic\")
                 .offset(100)
                 .await;
         }
@@ -352,13 +352,13 @@ fn test_kafka() -> !bool {
 // 7. GRAPHQL OPERATIONS
 // ============================================================================
 
-fn test_graphql() -> !bool {
+λ test_graphql() -> !bool {
     print("  [7/10] GraphQL operations... ");
 
     // Query
     assert_checks("
-        async fn query() -> ~Response {
-            return graphql·query(\"https://api.example.com/graphql\")
+        async λ query() -> ~Response {
+            ⤺ graphql·query(\"https://api.example.com/graphql\")
                 .document(\"query { users { id name } }\")
                 .await;
         }
@@ -366,8 +366,8 @@ fn test_graphql() -> !bool {
 
     // Query with variables
     assert_checks("
-        async fn query_vars() -> ~Response {
-            return graphql·query(\"https://api.example.com/graphql\")
+        async λ query_vars() -> ~Response {
+            ⤺ graphql·query(\"https://api.example.com/graphql\")
                 .document(\"query($id: ID!) { user(id: $id) { name } }\")
                 .variables({ \"id\": \"123\" })
                 .await;
@@ -376,8 +376,8 @@ fn test_graphql() -> !bool {
 
     // Mutation
     assert_checks("
-        async fn mutate() -> ~Response {
-            return graphql·mutation(\"https://api.example.com/graphql\")
+        async λ mutate() -> ~Response {
+            ⤺ graphql·mutation(\"https://api.example.com/graphql\")
                 .document(\"mutation { createUser(name: \\\"Test\\\") { id } }\")
                 .await;
         }
@@ -385,8 +385,8 @@ fn test_graphql() -> !bool {
 
     // Subscription
     assert_checks("
-        async fn subscribe() -> ~Stream<Response> {
-            return graphql·subscription(\"wss://api.example.com/graphql\")
+        async λ subscribe() -> ~Stream<Response> {
+            ⤺ graphql·subscription(\"wss://api.example.com/graphql\")
                 .document(\"subscription { newMessage { text } }\")
                 .await;
         }
@@ -394,8 +394,8 @@ fn test_graphql() -> !bool {
 
     // With operation name
     assert_checks("
-        async fn named_op() -> ~Response {
-            return graphql·query(\"https://api.example.com/graphql\")
+        async λ named_op() -> ~Response {
+            ⤺ graphql·query(\"https://api.example.com/graphql\")
                 .document(\"query GetUser { user { id } } query GetPosts { posts { id } }\")
                 .operation_name(\"GetUser\")
                 .await;
@@ -410,38 +410,38 @@ fn test_graphql() -> !bool {
 // 8. TRUST BOUNDARIES
 // ============================================================================
 
-fn test_trust_boundaries() -> !bool {
+λ test_trust_boundaries() -> !bool {
     print("  [8/10] Trust boundaries... ");
 
     // External data is reported
     assert_checks("
-        async fn get_external() -> ~String {
-            let response = http·get(\"https://api.example.com\").await;
-            return response.text().await;  // Returns ~String (reported)
+        async λ get_external() -> ~String {
+            ≔ response = http·get(\"https://api.example.com\").await;
+            ⤺ response.text().await;  // Returns ~String (reported)
         }
     ", "external_reported");
 
     // Validation promotes to known
     assert_checks("
-        async fn validate_input() -> !i32 {
-            let response = http·get(\"https://api.example.com/number\").await;
-            let text: ~String = response.text().await;
-            let num: ~i32 = text.parse();
+        async λ validate_input() -> !i32 {
+            ≔ response = http·get(\"https://api.example.com/number\").await;
+            ≔ text: ~String = response.text().await;
+            ≔ num: ~i32 = text.parse();
             // Validate before promoting to known
-            if num >= 0 && num <= 100 {
-                return num!;  // Explicit promotion
+            ⎇ num >= 0 && num <= 100 {
+                ⤺ num!;  // Explicit promotion
             }
-            return 0;
+            ⤺ 0;
         }
     ", "validate_promote");
 
     // Paradox on conflicting data
     assert_checks("
-        async fn check_paradox() -> ‽bool {
-            let a = http·get(\"https://api1.example.com/value\").await.json·<i32>();
-            let b = http·get(\"https://api2.example.com/value\").await.json·<i32>();
+        async λ check_paradox() -> ‽bool {
+            ≔ a = http·get(\"https://api1.example.com/value\").await.json·<i32>();
+            ≔ b = http·get(\"https://api2.example.com/value\").await.json·<i32>();
             // If sources disagree, result is paradox
-            return a == b;
+            ⤺ a == b;
         }
     ", "paradox_conflict");
 
@@ -453,13 +453,13 @@ fn test_trust_boundaries() -> !bool {
 // 9. ERROR HANDLING
 // ============================================================================
 
-fn test_protocol_errors() -> !bool {
+λ test_protocol_errors() -> !bool {
     print("  [9/10] Protocol error handling... ");
 
     // HTTP error handling
     assert_checks("
-        async fn handle_error() -> !String {
-            match http·get(\"https://api.example.com\").await {
+        async λ handle_error() -> !String {
+            ⌥ http·get(\"https://api.example.com\").await {
                 Response·Ok(r) => r.text().await.validate()!,
                 Response·Err(e) => format!(\"Error: {}\", e),
             }
@@ -468,11 +468,11 @@ fn test_protocol_errors() -> !bool {
 
     // Timeout handling
     assert_checks("
-        async fn with_timeout() -> ?String {
-            let result = http·get(\"https://api.example.com\")
+        async λ with_timeout() -> ?String {
+            ≔ result = http·get(\"https://api.example.com\")
                 .timeout(1000)
                 .await;
-            match result {
+            ⌥ result {
                 Response·Ok(r) => ?r.text().await,
                 Response·Timeout => null,
                 Response·Err(_) => null,
@@ -482,8 +482,8 @@ fn test_protocol_errors() -> !bool {
 
     // Retry logic
     assert_checks("
-        async fn with_retry() -> ~Response {
-            return http·get(\"https://api.example.com\")
+        async λ with_retry() -> ~Response {
+            ⤺ http·get(\"https://api.example.com\")
                 .retry(3)
                 .backoff(1000)
                 .await;
@@ -492,8 +492,8 @@ fn test_protocol_errors() -> !bool {
 
     // Circuit breaker
     assert_checks("
-        async fn with_circuit_breaker() -> ~Response {
-            return http·get(\"https://api.example.com\")
+        async λ with_circuit_breaker() -> ~Response {
+            ⤺ http·get(\"https://api.example.com\")
                 .circuit_breaker(\"api-service\", 5, 30000)
                 .await;
         }
@@ -507,18 +507,18 @@ fn test_protocol_errors() -> !bool {
 // 10. PROTOCOL COMPOSITION
 // ============================================================================
 
-fn test_protocol_composition() -> !bool {
+λ test_protocol_composition() -> !bool {
     print("  [10/10] Protocol composition... ");
 
     // Chained requests
     assert_checks("
-        async fn chained() -> ~Data {
-            let auth = http·post(\"https://auth.example.com/token\")
+        async λ chained() -> ~Data {
+            ≔ auth = http·post(\"https://auth.example.com/token\")
                 .json({ \"client_id\": \"xxx\" })
                 .await;
-            let token = auth.json·<TokenResponse>().access_token;
+            ≔ token = auth.json·<TokenResponse>().access_token;
 
-            return http·get(\"https://api.example.com/data\")
+            ⤺ http·get(\"https://api.example.com/data\")
                 .header(\"Authorization\", format!(\"Bearer {}\", token))
                 .await
                 .json();
@@ -527,19 +527,19 @@ fn test_protocol_composition() -> !bool {
 
     // Parallel requests
     assert_checks("
-        async fn parallel() -> !(~A, ~B) {
-            let (a, b) = join!(
+        async λ parallel() -> !(~A, ~B) {
+            ≔ (a, b) = join!(
                 http·get(\"https://api.example.com/a\").await.json(),
                 http·get(\"https://api.example.com/b\").await.json(),
             );
-            return (a, b);
+            ⤺ (a, b);
         }
     ", "parallel_requests");
 
     // Protocol pipeline
     assert_checks("
-        async fn pipeline() -> ![~Item] {
-            return http·get(\"https://api.example.com/items\")
+        async λ pipeline() -> ![~Item] {
+            ⤺ http·get(\"https://api.example.com/items\")
                 .await
                 .json·<[Item]>()
                 |τ{item => item.enrich().await}
@@ -549,12 +549,12 @@ fn test_protocol_composition() -> !bool {
 
     // Mixed protocols
     assert_checks("
-        async fn mixed() -> !() {
+        async λ mixed() -> !() {
             // Get config from HTTP
-            let config = http·get(\"https://config.example.com\").await.json();
+            ≔ config = http·get(\"https://config.example.com\").await.json();
 
             // Connect WebSocket with config
-            let ws = ws·connect(config.ws_url).await;
+            ≔ ws = ws·connect(config.ws_url).await;
 
             // Publish to Kafka
             kafka·produce(\"events\")
@@ -571,33 +571,33 @@ fn test_protocol_composition() -> !bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("Testing Protocol Operations...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
 
-    if test_http_get() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_http_post() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_http_other() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_websocket() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_grpc() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_kafka() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_graphql() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_trust_boundaries() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_protocol_errors() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_protocol_composition() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_http_get() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_http_post() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_http_other() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_websocket() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_grpc() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_kafka() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_graphql() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_trust_boundaries() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_protocol_errors() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_protocol_composition() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All protocol tests passed! (~44 test cases)");
-    return 0;
+    ⤺ 0;
 }

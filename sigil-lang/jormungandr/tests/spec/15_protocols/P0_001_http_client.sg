@@ -1,37 +1,37 @@
-// Test: HTTP client pattern - struct constructors and field access
+// Test: HTTP client pattern - Σ constructors and field access
 // Spec: 15-PROTOCOLS.md § 4 HTTP Support
 // Priority: P0 - Bootstrap Critical
 //
-// Tests language features used in HTTP client patterns:
+// Tests language features used ∈ HTTP client patterns:
 // - Struct constructors
 // - Static method patterns
 // - Evidential value binding and access
 
 // Define HTTP types locally to test the patterns
-struct HttpRequest {
+Σ HttpRequest {
     method: String,
     url: String,
 }
 
-struct HttpResponse {
+Σ HttpResponse {
     status: i64,
     body: String,
 }
 
 // Constructor pattern using namespace
-fn make_get_request(url: String) -> HttpRequest {
+λ make_get_request(url: String) -> HttpRequest {
     HttpRequest { method: "GET", url: url }
 }
 
-fn main() {
-    // Test struct constructor pattern
-    let req = make_get_request("https://api.example.com/data");
+λ main() {
+    // Test Σ constructor pattern
+    ≔ req = make_get_request("https://api.example.com/data");
 
     // Verify the request was constructed correctly
     println(req.method);
     println(req.url);
 
     // Test evidential binding pattern
-    let response~ = HttpResponse { status: 200, body: "OK" };
+    ≔ response~ = HttpResponse { status: 200, body: "OK" };
     println(response~.status);
 }

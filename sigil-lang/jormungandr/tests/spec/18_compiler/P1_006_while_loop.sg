@@ -2,9 +2,9 @@
 // Spec: 18-COMPILER.md § 3.1 Control Flow
 // Priority: P1 - Production Ready
 
-fn main() {
-    let mut i: !i32 = 0;
-    while i < 5 {
+λ main() {
+    ≔ Δ i: !i32 = 0;
+    ⟳ i < 5 {
         println(i);
         i = i + 1;
     }

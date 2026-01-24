@@ -1,24 +1,24 @@
 //! Comprehensive Inline Assembly Test Suite
 //!
 //! Tests inline assembly syntax and constraints.
-//! Target: 100% inline assembly coverage for regression detection.
+//! Target: 100% inline assembly coverage ∀ regression detection.
 
-use crate·parser·Parser;
+invoke crate·parser·Parser;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-fn parse_file(source: !&str) -> !bool {
-    let mut parser = Parser·new(source.to_string());
-    match parser.parse_file() {
+λ parse_file(source: !&str) -> !bool {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ⌥ parser.parse_file() {
         Result·Ok(_) => true,
         Result·Err(_) => false,
     }
 }
 
-fn assert_parses(source: !&str, name: !&str) {
-    if !parse_file(source) {
+λ assert_parses(source: !&str, name: !&str) {
+    ⎇ !parse_file(source) {
         panic(format!("FAIL {}: failed to parse", name));
     }
 }
@@ -27,12 +27,12 @@ fn assert_parses(source: !&str, name: !&str) {
 // 1. BASIC INLINE ASSEMBLY
 // ============================================================================
 
-fn test_basic_asm() -> !bool {
+λ test_basic_asm() -> !bool {
     print("  [1/3] Basic inline assembly... ");
 
     // Simple asm
     assert_parses("
-        fn nop() {
+        λ nop() {
             unsafe {
                 asm!(\"nop\");
             }
@@ -41,19 +41,19 @@ fn test_basic_asm() -> !bool {
 
     // With output
     assert_parses("
-        fn get_flags() -> !u64 {
-            let flags: u64;
+        λ get_flags() -> !u64 {
+            ≔ flags: u64;
             unsafe {
                 asm!(\"pushfq; pop {}\", out(reg) flags);
             }
-            return flags;
+            ⤺ flags;
         }
     ", "asm_output");
 
     // With input
     assert_parses("
-        fn cpuid(leaf: !u32) -> !u32 {
-            let result: u32;
+        λ cpuid(leaf: !u32) -> !u32 {
+            ≔ result: u32;
             unsafe {
                 asm!(
                     \"cpuid\",
@@ -61,13 +61,13 @@ fn test_basic_asm() -> !bool {
                     out(\"eax\") result,
                 );
             }
-            return result;
+            ⤺ result;
         }
     ", "asm_input_output");
 
     // Multiple instructions
     assert_parses("
-        fn swap(a: &mut i32, b: &mut i32) {
+        λ swap(a: &Δ i32, b: &Δ i32) {
             unsafe {
                 asm!(
                     \"mov {tmp}, [{a}]\",
@@ -91,35 +91,35 @@ fn test_basic_asm() -> !bool {
 // 2. ASM CONSTRAINTS
 // ============================================================================
 
-fn test_asm_constraints() -> !bool {
+λ test_asm_constraints() -> !bool {
     print("  [2/3] Asm constraints... ");
 
     // Register constraints
     assert_parses("
-        fn test() {
-            let x: u64;
+        λ test() {
+            ≔ x: u64;
             unsafe { asm!(\"mov {}, rax\", out(reg) x); }
         }
     ", "asm_reg_constraint");
 
     // Specific register
     assert_parses("
-        fn test() {
-            let x: u64;
+        λ test() {
+            ≔ x: u64;
             unsafe { asm!(\"mov rax, 42\", out(\"rax\") x); }
         }
     ", "asm_specific_reg");
 
     // Memory constraint
     assert_parses("
-        fn test(ptr: *mut i32) {
+        λ test(ptr: *Δ i32) {
             unsafe { asm!(\"mov dword ptr [{}], 42\", in(reg) ptr); }
         }
     ", "asm_memory");
 
     // Clobbers
     assert_parses("
-        fn test() {
+        λ test() {
             unsafe {
                 asm!(
                     \"cpuid\",
@@ -134,7 +134,7 @@ fn test_asm_constraints() -> !bool {
 
     // Options
     assert_parses("
-        fn test() {
+        λ test() {
             unsafe {
                 asm!(\"nop\", options(nomem, nostack));
             }
@@ -149,7 +149,7 @@ fn test_asm_constraints() -> !bool {
 // 3. GLOBAL ASM
 // ============================================================================
 
-fn test_global_asm() -> !bool {
+λ test_global_asm() -> !bool {
     print("  [3/3] Global assembly... ");
 
     // Global asm block
@@ -171,7 +171,7 @@ fn test_global_asm() -> !bool {
     // Naked function
     assert_parses("
         #[naked]
-        fn naked_fn() {
+        λ naked_fn() {
             unsafe {
                 asm!(
                     \"mov eax, 42\",
@@ -185,7 +185,7 @@ fn test_global_asm() -> !bool {
     // Interrupt handler
     assert_parses("
         #[naked]
-        extern \"x86-interrupt\" fn handler() {
+        extern \"x86-interrupt\" λ handler() {
             unsafe {
                 asm!(
                     \"push rax\",
@@ -202,21 +202,21 @@ fn test_global_asm() -> !bool {
 
     // Symbol reference
     assert_parses("
-        fn get_symbol() -> !*const u8 {
-            let addr: *const u8;
+        λ get_symbol() -> !*const u8 {
+            ≔ addr: *const u8;
             unsafe {
                 asm!(
                     \"lea {}, [rip + my_symbol]\",
                     out(reg) addr,
                 );
             }
-            return addr;
+            ⤺ addr;
         }
     ", "asm_symbol_ref");
 
     // Volatile asm
     assert_parses("
-        fn memory_barrier() {
+        λ memory_barrier() {
             unsafe {
                 asm!(\"mfence\", options(nostack, preserves_flags));
             }
@@ -231,26 +231,26 @@ fn test_global_asm() -> !bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("Testing Inline Assembly...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
 
-    if test_basic_asm() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_asm_constraints() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_global_asm() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_basic_asm() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_asm_constraints() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_global_asm() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All inline assembly tests passed! (~15 test cases)");
-    return 0;
+    ⤺ 0;
 }

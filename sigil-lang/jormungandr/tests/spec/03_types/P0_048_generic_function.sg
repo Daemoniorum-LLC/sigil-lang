@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should print 42
 
-fn identity<T>(x: T) -> T {
+λ identity<T>(x: T) -> T {
     x
 }
 
-fn main() {
-    let result: !i32 = identity(42);
+λ main() {
+    ≔ result: !i32 = identity(42);
     println(result);
 }

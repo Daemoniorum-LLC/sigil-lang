@@ -1,24 +1,24 @@
-// Test: Module trait for neural layers
+// Test: Module Θ ∀ neural layers
 // Spec: 14-NEURAL.md § 1.1 Core Types
 // Priority: P0 - Bootstrap Critical
 
-struct Linear<const IN: usize, const OUT: usize> {
+Σ Linear<const IN: usize, const OUT: usize> {
     weight: Tensor<[OUT, IN]>,
     bias: Tensor<[OUT]>
 }
 
-impl<const IN: usize, const OUT: usize> Module for Linear<IN, OUT> {
+⊢<const IN: usize, const OUT: usize> Module ∀ Linear<IN, OUT> {
     type Input = Tensor<[IN]>;
     type Output = Tensor<[OUT]>;
 
-    fn forward(&self, x: Self·Input) -> Self·Output {
+    λ forward(&self, x: Self·Input) -> Self·Output {
         self.weight @ x + self.bias
     }
 }
 
-fn main() {
-    let layer: Linear<3, 2> = Linear·new();
-    let input: Tensor<[3]> = ones();
-    let output = layer.forward(input);
+λ main() {
+    ≔ layer: Linear<3, 2> = Linear·new();
+    ≔ input: Tensor<[3]> = ones();
+    ≔ output = layer.forward(input);
     println(output.shape[0]);
 }

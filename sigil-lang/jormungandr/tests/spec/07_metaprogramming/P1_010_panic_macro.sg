@@ -2,8 +2,8 @@
 // Spec: 07-METAPROGRAMMING.md § 2.4 Control Macros
 // Priority: P1 - Production Ready
 
-fn main() {
+λ main() {
     // This test just verifies macros compile
-    let x: !i32 = 42;
+    ≔ x: !i32 = 42;
     println(x);
 }

@@ -2,8 +2,8 @@
 // Spec: 05-MATHEMATICS.md § 3.2 Bitwise
 // Priority: P2 - Enhancement
 
-fn main() {
-    let x: !i32 = 8;
+λ main() {
+    ≔ x: !i32 = 8;
 
     println(x << 1);   // 16
     println(x >> 1);   // 4

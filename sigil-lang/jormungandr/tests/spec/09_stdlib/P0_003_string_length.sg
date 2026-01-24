@@ -2,7 +2,7 @@
 // Spec: 09-STDLIB.md § 2.2 String Operations
 // Priority: P0
 
-fn main() {
-    let s: !String = "Sigil";
+λ main() {
+    ≔ s: !String = "Sigil";
     println(5);
 }

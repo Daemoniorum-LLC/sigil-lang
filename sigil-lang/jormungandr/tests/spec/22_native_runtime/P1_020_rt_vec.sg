@@ -1,20 +1,20 @@
 // P1_020_rt_vec.sg - Vec<T> Specification Tests (interpreter-compatible)
 //
 // These tests verify array operations work correctly.
-// Restructured for interpreter mode.
+// Restructured ∀ interpreter mode.
 
 // ============================================================================
 // Construction
 // ============================================================================
 
-fn test_vec_new_is_empty() {
-    let v = [];
+λ test_vec_new_is_empty() {
+    ≔ v = [];
     assert_eq!(v.len(), 0);
     assert!(v.is_empty());
 }
 
-fn test_vec_with_capacity_has_capacity() {
-    let v = [1, 2, 3];
+λ test_vec_with_capacity_has_capacity() {
+    ≔ v = [1, 2, 3];
     assert!(v.capacity() >= 3);
 }
 
@@ -22,15 +22,15 @@ fn test_vec_with_capacity_has_capacity() {
 // Push / Pop
 // ============================================================================
 
-fn test_vec_push_increases_len() {
-    let mut v = [];
+λ test_vec_push_increases_len() {
+    ≔ Δ v = [];
     v.push(42);
     assert_eq!(v.len(), 1);
     assert!(!v.is_empty());
 }
 
-fn test_vec_push_stores_value() {
-    let mut v = [];
+λ test_vec_push_stores_value() {
+    ≔ Δ v = [];
     v.push(10);
     v.push(20);
     v.push(30);
@@ -39,23 +39,23 @@ fn test_vec_push_stores_value() {
     assert_eq!(v[2], 30);
 }
 
-fn test_vec_pop_returns_last() {
-    let mut v = [];
+λ test_vec_pop_returns_last() {
+    ≔ Δ v = [];
     v.push(10);
     v.push(20);
 
-    match v.pop() {
-        Option::Some(val) => assert_eq!(val, 20),
-        Option::None => assert!(false),
+    ⌥ v.pop() {
+        Option·Some(val) => assert_eq!(val, 20),
+        Option·None => assert!(false),
     }
     assert_eq!(v.len(), 1);
 }
 
-fn test_vec_pop_empty_returns_none() {
-    let mut v = [];
-    match v.pop() {
-        Option::Some(_) => assert!(false),
-        Option::None => assert!(true),
+λ test_vec_pop_empty_returns_none() {
+    ≔ Δ v = [];
+    ⌥ v.pop() {
+        Option·Some(_) => assert!(false),
+        Option·None => assert!(true),
     }
     assert_eq!(v.len(), 0);
 }
@@ -64,8 +64,8 @@ fn test_vec_pop_empty_returns_none() {
 // Indexing / Get
 // ============================================================================
 
-fn test_vec_get_valid_index() {
-    let mut v = [];
+λ test_vec_get_valid_index() {
+    ≔ Δ v = [];
     v.push(100);
     v.push(200);
 
@@ -73,8 +73,8 @@ fn test_vec_get_valid_index() {
     assert_eq!(v[1], 200);
 }
 
-fn test_vec_get_mut_allows_modification() {
-    let mut v = [];
+λ test_vec_get_mut_allows_modification() {
+    ≔ Δ v = [];
     v.push(10);
 
     // In interpreter, arrays are mutable via indexing
@@ -82,8 +82,8 @@ fn test_vec_get_mut_allows_modification() {
     assert_eq!(v[0], 999);
 }
 
-fn test_vec_index_operator() {
-    let mut v = [];
+λ test_vec_index_operator() {
+    ≔ Δ v = [];
     v.push(42);
     v.push(84);
 
@@ -95,8 +95,8 @@ fn test_vec_index_operator() {
 // Capacity / Growth
 // ============================================================================
 
-fn test_vec_grows_automatically() {
-    let mut v = [];
+λ test_vec_grows_automatically() {
+    ≔ Δ v = [];
     v.push(1);
     v.push(2);
     v.push(3);
@@ -106,9 +106,9 @@ fn test_vec_grows_automatically() {
     assert_eq!(v[2], 3);
 }
 
-fn test_vec_growth_doubles_capacity() {
-    let mut v = [];
-    for i in 0..10 {
+λ test_vec_growth_doubles_capacity() {
+    ≔ Δ v = [];
+    ∀ i ∈ 0..10 {
         v.push(i);
     }
     assert!(v.capacity() >= 10);
@@ -118,8 +118,8 @@ fn test_vec_growth_doubles_capacity() {
 // Clear
 // ============================================================================
 
-fn test_vec_clear_preserves_capacity() {
-    let mut v = [];
+λ test_vec_clear_preserves_capacity() {
+    ≔ Δ v = [];
     v.push(1);
     v.push(2);
     v.push(3);
@@ -134,13 +134,13 @@ fn test_vec_clear_preserves_capacity() {
 // Slice Views
 // ============================================================================
 
-fn test_vec_as_slice() {
-    let mut v = [];
+λ test_vec_as_slice() {
+    ≔ Δ v = [];
     v.push(1);
     v.push(2);
     v.push(3);
 
-    let slice = v.as_slice();
+    ≔ slice = v.as_slice();
     assert_eq!(slice.len(), 3);
     assert_eq!(slice[0], 1);
     assert_eq!(slice[1], 2);
@@ -151,10 +151,10 @@ fn test_vec_as_slice() {
 // Drop
 // ============================================================================
 
-fn test_vec_drops_elements() {
+λ test_vec_drops_elements() {
     {
-        let mut v = [];
-        for i in 0..1000 {
+        ≔ Δ v = [];
+        ∀ i ∈ 0..1000 {
             v.push(i);
         }
     }
@@ -165,7 +165,7 @@ fn test_vec_drops_elements() {
 // Entry Point
 // ============================================================================
 
-fn main() {
+λ main() {
     // Construction
     test_vec_new_is_empty();
     test_vec_with_capacity_has_capacity();

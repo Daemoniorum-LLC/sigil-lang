@@ -2,35 +2,35 @@
 // Spec: 15-PROTOCOLS.md § 7 Kafka Support
 // Priority: P0 - Bootstrap Critical
 //
-// Tests language features used in Kafka patterns:
+// Tests language features used ∈ Kafka patterns:
 // - Struct with multiple fields
 // - Evidential value access patterns
 // - Consumer/subscription semantics
 
-struct Topic {
+Σ Topic {
     name: String,
 }
 
-struct KafkaMessage {
+Σ KafkaMessage {
     key: String,
     value: String,
     offset: i64,
 }
 
-struct Consumer {
+Σ Consumer {
     broker: String,
 }
 
-fn connect_consumer(broker: String) -> Consumer {
+λ connect_consumer(broker: String) -> Consumer {
     Consumer { broker: broker }
 }
 
-fn new_topic(name: String) -> Topic {
+λ new_topic(name: String) -> Topic {
     Topic { name: name }
 }
 
-fn recv_kafka(consumer: Consumer) -> KafkaMessage {
-    // Simulated message - in real Kafka from broker
+λ recv_kafka(consumer: Consumer) -> KafkaMessage {
+    // Simulated message - ∈ real Kafka from broker
     KafkaMessage {
         key: "key",
         value: "value",
@@ -38,15 +38,15 @@ fn recv_kafka(consumer: Consumer) -> KafkaMessage {
     }
 }
 
-fn main() {
+λ main() {
     // Test: Consumer construction with evidential binding
-    let consumer~ = connect_consumer("localhost:9092");
+    ≔ consumer~ = connect_consumer("localhost:9092");
 
     // Test: Topic construction
-    let topic = new_topic("events");
+    ≔ topic = new_topic("events");
 
     // Test: Receive returns evidential message
-    let msg~ = recv_kafka(consumer~);
+    ≔ msg~ = recv_kafka(consumer~);
 
     // Test: Field access on evidential message
     println(msg~.value);

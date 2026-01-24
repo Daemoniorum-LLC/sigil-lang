@@ -3,7 +3,7 @@
 // Should fail with undefined type error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let x: UndefinedType = 42;  // ERROR: undefined type
+λ main() {
+    ≔ x: UndefinedType = 42;  // ERROR: undefined type
     println(x);
 }

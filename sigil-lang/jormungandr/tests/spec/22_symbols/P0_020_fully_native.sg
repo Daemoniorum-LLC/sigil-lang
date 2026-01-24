@@ -5,20 +5,20 @@
 // Expected: Program compiles and runs correctly
 //
 // Symbols used:
-//   Σ  - struct
-//   λ  - fn
-//   ≔  - let
-//   Δ  - mut
-//   ⊢  - impl
-//   ⎇  - if
-//   ⎉  - else
-//   ⟳  - while
+//   Σ  - Σ
+//   λ  - λ
+//   ≔  - ≔
+//   Δ  - Δ
+//   ⊢  - ⊢
+//   ⎇  - ⎇
+//   ⎉  - ⎉
+//   ⟳  - ⟳
 //   ∞  - loop
-//   ∀  - for
+//   ∀  - ∀
 //   ∈  - in
-//   ⊗  - break
-//   ↻  - continue
-//   ⤺  - return
+//   ⊗  - ⊗
+//   ↻  - ↻
+//   ⤺  - ⤺
 
 // Define a counter structure
 Σ Counter {
@@ -80,8 +80,8 @@
 
 // Main entry point
 λ main() {
-    // Test struct and impl
-    ≔ Δ counter = Counter::new(5);
+    // Test Σ and ⊢
+    ≔ Δ counter = Counter·new(5);
     ⟳ !counter.at_limit() {
         counter.increment();
     }
@@ -92,11 +92,11 @@
     println!("classify(-7) = {}", classify(-7));
     println!("classify(0) = {}", classify(0));
 
-    // Test for-in with continue
+    // Test ∀-in with ↻
     ≔ data = [-2, 5, -1, 8, 0, 3];
     println!("sum_positive = {}", sum_positive(&data));
 
-    // Test infinite loop with break
+    // Test infinite loop with ⊗
     ≔ Δ i = 0;
     ∞ {
         i = i + 1;
@@ -106,7 +106,7 @@
     }
     println!("loop exited at i = {}", i);
 
-    // Test find with early return
+    // Test find with early ⤺
     println!("first > 4: {}", find_greater(&data, 4));
 
     println!("All native symbols working!");

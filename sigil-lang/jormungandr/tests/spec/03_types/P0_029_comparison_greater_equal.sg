@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print true
 
-fn main() {
-    let x: !bool = 20 >= 20;
+λ main() {
+    ≔ x: !bool = 20 >= 20;
     println(x);
 }

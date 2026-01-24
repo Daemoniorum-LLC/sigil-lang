@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print true (42 != 99)
 
-fn main() {
-    let x: !i32 = 42;
-    let y: !i32 = 99;
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = 99;
     println(x != y);
 }

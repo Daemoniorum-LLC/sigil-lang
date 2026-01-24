@@ -1,43 +1,43 @@
 //! Comprehensive Parser Expression Test Suite
 //!
 //! Tests all 40+ expression forms, operator precedence, and associativity.
-//! Target: 100% expression parsing coverage for regression detection.
+//! Target: 100% expression parsing coverage ∀ regression detection.
 
-use crate·parser·Parser;
-use crate·ast·{Expr, BinOp, UnaryOp, Literal, Block};
+invoke crate·parser·Parser;
+invoke crate·ast·{Expr, BinOp, UnaryOp, Literal, Block};
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-/// Parse a string and return the expression AST
-fn parse_expr(source: !&str) -> ?Expr {
-    let mut parser = Parser·new(source.to_string());
-    match parser.parse_expr() {
+/// Parse a string and ⤺ the expression AST
+λ parse_expr(source: !&str) -> ?Expr {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ⌥ parser.parse_expr() {
         Result·Ok(expr) => ?expr,
         Result·Err(_) => null,
     }
 }
 
-/// Parse as a file (for testing items that require full context)
-fn parse_file(source: !&str) -> !bool {
-    let mut parser = Parser·new(source.to_string());
-    match parser.parse_file() {
+/// Parse as a file (∀ testing items that require full context)
+λ parse_file(source: !&str) -> !bool {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ⌥ parser.parse_file() {
         Result·Ok(_) => true,
         Result·Err(_) => false,
     }
 }
 
 /// Assert parsing succeeds
-fn assert_parses(source: !&str, name: !&str) {
-    if parse_expr(source) == null {
+λ assert_parses(source: !&str, name: !&str) {
+    ⎇ parse_expr(source) == null {
         panic(format!("FAIL {}: failed to parse '{}'", name, source));
     }
 }
 
 /// Assert parsing fails
-fn assert_fails(source: !&str, name: !&str) {
-    if parse_expr(source) != null {
+λ assert_fails(source: !&str, name: !&str) {
+    ⎇ parse_expr(source) != null {
         panic(format!("FAIL {}: should have failed to parse '{}'", name, source));
     }
 }
@@ -46,7 +46,7 @@ fn assert_fails(source: !&str, name: !&str) {
 // 1. LITERAL EXPRESSIONS
 // ============================================================================
 
-fn test_literals() -> !bool {
+λ test_literals() -> !bool {
     print("  [1/16] Literal expressions... ");
 
     // Integer literals
@@ -115,7 +115,7 @@ fn test_literals() -> !bool {
 // 2. PATH EXPRESSIONS
 // ============================================================================
 
-fn test_paths() -> !bool {
+λ test_paths() -> !bool {
     print("  [2/16] Path expressions... ");
 
     // Simple identifiers
@@ -149,7 +149,7 @@ fn test_paths() -> !bool {
 // 3. BINARY EXPRESSIONS - Arithmetic
 // ============================================================================
 
-fn test_binary_arithmetic() -> !bool {
+λ test_binary_arithmetic() -> !bool {
     print("  [3/16] Binary arithmetic... ");
 
     // Basic arithmetic
@@ -184,7 +184,7 @@ fn test_binary_arithmetic() -> !bool {
 // 4. BINARY EXPRESSIONS - Comparison
 // ============================================================================
 
-fn test_binary_comparison() -> !bool {
+λ test_binary_comparison() -> !bool {
     print("  [4/16] Binary comparison... ");
 
     assert_parses("a == b", "eq");
@@ -194,7 +194,7 @@ fn test_binary_comparison() -> !bool {
     assert_parses("a > b", "gt");
     assert_parses("a >= b", "ge");
 
-    // Chained comparisons (if supported)
+    // Chained comparisons (⎇ supported)
     assert_parses("a < b && b < c", "chained_lt_with_and");
 
     // With arithmetic
@@ -209,7 +209,7 @@ fn test_binary_comparison() -> !bool {
 // 5. BINARY EXPRESSIONS - Logical
 // ============================================================================
 
-fn test_binary_logical() -> !bool {
+λ test_binary_logical() -> !bool {
     print("  [5/16] Binary logical... ");
 
     // Basic logical
@@ -241,7 +241,7 @@ fn test_binary_logical() -> !bool {
 // 6. BINARY EXPRESSIONS - Bitwise
 // ============================================================================
 
-fn test_binary_bitwise() -> !bool {
+λ test_binary_bitwise() -> !bool {
     print("  [6/16] Binary bitwise... ");
 
     assert_parses("a & b", "bit_and");
@@ -267,7 +267,7 @@ fn test_binary_bitwise() -> !bool {
 // 7. UNARY EXPRESSIONS
 // ============================================================================
 
-fn test_unary() -> !bool {
+λ test_unary() -> !bool {
     print("  [7/16] Unary expressions... ");
 
     // Negation
@@ -289,9 +289,9 @@ fn test_unary() -> !bool {
 
     // Reference
     assert_parses("&x", "ref");
-    assert_parses("&mut x", "ref_mut");
+    assert_parses("&Δ x", "ref_mut");
     assert_parses("&&x", "double_ref");
-    assert_parses("&mut &x", "ref_mut_ref");
+    assert_parses("&Δ &x", "ref_mut_ref");
 
     // Combined
     assert_parses("-*ptr", "neg_deref");
@@ -306,7 +306,7 @@ fn test_unary() -> !bool {
 // 8. CALL EXPRESSIONS
 // ============================================================================
 
-fn test_calls() -> !bool {
+λ test_calls() -> !bool {
     print("  [8/16] Call expressions... ");
 
     // Basic calls
@@ -346,7 +346,7 @@ fn test_calls() -> !bool {
 // 9. INDEX EXPRESSIONS
 // ============================================================================
 
-fn test_index() -> !bool {
+λ test_index() -> !bool {
     print("  [9/16] Index expressions... ");
 
     // Basic indexing
@@ -377,7 +377,7 @@ fn test_index() -> !bool {
 // 10. FIELD ACCESS
 // ============================================================================
 
-fn test_fields() -> !bool {
+λ test_fields() -> !bool {
     print("  [10/16] Field access... ");
 
     // Basic field access
@@ -407,7 +407,7 @@ fn test_fields() -> !bool {
 // 11. ARRAY AND TUPLE LITERALS
 // ============================================================================
 
-fn test_array_tuple() -> !bool {
+λ test_array_tuple() -> !bool {
     print("  [11/16] Array and tuple literals... ");
 
     // Array literals
@@ -440,10 +440,10 @@ fn test_array_tuple() -> !bool {
 // 12. STRUCT LITERALS
 // ============================================================================
 
-fn test_struct_literals() -> !bool {
+λ test_struct_literals() -> !bool {
     print("  [12/16] Struct literals... ");
 
-    // Basic struct literal
+    // Basic Σ literal
     assert_parses("Point { x: 1, y: 2 }", "struct_basic");
     assert_parses("Point { x: 1, y: 2, }", "struct_trailing_comma");
 
@@ -455,7 +455,7 @@ fn test_struct_literals() -> !bool {
     assert_parses("Point { x: 1, ..other }", "struct_update");
     assert_parses("Point { ..default() }", "struct_update_only");
 
-    // Qualified struct paths
+    // Qualified Σ paths
     assert_parses("module·Point { x: 1, y: 2 }", "qualified_struct");
     assert_parses("self·Inner { value: 42 }", "self_struct");
 
@@ -476,36 +476,36 @@ fn test_struct_literals() -> !bool {
 // 13. CONTROL FLOW EXPRESSIONS
 // ============================================================================
 
-fn test_control_flow() -> !bool {
+λ test_control_flow() -> !bool {
     print("  [13/16] Control flow expressions... ");
 
     // If expressions
-    assert_parses("if x { 1 }", "if_basic");
-    assert_parses("if x { 1 } else { 2 }", "if_else");
-    assert_parses("if x { 1 } else if y { 2 } else { 3 }", "if_else_if");
+    assert_parses("⎇ x { 1 }", "if_basic");
+    assert_parses("⎇ x { 1 } ⎉ { 2 }", "if_else");
+    assert_parses("⎇ x { 1 } ⎉ ⎇ y { 2 } ⎉ { 3 }", "if_else_if");
 
-    // If let
-    assert_parses("if let Some(x) = opt { x }", "if_let");
-    assert_parses("if let Some(x) = opt { x } else { 0 }", "if_let_else");
+    // If ≔
+    assert_parses("⎇ ≔ Some(x) = opt { x }", "if_let");
+    assert_parses("⎇ ≔ Some(x) = opt { x } ⎉ { 0 }", "if_let_else");
 
     // Match expressions
-    assert_parses("match x { 0 => \"zero\", _ => \"other\" }", "match_basic");
-    assert_parses("match opt { Some(v) => v, None => 0 }", "match_option");
-    assert_parses("match x { 1 | 2 | 3 => \"small\", _ => \"big\" }", "match_or_pattern");
-    assert_parses("match x { n if n > 0 => \"pos\", _ => \"neg\" }", "match_guard");
+    assert_parses("⌥ x { 0 => \"zero\", _ => \"other\" }", "match_basic");
+    assert_parses("⌥ opt { Some(v) => v, None => 0 }", "match_option");
+    assert_parses("⌥ x { 1 | 2 | 3 => \"small\", _ => \"big\" }", "match_or_pattern");
+    assert_parses("⌥ x { n ⎇ n > 0 => \"pos\", _ => \"neg\" }", "match_guard");
 
     // Loop expressions
-    assert_parses("loop { break }", "loop_basic");
-    assert_parses("loop { break 42 }", "loop_break_value");
+    assert_parses("loop { ⊗ }", "loop_basic");
+    assert_parses("loop { ⊗ 42 }", "loop_break_value");
 
     // While expressions
-    assert_parses("while x { foo() }", "while_basic");
-    assert_parses("while let Some(x) = iter.next() { process(x) }", "while_let");
+    assert_parses("⟳ x { foo() }", "while_basic");
+    assert_parses("⟳ ≔ Some(x) = iter.next() { process(x) }", "while_let");
 
     // For expressions
-    assert_parses("for x in iter { process(x) }", "for_basic");
-    assert_parses("for (i, x) in iter.enumerate() { foo(i, x) }", "for_tuple_pattern");
-    assert_parses("for _ in 0..10 { work() }", "for_range");
+    assert_parses("∀ x ∈ iter { process(x) }", "for_basic");
+    assert_parses("∀ (i, x) ∈ iter.enumerate() { foo(i, x) }", "for_tuple_pattern");
+    assert_parses("∀ _ ∈ 0..10 { work() }", "for_range");
 
     println("PASS (16 cases)");
     true
@@ -515,7 +515,7 @@ fn test_control_flow() -> !bool {
 // 14. CLOSURE EXPRESSIONS
 // ============================================================================
 
-fn test_closures() -> !bool {
+λ test_closures() -> !bool {
     print("  [14/16] Closure expressions... ");
 
     // No params
@@ -534,7 +534,7 @@ fn test_closures() -> !bool {
     assert_parses("|x: i32| x + 1", "closure_typed_param");
     assert_parses("|x: i32, y: i32| x + y", "closure_typed_params");
 
-    // With return type
+    // With ⤺ type
     assert_parses("|x| -> i32 { x + 1 }", "closure_return_type");
 
     // Move closure
@@ -544,7 +544,7 @@ fn test_closures() -> !bool {
     // Nested closures
     assert_parses("|x| |y| x + y", "nested_closures");
 
-    // Closure in expression
+    // Closure ∈ expression
     assert_parses("items.map(|x| x * 2)", "closure_as_arg");
     assert_parses("items.filter(|x| x > 0).map(|x| x * 2)", "closure_chain");
 
@@ -556,7 +556,7 @@ fn test_closures() -> !bool {
 // 15. RANGE EXPRESSIONS
 // ============================================================================
 
-fn test_ranges() -> !bool {
+λ test_ranges() -> !bool {
     print("  [15/16] Range expressions... ");
 
     // Full range
@@ -574,9 +574,9 @@ fn test_ranges() -> !bool {
     assert_parses("a + 1..b - 1", "range_exprs");
     assert_parses("0..arr.len()", "range_with_call");
 
-    // In for loops
-    assert_parses("for i in 0..10 { foo(i) }", "range_in_for");
-    assert_parses("for i in 0..=10 { foo(i) }", "range_inclusive_in_for");
+    // In ∀ loops
+    assert_parses("∀ i ∈ 0..10 { foo(i) }", "range_in_for");
+    assert_parses("∀ i ∈ 0..=10 { foo(i) }", "range_inclusive_in_for");
 
     println("PASS (11 cases)");
     true
@@ -586,23 +586,23 @@ fn test_ranges() -> !bool {
 // 16. SPECIAL EXPRESSIONS
 // ============================================================================
 
-fn test_special() -> !bool {
+λ test_special() -> !bool {
     print("  [16/16] Special expressions... ");
 
     // Return
-    assert_parses("return", "return_unit");
-    assert_parses("return 42", "return_value");
-    assert_parses("return x + y", "return_expr");
+    assert_parses("⤺", "return_unit");
+    assert_parses("⤺ 42", "return_value");
+    assert_parses("⤺ x + y", "return_expr");
 
     // Break
-    assert_parses("break", "break_unit");
-    assert_parses("break 42", "break_value");
-    assert_parses("break 'label", "break_label");
-    assert_parses("break 'label 42", "break_label_value");
+    assert_parses("⊗", "break_unit");
+    assert_parses("⊗ 42", "break_value");
+    assert_parses("⊗ 'label", "break_label");
+    assert_parses("⊗ 'label 42", "break_label_value");
 
     // Continue
-    assert_parses("continue", "continue_basic");
-    assert_parses("continue 'label", "continue_label");
+    assert_parses("↻", "continue_basic");
+    assert_parses("↻ 'label", "continue_label");
 
     // Try operator
     assert_parses("result?", "try_operator");
@@ -625,7 +625,7 @@ fn test_special() -> !bool {
     assert_parses("foo().await?", "await_try");
 
     // Block expression
-    assert_parses("{ let x = 1; x + 1 }", "block_expr");
+    assert_parses("{ ≔ x = 1; x + 1 }", "block_expr");
     assert_parses("{ 42 }", "block_single");
 
     // Unsafe block
@@ -645,7 +645,7 @@ fn test_special() -> !bool {
 // OPERATOR PRECEDENCE TESTS
 // ============================================================================
 
-fn test_operator_precedence() -> !bool {
+λ test_operator_precedence() -> !bool {
     print("  [BONUS] Operator precedence... ");
 
     // These should all parse correctly with proper precedence
@@ -673,41 +673,41 @@ fn test_operator_precedence() -> !bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("Testing Parser Expressions...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
 
     // Run all test groups
-    if test_literals() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_paths() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_binary_arithmetic() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_binary_comparison() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_binary_logical() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_binary_bitwise() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_unary() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_calls() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_index() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_fields() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_array_tuple() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_struct_literals() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_control_flow() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_closures() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_ranges() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_special() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_operator_precedence() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_literals() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_paths() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_binary_arithmetic() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_binary_comparison() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_binary_logical() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_binary_bitwise() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_unary() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_calls() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_index() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_fields() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_array_tuple() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_struct_literals() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_control_flow() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_closures() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_ranges() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_special() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_operator_precedence() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All parser expression tests passed! (~238 test cases)");
-    return 0;
+    ⤺ 0;
 }

@@ -2,9 +2,9 @@
 // Spec: 12-QUANTUM.md § 3.1 Single-Qubit Gates
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let q: linear Qubit = Qubit·zero();
-    let q2: linear Qubit = q|X;  // Bit flip: |0⟩ → |1⟩
-    let result: Cbit = q2|measure;
+λ main() {
+    ≔ q: linear Qubit = Qubit·zero();
+    ≔ q2: linear Qubit = q|X;  // Bit flip: |0⟩ → |1⟩
+    ≔ result: Cbit = q2|measure;
     println(result);
 }

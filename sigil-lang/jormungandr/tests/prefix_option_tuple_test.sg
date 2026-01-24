@@ -1,23 +1,23 @@
-// TDD Test: ? tuple return
-// Test if tuple auto-wraps for ?T return
+// TDD Test: ? tuple ⤺
+// Test ⎇ tuple auto-wraps ∀ ?T ⤺
 
-struct Token {
+Σ Token {
     value: i32,
 }
 
-struct Span {
+Σ Span {
     start: u64,
     end: u64,
 }
 
-fn maybe_get_tuple() -> ?(Token, Span) {
-    let token = Token { value: 42 };
-    let span = Span { start: 0, end: 10 };
+λ maybe_get_tuple() -> ?(Token, Span) {
+    ≔ token = Token { value: 42 };
+    ≔ span = Span { start: 0, end: 10 };
     (token, span)  // Does this auto-wrap?
 }
 
-fn main() {
-    match maybe_get_tuple() {
+λ main() {
+    ⌥ maybe_get_tuple() {
         ?(t, s) => println(t.value),
         null => println(0),
     }

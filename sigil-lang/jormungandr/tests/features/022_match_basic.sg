@@ -1,19 +1,19 @@
-// Test: match expression on enum
-pub enum Status {
+// Test: ⌥ expression on ᛈ
+☉ ᛈ Status {
     Active,
     Paused,
     Stopped
 }
 
-fn describe(s: !Status) -> !String {
-    match s {
+λ describe(s: !Status) -> !String {
+    ⌥ s {
         Status·Active => "running",
         Status·Paused => "paused",
         Status·Stopped => "stopped"
     }
 }
 
-fn main() {
-    let s: !Status = Status·Active;
+λ main() {
+    ≔ s: !Status = Status·Active;
     println(describe(s));
 }

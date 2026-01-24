@@ -1,15 +1,15 @@
 // TDD Test: Prefix ? option syntax
-// Test if -> ?T works as Option<T>
+// Test ⎇ -> ?T works as Option<T>
 
-fn maybe_get(cond: bool) -> ?i32 {
-    if cond {
+λ maybe_get(cond: bool) -> ?i32 {
+    ⎇ cond {
         42
-    } else {
+    } ⎉ {
         null
     }
 }
 
-fn main() {
-    let result = maybe_get(true);
+λ main() {
+    ≔ result = maybe_get(true);
     println(result);
 }

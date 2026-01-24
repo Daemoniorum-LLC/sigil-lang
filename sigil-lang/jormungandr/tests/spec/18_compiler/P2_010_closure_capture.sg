@@ -2,8 +2,8 @@
 // Spec: 18-COMPILER.md § 4.1 Closures
 // Priority: P2 - Enhancement
 
-fn main() {
-    let x: !i32 = 10;
-    let add = |y: i32| -> i32 { x + y };
+λ main() {
+    ≔ x: !i32 = 10;
+    ≔ add = |y: i32| -> i32 { x + y };
     println(add(5));
 }

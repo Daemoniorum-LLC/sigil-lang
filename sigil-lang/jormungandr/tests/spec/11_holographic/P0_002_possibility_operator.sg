@@ -4,13 +4,13 @@
 //
 // The ◊ operator extracts approximate answers from sketches
 
-use sketch·HyperLogLog;
+invoke sketch·HyperLogLog;
 
-fn main() {
-    let hll = HyperLogLog·<14>·new();
+λ main() {
+    ≔ hll = HyperLogLog·<14>·new();
     hll.insert(1);
     hll.insert(2);
     hll.insert(3);
-    let count◊ = hll|◊count;  // Approximate cardinality
+    ≔ count◊ = hll|◊count;  // Approximate cardinality
     println(count◊);
 }

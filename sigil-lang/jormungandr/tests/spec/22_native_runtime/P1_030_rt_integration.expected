@@ -21,7 +21,7 @@
   After clear, is_empty: OK
 
 === String Operations ===
-  String::from length: 5
+  String·from length: 5
   After push_str: Hello, World!
   Concat result: Sigil Native Runtime
   UTF-8 bytes (should be 6): 6

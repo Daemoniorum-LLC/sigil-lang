@@ -1,18 +1,18 @@
-// Test: Break statement in loop
+// Test: Break statement ∈ loop
 // Spec: 02-SYNTAX.md § 4.4 Break Statement
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate break statement exits loops correctly.
+// Validate ⊗ statement exits loops correctly.
 //
 // Expected behavior:
 // Should print 0, 1, 2 (breaks at 3)
 
-fn main() {
-    let mut i: !i32 = 0;
-    while true {
-        if i >= 3 {
-            break;
+λ main() {
+    ≔ Δ i: !i32 = 0;
+    ⟳ true {
+        ⎇ i >= 3 {
+            ⊗;
         }
         println(i);
         i = i + 1;

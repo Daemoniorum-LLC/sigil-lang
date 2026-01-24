@@ -10,9 +10,9 @@
 // When adding an Uncertain value and a Reported value, the result
 // should have Uncertain evidence. Should print 176 (99 + 77).
 
-fn main() {
-    let x: ?i32 = 99;
-    let y: ~i32 = 77;
-    let z = x + y;  // Should be ?i32
+λ main() {
+    ≔ x: ?i32 = 99;
+    ≔ y: ~i32 = 77;
+    ≔ z = x + y;  // Should be ?i32
     println(z);
 }

@@ -1,30 +1,30 @@
 //! Comprehensive Atomic Operations Test Suite
 //!
 //! Tests atomic types, operations, and memory ordering.
-//! Target: 100% atomic coverage for regression detection.
+//! Target: 100% atomic coverage ∀ regression detection.
 
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-fn check_source(source: !&str) -> !bool {
-    let mut parser = Parser·new(source.to_string());
-    let ast = match parser.parse_file() {
+λ check_source(source: !&str) -> !bool {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
         Result·Ok(a) => a,
-        Result·Err(_) => return false,
+        Result·Err(_) => ⤺ false,
     };
-    let mut checker = TypeChecker·new();
-    match checker.check_file(ast) {
+    ≔ Δ checker = TypeChecker·new();
+    ⌥ checker.check_file(ast) {
         Result·Ok(_) => true,
         Result·Err(_) => false,
     }
 }
 
-fn assert_checks(source: !&str, name: !&str) {
-    if !check_source(source) {
+λ assert_checks(source: !&str, name: !&str) {
+    ⎇ !check_source(source) {
         panic(format!("FAIL {}: check failed", name));
     }
 }
@@ -33,21 +33,21 @@ fn assert_checks(source: !&str, name: !&str) {
 // 1. ATOMIC TYPE DECLARATIONS
 // ============================================================================
 
-fn test_atomic_types() -> !bool {
+λ test_atomic_types() -> !bool {
     print("  [1/5] Atomic type declarations... ");
 
     // Integer atomics
-    assert_checks("fn test() { let a: Atomic<i32>; }", "atomic_i32");
-    assert_checks("fn test() { let a: Atomic<i64>; }", "atomic_i64");
-    assert_checks("fn test() { let a: Atomic<u32>; }", "atomic_u32");
-    assert_checks("fn test() { let a: Atomic<u64>; }", "atomic_u64");
-    assert_checks("fn test() { let a: Atomic<usize>; }", "atomic_usize");
+    assert_checks("λ test() { ≔ a: Atomic<i32>; }", "atomic_i32");
+    assert_checks("λ test() { ≔ a: Atomic<i64>; }", "atomic_i64");
+    assert_checks("λ test() { ≔ a: Atomic<u32>; }", "atomic_u32");
+    assert_checks("λ test() { ≔ a: Atomic<u64>; }", "atomic_u64");
+    assert_checks("λ test() { ≔ a: Atomic<usize>; }", "atomic_usize");
 
     // Boolean atomic
-    assert_checks("fn test() { let a: Atomic<bool>; }", "atomic_bool");
+    assert_checks("λ test() { ≔ a: Atomic<bool>; }", "atomic_bool");
 
     // Pointer atomic
-    assert_checks("fn test() { let a: Atomic<*mut i32>; }", "atomic_ptr");
+    assert_checks("λ test() { ≔ a: Atomic<*Δ i32>; }", "atomic_ptr");
 
     println("PASS (7 cases)");
     true
@@ -57,37 +57,37 @@ fn test_atomic_types() -> !bool {
 // 2. ATOMIC LOAD/STORE
 // ============================================================================
 
-fn test_atomic_load_store() -> !bool {
+λ test_atomic_load_store() -> !bool {
     print("  [2/5] Atomic load/store... ");
 
     // Load with ordering
     assert_checks("
-        fn test(a: &Atomic<i32>) -> !i32 {
-            return a.load(Ordering·SeqCst);
+        λ test(a: &Atomic<i32>) -> !i32 {
+            ⤺ a.load(Ordering·SeqCst);
         }
     ", "atomic_load_seqcst");
 
     assert_checks("
-        fn test(a: &Atomic<i32>) -> !i32 {
-            return a.load(Ordering·Acquire);
+        λ test(a: &Atomic<i32>) -> !i32 {
+            ⤺ a.load(Ordering·Acquire);
         }
     ", "atomic_load_acquire");
 
     assert_checks("
-        fn test(a: &Atomic<i32>) -> !i32 {
-            return a.load(Ordering·Relaxed);
+        λ test(a: &Atomic<i32>) -> !i32 {
+            ⤺ a.load(Ordering·Relaxed);
         }
     ", "atomic_load_relaxed");
 
     // Store with ordering
     assert_checks("
-        fn test(a: &Atomic<i32>, val: !i32) {
+        λ test(a: &Atomic<i32>, val: !i32) {
             a.store(val, Ordering·SeqCst);
         }
     ", "atomic_store_seqcst");
 
     assert_checks("
-        fn test(a: &Atomic<i32>, val: !i32) {
+        λ test(a: &Atomic<i32>, val: !i32) {
             a.store(val, Ordering·Release);
         }
     ", "atomic_store_release");
@@ -100,48 +100,48 @@ fn test_atomic_load_store() -> !bool {
 // 3. ATOMIC READ-MODIFY-WRITE
 // ============================================================================
 
-fn test_atomic_rmw() -> !bool {
+λ test_atomic_rmw() -> !bool {
     print("  [3/5] Atomic read-modify-write... ");
 
     // Fetch-add
     assert_checks("
-        fn test(a: &Atomic<i32>) -> !i32 {
-            return a.fetch_add(1, Ordering·SeqCst);
+        λ test(a: &Atomic<i32>) -> !i32 {
+            ⤺ a.fetch_add(1, Ordering·SeqCst);
         }
     ", "atomic_fetch_add");
 
     // Fetch-sub
     assert_checks("
-        fn test(a: &Atomic<i32>) -> !i32 {
-            return a.fetch_sub(1, Ordering·SeqCst);
+        λ test(a: &Atomic<i32>) -> !i32 {
+            ⤺ a.fetch_sub(1, Ordering·SeqCst);
         }
     ", "atomic_fetch_sub");
 
     // Fetch-and
     assert_checks("
-        fn test(a: &Atomic<u32>) -> !u32 {
-            return a.fetch_and(0xFF, Ordering·SeqCst);
+        λ test(a: &Atomic<u32>) -> !u32 {
+            ⤺ a.fetch_and(0xFF, Ordering·SeqCst);
         }
     ", "atomic_fetch_and");
 
     // Fetch-or
     assert_checks("
-        fn test(a: &Atomic<u32>) -> !u32 {
-            return a.fetch_or(0x100, Ordering·SeqCst);
+        λ test(a: &Atomic<u32>) -> !u32 {
+            ⤺ a.fetch_or(0x100, Ordering·SeqCst);
         }
     ", "atomic_fetch_or");
 
     // Fetch-xor
     assert_checks("
-        fn test(a: &Atomic<u32>) -> !u32 {
-            return a.fetch_xor(0xFF, Ordering·SeqCst);
+        λ test(a: &Atomic<u32>) -> !u32 {
+            ⤺ a.fetch_xor(0xFF, Ordering·SeqCst);
         }
     ", "atomic_fetch_xor");
 
     // Swap
     assert_checks("
-        fn test(a: &Atomic<i32>, new: !i32) -> !i32 {
-            return a.swap(new, Ordering·SeqCst);
+        λ test(a: &Atomic<i32>, new: !i32) -> !i32 {
+            ⤺ a.swap(new, Ordering·SeqCst);
         }
     ", "atomic_swap");
 
@@ -153,32 +153,32 @@ fn test_atomic_rmw() -> !bool {
 // 4. COMPARE-AND-SWAP
 // ============================================================================
 
-fn test_atomic_cas() -> !bool {
+λ test_atomic_cas() -> !bool {
     print("  [4/5] Compare-and-swap... ");
 
     // Compare-exchange strong
     assert_checks("
-        fn test(a: &Atomic<i32>, expected: !i32, new: !i32) -> !Result<i32, i32> {
-            return a.compare_exchange(expected, new, Ordering·SeqCst, Ordering·SeqCst);
+        λ test(a: &Atomic<i32>, expected: !i32, new: !i32) -> !Result<i32, i32> {
+            ⤺ a.compare_exchange(expected, new, Ordering·SeqCst, Ordering·SeqCst);
         }
     ", "atomic_cmpxchg_strong");
 
     // Compare-exchange weak
     assert_checks("
-        fn test(a: &Atomic<i32>, expected: !i32, new: !i32) -> !Result<i32, i32> {
-            return a.compare_exchange_weak(expected, new, Ordering·SeqCst, Ordering·Relaxed);
+        λ test(a: &Atomic<i32>, expected: !i32, new: !i32) -> !Result<i32, i32> {
+            ⤺ a.compare_exchange_weak(expected, new, Ordering·SeqCst, Ordering·Relaxed);
         }
     ", "atomic_cmpxchg_weak");
 
     // CAS loop pattern
     assert_checks("
-        fn increment(a: &Atomic<i32>) -> !i32 {
+        λ increment(a: &Atomic<i32>) -> !i32 {
             loop {
-                let current = a.load(Ordering·Relaxed);
-                let new = current + 1;
-                match a.compare_exchange_weak(current, new, Ordering·Release, Ordering·Relaxed) {
-                    Result·Ok(v) => return v,
-                    Result·Err(_) => continue,
+                ≔ current = a.load(Ordering·Relaxed);
+                ≔ new = current + 1;
+                ⌥ a.compare_exchange_weak(current, new, Ordering·Release, Ordering·Relaxed) {
+                    Result·Ok(v) => ⤺ v,
+                    Result·Err(_) => ↻,
                 }
             }
         }
@@ -192,41 +192,41 @@ fn test_atomic_cas() -> !bool {
 // 5. MEMORY FENCES
 // ============================================================================
 
-fn test_memory_fences() -> !bool {
+λ test_memory_fences() -> !bool {
     print("  [5/5] Memory fences... ");
 
     // Fence
     assert_checks("
-        fn test() {
+        λ test() {
             atomic·fence(Ordering·SeqCst);
         }
     ", "atomic_fence_seqcst");
 
     assert_checks("
-        fn test() {
+        λ test() {
             atomic·fence(Ordering·AcqRel);
         }
     ", "atomic_fence_acqrel");
 
     // Compiler fence
     assert_checks("
-        fn test() {
+        λ test() {
             atomic·compiler_fence(Ordering·SeqCst);
         }
     ", "compiler_fence");
 
     // Spin lock pattern
     assert_checks("
-        struct SpinLock {
+        Σ SpinLock {
             locked: !Atomic<bool>,
         }
-        impl SpinLock {
-            fn lock(self) {
-                while self.locked.compare_exchange_weak(false, true, Ordering·Acquire, Ordering·Relaxed).is_err() {
+        ⊢ SpinLock {
+            λ lock(self) {
+                ⟳ self.locked.compare_exchange_weak(false, true, Ordering·Acquire, Ordering·Relaxed).is_err() {
                     // Spin
                 }
             }
-            fn unlock(self) {
+            λ unlock(self) {
                 self.locked.store(false, Ordering·Release);
             }
         }
@@ -240,28 +240,28 @@ fn test_memory_fences() -> !bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("Testing Atomic Operations...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
 
-    if test_atomic_types() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_atomic_load_store() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_atomic_rmw() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_atomic_cas() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_memory_fences() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_atomic_types() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_atomic_load_store() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_atomic_rmw() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_atomic_cas() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_memory_fences() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All atomic tests passed! (~25 test cases)");
-    return 0;
+    ⤺ 0;
 }

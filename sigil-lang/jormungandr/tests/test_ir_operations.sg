@@ -2,41 +2,41 @@
 //!
 //! Tests all 50+ IR operation types, evidence lattice operations,
 //! and pipeline morpheme representations.
-//! Target: 100% IR operation coverage for regression detection.
+//! Target: 100% IR operation coverage ∀ regression detection.
 
-use crate·ir·*;
+invoke crate·ir·*;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-/// Create a basic IR module for testing
-fn new_module() -> !IrModule {
+/// Create a basic IR module ∀ testing
+λ new_module() -> !IrModule {
     IrModule·new("test.sg".to_string())
 }
 
 /// Create a Known evidence marker
-fn known() -> !IrEvidence {
+λ known() -> !IrEvidence {
     IrEvidence·Known
 }
 
 /// Create an Uncertain evidence marker
-fn uncertain() -> !IrEvidence {
+λ uncertain() -> !IrEvidence {
     IrEvidence·Uncertain
 }
 
 /// Create a Reported evidence marker
-fn reported() -> !IrEvidence {
+λ reported() -> !IrEvidence {
     IrEvidence·Reported
 }
 
 /// Create a Paradox evidence marker
-fn paradox() -> !IrEvidence {
+λ paradox() -> !IrEvidence {
     IrEvidence·Paradox
 }
 
 /// Create a simple i32 type
-fn i32_type() -> !IrType {
+λ i32_type() -> !IrType {
     IrType·Int {
         width: 32,
         signed: true,
@@ -44,12 +44,12 @@ fn i32_type() -> !IrType {
 }
 
 /// Create a simple bool type
-fn bool_type() -> !IrType {
+λ bool_type() -> !IrType {
     IrType·Bool
 }
 
 /// Create a simple string type
-fn str_type() -> !IrType {
+λ str_type() -> !IrType {
     IrType·Str
 }
 
@@ -57,7 +57,7 @@ fn str_type() -> !IrType {
 // 1. EVIDENCE LATTICE TESTS
 // ============================================================================
 
-fn test_evidence_lattice() -> !bool {
+λ test_evidence_lattice() -> !bool {
     print("  [1/14] Evidence lattice operations... ");
 
     // Test symbols
@@ -98,17 +98,17 @@ fn test_evidence_lattice() -> !bool {
 // 2. LITERAL OPERATIONS
 // ============================================================================
 
-fn test_literal_operations() -> !bool {
+λ test_literal_operations() -> !bool {
     print("  [2/14] Literal operations... ");
 
     // Integer literal
-    let int_lit = IrOperation·Literal {
+    ≔ int_lit = IrOperation·Literal {
         variant: LiteralVariant·Int,
         value: LiteralValue·Int(42),
         ty: i32_type(),
         evidence: known(),
     };
-    match int_lit {
+    ⌥ int_lit {
         IrOperation·Literal { value: LiteralValue·Int(v), .. } => {
             assert(v == 42, "int literal value");
         },
@@ -116,7 +116,7 @@ fn test_literal_operations() -> !bool {
     }
 
     // Float literal
-    let float_lit = IrOperation·Literal {
+    ≔ float_lit = IrOperation·Literal {
         variant: LiteralVariant·Float,
         value: LiteralValue·Float(3.14),
         ty: IrType·Float { width: 64 },
@@ -124,7 +124,7 @@ fn test_literal_operations() -> !bool {
     };
 
     // Bool literal
-    let bool_lit = IrOperation·Literal {
+    ≔ bool_lit = IrOperation·Literal {
         variant: LiteralVariant·Bool,
         value: LiteralValue·Bool(true),
         ty: bool_type(),
@@ -132,7 +132,7 @@ fn test_literal_operations() -> !bool {
     };
 
     // Char literal
-    let char_lit = IrOperation·Literal {
+    ≔ char_lit = IrOperation·Literal {
         variant: LiteralVariant·Char,
         value: LiteralValue·Char('a'),
         ty: IrType·Char,
@@ -140,7 +140,7 @@ fn test_literal_operations() -> !bool {
     };
 
     // String literal
-    let str_lit = IrOperation·Literal {
+    ≔ str_lit = IrOperation·Literal {
         variant: LiteralVariant·String,
         value: LiteralValue·String("hello".to_string()),
         ty: str_type(),
@@ -148,7 +148,7 @@ fn test_literal_operations() -> !bool {
     };
 
     // Null literal
-    let null_lit = IrOperation·Literal {
+    ≔ null_lit = IrOperation·Literal {
         variant: LiteralVariant·Null,
         value: LiteralValue·Null,
         ty: IrType·Option { inner: Box·new(i32_type()) },
@@ -163,17 +163,17 @@ fn test_literal_operations() -> !bool {
 // 3. VARIABLE OPERATIONS
 // ============================================================================
 
-fn test_variable_operations() -> !bool {
+λ test_variable_operations() -> !bool {
     print("  [3/14] Variable operations... ");
 
     // Variable reference
-    let var_ref = IrOperation·Var {
+    ≔ var_ref = IrOperation·Var {
         name: "x".to_string(),
         id: "x_0".to_string(),
         ty: i32_type(),
         evidence: known(),
     };
-    match var_ref {
+    ⌥ var_ref {
         IrOperation·Var { name, id, .. } => {
             assert(name == "x", "var name");
             assert(id == "x_0", "var id");
@@ -182,7 +182,7 @@ fn test_variable_operations() -> !bool {
     }
 
     // Let binding
-    let let_binding = IrOperation·Let {
+    ≔ let_binding = IrOperation·Let {
         pattern: IrPattern·Ident {
             name: "y".to_string(),
             mutable: false,
@@ -198,8 +198,8 @@ fn test_variable_operations() -> !bool {
         evidence: known(),
     };
 
-    // Let-else binding
-    let let_else = IrOperation·LetElse {
+    // Let-⎉ binding
+    ≔ let_else = IrOperation·LetElse {
         pattern: IrPattern·Variant {
             enum_name: "Option".to_string(),
             variant: "Some".to_string(),
@@ -226,17 +226,17 @@ fn test_variable_operations() -> !bool {
 // 4. BINARY OPERATIONS
 // ============================================================================
 
-fn test_binary_operations() -> !bool {
+λ test_binary_operations() -> !bool {
     print("  [4/14] Binary operations... ");
 
-    let left = Box·new(IrOperation·Literal {
+    ≔ left = Box·new(IrOperation·Literal {
         variant: LiteralVariant·Int,
         value: LiteralValue·Int(10),
         ty: i32_type(),
         evidence: known(),
     });
 
-    let right = Box·new(IrOperation·Literal {
+    ≔ right = Box·new(IrOperation·Literal {
         variant: LiteralVariant·Int,
         value: LiteralValue·Int(5),
         ty: i32_type(),
@@ -244,36 +244,36 @@ fn test_binary_operations() -> !bool {
     });
 
     // Arithmetic operations
-    let _add = IrOperation·Binary { operator: BinaryOp·Add, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _sub = IrOperation·Binary { operator: BinaryOp·Sub, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _mul = IrOperation·Binary { operator: BinaryOp·Mul, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _div = IrOperation·Binary { operator: BinaryOp·Div, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _rem = IrOperation·Binary { operator: BinaryOp·Rem, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _pow = IrOperation·Binary { operator: BinaryOp·Pow, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _add = IrOperation·Binary { operator: BinaryOp·Add, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _sub = IrOperation·Binary { operator: BinaryOp·Sub, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _mul = IrOperation·Binary { operator: BinaryOp·Mul, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _div = IrOperation·Binary { operator: BinaryOp·Div, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _rem = IrOperation·Binary { operator: BinaryOp·Rem, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _pow = IrOperation·Binary { operator: BinaryOp·Pow, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
 
     // Bitwise operations
-    let _bit_and = IrOperation·Binary { operator: BinaryOp·BitAnd, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _bit_or = IrOperation·Binary { operator: BinaryOp·BitOr, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _bit_xor = IrOperation·Binary { operator: BinaryOp·BitXor, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _shl = IrOperation·Binary { operator: BinaryOp·Shl, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
-    let _shr = IrOperation·Binary { operator: BinaryOp·Shr, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _bit_and = IrOperation·Binary { operator: BinaryOp·BitAnd, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _bit_or = IrOperation·Binary { operator: BinaryOp·BitOr, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _bit_xor = IrOperation·Binary { operator: BinaryOp·BitXor, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _shl = IrOperation·Binary { operator: BinaryOp·Shl, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
+    ≔ _shr = IrOperation·Binary { operator: BinaryOp·Shr, left: left.clone(), right: right.clone(), ty: i32_type(), evidence: known() };
 
     // Comparison operations
-    let _eq = IrOperation·Binary { operator: BinaryOp·Eq, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
-    let _ne = IrOperation·Binary { operator: BinaryOp·Ne, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
-    let _lt = IrOperation·Binary { operator: BinaryOp·Lt, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
-    let _le = IrOperation·Binary { operator: BinaryOp·Le, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
-    let _gt = IrOperation·Binary { operator: BinaryOp·Gt, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
-    let _ge = IrOperation·Binary { operator: BinaryOp·Ge, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
+    ≔ _eq = IrOperation·Binary { operator: BinaryOp·Eq, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
+    ≔ _ne = IrOperation·Binary { operator: BinaryOp·Ne, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
+    ≔ _lt = IrOperation·Binary { operator: BinaryOp·Lt, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
+    ≔ _le = IrOperation·Binary { operator: BinaryOp·Le, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
+    ≔ _gt = IrOperation·Binary { operator: BinaryOp·Gt, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
+    ≔ _ge = IrOperation·Binary { operator: BinaryOp·Ge, left: left.clone(), right: right.clone(), ty: bool_type(), evidence: known() };
 
     // Logical operations
-    let bool_left = Box·new(IrOperation·Literal { variant: LiteralVariant·Bool, value: LiteralValue·Bool(true), ty: bool_type(), evidence: known() });
-    let bool_right = Box·new(IrOperation·Literal { variant: LiteralVariant·Bool, value: LiteralValue·Bool(false), ty: bool_type(), evidence: known() });
-    let _and = IrOperation·Binary { operator: BinaryOp·And, left: bool_left.clone(), right: bool_right.clone(), ty: bool_type(), evidence: known() };
-    let _or = IrOperation·Binary { operator: BinaryOp·Or, left: bool_left.clone(), right: bool_right.clone(), ty: bool_type(), evidence: known() };
+    ≔ bool_left = Box·new(IrOperation·Literal { variant: LiteralVariant·Bool, value: LiteralValue·Bool(true), ty: bool_type(), evidence: known() });
+    ≔ bool_right = Box·new(IrOperation·Literal { variant: LiteralVariant·Bool, value: LiteralValue·Bool(false), ty: bool_type(), evidence: known() });
+    ≔ _and = IrOperation·Binary { operator: BinaryOp·And, left: bool_left.clone(), right: bool_right.clone(), ty: bool_type(), evidence: known() };
+    ≔ _or = IrOperation·Binary { operator: BinaryOp·Or, left: bool_left.clone(), right: bool_right.clone(), ty: bool_type(), evidence: known() };
 
     // Concat
-    let _concat = IrOperation·Binary { operator: BinaryOp·Concat, left: left.clone(), right: right.clone(), ty: str_type(), evidence: known() };
+    ≔ _concat = IrOperation·Binary { operator: BinaryOp·Concat, left: left.clone(), right: right.clone(), ty: str_type(), evidence: known() };
 
     println("PASS (21 cases)");
     true
@@ -283,17 +283,17 @@ fn test_binary_operations() -> !bool {
 // 5. UNARY OPERATIONS
 // ============================================================================
 
-fn test_unary_operations() -> !bool {
+λ test_unary_operations() -> !bool {
     print("  [5/14] Unary operations... ");
 
-    let int_operand = Box·new(IrOperation·Literal {
+    ≔ int_operand = Box·new(IrOperation·Literal {
         variant: LiteralVariant·Int,
         value: LiteralValue·Int(42),
         ty: i32_type(),
         evidence: known(),
     });
 
-    let bool_operand = Box·new(IrOperation·Literal {
+    ≔ bool_operand = Box·new(IrOperation·Literal {
         variant: LiteralVariant·Bool,
         value: LiteralValue·Bool(true),
         ty: bool_type(),
@@ -301,7 +301,7 @@ fn test_unary_operations() -> !bool {
     });
 
     // Negation
-    let _neg = IrOperation·Unary {
+    ≔ _neg = IrOperation·Unary {
         operator: UnaryOp·Neg,
         operand: int_operand.clone(),
         ty: i32_type(),
@@ -309,7 +309,7 @@ fn test_unary_operations() -> !bool {
     };
 
     // Logical not
-    let _not = IrOperation·Unary {
+    ≔ _not = IrOperation·Unary {
         operator: UnaryOp·Not,
         operand: bool_operand.clone(),
         ty: bool_type(),
@@ -317,7 +317,7 @@ fn test_unary_operations() -> !bool {
     };
 
     // Reference
-    let _ref_op = IrOperation·Unary {
+    ≔ _ref_op = IrOperation·Unary {
         operator: UnaryOp·Ref,
         operand: int_operand.clone(),
         ty: IrType·Ref { mutable: false, inner: Box·new(i32_type()) },
@@ -325,7 +325,7 @@ fn test_unary_operations() -> !bool {
     };
 
     // Mutable reference
-    let _ref_mut = IrOperation·Unary {
+    ≔ _ref_mut = IrOperation·Unary {
         operator: UnaryOp·RefMut,
         operand: int_operand.clone(),
         ty: IrType·Ref { mutable: true, inner: Box·new(i32_type()) },
@@ -333,7 +333,7 @@ fn test_unary_operations() -> !bool {
     };
 
     // Dereference
-    let _deref = IrOperation·Unary {
+    ≔ _deref = IrOperation·Unary {
         operator: UnaryOp·Deref,
         operand: Box·new(IrOperation·Var {
             name: "ptr".to_string(),
@@ -353,11 +353,11 @@ fn test_unary_operations() -> !bool {
 // 6. CALL OPERATIONS
 // ============================================================================
 
-fn test_call_operations() -> !bool {
+λ test_call_operations() -> !bool {
     print("  [6/14] Call operations... ");
 
     // Function call
-    let _call = IrOperation·Call {
+    ≔ _call = IrOperation·Call {
         function: "add".to_string(),
         function_id: "add_i32_i32".to_string(),
         args: [
@@ -370,7 +370,7 @@ fn test_call_operations() -> !bool {
     };
 
     // Generic function call
-    let _generic_call = IrOperation·Call {
+    ≔ _generic_call = IrOperation·Call {
         function: "identity".to_string(),
         function_id: "identity_i32".to_string(),
         args: [
@@ -382,7 +382,7 @@ fn test_call_operations() -> !bool {
     };
 
     // Method call
-    let _method = IrOperation·MethodCall {
+    ≔ _method = IrOperation·MethodCall {
         receiver: Box·new(IrOperation·Var {
             name: "vec".to_string(),
             id: "vec_0".to_string(),
@@ -406,10 +406,10 @@ fn test_call_operations() -> !bool {
 // 7. CONTROL FLOW OPERATIONS
 // ============================================================================
 
-fn test_control_flow() -> !bool {
+λ test_control_flow() -> !bool {
     print("  [7/14] Control flow operations... ");
 
-    let condition = Box·new(IrOperation·Literal {
+    ≔ condition = Box·new(IrOperation·Literal {
         variant: LiteralVariant·Bool,
         value: LiteralValue·Bool(true),
         ty: bool_type(),
@@ -417,7 +417,7 @@ fn test_control_flow() -> !bool {
     });
 
     // If expression
-    let _if_op = IrOperation·If {
+    ≔ _if_op = IrOperation·If {
         condition: condition.clone(),
         then_branch: Box·new(IrOperation·Literal {
             variant: LiteralVariant·Int,
@@ -436,7 +436,7 @@ fn test_control_flow() -> !bool {
     };
 
     // Match expression
-    let _match_op = IrOperation·Match {
+    ≔ _match_op = IrOperation·Match {
         scrutinee: Box·new(IrOperation·Var {
             name: "opt".to_string(),
             id: "opt_0".to_string(),
@@ -468,11 +468,11 @@ fn test_control_flow() -> !bool {
     };
 
     // Loop variants
-    let body = Box·new(IrOperation·Break { value: ?Box·new(IrOperation·Literal {
+    ≔ body = Box·new(IrOperation·Break { value: ?Box·new(IrOperation·Literal {
         variant: LiteralVariant·Int, value: LiteralValue·Int(42), ty: i32_type(), evidence: known(),
     }), evidence: known() });
 
-    let _infinite_loop = IrOperation·Loop {
+    ≔ _infinite_loop = IrOperation·Loop {
         variant: LoopVariant·Infinite,
         condition: null,
         iterator: null,
@@ -481,7 +481,7 @@ fn test_control_flow() -> !bool {
         evidence: known(),
     };
 
-    let _while_loop = IrOperation·Loop {
+    ≔ _while_loop = IrOperation·Loop {
         variant: LoopVariant·While,
         condition: ?condition.clone(),
         iterator: null,
@@ -490,7 +490,7 @@ fn test_control_flow() -> !bool {
         evidence: known(),
     };
 
-    let _for_loop = IrOperation·Loop {
+    ≔ _for_loop = IrOperation·Loop {
         variant: LoopVariant·For,
         condition: null,
         iterator: ?IrForIterator {
@@ -503,9 +503,9 @@ fn test_control_flow() -> !bool {
     };
 
     // Break and Continue
-    let _break_op = IrOperation·Break { value: null, evidence: known() };
-    let _continue_op = IrOperation·Continue { evidence: known() };
-    let _return_op = IrOperation·Return { value: ?Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(0), ty: i32_type(), evidence: known() }), evidence: known() };
+    ≔ _break_op = IrOperation·Break { value: null, evidence: known() };
+    ≔ _continue_op = IrOperation·Continue { evidence: known() };
+    ≔ _return_op = IrOperation·Return { value: ?Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(0), ty: i32_type(), evidence: known() }), evidence: known() };
 
     println("PASS (9 cases)");
     true
@@ -515,11 +515,11 @@ fn test_control_flow() -> !bool {
 // 8. DATA STRUCTURE OPERATIONS
 // ============================================================================
 
-fn test_data_structures() -> !bool {
+λ test_data_structures() -> !bool {
     print("  [8/14] Data structure operations... ");
 
     // Array
-    let _array = IrOperation·Array {
+    ≔ _array = IrOperation·Array {
         elements: [
             IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(1), ty: i32_type(), evidence: known() },
             IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(2), ty: i32_type(), evidence: known() },
@@ -530,7 +530,7 @@ fn test_data_structures() -> !bool {
     };
 
     // Tuple
-    let _tuple = IrOperation·Tuple {
+    ≔ _tuple = IrOperation·Tuple {
         elements: [
             IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(1), ty: i32_type(), evidence: known() },
             IrOperation·Literal { variant: LiteralVariant·String, value: LiteralValue·String("hello".to_string()), ty: str_type(), evidence: known() },
@@ -540,7 +540,7 @@ fn test_data_structures() -> !bool {
     };
 
     // Struct init
-    let _struct_init = IrOperation·StructInit {
+    ≔ _struct_init = IrOperation·StructInit {
         name: "Point".to_string(),
         fields: [
             ("x".to_string(), IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(10), ty: i32_type(), evidence: known() }),
@@ -552,7 +552,7 @@ fn test_data_structures() -> !bool {
     };
 
     // Field access
-    let _field = IrOperation·Field {
+    ≔ _field = IrOperation·Field {
         expr: Box·new(IrOperation·Var {
             name: "point".to_string(),
             id: "point_0".to_string(),
@@ -565,7 +565,7 @@ fn test_data_structures() -> !bool {
     };
 
     // Index access
-    let _index = IrOperation·Index {
+    ≔ _index = IrOperation·Index {
         expr: Box·new(IrOperation·Var {
             name: "arr".to_string(),
             id: "arr_0".to_string(),
@@ -585,10 +585,10 @@ fn test_data_structures() -> !bool {
 // 9. PIPELINE OPERATIONS
 // ============================================================================
 
-fn test_pipeline_operations() -> !bool {
+λ test_pipeline_operations() -> !bool {
     print("  [9/14] Pipeline operations... ");
 
-    let input = Box·new(IrOperation·Var {
+    ≔ input = Box·new(IrOperation·Var {
         name: "data".to_string(),
         id: "data_0".to_string(),
         ty: IrType·Array { element: Box·new(i32_type()), length: 0 },
@@ -596,7 +596,7 @@ fn test_pipeline_operations() -> !bool {
     });
 
     // Simple pipeline
-    let _pipeline = IrOperation·Pipeline {
+    ≔ _pipeline = IrOperation·Pipeline {
         input: input.clone(),
         steps: [
             IrPipelineStep·Transform {
@@ -638,7 +638,7 @@ fn test_pipeline_operations() -> !bool {
     };
 
     // Fork/Join
-    let _fork = IrOperation·Fork {
+    ≔ _fork = IrOperation·Fork {
         branches: [
             IrOperation·Call { function: "process_a".to_string(), function_id: "process_a".to_string(), args: [], type_args: [], ty: i32_type(), evidence: known() },
             IrOperation·Call { function: "process_b".to_string(), function_id: "process_b".to_string(), args: [], type_args: [], ty: i32_type(), evidence: known() },
@@ -649,7 +649,7 @@ fn test_pipeline_operations() -> !bool {
     };
 
     // Identity
-    let _identity = IrOperation·Identity {
+    ≔ _identity = IrOperation·Identity {
         ty: i32_type(),
         evidence: known(),
     };
@@ -662,10 +662,10 @@ fn test_pipeline_operations() -> !bool {
 // 10. MORPHEME OPERATIONS
 // ============================================================================
 
-fn test_morpheme_operations() -> !bool {
+λ test_morpheme_operations() -> !bool {
     print("  [10/14] Morpheme operations... ");
 
-    let input = Box·new(IrOperation·Var {
+    ≔ input = Box·new(IrOperation·Var {
         name: "data".to_string(),
         id: "data_0".to_string(),
         ty: IrType·Array { element: Box·new(i32_type()), length: 0 },
@@ -673,7 +673,7 @@ fn test_morpheme_operations() -> !bool {
     });
 
     // τ (tau) - transform
-    let _tau = IrOperation·Morpheme {
+    ≔ _tau = IrOperation·Morpheme {
         morpheme: MorphemeKind·Tau,
         symbol: "τ".to_string(),
         input: input.clone(),
@@ -689,7 +689,7 @@ fn test_morpheme_operations() -> !bool {
     };
 
     // φ (phi) - filter
-    let _phi = IrOperation·Morpheme {
+    ≔ _phi = IrOperation·Morpheme {
         morpheme: MorphemeKind·Phi,
         symbol: "φ".to_string(),
         input: input.clone(),
@@ -699,7 +699,7 @@ fn test_morpheme_operations() -> !bool {
     };
 
     // σ (sigma) - reduce
-    let _sigma = IrOperation·Morpheme {
+    ≔ _sigma = IrOperation·Morpheme {
         morpheme: MorphemeKind·Sigma,
         symbol: "σ".to_string(),
         input: input.clone(),
@@ -709,7 +709,7 @@ fn test_morpheme_operations() -> !bool {
     };
 
     // ρ (rho) - reduce
-    let _rho = IrOperation·Morpheme {
+    ≔ _rho = IrOperation·Morpheme {
         morpheme: MorphemeKind·Rho,
         symbol: "ρ".to_string(),
         input: input.clone(),
@@ -726,10 +726,10 @@ fn test_morpheme_operations() -> !bool {
 // 11. EVIDENCE OPERATIONS
 // ============================================================================
 
-fn test_evidence_operations() -> !bool {
+λ test_evidence_operations() -> !bool {
     print("  [11/14] Evidence coercion operations... ");
 
-    let expr = Box·new(IrOperation·Var {
+    ≔ expr = Box·new(IrOperation·Var {
         name: "x".to_string(),
         id: "x_0".to_string(),
         ty: i32_type(),
@@ -737,7 +737,7 @@ fn test_evidence_operations() -> !bool {
     });
 
     // Unwrap (? -> !)
-    let _unwrap = IrOperation·EvidenceCoerce {
+    ≔ _unwrap = IrOperation·EvidenceCoerce {
         operation: EvidenceOp·Unwrap,
         expr: expr.clone(),
         from_evidence: uncertain(),
@@ -746,7 +746,7 @@ fn test_evidence_operations() -> !bool {
     };
 
     // Assert (~ -> !)
-    let _assert = IrOperation·EvidenceCoerce {
+    ≔ _assert = IrOperation·EvidenceCoerce {
         operation: EvidenceOp·Assert,
         expr: Box·new(IrOperation·Var {
             name: "input".to_string(),
@@ -760,7 +760,7 @@ fn test_evidence_operations() -> !bool {
     };
 
     // Coalesce (?? operator)
-    let _coalesce = IrOperation·EvidenceCoerce {
+    ≔ _coalesce = IrOperation·EvidenceCoerce {
         operation: EvidenceOp·Coalesce,
         expr: expr.clone(),
         from_evidence: uncertain(),
@@ -776,10 +776,10 @@ fn test_evidence_operations() -> !bool {
 // 12. PROTOCOL OPERATIONS
 // ============================================================================
 
-fn test_protocol_operations() -> !bool {
+λ test_protocol_operations() -> !bool {
     print("  [12/14] Protocol operations... ");
 
-    let url = Box·new(IrOperation·Literal {
+    ≔ url = Box·new(IrOperation·Literal {
         variant: LiteralVariant·String,
         value: LiteralValue·String("https://api.example.com".to_string()),
         ty: str_type(),
@@ -787,7 +787,7 @@ fn test_protocol_operations() -> !bool {
     });
 
     // HTTP GET
-    let _http_get = IrOperation·HttpRequest {
+    ≔ _http_get = IrOperation·HttpRequest {
         method: HttpMethod·Get,
         url: url.clone(),
         headers: null,
@@ -798,7 +798,7 @@ fn test_protocol_operations() -> !bool {
     };
 
     // HTTP POST
-    let _http_post = IrOperation·HttpRequest {
+    ≔ _http_post = IrOperation·HttpRequest {
         method: HttpMethod·Post,
         url: url.clone(),
         headers: null,
@@ -809,7 +809,7 @@ fn test_protocol_operations() -> !bool {
     };
 
     // WebSocket connect
-    let _ws_connect = IrOperation·WebSocket {
+    ≔ _ws_connect = IrOperation·WebSocket {
         operation: WebSocketOp·Connect,
         url: url.clone(),
         message: null,
@@ -818,7 +818,7 @@ fn test_protocol_operations() -> !bool {
     };
 
     // WebSocket send
-    let _ws_send = IrOperation·WebSocket {
+    ≔ _ws_send = IrOperation·WebSocket {
         operation: WebSocketOp·Text,
         url: url.clone(),
         message: ?Box·new(IrOperation·Literal { variant: LiteralVariant·String, value: LiteralValue·String("hello".to_string()), ty: str_type(), evidence: known() }),
@@ -834,11 +834,11 @@ fn test_protocol_operations() -> !bool {
 // 13. SPECIAL OPERATIONS
 // ============================================================================
 
-fn test_special_operations() -> !bool {
+λ test_special_operations() -> !bool {
     print("  [13/14] Special operations... ");
 
     // Block
-    let _block = IrOperation·Block {
+    ≔ _block = IrOperation·Block {
         statements: [
             IrOperation·Let {
                 pattern: IrPattern·Ident { name: "x".to_string(), mutable: false, ty: ?i32_type() },
@@ -853,7 +853,7 @@ fn test_special_operations() -> !bool {
     };
 
     // Closure
-    let _closure = IrOperation·Closure {
+    ≔ _closure = IrOperation·Closure {
         params: [
             IrParam { name: "x".to_string(), ty: i32_type(), evidence: known(), mutable: false },
             IrParam { name: "y".to_string(), ty: i32_type(), evidence: known(), mutable: false },
@@ -871,7 +871,7 @@ fn test_special_operations() -> !bool {
     };
 
     // Await
-    let _await = IrOperation·Await {
+    ≔ _await = IrOperation·Await {
         expr: Box·new(IrOperation·Call {
             function: "fetch".to_string(),
             function_id: "fetch".to_string(),
@@ -885,7 +885,7 @@ fn test_special_operations() -> !bool {
     };
 
     // Unsafe
-    let _unsafe = IrOperation·Unsafe {
+    ≔ _unsafe = IrOperation·Unsafe {
         body: Box·new(IrOperation·Unary {
             operator: UnaryOp·Deref,
             operand: Box·new(IrOperation·Var {
@@ -902,7 +902,7 @@ fn test_special_operations() -> !bool {
     };
 
     // Cast
-    let _cast = IrOperation·Cast {
+    ≔ _cast = IrOperation·Cast {
         expr: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(42), ty: i32_type(), evidence: known() }),
         target_type: IrType·Float { width: 64 },
         ty: IrType·Float { width: 64 },
@@ -910,7 +910,7 @@ fn test_special_operations() -> !bool {
     };
 
     // Try operator
-    let _try_op = IrOperation·Try {
+    ≔ _try_op = IrOperation·Try {
         expr: Box·new(IrOperation·Call {
             function: "parse".to_string(),
             function_id: "parse".to_string(),
@@ -924,7 +924,7 @@ fn test_special_operations() -> !bool {
     };
 
     // Assign
-    let _assign = IrOperation·Assign {
+    ≔ _assign = IrOperation·Assign {
         target: Box·new(IrOperation·Var { name: "x".to_string(), id: "x_0".to_string(), ty: i32_type(), evidence: known() }),
         value: Box·new(IrOperation·Literal { variant: LiteralVariant·Int, value: LiteralValue·Int(100), ty: i32_type(), evidence: known() }),
         evidence: known(),
@@ -938,11 +938,11 @@ fn test_special_operations() -> !bool {
 // 14. IR MODULE AND SERIALIZATION
 // ============================================================================
 
-fn test_ir_module() -> !bool {
+λ test_ir_module() -> !bool {
     print("  [14/14] IR module and serialization... ");
 
     // Create module
-    let mut module = new_module();
+    ≔ Δ module = new_module();
     assert(module.version == IR_VERSION, "module version");
     assert(module.source == "test.sg", "module source");
     assert(module.functions.len() == 0, "empty functions");
@@ -967,15 +967,15 @@ fn test_ir_module() -> !bool {
     assert(module.functions.len() == 1, "one function");
 
     // JSON serialization
-    let json_compact = module.to_json(false);
+    ≔ json_compact = module.to_json(false);
     assert(json_compact.contains("\"version\""), "json has version");
     assert(json_compact.contains("\"source\""), "json has source");
 
-    let json_pretty = module.to_json(true);
+    ≔ json_pretty = module.to_json(true);
     assert(json_pretty.contains("\n"), "pretty json has newlines");
 
     // Check lattice defaults
-    let lattice = module.evidentiality_lattice;
+    ≔ lattice = module.evidentiality_lattice;
     assert(lattice.levels.len() == 4, "four evidence levels");
     assert(lattice.join_rules.len() == 6, "six join rules");
     assert(lattice.meet_rules.len() == 6, "six meet rules");
@@ -988,38 +988,38 @@ fn test_ir_module() -> !bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("Testing IR Operations...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
 
     // Run all test groups
-    if test_evidence_lattice() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_literal_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_variable_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_binary_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_unary_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_call_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_control_flow() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_data_structures() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_pipeline_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_morpheme_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_evidence_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_protocol_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_special_operations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_ir_module() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_evidence_lattice() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_literal_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_variable_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_binary_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_unary_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_call_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_control_flow() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_data_structures() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_pipeline_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_morpheme_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_evidence_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_protocol_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_special_operations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_ir_module() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All IR operation tests passed! (~96 test cases)");
-    return 0;
+    ⤺ 0;
 }

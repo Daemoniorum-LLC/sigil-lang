@@ -271,21 +271,42 @@ pub enum Token {
     #[token("/*", block_comment_callback)]
     BlockComment(String),
 
-    // === Keywords ===
-    #[token("fn")]
+    // === Deprecated Rust Syntax ===
+    // These tokens capture Rust-like syntax for helpful error messages
+    // The parser maps these to Sigil equivalents in error messages
+    #[token("fn", |lex| lex.slice().to_string())]
+    #[token("let", |lex| lex.slice().to_string())]
+    #[token("mut", |lex| lex.slice().to_string())]
+    #[token("struct", |lex| lex.slice().to_string())]
+    #[token("enum", |lex| lex.slice().to_string())]
+    #[token("trait", |lex| lex.slice().to_string())]
+    #[token("impl", |lex| lex.slice().to_string())]
+    #[token("mod", |lex| lex.slice().to_string())]
+    #[token("use", |lex| lex.slice().to_string())]
+    #[token("pub", |lex| lex.slice().to_string())]
+    #[token("if", |lex| lex.slice().to_string())]
+    #[token("else", |lex| lex.slice().to_string())]
+    #[token("match", |lex| lex.slice().to_string())]
+    #[token("while", |lex| lex.slice().to_string())]
+    #[token("for", |lex| lex.slice().to_string())]
+    #[token("in", |lex| lex.slice().to_string())]
+    #[token("break", |lex| lex.slice().to_string())]
+    #[token("continue", |lex| lex.slice().to_string())]
+    #[token("return", |lex| lex.slice().to_string())]
+    DeprecatedRustKeyword(String),
+
+    // === Keywords (Native Sigil Syntax Only) ===
     #[token("λ")]  // Lambda - function
     Fn,
     #[token("async")]
-    #[token("⌛")]  // Hourglass - time/waiting
+    #[token("⌛")]  // Hourglass - time/waiting (native symbol alternative)
     Async,
-    #[token("let")]
     #[token("≔")]  // Definition assignment
     Let,
-    #[token("mut")]
     #[token("Δ")]  // Delta - change/mutable
     Mut,
     #[token("const")]
-    #[token("◆")]  // Diamond - solid, fixed
+    #[token("◆")]  // Diamond - solid, fixed (native symbol alternative)
     Const,
     #[token("linear")]
     Linear,
@@ -296,25 +317,18 @@ pub enum Token {
     #[token("type")]
     Type,
     #[token("sigil")]
-    #[token("struct")]
     #[token("Σ")]
     Struct,
-    #[token("enum")]
     #[token("ᛈ")]  // Perthro rune - lot cup, choices/fate
     Enum,
-    #[token("trait")]
     #[token("Θ")]  // Theta - theory, aspect
     Trait,
-    #[token("impl")]
     #[token("⊢")]  // Turnstile - proves/provides
     Impl,
     #[token("scroll")]
-    #[token("mod")]
     Mod,
     #[token("invoke")]
-    #[token("use")]
     Use,
-    #[token("pub")]
     #[token("☉")]  // Sun - visible, public
     Pub,
     #[token("actor")]
@@ -330,30 +344,26 @@ pub enum Token {
     #[token("macro_rules")]
     MacroRules,
 
-    // Control flow
-    #[token("if")]
+    // Control flow (Native Sigil Syntax Only)
+    // Note: ∀ (ForAll token) is used contextually as `for` by parser
+    // Note: ∈ (ElementOf token) is used contextually as `in` by parser
+    // Note: ⊗ (Tensor token) is used contextually as `break` by parser
+    // Note: ↻ (CycleArrow token) is used contextually as `continue` by parser
+    // Note: ∞ (Infinity token) is used contextually as `loop` by parser
     #[token("⎇")]  // ISO branch symbol
     If,
-    #[token("else")]
     #[token("⎉")]  // ISO alternative symbol
     Else,
-    #[token("match")]
     #[token("⌥")]  // Option key - choices
     Match,
     #[token("loop")]
-    Loop, // Parser handles contextual use of ∞ (Infinity token) for loop
-    #[token("while")]
+    Loop, // Legacy - parser also handles ∞ (Infinity token) for loop
     #[token("⟳")]  // Cycle arrow
     While,
-    #[token("for")]
-    For,
-    #[token("in")]
-    In,
-    #[token("break")]
-    Break,
-    #[token("continue")]
-    Continue,
-    #[token("return")]
+    // For - parser uses ForAll (∀) token contextually
+    // In - parser uses ElementOf (∈) token contextually
+    // Break - parser uses Tensor (⊗) token contextually
+    // Continue - parser uses CycleArrow (↻) token contextually
     #[token("⤺")]  // Return arrow
     Return,
     #[token("yield")]
@@ -865,9 +875,9 @@ pub enum Token {
     DotDotEq,
     #[token("++")]
     PlusPlus, // Concatenation
-    // Re-enabled for Styx compatibility (uses :: for paths alongside middledot)
+    // Deprecated Rust operator - use · (middledot) for paths
     #[token("::")]
-    ColonColon,
+    DeprecatedColonColon,
     #[token(":")]
     Colon,
     #[token(";")]
@@ -1120,10 +1130,10 @@ impl Token {
                 | Token::Match
                 | Token::Loop
                 | Token::While
-                | Token::For
-                | Token::In
-                | Token::Break
-                | Token::Continue
+                | Token::ForAll      // ∀ - used as for keyword
+                | Token::ElementOf   // ∈ - used as in keyword
+                | Token::Tensor      // ⊗ - used as break keyword
+                | Token::CycleArrow  // ↻ - used as continue keyword
                 | Token::Return
                 | Token::Yield
                 | Token::Await

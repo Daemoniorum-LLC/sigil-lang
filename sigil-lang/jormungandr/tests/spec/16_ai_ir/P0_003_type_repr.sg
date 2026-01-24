@@ -1,14 +1,14 @@
-// Test: Type representation in IR
+// Test: Type representation ∈ IR
 // Spec: 16-AI-IR.md § Type Representation
 // Priority: P0 - Bootstrap Critical
 
-struct Point {
+Σ Point {
     x: !i32,
     y: !i32
 }
 
-fn main() {
-    let ir = __export_ir();
-    let point_type = ir.types|find{t => t.name == "Point"};
+λ main() {
+    ≔ ir = __export_ir();
+    ≔ point_type = ir.types|find{t => t.name == "Point"};
     println(point_type.fields.len());
 }

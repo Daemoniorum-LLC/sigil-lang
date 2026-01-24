@@ -3,10 +3,10 @@
 // Phase A: Platform Syscalls
 //
 // This test verifies error number handling patterns that would
-// use errno in compiled mode.
+// invoke errno ∈ compiled mode.
 
-// Error code enum (simulates Errno)
-enum Errno {
+// Error code ᛈ (simulates Errno)
+ᛈ Errno {
     EPERM = 1,
     ENOENT = 2,
     EIO = 5,
@@ -16,31 +16,31 @@ enum Errno {
     EINVAL = 22,
 }
 
-fn errno_message(code: i64) -> String {
-    if code == 1 {
-        return "Operation not permitted";
-    } else if code == 2 {
-        return "No such file or directory";
-    } else if code == 12 {
-        return "Out of memory";
-    } else {
-        return "Unknown error";
+λ errno_message(code: i64) -> String {
+    ⎇ code == 1 {
+        ⤺ "Operation not permitted";
+    } ⎉ ⎇ code == 2 {
+        ⤺ "No such file or directory";
+    } ⎉ ⎇ code == 12 {
+        ⤺ "Out of memory";
+    } ⎉ {
+        ⤺ "Unknown error";
     }
 }
 
-fn main() {
+λ main() {
     // Test 1: Errno from code
-    let eperm_code = 1;
+    ≔ eperm_code = 1;
     assert_eq!(eperm_code, 1);
     println("from_code_ok");
 
     // Test 2: Errno variants
-    let eperm = 1;
-    let enoent = 2;
-    let eio = 5;
-    let enomem = 12;
-    let eacces = 13;
-    let einval = 22;
+    ≔ eperm = 1;
+    ≔ enoent = 2;
+    ≔ eio = 5;
+    ≔ enomem = 12;
+    ≔ eacces = 13;
+    ≔ einval = 22;
     assert_eq!(eperm, 1);
     assert_eq!(enoent, 2);
     assert_eq!(eio, 5);
@@ -50,30 +50,30 @@ fn main() {
     println("variants_ok");
 
     // Test 3: Error messages
-    let msg1 = errno_message(1);
+    ≔ msg1 = errno_message(1);
     assert!(msg1.len() > 0);
     println(msg1);
 
-    let msg2 = errno_message(2);
+    ≔ msg2 = errno_message(2);
     assert!(msg2.len() > 0);
     println(msg2);
 
-    let msg3 = errno_message(12);
+    ≔ msg3 = errno_message(12);
     assert!(msg3.len() > 0);
     println(msg3);
 
     // Test 4: Unknown errno
-    let msg_unknown = errno_message(9999);
+    ≔ msg_unknown = errno_message(9999);
     assert!(msg_unknown.len() > 0);
     println("unknown_msg_ok");
 
     // Test 5: Simulate error result - bad file descriptor
-    let error_code = 9;  // EBADF
+    ≔ error_code = 9;  // EBADF
     assert_eq!(error_code, 9);
     println("ebadf_ok");
 
     // Test 6: Simulate error result - no such file
-    let error_code2 = 2;  // ENOENT
+    ≔ error_code2 = 2;  // ENOENT
     assert_eq!(error_code2, 2);
     println("enoent_ok");
 

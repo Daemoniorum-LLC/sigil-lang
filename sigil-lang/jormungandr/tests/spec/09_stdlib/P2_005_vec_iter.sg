@@ -2,10 +2,10 @@
 // Spec: 09-STDLIB.md § 4.1 Vec
 // Priority: P2 - Enhancement
 
-fn main() {
-    let v: Vec<i32> = vec![1, 2, 3];
+λ main() {
+    ≔ v: Vec<i32> = vec![1, 2, 3];
 
-    for item in v {
+    ∀ item ∈ v {
         println(item);
     }
 }

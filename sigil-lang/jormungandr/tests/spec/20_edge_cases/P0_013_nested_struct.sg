@@ -1,16 +1,16 @@
-// Test: Nested struct access
+// Test: Nested Σ access
 // Spec: Edge Cases - Deep Nesting
 // Priority: P0 - Bootstrap Critical
 
-struct Inner {
+Σ Inner {
     value: i32,
 }
 
-struct Outer {
+Σ Outer {
     inner: Inner,
 }
 
-fn main() {
-    let o = Outer { inner: Inner { value: 42 } };
+λ main() {
+    ≔ o = Outer { inner: Inner { value: 42 } };
     println(o.inner.value);
 }

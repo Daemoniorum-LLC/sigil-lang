@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should compile and print 42
 
-fn read_value(x: &!i32) -> !i32 {
+λ read_value(x: &!i32) -> !i32 {
     *x
 }
 
-fn main() {
-    let val: !i32 = 42;
+λ main() {
+    ≔ val: !i32 = 42;
     println(read_value(&val));
 }

@@ -1,16 +1,16 @@
-// Test: If expression without else branch
+// Test: If expression without ⎉ branch
 // Spec: 02-SYNTAX.md § 4.1 If Expressions
 // Priority: P0
 //
 // Purpose:
-// Validates that if without else works (unit type return).
+// Validates that ⎇ without ⎉ works (unit type ⤺).
 //
 // Expected behavior:
 // Should compile and print 42
 
-fn main() {
-    let mut x: !i32 = 0;
-    if true {
+λ main() {
+    ≔ Δ x: !i32 = 0;
+    ⎇ true {
         x = 42;
     }
     println(x);

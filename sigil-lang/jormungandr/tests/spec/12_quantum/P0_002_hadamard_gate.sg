@@ -3,11 +3,11 @@
 // Priority: P0 - Bootstrap Critical
 // Verifies H·H = I (Hadamard is self-inverse)
 
-fn main() {
+λ main() {
     // H applied twice returns qubit to original state
-    let q: linear Qubit = Qubit·zero();
-    let q2: linear Qubit = q|H;     // |0⟩ → |+⟩
-    let q3: linear Qubit = q2|H;    // |+⟩ → |0⟩
-    let result: Cbit = q3|measure;
+    ≔ q: linear Qubit = Qubit·zero();
+    ≔ q2: linear Qubit = q|H;     // |0⟩ → |+⟩
+    ≔ q3: linear Qubit = q2|H;    // |+⟩ → |0⟩
+    ≔ result: Cbit = q3|measure;
     println(result);  // Always 0 (H² = I)
 }

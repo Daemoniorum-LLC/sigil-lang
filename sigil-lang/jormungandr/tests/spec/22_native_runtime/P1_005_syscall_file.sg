@@ -3,16 +3,16 @@
 // Phase A: Platform Syscalls
 //
 // This test verifies data operations that would be used
-// for file syscalls in compiled mode.
+// ∀ file syscalls ∈ compiled mode.
 
-fn main() {
-    let test_content = "Hello, Native Runtime!";
+λ main() {
+    ≔ test_content = "Hello, Native Runtime!";
 
     // Test 1: Create and write (simulated with array)
-    let mut file_buffer = [];
-    let bytes = test_content.as_bytes();
-    let mut idx = 0;
-    while idx < bytes.len() {
+    ≔ Δ file_buffer = [];
+    ≔ bytes = test_content.as_bytes();
+    ≔ Δ idx = 0;
+    ⟳ idx < bytes.len() {
         file_buffer.push(bytes[idx]);
         idx = idx + 1;
     }
@@ -27,22 +27,22 @@ fn main() {
     println("read_ok");
 
     // Verify content matches
-    let mut matches = true;
+    ≔ Δ matches = true;
     matches = matches && (file_buffer[0] == bytes[0]);
     matches = matches && (file_buffer[10] == bytes[10]);
     matches = matches && (file_buffer[21] == bytes[21]);
-    if matches {
+    ⎇ matches {
         println("content_match");
-    } else {
+    } ⎉ {
         println("content_mismatch");
     }
 
     // Test 3: Append to buffer
     println("open_append_ok");
-    let append_content = " Appended!";
-    let append_bytes = append_content.as_bytes();
-    let mut idx2 = 0;
-    while idx2 < append_bytes.len() {
+    ≔ append_content = " Appended!";
+    ≔ append_bytes = append_content.as_bytes();
+    ≔ Δ idx2 = 0;
+    ⟳ idx2 < append_bytes.len() {
         file_buffer.push(append_bytes[idx2]);
         idx2 = idx2 + 1;
     }

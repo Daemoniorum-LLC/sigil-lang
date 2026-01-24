@@ -2,11 +2,11 @@
 // Spec: 04-MEMORY.md § 2.1 Move Semantics
 // Priority: P0
 
-pub struct Box { val: !i32 }
+☉ Σ Box { val: !i32 }
 
-fn take(b: !Box) -> !i32 { b.val }
+λ take(b: !Box) -> !i32 { b.val }
 
-fn main() {
-    let b = Box { val: 42 };
+λ main() {
+    ≔ b = Box { val: 42 };
     println(take(b));
 }

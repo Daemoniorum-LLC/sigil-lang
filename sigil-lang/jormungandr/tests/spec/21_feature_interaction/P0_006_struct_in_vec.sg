@@ -1,13 +1,13 @@
-// Test: Structs stored in Vec
+// Test: Structs stored ∈ Vec
 // Spec: Feature Interaction - Structs + Collections
 // Priority: P0 - Bootstrap Critical
 
-struct Item {
+Σ Item {
     value: i32,
 }
 
-fn main() {
-    let mut items: Vec<Item> = Vec·new();
+λ main() {
+    ≔ Δ items: Vec<Item> = Vec·new();
     items.push(Item { value: 10 });
     items.push(Item { value: 20 });
     println(items.len());

@@ -2,7 +2,7 @@
 // Spec: Edge Cases - String Boundaries
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let s: String = "";
+λ main() {
+    ≔ s: String = "";
     println(s.len());
 }

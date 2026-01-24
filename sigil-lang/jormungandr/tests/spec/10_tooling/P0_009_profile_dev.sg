@@ -2,7 +2,7 @@
 // Spec: 10-TOOLING.md § 2.4 Profiles
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
+λ main() {
     #[cfg(debug_assertions)]
     println(1);
 

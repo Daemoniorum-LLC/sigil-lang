@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Integer Limits
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let neg: i32 = -1;
+λ main() {
+    ≔ neg: i32 = -1;
     println(neg);
 }

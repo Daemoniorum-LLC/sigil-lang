@@ -2,32 +2,32 @@
 // Spec: 15-PROTOCOLS.md § 2 Common Abstractions
 // Priority: P0 - Bootstrap Critical
 //
-// Tests language features used in timeout patterns:
-// - Result enum with Ok/Err
-// - Pattern matching with evidential binding in Ok
+// Tests language features used ∈ timeout patterns:
+// - Result ᛈ with Ok/Err
+// - Pattern matching with evidential binding ∈ Ok
 // - Error variant matching
 
-struct HttpResponse {
+Σ HttpResponse {
     status: i64,
     body: String,
 }
 
-enum RequestResult {
+ᛈ RequestResult {
     Ok(HttpResponse),
     Err(String),
 }
 
-fn send_request(url: String, timeout_ms: i64) -> RequestResult {
+λ send_request(url: String, timeout_ms: i64) -> RequestResult {
     // Simulated successful request
     RequestResult·Ok(HttpResponse { status: 200, body: "OK" })
 }
 
-fn main() {
+λ main() {
     // Test: Function returning Result
-    let result = send_request("https://example.com", 5000);
+    ≔ result = send_request("https://example.com", 5000);
 
-    // Test: Pattern match with evidential binding on Ok variant
-    match result {
+    // Test: Pattern ⌥ with evidential binding on Ok variant
+    ⌥ result {
         RequestResult·Ok(response~) => println(response~.status),
         RequestResult·Err(msg) => println(-1),
     }

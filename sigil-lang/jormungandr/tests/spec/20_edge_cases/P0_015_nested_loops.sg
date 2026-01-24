@@ -1,13 +1,13 @@
-// Test: Nested loops with break
+// Test: Nested loops with ⊗
 // Spec: Edge Cases - Control Flow
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let mut count = 0;
-    let mut i = 0;
-    while i < 3 {
-        let mut j = 0;
-        while j < 3 {
+λ main() {
+    ≔ Δ count = 0;
+    ≔ Δ i = 0;
+    ⟳ i < 3 {
+        ≔ Δ j = 0;
+        ⟳ j < 3 {
             count = count + 1;
             j = j + 1;
         }

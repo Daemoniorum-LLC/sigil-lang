@@ -2,7 +2,7 @@
 // Spec: 07-METAPROGRAMMING.md § 1.1 Format Macro
 // Priority: P1 - Standard Feature
 
-fn main() {
-    let s = format!("Hello, World!");
+λ main() {
+    ≔ s = format!("Hello, World!");
     println(s);
 }

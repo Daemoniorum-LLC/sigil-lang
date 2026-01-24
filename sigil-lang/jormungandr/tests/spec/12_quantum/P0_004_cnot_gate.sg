@@ -2,10 +2,10 @@
 // Spec: 12-QUANTUM.md § 3.2 Multi-Qubit Gates
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let control: linear Qubit = Qubit·one();
-    let target: linear Qubit = Qubit·zero();
-    let (c2, t2) = CNOT(control, target);  // Flips target if control is |1⟩
-    let result: Cbit = t2|measure;
+λ main() {
+    ≔ control: linear Qubit = Qubit·one();
+    ≔ target: linear Qubit = Qubit·zero();
+    ≔ (c2, t2) = CNOT(control, target);  // Flips target ⎇ control is |1⟩
+    ≔ result: Cbit = t2|measure;
     println(result);
 }

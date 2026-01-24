@@ -3,13 +3,13 @@
 // Phase A: Platform Syscalls
 //
 // This test verifies string/byte operations that would be used
-// for write syscalls in compiled mode.
+// ∀ write syscalls ∈ compiled mode.
 
-fn main() {
+λ main() {
     // Test 1: Simulate write with string bytes
-    let msg = "Hello from syscall\n";
-    let bytes = msg.as_bytes();
-    let n = bytes.len();
+    ≔ msg = "Hello from syscall\n";
+    ≔ bytes = msg.as_bytes();
+    ≔ n = bytes.len();
 
     // Should have all 19 bytes including newline
     assert_eq!(n, 19);
@@ -17,17 +17,17 @@ fn main() {
     println(n);
 
     // Test 2: Write to different target (simulated)
-    let err_msg = "Error output\n";
-    let err_bytes = err_msg.as_bytes();
-    let n2 = err_bytes.len();
+    ≔ err_msg = "Error output\n";
+    ≔ err_bytes = err_msg.as_bytes();
+    ≔ n2 = err_bytes.len();
 
     assert_eq!(n2, 13);
     println(err_msg);
     println(n2);
 
     // Test 3: Empty buffer
-    let empty = [];
-    let n3 = empty.len();
+    ≔ empty = [];
+    ≔ n3 = empty.len();
 
     assert_eq!(n3, 0);
     println(n3);

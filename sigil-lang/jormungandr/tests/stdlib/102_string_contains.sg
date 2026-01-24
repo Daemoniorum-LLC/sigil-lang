@@ -1,12 +1,12 @@
 // Test: String contains method
-fn main() {
-    let s: !String = "Hello, World!";
+λ main() {
+    ≔ s: !String = "Hello, World!";
 
-    if s.contains("World") {
+    ⎇ s.contains("World") {
         println("found");
     }
 
-    if !s.contains("Goodbye") {
+    ⎇ !s.contains("Goodbye") {
         println("not found");
     }
 }

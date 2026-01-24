@@ -2,15 +2,15 @@
 // Spec: 18-COMPILER.md § 1.3 Recursion
 // Priority: P1 - Standard Feature
 
-fn factorial(n: !i32) -> !i32 {
-    if n <= 1 {
+λ factorial(n: !i32) -> !i32 {
+    ⎇ n <= 1 {
         1
-    } else {
+    } ⎉ {
         n * factorial(n - 1)
     }
 }
 
-fn main() {
+λ main() {
     println(factorial(5));
     println(factorial(10));
 }

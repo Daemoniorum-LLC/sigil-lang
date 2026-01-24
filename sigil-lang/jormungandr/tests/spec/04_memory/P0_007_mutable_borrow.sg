@@ -2,12 +2,12 @@
 // Spec: 04-MEMORY.md § 3.2 Mutable References
 // Priority: P0
 
-fn increment(x: &mut !i32) {
+λ increment(x: &Δ !i32) {
     *x = *x + 1;
 }
 
-fn main() {
-    let mut val: !i32 = 41;
-    increment(&mut val);
+λ main() {
+    ≔ Δ val: !i32 = 41;
+    increment(&Δ val);
     println(val);
 }

@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print 42
 
-fn main() {
-    let my_var: !i32 = 42;
+λ main() {
+    ≔ my_var: !i32 = 42;
     println(my_var);
 }

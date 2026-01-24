@@ -2,9 +2,9 @@
 // Spec: 07-METAPROGRAMMING.md § 1.7 Number Formatting
 // Priority: P1 - Standard Feature
 
-fn main() {
-    let pi = 3.14159;
-    let big = 1000000;
+λ main() {
+    ≔ pi = 3.14159;
+    ≔ big = 1000000;
 
     println!("Pi is approximately {}", pi);
     println!("Big number: {}", big);

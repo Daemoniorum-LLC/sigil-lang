@@ -4,16 +4,16 @@
 // Note: probability_of is a non-destructive query (borrow semantics)
 // This test demonstrates the API; full evidentiality integration is P2
 
-fn main() {
+λ main() {
     // Create QRegister and query probability (QRegister allows repeated queries)
-    let reg: QRegister<3> = QRegister·new(1);  // 1-qubit register
+    ≔ reg: QRegister<3> = QRegister·new(1);  // 1-qubit register
 
     // Apply H to create superposition
-    let reg2 = reg|H_all;
+    ≔ reg2 = reg|H_all;
 
     // Measure to get result
-    let results = reg2|measure_all;
-    let bit = results[0];
+    ≔ results = reg2|measure_all;
+    ≔ bit = results[0];
 
     // Just verify the register workflow works
     println(true);

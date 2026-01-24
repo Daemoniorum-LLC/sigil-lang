@@ -2,8 +2,8 @@
 // Spec: 02-SYNTAX.md § 5.6 For
 // Priority: P2 - Enhancement
 
-fn main() {
-    for i in 0..5 {
+λ main() {
+    ∀ i ∈ 0..5 {
         println(i);
     }
 }

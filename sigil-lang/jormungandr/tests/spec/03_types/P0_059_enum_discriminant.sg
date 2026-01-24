@@ -8,14 +8,14 @@
 // Expected behavior:
 // Should print 42 (matches first variant)
 
-pub enum Status {
+☉ ᛈ Status {
     Ok,
     Error
 }
 
-fn main() {
-    let s: !Status = Status·Ok;
-    match s {
+λ main() {
+    ≔ s: !Status = Status·Ok;
+    ⌥ s {
         Status·Ok => println(42),
         Status·Error => println(99)
     }

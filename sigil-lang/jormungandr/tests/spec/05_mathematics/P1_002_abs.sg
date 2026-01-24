@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 1.2 Absolute Value
 // Priority: P1 - Standard Feature
 
-fn main() {
+λ main() {
     // Positive int stays positive
     println(abs(42));
 

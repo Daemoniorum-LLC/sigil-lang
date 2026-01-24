@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should print 42
 
-fn main() {
-    let res: !Result<!i32, String> = Result·Ok(42);
-    match res {
+λ main() {
+    ≔ res: !Result<!i32, String> = Result·Ok(42);
+    ⌥ res {
         Result·Ok(x) => println(x),
         Result·Err(_) => println(0)
     }

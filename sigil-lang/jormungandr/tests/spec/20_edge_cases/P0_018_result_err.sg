@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Error Values
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let res: Result<i32, String> = Err("error message".to_string());
+λ main() {
+    ≔ res: Result<i32, String> = Err("error message".to_string());
     println(res.is_err());
 }

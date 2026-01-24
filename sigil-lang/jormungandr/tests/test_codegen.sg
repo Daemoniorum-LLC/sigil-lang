@@ -2,28 +2,28 @@
 //!
 //! Tests C code generation from IR, including type definitions,
 //! function signatures, control flow, and evidence tagging.
-//! Target: 100% codegen coverage for regression detection.
+//! Target: 100% codegen coverage ∀ regression detection.
 
-use crate·ir·*;
-use crate·codegen·CodeGen;
+invoke crate·ir·*;
+invoke crate·codegen·CodeGen;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 /// Create a new code generator
-fn new_codegen() -> !CodeGen {
+λ new_codegen() -> !CodeGen {
     CodeGen·new()
 }
 
 /// Generate code from an IR module
-fn generate(module: !IrModule) -> !String {
-    let mut gen = CodeGen·new();
+λ generate(module: !IrModule) -> !String {
+    ≔ Δ gen = CodeGen·new();
     gen.generate(module)
 }
 
 /// Create a simple function IR
-fn simple_function(name: !&str, body: !IrOperation) -> !IrFunction {
+λ simple_function(name: !&str, body: !IrOperation) -> !IrFunction {
     IrFunction {
         name: name.to_string(),
         id: name.to_string(),
@@ -40,15 +40,15 @@ fn simple_function(name: !&str, body: !IrOperation) -> !IrFunction {
 }
 
 /// Assert generated code contains a string
-fn assert_contains(code: !&str, pattern: !&str, name: !&str) {
-    if !code.contains(pattern) {
+λ assert_contains(code: !&str, pattern: !&str, name: !&str) {
+    ⎇ !code.contains(pattern) {
         panic(format!("FAIL {}: generated code does not contain '{}'", name, pattern));
     }
 }
 
 /// Assert generated code does NOT contain a string
-fn assert_not_contains(code: !&str, pattern: !&str, name: !&str) {
-    if code.contains(pattern) {
+λ assert_not_contains(code: !&str, pattern: !&str, name: !&str) {
+    ⎇ code.contains(pattern) {
         panic(format!("FAIL {}: generated code should not contain '{}'", name, pattern));
     }
 }
@@ -57,11 +57,11 @@ fn assert_not_contains(code: !&str, pattern: !&str, name: !&str) {
 // 1. HEADER GENERATION
 // ============================================================================
 
-fn test_header_generation() -> !bool {
+λ test_header_generation() -> !bool {
     print("  [1/12] Header generation... ");
 
-    let module = IrModule·new("test.sg".to_string());
-    let code = generate(module);
+    ≔ module = IrModule·new("test.sg".to_string());
+    ≔ code = generate(module);
 
     // Should include runtime header
     assert_contains(&code, "#include", "has_include");
@@ -78,10 +78,10 @@ fn test_header_generation() -> !bool {
 // 2. FUNCTION DECLARATIONS
 // ============================================================================
 
-fn test_function_declarations() -> !bool {
+λ test_function_declarations() -> !bool {
     print("  [2/12] Function declarations... ");
 
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(simple_function("foo", IrOperation·Return {
         value: ?Box·new(IrOperation·Literal {
             variant: LiteralVariant·Int,
@@ -92,7 +92,7 @@ fn test_function_declarations() -> !bool {
         evidence: IrEvidence·Known,
     }));
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
     // Should have function declaration
     assert_contains(&code, "sigil_foo", "has_function_name");
@@ -105,10 +105,10 @@ fn test_function_declarations() -> !bool {
 // 3. FUNCTION PARAMETERS
 // ============================================================================
 
-fn test_function_params() -> !bool {
+λ test_function_params() -> !bool {
     print("  [3/12] Function parameters... ");
 
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(IrFunction {
         name: "add".to_string(),
         id: "add".to_string(),
@@ -135,7 +135,7 @@ fn test_function_params() -> !bool {
         span: null,
     });
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
     // Should have parameter handling
     assert_contains(&code, "sigil_add", "has_add_function");
@@ -148,11 +148,11 @@ fn test_function_params() -> !bool {
 // 4. LITERAL CODE GENERATION
 // ============================================================================
 
-fn test_literal_codegen() -> !bool {
+λ test_literal_codegen() -> !bool {
     print("  [4/12] Literal generation... ");
 
     // Integer literal
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(simple_function("int_lit", IrOperation·Return {
         value: ?Box·new(IrOperation·Literal {
             variant: LiteralVariant·Int,
@@ -162,11 +162,11 @@ fn test_literal_codegen() -> !bool {
         }),
         evidence: IrEvidence·Known,
     }));
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "42", "int_literal");
 
     // Boolean literal
-    let mut module2 = IrModule·new("test.sg".to_string());
+    ≔ Δ module2 = IrModule·new("test.sg".to_string());
     module2.functions.push(IrFunction {
         name: "bool_lit".to_string(),
         id: "bool_lit".to_string(),
@@ -188,11 +188,11 @@ fn test_literal_codegen() -> !bool {
         is_unsafe: false,
         span: null,
     });
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "sigil_bool_lit", "bool_function");
 
     // String literal
-    let mut module3 = IrModule·new("test.sg".to_string());
+    ≔ Δ module3 = IrModule·new("test.sg".to_string());
     module3.functions.push(IrFunction {
         name: "str_lit".to_string(),
         id: "str_lit".to_string(),
@@ -214,11 +214,11 @@ fn test_literal_codegen() -> !bool {
         is_unsafe: false,
         span: null,
     });
-    let code3 = generate(module3);
+    ≔ code3 = generate(module3);
     assert_contains(&code3, "hello", "string_literal");
 
     // Null literal
-    let mut module4 = IrModule·new("test.sg".to_string());
+    ≔ Δ module4 = IrModule·new("test.sg".to_string());
     module4.functions.push(IrFunction {
         name: "null_lit".to_string(),
         id: "null_lit".to_string(),
@@ -240,7 +240,7 @@ fn test_literal_codegen() -> !bool {
         is_unsafe: false,
         span: null,
     });
-    let code4 = generate(module4);
+    ≔ code4 = generate(module4);
     assert_contains(&code4, "sigil_null_lit", "null_function");
 
     println("PASS (4 cases)");
@@ -251,11 +251,11 @@ fn test_literal_codegen() -> !bool {
 // 5. BINARY OPERATION CODE GENERATION
 // ============================================================================
 
-fn test_binary_codegen() -> !bool {
+λ test_binary_codegen() -> !bool {
     print("  [5/12] Binary operations... ");
 
     // Addition
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(simple_function("add", IrOperation·Return {
         value: ?Box·new(IrOperation·Binary {
             operator: BinaryOp·Add,
@@ -266,11 +266,11 @@ fn test_binary_codegen() -> !bool {
         }),
         evidence: IrEvidence·Known,
     }));
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "+", "has_add_op");
 
     // Comparison
-    let mut module2 = IrModule·new("test.sg".to_string());
+    ≔ Δ module2 = IrModule·new("test.sg".to_string());
     module2.functions.push(IrFunction {
         name: "cmp".to_string(),
         id: "cmp".to_string(),
@@ -293,7 +293,7 @@ fn test_binary_codegen() -> !bool {
         is_unsafe: false,
         span: null,
     });
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "<", "has_lt_op");
 
     println("PASS (2 cases)");
@@ -304,11 +304,11 @@ fn test_binary_codegen() -> !bool {
 // 6. CONTROL FLOW CODE GENERATION
 // ============================================================================
 
-fn test_control_flow_codegen() -> !bool {
+λ test_control_flow_codegen() -> !bool {
     print("  [6/12] Control flow... ");
 
     // If statement
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(simple_function("if_stmt", IrOperation·If {
         condition: Box·new(IrOperation·Literal { variant: LiteralVariant·Bool, value: LiteralValue·Bool(true), ty: IrType·Bool, evidence: IrEvidence·Known }),
         then_branch: Box·new(IrOperation·Return {
@@ -322,11 +322,11 @@ fn test_control_flow_codegen() -> !bool {
         ty: IrType·Int { width: 32, signed: true },
         evidence: IrEvidence·Known,
     }));
-    let code = generate(module);
-    assert_contains(&code, "if", "has_if");
+    ≔ code = generate(module);
+    assert_contains(&code, "⎇", "has_if");
 
     // Loop
-    let mut module2 = IrModule·new("test.sg".to_string());
+    ≔ Δ module2 = IrModule·new("test.sg".to_string());
     module2.functions.push(simple_function("loop_stmt", IrOperation·Loop {
         variant: LoopVariant·Infinite,
         condition: null,
@@ -335,8 +335,8 @@ fn test_control_flow_codegen() -> !bool {
         ty: IrType·Unit,
         evidence: IrEvidence·Known,
     }));
-    let code2 = generate(module2);
-    assert_contains(&code2, "while", "has_while");
+    ≔ code2 = generate(module2);
+    assert_contains(&code2, "⟳", "has_while");
 
     println("PASS (2 cases)");
     true
@@ -346,10 +346,10 @@ fn test_control_flow_codegen() -> !bool {
 // 7. TYPE DEFINITION CODE GENERATION
 // ============================================================================
 
-fn test_typedef_codegen() -> !bool {
+λ test_typedef_codegen() -> !bool {
     print("  [7/12] Type definitions... ");
 
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.types.push(IrTypeDef·Struct {
         name: "Point".to_string(),
         generics: [],
@@ -360,11 +360,11 @@ fn test_typedef_codegen() -> !bool {
         visibility: IrVisibility·Public,
     });
 
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "Point", "has_struct_name");
 
     // Enum type
-    let mut module2 = IrModule·new("test.sg".to_string());
+    ≔ Δ module2 = IrModule·new("test.sg".to_string());
     module2.types.push(IrTypeDef·Enum {
         name: "Option".to_string(),
         generics: ["T".to_string()],
@@ -374,7 +374,7 @@ fn test_typedef_codegen() -> !bool {
         ],
         visibility: IrVisibility·Public,
     });
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "Option", "has_enum_name");
 
     println("PASS (2 cases)");
@@ -385,11 +385,11 @@ fn test_typedef_codegen() -> !bool {
 // 8. EVIDENCE TAGGING
 // ============================================================================
 
-fn test_evidence_codegen() -> !bool {
+λ test_evidence_codegen() -> !bool {
     print("  [8/12] Evidence tagging... ");
 
     // Known evidence
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(simple_function("known", IrOperation·Return {
         value: ?Box·new(IrOperation·Literal {
             variant: LiteralVariant·Int,
@@ -399,12 +399,12 @@ fn test_evidence_codegen() -> !bool {
         }),
         evidence: IrEvidence·Known,
     }));
-    let code = generate(module);
+    ≔ code = generate(module);
     // Generated code should handle known evidence
     assert_contains(&code, "sigil_known", "has_known_tag");
 
     // Uncertain evidence
-    let mut module2 = IrModule·new("test.sg".to_string());
+    ≔ Δ module2 = IrModule·new("test.sg".to_string());
     module2.functions.push(IrFunction {
         name: "uncertain".to_string(),
         id: "uncertain".to_string(),
@@ -426,7 +426,7 @@ fn test_evidence_codegen() -> !bool {
         is_unsafe: false,
         span: null,
     });
-    let code2 = generate(module2);
+    ≔ code2 = generate(module2);
     assert_contains(&code2, "sigil_uncertain", "has_uncertain_tag");
 
     println("PASS (2 cases)");
@@ -437,10 +437,10 @@ fn test_evidence_codegen() -> !bool {
 // 9. FUNCTION CALL CODE GENERATION
 // ============================================================================
 
-fn test_call_codegen() -> !bool {
+λ test_call_codegen() -> !bool {
     print("  [9/12] Function calls... ");
 
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(simple_function("caller", IrOperation·Return {
         value: ?Box·new(IrOperation·Call {
             function: "callee".to_string(),
@@ -453,7 +453,7 @@ fn test_call_codegen() -> !bool {
         evidence: IrEvidence·Known,
     }));
 
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "sigil_callee", "has_callee_call");
 
     println("PASS (1 case)");
@@ -464,10 +464,10 @@ fn test_call_codegen() -> !bool {
 // 10. METHOD CALL CODE GENERATION
 // ============================================================================
 
-fn test_method_codegen() -> !bool {
+λ test_method_codegen() -> !bool {
     print("  [10/12] Method calls... ");
 
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(simple_function("method_test", IrOperation·Return {
         value: ?Box·new(IrOperation·MethodCall {
             receiver: Box·new(IrOperation·Var {
@@ -485,7 +485,7 @@ fn test_method_codegen() -> !bool {
         evidence: IrEvidence·Known,
     }));
 
-    let code = generate(module);
+    ≔ code = generate(module);
     assert_contains(&code, "get", "has_method_call");
 
     println("PASS (1 case)");
@@ -496,10 +496,10 @@ fn test_method_codegen() -> !bool {
 // 11. MAIN WRAPPER GENERATION
 // ============================================================================
 
-fn test_main_wrapper() -> !bool {
+λ test_main_wrapper() -> !bool {
     print("  [11/12] Main wrapper... ");
 
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(IrFunction {
         name: "main".to_string(),
         id: "main".to_string(),
@@ -522,7 +522,7 @@ fn test_main_wrapper() -> !bool {
         span: null,
     });
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
     // Should have main entry point
     assert_contains(&code, "int main", "has_main_entry");
@@ -536,10 +536,10 @@ fn test_main_wrapper() -> !bool {
 // 12. TEMPORARY VARIABLES
 // ============================================================================
 
-fn test_temp_vars() -> !bool {
+λ test_temp_vars() -> !bool {
     print("  [12/12] Temporary variables... ");
 
-    let mut module = IrModule·new("test.sg".to_string());
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(simple_function("complex", IrOperation·Block {
         statements: [
             IrOperation·Let {
@@ -569,7 +569,7 @@ fn test_temp_vars() -> !bool {
         evidence: IrEvidence·Known,
     }));
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
     // Should have proper variable handling
     assert_contains(&code, "sigil_complex", "has_function");
@@ -582,51 +582,51 @@ fn test_temp_vars() -> !bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("Testing Code Generation...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
 
-    if test_header_generation() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_function_declarations() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_function_params() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_literal_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_binary_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_control_flow_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_typedef_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_evidence_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_call_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_method_codegen() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_main_wrapper() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_temp_vars() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_uncertain_pattern_codegen() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_header_generation() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_function_declarations() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_function_params() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_literal_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_binary_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_control_flow_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_typedef_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_evidence_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_call_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_method_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_main_wrapper() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_temp_vars() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_uncertain_pattern_codegen() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All code generation tests passed! (~24 test cases)");
-    return 0;
+    ⤺ 0;
 }
 
 // ============================================================================
 // 13. UNCERTAIN PATTERN CODEGEN (CG-009)
 // ============================================================================
 
-/// Test that ?name patterns in match generate non-null checks, not "if (1)"
+/// Test that ?name patterns ∈ ⌥ generate non-null checks, not "⎇ (1)"
 /// This is CG-009 - the bootstrap hang bug
-fn test_uncertain_pattern_codegen() -> !bool {
-    print("  [13/13] Uncertain pattern match (CG-009)... ");
+λ test_uncertain_pattern_codegen() -> !bool {
+    print("  [13/13] Uncertain pattern ⌥ (CG-009)... ");
 
-    // Create a match with ?value pattern that should generate TAG_NULL check
-    let mut module = IrModule·new("test.sg".to_string());
+    // Create a ⌥ with ?value pattern that should generate TAG_NULL check
+    ≔ Δ module = IrModule·new("test.sg".to_string());
     module.functions.push(IrFunction {
         name: "test_uncertain_match".to_string(),
         id: "test_uncertain_match".to_string(),
@@ -676,12 +676,12 @@ fn test_uncertain_pattern_codegen() -> !bool {
         span: null,
     });
 
-    let code = generate(module);
+    ≔ code = generate(module);
 
-    // CG-009 BUG: Code currently generates "if (1)" for ?v pattern
+    // CG-009 BUG: Code currently generates "⎇ (1)" ∀ ?v pattern
     // EXPECTED: Should generate "(opt.tag != TAG_NULL)" or similar non-null check
-    assert_not_contains(&code, "if (1)", "CG-009: should NOT generate 'if (1)' for ?pattern");
-    assert_contains(&code, "TAG_NULL", "CG-009: should check TAG_NULL for ?pattern");
+    assert_not_contains(&code, "⎇ (1)", "CG-009: should NOT generate '⎇ (1)' ∀ ?pattern");
+    assert_contains(&code, "TAG_NULL", "CG-009: should check TAG_NULL ∀ ?pattern");
 
     println("PASS (2 cases)");
     true

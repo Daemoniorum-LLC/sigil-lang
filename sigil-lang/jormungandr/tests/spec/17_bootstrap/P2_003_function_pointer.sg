@@ -2,11 +2,11 @@
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 5.1 Function Pointers
 // Priority: P2 - Enhancement
 
-fn add_one(x: !i32) -> !i32 {
+λ add_one(x: !i32) -> !i32 {
     x + 1
 }
 
-fn main() {
-    let f: fn(i32) -> i32 = add_one;
+λ main() {
+    ≔ f: λ(i32) -> i32 = add_one;
     println(f(41));
 }

@@ -3,12 +3,12 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that the String type works correctly for basic string literals.
+// Validates that the String type works correctly ∀ basic string literals.
 //
 // Expected behavior:
 // Should compile and print "Hello, Sigil!"
 
-fn main() {
-    let s: !String = "Hello, Sigil!";
+λ main() {
+    ≔ s: !String = "Hello, Sigil!";
     println(s);
 }

@@ -3,12 +3,12 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate brackets work for arrays and indexing.
+// Validate brackets work ∀ arrays and indexing.
 //
 // Expected behavior:
 // Should print 42
 
-fn main() {
-    let arr: ![i32; 2] = [42, 99];
+λ main() {
+    ≔ arr: ![i32; 2] = [42, 99];
     println(arr[0]);
 }

@@ -21,6 +21,40 @@ pub enum ParseError {
     InvalidNumber(String),
     #[error("Parse error: {0}")]
     Custom(String),
+    #[error("Deprecated Rust syntax '{rust}' at {span}. Use Sigil's native syntax: {sigil}")]
+    DeprecatedRustSyntax {
+        rust: String,
+        sigil: String,
+        span: Span,
+    },
+}
+
+/// Maps deprecated Rust keywords to their Sigil equivalents
+fn rust_to_sigil(keyword: &str) -> &'static str {
+    match keyword {
+        "fn" => "λ (lambda)",
+        "let" => "≔ (definition)",
+        "mut" => "Δ (delta/mutable)",
+        "const" => "◆ (diamond/const)",
+        "struct" => "Σ (sigma) or 'sigil'",
+        "enum" => "ᛈ (perthro rune)",
+        "trait" => "Θ (theta)",
+        "impl" => "⊢ (turnstile)",
+        "mod" => "scroll",
+        "use" => "invoke",
+        "pub" => "☉ (sun/public)",
+        "if" => "⎇ (branch)",
+        "else" => "⎉ (alternative)",
+        "match" => "⌥ (option)",
+        "while" => "⟳ (cycle)",
+        "for" => "∀ (forall)",
+        "in" => "∈ (element-of)",
+        "break" => "⊗ (tensor/break)",
+        "continue" => "↻ (cycle-arrow)",
+        "return" => "⤺ (return-arrow)",
+        "async" => "⌛ (hourglass)",
+        _ => "(see docs)",
+    }
 }
 
 pub type ParseResult<T> = Result<T, ParseError>;
@@ -275,7 +309,7 @@ impl<'a> Parser<'a> {
 
         // Check for path continuation: attr_name::next_segment::...
         let mut full_name = first_name;
-        while self.consume_if(&Token::ColonColon) {
+        while self.consume_if(&Token::MiddleDot) {
             let segment = match self.current_token().cloned() {
                 Some(Token::Ident(name)) => {
                     self.advance();
@@ -434,12 +468,12 @@ impl<'a> Parser<'a> {
     /// Helper to continue parsing after an identifier in an attribute argument.
     fn parse_attr_arg_after_ident(&mut self, ident: Ident) -> ParseResult<AttrArg> {
         // Check for qualified path like serde::Serialize
-        if self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+        if self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::MiddleDot) {
             let mut path_parts = vec![ident.name.clone()];
             loop {
                 let part = self.parse_ident()?;
                 path_parts.push(part.name);
-                if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
+                if !self.consume_if(&Token::MiddleDot) && !self.consume_if(&Token::MiddleDot) {
                     break;
                 }
             }
@@ -720,6 +754,20 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(span)
             }
+            Some((Token::DeprecatedRustKeyword(kw), span)) => {
+                Err(ParseError::DeprecatedRustSyntax {
+                    rust: kw.clone(),
+                    sigil: rust_to_sigil(kw).to_string(),
+                    span: *span,
+                })
+            }
+            Some((Token::DeprecatedColonColon, span)) => {
+                Err(ParseError::DeprecatedRustSyntax {
+                    rust: "::".to_string(),
+                    sigil: "· (middledot) for path separator".to_string(),
+                    span: *span,
+                })
+            }
             Some((token, span)) => Err(ParseError::UnexpectedToken {
                 expected: format!("{:?}", expected),
                 found: token.clone(),
@@ -733,6 +781,20 @@ impl<'a> Parser<'a> {
     /// Used to accept both keyword and symbol alternatives (e.g., `in` or `∈`).
     pub(crate) fn expect_one_of(&mut self, expected: &[Token]) -> ParseResult<Span> {
         match &self.current {
+            Some((Token::DeprecatedRustKeyword(kw), span)) => {
+                Err(ParseError::DeprecatedRustSyntax {
+                    rust: kw.clone(),
+                    sigil: rust_to_sigil(kw).to_string(),
+                    span: *span,
+                })
+            }
+            Some((Token::DeprecatedColonColon, span)) => {
+                Err(ParseError::DeprecatedRustSyntax {
+                    rust: "::".to_string(),
+                    sigil: "· (middledot) for path separator".to_string(),
+                    span: *span,
+                })
+            }
             Some((token, span)) => {
                 let current_discriminant = std::mem::discriminant(token);
                 for exp in expected {
@@ -765,6 +827,28 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn check(&self, expected: &Token) -> bool {
         matches!(&self.current, Some((token, _)) if std::mem::discriminant(token) == std::mem::discriminant(expected))
+    }
+
+    /// Check for deprecated Rust syntax and emit helpful error.
+    /// Returns Err if deprecated syntax is found, Ok(()) otherwise.
+    pub(crate) fn check_deprecated(&self) -> ParseResult<()> {
+        match &self.current {
+            Some((Token::DeprecatedRustKeyword(kw), span)) => {
+                Err(ParseError::DeprecatedRustSyntax {
+                    rust: kw.clone(),
+                    sigil: rust_to_sigil(kw).to_string(),
+                    span: *span,
+                })
+            }
+            Some((Token::DeprecatedColonColon, span)) => {
+                Err(ParseError::DeprecatedRustSyntax {
+                    rust: "::".to_string(),
+                    sigil: "· (middledot) for path separator".to_string(),
+                    span: *span,
+                })
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Peek at the next token (after current) without consuming anything.
@@ -910,10 +994,10 @@ impl<'a> Parser<'a> {
                     | Token::Match
                     | Token::Loop
                     | Token::While
-                    | Token::For
+                    | Token::ForAll
                     | Token::Return
-                    | Token::Break
-                    | Token::Continue
+                    | Token::Tensor
+                    | Token::CycleArrow
                     | Token::Ident(_)
                     | Token::SelfLower
                     | Token::SelfUpper
@@ -953,6 +1037,9 @@ impl<'a> Parser<'a> {
     // === Item parsing ===
 
     fn parse_item(&mut self) -> ParseResult<Spanned<Item>> {
+        // Check for deprecated Rust syntax and emit helpful error
+        self.check_deprecated()?;
+
         let start_span = self.current_span();
 
         // Collect outer attributes (#[...] or @[...])
@@ -1573,7 +1660,7 @@ impl<'a> Parser<'a> {
         // Parse either `Trait for Type` or just `Type`
         let first_type = self.parse_type()?;
 
-        let (trait_, self_ty) = if self.consume_if(&Token::For) {
+        let (trait_, self_ty) = if self.consume_if(&Token::ForAll) {
             let self_ty = self.parse_type()?;
             let trait_path = match first_type {
                 TypeExpr::Path(p) => p,
@@ -1841,7 +1928,7 @@ impl<'a> Parser<'a> {
         let _evidentiality = self.parse_evidentiality_opt();
 
         // Check for path continuation with · or ::
-        if self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::ColonColon) {
+        if self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::MiddleDot) {
             let suffix = self.parse_use_tree()?;
             return Ok(UseTree::Path {
                 prefix: name,
@@ -2003,7 +2090,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.peek_n(pos) {
                 Some(Token::Bang) => return true,
-                Some(Token::ColonColon) => {
+                Some(Token::MiddleDot) => {
                     pos += 1;
                     // Next should be an identifier
                     match self.peek_n(pos) {
@@ -2036,15 +2123,15 @@ impl<'a> Parser<'a> {
             Token::Type => "type".to_string(),
             Token::Mod => "scroll".to_string(), // Sigil keyword for mod
             Token::Use => "invoke".to_string(), // Sigil keyword for use
-            Token::For => "for".to_string(),
-            Token::In => "in".to_string(),
+            Token::ForAll => "for".to_string(),
+            Token::ElementOf => "in".to_string(),
             Token::If => "if".to_string(),
             Token::Else => "else".to_string(),
             Token::Match => "match".to_string(),
             Token::While => "while".to_string(),
             Token::Loop => "loop".to_string(),
-            Token::Break => "break".to_string(),
-            Token::Continue => "continue".to_string(),
+            Token::Tensor => "break".to_string(),
+            Token::CycleArrow => "continue".to_string(),
             Token::Return => "return".to_string(),
             Token::Yield => "yield".to_string(),
             Token::True => "true".to_string(),
@@ -2087,7 +2174,7 @@ impl<'a> Parser<'a> {
             Token::InterpolatedStringLit(s) => format!("f\"{}\"", s),
             // Punctuation
             Token::Colon => ":".to_string(),
-            Token::ColonColon => "::".to_string(),
+            Token::MiddleDot => "::".to_string(),
             Token::Semi => ";".to_string(),
             Token::Comma => ",".to_string(),
             Token::Dot => ".".to_string(),
@@ -2861,7 +2948,7 @@ impl<'a> Parser<'a> {
 
                 self.expect_gt()?; // consume >
                 // Accept either middledot (·) or :: for path separator after >
-                if !self.consume_if(&Token::MiddleDot) && !self.consume_if(&Token::ColonColon) {
+                if !self.consume_if(&Token::MiddleDot) && !self.consume_if(&Token::MiddleDot) {
                     match self.current_token().cloned() {
                         Some(found) => {
                             return Err(ParseError::UnexpectedToken {
@@ -2876,7 +2963,7 @@ impl<'a> Parser<'a> {
 
                 // Parse the associated type/const path
                 let mut segments = vec![self.parse_path_segment()?];
-                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                while self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::MiddleDot) {
                     segments.push(self.parse_path_segment()?);
                 }
 
@@ -2899,7 +2986,7 @@ impl<'a> Parser<'a> {
                     generics: None,
                 }];
                 // Continue parsing path: Self::AssociatedType, Self::Nested::Type
-                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                while self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::MiddleDot) {
                     // Check for turbofish: Self::<T>
                     if self.check(&Token::Lt) {
                         self.advance();
@@ -3113,7 +3200,7 @@ impl<'a> Parser<'a> {
                 let mut segments = vec![first_segment];
 
                 // Continue parsing path: crate::module::Type
-                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                while self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::MiddleDot) {
                     // Check for turbofish: crate::<T> (unlikely but possible)
                     if self.check(&Token::Lt) {
                         self.advance();
@@ -3155,7 +3242,7 @@ impl<'a> Parser<'a> {
         while !self.pending_gt.is_some() {
             // Always allow :: as path separator
             // Only allow · for type paths (uppercase first letter)
-            let is_path_sep = self.consume_if(&Token::ColonColon)
+            let is_path_sep = self.consume_if(&Token::MiddleDot)
                 || (first_segment_is_type && self.consume_if(&Token::MiddleDot));
             if !is_path_sep {
                 break;
@@ -3266,7 +3353,7 @@ impl<'a> Parser<'a> {
                     // This distinguishes HashMap[String] (generic) from array[index] (indexing)
                     Some(Token::RBracket) => is_type_name,
                     Some(Token::Comma) => is_type_name,      // [T, U] - but not [a, b] which is array
-                    Some(Token::ColonColon) => true, // [T::U]
+                    Some(Token::MiddleDot) => true, // [T::U]
                     Some(Token::Lt) => is_type_name,         // [T<U>]
                     Some(Token::LBracket) => is_type_name,   // [T[U]] but not [a[b]] (nested index)
                     // Evidentiality markers: [T!], [T?], [T~], [T◊], [T‽]
@@ -3409,7 +3496,7 @@ impl<'a> Parser<'a> {
                     // For comma: only treat as generic if identifier looks like a type name
                     // This distinguishes `HashMap<K, V>` (generic) from `x < y,` (comparison in match)
                     Some(Token::Comma) => is_type_like,
-                    Some(Token::ColonColon) => true,  // T::U path
+                    Some(Token::MiddleDot) => true,  // T::U path
                     Some(Token::Lt) => true,   // T<U> nested generic
                     Some(Token::LBracket) => true, // T[U] bracket generic
                     // Evidentiality markers after type name: T?, T!, T~, T◊, T‽
@@ -3667,7 +3754,7 @@ impl<'a> Parser<'a> {
         if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
             self.advance();
             Ok(TypeExpr::Lifetime(name))
-        } else if self.check(&Token::For) {
+        } else if self.check(&Token::ForAll) {
             // Higher-ranked trait bound: for<'a, 'b> Trait<'a, 'b>
             self.advance(); // consume 'for'
             self.expect(Token::Lt)?; // <
@@ -4198,7 +4285,7 @@ impl<'a> Parser<'a> {
                     Token::CharLit(c) => format!("'{}'", c),
                     Token::Comma => ",".to_string(),
                     Token::Colon => ":".to_string(),
-                    Token::ColonColon => "::".to_string(),
+                    Token::MiddleDot => "::".to_string(),
                     Token::Dot => ".".to_string(),
                     Token::DotDot => "..".to_string(),
                     Token::Semi => ";".to_string(),
@@ -4241,11 +4328,11 @@ impl<'a> Parser<'a> {
                     Token::If => "if".to_string(),
                     Token::Else => "else".to_string(),
                     Token::Match => "match".to_string(),
-                    Token::For => "for".to_string(),
+                    Token::ForAll => "for".to_string(),
                     Token::While => "while".to_string(),
                     Token::Loop => "loop".to_string(),
-                    Token::Break => "break".to_string(),
-                    Token::Continue => "continue".to_string(),
+                    Token::Tensor => "break".to_string(),
+                    Token::CycleArrow => "continue".to_string(),
                     Token::Return => "return".to_string(),
                     Token::Struct => "struct".to_string(),
                     Token::Enum => "enum".to_string(),
@@ -4256,7 +4343,7 @@ impl<'a> Parser<'a> {
                     Token::Mod => "mod".to_string(),
                     Token::Use => "use".to_string(),
                     Token::As => "as".to_string(),
-                    Token::In => "in".to_string(),
+                    Token::ElementOf => "in".to_string(),
                     Token::True => "true".to_string(),
                     Token::False => "false".to_string(),
                     Token::Null => "null".to_string(),
@@ -4320,7 +4407,7 @@ impl<'a> Parser<'a> {
                 };
                 // Don't add space before . · :: ( [ { ) ] } , ;
                 let suppress_space_before = matches!(token,
-                    Token::Dot | Token::MiddleDot | Token::ColonColon | Token::LParen | Token::LBracket |
+                    Token::Dot | Token::MiddleDot | Token::MiddleDot | Token::LParen | Token::LBracket |
                     Token::LBrace | Token::RParen | Token::RBracket | Token::RBrace |
                     Token::Comma | Token::Semi | Token::Question);
                 if !tokens.is_empty() && !suppress_space_before && !tokens.ends_with('.') &&
@@ -4432,7 +4519,7 @@ impl<'a> Parser<'a> {
                         self.parse_ident()?
                     };
                     // Check for turbofish syntax: method::<Type>(args)
-                    if self.check(&Token::ColonColon) {
+                    if self.check(&Token::MiddleDot) {
                         self.advance(); // consume ::
                         self.expect(Token::Lt)?;
                         // Temporarily exit condition context - turbofish is type context
@@ -4551,12 +4638,12 @@ impl<'a> Parser<'a> {
                         break;
                     }
                 }
-                Some(Token::ColonColon) => {
+                Some(Token::MiddleDot) => {
                     // Qualified path call: Type::method() or path!::method()
                     self.advance(); // consume ::
                     let method = self.parse_ident()?;
                     // Check for turbofish: Type::method::<T>()
-                    let type_args = if self.check(&Token::ColonColon) {
+                    let type_args = if self.check(&Token::MiddleDot) {
                         self.advance();
                         self.expect(Token::Lt)?;
                         let types = self.parse_type_list()?;
@@ -4912,7 +4999,7 @@ impl<'a> Parser<'a> {
                 // ∀ is contextually a for-loop: ∀ pattern ∈ iter { ... }
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect_one_of(&[Token::In, Token::ElementOf])?;
+                self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -4978,10 +5065,10 @@ impl<'a> Parser<'a> {
                             body,
                         })
                     }
-                    Some(Token::For) | Some(Token::ForAll) => {
+                    Some(Token::ForAll) | Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
-                        self.expect_one_of(&[Token::In, Token::ElementOf])?;
+                        self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
                         let iter = self.parse_condition()?;
                         let body = self.parse_block()?;
                         Ok(Expr::For {
@@ -5024,10 +5111,10 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(Token::For) | Some(Token::ForAll) => {
+            Some(Token::ForAll) | Some(Token::ForAll) => {
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect_one_of(&[Token::In, Token::ElementOf])?;
+                self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -5050,7 +5137,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Return(value))
             }
-            Some(Token::Break) | Some(Token::Tensor) => {
+            Some(Token::Tensor) | Some(Token::Tensor) => {
                 // ⊗ (Tensor) is contextually break at statement start, tensor product in binary position
                 self.advance();
                 // Check for optional label: break 'label or break 'label value
@@ -5078,7 +5165,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Break { label, value })
             }
-            Some(Token::Continue) | Some(Token::CycleArrow) => {
+            Some(Token::CycleArrow) | Some(Token::CycleArrow) => {
                 // ↻ (CycleArrow) is contextually continue at statement start
                 self.advance();
                 // Check for optional label: continue 'label
@@ -5203,7 +5290,7 @@ impl<'a> Parser<'a> {
                     generics: None,
                 }];
                 // Handle Self::method() and other path continuations
-                while self.consume_if(&Token::ColonColon) {
+                while self.consume_if(&Token::MiddleDot) {
                     // Check for turbofish syntax: Self::method::<Type>
                     if self.check(&Token::Lt) {
                         self.advance(); // consume <
@@ -5361,8 +5448,8 @@ impl<'a> Parser<'a> {
                     let operand = self.parse_asm_operand(AsmOperandKind::Output)?;
                     outputs.push(operand);
                 }
-                // Handle `in` which is a keyword (Token::In)
-                Some(Token::In) => {
+                // Handle `in` which is a keyword (Token::ElementOf)
+                Some(Token::ElementOf) => {
                     self.advance();
                     let operand = self.parse_asm_operand(AsmOperandKind::Input)?;
                     inputs.push(operand);
@@ -5955,7 +6042,7 @@ impl<'a> Parser<'a> {
                     } else {
                         self.parse_ident()?
                     };
-                    if self.check(&Token::ColonColon) {
+                    if self.check(&Token::MiddleDot) {
                         self.advance();
                         self.expect(Token::Lt)?;
                         let type_args = self.parse_type_list()?;
@@ -6506,7 +6593,7 @@ impl<'a> Parser<'a> {
                 // |collect::<String>() - turbofish generics
                 let mut path_segments = vec![PathSegment { ident: name.clone(), generics: None }];
                 let type_args = loop {
-                    if self.check(&Token::ColonColon) {
+                    if self.check(&Token::MiddleDot) {
                         self.advance(); // consume ::
                         if self.check(&Token::Lt) {
                             // Turbofish: ::<Type>
@@ -7016,8 +7103,8 @@ impl<'a> Parser<'a> {
                 }
                 if self.check(&Token::Let) {
                     stmts.push(self.parse_let_stmt()?);
-                } else if self.check(&Token::Return) || self.check(&Token::Break)
-                    || self.check(&Token::Continue)
+                } else if self.check(&Token::Return) || self.check(&Token::Tensor)
+                    || self.check(&Token::CycleArrow)
                 {
                     // Control flow - treat as final expression
                     break;
@@ -7245,6 +7332,8 @@ impl<'a> Parser<'a> {
             // Consume if present, or allow if next token can start a new statement
             if !self.consume_if(&Token::Semi) {
                 if !self.can_start_stmt() && !self.check(&Token::RBrace) {
+                    // Check for deprecated Rust syntax first
+                    self.check_deprecated()?;
                     return Err(ParseError::UnexpectedToken {
                         expected: "`;` or new statement".to_string(),
                         found: self.current_token().cloned().unwrap_or(Token::Semi),
@@ -7608,7 +7697,7 @@ impl<'a> Parser<'a> {
                 }];
 
                 // Check for path continuation: Self::Variant or Self::Variant::SubVariant
-                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                while self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::MiddleDot) {
                     let segment_name = self.parse_ident()?;
                     segments.push(PathSegment {
                         ident: segment_name,
@@ -7682,7 +7771,7 @@ impl<'a> Parser<'a> {
                 self.advance();
 
                 // These must be followed by :: for a path pattern
-                if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
+                if !self.consume_if(&Token::MiddleDot) && !self.consume_if(&Token::MiddleDot) {
                     // Just `self` as an identifier pattern
                     if matches!(keyword, Some(Token::SelfLower)) {
                         return Ok(Pattern::Ident {
@@ -7725,7 +7814,7 @@ impl<'a> Parser<'a> {
                         generics: None,
                     });
 
-                    if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
+                    if !self.consume_if(&Token::MiddleDot) && !self.consume_if(&Token::MiddleDot) {
                         break;
                     }
                 }
@@ -7793,7 +7882,7 @@ impl<'a> Parser<'a> {
                 let name = self.parse_ident()?;
 
                 // Check for path continuation :: to form qualified path (e.g., Token::Fn)
-                if self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
+                if self.consume_if(&Token::MiddleDot) || self.consume_if(&Token::MiddleDot) {
                     // Build a path pattern
                     let mut segments = vec![PathSegment {
                         ident: name,
@@ -7808,7 +7897,7 @@ impl<'a> Parser<'a> {
                             generics: None,
                         });
 
-                        if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
+                        if !self.consume_if(&Token::MiddleDot) && !self.consume_if(&Token::MiddleDot) {
                             break;
                         }
                     }

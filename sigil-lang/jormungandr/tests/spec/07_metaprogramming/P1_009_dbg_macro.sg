@@ -1,9 +1,9 @@
-// Test: dbg! macro for debugging
+// Test: dbg! macro ∀ debugging
 // Spec: 07-METAPROGRAMMING.md § 2.3 Debug Macros
 // Priority: P1 - Production Ready
 
-fn main() {
-    let x: !i32 = 42;
+λ main() {
+    ≔ x: !i32 = 42;
     dbg!(x);
     println(x);
 }

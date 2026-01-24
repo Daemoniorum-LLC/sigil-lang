@@ -3,55 +3,55 @@
 // Phase C: Core Types
 //
 // This test verifies string operations work correctly.
-// Restructured for interpreter mode where strings are immutable.
+// Restructured ∀ interpreter mode where strings are immutable.
 
-fn main() {
+λ main() {
     // Test 1: Create empty String
-    let s1 = "";
+    ≔ s1 = "";
     assert_eq!(s1.len(), 0);
     assert!(s1.is_empty());
     println("new_ok");
 
     // Test 2: Create from literal
-    let s2 = "Hello";
+    ≔ s2 = "Hello";
     assert_eq!(s2.len(), 5);
     assert_eq!(s2, "Hello");
     println("from_str_ok");
 
     // Test 3: String concatenation
-    let s3 = "Hello" + ", World!";
+    ≔ s3 = "Hello" + ", World!";
     assert_eq!(s3.len(), 13);
     assert_eq!(s3, "Hello, World!");
     println("push_str_ok");
 
     // Test 4: Char to string conversion
-    let s4 = "AB" + "C";
+    ≔ s4 = "AB" + "C";
     assert_eq!(s4.len(), 3);
     assert_eq!(s4, "ABC");
     println("push_char_ok");
 
     // Test 5: Capacity exists
-    let s5 = "test string";
+    ≔ s5 = "test string";
     assert!(s5.capacity() >= s5.len());
     println("with_capacity_ok");
 
     // Test 6: Strings cleared via reassignment (strings are immutable)
-    let mut s6 = "Hello";
+    ≔ Δ s6 = "Hello";
     s6 = "";
     assert_eq!(s6.len(), 0);
     assert!(s6.is_empty());
     println("clear_ok");
 
     // Test 7: Concat via operator
-    let s7a = "Hello";
-    let s7b = " World";
-    let s7c = s7a + s7b;
+    ≔ s7a = "Hello";
+    ≔ s7b = " World";
+    ≔ s7c = s7a + s7b;
     assert_eq!(s7c, "Hello World");
     println("concat_ok");
 
     // Test 8: As bytes
-    let s8 = "ABC";
-    let bytes = s8.as_bytes();
+    ≔ s8 = "ABC";
+    ≔ bytes = s8.as_bytes();
     assert_eq!(bytes.len(), 3);
     assert_eq!(bytes[0], 65);  // 'A'
     assert_eq!(bytes[1], 66);  // 'B'
@@ -59,30 +59,30 @@ fn main() {
     println("as_bytes_ok");
 
     // Test 9: Build string from repeated concatenation
-    let mut s9 = "";
-    for i in 0..100 {
+    ≔ Δ s9 = "";
+    ∀ i ∈ 0..100 {
         s9 = s9 + "x";
     }
     assert_eq!(s9.len(), 100);
     println("build_large_ok");
 
     // Test 10: Unicode (basic test)
-    let s10 = "Hello " + "世界";
+    ≔ s10 = "Hello " + "世界";
     // UTF-8 encoding: 世 = 3 bytes, 界 = 3 bytes
     assert_eq!(s10.len(), 6 + 6);  // "Hello " (6) + 6 UTF-8 bytes
     println("unicode_ok");
 
     // Test 11: Empty string operations
-    let empty = "";
+    ≔ empty = "";
     assert_eq!(empty, "");
-    let empty2 = "";
+    ≔ empty2 = "";
     assert_eq!(empty2.len(), 0);
     println("empty_ops_ok");
 
     // Test 12: Add operator
-    let s12a = "Hello";
-    let s12b = " World";
-    let s12c = s12a + s12b;
+    ≔ s12a = "Hello";
+    ≔ s12b = " World";
+    ≔ s12c = s12a + s12b;
     assert_eq!(s12c, "Hello World");
     println("add_op_ok");
 

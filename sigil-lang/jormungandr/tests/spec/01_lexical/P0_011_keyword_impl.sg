@@ -1,10 +1,10 @@
-// Test: Keyword 'impl' for implementations
+// Test: Keyword '⊢' ∀ implementations
 // Spec: 01-LEXICAL.md § 2.2 Keywords
 // Priority: P0
 
-pub struct Val { x: !i32 }
-impl Val { pub fn get(&self) -> !i32 { self.x } }
+☉ Σ Val { x: !i32 }
+⊢ Val { ☉ λ get(&self) -> !i32 { self.x } }
 
-fn main() {
+λ main() {
     println(Val { x: 42 }.get());
 }

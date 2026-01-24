@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should print 42
 
-fn main() {
+λ main() {
     {
-        let x: !i32 = 42;
+        ≔ x: !i32 = 42;
         println(x);
     }
 }

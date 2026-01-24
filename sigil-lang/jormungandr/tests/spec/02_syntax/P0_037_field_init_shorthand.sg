@@ -8,12 +8,12 @@
 // Expected behavior:
 // Should print 42
 
-pub struct Value {
+☉ Σ Value {
     x: !i32
 }
 
-fn main() {
-    let x: !i32 = 42;
-    let v: !Value = Value { x };
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ v: !Value = Value { x };
     println(v.x);
 }

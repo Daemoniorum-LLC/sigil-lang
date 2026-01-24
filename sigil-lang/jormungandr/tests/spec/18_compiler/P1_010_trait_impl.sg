@@ -2,21 +2,21 @@
 // Spec: 18-COMPILER.md § 4.3 Traits
 // Priority: P1 - Production Ready
 
-trait Printable {
-    fn print(&self);
+Θ Printable {
+    λ print(&self);
 }
 
-struct Value {
+Σ Value {
     n: !i32,
 }
 
-impl Printable for Value {
-    fn print(&self) {
+⊢ Printable ∀ Value {
+    λ print(&self) {
         println(self.n);
     }
 }
 
-fn main() {
-    let v = Value { n: 42 };
+λ main() {
+    ≔ v = Value { n: 42 };
     v.print();
 }

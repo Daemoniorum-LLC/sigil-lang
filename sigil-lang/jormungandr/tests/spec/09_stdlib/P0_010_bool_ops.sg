@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should print true
 
-fn main() {
-    let a: !bool = true;
-    let b: !bool = false;
-    let result: !bool = a && !b;
+λ main() {
+    ≔ a: !bool = true;
+    ≔ b: !bool = false;
+    ≔ result: !bool = a && !b;
     println(result);
 }

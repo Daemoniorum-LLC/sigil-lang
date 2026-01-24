@@ -2,9 +2,9 @@
 // Spec: 13-QUANTUM-HOLOGRAPHIC.md § 7 Decoherence
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let entangled: Entangled<QHState<i32>, QHState<i32>> = bell_state();
-    let (system, environment) = entangled|partial_trace;
-    // System alone is in mixed state
+λ main() {
+    ≔ entangled: Entangled<QHState<i32>, QHState<i32>> = bell_state();
+    ≔ (system, environment) = entangled|partial_trace;
+    // System alone is ∈ mixed state
     println(system|is_pure);
 }

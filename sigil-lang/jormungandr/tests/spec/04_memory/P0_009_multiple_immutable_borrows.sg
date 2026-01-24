@@ -8,14 +8,14 @@
 // Expected behavior:
 // Should print 42 twice
 
-fn print_value(x: &!i32) {
+λ print_value(x: &!i32) {
     println(*x);
 }
 
-fn main() {
-    let val: !i32 = 42;
-    let r1: &!i32 = &val;
-    let r2: &!i32 = &val;
+λ main() {
+    ≔ val: !i32 = 42;
+    ≔ r1: &!i32 = &val;
+    ≔ r2: &!i32 = &val;
     print_value(r1);
     print_value(r2);
 }

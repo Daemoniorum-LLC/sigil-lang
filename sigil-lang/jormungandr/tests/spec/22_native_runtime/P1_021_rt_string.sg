@@ -1,25 +1,25 @@
 // P1_021_rt_string.sg - String Specification Tests (interpreter-compatible)
 //
 // These tests verify string operations work correctly.
-// Restructured for interpreter mode where strings are immutable.
+// Restructured ∀ interpreter mode where strings are immutable.
 
 // ============================================================================
 // Construction
 // ============================================================================
 
-fn test_string_new_is_empty() {
-    let s = "";
+λ test_string_new_is_empty() {
+    ≔ s = "";
     assert_eq!(s.len(), 0);
     assert!(s.is_empty());
 }
 
-fn test_string_with_capacity() {
-    let s = "test";
+λ test_string_with_capacity() {
+    ≔ s = "test";
     assert!(s.capacity() >= 4);
 }
 
-fn test_string_from_str() {
-    let s = "hello";
+λ test_string_from_str() {
+    ≔ s = "hello";
     assert_eq!(s.len(), 5);
     assert_eq!(s, "hello");
 }
@@ -28,19 +28,19 @@ fn test_string_from_str() {
 // Concatenation
 // ============================================================================
 
-fn test_string_push_str() {
-    let s = "hello" + " world";
+λ test_string_push_str() {
+    ≔ s = "hello" + " world";
     assert_eq!(s, "hello world");
     assert_eq!(s.len(), 11);
 }
 
-fn test_string_push_char() {
-    let s = "hell" + "o";
+λ test_string_push_char() {
+    ≔ s = "hell" + "o";
     assert_eq!(s, "hello");
 }
 
-fn test_string_push_multibyte_char() {
-    let s = "α" + "β";  // Greek alpha + beta
+λ test_string_push_multibyte_char() {
+    ≔ s = "α" + "β";  // Greek alpha + beta
     assert_eq!(s.len(), 4);  // 2 + 2 bytes
 }
 
@@ -48,14 +48,14 @@ fn test_string_push_multibyte_char() {
 // Length / Capacity
 // ============================================================================
 
-fn test_string_len_is_byte_count() {
-    let s = "αβγ";  // 3 chars, 6 bytes
+λ test_string_len_is_byte_count() {
+    ≔ s = "αβγ";  // 3 chars, 6 bytes
     assert_eq!(s.len(), 6);
 }
 
-fn test_string_is_empty() {
-    let empty = "";
-    let non_empty = "x";
+λ test_string_is_empty() {
+    ≔ empty = "";
+    ≔ non_empty = "x";
 
     assert!(empty.is_empty());
     assert!(!non_empty.is_empty());
@@ -65,14 +65,14 @@ fn test_string_is_empty() {
 // Conversion
 // ============================================================================
 
-fn test_string_as_str() {
-    let s = "test";
+λ test_string_as_str() {
+    ≔ s = "test";
     assert_eq!(s, "test");
 }
 
-fn test_string_as_bytes() {
-    let s = "ABC";
-    let bytes = s.as_bytes();
+λ test_string_as_bytes() {
+    ≔ s = "ABC";
+    ≔ bytes = s.as_bytes();
     assert_eq!(bytes.len(), 3);
     assert_eq!(bytes[0], 65);  // 'A'
     assert_eq!(bytes[1], 66);  // 'B'
@@ -80,11 +80,11 @@ fn test_string_as_bytes() {
 }
 
 // ============================================================================
-// Reassignment (strings are immutable, use assignment to clear)
+// Reassignment (strings are immutable, invoke assignment to clear)
 // ============================================================================
 
-fn test_string_reassignment() {
-    let mut s = "hello world";
+λ test_string_reassignment() {
+    ≔ Δ s = "hello world";
     s = "";
 
     assert!(s.is_empty());
@@ -95,18 +95,18 @@ fn test_string_reassignment() {
 // Concatenation
 // ============================================================================
 
-fn test_string_concat() {
-    let a = "hello";
-    let b = " world";
-    let c = a + b;
+λ test_string_concat() {
+    ≔ a = "hello";
+    ≔ b = " world";
+    ≔ c = a + b;
 
     assert_eq!(c, "hello world");
 }
 
-fn test_string_add_operator() {
-    let a = "foo";
-    let b = "bar";
-    let c = a + b;
+λ test_string_add_operator() {
+    ≔ a = "foo";
+    ≔ b = "bar";
+    ≔ c = a + b;
 
     assert_eq!(c, "foobar");
 }
@@ -115,7 +115,7 @@ fn test_string_add_operator() {
 // Entry Point
 // ============================================================================
 
-fn main() {
+λ main() {
     // Construction
     test_string_new_is_empty();
     test_string_with_capacity();

@@ -1,8 +1,8 @@
-// Test: Keyword 'if' for conditionals
+// Test: Keyword '⎇' ∀ conditionals
 // Spec: 01-LEXICAL.md § 2.2 Keywords
 // Priority: P0
 
-fn main() {
-    let x = if true { 42 } else { 0 };
+λ main() {
+    ≔ x = ⎇ true { 42 } ⎉ { 0 };
     println(x);
 }

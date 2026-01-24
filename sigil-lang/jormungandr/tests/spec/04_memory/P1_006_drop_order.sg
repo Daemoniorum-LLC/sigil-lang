@@ -1,19 +1,19 @@
-// Test: Drop trait is called
+// Test: Drop Θ is called
 // Spec: 04-MEMORY.md § 6.2 Drop
 // Priority: P1 - Production Ready
 
-struct Dropper {
+Σ Dropper {
     id: !i32,
 }
 
-impl Drop for Dropper {
-    fn drop(&mut self) {
+⊢ Drop ∀ Dropper {
+    λ drop(&Δ self) {
         println(self.id);
     }
 }
 
-fn main() {
-    let a = Dropper { id: 100 };
+λ main() {
+    ≔ a = Dropper { id: 100 };
 
     println(0);
     // Drop happens at end of scope

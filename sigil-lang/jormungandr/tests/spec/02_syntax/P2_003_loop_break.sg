@@ -1,14 +1,14 @@
-// Test: Loop with break
+// Test: Loop with ⊗
 // Spec: 02-SYNTAX.md § 5.4 Loop
 // Priority: P2 - Enhancement
 
-fn main() {
-    let mut i: !i32 = 0;
+λ main() {
+    ≔ Δ i: !i32 = 0;
     loop {
         println(i);
         i = i + 1;
-        if i >= 3 {
-            break;
+        ⎇ i >= 3 {
+            ⊗;
         }
     }
     println(100);

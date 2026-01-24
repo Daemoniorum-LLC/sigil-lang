@@ -2,12 +2,12 @@
 // Spec: 09-STDLIB.md § 3.2 Result
 // Priority: P2 - Enhancement
 
-fn main() {
-    let ok: Result<i32, String> = Result·Ok(21);
+λ main() {
+    ≔ ok: Result<i32, String> = Result·Ok(21);
 
-    let doubled = ok.map(|x| x * 2);
+    ≔ doubled = ok.map(|x| x * 2);
 
-    match doubled {
+    ⌥ doubled {
         Result·Ok(v) => println(v),
         Result·Err(e) => println(0),
     }

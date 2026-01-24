@@ -2,11 +2,11 @@
 // Spec: 05-MATHEMATICS.md § 2.2 Comparisons
 // Priority: P2 - Enhancement
 
-fn main() {
-    let a: !i32 = 10;
-    let b: !i32 = 20;
-    let min: !i32 = if a < b { a } else { b };
-    let max: !i32 = if a > b { a } else { b };
+λ main() {
+    ≔ a: !i32 = 10;
+    ≔ b: !i32 = 20;
+    ≔ min: !i32 = ⎇ a < b { a } ⎉ { b };
+    ≔ max: !i32 = ⎇ a > b { a } ⎉ { b };
     println(min);
     println(max);
 }

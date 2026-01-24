@@ -2,14 +2,14 @@
 // Spec: 05-MATHEMATICS.md § 5.3 Negative Numbers
 // Priority: P1 - Standard Feature
 
-fn main() {
+λ main() {
     // Negative literals
-    let a: !i32 = -42;
+    ≔ a: !i32 = -42;
     println(a);
 
     // Negation operator
-    let b: !i32 = 10;
-    let c: !i32 = -b;
+    ≔ b: !i32 = 10;
+    ≔ c: !i32 = -b;
     println(c);
 
     // Negative * negative = positive
@@ -19,10 +19,10 @@ fn main() {
     println(-3 * 4);
 
     // Double negation
-    let d: !i32 = --5;
+    ≔ d: !i32 = --5;
     println(d);
 
-    // Negative in expressions
+    // Negative ∈ expressions
     println(10 + -3);
     println(10 - -3);
 }

@@ -1,4 +1,4 @@
-// Test: Zero-sized type (unit struct)
+// Test: Zero-sized type (unit Σ)
 // Spec: 03-TYPES.md § 10.2 Zero-Sized Types
 // Priority: P0 - Bootstrap Critical
 //
@@ -8,13 +8,13 @@
 // Expected behavior:
 // Should print 42
 
-pub struct Marker;
+☉ Σ Marker;
 
-fn process(_m: Marker) -> !i32 {
+λ process(_m: Marker) -> !i32 {
     42
 }
 
-fn main() {
-    let m: Marker = Marker;
+λ main() {
+    ≔ m: Marker = Marker;
     println(process(m));
 }

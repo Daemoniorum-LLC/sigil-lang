@@ -2,9 +2,9 @@
 // Spec: 02-SYNTAX.md § 5.5 For
 // Priority: P2 - Enhancement
 
-fn main() {
-    let mut sum = 0;
-    for i in 1..4 {
+λ main() {
+    ≔ Δ sum = 0;
+    ∀ i ∈ 1..4 {
         sum = sum + i;
     }
     println(sum);

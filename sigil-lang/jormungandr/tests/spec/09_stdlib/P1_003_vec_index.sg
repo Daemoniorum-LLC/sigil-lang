@@ -2,8 +2,8 @@
 // Spec: 09-STDLIB.md § 4.1 Vec
 // Priority: P1 - Production Ready
 
-fn main() {
-    let v: Vec<i32> = vec![10, 20, 30, 40];
+λ main() {
+    ≔ v: Vec<i32> = vec![10, 20, 30, 40];
 
     println(v[0]);
     println(v[1]);

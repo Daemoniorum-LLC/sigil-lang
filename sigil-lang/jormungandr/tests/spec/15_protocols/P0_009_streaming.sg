@@ -2,18 +2,18 @@
 // Spec: 15-PROTOCOLS.md § 3.2 Streaming
 // Priority: P0 - Bootstrap Critical
 //
-// Tests language features used in streaming patterns:
+// Tests language features used ∈ streaming patterns:
 // - For loop iteration
 // - Mutable counter
 // - Evidential collection access
 
-fn main() {
-    // Simulated stream data - in real gRPC streaming from server
-    let stream~ = [1, 2, 3, 4, 5];
+λ main() {
+    // Simulated stream data - ∈ real gRPC streaming from server
+    ≔ stream~ = [1, 2, 3, 4, 5];
 
     // Test: Iteration with mutable counter
-    let mut count = 0;
-    for item in stream~ {
+    ≔ Δ count = 0;
+    ∀ item ∈ stream~ {
         count = count + 1;
     }
 

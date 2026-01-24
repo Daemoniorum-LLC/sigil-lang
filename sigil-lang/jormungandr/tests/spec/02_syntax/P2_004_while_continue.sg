@@ -1,13 +1,13 @@
-// Test: While with continue
+// Test: While with ↻
 // Spec: 02-SYNTAX.md § 5.5 While
 // Priority: P2 - Enhancement
 
-fn main() {
-    let mut i: !i32 = 0;
-    while i < 5 {
+λ main() {
+    ≔ Δ i: !i32 = 0;
+    ⟳ i < 5 {
         i = i + 1;
-        if i == 3 {
-            continue;
+        ⎇ i == 3 {
+            ↻;
         }
         println(i);
     }

@@ -2,19 +2,19 @@
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.1 Functions
 // Priority: P2 - Enhancement
 
-fn add(a: !i32, b: !i32) -> !i32 {
+λ add(a: !i32, b: !i32) -> !i32 {
     a + b
 }
 
-fn sub(a: !i32, b: !i32) -> !i32 {
+λ sub(a: !i32, b: !i32) -> !i32 {
     a - b
 }
 
-fn mul(a: !i32, b: !i32) -> !i32 {
+λ mul(a: !i32, b: !i32) -> !i32 {
     a * b
 }
 
-fn main() {
+λ main() {
     println(add(10, 20));
     println(sub(30, 10));
     println(mul(5, 6));

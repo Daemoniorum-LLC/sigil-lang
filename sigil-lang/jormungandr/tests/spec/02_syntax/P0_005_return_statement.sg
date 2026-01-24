@@ -1,17 +1,17 @@
-// Test: Explicit return statement
+// Test: Explicit ⤺ statement
 // Spec: 02-SYNTAX.md § 3.2 Return Statements
 // Priority: P0
 //
 // Purpose:
-// Validates that explicit return statements work.
+// Validates that explicit ⤺ statements work.
 //
 // Expected behavior:
 // Should compile and print 42
 
-fn get_value() -> !i32 {
-    return 42;
+λ get_value() -> !i32 {
+    ⤺ 42;
 }
 
-fn main() {
+λ main() {
     println(get_value());
 }

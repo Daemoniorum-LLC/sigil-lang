@@ -3,26 +3,26 @@
 
 // Test 1: Standard Option<T> with Some/None
 #[test]
-fn test_option_standard() {
-    let opt: Option<i32> = Some(42);
-    match opt {
+λ test_option_standard() {
+    ≔ opt: Option<i32> = Some(42);
+    ⌥ opt {
         Some(x) => assert_eq!(x, 42),
         None => assert!(false),
     }
 }
 
-// Test 2: Option function return
+// Test 2: Option function ⤺
 #[test]
-fn test_option_return() {
-    fn maybe(cond: bool) -> Option<i32> {
-        if cond {
+λ test_option_return() {
+    λ maybe(cond: bool) -> Option<i32> {
+        ⎇ cond {
             Some(42)
-        } else {
+        } ⎉ {
             None
         }
     }
 
-    match maybe(true) {
+    ⌥ maybe(true) {
         Some(x) => assert_eq!(x, 42),
         None => assert!(false),
     }
@@ -30,7 +30,7 @@ fn test_option_return() {
 
 // Test 3: Uncertain evidence (?) - different from Option
 #[test]
-fn test_uncertain_evidence() {
-    let uncertain: ?i32 = 42;  // Uncertain evidence, not Option
+λ test_uncertain_evidence() {
+    ≔ uncertain: ?i32 = 42;  // Uncertain evidence, not Option
     println(uncertain);
 }

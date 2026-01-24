@@ -2,21 +2,21 @@
 // Spec: 12-QUANTUM.md § 4.1 Entangled Types
 // Priority: P1 - Core Feature
 
-fn main() {
+λ main() {
     // Create Bell state - maximally entangled pair
-    let q0: linear Qubit = Qubit·zero();
-    let q1: linear Qubit = Qubit·zero();
+    ≔ q0: linear Qubit = Qubit·zero();
+    ≔ q1: linear Qubit = Qubit·zero();
 
     // H on first qubit, then CNOT creates entanglement
-    let q0h: linear Qubit = q0|H;
-    let (qc, qt): (Qubit, Qubit) = CNOT(q0h, q1);
+    ≔ q0h: linear Qubit = q0|H;
+    ≔ (qc, qt): (Qubit, Qubit) = CNOT(q0h, q1);
 
-    // Wrap in Entangled type - cannot be separated
-    let pair: Entangled<Qubit, Qubit> = Entangled·new(qc, qt);
+    // Wrap ∈ Entangled type - cannot be separated
+    ≔ pair: Entangled<Qubit, Qubit> = Entangled·new(qc, qt);
 
     // Must measure both together
-    let (a, b) = pair|measure_both;
+    ≔ (a, b) = pair|measure_both;
 
-    // Results are correlated (both 0 or both 1 for Phi+)
+    // Results are correlated (both 0 or both 1 ∀ Phi+)
     println(a == b);  // true
 }

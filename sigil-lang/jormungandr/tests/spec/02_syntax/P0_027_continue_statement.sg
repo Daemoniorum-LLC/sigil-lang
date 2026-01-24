@@ -1,19 +1,19 @@
-// Test: Continue statement in loop
+// Test: Continue statement ∈ loop
 // Spec: 02-SYNTAX.md § 4.5 Continue Statement
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate continue statement skips iteration correctly.
+// Validate ↻ statement skips iteration correctly.
 //
 // Expected behavior:
 // Should print 0, 2, 4 (skips odd numbers)
 
-fn main() {
-    let mut i: !i32 = 0;
-    while i < 5 {
+λ main() {
+    ≔ Δ i: !i32 = 0;
+    ⟳ i < 5 {
         i = i + 1;
-        if i % 2 == 1 {
-            continue;
+        ⎇ i % 2 == 1 {
+            ↻;
         }
         println(i);
     }

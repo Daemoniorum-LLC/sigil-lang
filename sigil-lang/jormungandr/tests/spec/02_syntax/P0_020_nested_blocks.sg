@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should print 42
 
-fn main() {
-    let x: !i32 = {
-        let y: !i32 = {
+λ main() {
+    ≔ x: !i32 = {
+        ≔ y: !i32 = {
             42
         };
         y

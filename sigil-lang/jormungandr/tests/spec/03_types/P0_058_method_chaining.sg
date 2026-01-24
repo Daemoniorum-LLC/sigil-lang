@@ -8,26 +8,26 @@
 // Expected behavior:
 // Should print 52 (42 + 10)
 
-pub struct Value {
+☉ Σ Value {
     x: !i32
 }
 
-impl Value {
-    pub fn new(x: !i32) -> Self {
+⊢ Value {
+    ☉ λ new(x: !i32) -> Self {
         Self { x: x }
     }
 
-    pub fn add(mut self, y: !i32) -> Self {
+    ☉ λ add(Δ self, y: !i32) -> Self {
         self.x = self.x + y;
         self
     }
 
-    pub fn get(self) -> !i32 {
+    ☉ λ get(self) -> !i32 {
         self.x
     }
 }
 
-fn main() {
-    let result: !i32 = Value·new(42).add(10).get();
+λ main() {
+    ≔ result: !i32 = Value·new(42).add(10).get();
     println(result);
 }

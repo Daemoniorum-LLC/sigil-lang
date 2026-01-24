@@ -2,7 +2,7 @@
 // Should fail with syntax error
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    break;  // ERROR: break outside of loop
+λ main() {
+    ⊗;  // ERROR: ⊗ outside of loop
     println("done");
 }

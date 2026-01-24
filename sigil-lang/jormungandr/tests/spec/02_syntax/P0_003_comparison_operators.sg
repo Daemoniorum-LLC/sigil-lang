@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should compile and print true
 
-fn main() {
-    let x: !i32 = 42;
-    let y: !bool = x == 42;
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !bool = x == 42;
     println(y);
 }

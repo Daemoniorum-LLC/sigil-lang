@@ -1,21 +1,21 @@
-// Test: Deeply nested struct
+// Test: Deeply nested Σ
 // Spec: 18-COMPILER.md § 4.2 Structs
 // Priority: P2 - Enhancement
 
-struct Level3 {
+Σ Level3 {
     value: !i32,
 }
 
-struct Level2 {
+Σ Level2 {
     l3: Level3,
 }
 
-struct Level1 {
+Σ Level1 {
     l2: Level2,
 }
 
-fn main() {
-    let obj = Level1 {
+λ main() {
+    ≔ obj = Level1 {
         l2: Level2 {
             l3: Level3 {
                 value: 42,

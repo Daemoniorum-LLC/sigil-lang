@@ -1,4 +1,4 @@
-//! Evidentiality system test for the Sigil self-hosted compiler
+//! Evidentiality system test ∀ the Sigil self-hosted compiler
 //!
 //! This tests Sigil's unique evidentiality markers:
 //! - ! (Known) - Verified values
@@ -7,87 +7,87 @@
 //! - ‽ (Paradox) - Contradictory values
 
 /// Test basic known values
-pub fn test_known() -> !bool {
-    let x: !i32 = 42;
-    let y: !String = "hello";
-    let z: !bool = true;
+☉ λ test_known() -> !bool {
+    ≔ x: !i32 = 42;
+    ≔ y: !String = "hello";
+    ≔ z: !bool = true;
 
     // Known values can be used directly
     assert(x == 42, "known i32 should equal 42");
     assert(z, "known bool should be true");
 
-    return true;
+    ⤺ true;
 }
 
 /// Test uncertain/optional values
-pub fn test_uncertain() -> !bool {
+☉ λ test_uncertain() -> !bool {
     // Uncertain values may be null
-    let maybe_int: ?i32 = 42;
-    let nothing: ?i32 = null;
+    ≔ maybe_int: ?i32 = 42;
+    ≔ nothing: ?i32 = null;
 
-    // Must check before use
-    if maybe_int != null {
-        let value = maybe_int!;  // Assert non-null
+    // Must check before invoke
+    ⎇ maybe_int != null {
+        ≔ value = maybe_int!;  // Assert non-null
         assert(value == 42, "unwrapped value should be 42");
     }
 
     // Null propagation
-    let result = nothing ?? 0;  // Default if null
+    ≔ result = nothing ?? 0;  // Default ⎇ null
     assert(result == 0, "null coalescing should give default");
 
-    return true;
+    ⤺ true;
 }
 
 /// Test reported values (from external sources)
-pub fn test_reported() -> !bool {
+☉ λ test_reported() -> !bool {
     // Simulating file input
-    let user_input: ~String = "42";
+    ≔ user_input: ~String = "42";
 
     // Parse with uncertainty
-    let parsed: ?i32 = parse_int(user_input);
+    ≔ parsed: ?i32 = parse_int(user_input);
 
     // Must validate before treating as known
-    if parsed != null {
-        let known: !i32 = parsed!;
+    ⎇ parsed != null {
+        ≔ known: !i32 = parsed!;
         assert(known == 42, "parsed value should be 42");
     }
 
-    return true;
+    ⤺ true;
 }
 
 /// Parse string to int (returns uncertain)
-fn parse_int(s: ~String) -> ?i32 {
+λ parse_int(s: ~String) -> ?i32 {
     // In a real implementation, this would parse
-    // For testing, we just return 42
-    return 42;
+    // For testing, we just ⤺ 42
+    ⤺ 42;
 }
 
 /// Test evidence level operations
-pub fn test_evidence_lattice() -> !bool {
+☉ λ test_evidence_lattice() -> !bool {
     // Evidence levels form a lattice:
     // Known < Uncertain < Reported < Paradox
 
     // Join operation (least upper bound)
     // Known ⊔ Uncertain = Uncertain
-    let known: !i32 = 1;
-    let uncertain: ?i32 = 2;
+    ≔ known: !i32 = 1;
+    ≔ uncertain: ?i32 = 2;
 
     // When combining, evidence propagates upward
     // This is handled by the type checker
 
-    return true;
+    ⤺ true;
 }
 
-/// Test struct with mixed evidentiality
-pub struct UserInput {
-    pub id: !i32,              // Always present
-    pub name: ~String,         // From external source
-    pub email: ?String,        // Optional
-    pub verified: ?bool,       // May be unknown
+/// Test Σ with mixed evidentiality
+☉ Σ UserInput {
+    ☉ id: !i32,              // Always present
+    ☉ name: ~String,         // From external source
+    ☉ email: ?String,        // Optional
+    ☉ verified: ?bool,       // May be unknown
 }
 
-impl UserInput {
-    pub fn new(id: !i32, name: ~String) -> !UserInput {
+⊢ UserInput {
+    ☉ λ new(id: !i32, name: ~String) -> !UserInput {
         UserInput {
             id: id,
             name: name,
@@ -97,13 +97,13 @@ impl UserInput {
     }
 
     /// Promote to verified known data
-    pub fn verify(self) -> ?VerifiedUser {
-        // Can only verify if email is present
-        if self.email == null {
-            return null;
+    ☉ λ verify(self) -> ?VerifiedUser {
+        // Can only verify ⎇ email is present
+        ⎇ self.email == null {
+            ⤺ null;
         }
 
-        return VerifiedUser {
+        ⤺ VerifiedUser {
             id: self.id,
             name: self.name!,  // Assert known after verification
             email: self.email!,
@@ -112,44 +112,44 @@ impl UserInput {
 }
 
 /// Verified user data (all known)
-pub struct VerifiedUser {
-    pub id: !i32,
-    pub name: !String,
-    pub email: !String,
+☉ Σ VerifiedUser {
+    ☉ id: !i32,
+    ☉ name: !String,
+    ☉ email: !String,
 }
 
 /// Test function boundaries
-pub fn test_evidence_boundaries() -> !bool {
+☉ λ test_evidence_boundaries() -> !bool {
     // Functions declare evidence requirements
-    fn needs_known(x: !i32) -> !i32 {
-        return x + 1;
+    λ needs_known(x: !i32) -> !i32 {
+        ⤺ x + 1;
     }
 
-    fn accepts_uncertain(x: ?i32) -> !i32 {
-        return x ?? 0;
+    λ accepts_uncertain(x: ?i32) -> !i32 {
+        ⤺ x ?? 0;
     }
 
-    fn returns_uncertain(flag: !bool) -> ?i32 {
-        if flag {
-            return 42;
+    λ returns_uncertain(flag: !bool) -> ?i32 {
+        ⎇ flag {
+            ⤺ 42;
         }
-        return null;
+        ⤺ null;
     }
 
-    let known = needs_known(10);
+    ≔ known = needs_known(10);
     assert(known == 11, "needs_known should work");
 
-    let from_uncertain = accepts_uncertain(null);
-    assert(from_uncertain == 0, "accepts_uncertain with null should return 0");
+    ≔ from_uncertain = accepts_uncertain(null);
+    assert(from_uncertain == 0, "accepts_uncertain with null should ⤺ 0");
 
-    let maybe = returns_uncertain(true);
+    ≔ maybe = returns_uncertain(true);
     assert(maybe! == 42, "returns_uncertain(true) should give 42");
 
-    return true;
+    ⤺ true;
 }
 
 /// Main entry point
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     assert(test_known(), "test_known failed");
     assert(test_uncertain(), "test_uncertain failed");
     assert(test_reported(), "test_reported failed");
@@ -157,5 +157,5 @@ pub fn main() -> !i32 {
     assert(test_evidence_boundaries(), "test_evidence_boundaries failed");
 
     println("All evidentiality tests passed!");
-    return 0;
+    ⤺ 0;
 }

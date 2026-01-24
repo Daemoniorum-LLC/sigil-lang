@@ -2,13 +2,13 @@
 // Spec: 04-MEMORY.md § 4.2 Rc
 // Priority: P2 - Enhancement
 
-struct Node {
+Σ Node {
     value: !i32,
 }
 
-fn main() {
-    let inner = Rc·new(Node { value: 42 });
-    let outer = Rc·new(inner.clone());
+λ main() {
+    ≔ inner = Rc·new(Node { value: 42 });
+    ≔ outer = Rc·new(inner.clone());
 
     println((*inner).value);
     println((*(*outer)).value);

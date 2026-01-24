@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 10 (42 >> 2 = 10)
 
-fn main() {
-    let x: !i32 = 42;
+λ main() {
+    ≔ x: !i32 = 42;
     println(x >> 2);
 }

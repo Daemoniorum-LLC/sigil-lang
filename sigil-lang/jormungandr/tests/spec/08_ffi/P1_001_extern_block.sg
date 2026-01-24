@@ -3,9 +3,9 @@
 // Priority: P1 - Standard Feature
 
 extern "C" {
-    fn write(fd: !i32, buf: *const !u8, count: !usize) -> !isize;
+    λ write(fd: !i32, buf: *const !u8, count: !usize) -> !isize;
 }
 
-fn main() {
+λ main() {
     println("extern block parsed");
 }

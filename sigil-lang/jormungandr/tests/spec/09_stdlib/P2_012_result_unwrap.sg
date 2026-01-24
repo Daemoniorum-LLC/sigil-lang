@@ -2,8 +2,8 @@
 // Spec: 09-STDLIB.md § 3.2 Result
 // Priority: P2 - Enhancement
 
-fn main() {
-    let res: Result<i32, String> = Result·Ok(99);
-    let val: !i32 = res.unwrap();
+λ main() {
+    ≔ res: Result<i32, String> = Result·Ok(99);
+    ≔ val: !i32 = res.unwrap();
     println(val);
 }

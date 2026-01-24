@@ -1,30 +1,30 @@
 // TDD Test: explicit Option<T> instead of ?T
 
-struct Token { value: i32 }
-struct Span { start: u64, end: u64 }
+Σ Token { value: i32 }
+Σ Span { start: u64, end: u64 }
 
-struct Lexer {
+Σ Lexer {
     pos: u64,
 }
 
-impl Lexer {
-    fn get_token(mut self) -> Option<(Token, Span)> {
+⊢ Lexer {
+    λ get_token(Δ self) -> Option<(Token, Span)> {
         // Try with explicit Option
-        if self.pos >= 100 {
-            return None;
+        ⎇ self.pos >= 100 {
+            ⤺ None;
         }
 
         self.pos = self.pos + 1;
 
-        let token = Token { value: 42 };
-        let span = Span { start: 0, end: 1 };
+        ≔ token = Token { value: 42 };
+        ≔ span = Span { start: 0, end: 1 };
         Some((token, span))
     }
 }
 
-fn main() {
-    let mut lexer = Lexer { pos: 0 };
-    match lexer.get_token() {
+λ main() {
+    ≔ Δ lexer = Lexer { pos: 0 };
+    ⌥ lexer.get_token() {
         Some((t, s)) => println(t.value),
         None => println(0),
     }

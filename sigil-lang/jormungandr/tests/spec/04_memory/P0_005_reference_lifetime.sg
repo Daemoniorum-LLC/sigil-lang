@@ -2,8 +2,8 @@
 // Spec: 04-MEMORY.md § 4.1 Lifetimes
 // Priority: P0
 
-fn main() {
-    let x: !i32 = 42;
-    let r: &!i32 = &x;
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ r: &!i32 = &x;
     println(*r);
 }

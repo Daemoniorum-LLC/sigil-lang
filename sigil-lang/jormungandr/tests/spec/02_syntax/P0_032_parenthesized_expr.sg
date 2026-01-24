@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 20 ((2 + 3) * 4 = 20)
 
-fn main() {
-    let x: !i32 = (2 + 3) * 4;
+λ main() {
+    ≔ x: !i32 = (2 + 3) * 4;
     println(x);
 }

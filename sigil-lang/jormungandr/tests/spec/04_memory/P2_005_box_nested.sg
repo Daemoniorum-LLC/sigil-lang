@@ -2,7 +2,7 @@
 // Spec: 04-MEMORY.md § 2.1 Box
 // Priority: P2 - Enhancement
 
-fn main() {
-    let outer: Box<i32> = Box·new(100);
+λ main() {
+    ≔ outer: Box<i32> = Box·new(100);
     println(*outer);
 }

@@ -1,7 +1,7 @@
 // P0_010: Comprehensive native symbol test
 // Priority: P0
 // Category: Native Symbols
-// Tests: Σ (struct), λ (fn), ≔ (let), ⊢ (impl), ⎇/⎉ (if/else), ⟳ (while), ⤺ (return)
+// Tests: Σ (Σ), λ (λ), ≔ (≔), ⊢ (⊢), ⎇/⎉ (⎇/⎉), ⟳ (⟳), ⤺ (⤺)
 // Expected: Program compiles and runs, printing expected output
 
 Σ Counter {
@@ -13,7 +13,7 @@
         Counter { value: v }
     }
 
-    λ increment(&mut self) {
+    λ increment(&Δ self) {
         self.value = self.value + 1;
     }
 
@@ -33,20 +33,20 @@
 }
 
 λ main() {
-    // Test struct and impl
-    ≔ mut counter = Counter::new(0);
+    // Test Σ and ⊢
+    ≔ Δ counter = Counter·new(0);
     counter.increment();
     counter.increment();
     counter.increment();
     println!("Counter: {}", counter.get());
 
-    // Test if/else with native symbols
+    // Test ⎇/⎉ with native symbols
     println!("classify(5) = {}", classify(5));
     println!("classify(-3) = {}", classify(-3));
     println!("classify(0) = {}", classify(0));
 
-    // Test while loop
-    ≔ mut i = 0;
+    // Test ⟳ loop
+    ≔ Δ i = 0;
     ⟳ i < 3 {
         println!("loop {}", i);
         i = i + 1;

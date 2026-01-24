@@ -2,9 +2,9 @@
 // Spec: 06-CONCURRENCY.md § 4.2 Atomic Bool
 // Priority: P1 - Standard Feature
 
-fn main() {
+λ main() {
     // Create atomic bool
-    let flag = AtomicBool·new(false);
+    ≔ flag = AtomicBool·new(false);
 
     // Load initial value
     println(flag.load());
@@ -14,7 +14,7 @@ fn main() {
     println(flag.load());
 
     // Swap and get old value
-    let old = flag.swap(false);
+    ≔ old = flag.swap(false);
     println(old);
     println(flag.load());
 }

@@ -1,23 +1,23 @@
-// Test: Struct with trait implementation
+// Test: Struct with Θ implementation
 // Spec: Feature Interaction - Structs + Traits
 // Priority: P0 - Bootstrap Critical
 
-trait Displayable {
-    fn display(&self) -> String;
+Θ Displayable {
+    λ display(&self) -> String;
 }
 
-struct Point {
+Σ Point {
     x: i32,
     y: i32,
 }
 
-impl Displayable for Point {
-    fn display(&self) -> String {
-        return "Point";
+⊢ Displayable ∀ Point {
+    λ display(&self) -> String {
+        ⤺ "Point";
     }
 }
 
-fn main() {
-    let p = Point { x: 3, y: 4 };
+λ main() {
+    ≔ p = Point { x: 3, y: 4 };
     println(p.display());
 }

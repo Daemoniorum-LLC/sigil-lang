@@ -2,18 +2,18 @@
 // Spec: 12-QUANTUM.md § 7.1 Grover's Search
 // Priority: P2 - Advanced Feature
 
-fn main() {
+λ main() {
     // Diffusion operator: 2|s⟩⟨s| - I where |s⟩ = uniform superposition
     // Applied to uniform superposition, should leave it unchanged
 
     // Create 2-qubit uniform superposition
-    let reg: QRegister<2> = QRegister·new(2);
-    let reg = QRegister·apply_all(reg, "H");  // |++⟩ = (|00⟩+|01⟩+|10⟩+|11⟩)/2
+    ≔ reg: QRegister<2> = QRegister·new(2);
+    ≔ reg = QRegister·apply_all(reg, "H");  // |++⟩ = (|00⟩+|01⟩+|10⟩+|11⟩)/2
 
     // Apply diffusion
-    let reg = Grover·diffusion(reg);
+    ≔ reg = Grover·diffusion(reg);
 
     // Measure - should still be uniform (each outcome ~25%)
-    let results = QRegister·measure_all(reg);
+    ≔ results = QRegister·measure_all(reg);
     println(results.len());  // 2 qubits measured
 }

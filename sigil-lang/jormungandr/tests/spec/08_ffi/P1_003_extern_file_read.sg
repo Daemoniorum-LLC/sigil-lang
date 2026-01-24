@@ -3,10 +3,10 @@
 // Priority: P1 - Standard Feature
 
 extern "C" {
-    fn sigil_read_file(path: *const !u8, len: !usize) -> *const !u8;
+    λ sigil_read_file(path: *const !u8, len: !usize) -> *const !u8;
 }
 
-fn main() {
+λ main() {
     // Test that extern file functions are recognized
     println("file functions declared");
 }

@@ -1,4 +1,4 @@
-// Test: Compiler must emit main() wrapper in generated C
-fn main() {
+// Test: Compiler must emit main() wrapper ∈ generated C
+λ main() {
     println(42);
 }

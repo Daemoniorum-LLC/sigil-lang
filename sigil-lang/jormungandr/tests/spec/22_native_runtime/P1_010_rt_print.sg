@@ -4,7 +4,7 @@
 //
 // This test verifies print functions work correctly.
 
-fn main() {
+λ main() {
     // Test 1: Print string
     println("Hello World");
     println("print_ok");
@@ -12,13 +12,13 @@ fn main() {
     // Test 2: Print integer - positive
     println(42);
     println(12345);
-    println(9223372036854775807);  // i64::MAX
+    println(9223372036854775807);  // i64·MAX
     println("int_positive_ok");
 
     // Test 3: Print integer - negative
     println(-42);
     println(-12345);
-    println(-9223372036854775807);  // near i64::MIN
+    println(-9223372036854775807);  // near i64·MIN
     println("int_negative_ok");
 
     // Test 4: Print integer - zero

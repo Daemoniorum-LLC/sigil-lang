@@ -9,12 +9,12 @@
 // Expected behavior:
 // Should compile and print 42
 
-pub struct Point {
+☉ Σ Point {
     x: !i32,
     y: !i32
 }
 
-fn main() {
-    let p: !Point = Point { x: 42, y: 10 };
+λ main() {
+    ≔ p: !Point = Point { x: 42, y: 10 };
     println(p.x);
 }

@@ -8,14 +8,14 @@
 // Expected behavior:
 // Should print 42
 
-fn get_value() -> !i32 {
+λ get_value() -> !i32 {
     42
 }
 
-fn call_fn(f: fn() -> !i32) -> !i32 {
+λ call_fn(f: λ() -> !i32) -> !i32 {
     f()
 }
 
-fn main() {
+λ main() {
     println(call_fn(get_value));
 }

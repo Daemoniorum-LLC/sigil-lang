@@ -2,9 +2,9 @@
 // Spec: 09-STDLIB.md § 4.2 String
 // Priority: P2 - Enhancement
 
-fn main() {
-    let s1: String = "ab";
-    let s2: String = s1 + "cd";
+λ main() {
+    ≔ s1: String = "ab";
+    ≔ s2: String = s1 + "cd";
     println(s2);
     println(s2.len());
 }

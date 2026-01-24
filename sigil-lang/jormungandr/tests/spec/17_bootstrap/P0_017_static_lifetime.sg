@@ -3,17 +3,17 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate static lifetime references work in C codegen.
+// Validate static lifetime references work ∈ C codegen.
 //
 // Expected behavior:
 // Should print 42
 
-fn get_static() -> &'static !i32 {
+λ get_static() -> &'static !i32 {
     static VAL: !i32 = 42;
     &VAL
 }
 
-fn main() {
-    let r: &'static !i32 = get_static();
+λ main() {
+    ≔ r: &'static !i32 = get_static();
     println(*r);
 }

@@ -1,25 +1,25 @@
-// Test: Match expression with enum
+// Test: Match expression with ᛈ
 // Spec: 02-SYNTAX.md § 4.3 Match Expressions
 // Priority: P0
 //
 // KNOWN FAILURE: C Codegen Bug
-// Enum variant constructors are redefined in generated C.
-// Related to CG-006 (deterministic output) and enum codegen.
+// Enum variant constructors are redefined ∈ generated C.
+// Related to CG-006 (deterministic output) and ᛈ codegen.
 //
 // Purpose:
-// Validates that match expressions work with enums.
+// Validates that ⌥ expressions work with enums.
 //
 // Expected behavior:
 // Should compile and print 42
 
-pub enum Option {
+☉ ᛈ Option {
     Some(!i32),
     None
 }
 
-fn main() {
-    let x: !Option = Option·Some(42);
-    let y: !i32 = match x {
+λ main() {
+    ≔ x: !Option = Option·Some(42);
+    ≔ y: !i32 = ⌥ x {
         Option·Some(v) => v,
         Option·None => 0,
     };

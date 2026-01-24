@@ -4,9 +4,9 @@
 //
 // This test verifies memory operations using interpreter arrays.
 
-fn main() {
+λ main() {
     // Test 1: Allocate array (simulates mmap allocation)
-    let mut buffer = [];
+    ≔ Δ buffer = [];
     buffer.push(0);
     buffer.push(0);
     buffer.push(0);
@@ -27,8 +27,8 @@ fn main() {
     println("write_ok");
 
     // Test 3: Read from allocated memory
-    let val1 = buffer[0];
-    let val2 = buffer[9];
+    ≔ val1 = buffer[0];
+    ≔ val2 = buffer[9];
     assert_eq!(val1, 42);
     assert_eq!(val2, 255);
     println("read_ok");
@@ -39,9 +39,9 @@ fn main() {
     println("unmap_ok");
 
     // Test 5: Large allocation - build via push
-    let mut large = [];
-    let mut idx = 0;
-    while idx < 1024 {
+    ≔ Δ large = [];
+    ≔ Δ idx = 0;
+    ⟳ idx < 1024 {
         large.push(idx);
         idx = idx + 1;
     }
@@ -55,13 +55,13 @@ fn main() {
     println("large_write_ok");
 
     // Test 7: Verify pattern matches
-    let mut ok = true;
+    ≔ Δ ok = true;
     ok = ok && (large[0] == 0);
     ok = ok && (large[100] == 100);
     ok = ok && (large[1023] == 1023);
-    if ok {
+    ⎇ ok {
         println("large_verify_ok");
-    } else {
+    } ⎉ {
         println("large_verify_fail");
     }
 

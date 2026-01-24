@@ -2,11 +2,11 @@
 // Spec: 03-TYPES.md § 8.1 Unit Type
 // Priority: P0
 
-fn side_effect() {
-    let _x = 42;
+λ side_effect() {
+    ≔ _x = 42;
 }
 
-fn main() {
+λ main() {
     side_effect();
     println(42);
 }

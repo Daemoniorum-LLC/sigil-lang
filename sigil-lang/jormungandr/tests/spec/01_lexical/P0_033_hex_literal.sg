@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 42 (0x2A)
 
-fn main() {
-    let x: !i32 = 0x2A;
+λ main() {
+    ≔ x: !i32 = 0x2A;
     println(x);
 }

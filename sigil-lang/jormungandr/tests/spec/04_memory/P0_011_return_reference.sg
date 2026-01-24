@@ -3,17 +3,17 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate functions can return references.
+// Validate functions can ⤺ references.
 //
 // Expected behavior:
 // Should print 42
 
-fn get_ref(x: &!i32) -> &!i32 {
+λ get_ref(x: &!i32) -> &!i32 {
     x
 }
 
-fn main() {
-    let val: !i32 = 42;
-    let r: &!i32 = get_ref(&val);
+λ main() {
+    ≔ val: !i32 = 42;
+    ≔ r: &!i32 = get_ref(&val);
     println(*r);
 }

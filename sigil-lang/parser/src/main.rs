@@ -2164,12 +2164,12 @@ impl SigilHighlighter {
             | Token::If
             | Token::Else
             | Token::While
-            | Token::For
-            | Token::In
+            | Token::ForAll
+            | Token::ElementOf
             | Token::Match
             | Token::Return
-            | Token::Break
-            | Token::Continue
+            | Token::Tensor
+            | Token::CycleArrow
             | Token::Struct
             | Token::Enum
             | Token::Impl
@@ -2268,7 +2268,7 @@ impl SigilHighlighter {
             | Token::Pipe
             | Token::Arrow
             | Token::FatArrow
-            | Token::ColonColon => colors::OPERATOR,
+            | Token::MiddleDot => colors::OPERATOR,
 
             // Identifiers - check for common stdlib functions
             Token::Ident(name) => {

@@ -2,8 +2,8 @@
 // Spec: 01-LEXICAL.md § 2.1 Comments
 // Priority: P2 - Enhancement
 
-fn main() {
+λ main() {
     /* This is a block comment */
-    let x: !i32 = 42;
+    ≔ x: !i32 = 42;
     println(x);
 }

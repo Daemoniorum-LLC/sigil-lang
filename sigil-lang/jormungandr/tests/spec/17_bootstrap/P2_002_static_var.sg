@@ -2,9 +2,9 @@
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 4.2 Statics
 // Priority: P2 - Enhancement
 
-static mut COUNTER: !i32 = 0;
+static Δ COUNTER: !i32 = 0;
 
-fn main() {
+λ main() {
     println(COUNTER);
     COUNTER = 10;
     println(COUNTER);

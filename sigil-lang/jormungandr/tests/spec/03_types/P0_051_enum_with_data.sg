@@ -3,19 +3,19 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate enum variants can carry data.
+// Validate ᛈ variants can carry data.
 //
 // Expected behavior:
 // Should print 42
 
-pub enum Value {
+☉ ᛈ Value {
     Number(!i32),
     Empty
 }
 
-fn main() {
-    let v: !Value = Value·Number(42);
-    match v {
+λ main() {
+    ≔ v: !Value = Value·Number(42);
+    ⌥ v {
         Value·Number(x) => println(x),
         Value·Empty => println(0)
     }

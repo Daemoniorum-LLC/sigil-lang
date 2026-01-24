@@ -3,18 +3,18 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate extern declarations work for C interop.
+// Validate extern declarations work ∀ C interop.
 //
 // Expected behavior:
 // Should print 42 (via native or mock)
 
 extern "C" {
-    fn abs(x: !i32) -> !i32;
+    λ abs(x: !i32) -> !i32;
 }
 
-fn main() {
+λ main() {
     unsafe {
-        let result: !i32 = abs(-42);
+        ≔ result: !i32 = abs(-42);
         println(result);
     }
 }

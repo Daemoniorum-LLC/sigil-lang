@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Optional Values
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let opt: Option<i32> = None;
+λ main() {
+    ≔ opt: Option<i32> = None;
     println(opt.is_none());
 }

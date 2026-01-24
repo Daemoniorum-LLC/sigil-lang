@@ -2,26 +2,26 @@
 // Spec: 05-MATHEMATICS.md § 5.1 Comparisons
 // Priority: P1 - Standard Feature
 
-fn main() {
+λ main() {
     // Less than
-    if 3 < 5 { println("3 < 5"); }
-    if 5 < 3 { println("ERROR"); }
+    ⎇ 3 < 5 { println("3 < 5"); }
+    ⎇ 5 < 3 { println("ERROR"); }
 
     // Greater than
-    if 5 > 3 { println("5 > 3"); }
-    if 3 > 5 { println("ERROR"); }
+    ⎇ 5 > 3 { println("5 > 3"); }
+    ⎇ 3 > 5 { println("ERROR"); }
 
     // Less than or equal
-    if 3 <= 5 { println("3 <= 5"); }
-    if 5 <= 5 { println("5 <= 5"); }
+    ⎇ 3 <= 5 { println("3 <= 5"); }
+    ⎇ 5 <= 5 { println("5 <= 5"); }
 
     // Greater than or equal
-    if 5 >= 3 { println("5 >= 3"); }
-    if 5 >= 5 { println("5 >= 5"); }
+    ⎇ 5 >= 3 { println("5 >= 3"); }
+    ⎇ 5 >= 5 { println("5 >= 5"); }
 
     // Equality
-    if 42 == 42 { println("42 == 42"); }
+    ⎇ 42 == 42 { println("42 == 42"); }
 
     // Not equal
-    if 42 != 43 { println("42 != 43"); }
+    ⎇ 42 != 43 { println("42 != 43"); }
 }

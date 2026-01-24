@@ -2,54 +2,54 @@
 // Spec: 15-PROTOCOLS.md § 3 gRPC Support
 // Priority: P0 - Bootstrap Critical
 //
-// Tests language features used in gRPC patterns:
+// Tests language features used ∈ gRPC patterns:
 // - Struct literals with named fields
 // - Evidential value binding and propagation
 // - Function composition with structs
 
-struct HelloRequest {
+Σ HelloRequest {
     name: String,
 }
 
-struct HelloResponse {
+Σ HelloResponse {
     message: String,
 }
 
-struct Channel {
+Σ Channel {
     endpoint: String,
 }
 
-struct GreeterClient {
+Σ GreeterClient {
     channel: Channel,
 }
 
 // Connection constructor
-fn connect_channel(endpoint: String) -> Channel {
+λ connect_channel(endpoint: String) -> Channel {
     Channel { endpoint: endpoint }
 }
 
-fn new_greeter_client(channel: Channel) -> GreeterClient {
+λ new_greeter_client(channel: Channel) -> GreeterClient {
     GreeterClient { channel: channel }
 }
 
 // Simulated RPC call
-fn say_hello(client: GreeterClient, req: HelloRequest) -> HelloResponse {
+λ say_hello(client: GreeterClient, req: HelloRequest) -> HelloResponse {
     // In real gRPC, response is reported evidence from network
     HelloResponse { message: "Hello, " + req.name + "!" }
 }
 
-fn main() {
+λ main() {
     // Test: Channel construction with evidential binding
-    let channel~ = connect_channel("http://localhost:50051");
+    ≔ channel~ = connect_channel("http://localhost:50051");
 
     // Test: Client construction using evidential channel
-    let client = new_greeter_client(channel~);
+    ≔ client = new_greeter_client(channel~);
 
     // Test: Struct literal syntax
-    let request = HelloRequest { name: "Sigil" };
+    ≔ request = HelloRequest { name: "Sigil" };
 
     // Test: Method call returning evidential response
-    let response~ = say_hello(client, request);
+    ≔ response~ = say_hello(client, request);
 
     // Test: Field access on evidential value
     println(response~.message);

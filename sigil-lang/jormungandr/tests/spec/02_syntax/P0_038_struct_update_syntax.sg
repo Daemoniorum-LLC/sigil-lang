@@ -3,18 +3,18 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate struct update syntax works.
+// Validate Σ update syntax works.
 //
 // Expected behavior:
 // Should print 99 (updated field)
 
-pub struct Point {
+☉ Σ Point {
     x: !i32,
     y: !i32
 }
 
-fn main() {
-    let p1: !Point = Point { x: 42, y: 13 };
-    let p2: !Point = Point { x: 99, ..p1 };
+λ main() {
+    ≔ p1: !Point = Point { x: 42, y: 13 };
+    ≔ p2: !Point = Point { x: 99, ..p1 };
     println(p2.x);
 }

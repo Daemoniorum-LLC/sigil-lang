@@ -2,15 +2,15 @@
 // Spec: 18-COMPILER.md § 1.2 Functions
 // Priority: P1 - Standard Feature
 
-fn add(a: !i32, b: !i32) -> !i32 {
+λ add(a: !i32, b: !i32) -> !i32 {
     a + b
 }
 
-fn multiply(a: !i32, b: !i32) -> !i32 {
+λ multiply(a: !i32, b: !i32) -> !i32 {
     a * b
 }
 
-fn main() {
+λ main() {
     println(add(3, 4));
     println(multiply(5, 6));
 }

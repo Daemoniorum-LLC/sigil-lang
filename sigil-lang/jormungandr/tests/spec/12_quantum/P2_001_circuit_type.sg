@@ -2,13 +2,13 @@
 // Spec: 12-QUANTUM.md § 6.1 Circuit DSL
 // Priority: P2 - Advanced Feature
 
-fn main() {
+λ main() {
     // Create a simple circuit: H then measure
-    let c = Circuit·new();
-    let c = Circuit·add_gate(c, "H", [0]);
-    let c = Circuit·add_measure(c, 0);
+    ≔ c = Circuit·new();
+    ≔ c = Circuit·add_gate(c, "H", [0]);
+    ≔ c = Circuit·add_measure(c, 0);
 
     // Execute circuit once
-    let result = Circuit·execute(c, 1);
+    ≔ result = Circuit·execute(c, 1);
     println(result.len());  // 1 shot
 }

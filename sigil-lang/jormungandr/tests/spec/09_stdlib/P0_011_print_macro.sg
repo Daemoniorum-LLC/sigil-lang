@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print: 4242
 
-fn main() {
+λ main() {
     print!(42);
     print!(42);
 }

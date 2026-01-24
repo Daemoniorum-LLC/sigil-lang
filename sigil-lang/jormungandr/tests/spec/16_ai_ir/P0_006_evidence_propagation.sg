@@ -1,13 +1,13 @@
-// Test: Evidence propagation rules in IR
+// Test: Evidence propagation rules ∈ IR
 // Spec: 16-AI-IR.md § Evidence Propagation
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let a: !i32 = 10;
-    let b: ?i32 = Option·Some(20);
-    let c = a + b.unwrap();  // ! join ? = ?
+λ main() {
+    ≔ a: !i32 = 10;
+    ≔ b: ?i32 = Option·Some(20);
+    ≔ c = a + b.unwrap();  // ! join ? = ?
 
-    let ir = __export_ir();
+    ≔ ir = __export_ir();
     // The IR should show c has uncertain evidence
     println(1);
 }

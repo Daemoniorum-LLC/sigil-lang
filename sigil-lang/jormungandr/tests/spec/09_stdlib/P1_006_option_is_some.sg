@@ -2,19 +2,19 @@
 // Spec: 09-STDLIB.md § 3.2 Option
 // Priority: P1 - Production Ready
 
-fn main() {
-    let some: Option<i32> = Option·Some(1);
-    let none: Option<i32> = Option·None;
+λ main() {
+    ≔ some: Option<i32> = Option·Some(1);
+    ≔ none: Option<i32> = Option·None;
 
-    if some.is_some() {
+    ⎇ some.is_some() {
         println(1);
-    } else {
+    } ⎉ {
         println(0);
     }
 
-    if none.is_none() {
+    ⎇ none.is_none() {
         println(1);
-    } else {
+    } ⎉ {
         println(0);
     }
 }

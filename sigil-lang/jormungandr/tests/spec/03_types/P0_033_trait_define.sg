@@ -8,21 +8,21 @@
 // Expected behavior:
 // Should compile and print 42
 
-pub trait Valuable {
-    fn get_value(&self) -> !i32;
+☉ Θ Valuable {
+    λ get_value(&self) -> !i32;
 }
 
-pub struct Item {
+☉ Σ Item {
     value: !i32
 }
 
-impl Valuable for Item {
-    fn get_value(&self) -> !i32 {
+⊢ Valuable ∀ Item {
+    λ get_value(&self) -> !i32 {
         self.value
     }
 }
 
-fn main() {
-    let item: !Item = Item { value: 42 };
+λ main() {
+    ≔ item: !Item = Item { value: 42 };
     println(item.get_value());
 }

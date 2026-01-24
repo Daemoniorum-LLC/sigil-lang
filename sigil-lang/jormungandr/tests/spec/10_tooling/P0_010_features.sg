@@ -3,8 +3,8 @@
 // Priority: P0 - Bootstrap Critical
 
 #[cfg(feature = "async")]
-fn async_fn() { }
+λ async_fn() { }
 
-fn main() {
+λ main() {
     println(1);
 }

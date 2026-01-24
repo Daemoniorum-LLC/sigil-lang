@@ -2,9 +2,9 @@
 // Spec: 11-HOLOGRAPHIC.md § 4 Content-Addressed Structures
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let tree: MerkleTree<String> = MerkleTree·from(["a", "b", "c", "d"]);
-    let proof = tree.prove_inclusion(0);
-    let valid! = proof|□verify;
+λ main() {
+    ≔ tree: MerkleTree<String> = MerkleTree·from(["a", "b", "c", "d"]);
+    ≔ proof = tree.prove_inclusion(0);
+    ≔ valid! = proof|□verify;
     println(valid!);
 }

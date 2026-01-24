@@ -2,16 +2,16 @@
 // Spec: 18-COMPILER.md § 2.1 Scopes
 // Priority: P1 - Standard Feature
 
-fn main() {
-    let x: !i32 = 1;
+λ main() {
+    ≔ x: !i32 = 1;
     println(x);
 
     {
-        let x: !i32 = 2;
+        ≔ x: !i32 = 2;
         println(x);
 
         {
-            let x: !i32 = 3;
+            ≔ x: !i32 = 3;
             println(x);
         }
 

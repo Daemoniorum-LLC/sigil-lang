@@ -1,12 +1,12 @@
-// Test: Evidence lattice in IR
+// Test: Evidence lattice ∈ IR
 // Spec: 16-AI-IR.md § Evidentiality Lattice
 // Priority: P0 - Bootstrap Critical
 
-fn main() {
-    let known: !i32 = 42;
-    let uncertain: ?i32 = Option·Some(1);
-    let reported: ~i32 = external_data();
+λ main() {
+    ≔ known: !i32 = 42;
+    ≔ uncertain: ?i32 = Option·Some(1);
+    ≔ reported: ~i32 = external_data();
 
-    let ir = __export_ir();
+    ≔ ir = __export_ir();
     println(ir.evidentiality_lattice.levels.len());
 }

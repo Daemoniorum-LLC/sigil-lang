@@ -1,19 +1,19 @@
-// Test: Reference as struct field
-// Spec: 04-MEMORY.md § 3.3 References in Structs
+// Test: Reference as Σ field
+// Spec: 04-MEMORY.md § 3.3 References ∈ Structs
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate references can be stored in struct fields.
+// Validate references can be stored ∈ Σ fields.
 //
 // Expected behavior:
 // Should print 42
 
-pub struct Wrapper {
+☉ Σ Wrapper {
     inner: &!i32
 }
 
-fn main() {
-    let val: !i32 = 42;
-    let w: !Wrapper = Wrapper { inner: &val };
+λ main() {
+    ≔ val: !i32 = 42;
+    ≔ w: !Wrapper = Wrapper { inner: &val };
     println(*w.inner);
 }

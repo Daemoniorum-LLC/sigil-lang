@@ -2,13 +2,13 @@
 // Spec: 06-CONCURRENCY.md § 5.3 Atomics
 // Priority: P1 - Production Ready
 
-fn main() {
-    let flag: AtomicBool = AtomicBool·new(false);
+λ main() {
+    ≔ flag: AtomicBool = AtomicBool·new(false);
 
     // Initial
-    if flag.load() {
+    ⎇ flag.load() {
         println(1);
-    } else {
+    } ⎉ {
         println(0);
     }
 
@@ -16,9 +16,9 @@ fn main() {
     flag.store(true);
 
     // After store
-    if flag.load() {
+    ⎇ flag.load() {
         println(1);
-    } else {
+    } ⎉ {
         println(0);
     }
 }

@@ -8,21 +8,21 @@
 // Expected behavior:
 // Should print 42
 
-pub struct Value {
+☉ Σ Value {
     x: !i32
 }
 
-impl Value {
-    pub fn new(x: !i32) -> !Value {
+⊢ Value {
+    ☉ λ new(x: !i32) -> !Value {
         Value { x: x }
     }
 
-    pub fn get(self) -> !i32 {
+    ☉ λ get(self) -> !i32 {
         self.x
     }
 }
 
-fn main() {
-    let v: !Value = Value·new(42);
+λ main() {
+    ≔ v: !Value = Value·new(42);
     println(v.get());
 }

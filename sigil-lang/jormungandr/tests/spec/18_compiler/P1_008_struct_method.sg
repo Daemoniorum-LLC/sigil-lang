@@ -2,22 +2,22 @@
 // Spec: 18-COMPILER.md § 4.1 Struct Methods
 // Priority: P1 - Production Ready
 
-struct Counter {
+Σ Counter {
     value: !i32,
 }
 
-impl Counter {
-    fn get(&self) -> !i32 {
+⊢ Counter {
+    λ get(&self) -> !i32 {
         self.value
     }
 
-    fn increment(&mut self) {
+    λ increment(&Δ self) {
         self.value = self.value + 1;
     }
 }
 
-fn main() {
-    let mut c = Counter { value: 0 };
+λ main() {
+    ≔ Δ c = Counter { value: 0 };
     println(c.get());
 
     c.increment();

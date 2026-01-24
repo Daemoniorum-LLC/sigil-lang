@@ -1,22 +1,22 @@
-// Test: Nested struct field access
+// Test: Nested Σ field access
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § CG-001 Field Access
 // Priority: P0
 //
 // Purpose:
-// Validates that nested struct access generates correct C code.
+// Validates that nested Σ access generates correct C code.
 //
 // Expected behavior:
 // Should compile and print 42
 
-pub struct Inner {
+☉ Σ Inner {
     value: !i32
 }
 
-pub struct Outer {
+☉ Σ Outer {
     inner: !Inner
 }
 
-fn main() {
-    let o: !Outer = Outer { inner: Inner { value: 42 } };
+λ main() {
+    ≔ o: !Outer = Outer { inner: Inner { value: 42 } };
     println(o.inner.value);
 }

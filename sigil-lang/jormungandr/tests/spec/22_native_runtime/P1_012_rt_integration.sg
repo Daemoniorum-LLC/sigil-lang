@@ -4,24 +4,24 @@
 //
 // This test exercises all interpreter components together.
 
-fn fabs(x: f64) -> f64 {
-    if x < 0.0 { -x } else { x }
+λ fabs(x: f64) -> f64 {
+    ⎇ x < 0.0 { -x } ⎉ { x }
 }
 
-fn main() {
+λ main() {
     // Phase A: Syscalls (simulated with byte operations)
     println("=== Phase A: Syscalls ===");
 
-    let msg = "Direct syscall write\n";
-    let bytes = msg.as_bytes();
+    ≔ msg = "Direct syscall write\n";
+    ≔ bytes = msg.as_bytes();
     assert!(bytes.len() > 0);
     println(msg);
     println("syscall_write: PASS");
 
     // Memory allocation simulation
-    let mut mmap_buf = [];
-    let mut i = 0;
-    while i < 100 {
+    ≔ Δ mmap_buf = [];
+    ≔ Δ i = 0;
+    ⟳ i < 100 {
         mmap_buf.push(0);
         i = i + 1;
     }
@@ -30,7 +30,7 @@ fn main() {
     println("syscall_mmap: PASS");
 
     // Time simulation
-    let time_value = 1704067201;
+    ≔ time_value = 1704067201;
     assert!(time_value > 0);
     println("syscall_clock: PASS");
 
@@ -39,15 +39,15 @@ fn main() {
 
     println("init_allocator: PASS");
 
-    let mut mem = [];
+    ≔ Δ mem = [];
     mem.push(42);
     assert_eq!(mem[0], 42);
     mem.clear();
     println("global_alloc: PASS");
 
-    let mut arena = [];
-    let mut j = 0;
-    while j < 256 {
+    ≔ Δ arena = [];
+    ≔ Δ j = 0;
+    ⟳ j < 256 {
         arena.push(0);
         j = j + 1;
     }
@@ -57,29 +57,29 @@ fn main() {
     // Phase C: Types
     println("=== Phase C: Types ===");
 
-    let mut v = [];
+    ≔ Δ v = [];
     v.push(1);
     v.push(2);
     v.push(3);
     assert_eq!(v.len(), 3);
-    match v.pop() {
-        Option::Some(val) => assert_eq!(val, 3),
-        Option::None => assert!(false),
+    ⌥ v.pop() {
+        Option·Some(val) => assert_eq!(val, 3),
+        Option·None => assert!(false),
     }
     println("vec: PASS");
 
-    let s = "Hello" + " World";
+    ≔ s = "Hello" + " World";
     assert_eq!(s, "Hello World");
     println("string: PASS");
 
     // Phase D: I/O (simulated)
     println("=== Phase D: I/O ===");
 
-    let test_content = "Integration test content";
-    let mut file_buf = [];
-    let content_bytes = test_content.as_bytes();
-    let mut k = 0;
-    while k < content_bytes.len() {
+    ≔ test_content = "Integration test content";
+    ≔ Δ file_buf = [];
+    ≔ content_bytes = test_content.as_bytes();
+    ≔ Δ k = 0;
+    ⟳ k < content_bytes.len() {
         file_buf.push(content_bytes[k]);
         k = k + 1;
     }
@@ -87,10 +87,10 @@ fn main() {
     println("file_write: PASS");
 
     // Verify content
-    let mut matches = true;
-    let mut m = 0;
-    while m < content_bytes.len() {
-        if file_buf[m] != content_bytes[m] {
+    ≔ Δ matches = true;
+    ≔ Δ m = 0;
+    ⟳ m < content_bytes.len() {
+        ⎇ file_buf[m] != content_bytes[m] {
             matches = false;
         }
         m = m + 1;
@@ -105,29 +105,29 @@ fn main() {
     println("=== Phase E: Math ===");
 
     // sqrt(4.0) = 2.0
-    let sqrt_result = 2.0;
+    ≔ sqrt_result = 2.0;
     assert!(fabs(sqrt_result - 2.0) < 0.0001);
     println("math_sqrt: PASS");
 
     // sin(PI/2) = 1.0
-    let sin_result = 1.0;
+    ≔ sin_result = 1.0;
     assert!(fabs(sin_result - 1.0) < 0.0001);
     println("math_sin: PASS");
 
     // cos(0) = 1.0
-    let cos_result = 1.0;
+    ≔ cos_result = 1.0;
     assert!(fabs(cos_result - 1.0) < 0.0001);
     println("math_cos: PASS");
 
     // Phase F: Time (simulated)
     println("=== Phase F: Time ===");
 
-    let now = 1704067200001;
+    ≔ now = 1704067200001;
     assert!(now > 1704067200000);
     println("sigil_now: PASS");
 
-    let mut count = 0;
-    while count < 10000 {
+    ≔ Δ count = 0;
+    ⟳ count < 10000 {
         count = count + 1;
     }
     assert!(count > 0);

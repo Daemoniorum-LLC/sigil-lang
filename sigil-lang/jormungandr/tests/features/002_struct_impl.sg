@@ -1,24 +1,24 @@
-// Test: impl block with methods
-pub struct Counter {
+// Test: ⊢ block with methods
+☉ Σ Counter {
     value: !i32
 }
 
-impl Counter {
-    fn new() -> !Counter {
+⊢ Counter {
+    λ new() -> !Counter {
         Counter { value: 0 }
     }
 
-    fn increment(&mut self) {
+    λ increment(&Δ self) {
         self.value = self.value + 1;
     }
 
-    fn get(&self) -> !i32 {
+    λ get(&self) -> !i32 {
         self.value
     }
 }
 
-fn main() {
-    let mut c: !Counter = Counter·new();
+λ main() {
+    ≔ Δ c: !Counter = Counter·new();
     c.increment();
     c.increment();
     println(c.get());

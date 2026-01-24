@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print 2 (42 % 10)
 
-fn main() {
-    let x: !i32 = 42;
-    let y: !i32 = 10;
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = 10;
     println(x % y);
 }

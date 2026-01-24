@@ -1,22 +1,22 @@
-// Test: Method returning Self for builder pattern
+// Test: Method returning Self ∀ builder pattern
 // Spec: Feature Interaction - Methods + Self
 // Priority: P0 - Bootstrap Critical
 
-struct Builder {
+Σ Builder {
     value: i32,
 }
 
-impl Builder {
-    fn new() -> Builder {
-        return Builder { value: 0 };
+⊢ Builder {
+    λ new() -> Builder {
+        ⤺ Builder { value: 0 };
     }
 
-    fn with_value(self, v: i32) -> Builder {
-        return Builder { value: v };
+    λ with_value(self, v: i32) -> Builder {
+        ⤺ Builder { value: v };
     }
 }
 
-fn main() {
-    let b = Builder·new().with_value(42);
+λ main() {
+    ≔ b = Builder·new().with_value(42);
     println(b.value);
 }

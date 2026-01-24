@@ -1,40 +1,40 @@
 //! Comprehensive Type Checker Traits Test Suite
 //!
-//! Tests trait definitions, implementations, bounds, associated types,
+//! Tests Θ definitions, implementations, bounds, associated types,
 //! supertraits, and method resolution.
-//! Target: 100% trait system coverage for regression detection.
+//! Target: 100% Θ system coverage ∀ regression detection.
 
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
 /// Parse and type check a source string
-fn check_source(source: !&str) -> !bool {
-    let mut parser = Parser·new(source.to_string());
-    let ast = match parser.parse_file() {
+λ check_source(source: !&str) -> !bool {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
         Result·Ok(a) => a,
-        Result·Err(_) => return false,
+        Result·Err(_) => ⤺ false,
     };
-    let mut checker = TypeChecker·new();
-    match checker.check_file(ast) {
+    ≔ Δ checker = TypeChecker·new();
+    ⌥ checker.check_file(ast) {
         Result·Ok(_) => true,
         Result·Err(_) => false,
     }
 }
 
 /// Assert that type checking succeeds
-fn assert_checks(source: !&str, name: !&str) {
-    if !check_source(source) {
+λ assert_checks(source: !&str, name: !&str) {
+    ⎇ !check_source(source) {
         panic(format!("FAIL {}: type check failed", name));
     }
 }
 
 /// Assert that type checking fails
-fn assert_fails(source: !&str, name: !&str) {
-    if check_source(source) {
+λ assert_fails(source: !&str, name: !&str) {
+    ⎇ check_source(source) {
         panic(format!("FAIL {}: type check should have failed", name));
     }
 }
@@ -43,36 +43,36 @@ fn assert_fails(source: !&str, name: !&str) {
 // 1. BASIC TRAIT DEFINITIONS
 // ============================================================================
 
-fn test_basic_traits() -> !bool {
-    print("  [1/10] Basic trait definitions... ");
+λ test_basic_traits() -> !bool {
+    print("  [1/10] Basic Θ definitions... ");
 
-    // Empty marker trait
-    assert_checks("trait Marker {}", "empty_trait");
+    // Empty marker Θ
+    assert_checks("Θ Marker {}", "empty_trait");
 
     // Trait with method
     assert_checks("
-        trait Greet {
-            fn greet(self) -> !String;
+        Θ Greet {
+            λ greet(self) -> !String;
         }
     ", "trait_one_method");
 
     // Trait with multiple methods
     assert_checks("
-        trait Collection {
-            fn len(self) -> !usize;
-            fn is_empty(self) -> !bool;
-            fn clear(mut self);
+        Θ Collection {
+            λ len(self) -> !usize;
+            λ is_empty(self) -> !bool;
+            λ clear(Δ self);
         }
     ", "trait_multi_methods");
 
-    // Public trait
-    assert_checks("pub trait PublicTrait {}", "pub_trait");
+    // Public Θ
+    assert_checks("☉ Θ PublicTrait {}", "pub_trait");
 
     // Trait with generic parameter
     assert_checks("
-        trait Container<T> {
-            fn get(self) -> !T;
-            fn set(mut self, value: !T);
+        Θ Container<T> {
+            λ get(self) -> !T;
+            λ set(Δ self, value: !T);
         }
     ", "generic_trait");
 
@@ -84,45 +84,45 @@ fn test_basic_traits() -> !bool {
 // 2. TRAIT IMPLEMENTATIONS
 // ============================================================================
 
-fn test_trait_impls() -> !bool {
+λ test_trait_impls() -> !bool {
     print("  [2/10] Trait implementations... ");
 
     // Basic implementation
     assert_checks("
-        trait Greet {
-            fn greet(self) -> !String;
+        Θ Greet {
+            λ greet(self) -> !String;
         }
-        struct Person { name: !String }
-        impl Greet for Person {
-            fn greet(self) -> !String {
-                return format!(\"Hello, {}\", self.name);
+        Σ Person { name: !String }
+        ⊢ Greet ∀ Person {
+            λ greet(self) -> !String {
+                ⤺ format!(\"Hello, {}\", self.name);
             }
         }
     ", "basic_impl");
 
-    // Implement for multiple types
+    // Implement ∀ multiple types
     assert_checks("
-        trait Show {
-            fn show(self) -> !String;
+        Θ Show {
+            λ show(self) -> !String;
         }
-        struct Foo {}
-        struct Bar {}
-        impl Show for Foo {
-            fn show(self) -> !String { return \"Foo\"; }
+        Σ Foo {}
+        Σ Bar {}
+        ⊢ Show ∀ Foo {
+            λ show(self) -> !String { ⤺ \"Foo\"; }
         }
-        impl Show for Bar {
-            fn show(self) -> !String { return \"Bar\"; }
+        ⊢ Show ∀ Bar {
+            λ show(self) -> !String { ⤺ \"Bar\"; }
         }
     ", "impl_multiple_types");
 
     // Generic implementation
     assert_checks("
-        trait Default {
-            fn default() -> !Self;
+        Θ Default {
+            λ default() -> !Self;
         }
-        struct Wrapper<T> { value: !T }
-        impl<T> Default for Wrapper<T> where T: Default {
-            fn default() -> !Wrapper<T> {
+        Σ Wrapper<T> { value: !T }
+        ⊢<T> Default ∀ Wrapper<T> where T: Default {
+            λ default() -> !Wrapper<T> {
                 Wrapper { value: T·default() }
             }
         }
@@ -130,21 +130,21 @@ fn test_trait_impls() -> !bool {
 
     // Missing method should fail
     assert_fails("
-        trait Required {
-            fn must_implement(self);
+        Θ Required {
+            λ must_implement(self);
         }
-        struct Missing {}
-        impl Required for Missing {}
+        Σ Missing {}
+        ⊢ Required ∀ Missing {}
     ", "missing_method");
 
     // Wrong method signature should fail
     assert_fails("
-        trait Exact {
-            fn method(self) -> !i32;
+        Θ Exact {
+            λ method(self) -> !i32;
         }
-        struct Wrong {}
-        impl Exact for Wrong {
-            fn method(self) -> !String { return \"\"; }
+        Σ Wrong {}
+        ⊢ Exact ∀ Wrong {
+            λ method(self) -> !String { ⤺ \"\"; }
         }
     ", "wrong_signature");
 
@@ -156,43 +156,43 @@ fn test_trait_impls() -> !bool {
 // 3. DEFAULT METHOD IMPLEMENTATIONS
 // ============================================================================
 
-fn test_default_methods() -> !bool {
+λ test_default_methods() -> !bool {
     print("  [3/10] Default method implementations... ");
 
     // Trait with default implementation
     assert_checks("
-        trait WithDefault {
-            fn required(self) -> !i32;
-            fn optional(self) -> !i32 {
-                return self.required() * 2;
+        Θ WithDefault {
+            λ required(self) -> !i32;
+            λ optional(self) -> !i32 {
+                ⤺ self.required() * 2;
             }
         }
-        struct Implementor {}
-        impl WithDefault for Implementor {
-            fn required(self) -> !i32 { return 21; }
+        Σ Implementor {}
+        ⊢ WithDefault ∀ Implementor {
+            λ required(self) -> !i32 { ⤺ 21; }
         }
     ", "default_method");
 
     // Override default implementation
     assert_checks("
-        trait Overridable {
-            fn method(self) -> !i32 { return 0; }
+        Θ Overridable {
+            λ method(self) -> !i32 { ⤺ 0; }
         }
-        struct Custom {}
-        impl Overridable for Custom {
-            fn method(self) -> !i32 { return 42; }
+        Σ Custom {}
+        ⊢ Overridable ∀ Custom {
+            λ method(self) -> !i32 { ⤺ 42; }
         }
     ", "override_default");
 
     // Multiple defaults
     assert_checks("
-        trait ManyDefaults {
-            fn a(self) -> !i32 { return 1; }
-            fn b(self) -> !i32 { return 2; }
-            fn c(self) -> !i32 { return self.a() + self.b(); }
+        Θ ManyDefaults {
+            λ a(self) -> !i32 { ⤺ 1; }
+            λ b(self) -> !i32 { ⤺ 2; }
+            λ c(self) -> !i32 { ⤺ self.a() + self.b(); }
         }
-        struct User {}
-        impl ManyDefaults for User {}
+        Σ User {}
+        ⊢ ManyDefaults ∀ User {}
     ", "multiple_defaults");
 
     println("PASS (3 cases)");
@@ -203,49 +203,49 @@ fn test_default_methods() -> !bool {
 // 4. ASSOCIATED TYPES
 // ============================================================================
 
-fn test_associated_types() -> !bool {
+λ test_associated_types() -> !bool {
     print("  [4/10] Associated types... ");
 
     // Basic associated type
     assert_checks("
-        trait Iterator {
+        Θ Iterator {
             type Item;
-            fn next(mut self) -> ?Self·Item;
+            λ next(Δ self) -> ?Self·Item;
         }
-        struct RangeIter { current: !i32, end: !i32 }
-        impl Iterator for RangeIter {
+        Σ RangeIter { current: !i32, end: !i32 }
+        ⊢ Iterator ∀ RangeIter {
             type Item = i32;
-            fn next(mut self) -> ?i32 {
-                if self.current < self.end {
-                    let val = self.current;
+            λ next(Δ self) -> ?i32 {
+                ⎇ self.current < self.end {
+                    ≔ val = self.current;
                     self.current = self.current + 1;
-                    return ?val;
+                    ⤺ ?val;
                 }
-                return null;
+                ⤺ null;
             }
         }
     ", "associated_type_basic");
 
     // Multiple associated types
     assert_checks("
-        trait Mapping {
+        Θ Mapping {
             type Key;
             type Value;
-            fn get(self, key: !Self·Key) -> ?Self·Value;
+            λ get(self, key: !Self·Key) -> ?Self·Value;
         }
-        struct StringMap {}
-        impl Mapping for StringMap {
+        Σ StringMap {}
+        ⊢ Mapping ∀ StringMap {
             type Key = String;
             type Value = String;
-            fn get(self, key: !String) -> ?String { return null; }
+            λ get(self, key: !String) -> ?String { ⤺ null; }
         }
     ", "multiple_associated_types");
 
     // Associated type with bounds
     assert_checks("
-        trait Bounded {
+        Θ Bounded {
             type Output: Clone;
-            fn produce(self) -> !Self·Output;
+            λ produce(self) -> !Self·Output;
         }
     ", "associated_type_bounded");
 
@@ -257,37 +257,37 @@ fn test_associated_types() -> !bool {
 // 5. ASSOCIATED CONSTANTS
 // ============================================================================
 
-fn test_associated_constants() -> !bool {
+λ test_associated_constants() -> !bool {
     print("  [5/10] Associated constants... ");
 
     // Basic associated constant
     assert_checks("
-        trait HasMax {
+        Θ HasMax {
             const MAX: i32;
         }
-        struct SmallInt {}
-        impl HasMax for SmallInt {
+        Σ SmallInt {}
+        ⊢ HasMax ∀ SmallInt {
             const MAX: i32 = 127;
         }
     ", "associated_const_basic");
 
     // Default associated constant
     assert_checks("
-        trait WithDefault {
+        Θ WithDefault {
             const DEFAULT: i32 = 0;
         }
-        struct UseDefault {}
-        impl WithDefault for UseDefault {}
+        Σ UseDefault {}
+        ⊢ WithDefault ∀ UseDefault {}
     ", "associated_const_default");
 
     // Multiple associated constants
     assert_checks("
-        trait Limits {
+        Θ Limits {
             const MIN: i32;
             const MAX: i32;
         }
-        struct Byte {}
-        impl Limits for Byte {
+        Σ Byte {}
+        ⊢ Limits ∀ Byte {
             const MIN: i32 = 0;
             const MAX: i32 = 255;
         }
@@ -301,57 +301,57 @@ fn test_associated_constants() -> !bool {
 // 6. TRAIT BOUNDS
 // ============================================================================
 
-fn test_trait_bounds() -> !bool {
+λ test_trait_bounds() -> !bool {
     print("  [6/10] Trait bounds... ");
 
     // Single bound
     assert_checks("
-        trait Clone { fn clone(self) -> !Self; }
-        fn duplicate<T: Clone>(x: !T) -> !(T, T) {
-            return (x.clone(), x);
+        Θ Clone { λ clone(self) -> !Self; }
+        λ duplicate<T: Clone>(x: !T) -> !(T, T) {
+            ⤺ (x.clone(), x);
         }
     ", "single_bound");
 
     // Multiple bounds
     assert_checks("
-        trait Clone { fn clone(self) -> !Self; }
-        trait Debug { fn debug(self) -> !String; }
-        fn debug_clone<T: Clone + Debug>(x: !T) -> !String {
-            return x.debug();
+        Θ Clone { λ clone(self) -> !Self; }
+        Θ Debug { λ debug(self) -> !String; }
+        λ debug_clone<T: Clone + Debug>(x: !T) -> !String {
+            ⤺ x.debug();
         }
     ", "multiple_bounds");
 
     // Where clause
     assert_checks("
-        trait Clone { fn clone(self) -> !Self; }
-        fn process<T>(items: ![T]) -> ![T] where T: Clone {
-            return items;
+        Θ Clone { λ clone(self) -> !Self; }
+        λ process<T>(items: ![T]) -> ![T] where T: Clone {
+            ⤺ items;
         }
     ", "where_clause");
 
     // Complex where clause
     assert_checks("
-        trait A {}
-        trait B {}
-        trait C {}
-        fn complex<T, U>(a: !T, b: !U) where T: A + B, U: C {
+        Θ A {}
+        Θ B {}
+        Θ C {}
+        λ complex<T, U>(a: !T, b: !U) where T: A + B, U: C {
         }
     ", "complex_where");
 
     // Bound on associated type
     assert_checks("
-        trait Iterator { type Item; }
-        trait Clone {}
-        fn collect_clones<I>(iter: !I) where I: Iterator, I·Item: Clone {
+        Θ Iterator { type Item; }
+        Θ Clone {}
+        λ collect_clones<I>(iter: !I) where I: Iterator, I·Item: Clone {
         }
     ", "associated_type_bound");
 
     // Unsatisfied bound should fail
     assert_fails("
-        trait Required {}
-        fn needs_trait<T: Required>(x: !T) {}
-        struct NoImpl {}
-        fn main() { needs_trait(NoImpl {}); }
+        Θ Required {}
+        λ needs_trait<T: Required>(x: !T) {}
+        Σ NoImpl {}
+        λ main() { needs_trait(NoImpl {}); }
     ", "unsatisfied_bound");
 
     println("PASS (6 cases)");
@@ -362,51 +362,51 @@ fn test_trait_bounds() -> !bool {
 // 7. SUPERTRAITS
 // ============================================================================
 
-fn test_supertraits() -> !bool {
+λ test_supertraits() -> !bool {
     print("  [7/10] Supertraits... ");
 
     // Single supertrait
     assert_checks("
-        trait Base {
-            fn base_method(self) -> !i32;
+        Θ Base {
+            λ base_method(self) -> !i32;
         }
-        trait Derived: Base {
-            fn derived_method(self) -> !i32;
+        Θ Derived: Base {
+            λ derived_method(self) -> !i32;
         }
-        struct Impl {}
-        impl Base for Impl {
-            fn base_method(self) -> !i32 { return 1; }
+        Σ Impl {}
+        ⊢ Base ∀ Impl {
+            λ base_method(self) -> !i32 { ⤺ 1; }
         }
-        impl Derived for Impl {
-            fn derived_method(self) -> !i32 { return 2; }
+        ⊢ Derived ∀ Impl {
+            λ derived_method(self) -> !i32 { ⤺ 2; }
         }
     ", "single_supertrait");
 
     // Multiple supertraits
     assert_checks("
-        trait A { fn a(self); }
-        trait B { fn b(self); }
-        trait C: A + B { fn c(self); }
-        struct Multi {}
-        impl A for Multi { fn a(self) {} }
-        impl B for Multi { fn b(self) {} }
-        impl C for Multi { fn c(self) {} }
+        Θ A { λ a(self); }
+        Θ B { λ b(self); }
+        Θ C: A + B { λ c(self); }
+        Σ Multi {}
+        ⊢ A ∀ Multi { λ a(self) {} }
+        ⊢ B ∀ Multi { λ b(self) {} }
+        ⊢ C ∀ Multi { λ c(self) {} }
     ", "multiple_supertraits");
 
     // Transitive supertraits
     assert_checks("
-        trait First { fn first(self); }
-        trait Second: First { fn second(self); }
-        trait Third: Second { fn third(self); }
+        Θ First { λ first(self); }
+        Θ Second: First { λ second(self); }
+        Θ Third: Second { λ third(self); }
     ", "transitive_supertraits");
 
-    // Missing supertrait impl should fail
+    // Missing supertrait ⊢ should fail
     assert_fails("
-        trait Base { fn base(self); }
-        trait Derived: Base { fn derived(self); }
-        struct Incomplete {}
-        impl Derived for Incomplete {
-            fn derived(self) {}
+        Θ Base { λ base(self); }
+        Θ Derived: Base { λ derived(self); }
+        Σ Incomplete {}
+        ⊢ Derived ∀ Incomplete {
+            λ derived(self) {}
         }
     ", "missing_supertrait");
 
@@ -418,31 +418,31 @@ fn test_supertraits() -> !bool {
 // 8. OBJECT SAFETY
 // ============================================================================
 
-fn test_object_safety() -> !bool {
+λ test_object_safety() -> !bool {
     print("  [8/10] Object safety... ");
 
-    // Object-safe trait
+    // Object-safe Θ
     assert_checks("
-        trait ObjectSafe {
-            fn method(self);
+        Θ ObjectSafe {
+            λ method(self);
         }
-        fn use_dyn(obj: &dyn ObjectSafe) {
+        λ use_dyn(obj: &dyn ObjectSafe) {
             obj.method();
         }
     ", "object_safe_basic");
 
-    // Trait with Self in return is not object-safe
+    // Trait with Self ∈ ⤺ is not object-safe
     assert_checks("
-        trait NotObjectSafe {
-            fn clone(self) -> !Self;
+        Θ NotObjectSafe {
+            λ clone(self) -> !Self;
         }
     ", "not_object_safe_clone");
 
     // Trait object with multiple traits
     assert_checks("
-        trait Read { fn read(self); }
-        trait Write { fn write(self); }
-        fn read_write(obj: &(dyn Read + Write)) {}
+        Θ Read { λ read(self); }
+        Θ Write { λ write(self); }
+        λ read_write(obj: &(dyn Read + Write)) {}
     ", "multi_trait_object");
 
     println("PASS (3 cases)");
@@ -453,60 +453,60 @@ fn test_object_safety() -> !bool {
 // 9. METHOD RESOLUTION
 // ============================================================================
 
-fn test_method_resolution() -> !bool {
+λ test_method_resolution() -> !bool {
     print("  [9/10] Method resolution... ");
 
     // Inherent method takes priority
     assert_checks("
-        trait Trait {
-            fn method(self) -> !i32 { return 1; }
+        Θ Trait {
+            λ method(self) -> !i32 { ⤺ 1; }
         }
-        struct Type {}
-        impl Type {
-            fn method(self) -> !i32 { return 2; }
+        Σ Type {}
+        ⊢ Type {
+            λ method(self) -> !i32 { ⤺ 2; }
         }
-        impl Trait for Type {}
-        fn main() {
-            let t = Type {};
-            let _x = t.method();  // Calls inherent, returns 2
+        ⊢ Trait ∀ Type {}
+        λ main() {
+            ≔ t = Type {};
+            ≔ _x = t.method();  // Calls inherent, returns 2
         }
     ", "inherent_priority");
 
-    // Explicit trait method call
+    // Explicit Θ method call
     assert_checks("
-        trait A { fn method(self) -> !i32; }
-        trait B { fn method(self) -> !i32; }
-        struct Type {}
-        impl A for Type { fn method(self) -> !i32 { return 1; } }
-        impl B for Type { fn method(self) -> !i32 { return 2; } }
-        fn main() {
-            let t = Type {};
-            let _a = A·method(t);
-            let _b = B·method(t);
+        Θ A { λ method(self) -> !i32; }
+        Θ B { λ method(self) -> !i32; }
+        Σ Type {}
+        ⊢ A ∀ Type { λ method(self) -> !i32 { ⤺ 1; } }
+        ⊢ B ∀ Type { λ method(self) -> !i32 { ⤺ 2; } }
+        λ main() {
+            ≔ t = Type {};
+            ≔ _a = A·method(t);
+            ≔ _b = B·method(t);
         }
     ", "explicit_trait_method");
 
-    // Auto-ref for method call
+    // Auto-ref ∀ method call
     assert_checks("
-        struct Value { x: !i32 }
-        impl Value {
-            fn get(self) -> !i32 { self.x }
-            fn get_ref(&self) -> !i32 { self.x }
+        Σ Value { x: !i32 }
+        ⊢ Value {
+            λ get(self) -> !i32 { self.x }
+            λ get_ref(&self) -> !i32 { self.x }
         }
-        fn main() {
-            let v = Value { x: 42 };
-            let _a = v.get();
-            let _b = v.get_ref();
+        λ main() {
+            ≔ v = Value { x: 42 };
+            ≔ _a = v.get();
+            ≔ _b = v.get_ref();
         }
     ", "auto_ref");
 
     // Method on generic type
     assert_checks("
-        trait Process {
-            fn process(self) -> !i32;
+        Θ Process {
+            λ process(self) -> !i32;
         }
-        fn call_process<T: Process>(x: !T) -> !i32 {
-            return x.process();
+        λ call_process<T: Process>(x: !T) -> !i32 {
+            ⤺ x.process();
         }
     ", "method_on_generic");
 
@@ -518,36 +518,36 @@ fn test_method_resolution() -> !bool {
 // 10. COHERENCE AND ORPHAN RULES
 // ============================================================================
 
-fn test_coherence() -> !bool {
+λ test_coherence() -> !bool {
     print("  [10/10] Coherence rules... ");
 
-    // Local type implementing foreign trait (allowed)
+    // Local type implementing foreign Θ (allowed)
     assert_checks("
-        trait ForeignTrait {}
-        struct LocalType {}
-        impl ForeignTrait for LocalType {}
+        Θ ForeignTrait {}
+        Σ LocalType {}
+        ⊢ ForeignTrait ∀ LocalType {}
     ", "local_for_foreign");
 
-    // Local trait for foreign type (allowed in same crate)
+    // Local Θ ∀ foreign type (allowed ∈ same crate)
     assert_checks("
-        trait LocalTrait {}
-        impl LocalTrait for i32 {}
+        Θ LocalTrait {}
+        ⊢ LocalTrait ∀ i32 {}
     ", "local_trait_foreign_type");
 
     // Blanket implementation
     assert_checks("
-        trait ToString {
-            fn to_string(self) -> !String;
+        Θ ToString {
+            λ to_string(self) -> !String;
         }
-        impl<T> ToString for T where T: Debug {
-            fn to_string(self) -> !String { return \"\"; }
+        ⊢<T> ToString ∀ T where T: Debug {
+            λ to_string(self) -> !String { ⤺ \"\"; }
         }
     ", "blanket_impl");
 
-    // Negative impl marker (if supported)
+    // Negative ⊢ marker (⎇ supported)
     assert_checks("
-        trait Marker {}
-        struct NotMarker {}
+        Θ Marker {}
+        Σ NotMarker {}
         // NotMarker deliberately does not implement Marker
     ", "no_impl");
 
@@ -559,33 +559,33 @@ fn test_coherence() -> !bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("Testing Type Checker Traits...");
     println("");
 
-    let mut passed: !i32 = 0;
-    let mut failed: !i32 = 0;
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
 
-    if test_basic_traits() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_trait_impls() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_default_methods() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_associated_types() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_associated_constants() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_trait_bounds() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_supertraits() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_object_safety() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_method_resolution() { passed = passed + 1; } else { failed = failed + 1; }
-    if test_coherence() { passed = passed + 1; } else { failed = failed + 1; }
+    ⎇ test_basic_traits() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_trait_impls() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_default_methods() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_associated_types() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_associated_constants() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_trait_bounds() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_supertraits() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_object_safety() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_method_resolution() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_coherence() { passed = passed + 1; } ⎉ { failed = failed + 1; }
 
     println("");
     println("Results: {}/{} test groups passed", passed, passed + failed);
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("FAILED: {} test groups failed", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
-    println("All trait system tests passed! (~40 test cases)");
-    return 0;
+    println("All Θ system tests passed! (~40 test cases)");
+    ⤺ 0;
 }

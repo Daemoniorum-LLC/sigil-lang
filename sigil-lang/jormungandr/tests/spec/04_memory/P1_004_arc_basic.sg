@@ -2,12 +2,12 @@
 // Spec: 04-MEMORY.md § 4.3 Arc
 // Priority: P1 - Production Ready
 
-fn main() {
-    let arc1: Arc<i32> = Arc·new(42);
+λ main() {
+    ≔ arc1: Arc<i32> = Arc·new(42);
 
     // Clone creates new reference
-    let arc2 = arc1.clone();
-    let arc3 = arc1.clone();
+    ≔ arc2 = arc1.clone();
+    ≔ arc3 = arc1.clone();
 
     // All point to same value
     println(*arc1);

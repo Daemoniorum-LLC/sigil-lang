@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 1.4 Exponentiation
 // Priority: P1 - Standard Feature
 
-fn main() {
+λ main() {
     // Integer powers
     println(pow(2, 3));
     println(pow(2, 10));

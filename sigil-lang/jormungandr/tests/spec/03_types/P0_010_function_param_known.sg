@@ -1,20 +1,20 @@
 // Test: Function parameter with Known (!) evidence
-// Spec: 03-TYPES.md § 2.4 Evidence in Function Signatures
+// Spec: 03-TYPES.md § 2.4 Evidence ∈ Function Signatures
 // Priority: P0
 //
 // Purpose:
 // Validates that functions can accept parameters with Known (!) evidence
-// and that the evidence is preserved in the function body.
+// and that the evidence is preserved ∈ the function body.
 //
 // Expected behavior:
 // Should compile and print 84 (42 * 2)
 
-fn double(x: !i32) -> !i32 {
+λ double(x: !i32) -> !i32 {
     x * 2
 }
 
-fn main() {
-    let val: !i32 = 42;
-    let result: !i32 = double(val);
+λ main() {
+    ≔ val: !i32 = 42;
+    ≔ result: !i32 = double(val);
     println(result);
 }

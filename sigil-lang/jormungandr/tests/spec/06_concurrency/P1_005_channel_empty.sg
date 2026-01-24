@@ -2,10 +2,10 @@
 // Spec: 06-CONCURRENCY.md § 2.4 Non-blocking Receive
 // Priority: P1 - Standard Feature
 
-fn main() {
-    let ch = channel_new();
+λ main() {
+    ≔ ch = channel_new();
 
-    // Try to receive from empty channel - should return None
-    let result = channel_try_recv(ch);
+    // Try to receive from empty channel - should ⤺ None
+    ≔ result = channel_try_recv(ch);
     println(result);
 }

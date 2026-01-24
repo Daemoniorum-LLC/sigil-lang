@@ -3,14 +3,14 @@
 // Priority: P0 - Bootstrap Critical
 
 #[bench]
-fn bench_fib() {
-    let n = fib(20);
+λ bench_fib() {
+    ≔ n = fib(20);
 }
 
-fn fib(n: !i32) -> !i32 {
-    if n <= 1 { n } else { fib(n-1) + fib(n-2) }
+λ fib(n: !i32) -> !i32 {
+    ⎇ n <= 1 { n } ⎉ { fib(n-1) + fib(n-2) }
 }
 
-fn main() {
+λ main() {
     println(fib(10));
 }

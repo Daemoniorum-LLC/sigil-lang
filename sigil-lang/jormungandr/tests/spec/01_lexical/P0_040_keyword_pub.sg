@@ -3,15 +3,15 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate pub keyword works for visibility.
+// Validate ☉ keyword works ∀ visibility.
 //
 // Expected behavior:
 // Should print 42
 
-pub fn get_value() -> !i32 {
+☉ λ get_value() -> !i32 {
     42
 }
 
-fn main() {
+λ main() {
     println(get_value());
 }
