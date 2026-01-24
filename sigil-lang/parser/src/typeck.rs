@@ -217,20 +217,120 @@ impl EvidenceLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeVar(pub u32);
 
-/// Type error
+/// Type error categories for better diagnostics
+#[derive(Debug, Clone)]
+pub enum TypeErrorKind {
+    /// Type mismatch: expected one type, got another
+    Mismatch {
+        expected: String,
+        actual: String,
+        context: Option<String>,
+    },
+    /// Undefined type, trait, or associated item
+    Undefined {
+        name: String,
+        kind: &'static str, // "type", "trait", "method", "field"
+    },
+    /// Missing trait implementation
+    MissingImpl {
+        type_name: String,
+        trait_name: String,
+    },
+    /// Invalid operation on type
+    InvalidOperation {
+        operation: String,
+        type_name: String,
+    },
+    /// Generic error with message
+    Generic {
+        message: String,
+    },
+}
+
+/// Type error with rich context
 #[derive(Debug, Clone)]
 pub struct TypeError {
+    pub kind: TypeErrorKind,
     pub message: String,
     pub span: Option<Span>,
     pub notes: Vec<String>,
+    pub help: Option<String>,
 }
 
 impl TypeError {
     pub fn new(message: impl Into<String>) -> Self {
+        let msg = message.into();
         Self {
-            message: message.into(),
+            kind: TypeErrorKind::Generic { message: msg.clone() },
+            message: msg,
             span: None,
             notes: Vec::new(),
+            help: None,
+        }
+    }
+
+    /// Create a type mismatch error
+    pub fn mismatch(expected: impl Into<String>, actual: impl Into<String>) -> Self {
+        let exp = expected.into();
+        let act = actual.into();
+        let msg = format!("expected `{}`, found `{}`", exp, act);
+        Self {
+            kind: TypeErrorKind::Mismatch {
+                expected: exp,
+                actual: act,
+                context: None,
+            },
+            message: msg,
+            span: None,
+            notes: Vec::new(),
+            help: None,
+        }
+    }
+
+    /// Create an undefined type/trait error
+    pub fn undefined(name: impl Into<String>, kind: &'static str) -> Self {
+        let n = name.into();
+        let msg = format!("cannot find {} `{}` in this scope", kind, n);
+        Self {
+            kind: TypeErrorKind::Undefined { name: n, kind },
+            message: msg,
+            span: None,
+            notes: Vec::new(),
+            help: None,
+        }
+    }
+
+    /// Create a missing trait implementation error
+    pub fn missing_impl(type_name: impl Into<String>, trait_name: impl Into<String>) -> Self {
+        let t = type_name.into();
+        let tr = trait_name.into();
+        let msg = format!("the trait `{}` is not implemented for `{}`", tr, t);
+        Self {
+            kind: TypeErrorKind::MissingImpl {
+                type_name: t,
+                trait_name: tr,
+            },
+            message: msg,
+            span: None,
+            notes: Vec::new(),
+            help: None,
+        }
+    }
+
+    /// Create an invalid operation error
+    pub fn invalid_op(operation: impl Into<String>, type_name: impl Into<String>) -> Self {
+        let op = operation.into();
+        let ty = type_name.into();
+        let msg = format!("cannot {} type `{}`", op, ty);
+        Self {
+            kind: TypeErrorKind::InvalidOperation {
+                operation: op,
+                type_name: ty,
+            },
+            message: msg,
+            span: None,
+            notes: Vec::new(),
+            help: None,
         }
     }
 
@@ -243,16 +343,35 @@ impl TypeError {
         self.notes.push(note.into());
         self
     }
+
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
+
+    /// Get error code for documentation
+    pub fn code(&self) -> &'static str {
+        match &self.kind {
+            TypeErrorKind::Mismatch { .. } => "T001",
+            TypeErrorKind::Undefined { .. } => "T002",
+            TypeErrorKind::MissingImpl { .. } => "T003",
+            TypeErrorKind::InvalidOperation { .. } => "T004",
+            TypeErrorKind::Generic { .. } => "T000",
+        }
+    }
 }
 
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)?;
+        write!(f, "error[{}]: {}", self.code(), self.message)?;
         if let Some(span) = self.span {
-            write!(f, " at {}", span)?;
+            write!(f, "\n  --> at {}", span)?;
         }
         for note in &self.notes {
             write!(f, "\n  note: {}", note)?;
+        }
+        if let Some(help) = &self.help {
+            write!(f, "\n  help: {}", help)?;
         }
         Ok(())
     }
