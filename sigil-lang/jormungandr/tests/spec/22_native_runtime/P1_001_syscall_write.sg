@@ -1,33 +1,28 @@
 // P1_001_syscall_write.sg
-// Test: Write operations (interpreter-compatible)
+// Test: Write operations using Sys module
 // Phase A: Platform Syscalls
 //
-// This test verifies string/byte operations that would be used
-// ∀ write syscalls ∈ compiled mode.
+// This test verifies the Sys·write syscall abstraction.
 
 λ main() {
-    // Test 1: Simulate write with string bytes
+    // Test 1: Write to stdout using Sys·write
     ≔ msg = "Hello from syscall\n";
-    ≔ bytes = msg.as_bytes();
-    ≔ n = bytes.len();
+    ≔ n = Sys·write(STDOUT_FILENO(), msg, 19);
 
-    // Should have all 19 bytes including newline
+    // Should have written all 19 bytes including newline
     assert_eq!(n, 19);
-    println(msg);
     println(n);
 
-    // Test 2: Write to different target (simulated)
+    // Test 2: Write to stderr using Sys·write
     ≔ err_msg = "Error output\n";
-    ≔ err_bytes = err_msg.as_bytes();
-    ≔ n2 = err_bytes.len();
+    ≔ n2 = Sys·write(STDERR_FILENO(), err_msg, 13);
 
     assert_eq!(n2, 13);
-    println(err_msg);
     println(n2);
 
-    // Test 3: Empty buffer
-    ≔ empty = [];
-    ≔ n3 = empty.len();
+    // Test 3: Empty write
+    ≔ empty = "";
+    ≔ n3 = Sys·write(STDOUT_FILENO(), empty, 0);
 
     assert_eq!(n3, 0);
     println(n3);
