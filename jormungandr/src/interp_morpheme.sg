@@ -1,0 +1,162 @@
+//! Morpheme evaluation for the Sigil interpreter.
+
+invoke tome·ir·*;
+invoke tome·interp_value·{Value, EvidentialValue};
+invoke tome·interp_error·RuntimeError;
+invoke tome·interp_env·Environment;
+invoke tome·interp·Interpreter;
+
+⊢ Interpreter {
+    rite eval_morpheme(vary this, kind: !MorphemeKind, input: !EvidentialValue, body: ?Box<IrOperation>, env: !Environment) → !Result<EvidentialValue, RuntimeError> {
+        ≔ arr = ⌥ input.value {
+            Value·Array(a) => a,
+            _ => ⤺ Result·Err(RuntimeError·new("morpheme requires array input")),
+        };
+
+        ⌥ kind {
+            MorphemeKind·Transform => {
+                // τ{expr} - map over array
+                ≔ body = ⌥ body {
+                    ?b => *b,
+                    null | Option·None => ⤺ Result·Err(RuntimeError·new("transform requires body")),
+                };
+
+                ≔ results: ![Value] = Vec·new();
+                each item ∈ arr {
+                    ≔ vary item_env = Environment·child(env);
+                    item_env.define("it", EvidentialValue { value: item, evidence: input.evidence });
+                    ≔ result = this.eval_with_env(body.clone(), item_env)?;
+                    results.push(result.value);
+                }
+                Result·Ok(EvidentialValue { value: Value·Array(results), evidence: input.evidence })
+            },
+            MorphemeKind·Filter => {
+                // φ{predicate} - filter array
+                ≔ body = ⌥ body {
+                    ?b => *b,
+                    null | Option·None => ⤺ Result·Err(RuntimeError·new("filter requires body")),
+                };
+
+                ≔ results: ![Value] = Vec·new();
+                each item ∈ arr {
+                    ≔ vary item_env = Environment·child(env);
+                    item_env.define("it", EvidentialValue { value: item.clone(), evidence: input.evidence });
+                    ≔ result = this.eval_with_env(body.clone(), item_env)?;
+                    ⎇ result.value.is_truthy() {
+                        results.push(item);
+                    }
+                }
+                Result·Ok(EvidentialValue { value: Value·Array(results), evidence: input.evidence })
+            },
+            MorphemeKind·Reduce => {
+                // ρ{accumulator} - fold array
+                ≔ body = ⌥ body {
+                    ?b => *b,
+                    null | Option·None => ⤺ Result·Err(RuntimeError·new("reduce requires body")),
+                };
+
+                ⎇ arr.is_empty() {
+                    ⤺ Result·Err(RuntimeError·new("cannot reduce empty array"));
+                }
+
+                ≔ vary acc = arr[0].clone();
+                ≔ vary idx: usize = 1;
+                ⟳ idx < arr.len() {
+                    ≔ item = arr[idx].clone();
+                    ≔ vary fold_env = Environment·child(env);
+                    fold_env.define("acc", EvidentialValue { value: acc, evidence: input.evidence });
+                    fold_env.define("it", EvidentialValue { value: item, evidence: input.evidence });
+                    ≔ result = this.eval_with_env(body.clone(), fold_env)?;
+                    acc = result.value;
+                    idx = idx + 1;
+                }
+                Result·Ok(EvidentialValue { value: acc, evidence: input.evidence })
+            },
+            MorphemeKind·Sum => {
+                // Σ - sum numbers
+                ≔ vary sum = 0.0;
+                each item ∈ arr {
+                    ⌥ item {
+                        Value·Int(n) => sum += n as f64,
+                        Value·Float(f) => sum += f,
+                        _ => ⤺ Result·Err(RuntimeError·new("sum requires numbers")),
+                    }
+                }
+                Result·Ok(EvidentialValue { value: Value·Float(sum), evidence: input.evidence })
+            },
+            MorphemeKind·Product => {
+                // Π - product of numbers
+                ≔ vary prod = 1.0;
+                each item ∈ arr {
+                    ⌥ item {
+                        Value·Int(n) => prod *= n as f64,
+                        Value·Float(f) => prod *= f,
+                        _ => ⤺ Result·Err(RuntimeError·new("product requires numbers")),
+                    }
+                }
+                Result·Ok(EvidentialValue { value: Value·Float(prod), evidence: input.evidence })
+            },
+            MorphemeKind·Min => {
+                ⎇ arr.is_empty() {
+                    ⤺ Result·Err(RuntimeError·new("min on empty array"));
+                }
+                ≔ vary min_val = arr[0].clone();
+                ≔ vary idx: usize = 1;
+                ⟳ idx < arr.len() {
+                    ≔ item = arr[idx].clone();
+                    ⌥ (min_val.clone(), item) {
+                        (Value·Int(a), Value·Int(b)) ⎇ b < a => min_val = Value·Int(b),
+                        (Value·Float(a), Value·Float(b)) ⎇ b < a => min_val = Value·Float(b),
+                        _ => {},
+                    }
+                    idx = idx + 1;
+                }
+                Result·Ok(EvidentialValue { value: min_val, evidence: input.evidence })
+            },
+            MorphemeKind·Max => {
+                ⎇ arr.is_empty() {
+                    ⤺ Result·Err(RuntimeError·new("max on empty array"));
+                }
+                ≔ vary max_val = arr[0].clone();
+                ≔ vary idx: usize = 1;
+                ⟳ idx < arr.len() {
+                    ≔ item = arr[idx].clone();
+                    ⌥ (max_val.clone(), item) {
+                        (Value·Int(a), Value·Int(b)) ⎇ b > a => max_val = Value·Int(b),
+                        (Value·Float(a), Value·Float(b)) ⎇ b > a => max_val = Value·Float(b),
+                        _ => {},
+                    }
+                    idx = idx + 1;
+                }
+                Result·Ok(EvidentialValue { value: max_val, evidence: input.evidence })
+            },
+            MorphemeKind·First => {
+                ⌥ arr.first() {
+                    ?v => Result·Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence·Uncertain }),
+                    null | Option·None => Result·Ok(EvidentialValue { value: Value·Null, evidence: IrEvidence·Uncertain }),
+                }
+            },
+            MorphemeKind·Last => {
+                ⌥ arr.last() {
+                    ?v => Result·Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence·Uncertain }),
+                    null | Option·None => Result·Ok(EvidentialValue { value: Value·Null, evidence: IrEvidence·Uncertain }),
+                }
+            },
+            MorphemeKind·All => {
+                // ρ& - all elements truthy
+                ≔ vary all_truthy = yea;
+                each item ∈ arr { ⎇ !item.is_truthy() { all_truthy = nay; ⊲; } }
+                Result·Ok(EvidentialValue { value: Value·Bool(all_truthy), evidence: input.evidence })
+            },
+            MorphemeKind·Any => {
+                // ρ| - any element truthy
+                ≔ vary any_truthy = nay;
+                each item ∈ arr { ⎇ item.is_truthy() { any_truthy = yea; ⊲; } }
+                Result·Ok(EvidentialValue { value: Value·Bool(any_truthy), evidence: input.evidence })
+            },
+            _ => Result·Err(RuntimeError·new(format!("unsupported morpheme: {}", kind.symbol()))),
+        }
+    }
+
+    /// Check ⎇ a pattern matches a value
+}

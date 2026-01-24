@@ -1388,8 +1388,8 @@ impl CodeGen {
         self.line("#ifndef USETREE_GLOB");
         self.line("#define USETREE_GLOB 0xFFFF");
         self.line("#endif");
-        self.line("#ifndef USETREE_NESTED");
-        self.line("#define USETREE_NESTED 0xFFFF");
+        self.line("#ifndef USETREE_GROUP");
+        self.line("#define USETREE_GROUP 0xFFFF");
         self.line("#endif");
         self.line("");
 

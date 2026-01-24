@@ -1,0 +1,23 @@
+// Test: Circuit composition (sequence and parallel)
+// Spec: 12-QUANTUM.md § 6.2 Circuit Composition
+// Priority: P2 - Advanced Feature
+
+fn main() {
+    // Create two circuits
+    let c1 = Circuit·new();
+    let c1 = Circuit·add_gate(c1, "H", [0]);
+
+    let c2 = Circuit·new();
+    let c2 = Circuit·add_gate(c2, "X", [0]);
+
+    // Sequential composition: c1 then c2
+    let seq = Circuit·sequence(c1, c2);
+    println(Circuit·depth(seq));  // 2 gates deep
+
+    // Gate cancellation: H·H = I
+    let c3 = Circuit·new();
+    let c3 = Circuit·add_gate(c3, "H", [0]);
+    let c3 = Circuit·add_gate(c3, "H", [0]);
+    let optimized = Circuit·optimize(c3);
+    println(Circuit·depth(optimized));  // 0 after cancellation
+}

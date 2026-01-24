@@ -1,0 +1,20 @@
+// P0_012: ∞ (infinity) should parse as loop keyword
+// Priority: P0
+// Category: Native Symbols
+// Tests: ∞ for loop
+// Expected: Program compiles and runs, printing 0, 1, 2 then "done"
+
+λ main() {
+    ≔ mut i = 0;
+
+    // Use ∞ for infinite loop with break
+    ∞ {
+        println!("{}", i);
+        i = i + 1;
+        ⎇ i >= 3 {
+            break;
+        }
+    }
+
+    println!("done");
+}

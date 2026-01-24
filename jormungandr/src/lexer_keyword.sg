@@ -1,0 +1,374 @@
+//! Keyword and identifier lexing for the Sigil lexer.
+//!
+//! Handles keyword recognition and identifier parsing including Unicode.
+
+invoke tome·span·Span;
+invoke tome·token·Token;
+invoke tome·lexer·Lexer;
+
+⊢ Lexer {
+    rite lex_ident_or_keyword(vary this, first: !char) → !Token {
+        // Check for raw string literal (r#"..."# or r"...")
+        ⎇ first == 'r' ∧ (this.current() == '#' ∨ this.current() == '"') {
+            ⤺ this.lex_raw_string();
+        }
+
+        // Check for byte string literal (b"...")
+        ⎇ first == 'b' ∧ this.current() == '"' {
+            ⤺ this.lex_byte_string();
+        }
+
+        // Check for byte literal (b'...')
+        ⎇ first == 'b' ∧ this.current() == '\'' {
+            ⤺ this.lex_byte_literal();
+        }
+
+        ≔ vary name = String·new();
+        name.push(first);
+
+        // Continue with alphanumeric and underscore
+        // Use loop with helper to avoid method call issues
+        forever {
+            ⎇ !Lexer·is_alnum_or_underscore(this.current()) {
+                ⊲;
+            }
+            name.push(this.advance()!);
+        }
+
+        // Check for prime suffix: x', y', S' (mathematical notation)
+        // Only ⎇ followed by non-alphanumeric (to not confuse with char literals)
+        ⎇ this.current() == '\'' {
+            ≔ next = this.peek_ahead();
+            // Prime ⎇ followed by non-alphabetic (like comma, bracket, space)
+            ⎇ !Lexer·is_alnum_or_underscore(next) {
+                name.push(this.advance()!);
+            }
+        }
+
+        // Check for keywords
+        this.keyword_or_ident(name)
+    }
+
+    /// Lex a raw string literal (r"..." or r#"..."#).
+
+    rite lex_ident_rest(vary this) → !Token {
+        ≔ vary name = "_".to_string();
+
+        // Use loop with helper to avoid method call issues
+        forever {
+            ⎇ !Lexer·is_alnum_or_underscore(this.current()) {
+                ⊲;
+            }
+            name.push(this.advance()!);
+        }
+
+        this.keyword_or_ident(name)
+    }
+
+    /// Check ⎇ name is a keyword, otherwise ⤺ as identifier.
+    rite keyword_or_ident(this, name: !String) → !Token {
+        ⌥ name.as_str() {
+            // Definition keywords
+            "fn" => Token·Fn,
+            "async" => Token·Async,
+            "let" => Token·Let,
+            "mut" => Token·Mut,
+            "const" => Token·Const,
+            "type" => Token·Type,
+            "struct" => Token·Struct,
+            "enum" => Token·Enum,
+            "trait" => Token·Trait,
+            "impl" => Token·Impl,
+            "mod" => Token·Mod,
+            "scroll" => Token·Mod,      // Sigil-native: scroll = scroll (subdivision of a tome)
+            "use" => Token·Use,
+            "invoke" => Token·Use,      // Sigil-native: invoke = invoke (bring symbols into scope)
+            "pub" => Token·Pub,
+            "actor" => Token·Actor,
+            "saga" => Token·Saga,
+            // "scope" unreserved - not used by parser, field names need it
+            "rune" => Token·Rune,
+
+            // Control flow
+            "if" => Token·If,
+            "else" => Token·Else,
+            "match" => Token·Match,
+            "loop" => Token·Loop,
+            "while" => Token·While,
+            "for" => Token·For,
+            "in" => Token·In,
+            "break" => Token·Break,
+            "continue" => Token·Continue,
+            "return" => Token·Return,
+            "yield" => Token·Yield,
+            "await" => Token·Await,
+
+            // Other keywords
+            "this" => Token·SelfLower,
+            "This" => Token·SelfUpper,
+            "super" => Token·Super,
+            "crate" => Token·Crate,
+            "where" => Token·Where,
+            "as" => Token·As,
+            "dyn" => Token·Dyn,
+            "move" => Token·Move,
+            "ref" => Token·Ref,
+            "static" => Token·Static,
+            "unsafe" => Token·Unsafe,
+            "extern" => Token·Extern,
+            "asm" => Token·Asm,
+            "volatile" => Token·Volatile,
+            "naked" => Token·Naked,
+            "packed" => Token·Packed,
+            "simd" => Token·Simd,
+            "atomic" => Token·Atomic,
+            "derive" => Token·Derive,
+            "on" => Token·On,
+
+            // Literals
+            "yea" => Token·True,
+            "nay" => Token·False,
+            "null" => Token·Null,
+
+            // Parallel/concurrency keywords
+            "parallel" => Token·Parallel,
+            "gpu" => Token·Gpu,
+
+            // Protocol keywords
+            // Note: "stream" removed - invoke ≋ (ProtoStream) morpheme instead
+            "send" => Token·Send,
+            "recv" => Token·Recv,
+            // "connect" unreserved - method/field names invoke it
+            "close" => Token·Close,
+            "timeout" => Token·Timeout,
+            "retry" => Token·Retry,
+            "header" => Token·Header,
+            "body" => Token·Body,
+            "http" => Token·Http,
+            "https" => Token·Https,
+            "ws" => Token·Ws,
+            "wss" => Token·Wss,
+            "grpc" => Token·Grpc,
+            "kafka" => Token·Kafka,
+            "amqp" => Token·Amqp,
+            "graphql" => Token·GraphQL,
+
+            // Identifier
+            _ => Token·Ident(name),
+        }
+    }
+
+    /// Lex Unicode symbols (morphemes, operators, etc.).
+    rite lex_unicode(vary this, c: !char) → !Token {
+        ⌥ c {
+            // Morphemes (Greek letters)
+            'τ' | 'Τ' => Token·Tau,
+            'φ' | 'Φ' => Token·Phi,
+            'σ' | 'Σ' => Token·Sigma,
+            'ρ' | 'Ρ' => Token·Rho,
+            'λ' | 'Λ' => Token·Lambda,
+            'Π' => Token·Pi,
+            'δ' | 'Δ' => Token·Delta,
+            'ε' => Token·Epsilon,
+            'ω' | 'Ω' => Token·Omega,
+            'α' => Token·Alpha,
+            // Note: Using Combiner to avoid codegen bug with variant names containing 'Z'
+            'ζ' => Token·Combiner,
+            'μ' | 'Μ' => Token·Mu,
+            'χ' | 'Χ' => Token·Chi,
+            'ν' | 'Ν' => Token·Nu,
+            'ξ' | 'Ξ' => Token·Xi,
+
+            // Special symbols
+            '⌛' => Token·Hourglass,
+            '∥' => Token·Parallel,
+            '⊛' => Token·Gpu,
+
+            // Quantifiers
+            '∀' => Token·ForAll,
+            '∃' => Token·Exists,
+            '∈' => Token·ElementOf,
+            '∉' => Token·NotElementOf,
+
+            // Set operations
+            '∪' => Token·Union,
+            '∩' => Token·Intersection,
+            '∖' => Token·SetMinus,
+            '⊂' => Token·Subset,
+            '⊆' => Token·SubsetEq,
+            '⊃' => Token·Superset,
+            '⊇' => Token·SupersetEq,
+
+            // Logic operators
+            '∧' => Token·LogicAnd,
+            '∨' => Token·LogicOr,
+            '¬' => Token·LogicNot,
+            '⊻' => Token·LogicXor,
+            '⊤' => Token·Top,
+            '⊥' => Token·Bottom,
+
+            // Bitwise (Unicode)
+            '⋏' => Token·BitwiseAndSymbol,
+            '⋎' => Token·BitwiseOrSymbol,
+
+            // Type theory
+            '∷' => Token·TypeAnnotation,
+
+            // Analysis/Calculus
+            '∫' => Token·Integral,
+            '∂' => Token·Partial,
+            '√' => this.lex_sqrt_or_ident('√'),
+            '∛' => this.lex_sqrt_or_ident('∛'),
+            '∇' => Token·Nabla,
+
+            // APL-inspired
+            '⍋' => Token·GradeUp,
+            '⍒' => Token·GradeDown,
+            '⌽' => Token·Rotate,
+            '↻' => Token·CycleArrow,
+            '⌺' => Token·QuadDiamond,
+            '⊞' => Token·SquaredPlus,
+            '⍳' => Token·Iota,
+
+            // Category theory
+            '∘' => Token·Compose,
+            '⊗' => Token·Tensor,
+            '⊕' => Token·DirectSum,
+
+            // Data operations
+            '⋈' => Token·Bowtie,
+            '⋳' => Token·ElementSmallVerticalBar,
+            '⊔' => Token·SquareCup,
+            '⊓' => Token·SquareCap,
+
+            // Evidentiality
+            '‽' => Token·Interrobang,
+
+            // Affective markers
+            '⊖' => Token·AffectNegative,
+            '⊜' => Token·AffectNeutral,
+            '⸮' => Token·IronyMark,
+            '↑' => Token·IntensityUp,
+            '↓' => Token·IntensityDown,
+            '⇈' => Token·IntensityMax,
+            '♔' => Token·FormalRegister,
+            '♟' => Token·InformalRegister,
+            '☺' => Token·EmotionJoy,
+            '☹' => Token·EmotionSadness,
+            '⚡' => Token·EmotionAnger,
+            '❄' => Token·EmotionFear,
+            '✦' => Token·EmotionSurprise,
+            '♡' => Token·EmotionLove,
+            '◉' => Token·ConfidenceHigh,
+            '◎' => Token·ConfidenceMedium,
+            '○' => Token·ConfidenceLow,
+
+            // Special symbols
+            '∅' => Token·Empty,
+            '◯' => Token·Circle,
+            '∞' => Token·Infinity,
+
+            // Protocol operations
+            '⇒' => Token·ProtoSend,
+            '⇐' => Token·ProtoRecv,
+            '≋' => Token·ProtoStream,
+            '⊸' => Token·ProtoConnect,
+            '⏱' => Token·ProtoTimeout,
+
+            // Middle dot (incorporation)
+            '·' => this.lex_middle_dot(),
+
+            // Unknown - try as identifier
+            _ => {
+                // Use helper instead of method call for bootstrap compatibility
+                ⎇ Lexer·is_alpha(c) {
+                    this.lex_unicode_ident(c)
+                } ⎉ {
+                    // Skip unknown character
+                    Token·Ident(c.to_string())
+                }
+            }
+        }
+    }
+
+    /// Lex middle dot or aspect morpheme.
+    rite lex_middle_dot(vary this) → !Token {
+        // Check for aspect markers: ·ing, ·ed, ·able, ·ive
+        ≔ start = this.pos;
+
+        ⎇ this.match_str("ing") {
+            Token·AspectProgressive
+        } ⎉ ⎇ this.match_str("ed") {
+            Token·AspectPerfective
+        } ⎉ ⎇ this.match_str("able") {
+            Token·AspectPotential
+        } ⎉ ⎇ this.match_str("ive") {
+            Token·AspectResultative
+        } ⎉ {
+            Token·MiddleDot
+        }
+    }
+
+    /// Check ⎇ the next characters ⌥ a string.
+    rite match_str(vary this, s: !&str) → !bool {
+        ≔ start = this.pos;
+        each expected ∈ s.chars() {
+            // Use == with negated result to avoid != codegen bug
+            ⎇ this.current() == expected {
+                this.advance();
+            } ⎉ {
+                this.pos = start;
+                ⤺ nay;
+            }
+        }
+        yea
+    }
+
+    /// Lex a Unicode identifier.
+    rite lex_unicode_ident(vary this, first: !char) → !Token {
+        ≔ vary name = String·new();
+        name.push(first);
+
+        // Use loop with helper to avoid method call issues
+        forever {
+            ⎇ !Lexer·is_unicode_alnum_or_underscore(this.current()) {
+                ⊲;
+            }
+            name.push(this.advance()!);
+        }
+
+        Token·Ident(name)
+    }
+
+    /// Lex sqrt symbol (√ or ∛) - ⎇ followed by digits, combine into identifier (e.g., √2)
+    rite lex_sqrt_or_ident(vary this, root_char: !char) → !Token {
+        // Check ⎇ followed by a digit
+        ⌥ Lexer·is_digit(this.current()) {
+            yea => {
+                // Combine root symbol with following digits to form identifier like √2
+                ⤺ this.lex_sqrt_with_digits(root_char);
+            }
+            nay => {}
+        }
+        // Just the root symbol as operator
+        ⌥ root_char {
+            '√' => Token·Sqrt,
+            '∛' => Token·Cbrt,
+            _ => Token·Ident(root_char.to_string()),
+        }
+    }
+
+    /// Helper: lex √ followed by digits into identifier
+    rite lex_sqrt_with_digits(vary this, root_char: !char) → !Token {
+        ≔ vary name = String·new();
+        name.push(root_char);
+        // Use loop with helper to avoid method call issues (matching lex_unicode_ident pattern)
+        forever {
+            ⎇ !Lexer·is_digit(this.current()) {
+                ⊲;
+            }
+            name.push(this.advance()!);
+        }
+        Token·Ident(name)
+    }
+}

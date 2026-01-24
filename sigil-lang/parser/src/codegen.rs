@@ -1989,7 +1989,11 @@ pub mod jit {
                         | PipeOp::Chunks(_)
                         | PipeOp::Flatten
                         | PipeOp::Unique
-                        | PipeOp::Enumerate => {
+                        | PipeOp::Enumerate
+                        // Holographic operations (Spec 11)
+                        | PipeOp::Universal
+                        | PipeOp::Possibility { .. }
+                        | PipeOp::Necessity { .. } => {
                             // Fallback to interpreter for these complex operations
                             result
                         }
@@ -2124,6 +2128,7 @@ pub mod jit {
             BinOp::MatMul => return Err("MatMul not supported in JIT (use runtime)".into()),
             BinOp::Hadamard => return Err("Hadamard not supported in JIT (use runtime)".into()),
             BinOp::TensorProd => return Err("TensorProd not supported in JIT (use runtime)".into()),
+            BinOp::Convolve => return Err("Convolve not supported in JIT (use runtime)".into()),
         };
         Ok(result)
     }

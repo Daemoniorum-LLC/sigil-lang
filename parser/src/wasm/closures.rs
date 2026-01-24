@@ -941,6 +941,7 @@ impl<'a> CaptureAnalyzer<'a> {
                 params,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // Add parameters to bound set (is_move affects ownership, not capture analysis)
                 let prev_len = self.bound.len();
@@ -1053,6 +1054,8 @@ mod tests {
                 ty: None,
             }],
             body: Box::new(body),
+            is_move: false,
+            return_type: None,
         }
     }
 

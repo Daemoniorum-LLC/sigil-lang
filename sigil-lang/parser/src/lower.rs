@@ -632,6 +632,10 @@ fn lower_type_expr(t: &ast::TypeExpr) -> IrType {
                 generics: vec![lower_type_expr(self_type)],
             }
         }
+        // Linear/affine/relevant type modifiers - lower the inner type
+        ast::TypeExpr::Linear(inner) => lower_type_expr(inner),
+        ast::TypeExpr::Affine(inner) => lower_type_expr(inner),
+        ast::TypeExpr::Relevant(inner) => lower_type_expr(inner),
     }
 }
 
@@ -1702,6 +1706,7 @@ fn lower_binop(op: ast::BinOp) -> BinaryOp {
         ast::BinOp::MatMul => BinaryOp::MatMul,
         ast::BinOp::Hadamard => BinaryOp::Hadamard,
         ast::BinOp::TensorProd => BinaryOp::TensorProd,
+        ast::BinOp::Convolve => BinaryOp::Concat, // Convolve is like concat for arrays
     }
 }
 

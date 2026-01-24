@@ -161,12 +161,13 @@ fn main() -> ExitCode {
         "compile" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--tls] [-O0|-O1|-O2|-O3|-Os]");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--tls] [--cuda] [-O0|-O1|-O2|-O3|-Os]");
                 return ExitCode::from(1);
             }
             // Parse flags
             let use_lto = args.iter().any(|a| a == "--lto");
             let use_tls = args.iter().any(|a| a == "--tls");
+            let use_cuda = args.iter().any(|a| a == "--cuda");
             // Parse optimization level
             let opt_level = if args.iter().any(|a| a == "-O0" || a == "-Onone") {
                 OptLevel::None
@@ -196,7 +197,7 @@ fn main() -> ExitCode {
                     .trim_end_matches(".sg")
                     .to_string()
             };
-            compile_file(&args[2], &output, use_lto, use_tls, opt_level)
+            compile_file(&args[2], &output, use_lto, use_tls, use_cuda, opt_level)
         }
         #[cfg(not(feature = "llvm"))]
         "compile" => {
@@ -1047,7 +1048,7 @@ fn llvm_file(path: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, opt_level: OptLevel) -> ExitCode {
+fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda: bool, opt_level: OptLevel) -> ExitCode {
     use inkwell::context::Context;
     use std::path::Path;
     use std::process::Command;
@@ -1090,11 +1091,14 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, opt_leve
     }
 
     // Find the runtime (static library or C source)
-    let runtime_result = find_runtime(use_lto, use_tls);
+    let runtime_result = find_runtime(use_lto, use_tls, use_cuda);
     if runtime_result.is_none() {
         eprintln!("Error: Could not find sigil runtime");
         eprintln!("Expected locations:");
-        if use_tls {
+        if use_cuda {
+            eprintln!("  - ./runtime/libsigil_runtime_cuda.a (CUDA-enabled runtime)");
+            eprintln!("Run 'make cuda' in the runtime directory to build.");
+        } else if use_tls {
             eprintln!("  - ./runtime/libsigil_runtime_tls.a (TLS-enabled runtime)");
             eprintln!("Run 'make tls' in the runtime directory to build.");
         } else {
@@ -1108,7 +1112,9 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, opt_leve
     let is_static_lib = runtime.ends_with(".a");
 
     // Link with clang/gcc
-    let mode_str = if should_use_lto {
+    let mode_str = if use_cuda {
+        "CUDA enabled"
+    } else if should_use_lto {
         "with LTO"
     } else if is_static_lib {
         "pre-built runtime"
@@ -1135,6 +1141,22 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, opt_leve
         args.push("-lcrypto");
     }
 
+    // Add CUDA libraries when using --cuda
+    // NOTE: -L paths MUST come before -l flags for the linker to find libraries
+    if use_cuda {
+        // Search paths first
+        args.push("-L/usr/lib/wsl/lib");  // WSL2 CUDA driver (libcuda.so)
+        args.push("-L/usr/lib/x86_64-linux-gnu");  // System libs (libnvrtc.so)
+        args.push("-L/usr/local/cuda/lib64");  // CUDA toolkit (if installed)
+        // Then library names
+        args.push("-lcuda");
+        args.push("-lnvrtc");
+        // Set rpath for runtime library loading
+        args.push("-Wl,-rpath,/usr/lib/wsl/lib");
+        args.push("-Wl,-rpath,/usr/lib/x86_64-linux-gnu");
+        args.push("-Wl,-rpath,/usr/local/cuda/lib64");
+    }
+
     let link_result = Command::new(&linker).args(&args).status();
 
     // Clean up object file
@@ -1157,7 +1179,34 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, opt_leve
 }
 
 #[cfg(feature = "llvm")]
-fn find_runtime(use_lto: bool, use_tls: bool) -> Option<(String, bool)> {
+fn find_runtime(use_lto: bool, use_tls: bool, use_cuda: bool) -> Option<(String, bool)> {
+    // For CUDA, use the CUDA-enabled runtime
+    if use_cuda {
+        let cuda_lib_candidates = [
+            "runtime/libsigil_runtime_cuda.a",
+            "../runtime/libsigil_runtime_cuda.a",
+            "sigil/parser/runtime/libsigil_runtime_cuda.a",
+        ];
+
+        for candidate in cuda_lib_candidates {
+            if std::path::Path::new(candidate).exists() {
+                return Some((candidate.to_string(), false));
+            }
+        }
+
+        // Try relative to executable
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let lib_path = dir.join("runtime/libsigil_runtime_cuda.a");
+                if lib_path.exists() {
+                    return Some((lib_path.to_string_lossy().into_owned(), false));
+                }
+            }
+        }
+
+        return None;
+    }
+
     // For TLS, we must use the pre-compiled TLS runtime (can't compile from source easily)
     if use_tls {
         let tls_lib_candidates = [
@@ -2170,7 +2219,7 @@ impl SigilHighlighter {
             Token::Bang | Token::Question | Token::Tilde | Token::Interrobang => colors::EVIDENCE,
 
             // Special symbols
-            Token::Hourglass
+            Token::Async
             | Token::Circle
             | Token::Empty
             | Token::Infinity
@@ -3112,7 +3161,7 @@ fn build_project() -> ExitCode {
         let output_path = target_dir.join(name);
         let output_str = output_path.to_string_lossy();
         println!("Compiling to native executable...");
-        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, OptLevel::Standard);
+        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, false, OptLevel::Standard);
     }
 
     #[cfg(not(feature = "llvm"))]

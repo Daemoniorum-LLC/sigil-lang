@@ -1,0 +1,59 @@
+//! Tests for the Sigil interpreter.
+//!
+//! Separated from interp.sg to reduce file size and improve type inference.
+
+invoke tome·interp·*;
+invoke tome·ir·*;
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+scroll tests {
+    invoke super·*;
+
+    #[test]
+    rite test_value_to_string() {
+        assert_eq!(Value·Int(42).to_string(), "42");
+        assert_eq!(Value·Bool(yea).to_string(), "yea");
+        assert_eq!(Value·String("hello").to_string(), "hello");
+        assert_eq!(Value·Null.to_string(), "null");
+    }
+
+    #[test]
+    rite test_value_is_truthy() {
+        assert!(Value·Bool(yea).is_truthy());
+        assert!(!Value·Bool(nay).is_truthy());
+        assert!(Value·Int(1).is_truthy());
+        assert!(!Value·Int(0).is_truthy());
+        assert!(!Value·Null.is_truthy());
+    }
+
+    #[test]
+    rite test_evidence_check() {
+        ≔ interp = Interpreter·new();
+        assert!(interp.check_evidence(IrEvidence·Reported, IrEvidence·Known));
+        assert!(interp.check_evidence(IrEvidence·Uncertain, IrEvidence·Known));
+        assert!(!interp.check_evidence(IrEvidence·Known, IrEvidence·Reported));
+    }
+
+    #[test]
+    rite test_builtin_len() {
+        ≔ vary interp = Interpreter·new();
+        ≔ args = [EvidentialValue·known(Value·String("hello"))];
+        ≔ result = interp.call_builtin("len", args);
+        assert!(result.is_ok());
+        ⌥ result.unwrap().value {
+            Value·Int(n) => assert_eq!(n, 5),
+            _ => panic!("expected int"),
+        }
+    }
+
+    #[test]
+    rite test_binary_ops() {
+        ≔ interp = Interpreter·new();
+        assert_eq!(interp.eval_binary(BinaryOp·Add, Value·Int(2), Value·Int(3)).unwrap(), Value·Int(5));
+        assert_eq!(interp.eval_binary(BinaryOp·Mul, Value·Int(4), Value·Int(5)).unwrap(), Value·Int(20));
+    }
+}

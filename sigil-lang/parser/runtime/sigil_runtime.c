@@ -73,6 +73,15 @@ void sigil_print_str(const char* str) {
     printf("%s\n", str);
 }
 
+/* Print a string with newline (alias for println) */
+void sigil_println(const char* str) {
+    if (str == NULL) {
+        printf("\n");
+    } else {
+        printf("%s\n", str);
+    }
+}
+
 /* Get string length */
 int64_t sigil_strlen(const char* str) {
     if (str == NULL) return 0;
@@ -295,6 +304,330 @@ void sigil_string_print(void* str_ptr) {
 /* Free a String */
 void sigil_string_free(void* str_ptr) {
     if (str_ptr) free(str_ptr);
+}
+
+/* Convert integer to String */
+void* sigil_int_to_string(int64_t n) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%lld", (long long)n);
+    return sigil_string_from(buf);
+}
+
+/* Convert any value to String - handles both integers and existing String pointers
+ * This is used for format! arguments where we don't know the type at compile time.
+ *
+ * Heuristic to detect String pointers:
+ * - Must be in a realistic heap range (> 0x100000000, i.e., 4GB)
+ * - Must be 8-byte aligned
+ * - Must have reasonable header values (length <= capacity < 10MB)
+ */
+void* sigil_value_to_string(int64_t value) {
+    // Check if value looks like a heap pointer
+    // On 64-bit Linux, heap addresses are typically > 0x100000000 (4GB)
+    // This avoids treating small integers as pointers
+    if (value > 0x100000000LL && value < 0x7FFFFFFFFFFFLL) {
+        // Check 8-byte alignment (heap allocations are aligned)
+        if ((value & 0x7) == 0) {
+            // Try to interpret as String pointer
+            void* ptr = (void*)value;
+            int64_t* header = (int64_t*)ptr;
+            int64_t len = header[0];
+            int64_t cap = header[1];
+            // Sanity check: length <= capacity, both reasonable sizes
+            if (len >= 0 && len <= cap && cap > 0 && cap < 10000000) {
+                // Looks like a valid String, return as-is
+                return ptr;
+            }
+        }
+    }
+    // Not a String pointer, convert as integer
+    return sigil_int_to_string(value);
+}
+
+/* Format a string with placeholders {} replaced by arguments
+ * This is a simplified format - just handles {} (not {0}, {:x}, etc.)
+ * format: format string with {} placeholders
+ * args: array of string pointers (already converted to strings)
+ * argc: number of arguments
+ */
+void* sigil_format(const char* format, void** args, int64_t argc) {
+    if (!format) return sigil_string_new(16);
+
+    // Count total length needed
+    size_t total_len = 0;
+    const char* p = format;
+    int64_t arg_idx = 0;
+
+    while (*p) {
+        if (*p == '{' && *(p+1) == '}') {
+            // Placeholder - add arg length
+            if (arg_idx < argc && args[arg_idx]) {
+                total_len += (size_t)sigil_string_len(args[arg_idx]);
+            }
+            arg_idx++;
+            p += 2;
+        } else {
+            total_len++;
+            p++;
+        }
+    }
+
+    // Allocate result
+    void* result = sigil_string_new((int64_t)total_len + 16);
+    if (!result) return NULL;
+
+    int64_t* res_header = (int64_t*)result;
+    char* out = (char*)(res_header + 2);
+
+    // Build result
+    p = format;
+    arg_idx = 0;
+    size_t out_pos = 0;
+
+    while (*p) {
+        if (*p == '{' && *(p+1) == '}') {
+            // Copy argument string
+            if (arg_idx < argc && args[arg_idx]) {
+                const char* arg_str = sigil_string_as_ptr(args[arg_idx]);
+                int64_t arg_len = sigil_string_len(args[arg_idx]);
+                memcpy(out + out_pos, arg_str, (size_t)arg_len);
+                out_pos += (size_t)arg_len;
+            }
+            arg_idx++;
+            p += 2;
+        } else {
+            out[out_pos++] = *p++;
+        }
+    }
+    out[out_pos] = '\0';
+    res_header[0] = (int64_t)out_pos;
+
+    return result;
+}
+
+/* Print formatted string (format! + println) */
+void sigil_println_fmt(const char* format, void** args, int64_t argc) {
+    void* str = sigil_format(format, args, argc);
+    if (str) {
+        sigil_string_print(str);
+        sigil_string_free(str);
+    }
+}
+
+/* ============================================================================
+ * String Methods
+ * ============================================================================ */
+
+/* Check if string is empty */
+int64_t sigil_string_is_empty(void* str_ptr) {
+    if (!str_ptr) return 1;
+    return ((int64_t*)str_ptr)[0] == 0 ? 1 : 0;
+}
+
+/* Check if string contains substring */
+int64_t sigil_string_contains(void* str_ptr, void* needle_ptr) {
+    if (!str_ptr || !needle_ptr) return 0;
+    const char* haystack = sigil_string_as_ptr(str_ptr);
+    const char* needle = sigil_string_as_ptr(needle_ptr);
+    return strstr(haystack, needle) != NULL ? 1 : 0;
+}
+
+/* Check if string starts with prefix */
+int64_t sigil_string_starts_with(void* str_ptr, void* prefix_ptr) {
+    if (!str_ptr || !prefix_ptr) return 0;
+    const char* str = sigil_string_as_ptr(str_ptr);
+    const char* prefix = sigil_string_as_ptr(prefix_ptr);
+    int64_t prefix_len = sigil_string_len(prefix_ptr);
+    return strncmp(str, prefix, (size_t)prefix_len) == 0 ? 1 : 0;
+}
+
+/* Check if string ends with suffix */
+int64_t sigil_string_ends_with(void* str_ptr, void* suffix_ptr) {
+    if (!str_ptr || !suffix_ptr) return 0;
+    int64_t str_len = sigil_string_len(str_ptr);
+    int64_t suffix_len = sigil_string_len(suffix_ptr);
+    if (suffix_len > str_len) return 0;
+    const char* str = sigil_string_as_ptr(str_ptr);
+    const char* suffix = sigil_string_as_ptr(suffix_ptr);
+    return strcmp(str + (str_len - suffix_len), suffix) == 0 ? 1 : 0;
+}
+
+/* Trim whitespace from string */
+void* sigil_string_trim(void* str_ptr) {
+    if (!str_ptr) return sigil_string_new(16);
+    const char* str = sigil_string_as_ptr(str_ptr);
+    int64_t len = sigil_string_len(str_ptr);
+
+    // Find start (skip leading whitespace)
+    const char* start = str;
+    while (*start && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')) {
+        start++;
+    }
+
+    // Find end (skip trailing whitespace)
+    const char* end = str + len;
+    while (end > start && (*(end-1) == ' ' || *(end-1) == '\t' || *(end-1) == '\n' || *(end-1) == '\r')) {
+        end--;
+    }
+
+    int64_t new_len = end - start;
+    void* result = sigil_string_new(new_len + 1);
+    if (!result) return NULL;
+
+    int64_t* header = (int64_t*)result;
+    char* data = (char*)(header + 2);
+    memcpy(data, start, (size_t)new_len);
+    data[new_len] = '\0';
+    header[0] = new_len;
+
+    return result;
+}
+
+/* Convert string to lowercase */
+void* sigil_string_to_lowercase(void* str_ptr) {
+    if (!str_ptr) return sigil_string_new(16);
+    int64_t len = sigil_string_len(str_ptr);
+    const char* src = sigil_string_as_ptr(str_ptr);
+
+    void* result = sigil_string_new(len + 1);
+    if (!result) return NULL;
+
+    int64_t* header = (int64_t*)result;
+    char* data = (char*)(header + 2);
+    for (int64_t i = 0; i < len; i++) {
+        char c = src[i];
+        data[i] = (c >= 'A' && c <= 'Z') ? (c + 32) : c;
+    }
+    data[len] = '\0';
+    header[0] = len;
+
+    return result;
+}
+
+/* Convert string to uppercase */
+void* sigil_string_to_uppercase(void* str_ptr) {
+    if (!str_ptr) return sigil_string_new(16);
+    int64_t len = sigil_string_len(str_ptr);
+    const char* src = sigil_string_as_ptr(str_ptr);
+
+    void* result = sigil_string_new(len + 1);
+    if (!result) return NULL;
+
+    int64_t* header = (int64_t*)result;
+    char* data = (char*)(header + 2);
+    for (int64_t i = 0; i < len; i++) {
+        char c = src[i];
+        data[i] = (c >= 'a' && c <= 'z') ? (c - 32) : c;
+    }
+    data[len] = '\0';
+    header[0] = len;
+
+    return result;
+}
+
+/* Clone a string */
+void* sigil_string_clone(void* str_ptr) {
+    if (!str_ptr) return sigil_string_new(16);
+    const char* src = sigil_string_as_ptr(str_ptr);
+    return sigil_string_from(src);
+}
+
+/* Get character at index (returns -1 if out of bounds) */
+int64_t sigil_string_char_at(void* str_ptr, int64_t idx) {
+    if (!str_ptr) return -1;
+    int64_t len = sigil_string_len(str_ptr);
+    if (idx < 0 || idx >= len) return -1;
+    const char* data = sigil_string_as_ptr(str_ptr);
+    return (int64_t)(unsigned char)data[idx];
+}
+
+/* ============================================================================
+ * Vec Methods
+ * ============================================================================ */
+
+/* Check if vec is empty */
+int64_t sigil_vec_is_empty(void* vec_ptr) {
+    if (!vec_ptr) return 1;
+    return ((int64_t*)vec_ptr)[0] == 0 ? 1 : 0;
+}
+
+/* Pop last element from vec (returns value, -1 if empty) */
+int64_t sigil_vec_pop(void* vec_ptr) {
+    if (!vec_ptr) return -1;
+    int64_t* vec = (int64_t*)vec_ptr;
+    int64_t len = vec[0];
+    if (len == 0) return -1;
+    int64_t value = vec[2 + len - 1];
+    vec[0] = len - 1;
+    return value;
+}
+
+/* Get first element (returns -1 if empty) */
+int64_t sigil_vec_first(void* vec_ptr) {
+    if (!vec_ptr) return -1;
+    int64_t* vec = (int64_t*)vec_ptr;
+    int64_t len = vec[0];
+    if (len == 0) return -1;
+    return vec[2];
+}
+
+/* Get last element (returns -1 if empty) */
+int64_t sigil_vec_last(void* vec_ptr) {
+    if (!vec_ptr) return -1;
+    int64_t* vec = (int64_t*)vec_ptr;
+    int64_t len = vec[0];
+    if (len == 0) return -1;
+    return vec[2 + len - 1];
+}
+
+/* Check if vec contains value */
+int64_t sigil_vec_contains(void* vec_ptr, int64_t value) {
+    if (!vec_ptr) return 0;
+    int64_t* vec = (int64_t*)vec_ptr;
+    int64_t len = vec[0];
+    int64_t* data = vec + 2;
+    for (int64_t i = 0; i < len; i++) {
+        if (data[i] == value) return 1;
+    }
+    return 0;
+}
+
+/* Clone a vec */
+void* sigil_vec_clone(void* vec_ptr) {
+    if (!vec_ptr) return sigil_vec_new(16);
+    int64_t* src = (int64_t*)vec_ptr;
+    int64_t len = src[0];
+    int64_t cap = src[1];
+
+    size_t size = (2 + (size_t)cap) * sizeof(int64_t);
+    int64_t* result = (int64_t*)malloc(size);
+    if (!result) return NULL;
+
+    result[0] = len;
+    result[1] = cap;
+    memcpy(result + 2, src + 2, (size_t)len * sizeof(int64_t));
+
+    return result;
+}
+
+/* Reverse vec in place */
+void sigil_vec_reverse(void* vec_ptr) {
+    if (!vec_ptr) return;
+    int64_t* vec = (int64_t*)vec_ptr;
+    int64_t len = vec[0];
+    int64_t* data = vec + 2;
+
+    for (int64_t i = 0; i < len / 2; i++) {
+        int64_t tmp = data[i];
+        data[i] = data[len - 1 - i];
+        data[len - 1 - i] = tmp;
+    }
+}
+
+/* Clear vec (set length to 0) */
+void sigil_vec_clear(void* vec_ptr) {
+    if (!vec_ptr) return;
+    ((int64_t*)vec_ptr)[0] = 0;
 }
 
 /* ============================================================================

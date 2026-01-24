@@ -1,0 +1,1872 @@
+//! Operation code generation for Sigil.
+//!
+//! Contains emit_operation - the largest single method in the code generator.
+//! Separated from codegen.sg to reduce file size and improve type inference.
+
+invoke tome·ir·*;
+invoke tome·codegen·CodeGen;
+
+// ============================================================================
+// Operation Generation (Extension impl block)
+// ============================================================================
+
+⊢ CodeGen {
+    /// Emit code for an operation, returning the C expression
+    rite emit_operation(vary this, op: !IrOperation) → !String {
+        ⌥ op {
+            IrOperation·Literal { .. } => {
+                ≔ value = op.value;
+                ≔ evidence = op.evidence;
+                ≔ val = ⌥ value {
+                    LiteralValue·Int(n) => format!("sigil_int({}LL)", n),
+                    LiteralValue·Float(f) => format!("sigil_float({})", f),
+                    LiteralValue·Bool(b) => {
+                        ⎇ b {
+                            "sigil_bool(yea)".to_string()
+                        } ⎉ {
+                            "sigil_bool(nay)".to_string()
+                        }
+                    },
+                    LiteralValue·Char(c) => {
+                        // For ASCII chars, invoke character literal; for Unicode, invoke integer cast
+                        ≔ code = c as u32;
+                        ⎇ code < 128 {
+                            // Pre-compute escape to avoid method call in format!
+                            ≔ escaped = this.escape_char(c);
+                            format!("sigil_char('{}')", escaped)
+                        } ⎉ {
+                            // Use integer code point for non-ASCII
+                            format!("sigil_char((char){})", code)
+                        }
+                    },
+                    LiteralValue·String(s) => {
+                        // Pre-compute escape to avoid method call in format!
+                        ≔ escaped = this.escape_string(s);
+                        format!("sigil_string(\"{}\")", escaped)
+                    },
+                    LiteralValue·Null => "sigil_null()",
+                };
+                this.with_evidence(val, evidence)
+            },
+
+            IrOperation·Var { .. } => {
+                ≔ name = op.name;
+                // CG-015: Dereference this when it's a pointer (in vary this methods)
+                // CG-147: In closures, captured this is always a value, not a pointer
+                ⎇ name == "this" ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
+                    "(*this)".to_string()
+                } ⎉ ⎇ name == "_" {
+                    // CG-017: Wildcard pattern - emit placeholder value
+                    // This occurs when _ is used as an argument (e.g., Token·LineComment(_))
+                    "sigil_null()".to_string()
+                } ⎉ {
+                    this.mangle_name(name)
+                }
+            },
+
+            IrOperation·Let { .. } => {
+                ≔ pattern = op.pattern;
+                ≔ init = op.init;
+                ≔ init_code = this.emit_operation(*init);
+                this.emit_pattern_binding(pattern, init_code);
+                "sigil_unit()"
+            },
+
+            IrOperation·LetElse { .. } => {
+                ≔ pattern = op.pattern;
+                ≔ init = op.init;
+                ≔ else_branch = op.else_branch;
+                // ≔ pattern = init ⎉ { else_branch }
+                // CG-083: Fix scoping - declare pattern variables BEFORE the ⎇ block
+                // so they're accessible after the if/else completes
+                ≔ init_code = this.emit_operation(*init);
+                ≔ temp_name = this.fresh_temp();
+                this.line(format!("SigilValue {} = {};", temp_name, init_code));
+
+                // Declare pattern variables before the ⎇ block
+                this.emit_pattern_declarations(pattern.clone());
+
+                // Check ⎇ pattern matches and assign, else execute else_branch
+                ≔ cond = this.emit_pattern_condition(pattern.clone(), temp_name.clone());
+                this.line_open(format!("⎇ ({})", cond));
+                this.indent_push();
+                this.emit_pattern_assignments(pattern, temp_name);
+                this.indent_pop();
+                this.line("} ⎉ {");
+                this.indent_push();
+                this.emit_operation(*else_branch);
+                this.indent_pop();
+                this.line("}");
+                "sigil_unit()"
+            },
+
+            IrOperation·Binary { .. } => {
+                ≔ operator = op.operator;
+                ≔ left = op.left;
+                ≔ right = op.right;
+                ≔ evidence = op.evidence;
+
+                // CG-125: Handle short-circuit operators BEFORE emitting operands
+                // For ∧ and ∨, we must not evaluate the right operand unconditionally
+                ⌥ operator {
+                    BinaryOp·And => {
+                        // Short-circuit ∧: only evaluate right ⎇ left is yea
+                        ≔ l_code = this.emit_operation(*left);
+                        ≔ result_temp = this.fresh_temp();
+                        ≔ r_temp = this.fresh_temp();
+                        // Emit: result = left; ⎇ (truthy(result)) { result = right; }
+                        this.line(format!("SigilValue {} = {};", result_temp, l_code));
+                        this.line(format!("SigilValue {} = sigil_bool(nay);", r_temp));
+                        this.line(format!("⎇ (sigil_truthy({})) {{", result_temp));
+                        this.indent_push();
+                        ≔ r_code = this.emit_operation(*right);
+                        this.line(format!("{} = {};", r_temp, r_code));
+                        this.indent_pop();
+                        this.line("}");
+                        ≔ expr = format!("sigil_bool(sigil_truthy({}) ∧ sigil_truthy({}))", result_temp, r_temp);
+                        ⤺ this.with_evidence(expr, evidence);
+                    },
+                    BinaryOp·Or => {
+                        // Short-circuit ∨: only evaluate right ⎇ left is nay
+                        ≔ l_code = this.emit_operation(*left);
+                        ≔ result_temp = this.fresh_temp();
+                        ≔ r_temp = this.fresh_temp();
+                        // Emit: result = left; ⎇ (!truthy(result)) { r_temp = right; }
+                        this.line(format!("SigilValue {} = {};", result_temp, l_code));
+                        this.line(format!("SigilValue {} = sigil_bool(yea);", r_temp));
+                        this.line(format!("⎇ (!sigil_truthy({})) {{", result_temp));
+                        this.indent_push();
+                        ≔ r_code = this.emit_operation(*right);
+                        this.line(format!("{} = {};", r_temp, r_code));
+                        this.indent_pop();
+                        this.line("}");
+                        ≔ expr = format!("sigil_bool(sigil_truthy({}) ∨ sigil_truthy({}))", result_temp, r_temp);
+                        ⤺ this.with_evidence(expr, evidence);
+                    },
+                    _ => {},
+                };
+
+                // For non-short-circuit operators, evaluate both operands
+                ≔ l_raw = this.emit_operation(*left);
+                ≔ r_raw = this.emit_operation(*right);
+
+                // CG-130: Store complex operands in temps to prevent exponential code expansion
+                // The emit_binary_* functions invoke each operand ~14 times, causing huge output
+                // when operands are already complex expressions. Use temps for non-trivial operands.
+                // CG-140: For comparison operators that access .tag/.v.i/.v.f, we MUST invoke temps
+                // for any function call result, regardless of length.
+                ≔ is_comparison = ⌥ operator {
+                    BinaryOp·Lt | BinaryOp·Le | BinaryOp·Gt | BinaryOp·Ge => yea,
+                    _ => nay,
+                };
+                ≔ l = ⎇ l_raw.contains("(") ∧ (l_raw.len() > 30 ∨ is_comparison) {
+                    ≔ temp = this.fresh_temp();
+                    this.line(format!("SigilValue {} = {};", temp, l_raw));
+                    temp
+                } ⎉ {
+                    l_raw
+                };
+                ≔ r = ⎇ r_raw.contains("(") ∧ (r_raw.len() > 30 ∨ is_comparison) {
+                    ≔ temp = this.fresh_temp();
+                    this.line(format!("SigilValue {} = {};", temp, r_raw));
+                    temp
+                } ⎉ {
+                    r_raw
+                };
+
+                ≔ expr = ⌥ operator {
+                    BinaryOp·Add => this.emit_binary_add(l, r),
+                    BinaryOp·Sub => this.emit_binary_sub(l, r),
+                    BinaryOp·Mul => this.emit_binary_mul(l, r),
+                    BinaryOp·Div => this.emit_binary_div(l, r),
+                    BinaryOp·Rem => this.emit_binary_rem(l, r),
+                    BinaryOp·Pow => format!("sigil_pow({}, {})", l, r),
+                    BinaryOp·Eq => format!("sigil_bool(sigil_eq({}, {}))", l, r),
+                    BinaryOp·Ne => this.emit_binary_ne(l, r),
+                    BinaryOp·Lt => this.emit_binary_lt(l, r),
+                    BinaryOp·Le => this.emit_binary_le(l, r),
+                    BinaryOp·Gt => this.emit_binary_gt(l, r),
+                    BinaryOp·Ge => this.emit_binary_ge(l, r),
+                    // CG-125: And/Or handled above with short-circuit logic
+                    BinaryOp·And => "sigil_bool(nay)".to_string(), // unreachable
+                    BinaryOp·Or => "sigil_bool(nay)".to_string(),  // unreachable
+                    BinaryOp·BitAnd => format!("sigil_int({}.v.i & {}.v.i)", l, r),
+                    BinaryOp·BitOr => format!("sigil_int({}.v.i | {}.v.i)", l, r),
+                    BinaryOp·BitXor => format!("sigil_int({}.v.i ^ {}.v.i)", l, r),
+                    BinaryOp·Shl => format!("sigil_int({}.v.i << {}.v.i)", l, r),
+                    BinaryOp·Shr => format!("sigil_int({}.v.i >> {}.v.i)", l, r),
+                    BinaryOp·Concat => format!("sigil_concat({}, {})", l, r),
+                };
+                this.with_evidence(expr, evidence)
+            },
+
+            IrOperation·Unary { .. } => {
+                ≔ operator = op.operator;
+                ≔ operand = op.operand;
+                ≔ evidence = op.evidence;
+                ≔ op_code = this.emit_operation(*operand);
+
+                ≔ expr = ⌥ operator {
+                    UnaryOp·Neg => format!("({}.tag == TAG_INT ? sigil_int(-{}.v.i) : sigil_float(-{}.v.f))", op_code, op_code, op_code),
+                    UnaryOp·Not => format!("sigil_bool(!sigil_truthy({}))", op_code),
+                    UnaryOp·Ref | UnaryOp·RefMut => {
+                        // Need to store in a temp ⎇ it's a complex expression
+                        // to avoid "lvalue required" errors with &function_call()
+                        ⎇ op_code.contains("(") ∨ op_code.contains("{") {
+                            ≔ temp = this.fresh_temp();
+                            this.line(format!("SigilValue {} = {};", temp, op_code));
+                            CodeGen·compound_lit("SigilValue", format!(".tag = TAG_REF, .v.ptr = &{}", temp))
+                        } ⎉ {
+                            CodeGen·compound_lit("SigilValue", format!(".tag = TAG_REF, .v.ptr = &{}", op_code))
+                        }
+                    },
+                    UnaryOp·Deref => {
+                        // CG-FIX: Safe dereference - check TAG_REF before dereferencing pointer
+                        ≔ temp = this.fresh_temp();
+                        this.line(format!("SigilValue {} = {};", temp, op_code));
+                        this.line(format!("⎇ ({}.tag == TAG_REF ∧ {}.v.ptr) {} = *((SigilValue*){}.v.ptr);", temp, temp, temp, temp));
+                        temp
+                    },
+                };
+                this.with_evidence(expr, evidence)
+            },
+
+            IrOperation·Call { .. } => {
+                ≔ function = op.function;
+                ≔ args = op.args;
+                ≔ evidence = op.evidence;
+
+                // CG-015: Check ⎇ this is a qualified method call (Type·method)
+                // If so, the first arg is the receiver and we need to handle vary this methods
+                ≔ is_qualified_call = function.contains("·");
+
+                // Extract type and method ⎇ qualified
+                ≔ (call_type, call_method) = ⎇ is_qualified_call {
+                    ≔ parts: ![&str] = function.split("·").collect();
+                    ⎇ parts.len() >= 2 {
+                        (parts[0].to_string(), parts[1].to_string())
+                    } ⎉ {
+                        ("".to_string(), "".to_string())
+                    }
+                } ⎉ {
+                    ("".to_string(), "".to_string())
+                };
+
+                // CG-015: Check ⎇ target method expects vary this
+                ≔ target_expects_mut_self = ⎇ is_qualified_call ∧ call_type != "" {
+                    this.is_known_mut_self_for_type(call_type.as_str(), call_method.as_str())
+                } ⎉ {
+                    nay
+                };
+
+                // CG-015: Check ⎇ first arg is this variable
+                // CG-147: Also check EvidenceCoerce wrapping Var "this"
+                ≔ first_arg_is_self = ⎇ args.len() > 0 {
+                    ⌥ args[0] {
+                        IrOperation·Var { .. } => args[0].name == "this",
+                        IrOperation·EvidenceCoerce { .. } => {
+                            ⌥ *args[0].expr {
+                                IrOperation·Var { .. } => args[0].expr.name == "this",
+                                _ => nay,
+                            }
+                        },
+                        _ => nay,
+                    }
+                } ⎉ {
+                    nay
+                };
+
+                // Build arg_codes with for-loop to avoid closure capture
+                // CG-015: For vary this qualified calls, handle first arg specially
+                // CG-147: In closures, captured this is a value not a pointer
+                ≔ vary arg_codes: ![String] = Vec·new();
+                each (i, a) ∈ args.iter().enumerate() {
+                    ⎇ i == 0 ∧ is_qualified_call ∧ target_expects_mut_self {
+                        // CG-015: Pass receiver as pointer for vary this methods
+                        ⎇ first_arg_is_self ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
+                            // this is already SigilValue*, pass it directly
+                            arg_codes.push("this".to_string());
+                        } ⎉ {
+                            // Local variable - emit it and take its address
+                            ≔ receiver_code = this.emit_operation(a.clone());
+                            // Store in temp to get addressable lvalue
+                            ≔ temp = this.fresh_temp();
+                            this.line(format!("SigilValue {} = {};", temp, receiver_code));
+                            arg_codes.push(format!("&{}", temp));
+                        }
+                    } ⎉ {
+                        arg_codes.push(this.emit_operation(a.clone()));
+                    }
+                }
+                ≔ args_str = arg_codes.join(", ");
+
+                // Check ⎇ this looks like a closure parameter call
+                // Heuristic: single lowercase letter or common closure names
+                ≔ is_closure_param = this.is_likely_closure_param(function.as_str());
+
+                ≔ call = ⎇ is_closure_param {
+                    // Closure call: invoke the function pointer stored in the SigilValue
+                    ≔ fn_var = this.mangle_name(function.clone());
+                    ≔ num_args = arg_codes.len();
+                    ⎇ num_args == 0 {
+                        format!("((SigilValue (*)(void)){}.v.ptr)()", fn_var)
+                    } ⎉ ⎇ num_args == 1 {
+                        format!("((SigilValue (*)(SigilValue)){}.v.ptr)({})", fn_var, args_str)
+                    } ⎉ ⎇ num_args == 2 {
+                        format!("((SigilValue (*)(SigilValue, SigilValue)){}.v.ptr)({})", fn_var, args_str)
+                    } ⎉ {
+                        // For more args, build signature manually
+                        ≔ vary sig_parts: ![String] = Vec·new();
+                        each _ ∈ arg_codes {
+                            sig_parts.push("SigilValue".to_string());
+                        }
+                        ≔ sig = sig_parts.join(", ");
+                        format!("((SigilValue (*)({})){}.v.ptr)({})", sig, fn_var, args_str)
+                    }
+                } ⎉ {
+                    // Regular function call with sigil_ prefix
+                    ≔ fn_name = this.mangle_name(function.clone());
+
+                    // Special handling for assert - add default message ⎇ only 1 arg
+                    ⎇ function == "assert" ∧ arg_codes.len() == 1 {
+                        format!("sigil_assert({}, sigil_string(\"assertion failed\"))", args_str)
+                    } ⎉ ⎇ function == "is_variant" ∧ arg_codes.len() == 2 {
+                        // is_variant(v, "Name") → sigil_is_struct_variant(v, "Name")
+                        // Extract the string literal from the second arg (strip sigil_string wrapper)
+                        ≔ val_code = arg_codes[0].clone();
+                        ≔ name_arg = arg_codes[1].clone();
+                        // name_arg is typically sigil_string("...") - extract the literal
+                        // Use simple string slicing instead of strip_prefix/strip_suffix
+                        ≔ prefix = "sigil_string(\"";
+                        ≔ suffix = "\")";
+                        ⎇ name_arg.starts_with(prefix) ∧ name_arg.ends_with(suffix) {
+                            // Extract the string between prefix and suffix
+                            ≔ prefix_len = prefix.len();
+                            ≔ suffix_len = suffix.len();
+                            ≔ total_len = name_arg.len();
+                            // name = name_arg[prefix_len .. total_len - suffix_len]
+                            ≔ name = name_arg[prefix_len..(total_len - suffix_len)].to_string();
+                            format!("sigil_bool(sigil_is_struct_variant({}, \"{}\"))", val_code, name)
+                        } ⎉ {
+                            // Fallback: invoke the arg as-is (might be a variable)
+                            format!("sigil_bool(sigil_is_struct_variant({}, {}.v.s))", val_code, name_arg)
+                        }
+                    } ⎉ {
+                        // CG-050: Don't double-prefix FFI functions that already start with sigil_
+                        ⎇ function.starts_with("sigil_") {
+                            format!("{}({})", fn_name, args_str)
+                        } ⎉ {
+                            format!("sigil_{}({})", fn_name, args_str)
+                        }
+                    }
+                };
+
+                // CG-202: Writeback for qualified mutating method calls (Vec·push, String·push, etc.)
+                // When lowerer converts items.push(x) to Vec·push(items, x), first arg is the receiver
+                // We need to write back the result to the receiver variable
+                ≔ is_qualified_mutating = is_qualified_call ∧
+                    (call_method == "push" ∨ call_method == "push_str" ∨ call_method == "pop" ∨
+                     call_method == "clear" ∨ call_method == "extend" ∨ call_method == "insert" ∨
+                     call_method == "remove" ∨ call_method == "reserve");
+
+                ⎇ is_qualified_mutating ∧ args.len() > 0 {
+                    // Check ⎇ first arg is a variable (not this) that needs writeback
+                    ≔ var_name_for_writeback: !String = ⌥ args[0] {
+                        IrOperation·Var { name: vname, .. } => {
+                            ⎇ vname != "this" { vname.clone() } ⎉ { "".to_string() }
+                        },
+                        IrOperation·EvidenceCoerce { expr: inner_box, .. } => {
+                            ⌥ *inner_box {
+                                IrOperation·Var { name: vname, .. } => {
+                                    ⎇ vname != "this" { vname.clone() } ⎉ { "".to_string() }
+                                },
+                                _ => "".to_string(),
+                            }
+                        },
+                        _ => "".to_string(),
+                    };
+
+                    ⎇ var_name_for_writeback.len() > 0 {
+                        // Emit writeback: var = call;
+                        ≔ mangled_var = this.mangle_name(var_name_for_writeback);
+                        this.line(format!("{} = {};", mangled_var, call));
+                        ⤺ this.with_evidence(mangled_var, evidence);
+                    }
+                }
+
+                this.with_evidence(call, evidence)
+            },
+
+            IrOperation·If { .. } => {
+                ≔ condition = op.condition;
+                ≔ then_branch = op.then_branch;
+                ≔ else_branch = op.else_branch;
+                ≔ result_var = this.fresh_temp();
+
+                // CG-301: Initialize ⎇ result variable to prevent use-of-uninitialized
+                // when break/continue/⤺ makes the assignment unreachable
+                this.line(format!("SigilValue {} = sigil_unit();", result_var));
+
+                // Check ⎇ condition is a LetMatch (for ⎇ ≔ patterns)
+                ⌥ *condition {
+                    IrOperation·LetMatch { .. } => {
+                        ≔ pattern = condition.pattern;
+                        ≔ value = condition.value;
+                        // Emit the value being matched
+                        ≔ value_code = this.emit_operation(*value);
+                        ≔ value_var = this.fresh_temp();
+                        this.line(format!("SigilValue {} = {};", value_var, value_code));
+                        // Emit the pattern condition
+                        ≔ cond = this.emit_pattern_condition(pattern.clone(), value_var.clone());
+                        this.line_open(format!("⎇ ({})", cond));
+                        this.indent_push();
+                        // Emit pattern bindings for the then-branch
+                        this.emit_pattern_binding(pattern, value_var);
+                    },
+                    _ => {
+                        ≔ cond = this.emit_operation(*condition);
+                        this.line_open(format!("⎇ (sigil_truthy({}))", cond));
+                        this.indent_push();
+                    },
+                }
+
+                ≔ then_result = this.emit_operation(*then_branch);
+                this.line(format!("{} = {};", result_var, then_result));
+
+                this.indent_pop();
+
+                ⌥ else_branch {
+                    ?else_op => {
+                        this.line("} ⎉ {");
+                        this.indent_push();
+
+                        ≔ else_result = this.emit_operation(*else_op);
+                        this.line(format!("{} = {};", result_var, else_result));
+
+                        this.indent_pop();
+                        this.line("}");
+                    },
+                    null | Option·None => {
+                        this.line("} ⎉ {");
+                        this.indent_push();
+                        this.line(format!("{} = sigil_unit();", result_var));
+                        this.indent_pop();
+                        this.line("}");
+                    },
+                }
+
+                result_var
+            },
+
+            IrOperation·Block { .. } => {
+                ≔ statements = op.statements;
+                ≔ vary last_result = "sigil_unit()".to_string();
+                ≔ n = statements.len();
+                each (i, stmt) ∈ statements.iter().enumerate() {
+                    ≔ result = this.emit_operation(stmt);
+                    ⎇ i < n - 1 {
+                        // Not the last statement - emit as side effect ⎇ not a ≔ binding
+                        ⌥ stmt {
+                            IrOperation·Let { .. } => {},  // Already emitted by emit_operation
+                            IrOperation·LetElse { .. } => {},  // Already emitted by emit_operation
+                            IrOperation·Return { .. } => {},  // Already emitted
+                            IrOperation·Block { .. } => {},  // Already emitted
+                            _ => {
+                                // Emit expression statements as side effects
+                                ⎇ !result.is_empty() ∧ result != "sigil_unit()" {
+                                    this.line(format!("{};", result));
+                                }
+                            },
+                        }
+                    }
+                    last_result = result;
+                }
+                last_result
+            },
+
+            IrOperation·Return { .. } => {
+                ≔ value = op.value;
+                ⌥ value {
+                    ?v => {
+                        ≔ result = this.emit_operation(*v);
+                        this.line(format!("⤺ {};", result));
+                    },
+                    null | Option·None => {
+                        this.line("⤺ sigil_unit();");
+                    },
+                }
+                "sigil_unit()" // Unreachable
+            },
+
+            IrOperation·Array { .. } => {
+                ≔ elements = op.elements;
+                ≔ evidence = op.evidence;
+                ≔ len = elements.len();
+                ≔ arr_var = this.fresh_temp();
+
+                this.line(format!("SigilValue {} = sigil_array({});", arr_var, len));
+
+                ≔ vary i: usize = 0;
+                ⟳ i < elements.len() {
+                    ≔ elem_code = this.emit_operation(elements[i]);
+                    this.line(format!("{}.v.arr.data[{}] = {};", arr_var, i, elem_code));
+                    i = i + 1;
+                }
+
+                this.with_evidence(arr_var, evidence)
+            },
+
+            IrOperation·Repeat { .. } => {
+                ≔ value = op.value;
+                ≔ count = op.count;
+                ≔ evidence = op.evidence;
+
+                // Get the count value (assumed to be a compile-time constant integer)
+                ≔ count_code = this.emit_operation(*count);
+                ≔ arr_var = this.fresh_temp();
+                ≔ val_var = this.fresh_temp();
+                ≔ idx_var = this.fresh_temp();
+                ≔ count_sv = this.fresh_temp();
+
+                // Emit the value once
+                ≔ value_code = this.emit_operation(*value);
+                this.line(format!("SigilValue {} = {};", val_var, value_code));
+
+                // Store count as SigilValue and extract int
+                this.line(format!("SigilValue {} = {};", count_sv, count_code));
+                this.line(format!("int64_t {} = {}.v.i;", idx_var, count_sv));
+                this.line(format!("SigilValue {} = sigil_array({});", arr_var, idx_var));
+
+                // Fill with repeated value
+                this.line(format!("for (int64_t _i = 0; _i < {}; _i++) {}.v.arr.data[_i] = {};", idx_var, arr_var, val_var));
+
+                this.with_evidence(arr_var, evidence)
+            },
+
+            IrOperation·Index { .. } => {
+                ≔ expr = op.expr;
+                ≔ index = op.index;
+                ≔ evidence = op.evidence;
+                ≔ arr = this.emit_operation(*expr);
+                ≔ idx = this.emit_operation(*index);
+
+                ≔ result = format!("{}.v.arr.data[{}.v.i]", arr, idx);
+                this.with_evidence(result, evidence)
+            },
+
+            IrOperation·Loop { .. } => {
+                ≔ variant = op.variant;
+                ≔ condition = op.condition;
+                ≔ iterator = op.iterator;
+                ≔ body = op.body;
+                ≔ result_var = this.fresh_temp();
+                this.line(format!("SigilValue {} = sigil_unit();", result_var));
+
+                ⌥ variant {
+                    LoopVariant·Infinite => {
+                        this.line("⟳ (1) {");
+                        this.indent_push();
+                        this.line("tick(__func__);");  // Prevent infinite loops
+                        ≔ body_result = this.emit_operation(*body);
+                        this.line(format!("{} = {};", result_var, body_result));
+                        this.indent_pop();
+                        this.line("}");
+                    },
+                    LoopVariant·While => {
+                        // CG-013 FIX: Evaluate condition at START of each iteration
+                        // This ensures continue doesn't skip condition re-evaluation
+                        this.line("⟳ (1) {");
+                        this.indent_push();
+                        this.line("tick(__func__);");  // Prevent infinite loops
+                        ≔ cond = ⌥ condition {
+                            ?c => this.emit_operation(*c),
+                            null | Option·None => "sigil_bool(yea)".to_string(),
+                        };
+                        ≔ cond_var = this.fresh_temp();
+                        this.line(format!("SigilValue {} = {};", cond_var, cond));
+                        this.line(format!("⎇ (!sigil_truthy({})) ⊲;", cond_var));
+                        ≔ body_result = this.emit_operation(*body);
+                        this.line(format!("{} = {};", result_var, body_result));
+                        this.indent_pop();
+                        this.line("}");
+                    },
+                    LoopVariant·For => {
+                        ⎇ ≔ ?iter = iterator {
+                            // Check ⎇ iterable is a range
+                            ⌥ *iter.iterable {
+                                IrOperation·Range { .. } => {
+                                    ≔ range_op = *iter.iterable;
+                                    ≔ start = range_op.start;
+                                    ≔ end = range_op.end;
+                                    ≔ inclusive = range_op.inclusive;
+                                    ≔ start_code = ⌥ start {
+                                        ?s => this.emit_operation(*s),
+                                        null | Option·None => "sigil_int(0LL)".to_string(),
+                                    };
+                                    ≔ end_code = ⌥ end {
+                                        ?e => this.emit_operation(*e),
+                                        null | Option·None => "sigil_int(0LL)".to_string(),
+                                    };
+                                    ≔ i_var = this.fresh_temp();
+                                    ≔ compare_op = ⎇ inclusive { "<=" } ⎉ { "<" };
+                                    this.line_open(format!("for (int64_t {} = {}.v.i; {} {} {}.v.i; {}++)", i_var, start_code, i_var, compare_op, end_code, i_var));
+                                    this.indent_push();
+                                    this.line("tick(__func__);");  // Prevent infinite loops
+                                    // Bind pattern to current loop index as SigilValue
+                                    this.emit_pattern_binding(iter.pattern, format!("sigil_int({})", i_var));
+                                    ≔ body_result = this.emit_operation(*body);
+                                    this.line(format!("{} = {};", result_var, body_result));
+                                    this.indent_pop();
+                                    this.line("}");
+                                },
+                                _ => {
+                                    // Array iteration
+                                    // CG-012 FIX: Cache iterable to avoid re-evaluation each iteration
+                                    ≔ iterable_code = this.emit_operation(*iter.iterable);
+                                    ≔ iter_cache = this.fresh_temp();
+                                    this.line(format!("SigilValue {} = {};", iter_cache, iterable_code));
+                                    ≔ i_var = this.fresh_temp();
+                                    this.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, iter_cache, i_var));
+                                    this.indent_push();
+                                    this.line("tick(__func__);");  // Prevent infinite loops
+                                    // Bind pattern to current element
+                                    this.emit_pattern_binding(iter.pattern, format!("{}.v.arr.data[{}]", iter_cache, i_var));
+                                    ≔ body_result = this.emit_operation(*body);
+                                    this.line(format!("{} = {};", result_var, body_result));
+                                    this.indent_pop();
+                                    this.line("}");
+                                },
+                            }
+                        }
+                    },
+                }
+
+                result_var
+            },
+
+            IrOperation·Break { .. } => {
+                ≔ value = op.value;
+                ⌥ value {
+                    ?v => {
+                        ≔ result = this.emit_operation(*v);
+                        // Store in a break result variable (would need more context)
+                    },
+                    null | Option·None => {},
+                }
+                this.line("⊲;");
+                "sigil_unit()"
+            },
+
+            IrOperation·Continue { .. } => {
+                this.line("⊳;");
+                "sigil_unit()"
+            },
+
+            IrOperation·Closure { .. } => {
+                ≔ params = op.params;
+                ≔ body = op.body;
+                ≔ captures = op.captures;
+                // CG-143: Generate closure name that includes current function to avoid conflicts
+                // when multiple modules are combined
+                ≔ fn_prefix = ⌥ this.current_function {
+                    ?fn_name => fn_name.clone(),
+                    null | Option·None => "global".to_string(),
+                };
+                ≔ closure_name = format!("sigil_closure_{}_{}", this.mangle_name(fn_prefix), this.temp_counter);
+                this.temp_counter += 1;
+
+                // Build parameter list - only explicit params, not captures
+                // Captured variables are accessed via __closure_* globals
+                ≔ vary param_names: ![String] = Vec·new();
+                each p ∈ params.iter() {
+                    param_names.push(this.mangle_name(p.name.clone()));
+                }
+                ≔ vary param_decls = String·new();
+                each name ∈ param_names.iter() {
+                    ⎇ !param_decls.is_empty() { param_decls = param_decls + ", "; }
+                    param_decls = param_decls + "SigilValue ";
+                    param_decls = param_decls + name.as_str();
+                }
+                // CG-071: Use assignment instead of shadowing to avoid C redefinition error
+                param_decls = ⎇ param_decls.is_empty() { "void".to_string() } ⎉ { param_decls };
+
+                // Save current output and generate closure body
+                ≔ saved_output = this.output.clone();
+                ≔ saved_indent = this.indent;
+                ≔ saved_in_closure = this.in_closure_body;
+                this.output = String·new();
+                this.indent = 1;
+                this.in_closure_body = yea;  // CG-029: Mark that we're in a closure
+
+                // Add captured variable declarations from __closure_* globals
+                // Skip captures that are already parameters
+                each cap ∈ captures.iter() {
+                    ≔ mangled = this.mangle_name(cap.clone());
+                    // Check ⎇ this captured var is already a parameter
+                    ⎇ !param_names.contains(&mangled) {
+                        this.line(format!("SigilValue {} = __closure_{};", mangled, cap));
+                    }
+                }
+
+                ≔ body_result = this.emit_operation(*body);
+                this.line(format!("⤺ {};", body_result));
+                ≔ body_code = this.output.clone();
+
+                // Restore output
+                this.output = saved_output;
+                this.indent = saved_indent;
+                this.in_closure_body = saved_in_closure;  // CG-029: Restore
+
+                // Add closure function to closure_buffer
+                // Note: Must reassign push_str result since it returns new string value
+                ≔ closure_open = format!("static SigilValue {}({}) ", closure_name, param_decls) + CodeGen·open_brace() + "\n";
+                this.closure_buffer = this.closure_buffer + closure_open;
+                this.closure_buffer = this.closure_buffer + body_code;
+                this.closure_buffer = this.closure_buffer + CodeGen·close_brace();
+                this.closure_buffer = this.closure_buffer + "\n\n";
+
+                // CG-005 FIX: Set up captured variables in __closure_* globals before returning closure
+                // This ensures captures are available when the closure is invoked
+                each cap ∈ captures.iter() {
+                    ≔ mangled = this.mangle_name(cap.clone());
+                    this.line(format!("__closure_{} = {};", cap, mangled));
+                }
+
+                // Return the function pointer cast to SigilValue
+                CodeGen·compound_lit("SigilValue", format!(".tag = TAG_CLOSURE, .evidence = SIGIL_KNOWN, .v.ptr = (void*){}", closure_name))
+            },
+
+            IrOperation·Pipeline { .. } => {
+                ≔ input = op.input;
+                ≔ steps = op.steps;
+                ≔ evidence = op.evidence;
+                ≔ vary current = this.emit_operation(*input);
+
+                each step ∈ steps {
+                    current = this.emit_pipeline_step(step, current);
+                }
+
+                this.with_evidence(current, evidence)
+            },
+
+            IrOperation·EvidenceCoerce { .. } => {
+                ≔ expr = op.expr;
+                ≔ to_evidence = op.to_evidence;
+                ≔ val = this.emit_operation(*expr);
+                // CG-096: Handle empty expressions - () should become sigil_unit()
+                ≔ val_safe = ⎇ val == "()" ∨ val.is_empty() {
+                    "sigil_unit()".to_string()
+                } ⎉ {
+                    val
+                };
+                ≔ ev = this.evidence_to_c(to_evidence);
+                format!("sigil_with_evidence({}, {})", val_safe, ev)
+            },
+
+            IrOperation·Assign { .. } => {
+                ≔ target = op.target;
+                ≔ value = op.value;
+                // Check ⎇ target is a field access - need to invoke sigil setter
+                ⌥ *target.clone() {
+                    IrOperation·Field { .. } => {
+                        // Field assignment: obj.field = value
+                        // Need to set the field in the struct, not just a local copy
+                        ≔ field = (*target).field;
+                        ≔ expr = (*target).expr;
+                        ≔ base_code = this.emit_operation(*expr);
+                        ≔ value_code = this.emit_operation(*value);
+                        // CG-124: Fix field assignment on dereferenced pointers like (*this)
+                        // If base_code is (*X), pass X directly (it's already a pointer)
+                        // CG-133: Can't take address of function call result - store in temp first
+                        ≔ base_var = ⎇ base_code.starts_with("(*") ∧ base_code.ends_with(")") {
+                            // CG-124: Pattern: (*ptr) - extract ptr and pass it directly
+                            // CG-126: String slicing not supported in bootstrap, invoke explicit checks
+                            ≔ inner = ⎇ base_code == "(*this)" {
+                                "this".to_string()
+                            } ⎉ ⎇ base_code == "(*env)" {
+                                "env".to_string()
+                            } ⎉ ⎇ base_code == "(*ctx)" {
+                                "ctx".to_string()
+                            } ⎉ ⎇ base_code == "(*lexer)" {
+                                "lexer".to_string()
+                            } ⎉ ⎇ base_code == "(*parser)" {
+                                "parser".to_string()
+                            } ⎉ ⎇ base_code == "(*checker)" {
+                                "checker".to_string()
+                            } ⎉ ⎇ base_code == "(*interp)" {
+                                "interp".to_string()
+                            } ⎉ ⎇ base_code == "(*codegen)" {
+                                "codegen".to_string()
+                            } ⎉ {
+                                // Fallback for other cases - invoke this as most common
+                                "this".to_string()
+                            };
+                            // Pass the pointer directly without &
+                            this.line(format!("sigil_struct_set_field({}, \"{}\", {});", inner, field, value_code));
+                            ⤺ "sigil_unit()";
+                        } ⎉ ⎇ base_code.contains("(") {
+                            ≔ temp = this.fresh_temp();
+                            this.line(format!("SigilValue {} = {};", temp, base_code));
+                            temp
+                        } ⎉ {
+                            base_code
+                        };
+                        // FIX: Check ⎇ base is a mutable reference parameter
+                        ≔ vary is_mut_ref_param = nay;
+                        ≔ vary i = 0;
+                        ⟳ i < this.current_mut_ref_params.len() {
+                            ⎇ this.current_mut_ref_params[i] == base_var {
+                                is_mut_ref_param = yea;
+                                ⊲;
+                            }
+                            i = i + 1;
+                        }
+                        ⎇ is_mut_ref_param {
+                            this.line(format!("sigil_struct_set_field((SigilValue*){}.v.ptr, \"{}\", {});", base_var, field, value_code));
+                        } ⎉ {
+                            this.line(format!("sigil_struct_set_field(&{}, \"{}\", {});", base_var, field, value_code));
+                        }
+                        "sigil_unit()"
+                    },
+                    IrOperation·Var { .. } => {
+                        // Simple variable assignment - invoke name directly without evidence wrapper
+                        ≔ target_code = this.mangle_name((*target).name.clone());
+                        ≔ value_code = this.emit_operation(*value);
+                        this.line(format!("{} = {};", target_code, value_code));
+                        "sigil_unit()"
+                    },
+                    IrOperation·EvidenceCoerce { .. } => {
+                        // Evidence coercion on assignment - unwrap and assign to inner expr
+                        ≔ inner_expr = (*target).expr;
+                        ≔ inner_target = this.emit_operation(*inner_expr);
+                        ≔ value_code = this.emit_operation(*value);
+                        this.line(format!("{} = {};", inner_target, value_code));
+                        "sigil_unit()"
+                    },
+                    _ => {
+                        // Other assignments - emit target and assign
+                        ≔ target_code = this.emit_operation(*target);
+                        ≔ value_code = this.emit_operation(*value);
+                        this.line(format!("{} = {};", target_code, value_code));
+                        "sigil_unit()"
+                    },
+                }
+            },
+
+            IrOperation·Field { .. } => {
+                ≔ expr = op.expr;
+                ≔ field = op.field;
+                ≔ evidence = op.evidence;
+                // Generate field access for structs
+                // Structs are stored as arrays of SigilValue, field access by name
+                ≔ base_code = this.emit_operation(*expr);
+                // Use the struct's field map to get the index
+                // For now, just access the named field from the sigil pointer
+                ≔ temp = this.fresh_temp();
+                this.line(format!("SigilValue {} = sigil_struct_field({}, \"{}\");", temp, base_code, field));
+                this.with_evidence(temp, evidence)
+            },
+
+            IrOperation·Index { .. } ⎇ nay => {
+                // Duplicate case - handled above
+                "sigil_unit()"
+            },
+
+            IrOperation·StructInit { .. } => {
+                ≔ name = op.name;
+                ≔ fields = op.fields;
+                ≔ evidence = op.evidence;
+                // Generate sigil initialization
+                // Store as (name_str, array of field_names, array of field_values)
+                ≔ temp = this.fresh_temp();
+                ≔ n = fields.len();
+
+                // Build field names and values by index
+                ≔ vary field_names_parts: ![String] = Vec·new();
+                ≔ vary i = 0;
+                this.line(format!("SigilValue {}__values[{}];", temp, n));
+                ⟳ i < n {
+                    ≔ field = fields[i];
+                    ≔ field_name = field.0;
+                    ≔ field_value = field.1;
+                    ≔ quoted = format!("\"{}\"", field_name);
+                    field_names_parts.push(quoted);
+                    ≔ val = this.emit_operation(field_value);
+                    this.line(format!("{}__values[{}] = {};", temp, i, val));
+                    i = i + 1;
+                }
+                ≔ field_names_str = field_names_parts.join(", ");
+
+                // Emit field names array
+                ≔ names_init = CodeGen·struct_init(field_names_str);
+                this.line(format!("static ◆ char* {}__names[{}] = {};",
+                    temp, n, names_init));
+
+                // Create sigil value with sigil_struct helper
+                ≔ result = format!("sigil_struct(\"{}\", {}__names, {}__values, {})", name, temp, temp, n);
+                this.with_evidence(result, evidence)
+            },
+
+            IrOperation·Tuple { .. } => {
+                ≔ elements = op.elements;
+                ≔ evidence = op.evidence;
+                // Generate tuple
+                ≔ temp = this.fresh_temp();
+                ≔ n = elements.len();
+
+                this.line(format!("SigilValue {}__fields[{}];", temp, n));
+                each (i, elem) ∈ elements.iter().enumerate() {
+                    ≔ val = this.emit_operation(elem.clone());
+                    this.line(format!("{}__fields[{}] = {};", temp, i, val));
+                }
+
+                ≔ result = format!("sigil_tuple({}__fields, {})", temp, n);
+                this.with_evidence(result, evidence)
+            },
+
+            IrOperation·Cast { .. } => {
+                ≔ expr = op.expr;
+                ≔ target_type = op.target_type;
+                ≔ evidence = op.evidence;
+                // Generate cast expression
+                ≔ expr_code = this.emit_operation(*expr);
+
+                // Generate appropriate cast based on target type
+                ≔ cast_code = ⌥ target_type {
+                    IrType·Primitive { .. } => {
+                        ≔ name = target_type.name;
+                        ⌥ name.as_str() {
+                            "i8" | "i16" | "i32" | "i64" | "isize" |
+                            "u8" | "u16" | "u32" | "u64" | "usize" => {
+                                format!("sigil_int((int64_t){}.v.i)", expr_code)
+                            },
+                            "f32" | "f64" => {
+                                format!("sigil_float((double)({}.tag == TAG_INT ? (double){}.v.i : {}.v.f))",
+                                    expr_code, expr_code, expr_code)
+                            },
+                            "bool" => {
+                                format!("sigil_bool(sigil_truthy({}))", expr_code)
+                            },
+                            "char" => {
+                                format!("sigil_char((char){}.v.i)", expr_code)
+                            },
+                            _ => expr_code.clone(),
+                        }
+                    },
+                    _ => expr_code.clone(),
+                };
+                this.with_evidence(cast_code, evidence)
+            },
+
+            IrOperation·FormatCall { .. } => {
+                // FormatCall is the lowered form of format! macro with properly translated arguments
+                ≔ format_string = op.format_string;
+                ≔ args = op.args;
+                ≔ evidence = op.evidence;
+
+                // Build the argument list by emitting each lowered IR operation
+                ≔ vary arg_codes: ![String] = Vec·new();
+                each a ∈ args.iter() {
+                    arg_codes.push(this.emit_operation(a.clone()));
+                }
+
+                // Generate sigil_format call with format string and emitted arguments
+                ≔ result = ⎇ arg_codes.is_empty() {
+                    format!("sigil_format({})", format_string)
+                } ⎉ {
+                    format!("sigil_format({}, {})", format_string, arg_codes.join(", "))
+                };
+                this.with_evidence(result, evidence)
+            },
+
+            IrOperation·MacroExpansion { .. } => {
+                ≔ name = op.name;
+                ≔ tokens = op.tokens;
+                // Generate macro expansion based on macro name
+                ⌥ name.as_str() {
+                    "write" | "writeln" => {
+                        // write!/writeln! → generate a comment (side effect placeholder)
+                        format!("/* {}!({}) */ sigil_unit()", name, tokens)
+                    },
+                    "format" => {
+                        // format!("...", args) → sigil_format (variadic string formatting)
+                        // CG-016: Translate method calls in format! arguments
+                        ≔ translated = this.translate_format_tokens(tokens);
+                        format!("sigil_format({})", translated)
+                    },
+                    "print" => {
+                        // print!("...") → printf
+                        format!("(printf(\"%s\", {}), sigil_unit())", tokens)
+                    },
+                    "println" => {
+                        // println!("...") → printf with newline
+                        format!("(printf(\"%s\\n\", {}), sigil_unit())", tokens)
+                    },
+                    "vec" => {
+                        // vec![a, b, c] → array creation placeholder
+                        format!("/* vec![{}] */ sigil_array(0)", tokens)
+                    },
+                    "assert" => {
+                        // assert!(cond) → sigil_assert with default message
+                        format!("sigil_assert(sigil_bool({}), sigil_string(\"assertion failed\"))", tokens)
+                    },
+                    "assert_eq" => {
+                        // assert_eq!(a, b) → sigil_assert_eq
+                        format!("/* assert_eq!({}) */ sigil_unit()", tokens)
+                    },
+                    _ => {
+                        // Unknown macro - generate a comment
+                        format!("/* {}!({}) */ sigil_unit()", name, tokens)
+                    },
+                }
+            },
+
+            IrOperation·MethodCall { .. } => {
+                ≔ receiver = op.receiver;
+                ≔ method = op.method;
+                ≔ args = op.args;
+                ≔ evidence = op.evidence;
+
+                // CG-015: Check ⎇ receiver is `this` variable for special handling
+                // CG-147: Also check EvidenceCoerce wrapping Var "this"
+                ≔ receiver_is_self = ⌥ *receiver {
+                    IrOperation·Var { .. } => receiver.name == "this",
+                    IrOperation·EvidenceCoerce { .. } => {
+                        ⌥ *receiver.expr {
+                            IrOperation·Var { .. } => receiver.expr.name == "this",
+                            _ => nay,
+                        }
+                    },
+                    _ => nay,
+                };
+
+                // CG-021: Check ⎇ receiver is a Field access (for writeback on mutating methods)
+                // Methods like push/pop/clear can reallocate arrays, requiring writeback to sigil field
+                // Use empty string to indicate "no field access" since ?String.is_some() has issues
+                ≔ vary field_base_code = "".to_string();
+                ≔ vary field_name_for_writeback = "".to_string();
+                // CG-099: Track variable name for writeback on mutating methods (e.g., result.push(c))
+                ≔ vary var_name_for_writeback = "".to_string();
+                // CG-100: Track receiver type name for disambiguating push (String vs Vec)
+                ≔ vary receiver_type_name = "".to_string();
+                ≔ recv_code = ⌥ *receiver {
+                    IrOperation·Field { expr: base_box, field: fname, .. } => {
+                        ≔ base_code = this.emit_operation(*base_box);
+                        field_base_code = base_code.clone();
+                        field_name_for_writeback = fname.clone();
+                        ≔ temp = this.fresh_temp();
+                        this.line(format!("SigilValue {} = sigil_struct_field({}, \"{}\");", temp, base_code, fname));
+                        temp
+                    },
+                    IrOperation·Var { name: vname, ty: vty, .. } => {
+                        // CG-099: Track variable name for writeback
+                        var_name_for_writeback = vname.clone();
+                        // CG-100: Track type name for method disambiguation
+                        // CG-161: Handle MutRef/Ref wrappers for vary this methods
+                        ⌥ vty {
+                            IrType·Named { name: tname, .. } => {
+                                receiver_type_name = tname.clone();
+                            },
+                            IrType·Reference { inner, .. } => {
+                                ⌥ *inner {
+                                    IrType·Named { name: tname, .. } => {
+                                        receiver_type_name = tname.clone();
+                                    },
+                                    _ => {},
+                                }
+                            },
+                            IrType·Primitive { name: pname } => {
+                                // str → String
+                                ⎇ pname == "str" {
+                                    receiver_type_name = "String".to_string();
+                                } ⎉ {
+                                    receiver_type_name = pname.clone();
+                                }
+                            },
+                            _ => {},
+                        }
+                        // CG-099 FIX: Directly emit the variable reference instead of calling
+                        // emit_operation(*receiver) which would try to invoke the consumed receiver.
+                        // This mirrors the IrOperation·Var handling in emit_operation.
+                        ⎇ vname == "this" ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
+                            "(*this)".to_string()
+                        } ⎉ ⎇ vname == "_" {
+                            "sigil_null()".to_string()
+                        } ⎉ {
+                            this.mangle_name(vname)
+                        }
+                    },
+                    // CG-100: Handle EvidenceCoerce wrapping a Var or Field
+                    IrOperation·EvidenceCoerce { expr: inner_box, .. } => {
+                        ⌥ *inner_box {
+                            // CG-121: Handle EvidenceCoerce wrapping Field (for sigil field writeback)
+                            IrOperation·Field { expr: base_box, field: fname, .. } => {
+                                ≔ base_code = this.emit_operation(*base_box);
+                                field_base_code = base_code.clone();
+                                field_name_for_writeback = fname.clone();
+                                ≔ temp = this.fresh_temp();
+                                this.line(format!("SigilValue {} = sigil_struct_field({}, \"{}\");", temp, base_code, fname));
+                                temp
+                            },
+                            IrOperation·Var { name: vname, ty: vty, .. } => {
+                                var_name_for_writeback = vname.clone();
+                                // CG-161: Handle Reference wrappers
+                                ⌥ vty {
+                                    IrType·Named { name: tname, .. } => {
+                                        receiver_type_name = tname.clone();
+                                    },
+                                    IrType·Reference { inner, .. } => {
+                                        ⌥ *inner {
+                                            IrType·Named { name: tname, .. } => {
+                                                receiver_type_name = tname.clone();
+                                            },
+                                            _ => {},
+                                        }
+                                    },
+                                    IrType·Primitive { name: pname } => {
+                                        ⎇ pname == "str" {
+                                            receiver_type_name = "String".to_string();
+                                        } ⎉ {
+                                            receiver_type_name = pname.clone();
+                                        }
+                                    },
+                                    _ => {},
+                                }
+                                // CG-099 FIX: Emit the variable reference directly instead of
+                                // using consumed receiver. EvidenceCoerce doesn't change var emission.
+                                ⎇ vname == "this" ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
+                                    "(*this)".to_string()
+                                } ⎉ ⎇ vname == "_" {
+                                    "sigil_null()".to_string()
+                                } ⎉ {
+                                    this.mangle_name(vname)
+                                }
+                            },
+                            // CG-015: Handle EvidenceCoerce wrapping Call (for method chaining)
+                            IrOperation·Call { ty: call_ty, .. } => {
+                                ⌥ call_ty {
+                                    IrType·Named { name: tname, .. } => {
+                                        receiver_type_name = tname.clone();
+                                    },
+                                    IrType·Primitive { name: pname } => {
+                                        ⎇ pname == "str" {
+                                            receiver_type_name = "String".to_string();
+                                        } ⎉ {
+                                            receiver_type_name = pname.clone();
+                                        }
+                                    },
+                                    _ => {},
+                                }
+                                this.emit_operation(*receiver)
+                            },
+                            // CG-015: Handle EvidenceCoerce wrapping MethodCall (for method chaining)
+                            IrOperation·MethodCall { ty: mc_ty, .. } => {
+                                ⌥ mc_ty {
+                                    IrType·Named { name: tname, .. } => {
+                                        receiver_type_name = tname.clone();
+                                    },
+                                    IrType·Primitive { name: pname } => {
+                                        ⎇ pname == "str" {
+                                            receiver_type_name = "String".to_string();
+                                        } ⎉ {
+                                            receiver_type_name = pname.clone();
+                                        }
+                                    },
+                                    _ => {},
+                                }
+                                this.emit_operation(*receiver)
+                            },
+                            // CG-015: Handle EvidenceCoerce wrapping Try (for method chaining after ?)
+                            IrOperation·Try { ty: try_ty, .. } => {
+                                ⌥ try_ty {
+                                    IrType·Named { name: tname, .. } => {
+                                        receiver_type_name = tname.clone();
+                                    },
+                                    IrType·Primitive { name: pname } => {
+                                        ⎇ pname == "str" {
+                                            receiver_type_name = "String".to_string();
+                                        } ⎉ {
+                                            receiver_type_name = pname.clone();
+                                        }
+                                    },
+                                    _ => {},
+                                }
+                                this.emit_operation(*receiver)
+                            },
+                            _ => this.emit_operation(*receiver),
+                        }
+                    },
+                    // CG-015: Handle Call as receiver - extract type from ⤺ type for vary this lookup
+                    IrOperation·Call { ty: call_ty, .. } => {
+                        ⌥ call_ty {
+                            IrType·Named { name: tname, .. } => {
+                                receiver_type_name = tname.clone();
+                            },
+                            IrType·Primitive { name: pname } => {
+                                ⎇ pname == "str" {
+                                    receiver_type_name = "String".to_string();
+                                } ⎉ {
+                                    receiver_type_name = pname.clone();
+                                }
+                            },
+                            _ => {},
+                        }
+                        this.emit_operation(*receiver)
+                    },
+                    // CG-015: Handle MethodCall as receiver - extract type from ⤺ type
+                    IrOperation·MethodCall { ty: mc_ty, .. } => {
+                        ⌥ mc_ty {
+                            IrType·Named { name: tname, .. } => {
+                                receiver_type_name = tname.clone();
+                            },
+                            IrType·Primitive { name: pname } => {
+                                ⎇ pname == "str" {
+                                    receiver_type_name = "String".to_string();
+                                } ⎉ {
+                                    receiver_type_name = pname.clone();
+                                }
+                            },
+                            _ => {},
+                        }
+                        this.emit_operation(*receiver)
+                    },
+                    // CG-015: Handle Try as receiver - unwrapped type for method chaining after ?
+                    IrOperation·Try { ty: try_ty, .. } => {
+                        ⌥ try_ty {
+                            IrType·Named { name: tname, .. } => {
+                                receiver_type_name = tname.clone();
+                            },
+                            IrType·Primitive { name: pname } => {
+                                ⎇ pname == "str" {
+                                    receiver_type_name = "String".to_string();
+                                } ⎉ {
+                                    receiver_type_name = pname.clone();
+                                }
+                            },
+                            _ => {},
+                        }
+                        this.emit_operation(*receiver)
+                    },
+                    _ => this.emit_operation(*receiver),
+                };
+                // Build arg_codes with for-loop to avoid closure capture
+                ≔ vary arg_codes: ![String] = Vec·new();
+                each a ∈ args.iter() {
+                    arg_codes.push(this.emit_operation(a.clone()));
+                }
+
+                // Handle primitive methods inline
+                ≔ call = ⌥ method.as_str() {
+                    "min" ⎇ arg_codes.len() == 1 => {
+                        ≔ other = arg_codes[0].clone();
+                        format!("({}.v.i < {}.v.i ? {} : {})", recv_code, other, recv_code, other)
+                    },
+                    "max" ⎇ arg_codes.len() == 1 => {
+                        ≔ other = arg_codes[0].clone();
+                        format!("({}.v.i > {}.v.i ? {} : {})", recv_code, other, recv_code, other)
+                    },
+                    "len" ⎇ arg_codes.is_empty() => {
+                        format!("sigil_len({})", recv_code)
+                    },
+                    "is_empty" ⎇ arg_codes.is_empty() => {
+                        format!("sigil_bool(sigil_len({}).v.i == 0)", recv_code)
+                    },
+                    "clone" ⎇ arg_codes.is_empty() => {
+                        recv_code.clone()
+                    },
+                    "to_string" ⎇ arg_codes.is_empty() => {
+                        // If receiver is already a sigil_string, just ⤺ it
+                        // Otherwise invoke sigil_display to convert SigilValue to string
+                        ⎇ recv_code.starts_with("sigil_string(") {
+                            recv_code.clone()
+                        } ⎉ {
+                            format!("sigil_display({})", recv_code)
+                        }
+                    },
+                    // CG-076: Special case for join to ensure separator is included
+                    "join" => {
+                        ≔ sep = ⎇ arg_codes.is_empty() {
+                            "sigil_string(\", \")".to_string()
+                        } ⎉ {
+                            arg_codes[0].clone()
+                        };
+                        format!("sigil_Vec____join({}, {})", recv_code, sep)
+                    },
+                    // CG-139: Handle iterator methods
+                    "iter" ⎇ arg_codes.is_empty() => {
+                        // iter() returns the receiver wrapped for iteration
+                        format!("sigil_iter({})", recv_code)
+                    },
+                    "zip" ⎇ arg_codes.len() == 1 => {
+                        // zip(other) combines two iterators
+                        format!("sigil_zip({}, {})", recv_code, arg_codes[0])
+                    },
+                    "enumerate" ⎇ arg_codes.is_empty() => {
+                        // enumerate() adds indices to iterator
+                        format!("sigil_enumerate({})", recv_code)
+                    },
+                    "all" ⎇ arg_codes.len() == 1 => {
+                        // all(predicate) tests ⎇ all elements match
+                        format!("sigil_all({}, {})", recv_code, arg_codes[0])
+                    },
+                    "any" ⎇ arg_codes.len() == 1 => {
+                        // any(predicate) tests ⎇ any element matches
+                        format!("sigil_any({}, {})", recv_code, arg_codes[0])
+                    },
+                    "filter" ⎇ arg_codes.len() == 1 => {
+                        // filter(predicate) keeps elements matching predicate
+                        format!("sigil_filter({}, {})", recv_code, arg_codes[0])
+                    },
+                    "flat_map" ⎇ arg_codes.len() == 1 => {
+                        // flat_map(mapper) maps and flattens results
+                        format!("sigil_flat_map({}, {})", recv_code, arg_codes[0])
+                    },
+                    "collect" ⎇ arg_codes.is_empty() => {
+                        // collect() materializes iterator to vec
+                        format!("sigil_collect({})", recv_code)
+                    },
+                    // HashMap entry API - entry() returns a special marker
+                    "entry" => {
+                        ⎇ arg_codes.len() == 1 {
+                            // For entry(), we emit temp vars and ⤺ marker
+                            ≔ key_code = arg_codes[0].clone();
+                            ≔ entry_var = this.fresh_temp();
+                            // Store map and key for later invoke by or_default/or_insert
+                            this.line(format!("SigilValue {}_map = {};", entry_var, recv_code));
+                            this.line(format!("SigilValue {}_key = {};", entry_var, key_code));
+                            // Return marker that or_default can detect
+                            format!("sigil_entry_marker(\"{}\")", entry_var)
+                        } ⎉ {
+                            // Fallback for unexpected arg count
+                            format!("sigil_Map____entry({})", recv_code)
+                        }
+                    },
+                    // or_default() - insert default value ⎇ key missing, ⤺ mutable ref
+                    "or_default" => {
+                        // Check ⎇ receiver is an entry() call - recv_code will be sigil_entry_marker("_tN")
+                        // The marker is 21 chars of prefix + var name + 2 chars suffix
+                        ≔ entry_prefix = "sigil_entry_marker(\"";
+                        ⎇ recv_code.starts_with(entry_prefix) {
+                            // Extract: sigil_entry_marker("_tN") → _tN
+                            // prefix is 21 chars, suffix is 2 chars: ")
+                            ≔ prefix_len = 21;
+                            ≔ total_len = recv_code.len();
+                            ≔ var_len = total_len - prefix_len - 2;
+                            // Build the var name by taking substring
+                            ≔ vary entry_var = String·new();
+                            ≔ vary i = 0;
+                            ⟳ i < var_len {
+                                ≔ c = recv_code.chars().nth(prefix_len + i).unwrap_or('_');
+                                entry_var.push(c);
+                                i = i + 1;
+                            }
+                            ≔ result_var = this.fresh_temp();
+                            this.line(format!("SigilValue {} = sigil_map_entry_or_default({}_map, {}_key);",
+                                result_var, entry_var, entry_var));
+                            result_var
+                        } ⎉ {
+                            format!("sigil_Map____or_default({})", recv_code)
+                        }
+                    },
+                    // or_insert(value) - insert value ⎇ key missing, ⤺ mutable ref
+                    "or_insert" => {
+                        ⎇ arg_codes.len() != 1 {
+                            format!("sigil_Map____or_insert({})", recv_code)
+                        } ⎉ {
+                        ≔ value_code = arg_codes[0].clone();
+                        ≔ entry_prefix = "sigil_entry_marker(\"";
+                        ⎇ recv_code.starts_with(entry_prefix) {
+                            ≔ prefix_len = 21;
+                            ≔ total_len = recv_code.len();
+                            ≔ var_len = total_len - prefix_len - 2;
+                            ≔ vary entry_var = String·new();
+                            ≔ vary i = 0;
+                            ⟳ i < var_len {
+                                ≔ c = recv_code.chars().nth(prefix_len + i).unwrap_or('_');
+                                entry_var.push(c);
+                                i = i + 1;
+                            }
+                            ≔ result_var = this.fresh_temp();
+                            this.line(format!("SigilValue {} = sigil_map_entry_or_insert({}_map, {}_key, {});",
+                                result_var, entry_var, entry_var, value_code));
+                            result_var
+                        } ⎉ {
+                            format!("sigil_Map____or_insert({}, {})", recv_code, value_code)
+                        }
+                        }
+                    },
+                    // or_insert_with(closure) - insert closure result ⎇ key missing
+                    "or_insert_with" => {
+                        ⎇ arg_codes.len() != 1 {
+                            format!("sigil_Map____or_insert_with({})", recv_code)
+                        } ⎉ {
+                        ≔ closure_code = arg_codes[0].clone();
+                        ≔ entry_prefix = "sigil_entry_marker(\"";
+                        ⎇ recv_code.starts_with(entry_prefix) {
+                            ≔ prefix_len = 21;
+                            ≔ total_len = recv_code.len();
+                            ≔ var_len = total_len - prefix_len - 2;
+                            ≔ vary entry_var = String·new();
+                            ≔ vary i = 0;
+                            ⟳ i < var_len {
+                                ≔ c = recv_code.chars().nth(prefix_len + i).unwrap_or('_');
+                                entry_var.push(c);
+                                i = i + 1;
+                            }
+                            ≔ result_var = this.fresh_temp();
+                            this.line(format!("SigilValue {} = sigil_map_entry_or_insert_with({}_map, {}_key, {});",
+                                result_var, entry_var, entry_var, closure_code));
+                            result_var
+                        } ⎉ {
+                            format!("sigil_Map____or_insert_with({}, {})", recv_code, closure_code)
+                        }
+                        }
+                    },
+                    _ => {
+                        // CG-020: Use if-else chains for method lookup (| patterns don't work in native)
+                        ≔ m = method.as_str();
+
+                        // CG-METHOD-FIX: If receiver_type_name is still empty, extract from receiver's type
+                        // This handles user-defined types not in the hardcoded method table
+                        ⎇ receiver_type_name.len() == 0 ∨ receiver_type_name == "" {
+                            ⌥ op.receiver.ty {
+                                IrType·Named { name: tname, .. } => {
+                                    receiver_type_name = tname.clone();
+                                },
+                                IrType·Primitive { name: pname } => {
+                                    ⎇ pname == "str" {
+                                        receiver_type_name = "String".to_string();
+                                    } ⎉ {
+                                        receiver_type_name = pname.clone();
+                                    }
+                                },
+                                IrType·Reference { inner, .. } => {
+                                    ⌥ *inner {
+                                        IrType·Named { name: tname, .. } => {
+                                            receiver_type_name = tname.clone();
+                                        },
+                                        IrType·Primitive { name: pname } => {
+                                            ⎇ pname == "str" {
+                                                receiver_type_name = "String".to_string();
+                                            } ⎉ {
+                                                receiver_type_name = pname.clone();
+                                            }
+                                        },
+                                        _ => {},
+                                    }
+                                },
+                                _ => {},
+                            }
+                        }
+
+                        // CG-020: Method lookup table - comments must be on separate lines before the let
+                        ≔ type_prefix =
+                            ⎇ m == "merge" { "Span" }
+                            else ⎇ m == "overlaps" { "Span" }
+                            else ⎇ m == "empty_at" { "Span" }
+                            else ⎇ m == "map" { "Spanned" }
+                            else ⎇ m == "inner" { "Spanned" }
+                            else ⎇ m == "into_inner" { "Spanned" }
+                            else ⎇ m == "is_keyword" { "Token" }
+                            else ⎇ m == "is_morpheme" { "Token" }
+                            else ⎇ m == "is_evidentiality" { "Token" }
+                            else ⎇ m == "is_affectivity" { "Token" }
+                            else ⎇ m == "is_literal" { "Token" }
+                            else ⎇ m == "is_comparison" { "Token" }
+                            else ⎇ m == "is_assign_op" { "Token" }
+                            else ⎇ m == "is_protocol" { "Token" }
+                            else ⎇ m == "is_intensity" { "Token" }
+                            else ⎇ m == "is_aspect" { "Token" }
+                            else ⎇ m == "is_mood" { "Token" }
+                            else ⎇ m == "is_polarity" { "Token" }
+                            else ⎇ m == "is_some" { "Option" }
+                            else ⎇ m == "is_none" { "Option" }
+                            else ⎇ m == "unwrap" { "Option" }
+                            else ⎇ m == "unwrap_or" { "Option" }
+                            else ⎇ m == "expect" { "Option" }
+                            else ⎇ m == "next_token" { "Lexer" }
+                            else ⎇ m == "peek" { "Lexer" }
+                            else ⎇ m == "peek_is_closure_indicator" { "Lexer" }
+                            else ⎇ m == "peek_is_macro_delimiter" { "Lexer" }
+                            else ⎇ m == "current" { "Lexer" }
+                            else ⎇ m == "is_eof" { "Lexer" }
+                            else ⎇ m == "lex_ident_or_keyword" { "Lexer" }
+                            else ⎇ m == "skip_whitespace" { "Lexer" }
+                            else ⎇ m == "skip_whitespace_and_comments" { "Lexer" }
+                            else ⎇ m == "skip_line_comment" { "Lexer" }
+                            else ⎇ m.starts_with("lex_") { "Lexer" }
+                            else ⎇ m == "match_char" { "Lexer" }
+                            else ⎇ m == "rank" { "EvidenceLevel" }
+                            else ⎇ m == "satisfies" { "EvidenceLevel" }
+                            // CG-075: join is for Vec, not EvidenceLevel
+                            else ⎇ m == "meet" { "EvidenceLevel" }
+                            else ⎇ m.starts_with("parse_") { "Parser" }
+                            else ⎇ m == "consume_if" { "Parser" }
+                            else ⎇ m == "peek_token" { "Parser" }
+                            else ⎇ m == "expect_gt" { "Parser" }
+                            else ⎇ m == "is_closure_start" { "Parser" }
+                            else ⎇ m == "skip_extern_block" { "Parser" }
+                            else ⎇ m == "get" { "Map" }
+                            else ⎇ m == "insert" { "Map" }
+                            else ⎇ m == "contains_key" { "Map" }
+                            else ⎇ m == "remove" { "Map" }
+                            else ⎇ m == "entries" { "Map" }
+                            else ⎇ m == "keys" { "Map" }
+                            else ⎇ m == "values" { "Map" }
+                            // CG-100: Disambiguate push based on receiver type (String is lowered as "str")
+                            else ⎇ m == "push" { ⎇ receiver_type_name == "String" ∨ receiver_type_name == "str" { "String" } ⎉ { "Vec" } }
+                            // CG-150: Use receiver type for clone method (many types have it)
+                            else ⎇ m == "clone" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "pop" { "Vec" }
+                            else ⎇ m == "first" { "Vec" }
+                            else ⎇ m == "last" { "Vec" }
+                            else ⎇ m == "clear" { "Vec" }
+                            else ⎇ m == "extend" { "Vec" }
+                            else ⎇ m == "with_capacity" { "Vec" }
+                            else ⎇ m == "reserve" { "Vec" }
+                            else ⎇ m == "capacity" { "Vec" }
+                            else ⎇ m == "as_slice" { "Vec" }
+                            else ⎇ m == "join" { "Vec" }
+                            else ⎇ m == "chars" { "String" }
+                            else ⎇ m == "bytes" { "String" }
+                            else ⎇ m == "lines" { "String" }
+                            else ⎇ m == "split" { "String" }
+                            else ⎇ m == "trim" { "String" }
+                            else ⎇ m == "starts_with" { "String" }
+                            else ⎇ m == "ends_with" { "String" }
+                            else ⎇ m == "strip_prefix" { "String" }
+                            else ⎇ m == "strip_suffix" { "String" }
+                            else ⎇ m == "replace" { "String" }
+                            else ⎇ m == "to_lowercase" { "String" }
+                            else ⎇ m == "to_uppercase" { "String" }
+                            else ⎇ m == "find" { "String" }
+                            else ⎇ m == "push_str" { "String" }
+                            else ⎇ m == "as_str" { "String" }
+                            else ⎇ m == "into_raw" { "Box" }
+                            else ⎇ m == "from_raw" { "Box" }
+                            else ⎇ m == "lookup" { "TypeEnv" }
+                            else ⎇ m == "binding_name" { "Pattern" }
+                            else ⎇ m == "evidentiality" { "Pattern" }
+                            else ⎇ m == "message" { "ParseError" }
+                            else ⎇ m == "span" { "ParseError" }
+                            else ⎇ m == "to_string" { "TypeError" }
+                            else ⎇ m == "is_never" { "Type" }
+                            else ⎇ m.starts_with("emit_") { "CodeGen" }
+                            else ⎇ m == "fresh_temp" { "CodeGen" }
+                            else ⎇ m == "fresh_label" { "CodeGen" }
+                            else ⎇ m == "line" { "CodeGen" }
+                            else ⎇ m == "line_open" { "CodeGen" }
+                            else ⎇ m == "line_close" { "CodeGen" }
+                            else ⎇ m == "indent_push" { "CodeGen" }
+                            else ⎇ m == "indent_pop" { "CodeGen" }
+                            else ⎇ m == "generate" { "CodeGen" }
+                            else ⎇ m == "escape_char" { "CodeGen" }
+                            else ⎇ m == "escape_string" { "CodeGen" }
+                            else ⎇ m == "mangle_name" { "CodeGen" }
+                            else ⎇ m == "translate_format_tokens" { "CodeGen" }
+                            else ⎇ m == "with_evidence" { "CodeGen" }
+                            else ⎇ m == "evidence_to_c" { "CodeGen" }
+                            else ⎇ m == "hex_digit" { "CodeGen" }
+                            else ⎇ m == "strip_single_prefix" { "CodeGen" }
+                            else ⎇ m == "register_builtins" { "Interpreter" }
+                            else ⎇ m == "get_output" { "Interpreter" }
+                            else ⎇ m == "load_module" { "Interpreter" }
+                            else ⎇ m == "call_function" { "Interpreter" }
+                            else ⎇ m == "call_builtin" { "Interpreter" }
+                            else ⎇ m == "eval_with_env" { "Interpreter" }
+                            else ⎇ m == "eval_pipeline_step" { "Interpreter" }
+                            else ⎇ m == "eval_morpheme" { "Interpreter" }
+                            else ⎇ m == "run" { "Driver" }
+                            else ⎇ m == "compile" { "Driver" }
+                            else ⎇ m == "interpret" { "Driver" }
+                            else ⎇ m == "dump_ir" { "Driver" }
+                            else ⎇ m == "dump_ast" { "Driver" }
+                            else ⎇ m == "dump_tokens" { "Driver" }
+                            else ⎇ m == "read_file" { "Driver" }
+                            else ⎇ m == "write_file" { "Driver" }
+                            else ⎇ m == "lower" { "Driver" }
+                            else ⎇ m == "print_errors" { "Driver" }
+                            else ⎇ m.starts_with("check_") { "TypeChecker" }
+                            else ⎇ m.starts_with("infer_") { "TypeChecker" }
+                            else ⎇ m.starts_with("collect_") { "TypeChecker" }
+                            else ⎇ m == "qualify_name" { "LoweringContext" }
+                            else ⎇ m == "fresh_id" { "LoweringContext" }
+                            else ⎇ m == "get_var_id" { "LoweringContext" }
+                            else ⎇ m == "current_namespace" { "LoweringContext" }
+                            else ⎇ m == "error" { "LoweringContext" }
+                            else ⎇ m == "unify" { "TypeChecker" }
+                            else ⎇ m == "fresh_var" { "TypeChecker" }
+                            else ⎇ m == "freshen" { "TypeChecker" }
+                            else ⎇ m == "freshen_inner" { "TypeChecker" }
+                            else ⎇ m == "push_scope" { "TypeChecker" }
+                            else ⎇ m == "pop_scope" { "TypeChecker" }
+                            else ⎇ m == "set" { "Environment" }
+                            else ⎇ m == "fresh_id" { "LoweringContext" }
+                            else ⎇ m == "get_var_id" { "LoweringContext" }
+                            else ⎇ m == "alloc" { "Arena" }
+                            else ⎇ m == "reset" { "Arena" }
+                            else ⎇ m == "get_mut" { "Rc" }
+                            else ⎇ m == "drop" { "Rc" }
+                            else ⎇ m == "intern" { "StringInterner" }
+                            // CG-160: Use receiver type for ambiguous methods
+                            else ⎇ m == "advance" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "check" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "define" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "error" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "parse" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "is_empty" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "contains" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "bind_pattern" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            else ⎇ m == "check_evidence" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ { "" };
+
+                        // CG-015: Check ⎇ target method expects vary this
+                        // Use heuristic lookup when type_prefix is known
+                        ≔ target_expects_mut_self = ⎇ type_prefix != "" ∧ type_prefix != "AMBIGUOUS" {
+                            this.is_known_mut_self_for_type(type_prefix, method.as_str())
+                        } ⎉ {
+                            nay
+                        };
+                        // CG-015: Adjust receiver for vary this methods
+                        // If target method expects vary this (SigilValue*), we need to pass a pointer
+                        // CG-029: In closures, captured this is always a value, never a pointer
+                        ≔ final_recv_code = ⎇ target_expects_mut_self {
+                            // When target expects vary this, we need to pass a pointer
+                            // If receiver is this AND we're in a vary this method AND NOT in a closure,
+                            // this is already a pointer (SigilValue* this)
+                            // Otherwise, take address of the value
+                            ⎇ receiver_is_self ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
+                                "this".to_string()
+                            } ⎉ {
+                                // CG-133: Can't take address of function call result - store in temp first
+                                ⎇ recv_code.contains("(") {
+                                    ≔ recv_temp = this.fresh_temp();
+                                    this.line(format!("SigilValue {} = {};", recv_temp, recv_code));
+                                    format!("&{}", recv_temp)
+                                } ⎉ {
+                                    format!("&{}", recv_code)
+                                }
+                            }
+                        } ⎉ {
+                            // CG-090: Target expects value this
+                            // If receiver is this AND we're in a vary this method, this is a pointer
+                            // We need to dereference it to get the value
+                            ⎇ receiver_is_self ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
+                                "(*this)".to_string()
+                            } ⎉ {
+                                recv_code.clone()
+                            }
+                        };
+
+                        // Default: call method name with receiver as first arg
+                        ≔ vary all_args = [final_recv_code];
+                        each arg ∈ arg_codes {
+                            all_args.push(arg);
+                        }
+
+                        // CG-METHOD-FIX-V2: Prefer actual receiver type over hardcoded lookup
+                        // The type checker knows the receiver's type - that should always take precedence
+                        // Hardcoded lookups (lines 3851-4004) serve as fallback for ambiguous cases
+                        ≔ effective_type_prefix = ⎇ receiver_type_name.len() > 0 ∧ receiver_type_name != "" ∧ receiver_type_name != "AMBIGUOUS" {
+                            receiver_type_name.as_str()
+                        } ⎉ ⎇ type_prefix != "" ∧ type_prefix != "AMBIGUOUS" {
+                            type_prefix
+                        } ⎉ {
+                            ""
+                        };
+
+                        ⎇ effective_type_prefix != "" {
+                            format!("sigil_{}____{}({})", effective_type_prefix, this.mangle_name(method), all_args.join(", "))
+                        } ⎉ {
+                            format!("sigil_{}({})", this.mangle_name(method), all_args.join(", "))
+                        }
+                    },
+                };
+
+                // CG-021: Write back result to sigil field ⎇ receiver was a field and method is mutating
+                // Vec methods that can reallocate: push, pop, clear, extend, insert, remove, reserve
+                // CG-022: String·push_str also returns new value (not in-place mutation in C)
+                ≔ is_mutating_method = method == "push" ∨ method == "pop" ∨ method == "clear" ∨
+                    method == "extend" ∨ method == "insert" ∨ method == "remove" ∨ method == "reserve" ∨
+                    method == "push_str";
+
+                // Check ⎇ we need writeback (non-empty strings indicate field access was detected)
+                ≔ has_field_info = field_base_code.len() > 0 ∧ field_name_for_writeback.len() > 0;
+                // CG-099: Check ⎇ receiver is a local variable that needs writeback
+                ≔ has_var_info = var_name_for_writeback.len() > 0 ∧ var_name_for_writeback != "this";
+
+                ⎇ is_mutating_method ∧ has_field_info {
+                    // Store result in temp and write back to sigil field
+                    ≔ result_temp = this.fresh_temp();
+                    this.line(format!("SigilValue {} = {};", result_temp, call));
+                    // CG-133: Can't take address of function call result - store in temp first
+                    // CG-XXX: Special case for (*ptr) - extract ptr and pass directly to avoid copy
+                    ≔ base_var = ⎇ field_base_code.starts_with("(*") ∧ field_base_code.ends_with(")") {
+                        // Extract pointer name from (*ptr) pattern
+                        ⎇ field_base_code == "(*this)" {
+                            "this".to_string()
+                        } ⎉ ⎇ field_base_code == "(*env)" {
+                            "env".to_string()
+                        } ⎉ ⎇ field_base_code == "(*ctx)" {
+                            "ctx".to_string()
+                        } ⎉ ⎇ field_base_code == "(*lexer)" {
+                            "lexer".to_string()
+                        } ⎉ ⎇ field_base_code == "(*parser)" {
+                            "parser".to_string()
+                        } ⎉ ⎇ field_base_code == "(*checker)" {
+                            "checker".to_string()
+                        } ⎉ ⎇ field_base_code == "(*interp)" {
+                            "interp".to_string()
+                        } ⎉ ⎇ field_base_code == "(*codegen)" {
+                            "codegen".to_string()
+                        } ⎉ {
+                            "this".to_string()
+                        }
+                    } ⎉ ⎇ field_base_code.contains("(") {
+                        ≔ temp2 = this.fresh_temp();
+                        this.line(format!("SigilValue {} = {};", temp2, field_base_code));
+                        temp2
+                    } ⎉ {
+                        field_base_code
+                    };
+                    // FIX: Use & only for non-pointer bases
+                    // Check ⎇ base is a mutable reference parameter - needs .v.ptr extraction
+                    ≔ vary is_mut_ref_param = nay;
+                    ≔ vary i = 0;
+                    ⟳ i < this.current_mut_ref_params.len() {
+                        ⎇ this.current_mut_ref_params[i] == base_var {
+                            is_mut_ref_param = yea;
+                            ⊲;
+                        }
+                        i = i + 1;
+                    }
+                    ≔ set_field_call = ⎇ field_base_code.starts_with("(*") {
+                        format!("sigil_struct_set_field({}, \"{}\", {});", base_var, field_name_for_writeback, result_temp)
+                    } ⎉ ⎇ is_mut_ref_param {
+                        // Mutable reference parameter: extract pointer from TAG_REF wrapper
+                        format!("sigil_struct_set_field((SigilValue*){}.v.ptr, \"{}\", {});", base_var, field_name_for_writeback, result_temp)
+                    } ⎉ {
+                        format!("sigil_struct_set_field(&{}, \"{}\", {});", base_var, field_name_for_writeback, result_temp)
+                    };
+                    this.line(set_field_call);
+                    this.with_evidence(result_temp, evidence)
+                } ⎉ ⎇ is_mutating_method ∧ has_var_info {
+                    // CG-099: Write back to local variable (e.g., result = result.push(c))
+                    // This is needed because String/Vec methods ⤺ modified values
+                    ≔ mangled_var = this.mangle_name(var_name_for_writeback);
+                    this.line(format!("{} = {};", mangled_var, call));
+                    this.with_evidence(mangled_var, evidence)
+                } ⎉ {
+                    this.with_evidence(call, evidence)
+                }
+            },
+
+            IrOperation·Match { .. } => {
+                ≔ scrutinee = op.scrutinee;
+                ≔ arms = op.arms;
+                ≔ evidence = op.evidence;
+                // Generate ⌥ as if-else chain
+                ≔ scrutinee_code = this.emit_operation(*scrutinee);
+                ≔ scrutinee_var = this.fresh_temp();
+                ≔ result_var = this.fresh_temp();
+
+                this.line(format!("SigilValue {} = {};", scrutinee_var, scrutinee_code));
+
+                // CG-026 FIX: Check ⎇ this ⌥ has evidential patterns (?x)
+                // If so, DON'T unwrap TAG_REF - the nullable value needs to be matched directly
+                // For regular ᛈ matches, we DO unwrap to access sigil fields
+                ≔ has_evidential = this.has_evidential_pattern(arms.clone());
+
+                ⎇ !has_evidential {
+                    // Only unwrap for non-evidential matches (ᛈ variant destructuring)
+                    this.line(format!("⎇ ({}.tag == TAG_REF ∧ {}.v.ptr) {} = *((SigilValue*){}.v.ptr);", scrutinee_var, scrutinee_var, scrutinee_var, scrutinee_var));
+                }
+                this.line(format!("SigilValue {};", result_var));
+
+                // CG-027 FIX: Use _matched flag instead of if-else-⎇ chain
+                // This allows guard failures to fall through to subsequent arms
+                // with the same pattern but different guards
+                ≔ matched_var = this.fresh_temp();
+                this.line(format!("int {} = 0;", matched_var));
+
+                each arm ∈ arms {
+                    ≔ cond = this.emit_pattern_condition(arm.pattern.clone(), scrutinee_var.clone());
+
+                    // Each arm is an independent if, guarded by !_matched
+                    this.line_open(format!("⎇ (!{} ∧ ({}))", matched_var, cond));
+                    this.indent_push();
+
+                    // Bind pattern variables
+                    this.emit_pattern_binding(arm.pattern.clone(), scrutinee_var.clone());
+
+                    // Handle guard ⎇ present
+                    ⌥ arm.guard {
+                        ?guard => {
+                            ≔ guard_code = this.emit_operation(guard);
+                            this.line_open(format!("⎇ (sigil_truthy({}))", guard_code));
+                            this.indent_push();
+                            ≔ body_result = this.emit_operation(arm.body.clone());
+                            this.line(format!("{} = {};", result_var, body_result));
+                            this.line(format!("{} = 1;", matched_var));
+                            this.indent_pop();
+                            this.line("}");
+                            // Guard failed - don't set _matched, allow fallthrough to next arm
+                        },
+                        null | Option·None => {
+                            ≔ body_result = this.emit_operation(arm.body.clone());
+                            this.line(format!("{} = {};", result_var, body_result));
+                            this.line(format!("{} = 1;", matched_var));
+                        },
+                    }
+
+                    this.indent_pop();
+                    this.line("}");
+                }
+
+                // Default case ⎇ no arm matched
+                this.line_open(format!("⎇ (!{})", matched_var));
+                this.indent_push();
+                this.line(format!("{} = sigil_unit();", result_var));
+                this.indent_pop();
+                this.line("}");
+
+                this.with_evidence(result_var, evidence)
+            },
+
+// Try expression: expr?
+            // Evaluates inner expression, returns early ⎇ Result·Err, unwraps ⎇ Result·Ok
+            IrOperation·Try { .. } => {
+                ≔ expr = op.expr;
+                ≔ evidence = op.evidence;
+                ≔ inner_code = this.emit_operation(*expr);
+                ≔ temp = this.fresh_temp();
+
+                this.line(format!("SigilValue {} = {};", temp, inner_code));
+                this.line(format!("⎇ ({}.tag == TAG_RESULT_ERR) {{", temp));
+                this.indent_push();
+                this.line(format!("⤺ {};", temp));
+                this.indent_pop();
+                this.line("}");
+
+                ≔ result = format!("({}.tag == TAG_RESULT_OK ? *(SigilValue*){}.v.ptr : {})", temp, temp, temp);
+                this.with_evidence(result, evidence)
+            },
+
+            IrOperation·LetMatch { .. } => {
+                ≔ pattern = op.pattern;
+                ≔ value = op.value;
+                // Generate pattern ⌥ condition as a boolean
+                ≔ value_code = this.emit_operation(*value);
+                ≔ value_var = this.fresh_temp();
+                this.line(format!("SigilValue {} = {};", value_var, value_code));
+                ≔ cond = this.emit_pattern_condition(pattern, value_var);
+                format!("sigil_bool({})", cond)
+            },
+
+            _ => {
+                this.line("/* Unsupported operation */");
+                "sigil_unit()"
+            },
+        }
+    }
+}

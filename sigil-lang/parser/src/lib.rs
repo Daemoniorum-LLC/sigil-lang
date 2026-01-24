@@ -60,6 +60,7 @@ pub mod plurality;
 pub mod span;
 pub mod stdlib;
 pub mod typeck;
+pub mod holographic;
 pub mod tree_sitter_support;
 
 // New v0.4.0 features

@@ -1965,6 +1965,32 @@ impl Optimizer {
                     .map(|e| self.substitute_params_in_expr(e, param_map))
                     .collect(),
             ),
+            Expr::Match { expr: match_expr, arms } => Expr::Match {
+                expr: Box::new(self.substitute_params_in_expr(match_expr, param_map)),
+                arms: arms
+                    .iter()
+                    .map(|arm| crate::ast::MatchArm {
+                        pattern: arm.pattern.clone(),
+                        guard: arm.guard.as_ref().map(|g| self.substitute_params_in_expr(g, param_map)),
+                        body: self.substitute_params_in_expr(&arm.body, param_map),
+                    })
+                    .collect(),
+            },
+            // Field access - must substitute the struct expression
+            Expr::Field { expr: inner, field } => Expr::Field {
+                expr: Box::new(self.substitute_params_in_expr(inner, param_map)),
+                field: field.clone(),
+            },
+            // Method call - substitute receiver and arguments
+            Expr::MethodCall { receiver, method, args, type_args } => Expr::MethodCall {
+                receiver: Box::new(self.substitute_params_in_expr(receiver, param_map)),
+                method: method.clone(),
+                args: args
+                    .iter()
+                    .map(|a| self.substitute_params_in_expr(a, param_map))
+                    .collect(),
+                type_args: type_args.clone(),
+            },
             other => other.clone(),
         }
     }

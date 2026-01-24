@@ -76,6 +76,7 @@ impl WasmCompiler {
             BinOp::MatMul => return Err(WasmError::unsupported("matrix multiplication")),
             BinOp::Hadamard => return Err(WasmError::unsupported("hadamard product")),
             BinOp::TensorProd => return Err(WasmError::unsupported("tensor product")),
+            BinOp::Convolve => return Err(WasmError::unsupported("convolution")),
 
             // String concatenation - calls runtime function
             BinOp::Concat => {

@@ -104,6 +104,15 @@ pub enum Type {
     InlineEnum(Vec<String>),
     /// Associated type binding: Output = Type
     AssocTypeBinding { name: String, ty: Box<Type> },
+
+    /// Linear type wrapper - value must be used exactly once (no-cloning theorem)
+    Linear(Box<Type>),
+
+    /// Affine type wrapper - value can be used at most once (can be dropped)
+    Affine(Box<Type>),
+
+    /// Relevant type wrapper - value must be used at least once (can be cloned)
+    Relevant(Box<Type>),
 }
 
 /// Integer sizes
@@ -256,6 +265,8 @@ pub struct TypeEnv {
     bindings: HashMap<String, (Type, EvidenceLevel)>,
     /// Parent scope
     parent: Option<Rc<RefCell<TypeEnv>>>,
+    /// Set of linear variables that have been consumed (used)
+    consumed_linear: std::collections::HashSet<String>,
 }
 
 impl TypeEnv {
@@ -263,6 +274,7 @@ impl TypeEnv {
         Self {
             bindings: HashMap::new(),
             parent: None,
+            consumed_linear: std::collections::HashSet::new(),
         }
     }
 
@@ -270,6 +282,7 @@ impl TypeEnv {
         Self {
             bindings: HashMap::new(),
             parent: Some(parent),
+            consumed_linear: std::collections::HashSet::new(),
         }
     }
 
@@ -278,7 +291,7 @@ impl TypeEnv {
         self.bindings.insert(name, (ty, evidence));
     }
 
-    /// Look up a binding
+    /// Look up a binding (without consuming)
     pub fn lookup(&self, name: &str) -> Option<(Type, EvidenceLevel)> {
         if let Some(binding) = self.bindings.get(name) {
             Some(binding.clone())
@@ -287,6 +300,42 @@ impl TypeEnv {
         } else {
             None
         }
+    }
+
+    /// Check if a variable has a linear type
+    pub fn is_linear(&self, name: &str) -> bool {
+        if let Some((ty, _)) = self.lookup(name) {
+            matches!(ty, Type::Linear(_))
+        } else {
+            false
+        }
+    }
+
+    /// Check if a linear variable has already been consumed
+    pub fn is_consumed(&self, name: &str) -> bool {
+        if self.consumed_linear.contains(name) {
+            return true;
+        }
+        if let Some(ref parent) = self.parent {
+            return parent.borrow().is_consumed(name);
+        }
+        false
+    }
+
+    /// Mark a linear variable as consumed
+    pub fn consume(&mut self, name: &str) {
+        self.consumed_linear.insert(name.to_string());
+    }
+
+    /// Get all unconsumed linear variables in this scope (for checking at scope exit)
+    pub fn get_unconsumed_linear_vars(&self) -> Vec<String> {
+        self.bindings
+            .iter()
+            .filter(|(name, (ty, _))| {
+                matches!(ty, Type::Linear(_)) && !self.consumed_linear.contains(*name)
+            })
+            .map(|(name, _)| name.clone())
+            .collect()
     }
 }
 
@@ -1491,7 +1540,25 @@ impl TypeChecker {
             Expr::Path(path) => {
                 if path.segments.len() == 1 {
                     let name = &path.segments[0].ident.name;
-                    if let Some((ty, _)) = self.env.borrow().lookup(name) {
+
+                    // First, lookup the type (immutable borrow)
+                    let lookup_result = self.env.borrow().lookup(name);
+
+                    if let Some((ty, _)) = lookup_result {
+                        // Check for linear type double-use
+                        if matches!(ty, Type::Linear(_)) {
+                            let already_consumed = self.env.borrow().is_consumed(name);
+                            if already_consumed {
+                                // Linear variable used twice - no-cloning violation!
+                                self.error(TypeError::new(format!(
+                                    "linear value '{}' used twice: linear types cannot be cloned (no-cloning theorem)",
+                                    name
+                                )));
+                            } else {
+                                // Mark as consumed for future use checks
+                                self.env.borrow_mut().consume(name);
+                            }
+                        }
                         return ty;
                     }
                     if let Some(ty) = self.functions.get(name).cloned() {
@@ -2193,7 +2260,7 @@ impl TypeChecker {
             // Matrix multiplication: tensor @ tensor -> tensor
             // Hadamard/element-wise: tensor ⊙ tensor -> tensor
             // Tensor product: tensor ⊗ tensor -> tensor
-            BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd => {
+            BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd | BinOp::Convolve => {
                 // Return a fresh type variable for now (proper tensor type checking would go here)
                 self.fresh_var()
             }
@@ -2757,6 +2824,26 @@ impl TypeChecker {
             }
             PipeOp::Flatten | PipeOp::Unique => self.fresh_var(),
             PipeOp::Enumerate => self.fresh_var(), // Array of (index, value) tuples
+
+            // Holographic operations (Spec 11-HOLOGRAPHIC.md)
+            PipeOp::Universal => {
+                // |∀ - Universal reconstruction: [T] -> T (sum/aggregate)
+                if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                    *element
+                } else if let Type::Named { name, generics } = &inner {
+                    if (name == "Vec" || name == "LinkedList" || name == "VecDeque")
+                        && !generics.is_empty()
+                    {
+                        generics[0].clone()
+                    } else {
+                        self.fresh_var()
+                    }
+                } else {
+                    self.fresh_var()
+                }
+            }
+            PipeOp::Possibility { .. } => self.fresh_var(), // |◊method - approximate query result
+            PipeOp::Necessity { .. } => self.fresh_var(),   // |□method - verified result
         };
 
         // Preserve evidence through pipe
@@ -3286,6 +3373,11 @@ impl TypeChecker {
                     generics: vec![self.convert_type(self_type)],
                 }
             }
+            // Linear/affine/relevant type modifiers - wrap the inner type
+            // Linear types enforce the no-cloning theorem at compile time
+            TypeExpr::Linear(inner) => Type::Linear(Box::new(self.convert_type(inner))),
+            TypeExpr::Affine(inner) => Type::Affine(Box::new(self.convert_type(inner))),
+            TypeExpr::Relevant(inner) => Type::Relevant(Box::new(self.convert_type(inner))),
         }
     }
 
@@ -3459,6 +3551,10 @@ impl fmt::Display for Type {
             Type::AssocTypeBinding { name, ty } => {
                 write!(f, "{} = {}", name, ty)
             }
+            // Linear type modifiers for quantum computing
+            Type::Linear(inner) => write!(f, "linear {}", inner),
+            Type::Affine(inner) => write!(f, "affine {}", inner),
+            Type::Relevant(inner) => write!(f, "relevant {}", inner),
         }
     }
 }

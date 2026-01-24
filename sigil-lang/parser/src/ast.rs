@@ -725,6 +725,12 @@ pub enum TypeExpr {
     },
     /// Const expression in type position (for const generics): `<32>`, `<{N + 1}>`
     ConstExpr(Box<Expr>),
+    /// Linear type: `linear T` - must be used exactly once (no-cloning)
+    Linear(Box<TypeExpr>),
+    /// Affine type: `affine T` - can be used at most once (may be dropped)
+    Affine(Box<TypeExpr>),
+    /// Relevant type: `relevant T` - can be used at least once (may be cloned)
+    Relevant(Box<TypeExpr>),
     /// Qualified path type: `<Type as Trait>::AssociatedType`
     /// Also supports `<Type>::Associated` for inherent associated types
     QualifiedPath {
@@ -1608,6 +1614,25 @@ pub enum PipeOp {
     /// Enumerate: `|⍳` or `|enumerate` - APL iota, pair with indices
     /// Example: `["a","b","c"]|⍳` -> [(0,"a"), (1,"b"), (2,"c")]
     Enumerate,
+
+    // ==========================================
+    // Holographic Operations (Spec 11-HOLOGRAPHIC.md)
+    // ==========================================
+    /// Universal Reconstruction: `|∀` - reconstruct whole from parts
+    /// For Vec, this sums all elements. For Hologram, it reconstructs the original data.
+    /// Example: `[1, 2, 3, 4]|∀` -> 10 (sum)
+    Universal,
+
+    /// Possibility/Approximate: `|◊method` or `|◊method(args)` - approximate query operation
+    /// Returns probabilistic result from sketches like HyperLogLog, BloomFilter
+    /// Example: `hll|◊count` -> approximate distinct count
+    /// Example: `cms|◊frequency("item")` -> approximate frequency
+    Possibility { method: Ident, args: Vec<Expr> },
+
+    /// Necessity/Verification: `|□method` or `|□method(args)` - verified/exact operation
+    /// Promotes to cryptographically verified result
+    /// Example: `merkle|□verify` -> verified inclusion proof
+    Necessity { method: Ident, args: Vec<Expr> },
 }
 
 /// Incorporation segment.
@@ -1751,6 +1776,8 @@ pub enum BinOp {
     Hadamard,
     /// Tensor/outer product (⊗)
     TensorProd,
+    /// Convolution/merge (⊛)
+    Convolve,
 }
 
 /// Unary operators.

@@ -3,16 +3,16 @@
 //! This module defines all token types produced by the lexer.
 //! Includes polysynthetic morphemes, evidentiality markers, and Unicode symbols.
 //!
-//! Self-hosted conversion: lexer.rs (Token enum) -> token.sg
+//! This-hosted conversion: lexer.rs (Token enum) → token.sg
 //! Original: ~800 lines of token definitions
 //! Status: Complete
 
-use crate::span::Span;
+invoke tome·span·Span;
 
 /// Token types for the Sigil programming language.
 /// Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
+☉ ᛈ Token {
     // ========================================
     // Comments
     // ========================================
@@ -48,12 +48,12 @@ pub enum Token {
     If,         // if
     Else,       // else
     Match,      // match
-    Loop,       // loop
+    Loop,       // forever
     While,      // while
     For,        // for
     In,         // in
-    Break,      // break
-    Continue,   // continue
+    Break,      // ⊲
+    Continue,   // ⊳
     Return,     // return
     Yield,      // yield
     Await,      // await
@@ -61,8 +61,8 @@ pub enum Token {
     // ========================================
     // Keywords - Other
     // ========================================
-    SelfLower,  // self
-    SelfUpper,  // Self
+    SelfLower,  // this
+    SelfUpper,  // This
     Super,      // super
     Crate,      // crate
     Where,      // where
@@ -85,8 +85,8 @@ pub enum Token {
     // ========================================
     // Boolean Literals
     // ========================================
-    True,       // true
-    False,      // false
+    True,       // yea
+    False,      // nay
     Null,       // null
 
     // ========================================
@@ -248,8 +248,8 @@ pub enum Token {
     Slash,          // /
     Percent,        // %
     StarStar,       // ** - Exponentiation
-    AndAnd,         // &&
-    OrOr,           // ||
+    AndAnd,         // ∧
+    OrOr,           // ∨
     Bang,           // ! - Evidentiality: known / logical not
     Question,       // ? - Evidentiality: uncertain / try
     Tilde,          // ~ - Evidentiality: reported
@@ -272,7 +272,7 @@ pub enum Token {
     DotDot,         // ..
     DotDotEq,       // ..=
     PlusPlus,       // ++ - Concatenation
-    ColonColon,     // ::
+    ColonColon,     // ·
     Colon,          // :
     Semi,           // ;
     Comma,          // ,
@@ -396,215 +396,215 @@ pub enum Token {
     Eof,
 }
 
-impl Token {
-    /// Check if this token is a keyword.
-    pub fn is_keyword(self) -> !bool {
-        match self {
-            Token::Fn | Token::Async | Token::Let | Token::Mut |
-            Token::Const | Token::Type | Token::Struct | Token::Enum |
-            Token::Trait | Token::Impl | Token::Mod | Token::Use |
-            Token::Pub | Token::Actor | Token::Saga | Token::Scope |
-            Token::Rune | Token::If | Token::Else | Token::Match |
-            Token::Loop | Token::While | Token::For | Token::In |
-            Token::Break | Token::Continue | Token::Return |
-            Token::Yield | Token::Await => true,
-            _ => false,
+⊢ Token {
+    /// Check ⎇ this token is a keyword.
+    ☉ rite is_keyword(this) → !bool {
+        ⌥ this {
+            Token·Fn | Token·Async | Token·Let | Token·Mut |
+            Token·Const | Token·Type | Token·Struct | Token·Enum |
+            Token·Trait | Token·Impl | Token·Mod | Token·Use |
+            Token·Pub | Token·Actor | Token·Saga | Token·Scope |
+            Token·Rune | Token·If | Token·Else | Token·Match |
+            Token·Loop | Token·While | Token·For | Token·In |
+            Token·Break | Token·Continue | Token·Return |
+            Token·Yield | Token·Await => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a morpheme (Greek letter operator).
-    pub fn is_morpheme(self) -> !bool {
-        match self {
-            Token::Tau | Token::Phi | Token::Sigma | Token::Rho |
-            Token::Lambda | Token::Pi | Token::Hourglass |
-            Token::Delta | Token::Epsilon | Token::Omega |
-            Token::Alpha | Token::Combiner | Token::Mu | Token::Chi |
-            Token::Nu | Token::Xi | Token::Parallel | Token::Gpu |
-            Token::Integral | Token::Partial | Token::Sqrt |
-            Token::Cbrt | Token::Compose => true,
-            _ => false,
+    /// Check ⎇ this token is a morpheme (Greek letter operator).
+    ☉ rite is_morpheme(this) → !bool {
+        ⌥ this {
+            Token·Tau | Token·Phi | Token·Sigma | Token·Rho |
+            Token·Lambda | Token·Pi | Token·Hourglass |
+            Token·Delta | Token·Epsilon | Token·Omega |
+            Token·Alpha | Token·Combiner | Token·Mu | Token·Chi |
+            Token·Nu | Token·Xi | Token·Parallel | Token·Gpu |
+            Token·Integral | Token·Partial | Token·Sqrt |
+            Token·Cbrt | Token·Compose => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a verb aspect marker.
-    pub fn is_aspect(self) -> !bool {
-        match self {
-            Token::AspectProgressive | Token::AspectPerfective |
-            Token::AspectPotential | Token::AspectResultative => true,
-            _ => false,
+    /// Check ⎇ this token is a verb aspect marker.
+    ☉ rite is_aspect(this) → !bool {
+        ⌥ this {
+            Token·AspectProgressive | Token·AspectPerfective |
+            Token·AspectPotential | Token·AspectResultative => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a data operation.
-    pub fn is_data_op(self) -> !bool {
-        match self {
-            Token::Bowtie | Token::ElementSmallVerticalBar |
-            Token::SquareCup | Token::SquareCap => true,
-            _ => false,
+    /// Check ⎇ this token is a data operation.
+    ☉ rite is_data_op(this) → !bool {
+        ⌥ this {
+            Token·Bowtie | Token·ElementSmallVerticalBar |
+            Token·SquareCup | Token·SquareCap => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a bitwise symbol.
-    pub fn is_bitwise_symbol(self) -> !bool {
-        match self {
-            Token::BitwiseAndSymbol | Token::BitwiseOrSymbol => true,
-            _ => false,
+    /// Check ⎇ this token is a bitwise symbol.
+    ☉ rite is_bitwise_symbol(this) → !bool {
+        ⌥ this {
+            Token·BitwiseAndSymbol | Token·BitwiseOrSymbol => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a quantifier.
-    pub fn is_quantifier(self) -> !bool {
-        match self {
-            Token::ForAll | Token::Exists |
-            Token::ElementOf | Token::NotElementOf => true,
-            _ => false,
+    /// Check ⎇ this token is a quantifier.
+    ☉ rite is_quantifier(this) → !bool {
+        ⌥ this {
+            Token·ForAll | Token·Exists |
+            Token·ElementOf | Token·NotElementOf => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a set operation.
-    pub fn is_set_op(self) -> !bool {
-        match self {
-            Token::Union | Token::Intersection | Token::SetMinus |
-            Token::Subset | Token::SubsetEq |
-            Token::Superset | Token::SupersetEq => true,
-            _ => false,
+    /// Check ⎇ this token is a set operation.
+    ☉ rite is_set_op(this) → !bool {
+        ⌥ this {
+            Token·Union | Token·Intersection | Token·SetMinus |
+            Token·Subset | Token·SubsetEq |
+            Token·Superset | Token·SupersetEq => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a logic operator.
-    pub fn is_logic_op(self) -> !bool {
-        match self {
-            Token::LogicAnd | Token::LogicOr | Token::LogicNot |
-            Token::LogicXor | Token::Top | Token::Bottom => true,
-            _ => false,
+    /// Check ⎇ this token is a logic operator.
+    ☉ rite is_logic_op(this) → !bool {
+        ⌥ this {
+            Token·LogicAnd | Token·LogicOr | Token·LogicNot |
+            Token·LogicXor | Token·Top | Token·Bottom => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is an evidentiality marker.
-    pub fn is_evidentiality(self) -> !bool {
-        match self {
-            Token::Bang | Token::Question |
-            Token::Tilde | Token::Interrobang | Token::Lozenge => true,
-            _ => false,
+    /// Check ⎇ this token is an evidentiality marker.
+    ☉ rite is_evidentiality(this) → !bool {
+        ⌥ this {
+            Token·Bang | Token·Question |
+            Token·Tilde | Token·Interrobang | Token·Lozenge => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is an affective marker.
-    pub fn is_affective(self) -> !bool {
-        match self {
-            Token::DirectSum | Token::AffectNegative | Token::AffectNeutral |
-            Token::IronyMark | Token::IntensityUp | Token::IntensityDown |
-            Token::IntensityMax | Token::FormalRegister | Token::InformalRegister |
-            Token::EmotionJoy | Token::EmotionSadness | Token::EmotionAnger |
-            Token::EmotionFear | Token::EmotionSurprise | Token::EmotionLove |
-            Token::ConfidenceHigh | Token::ConfidenceMedium | Token::ConfidenceLow => true,
-            _ => false,
+    /// Check ⎇ this token is an affective marker.
+    ☉ rite is_affective(this) → !bool {
+        ⌥ this {
+            Token·DirectSum | Token·AffectNegative | Token·AffectNeutral |
+            Token·IronyMark | Token·IntensityUp | Token·IntensityDown |
+            Token·IntensityMax | Token·FormalRegister | Token·InformalRegister |
+            Token·EmotionJoy | Token·EmotionSadness | Token·EmotionAnger |
+            Token·EmotionFear | Token·EmotionSurprise | Token·EmotionLove |
+            Token·ConfidenceHigh | Token·ConfidenceMedium | Token·ConfidenceLow => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a sentiment marker.
-    pub fn is_sentiment(self) -> !bool {
-        match self {
-            Token::DirectSum | Token::AffectNegative | Token::AffectNeutral => true,
-            _ => false,
+    /// Check ⎇ this token is a sentiment marker.
+    ☉ rite is_sentiment(this) → !bool {
+        ⌥ this {
+            Token·DirectSum | Token·AffectNegative | Token·AffectNeutral => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is an emotion marker.
-    pub fn is_emotion(self) -> !bool {
-        match self {
-            Token::EmotionJoy | Token::EmotionSadness | Token::EmotionAnger |
-            Token::EmotionFear | Token::EmotionSurprise | Token::EmotionLove => true,
-            _ => false,
+    /// Check ⎇ this token is an emotion marker.
+    ☉ rite is_emotion(this) → !bool {
+        ⌥ this {
+            Token·EmotionJoy | Token·EmotionSadness | Token·EmotionAnger |
+            Token·EmotionFear | Token·EmotionSurprise | Token·EmotionLove => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is an intensity marker.
-    pub fn is_intensity(self) -> !bool {
-        match self {
-            Token::IntensityUp | Token::IntensityDown | Token::IntensityMax => true,
-            _ => false,
+    /// Check ⎇ this token is an intensity marker.
+    ☉ rite is_intensity(this) → !bool {
+        ⌥ this {
+            Token·IntensityUp | Token·IntensityDown | Token·IntensityMax => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a literal.
-    pub fn is_literal(self) -> !bool {
-        match self {
-            Token::BinaryLit(_) | Token::OctalLit(_) | Token::HexLit(_) |
-            Token::VigesimalLit(_) | Token::SexagesimalLit(_) | Token::DuodecimalLit(_) |
-            Token::FloatLit(_) | Token::IntLit(_) | Token::StringLit(_) |
-            Token::MultiLineStringLit(_) | Token::ByteStringLit(_) | Token::ByteLit(_) |
-            Token::InterpolatedStringLit(_) | Token::SigilStringSql(_) |
-            Token::SigilStringRoute(_) | Token::CharLit(_) |
-            Token::RawStringLit(_) | Token::RawStringDelimited(_) |
-            Token::True | Token::False | Token::Null => true,
-            _ => false,
+    /// Check ⎇ this token is a literal.
+    ☉ rite is_literal(this) → !bool {
+        ⌥ this {
+            Token·BinaryLit(_) | Token·OctalLit(_) | Token·HexLit(_) |
+            Token·VigesimalLit(_) | Token·SexagesimalLit(_) | Token·DuodecimalLit(_) |
+            Token·FloatLit(_) | Token·IntLit(_) | Token·StringLit(_) |
+            Token·MultiLineStringLit(_) | Token·ByteStringLit(_) | Token·ByteLit(_) |
+            Token·InterpolatedStringLit(_) | Token·SigilStringSql(_) |
+            Token·SigilStringRoute(_) | Token·CharLit(_) |
+            Token·RawStringLit(_) | Token·RawStringDelimited(_) |
+            Token·True | Token·False | Token·Null => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a delimiter.
-    pub fn is_delimiter(self) -> !bool {
-        match self {
-            Token::LParen | Token::RParen |
-            Token::LBrace | Token::RBrace |
-            Token::LBracket | Token::RBracket => true,
-            _ => false,
+    /// Check ⎇ this token is a delimiter.
+    ☉ rite is_delimiter(this) → !bool {
+        ⌥ this {
+            Token·LParen | Token·RParen |
+            Token·LBrace | Token·RBrace |
+            Token·LBracket | Token·RBracket => yea,
+            _ => nay,
         }
     }
 
-    /// Check if this token is a protocol keyword.
-    pub fn is_protocol(self) -> !bool {
-        match self {
-            Token::Send | Token::Recv | Token::Stream |
-            Token::Connect | Token::Close | Token::Timeout |
-            Token::Retry | Token::Header | Token::Body |
-            Token::Http | Token::Https | Token::Ws | Token::Wss |
-            Token::Grpc | Token::Kafka | Token::Amqp | Token::GraphQL |
-            Token::ProtoSend | Token::ProtoRecv | Token::ProtoStream |
-            Token::ProtoConnect | Token::ProtoTimeout => true,
-            _ => false,
+    /// Check ⎇ this token is a protocol keyword.
+    ☉ rite is_protocol(this) → !bool {
+        ⌥ this {
+            Token·Send | Token·Recv | Token·Stream |
+            Token·Connect | Token·Close | Token·Timeout |
+            Token·Retry | Token·Header | Token·Body |
+            Token·Http | Token·Https | Token·Ws | Token·Wss |
+            Token·Grpc | Token·Kafka | Token·Amqp | Token·GraphQL |
+            Token·ProtoSend | Token·ProtoRecv | Token·ProtoStream |
+            Token·ProtoConnect | Token·ProtoTimeout => yea,
+            _ => nay,
         }
     }
 }
 
 /// A token with its source span.
-pub type SpannedToken = (Token, Span);
+☉ type SpannedToken = (Token, Span);
 
 // ============================================
 // Tests
 // ============================================
 
 #[test]
-fn test_token_is_keyword() {
-    assert!(Token::Fn.is_keyword());
-    assert!(Token::Let.is_keyword());
-    assert!(Token::If.is_keyword());
-    assert!(!Token::Ident("foo".to_string()).is_keyword());
-    assert!(!Token::Plus.is_keyword());
+rite test_token_is_keyword() {
+    assert!(Token·Fn.is_keyword());
+    assert!(Token·Let.is_keyword());
+    assert!(Token·If.is_keyword());
+    assert!(!Token·Ident("foo".to_string()).is_keyword());
+    assert!(!Token·Plus.is_keyword());
 }
 
 #[test]
-fn test_token_is_morpheme() {
-    assert!(Token::Tau.is_morpheme());
-    assert!(Token::Phi.is_morpheme());
-    assert!(Token::Sigma.is_morpheme());
-    assert!(Token::Rho.is_morpheme());
-    assert!(!Token::Plus.is_morpheme());
+rite test_token_is_morpheme() {
+    assert!(Token·Tau.is_morpheme());
+    assert!(Token·Phi.is_morpheme());
+    assert!(Token·Sigma.is_morpheme());
+    assert!(Token·Rho.is_morpheme());
+    assert!(!Token·Plus.is_morpheme());
 }
 
 #[test]
-fn test_token_is_evidentiality() {
-    assert!(Token::Bang.is_evidentiality());
-    assert!(Token::Question.is_evidentiality());
-    assert!(Token::Tilde.is_evidentiality());
-    assert!(Token::Interrobang.is_evidentiality());
-    assert!(!Token::Plus.is_evidentiality());
+rite test_token_is_evidentiality() {
+    assert!(Token·Bang.is_evidentiality());
+    assert!(Token·Question.is_evidentiality());
+    assert!(Token·Tilde.is_evidentiality());
+    assert!(Token·Interrobang.is_evidentiality());
+    assert!(!Token·Plus.is_evidentiality());
 }
 
 #[test]
-fn test_token_is_literal() {
-    assert!(Token::IntLit("42".to_string()).is_literal());
-    assert!(Token::StringLit("hello".to_string()).is_literal());
-    assert!(Token::True.is_literal());
-    assert!(!Token::Ident("x".to_string()).is_literal());
+rite test_token_is_literal() {
+    assert!(Token·IntLit("42".to_string()).is_literal());
+    assert!(Token·StringLit("hello".to_string()).is_literal());
+    assert!(Token·True.is_literal());
+    assert!(!Token·Ident("x".to_string()).is_literal());
 }

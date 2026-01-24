@@ -1,0 +1,19 @@
+// Test: Measurement in arbitrary basis
+// Spec: 12-QUANTUM.md § 5.1 Measurement Operations
+// Priority: P1 - Core Feature
+
+fn main() {
+    // Prepare |+⟩ state
+    let q: linear Qubit = Qubit·zero();
+    let qh: linear Qubit = q|H;
+
+    // Measure in X basis (Hadamard basis)
+    // |+⟩ measured in X basis always gives 0
+    let result = measure_basis(qh, Basis·X());
+    println(result);  // 0
+
+    // Prepare |0⟩ and measure in Z basis
+    let q2: linear Qubit = Qubit·zero();
+    let result2 = measure_basis(q2, Basis·Z());
+    println(result2);  // 0
+}

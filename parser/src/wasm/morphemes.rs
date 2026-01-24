@@ -164,6 +164,9 @@ impl WasmCompiler {
                 Err(WasmError::unsupported("possibility method call"))
             }
             PipeOp::NecessityMethod { .. } => Err(WasmError::unsupported("necessity method call")),
+
+            // Function call in pipe context
+            PipeOp::Call(_) => Err(WasmError::unsupported("call in pipe context")),
         }
     }
 
@@ -797,6 +800,7 @@ impl WasmCompiler {
                 params,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // Create a new function for this closure (is_move handled in closure compilation)
                 let fn_name = format!("__closure_{}", self.functions.len());
@@ -1088,6 +1092,7 @@ impl WasmCompiler {
                 params,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // Inline closure: bind parameter and compile body (is_move irrelevant for inline)
                 if params.len() != 1 {
@@ -1146,6 +1151,7 @@ impl WasmCompiler {
                 params,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // is_move irrelevant for inline binary closure application
                 if params.len() != 2 {
@@ -1331,6 +1337,8 @@ mod tests {
                 op: crate::ast::BinOp::Mul,
                 right: Box::new(make_int(2)),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack
@@ -1369,6 +1377,8 @@ mod tests {
                 op: crate::ast::BinOp::Gt,
                 right: Box::new(make_int(0)),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack
@@ -1417,6 +1427,8 @@ mod tests {
                 op: crate::ast::BinOp::Add,
                 right: Box::new(make_path("b")),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack

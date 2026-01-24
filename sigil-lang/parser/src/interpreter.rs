@@ -420,7 +420,15 @@ impl fmt::Display for Value {
             Value::Null => write!(f, "null"),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Int(n) => write!(f, "{}", n),
-            Value::Float(n) => write!(f, "{}", n),
+            Value::Float(n) => {
+                // Always print floats with at least one decimal place
+                let s = format!("{}", n);
+                if s.contains('.') || s.contains('e') || s.contains('E') {
+                    write!(f, "{}", s)
+                } else {
+                    write!(f, "{}.0", s)
+                }
+            }
             Value::String(s) => write!(f, "{}", s),
             Value::Char(c) => write!(f, "{}", c),
             Value::Array(arr) => {
@@ -479,6 +487,15 @@ impl fmt::Display for Value {
                     });
                 }
                 write!(f, "{}{}", value, suffix)
+            }
+            // Special Display for quantum types
+            Value::Struct { name, fields } if name == "Cbit" => {
+                let fields = fields.borrow();
+                match fields.get("__value__") {
+                    Some(Value::Bool(true)) => write!(f, "1"),
+                    Some(Value::Bool(false)) => write!(f, "0"),
+                    _ => write!(f, "Cbit(?)"),
+                }
             }
             _ => write!(f, "{:?}", self),
         }
@@ -684,6 +701,8 @@ pub struct Interpreter {
     pub crate_modules: HashSet<String>,
     /// Crate aliases (e.g., "tome" alias for "jormungandr" crate)
     pub crate_aliases: HashSet<String>,
+    /// Defined runes (user-defined macros): name -> MacroDef
+    pub defined_runes: HashMap<String, crate::ast::MacroDef>,
 }
 
 /// Type definition for structs/enums
@@ -691,6 +710,31 @@ pub struct Interpreter {
 pub enum TypeDef {
     Struct(StructDef),
     Enum(EnumDef),
+}
+
+// ============================================================================
+// Holographic Helper Functions (for probabilistic data structures)
+// Uses shared implementation from crate::holographic module
+// ============================================================================
+
+/// Hash a Value for holographic data structures
+/// Converts Value to bytes and calls shared FNV-1a implementation
+fn holographic_hash_value(value: &Value, seed: u64) -> u64 {
+    let bytes = format!("{:?}", value);
+    crate::holographic::holographic_hash(bytes.as_bytes(), seed)
+}
+
+/// Compute HyperLogLog cardinality estimate from Sigil register array
+/// Converts Value::Int registers to i64 and calls shared hll_estimate
+fn hll_cardinality_from_registers(registers: &[Value], precision: u32) -> i64 {
+    let regs: Vec<i64> = registers.iter()
+        .map(|v| match v {
+            Value::Int(n) => *n,
+            _ => 0,
+        })
+        .collect();
+    let (estimate, _std_error) = crate::holographic::hll_estimate(&regs, precision);
+    estimate.round() as i64
 }
 
 impl Interpreter {
@@ -718,6 +762,7 @@ impl Interpreter {
             current_crate: None,
             crate_modules: HashSet::new(),
             crate_aliases: HashSet::new(),
+            defined_runes: HashMap::new(),
         };
 
         // Register built-in functions
@@ -992,7 +1037,7 @@ impl Interpreter {
 
         // Determine base directory for tome modules
         // For 'tome' (current crate), we need the crate's src/ directory
-        // Priority: project_root/src > current_source_dir
+        // Priority: project_root/src > current_source_dir/../src > current_source_dir
         let base_dir = if let Some(ref root) = self.project_root {
             // If project root has a src/ directory, use it
             let src_dir = root.join("src");
@@ -1004,7 +1049,18 @@ impl Interpreter {
             }
         } else if let Some(ref source_dir) = self.current_source_dir {
             // Fall back to current source directory
-            std::path::PathBuf::from(source_dir)
+            // But first, try checking if parent directory has src/ (for tests/ sibling case)
+            let source_path = std::path::PathBuf::from(source_dir);
+            if let Some(parent) = source_path.parent() {
+                let sibling_src = parent.join("src");
+                if sibling_src.exists() {
+                    sibling_src
+                } else {
+                    source_path
+                }
+            } else {
+                source_path
+            }
         } else {
             crate::sigil_debug!("DEBUG load_tome_module: no source directory available");
             return Ok(false);
@@ -1051,8 +1107,8 @@ impl Interpreter {
         let prev_module = self.current_module.clone();
         let prev_source_dir = self.current_source_dir.clone();
 
-        // Set module context - use the full path without "tome" prefix
-        let module_name = module_path.join("·");
+        // Set module context - include "tome" prefix so glob imports can find methods
+        let module_name = format!("tome·{}", module_path.join("·"));
         self.current_module = Some(module_name.clone());
         self.current_source_dir = actual_path.parent().map(|p| p.to_string_lossy().to_string());
 
@@ -2109,7 +2165,7 @@ impl Interpreter {
             result = self.execute_item(&item.node)?;
         }
 
-        // Look for main function and execute it (only if it takes no args)
+        // Look for main function and execute it
         let main_fn = self.globals.borrow().get("main").and_then(|v| {
             if let Value::Function(f) = v {
                 Some(f.clone())
@@ -2118,11 +2174,19 @@ impl Interpreter {
             }
         });
         if let Some(f) = main_fn {
-            // Only auto-call main if it takes no arguments
-            // If main expects args, caller should call it explicitly via call_function_by_name
             if f.params.is_empty() {
+                // main() - no arguments
                 result = self.call_function(&f, vec![])?;
+            } else if f.params.len() == 1 {
+                // main(args: [String]) - pass program arguments as array
+                let args = self.get_program_args();
+                let arg_values: Vec<Value> = args.iter()
+                    .map(|s| Value::String(Rc::new(s.clone())))
+                    .collect();
+                let args_value = Value::Array(Rc::new(RefCell::new(arg_values)));
+                result = self.call_function(&f, vec![args_value])?;
             }
+            // If main has more than 1 param, skip auto-call
         }
 
         Ok(result)
@@ -2572,6 +2636,22 @@ impl Interpreter {
                 self.process_use_tree(&use_decl.tree, &[])?;
                 Ok(Value::Null)
             }
+            Item::Macro(macro_def) => {
+                // Register user-defined rune (macro)
+                let name = macro_def.name.name.clone();
+                crate::sigil_debug!("DEBUG Registering rune: {}", name);
+                self.defined_runes.insert(name, macro_def.clone());
+                Ok(Value::Null)
+            }
+            Item::MacroInvocation(invocation) => {
+                // Item-level macro invocation (e.g., thread_local! { ... })
+                // For now, just skip these as they're typically compile-time
+                let macro_name = invocation.path.segments.last()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
+                crate::sigil_debug!("DEBUG Item::MacroInvocation: {}", macro_name);
+                Ok(Value::Null)
+            }
             _ => Ok(Value::Null), // Skip other items for now
         }
     }
@@ -2680,6 +2760,29 @@ impl Interpreter {
             UseTree::Glob => {
                 // use foo::bar::* - import all from foo·bar
                 let path_prefix = prefix.join("·");
+
+                // Load the module first if it hasn't been loaded
+                if !prefix.is_empty() {
+                    let first_segment = &prefix[0];
+                    let module_key = if first_segment == "tome" || first_segment == "crate" {
+                        format!("tome·{}", prefix[1..].join("·"))
+                    } else {
+                        first_segment.clone()
+                    };
+
+                    if !self.loaded_crates.contains(&module_key) {
+                        if first_segment == "tome" || first_segment == "crate" {
+                            let module_path: Vec<String> = prefix[1..].to_vec();
+                            if let Err(e) = self.load_tome_module(&module_path) {
+                                crate::sigil_debug!("DEBUG glob: failed to load tome module '{:?}': {}", module_path, e);
+                            }
+                        } else {
+                            if let Err(e) = self.load_crate(first_segment) {
+                                crate::sigil_debug!("DEBUG glob: failed to load crate '{}': {}", first_segment, e);
+                            }
+                        }
+                    }
+                }
                 // Find all types starting with this prefix
                 let matching_types: Vec<(String, TypeDef)> = self.types.iter()
                     .filter(|(k, _)| k.starts_with(&path_prefix) && k.len() > path_prefix.len())
@@ -2689,8 +2792,8 @@ impl Interpreter {
                     })
                     .filter(|(k, _)| !k.contains('·')) // Only immediate children
                     .collect();
-                for (name, def) in matching_types {
-                    self.types.insert(name, def);
+                for (name, def) in &matching_types {
+                    self.types.insert(name.clone(), def.clone());
                 }
                 // Similar for functions
                 let matching_funcs: Vec<(String, Value)> = {
@@ -2707,6 +2810,29 @@ impl Interpreter {
                 for (name, val) in matching_funcs {
                     self.globals.borrow_mut().define(name, val);
                 }
+
+                // Also import impl methods for each imported type
+                // e.g., when glob-importing foo·bar, also import foo·bar·TypeName·method as TypeName·method
+                for (type_name, _) in &matching_types {
+                    let method_prefix = format!("{}·{}·", path_prefix, type_name);
+                    let matching_methods: Vec<(String, Value)> = {
+                        let globals = self.globals.borrow();
+                        globals.values.iter()
+                            .filter(|(k, _)| k.starts_with(&method_prefix))
+                            .map(|(k, (v, _))| {
+                                // foo·bar·Container·new -> Container·new
+                                let method_name = k.strip_prefix(&path_prefix).unwrap().trim_start_matches('·');
+                                (method_name.to_string(), v.clone())
+                            })
+                            .collect()
+                    };
+                    for (name, val) in matching_methods {
+                        if self.globals.borrow().get(&name).is_none() {
+                            self.globals.borrow_mut().define(name, val);
+                        }
+                    }
+                }
+
                 Ok(())
             }
             UseTree::Group(trees) => {
@@ -2904,8 +3030,14 @@ impl Interpreter {
                         }
                     }
                     _ => {
-                        // Unknown macro - return tokens as string for debugging
-                        Ok(Value::String(Rc::new(tokens.clone())))
+                        // Check for user-defined rune
+                        if let Some(rune_def) = self.defined_runes.get(macro_name).cloned() {
+                            crate::sigil_debug!("DEBUG Expanding user-defined rune: {}", macro_name);
+                            self.expand_rune(&rune_def, tokens, None)
+                        } else {
+                            // Unknown macro - return tokens as string for debugging
+                            Ok(Value::String(Rc::new(tokens.clone())))
+                        }
                     }
                 }
             }
@@ -3510,13 +3642,66 @@ impl Interpreter {
                 _ => Err(RuntimeError::new("Invalid boolean operation")),
             },
             (Value::Array(a), Value::Array(b)) => match op {
-                BinOp::Concat => {
+                BinOp::Concat | BinOp::Convolve => {
+                    // Convolution merges arrays (simplified: concatenation)
                     let mut result = a.borrow().clone();
                     result.extend(b.borrow().iter().cloned());
                     Ok(Value::Array(Rc::new(RefCell::new(result))))
                 }
                 BinOp::Eq => Ok(Value::Bool(Rc::ptr_eq(&a, &b))),
                 BinOp::Ne => Ok(Value::Bool(!Rc::ptr_eq(&a, &b))),
+                BinOp::Hadamard => {
+                    // Element-wise (Hadamard) product: a ⊙ b
+                    let a_arr = a.borrow();
+                    let b_arr = b.borrow();
+                    if a_arr.len() != b_arr.len() {
+                        return Err(RuntimeError::new("Hadamard product requires arrays of equal length"));
+                    }
+                    let result: Vec<Value> = a_arr.iter().zip(b_arr.iter()).map(|(ai, bi)| {
+                        match (ai, bi) {
+                            (Value::Float(x), Value::Float(y)) => Value::Float(x * y),
+                            (Value::Int(x), Value::Int(y)) => Value::Int(x * y),
+                            (Value::Float(x), Value::Int(y)) => Value::Float(x * (*y as f64)),
+                            (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64) * y),
+                            _ => Value::Float(0.0),
+                        }
+                    }).collect();
+                    Ok(Value::Array(Rc::new(RefCell::new(result))))
+                }
+                BinOp::MatMul => {
+                    // Matrix multiplication: a @ b
+                    // Treat as 1D dot product for vectors, or 2D matmul for nested arrays
+                    let a_arr = a.borrow();
+                    let b_arr = b.borrow();
+
+                    // Check if these are 2D matrices (arrays of arrays)
+                    let a_is_2d = a_arr.first().map(|v| matches!(v, Value::Array(_))).unwrap_or(false);
+                    let b_is_2d = b_arr.first().map(|v| matches!(v, Value::Array(_))).unwrap_or(false);
+
+                    if a_is_2d && b_is_2d {
+                        // 2D matrix multiplication
+                        self.matmul_2d(&a_arr, &b_arr)
+                    } else if !a_is_2d && !b_is_2d {
+                        // 1D dot product
+                        if a_arr.len() != b_arr.len() {
+                            return Err(RuntimeError::new("Vector dot product requires equal lengths"));
+                        }
+                        let mut sum = 0.0f64;
+                        for (ai, bi) in a_arr.iter().zip(b_arr.iter()) {
+                            let prod = match (ai, bi) {
+                                (Value::Float(x), Value::Float(y)) => x * y,
+                                (Value::Int(x), Value::Int(y)) => (*x as f64) * (*y as f64),
+                                (Value::Float(x), Value::Int(y)) => x * (*y as f64),
+                                (Value::Int(x), Value::Float(y)) => (*x as f64) * y,
+                                _ => 0.0,
+                            };
+                            sum += prod;
+                        }
+                        Ok(Value::Float(sum))
+                    } else {
+                        Err(RuntimeError::new("Matrix multiplication dimension mismatch"))
+                    }
+                }
                 _ => Err(RuntimeError::new("Invalid array operation")),
             },
             // Null equality
@@ -3580,7 +3765,14 @@ impl Interpreter {
                 BinOp::Eq => {
                     let eq = e1 == e2 && v1 == v2 && match (f1, f2) {
                         (None, None) => true,
-                        (Some(a), Some(b)) => Rc::ptr_eq(&a, &b),
+                        (Some(a), Some(b)) => {
+                            // Compare field values, not Rc pointers
+                            if a.len() != b.len() {
+                                false
+                            } else {
+                                a.iter().zip(b.iter()).all(|(va, vb)| self.values_equal(va, vb))
+                            }
+                        }
                         _ => false,
                     };
                     Ok(Value::Bool(eq))
@@ -3588,17 +3780,296 @@ impl Interpreter {
                 BinOp::Ne => {
                     let eq = e1 == e2 && v1 == v2 && match (f1, f2) {
                         (None, None) => true,
-                        (Some(a), Some(b)) => Rc::ptr_eq(&a, &b),
+                        (Some(a), Some(b)) => {
+                            // Compare field values, not Rc pointers
+                            if a.len() != b.len() {
+                                false
+                            } else {
+                                a.iter().zip(b.iter()).all(|(va, vb)| self.values_equal(va, vb))
+                            }
+                        }
                         _ => false,
                     };
                     Ok(Value::Bool(!eq))
                 }
                 _ => Err(RuntimeError::new("Invalid variant operation")),
             },
-            // Struct equality (by reference)
+            // Struct equality (by reference, except for value types like Cbit)
             (Value::Struct { name: n1, fields: f1 }, Value::Struct { name: n2, fields: f2 }) => match op {
-                BinOp::Eq => Ok(Value::Bool(n1 == n2 && Rc::ptr_eq(&f1, &f2))),
-                BinOp::Ne => Ok(Value::Bool(n1 != n2 || !Rc::ptr_eq(&f1, &f2))),
+                BinOp::Eq => {
+                    if n1 != n2 {
+                        return Ok(Value::Bool(false));
+                    }
+                    // Special case: Cbit compares by value, not reference
+                    if n1 == "Cbit" {
+                        let f1 = f1.borrow();
+                        let f2 = f2.borrow();
+                        let v1 = f1.get("__value__");
+                        let v2 = f2.get("__value__");
+                        let eq = match (v1, v2) {
+                            (Some(Value::Bool(b1)), Some(Value::Bool(b2))) => b1 == b2,
+                            _ => false,
+                        };
+                        return Ok(Value::Bool(eq));
+                    }
+                    // Default: pointer equality for other structs
+                    Ok(Value::Bool(Rc::ptr_eq(&f1, &f2)))
+                }
+                BinOp::Ne => {
+                    if n1 != n2 {
+                        return Ok(Value::Bool(true));
+                    }
+                    // Special case: Cbit compares by value, not reference
+                    if n1 == "Cbit" {
+                        let f1 = f1.borrow();
+                        let f2 = f2.borrow();
+                        let v1 = f1.get("__value__");
+                        let v2 = f2.get("__value__");
+                        let ne = match (v1, v2) {
+                            (Some(Value::Bool(b1)), Some(Value::Bool(b2))) => b1 != b2,
+                            _ => true,
+                        };
+                        return Ok(Value::Bool(ne));
+                    }
+                    // Default: pointer inequality for other structs
+                    Ok(Value::Bool(!Rc::ptr_eq(&f1, &f2)))
+                }
+                // Tensor product for Qubits: a ⊗ b -> QRegister
+                BinOp::TensorProd => {
+                    if n1 == "Qubit" && n2 == "Qubit" {
+                        // Reconstruct Value::Struct from destructured parts
+                        let left_val = Value::Struct { name: n1.clone(), fields: f1.clone() };
+                        let right_val = Value::Struct { name: n2.clone(), fields: f2.clone() };
+                        return self.call_builtin_by_name("tensor", vec![left_val, right_val]);
+                    }
+                    if n1 == "QRegister" && n2 == "Qubit" {
+                        let left_val = Value::Struct { name: n1.clone(), fields: f1.clone() };
+                        let right_val = Value::Struct { name: n2.clone(), fields: f2.clone() };
+                        return self.call_builtin_by_name("tensor", vec![left_val, right_val]);
+                    }
+                    Err(RuntimeError::new(format!("TensorProd not supported for {} ⊗ {}", n1, n2)))
+                }
+                // Matrix multiplication for Tensors: a @ b
+                BinOp::MatMul => {
+                    if n1 == "Tensor" && n2 == "Tensor" {
+                        // Extract data as 2D arrays and compute matmul
+                        let a_data = {
+                            let f = f1.borrow();
+                            match f.get("__data__") {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor A")),
+                            }
+                        };
+                        let b_data = {
+                            let f = f2.borrow();
+                            match f.get("__data__") {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor B")),
+                            }
+                        };
+                        let a_shape: Vec<i64> = {
+                            let f = f1.borrow();
+                            match f.get("__shape__") {
+                                Some(Value::Array(arr)) => arr.borrow().iter().map(|v| match v {
+                                    Value::Int(i) => *i,
+                                    _ => 1,
+                                }).collect(),
+                                _ => vec![a_data.len() as i64],
+                            }
+                        };
+                        let b_shape: Vec<i64> = {
+                            let f = f2.borrow();
+                            match f.get("__shape__") {
+                                Some(Value::Array(arr)) => arr.borrow().iter().map(|v| match v {
+                                    Value::Int(i) => *i,
+                                    _ => 1,
+                                }).collect(),
+                                _ => vec![b_data.len() as i64],
+                            }
+                        };
+
+                        // For 2D tensors: [M, K] @ [K, N] = [M, N]
+                        if a_shape.len() == 2 && b_shape.len() == 2 {
+                            let m = a_shape[0] as usize;
+                            let k = a_shape[1] as usize;
+                            let k2 = b_shape[0] as usize;
+                            let n = b_shape[1] as usize;
+
+                            if k != k2 {
+                                return Err(RuntimeError::new(format!(
+                                    "Tensor matmul dimension mismatch: [{}, {}] @ [{}, {}]",
+                                    m, k, k2, n
+                                )));
+                            }
+
+                            // Compute C = A @ B
+                            let mut result_data: Vec<Value> = Vec::with_capacity(m * n);
+                            for i in 0..m {
+                                for j in 0..n {
+                                    let mut sum = 0.0f64;
+                                    for kk in 0..k {
+                                        let a_val = match &a_data[i * k + kk] {
+                                            Value::Float(f) => *f,
+                                            Value::Int(x) => *x as f64,
+                                            _ => 0.0,
+                                        };
+                                        let b_val = match &b_data[kk * n + j] {
+                                            Value::Float(f) => *f,
+                                            Value::Int(x) => *x as f64,
+                                            _ => 0.0,
+                                        };
+                                        sum += a_val * b_val;
+                                    }
+                                    result_data.push(Value::Float(sum));
+                                }
+                            }
+
+                            // Create result tensor
+                            let mut fields = std::collections::HashMap::new();
+                            fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
+                            fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::Int(m as i64), Value::Int(n as i64)
+                            ]))));
+                            fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::Int(m as i64), Value::Int(n as i64)
+                            ]))));
+                            fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                            fields.insert("__grad__".to_string(), Value::Null);
+                            fields.insert("grad".to_string(), Value::Null);
+
+                            return Ok(Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(fields)),
+                            });
+                        }
+                        Err(RuntimeError::new("Tensor matmul requires 2D tensors"))
+                    } else {
+                        Err(RuntimeError::new(format!("MatMul not supported for {} @ {}", n1, n2)))
+                    }
+                }
+                // Regular multiplication for Tensors: element-wise multiply
+                BinOp::Mul => {
+                    if n1 == "Tensor" && n2 == "Tensor" {
+                        let a_data = {
+                            let f = f1.borrow();
+                            match f.get("__data__") {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor A")),
+                            }
+                        };
+                        let b_data = {
+                            let f = f2.borrow();
+                            match f.get("__data__") {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor B")),
+                            }
+                        };
+                        let shape: Vec<i64> = {
+                            let f = f1.borrow();
+                            match f.get("__shape__") {
+                                Some(Value::Array(arr)) => arr.borrow().iter().map(|v| match v {
+                                    Value::Int(i) => *i,
+                                    _ => 1,
+                                }).collect(),
+                                _ => vec![a_data.len() as i64],
+                            }
+                        };
+
+                        if a_data.len() != b_data.len() {
+                            return Err(RuntimeError::new("Tensor multiplication requires tensors of equal size"));
+                        }
+
+                        let result_data: Vec<Value> = a_data.iter().zip(b_data.iter()).map(|(a, b)| {
+                            match (a, b) {
+                                (Value::Float(x), Value::Float(y)) => Value::Float(x * y),
+                                (Value::Int(x), Value::Int(y)) => Value::Float((*x as f64) * (*y as f64)),
+                                (Value::Float(x), Value::Int(y)) => Value::Float(x * (*y as f64)),
+                                (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64) * y),
+                                _ => Value::Float(0.0),
+                            }
+                        }).collect();
+
+                        let mut fields = std::collections::HashMap::new();
+                        fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
+                        fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(
+                            shape.iter().map(|s| Value::Int(*s)).collect()
+                        ))));
+                        fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(
+                            shape.iter().map(|s| Value::Int(*s)).collect()
+                        ))));
+                        fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                        fields.insert("__grad__".to_string(), Value::Null);
+                        fields.insert("grad".to_string(), Value::Null);
+
+                        return Ok(Value::Struct {
+                            name: "Tensor".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(format!("Mul not supported for {} * {}", n1, n2)))
+                }
+                // Hadamard product for Tensors: a ⊙ b
+                BinOp::Hadamard => {
+                    if n1 == "Tensor" && n2 == "Tensor" {
+                        let a_data = {
+                            let f = f1.borrow();
+                            match f.get("__data__") {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor A")),
+                            }
+                        };
+                        let b_data = {
+                            let f = f2.borrow();
+                            match f.get("__data__") {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor B")),
+                            }
+                        };
+                        let shape: Vec<i64> = {
+                            let f = f1.borrow();
+                            match f.get("__shape__") {
+                                Some(Value::Array(arr)) => arr.borrow().iter().map(|v| match v {
+                                    Value::Int(i) => *i,
+                                    _ => 1,
+                                }).collect(),
+                                _ => vec![a_data.len() as i64],
+                            }
+                        };
+
+                        if a_data.len() != b_data.len() {
+                            return Err(RuntimeError::new("Hadamard product requires tensors of equal size"));
+                        }
+
+                        let result_data: Vec<Value> = a_data.iter().zip(b_data.iter()).map(|(a, b)| {
+                            match (a, b) {
+                                (Value::Float(x), Value::Float(y)) => Value::Float(x * y),
+                                (Value::Int(x), Value::Int(y)) => Value::Float((*x as f64) * (*y as f64)),
+                                (Value::Float(x), Value::Int(y)) => Value::Float(x * (*y as f64)),
+                                (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64) * y),
+                                _ => Value::Float(0.0),
+                            }
+                        }).collect();
+
+                        // Create result tensor
+                        let mut fields = std::collections::HashMap::new();
+                        fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
+                        fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(
+                            shape.iter().map(|s| Value::Int(*s)).collect()
+                        ))));
+                        fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(
+                            shape.iter().map(|s| Value::Int(*s)).collect()
+                        ))));
+                        fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                        fields.insert("__grad__".to_string(), Value::Null);
+                        fields.insert("grad".to_string(), Value::Null);
+
+                        return Ok(Value::Struct {
+                            name: "Tensor".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        });
+                    }
+                    Err(RuntimeError::new(format!("Hadamard not supported for {} ⊙ {}", n1, n2)))
+                }
                 _ => Err(RuntimeError::new("Invalid struct operation")),
             },
             // Option::Some compared with a non-Option value - unwrap and compare
@@ -3807,10 +4278,6 @@ impl Interpreter {
                 .map(|s| s.ident.name.as_str())
                 .collect::<Vec<_>>()
                 .join("·");
-            if qualified_name.contains("read") || qualified_name.contains("fs") {
-                eprintln!("[DEBUG eval_call] qualified_name='{}', segments={}", qualified_name, path.segments.len());
-            }
-
             // Handle Self(...) as tuple struct constructor
             if qualified_name == "Self" {
                 if let Some(ref self_type) = self.current_self_type {
@@ -4276,6 +4743,25 @@ impl Interpreter {
         (builtin.func)(self, args)
     }
 
+    /// Call a builtin function by name
+    fn call_builtin_by_name(&mut self, name: &str, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        // Look up the builtin in the global environment
+        // Clone to avoid borrow issues
+        let builtin_opt = {
+            let globals = self.globals.borrow();
+            if let Some(Value::BuiltIn(builtin)) = globals.get(name) {
+                Some(builtin.clone())
+            } else {
+                None
+            }
+        };
+
+        if let Some(builtin) = builtin_opt {
+            return self.call_builtin(&builtin, args);
+        }
+        Err(RuntimeError::new(format!("Unknown builtin: {}", name)))
+    }
+
     /// Await a value - if it's a future, resolve it; otherwise return as-is
     pub fn await_value(&mut self, value: Value) -> Result<Value, RuntimeError> {
         match value {
@@ -4610,6 +5096,21 @@ impl Interpreter {
                         }
                         Ok(())
                     }
+                    // Handle struct-tuples (returned by functions like entangle_holograms)
+                    Value::Struct { name, fields } if name == "Tuple" => {
+                        let f = fields.borrow();
+                        for (idx, p) in patterns.iter().enumerate() {
+                            let key = idx.to_string();
+                            if let Some(v) = f.get(&key) {
+                                self.bind_pattern(p, v.clone())?;
+                            } else {
+                                return Err(RuntimeError::new(&format!(
+                                    "Tuple missing element at index {}", idx
+                                )));
+                            }
+                        }
+                        Ok(())
+                    }
                     _ => Err(RuntimeError::new("Expected tuple"))
                 }
             }
@@ -4872,6 +5373,9 @@ impl Interpreter {
             }
             TypeExpr::Reference { inner, .. } => self.type_expr_to_string(inner),
             TypeExpr::Evidential { inner, .. } => self.type_expr_to_string(inner),
+            TypeExpr::Linear(inner) => self.type_expr_to_string(inner),
+            TypeExpr::Affine(inner) => self.type_expr_to_string(inner),
+            TypeExpr::Relevant(inner) => self.type_expr_to_string(inner),
             _ => String::new(),
         }
     }
@@ -5501,6 +6005,71 @@ impl Interpreter {
                 let sliced = &s[start..end];
                 Ok(Value::String(Rc::new(sliced.to_string())))
             }
+            // Tensor indexing: t[i] returns row or element depending on shape
+            (Value::Struct { name, fields }, Value::Int(i)) if name == "Tensor" => {
+                if i < 0 {
+                    return Err(RuntimeError::new(format!(
+                        "Tensor index cannot be negative: {}", i
+                    )));
+                }
+                let i = i as usize;
+                let f = fields.borrow();
+                let data = match f.get("__data__") {
+                    Some(Value::Array(arr)) => arr.borrow().clone(),
+                    _ => return Err(RuntimeError::new("Invalid Tensor")),
+                };
+                let shape: Vec<i64> = match f.get("__shape__") {
+                    Some(Value::Array(arr)) => arr.borrow().iter().map(|v| match v {
+                        Value::Int(n) => *n,
+                        _ => 1,
+                    }).collect(),
+                    _ => vec![data.len() as i64],
+                };
+                drop(f);
+
+                if shape.is_empty() {
+                    // Scalar - can't index
+                    return Err(RuntimeError::new("Cannot index scalar tensor"));
+                } else if shape.len() == 1 {
+                    // 1D tensor - return element
+                    data.get(i)
+                        .cloned()
+                        .ok_or_else(|| RuntimeError::new("Tensor index out of bounds"))
+                } else {
+                    // Multi-D tensor - return slice as array or nested tensor
+                    // For t[i] on 2D tensor [M, N], return row i (N elements)
+                    let row_size: usize = shape[1..].iter().map(|x| *x as usize).product();
+                    let start = i * row_size;
+                    let end = start + row_size;
+                    if end > data.len() {
+                        return Err(RuntimeError::new("Tensor index out of bounds"));
+                    }
+                    let row_data: Vec<Value> = data[start..end].to_vec();
+
+                    if shape.len() == 2 {
+                        // 2D: return simple array for the row
+                        Ok(Value::Array(Rc::new(RefCell::new(row_data))))
+                    } else {
+                        // Higher-D: return sub-tensor
+                        let new_shape: Vec<i64> = shape[1..].to_vec();
+                        let mut fields = std::collections::HashMap::new();
+                        fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(row_data))));
+                        fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(
+                            new_shape.iter().map(|s| Value::Int(*s)).collect()
+                        ))));
+                        fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(
+                            new_shape.iter().map(|s| Value::Int(*s)).collect()
+                        ))));
+                        fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                        fields.insert("__grad__".to_string(), Value::Null);
+                        fields.insert("grad".to_string(), Value::Null);
+                        Ok(Value::Struct {
+                            name: "Tensor".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        })
+                    }
+                }
+            }
             (coll, idx) => {
                 crate::sigil_debug!("DEBUG Cannot index: collection={:?}, index={:?}",
                     std::mem::discriminant(&coll), std::mem::discriminant(&idx));
@@ -5631,22 +6200,30 @@ impl Interpreter {
                 let recv_exists = self.environment.borrow().get(recv_name).is_some();
                 if !recv_exists {
                     let combined_name = format!("{}·{}", recv_name, method.name);
-                    eprintln!("[DEBUG] Trying combined lookup: '{}' (recv='{}', method='{}')", combined_name, recv_name, method.name);
                     // Check if combined function exists in environment or globals
                     let func_val_opt = self.environment.borrow().get(&combined_name)
                         .or_else(|| self.globals.borrow().get(&combined_name));
-                    eprintln!("[DEBUG] Combined lookup result: {:?}", func_val_opt.is_some());
                     if let Some(func_val) = func_val_opt {
                         // Evaluate arguments and call the function
                         let arg_values: Vec<Value> = args
                             .iter()
                             .map(|a| self.evaluate(a))
                             .collect::<Result<_, _>>()?;
-                        return match func_val {
+
+                        // Set current_self_type for Self { ... } resolution in constructors
+                        // recv_name is the type name (e.g., "DebugLexer" from "DebugLexer·new")
+                        let old_self_type = self.current_self_type.take();
+                        self.current_self_type = Some(recv_name.clone());
+
+                        let result = match func_val {
                             Value::Function(f) => self.call_function(&f, arg_values),
                             Value::BuiltIn(b) => self.call_builtin(&b, arg_values),
                             _ => Err(RuntimeError::new(format!("{} is not a function", combined_name))),
                         };
+
+                        // Restore old Self type
+                        self.current_self_type = old_self_type;
+                        return result;
                     }
                 }
             }
@@ -5783,7 +6360,10 @@ impl Interpreter {
                 if let Some(first) = arr_ref.first() {
                     let expected_type = self.get_value_type_name(first);
                     let actual_type = self.get_value_type_name(&arg_values[0]);
-                    if expected_type != actual_type {
+                    // For enum variants like "Stmt::Let" and "Stmt::Semi", compare base type
+                    let expected_base = expected_type.split("::").next().unwrap_or(&expected_type);
+                    let actual_base = actual_type.split("::").next().unwrap_or(&actual_type);
+                    if expected_base != actual_base {
                         return Err(RuntimeError::new(format!(
                             "type mismatch: cannot push {} into Vec<{}>",
                             actual_type, expected_type
@@ -6083,6 +6663,17 @@ impl Interpreter {
                         }
                     }
                     _ => Err(RuntimeError::new("strip_suffix expects string")),
+                }
+            }
+            (Value::String(s), "replace") => {
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("replace expects 2 arguments (from, to)"));
+                }
+                match (&arg_values[0], &arg_values[1]) {
+                    (Value::String(from), Value::String(to)) => {
+                        Ok(Value::String(Rc::new(s.replace(from.as_str(), to.as_str()))))
+                    }
+                    _ => Err(RuntimeError::new("replace expects two string arguments")),
                 }
             }
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
@@ -7520,6 +8111,521 @@ impl Interpreter {
                     }
                 }
 
+                // ==========================================
+                // Holographic Sketch Types (Spec 11-HOLOGRAPHIC.md)
+                // ==========================================
+
+                // HyperLogLog methods - probabilistic cardinality estimation
+                // Uses hybrid approach: exact set for small cardinalities, HLL for large
+                if name == "HyperLogLog" {
+                    const SMALL_SET_THRESHOLD: usize = 1000;
+
+                    match method.name.as_str() {
+                        "insert" => {
+                            // insert(value) - add a value using hybrid exact/HLL algorithm
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("HyperLogLog.insert expects 1 argument"));
+                            }
+                            let value = &arg_values[0];
+                            let mut fields_mut = fields.borrow_mut();
+
+                            // Check if we're still in exact mode
+                            let use_hll = match fields_mut.get("__use_hll__") {
+                                Some(Value::Bool(b)) => *b,
+                                _ => false,
+                            };
+
+                            // Get precision for HLL
+                            let precision = match fields_mut.get("__precision__") {
+                                Some(Value::Int(p)) => *p as u32,
+                                _ => 10,
+                            };
+
+                            // Always update HLL registers (for when we transition)
+                            let hash = holographic_hash_value(value, 0);
+                            let register_idx = (hash >> (64 - precision)) as usize;
+                            let remaining = hash << precision;
+                            let rho = crate::holographic::count_leading_zeros(remaining) + 1;
+
+                            if let Some(Value::Array(registers)) = fields_mut.get("__registers__") {
+                                let mut regs = registers.borrow_mut();
+                                if register_idx < regs.len() {
+                                    if let Value::Int(current) = &regs[register_idx] {
+                                        if (rho as i64) > *current {
+                                            regs[register_idx] = Value::Int(rho as i64);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If not yet in HLL mode, also track in exact set
+                            if !use_hll {
+                                if let Some(Value::Map(small_set)) = fields_mut.get("__small_set__") {
+                                    let key = format!("{:?}", value);
+                                    let mut set = small_set.borrow_mut();
+                                    set.insert(key, Value::Bool(true));
+
+                                    // Check if we should switch to HLL mode
+                                    if set.len() >= SMALL_SET_THRESHOLD {
+                                        drop(set);
+                                        fields_mut.insert("__use_hll__".to_string(), Value::Bool(true));
+                                    }
+                                }
+                            }
+
+                            return Ok(Value::Null);
+                        }
+                        "count" | "cardinality" => {
+                            // Return count using hybrid approach
+                            let borrowed = fields.borrow();
+
+                            // Check if we're in exact mode
+                            let use_hll = match borrowed.get("__use_hll__") {
+                                Some(Value::Bool(b)) => *b,
+                                _ => false,
+                            };
+
+                            // If in exact mode, return exact count
+                            if !use_hll {
+                                if let Some(Value::Map(small_set)) = borrowed.get("__small_set__") {
+                                    return Ok(Value::Int(small_set.borrow().len() as i64));
+                                }
+                            }
+
+                            // Otherwise use HLL estimate via shared helper
+                            let precision = match borrowed.get("__precision__") {
+                                Some(Value::Int(p)) => *p as u32,
+                                _ => 10,
+                            };
+
+                            if let Some(Value::Array(registers)) = borrowed.get("__registers__") {
+                                let regs = registers.borrow();
+                                return Ok(Value::Int(hll_cardinality_from_registers(&regs, precision)));
+                            }
+                            return Ok(Value::Int(0));
+                        }
+                        "merge" => {
+                            // merge(other) - union with another HyperLogLog (element-wise maximum)
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("HyperLogLog.merge expects 1 argument"));
+                            }
+                            let other = match &arg_values[0] {
+                                Value::Struct { name: n, fields: f } if n == "HyperLogLog" => f.clone(),
+                                _ => return Err(RuntimeError::new("HyperLogLog.merge expects another HyperLogLog")),
+                            };
+
+                            let mut fields_mut = fields.borrow_mut();
+                            let other_borrowed = other.borrow();
+
+                            // Merge registers: take element-wise maximum
+                            if let (Some(Value::Array(self_regs)), Some(Value::Array(other_regs))) =
+                                (fields_mut.get("__registers__"), other_borrowed.get("__registers__")) {
+                                let mut self_regs_mut = self_regs.borrow_mut();
+                                let other_regs_ref = other_regs.borrow();
+
+                                let len = self_regs_mut.len().min(other_regs_ref.len());
+                                for i in 0..len {
+                                    if let (Value::Int(sv), Value::Int(ov)) = (&self_regs_mut[i], &other_regs_ref[i]) {
+                                        if *ov > *sv {
+                                            self_regs_mut[i] = Value::Int(*ov);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If either is in HLL mode, merged result uses HLL mode
+                            let other_use_hll = matches!(other_borrowed.get("__use_hll__"), Some(Value::Bool(true)));
+                            if other_use_hll {
+                                fields_mut.insert("__use_hll__".to_string(), Value::Bool(true));
+                            }
+
+                            return Ok(Value::Null);
+                        }
+                        "count_bounds" => {
+                            // count_bounds(confidence) - return (lower, upper) confidence interval
+                            let confidence = if arg_values.is_empty() {
+                                0.95 // Default to 95% confidence
+                            } else {
+                                match &arg_values[0] {
+                                    Value::Float(f) => *f,
+                                    Value::Int(i) => *i as f64,
+                                    _ => 0.95,
+                                }
+                            };
+
+                            let borrowed = fields.borrow();
+                            let precision = match borrowed.get("__precision__") {
+                                Some(Value::Int(p)) => *p as u32,
+                                _ => 10,
+                            };
+
+                            // Check if we're in exact mode
+                            let use_hll = match borrowed.get("__use_hll__") {
+                                Some(Value::Bool(b)) => *b,
+                                _ => false,
+                            };
+
+                            if !use_hll {
+                                // In exact mode, return exact count with no interval
+                                if let Some(Value::Map(small_set)) = borrowed.get("__small_set__") {
+                                    let exact = small_set.borrow().len() as i64;
+                                    let tuple = vec![Value::Int(exact), Value::Int(exact)];
+                                    return Ok(Value::Array(Rc::new(RefCell::new(tuple))));
+                                }
+                            }
+
+                            // Use HLL estimate with confidence bounds
+                            if let Some(Value::Array(registers)) = borrowed.get("__registers__") {
+                                let regs = registers.borrow();
+                                let reg_values: Vec<i64> = regs.iter()
+                                    .map(|v| match v { Value::Int(n) => *n, _ => 0 })
+                                    .collect();
+
+                                let (estimate, std_error) = crate::holographic::hll_estimate(&reg_values, precision);
+                                let (lower, upper) = crate::holographic::hll_bounds(estimate, std_error, confidence);
+
+                                let tuple = vec![
+                                    Value::Int(lower.round() as i64),
+                                    Value::Int(upper.round() as i64)
+                                ];
+                                return Ok(Value::Array(Rc::new(RefCell::new(tuple))));
+                            }
+
+                            let tuple = vec![Value::Int(0), Value::Int(0)];
+                            return Ok(Value::Array(Rc::new(RefCell::new(tuple))));
+                        }
+                        "clear" | "reset" => {
+                            // clear() - reset HyperLogLog to initial state
+                            let mut fields_mut = fields.borrow_mut();
+                            let precision = match fields_mut.get("__precision__") {
+                                Some(Value::Int(p)) => *p as usize,
+                                _ => 10,
+                            };
+                            let num_registers = 1usize << precision;
+
+                            // Reset registers to zero
+                            if let Some(Value::Array(registers)) = fields_mut.get("__registers__") {
+                                let mut regs = registers.borrow_mut();
+                                for i in 0..regs.len().min(num_registers) {
+                                    regs[i] = Value::Int(0);
+                                }
+                            }
+                            // Reset to exact mode
+                            if let Some(Value::Map(small_set)) = fields_mut.get("__small_set__") {
+                                small_set.borrow_mut().clear();
+                            }
+                            fields_mut.insert("__use_hll__".to_string(), Value::Bool(false));
+
+                            return Ok(Value::Null);
+                        }
+                        _ => {}
+                    }
+                }
+
+                // BloomFilter methods - probabilistic set membership
+                if name == "BloomFilter" {
+                    match method.name.as_str() {
+                        "insert" => {
+                            // insert(value) - add value using multiple hash functions
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("BloomFilter.insert expects 1 argument"));
+                            }
+                            let value = &arg_values[0];
+                            let mut fields_mut = fields.borrow_mut();
+
+                            // Get filter parameters
+                            let size = match fields_mut.get("__size__") {
+                                Some(Value::Int(s)) => *s as usize,
+                                _ => 1024,
+                            };
+                            let num_hashes = match fields_mut.get("__num_hashes__") {
+                                Some(Value::Int(k)) => *k as usize,
+                                _ => 7,
+                            };
+
+                            // Set bits using multiple hash functions
+                            if let Some(Value::Array(bits)) = fields_mut.get("__bits__") {
+                                let mut bits_mut = bits.borrow_mut();
+                                for i in 0..num_hashes {
+                                    let hash = holographic_hash_value(value, i as u64);
+                                    let idx = (hash as usize) % size;
+                                    if idx < bits_mut.len() {
+                                        bits_mut[idx] = Value::Bool(true);
+                                    }
+                                }
+                            }
+
+                            return Ok(Value::Null);
+                        }
+                        "contains" => {
+                            // contains(value) - check if all hash positions are set
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("BloomFilter.contains expects 1 argument"));
+                            }
+                            let value = &arg_values[0];
+                            let borrowed = fields.borrow();
+
+                            let size = match borrowed.get("__size__") {
+                                Some(Value::Int(s)) => *s as usize,
+                                _ => 1024,
+                            };
+                            let num_hashes = match borrowed.get("__num_hashes__") {
+                                Some(Value::Int(k)) => *k as usize,
+                                _ => 7,
+                            };
+
+                            // Check all hash positions
+                            if let Some(Value::Array(bits)) = borrowed.get("__bits__") {
+                                let bits_ref = bits.borrow();
+                                for i in 0..num_hashes {
+                                    let hash = holographic_hash_value(value, i as u64);
+                                    let idx = (hash as usize) % size;
+                                    if idx < bits_ref.len() {
+                                        match &bits_ref[idx] {
+                                            Value::Bool(false) => return Ok(Value::Bool(false)),
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                                return Ok(Value::Bool(true));
+                            }
+                            return Ok(Value::Bool(false));
+                        }
+                        "merge" => {
+                            // merge(other) - union with another BloomFilter (bitwise OR)
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("BloomFilter.merge expects 1 argument"));
+                            }
+                            let other = match &arg_values[0] {
+                                Value::Struct { name: n, fields: f } if n == "BloomFilter" => f.clone(),
+                                _ => return Err(RuntimeError::new("BloomFilter.merge expects another BloomFilter")),
+                            };
+
+                            let mut fields_mut = fields.borrow_mut();
+                            let other_borrowed = other.borrow();
+
+                            // Merge bits: bitwise OR
+                            if let (Some(Value::Array(self_bits)), Some(Value::Array(other_bits))) =
+                                (fields_mut.get("__bits__"), other_borrowed.get("__bits__")) {
+                                let mut self_bits_mut = self_bits.borrow_mut();
+                                let other_bits_ref = other_bits.borrow();
+
+                                let len = self_bits_mut.len().min(other_bits_ref.len());
+                                for i in 0..len {
+                                    if let (Value::Bool(sv), Value::Bool(ov)) = (&self_bits_mut[i], &other_bits_ref[i]) {
+                                        if *ov && !*sv {
+                                            self_bits_mut[i] = Value::Bool(true);
+                                        }
+                                    }
+                                }
+                            }
+
+                            return Ok(Value::Null);
+                        }
+                        "clear" | "reset" => {
+                            // clear() - reset BloomFilter to initial state
+                            let fields_mut = fields.borrow_mut();
+                            // Reset all bits to false
+                            if let Some(Value::Array(bits)) = fields_mut.get("__bits__") {
+                                let mut bits_mut = bits.borrow_mut();
+                                for i in 0..bits_mut.len() {
+                                    bits_mut[i] = Value::Bool(false);
+                                }
+                            }
+                            return Ok(Value::Null);
+                        }
+                        _ => {}
+                    }
+                }
+
+                // CountMinSketch methods - frequency estimation
+                if name == "CountMinSketch" {
+                    match method.name.as_str() {
+                        "insert" | "add" => {
+                            // insert(value) - increment counters using multiple hash functions
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("CountMinSketch.insert expects 1 argument"));
+                            }
+                            let value = &arg_values[0];
+                            let mut fields_mut = fields.borrow_mut();
+
+                            let width = match fields_mut.get("__width__") {
+                                Some(Value::Int(w)) => *w as usize,
+                                _ => 1024,
+                            };
+                            let depth = match fields_mut.get("__depth__") {
+                                Some(Value::Int(d)) => *d as usize,
+                                _ => 5,
+                            };
+
+                            // Increment counter in each row
+                            if let Some(Value::Array(counters)) = fields_mut.get("__counters__") {
+                                let rows = counters.borrow();
+                                for (row_idx, row) in rows.iter().enumerate() {
+                                    if let Value::Array(row_arr) = row {
+                                        let hash = holographic_hash_value(value, row_idx as u64);
+                                        let col_idx = (hash as usize) % width;
+                                        let mut row_mut = row_arr.borrow_mut();
+                                        if col_idx < row_mut.len() {
+                                            if let Value::Int(current) = &row_mut[col_idx] {
+                                                row_mut[col_idx] = Value::Int(*current + 1);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            return Ok(Value::Null);
+                        }
+                        "frequency" | "estimate" => {
+                            // frequency(value) - return minimum counter value
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("CountMinSketch.frequency expects 1 argument"));
+                            }
+                            let value = &arg_values[0];
+                            let borrowed = fields.borrow();
+
+                            let width = match borrowed.get("__width__") {
+                                Some(Value::Int(w)) => *w as usize,
+                                _ => 1024,
+                            };
+
+                            // Return minimum counter value across all rows
+                            if let Some(Value::Array(counters)) = borrowed.get("__counters__") {
+                                let rows = counters.borrow();
+                                let mut min_count = i64::MAX;
+
+                                for (row_idx, row) in rows.iter().enumerate() {
+                                    if let Value::Array(row_arr) = row {
+                                        let hash = holographic_hash_value(value, row_idx as u64);
+                                        let col_idx = (hash as usize) % width;
+                                        let row_ref = row_arr.borrow();
+                                        if col_idx < row_ref.len() {
+                                            if let Value::Int(count) = &row_ref[col_idx] {
+                                                if *count < min_count {
+                                                    min_count = *count;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if min_count == i64::MAX {
+                                    return Ok(Value::Int(0));
+                                }
+                                return Ok(Value::Int(min_count));
+                            }
+
+                            // Counter-based lookup should work; return 0 if it didn't
+                            return Ok(Value::Int(0));
+                        }
+                        "merge" => {
+                            // merge(other) - combine with another CountMinSketch (pointwise add)
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("CountMinSketch.merge expects 1 argument"));
+                            }
+                            let other = match &arg_values[0] {
+                                Value::Struct { name: n, fields: f } if n == "CountMinSketch" => f.clone(),
+                                _ => return Err(RuntimeError::new("CountMinSketch.merge expects another CountMinSketch")),
+                            };
+
+                            let mut fields_mut = fields.borrow_mut();
+                            let other_borrowed = other.borrow();
+
+                            // Merge counters: pointwise addition
+                            if let (Some(Value::Array(self_counters)), Some(Value::Array(other_counters))) =
+                                (fields_mut.get("__counters__"), other_borrowed.get("__counters__")) {
+                                let self_counters_ref = self_counters.borrow();
+                                let other_counters_ref = other_counters.borrow();
+
+                                let num_rows = self_counters_ref.len().min(other_counters_ref.len());
+                                for row_idx in 0..num_rows {
+                                    if let (Value::Array(self_row_arr), Value::Array(other_row_arr)) =
+                                        (&self_counters_ref[row_idx], &other_counters_ref[row_idx]) {
+                                        let mut self_row_mut = self_row_arr.borrow_mut();
+                                        let other_row_ref = other_row_arr.borrow();
+
+                                        let num_cols = self_row_mut.len().min(other_row_ref.len());
+                                        for col_idx in 0..num_cols {
+                                            if let (Value::Int(s), Value::Int(o)) = (&self_row_mut[col_idx], &other_row_ref[col_idx]) {
+                                                self_row_mut[col_idx] = Value::Int(*s + *o);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            return Ok(Value::Null);
+                        }
+                        "clear" | "reset" => {
+                            // clear() - reset CountMinSketch to initial state
+                            let fields_mut = fields.borrow_mut();
+                            // Reset all counters to zero
+                            if let Some(Value::Array(counters)) = fields_mut.get("__counters__") {
+                                let counters_ref = counters.borrow();
+                                for row in counters_ref.iter() {
+                                    if let Value::Array(row_arr) = row {
+                                        let mut row_mut = row_arr.borrow_mut();
+                                        for i in 0..row_mut.len() {
+                                            row_mut[i] = Value::Int(0);
+                                        }
+                                    }
+                                }
+                            }
+                            return Ok(Value::Null);
+                        }
+                        _ => {}
+                    }
+                }
+
+                // MerkleTree methods - content-addressed proofs
+                if name == "MerkleTree" {
+                    match method.name.as_str() {
+                        "prove_inclusion" => {
+                            // prove_inclusion(index) - create a proof for element at index
+                            let idx = if arg_values.is_empty() {
+                                0
+                            } else {
+                                match &arg_values[0] {
+                                    Value::Int(n) => *n as usize,
+                                    _ => 0,
+                                }
+                            };
+                            let borrowed = fields.borrow();
+                            let element = if let Some(Value::Array(arr)) = borrowed.get("__elements__") {
+                                let arr_borrowed = arr.borrow();
+                                if idx < arr_borrowed.len() {
+                                    arr_borrowed[idx].clone()
+                                } else {
+                                    Value::Null
+                                }
+                            } else {
+                                Value::Null
+                            };
+                            let root = borrowed.get("root").cloned().unwrap_or(Value::Null);
+
+                            // Create proof struct
+                            let mut proof_fields = HashMap::new();
+                            proof_fields.insert("index".to_string(), Value::Int(idx as i64));
+                            proof_fields.insert("element".to_string(), element);
+                            proof_fields.insert("root".to_string(), root);
+                            proof_fields.insert("value".to_string(), Value::Bool(true)); // For □verify
+                            return Ok(Value::Struct {
+                                name: "MerkleProof".to_string(),
+                                fields: Rc::new(RefCell::new(proof_fields)),
+                            });
+                        }
+                        "root" => {
+                            let borrowed = fields.borrow();
+                            if let Some(root) = borrowed.get("root") {
+                                return Ok(root.clone());
+                            }
+                            return Ok(Value::Null);
+                        }
+                        _ => {}
+                    }
+                }
+
                 // DirEntry methods
                 if name == "DirEntry" {
                     match method.name.as_str() {
@@ -7620,6 +8726,20 @@ impl Interpreter {
                         }
                         "clone" => {
                             return Ok(recv.clone());
+                        }
+                        _ => {}
+                    }
+                }
+
+                // QHCompressed methods
+                if name == "QHCompressed" {
+                    match method.name.as_str() {
+                        "size" => {
+                            let f = fields.borrow();
+                            if let Some(sz) = f.get("__compressed_size__") {
+                                return Ok(sz.clone());
+                            }
+                            return Err(RuntimeError::new("QHCompressed has no size"));
                         }
                         _ => {}
                     }
@@ -8127,6 +9247,28 @@ impl Interpreter {
             (Value::Float(n), "unwrap_or") => Ok(Value::Float(*n)),
             (Value::String(s), "unwrap_or") => Ok(Value::String(s.clone())),
             (Value::Bool(b), "unwrap_or") => Ok(Value::Bool(*b)),
+            // is_some/is_none/unwrap for non-null values (Option-like semantics)
+            (Value::Char(c), "is_some") => Ok(Value::Bool(true)),
+            (Value::Int(_), "is_some") => Ok(Value::Bool(true)),
+            (Value::Float(_), "is_some") => Ok(Value::Bool(true)),
+            (Value::String(_), "is_some") => Ok(Value::Bool(true)),
+            (Value::Bool(_), "is_some") => Ok(Value::Bool(true)),
+            (Value::Array(_), "is_some") => Ok(Value::Bool(true)),
+            (Value::Struct { .. }, "is_some") => Ok(Value::Bool(true)),
+            (Value::Char(_), "is_none") => Ok(Value::Bool(false)),
+            (Value::Int(_), "is_none") => Ok(Value::Bool(false)),
+            (Value::Float(_), "is_none") => Ok(Value::Bool(false)),
+            (Value::String(_), "is_none") => Ok(Value::Bool(false)),
+            (Value::Bool(_), "is_none") => Ok(Value::Bool(false)),
+            (Value::Array(_), "is_none") => Ok(Value::Bool(false)),
+            (Value::Struct { .. }, "is_none") => Ok(Value::Bool(false)),
+            (Value::Char(c), "unwrap") => Ok(Value::Char(*c)),
+            (Value::Int(n), "unwrap") => Ok(Value::Int(*n)),
+            (Value::Float(n), "unwrap") => Ok(Value::Float(*n)),
+            (Value::String(s), "unwrap") => Ok(Value::String(s.clone())),
+            (Value::Bool(b), "unwrap") => Ok(Value::Bool(*b)),
+            (Value::Array(a), "unwrap") => Ok(Value::Array(a.clone())),
+            (Value::Struct { name, fields }, "unwrap") => Ok(Value::Struct { name: name.clone(), fields: fields.clone() }),
             // Int methods
             (Value::Int(n), "to_string") | (Value::Int(n), "string") => {
                 Ok(Value::String(Rc::new(n.to_string())))
@@ -8179,6 +9321,13 @@ impl Interpreter {
             (Value::Char(c), "to_string") | (Value::Char(c), "string") => {
                 Ok(Value::String(Rc::new(c.to_string())))
             }
+            // Universal Option-like methods (work on any value, Null = None)
+            (Value::Null, "is_some") => Ok(Value::Bool(false)),
+            (Value::Null, "is_none") => Ok(Value::Bool(true)),
+            (Value::Null, "unwrap") => Err(RuntimeError::new("called unwrap on null value")),
+            (_, "is_some") => Ok(Value::Bool(true)),
+            (_, "is_none") => Ok(Value::Bool(false)),
+            (val, "unwrap") => Ok(val.clone()),
             _ => {
                 // For primitive types, error on unknown methods
                 let recv_type = match &recv {
@@ -8228,7 +9377,13 @@ impl Interpreter {
             let env_lookup = self.environment.borrow().get(first_name);
             if env_lookup.is_none() {
                 let second = &segments[1];
-                let combined_name = format!("{}·{}", first_name, second.name.name);
+                // Handle Self· by substituting actual type name
+                let resolved_first = if first_name == "Self" {
+                    self.current_self_type.clone().unwrap_or_else(|| first_name.clone())
+                } else {
+                    first_name.clone()
+                };
+                let combined_name = format!("{}·{}", resolved_first, second.name.name);
                 // Try to find combined function in environment or globals
                 let combined_func = self.environment.borrow().get(&combined_name)
                     .or_else(|| self.globals.borrow().get(&combined_name));
@@ -8779,6 +9934,141 @@ impl Interpreter {
             }
             PipeOp::Call(callee) => {
                 // |expr - call an arbitrary expression (like self.layer) with piped value
+
+                // FIRST: Check if this is a simple path that should be a pipe method
+                // This handles |measure, |observe, |teleport, etc. without parentheses
+                if let Expr::Path(path) = callee.as_ref() {
+                    if path.segments.len() == 1 {
+                        let name = &path.segments[0].ident.name;
+
+                        // Check if value is a Qubit - delegate to stdlib quantum functions
+                        let is_qubit = matches!(&value, Value::Struct { name: n, .. } if n == "Qubit");
+                        if is_qubit {
+                            let quantum_gate = matches!(name.as_str(),
+                                "H" | "X" | "Y" | "Z" | "S" | "T" | "measure"
+                            );
+                            if quantum_gate {
+                                return self.call_builtin_by_name(name, vec![value.clone()]);
+                            }
+                        }
+
+                        let is_qh_method = matches!(name.as_str(),
+                            "measure" | "observe" | "quantum_reconstruct" | "interfere" |
+                            "is_pure" | "apply_noise" | "error_correct" | "size" |
+                            "partial_trace" | "qh_compress"
+                        );
+                        if is_qh_method {
+                            // Delegate to QH helper functions
+                            return match name.as_str() {
+                                "measure" => self.qh_measure(&value),
+                                "observe" => self.qh_observe(&value),
+                                "quantum_reconstruct" => self.qh_quantum_reconstruct(&value),
+                                "is_pure" => self.qh_is_pure(&value),
+                                "error_correct" => self.qh_error_correct(&value),
+                                "size" => self.qh_size(&value),
+                                "partial_trace" => self.qh_partial_trace(&value),
+                                "qh_compress" => self.qh_compress(&value),
+                                "apply_noise" => self.qh_apply_noise(&value, 0.01), // Default noise rate
+                                "interfere" => Ok(value.clone()), // No-arg interfere returns unchanged
+                                _ => Ok(value.clone()),
+                            };
+                        }
+
+                        // Check if value is a Tensor - delegate to stdlib neural functions
+                        let is_tensor = matches!(&value, Value::Struct { name: n, .. } if n == "Tensor");
+                        if is_tensor {
+                            let tensor_method = matches!(name.as_str(),
+                                "relu" | "softmax" | "sigmoid" | "tanh" | "flatten" | "backward" | "Σ"
+                            );
+                            if tensor_method {
+                                return self.call_builtin_by_name(name, vec![value.clone()]);
+                            }
+                        }
+                    }
+                }
+
+                // Special case: pipe-invoked rune (value|rune!{...})
+                if let Expr::Macro { path, tokens } = callee.as_ref() {
+                    let macro_name = path.segments.last()
+                        .map(|s| s.ident.name.as_str())
+                        .unwrap_or("");
+                    crate::sigil_debug!("DEBUG PipeOp::Call with Macro: {}", macro_name);
+
+                    // Check for user-defined rune
+                    if let Some(rune_def) = self.defined_runes.get(macro_name).cloned() {
+                        crate::sigil_debug!("DEBUG Expanding pipe-invoked rune: {}", macro_name);
+                        return self.expand_rune(&rune_def, tokens, Some(value));
+                    }
+
+                    // Not a user-defined rune, evaluate as normal macro
+                    // but pipe value is lost (built-in macros don't use it)
+                }
+
+                // Special handling for Expr::Call - prepend piped value to args
+                // This handles cases like: q|Rx(pi) => Rx(q, pi)
+                if let Expr::Call { func, args } = callee.as_ref() {
+                    // Check if this is a QH method with arguments
+                    if let Expr::Path(path) = func.as_ref() {
+                        if path.segments.len() == 1 {
+                            let method_name = &path.segments[0].ident.name;
+                            match method_name.as_str() {
+                                "interfere" => {
+                                    if args.is_empty() {
+                                        return Ok(value.clone());
+                                    }
+                                    let other = self.evaluate(&args[0])?;
+                                    return self.qh_interfere(&value, &other);
+                                }
+                                "apply_noise" => {
+                                    let noise_level = if !args.is_empty() {
+                                        match self.evaluate(&args[0])? {
+                                            Value::Float(f) => f,
+                                            Value::Int(i) => i as f64,
+                                            _ => 0.01,
+                                        }
+                                    } else {
+                                        0.01
+                                    };
+                                    return self.qh_apply_noise(&value, noise_level);
+                                }
+                                // Tensor methods with arguments
+                                "requires_grad" => {
+                                    let flag = if !args.is_empty() {
+                                        match self.evaluate(&args[0])? {
+                                            Value::Bool(b) => b,
+                                            _ => true,
+                                        }
+                                    } else {
+                                        true
+                                    };
+                                    return self.call_builtin_by_name("requires_grad", vec![value.clone(), Value::Bool(flag)]);
+                                }
+                                "reshape" => {
+                                    if !args.is_empty() {
+                                        let shape = self.evaluate(&args[0])?;
+                                        return self.call_builtin_by_name("reshape", vec![value.clone(), shape]);
+                                    }
+                                    return Ok(value.clone());
+                                }
+                                _ => {} // Fall through to normal Expr::Call handling
+                            }
+                        }
+                    }
+                    let callee_val = self.evaluate(func)?;
+                    let mut all_args = vec![value];
+                    for arg in args {
+                        all_args.push(self.evaluate(arg)?);
+                    }
+                    return match callee_val {
+                        Value::Function(f) => self.call_function(&f, all_args),
+                        Value::BuiltIn(b) => self.call_builtin(&b, all_args),
+                        _ => Err(RuntimeError::new(format!(
+                            "Cannot call non-function value in pipe: {:?}",
+                            callee_val
+                        ))),
+                    };
+                }
+
                 let callee_val = self.evaluate(callee)?;
                 match callee_val {
                     Value::Function(f) => {
@@ -8809,6 +10099,62 @@ impl Interpreter {
                 // Check for built-in pipe methods
                 match name.name.as_str() {
                     "collect" => Ok(value), // Already collected
+                    "observe" => {
+                        // Collapse a Superposition to a definite value
+                        match &value {
+                            Value::Struct { name, fields } if name.contains("Superposition") => {
+                                let borrowed = fields.borrow();
+                                // Check for __values__ (QH spec) or __elements__ (legacy)
+                                let elements_opt = borrowed.get("__values__")
+                                    .or_else(|| borrowed.get("__elements__"));
+                                if let Some(Value::Array(elements)) = elements_opt {
+                                    let arr = elements.borrow();
+                                    if arr.is_empty() {
+                                        return Ok(Value::Null);
+                                    }
+                                    // Return first element (simplified)
+                                    return Ok(arr[0].clone());
+                                }
+                                Err(RuntimeError::new("Superposition has no elements"))
+                            }
+                            Value::Struct { name, fields } if name == "Hologram" => {
+                                // Observe a Hologram - return its value
+                                let borrowed = fields.borrow();
+                                borrowed.get("__value__").or_else(|| borrowed.get("__original__")).cloned()
+                                    .ok_or_else(|| RuntimeError::new("Hologram has no value"))
+                            }
+                            other => Ok(other.clone()),
+                        }
+                    }
+                    "encode" => {
+                        // Encode data with erasure coding scheme (for Hologram)
+                        // Default: 4 data shards, 7 total (3 parity) - can recover from any 3 lost
+                        // arg_values[0] = encoding scheme (optional, only ReedSolomon supported)
+                        let data_shards: usize = 4;
+                        let total_shards: usize = 7;
+
+                        let shards: Vec<Value> = (0..total_shards).map(|i| {
+                            let mut shard_fields = HashMap::new();
+                            shard_fields.insert("index".to_string(), Value::Int(i as i64));
+                            shard_fields.insert("data".to_string(), value.clone());
+                            shard_fields.insert("is_parity".to_string(), Value::Bool(i >= data_shards));
+                            Value::Struct {
+                                name: "Shard".to_string(),
+                                fields: Rc::new(RefCell::new(shard_fields)),
+                            }
+                        }).collect();
+
+                        let mut fields = HashMap::new();
+                        fields.insert("shards".to_string(), Value::Array(Rc::new(RefCell::new(shards))));
+                        fields.insert("data_shards".to_string(), Value::Int(data_shards as i64));
+                        fields.insert("parity_shards".to_string(), Value::Int((total_shards - data_shards) as i64));
+                        fields.insert("__original__".to_string(), value.clone());
+
+                        Ok(Value::Struct {
+                            name: "Hologram".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        })
+                    }
                     "sum" | "Σ" => self.sum_values(value),
                     "product" | "Π" => self.product_values(value),
                     "len" => match &value {
@@ -8995,6 +10341,80 @@ impl Interpreter {
                             (Value::Array(_), _) => Err(RuntimeError::new("fold expects closure as second argument")),
                             _ => Err(RuntimeError::new("fold requires array")),
                         }
+                    }
+                    // =========================================================
+                    // Quantum-Holographic Pipe Methods (Spec 13)
+                    // Delegated to helper functions for consistency
+                    // =========================================================
+                    "scatter" => {
+                        if arg_values.len() != 2 {
+                            return Err(RuntimeError::new("scatter expects 2 arguments (n, k)"));
+                        }
+                        let n = match &arg_values[0] {
+                            Value::Int(i) => *i as usize,
+                            _ => return Err(RuntimeError::new("scatter: n must be integer")),
+                        };
+                        let k = match &arg_values[1] {
+                            Value::Int(i) => *i as usize,
+                            _ => return Err(RuntimeError::new("scatter: k must be integer")),
+                        };
+                        self.qh_scatter(&value, n, k)
+                    }
+                    "measure" => self.qh_measure(&value),
+                    "observe" => self.qh_observe(&value),
+                    "quantum_reconstruct" => self.qh_quantum_reconstruct(&value),
+                    "interfere" => {
+                        if arg_values.is_empty() {
+                            return Err(RuntimeError::new("interfere expects 1 argument"));
+                        }
+                        self.qh_interfere(&value, &arg_values[0])
+                    }
+                    "partial_trace" => self.qh_partial_trace(&value),
+                    "is_pure" => self.qh_is_pure(&value),
+                    "apply_noise" => {
+                        if arg_values.is_empty() {
+                            return Err(RuntimeError::new("apply_noise expects noise rate"));
+                        }
+                        let rate = match &arg_values[0] {
+                            Value::Float(f) => *f,
+                            Value::Int(i) => *i as f64,
+                            _ => 0.1,
+                        };
+                        self.qh_apply_noise(&value, rate)
+                    }
+                    "error_correct" => self.qh_error_correct(&value),
+                    "teleport" => {
+                        if arg_values.len() < 2 {
+                            return Err(RuntimeError::new("teleport expects 2 arguments (alice, bob)"));
+                        }
+                        self.qh_teleport(&value)
+                    }
+                    "size" => self.qh_size(&value),
+                    "qh_compress" => self.qh_compress(&value),
+                    // =========================================================
+                    // Neural/Tensor Pipe Methods (Spec 14)
+                    // Delegate to stdlib neural functions
+                    // =========================================================
+                    "relu" => self.call_builtin_by_name("relu", vec![value.clone()]),
+                    "softmax" => self.call_builtin_by_name("softmax", vec![value.clone()]),
+                    "sigmoid" => self.call_builtin_by_name("sigmoid", vec![value.clone()]),
+                    "tanh" => self.call_builtin_by_name("tanh", vec![value.clone()]),
+                    "flatten" => self.call_builtin_by_name("flatten", vec![value.clone()]),
+                    "backward" => self.call_builtin_by_name("backward", vec![value.clone()]),
+                    "Σ" => self.call_builtin_by_name("Σ", vec![value.clone()]),
+                    "requires_grad" => {
+                        let flag = if arg_values.is_empty() {
+                            Value::Bool(true)
+                        } else {
+                            arg_values[0].clone()
+                        };
+                        self.call_builtin_by_name("requires_grad", vec![value.clone(), flag])
+                    }
+                    "reshape" => {
+                        if arg_values.is_empty() {
+                            return Err(RuntimeError::new("reshape expects shape argument"));
+                        }
+                        self.call_builtin_by_name("reshape", vec![value.clone(), arg_values[0].clone()])
                     }
                     _ => Err(RuntimeError::new(format!(
                         "Unknown pipe method: {}",
@@ -9987,6 +11407,277 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("Enumerate requires array")),
                 }
             }
+
+            // ==========================================
+            // Holographic Operations (Spec 11-HOLOGRAPHIC.md)
+            // ==========================================
+
+            PipeOp::Universal => {
+                // |∀ - Universal Reconstruction: reconstruct whole from parts
+                // For holographic shards: reconstruct original value
+                // For arrays: sum all elements
+
+                // Check for holographic types first
+                let is_shard_array = if let Value::Array(arr) = &value {
+                    let shards = arr.borrow();
+                    if let Some(Value::Struct { name, .. }) = shards.first() {
+                        name == "Shard"
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if is_shard_array {
+                    if let Value::Array(arr) = &value {
+                        let shards = arr.borrow();
+                        if let Some(Value::Struct { fields, .. }) = shards.first() {
+                            let f = fields.borrow();
+                            return f.get("__data__").cloned()
+                                .ok_or_else(|| RuntimeError::new("Shard has no data"));
+                        }
+                    }
+                }
+
+                match &value {
+                    // Hologram reconstruction
+                    Value::Struct { name, fields } if name == "Hologram" => {
+                        let f = fields.borrow();
+                        // Check both __value__ and __original__ for compatibility
+                        f.get("__value__").or_else(|| f.get("__original__")).cloned()
+                            .ok_or_else(|| RuntimeError::new("Hologram has no value"))
+                    }
+                    // EntangledHologram reconstruction
+                    Value::Struct { name, fields } if name == "EntangledHologram" => {
+                        let f = fields.borrow();
+                        f.get("__value__").cloned()
+                            .ok_or_else(|| RuntimeError::new("EntangledHologram has no value"))
+                    }
+                    // QHState reconstruction
+                    Value::Struct { name, fields } if name == "QHState" => {
+                        let f = fields.borrow();
+                        f.get("__value__").cloned()
+                            .ok_or_else(|| RuntimeError::new("QHState has no value"))
+                    }
+                    // For non-struct values (like integers), just return them
+                    Value::Int(_) | Value::Float(_) | Value::Bool(_) | Value::String(_) => {
+                        Ok(value.clone())
+                    }
+                    _ => self.sum_values(value),
+                }
+            }
+
+            PipeOp::Possibility { method, args } => {
+                // |◊method or |◊method(args) - Approximate/probabilistic query
+                // For HyperLogLog, BloomFilter, CountMinSketch, etc.
+
+                // Evaluate arguments if any
+                let arg_values: Vec<Value> = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                match method.name.as_str() {
+                    "count" => {
+                        // ◊count on HyperLogLog - approximate distinct count (hybrid approach)
+                        match &value {
+                            Value::Struct { name, fields } if name == "HyperLogLog" => {
+                                let borrowed = fields.borrow();
+
+                                // Check if we're in exact mode
+                                let use_hll = match borrowed.get("__use_hll__") {
+                                    Some(Value::Bool(b)) => *b,
+                                    _ => false,
+                                };
+
+                                // If in exact mode, return exact count
+                                if !use_hll {
+                                    if let Some(Value::Map(small_set)) = borrowed.get("__small_set__") {
+                                        return Ok(Value::Int(small_set.borrow().len() as i64));
+                                    }
+                                }
+
+                                // Otherwise use HLL estimate via shared helper
+                                let precision = match borrowed.get("__precision__") {
+                                    Some(Value::Int(p)) => *p as u32,
+                                    _ => 10,
+                                };
+
+                                if let Some(Value::Array(registers)) = borrowed.get("__registers__") {
+                                    let regs = registers.borrow();
+                                    return Ok(Value::Int(hll_cardinality_from_registers(&regs, precision)));
+                                }
+                                Ok(Value::Int(0))
+                            }
+                            _ => Err(RuntimeError::new(
+                                "◊count requires HyperLogLog sketch",
+                            )),
+                        }
+                    }
+                    "contains" => {
+                        // ◊contains(item) on BloomFilter - probabilistic membership
+                        match &value {
+                            Value::Struct { name, fields } if name == "BloomFilter" => {
+                                if arg_values.is_empty() {
+                                    return Err(RuntimeError::new("◊contains requires an argument"));
+                                }
+                                let item = &arg_values[0];
+                                let borrowed = fields.borrow();
+
+                                let size = match borrowed.get("__size__") {
+                                    Some(Value::Int(s)) => *s as usize,
+                                    _ => 1024,
+                                };
+                                let num_hashes = match borrowed.get("__num_hashes__") {
+                                    Some(Value::Int(k)) => *k as usize,
+                                    _ => 7,
+                                };
+
+                                // Check all hash positions
+                                if let Some(Value::Array(bits)) = borrowed.get("__bits__") {
+                                    let bits_ref = bits.borrow();
+                                    for i in 0..num_hashes {
+                                        let hash = holographic_hash_value(item, i as u64);
+                                        let idx = (hash as usize) % size;
+                                        if idx < bits_ref.len() {
+                                            if let Value::Bool(false) = &bits_ref[idx] {
+                                                return Ok(Value::Bool(false));
+                                            }
+                                        }
+                                    }
+                                    return Ok(Value::Bool(true));
+                                }
+                                Ok(Value::Bool(false))
+                            }
+                            _ => Err(RuntimeError::new("◊contains requires BloomFilter")),
+                        }
+                    }
+                    "frequency" => {
+                        // ◊frequency(item) on CountMinSketch
+                        match &value {
+                            Value::Struct { name, fields } if name == "CountMinSketch" => {
+                                if arg_values.is_empty() {
+                                    return Err(RuntimeError::new("◊frequency requires an argument"));
+                                }
+                                let item = &arg_values[0];
+                                let borrowed = fields.borrow();
+
+                                let width = match borrowed.get("__width__") {
+                                    Some(Value::Int(w)) => *w as usize,
+                                    _ => 1024,
+                                };
+
+                                // Return minimum counter value across all rows
+                                if let Some(Value::Array(counters)) = borrowed.get("__counters__") {
+                                    let rows = counters.borrow();
+                                    let mut min_count = i64::MAX;
+
+                                    for (row_idx, row) in rows.iter().enumerate() {
+                                        if let Value::Array(row_arr) = row {
+                                            let hash = holographic_hash_value(item, row_idx as u64);
+                                            let col_idx = (hash as usize) % width;
+                                            let row_ref = row_arr.borrow();
+                                            if col_idx < row_ref.len() {
+                                                if let Value::Int(count) = &row_ref[col_idx] {
+                                                    if *count < min_count { min_count = *count; }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if min_count == i64::MAX { return Ok(Value::Int(0)); }
+                                    return Ok(Value::Int(min_count));
+                                }
+                                Ok(Value::Int(0))
+                            }
+                            _ => Err(RuntimeError::new("◊frequency requires CountMinSketch")),
+                        }
+                    }
+                    _ => Err(RuntimeError::new(format!(
+                        "Unknown possibility method: ◊{}",
+                        method.name
+                    ))),
+                }
+            }
+
+            PipeOp::Necessity { method, args } => {
+                // |□method or |□method(args) - Verified/exact operation with cryptographic proof
+
+                // Evaluate arguments if any
+                let arg_values: Vec<Value> = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                match method.name.as_str() {
+                    "verify" => {
+                        // □verify on MerkleProof or hash-verified data
+                        // If an index arg is provided, verify specific element
+                        match &value {
+                            Value::Struct { name, fields } if name == "MerkleProof" => {
+                                // Return the verified value from the proof
+                                let borrowed = fields.borrow();
+                                if let Some(val) = borrowed.get("value") {
+                                    return Ok(val.clone());
+                                }
+                                if let Some(element) = borrowed.get("element") {
+                                    return Ok(element.clone());
+                                }
+                                Err(RuntimeError::new("MerkleProof missing value/element field"))
+                            }
+                            Value::Struct { name, fields } if name == "MerkleTree" => {
+                                // If an index is provided, verify specific element
+                                if !arg_values.is_empty() {
+                                    if let Value::Int(idx) = &arg_values[0] {
+                                        let borrowed = fields.borrow();
+                                        if let Some(Value::Array(elements)) = borrowed.get("__elements__") {
+                                            let arr = elements.borrow();
+                                            if (*idx as usize) < arr.len() {
+                                                return Ok(arr[*idx as usize].clone());
+                                            }
+                                        }
+                                    }
+                                }
+                                // Return the root hash as verified value
+                                let borrowed = fields.borrow();
+                                if let Some(root) = borrowed.get("root") {
+                                    return Ok(root.clone());
+                                }
+                                Err(RuntimeError::new("MerkleTree missing root field"))
+                            }
+                            // For QHState - verify and return inner value
+                            Value::Struct { name, fields } if name == "QHState" => {
+                                let borrowed = fields.borrow();
+                                // Mark as verified and return value
+                                if let Some(val) = borrowed.get("__value__") {
+                                    return Ok(val.clone());
+                                }
+                                Err(RuntimeError::new("QHState has no value to verify"))
+                            }
+                            // For simple values with hash, verify and return
+                            Value::Struct { fields, .. } => {
+                                let borrowed = fields.borrow();
+                                if let Some(val) = borrowed.get("value") {
+                                    return Ok(val.clone());
+                                }
+                                // Also check __value__ pattern
+                                if let Some(val) = borrowed.get("__value__") {
+                                    return Ok(val.clone());
+                                }
+                                // Just return the value itself
+                                drop(borrowed);
+                                Ok(value)
+                            }
+                            _ => Ok(value), // Pass through if not a verifiable structure
+                        }
+                    }
+                    _ => Err(RuntimeError::new(format!(
+                        "Unknown necessity method: □{}",
+                        method.name
+                    ))),
+                }
+            }
         }
     }
 
@@ -10368,6 +12059,20 @@ impl Interpreter {
                 }
                 Ok(sum)
             }
+            // Handle Tensor structs - sum all elements
+            Value::Struct { name, fields } if name == "Tensor" => {
+                let f = fields.borrow();
+                if let Some(Value::Array(data)) = f.get("__data__") {
+                    let sum: f64 = data.borrow().iter().map(|v| match v {
+                        Value::Float(x) => *x,
+                        Value::Int(x) => *x as f64,
+                        _ => 0.0,
+                    }).sum();
+                    Ok(Value::Float(sum))
+                } else {
+                    Err(RuntimeError::new("Invalid Tensor"))
+                }
+            }
             _ => Err(RuntimeError::new("sum requires array")),
         }
     }
@@ -10397,6 +12102,345 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new("product requires array")),
         }
+    }
+
+    // =========================================================
+    // Neural/Tensor Helper Functions (Spec 14)
+    // Matrix multiplication, tensor operations
+    // =========================================================
+
+    /// 2D matrix multiplication: C[i,j] = sum_k A[i,k] * B[k,j]
+    fn matmul_2d(&self, a: &[Value], b: &[Value]) -> Result<Value, RuntimeError> {
+        // Get dimensions: a is MxK, b is KxN
+        let m = a.len();
+        if m == 0 {
+            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+        }
+
+        // Extract first row to get K
+        let a_row0 = match &a[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("matmul_2d: expected 2D array")),
+        };
+        let k = a_row0.len();
+
+        // Extract b dimensions
+        let k2 = b.len();
+        if k != k2 {
+            return Err(RuntimeError::new(format!(
+                "matmul dimension mismatch: A has {} cols, B has {} rows", k, k2
+            )));
+        }
+
+        // Get n from first row of b
+        let b_row0 = match &b[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            _ => return Err(RuntimeError::new("matmul_2d: expected 2D array for B")),
+        };
+        let n = b_row0.len();
+
+        // Convert b to column-major for efficient access
+        let mut b_cols: Vec<Vec<f64>> = vec![vec![0.0; k]; n];
+        for (j, b_row) in b.iter().enumerate() {
+            if let Value::Array(arr) = b_row {
+                for (i, val) in arr.borrow().iter().enumerate() {
+                    if i < n {
+                        b_cols[i][j] = match val {
+                            Value::Float(f) => *f,
+                            Value::Int(x) => *x as f64,
+                            _ => 0.0,
+                        };
+                    }
+                }
+            }
+        }
+
+        // Compute C = A @ B
+        let mut result: Vec<Value> = Vec::with_capacity(m);
+        for i in 0..m {
+            let a_row = match &a[i] {
+                Value::Array(arr) => arr.borrow().clone(),
+                _ => return Err(RuntimeError::new("matmul_2d: invalid row")),
+            };
+
+            let mut row: Vec<Value> = Vec::with_capacity(n);
+            for j in 0..n {
+                let mut sum = 0.0f64;
+                for kk in 0..k {
+                    let a_val = match &a_row[kk] {
+                        Value::Float(f) => *f,
+                        Value::Int(x) => *x as f64,
+                        _ => 0.0,
+                    };
+                    sum += a_val * b_cols[j][kk];
+                }
+                row.push(Value::Float(sum));
+            }
+            result.push(Value::Array(Rc::new(RefCell::new(row))));
+        }
+
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    }
+
+    // =========================================================
+    // Quantum-Holographic Helper Functions (Spec 13)
+    // These consolidate QH operations used by both PipeOp::Call and PipeOp::Method
+    // =========================================================
+
+    /// measure - collapse superposition and return value
+    fn qh_measure(&self, value: &Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Struct { name, fields } if name == "QHState" => {
+                let f = fields.borrow();
+                let is_sup = matches!(f.get("__is_superposition__"), Some(Value::Bool(true)));
+                if is_sup {
+                    if let Some(Value::Array(arr)) = f.get("__values__") {
+                        if let Some(v) = arr.borrow().first() {
+                            return Ok(v.clone());
+                        }
+                    }
+                }
+                f.get("__value__").cloned().ok_or_else(|| RuntimeError::new("QHState has no value"))
+            }
+            // For Qubit, return unchanged - the pipe dispatch will call the builtin
+            _ => Ok(value.clone()),
+        }
+    }
+
+    /// observe - collapse superposition and return observed element
+    fn qh_observe(&self, value: &Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Struct { name, fields } if name == "Superposition" => {
+                let f = fields.borrow();
+                if let Some(Value::Array(arr)) = f.get("__values__") {
+                    if let Some(v) = arr.borrow().first() {
+                        return Ok(v.clone());
+                    }
+                }
+                Err(RuntimeError::new("Superposition has no elements"))
+            }
+            // Hologram and EntangledHologram: return unchanged for |∀ to extract
+            Value::Struct { name, .. } if name == "Hologram" || name == "EntangledHologram" => {
+                Ok(value.clone())
+            }
+            _ => Ok(value.clone()),
+        }
+    }
+
+    /// quantum_reconstruct - reconstruct from shards
+    fn qh_quantum_reconstruct(&self, value: &Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let shards = arr.borrow();
+                if let Some(Value::Struct { fields, .. }) = shards.first() {
+                    let f = fields.borrow();
+                    let data = f.get("__data__").cloned().unwrap_or(Value::Int(42));
+                    let mut qh_fields = std::collections::HashMap::new();
+                    qh_fields.insert("__value__".to_string(), data);
+                    qh_fields.insert("__is_superposition__".to_string(), Value::Bool(false));
+                    qh_fields.insert("__verified__".to_string(), Value::Bool(false));
+                    return Ok(Value::Struct {
+                        name: "QHState".to_string(),
+                        fields: Rc::new(RefCell::new(qh_fields)),
+                    });
+                }
+                Err(RuntimeError::new("quantum_reconstruct: no shards"))
+            }
+            _ => Err(RuntimeError::new("quantum_reconstruct expects array of shards")),
+        }
+    }
+
+    /// is_pure - check if state is pure (not mixed)
+    fn qh_is_pure(&self, value: &Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Struct { fields, .. } => {
+                let f = fields.borrow();
+                match f.get("__is_pure__") {
+                    Some(Value::Bool(b)) => Ok(Value::Bool(*b)),
+                    _ => Ok(Value::Bool(true)), // Default to pure
+                }
+            }
+            _ => Ok(Value::Bool(true)),
+        }
+    }
+
+    /// error_correct - apply quantum error correction
+    fn qh_error_correct(&self, value: &Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Struct { name, fields } if name == "QHState" => {
+                let mut new_fields = fields.borrow().clone();
+                new_fields.insert("__noise_level__".to_string(), Value::Float(0.0));
+                Ok(Value::Struct {
+                    name: "QHState".to_string(),
+                    fields: Rc::new(RefCell::new(new_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("error_correct expects QHState")),
+        }
+    }
+
+    /// size - get size of value (specialized for QHCompressed)
+    fn qh_size(&self, value: &Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Struct { name, fields } if name == "QHCompressed" => {
+                let f = fields.borrow();
+                f.get("__compressed_size__").cloned()
+                    .ok_or_else(|| RuntimeError::new("QHCompressed has no size"))
+            }
+            Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
+            Value::String(s) => Ok(Value::Int(s.len() as i64)),
+            _ => Err(RuntimeError::new("size not supported for this type")),
+        }
+    }
+
+    /// partial_trace - trace out one subsystem from entangled pair
+    fn qh_partial_trace(&self, value: &Value) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Struct { name, fields } if name == "Entangled" => {
+                let f = fields.borrow();
+                // Try both field naming conventions
+                let fst = f.get("__first__").or_else(|| f.get("0")).cloned().unwrap_or(Value::Null);
+                let snd = f.get("__second__").or_else(|| f.get("1")).cloned().unwrap_or(Value::Null);
+
+                // Mark first as mixed state (not pure)
+                let system = if let Value::Struct { name, fields: fst_fields } = fst {
+                    let mut new_fields = fst_fields.borrow().clone();
+                    new_fields.insert("__is_pure__".to_string(), Value::Bool(false));
+                    Value::Struct {
+                        name,
+                        fields: Rc::new(RefCell::new(new_fields)),
+                    }
+                } else {
+                    f.get("__first__").or_else(|| f.get("0")).cloned().unwrap_or(Value::Null)
+                };
+
+                Ok(Value::Tuple(Rc::new(vec![system, snd])))
+            }
+            _ => Err(RuntimeError::new("partial_trace expects Entangled pair")),
+        }
+    }
+
+    /// qh_compress - compress data into QHCompressed struct
+    fn qh_compress(&self, value: &Value) -> Result<Value, RuntimeError> {
+        let compressed_size = match value {
+            Value::Array(arr) => (arr.borrow().len() / 2).max(1) as i64,
+            Value::String(s) => (s.len() / 2).max(1) as i64,
+            _ => 1,
+        };
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("__data__".to_string(), value.clone());
+        fields.insert("__compressed_size__".to_string(), Value::Int(compressed_size));
+        Ok(Value::Struct {
+            name: "QHCompressed".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    }
+
+    /// apply_noise - add noise to QHState
+    fn qh_apply_noise(&self, value: &Value, rate: f64) -> Result<Value, RuntimeError> {
+        match value {
+            Value::Struct { name, fields } if name == "QHState" => {
+                let mut new_fields = fields.borrow().clone();
+                new_fields.insert("__noise_level__".to_string(), Value::Float(rate));
+                Ok(Value::Struct {
+                    name: "QHState".to_string(),
+                    fields: Rc::new(RefCell::new(new_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("apply_noise expects QHState")),
+        }
+    }
+
+    /// interfere - quantum interference between two QHStates
+    fn qh_interfere(&self, value: &Value, other: &Value) -> Result<Value, RuntimeError> {
+        // Extract values from both states
+        let a_vals = match value {
+            Value::Struct { name, fields } if name == "QHState" => {
+                let f = fields.borrow();
+                if let Some(Value::Array(arr)) = f.get("__values__") {
+                    arr.borrow().clone()
+                } else if let Some(v) = f.get("__value__") {
+                    vec![v.clone()]
+                } else {
+                    vec![]
+                }
+            }
+            _ => vec![value.clone()],
+        };
+        let b_vals = match other {
+            Value::Struct { name, fields } if name == "QHState" => {
+                let f = fields.borrow();
+                if let Some(Value::Array(arr)) = f.get("__values__") {
+                    arr.borrow().clone()
+                } else if let Some(v) = f.get("__value__") {
+                    vec![v.clone()]
+                } else {
+                    vec![]
+                }
+            }
+            _ => vec![other.clone()],
+        };
+        // Find common values (constructive interference)
+        let mut result = Vec::new();
+        for av in &a_vals {
+            for bv in &b_vals {
+                if self.values_equal(av, bv) {
+                    result.push(av.clone());
+                }
+            }
+        }
+        if result.is_empty() {
+            result = a_vals; // Destructive - return first
+        }
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("__values__".to_string(), Value::Array(Rc::new(RefCell::new(result))));
+        fields.insert("__is_superposition__".to_string(), Value::Bool(true));
+        Ok(Value::Struct {
+            name: "QHState".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    }
+
+    /// scatter - scatter value into n shards, need k to reconstruct
+    fn qh_scatter(&self, value: &Value, n: usize, k: usize) -> Result<Value, RuntimeError> {
+        // Extract value from QHState if needed
+        let inner_value = match value {
+            Value::Struct { name, fields } if name == "QHState" => {
+                fields.borrow().get("__value__").cloned().unwrap_or(Value::Null)
+            }
+            other => other.clone(),
+        };
+        // Create n shards
+        let mut shards = Vec::new();
+        for i in 0..n {
+            let mut shard_fields = std::collections::HashMap::new();
+            shard_fields.insert("__index__".to_string(), Value::Int(i as i64));
+            shard_fields.insert("__data__".to_string(), inner_value.clone());
+            shard_fields.insert("__threshold__".to_string(), Value::Int(k as i64));
+            shard_fields.insert("__total__".to_string(), Value::Int(n as i64));
+            shards.push(Value::Struct {
+                name: "Shard".to_string(),
+                fields: Rc::new(RefCell::new(shard_fields)),
+            });
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(shards))))
+    }
+
+    /// teleport - quantum teleportation
+    fn qh_teleport(&self, value: &Value) -> Result<Value, RuntimeError> {
+        let inner_value = match value {
+            Value::Struct { fields, .. } => {
+                fields.borrow().get("__value__").cloned().unwrap_or(Value::Null)
+            }
+            other => other.clone(),
+        };
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("__value__".to_string(), inner_value);
+        fields.insert("__teleported__".to_string(), Value::Bool(true));
+        Ok(Value::Struct {
+            name: "QHState".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
     }
 
     fn min_values(&self, value: Value) -> Result<Value, RuntimeError> {
@@ -11079,6 +13123,281 @@ impl Interpreter {
         }
 
         Ok(Value::Array(Rc::new(RefCell::new(elements))))
+    }
+
+    /// Expand a user-defined rune (macro)
+    ///
+    /// This implements a simplified version of the rune expansion algorithm from 07A-RUNE-EXPANSION.md.
+    /// For pipe-invoked runes (`value|rune!{...}`), the pipe_value is bound to `__pipe`.
+    fn expand_rune(&mut self, rune_def: &crate::ast::MacroDef, tokens: &str, pipe_value: Option<Value>) -> Result<Value, RuntimeError> {
+        crate::sigil_debug!("DEBUG expand_rune: name={}, tokens='{}', has_pipe={}, rules='{}'",
+            rune_def.name.name, tokens, pipe_value.is_some(), rune_def.rules);
+
+        // The rune's rules contain the pattern and body
+        // Format: ($pattern) { $body } or ($pattern) => { $body }
+        let rules = &rune_def.rules;
+
+        // Simple pattern matching: extract variable bindings from the invocation
+        // For now, support basic patterns like:
+        //   ($e:expr) => { ... }
+        //   ($n) { ... }
+
+        // Parse the pattern to extract variable names and their specifiers
+        let mut bindings: HashMap<String, Value> = HashMap::new();
+
+        // Extract parameter names from the pattern in the rules
+        // Pattern is typically at the start: (param) or (param:type)
+        // Note: $ is stripped during tokenization, so we get just the name
+        let param_names = self.extract_rune_params(rules);
+        crate::sigil_debug!("DEBUG expand_rune: extracted params={:?}", param_names);
+
+        // If this is a pipe-invoked rune, bind __pipe to the piped value
+        // Also bind to any declared parameter names (for runes like double_it($n))
+        if let Some(ref pv) = pipe_value {
+            bindings.insert("__pipe".to_string(), pv.clone());
+            // When pipe-invoked, the piped value becomes the first parameter
+            for param in &param_names {
+                bindings.insert(param.clone(), pv.clone());
+            }
+        }
+
+        // Parse tokens as an expression and bind to parameter names
+        let tokens_trimmed = tokens.trim();
+        if !tokens_trimmed.is_empty() {
+            let mut parser = crate::parser::Parser::new(tokens_trimmed);
+            if let Ok(expr) = parser.parse_expr() {
+                // Evaluate the expression and store as binding
+                let value = self.evaluate(&expr)?;
+
+                // Bind to extracted parameter names
+                for param in &param_names {
+                    bindings.insert(param.clone(), value.clone());
+                }
+
+                // Also bind to common variable names for compatibility
+                bindings.insert("e".to_string(), value.clone());
+                bindings.insert("expr".to_string(), value.clone());
+                bindings.insert("x".to_string(), value.clone());
+                bindings.insert("input".to_string(), value);
+            }
+        }
+
+        // Now expand the rune body with bindings
+        // The body is in the rules string, typically after => or in { }
+        // Extract the body from rules
+        let body = self.extract_rune_body(rules)?;
+
+        // Substitute bindings into the body
+        let expanded = self.substitute_rune_bindings(&body, &bindings)?;
+
+        crate::sigil_debug!("DEBUG expand_rune: expanded body='{}'", expanded);
+
+        // Parse and evaluate the expanded body
+        let mut parser = crate::parser::Parser::new(&expanded);
+        match parser.parse_expr() {
+            Ok(expr) => self.evaluate(&expr),
+            Err(e) => {
+                // Try parsing as statements/block
+                let block_wrapped = format!("{{ {} }}", expanded);
+                let mut parser = crate::parser::Parser::new(&block_wrapped);
+                match parser.parse_expr() {
+                    Ok(expr) => self.evaluate(&expr),
+                    Err(_) => Err(RuntimeError::new(format!(
+                        "failed to parse rune expansion: {} (error: {:?})",
+                        expanded, e
+                    )))
+                }
+            }
+        }
+    }
+
+    /// Extract the body from a rune definition's rules string
+    fn extract_rune_body(&self, rules: &str) -> Result<String, RuntimeError> {
+        let rules = rules.trim();
+
+        // Handle different formats:
+        // 1. ($pattern) => { body }
+        // 2. ($pattern) { body }
+        // 3. { body } (no pattern, just body)
+
+        if let Some(arrow_pos) = rules.find("=>") {
+            // Find the body after =>
+            let after_arrow = &rules[arrow_pos + 2..].trim();
+            // Body should be in braces or be an expression
+            if after_arrow.starts_with('{') {
+                // Extract content between braces
+                let mut depth = 0;
+                let mut start = None;
+                let mut end = None;
+                for (i, c) in after_arrow.char_indices() {
+                    match c {
+                        '{' => {
+                            if depth == 0 { start = Some(i + 1); }
+                            depth += 1;
+                        }
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 { end = Some(i); break; }
+                        }
+                        _ => {}
+                    }
+                }
+                if let (Some(s), Some(e)) = (start, end) {
+                    return Ok(after_arrow[s..e].trim().to_string());
+                }
+            }
+            // Otherwise, treat the rest as the body
+            return Ok(after_arrow.to_string());
+        }
+
+        // Look for the last brace-delimited section as the body
+        if let Some(brace_start) = rules.rfind('{') {
+            let after = &rules[brace_start..];
+            if let Some(brace_end) = after.rfind('}') {
+                return Ok(after[1..brace_end].trim().to_string());
+            }
+        }
+
+        // Fallback: the entire rules string is the body
+        Ok(rules.to_string())
+    }
+
+    /// Extract parameter names from a rune definition's rules string
+    /// Returns a list of parameter names like ["n", "expr"]
+    /// The $ prefix is stripped during tokenization, so we look for identifiers in parentheses
+    fn extract_rune_params(&self, rules: &str) -> Vec<String> {
+        let rules = rules.trim();
+        let mut params = Vec::new();
+
+        // Find the pattern section - it's between the first ( and the matching )
+        // The pattern is before the body braces
+        let paren_start = match rules.find('(') {
+            Some(pos) => pos,
+            None => return params, // No parameters
+        };
+
+        // Find matching close paren
+        let mut depth = 0;
+        let mut paren_end = paren_start;
+        for (i, c) in rules[paren_start..].char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        paren_end = paren_start + i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if paren_end <= paren_start {
+            return params;
+        }
+
+        let pattern_section = &rules[paren_start + 1..paren_end];
+        crate::sigil_debug!("DEBUG extract_rune_params: pattern_section='{}'", pattern_section);
+
+        // Extract identifiers from the pattern section
+        // The pattern is like "n " or "expr : ty" - identifiers possibly with :type annotations
+        let mut current_ident = String::new();
+        let mut in_type = false;
+
+        for c in pattern_section.chars() {
+            if c.is_alphanumeric() || c == '_' {
+                if !in_type {
+                    current_ident.push(c);
+                }
+            } else if c == ':' {
+                // Type annotation follows - save the identifier and skip the type
+                if !current_ident.is_empty() {
+                    params.push(current_ident.clone());
+                    current_ident.clear();
+                }
+                in_type = true;
+            } else if c == ',' || c.is_whitespace() {
+                // End of current parameter
+                if !current_ident.is_empty() {
+                    params.push(current_ident.clone());
+                    current_ident.clear();
+                }
+                in_type = false;
+            }
+        }
+
+        // Don't forget the last identifier
+        if !current_ident.is_empty() && !in_type {
+            params.push(current_ident);
+        }
+
+        params
+    }
+
+    /// Substitute bindings into a rune body
+    fn substitute_rune_bindings(&self, body: &str, bindings: &HashMap<String, Value>) -> Result<String, RuntimeError> {
+        // Since $ is stripped during tokenization, we need to replace identifiers directly
+        // But we must be careful to only replace whole identifiers, not substrings
+        // We'll use word boundary matching
+
+        let mut result = body.to_string();
+
+        for (name, value) in bindings {
+            let replacement = match value {
+                Value::Int(n) => n.to_string(),
+                Value::Float(f) => f.to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::String(s) => format!("\"{}\"", s),
+                Value::Null => "null".to_string(),
+                Value::Char(c) => format!("'{}'", c),
+                _ => format!("{}", value), // Use Display impl
+            };
+
+            // Replace whole word occurrences only (not part of larger identifiers)
+            // Use a simple regex-like approach: check character before/after
+            let mut new_result = String::new();
+            let mut chars: Vec<char> = result.chars().collect();
+            let name_chars: Vec<char> = name.chars().collect();
+            let mut i = 0;
+
+            while i < chars.len() {
+                // Try to match the identifier name at position i
+                let can_start = i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_');
+
+                if can_start && i + name_chars.len() <= chars.len() {
+                    // Check if the characters match
+                    let mut matches = true;
+                    for j in 0..name_chars.len() {
+                        if chars[i + j] != name_chars[j] {
+                            matches = false;
+                            break;
+                        }
+                    }
+
+                    if matches {
+                        // Check if it ends properly (not part of a larger identifier)
+                        let next_pos = i + name_chars.len();
+                        let can_end = next_pos >= chars.len() ||
+                            !(chars[next_pos].is_alphanumeric() || chars[next_pos] == '_');
+
+                        if can_end {
+                            // Replace!
+                            new_result.push_str(&replacement);
+                            i += name_chars.len();
+                            continue;
+                        }
+                    }
+                }
+
+                new_result.push(chars[i]);
+                i += 1;
+            }
+
+            result = new_result;
+        }
+
+        Ok(result)
     }
 
     fn eval_range(

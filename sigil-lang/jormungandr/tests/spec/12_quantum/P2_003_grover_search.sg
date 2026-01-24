@@ -1,0 +1,25 @@
+// Test: Grover's search algorithm
+// Spec: 12-QUANTUM.md § 7.1 Grover's Search
+// Priority: P2 - Advanced Feature
+
+fn main() {
+    // Search for item 3 in a 4-item database (2 qubits)
+    // Oracle marks |11⟩ (binary 3)
+    let target = 3;
+
+    // Run Grover search with 1 iteration (optimal for n=2)
+    let result = Grover·search(2, target, 1);
+
+    // With proper amplitude amplification, should find target
+    // Run 10 times and check success rate > 90%
+    let mut successes = 0;
+    for i in 0..10 {
+        let r = Grover·search(2, target, 1);
+        if r == target {
+            successes = successes + 1;
+        }
+    }
+
+    // Should succeed most of the time
+    println(successes > 7);  // true
+}

@@ -1,0 +1,113 @@
+// P0_020: Fully Native Sigil - No Rust keywords
+// Priority: P0
+// Category: Native Symbols
+// Tests: Complete native symbol vocabulary
+// Expected: Program compiles and runs correctly
+//
+// Symbols used:
+//   Σ  - struct
+//   λ  - fn
+//   ≔  - let
+//   Δ  - mut
+//   ⊢  - impl
+//   ⎇  - if
+//   ⎉  - else
+//   ⟳  - while
+//   ∞  - loop
+//   ∀  - for
+//   ∈  - in
+//   ⊗  - break
+//   ↻  - continue
+//   ⤺  - return
+
+// Define a counter structure
+Σ Counter {
+    value: i64,
+    limit: i64,
+}
+
+// Implement methods on Counter
+⊢ Counter {
+    λ new(limit: i64) -> Counter {
+        Counter { value: 0, limit: limit }
+    }
+
+    λ increment(&Δ self) {
+        self.value = self.value + 1;
+    }
+
+    λ get(self) -> i64 {
+        ⤺ self.value
+    }
+
+    λ at_limit(self) -> bool {
+        ⤺ self.value >= self.limit
+    }
+}
+
+// Classify a number
+λ classify(n: i64) -> i64 {
+    ⎇ n > 0 {
+        ⤺ 1
+    } ⎉ ⎇ n < 0 {
+        ⤺ -1
+    } ⎉ {
+        ⤺ 0
+    }
+}
+
+// Sum only positive numbers from a list
+λ sum_positive(numbers: &[i64]) -> i64 {
+    ≔ Δ sum = 0;
+    ∀ n ∈ numbers {
+        ⎇ *n <= 0 {
+            ↻;  // skip non-positive
+        }
+        sum = sum + *n;
+    }
+    ⤺ sum
+}
+
+// Find first number greater than threshold
+λ find_greater(numbers: &[i64], threshold: i64) -> i64 {
+    ∀ n ∈ numbers {
+        ⎇ *n > threshold {
+            ⤺ *n
+        }
+    }
+    ⤺ -1  // not found
+}
+
+// Main entry point
+λ main() {
+    // Test struct and impl
+    ≔ Δ counter = Counter::new(5);
+    ⟳ !counter.at_limit() {
+        counter.increment();
+    }
+    println!("Counter reached: {}", counter.get());
+
+    // Test classification
+    println!("classify(42) = {}", classify(42));
+    println!("classify(-7) = {}", classify(-7));
+    println!("classify(0) = {}", classify(0));
+
+    // Test for-in with continue
+    ≔ data = [-2, 5, -1, 8, 0, 3];
+    println!("sum_positive = {}", sum_positive(&data));
+
+    // Test infinite loop with break
+    ≔ Δ i = 0;
+    ∞ {
+        i = i + 1;
+        ⎇ i > 3 {
+            ⊗;
+        }
+    }
+    println!("loop exited at i = {}", i);
+
+    // Test find with early return
+    println!("first > 4: {}", find_greater(&data, 4));
+
+    println!("All native symbols working!");
+}

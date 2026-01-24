@@ -273,25 +273,40 @@ pub enum Token {
 
     // === Keywords ===
     #[token("fn")]
+    #[token("λ")]  // Lambda - function
     Fn,
     #[token("async")]
+    #[token("⌛")]  // Hourglass - time/waiting
     Async,
     #[token("let")]
+    #[token("≔")]  // Definition assignment
     Let,
     #[token("mut")]
+    #[token("Δ")]  // Delta - change/mutable
     Mut,
     #[token("const")]
+    #[token("◆")]  // Diamond - solid, fixed
     Const,
+    #[token("linear")]
+    Linear,
+    #[token("affine")]
+    Affine,
+    #[token("relevant")]
+    Relevant,
     #[token("type")]
     Type,
     #[token("sigil")]
     #[token("struct")]
+    #[token("Σ")]
     Struct,
     #[token("enum")]
+    #[token("ᛈ")]  // Perthro rune - lot cup, choices/fate
     Enum,
     #[token("trait")]
+    #[token("Θ")]  // Theta - theory, aspect
     Trait,
     #[token("impl")]
+    #[token("⊢")]  // Turnstile - proves/provides
     Impl,
     #[token("scroll")]
     #[token("mod")]
@@ -300,6 +315,7 @@ pub enum Token {
     #[token("use")]
     Use,
     #[token("pub")]
+    #[token("☉")]  // Sun - visible, public
     Pub,
     #[token("actor")]
     Actor,
@@ -316,14 +332,18 @@ pub enum Token {
 
     // Control flow
     #[token("if")]
+    #[token("⎇")]  // ISO branch symbol
     If,
     #[token("else")]
+    #[token("⎉")]  // ISO alternative symbol
     Else,
     #[token("match")]
+    #[token("⌥")]  // Option key - choices
     Match,
     #[token("loop")]
-    Loop,
+    Loop, // Parser handles contextual use of ∞ (Infinity token) for loop
     #[token("while")]
+    #[token("⟳")]  // Cycle arrow
     While,
     #[token("for")]
     For,
@@ -334,6 +354,7 @@ pub enum Token {
     #[token("continue")]
     Continue,
     #[token("return")]
+    #[token("⤺")]  // Return arrow
     Return,
     #[token("yield")]
     Yield,
@@ -343,6 +364,7 @@ pub enum Token {
     // Other keywords
     #[token("self")]
     SelfLower,
+    // Note: ⊙ kept for Hadamard product - self uses keyword only
     #[token("Self")]
     SelfUpper,
     #[token("super")]
@@ -440,27 +462,23 @@ pub enum Token {
     Phi, // Filter
 
     #[token("σ")]
-    #[token("Σ")]
-    Sigma, // Sort (lowercase) / Sum (uppercase)
+    Sigma, // Sort morpheme (lowercase only - uppercase Σ is struct keyword)
 
     #[token("ρ")]
     #[token("Ρ")]
     Rho, // Reduce
 
-    #[token("λ")]
     #[token("Λ")]
-    Lambda, // Lambda
+    Lambda, // Lambda morpheme (uppercase only - lowercase λ is fn keyword)
 
     #[token("Π")]
     Pi, // Product
 
-    #[token("⌛")]
-    Hourglass, // Await symbol
+    // Note: ⌛ (hourglass) is now mapped to Async keyword
 
     // Additional morphemes
     #[token("δ")]
-    #[token("Δ")]
-    Delta, // Difference/change
+    Delta, // Difference/change morpheme (lowercase only - uppercase Δ is mut keyword)
 
     #[token("ε")]
     Epsilon, // Empty/null
@@ -497,8 +515,7 @@ pub enum Token {
     Psi, // Psychological/mental state
 
     #[token("θ")]
-    #[token("Θ")]
-    Theta, // Threshold/angle
+    Theta, // Threshold/angle morpheme (lowercase only - uppercase Θ is trait keyword)
 
     #[token("κ")]
     #[token("Κ")]
@@ -509,19 +526,21 @@ pub enum Token {
     #[token("parallel")]
     Parallel, // Parallel execution (U+2225)
 
-    #[token("⊛")]
     #[token("gpu")]
-    Gpu, // GPU compute shader (U+229B - circled asterisk)
+    Gpu, // GPU compute shader
+
+    #[token("⊛")]
+    Convolve, // Convolution/merge operator (U+229B - circled asterisk)
 
     // === Quantifiers (for AI-native set operations) ===
     #[token("∀")]
-    ForAll, // Universal quantification
+    ForAll, // Universal quantification (parser handles contextual use as `for` keyword)
 
     #[token("∃")]
     Exists, // Existential quantification
 
     #[token("∈")]
-    ElementOf, // Membership test
+    ElementOf, // Membership test (parser handles contextual use as `in` keyword)
 
     #[token("∉")]
     NotElementOf, // Non-membership
@@ -651,6 +670,9 @@ pub enum Token {
 
     #[token("◊")]
     Lozenge, // Predicted/speculative (U+25CA) - Token◊
+
+    #[token("□")]
+    BoxSquare, // Necessity/verification (U+25A1) - |□verify
 
     // === Legion Morphemes (Holographic Agent Collective) ===
     // From Infernum 2.0 - distributed memory and multi-agent coordination
@@ -843,9 +865,9 @@ pub enum Token {
     DotDotEq,
     #[token("++")]
     PlusPlus, // Concatenation
-    // DISABLED: Rust compatibility removed - use middledot (·) instead
-    // #[token("::")]
-    ColonColon,  // Keep variant for compiler compatibility, but lexer won't produce it
+    // Re-enabled for Styx compatibility (uses :: for paths alongside middledot)
+    #[token("::")]
+    ColonColon,
     #[token(":")]
     Colon,
     #[token(";")]
@@ -883,7 +905,7 @@ pub enum Token {
     #[token("◯")]
     Circle, // Geometric zero
     #[token("∞")]
-    Infinity, // Ananta
+    Infinity, // Infinite value (parser handles contextual use for loop keyword)
 
     // === Protocol Operations (Sigil-native networking) ===
     #[token("⇒")]
@@ -1078,6 +1100,9 @@ impl Token {
                 | Token::Let
                 | Token::Mut
                 | Token::Const
+                | Token::Linear
+                | Token::Affine
+                | Token::Relevant
                 | Token::Type
                 | Token::Struct
                 | Token::Enum
@@ -1138,7 +1163,7 @@ impl Token {
         matches!(
             self,
             Token::Tau | Token::Phi | Token::Sigma | Token::Rho |
-            Token::Lambda | Token::Pi | Token::Hourglass |
+            Token::Lambda | Token::Pi | Token::Async |
             Token::Delta | Token::Epsilon | Token::Omega | Token::Alpha | Token::Zeta |
             Token::Mu | Token::Chi | Token::Nu | Token::Xi |  // Access morphemes
             Token::Parallel | Token::Gpu |  // Concurrency morphemes
@@ -1359,7 +1384,7 @@ mod tests {
         assert!(matches!(lexer.next_token(), Some((Token::Lambda, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Sigma, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Pi, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Hourglass, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Async, _))));
     }
 
     #[test]

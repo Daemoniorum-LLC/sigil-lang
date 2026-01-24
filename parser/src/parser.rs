@@ -1064,7 +1064,7 @@ impl<'a> Parser<'a> {
             Some(Token::Static) => Item::Static(self.parse_static(visibility)?),
             Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
             Some(Token::Extern) => Item::ExternBlock(self.parse_extern_block()?),
-            Some(Token::Macro) | Some(Token::MacroRules) => {
+            Some(Token::Macro) | Some(Token::MacroRules) | Some(Token::Rune) => {
                 Item::Macro(self.parse_macro_def(visibility)?)
             }
             Some(Token::Naked) => {
@@ -2018,18 +2018,27 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a macro definition: `macro name { ... }` or `macro name(...) { ... }`
-    /// Also supports Rust-style: `macro_rules! name { ... }`
+    /// Also supports Rust-style: `macro_rules! name { ... }` and Sigil: `rune name! { ... }`
     fn parse_macro_def(&mut self, visibility: Visibility) -> ParseResult<MacroDef> {
-        // Handle both `macro` and `macro_rules` keywords
+        // Handle `macro`, `macro_rules!`, and `rune ... !` keywords
         let is_macro_rules = self.check(&Token::MacroRules);
+        let is_rune = self.check(&Token::Rune);
         if is_macro_rules {
             self.advance(); // consume 'macro_rules'
             self.expect(Token::Bang)?; // consume '!'
+        } else if is_rune {
+            self.advance(); // consume 'rune'
+            // rune name! { ... } - consume the ! after the name
         } else {
             self.expect(Token::Macro)?;
         }
 
         let name = self.parse_ident()?;
+
+        // For rune definitions, consume the trailing ! after the name
+        if is_rune && self.check(&Token::Bang) {
+            self.advance(); // consume '!'
+        }
 
         // Collect the entire macro body as a string (we don't interpret macros)
         // Could be: macro name { ... } or macro name(...) { ... } or macro name($arg:ty) { ... }

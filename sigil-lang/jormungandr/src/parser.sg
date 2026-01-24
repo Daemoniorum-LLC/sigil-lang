@@ -432,13 +432,8 @@ impl Parser {
         // Check for #[macro_export] attribute
         let mut is_macro_export = false;
         for attr in attrs.clone() {
-            match attr.value.path.segments.first() {
-                ?seg => {
-                    if seg.value.name == "macro_export" {
-                        is_macro_export = true;
-                    }
-                }
-                null => {}
+            if attr.name.name == "macro_export" {
+                is_macro_export = true;
             }
         }
 
@@ -719,7 +714,7 @@ impl Parser {
                 } else {
                     null
                 };
-                fields.push(FieldDef { visibility: vis, name, ty, default });
+                fields.push(FieldDef { visibility: vis, name, ty, default_value: default });
                 if !self.consume_if(&Token·Comma) {
                     break;
                 }
@@ -829,7 +824,7 @@ impl Parser {
                         visibility: Visibility·Private,
                         name,
                         ty,
-                        default: null,
+                        default_value: null,
                     });
                     if !self.consume_if(&Token·Comma) {
                         break;
@@ -1240,7 +1235,7 @@ impl Parser {
                     visibility: Visibility·Private,
                     name,
                     ty,
-                    default,
+                    default_value: default,
                 });
                 self.consume_if(&Token·Comma);
             }
@@ -1815,7 +1810,7 @@ impl Parser {
                 let last = segments[last_idx].clone();
                 segments[last_idx] = PathSegment {
                     ident: last.ident,
-                    args: types,
+                    generics: types,
                 };
                 // Check if there's more path after the turbofish (e.g., ::method)
                 if !self.check(&Token·ColonColon) && !self.check(&Token·MiddleDot) {
@@ -1960,7 +1955,7 @@ impl Parser {
                             return Ok(TypeExpr·Path(TypePath {
                                 segments: [PathSegment {
                                     ident: Spanned·new(Ident·new(name.clone(), span), span),
-                                    args: [],
+                                    generics: null,
                                 }],
                             }));
                         }
@@ -1988,7 +1983,7 @@ impl Parser {
                 Ok(TypeExpr·Path(TypePath {
                     segments: [PathSegment {
                         ident: Spanned·new(Ident·new(val.clone(), span), span),
-                        args: [],
+                        generics: null,
                     }],
                 }))
             }
@@ -2004,7 +1999,7 @@ impl Parser {
                         Ok(TypeExpr·Path(TypePath {
                             segments: [PathSegment {
                                 ident: Spanned·new(Ident·new(neg_val, span), span),
-                                args: [],
+                                generics: null,
                             }],
                         }))
                     }
@@ -2031,7 +2026,7 @@ impl Parser {
                 Ok(TypeExpr·Path(TypePath {
                     segments: [PathSegment {
                         ident: Spanned·new(Ident·new(format!("'{}", name), span), span),
-                        args: [],
+                        generics: null,
                     }],
                 }))
             }
@@ -2417,7 +2412,7 @@ impl Parser {
                                         func: Box·new(Expr·Path(TypePath {
                                             segments: [PathSegment {
                                                 ident: Ident { name: "assert".to_string(), evidentiality: null, affect: null, span: Span·empty_at(0) },
-                                                args: null,
+                                                generics: null,
                                             }],
                                         })),
                                         args,
@@ -3058,7 +3053,7 @@ impl Parser {
                     _ => {
                         // Parse as identifier (e.g., φ as golden ratio constant)
                         let ident = self.parse_ident()?;
-                        let path = TypePath { segments: [PathSegment { ident, args: null }] };
+                        let path = TypePath { segments: [PathSegment { ident, generics: null }] };
                         Ok(Expr·Path(path))
                     }
                 }
@@ -3231,7 +3226,7 @@ impl Parser {
 
     /// Parse block contents.
     fn parse_block_contents(mut self) -> !ParseResult<Block> {
-        let mut stmts = Vec·new();
+        let mut stmts: Vec<Stmt> = Vec·new();
         let mut expr = null;
 
         while !self.check(&Token·RBrace) {
@@ -4173,12 +4168,12 @@ impl Parser {
                 | Token·Packed | Token·Repr | Token·Align => {
                 let ident = self.parse_ident()?;
 
-                // Build path segments (handle :: for qualified paths like Token·Fn)
+                // Build path segments (handle :: or · for qualified paths like Token·Fn)
                 let mut segments = Vec·new();
-                segments.push(PathSegment { ident, args: null });
-                while self.consume_if(&Token·ColonColon) {
+                segments.push(PathSegment { ident, generics: null });
+                while self.consume_if(&Token·ColonColon) || self.consume_if(&Token·MiddleDot) {
                     let next_ident = self.parse_ident()?;
-                    segments.push(PathSegment { ident: next_ident, args: null });
+                    segments.push(PathSegment { ident: next_ident, generics: null });
                 }
                 let path = TypePath { segments: segments.clone() };
 
@@ -4602,8 +4597,8 @@ impl Parser {
     /// Parse macro tokens: collects all tokens inside matching delimiters.
     fn parse_macro_tokens(mut self) -> !ParseResult<String> {
         // Determine delimiter type
-        let open: Token;
-        let close: Token;
+        let mut open: Token;
+        let mut close: Token;
         match self.current_token() {
             Token·LParen => { open = Token·LParen; close = Token·RParen; }
             Token·LBracket => { open = Token·LBracket; close = Token·RBracket; }

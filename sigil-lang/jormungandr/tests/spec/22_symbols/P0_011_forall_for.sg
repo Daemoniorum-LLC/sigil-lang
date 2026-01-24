@@ -1,0 +1,17 @@
+// P0_011: ∀ (for all) should parse as for keyword
+// Priority: P0
+// Category: Native Symbols
+// Tests: ∀ for for, ∈ for in
+// Expected: Program compiles and runs, printing sum of 1+2+3+4+5 = 15
+
+λ main() {
+    ≔ mut sum = 0;
+    ≔ numbers = [1, 2, 3, 4, 5];
+
+    // Use ∀ for "for" and ∈ for "in"
+    ∀ n ∈ numbers {
+        sum = sum + n;
+    }
+
+    println!("sum = {}", sum);
+}

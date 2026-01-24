@@ -1,0 +1,304 @@
+//! String and character literal lexing for the Sigil lexer.
+//!
+//! Handles strings, chars, raw strings, byte strings, escape sequences.
+
+invoke tome·span·Span;
+invoke tome·token·Token;
+invoke tome·lexer·Lexer;
+
+⊢ Lexer {
+    rite lex_string(vary this) → !Token {
+        ≔ vary value = String·new();
+
+        // Check for multi-line string (""")
+        ⎇ this.match_char('"') {
+            ⎇ this.match_char('"') {
+                // Multi-line string
+                ⤺ this.lex_multiline_string();
+            } ⎉ {
+                // Empty string
+                ⤺ Token·StringLit("".to_string());
+            }
+        }
+
+        // Regular string - invoke explicit loop for nullable char handling
+        forever {
+            ⎇ this.is_eof() {
+                ⊲;
+            }
+            ≔ curr = this.current();
+            // Check for closing quote - invoke explicit nullable check
+            ⌥ curr {
+                ?c => {
+                    ⎇ c == '"' {
+                        ⊲;
+                    }
+                    this.advance();
+                    ⎇ c == '\\' {
+                        // Escape sequence
+                        value.push(this.lex_escape_sequence());
+                    } ⎉ {
+                        value.push(c);
+                    }
+                },
+                null | Option·None => ⊲,
+            }
+        }
+
+        // Consume closing quote
+        this.advance();
+
+        Token·StringLit(value)
+    }
+
+    /// Lex a multi-line string (""" ... """).
+    rite lex_multiline_string(vary this) → !Token {
+        ≔ vary value = String·new();
+
+        forever {
+            ⎇ this.is_eof() {
+                ⊲;
+            }
+
+            // Check for closing """
+            ⎇ this.current() == '"' {
+                ⎇ this.peek_char(1) == '"' ∧ this.peek_char(2) == '"' {
+                    this.advance();
+                    this.advance();
+                    this.advance();
+                    ⊲;
+                }
+            }
+
+            ≔ c = this.advance()!;
+            ⎇ c == '\\' {
+                value.push(this.lex_escape_sequence());
+            } ⎉ {
+                value.push(c);
+            }
+        }
+
+        Token·MultiLineStringLit(value)
+    }
+
+    /// Lex an escape sequence.
+    rite lex_escape_sequence(vary this) → !char {
+        ⌥ this.advance() {
+            'n' => '\n',
+            't' => '\t',
+            'r' => '\r',
+            '\\' => '\\',
+            '"' => '"',
+            '\'' => '\'',
+            '0' => '\0',
+            'x' => this.lex_hex_escape(2),
+            'u' => this.lex_unicode_escape(),
+            c => c?, // Unknown escape, ⤺ as-is
+        }
+    }
+
+    /// Lex \xNN hex escape.
+    rite lex_hex_escape(vary this, digits: !u64) → !char {
+        ≔ vary value: u32 = 0;
+        each _ ∈ 0..digits {
+            ⌥ this.current() {
+                '0'..='9' => {
+                    value = value * 16 + (this.advance()! as u32 - '0' as u32);
+                }
+                'a'..='f' => {
+                    value = value * 16 + (this.advance()! as u32 - 'a' as u32 + 10);
+                }
+                'A'..='F' => {
+                    value = value * 16 + (this.advance()! as u32 - 'A' as u32 + 10);
+                }
+                _ => ⊲,
+            }
+        }
+        char·from_u32(value) ?? '?'
+    }
+
+    /// Lex \u{NNNN} unicode escape.
+    rite lex_unicode_escape(vary this) → !char {
+        ⎇ !this.match_char('{') {
+            ⤺ '?';
+        }
+
+        ≔ vary value: u32 = 0;
+        // Use loop with break instead of ⟳ != to avoid codegen bug
+        forever {
+            ⎇ this.is_eof() {
+                ⊲;
+            }
+            ⌥ this.current() {
+                '}' => ⊲,
+                '0'..='9' => {
+                    value = value * 16 + (this.advance()! as u32 - '0' as u32);
+                }
+                'a'..='f' => {
+                    value = value * 16 + (this.advance()! as u32 - 'a' as u32 + 10);
+                }
+                'A'..='F' => {
+                    value = value * 16 + (this.advance()! as u32 - 'A' as u32 + 10);
+                }
+                _ => ⊲,
+            }
+        }
+
+        this.match_char('}');
+        char·from_u32(value) ?? '?'
+    }
+
+    /// Lex a quote (') which could be a char literal or lifetime marker.
+    rite lex_quote_or_char(vary this) → !Token {
+        // Check what follows the opening quote
+        ⌥ this.current() {
+            // If followed by identifier start, check ⎇ it's a lifetime
+            'a'..='z' | 'A'..='Z' | '_' => {
+                // Peek one ahead: ⎇ next char after the letter is a closing quote,
+                // it's a char literal like 'a'; otherwise it's a lifetime
+                ⌥ this.peek_char(1) {
+                    '\'' => {
+                        // It's a char literal like 'a'
+                        this.lex_char()
+                    }
+                    _ => {
+                        // It's a lifetime like 'static or 'a
+                        this.lex_lifetime()
+                    }
+                }
+            }
+            // Escaped char is always a char literal
+            '\\' => this.lex_char(),
+            // Any other single char followed by ' is a char literal
+            _ => this.lex_char(),
+        }
+    }
+
+    /// Lex a lifetime identifier ('static, 'a, etc.)
+    rite lex_lifetime(vary this) → !Token {
+        // Collect the lifetime name (we're positioned after the ')
+        ≔ vary name = String·new();
+        ⟳ Lexer·is_alnum_or_underscore(this.current()) {
+            name.push(this.advance()!);
+        }
+        Token·Lifetime(name)
+    }
+
+    /// Lex a character literal.
+    rite lex_char(vary this) → !Token {
+        ≔ c = ⎇ this.current() == '\\' {
+            this.advance();
+            this.lex_escape_sequence()
+        } ⎉ {
+            this.advance()!
+        };
+
+        // Consume closing quote
+        this.match_char('\'');
+
+        Token·CharLit(c)
+    }
+
+    /// Helper to check ⎇ a char is an ASCII digit
+
+    rite lex_raw_string(vary this) → !Token {
+        // Count the number of # characters
+        ≔ vary hash_count = 0;
+        ⟳ this.current() == '#' {
+            this.advance();
+            hash_count = hash_count + 1;
+        }
+
+        // Expect opening quote - invoke ⌥ to avoid != codegen bug
+        ⌥ this.current() {
+            '"' => {},
+            _ => {
+                // Not a valid raw string, ⤺ as identifier 'r' followed by hashes
+                // This shouldn't normally happen in valid Sigil code
+                ⤺ Token·Ident("r".to_string());
+            }
+        }
+        this.advance(); // consume opening quote
+
+        ≔ vary value = String·new();
+
+        // Read until we find closing quote followed by same number of #
+        forever {
+            ⎇ this.is_eof() {
+                ⊲;
+            }
+
+            ≔ c = this.advance()!;
+            ⎇ c == '"' {
+                // Check for closing # sequence
+                ≔ vary closing_hashes = 0;
+                ⟳ closing_hashes < hash_count ∧ this.current() == '#' {
+                    this.advance();
+                    closing_hashes = closing_hashes + 1;
+                }
+                ⎇ closing_hashes == hash_count {
+                    // Found the closing sequence
+                    ⊲;
+                } ⎉ {
+                    // Not the closing sequence, add the quote and hashes to value
+                    value.push('"');
+                    ≔ vary i = 0;
+                    ⟳ i < closing_hashes {
+                        value.push('#');
+                        i = i + 1;
+                    }
+                }
+            } ⎉ {
+                value.push(c);
+            }
+        }
+
+        Token·RawStringLit(value)
+    }
+
+    /// Lex a byte string literal (b"...").
+    rite lex_byte_string(vary this) → !Token {
+        // Consume the opening quote
+        this.advance();  // consume "
+
+        ≔ vary bytes: ![u8] = Vec·new();
+
+        forever {
+            ⌥ this.current() {
+                '"' => {
+                    this.advance();
+                    ⊲;
+                }
+                '\\' => {
+                    this.advance();
+                    ≔ escaped = this.lex_escape_sequence();
+                    bytes.push(escaped as u8);
+                }
+                null | Option·None => ⊲,  // EOF
+                c => {
+                    bytes.push(c! as u8);
+                    this.advance();
+                }
+            }
+        }
+
+        Token·ByteStringLit(bytes)
+    }
+
+    /// Lex a byte literal (b'a').
+    rite lex_byte_literal(vary this) → !Token {
+        this.advance();  // consume '
+
+        ≔ byte = ⎇ this.current() == '\\' {
+            this.advance();
+            this.lex_escape_sequence() as u8
+        } ⎉ {
+            ≔ c = this.advance()!;
+            c as u8
+        };
+
+        this.match_char('\'');
+
+        Token·ByteLit(byte)
+    }
+}

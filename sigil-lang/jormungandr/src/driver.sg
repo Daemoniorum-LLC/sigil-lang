@@ -26,15 +26,16 @@
 //! diff sigil2.c sigil3.c  # Should be identical (fixed point!)
 //! ```
 
-invoke tome·lexer·Lexer;
-invoke tome·parser·{Parser, ParseError};
-invoke tome·typeck·{TypeChecker, TypeError};
-invoke tome·lower·{lower_file, LowerError};
-invoke tome·ir·IrModule;
-invoke tome·interp·{Interpreter, RuntimeError};
-invoke tome·codegen·CodeGen;
-invoke tome·span·Span;
-invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
+// Use local modules from crate, not external tome
+invoke crate·lexer·Lexer;
+invoke crate·parser·{Parser, ParseError};
+invoke crate·typeck·{TypeChecker, TypeError};
+invoke crate·lower·{lower_file, LowerError};
+invoke crate·ir·IrModule;
+invoke crate·interp·{Interpreter, RuntimeError};
+invoke crate·codegen·CodeGen;
+invoke crate·span·Span;
+invoke crate·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 
 // ============================================================================
 // Compiler Configuration
@@ -98,7 +99,8 @@ impl Config {
         let mut config = Config·default();
         let mut expect_output = false;
 
-        for arg in argv.iter() {
+        // Skip first arg (program name)
+        for arg in argv.iter().skip(1) {
             let s = arg.clone();
 
             if expect_output {
@@ -612,7 +614,7 @@ impl Driver {
 
                     let source = match self.read_file(additional_path.clone()) {
                         Result·Ok(s) => s,
-                        Result·Err(_code) => {
+                        Result·Err(_) => {
                             // File doesn't exist - skip silently for now
                             // This handles the case where tome paths are guessed but don't exist
                             continue;

@@ -1,0 +1,47 @@
+//! Error types for the Sigil interpreter.
+
+// ============================================================================
+// Runtime Errors
+// ============================================================================
+
+/// Runtime error
+☉ sigil RuntimeError {
+    ☉ message: !String,
+    ☉ stack_trace: ![String],
+    ☉ is_break: !bool,
+    ☉ is_continue: !bool,
+    ☉ value: ?EvidentialValue,
+}
+
+⊢ RuntimeError {
+    ☉ rite new(message: !String) → !RuntimeError {
+        RuntimeError {
+            message,
+            stack_trace: [],
+            is_break: nay,
+            is_continue: nay,
+            value: null,
+        }
+    }
+
+    ☉ rite break_with(value: ?EvidentialValue) → !RuntimeError {
+        RuntimeError {
+            message: "break",
+            stack_trace: [],
+            is_break: yea,
+            is_continue: nay,
+            value,
+        }
+    }
+
+    ☉ rite continue_loop() → !RuntimeError {
+        RuntimeError {
+            message: "continue",
+            stack_trace: [],
+            is_break: nay,
+            is_continue: yea,
+            value: null,
+        }
+    }
+}
+

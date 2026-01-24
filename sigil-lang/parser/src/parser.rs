@@ -25,6 +25,32 @@ pub enum ParseError {
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
+/// Quantum gate names recognized in pipe syntax (e.g., `q|H`, `q|CNOT(q2)`).
+/// These are treated specially to distinguish pipe from bitwise OR in expressions like `x|H`.
+/// To add new gates, extend this list - it's the single source of truth for the parser.
+const QUANTUM_GATES: &[&str] = &[
+    // Single-qubit gates
+    "H", "X", "Y", "Z", "S", "T",
+    // Rotation gates (parameterized)
+    "Rx", "Ry", "Rz",
+    // Two-qubit gates
+    "CNOT", "CZ", "SWAP",
+    // Three-qubit gates
+    "Toffoli", "Fredkin",
+    // Register operations
+    "H_all", "X_all",
+];
+
+/// Quantum operations (measurement, queries, etc.)
+const QUANTUM_OPS: &[&str] = &[
+    // Measurement
+    "measure", "measure_all", "measure_both", "measure_basis", "measure_partial",
+    // Queries
+    "probability_of",
+    // Register operations
+    "apply_at",
+];
+
 /// Recursive descent parser for Sigil.
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -145,6 +171,55 @@ impl<'a> Parser<'a> {
                 is_inner: false,
             })
         }
+    }
+
+    /// Evaluate a cfg condition to determine if the annotated item should be included.
+    /// Returns true if the condition is satisfied, false if the item should be skipped.
+    /// For the interpreter, `debug_assertions` is always true (interpreter = debug mode).
+    fn evaluate_cfg_condition(&self, attrs: &[Attribute]) -> bool {
+        for attr in attrs {
+            if attr.name.name == "cfg" {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    // Check the cfg argument
+                    for arg in args {
+                        match arg {
+                            AttrArg::Ident(ident) => {
+                                // Simple cfg like #[cfg(debug_assertions)]
+                                if ident.name == "debug_assertions" {
+                                    // In interpreter mode, debug_assertions is true
+                                    return true;
+                                }
+                                // Unknown cfg - default to true
+                                return true;
+                            }
+                            AttrArg::Nested(nested_attr) => {
+                                // cfg(not(...)) or cfg(all(...)) or cfg(any(...))
+                                if nested_attr.name.name == "not" {
+                                    // Evaluate the negated condition
+                                    if let Some(AttrArgs::Paren(inner_args)) = &nested_attr.args {
+                                        for inner_arg in inner_args {
+                                            if let AttrArg::Ident(inner_ident) = inner_arg {
+                                                if inner_ident.name == "debug_assertions" {
+                                                    // not(debug_assertions) = false in interpreter
+                                                    return false;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Unknown negated condition - default to false (skip)
+                                    return false;
+                                }
+                                // Unknown nested cfg - default to true
+                                return true;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        // No cfg attribute or couldn't evaluate - include the item
+        true
     }
 
     /// Parse an attribute name (identifier, keyword, or path like async_trait::async_trait).
@@ -654,6 +729,40 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Expect one of several tokens (for contextual symbol parsing).
+    /// Used to accept both keyword and symbol alternatives (e.g., `in` or `∈`).
+    pub(crate) fn expect_one_of(&mut self, expected: &[Token]) -> ParseResult<Span> {
+        match &self.current {
+            Some((token, span)) => {
+                let current_discriminant = std::mem::discriminant(token);
+                for exp in expected {
+                    if current_discriminant == std::mem::discriminant(exp) {
+                        let span = *span;
+                        self.advance();
+                        return Ok(span);
+                    }
+                }
+                Err(ParseError::UnexpectedToken {
+                    expected: expected.iter().map(|t| format!("{:?}", t)).collect::<Vec<_>>().join(" or "),
+                    found: token.clone(),
+                    span: *span,
+                })
+            }
+            None => Err(ParseError::UnexpectedEof),
+        }
+    }
+
+    /// Check if current token matches any of the expected tokens.
+    pub(crate) fn check_one_of(&self, expected: &[Token]) -> bool {
+        match &self.current {
+            Some((token, _)) => {
+                let current_discriminant = std::mem::discriminant(token);
+                expected.iter().any(|exp| current_discriminant == std::mem::discriminant(exp))
+            }
+            None => false,
+        }
+    }
+
     pub(crate) fn check(&self, expected: &Token) -> bool {
         matches!(&self.current, Some((token, _)) if std::mem::discriminant(token) == std::mem::discriminant(expected))
     }
@@ -1053,7 +1162,7 @@ impl<'a> Parser<'a> {
 
         // Handle async marker after return type: -> Type⌛
         // This is an alternative async syntax: fn foo() -> Result⌛ { ... }
-        let is_async = is_async || self.consume_if(&Token::Hourglass);
+        let is_async = is_async || self.consume_if(&Token::Async);
 
         let where_clause = self.parse_where_clause_opt()?;
 
@@ -1836,7 +1945,8 @@ impl<'a> Parser<'a> {
                         }
                     }
                     Some(tok) => {
-                        body.push_str(&format!("{:?} ", tok));
+                        body.push_str(&Self::token_to_source(tok));
+                        body.push(' ');
                     }
                     None => break,
                 }
@@ -1865,7 +1975,8 @@ impl<'a> Parser<'a> {
                     body.push_str(&format!("//{}", s));
                 }
                 Some(tok) => {
-                    body.push_str(&format!("{:?} ", tok));
+                    body.push_str(&Self::token_to_source(tok));
+                    body.push(' ');
                 }
                 None => break,
             }
@@ -2059,7 +2170,7 @@ impl<'a> Parser<'a> {
             Token::Empty => "∅".to_string(),
             Token::Circle => "◯".to_string(),
             Token::Infinity => "∞".to_string(),
-            Token::Hourglass => "⌛".to_string(),
+            Token::Async => "⌛".to_string(),
             // Comments
             Token::LineComment(s) => format!("//{}", s),
             Token::TildeComment(s) => format!("~~{}", s),
@@ -2805,6 +2916,24 @@ impl<'a> Parser<'a> {
                 let bounds = self.parse_type_bounds()?;
                 Ok(TypeExpr::TraitObject(bounds))
             }
+            Some(Token::Linear) => {
+                // Linear type: linear T - must be used exactly once
+                self.advance();
+                let inner = self.parse_type()?;
+                Ok(TypeExpr::Linear(Box::new(inner)))
+            }
+            Some(Token::Affine) => {
+                // Affine type: affine T - can be used at most once
+                self.advance();
+                let inner = self.parse_type()?;
+                Ok(TypeExpr::Affine(Box::new(inner)))
+            }
+            Some(Token::Relevant) => {
+                // Relevant type: relevant T - must be used at least once
+                self.advance();
+                let inner = self.parse_type()?;
+                Ok(TypeExpr::Relevant(Box::new(inner)))
+            }
             Some(Token::Struct) => {
                 // Inline struct type: struct { field: Type, ... }
                 self.advance();
@@ -3292,6 +3421,7 @@ impl<'a> Parser<'a> {
             Some(Token::Tau) => true,      // |τ{...} transform
             Some(Token::Phi) => true,      // |φ{...} filter
             Some(Token::Sigma) => true,    // |σ sort
+            Some(Token::Struct) => true,   // |Σ (uppercase sigma tokenized as Struct) - neural sum
             Some(Token::Rho) => true,      // |ρ+ reduce
             Some(Token::Pi) => true,       // |Π product
             Some(Token::Alpha) => true,    // |α first
@@ -3317,6 +3447,9 @@ impl<'a> Parser<'a> {
             Some(Token::SquaredPlus) => true, // |⊞ chunks
             Some(Token::ElementSmallVerticalBar) => true, // |⋳ flatten
             Some(Token::Union) => true,    // |∪ unique
+            // Holographic operators
+            Some(Token::Lozenge) => true,  // |◊method possibility
+            Some(Token::BoxSquare) => true,  // |□method necessity/verification
             // Keywords for pipe operations
             Some(Token::Match) => true,    // |match{...}
             Some(Token::Send) => true,     // |send{...}
@@ -3332,7 +3465,24 @@ impl<'a> Parser<'a> {
             Some(Token::Interrobang) => true, // |‽
             // Identifier could be pipe method: |collect, |take, etc.
             // But identifiers NOT followed by `(` or `{` are likely bitwise OR operands
-            Some(Token::Ident(_)) => {
+            Some(Token::Ident(name)) => {
+                // Known pipe methods that don't require parentheses
+                // Collection operations that don't require parentheses
+                let collection_pipe_methods = ["observe", "collect", "sum", "product", "len",
+                                               "min", "max", "first", "last", "head", "tail",
+                                               "reverse", "flatten", "enumerate", "encode",
+                                               // Quantum-holographic methods
+                                               "error_correct", "quantum_reconstruct", "interfere",
+                                               "partial_trace", "qh_compress", "is_pure",
+                                               "apply_noise", "scatter", "teleport", "size",
+                                               // Neural/Tensor methods
+                                               "relu", "softmax", "sigmoid", "tanh", "backward", "Σ"];
+                if collection_pipe_methods.contains(&name.as_str())
+                    || QUANTUM_GATES.contains(&name.as_str())
+                    || QUANTUM_OPS.contains(&name.as_str()) {
+                    return true;
+                }
+
                 // Only treat as pipe method if followed by explicit call syntax
                 // peek_next() gave us the Ident, peek_n(1) gives us the token after it
                 // Also handle evidentiality markers: |validate!{...} where ! precedes {
@@ -3350,6 +3500,8 @@ impl<'a> Parser<'a> {
             Some(Token::Amp) => true,
             // Direct closure: |{x => body}
             Some(Token::LBrace) => true,
+            // Keyword tokens that are pipe methods
+            Some(Token::Interfere) => true,  // |interfere is a pipe method
             // Everything else is likely bitwise OR
             _ => false,
         }
@@ -3772,6 +3924,7 @@ impl<'a> Parser<'a> {
                 // Tensor/array operators
                 Some(Token::CircledDot) => BinOp::Hadamard,     // ⊙ element-wise multiply
                 Some(Token::Tensor) => BinOp::TensorProd,       // ⊗ tensor product
+                Some(Token::Convolve) => BinOp::Convolve,       // ⊛ convolution/merge
                 // Legion operators handled specially below
                 Some(Token::Interfere) | Some(Token::Distribute) | Some(Token::Broadcast)
                 | Some(Token::Gather) | Some(Token::Consensus) | Some(Token::ConfidenceHigh) => {
@@ -4120,7 +4273,7 @@ impl<'a> Parser<'a> {
                     Token::ShlEq => "<<=".to_string(),
                     Token::ShrEq => ">>=".to_string(),
                     Token::DotDotEq => "..=".to_string(), // Inclusive range
-                    Token::Hourglass => "⏳".to_string(), // Await symbol
+                    Token::Async => "⏳".to_string(), // Await symbol
                     Token::Parallel => "‖".to_string(),  // Parallel execution
                     Token::Compose => "∘".to_string(),   // Function composition
                     Token::ForAll => "∀".to_string(),    // Universal quantification
@@ -4220,7 +4373,7 @@ impl<'a> Parser<'a> {
                 Some(Token::Dot) => {
                     self.advance();
                     // Handle `.⌛` as await syntax (alternative to `expr⌛`)
-                    if self.check(&Token::Hourglass) {
+                    if self.check(&Token::Async) {
                         self.advance();
                         let evidentiality = self.parse_evidentiality_opt();
                         expr = Expr::Await {
@@ -4396,7 +4549,7 @@ impl<'a> Parser<'a> {
                         };
                     }
                 }
-                Some(Token::Hourglass) => {
+                Some(Token::Async) => {
                     self.advance();
                     // Check for optional evidentiality marker: ⌛? ⌛! ⌛~ ⌛◊ ⌛‽
                     let evidentiality = match self.current_token() {
@@ -4436,7 +4589,7 @@ impl<'a> Parser<'a> {
 
                     while self.consume_if(&Token::MiddleDot) {
                         // Handle ·⌛ as await syntax (alternative to `expr⌛`)
-                        if self.check(&Token::Hourglass) {
+                        if self.check(&Token::Async) {
                             self.advance();
                             let evidentiality = self.parse_evidentiality_opt();
                             // Build Incorporation from segments collected so far
@@ -4645,8 +4798,16 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Literal(Literal::Empty))
             }
             Some(Token::Infinity) => {
-                self.advance();
-                Ok(Expr::Literal(Literal::Infinity))
+                // Contextual: ∞ { ... } is a loop, ∞ alone is the infinity literal
+                if self.peek_next() == Some(&Token::LBrace) {
+                    // This is a loop expression
+                    self.advance();
+                    let body = self.parse_block()?;
+                    Ok(Expr::Loop { label: None, body })
+                } else {
+                    self.advance();
+                    Ok(Expr::Literal(Literal::Infinity))
+                }
             }
             Some(Token::Circle) => {
                 self.advance();
@@ -4712,6 +4873,20 @@ impl<'a> Parser<'a> {
             }
             Some(Token::If) => self.parse_if_expr(),
             Some(Token::Match) => self.parse_match_expr(),
+            Some(Token::ForAll) => {
+                // ∀ is contextually a for-loop: ∀ pattern ∈ iter { ... }
+                self.advance();
+                let pattern = self.parse_pattern()?;
+                self.expect_one_of(&[Token::In, Token::ElementOf])?;
+                let iter = self.parse_condition()?;
+                let body = self.parse_block()?;
+                Ok(Expr::For {
+                    label: None,
+                    pattern,
+                    iter: Box::new(iter),
+                    body,
+                })
+            }
             Some(Token::Unsafe) => {
                 self.advance();
                 let block = self.parse_block()?;
@@ -4742,7 +4917,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.expect(Token::Colon)?;
                 match self.current_token().cloned() {
-                    Some(Token::Loop) => {
+                    Some(Token::Loop) | Some(Token::Infinity) => {
                         self.advance();
                         let body = self.parse_block()?;
                         Ok(Expr::Loop { label: Some(label), body })
@@ -4768,10 +4943,10 @@ impl<'a> Parser<'a> {
                             body,
                         })
                     }
-                    Some(Token::For) => {
+                    Some(Token::For) | Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
-                        self.expect(Token::In)?;
+                        self.expect_one_of(&[Token::In, Token::ElementOf])?;
                         let iter = self.parse_condition()?;
                         let body = self.parse_block()?;
                         Ok(Expr::For {
@@ -4788,7 +4963,7 @@ impl<'a> Parser<'a> {
                     })
                 }
             }
-            Some(Token::Loop) => {
+            Some(Token::Loop) | Some(Token::Infinity) => {
                 self.advance();
                 let body = self.parse_block()?;
                 Ok(Expr::Loop { label: None, body })
@@ -4814,10 +4989,10 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(Token::For) => {
+            Some(Token::For) | Some(Token::ForAll) => {
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect(Token::In)?;
+                self.expect_one_of(&[Token::In, Token::ElementOf])?;
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -4840,7 +5015,8 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Return(value))
             }
-            Some(Token::Break) => {
+            Some(Token::Break) | Some(Token::Tensor) => {
+                // ⊗ (Tensor) is contextually break at statement start, tensor product in binary position
                 self.advance();
                 // Check for optional label: break 'label or break 'label value
                 let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
@@ -4867,7 +5043,8 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Break { label, value })
             }
-            Some(Token::Continue) => {
+            Some(Token::Continue) | Some(Token::CycleArrow) => {
+                // ↻ (CycleArrow) is contextually continue at statement start
                 self.advance();
                 // Check for optional label: continue 'label
                 let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
@@ -5678,7 +5855,7 @@ impl<'a> Parser<'a> {
                 | Token::Lambda | Token::Delta | Token::Mu | Token::Chi
                 | Token::GradeUp | Token::GradeDown | Token::Rotate
                 | Token::Iota | Token::ForAll | Token::Exists
-                | Token::Pi | Token::Hourglass => true,
+                | Token::Pi | Token::Async => true,
                 // Closure syntax |x| or || (lookahead for closure parameter list)
                 Token::Pipe => true,
                 Token::OrOr => true,  // Empty closure ||
@@ -5766,7 +5943,7 @@ impl<'a> Parser<'a> {
 
                     while self.consume_if(&Token::MiddleDot) {
                         // Handle ·⌛ as await syntax (alternative to `expr⌛`)
-                        if self.check(&Token::Hourglass) {
+                        if self.check(&Token::Async) {
                             self.advance();
                             let evidentiality = self.parse_evidentiality_opt();
                             // Build Incorporation from segments collected so far
@@ -6053,7 +6230,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(PipeOp::Await)
             }
-            Some(Token::Hourglass) => {
+            Some(Token::Async) => {
                 self.advance();
                 Ok(PipeOp::Await)
             }
@@ -6140,6 +6317,46 @@ impl<'a> Parser<'a> {
                     type_args: None,
                     args: vec![],
                 })
+            }
+            // Handle special keyword tokens that are pipe methods
+            Some(Token::Interfere) => {
+                self.advance(); // consume 'interfere'
+                let name = Ident {
+                    name: "interfere".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span: self.current_span(),
+                };
+                // Parse optional arguments
+                let args = if self.check(&Token::LParen) {
+                    self.advance();
+                    let args = self.parse_expr_list()?;
+                    self.expect(Token::RParen)?;
+                    args
+                } else {
+                    vec![]
+                };
+                Ok(PipeOp::Method { name, type_args: None, args })
+            }
+            // Handle Σ (uppercase sigma) which is tokenized as Struct but used as neural sum in pipe context
+            Some(Token::Struct) => {
+                self.advance(); // consume Σ
+                let name = Ident {
+                    name: "Σ".to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span: self.current_span(),
+                };
+                // Parse optional arguments like Σ(dim: -1)
+                let args = if self.check(&Token::LParen) {
+                    self.advance();
+                    let args = self.parse_expr_list()?;
+                    self.expect(Token::RParen)?;
+                    args
+                } else {
+                    vec![]
+                };
+                Ok(PipeOp::Method { name, type_args: None, args })
             }
             Some(Token::Ident(_)) => {
                 let name = self.parse_ident()?;
@@ -6321,6 +6538,28 @@ impl<'a> Parser<'a> {
                     });
                 }
 
+                // Check if this is a known builtin function that should be called directly
+                // rather than treated as a method on the piped value
+                // Uses QUANTUM_GATES and QUANTUM_OPS constants for extensibility
+                if QUANTUM_GATES.contains(&name.name.as_str())
+                    || QUANTUM_OPS.contains(&name.name.as_str()) {
+                    // Emit PipeOp::Call(Expr::Path) or PipeOp::Call(Expr::Call)
+                    // This will evaluate the identifier (getting Value::BuiltIn)
+                    // and call it with the piped value as the first argument
+                    let path_expr = Expr::Path(TypePath {
+                        segments: vec![PathSegment { ident: name, generics: None }],
+                    });
+                    let call_expr = if args.is_empty() {
+                        path_expr
+                    } else {
+                        Expr::Call {
+                            func: Box::new(path_expr),
+                            args,
+                        }
+                    };
+                    return Ok(PipeOp::Call(Box::new(call_expr)));
+                }
+
                 Ok(PipeOp::Method { name, type_args, args })
             }
 
@@ -6425,13 +6664,21 @@ impl<'a> Parser<'a> {
             // Mathematical & APL-Inspired Operations
             // ==========================================
 
-            // All/ForAll: |∀{p} or |all{p}
+            // All/ForAll: |∀{p} = check all satisfy predicate
+            // Universal: |∀ (no braces) = reconstruct whole from parts (sum)
             Some(Token::ForAll) => {
                 self.advance();
-                self.expect(Token::LBrace)?;
-                let pred = self.parse_expr()?;
-                self.expect(Token::RBrace)?;
-                Ok(PipeOp::All(Box::new(pred)))
+                // |∀ without braces = Universal Reconstruction (sum)
+                // |∀{predicate} = check All elements satisfy predicate
+                if self.current_token() == Some(&Token::LBrace) {
+                    self.advance(); // consume {
+                    let pred = self.parse_expr()?;
+                    self.expect(Token::RBrace)?;
+                    Ok(PipeOp::All(Box::new(pred)))
+                } else {
+                    // No braces - Universal Reconstruction operator
+                    Ok(PipeOp::Universal)
+                }
             }
 
             // Any/Exists: |∃{p} or |any{p}
@@ -6546,6 +6793,44 @@ impl<'a> Parser<'a> {
             Some(Token::Iota) => {
                 self.advance();
                 Ok(PipeOp::Enumerate)
+            }
+
+            // ==========================================
+            // Holographic Operations (Spec 11-HOLOGRAPHIC.md)
+            // ==========================================
+
+            // Possibility: |◊method or |◊method(args) - approximate query
+            Some(Token::Lozenge) => {
+                self.advance();
+                // Expect an identifier for the method name
+                let method = self.parse_ident()?;
+                // Check for optional arguments in parentheses
+                let args = if self.check(&Token::LParen) {
+                    self.advance();
+                    let args = self.parse_expr_list()?;
+                    self.expect(Token::RParen)?;
+                    args
+                } else {
+                    vec![]
+                };
+                Ok(PipeOp::Possibility { method, args })
+            }
+
+            // Necessity: |□method or |□method(args) - verification/exactness
+            Some(Token::BoxSquare) => {
+                self.advance();
+                // Expect an identifier for the method name
+                let method = self.parse_ident()?;
+                // Check for optional arguments in parentheses
+                let args = if self.check(&Token::LParen) {
+                    self.advance();
+                    let args = self.parse_expr_list()?;
+                    self.expect(Token::RParen)?;
+                    args
+                } else {
+                    vec![]
+                };
+                Ok(PipeOp::Necessity { method, args })
             }
 
             // Reference expression: |&self.field or |&expr
@@ -6809,6 +7094,21 @@ impl<'a> Parser<'a> {
                 while self.check(&Token::Hash) || self.check(&Token::At) {
                     attrs.push(self.parse_outer_attribute()?);
                     self.skip_comments();
+                }
+
+                // Check cfg conditions - skip statement if cfg evaluates to false
+                if !self.evaluate_cfg_condition(&attrs) {
+                    // Skip the following statement/expression
+                    if self.is_item_start() {
+                        let _ = self.parse_item()?; // Parse but discard
+                    } else if self.check(&Token::Let) {
+                        let _ = self.parse_let_stmt()?; // Parse but discard
+                    } else {
+                        let _ = self.parse_expr()?; // Parse but discard
+                        self.skip_comments();
+                        self.consume_if(&Token::Semi); // Consume trailing semicolon if present
+                    }
+                    continue; // Skip adding to stmts
                 }
 
                 // After attributes, check what follows
@@ -8601,7 +8901,7 @@ fn infix_binding_power(op: BinOp) -> (u8, u8) {
         BinOp::Shl | BinOp::Shr => (13, 14),
         BinOp::Add | BinOp::Sub | BinOp::Concat => (15, 16),
         BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::MatMul
-        | BinOp::Hadamard | BinOp::TensorProd => (17, 18),
+        | BinOp::Hadamard | BinOp::TensorProd | BinOp::Convolve => (17, 18),
         BinOp::Pow => (20, 19), // Right associative
     }
 }

@@ -1,0 +1,19 @@
+// Test: Quantum error correction (3-qubit bit-flip code)
+// Spec: 12-QUANTUM.md § 8.1 Logical Qubits
+// Priority: P2 - Advanced Feature
+
+fn main() {
+    // Encode |0⟩ using 3-qubit bit-flip code: |0⟩ → |000⟩
+    let logical = BitFlipCode·encode_zero();
+
+    // Simulate a bit-flip error on qubit 1
+    let corrupted = BitFlipCode·apply_error(logical, 1);
+
+    // Detect and correct the error
+    let syndrome = BitFlipCode·detect(corrupted);
+    let corrected = BitFlipCode·correct(corrupted, syndrome);
+
+    // Decode and verify we get back |0⟩
+    let result = BitFlipCode·decode(corrected);
+    println(result);  // 0 (successfully recovered)
+}

@@ -451,6 +451,15 @@ pub mod llvm {
                 self.module.add_function(name, binary_math_type, None);
             }
 
+            // Standard C library functions
+            let ptr_type_real = self.context.ptr_type(inkwell::AddressSpace::default());
+            // malloc(size: i64) -> ptr
+            let malloc_type = ptr_type_real.fn_type(&[i64_type.into()], false);
+            self.module.add_function("malloc", malloc_type, None);
+            // free(ptr: ptr) -> void
+            let free_type = void_type.fn_type(&[ptr_type_real.into()], false);
+            self.module.add_function("free", free_type, None);
+
             // Vec functions - use ptr type (i64 as opaque pointer)
             let ptr_type = i64_type; // Using i64 as opaque pointer type
 
@@ -480,13 +489,37 @@ pub mod llvm {
             let string_len_type = i64_type.fn_type(&[ptr_type.into()], false);
             self.module.add_function("sigil_string_len", string_len_type, None);
 
+            // sigil_string_as_ptr(str: ptr) -> ptr (returns raw C string for FFI)
+            let string_as_ptr_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_string_as_ptr", string_as_ptr_type, None);
+
             // sigil_string_print(str: ptr) -> void
             let string_print_type = void_type.fn_type(&[ptr_type.into()], false);
             self.module.add_function("sigil_string_print", string_print_type, None);
 
+            // sigil_println(str: ptr) -> void (print with newline)
+            let println_type = void_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_println", println_type, None);
+
             // sigil_string_concat(str1: ptr, str2: ptr) -> ptr
             let string_concat_type = ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
             self.module.add_function("sigil_string_concat", string_concat_type, None);
+
+            // sigil_int_to_string(n: i64) -> ptr
+            let int_to_string_type = ptr_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_int_to_string", int_to_string_type, None);
+
+            // sigil_value_to_string(value: i64) -> ptr
+            // Smart conversion: detects if value is already a String pointer
+            self.module.add_function("sigil_value_to_string", int_to_string_type, None);
+
+            // sigil_format(format: ptr, args: ptr, argc: i64) -> ptr
+            let format_type = ptr_type.fn_type(&[ptr_type.into(), ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_format", format_type, None);
+
+            // sigil_println_fmt(format: ptr, args: ptr, argc: i64) -> void
+            let println_fmt_type = void_type.fn_type(&[ptr_type.into(), ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_println_fmt", println_fmt_type, None);
 
             // Option functions
             // sigil_option_some(value: i64) -> ptr
@@ -688,6 +721,67 @@ pub mod llvm {
             // sigil_tls_verify_result(ssl: ptr) -> i64
             let tls_verify_result_type = i64_type.fn_type(&[ptr_type.into()], false);
             self.module.add_function("sigil_tls_verify_result", tls_verify_result_type, None);
+
+            // String method functions
+            // sigil_string_is_empty(str: ptr) -> i64
+            let string_is_empty_type = i64_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_string_is_empty", string_is_empty_type, None);
+
+            // sigil_string_contains(str: ptr, needle: ptr) -> i64
+            let string_contains_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+            self.module.add_function("sigil_string_contains", string_contains_type, None);
+
+            // sigil_string_starts_with(str: ptr, prefix: ptr) -> i64
+            self.module.add_function("sigil_string_starts_with", string_contains_type, None);
+
+            // sigil_string_ends_with(str: ptr, suffix: ptr) -> i64
+            self.module.add_function("sigil_string_ends_with", string_contains_type, None);
+
+            // sigil_string_trim(str: ptr) -> ptr
+            let string_trim_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_string_trim", string_trim_type, None);
+
+            // sigil_string_to_lowercase(str: ptr) -> ptr
+            self.module.add_function("sigil_string_to_lowercase", string_trim_type, None);
+
+            // sigil_string_to_uppercase(str: ptr) -> ptr
+            self.module.add_function("sigil_string_to_uppercase", string_trim_type, None);
+
+            // sigil_string_clone(str: ptr) -> ptr
+            self.module.add_function("sigil_string_clone", string_trim_type, None);
+
+            // sigil_string_char_at(str: ptr, idx: i64) -> i64
+            let string_char_at_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_string_char_at", string_char_at_type, None);
+
+            // Vec method functions
+            // sigil_vec_is_empty(vec: ptr) -> i64
+            let vec_is_empty_type = i64_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_vec_is_empty", vec_is_empty_type, None);
+
+            // sigil_vec_pop(vec: ptr) -> i64
+            self.module.add_function("sigil_vec_pop", vec_is_empty_type, None);
+
+            // sigil_vec_first(vec: ptr) -> i64
+            self.module.add_function("sigil_vec_first", vec_is_empty_type, None);
+
+            // sigil_vec_last(vec: ptr) -> i64
+            self.module.add_function("sigil_vec_last", vec_is_empty_type, None);
+
+            // sigil_vec_contains(vec: ptr, value: i64) -> i64
+            let vec_contains_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_vec_contains", vec_contains_type, None);
+
+            // sigil_vec_clone(vec: ptr) -> ptr
+            let vec_clone_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_vec_clone", vec_clone_type, None);
+
+            // sigil_vec_reverse(vec: ptr) -> void
+            let vec_reverse_type = void_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("sigil_vec_reverse", vec_reverse_type, None);
+
+            // sigil_vec_clear(vec: ptr) -> void
+            self.module.add_function("sigil_vec_clear", vec_reverse_type, None);
         }
 
         /// Register a struct type in the type registry
@@ -1057,8 +1151,16 @@ pub mod llvm {
 
             // Evaluate the constant expression at compile time
             // For now, only support integer literals and simple expressions
-            let value = self.eval_const_expr(&const_def.value)?;
-            self.constants.insert(name.clone(), value);
+            // String constants are skipped (not used at runtime for basic ops)
+            match self.eval_const_expr(&const_def.value) {
+                Ok(value) => {
+                    self.constants.insert(name.clone(), value);
+                }
+                Err(_) => {
+                    // Skip unsupported constant types (e.g., strings)
+                    // They can still be used as globals if needed
+                }
+            }
             Ok(())
         }
 
@@ -1153,41 +1255,45 @@ pub mod llvm {
                     let method_name = &func.name.name;
                     let mangled_name = format!("{}_{}", type_name, method_name);
 
-                    // Declare the function with self as first parameter
+                    // Declare the function
                     let i64_type = self.context.i64_type();
 
-                    // Check if first param is self (don't double count)
-                    let has_explicit_self = func.params.first().map_or(false, |p| {
-                        matches!(&p.pattern, ast::Pattern::Ident { name, .. } if name.name == "self")
+                    // Check if this is a method (has self/&self) or associated function (no self)
+                    let has_self = func.params.first().map_or(false, |p| {
+                        match &p.pattern {
+                            ast::Pattern::Ident { name, .. } => name.name == "self",
+                            ast::Pattern::Ref { pattern, .. } => {
+                                if let ast::Pattern::Ident { name, .. } = pattern.as_ref() {
+                                    name.name == "self"
+                                } else {
+                                    false
+                                }
+                            }
+                            _ => false
+                        }
                     });
 
-                    // Count params: if self is explicit, use params.len(), otherwise add 1 for implicit self
-                    let param_count = if has_explicit_self {
-                        func.params.len()
-                    } else {
-                        1 + func.params.len()
-                    };
+                    // Associated functions don't have self parameter
+                    let param_count = func.params.len();
                     let param_types: Vec<BasicMetadataTypeEnum> =
                         (0..param_count).map(|_| i64_type.into()).collect();
 
                     let fn_type = i64_type.fn_type(&param_types, false);
                     let fn_value = self.module.add_function(&mangled_name, fn_type, None);
 
-                    // Name parameters
-                    if has_explicit_self {
-                        // self is in params, name them all
-                        for (i, param) in func.params.iter().enumerate() {
-                            if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
+                    // Name parameters - all params are in func.params (no implicit self)
+                    for (i, param) in func.params.iter().enumerate() {
+                        match &param.pattern {
+                            ast::Pattern::Ident { name: ref ident, .. } => {
                                 fn_value.get_nth_param(i as u32).unwrap().set_name(&ident.name);
                             }
-                        }
-                    } else {
-                        // self is implicit, name it first then other params
-                        fn_value.get_nth_param(0).unwrap().set_name("self");
-                        for (i, param) in func.params.iter().enumerate() {
-                            if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
-                                fn_value.get_nth_param((i + 1) as u32).unwrap().set_name(&ident.name);
+                            ast::Pattern::Ref { pattern, .. } => {
+                                // &self pattern
+                                if let ast::Pattern::Ident { name: ref ident, .. } = pattern.as_ref() {
+                                    fn_value.get_nth_param(i as u32).unwrap().set_name(&ident.name);
+                                }
                             }
+                            _ => {}
                         }
                     }
 
@@ -1225,43 +1331,26 @@ pub mod llvm {
                     // Set up variable scope
                     let mut scope = CompileScope::new();
 
-                    // Check if first param is self (explicit self in params)
-                    let has_explicit_self = func.params.first().map_or(false, |p| {
-                        matches!(&p.pattern, ast::Pattern::Ident { name, .. } if name.name == "self")
-                    });
-
-                    if has_explicit_self {
-                        // self is explicitly in params, add all params to scope
-                        for (i, param) in func.params.iter().enumerate() {
-                            if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
-                                let param_value = fn_value.get_nth_param(i as u32).unwrap();
-                                let alloca = self.builder
-                                    .build_alloca(self.context.i64_type(), &ident.name)
-                                    .map_err(|e| e.to_string())?;
-                                self.builder.build_store(alloca, param_value).map_err(|e| e.to_string())?;
-                                scope.vars.insert(ident.name.clone(), alloca);
+                    // Add all parameters to scope (no implicit self - params match declaration)
+                    for (i, param) in func.params.iter().enumerate() {
+                        let param_name = match &param.pattern {
+                            ast::Pattern::Ident { name: ref ident, .. } => ident.name.clone(),
+                            ast::Pattern::Ref { pattern, .. } => {
+                                // &self pattern
+                                if let ast::Pattern::Ident { name: ref ident, .. } = pattern.as_ref() {
+                                    ident.name.clone()
+                                } else {
+                                    format!("_param{}", i)
+                                }
                             }
-                        }
-                    } else {
-                        // self is implicit (first parameter)
-                        let self_param = fn_value.get_nth_param(0).unwrap();
-                        let self_alloca = self.builder
-                            .build_alloca(self.context.i64_type(), "self")
+                            _ => format!("_param{}", i)
+                        };
+                        let param_value = fn_value.get_nth_param(i as u32).unwrap();
+                        let alloca = self.builder
+                            .build_alloca(self.context.i64_type(), &param_name)
                             .map_err(|e| e.to_string())?;
-                        self.builder.build_store(self_alloca, self_param).map_err(|e| e.to_string())?;
-                        scope.vars.insert("self".to_string(), self_alloca);
-
-                        // Add other parameters to scope
-                        for (i, param) in func.params.iter().enumerate() {
-                            if let ast::Pattern::Ident { name: ref ident, .. } = param.pattern {
-                                let param_value = fn_value.get_nth_param((i + 1) as u32).unwrap();
-                                let alloca = self.builder
-                                    .build_alloca(self.context.i64_type(), &ident.name)
-                                    .map_err(|e| e.to_string())?;
-                                self.builder.build_store(alloca, param_value).map_err(|e| e.to_string())?;
-                                scope.vars.insert(ident.name.clone(), alloca);
-                            }
-                        }
+                        self.builder.build_store(alloca, param_value).map_err(|e| e.to_string())?;
+                        scope.vars.insert(param_name, alloca);
                     }
 
                     // Compile function body
@@ -1513,14 +1602,15 @@ pub mod llvm {
             match expr {
                 Expr::Literal(lit) => self.compile_literal(lit),
                 Expr::Path(path) => {
-                    // Check for qualified enum variant path (e.g., Color::Blue)
+                    // Check for qualified enum variant path (e.g., Color::Blue, Option::None)
                     if path.segments.len() >= 2 {
                         let enum_name = &path.segments[path.segments.len() - 2].ident.name;
                         let variant_name = &path.segments[path.segments.len() - 1].ident.name;
-                        
+
                         if let Some(enum_info) = self.enum_types.get(enum_name) {
                             if let Some(&discriminant) = enum_info.variants.get(variant_name) {
-                                return Ok(self.context.i64_type().const_int(discriminant, false));
+                                // Unit variant - discriminant shifted to high bits (matches packed format)
+                                return Ok(self.context.i64_type().const_int(discriminant << 32, false));
                             }
                         }
                     }
@@ -1658,9 +1748,21 @@ pub mod llvm {
                         .ok_or_else(|| format!("Unknown struct type: {}", struct_name))?
                         .clone();
 
-                    // Allocate space for struct on stack
+                    // Allocate space for struct on heap (so it survives function returns)
+                    // Calculate struct size: number of fields * 8 bytes (i64)
+                    let num_fields = struct_info.field_indices.len() as u64;
+                    let struct_size = num_fields * 8;
+                    let malloc_fn = self.module.get_function("malloc")
+                        .ok_or("malloc not declared")?;
+                    let size_val = self.context.i64_type().const_int(struct_size, false);
+                    let malloc_call = self.builder
+                        .build_call(malloc_fn, &[size_val.into()], "struct_alloc")
+                        .map_err(|e| e.to_string())?;
+                    let raw_ptr = malloc_call.try_as_basic_value().left()
+                        .ok_or("Expected return value from malloc")?
+                        .into_pointer_value();
                     let struct_ptr = self.builder
-                        .build_alloca(struct_info.llvm_type, &struct_name)
+                        .build_pointer_cast(raw_ptr, self.context.ptr_type(inkwell::AddressSpace::default()), "struct_ptr")
                         .map_err(|e| e.to_string())?;
 
                     // Initialize each field
@@ -1729,6 +1831,22 @@ pub mod llvm {
                     // Compile the scrutinee (thing being matched)
                     let scrutinee = self.compile_expr(fn_value, scope, expr)?;
 
+                    // Check if this is an enum match (scrutinee has discriminant in high bits)
+                    // Extract discriminant for comparison: shift right by 32 bits
+                    let is_enum_match = arms.iter().any(|arm| {
+                        matches!(&arm.pattern, ast::Pattern::Path(p) if p.segments.len() >= 2) ||
+                        matches!(&arm.pattern, ast::Pattern::TupleStruct { .. })
+                    });
+
+                    let scrutinee_disc = if is_enum_match {
+                        let shift_amount = self.context.i64_type().const_int(32, false);
+                        self.builder
+                            .build_right_shift(scrutinee, shift_amount, false, "extract_disc")
+                            .map_err(|e| e.to_string())?
+                    } else {
+                        scrutinee
+                    };
+
                     let merge_bb = self.context.append_basic_block(fn_value, "match_merge");
                     let mut incoming: Vec<(IntValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
 
@@ -1737,6 +1855,16 @@ pub mod llvm {
                         // Get pattern discriminant value
                         let pattern_val = match &arm.pattern {
                             ast::Pattern::Path(path) => {
+                                if path.segments.len() >= 2 {
+                                    let enum_name = &path.segments[path.segments.len() - 2].ident.name;
+                                    let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+                                    if let Some(enum_info) = self.enum_types.get(enum_name) {
+                                        enum_info.variants.get(variant_name).copied()
+                                    } else { None }
+                                } else { None }
+                            }
+                            ast::Pattern::TupleStruct { path, .. } => {
+                                // Get discriminant for TupleStruct pattern (e.g., Option·Some(v))
                                 if path.segments.len() >= 2 {
                                     let enum_name = &path.segments[path.segments.len() - 2].ident.name;
                                     let variant_name = &path.segments[path.segments.len() - 1].ident.name;
@@ -1771,7 +1899,7 @@ pub mod llvm {
                             } else {
                                 let pattern_const = self.context.i64_type().const_int(disc, false);
                                 let cond = self.builder
-                                    .build_int_compare(IntPredicate::EQ, scrutinee, pattern_const, "match_cmp")
+                                    .build_int_compare(IntPredicate::EQ, scrutinee_disc, pattern_const, "match_cmp")
                                     .map_err(|e| e.to_string())?;
                                 self.builder.build_conditional_branch(cond, then_bb, else_bb)
                                     .map_err(|e| e.to_string())?;
@@ -1782,9 +1910,17 @@ pub mod llvm {
                                 .map_err(|e| e.to_string())?;
                         }
 
-                        // Compile the arm body
+                        // Compile the arm body with pattern bindings
                         self.builder.position_at_end(then_bb);
-                        let arm_val = self.compile_expr(fn_value, scope, &arm.body)?;
+
+                        // Create a new scope for this arm with pattern bindings
+                        let mut arm_scope = scope.clone();
+
+                        // Bind pattern variables to scope
+                        // For patterns like Option·Some(v) or (a, b), extract the bindings
+                        self.bind_pattern_vars(&arm.pattern, scrutinee, &mut arm_scope)?;
+
+                        let arm_val = self.compile_expr(fn_value, &mut arm_scope, &arm.body)?;
 
                         if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
                             let current_bb = self.builder.get_insert_block().unwrap();
@@ -1819,11 +1955,20 @@ pub mod llvm {
                 Expr::MethodCall { receiver, method, args, .. } => {
                     // Compile the receiver
                     let receiver_val = self.compile_expr(fn_value, scope, receiver)?;
+                    let method_name = &method.name;
+
+                    // Try built-in methods first (String, Vec, Option)
+                    let builtin_result = self.compile_builtin_method(
+                        fn_value, scope, receiver_val, method_name, args
+                    );
+                    if let Ok(result) = builtin_result {
+                        return Ok(result);
+                    }
 
                     // Look up the method by trying all registered impl methods
                     // For now, try each type until we find a match
-                    for ((type_name, method_name), mangled_name) in &self.impl_methods {
-                        if method_name == &method.name {
+                    for ((_type_name, impl_method_name), mangled_name) in &self.impl_methods {
+                        if impl_method_name == method_name {
                             if let Some(callee) = self.module.get_function(mangled_name) {
                                 // Compile arguments
                                 let mut compiled_args: Vec<BasicMetadataValueEnum> = vec![receiver_val.into()];
@@ -1844,7 +1989,7 @@ pub mod llvm {
                             }
                         }
                     }
-                    Err(format!("Unknown method: {}", method.name))
+                    Err(format!("Unknown method: {}", method_name))
                 }
                 // ============================================
                 // Sigil-native expressions
@@ -1932,22 +2077,67 @@ pub mod llvm {
                     self.compile_expr(fn_value, scope, inner)
                 }
 
-                // Macro invocation - compile the name as a call
-                Expr::Macro { path, .. } => {
-                    // Treat macro! as a function call to the macro name
-                    let name = path.segments.last()
-                        .map(|s| s.ident.name.trim_end_matches('!'))
+                // Macro invocation - handle format!, println!, etc.
+                Expr::Macro { path, tokens } => {
+                    let macro_name = path.segments.last()
+                        .map(|s| s.ident.name.as_str())
                         .unwrap_or("unknown");
-                    if let Some(f) = self.module.get_function(name) {
-                        let call = self.builder
-                            .build_call(f, &[], "macro_call")
-                            .map_err(|e| e.to_string())?;
-                        Ok(call.try_as_basic_value().left()
-                            .map(|v| v.into_int_value())
-                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
-                    } else {
-                        // Unknown macro, return 0
-                        Ok(self.context.i64_type().const_int(0, false))
+
+                    match macro_name {
+                        "format" | "println" | "print" | "eprintln" => {
+                            self.compile_format_macro(fn_value, scope, macro_name, tokens)
+                        }
+                        "vec" => {
+                            // vec![...] - create a vector and push initial elements
+                            // tokens is a String with the content between []
+                            let elements: Vec<&str> = if tokens.is_empty() {
+                                vec![]
+                            } else {
+                                tokens.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect()
+                            };
+
+                            // Create vec with appropriate capacity
+                            let capacity = std::cmp::max(elements.len() as u64, 16);
+                            let cap_val = self.context.i64_type().const_int(capacity, false);
+                            let vec_new_fn = self.module.get_function("sigil_vec_new")
+                                .ok_or("sigil_vec_new not declared")?;
+                            let call = self.builder
+                                .build_call(vec_new_fn, &[cap_val.into()], "vec")
+                                .map_err(|e| e.to_string())?;
+                            let vec_ptr = call.try_as_basic_value().left()
+                                .map(|v| v.into_int_value())
+                                .ok_or("Expected vec pointer")?;
+
+                            // Push each element
+                            let vec_push_fn = self.module.get_function("sigil_vec_push")
+                                .ok_or("sigil_vec_push not declared")?;
+                            for elem_str in elements {
+                                // Parse and compile each element
+                                let mut elem_parser = crate::parser::Parser::new(elem_str);
+                                if let Ok(elem_expr) = elem_parser.parse_expr() {
+                                    let elem_val = self.compile_expr(fn_value, scope, &elem_expr)?;
+                                    self.builder
+                                        .build_call(vec_push_fn, &[vec_ptr.into(), elem_val.into()], "")
+                                        .map_err(|e| e.to_string())?;
+                                }
+                            }
+
+                            Ok(vec_ptr)
+                        }
+                        _ => {
+                            // Unknown macro - try calling as function
+                            let name = macro_name.trim_end_matches('!');
+                            if let Some(f) = self.module.get_function(name) {
+                                let call = self.builder
+                                    .build_call(f, &[], "macro_call")
+                                    .map_err(|e| e.to_string())?;
+                                Ok(call.try_as_basic_value().left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
+                            } else {
+                                Ok(self.context.i64_type().const_int(0, false))
+                            }
+                        }
                     }
                 }
 
@@ -2016,6 +2206,72 @@ pub mod llvm {
             }
         }
 
+        /// Bind pattern variables to scope for match arms
+        /// This extracts identifiers from patterns and adds them to the scope
+        fn bind_pattern_vars(
+            &mut self,
+            pattern: &ast::Pattern,
+            scrutinee: IntValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+        ) -> Result<(), String> {
+            match pattern {
+                ast::Pattern::Ident { name, .. } => {
+                    // Simple identifier pattern - bind scrutinee directly
+                    let alloca = self.builder
+                        .build_alloca(self.context.i64_type(), &name.name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, scrutinee)
+                        .map_err(|e| e.to_string())?;
+                    scope.vars.insert(name.name.clone(), alloca);
+                }
+                ast::Pattern::TupleStruct { path: _, fields, .. } => {
+                    // Enum variant with fields like Option·Some(v)
+                    // Our encoding: high 32 bits = discriminant, low 32 bits = data
+                    // Extract the data (low 32 bits)
+                    if fields.len() == 1 {
+                        if let ast::Pattern::Ident { name, .. } = &fields[0] {
+                            // Create alloca for the binding
+                            let alloca = self.builder
+                                .build_alloca(self.context.i64_type(), &name.name)
+                                .map_err(|e| e.to_string())?;
+                            // Mask off high bits to get data (low 32 bits)
+                            let mask = self.context.i64_type().const_int(0xFFFFFFFF, false);
+                            let data = self.builder
+                                .build_and(scrutinee, mask, "extract_data")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(alloca, data)
+                                .map_err(|e| e.to_string())?;
+                            scope.vars.insert(name.name.clone(), alloca);
+                        }
+                    }
+                }
+                ast::Pattern::Tuple(patterns) => {
+                    // Tuple pattern like (a, b)
+                    for (i, pat) in patterns.iter().enumerate() {
+                        if let ast::Pattern::Ident { name, .. } = pat {
+                            let alloca = self.builder
+                                .build_alloca(self.context.i64_type(), &name.name)
+                                .map_err(|e| e.to_string())?;
+                            // Extract tuple element - for now just use scrutinee
+                            // TODO: Proper tuple element extraction
+                            self.builder
+                                .build_store(alloca, scrutinee)
+                                .map_err(|e| e.to_string())?;
+                            scope.vars.insert(name.name.clone(), alloca);
+                        }
+                    }
+                }
+                // Wildcard, Path (enum variants without binding), and Literal don't bind variables
+                ast::Pattern::Wildcard | ast::Pattern::Path(_) | ast::Pattern::Literal(_) => {}
+                _ => {
+                    // Other patterns not yet supported - just skip binding
+                }
+            }
+            Ok(())
+        }
+
         /// Compile a literal
         fn compile_literal(&mut self, lit: &Literal) -> Result<IntValue<'ctx>, String> {
             match lit {
@@ -2053,18 +2309,548 @@ pub mod llvm {
                     global.set_constant(true);
                     global.set_linkage(inkwell::module::Linkage::Private);
 
-                    // Return pointer as i64
+                    // Convert raw C string to Sigil String struct via sigil_string_from
                     let ptr = global.as_pointer_value();
-                    let ptr_as_int = self.builder
-                        .build_ptr_to_int(ptr, self.context.i64_type(), "str_ptr")
+                    let string_from = self.module.get_function("sigil_string_from")
+                        .ok_or("sigil_string_from not declared")?;
+                    let call = self.builder.build_call(string_from, &[ptr.into()], "sigil_str")
                         .map_err(|e| e.to_string())?;
-                    Ok(ptr_as_int)
+                    let ret_val = call.try_as_basic_value().left()
+                        .ok_or("Expected return value from sigil_string_from")?;
+
+                    // Return as i64 (pointer value)
+                    if ret_val.is_int_value() {
+                        Ok(ret_val.into_int_value())
+                    } else {
+                        self.builder.build_ptr_to_int(
+                            ret_val.into_pointer_value(),
+                            self.context.i64_type(),
+                            "str_ptr"
+                        ).map_err(|e| e.to_string())
+                    }
                 }
                 Literal::Char(c) => {
                     Ok(self.context.i64_type().const_int(*c as u64, false))
                 }
                 _ => Ok(self.context.i64_type().const_int(0, false)),
             }
+        }
+
+        /// Compile format!, println!, print! macros
+        ///
+        /// Tokens format: `"format string", arg1, arg2, ...`
+        fn compile_format_macro(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            macro_name: &str,
+            tokens: &str,
+        ) -> Result<IntValue<'ctx>, String> {
+            let tokens = tokens.trim();
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+            let i64_type = self.context.i64_type();
+
+            // Parse format string (first quoted string)
+            if !tokens.starts_with('"') {
+                // No format string - just print the tokens as-is for println
+                if macro_name == "println" || macro_name == "print" || macro_name == "eprintln" {
+                    let global = self.builder.build_global_string_ptr(tokens, "fmt_str")
+                        .map_err(|e| e.to_string())?;
+                    let println_fn = self.module.get_function("sigil_println")
+                        .ok_or("sigil_println not declared")?;
+                    self.builder.build_call(println_fn, &[global.as_pointer_value().into()], "")
+                        .map_err(|e| e.to_string())?;
+                }
+                return Ok(i64_type.const_int(0, false));
+            }
+
+            // Find the end of the format string (handle escaped quotes)
+            let mut in_escape = false;
+            let mut format_end = 1;
+            for (i, c) in tokens[1..].char_indices() {
+                if in_escape {
+                    in_escape = false;
+                } else if c == '\\' {
+                    in_escape = true;
+                } else if c == '"' {
+                    format_end = i + 2;
+                    break;
+                }
+            }
+
+            let format_str = &tokens[1..format_end-1]; // Remove quotes
+            let args_str = if format_end < tokens.len() {
+                tokens[format_end..].trim_start_matches(',').trim()
+            } else {
+                ""
+            };
+
+            // Create format string global
+            let format_global = self.builder.build_global_string_ptr(format_str, "fmt_str")
+                .map_err(|e| e.to_string())?;
+
+            // Parse and compile argument expressions
+            let mut arg_values: Vec<inkwell::values::PointerValue<'ctx>> = Vec::new();
+
+            if !args_str.is_empty() {
+                // Split by comma, respecting parentheses/brackets
+                let mut depth = 0;
+                let mut current_arg = String::new();
+
+                for c in args_str.chars() {
+                    match c {
+                        '(' | '[' | '{' => {
+                            depth += 1;
+                            current_arg.push(c);
+                        }
+                        ')' | ']' | '}' => {
+                            depth -= 1;
+                            current_arg.push(c);
+                        }
+                        ',' if depth == 0 => {
+                            if let Some(ptr) = self.compile_format_arg(fn_value, scope, current_arg.trim())? {
+                                arg_values.push(ptr);
+                            }
+                            current_arg.clear();
+                        }
+                        _ => current_arg.push(c),
+                    }
+                }
+                // Don't forget the last argument
+                if !current_arg.trim().is_empty() {
+                    if let Some(ptr) = self.compile_format_arg(fn_value, scope, current_arg.trim())? {
+                        arg_values.push(ptr);
+                    }
+                }
+            }
+
+            let argc = arg_values.len() as u64;
+
+            // Build args array on stack
+            let args_array = if argc > 0 {
+                let array_type = ptr_type.array_type(argc as u32);
+                let args_alloca = self.builder.build_alloca(array_type, "fmt_args")
+                    .map_err(|e| e.to_string())?;
+
+                for (i, arg_ptr) in arg_values.iter().enumerate() {
+                    let idx = self.context.i32_type().const_int(i as u64, false);
+                    let zero = self.context.i32_type().const_int(0, false);
+                    let gep = unsafe {
+                        self.builder.build_gep(array_type, args_alloca, &[zero, idx], "arg_ptr")
+                            .map_err(|e| e.to_string())?
+                    };
+                    self.builder.build_store(gep, *arg_ptr)
+                        .map_err(|e| e.to_string())?;
+                }
+                args_alloca
+            } else {
+                // Null pointer for no args
+                ptr_type.const_null()
+            };
+
+            let argc_val = i64_type.const_int(argc, false);
+
+            // Call appropriate function based on macro
+            match macro_name {
+                "format" => {
+                    let format_fn = self.module.get_function("sigil_format")
+                        .ok_or("sigil_format not declared")?;
+                    let call = self.builder.build_call(
+                        format_fn,
+                        &[format_global.as_pointer_value().into(), args_array.into(), argc_val.into()],
+                        "formatted"
+                    ).map_err(|e| e.to_string())?;
+                    Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| i64_type.const_int(0, false)))
+                }
+                "println" | "print" | "eprintln" => {
+                    let println_fn = self.module.get_function("sigil_println_fmt")
+                        .ok_or("sigil_println_fmt not declared")?;
+                    self.builder.build_call(
+                        println_fn,
+                        &[format_global.as_pointer_value().into(), args_array.into(), argc_val.into()],
+                        ""
+                    ).map_err(|e| e.to_string())?;
+                    Ok(i64_type.const_int(0, false))
+                }
+                _ => Ok(i64_type.const_int(0, false))
+            }
+        }
+
+        /// Compile a single format argument and convert to string pointer
+        fn compile_format_arg(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            arg_str: &str,
+        ) -> Result<Option<inkwell::values::PointerValue<'ctx>>, String> {
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+
+            // Try to parse as expression
+            let mut parser = crate::parser::Parser::new(arg_str);
+            match parser.parse_expr() {
+                Ok(expr) => {
+                    // Check if it's a string literal
+                    if let crate::ast::Expr::Literal(crate::ast::Literal::String(s)) = &expr {
+                        // String literal - create global and call sigil_string_from
+                        let global = self.builder.build_global_string_ptr(s, "str_arg")
+                            .map_err(|e| e.to_string())?;
+                        let string_from = self.module.get_function("sigil_string_from")
+                            .ok_or("sigil_string_from not declared")?;
+                        let call = self.builder.build_call(
+                            string_from,
+                            &[global.as_pointer_value().into()],
+                            "str"
+                        ).map_err(|e| e.to_string())?;
+                        let ret_val = call.try_as_basic_value().left()
+                            .ok_or("Expected return value")?;
+                        let ptr = if ret_val.is_pointer_value() {
+                            ret_val.into_pointer_value()
+                        } else {
+                            self.builder.build_int_to_ptr(
+                                ret_val.into_int_value(),
+                                ptr_type,
+                                "str_ptr"
+                            ).map_err(|e| e.to_string())?
+                        };
+                        return Ok(Some(ptr));
+                    }
+
+                    // Compile the expression
+                    let val = self.compile_expr(fn_value, scope, &expr)?;
+
+                    // Convert to string - use smart conversion that detects existing String pointers
+                    let value_to_str = self.module.get_function("sigil_value_to_string")
+                        .ok_or("sigil_value_to_string not declared")?;
+                    let call = self.builder.build_call(value_to_str, &[val.into()], "str")
+                        .map_err(|e| e.to_string())?;
+                    let ret_val = call.try_as_basic_value().left()
+                        .ok_or("Expected return value")?;
+                    // Handle both pointer and int returns (runtime returns void* which may be seen as i64)
+                    let ptr = if ret_val.is_pointer_value() {
+                        ret_val.into_pointer_value()
+                    } else {
+                        // Convert i64 to pointer
+                        self.builder.build_int_to_ptr(
+                            ret_val.into_int_value(),
+                            ptr_type,
+                            "str_ptr"
+                        ).map_err(|e| e.to_string())?
+                    };
+                    Ok(Some(ptr))
+                }
+                Err(_) => {
+                    // Failed to parse - create string literal from the raw text
+                    let global = self.builder.build_global_string_ptr(arg_str, "raw_arg")
+                        .map_err(|e| e.to_string())?;
+                    Ok(Some(self.builder.build_pointer_cast(
+                        global.as_pointer_value(),
+                        ptr_type,
+                        "arg_ptr"
+                    ).map_err(|e| e.to_string())?))
+                }
+            }
+        }
+
+        /// Compile built-in method calls for String, Vec, Option types
+        fn compile_builtin_method(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            receiver_val: IntValue<'ctx>,
+            method_name: &str,
+            args: &[Expr],
+        ) -> Result<IntValue<'ctx>, String> {
+            // String methods
+            match method_name {
+                // === String methods ===
+                "len" => {
+                    // Could be string or vec - try string first
+                    let len_fn = self.module.get_function("sigil_string_len")
+                        .ok_or("sigil_string_len not declared")?;
+                    let call = self.builder
+                        .build_call(len_fn, &[receiver_val.into()], "len")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "is_empty" => {
+                    let fn_name = "sigil_string_is_empty";
+                    if let Some(f) = self.module.get_function(fn_name) {
+                        let call = self.builder
+                            .build_call(f, &[receiver_val.into()], "is_empty")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                }
+                "contains" => {
+                    if !args.is_empty() {
+                        let arg_val = self.compile_expr(fn_value, scope, &args[0])?;
+                        let fn_name = "sigil_string_contains";
+                        if let Some(f) = self.module.get_function(fn_name) {
+                            let call = self.builder
+                                .build_call(f, &[receiver_val.into(), arg_val.into()], "contains")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(call.try_as_basic_value().left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                        }
+                    }
+                }
+                "starts_with" => {
+                    if !args.is_empty() {
+                        let arg_val = self.compile_expr(fn_value, scope, &args[0])?;
+                        let f = self.module.get_function("sigil_string_starts_with")
+                            .ok_or("sigil_string_starts_with not declared")?;
+                        let call = self.builder
+                            .build_call(f, &[receiver_val.into(), arg_val.into()], "starts_with")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                }
+                "ends_with" => {
+                    if !args.is_empty() {
+                        let arg_val = self.compile_expr(fn_value, scope, &args[0])?;
+                        let f = self.module.get_function("sigil_string_ends_with")
+                            .ok_or("sigil_string_ends_with not declared")?;
+                        let call = self.builder
+                            .build_call(f, &[receiver_val.into(), arg_val.into()], "ends_with")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                }
+                "trim" => {
+                    let f = self.module.get_function("sigil_string_trim")
+                        .ok_or("sigil_string_trim not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "trimmed")
+                        .map_err(|e| e.to_string())?;
+                    let ret = call.try_as_basic_value().left().ok_or("Expected return")?;
+                    // Convert pointer to i64 if needed
+                    return if ret.is_int_value() {
+                        Ok(ret.into_int_value())
+                    } else {
+                        self.builder.build_ptr_to_int(
+                            ret.into_pointer_value(),
+                            self.context.i64_type(),
+                            "ptr_as_int"
+                        ).map_err(|e| e.to_string())
+                    };
+                }
+                "to_lowercase" => {
+                    let f = self.module.get_function("sigil_string_to_lowercase")
+                        .ok_or("sigil_string_to_lowercase not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "lowered")
+                        .map_err(|e| e.to_string())?;
+                    let ret = call.try_as_basic_value().left().ok_or("Expected return")?;
+                    return if ret.is_int_value() {
+                        Ok(ret.into_int_value())
+                    } else {
+                        self.builder.build_ptr_to_int(
+                            ret.into_pointer_value(),
+                            self.context.i64_type(),
+                            "ptr_as_int"
+                        ).map_err(|e| e.to_string())
+                    };
+                }
+                "to_uppercase" => {
+                    let f = self.module.get_function("sigil_string_to_uppercase")
+                        .ok_or("sigil_string_to_uppercase not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "uppered")
+                        .map_err(|e| e.to_string())?;
+                    let ret = call.try_as_basic_value().left().ok_or("Expected return")?;
+                    return if ret.is_int_value() {
+                        Ok(ret.into_int_value())
+                    } else {
+                        self.builder.build_ptr_to_int(
+                            ret.into_pointer_value(),
+                            self.context.i64_type(),
+                            "ptr_as_int"
+                        ).map_err(|e| e.to_string())
+                    };
+                }
+                "clone" => {
+                    // Try string clone first, could also be vec clone
+                    if let Some(f) = self.module.get_function("sigil_string_clone") {
+                        let call = self.builder
+                            .build_call(f, &[receiver_val.into()], "cloned")
+                            .map_err(|e| e.to_string())?;
+                        let ret = call.try_as_basic_value().left().ok_or("Expected return")?;
+                        return if ret.is_int_value() {
+                            Ok(ret.into_int_value())
+                        } else {
+                            self.builder.build_ptr_to_int(
+                                ret.into_pointer_value(),
+                                self.context.i64_type(),
+                                "ptr_as_int"
+                            ).map_err(|e| e.to_string())
+                        };
+                    }
+                }
+                "char_at" => {
+                    if !args.is_empty() {
+                        let idx = self.compile_expr(fn_value, scope, &args[0])?;
+                        let f = self.module.get_function("sigil_string_char_at")
+                            .ok_or("sigil_string_char_at not declared")?;
+                        let call = self.builder
+                            .build_call(f, &[receiver_val.into(), idx.into()], "char")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                }
+                "to_string" => {
+                    // For integers, convert to string
+                    let f = self.module.get_function("sigil_int_to_string")
+                        .ok_or("sigil_int_to_string not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "str")
+                        .map_err(|e| e.to_string())?;
+                    let ret = call.try_as_basic_value().left().ok_or("Expected return")?;
+                    return if ret.is_int_value() {
+                        Ok(ret.into_int_value())
+                    } else {
+                        self.builder.build_ptr_to_int(
+                            ret.into_pointer_value(),
+                            self.context.i64_type(),
+                            "ptr_as_int"
+                        ).map_err(|e| e.to_string())
+                    };
+                }
+
+                // === Vec methods ===
+                "push" => {
+                    if !args.is_empty() {
+                        let arg_val = self.compile_expr(fn_value, scope, &args[0])?;
+                        let f = self.module.get_function("sigil_vec_push")
+                            .ok_or("sigil_vec_push not declared")?;
+                        self.builder
+                            .build_call(f, &[receiver_val.into(), arg_val.into()], "")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(self.context.i64_type().const_int(0, false));
+                    }
+                }
+                "pop" => {
+                    let f = self.module.get_function("sigil_vec_pop")
+                        .ok_or("sigil_vec_pop not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "popped")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "get" => {
+                    if !args.is_empty() {
+                        let idx = self.compile_expr(fn_value, scope, &args[0])?;
+                        let f = self.module.get_function("sigil_vec_get")
+                            .ok_or("sigil_vec_get not declared")?;
+                        let call = self.builder
+                            .build_call(f, &[receiver_val.into(), idx.into()], "elem")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                }
+                "first" => {
+                    let f = self.module.get_function("sigil_vec_first")
+                        .ok_or("sigil_vec_first not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "first")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "last" => {
+                    let f = self.module.get_function("sigil_vec_last")
+                        .ok_or("sigil_vec_last not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "last")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "reverse" => {
+                    let f = self.module.get_function("sigil_vec_reverse")
+                        .ok_or("sigil_vec_reverse not declared")?;
+                    self.builder
+                        .build_call(f, &[receiver_val.into()], "")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "clear" => {
+                    let f = self.module.get_function("sigil_vec_clear")
+                        .ok_or("sigil_vec_clear not declared")?;
+                    self.builder
+                        .build_call(f, &[receiver_val.into()], "")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+
+                // === Option methods ===
+                "is_some" => {
+                    let f = self.module.get_function("sigil_option_is_some")
+                        .ok_or("sigil_option_is_some not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "is_some")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "is_none" => {
+                    let f = self.module.get_function("sigil_option_is_none")
+                        .ok_or("sigil_option_is_none not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "is_none")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "unwrap" => {
+                    let f = self.module.get_function("sigil_option_unwrap")
+                        .ok_or("sigil_option_unwrap not declared")?;
+                    let call = self.builder
+                        .build_call(f, &[receiver_val.into()], "unwrapped")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "unwrap_or" => {
+                    if !args.is_empty() {
+                        let default = self.compile_expr(fn_value, scope, &args[0])?;
+                        let f = self.module.get_function("sigil_option_unwrap_or")
+                            .ok_or("sigil_option_unwrap_or not declared")?;
+                        let call = self.builder
+                            .build_call(f, &[receiver_val.into(), default.into()], "unwrapped")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                }
+
+                _ => {}
+            }
+
+            // Not a built-in method
+            Err(format!("Not a built-in method: {}", method_name))
         }
 
         /// Compile inline assembly expression
@@ -3901,6 +4687,186 @@ pub mod llvm {
                 return Err("Expected function name".to_string());
             };
 
+            // Check for enum variant constructor with data (e.g., Option·Some(42))
+            if let Expr::Path(path) = func {
+                if path.segments.len() >= 2 {
+                    let enum_name = &path.segments[path.segments.len() - 2].ident.name;
+                    let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+
+                    if let Some(enum_info) = self.enum_types.get(enum_name) {
+                        if let Some(&discriminant) = enum_info.variants.get(variant_name) {
+                            // This is an enum variant constructor
+                            if !args.is_empty() {
+                                // Enum variant with data - pack discriminant and data
+                                // Use bit packing: high 32 bits = discriminant, low 32 bits = data
+                                let data_val = self.compile_expr(fn_value, scope, &args[0])?;
+                                let disc_shifted = self.context.i64_type().const_int(discriminant << 32, false);
+                                let combined = self.builder
+                                    .build_or(disc_shifted, data_val, "enum_pack")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(combined);
+                            } else {
+                                // Unit variant - just return discriminant shifted
+                                return Ok(self.context.i64_type().const_int(discriminant << 32, false));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Handle Cuda module functions (Cuda·init, Cuda·malloc, etc.)
+            if full_path.starts_with("Cuda::") || full_path.starts_with("Cuda·") {
+                let cuda_fn = fn_name;
+                match cuda_fn {
+                    "init" => {
+                        let f = self.module.get_function("sigil_cuda_init")
+                            .ok_or("sigil_cuda_init not declared")?;
+                        let call = self.builder.build_call(f, &[], "cuda_init")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                    "cleanup" => {
+                        let f = self.module.get_function("sigil_cuda_cleanup")
+                            .ok_or("sigil_cuda_cleanup not declared")?;
+                        self.builder.build_call(f, &[], "")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(self.context.i64_type().const_int(0, false));
+                    }
+                    "device_count" => {
+                        let f = self.module.get_function("sigil_cuda_get_device_count")
+                            .ok_or("sigil_cuda_get_device_count not declared")?;
+                        let call = self.builder.build_call(f, &[], "device_count")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                    "malloc" => {
+                        if args.is_empty() {
+                            return Err("Cuda·malloc requires size argument".to_string());
+                        }
+                        let size = self.compile_expr(fn_value, scope, &args[0])?;
+                        let f = self.module.get_function("sigil_cuda_malloc")
+                            .ok_or("sigil_cuda_malloc not declared")?;
+                        let call = self.builder.build_call(f, &[size.into()], "cuda_malloc")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                    "free" => {
+                        if args.is_empty() {
+                            return Err("Cuda·free requires device_ptr argument".to_string());
+                        }
+                        let ptr = self.compile_expr(fn_value, scope, &args[0])?;
+                        let f = self.module.get_function("sigil_cuda_free")
+                            .ok_or("sigil_cuda_free not declared")?;
+                        self.builder.build_call(f, &[ptr.into()], "")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(self.context.i64_type().const_int(0, false));
+                    }
+                    "memcpy_h2d" => {
+                        if args.len() < 3 {
+                            return Err("Cuda·memcpy_h2d requires (dst, src, size) arguments".to_string());
+                        }
+                        let dst = self.compile_expr(fn_value, scope, &args[0])?;
+                        let src = self.compile_expr(fn_value, scope, &args[1])?;
+                        let size = self.compile_expr(fn_value, scope, &args[2])?;
+                        let f = self.module.get_function("sigil_cuda_memcpy_h2d")
+                            .ok_or("sigil_cuda_memcpy_h2d not declared")?;
+                        let call = self.builder.build_call(f, &[dst.into(), src.into(), size.into()], "h2d")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                    "memcpy_d2h" => {
+                        if args.len() < 3 {
+                            return Err("Cuda·memcpy_d2h requires (dst, src, size) arguments".to_string());
+                        }
+                        let dst = self.compile_expr(fn_value, scope, &args[0])?;
+                        let src = self.compile_expr(fn_value, scope, &args[1])?;
+                        let size = self.compile_expr(fn_value, scope, &args[2])?;
+                        let f = self.module.get_function("sigil_cuda_memcpy_d2h")
+                            .ok_or("sigil_cuda_memcpy_d2h not declared")?;
+                        let call = self.builder.build_call(f, &[dst.into(), src.into(), size.into()], "d2h")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                    "sync" => {
+                        let f = self.module.get_function("sigil_cuda_sync")
+                            .ok_or("sigil_cuda_sync not declared")?;
+                        self.builder.build_call(f, &[], "")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(self.context.i64_type().const_int(0, false));
+                    }
+                    "compile_kernel" => {
+                        if args.len() < 2 {
+                            return Err("Cuda·compile_kernel requires (source, name) arguments".to_string());
+                        }
+                        // Compile string arguments (returns Sigil String pointers)
+                        let src_sigil = self.compile_expr(fn_value, scope, &args[0])?;
+                        let name_sigil = self.compile_expr(fn_value, scope, &args[1])?;
+
+                        // Extract raw C strings using sigil_string_as_ptr
+                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                        let string_as_ptr = self.module.get_function("sigil_string_as_ptr")
+                            .ok_or("sigil_string_as_ptr not declared")?;
+
+                        // Convert Sigil String to C string for source
+                        let src_ptr = self.builder.build_int_to_ptr(src_sigil, ptr_type, "src_sigil_ptr")
+                            .map_err(|e| e.to_string())?;
+                        let src_call = self.builder.build_call(string_as_ptr, &[src_ptr.into()], "src_cstr")
+                            .map_err(|e| e.to_string())?;
+                        let src_cstr = src_call.try_as_basic_value().left()
+                            .ok_or("Expected C string pointer")?;
+
+                        // Convert Sigil String to C string for name
+                        let name_ptr = self.builder.build_int_to_ptr(name_sigil, ptr_type, "name_sigil_ptr")
+                            .map_err(|e| e.to_string())?;
+                        let name_call = self.builder.build_call(string_as_ptr, &[name_ptr.into()], "name_cstr")
+                            .map_err(|e| e.to_string())?;
+                        let name_cstr = name_call.try_as_basic_value().left()
+                            .ok_or("Expected C string pointer")?;
+
+                        // Call CUDA compile_kernel with raw C strings
+                        let f = self.module.get_function("sigil_cuda_compile_kernel")
+                            .ok_or("sigil_cuda_compile_kernel not declared")?;
+                        let call = self.builder.build_call(f, &[src_cstr.into(), name_cstr.into()], "kernel")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                    "launch_1d" => {
+                        if args.len() < 5 {
+                            return Err("Cuda·launch_1d requires (kernel, grid_x, block_x, args_ptr, num_args)".to_string());
+                        }
+                        let kernel = self.compile_expr(fn_value, scope, &args[0])?;
+                        let grid_x = self.compile_expr(fn_value, scope, &args[1])?;
+                        let block_x = self.compile_expr(fn_value, scope, &args[2])?;
+                        let args_ptr = self.compile_expr(fn_value, scope, &args[3])?;
+                        let num_args = self.compile_expr(fn_value, scope, &args[4])?;
+                        let f = self.module.get_function("sigil_cuda_launch_kernel_1d")
+                            .ok_or("sigil_cuda_launch_kernel_1d not declared")?;
+                        let call = self.builder.build_call(f, &[
+                            kernel.into(), grid_x.into(), block_x.into(), args_ptr.into(), num_args.into()
+                        ], "launch")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(call.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                    }
+                    _ => {
+                        return Err(format!("Unknown Cuda function: {}", cuda_fn));
+                    }
+                }
+            }
+
             // Handle built-in functions
             match fn_name {
                 "print" => {
@@ -4102,6 +5068,20 @@ pub mod llvm {
                         .ok_or("sigil_string_print not declared")?;
                     self.builder
                         .build_call(string_print_fn, &[str_ptr.into()], "")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "println" => {
+                    if args.is_empty() {
+                        return Err("println requires argument".to_string());
+                    }
+                    let str_ptr = self.compile_expr(fn_value, scope, &args[0])?;
+                    let println_fn = self
+                        .module
+                        .get_function("sigil_println")
+                        .ok_or("sigil_println not declared")?;
+                    self.builder
+                        .build_call(println_fn, &[str_ptr.into()], "")
                         .map_err(|e| e.to_string())?;
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
@@ -4628,6 +5608,7 @@ pub mod llvm {
     }
 
     /// Variable scope for compilation
+    #[derive(Clone)]
     struct CompileScope<'ctx> {
         vars: HashMap<String, PointerValue<'ctx>>,
     }

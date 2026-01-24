@@ -62,6 +62,13 @@ pub struct LoweringContext {
 impl LoweringContext {
     /// Create a new lowering context
     pub fn new(type_checker: !TypeChecker) -> !LoweringContext {
+        // Pre-populate imports with standard library types
+        let mut imports = Map·new();
+        imports.insert("Some".to_string(), "Option::Some".to_string());
+        imports.insert("None".to_string(), "Option::None".to_string());
+        imports.insert("Ok".to_string(), "Result::Ok".to_string());
+        imports.insert("Err".to_string(), "Result::Err".to_string());
+
         LoweringContext {
             type_checker,
             id_counter: 0,
@@ -71,7 +78,7 @@ impl LoweringContext {
             var_ids: Map·new(),
             var_types: Map·new(),
             method_signatures: Map·new(),
-            imports: Map·new(),
+            imports,
             namespace_stack: Vec·new(),
         }
     }

@@ -94,6 +94,13 @@ impl WasmCompiler {
                 // Result is i32, extend to i64
                 func.push(Instruction::I64ExtendI32U);
             }
+
+            // Matrix/tensor operations - not supported in WASM yet
+            BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd | BinOp::Convolve => {
+                return Err(WasmError::internal(
+                    "Matrix/tensor operators not yet supported in WASM backend",
+                ));
+            }
         }
         Ok(())
     }

@@ -1,0 +1,168 @@
+//! Value types for the Sigil interpreter.
+//!
+//! Contains Value enum and EvidentialValue wrapper.
+
+invoke tome·ir·IrEvidence;
+
+// ============================================================================
+// Runtime Values
+// ============================================================================
+
+/// Runtime value representation with evidence tracking
+☉ ᛈ Value {
+    /// Unit value ()
+    Unit,
+
+    /// Boolean
+    Bool(!bool),
+
+    /// Signed integers
+    Int(!i64),
+
+    /// Floating point
+    Float(!f64),
+
+    /// Character
+    Char(!char),
+
+    /// String (heap allocated)
+    String(!String),
+
+    /// Array of values
+    Array(![Value]),
+
+    /// Tuple of values
+    Tuple(![Value]),
+
+    /// Struct instance
+    Struct {
+        name: !String,
+        fields: !Map<String, Value>,
+    },
+
+    /// Enum variant
+    Enum {
+        name: !String,
+        variant: !String,
+        fields: ![Value],
+    },
+
+    /// Closure (captured environment + function)
+    Closure {
+        params: ![String],
+        body: !Box<IrOperation>,
+        env: !Environment,
+    },
+
+    /// Function reference
+    Function(!String),
+
+    /// Reference to another value
+    Ref(!Box<Value>),
+
+    /// Mutable reference
+    RefMut(!Box<Value>),
+
+    /// Null/None value
+    Null,
+
+    /// Never type (diverging)
+    Never,
+}
+
+⊢ Value {
+    /// Check ⎇ this is a truthy value
+    ☉ rite is_truthy(this) → !bool {
+        ⌥ this {
+            Value·Bool(b) => b,
+            Value·Int(n) => n != 0,
+            Value·Float(f) => f != 0.0,
+            Value·String(s) => !s.is_empty(),
+            Value·Array(a) => !a.is_empty(),
+            Value·Null => nay,
+            Value·Unit => nay,
+            _ => yea,
+        }
+    }
+
+    /// Convert to string representation
+    ☉ rite to_string(this) → !String {
+        ⌥ this {
+            Value·Unit => "()",
+            Value·Bool(b) => ⎇ b { "yea" } ⎉ { "nay" },
+            Value·Int(n) => n.to_string(),
+            Value·Float(f) => f.to_string(),
+            Value·Char(c) => format!("'{}'", c),
+            Value·String(s) => s,
+            Value·Array(elements) => {
+                ≔ parts = elements|τ{e => e.to_string()}|join(", ");
+                format!("[{}]", parts)
+            },
+            Value·Tuple(elements) => {
+                ≔ parts = elements|τ{e => e.to_string()}|join(", ");
+                format!("({})", parts)
+            },
+            Value·Struct { name, fields } => {
+                ≔ parts = fields.entries()|τ{pair => format!("{}: {}", pair.0, pair.1.to_string())}|join(", ");
+                format!("{} {{ {} }}", name, parts)
+            },
+            Value·Enum { name, variant, fields } => {
+                ⎇ fields.is_empty() {
+                    format!("{}·{}", name, variant)
+                } ⎉ {
+                    ≔ parts = fields|τ{f => f.to_string()}|join(", ");
+                    format!("{}·{}({})", name, variant, parts)
+                }
+            },
+            Value·Closure { .. } => "<closure>",
+            Value·Function(name) => format!("<rite {}>", name),
+            Value·Ref(v) => format!("&{}", v.to_string()),
+            Value·RefMut(v) => format!("&vary {}", v.to_string()),
+            Value·Null => "null",
+            Value·Never => "!",
+        }
+    }
+
+    /// Get type name for error messages
+    ☉ rite type_name(this) → !&str {
+        ⌥ this {
+            Value·Unit => "()",
+            Value·Bool(_) => "bool",
+            Value·Int(_) => "i64",
+            Value·Float(_) => "f64",
+            Value·Char(_) => "char",
+            Value·String(_) => "str",
+            Value·Array(_) => "array",
+            Value·Tuple(_) => "tuple",
+            Value·Struct { name, .. } => name,
+            Value·Enum { name, .. } => name,
+            Value·Closure { .. } => "closure",
+            Value·Function(_) => "function",
+            Value·Ref(_) => "ref",
+            Value·RefMut(_) => "ref mut",
+            Value·Null => "null",
+            Value·Never => "!",
+        }
+    }
+}
+
+/// Runtime value with evidence annotation
+☉ sigil EvidentialValue {
+    ☉ value: !Value,
+    ☉ evidence: !IrEvidence,
+}
+
+⊢ EvidentialValue {
+    ☉ rite known(value: !Value) → !EvidentialValue {
+        EvidentialValue { value, evidence: IrEvidence·Known }
+    }
+
+    ☉ rite uncertain(value: !Value) → !EvidentialValue {
+        EvidentialValue { value, evidence: IrEvidence·Uncertain }
+    }
+
+    ☉ rite reported(value: !Value) → !EvidentialValue {
+        EvidentialValue { value, evidence: IrEvidence·Reported }
+    }
+}
+
