@@ -1940,6 +1940,239 @@ Sys_getsockname:
     ret
 
 # ============================================================================
+# Threading Syscalls (Phase 8)
+# ============================================================================
+
+# Sys_clone(flags: i64, stack: *mut u8, parent_tid: *mut i32, child_tid: *mut i32, tls: i64) -> i64
+# Creates a new thread. Returns 0 in child, child tid in parent, or negative errno.
+# Common flags: CLONE_VM=0x100, CLONE_FS=0x200, CLONE_FILES=0x400, CLONE_SIGHAND=0x800
+#               CLONE_THREAD=0x10000, CLONE_SYSVSEM=0x40000, CLONE_SETTLS=0x80000
+#               CLONE_PARENT_SETTID=0x100000, CLONE_CHILD_CLEARTID=0x200000
+.global Sys_clone
+Sys_clone:
+    mov rax, 56              # SYS_clone
+    mov r10, rcx             # parent_tid -> r10 (4th arg)
+    syscall
+    ret
+
+# Sys_clone3(args: *const clone_args, size: i64) -> i64
+# Modern clone interface with extensible arguments struct
+.global Sys_clone3
+Sys_clone3:
+    mov rax, 435             # SYS_clone3
+    syscall
+    ret
+
+# Sys_futex(uaddr: *mut u32, futex_op: i32, val: u32, timeout: *const timespec, uaddr2: *mut u32, val3: u32) -> i64
+# Fast userspace locking primitive. Used to implement mutexes, condvars, etc.
+# Common ops: FUTEX_WAIT=0, FUTEX_WAKE=1, FUTEX_WAIT_PRIVATE=128, FUTEX_WAKE_PRIVATE=129
+.global Sys_futex
+Sys_futex:
+    mov rax, 202             # SYS_futex
+    mov r10, rcx             # timeout -> r10 (4th arg)
+    syscall
+    ret
+
+# Sys_gettid() -> i64
+# Get the thread ID of the calling thread
+.global Sys_gettid
+Sys_gettid:
+    mov rax, 186             # SYS_gettid
+    syscall
+    ret
+
+# Sys_tkill(tid: i64, sig: i64) -> i64
+# Send a signal to a thread (deprecated, use tgkill)
+.global Sys_tkill
+Sys_tkill:
+    mov rax, 200             # SYS_tkill
+    syscall
+    ret
+
+# Sys_tgkill(tgid: i64, tid: i64, sig: i64) -> i64
+# Send a signal to a thread in a thread group
+.global Sys_tgkill
+Sys_tgkill:
+    mov rax, 234             # SYS_tgkill
+    syscall
+    ret
+
+# Sys_set_tid_address(tidptr: *mut i32) -> i64
+# Set pointer to thread ID (for CLONE_CHILD_CLEARTID)
+.global Sys_set_tid_address
+Sys_set_tid_address:
+    mov rax, 218             # SYS_set_tid_address
+    syscall
+    ret
+
+# Sys_exit_group(status: i64) -> !
+# Exit all threads in the process
+.global Sys_exit_group
+Sys_exit_group:
+    mov rax, 231             # SYS_exit_group
+    syscall
+    # Never returns
+
+# ============================================================================
+# Async I/O - epoll Syscalls (Phase 8)
+# ============================================================================
+
+# Sys_epoll_create1(flags: i64) -> i64
+# Create an epoll instance. flags: EPOLL_CLOEXEC=0x80000
+.global Sys_epoll_create1
+Sys_epoll_create1:
+    mov rax, 291             # SYS_epoll_create1
+    syscall
+    ret
+
+# Sys_epoll_ctl(epfd: i64, op: i64, fd: i64, event: *mut epoll_event) -> i64
+# Control an epoll instance. op: EPOLL_CTL_ADD=1, EPOLL_CTL_DEL=2, EPOLL_CTL_MOD=3
+.global Sys_epoll_ctl
+Sys_epoll_ctl:
+    mov rax, 233             # SYS_epoll_ctl
+    mov r10, rcx             # event -> r10 (4th arg)
+    syscall
+    ret
+
+# Sys_epoll_wait(epfd: i64, events: *mut epoll_event, maxevents: i64, timeout: i64) -> i64
+# Wait for events on an epoll instance. Returns number of ready fds.
+.global Sys_epoll_wait
+Sys_epoll_wait:
+    mov rax, 232             # SYS_epoll_wait
+    mov r10, rcx             # timeout -> r10 (4th arg)
+    syscall
+    ret
+
+# Sys_epoll_pwait(epfd: i64, events: *mut epoll_event, maxevents: i64, timeout: i64, sigmask: *const sigset_t) -> i64
+# epoll_wait with signal mask
+.global Sys_epoll_pwait
+Sys_epoll_pwait:
+    mov rax, 281             # SYS_epoll_pwait
+    mov r10, rcx             # timeout -> r10 (4th arg)
+    syscall
+    ret
+
+# Sys_epoll_pwait2(epfd: i64, events: *mut epoll_event, maxevents: i64, timeout: *const timespec, sigmask: *const sigset_t) -> i64
+# epoll_pwait with nanosecond timeout precision
+.global Sys_epoll_pwait2
+Sys_epoll_pwait2:
+    mov rax, 441             # SYS_epoll_pwait2
+    mov r10, rcx             # timeout -> r10 (4th arg)
+    syscall
+    ret
+
+# ============================================================================
+# Synchronization Primitives (Phase 8)
+# ============================================================================
+
+# sigil_mutex_init(mutex: *mut i32) -> void
+# Initialize a mutex (set to 0 = unlocked)
+.global sigil_mutex_init
+sigil_mutex_init:
+    mov dword ptr [rdi], 0
+    ret
+
+# sigil_mutex_lock(mutex: *mut i32) -> void
+# Acquire a mutex using futex. Spins briefly before sleeping.
+.global sigil_mutex_lock
+sigil_mutex_lock:
+    push rbx
+    mov rbx, rdi             # Save mutex pointer
+
+.mutex_lock_try:
+    # Try to acquire: compare-and-swap 0 -> 1
+    xor eax, eax             # expected = 0 (unlocked)
+    mov ecx, 1               # desired = 1 (locked)
+    lock cmpxchg dword ptr [rbx], ecx
+    jz .mutex_lock_done      # If successful, we're done
+
+    # Mutex is held. Set to 2 (contended) and wait.
+    mov ecx, 2               # Set to contended
+    xchg dword ptr [rbx], ecx
+
+    # If it was 0 (unlocked), we got it
+    test ecx, ecx
+    jz .mutex_lock_done
+
+.mutex_lock_wait:
+    # Call futex(mutex, FUTEX_WAIT_PRIVATE, 2, NULL, NULL, 0)
+    mov rdi, rbx             # uaddr = mutex
+    mov esi, 128             # FUTEX_WAIT_PRIVATE = 128
+    mov edx, 2               # val = 2 (contended)
+    xor r10d, r10d           # timeout = NULL
+    xor r8d, r8d             # uaddr2 = NULL
+    xor r9d, r9d             # val3 = 0
+    mov eax, 202             # SYS_futex
+    syscall
+
+    # Try to acquire again
+    jmp .mutex_lock_try
+
+.mutex_lock_done:
+    pop rbx
+    ret
+
+# sigil_mutex_unlock(mutex: *mut i32) -> void
+# Release a mutex. If contended, wake one waiter.
+.global sigil_mutex_unlock
+sigil_mutex_unlock:
+    # Atomically set mutex to 0 and get old value
+    xor eax, eax
+    xchg dword ptr [rdi], eax
+
+    # If old value was 2 (contended), wake a waiter
+    cmp eax, 2
+    jne .mutex_unlock_done
+
+    # Call futex(mutex, FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0)
+    # rdi already has mutex
+    mov esi, 129             # FUTEX_WAKE_PRIVATE = 129
+    mov edx, 1               # Wake one waiter
+    xor r10d, r10d
+    xor r8d, r8d
+    xor r9d, r9d
+    mov eax, 202             # SYS_futex
+    syscall
+
+.mutex_unlock_done:
+    ret
+
+# sigil_mutex_trylock(mutex: *mut i32) -> i64
+# Try to acquire mutex without blocking. Returns 0 on success, -1 if held.
+.global sigil_mutex_trylock
+sigil_mutex_trylock:
+    xor eax, eax             # expected = 0
+    mov ecx, 1               # desired = 1
+    lock cmpxchg dword ptr [rdi], ecx
+    jz .trylock_success
+    mov rax, -1              # Return -1 (failed)
+    ret
+.trylock_success:
+    xor eax, eax             # Return 0 (success)
+    ret
+
+# sigil_spinlock_lock(lock: *mut i32) -> void
+# Acquire a spinlock (busy-wait)
+.global sigil_spinlock_lock
+sigil_spinlock_lock:
+.spin_try:
+    xor eax, eax
+    mov ecx, 1
+    lock cmpxchg dword ptr [rdi], ecx
+    jz .spin_done
+    pause                    # CPU hint for spin-wait
+    jmp .spin_try
+.spin_done:
+    ret
+
+# sigil_spinlock_unlock(lock: *mut i32) -> void
+# Release a spinlock
+.global sigil_spinlock_unlock
+sigil_spinlock_unlock:
+    mov dword ptr [rdi], 0
+    ret
+
+# ============================================================================
 # Data Section
 # ============================================================================
 

@@ -1,0 +1,49 @@
+// Test epoll syscalls for async I/O
+// This tests the native runtime async I/O syscalls
+// Priority: P1
+
+λ main() {
+    // Create epoll instance
+    ≔ epfd = Sys·epoll_create1(0);
+
+    ⎇ epfd >= 0 {
+        println("epoll_create1: OK");
+
+        // Create a socket to add to epoll
+        ≔ sock = Sys·socket(AF_INET(), SOCK_STREAM(), 0);
+
+        ⎇ sock >= 0 {
+            // Add socket to epoll (EPOLL_CTL_ADD = 1)
+            ≔ result = Sys·epoll_ctl(epfd, EPOLL_CTL_ADD(), sock, 0);
+            ⎇ result == 0 {
+                println("epoll_ctl ADD: OK");
+            } ⎉ {
+                println("epoll_ctl ADD: FAILED");
+            }
+
+            // Wait for events (with 0 timeout = non-blocking)
+            ≔ events = Sys·epoll_wait(epfd, 0, 10, 0);
+            ⎇ events >= 0 {
+                println("epoll_wait: OK");
+            } ⎉ {
+                println("epoll_wait: FAILED");
+            }
+
+            // Remove socket from epoll (EPOLL_CTL_DEL = 2)
+            ≔ del_result = Sys·epoll_ctl(epfd, EPOLL_CTL_DEL(), sock, 0);
+            ⎇ del_result == 0 {
+                println("epoll_ctl DEL: OK");
+            } ⎉ {
+                println("epoll_ctl DEL: FAILED");
+            }
+
+            Sys·close(sock);
+        } ⎉ {
+            println("socket: FAILED");
+        }
+
+        Sys·close(epfd);
+    } ⎉ {
+        println("epoll_create1: FAILED");
+    }
+}

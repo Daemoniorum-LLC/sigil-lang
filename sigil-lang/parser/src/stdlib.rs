@@ -35439,6 +35439,170 @@ fn register_sys(interp: &mut Interpreter) {
 
     define(interp, "IPPROTO_TCP", Some(0), |_, _| Ok(Value::Int(6)));
     define(interp, "IPPROTO_UDP", Some(0), |_, _| Ok(Value::Int(17)));
+
+    // ========================================================================
+    // Threading Syscalls (Phase 8)
+    // ========================================================================
+
+    // Sys·gettid() -> i64
+    // Get the thread ID of the calling thread
+    define(interp, "Sys·gettid", Some(0), |_, _| {
+        // In interpreter mode, return a fake thread ID
+        // In real usage, this would be the actual thread ID
+        Ok(Value::Int(std::process::id() as i64))
+    });
+
+    // Sys·futex(uaddr: ptr, op: i64, val: i64, timeout: ptr, uaddr2: ptr, val3: i64) -> i64
+    // Fast userspace locking - simulated in interpreter
+    define(interp, "Sys·futex", Some(6), |_, args| {
+        let op = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·futex requires int op")),
+        };
+
+        // In interpreter mode, we simulate futex behavior
+        // FUTEX_WAIT (0 or 128) - would block, return immediately
+        // FUTEX_WAKE (1 or 129) - wake waiters, return 0
+        match op & 0x7f {
+            0 => Ok(Value::Int(0)),  // FUTEX_WAIT - pretend we didn't wait
+            1 => Ok(Value::Int(1)),  // FUTEX_WAKE - pretend we woke 1
+            _ => Ok(Value::Int(0)),
+        }
+    });
+
+    // Sys·clone - simulated (returns error in interpreter, threads not supported)
+    define(interp, "Sys·clone", Some(5), |_, _| {
+        // In interpreter mode, we can't actually create threads
+        // Return -ENOSYS (function not implemented)
+        Ok(Value::Int(-38))
+    });
+
+    // Sys·exit_group(status: i64) -> !
+    define(interp, "Sys·exit_group", Some(1), |_, args| {
+        let code = match &args[0] {
+            Value::Int(n) => *n as i32,
+            _ => 1,
+        };
+        std::process::exit(code);
+    });
+
+    // ========================================================================
+    // Async I/O - epoll Syscalls (Phase 8)
+    // ========================================================================
+
+    // Sys·epoll_create1(flags: i64) -> i64
+    define(interp, "Sys·epoll_create1", Some(1), |_, _| {
+        // Create a fake epoll fd
+        let fd = FAKE_EPOLL_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        FAKE_EPOLL_STATE.with(|map| {
+            map.borrow_mut().insert(fd, FakeEpoll { fds: Vec::new() });
+        });
+        Ok(Value::Int(fd))
+    });
+
+    // Sys·epoll_ctl(epfd: i64, op: i64, fd: i64, event: ptr) -> i64
+    define(interp, "Sys·epoll_ctl", Some(4), |_, args| {
+        let epfd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·epoll_ctl requires int epfd")),
+        };
+        let op = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·epoll_ctl requires int op")),
+        };
+        let fd = match &args[2] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·epoll_ctl requires int fd")),
+        };
+
+        let exists = FAKE_EPOLL_STATE.with(|map| {
+            map.borrow().contains_key(&epfd)
+        });
+
+        if !exists {
+            return Ok(Value::Int(-9)); // EBADF
+        }
+
+        FAKE_EPOLL_STATE.with(|map| {
+            let mut m = map.borrow_mut();
+            if let Some(epoll) = m.get_mut(&epfd) {
+                match op {
+                    1 => epoll.fds.push(fd),    // EPOLL_CTL_ADD
+                    2 => epoll.fds.retain(|&x| x != fd), // EPOLL_CTL_DEL
+                    3 => {},                     // EPOLL_CTL_MOD - no-op in sim
+                    _ => return Ok(Value::Int(-22)), // EINVAL
+                }
+            }
+            Ok(Value::Int(0))
+        })
+    });
+
+    // Sys·epoll_wait(epfd: i64, events: ptr, maxevents: i64, timeout: i64) -> i64
+    define(interp, "Sys·epoll_wait", Some(4), |_, args| {
+        let epfd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·epoll_wait requires int epfd")),
+        };
+
+        let exists = FAKE_EPOLL_STATE.with(|map| {
+            map.borrow().contains_key(&epfd)
+        });
+
+        if !exists {
+            return Ok(Value::Int(-9)); // EBADF
+        }
+
+        // In interpreter mode, always return 0 (no events ready)
+        // Real usage would block until events are available
+        Ok(Value::Int(0))
+    });
+
+    // Mutex operations (for interpreter testing)
+    define(interp, "Mutex·init", Some(1), |_, _| {
+        Ok(Value::Int(0))  // Success
+    });
+
+    define(interp, "Mutex·lock", Some(1), |_, _| {
+        Ok(Value::Int(0))  // Success (no-op in single-threaded interpreter)
+    });
+
+    define(interp, "Mutex·unlock", Some(1), |_, _| {
+        Ok(Value::Int(0))  // Success
+    });
+
+    define(interp, "Mutex·trylock", Some(1), |_, _| {
+        Ok(Value::Int(0))  // Always succeeds in single-threaded interpreter
+    });
+
+    // Threading constants
+    define(interp, "CLONE_VM", Some(0), |_, _| Ok(Value::Int(0x100)));
+    define(interp, "CLONE_FS", Some(0), |_, _| Ok(Value::Int(0x200)));
+    define(interp, "CLONE_FILES", Some(0), |_, _| Ok(Value::Int(0x400)));
+    define(interp, "CLONE_SIGHAND", Some(0), |_, _| Ok(Value::Int(0x800)));
+    define(interp, "CLONE_THREAD", Some(0), |_, _| Ok(Value::Int(0x10000)));
+    define(interp, "CLONE_SYSVSEM", Some(0), |_, _| Ok(Value::Int(0x40000)));
+    define(interp, "CLONE_SETTLS", Some(0), |_, _| Ok(Value::Int(0x80000)));
+    define(interp, "CLONE_PARENT_SETTID", Some(0), |_, _| Ok(Value::Int(0x100000)));
+    define(interp, "CLONE_CHILD_CLEARTID", Some(0), |_, _| Ok(Value::Int(0x200000)));
+
+    // Futex constants
+    define(interp, "FUTEX_WAIT", Some(0), |_, _| Ok(Value::Int(0)));
+    define(interp, "FUTEX_WAKE", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "FUTEX_WAIT_PRIVATE", Some(0), |_, _| Ok(Value::Int(128)));
+    define(interp, "FUTEX_WAKE_PRIVATE", Some(0), |_, _| Ok(Value::Int(129)));
+
+    // Epoll constants
+    define(interp, "EPOLL_CTL_ADD", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "EPOLL_CTL_DEL", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "EPOLL_CTL_MOD", Some(0), |_, _| Ok(Value::Int(3)));
+    define(interp, "EPOLL_CLOEXEC", Some(0), |_, _| Ok(Value::Int(0x80000)));
+
+    define(interp, "EPOLLIN", Some(0), |_, _| Ok(Value::Int(0x001)));
+    define(interp, "EPOLLOUT", Some(0), |_, _| Ok(Value::Int(0x004)));
+    define(interp, "EPOLLERR", Some(0), |_, _| Ok(Value::Int(0x008)));
+    define(interp, "EPOLLHUP", Some(0), |_, _| Ok(Value::Int(0x010)));
+    define(interp, "EPOLLET", Some(0), |_, _| Ok(Value::Int(1 << 31)));
+    define(interp, "EPOLLONESHOT", Some(0), |_, _| Ok(Value::Int(1 << 30)));
 }
 
 // Thread-local storage for fake mmap allocations
@@ -35446,9 +35610,11 @@ thread_local! {
     static FAKE_MMAP_MAP: RefCell<HashMap<i64, Vec<u8>>> = RefCell::new(HashMap::new());
     static FAKE_FD_MAP: RefCell<HashMap<i64, std::sync::Arc<std::sync::Mutex<std::fs::File>>>> = RefCell::new(HashMap::new());
     static FAKE_SOCKET_STATE: RefCell<HashMap<i64, FakeSocket>> = RefCell::new(HashMap::new());
+    static FAKE_EPOLL_STATE: RefCell<HashMap<i64, FakeEpoll>> = RefCell::new(HashMap::new());
 }
 static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
 static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1000);
+static FAKE_EPOLL_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(2000);
 
 // Socket states for interpreter simulation
 #[derive(Clone, Debug)]
@@ -35458,6 +35624,12 @@ enum FakeSocket {
     Listening,
     Connected,
     Udp,
+}
+
+// Epoll state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakeEpoll {
+    fds: Vec<i64>,
 }
 
 #[cfg(test)]

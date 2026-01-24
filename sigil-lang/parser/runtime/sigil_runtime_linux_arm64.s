@@ -1597,6 +1597,246 @@ Sys_getsockname:
     ret
 
 // ============================================================================
+// Threading Syscalls (Phase 8)
+// ============================================================================
+
+// Sys_clone(flags: i64, stack: *mut u8, parent_tid: *mut i32, tls: i64, child_tid: *mut i32) -> i64
+// Note: ARM64 clone has different argument order than x86_64!
+// Creates a new thread. Returns 0 in child, child tid in parent, or negative errno.
+.global Sys_clone
+Sys_clone:
+    mov x8, #220             // SYS_clone
+    svc #0
+    ret
+
+// Sys_clone3(args: *const clone_args, size: i64) -> i64
+// Modern clone interface with extensible arguments struct
+.global Sys_clone3
+Sys_clone3:
+    mov x8, #435             // SYS_clone3
+    svc #0
+    ret
+
+// Sys_futex(uaddr: *mut u32, futex_op: i32, val: u32, timeout: *const timespec, uaddr2: *mut u32, val3: u32) -> i64
+// Fast userspace locking primitive. Used to implement mutexes, condvars, etc.
+.global Sys_futex
+Sys_futex:
+    mov x8, #98              // SYS_futex
+    svc #0
+    ret
+
+// Sys_gettid() -> i64
+// Get the thread ID of the calling thread
+.global Sys_gettid
+Sys_gettid:
+    mov x8, #178             // SYS_gettid
+    svc #0
+    ret
+
+// Sys_tkill(tid: i64, sig: i64) -> i64
+// Send a signal to a thread
+.global Sys_tkill
+Sys_tkill:
+    mov x8, #130             // SYS_tkill
+    svc #0
+    ret
+
+// Sys_tgkill(tgid: i64, tid: i64, sig: i64) -> i64
+// Send a signal to a thread in a thread group
+.global Sys_tgkill
+Sys_tgkill:
+    mov x8, #131             // SYS_tgkill
+    svc #0
+    ret
+
+// Sys_set_tid_address(tidptr: *mut i32) -> i64
+// Set pointer to thread ID (for CLONE_CHILD_CLEARTID)
+.global Sys_set_tid_address
+Sys_set_tid_address:
+    mov x8, #96              // SYS_set_tid_address
+    svc #0
+    ret
+
+// Sys_exit_group(status: i64) -> !
+// Exit all threads in the process
+.global Sys_exit_group
+Sys_exit_group:
+    mov x8, #94              // SYS_exit_group
+    svc #0
+    // Never returns
+
+// ============================================================================
+// Async I/O - epoll Syscalls (Phase 8)
+// ============================================================================
+
+// Sys_epoll_create1(flags: i64) -> i64
+// Create an epoll instance. flags: EPOLL_CLOEXEC=0x80000
+.global Sys_epoll_create1
+Sys_epoll_create1:
+    mov x8, #20              // SYS_epoll_create1
+    svc #0
+    ret
+
+// Sys_epoll_ctl(epfd: i64, op: i64, fd: i64, event: *mut epoll_event) -> i64
+// Control an epoll instance. op: EPOLL_CTL_ADD=1, EPOLL_CTL_DEL=2, EPOLL_CTL_MOD=3
+.global Sys_epoll_ctl
+Sys_epoll_ctl:
+    mov x8, #21              // SYS_epoll_ctl
+    svc #0
+    ret
+
+// Sys_epoll_pwait(epfd: i64, events: *mut epoll_event, maxevents: i64, timeout: i64, sigmask: *const sigset_t) -> i64
+// Wait for events on an epoll instance (ARM64 only has epoll_pwait, not epoll_wait)
+.global Sys_epoll_pwait
+Sys_epoll_pwait:
+    mov x8, #22              // SYS_epoll_pwait
+    svc #0
+    ret
+
+// Sys_epoll_wait - wrapper around epoll_pwait with NULL sigmask for compatibility
+.global Sys_epoll_wait
+Sys_epoll_wait:
+    mov x4, #0               // sigmask = NULL
+    mov x8, #22              // SYS_epoll_pwait
+    svc #0
+    ret
+
+// Sys_epoll_pwait2(epfd: i64, events: *mut epoll_event, maxevents: i64, timeout: *const timespec, sigmask: *const sigset_t) -> i64
+// epoll_pwait with nanosecond timeout precision
+.global Sys_epoll_pwait2
+Sys_epoll_pwait2:
+    mov x8, #441             // SYS_epoll_pwait2
+    svc #0
+    ret
+
+// ============================================================================
+// Synchronization Primitives (Phase 8)
+// ============================================================================
+
+// sigil_mutex_init(mutex: *mut i32) -> void
+// Initialize a mutex (set to 0 = unlocked)
+.global sigil_mutex_init
+sigil_mutex_init:
+    str wzr, [x0]            // Store 0 to mutex
+    ret
+
+// sigil_mutex_lock(mutex: *mut i32) -> void
+// Acquire a mutex using futex. Spins briefly before sleeping.
+.global sigil_mutex_lock
+sigil_mutex_lock:
+    stp x29, x30, [sp, #-32]!
+    mov x29, sp
+    str x19, [sp, #16]
+    mov x19, x0              // Save mutex pointer
+
+.mutex_lock_try_arm:
+    // Try to acquire: compare-and-swap 0 -> 1
+    mov w1, #0               // expected = 0 (unlocked)
+    mov w2, #1               // desired = 1 (locked)
+    ldaxr w3, [x19]          // Load-acquire exclusive
+    cmp w3, w1
+    bne .mutex_lock_contended_arm
+    stlxr w4, w2, [x19]      // Store-release exclusive
+    cbnz w4, .mutex_lock_try_arm  // Retry if store failed
+    b .mutex_lock_done_arm
+
+.mutex_lock_contended_arm:
+    // Mutex is held. Set to 2 (contended) and wait.
+    mov w1, #2
+    swp w1, w1, [x19]        // Atomically swap
+
+    // If it was 0 (unlocked), we got it
+    cbz w1, .mutex_lock_done_arm
+
+.mutex_lock_wait_arm:
+    // Call futex(mutex, FUTEX_WAIT_PRIVATE, 2, NULL, NULL, 0)
+    mov x0, x19              // uaddr = mutex
+    mov x1, #128             // FUTEX_WAIT_PRIVATE
+    mov x2, #2               // val = 2 (contended)
+    mov x3, #0               // timeout = NULL
+    mov x4, #0               // uaddr2 = NULL
+    mov x5, #0               // val3 = 0
+    mov x8, #98              // SYS_futex
+    svc #0
+
+    // Try to acquire again
+    b .mutex_lock_try_arm
+
+.mutex_lock_done_arm:
+    ldr x19, [sp, #16]
+    ldp x29, x30, [sp], #32
+    ret
+
+// sigil_mutex_unlock(mutex: *mut i32) -> void
+// Release a mutex. If contended, wake one waiter.
+.global sigil_mutex_unlock
+sigil_mutex_unlock:
+    stp x29, x30, [sp, #-16]!
+    mov x29, sp
+
+    // Atomically set mutex to 0 and get old value
+    mov w1, #0
+    swp w1, w1, [x0]
+
+    // If old value was 2 (contended), wake a waiter
+    cmp w1, #2
+    bne .mutex_unlock_done_arm
+
+    // Call futex(mutex, FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0)
+    // x0 already has mutex
+    mov x1, #129             // FUTEX_WAKE_PRIVATE
+    mov x2, #1               // Wake one waiter
+    mov x3, #0
+    mov x4, #0
+    mov x5, #0
+    mov x8, #98              // SYS_futex
+    svc #0
+
+.mutex_unlock_done_arm:
+    ldp x29, x30, [sp], #16
+    ret
+
+// sigil_mutex_trylock(mutex: *mut i32) -> i64
+// Try to acquire mutex without blocking. Returns 0 on success, -1 if held.
+.global sigil_mutex_trylock
+sigil_mutex_trylock:
+    mov w1, #0               // expected = 0
+    mov w2, #1               // desired = 1
+.trylock_retry_arm:
+    ldaxr w3, [x0]
+    cmp w3, w1
+    bne .trylock_fail_arm
+    stlxr w4, w2, [x0]
+    cbnz w4, .trylock_retry_arm
+    mov x0, #0               // Return 0 (success)
+    ret
+.trylock_fail_arm:
+    mov x0, #-1              // Return -1 (failed)
+    ret
+
+// sigil_spinlock_lock(lock: *mut i32) -> void
+// Acquire a spinlock (busy-wait)
+.global sigil_spinlock_lock
+sigil_spinlock_lock:
+    mov w1, #1
+.spin_try_arm:
+    ldaxr w2, [x0]
+    cbnz w2, .spin_wait_arm
+    stlxr w3, w1, [x0]
+    cbnz w3, .spin_try_arm
+    ret
+.spin_wait_arm:
+    yield                    // CPU hint for spin-wait (ARM equivalent of pause)
+    b .spin_try_arm
+
+// sigil_spinlock_unlock(lock: *mut i32) -> void
+// Release a spinlock
+.global sigil_spinlock_unlock
+sigil_spinlock_unlock:
+    stlr wzr, [x0]           // Store-release 0
+    ret
+
+// ============================================================================
 // Note section for stack protection
 // ============================================================================
 .section .note.GNU-stack,"",@progbits
