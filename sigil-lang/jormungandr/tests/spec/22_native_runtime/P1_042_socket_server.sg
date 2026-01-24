@@ -1,0 +1,57 @@
+// Test socket server operations
+// This tests bind, listen, accept syscalls
+// Priority: P1
+
+λ main() {
+    // Test: Create a server socket
+    ≔ sock = Sys·socket(AF_INET(), SOCK_STREAM(), 0);
+
+    ⎇ sock >= 0 {
+        println("socket: OK");
+
+        // Set socket option (reuse address)
+        ≔ opt = Sys·setsockopt(sock, SOL_SOCKET(), SO_REUSEADDR(), 0, 4);
+        ⎇ opt == 0 {
+            println("setsockopt: OK");
+        } ⎉ {
+            println("setsockopt: FAILED");
+        }
+
+        // Bind to address (simulated)
+        ≔ bound = Sys·bind(sock, 0, 16);
+        ⎇ bound == 0 {
+            println("bind: OK");
+        } ⎉ {
+            println("bind: FAILED");
+        }
+
+        // Listen for connections
+        ≔ listening = Sys·listen(sock, 10);
+        ⎇ listening == 0 {
+            println("listen: OK");
+        } ⎉ {
+            println("listen: FAILED");
+        }
+
+        // Accept a connection (simulated - returns new fd)
+        ≔ client = Sys·accept(sock, 0, 0);
+        ⎇ client >= 0 {
+            println("accept: OK");
+
+            // Close client socket
+            Sys·close(client);
+        } ⎉ {
+            println("accept: FAILED");
+        }
+
+        // Close server socket
+        ≔ closed = Sys·close(sock);
+        ⎇ closed == 0 {
+            println("close: OK");
+        } ⎉ {
+            println("close: FAILED");
+        }
+    } ⎉ {
+        println("socket: FAILED");
+    }
+}

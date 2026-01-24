@@ -1825,6 +1825,121 @@ Sys_clock_gettime:
     ret
 
 # ============================================================================
+# Networking Syscalls
+# ============================================================================
+
+# Sys_socket(domain: i64, type: i64, protocol: i64) -> i64
+# domain: AF_INET=2, AF_INET6=10, AF_UNIX=1
+# type: SOCK_STREAM=1, SOCK_DGRAM=2
+.global Sys_socket
+Sys_socket:
+    mov rax, 41              # SYS_socket
+    syscall
+    ret
+
+# Sys_connect(fd: i64, addr: *const sockaddr, addrlen: i64) -> i64
+.global Sys_connect
+Sys_connect:
+    mov rax, 42              # SYS_connect
+    syscall
+    ret
+
+# Sys_accept(fd: i64, addr: *mut sockaddr, addrlen: *mut i64) -> i64
+.global Sys_accept
+Sys_accept:
+    mov rax, 43              # SYS_accept
+    syscall
+    ret
+
+# Sys_sendto(fd: i64, buf: *const u8, len: i64, flags: i64, addr: *const sockaddr, addrlen: i64) -> i64
+.global Sys_sendto
+Sys_sendto:
+    mov rax, 44              # SYS_sendto
+    mov r10, rcx             # Linux syscall uses r10 for 4th arg
+    syscall
+    ret
+
+# Sys_recvfrom(fd: i64, buf: *mut u8, len: i64, flags: i64, addr: *mut sockaddr, addrlen: *mut i64) -> i64
+.global Sys_recvfrom
+Sys_recvfrom:
+    mov rax, 45              # SYS_recvfrom
+    mov r10, rcx             # Linux syscall uses r10 for 4th arg
+    syscall
+    ret
+
+# Sys_send(fd: i64, buf: *const u8, len: i64, flags: i64) -> i64
+.global Sys_send
+Sys_send:
+    mov rax, 44              # SYS_sendto with NULL addr
+    mov r10, rcx             # flags
+    xor r8, r8               # addr = NULL
+    xor r9, r9               # addrlen = 0
+    syscall
+    ret
+
+# Sys_recv(fd: i64, buf: *mut u8, len: i64, flags: i64) -> i64
+.global Sys_recv
+Sys_recv:
+    mov rax, 45              # SYS_recvfrom with NULL addr
+    mov r10, rcx             # flags
+    xor r8, r8               # addr = NULL
+    xor r9, r9               # addrlen = NULL
+    syscall
+    ret
+
+# Sys_bind(fd: i64, addr: *const sockaddr, addrlen: i64) -> i64
+.global Sys_bind
+Sys_bind:
+    mov rax, 49              # SYS_bind
+    syscall
+    ret
+
+# Sys_listen(fd: i64, backlog: i64) -> i64
+.global Sys_listen
+Sys_listen:
+    mov rax, 50              # SYS_listen
+    syscall
+    ret
+
+# Sys_shutdown(fd: i64, how: i64) -> i64
+# how: SHUT_RD=0, SHUT_WR=1, SHUT_RDWR=2
+.global Sys_shutdown
+Sys_shutdown:
+    mov rax, 48              # SYS_shutdown
+    syscall
+    ret
+
+# Sys_setsockopt(fd: i64, level: i64, optname: i64, optval: *const void, optlen: i64) -> i64
+.global Sys_setsockopt
+Sys_setsockopt:
+    mov rax, 54              # SYS_setsockopt
+    mov r10, rcx             # Linux syscall uses r10 for 4th arg
+    syscall
+    ret
+
+# Sys_getsockopt(fd: i64, level: i64, optname: i64, optval: *mut void, optlen: *mut i64) -> i64
+.global Sys_getsockopt
+Sys_getsockopt:
+    mov rax, 55              # SYS_getsockopt
+    mov r10, rcx             # Linux syscall uses r10 for 4th arg
+    syscall
+    ret
+
+# Sys_getpeername(fd: i64, addr: *mut sockaddr, addrlen: *mut i64) -> i64
+.global Sys_getpeername
+Sys_getpeername:
+    mov rax, 52              # SYS_getpeername
+    syscall
+    ret
+
+# Sys_getsockname(fd: i64, addr: *mut sockaddr, addrlen: *mut i64) -> i64
+.global Sys_getsockname
+Sys_getsockname:
+    mov rax, 51              # SYS_getsockname
+    syscall
+    ret
+
+# ============================================================================
 # Data Section
 # ============================================================================
 

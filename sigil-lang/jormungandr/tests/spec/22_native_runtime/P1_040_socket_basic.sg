@@ -1,0 +1,23 @@
+// Test basic socket creation
+// This tests the native runtime networking syscalls
+// Priority: P1
+
+λ main() {
+    // Test: Create an IPv4 TCP socket
+    // AF_INET = 2, SOCK_STREAM = 1, protocol = 0
+    ≔ sock = Sys·socket(2, 1, 0);
+
+    ⎇ sock >= 0 {
+        println("socket: OK");
+
+        // Close the socket
+        ≔ result = Sys·close(sock);
+        ⎇ result == 0 {
+            println("close: OK");
+        } ⎉ {
+            println("close: FAILED");
+        }
+    } ⎉ {
+        println("socket: FAILED");
+    }
+}

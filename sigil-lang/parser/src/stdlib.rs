@@ -35068,7 +35068,7 @@ fn register_sys(interp: &mut Interpreter) {
 
     // ========================================================================
     // Sys·close(fd: i64) -> i64
-    // Close a file descriptor. Returns 0 on success.
+    // Close a file descriptor or socket. Returns 0 on success.
     // ========================================================================
     define(interp, "Sys·close", Some(1), |_, args| {
         let fd = match &args[0] {
@@ -35081,11 +35081,17 @@ fn register_sys(interp: &mut Interpreter) {
             return Ok(Value::Int(0));
         }
 
-        let removed = FAKE_FD_MAP.with(|map| {
+        // Try closing as file
+        let removed_fd = FAKE_FD_MAP.with(|map| {
             map.borrow_mut().remove(&fd).is_some()
         });
 
-        if removed {
+        // Try closing as socket
+        let removed_socket = FAKE_SOCKET_STATE.with(|map| {
+            map.borrow_mut().remove(&fd).is_some()
+        });
+
+        if removed_fd || removed_socket {
             Ok(Value::Int(0))
         } else {
             Ok(Value::Int(-9)) // EBADF
@@ -35178,14 +35184,281 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "STDIN_FILENO", Some(0), |_, _| Ok(Value::Int(0)));
     define(interp, "STDOUT_FILENO", Some(0), |_, _| Ok(Value::Int(1)));
     define(interp, "STDERR_FILENO", Some(0), |_, _| Ok(Value::Int(2)));
+
+    // ========================================================================
+    // Networking Syscalls (Phase 9)
+    // ========================================================================
+
+    // Sys·socket(domain: i64, type: i64, protocol: i64) -> i64
+    // Creates a socket. Returns fd or negative errno.
+    // domain: AF_INET=2, AF_INET6=10, AF_UNIX=1
+    // type: SOCK_STREAM=1, SOCK_DGRAM=2
+    define(interp, "Sys·socket", Some(3), |_, args| {
+        let domain = match &args[0] {
+            Value::Int(n) => *n as i32,
+            _ => return Err(RuntimeError::new("Sys·socket requires int domain")),
+        };
+        let sock_type = match &args[1] {
+            Value::Int(n) => *n as i32,
+            _ => return Err(RuntimeError::new("Sys·socket requires int type")),
+        };
+        let _protocol = match &args[2] {
+            Value::Int(n) => *n as i32,
+            _ => 0,
+        };
+
+        // In interpreter mode, use Rust's std::net
+        // We only support AF_INET (2) with SOCK_STREAM (1) for TCP
+        if domain == 2 && sock_type == 1 {
+            // Create a fake socket fd - actual connection happens on connect
+            let fd = FAKE_SOCKET_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+            FAKE_SOCKET_STATE.with(|map| {
+                map.borrow_mut().insert(fd, FakeSocket::Created);
+            });
+            Ok(Value::Int(fd))
+        } else if domain == 2 && sock_type == 2 {
+            // UDP socket
+            let fd = FAKE_SOCKET_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+            FAKE_SOCKET_STATE.with(|map| {
+                map.borrow_mut().insert(fd, FakeSocket::Udp);
+            });
+            Ok(Value::Int(fd))
+        } else {
+            Ok(Value::Int(-93)) // EPROTONOSUPPORT
+        }
+    });
+
+    // Sys·connect(fd: i64, addr: ptr, addrlen: i64) -> i64
+    // Connects a socket to a remote address. Returns 0 or negative errno.
+    define(interp, "Sys·connect", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·connect requires int fd")),
+        };
+
+        // In interpreter mode, we don't actually connect
+        // Just mark the socket as connected for testing purposes
+        let exists = FAKE_SOCKET_STATE.with(|map| {
+            map.borrow().contains_key(&fd)
+        });
+
+        if exists {
+            FAKE_SOCKET_STATE.with(|map| {
+                map.borrow_mut().insert(fd, FakeSocket::Connected);
+            });
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Sys·bind(fd: i64, addr: ptr, addrlen: i64) -> i64
+    // Binds a socket to a local address. Returns 0 or negative errno.
+    define(interp, "Sys·bind", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·bind requires int fd")),
+        };
+
+        let exists = FAKE_SOCKET_STATE.with(|map| {
+            map.borrow().contains_key(&fd)
+        });
+
+        if exists {
+            FAKE_SOCKET_STATE.with(|map| {
+                map.borrow_mut().insert(fd, FakeSocket::Bound);
+            });
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Sys·listen(fd: i64, backlog: i64) -> i64
+    // Listen for connections on a socket. Returns 0 or negative errno.
+    define(interp, "Sys·listen", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·listen requires int fd")),
+        };
+
+        let exists = FAKE_SOCKET_STATE.with(|map| {
+            map.borrow().contains_key(&fd)
+        });
+
+        if exists {
+            FAKE_SOCKET_STATE.with(|map| {
+                map.borrow_mut().insert(fd, FakeSocket::Listening);
+            });
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Sys·accept(fd: i64, addr: ptr, addrlen: ptr) -> i64
+    // Accept a connection. Returns new fd or negative errno.
+    define(interp, "Sys·accept", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·accept requires int fd")),
+        };
+
+        let is_listening = FAKE_SOCKET_STATE.with(|map| {
+            matches!(map.borrow().get(&fd), Some(FakeSocket::Listening))
+        });
+
+        if is_listening {
+            // Create a new "connected" socket for the accepted connection
+            let new_fd = FAKE_SOCKET_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+            FAKE_SOCKET_STATE.with(|map| {
+                map.borrow_mut().insert(new_fd, FakeSocket::Connected);
+            });
+            Ok(Value::Int(new_fd))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Sys·send(fd: i64, buf: ptr, len: i64, flags: i64) -> i64
+    // Send data on a connected socket. Returns bytes sent or negative errno.
+    define(interp, "Sys·send", Some(4), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·send requires int fd")),
+        };
+
+        let len = match &args[2] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·send requires int len")),
+        };
+
+        let is_connected = FAKE_SOCKET_STATE.with(|map| {
+            matches!(map.borrow().get(&fd), Some(FakeSocket::Connected))
+        });
+
+        if is_connected {
+            // In interpreter mode, pretend we sent the data
+            Ok(Value::Int(len))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Sys·recv(fd: i64, buf: ptr, len: i64, flags: i64) -> i64
+    // Receive data from a connected socket. Returns bytes received or negative errno.
+    define(interp, "Sys·recv", Some(4), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·recv requires int fd")),
+        };
+
+        let is_connected = FAKE_SOCKET_STATE.with(|map| {
+            matches!(map.borrow().get(&fd), Some(FakeSocket::Connected))
+        });
+
+        if is_connected {
+            // In interpreter mode, return 0 (no data available / EOF)
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Sys·shutdown(fd: i64, how: i64) -> i64
+    // Shut down part of a full-duplex connection. how: 0=SHUT_RD, 1=SHUT_WR, 2=SHUT_RDWR
+    define(interp, "Sys·shutdown", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·shutdown requires int fd")),
+        };
+
+        let exists = FAKE_SOCKET_STATE.with(|map| {
+            map.borrow().contains_key(&fd)
+        });
+
+        if exists {
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Sys·setsockopt(fd: i64, level: i64, optname: i64, optval: ptr, optlen: i64) -> i64
+    define(interp, "Sys·setsockopt", Some(5), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·setsockopt requires int fd")),
+        };
+
+        let exists = FAKE_SOCKET_STATE.with(|map| {
+            map.borrow().contains_key(&fd)
+        });
+
+        if exists {
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Sys·getsockopt(fd: i64, level: i64, optname: i64, optval: ptr, optlen: ptr) -> i64
+    define(interp, "Sys·getsockopt", Some(5), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·getsockopt requires int fd")),
+        };
+
+        let exists = FAKE_SOCKET_STATE.with(|map| {
+            map.borrow().contains_key(&fd)
+        });
+
+        if exists {
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-9)) // EBADF
+        }
+    });
+
+    // Socket constants
+    define(interp, "AF_UNIX", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "AF_INET", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "AF_INET6", Some(0), |_, _| Ok(Value::Int(10)));
+
+    define(interp, "SOCK_STREAM", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "SOCK_DGRAM", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "SOCK_RAW", Some(0), |_, _| Ok(Value::Int(3)));
+
+    define(interp, "SHUT_RD", Some(0), |_, _| Ok(Value::Int(0)));
+    define(interp, "SHUT_WR", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "SHUT_RDWR", Some(0), |_, _| Ok(Value::Int(2)));
+
+    define(interp, "SOL_SOCKET", Some(0), |_, _| Ok(Value::Int(1)));
+    define(interp, "SO_REUSEADDR", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "SO_KEEPALIVE", Some(0), |_, _| Ok(Value::Int(9)));
+
+    define(interp, "IPPROTO_TCP", Some(0), |_, _| Ok(Value::Int(6)));
+    define(interp, "IPPROTO_UDP", Some(0), |_, _| Ok(Value::Int(17)));
 }
 
 // Thread-local storage for fake mmap allocations
 thread_local! {
     static FAKE_MMAP_MAP: RefCell<HashMap<i64, Vec<u8>>> = RefCell::new(HashMap::new());
     static FAKE_FD_MAP: RefCell<HashMap<i64, std::sync::Arc<std::sync::Mutex<std::fs::File>>>> = RefCell::new(HashMap::new());
+    static FAKE_SOCKET_STATE: RefCell<HashMap<i64, FakeSocket>> = RefCell::new(HashMap::new());
 }
 static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
+static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1000);
+
+// Socket states for interpreter simulation
+#[derive(Clone, Debug)]
+enum FakeSocket {
+    Created,
+    Bound,
+    Listening,
+    Connected,
+    Udp,
+}
 
 #[cfg(test)]
 mod tests {

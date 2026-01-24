@@ -1488,6 +1488,115 @@ simd_alloc_aligned:
     b sigil_alloc
 
 // ============================================================================
+// Networking Syscalls
+// ============================================================================
+
+// Sys_socket(domain: i64, type: i64, protocol: i64) -> i64
+// domain: AF_INET=2, AF_INET6=10, AF_UNIX=1
+// type: SOCK_STREAM=1, SOCK_DGRAM=2
+.global Sys_socket
+Sys_socket:
+    mov x8, #198             // SYS_socket
+    svc #0
+    ret
+
+// Sys_connect(fd: i64, addr: *const sockaddr, addrlen: i64) -> i64
+.global Sys_connect
+Sys_connect:
+    mov x8, #203             // SYS_connect
+    svc #0
+    ret
+
+// Sys_accept(fd: i64, addr: *mut sockaddr, addrlen: *mut i64) -> i64
+.global Sys_accept
+Sys_accept:
+    mov x8, #202             // SYS_accept
+    svc #0
+    ret
+
+// Sys_sendto(fd: i64, buf: *const u8, len: i64, flags: i64, addr: *const sockaddr, addrlen: i64) -> i64
+.global Sys_sendto
+Sys_sendto:
+    mov x8, #206             // SYS_sendto
+    svc #0
+    ret
+
+// Sys_recvfrom(fd: i64, buf: *mut u8, len: i64, flags: i64, addr: *mut sockaddr, addrlen: *mut i64) -> i64
+.global Sys_recvfrom
+Sys_recvfrom:
+    mov x8, #207             // SYS_recvfrom
+    svc #0
+    ret
+
+// Sys_send(fd: i64, buf: *const u8, len: i64, flags: i64) -> i64
+.global Sys_send
+Sys_send:
+    mov x4, #0               // addr = NULL
+    mov x5, #0               // addrlen = 0
+    mov x8, #206             // SYS_sendto
+    svc #0
+    ret
+
+// Sys_recv(fd: i64, buf: *mut u8, len: i64, flags: i64) -> i64
+.global Sys_recv
+Sys_recv:
+    mov x4, #0               // addr = NULL
+    mov x5, #0               // addrlen = NULL
+    mov x8, #207             // SYS_recvfrom
+    svc #0
+    ret
+
+// Sys_bind(fd: i64, addr: *const sockaddr, addrlen: i64) -> i64
+.global Sys_bind
+Sys_bind:
+    mov x8, #200             // SYS_bind
+    svc #0
+    ret
+
+// Sys_listen(fd: i64, backlog: i64) -> i64
+.global Sys_listen
+Sys_listen:
+    mov x8, #201             // SYS_listen
+    svc #0
+    ret
+
+// Sys_shutdown(fd: i64, how: i64) -> i64
+// how: SHUT_RD=0, SHUT_WR=1, SHUT_RDWR=2
+.global Sys_shutdown
+Sys_shutdown:
+    mov x8, #210             // SYS_shutdown
+    svc #0
+    ret
+
+// Sys_setsockopt(fd: i64, level: i64, optname: i64, optval: *const void, optlen: i64) -> i64
+.global Sys_setsockopt
+Sys_setsockopt:
+    mov x8, #208             // SYS_setsockopt
+    svc #0
+    ret
+
+// Sys_getsockopt(fd: i64, level: i64, optname: i64, optval: *mut void, optlen: *mut i64) -> i64
+.global Sys_getsockopt
+Sys_getsockopt:
+    mov x8, #209             // SYS_getsockopt
+    svc #0
+    ret
+
+// Sys_getpeername(fd: i64, addr: *mut sockaddr, addrlen: *mut i64) -> i64
+.global Sys_getpeername
+Sys_getpeername:
+    mov x8, #205             // SYS_getpeername
+    svc #0
+    ret
+
+// Sys_getsockname(fd: i64, addr: *mut sockaddr, addrlen: *mut i64) -> i64
+.global Sys_getsockname
+Sys_getsockname:
+    mov x8, #204             // SYS_getsockname
+    svc #0
+    ret
+
+// ============================================================================
 // Note section for stack protection
 // ============================================================================
 .section .note.GNU-stack,"",@progbits
