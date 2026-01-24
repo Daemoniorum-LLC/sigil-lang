@@ -162,13 +162,14 @@ fn main() -> ExitCode {
         "compile" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--tls] [--cuda] [-O0|-O1|-O2|-O3|-Os]");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--tls] [--cuda] [--native-runtime] [-O0|-O1|-O2|-O3|-Os]");
                 return ExitCode::from(1);
             }
             // Parse flags
             let use_lto = args.iter().any(|a| a == "--lto");
             let use_tls = args.iter().any(|a| a == "--tls");
             let use_cuda = args.iter().any(|a| a == "--cuda");
+            let use_native_runtime = args.iter().any(|a| a == "--native-runtime" || a == "--native");
             // Parse optimization level
             let opt_level = if args.iter().any(|a| a == "-O0" || a == "-Onone") {
                 OptLevel::None
@@ -198,7 +199,7 @@ fn main() -> ExitCode {
                     .trim_end_matches(".sg")
                     .to_string()
             };
-            compile_file(&args[2], &output, use_lto, use_tls, use_cuda, opt_level)
+            compile_file(&args[2], &output, use_lto, use_tls, use_cuda, use_native_runtime, opt_level)
         }
         #[cfg(not(feature = "llvm"))]
         "compile" => {
@@ -1062,7 +1063,7 @@ fn llvm_file(path: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda: bool, opt_level: OptLevel) -> ExitCode {
+fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda: bool, use_native_runtime: bool, opt_level: OptLevel) -> ExitCode {
     use inkwell::context::Context;
     use std::path::Path;
     use std::process::Command;
@@ -1102,6 +1103,11 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
     if let Err(e) = compiler.write_object_file(Path::new(&obj_path)) {
         eprintln!("Failed to write object file: {}", e);
         return ExitCode::from(1);
+    }
+
+    // Native runtime mode: link with pure assembly runtime, no libc
+    if use_native_runtime {
+        return link_native_runtime(&obj_path, output);
     }
 
     // Find the runtime (static library or C source)
@@ -1190,6 +1196,87 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
             ExitCode::from(1)
         }
     }
+}
+
+/// Link with the native assembly runtime (no libc dependency)
+#[cfg(feature = "llvm")]
+fn link_native_runtime(obj_path: &str, output: &str) -> ExitCode {
+    use std::process::Command;
+
+    // Find the native runtime library
+    let native_lib = find_native_runtime();
+    if native_lib.is_none() {
+        eprintln!("Error: Could not find native runtime library");
+        eprintln!("Expected: libsigil_native.a");
+        eprintln!("Run './build_native.sh' in the runtime directory to build.");
+        let _ = std::fs::remove_file(obj_path);
+        return ExitCode::from(1);
+    }
+    let runtime = native_lib.unwrap();
+
+    println!("Compiling with native runtime (no libc) -> {}", output);
+
+    // Link with ld directly, no libc
+    let link_result = Command::new("ld")
+        .args([
+            obj_path,
+            &runtime,
+            "-o", output,
+            "-nostdlib",
+            "-static",
+        ])
+        .status();
+
+    // Clean up object file
+    let _ = std::fs::remove_file(obj_path);
+
+    match link_result {
+        Ok(status) if status.success() => {
+            println!("Successfully compiled to: {} (native runtime, no libc)", output);
+            ExitCode::SUCCESS
+        }
+        Ok(status) => {
+            eprintln!("Linker failed with status: {}", status);
+            ExitCode::from(1)
+        }
+        Err(e) => {
+            eprintln!("Failed to run linker 'ld': {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Find the native runtime library (libsigil_native.a)
+#[cfg(feature = "llvm")]
+fn find_native_runtime() -> Option<String> {
+    let candidates = [
+        "runtime/libsigil_native.a",
+        "../runtime/libsigil_native.a",
+        "parser/runtime/libsigil_native.a",
+        "../parser/runtime/libsigil_native.a",
+    ];
+
+    for candidate in candidates {
+        if std::path::Path::new(candidate).exists() {
+            return Some(candidate.to_string());
+        }
+    }
+
+    // Try relative to executable
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let lib_path = exe_dir.join("runtime/libsigil_native.a");
+            if lib_path.exists() {
+                return Some(lib_path.to_string_lossy().to_string());
+            }
+            let lib_path = exe_dir.join("../runtime/libsigil_native.a");
+            if lib_path.exists() {
+                return Some(lib_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(feature = "llvm")]
@@ -3124,7 +3211,7 @@ fn build_project() -> ExitCode {
         let output_path = target_dir.join(name);
         let output_str = output_path.to_string_lossy();
         println!("Compiling to native executable...");
-        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, false, OptLevel::Standard);
+        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, false, false, OptLevel::Standard);
     }
 
     #[cfg(not(feature = "llvm"))]

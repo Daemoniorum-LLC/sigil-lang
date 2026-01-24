@@ -75,7 +75,7 @@ _main:
     mov [rip + stderr_handle], rax
 
     # Call Sigil main function
-    call sigil_main
+    call main_sigil
 
     # Exit with return value
     mov ecx, eax

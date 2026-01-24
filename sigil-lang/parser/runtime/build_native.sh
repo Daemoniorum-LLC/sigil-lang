@@ -115,9 +115,9 @@ if [ "$1" = "test" ]; then
     # Create a minimal test program
     cat > /tmp/sigil_native_test.s << 'EOF'
 .intel_syntax noprefix
-.global sigil_main
+.global main_sigil
 
-sigil_main:
+main_sigil:
     push rbx
 
     # Test 1: Print a string

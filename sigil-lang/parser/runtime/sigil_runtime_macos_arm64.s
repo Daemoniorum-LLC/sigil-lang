@@ -40,7 +40,7 @@
 .align 4
 _start:
     // Call main function
-    bl _sigil_main
+    bl _main_sigil
 
     // Exit with return value
     mov x16, SYS_exit

@@ -16,7 +16,7 @@
 
 .intel_syntax noprefix
 .global _start
-.global sigil_main
+.global main_sigil
 
 # ============================================================================
 # Entry Point
@@ -29,7 +29,7 @@ _start:
     xor rbp, rbp
 
     # Call the Sigil main function
-    call sigil_main
+    call main_sigil
 
     # Exit with return value from main
     mov edi, eax
@@ -40,32 +40,32 @@ _start:
 # Print Functions
 # ============================================================================
 
-# sigil_println(str: *const u8)
-# Prints a null-terminated string followed by newline
+# sigil_println(str: *const String)
+# Prints a Sigil String (with [len][capacity][data] header) followed by newline
+# String layout: [len: i64][capacity: i64][data: u8[]]
 .global sigil_println
 sigil_println:
     push rbx
     push r12
-    mov r12, rdi             # Save string pointer
 
-    # Find string length
-    xor rcx, rcx
-.strlen_loop:
-    mov al, [r12 + rcx]
-    test al, al
-    jz .strlen_done
-    inc rcx
-    jmp .strlen_loop
-.strlen_done:
-    mov rbx, rcx             # Save length
+    # Handle NULL
+    test rdi, rdi
+    jz .println_newline_only
 
-    # Write string
+    # Get length from header (first 8 bytes)
+    mov rbx, [rdi]           # len = str[0]
+
+    # Get data pointer (skip 16-byte header)
+    lea r12, [rdi + 16]      # data = str + 16
+
+    # Write string data
     mov rax, 1               # SYS_write
     mov rdi, 1               # stdout
-    mov rsi, r12             # buffer
-    mov rdx, rbx             # length
+    mov rsi, r12             # buffer = data ptr
+    mov rdx, rbx             # length from header
     syscall
 
+.println_newline_only:
     # Write newline
     push 10                  # '\n' on stack
     mov rax, 1               # SYS_write

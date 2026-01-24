@@ -40,7 +40,7 @@
 .global _start
 _start:
     # Call main function
-    call _sigil_main
+    call _main_sigil
 
     # Exit with return value
     mov rdi, rax
