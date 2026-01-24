@@ -1290,6 +1290,480 @@ sigil_max:
     ret
 
 # ============================================================================
+# SIMD Math Functions (SSE/AVX)
+# ============================================================================
+# F32x4: 4-wide f32 vectors using SSE (128-bit XMM registers)
+# F32x8: 8-wide f32 vectors using AVX (256-bit YMM registers)
+# F64x2: 2-wide f64 vectors using SSE2
+# F64x4: 4-wide f64 vectors using AVX
+
+# ----------------------------------------------------------------------------
+# F32x4 Operations (SSE 128-bit)
+# All functions take pointers to aligned 16-byte memory regions
+# ----------------------------------------------------------------------------
+
+# simd_f32x4_add(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x4_add
+simd_f32x4_add:
+    movaps xmm0, [rsi]       # Load 4 floats from a
+    movaps xmm1, [rdx]       # Load 4 floats from b
+    addps xmm0, xmm1         # Add packed single-precision
+    movaps [rdi], xmm0       # Store result
+    ret
+
+# simd_f32x4_sub(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x4_sub
+simd_f32x4_sub:
+    movaps xmm0, [rsi]
+    movaps xmm1, [rdx]
+    subps xmm0, xmm1
+    movaps [rdi], xmm0
+    ret
+
+# simd_f32x4_mul(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x4_mul
+simd_f32x4_mul:
+    movaps xmm0, [rsi]
+    movaps xmm1, [rdx]
+    mulps xmm0, xmm1
+    movaps [rdi], xmm0
+    ret
+
+# simd_f32x4_div(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x4_div
+simd_f32x4_div:
+    movaps xmm0, [rsi]
+    movaps xmm1, [rdx]
+    divps xmm0, xmm1
+    movaps [rdi], xmm0
+    ret
+
+# simd_f32x4_min(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x4_min
+simd_f32x4_min:
+    movaps xmm0, [rsi]
+    movaps xmm1, [rdx]
+    minps xmm0, xmm1
+    movaps [rdi], xmm0
+    ret
+
+# simd_f32x4_max(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x4_max
+simd_f32x4_max:
+    movaps xmm0, [rsi]
+    movaps xmm1, [rdx]
+    maxps xmm0, xmm1
+    movaps [rdi], xmm0
+    ret
+
+# simd_f32x4_sqrt(dst: *mut f32, a: *const f32)
+.global simd_f32x4_sqrt
+simd_f32x4_sqrt:
+    movaps xmm0, [rsi]
+    sqrtps xmm0, xmm0
+    movaps [rdi], xmm0
+    ret
+
+# simd_f32x4_splat(dst: *mut f32, value: f32)
+# Note: value passed in xmm0 (float calling convention)
+.global simd_f32x4_splat
+simd_f32x4_splat:
+    shufps xmm0, xmm0, 0     # Broadcast to all lanes
+    movaps [rdi], xmm0
+    ret
+
+# simd_f32x4_reduce_add(a: *const f32) -> f32
+# Returns horizontal sum of 4 floats
+.global simd_f32x4_reduce_add
+simd_f32x4_reduce_add:
+    movaps xmm0, [rdi]
+    movhlps xmm1, xmm0       # xmm1 = [z, w, -, -]
+    addps xmm0, xmm1         # xmm0 = [x+z, y+w, -, -]
+    movaps xmm1, xmm0
+    shufps xmm1, xmm1, 1     # xmm1 = [y+w, -, -, -]
+    addss xmm0, xmm1         # xmm0[0] = x+y+z+w
+    ret                      # Return in xmm0
+
+# simd_f32x4_dot(a: *const f32, b: *const f32) -> f32
+# Dot product of two 4-vectors
+.global simd_f32x4_dot
+simd_f32x4_dot:
+    movaps xmm0, [rdi]
+    movaps xmm1, [rsi]
+    mulps xmm0, xmm1         # Element-wise multiply
+    # Horizontal sum
+    movhlps xmm1, xmm0
+    addps xmm0, xmm1
+    movaps xmm1, xmm0
+    shufps xmm1, xmm1, 1
+    addss xmm0, xmm1
+    ret
+
+# simd_f32x4_fmadd(dst: *mut f32, a: *const f32, b: *const f32, c: *const f32)
+# dst = a * b + c (fused multiply-add if FMA available, else mul+add)
+.global simd_f32x4_fmadd
+simd_f32x4_fmadd:
+    movaps xmm0, [rsi]       # a
+    movaps xmm1, [rdx]       # b
+    movaps xmm2, [rcx]       # c
+    mulps xmm0, xmm1         # a * b
+    addps xmm0, xmm2         # + c
+    movaps [rdi], xmm0
+    ret
+
+# ----------------------------------------------------------------------------
+# F64x2 Operations (SSE2 128-bit)
+# ----------------------------------------------------------------------------
+
+# simd_f64x2_add(dst: *mut f64, a: *const f64, b: *const f64)
+.global simd_f64x2_add
+simd_f64x2_add:
+    movapd xmm0, [rsi]
+    movapd xmm1, [rdx]
+    addpd xmm0, xmm1
+    movapd [rdi], xmm0
+    ret
+
+# simd_f64x2_sub(dst: *mut f64, a: *const f64, b: *const f64)
+.global simd_f64x2_sub
+simd_f64x2_sub:
+    movapd xmm0, [rsi]
+    movapd xmm1, [rdx]
+    subpd xmm0, xmm1
+    movapd [rdi], xmm0
+    ret
+
+# simd_f64x2_mul(dst: *mut f64, a: *const f64, b: *const f64)
+.global simd_f64x2_mul
+simd_f64x2_mul:
+    movapd xmm0, [rsi]
+    movapd xmm1, [rdx]
+    mulpd xmm0, xmm1
+    movapd [rdi], xmm0
+    ret
+
+# simd_f64x2_div(dst: *mut f64, a: *const f64, b: *const f64)
+.global simd_f64x2_div
+simd_f64x2_div:
+    movapd xmm0, [rsi]
+    movapd xmm1, [rdx]
+    divpd xmm0, xmm1
+    movapd [rdi], xmm0
+    ret
+
+# simd_f64x2_sqrt(dst: *mut f64, a: *const f64)
+.global simd_f64x2_sqrt
+simd_f64x2_sqrt:
+    movapd xmm0, [rsi]
+    sqrtpd xmm0, xmm0
+    movapd [rdi], xmm0
+    ret
+
+# simd_f64x2_reduce_add(a: *const f64) -> f64
+.global simd_f64x2_reduce_add
+simd_f64x2_reduce_add:
+    movapd xmm0, [rdi]
+    movhlps xmm1, xmm0       # Get high element
+    addsd xmm0, xmm1         # Add low + high
+    ret
+
+# simd_f64x2_dot(a: *const f64, b: *const f64) -> f64
+.global simd_f64x2_dot
+simd_f64x2_dot:
+    movapd xmm0, [rdi]
+    movapd xmm1, [rsi]
+    mulpd xmm0, xmm1
+    movhlps xmm1, xmm0
+    addsd xmm0, xmm1
+    ret
+
+# ----------------------------------------------------------------------------
+# F32x8 Operations (AVX 256-bit)
+# Requires AVX support - check with cpuid before using
+# ----------------------------------------------------------------------------
+
+# simd_f32x8_add(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x8_add
+simd_f32x8_add:
+    vmovaps ymm0, [rsi]
+    vmovaps ymm1, [rdx]
+    vaddps ymm0, ymm0, ymm1
+    vmovaps [rdi], ymm0
+    vzeroupper               # Avoid AVX-SSE transition penalty
+    ret
+
+# simd_f32x8_sub(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x8_sub
+simd_f32x8_sub:
+    vmovaps ymm0, [rsi]
+    vmovaps ymm1, [rdx]
+    vsubps ymm0, ymm0, ymm1
+    vmovaps [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f32x8_mul(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x8_mul
+simd_f32x8_mul:
+    vmovaps ymm0, [rsi]
+    vmovaps ymm1, [rdx]
+    vmulps ymm0, ymm0, ymm1
+    vmovaps [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f32x8_div(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x8_div
+simd_f32x8_div:
+    vmovaps ymm0, [rsi]
+    vmovaps ymm1, [rdx]
+    vdivps ymm0, ymm0, ymm1
+    vmovaps [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f32x8_min(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x8_min
+simd_f32x8_min:
+    vmovaps ymm0, [rsi]
+    vmovaps ymm1, [rdx]
+    vminps ymm0, ymm0, ymm1
+    vmovaps [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f32x8_max(dst: *mut f32, a: *const f32, b: *const f32)
+.global simd_f32x8_max
+simd_f32x8_max:
+    vmovaps ymm0, [rsi]
+    vmovaps ymm1, [rdx]
+    vmaxps ymm0, ymm0, ymm1
+    vmovaps [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f32x8_sqrt(dst: *mut f32, a: *const f32)
+.global simd_f32x8_sqrt
+simd_f32x8_sqrt:
+    vmovaps ymm0, [rsi]
+    vsqrtps ymm0, ymm0
+    vmovaps [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f32x8_splat(dst: *mut f32, value: f32)
+.global simd_f32x8_splat
+simd_f32x8_splat:
+    vbroadcastss ymm0, xmm0  # Broadcast scalar to all 8 lanes
+    vmovaps [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f32x8_reduce_add(a: *const f32) -> f32
+# Horizontal sum of 8 floats
+.global simd_f32x8_reduce_add
+simd_f32x8_reduce_add:
+    vmovaps ymm0, [rdi]
+    vextractf128 xmm1, ymm0, 1    # Get high 128 bits
+    vaddps xmm0, xmm0, xmm1       # Add high and low halves
+    vmovhlps xmm1, xmm0, xmm0     # Get [z, w]
+    vaddps xmm0, xmm0, xmm1       # [x+z, y+w]
+    vshufps xmm1, xmm0, xmm0, 1   # Get y+w
+    vaddss xmm0, xmm0, xmm1       # Final sum
+    vzeroupper
+    ret
+
+# simd_f32x8_dot(a: *const f32, b: *const f32) -> f32
+.global simd_f32x8_dot
+simd_f32x8_dot:
+    vmovaps ymm0, [rdi]
+    vmovaps ymm1, [rsi]
+    vmulps ymm0, ymm0, ymm1        # Element-wise multiply
+    vextractf128 xmm1, ymm0, 1
+    vaddps xmm0, xmm0, xmm1
+    vmovhlps xmm1, xmm0, xmm0
+    vaddps xmm0, xmm0, xmm1
+    vshufps xmm1, xmm0, xmm0, 1
+    vaddss xmm0, xmm0, xmm1
+    vzeroupper
+    ret
+
+# simd_f32x8_fmadd(dst: *mut f32, a: *const f32, b: *const f32, c: *const f32)
+# dst = a * b + c
+.global simd_f32x8_fmadd
+simd_f32x8_fmadd:
+    vmovaps ymm0, [rsi]       # a
+    vmovaps ymm1, [rdx]       # b
+    vmovaps ymm2, [rcx]       # c
+    vmulps ymm0, ymm0, ymm1   # a * b
+    vaddps ymm0, ymm0, ymm2   # + c
+    vmovaps [rdi], ymm0
+    vzeroupper
+    ret
+
+# ----------------------------------------------------------------------------
+# F64x4 Operations (AVX 256-bit)
+# ----------------------------------------------------------------------------
+
+# simd_f64x4_add(dst: *mut f64, a: *const f64, b: *const f64)
+.global simd_f64x4_add
+simd_f64x4_add:
+    vmovapd ymm0, [rsi]
+    vmovapd ymm1, [rdx]
+    vaddpd ymm0, ymm0, ymm1
+    vmovapd [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f64x4_sub(dst: *mut f64, a: *const f64, b: *const f64)
+.global simd_f64x4_sub
+simd_f64x4_sub:
+    vmovapd ymm0, [rsi]
+    vmovapd ymm1, [rdx]
+    vsubpd ymm0, ymm0, ymm1
+    vmovapd [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f64x4_mul(dst: *mut f64, a: *const f64, b: *const f64)
+.global simd_f64x4_mul
+simd_f64x4_mul:
+    vmovapd ymm0, [rsi]
+    vmovapd ymm1, [rdx]
+    vmulpd ymm0, ymm0, ymm1
+    vmovapd [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f64x4_div(dst: *mut f64, a: *const f64, b: *const f64)
+.global simd_f64x4_div
+simd_f64x4_div:
+    vmovapd ymm0, [rsi]
+    vmovapd ymm1, [rdx]
+    vdivpd ymm0, ymm0, ymm1
+    vmovapd [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f64x4_sqrt(dst: *mut f64, a: *const f64)
+.global simd_f64x4_sqrt
+simd_f64x4_sqrt:
+    vmovapd ymm0, [rsi]
+    vsqrtpd ymm0, ymm0
+    vmovapd [rdi], ymm0
+    vzeroupper
+    ret
+
+# simd_f64x4_reduce_add(a: *const f64) -> f64
+.global simd_f64x4_reduce_add
+simd_f64x4_reduce_add:
+    vmovapd ymm0, [rdi]
+    vextractf128 xmm1, ymm0, 1    # Get high 128 bits
+    vaddpd xmm0, xmm0, xmm1       # Add halves
+    vmovhlps xmm1, xmm0, xmm0     # Get high element
+    vaddsd xmm0, xmm0, xmm1       # Final sum
+    vzeroupper
+    ret
+
+# simd_f64x4_dot(a: *const f64, b: *const f64) -> f64
+.global simd_f64x4_dot
+simd_f64x4_dot:
+    vmovapd ymm0, [rdi]
+    vmovapd ymm1, [rsi]
+    vmulpd ymm0, ymm0, ymm1
+    vextractf128 xmm1, ymm0, 1
+    vaddpd xmm0, xmm0, xmm1
+    vmovhlps xmm1, xmm0, xmm0
+    vaddsd xmm0, xmm0, xmm1
+    vzeroupper
+    ret
+
+# ----------------------------------------------------------------------------
+# SIMD Utility Functions
+# ----------------------------------------------------------------------------
+
+# simd_check_avx() -> i64
+# Returns 1 if AVX is supported, 0 otherwise
+.global simd_check_avx
+simd_check_avx:
+    push rbx
+    mov eax, 1
+    cpuid
+    xor rax, rax
+    test ecx, 0x10000000     # Check AVX bit (bit 28 of ECX)
+    setnz al
+    pop rbx
+    ret
+
+# simd_check_avx2() -> i64
+# Returns 1 if AVX2 is supported, 0 otherwise
+.global simd_check_avx2
+simd_check_avx2:
+    push rbx
+    mov eax, 7
+    xor ecx, ecx
+    cpuid
+    xor rax, rax
+    test ebx, 0x20           # Check AVX2 bit (bit 5 of EBX)
+    setnz al
+    pop rbx
+    ret
+
+# simd_check_fma() -> i64
+# Returns 1 if FMA is supported, 0 otherwise
+.global simd_check_fma
+simd_check_fma:
+    push rbx
+    mov eax, 1
+    cpuid
+    xor rax, rax
+    test ecx, 0x1000         # Check FMA bit (bit 12 of ECX)
+    setnz al
+    pop rbx
+    ret
+
+# simd_alloc_aligned(size: i64, alignment: i64) -> *mut u8
+# Allocate memory with specified alignment
+# alignment must be power of 2
+.global simd_alloc_aligned
+simd_alloc_aligned:
+    # Store original size and alignment for later
+    push rbx
+    push r12
+    mov rbx, rdi             # size
+    mov r12, rsi             # alignment
+
+    # Allocate size + alignment + 8 (for storing original ptr)
+    add rdi, rsi
+    add rdi, 8
+    call sigil_alloc
+
+    test rax, rax
+    jz .aligned_alloc_fail
+
+    # Store original pointer at start
+    mov [rax], rax
+    add rax, 8
+
+    # Align the pointer
+    mov rcx, rax
+    add rcx, r12
+    sub rcx, 1
+    neg r12
+    and rcx, r12
+    mov rax, rcx
+
+    pop r12
+    pop rbx
+    ret
+
+.aligned_alloc_fail:
+    pop r12
+    pop rbx
+    xor rax, rax
+    ret
+
+# ============================================================================
 # Low-level Syscall Wrappers
 # ============================================================================
 
