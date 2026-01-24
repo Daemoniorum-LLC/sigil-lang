@@ -2769,9 +2769,41 @@ impl<'a> Parser<'a> {
                         Ok(TypeExpr::ConstExpr(Box::new(Expr::Array(vec![expr]))))
                     }
                 } else {
-                    // Slice: [Type]
                     self.expect(Token::RBracket)?;
-                    Ok(TypeExpr::Slice(Box::new(first)))
+                    // Check if first is a ConstExpr containing a literal number
+                    // If so, treat [3] as a single-element shape, not a slice
+                    match &first {
+                        TypeExpr::ConstExpr(expr) => {
+                            if matches!(expr.as_ref(), Expr::Literal(Literal::Int { .. })) {
+                                // Single-element shape: [3] means shape [3]
+                                let first_expr = *expr.clone();
+                                Ok(TypeExpr::ConstExpr(Box::new(Expr::Array(vec![first_expr]))))
+                            } else {
+                                // Slice: [Type]
+                                Ok(TypeExpr::Slice(Box::new(first)))
+                            }
+                        }
+                        // Also handle Path that looks like a number (from parse_type_or_lifetime)
+                        TypeExpr::Path(path) if path.segments.len() == 1 => {
+                            let name = &path.segments[0].ident.name;
+                            if name.chars().all(|c| c.is_ascii_digit()) {
+                                // Single numeric literal as path: [3] means shape [3]
+                                let first_expr = Expr::Literal(Literal::Int {
+                                    value: name.clone(),
+                                    base: NumBase::Decimal,
+                                    suffix: None,
+                                });
+                                Ok(TypeExpr::ConstExpr(Box::new(Expr::Array(vec![first_expr]))))
+                            } else {
+                                // Slice: [Type]
+                                Ok(TypeExpr::Slice(Box::new(first)))
+                            }
+                        }
+                        _ => {
+                            // Slice: [Type]
+                            Ok(TypeExpr::Slice(Box::new(first)))
+                        }
+                    }
                 }
             }
             Some(Token::LParen) => {
@@ -3502,6 +3534,9 @@ impl<'a> Parser<'a> {
             Some(Token::LBrace) => true,
             // Keyword tokens that are pipe methods
             Some(Token::Interfere) => true,  // |interfere is a pipe method
+            // Await/Async for async pipe chains
+            Some(Token::Await) => true,      // |await resolves futures
+            Some(Token::Async) => true,      // |async (alternative syntax)
             // Everything else is likely bitwise OR
             _ => false,
         }
@@ -5888,6 +5923,22 @@ impl<'a> Parser<'a> {
                 Some(Token::Question) => {
                     self.advance();
                     expr = Expr::Try(Box::new(expr));
+                }
+                // Evidentiality markers after pipe: |await~ marks result as Reported
+                Some(Token::Tilde) => {
+                    self.advance();
+                    expr = Expr::Evidential {
+                        expr: Box::new(expr),
+                        evidentiality: Evidentiality::Reported,
+                    };
+                }
+                Some(Token::Bang) => {
+                    // ! as evidentiality marker (Known) after pipe expression
+                    self.advance();
+                    expr = Expr::Evidential {
+                        expr: Box::new(expr),
+                        evidentiality: Evidentiality::Known,
+                    };
                 }
                 Some(Token::Dot) => {
                     self.advance();

@@ -2249,12 +2249,20 @@ impl TypeChecker {
         };
 
         let result_ty = match op {
-            // Arithmetic: numeric -> numeric
+            // Arithmetic: numeric -> numeric with coercion
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::Pow => {
-                // For bootstrapping: just try to unify, skip error if unification fails
-                // (type inference is incomplete so false positives are common with integer types)
-                let _ = self.unify(&left_inner, &right_inner);
-                left_inner
+                // Numeric coercion: if either operand is float, result is float
+                let is_left_float = matches!(&left_inner, Type::Float(_));
+                let is_right_float = matches!(&right_inner, Type::Float(_));
+
+                if is_left_float || is_right_float {
+                    // Result is the wider float type
+                    if is_left_float { left_inner } else { right_inner }
+                } else {
+                    // Both are ints (or unknown) - try to unify
+                    let _ = self.unify(&left_inner, &right_inner);
+                    left_inner
+                }
             }
 
             // Matrix multiplication: tensor @ tensor -> tensor

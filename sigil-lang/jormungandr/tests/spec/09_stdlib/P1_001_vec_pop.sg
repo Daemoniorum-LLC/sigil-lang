@@ -5,14 +5,18 @@
 fn main() {
     let mut v: Vec<i32> = vec![1, 2, 3];
 
-    // Pop returns the last element (3)
-    let last = v.pop();
-    println(last);
+    // Pop returns Option::Some(last element)
+    match v.pop() {
+        Option::Some(val) => println(val),
+        Option::None => println("empty"),
+    }
 
     // Length is now 2
     println(v.len());
 
     // Pop again
-    let second = v.pop();
-    println(second);
+    match v.pop() {
+        Option::Some(val) => println(val),
+        Option::None => println("empty"),
+    }
 }

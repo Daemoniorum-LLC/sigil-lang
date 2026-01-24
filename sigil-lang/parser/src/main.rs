@@ -424,7 +424,10 @@ fn run_file(path: &str, program_args: &[String], skip_typecheck: bool) -> ExitCo
     // Execute with full stdlib
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
-    
+
+    // Store source text for IR export line number calculation
+    interpreter.source_text = Some(source.clone());
+
     // Set source directory for module resolution
     if let Some(parent) = std::path::Path::new(path).parent() {
         let source_dir = parent.to_string_lossy().to_string();

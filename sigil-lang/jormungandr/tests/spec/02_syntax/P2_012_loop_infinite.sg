@@ -3,7 +3,7 @@
 // Priority: P2 - Enhancement
 
 fn main() {
-    let count: !i32 = 0;
+    let mut count = 0;
     loop {
         count = count + 1;
         if count >= 3 {

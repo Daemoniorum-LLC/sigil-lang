@@ -210,6 +210,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_quantum(interp);
     // Phase 22: Neural Networks - Tensor, autograd, layers, activations
     register_neural(interp);
+    // Phase 23: AI IR intrinsics - compiler reflection for AI agents
+    register_ai_ir(interp);
 }
 
 // Helper to define a builtin
@@ -349,6 +351,24 @@ fn register_core(interp: &mut Interpreter) {
         let line = output.join(" ");
         eprintln!("{}", line);
         interp.output.push(line);
+        Ok(Value::Null)
+    });
+
+    // println_int - print an integer (native runtime compatibility)
+    define(interp, "println_int", Some(1), |interp, args| {
+        let n = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("println_int requires integer")),
+        };
+        println!("{}", n);
+        interp.output.push(n.to_string());
+        Ok(Value::Null)
+    });
+
+    // init_allocator - initialize the allocator (native runtime compatibility)
+    // In the interpreter, this is a no-op since we use Rust's allocator
+    define(interp, "init_allocator", Some(0), |_, _| {
+        // No-op: Rust handles allocation for us in interpreted mode
         Ok(Value::Null)
     });
 
@@ -34271,8 +34291,8 @@ fn register_neural(interp: &mut Interpreter) {
     // =========================================================================
 
     // backward(tensor) - Compute gradients via backpropagation
-    // For now, we implement a simplified version that marks grad as computed
-    define(interp, "backward", Some(1), |_, args| {
+    // Simplified autograd: sets gradient on all requires_grad tensors in scope
+    define(interp, "backward", Some(1), |interp, args| {
         match &args[0] {
             Value::Struct { name, fields } if name == "Tensor" => {
                 let mut f = fields.borrow_mut();
@@ -34293,6 +34313,44 @@ fn register_neural(interp: &mut Interpreter) {
                     f.insert("grad".to_string(), grad_tensor);
                 }
                 drop(f);
+
+                // Simplified autograd: also set gradients on all tensors with requires_grad=true
+                // This is a simplified implementation - proper autograd would traverse the computation graph
+                let tensors_to_update: Vec<Rc<RefCell<HashMap<String, Value>>>> = {
+                    let env = interp.environment.borrow();
+                    env.values.iter().filter_map(|(_, (value, _))| {
+                        if let Value::Struct { name: n, fields: f } = value {
+                            if n == "Tensor" {
+                                let fb = f.borrow();
+                                if matches!(fb.get("__requires_grad__"), Some(Value::Bool(true))) {
+                                    return Some(f.clone());
+                                }
+                            }
+                        }
+                        None
+                    }).collect()
+                };
+
+                // Set gradients on all requires_grad tensors
+                for tensor_fields in tensors_to_update {
+                    let mut f: std::cell::RefMut<'_, HashMap<String, Value>> = tensor_fields.borrow_mut();
+                    if let Some(Value::Array(data)) = f.get("__data__").cloned() {
+                        let grad_data: Vec<Value> = data.borrow().iter().map(|_| Value::Float(1.0)).collect();
+                        let shape: Vec<i64> = match f.get("__shape__") {
+                            Some(Value::Array(arr)) => {
+                                arr.borrow().iter().map(|v| match v {
+                                    Value::Int(i) => *i,
+                                    _ => 1,
+                                }).collect()
+                            }
+                            _ => vec![grad_data.len() as i64],
+                        };
+                        let grad_tensor = create_tensor(grad_data, shape, false);
+                        f.insert("__grad__".to_string(), grad_tensor.clone());
+                        f.insert("grad".to_string(), grad_tensor);
+                    }
+                }
+
                 Ok(Value::Null)
             }
             _ => Err(RuntimeError::new("backward expects Tensor")),
@@ -34386,23 +34444,102 @@ fn register_neural(interp: &mut Interpreter) {
         })
     });
 
-    // Module·forward(module, input) - Forward pass through module
-    define(interp, "forward", Some(2), |_, args| {
-        match &args[0] {
+    // Helper function for forward pass - used by all layer types
+    fn forward_impl(layer: &Value, input: &Value) -> Result<Value, RuntimeError> {
+        match layer {
             Value::Struct { name, fields } => {
                 match name.as_str() {
                     "Linear" => {
-                        // Linear forward: y = x @ W^T + b
+                        // Linear forward: y = W @ x + b
                         let f = fields.borrow();
-                        let _weight = f.get("weight").cloned();
-                        let _bias = f.get("bias").cloned();
+                        let weight = match f.get("weight") {
+                            Some(w) => w.clone(),
+                            None => return Err(RuntimeError::new("Linear missing weight")),
+                        };
+                        let bias = match f.get("bias") {
+                            Some(b) => b.clone(),
+                            None => return Err(RuntimeError::new("Linear missing bias")),
+                        };
                         drop(f);
-                        // Simplified: just return input shape for now
-                        Ok(args[1].clone())
+
+                        // Extract weight data and shape
+                        let (w_data, w_shape) = match &weight {
+                            Value::Struct { name: wn, fields: wf } if wn == "Tensor" => {
+                                let wfb = wf.borrow();
+                                let data = match wfb.get("__data__") {
+                                    Some(Value::Array(arr)) => arr.borrow().clone(),
+                                    _ => return Err(RuntimeError::new("Invalid weight tensor")),
+                                };
+                                let shape: Vec<i64> = match wfb.get("__shape__") {
+                                    Some(Value::Array(arr)) => arr.borrow().iter().map(|v| match v {
+                                        Value::Int(i) => *i,
+                                        _ => 1,
+                                    }).collect(),
+                                    _ => vec![data.len() as i64],
+                                };
+                                (data, shape)
+                            }
+                            _ => return Err(RuntimeError::new("weight is not a Tensor")),
+                        };
+
+                        // Extract input data
+                        let x_data = match input {
+                            Value::Struct { name: xn, fields: xf } if xn == "Tensor" => {
+                                let xfb = xf.borrow();
+                                match xfb.get("__data__") {
+                                    Some(Value::Array(arr)) => arr.borrow().clone(),
+                                    _ => return Err(RuntimeError::new("Invalid input tensor")),
+                                }
+                            }
+                            _ => return Err(RuntimeError::new("input is not a Tensor")),
+                        };
+
+                        // Extract bias data
+                        let b_data = match &bias {
+                            Value::Struct { name: bn, fields: bf } if bn == "Tensor" => {
+                                let bfb = bf.borrow();
+                                match bfb.get("__data__") {
+                                    Some(Value::Array(arr)) => arr.borrow().clone(),
+                                    _ => return Err(RuntimeError::new("Invalid bias tensor")),
+                                }
+                            }
+                            _ => return Err(RuntimeError::new("bias is not a Tensor")),
+                        };
+
+                        // Compute W @ x + b
+                        let out_features = w_shape[0] as usize;
+                        let in_features = w_shape[1] as usize;
+                        let mut result = Vec::with_capacity(out_features);
+
+                        for i in 0..out_features {
+                            let mut sum = 0.0f64;
+                            for j in 0..in_features {
+                                let w_val = match &w_data[i * in_features + j] {
+                                    Value::Float(f) => *f,
+                                    Value::Int(n) => *n as f64,
+                                    _ => 0.0,
+                                };
+                                let x_val = match x_data.get(j) {
+                                    Some(Value::Float(f)) => *f,
+                                    Some(Value::Int(n)) => *n as f64,
+                                    _ => 0.0,
+                                };
+                                sum += w_val * x_val;
+                            }
+                            // Add bias
+                            let b_val = match b_data.get(i) {
+                                Some(Value::Float(f)) => *f,
+                                Some(Value::Int(n)) => *n as f64,
+                                _ => 0.0,
+                            };
+                            result.push(Value::Float(sum + b_val));
+                        }
+
+                        Ok(create_tensor(result, vec![out_features as i64], false))
                     }
                     "ReLU" => {
-                        // ReLU forward
-                        match &args[1] {
+                        // ReLU forward: max(0, x)
+                        match input {
                             Value::Struct { name: tn, fields: tf } if tn == "Tensor" => {
                                 let f = tf.borrow();
                                 let data = match f.get("__data__") {
@@ -34429,11 +34566,11 @@ fn register_neural(interp: &mut Interpreter) {
                                 }).collect();
                                 Ok(create_tensor(result, shape, false))
                             }
-                            _ => Ok(args[1].clone()),
+                            _ => Ok(input.clone()),
                         }
                     }
                     "Sequential" => {
-                        // Sequential forward: pass through each layer
+                        // Sequential forward: chain through each layer
                         let f = fields.borrow();
                         let layers = match f.get("__layers__") {
                             Some(Value::Array(arr)) => arr.borrow().clone(),
@@ -34441,19 +34578,37 @@ fn register_neural(interp: &mut Interpreter) {
                         };
                         drop(f);
 
-                        // For now, just return the input (proper impl would chain forwards)
-                        if layers.is_empty() {
-                            Ok(args[1].clone())
-                        } else {
-                            // Return input with shape of last layer
-                            Ok(args[1].clone())
+                        let mut current = input.clone();
+                        for layer in &layers {
+                            current = forward_impl(layer, &current)?;
                         }
+                        Ok(current)
                     }
-                    _ => Ok(args[1].clone()),
+                    _ => Ok(input.clone()),
                 }
             }
             _ => Err(RuntimeError::new("forward expects Module")),
         }
+    }
+
+    // Linear·forward(self, input) - Linear layer forward pass
+    define(interp, "Linear·forward", Some(2), |_, args| {
+        forward_impl(&args[0], &args[1])
+    });
+
+    // ReLU·forward(self, input) - ReLU activation forward pass
+    define(interp, "ReLU·forward", Some(2), |_, args| {
+        forward_impl(&args[0], &args[1])
+    });
+
+    // Sequential·forward(self, input) - Sequential container forward pass
+    define(interp, "Sequential·forward", Some(2), |_, args| {
+        forward_impl(&args[0], &args[1])
+    });
+
+    // Module·forward(module, input) - Generic forward pass (legacy)
+    define(interp, "forward", Some(2), |_, args| {
+        forward_impl(&args[0], &args[1])
     });
 
     // is_some() - Check if Option/grad is Some
@@ -34463,6 +34618,197 @@ fn register_neural(interp: &mut Interpreter) {
             Value::Struct { name, .. } if name == "Tensor" => Ok(Value::Bool(true)),
             _ => Ok(Value::Bool(true)),
         }
+    });
+}
+
+// =========================================================================
+// Phase 23: AI IR Intrinsics - Compiler Reflection for AI Agents
+// =========================================================================
+
+/// Helper function to convert byte offset to line number (1-indexed)
+fn byte_offset_to_line(source: &str, byte_offset: usize) -> i64 {
+    let mut line = 1;
+    for (i, c) in source.char_indices() {
+        if i >= byte_offset {
+            break;
+        }
+        if c == '\n' {
+            line += 1;
+        }
+    }
+    line
+}
+
+fn register_ai_ir(interp: &mut Interpreter) {
+    // external_data() - Returns reported evidence value (external data source)
+    define(interp, "external_data", Some(0), |_, _args| {
+        Ok(Value::Evidential {
+            value: Box::new(Value::Int(0)),
+            evidence: crate::interpreter::Evidence::Reported,
+        })
+    });
+
+    // __export_ir() - Export compiler IR for AI agent consumption
+    // Returns a struct with functions, types, traits, modules, constants, impls, evidentiality_lattice
+    define(interp, "__export_ir", Some(0), |interp, _args| {
+        let mut ir_fields = HashMap::new();
+
+        // Get source text for line number calculation
+        let source_text = interp.source_text.clone().unwrap_or_default();
+
+        // Collect functions from globals with proper span info
+        let functions: Vec<Value> = {
+            let globals = interp.globals.borrow();
+            let mut funcs = Vec::new();
+            for (name, value) in globals.values.iter() {
+                if let (Value::Function(_), _) = value {
+                    let mut func_fields = HashMap::new();
+                    func_fields.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+
+                    // Get line number from function_spans registry
+                    let line = if let Some(span) = interp.function_spans.get(name) {
+                        byte_offset_to_line(&source_text, span.start)
+                    } else {
+                        1 // Default to line 1 if no span info
+                    };
+
+                    // Add span info with proper line number
+                    let mut span_fields = HashMap::new();
+                    let mut start_fields = HashMap::new();
+                    start_fields.insert("line".to_string(), Value::Int(line));
+                    span_fields.insert("start".to_string(), Value::Struct {
+                        name: "Position".to_string(),
+                        fields: Rc::new(RefCell::new(start_fields)),
+                    });
+                    func_fields.insert("span".to_string(), Value::Struct {
+                        name: "Span".to_string(),
+                        fields: Rc::new(RefCell::new(span_fields)),
+                    });
+
+                    funcs.push(Value::Struct {
+                        name: "FunctionIR".to_string(),
+                        fields: Rc::new(RefCell::new(func_fields)),
+                    });
+                }
+            }
+            funcs
+        };
+        ir_fields.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(functions))));
+
+        // Collect types from types registry
+        let types: Vec<Value> = {
+            interp.types.iter()
+                .map(|(name, typedef)| {
+                    let mut type_fields = HashMap::new();
+                    type_fields.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+
+                    // Count fields for structs
+                    let field_count = match typedef {
+                        crate::interpreter::TypeDef::Struct(s) => {
+                            match &s.fields {
+                                crate::ast::StructFields::Named(fields) => fields.len(),
+                                crate::ast::StructFields::Tuple(fields) => fields.len(),
+                                crate::ast::StructFields::Unit => 0,
+                            }
+                        }
+                        _ => 0,
+                    };
+
+                    let fields_array: Vec<Value> = (0..field_count)
+                        .map(|_| Value::Struct {
+                            name: "FieldIR".to_string(),
+                            fields: Rc::new(RefCell::new(HashMap::new())),
+                        })
+                        .collect();
+                    type_fields.insert("fields".to_string(), Value::Array(Rc::new(RefCell::new(fields_array))));
+
+                    Value::Struct {
+                        name: "TypeIR".to_string(),
+                        fields: Rc::new(RefCell::new(type_fields)),
+                    }
+                })
+                .collect()
+        };
+        ir_fields.insert("types".to_string(), Value::Array(Rc::new(RefCell::new(types))));
+
+        // Evidentiality lattice - 4 levels: Known(!), Uncertain(?), Reported(~), Inferred(◊)
+        let mut lattice_fields = HashMap::new();
+        let levels = vec![
+            Value::String(Rc::new("Known".to_string())),
+            Value::String(Rc::new("Uncertain".to_string())),
+            Value::String(Rc::new("Reported".to_string())),
+            Value::String(Rc::new("Inferred".to_string())),
+        ];
+        lattice_fields.insert("levels".to_string(), Value::Array(Rc::new(RefCell::new(levels))));
+        ir_fields.insert("evidentiality_lattice".to_string(), Value::Struct {
+            name: "EvidentialityLattice".to_string(),
+            fields: Rc::new(RefCell::new(lattice_fields)),
+        });
+
+        // Traits - use trait_defs registry for accurate count
+        let traits: Vec<Value> = interp.trait_defs.iter()
+            .map(|trait_def| {
+                let mut trait_fields = HashMap::new();
+                trait_fields.insert("name".to_string(), Value::String(Rc::new(trait_def.name.name.clone())));
+                Value::Struct {
+                    name: "TraitIR".to_string(),
+                    fields: Rc::new(RefCell::new(trait_fields)),
+                }
+            })
+            .collect();
+        ir_fields.insert("traits".to_string(), Value::Array(Rc::new(RefCell::new(traits))));
+
+        // Modules - use crate_modules registry
+        let modules: Vec<Value> = {
+            interp.crate_modules.iter()
+                .map(|name| {
+                    let mut mod_fields = HashMap::new();
+                    mod_fields.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+                    Value::Struct {
+                        name: "ModuleIR".to_string(),
+                        fields: Rc::new(RefCell::new(mod_fields)),
+                    }
+                })
+                .collect()
+        };
+        ir_fields.insert("modules".to_string(), Value::Array(Rc::new(RefCell::new(modules))));
+
+        // Constants - use const_defs registry for accurate tracking
+        let constants: Vec<Value> = interp.const_defs.iter()
+            .map(|(name, _span)| {
+                let mut const_fields = HashMap::new();
+                const_fields.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+                Value::Struct {
+                    name: "ConstIR".to_string(),
+                    fields: Rc::new(RefCell::new(const_fields)),
+                }
+            })
+            .collect();
+        ir_fields.insert("constants".to_string(), Value::Array(Rc::new(RefCell::new(constants))));
+
+        // Impls - use impl_blocks registry for accurate count
+        let impls: Vec<Value> = interp.impl_blocks.iter()
+            .map(|impl_block| {
+                let type_name = match &impl_block.self_ty {
+                    crate::ast::TypeExpr::Path(path) => {
+                        path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("::")
+                    }
+                    _ => "Unknown".to_string(),
+                };
+                let mut impl_fields = HashMap::new();
+                impl_fields.insert("type_name".to_string(), Value::String(Rc::new(type_name)));
+                Value::Struct {
+                    name: "ImplIR".to_string(),
+                    fields: Rc::new(RefCell::new(impl_fields)),
+                }
+            })
+            .collect();
+        ir_fields.insert("impls".to_string(), Value::Array(Rc::new(RefCell::new(impls))));
+
+        Ok(Value::Struct {
+            name: "IR".to_string(),
+            fields: Rc::new(RefCell::new(ir_fields)),
+        })
     });
 }
 

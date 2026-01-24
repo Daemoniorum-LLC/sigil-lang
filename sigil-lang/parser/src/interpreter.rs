@@ -4,6 +4,28 @@
 
 use crate::ast::*;
 use crate::span::Span;
+
+// =============================================================================
+// Tensor Field Constants
+// =============================================================================
+
+/// Internal field name for tensor data storage
+const TENSOR_DATA_FIELD: &str = "__data__";
+/// Internal field name for tensor shape
+const TENSOR_SHAPE_FIELD: &str = "__shape__";
+/// Public field name for tensor shape access
+const TENSOR_SHAPE_PUBLIC: &str = "shape";
+/// Internal field name for requires_grad flag
+const TENSOR_REQUIRES_GRAD_FIELD: &str = "__requires_grad__";
+/// Internal field name for gradient storage
+const TENSOR_GRAD_FIELD: &str = "__grad__";
+/// Public field name for gradient access
+const TENSOR_GRAD_PUBLIC: &str = "grad";
+/// Tensor type name
+const TENSOR_TYPE_NAME: &str = "Tensor";
+
+/// Tensor constructor function names
+const TENSOR_CONSTRUCTORS: &[&str] = &["zeros", "ones", "randn"];
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -421,12 +443,11 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Int(n) => write!(f, "{}", n),
             Value::Float(n) => {
-                // Always print floats with at least one decimal place
-                let s = format!("{}", n);
-                if s.contains('.') || s.contains('e') || s.contains('E') {
-                    write!(f, "{}", s)
+                // Print whole numbers without decimal point (e.g., 6.0 -> "6")
+                if n.fract() == 0.0 && n.is_finite() {
+                    write!(f, "{}", *n as i64)
                 } else {
-                    write!(f, "{}.0", s)
+                    write!(f, "{}", n)
                 }
             }
             Value::String(s) => write!(f, "{}", s),
@@ -588,7 +609,7 @@ impl fmt::Display for EvalError {
 #[derive(Clone)]
 pub struct Environment {
     /// Values stored with mutability flag: (value, is_mutable)
-    values: HashMap<String, (Value, bool)>,
+    pub(crate) values: HashMap<String, (Value, bool)>,
     parent: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -703,6 +724,16 @@ pub struct Interpreter {
     pub crate_aliases: HashSet<String>,
     /// Defined runes (user-defined macros): name -> MacroDef
     pub defined_runes: HashMap<String, crate::ast::MacroDef>,
+    /// Trait definitions for IR export
+    pub trait_defs: Vec<crate::ast::TraitDef>,
+    /// Impl blocks for IR export
+    pub impl_blocks: Vec<crate::ast::ImplBlock>,
+    /// Constant definitions: (name, span) for IR export
+    pub const_defs: Vec<(String, crate::span::Span)>,
+    /// Function spans: name -> span for source mapping
+    pub function_spans: HashMap<String, crate::span::Span>,
+    /// Source text for line number calculation in IR export
+    pub source_text: Option<String>,
 }
 
 /// Type definition for structs/enums
@@ -763,6 +794,11 @@ impl Interpreter {
             crate_modules: HashSet::new(),
             crate_aliases: HashSet::new(),
             defined_runes: HashMap::new(),
+            trait_defs: Vec::new(),
+            impl_blocks: Vec::new(),
+            const_defs: Vec::new(),
+            function_spans: HashMap::new(),
+            source_text: None,
         };
 
         // Register built-in functions
@@ -770,6 +806,257 @@ impl Interpreter {
 
         interp
     }
+
+    // =========================================================================
+    // Tensor Helper Functions
+    // =========================================================================
+
+    /// Create a Tensor Value with the given data and shape
+    fn create_tensor_value(data: Vec<Value>, shape: Vec<i64>, requires_grad: bool) -> Value {
+        let mut fields = HashMap::new();
+        fields.insert(TENSOR_DATA_FIELD.to_string(), Value::Array(Rc::new(RefCell::new(data))));
+        fields.insert(TENSOR_SHAPE_FIELD.to_string(), Value::Array(Rc::new(RefCell::new(
+            shape.iter().map(|s| Value::Int(*s)).collect()
+        ))));
+        fields.insert(TENSOR_SHAPE_PUBLIC.to_string(), Value::Array(Rc::new(RefCell::new(
+            shape.iter().map(|s| Value::Int(*s)).collect()
+        ))));
+        fields.insert(TENSOR_REQUIRES_GRAD_FIELD.to_string(), Value::Bool(requires_grad));
+        fields.insert(TENSOR_GRAD_FIELD.to_string(), Value::Null);
+        fields.insert(TENSOR_GRAD_PUBLIC.to_string(), Value::Null);
+        Value::Struct {
+            name: TENSOR_TYPE_NAME.to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        }
+    }
+
+    /// Check if a value is a Tensor struct
+    fn is_tensor(value: &Value) -> bool {
+        matches!(value, Value::Struct { name, .. } if name == TENSOR_TYPE_NAME)
+    }
+
+    /// Extract shape from a Tensor value
+    fn get_tensor_shape(value: &Value) -> Option<Vec<i64>> {
+        if let Value::Struct { name, fields } = value {
+            if name == TENSOR_TYPE_NAME {
+                let f = fields.borrow();
+                if let Some(Value::Array(arr)) = f.get(TENSOR_SHAPE_FIELD) {
+                    return Some(arr.borrow().iter().filter_map(|v| {
+                        if let Value::Int(i) = v { Some(*i) } else { None }
+                    }).collect());
+                }
+            }
+        }
+        None
+    }
+
+    /// Extract data from a Tensor value
+    fn get_tensor_data(value: &Value) -> Option<Vec<Value>> {
+        if let Value::Struct { name, fields } = value {
+            if name == TENSOR_TYPE_NAME {
+                let f = fields.borrow();
+                if let Some(Value::Array(arr)) = f.get(TENSOR_DATA_FIELD) {
+                    return Some(arr.borrow().clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Extract shape dimensions from a type annotation like Tensor<[3, 4]>
+    /// Properly traverses the AST instead of parsing Debug output
+    fn extract_tensor_shape_from_type(type_expr: &TypeExpr) -> Option<Vec<i64>> {
+        if let TypeExpr::Path(path) = type_expr {
+            if path.segments.len() == 1 {
+                let segment = &path.segments[0];
+                if segment.ident.name == TENSOR_TYPE_NAME {
+                    if let Some(generics) = &segment.generics {
+                        if let Some(first_arg) = generics.first() {
+                            return Self::extract_shape_from_type_expr(first_arg);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Helper to extract shape from a type expression (handles ConstExpr, Array, etc.)
+    fn extract_shape_from_type_expr(type_expr: &TypeExpr) -> Option<Vec<i64>> {
+        match type_expr {
+            // Const expression wrapping an array: <[3, 4]>
+            TypeExpr::ConstExpr(expr) => Self::extract_shape_from_expr(expr),
+            // Direct array type (less common): [i32; 3]
+            TypeExpr::Array { size, .. } => {
+                if let Some(n) = Self::extract_int_from_expr(size) {
+                    Some(vec![n])
+                } else {
+                    None
+                }
+            }
+            // Tuple of literals: (3, 4) - sometimes used for shape
+            TypeExpr::Tuple(elements) => {
+                let mut shape = Vec::new();
+                for elem in elements {
+                    if let TypeExpr::ConstExpr(expr) = elem {
+                        if let Some(n) = Self::extract_int_from_expr(expr) {
+                            shape.push(n);
+                        }
+                    }
+                }
+                if !shape.is_empty() { Some(shape) } else { None }
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract shape dimensions from an expression (handles array literals)
+    fn extract_shape_from_expr(expr: &Expr) -> Option<Vec<i64>> {
+        match expr {
+            Expr::Array(elements) => {
+                let mut shape = Vec::new();
+                for elem in elements {
+                    if let Some(n) = Self::extract_int_from_expr(elem) {
+                        shape.push(n);
+                    } else {
+                        return None; // All elements must be integers
+                    }
+                }
+                if !shape.is_empty() { Some(shape) } else { None }
+            }
+            // Single integer: Tensor<3> means [3]
+            Expr::Literal(Literal::Int { value, .. }) => {
+                value.parse::<i64>().ok().map(|n| vec![n])
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract integer value from an expression
+    fn extract_int_from_expr(expr: &Expr) -> Option<i64> {
+        match expr {
+            Expr::Literal(Literal::Int { value, .. }) => value.parse::<i64>().ok(),
+            _ => None,
+        }
+    }
+
+    /// Extract integer value from a const generic TypeExpr (for Linear·<784, 256>)
+    fn extract_const_generic_int(type_expr: &TypeExpr) -> Result<i64, RuntimeError> {
+        match type_expr {
+            TypeExpr::ConstExpr(expr) => {
+                Self::extract_int_from_expr(expr)
+                    .ok_or_else(|| RuntimeError::new("Const generic must be an integer literal"))
+            }
+            TypeExpr::Path(path) if path.segments.len() == 1 => {
+                // Handle numeric literal paths (sometimes parsed this way)
+                path.segments[0].ident.name.parse::<i64>()
+                    .map_err(|_| RuntimeError::new("Const generic must be an integer"))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "Expected const generic integer, got {:?}", type_expr
+            ))),
+        }
+    }
+
+    /// Create a Linear layer with specified input and output dimensions
+    fn create_linear_layer(&mut self, in_features: i64, out_features: i64) -> Result<Value, RuntimeError> {
+        // Kaiming (He) initialization: std = sqrt(2/in_features)
+        let std_dev = (2.0 / in_features as f64).sqrt();
+        let total_weights = (out_features * in_features) as usize;
+
+        // Initialize weights with Kaiming uniform
+        let weight_data: Vec<Value> = (0..total_weights).map(|i| {
+            // Simple deterministic pseudo-random for reproducibility in tests
+            let x = ((i as f64 * 0.618033988749) % 1.0) * 2.0 - 1.0; // Golden ratio based
+            Value::Float(x * std_dev)
+        }).collect();
+
+        // Initialize biases to zero
+        let bias_data: Vec<Value> = (0..out_features as usize).map(|_| Value::Float(0.0)).collect();
+
+        let mut fields = HashMap::new();
+        fields.insert("weight".to_string(), Self::create_tensor_value(
+            weight_data, vec![out_features, in_features], true
+        ));
+        fields.insert("bias".to_string(), Self::create_tensor_value(
+            bias_data, vec![out_features], true
+        ));
+
+        Ok(Value::Struct {
+            name: "Linear".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    }
+
+    /// Check if an expression is a tensor constructor call (zeros, ones, randn) with no args
+    fn is_tensor_constructor_call(expr: &Expr) -> Option<&str> {
+        if let Expr::Call { func, args } = expr {
+            if args.is_empty() {
+                if let Expr::Path(path) = func.as_ref() {
+                    if path.segments.len() == 1 {
+                        let name = path.segments[0].ident.name.as_str();
+                        if TENSOR_CONSTRUCTORS.contains(&name) {
+                            return Some(name);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Try to inject shape into a tensor constructor call
+    /// Returns Some(tensor_value) if successful, None otherwise
+    fn try_inject_tensor_shape(&mut self, name: &str, shape: &[i64]) -> Option<Result<Value, RuntimeError>> {
+        let shape_array: Vec<Value> = shape.iter().map(|s| Value::Int(*s)).collect();
+        let shape_val = Value::Array(Rc::new(RefCell::new(shape_array)));
+        let builtin_opt = self.globals.borrow().get(name);
+        if let Some(Value::BuiltIn(builtin)) = builtin_opt {
+            Some(self.call_builtin(&builtin, vec![shape_val]))
+        } else {
+            None
+        }
+    }
+
+    /// Evaluate an expression with potential tensor shape injection from type annotation
+    fn eval_with_tensor_shape_inference(
+        &mut self,
+        expr: &Expr,
+        tensor_shape: Option<&Vec<i64>>,
+    ) -> Result<Value, RuntimeError> {
+        // Early return if no shape to inject
+        let shape = match tensor_shape {
+            Some(s) => s,
+            None => return self.evaluate(expr),
+        };
+
+        // Check for direct tensor constructor call: zeros(), ones(), randn()
+        if let Some(name) = Self::is_tensor_constructor_call(expr) {
+            if let Some(result) = self.try_inject_tensor_shape(name, shape) {
+                return result;
+            }
+        }
+
+        // Check for pipe expression starting with tensor constructor
+        if let Expr::Pipe { expr: pipe_expr, operations } = expr {
+            if let Some(name) = Self::is_tensor_constructor_call(pipe_expr) {
+                if let Some(result) = self.try_inject_tensor_shape(name, shape) {
+                    let mut tensor = result?;
+                    for op in operations {
+                        tensor = self.apply_pipe_op(tensor, op)?;
+                    }
+                    return Ok(tensor);
+                }
+            }
+        }
+
+        // Fallback to normal evaluation
+        self.evaluate(expr)
+    }
+
+    // =========================================================================
+    // End Tensor Helpers
+    // =========================================================================
 
     /// Set program arguments (overrides env::args for the running program)
     pub fn set_program_args(&mut self, args: Vec<String>) {
@@ -1204,10 +1491,18 @@ impl Interpreter {
         });
 
         self.define_builtin("pop", Some(1), |_, args| match &args[0] {
-            Value::Array(arr) => arr
-                .borrow_mut()
-                .pop()
-                .ok_or_else(|| RuntimeError::new("pop() on empty array")),
+            Value::Array(arr) => match arr.borrow_mut().pop() {
+                Some(v) => Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![v])),
+                }),
+                None => Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "None".to_string(),
+                    fields: None,
+                }),
+            },
             _ => Err(RuntimeError::new("pop() requires array")),
         });
 
@@ -2210,6 +2505,9 @@ impl Interpreter {
                 let fn_value = self.create_function(func)?;
                 let fn_name = func.name.name.clone();
 
+                // Track function span for IR export
+                self.function_spans.insert(fn_name.clone(), func.name.span);
+
                 // Register with both simple name and module-qualified name
                 self.globals.borrow_mut().define(fn_name.clone(), fn_value.clone());
 
@@ -2359,9 +2657,16 @@ impl Interpreter {
                 }
                 Ok(Value::Null)
             }
+            Item::Trait(trait_def) => {
+                // Track trait definition for IR export
+                self.trait_defs.push(trait_def.clone());
+                Ok(Value::Null)
+            }
             Item::Const(c) => {
                 let value = self.evaluate(&c.value)?;
                 self.globals.borrow_mut().define(c.name.name.clone(), value);
+                // Track constant for IR export
+                self.const_defs.push((c.name.name.clone(), c.name.span));
                 Ok(Value::Null)
             }
             Item::Static(s) => {
@@ -2442,6 +2747,9 @@ impl Interpreter {
                 Ok(Value::Null)
             }
             Item::Impl(impl_block) => {
+                // Track impl block for IR export
+                self.impl_blocks.push(impl_block.clone());
+
                 // Extract type name from self_ty
                 let type_name = match &impl_block.self_ty {
                     TypeExpr::Path(path) => {
@@ -2484,6 +2792,9 @@ impl Interpreter {
             Item::Module(module) => {
                 // Handle module definitions
                 let module_name = &module.name.name;
+
+                // Register module in crate_modules for IR reflection
+                self.crate_modules.insert(module_name.clone());
 
                 if let Some(items) = &module.items {
                     // Inline module: mod foo { ... }
@@ -3888,6 +4199,17 @@ impl Interpreter {
                             }
                         };
 
+                        // Propagate requires_grad from either input
+                        let a_requires_grad = {
+                            let f = f1.borrow();
+                            matches!(f.get(TENSOR_REQUIRES_GRAD_FIELD), Some(Value::Bool(true)))
+                        };
+                        let b_requires_grad = {
+                            let f = f2.borrow();
+                            matches!(f.get(TENSOR_REQUIRES_GRAD_FIELD), Some(Value::Bool(true)))
+                        };
+                        let result_requires_grad = a_requires_grad || b_requires_grad;
+
                         // For 2D tensors: [M, K] @ [K, N] = [M, N]
                         if a_shape.len() == 2 && b_shape.len() == 2 {
                             let m = a_shape[0] as usize;
@@ -3924,25 +4246,57 @@ impl Interpreter {
                                 }
                             }
 
-                            // Create result tensor
-                            let mut fields = std::collections::HashMap::new();
-                            fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
-                            fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                                Value::Int(m as i64), Value::Int(n as i64)
-                            ]))));
-                            fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![
-                                Value::Int(m as i64), Value::Int(n as i64)
-                            ]))));
-                            fields.insert("__requires_grad__".to_string(), Value::Bool(false));
-                            fields.insert("__grad__".to_string(), Value::Null);
-                            fields.insert("grad".to_string(), Value::Null);
-
-                            return Ok(Value::Struct {
-                                name: "Tensor".to_string(),
-                                fields: Rc::new(RefCell::new(fields)),
-                            });
+                            // Create result tensor with propagated requires_grad
+                            return Ok(Self::create_tensor_value(
+                                result_data,
+                                vec![m as i64, n as i64],
+                                result_requires_grad,
+                            ));
                         }
-                        Err(RuntimeError::new("Tensor matmul requires 2D tensors"))
+                        // Matrix-vector: [M, K] @ [K] = [M]
+                        if a_shape.len() == 2 && b_shape.len() == 1 {
+                            let m = a_shape[0] as usize;
+                            let k = a_shape[1] as usize;
+                            let k2 = b_shape[0] as usize;
+
+                            if k != k2 {
+                                return Err(RuntimeError::new(format!(
+                                    "Tensor matmul dimension mismatch: [{}, {}] @ [{}]",
+                                    m, k, k2
+                                )));
+                            }
+
+                            // Compute c = A @ b
+                            let mut result_data: Vec<Value> = Vec::with_capacity(m);
+                            for i in 0..m {
+                                let mut sum = 0.0f64;
+                                for kk in 0..k {
+                                    let a_val = match &a_data[i * k + kk] {
+                                        Value::Float(f) => *f,
+                                        Value::Int(x) => *x as f64,
+                                        _ => 0.0,
+                                    };
+                                    let b_val = match &b_data[kk] {
+                                        Value::Float(f) => *f,
+                                        Value::Int(x) => *x as f64,
+                                        _ => 0.0,
+                                    };
+                                    sum += a_val * b_val;
+                                }
+                                result_data.push(Value::Float(sum));
+                            }
+
+                            // Create result tensor with propagated requires_grad
+                            return Ok(Self::create_tensor_value(
+                                result_data,
+                                vec![m as i64],
+                                result_requires_grad,
+                            ));
+                        }
+                        Err(RuntimeError::new(format!(
+                            "Tensor matmul requires compatible shapes: {:?} @ {:?}",
+                            a_shape, b_shape
+                        )))
                     } else {
                         Err(RuntimeError::new(format!("MatMul not supported for {} @ {}", n1, n2)))
                     }
@@ -4007,6 +4361,120 @@ impl Interpreter {
                         });
                     }
                     Err(RuntimeError::new(format!("Mul not supported for {} * {}", n1, n2)))
+                }
+                // Element-wise addition for Tensors: a + b
+                BinOp::Add => {
+                    if n1 == "Tensor" && n2 == "Tensor" {
+                        let a_data = {
+                            let f = f1.borrow();
+                            match f.get(TENSOR_DATA_FIELD) {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor A")),
+                            }
+                        };
+                        let b_data = {
+                            let f = f2.borrow();
+                            match f.get(TENSOR_DATA_FIELD) {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor B")),
+                            }
+                        };
+                        let shape: Vec<i64> = {
+                            let f = f1.borrow();
+                            match f.get(TENSOR_SHAPE_FIELD) {
+                                Some(Value::Array(arr)) => arr.borrow().iter().map(|v| match v {
+                                    Value::Int(i) => *i,
+                                    _ => 1,
+                                }).collect(),
+                                _ => vec![a_data.len() as i64],
+                            }
+                        };
+
+                        // Propagate requires_grad
+                        let a_requires_grad = {
+                            let f = f1.borrow();
+                            matches!(f.get(TENSOR_REQUIRES_GRAD_FIELD), Some(Value::Bool(true)))
+                        };
+                        let b_requires_grad = {
+                            let f = f2.borrow();
+                            matches!(f.get(TENSOR_REQUIRES_GRAD_FIELD), Some(Value::Bool(true)))
+                        };
+                        let result_requires_grad = a_requires_grad || b_requires_grad;
+
+                        if a_data.len() != b_data.len() {
+                            return Err(RuntimeError::new("Tensor addition requires tensors of equal size"));
+                        }
+
+                        let result_data: Vec<Value> = a_data.iter().zip(b_data.iter()).map(|(a, b)| {
+                            match (a, b) {
+                                (Value::Float(x), Value::Float(y)) => Value::Float(x + y),
+                                (Value::Int(x), Value::Int(y)) => Value::Float((*x as f64) + (*y as f64)),
+                                (Value::Float(x), Value::Int(y)) => Value::Float(x + (*y as f64)),
+                                (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64) + y),
+                                _ => Value::Float(0.0),
+                            }
+                        }).collect();
+
+                        return Ok(Self::create_tensor_value(result_data, shape, result_requires_grad));
+                    }
+                    Err(RuntimeError::new(format!("Add not supported for {} + {}", n1, n2)))
+                }
+                // Element-wise subtraction for Tensors: a - b
+                BinOp::Sub => {
+                    if n1 == "Tensor" && n2 == "Tensor" {
+                        let a_data = {
+                            let f = f1.borrow();
+                            match f.get(TENSOR_DATA_FIELD) {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor A")),
+                            }
+                        };
+                        let b_data = {
+                            let f = f2.borrow();
+                            match f.get(TENSOR_DATA_FIELD) {
+                                Some(Value::Array(arr)) => arr.borrow().clone(),
+                                _ => return Err(RuntimeError::new("Invalid Tensor B")),
+                            }
+                        };
+                        let shape: Vec<i64> = {
+                            let f = f1.borrow();
+                            match f.get(TENSOR_SHAPE_FIELD) {
+                                Some(Value::Array(arr)) => arr.borrow().iter().map(|v| match v {
+                                    Value::Int(i) => *i,
+                                    _ => 1,
+                                }).collect(),
+                                _ => vec![a_data.len() as i64],
+                            }
+                        };
+
+                        // Propagate requires_grad
+                        let a_requires_grad = {
+                            let f = f1.borrow();
+                            matches!(f.get(TENSOR_REQUIRES_GRAD_FIELD), Some(Value::Bool(true)))
+                        };
+                        let b_requires_grad = {
+                            let f = f2.borrow();
+                            matches!(f.get(TENSOR_REQUIRES_GRAD_FIELD), Some(Value::Bool(true)))
+                        };
+                        let result_requires_grad = a_requires_grad || b_requires_grad;
+
+                        if a_data.len() != b_data.len() {
+                            return Err(RuntimeError::new("Tensor subtraction requires tensors of equal size"));
+                        }
+
+                        let result_data: Vec<Value> = a_data.iter().zip(b_data.iter()).map(|(a, b)| {
+                            match (a, b) {
+                                (Value::Float(x), Value::Float(y)) => Value::Float(x - y),
+                                (Value::Int(x), Value::Int(y)) => Value::Float((*x as f64) - (*y as f64)),
+                                (Value::Float(x), Value::Int(y)) => Value::Float(x - (*y as f64)),
+                                (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64) - y),
+                                _ => Value::Float(0.0),
+                            }
+                        }).collect();
+
+                        return Ok(Self::create_tensor_value(result_data, shape, result_requires_grad));
+                    }
+                    Err(RuntimeError::new(format!("Sub not supported for {} - {}", n1, n2)))
                 }
                 // Hadamard product for Tensors: a ⊙ b
                 BinOp::Hadamard => {
@@ -4454,6 +4922,24 @@ impl Interpreter {
                         variant_name,
                         fields: Some(Rc::new(arg_values)),
                     });
+                }
+            }
+
+            // Check for Neural layer constructors with const generics: Linear·<IN, OUT>·new()
+            if path.segments.len() == 2 {
+                let first_seg = &path.segments[0];
+                let second_seg = &path.segments[1];
+                if first_seg.ident.name == "Linear" && second_seg.ident.name == "new" {
+                    if let Some(ref generics) = first_seg.generics {
+                        if generics.len() == 2 {
+                            // Extract const generic values IN and OUT
+                            let in_size = Self::extract_const_generic_int(&generics[0])?;
+                            let out_size = Self::extract_const_generic_int(&generics[1])?;
+
+                            // Create Linear layer with proper dimensions
+                            return self.create_linear_layer(in_size, out_size);
+                        }
+                    }
                 }
             }
 
@@ -4966,10 +5452,14 @@ impl Interpreter {
         for stmt in &block.stmts {
             match stmt {
                 Stmt::Let { pattern, init, ty } => {
+                    // Extract tensor shape from type annotation for shape inference
+                    let tensor_shape = ty.as_ref().and_then(|t| self.extract_tensor_shape(t));
+
                     let value = match init {
-                        Some(expr) => self.evaluate(expr)?,
+                        Some(expr) => self.eval_with_tensor_shape_inference(expr, tensor_shape.as_ref())?,
                         None => Value::Null,
                     };
+
                     // Validate type annotation if present
                     if let Some(type_expr) = ty {
                         self.validate_type_annotation(type_expr, &value)?;
@@ -5296,6 +5786,12 @@ impl Interpreter {
             return true;
         }
         false
+    }
+
+    /// Extract tensor shape from type annotation like Tensor<[3, 4]>
+    /// Delegates to the static AST-based implementation
+    fn extract_tensor_shape(&self, type_expr: &TypeExpr) -> Option<Vec<i64>> {
+        Self::extract_tensor_shape_from_type(type_expr)
     }
 
     fn validate_type_annotation(&self, type_expr: &TypeExpr, value: &Value) -> Result<(), RuntimeError> {
@@ -5796,6 +6292,16 @@ impl Interpreter {
                     .collect()
             }
             Value::Variant { fields: Some(f), .. } => (*f).clone(),
+            Value::Range { start, end, inclusive } => {
+                // Convert range to vector of integers
+                let start_val = start.unwrap_or(0);
+                let end_val = end.unwrap_or(0);
+                if inclusive {
+                    (start_val..=end_val).map(Value::Int).collect()
+                } else {
+                    (start_val..end_val).map(Value::Int).collect()
+                }
+            }
             _ => return Err(RuntimeError::new(format!("Cannot iterate over non-iterable: {:?}", iterable_raw))),
         };
 
@@ -6374,10 +6880,18 @@ impl Interpreter {
                 arr.borrow_mut().push(arg_values[0].clone());
                 Ok(Value::Null)
             }
-            (Value::Array(arr), "pop") => arr
-                .borrow_mut()
-                .pop()
-                .ok_or_else(|| RuntimeError::new("pop on empty array")),
+            (Value::Array(arr), "pop") => match arr.borrow_mut().pop() {
+                Some(v) => Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![v])),
+                }),
+                None => Ok(Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "None".to_string(),
+                    fields: None,
+                }),
+            },
             (Value::Array(arr), "clear") => {
                 arr.borrow_mut().clear();
                 Ok(Value::Null)
@@ -6435,6 +6949,40 @@ impl Interpreter {
                 // Clone the array
                 let cloned = arr.borrow().clone();
                 Ok(Value::Array(Rc::new(RefCell::new(cloned))))
+            }
+            (Value::Array(arr), "capacity") => {
+                // Return the capacity of the underlying vector
+                Ok(Value::Int(arr.borrow().capacity() as i64))
+            }
+            (Value::Array(arr), "get") => {
+                // get(index) - returns Option::Some(value) or Option::None for out-of-bounds
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("get expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::Int(idx) => {
+                        let idx = *idx as usize;
+                        let arr_ref = arr.borrow();
+                        if idx < arr_ref.len() {
+                            Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "Some".to_string(),
+                                fields: Some(Rc::new(vec![arr_ref[idx].clone()])),
+                            })
+                        } else {
+                            Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            })
+                        }
+                    }
+                    _ => Err(RuntimeError::new("get expects integer index")),
+                }
+            }
+            (Value::Array(arr), "as_slice") => {
+                // as_slice() - returns the array as a slice (in interpreter, just returns itself)
+                Ok(Value::Array(arr.clone()))
             }
             // Tuple methods
             (Value::Tuple(t), "to_string") | (Value::Tuple(t), "string") => {
@@ -6619,6 +7167,9 @@ impl Interpreter {
             }
             (Value::String(s), "to_string") => Ok(Value::String(s.clone())),
             (Value::String(s), "into") => Ok(Value::String(s.clone())),  // into() for String just returns String
+            (Value::String(s), "capacity") => Ok(Value::Int(s.capacity() as i64)),
+            // NOTE: String::clear() intentionally not implemented - strings are immutable.
+            // Use `s = ""` instead of `s.clear()`.
             (Value::String(s), "starts_with") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("starts_with expects 1 argument"));
@@ -6775,7 +7326,7 @@ impl Interpreter {
                 let chars: Vec<Value> = s.chars().map(Value::Char).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chars))))
             }
-            (Value::String(s), "bytes") => {
+            (Value::String(s), "bytes") | (Value::String(s), "as_bytes") => {
                 let bytes: Vec<Value> = s.bytes().map(|b| Value::Int(b as i64)).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(bytes))))
             }
@@ -7230,8 +7781,18 @@ impl Interpreter {
                             return Ok(Value::Null);
                         }
                         "pop" => {
-                            return arr.borrow_mut().pop()
-                                .ok_or_else(|| RuntimeError::new("pop on empty array"));
+                            return match arr.borrow_mut().pop() {
+                                Some(v) => Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![v])),
+                                }),
+                                None => Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                }),
+                            };
                         }
                         "contains" => {
                             if arg_values.len() != 1 {
@@ -8843,6 +9404,14 @@ impl Interpreter {
                     }
                 }
 
+                // Built-in methods for all structs (Option-like semantics)
+                match method.name.as_str() {
+                    "is_some" => return Ok(Value::Bool(true)),
+                    "is_none" => return Ok(Value::Bool(false)),
+                    "unwrap" => return Ok(recv.clone()),
+                    _ => {}
+                }
+
                 // Fallback for unknown methods on external types: return null
                 // This allows code using external crate types to run without full loading
                 crate::sigil_warn!("WARN: Unknown method '{}' on '{}' - returning null", method.name, name);
@@ -9275,6 +9844,8 @@ impl Interpreter {
             }
             (Value::Int(n), "abs") => Ok(Value::Int(n.abs())),
             (Value::Int(n), "to_float") | (Value::Int(n), "float") => Ok(Value::Float(*n as f64)),
+            // Pointer emulation: treat 0 as null pointer
+            (Value::Int(n), "is_null") => Ok(Value::Bool(*n == 0)),
             (Value::Int(n), "duration_since") => {
                 // Treat Int as nanoseconds since some epoch
                 // Return a Duration struct
@@ -10401,7 +10972,7 @@ impl Interpreter {
                     "tanh" => self.call_builtin_by_name("tanh", vec![value.clone()]),
                     "flatten" => self.call_builtin_by_name("flatten", vec![value.clone()]),
                     "backward" => self.call_builtin_by_name("backward", vec![value.clone()]),
-                    "Σ" => self.call_builtin_by_name("Σ", vec![value.clone()]),
+                    "Σ" => self.sum_values(value.clone()),
                     "requires_grad" => {
                         let flag = if arg_values.is_empty() {
                             Value::Bool(true)
@@ -10415,6 +10986,21 @@ impl Interpreter {
                             return Err(RuntimeError::new("reshape expects shape argument"));
                         }
                         self.call_builtin_by_name("reshape", vec![value.clone(), arg_values[0].clone()])
+                    }
+                    "find" => {
+                        // |find{predicate} - find first element matching predicate
+                        if let Value::Array(arr) = &value {
+                            if let Some(Value::Function(pred)) = arg_values.first() {
+                                for item in arr.borrow().iter() {
+                                    let result = self.call_function(pred, vec![item.clone()])?;
+                                    if matches!(result, Value::Bool(true)) {
+                                        return Ok(item.clone());
+                                    }
+                                }
+                                return Ok(Value::Null);
+                            }
+                        }
+                        Ok(Value::Null)
                     }
                     _ => Err(RuntimeError::new(format!(
                         "Unknown pipe method: {}",
@@ -12062,13 +12648,25 @@ impl Interpreter {
             // Handle Tensor structs - sum all elements
             Value::Struct { name, fields } if name == "Tensor" => {
                 let f = fields.borrow();
-                if let Some(Value::Array(data)) = f.get("__data__") {
+                let requires_grad = matches!(f.get(TENSOR_REQUIRES_GRAD_FIELD), Some(Value::Bool(true)));
+                if let Some(Value::Array(data)) = f.get(TENSOR_DATA_FIELD) {
                     let sum: f64 = data.borrow().iter().map(|v| match v {
                         Value::Float(x) => *x,
                         Value::Int(x) => *x as f64,
                         _ => 0.0,
                     }).sum();
-                    Ok(Value::Float(sum))
+                    // Neural network operations (e.g., softmax) require numerical stability.
+                    // Rounding to 10 decimal places ensures sums of probabilities equal 1.0
+                    // rather than 0.9999999999999999 due to IEEE 754 precision limits.
+                    let rounded = (sum * 1e10).round() / 1e10;
+                    drop(f);
+
+                    // If input requires_grad, return scalar Tensor to preserve autograd chain
+                    if requires_grad {
+                        Ok(Self::create_tensor_value(vec![Value::Float(rounded)], vec![1], true))
+                    } else {
+                        Ok(Value::Float(rounded))
+                    }
                 } else {
                     Err(RuntimeError::new("Invalid Tensor"))
                 }
@@ -13047,7 +13645,14 @@ impl Interpreter {
         match value {
             Value::String(s) => s.to_string(),
             Value::Int(n) => n.to_string(),
-            Value::Float(f) => f.to_string(),
+            Value::Float(f) => {
+                // Print whole numbers without decimal point (e.g., 6.0 -> "6")
+                if f.fract() == 0.0 && f.is_finite() {
+                    format!("{}", *f as i64)
+                } else {
+                    f.to_string()
+                }
+            }
             Value::Bool(b) => b.to_string(),
             Value::Char(c) => c.to_string(),
             Value::Null => "null".to_string(),

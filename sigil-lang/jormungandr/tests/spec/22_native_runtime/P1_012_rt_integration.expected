@@ -1,5 +1,6 @@
 === Phase A: Syscalls ===
 Direct syscall write
+
 syscall_write: PASS
 syscall_mmap: PASS
 syscall_clock: PASS
