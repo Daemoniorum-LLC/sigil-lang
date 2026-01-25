@@ -1,4 +1,4 @@
-//! Basilica - Evidentiality-Native Web Framework for Sigil
+//! Basilica - Evidentiality-Native Web Framework ∀ Sigil
 //!
 //! Basilica is a web framework designed from first principles to embrace
 //! Sigil's unique features: evidentiality, daemon services, covenant
@@ -13,31 +13,31 @@
 //!
 //! 2. **Services Are Daemons, Not Beans**
 //!    - Long-lived processes with memory (Engram)
-//!    - Heartbeat cycles for proactive work
+//!    - Heartbeat cycles ∀ proactive work
 //!    - Learning from experience
 //!
 //! 3. **Human-in-the-Loop by Design**
-//!    - Covenant boundaries enforced in middleware
-//!    - Handoffs for approval when needed
+//!    - Covenant boundaries enforced ∈ middleware
+//!    - Handoffs ∀ approval when needed
 //!    - Trust tracking built in
 //!
 //! 4. **Explainable by Default**
 //!    - Oracle traces every decision
-//!    - Confidence in responses
+//!    - Confidence ∈ responses
 //!    - Counterfactual reasoning available
 //!
 //! # Example
 //!
 //! ```sigil
-//! use basilica::prelude::*;
+//! invoke basilica·prelude·*;
 //!
 //! #[route(GET, "/")]
-//! fn hello() -> Response<String!> {
-//!     Response::ok("Hello, Basilica!"!)
+//! λ hello() -> Response<String!> {
+//!     Response·ok("Hello, Basilica!"!)
 //! }
 //!
-//! fn main() {
-//!     Nave::new()
+//! λ main() {
+//!     Nave·new()
 //!         .route(routes![hello])
 //!         .listen("0.0.0.0:8080")
 //!         .run();
@@ -45,60 +45,60 @@
 //! ```
 
 // Re-export shared types
-pub use shared::{
+☉ invoke shared·{
     Timestamp, Duration, Value, Confidence, TrustLevel,
     Priority, AgentId, HumanId, Metadata, AgentError, AgentResult,
     BoundedDeque,
 };
 
 // Core modules
-pub mod evidence;
-pub mod request;
-pub mod response;
-pub mod route;
-pub mod middleware;
-pub mod validation;
-pub mod context;
-pub mod nave;
-pub mod service;
-pub mod repository;
-pub mod query;
-pub mod error;
+☉ scroll evidence;
+☉ scroll request;
+☉ scroll response;
+☉ scroll route;
+☉ scroll middleware;
+☉ scroll validation;
+☉ scroll context;
+☉ scroll nave;
+☉ scroll service;
+☉ scroll repository;
+☉ scroll query;
+☉ scroll error;
 
 // Real-time streaming
-pub mod stream;
+☉ scroll stream;
 
 // Security middleware
-pub mod cors;
-pub mod auth;
+☉ scroll cors;
+☉ scroll auth;
 
-// Re-exports for convenience
-pub use evidence::*;
-pub use request::*;
-pub use response::*;
-pub use route::*;
-pub use middleware::*;
-pub use validation::*;
-pub use context::*;
-pub use nave::*;
-pub use service::*;
-pub use repository::*;
-pub use query::*;
-pub use error::*;
-pub use stream::*;
-pub use cors::*;
-pub use auth::*;
+// Re-exports ∀ convenience
+☉ invoke evidence·*;
+☉ invoke request·*;
+☉ invoke response·*;
+☉ invoke route·*;
+☉ invoke middleware·*;
+☉ invoke validation·*;
+☉ invoke context·*;
+☉ invoke nave·*;
+☉ invoke service·*;
+☉ invoke repository·*;
+☉ invoke query·*;
+☉ invoke error·*;
+☉ invoke stream·*;
+☉ invoke cors·*;
+☉ invoke auth·*;
 
 // External integrations
-pub use daemon::{Daemon, DaemonConfig, Goal, GoalStack};
-pub use engram::{Engram, Query as MemoryQuery, Event};
-pub use covenant::{Covenant, Pact, Mode, Boundary, BoundaryCheck, HandoffType};
-pub use oracle::{Oracle, Explanation, ExplanationLevel, ReasoningStep};
-pub use anima::{Anima, Expression, Resonance};
+☉ invoke daemon·{Daemon, DaemonConfig, Goal, GoalStack};
+☉ invoke engram·{Engram, Query as MemoryQuery, Event};
+☉ invoke covenant·{Covenant, Pact, Mode, Boundary, BoundaryCheck, HandoffType};
+☉ invoke oracle·{Oracle, Explanation, ExplanationLevel, ReasoningStep};
+☉ invoke anima·{Anima, Expression, Resonance};
 
-/// Prelude module for common imports
-pub mod prelude {
-    pub use super::{
+/// Prelude module ∀ common imports
+☉ scroll prelude {
+    ☉ invoke super·{
         // Core types
         Nave, Route, Request, Response, Context,
         Middleware, MiddlewareResult, ValidationGate,
@@ -145,8 +145,8 @@ pub mod prelude {
     };
 
     // Macro re-exports
-    pub use super::routes;
-    pub use super::route;
+    ☉ invoke super·routes;
+    ☉ invoke super·route;
 }
 
 /// Route collection macro

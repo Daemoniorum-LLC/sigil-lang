@@ -1,20 +1,20 @@
 //! Oracle Reasoning Tests - 20 tests
 
-struct StepId {
+Σ StepId {
     value: !u64,
 }
 
-impl StepId {
-    pub fn new(value: !u64) -> Self {
+⊢ StepId {
+    ☉ λ new(value: !u64) -> Self {
         StepId { value }
     }
 
-    pub fn to_short(&self) -> !u64 {
+    ☉ λ to_short(&self) -> !u64 {
         self.value % 256
     }
 }
 
-enum StepType {
+ᛈ StepType {
     Observation,
     Retrieval,
     Inference,
@@ -22,7 +22,7 @@ enum StepType {
     Decision,
 }
 
-struct ReasoningStep {
+Σ ReasoningStep {
     id: StepId,
     step_type: StepType,
     description_len: !usize,
@@ -30,132 +30,132 @@ struct ReasoningStep {
     confidence: !f32,
 }
 
-impl ReasoningStep {
-    pub fn observation(id: !u64, desc_len: !usize) -> Self {
+⊢ ReasoningStep {
+    ☉ λ observation(id: !u64, desc_len: !usize) -> Self {
         ReasoningStep {
-            id: StepId::new(id),
-            step_type: StepType::Observation,
+            id: StepId·new(id),
+            step_type: StepType·Observation,
             description_len: desc_len,
             reasoning_len: 0,
             confidence: 0.95,
         }
     }
 
-    pub fn inference(id: !u64, desc_len: !usize, reasoning_len: !usize) -> Self {
+    ☉ λ inference(id: !u64, desc_len: !usize, reasoning_len: !usize) -> Self {
         ReasoningStep {
-            id: StepId::new(id),
-            step_type: StepType::Inference,
+            id: StepId·new(id),
+            step_type: StepType·Inference,
             description_len: desc_len,
             reasoning_len,
             confidence: 0.7,
         }
     }
 
-    pub fn decision(id: !u64, desc_len: !usize, confidence: !f32) -> Self {
+    ☉ λ decision(id: !u64, desc_len: !usize, confidence: !f32) -> Self {
         ReasoningStep {
-            id: StepId::new(id),
-            step_type: StepType::Decision,
+            id: StepId·new(id),
+            step_type: StepType·Decision,
             description_len: desc_len,
             reasoning_len: 0,
             confidence,
         }
     }
 
-    pub fn with_confidence(mut self, confidence: !f32) -> Self {
+    ☉ λ with_confidence(Δ self, confidence: !f32) -> Self {
         self.confidence = confidence;
         self
     }
 }
 
-struct ReasoningChain {
+Σ ReasoningChain {
     step_count: !usize,
     total_confidence: !f32,
 }
 
-impl ReasoningChain {
-    pub fn new() -> Self {
+⊢ ReasoningChain {
+    ☉ λ new() -> Self {
         ReasoningChain { step_count: 0, total_confidence: 0.0 }
     }
 
-    pub fn add_step(&mut self, confidence: !f32) {
+    ☉ λ add_step(&Δ self, confidence: !f32) {
         self.step_count = self.step_count + 1;
         self.total_confidence = self.total_confidence + confidence;
     }
 
-    pub fn is_empty(&self) -> !bool {
+    ☉ λ is_empty(&self) -> !bool {
         self.step_count == 0
     }
 
-    pub fn average_confidence(&self) -> !f32 {
-        if self.step_count == 0 {
+    ☉ λ average_confidence(&self) -> !f32 {
+        ⎇ self.step_count == 0 {
             0.0
-        } else {
+        } ⎉ {
             self.total_confidence / self.step_count as !f32
         }
     }
 
-    pub fn is_well_supported(&self) -> !bool {
+    ☉ λ is_well_supported(&self) -> !bool {
         self.step_count >= 2 && self.average_confidence() >= 0.7
     }
 }
 
-struct Factor {
+Σ Factor {
     weight: !f32,
     is_positive: !bool,
 }
 
-impl Factor {
-    pub fn positive(weight: !f32) -> Self {
+⊢ Factor {
+    ☉ λ positive(weight: !f32) -> Self {
         Factor { weight, is_positive: true }
     }
 
-    pub fn negative(weight: !f32) -> Self {
+    ☉ λ negative(weight: !f32) -> Self {
         Factor { weight, is_positive: false }
     }
 
-    pub fn contribution(&self) -> !f32 {
-        if self.is_positive {
+    ☉ λ contribution(&self) -> !f32 {
+        ⎇ self.is_positive {
             self.weight
-        } else {
+        } ⎉ {
             -self.weight
         }
     }
 }
 
-struct FactorSet {
+Σ FactorSet {
     positive_sum: !f32,
     negative_sum: !f32,
     count: !usize,
 }
 
-impl FactorSet {
-    pub fn new() -> Self {
+⊢ FactorSet {
+    ☉ λ new() -> Self {
         FactorSet { positive_sum: 0.0, negative_sum: 0.0, count: 0 }
     }
 
-    pub fn add_positive(&mut self, weight: !f32) {
+    ☉ λ add_positive(&Δ self, weight: !f32) {
         self.positive_sum = self.positive_sum + weight;
         self.count = self.count + 1;
     }
 
-    pub fn add_negative(&mut self, weight: !f32) {
+    ☉ λ add_negative(&Δ self, weight: !f32) {
         self.negative_sum = self.negative_sum + weight;
         self.count = self.count + 1;
     }
 
-    pub fn net_score(&self) -> !f32 {
+    ☉ λ net_score(&self) -> !f32 {
         self.positive_sum - self.negative_sum
     }
 
-    pub fn is_positive(&self) -> !bool {
+    ☉ λ is_positive(&self) -> !bool {
         self.net_score() > 0.0
     }
 
-    pub fn balance_ratio(&self) -> !f32 {
-        let total = self.positive_sum + self.negative_sum;
-        if total == 0.0 {
+    ☉ λ balance_ratio(&self) -> !f32 {
+        ≔ total = self.positive_sum + self.negative_sum;
+        ⎇ total == 0.0 {
             0.5
-        } else {
+        } ⎉ {
             self.positive_sum / total
         }
     }
@@ -166,110 +166,110 @@ impl FactorSet {
 // ============================================================================
 
 #[test]
-fn test_step_id_creation() {
-    let id = StepId::new(12345);
+λ test_step_id_creation() {
+    ≔ id = StepId·new(12345);
     assert(id.value == 12345);
 }
 
 #[test]
-fn test_step_id_short() {
-    let id = StepId::new(300);
+λ test_step_id_short() {
+    ≔ id = StepId·new(300);
     assert(id.to_short() == 44);
 }
 
 #[test]
-fn test_reasoning_step_observation() {
-    let step = ReasoningStep::observation(1, 20);
+λ test_reasoning_step_observation() {
+    ≔ step = ReasoningStep·observation(1, 20);
     assert(step.confidence == 0.95);
 }
 
 #[test]
-fn test_reasoning_step_inference() {
-    let step = ReasoningStep::inference(2, 30, 50);
+λ test_reasoning_step_inference() {
+    ≔ step = ReasoningStep·inference(2, 30, 50);
     assert(step.confidence == 0.7);
     assert(step.reasoning_len == 50);
 }
 
 #[test]
-fn test_reasoning_step_decision() {
-    let step = ReasoningStep::decision(3, 25, 0.85);
+λ test_reasoning_step_decision() {
+    ≔ step = ReasoningStep·decision(3, 25, 0.85);
     assert(step.confidence == 0.85);
 }
 
 #[test]
-fn test_reasoning_step_with_confidence() {
-    let step = ReasoningStep::observation(1, 10).with_confidence(0.8);
+λ test_reasoning_step_with_confidence() {
+    ≔ step = ReasoningStep·observation(1, 10).with_confidence(0.8);
     assert(step.confidence == 0.8);
 }
 
 #[test]
-fn test_reasoning_chain_empty() {
-    let chain = ReasoningChain::new();
+λ test_reasoning_chain_empty() {
+    ≔ chain = ReasoningChain·new();
     assert(chain.is_empty());
     assert(chain.average_confidence() == 0.0);
 }
 
 #[test]
-fn test_reasoning_chain_add_step() {
-    let mut chain = ReasoningChain::new();
+λ test_reasoning_chain_add_step() {
+    ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.9);
     assert(!chain.is_empty());
     assert(chain.step_count == 1);
 }
 
 #[test]
-fn test_reasoning_chain_average() {
-    let mut chain = ReasoningChain::new();
+λ test_reasoning_chain_average() {
+    ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.8);
     chain.add_step(0.6);
     assert(chain.average_confidence() == 0.7);
 }
 
 #[test]
-fn test_reasoning_chain_well_supported() {
-    let mut chain = ReasoningChain::new();
+λ test_reasoning_chain_well_supported() {
+    ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.8);
     chain.add_step(0.8);
     assert(chain.is_well_supported());
 }
 
 #[test]
-fn test_reasoning_chain_not_well_supported_few_steps() {
-    let mut chain = ReasoningChain::new();
+λ test_reasoning_chain_not_well_supported_few_steps() {
+    ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.9);
     assert(!chain.is_well_supported());
 }
 
 #[test]
-fn test_reasoning_chain_not_well_supported_low_confidence() {
-    let mut chain = ReasoningChain::new();
+λ test_reasoning_chain_not_well_supported_low_confidence() {
+    ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.5);
     chain.add_step(0.5);
     assert(!chain.is_well_supported());
 }
 
 #[test]
-fn test_factor_positive() {
-    let f = Factor::positive(0.8);
+λ test_factor_positive() {
+    ≔ f = Factor·positive(0.8);
     assert(f.contribution() == 0.8);
 }
 
 #[test]
-fn test_factor_negative() {
-    let f = Factor::negative(0.3);
+λ test_factor_negative() {
+    ≔ f = Factor·negative(0.3);
     assert(f.contribution() == -0.3);
 }
 
 #[test]
-fn test_factor_set_empty() {
-    let fs = FactorSet::new();
+λ test_factor_set_empty() {
+    ≔ fs = FactorSet·new();
     assert(fs.net_score() == 0.0);
     assert(fs.balance_ratio() == 0.5);
 }
 
 #[test]
-fn test_factor_set_positive() {
-    let mut fs = FactorSet::new();
+λ test_factor_set_positive() {
+    ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.8);
     fs.add_positive(0.6);
     assert(fs.net_score() == 1.4);
@@ -277,8 +277,8 @@ fn test_factor_set_positive() {
 }
 
 #[test]
-fn test_factor_set_mixed() {
-    let mut fs = FactorSet::new();
+λ test_factor_set_mixed() {
+    ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.7);
     fs.add_negative(0.3);
     assert(fs.net_score() == 0.4);
@@ -286,30 +286,30 @@ fn test_factor_set_mixed() {
 }
 
 #[test]
-fn test_factor_set_negative_dominant() {
-    let mut fs = FactorSet::new();
+λ test_factor_set_negative_dominant() {
+    ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.2);
     fs.add_negative(0.8);
     assert(!fs.is_positive());
 }
 
 #[test]
-fn test_factor_set_balance_ratio() {
-    let mut fs = FactorSet::new();
+λ test_factor_set_balance_ratio() {
+    ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.6);
     fs.add_negative(0.4);
     assert(fs.balance_ratio() == 0.6);
 }
 
 #[test]
-fn test_factor_set_count() {
-    let mut fs = FactorSet::new();
+λ test_factor_set_count() {
+    ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.5);
     fs.add_positive(0.5);
     fs.add_negative(0.3);
     assert(fs.count == 3);
 }
 
-fn main() {
+λ main() {
     println("Oracle reasoning tests - 20 tests");
 }

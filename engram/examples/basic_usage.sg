@@ -1,14 +1,14 @@
 // Engram Basic Usage Example
 // Demonstrates core functionality of the memory system
 
-use engram::{
+invoke engram·{
     Engram, EngramConfig, Query,
     Fact, Epistemic, Relation, Outcome,
     Episode, Event, Context,
 }
 
-fn main() {
-    println("=== Engram: Memory Infrastructure for Artificial Minds ===\n")
+λ main() {
+    println("=== Engram: Memory Infrastructure ∀ Artificial Minds ===\n")
 
     // ========================================================================
     // 1. Create an Engram instance
@@ -16,7 +16,7 @@ fn main() {
 
     println("1. Creating Engram instance...")
 
-    let memory = engram::new()!
+    ≔ memory = engram·new()!
 
     println("   Created with default configuration")
     println("   - Instant memory: 8000 tokens")
@@ -30,32 +30,32 @@ fn main() {
     println("2. Learning facts (Semantic Memory)...")
 
     // Learn about Sigil
-    memory.learn(Fact::new("Sigil")
-        .claim(Relation::IsA, "programming language")
-        .claim(Relation::HasProperty, "polysynthetic")
-        .claim(Relation::HasProperty, "evidentiality-native")
+    memory.learn(Fact·new("Sigil")
+        .claim(Relation·IsA, "programming language")
+        .claim(Relation·HasProperty, "polysynthetic")
+        .claim(Relation·HasProperty, "evidentiality-native")
         .observed()
     )!
 
     // Learn about Engram
-    memory.learn(Fact::new("Engram")
-        .claim(Relation::IsA, "memory system")
-        .claim(Relation::CreatedBy, "Sigil")
-        .claim(Relation::HasProperty, "AI-agent-first")
+    memory.learn(Fact·new("Engram")
+        .claim(Relation·IsA, "memory system")
+        .claim(Relation·CreatedBy, "Sigil")
+        .claim(Relation·HasProperty, "AI-agent-first")
         .observed()
     )!
 
     // Learn relationships
     memory.learn(Fact {
         subject: "AI agents",
-        subject_type: Some(NodeType::Concept),
+        subject_type: Some(NodeType·Concept),
         claims: vec![
-            Claim { relation: Relation::UsedBy, object: "Engram", ..Default::default() },
-            Claim { relation: Relation::RelatedTo, object: "memory", ..Default::default() },
+            Claim { relation: Relation·UsedBy, object: "Engram", ..Default·default() },
+            Claim { relation: Relation·RelatedTo, object: "memory", ..Default·default() },
         ],
-        epistemic: Epistemic::Observed {
+        epistemic: Epistemic·Observed {
             observer: "user".to_string(),
-            timestamp: Instant::now(),
+            timestamp: Instant·now(),
         },
         confidence: 0.95,
         sources: vec![],
@@ -71,19 +71,19 @@ fn main() {
     println("3. Recalling knowledge...")
 
     // Simple recall
-    let results = memory.recall("programming language")
+    ≔ results = memory.recall("programming language")
     println("   Query: 'programming language'")
     println("   Found {} results:", results.memories.len())
-    for mem in &results.memories {
+    ∀ mem ∈ &results.memories {
         println("     - {} (confidence: {:.0}%)", mem.content, mem.confidence * 100.0)
     }
     println("")
 
     // Recall with filters
-    let filtered = memory.recall(
-        Query::new("memory system")
-            .where_confidence(Comparator::Gt, 0.8)
-            .where_epistemic(EpistemicCheck::IsObserved)
+    ≔ filtered = memory.recall(
+        Query·new("memory system")
+            .where_confidence(Comparator·Gt, 0.8)
+            .where_epistemic(EpistemicCheck·IsObserved)
     )
     println("   Query: 'memory system' (confidence > 80%, observed only)")
     println("   Found {} results", filtered.memories.len())
@@ -96,21 +96,21 @@ fn main() {
     println("4. Recording experiences (Episodic Memory)...")
 
     // Create a task episode
-    let episode = Episode {
-        id: EpisodeId::new()!,
-        started_at: Instant::now(),
-        ended_at: Some(Instant::now() + Duration::from_secs(60)),
-        context: Context::with_goal("Learn about Engram"),
+    ≔ episode = Episode {
+        id: EpisodeId·new()!,
+        started_at: Instant·now(),
+        ended_at: Some(Instant·now() + Duration·from_secs(60)),
+        context: Context·with_goal("Learn about Engram"),
         participants: vec![
-            Participant { id: "user".to_string(), role: ParticipantRole::User, name: Some("User".to_string()) },
-            Participant { id: "agent".to_string(), role: ParticipantRole::Self_, name: Some("Agent".to_string()) },
+            Participant { id: "user".to_string(), role: ParticipantRole·User, name: Some("User".to_string()) },
+            Participant { id: "agent".to_string(), role: ParticipantRole·Self_, name: Some("Agent".to_string()) },
         ],
         events: vec![
-            Event::user_message("What is Engram?"),
-            Event::agent_response("Engram is a memory system for AI agents..."),
-            Event::tool_call("search", json!({"query": "Engram memory"})),
+            Event·user_message("What is Engram?"),
+            Event·agent_response("Engram is a memory system ∀ AI agents..."),
+            Event·tool_call("search", json!({"query": "Engram memory"})),
         ],
-        outcome: Outcome::Success {
+        outcome: Outcome·Success {
             result: json!({"learned": true}),
             goal_alignment: 0.9,
         },
@@ -119,7 +119,7 @@ fn main() {
         surprise: 0.3,
         strength: 1.0,
         access_count: 0,
-        last_accessed: Instant::now(),
+        last_accessed: Instant·now(),
         consolidated: false,
         caused_by: vec![],
         leads_to: vec![],
@@ -137,31 +137,31 @@ fn main() {
 
     // Add items to working memory
     memory.attend("Current task: Demonstrate Engram usage", relevance: 0.9)!
-    memory.attend("User is interested in AI memory systems", relevance: 0.7)!
+    memory.attend("User is interested ∈ AI memory systems", relevance: 0.7)!
     memory.attend("Previous query was about programming languages", relevance: 0.5)!
 
-    let usage = memory.instant().token_usage()
+    ≔ usage = memory.instant().token_usage()
     println("   Added 3 items to working memory")
     println("   Token usage: {}/{} ({:.1}%)",
         usage.used.0, usage.capacity.0, usage.utilization * 100.0)
     println("")
 
     // ========================================================================
-    // 6. Build Context for LLM
+    // 6. Build Context ∀ LLM
     // ========================================================================
 
-    println("6. Building context for LLM...")
+    println("6. Building context ∀ LLM...")
 
-    let context = memory.build_context(ContextConfig {
+    ≔ context = memory.build_context(ContextConfig {
         budget: TokenCount(2000),
         for_task: Some("Explain Engram to user".to_string()),
         include: vec![
-            ContextSource::Instant,
-            ContextSource::SemanticRelevant,
-            ContextSource::EpisodicRecent,
+            ContextSource·Instant,
+            ContextSource·SemanticRelevant,
+            ContextSource·EpisodicRecent,
         ],
-        format: ContextFormat::XML,
-        prioritize: ContextPriority::Relevance,
+        format: ContextFormat·XML,
+        prioritize: ContextPriority·Relevance,
     })
 
     println("   Built context with {} items ({} tokens)",
@@ -174,9 +174,9 @@ fn main() {
 
     println("7. Matching skills (Procedural Memory)...")
 
-    let skills = memory.match_skills(&Context::with_goal("explain concept"))
+    ≔ skills = memory.match_skills(&Context·with_goal("explain concept"))
     println("   Found {} applicable skills", skills.len())
-    for skill in &skills {
+    ∀ skill ∈ &skills {
         println("     - {} (success rate: {:.0}%)",
             skill.skill.name, skill.skill.stats.success_rate * 100.0)
     }
@@ -188,18 +188,18 @@ fn main() {
 
     println("8. Identifying knowledge gaps...")
 
-    let result = memory.recall("quantum computing in finance")
-    println("   Query: 'quantum computing in finance'")
+    ≔ result = memory.recall("quantum computing ∈ finance")
+    println("   Query: 'quantum computing ∈ finance'")
     println("   Found {} results", result.memories.len())
     println("   Identified {} gaps:", result.gaps.len())
-    for gap in &result.gaps {
+    ∀ gap ∈ &result.gaps {
         println("     - {} (severity: {:.0}%)", gap.description, gap.severity * 100.0)
-        for action in &gap.suggested_actions {
-            match action {
-                SuggestedAction::AskUser { question } => {
+        ∀ action ∈ &gap.suggested_actions {
+            ⌥ action {
+                SuggestedAction·AskUser { question } => {
                     println("       Suggestion: Ask user - {}", question)
                 }
-                SuggestedAction::SearchExternal { query } => {
+                SuggestedAction·SearchExternal { query } => {
                     println("       Suggestion: Search externally - {}", query)
                 }
                 _ => {}
@@ -214,8 +214,8 @@ fn main() {
 
     println("9. Running consolidation...")
 
-    let report = memory.consolidate()
-    println("   Consolidation completed in {:?}", report.duration)
+    ≔ report = memory.consolidate()
+    println("   Consolidation completed ∈ {:?}", report.duration)
     println("   - Episodes consolidated: {}", report.episodic.consolidated_count)
     println("   - Skills learned: {}", report.episodic.skills_learned.len())
     println("   - Facts extracted: {}", report.episodic.facts_extracted.len())
@@ -227,8 +227,8 @@ fn main() {
 
     println("10. Memory statistics...")
 
-    let stats = memory.stats()
-    let usage = memory.memory_usage()
+    ≔ stats = memory.stats()
+    ≔ usage = memory.memory_usage()
 
     println("   Recall operations: {}", stats.recall_count)
     println("   Facts learned: {}", stats.facts_learned)
@@ -247,31 +247,31 @@ fn main() {
 // Advanced Example: Evidentiality
 // ============================================================================
 
-fn evidentiality_example() {
+λ evidentiality_example() {
     println("\n=== Evidentiality Example ===\n")
 
-    let memory = engram::new()!
+    ≔ memory = engram·new()!
 
     // Learn facts with different evidentiality levels
 
     // Direct observation (highest trust)
     memory.learn(Fact {
         subject: "current_time",
-        claims: vec![Claim { relation: Relation::HasProperty, object: "2025-12-04", ..Default::default() }],
-        epistemic: Epistemic::Observed {
+        claims: vec![Claim { relation: Relation·HasProperty, object: "2025-12-04", ..Default·default() }],
+        epistemic: Epistemic·Observed {
             observer: "system".to_string(),
-            timestamp: Instant::now(),
+            timestamp: Instant·now(),
         },
         confidence: 1.0,
-        sources: vec![Source::Sensor("system_clock".to_string())],
+        sources: vec![Source·Sensor("system_clock".to_string())],
     })!
 
     // Reported by external API (medium trust)
     memory.learn(Fact {
         subject: "weather",
-        claims: vec![Claim { relation: Relation::HasProperty, object: "sunny", ..Default::default() }],
-        epistemic: Epistemic::Reported {
-            source: Source::Api { endpoint: "weather.api".to_string(), timestamp: Instant::now() },
+        claims: vec![Claim { relation: Relation·HasProperty, object: "sunny", ..Default·default() }],
+        epistemic: Epistemic·Reported {
+            source: Source·Api { endpoint: "weather.api".to_string(), timestamp: Instant·now() },
             trust_level: 0.7,
         },
         confidence: 0.7,
@@ -281,10 +281,10 @@ fn evidentiality_example() {
     // Inferred from other facts (lower trust)
     memory.learn(Fact {
         subject: "outdoor_activity",
-        claims: vec![Claim { relation: Relation::HasProperty, object: "recommended", ..Default::default() }],
-        epistemic: Epistemic::Inferred {
+        claims: vec![Claim { relation: Relation·HasProperty, object: "recommended", ..Default·default() }],
+        epistemic: Epistemic·Inferred {
             premises: vec![],  // Would contain IDs of weather and time facts
-            inference_type: InferenceType::Deductive,
+            inference_type: InferenceType·Deductive,
             confidence: 0.6,
         },
         confidence: 0.6,
@@ -293,29 +293,29 @@ fn evidentiality_example() {
 
     // Query with epistemic filter
     println("Observed facts only:")
-    let observed = memory.recall(
-        Query::new("*")
-            .where_epistemic(EpistemicCheck::IsObserved)
+    ≔ observed = memory.recall(
+        Query·new("*")
+            .where_epistemic(EpistemicCheck·IsObserved)
     )
-    for mem in &observed.memories {
+    ∀ mem ∈ &observed.memories {
         println("  {} ({})", mem.content, "observed!")
     }
 
     println("\nReported facts:")
-    let reported = memory.recall(
-        Query::new("*")
-            .where_epistemic(EpistemicCheck::IsReported)
+    ≔ reported = memory.recall(
+        Query·new("*")
+            .where_epistemic(EpistemicCheck·IsReported)
     )
-    for mem in &reported.memories {
+    ∀ mem ∈ &reported.memories {
         println("  {} ({})", mem.content, "reported~")
     }
 
     println("\nInferred facts:")
-    let inferred = memory.recall(
-        Query::new("*")
-            .where_epistemic(EpistemicCheck::IsInferred)
+    ≔ inferred = memory.recall(
+        Query·new("*")
+            .where_epistemic(EpistemicCheck·IsInferred)
     )
-    for mem in &inferred.memories {
+    ∀ mem ∈ &inferred.memories {
         println("  {} ({})", mem.content, "inferred~")
     }
 }
@@ -324,50 +324,50 @@ fn evidentiality_example() {
 // Advanced Example: Temporal Queries
 // ============================================================================
 
-fn temporal_example() {
+λ temporal_example() {
     println("\n=== Temporal Query Example ===\n")
 
-    let memory = engram::new()!
+    ≔ memory = engram·new()!
 
     // Record some events at different times
-    let base_time = Instant::now()
+    ≔ base_time = Instant·now()
 
     // Event 1 hour ago
     memory.episodic_mut().record(Episode {
-        id: EpisodeId::new()!,
-        started_at: base_time - Duration::from_hours(1),
-        ended_at: Some(base_time - Duration::from_mins(50)),
-        context: Context::with_goal("Task A"),
-        events: vec![Event::agent_response("Completed task A")],
-        outcome: Outcome::Success { result: json!({}), goal_alignment: 1.0 },
-        ..Default::default()
+        id: EpisodeId·new()!,
+        started_at: base_time - Duration·from_hours(1),
+        ended_at: Some(base_time - Duration·from_mins(50)),
+        context: Context·with_goal("Task A"),
+        events: vec![Event·agent_response("Completed task A")],
+        outcome: Outcome·Success { result: json!({}), goal_alignment: 1.0 },
+        ..Default·default()
     })!
 
     // Event 30 minutes ago
     memory.episodic_mut().record(Episode {
-        id: EpisodeId::new()!,
-        started_at: base_time - Duration::from_mins(30),
-        ended_at: Some(base_time - Duration::from_mins(20)),
-        context: Context::with_goal("Task B"),
-        events: vec![Event::agent_response("Completed task B")],
-        outcome: Outcome::Success { result: json!({}), goal_alignment: 1.0 },
-        ..Default::default()
+        id: EpisodeId·new()!,
+        started_at: base_time - Duration·from_mins(30),
+        ended_at: Some(base_time - Duration·from_mins(20)),
+        context: Context·with_goal("Task B"),
+        events: vec![Event·agent_response("Completed task B")],
+        outcome: Outcome·Success { result: json!({}), goal_alignment: 1.0 },
+        ..Default·default()
     })!
 
     // Query by time
-    println("Events in last hour:")
-    let recent = memory.recall(
-        Query::new("*")
-            .during(TimeRange::LastHour)
+    println("Events ∈ last hour:")
+    ≔ recent = memory.recall(
+        Query·new("*")
+            .during(TimeRange·LastHour)
     )
     println("  Found {} events", recent.memories.len())
 
-    println("\nEvents in last 30 minutes:")
-    let very_recent = memory.recall(
-        Query::new("*")
-            .after(TimePoint::Relative {
-                amount: Duration::from_mins(30),
-                direction: TimeDirection::Ago,
+    println("\nEvents ∈ last 30 minutes:")
+    ≔ very_recent = memory.recall(
+        Query·new("*")
+            .after(TimePoint·Relative {
+                amount: Duration·from_mins(30),
+                direction: TimeDirection·Ago,
             })
     )
     println("  Found {} events", very_recent.memories.len())

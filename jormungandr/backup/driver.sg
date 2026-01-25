@@ -1,6 +1,6 @@
 //! Sigil Compiler Driver
 //!
-//! This is the main entry point for the Sigil self-hosted compiler.
+//! This is the main entry point ∀ the Sigil self-hosted compiler.
 //! It orchestrates the compilation pipeline:
 //!
 //!   Source → Lexer → Parser → TypeCheck → Lower → IR → (Interp | CodeGen)
@@ -26,22 +26,22 @@
 //! diff sigil2.c sigil3.c  # Should be identical (fixed point!)
 //! ```
 
-use crate::lexer::Lexer;
-use crate::parser::{Parser, ParseError};
-use crate::typeck::{TypeChecker, TypeError};
-use crate::lower::{lower_file, LowerError};
-use crate::ir::IrModule;
-use crate::interp::{Interpreter, RuntimeError};
-use crate::codegen::CodeGen;
-use crate::span::Span;
-use crate::ast::{SourceFile, UseTree, UseDecl, Ident, Item, Module};
+invoke crate·lexer·Lexer;
+invoke crate·parser·{Parser, ParseError};
+invoke crate·typeck·{TypeChecker, TypeError};
+invoke crate·lower·{lower_file, LowerError};
+invoke crate·ir·IrModule;
+invoke crate·interp·{Interpreter, RuntimeError};
+invoke crate·codegen·CodeGen;
+invoke crate·span·Span;
+invoke crate·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 
 // ============================================================================
 // Compiler Configuration
 // ============================================================================
 
 /// Compilation mode
-pub enum CompileMode {
+☉ ᛈ CompileMode {
     /// Generate C code
     Compile,
     /// Run immediately with interpreter
@@ -57,33 +57,33 @@ pub enum CompileMode {
 }
 
 /// Compiler configuration
-pub struct Config {
+☉ Σ Config {
     /// Input files
-    pub input_files: ![String],
+    ☉ input_files: ![String],
     /// Output file
-    pub output_file: ?String,
+    ☉ output_file: ?String,
     /// Compilation mode
-    pub mode: !CompileMode,
+    ☉ mode: !CompileMode,
     /// Enable verbose output
-    pub verbose: !bool,
+    ☉ verbose: !bool,
     /// Enable debug info
-    pub debug: !bool,
+    ☉ debug: !bool,
     /// Optimization level (0-3)
-    pub opt_level: !u8,
+    ☉ opt_level: !u8,
     /// Emit evidence checks at runtime
-    pub evidence_checks: !bool,
+    ☉ evidence_checks: !bool,
     /// Tome search paths (directories containing tomes)
-    pub tome_paths: ![String],
+    ☉ tome_paths: ![String],
     /// Auto-resolve external tome imports
-    pub resolve_tomes: !bool,
+    ☉ resolve_tomes: !bool,
 }
 
-impl Config {
-    pub fn default() -> !Config {
+⊢ Config {
+    ☉ λ default() -> !Config {
         Config {
             input_files: [],
             output_file: null,
-            mode: CompileMode::Compile,
+            mode: CompileMode·Compile,
             verbose: false,
             debug: false,
             opt_level: 0,
@@ -94,69 +94,69 @@ impl Config {
     }
 
     /// Parse command line arguments
-    pub fn from_args(argv: ![String]) -> !Result<Config, String> {
-        let mut config = Config::default();
-        let mut expect_output = false;
+    ☉ λ from_args(argv: ![String]) -> !Result<Config, String> {
+        ≔ Δ config = Config·default();
+        ≔ Δ expect_output = false;
 
-        for arg in argv.iter() {
-            let s = arg.clone();
+        ∀ arg ∈ argv.iter() {
+            ≔ s = arg.clone();
 
-            if expect_output {
+            ⎇ expect_output {
                 config.output_file = ?s;
                 expect_output = false;
-            } else if s == "compile" {
-                config.mode = CompileMode::Compile;
-            } else if s == "run" {
-                config.mode = CompileMode::Run;
-            } else if s == "check" {
-                config.mode = CompileMode::Check;
-            } else if s == "dump-ir" {
-                config.mode = CompileMode::DumpIr;
-            } else if s == "dump-ast" {
-                config.mode = CompileMode::DumpAst;
-            } else if s == "dump-tokens" {
-                config.mode = CompileMode::DumpTokens;
-            } else if s == "-o" || s == "--output" {
+            } ⎉ ⎇ s == "compile" {
+                config.mode = CompileMode·Compile;
+            } ⎉ ⎇ s == "run" {
+                config.mode = CompileMode·Run;
+            } ⎉ ⎇ s == "check" {
+                config.mode = CompileMode·Check;
+            } ⎉ ⎇ s == "dump-ir" {
+                config.mode = CompileMode·DumpIr;
+            } ⎉ ⎇ s == "dump-ast" {
+                config.mode = CompileMode·DumpAst;
+            } ⎉ ⎇ s == "dump-tokens" {
+                config.mode = CompileMode·DumpTokens;
+            } ⎉ ⎇ s == "-o" || s == "--output" {
                 expect_output = true;
-            } else if s == "-v" || s == "--verbose" {
+            } ⎉ ⎇ s == "-v" || s == "--verbose" {
                 config.verbose = true;
-            } else if s == "-g" || s == "--debug" {
+            } ⎉ ⎇ s == "-g" || s == "--debug" {
                 config.debug = true;
-            } else if s == "-O0" {
+            } ⎉ ⎇ s == "-O0" {
                 config.opt_level = 0;
-            } else if s == "-O1" {
+            } ⎉ ⎇ s == "-O1" {
                 config.opt_level = 1;
-            } else if s == "-O2" {
+            } ⎉ ⎇ s == "-O2" {
                 config.opt_level = 2;
-            } else if s == "-O3" {
+            } ⎉ ⎇ s == "-O3" {
                 config.opt_level = 3;
-            } else if s == "--no-evidence-checks" {
+            } ⎉ ⎇ s == "--no-evidence-checks" {
                 config.evidence_checks = false;
-            } else if s == "--no-resolve-tomes" {
+            } ⎉ ⎇ s == "--no-resolve-tomes" {
                 config.resolve_tomes = false;
-            } else if s.starts_with("--tome-path=") {
+            } ⎉ ⎇ s.starts_with("--tome-path=") {
                 // Extract path after '='
-                let path = s.chars().skip(12).collect::<String>();
+                ≔ path = s.chars().skip(12).collect·<String>();
                 config.tome_paths.push(path);
-            } else if s == "-h" || s == "--help" {
-                return Result::Err(Self::help_text());
-            } else if s == "--version" {
-                return Result::Err(format!("Sigil Compiler {}", crate::VERSION));
-            } else if s.starts_with("-") {
-                return Result::Err(format!("unknown option: {}", s));
-            } else {
+            } ⎉ ⎇ s == "-h" || s == "--help" {
+                ⤺ Result·Err(Self·help_text());
+            } ⎉ ⎇ s == "--version" {
+                ⤺ Result·Err(format!("Sigil Compiler {}", crate·VERSION));
+            } ⎉ ⎇ s.starts_with("-") {
+                ⤺ Result·Err(format!("unknown option: {}", s));
+            } ⎉ {
                 config.input_files.push(s);
             }
         }
 
-        if config.input_files.is_empty() {
-            return Result::Err("no input files specified");
+        ⎇ config.input_files.is_empty() {
+            ⤺ Result·Err("no input files specified");
         }
 
-        Result::Ok(config)
+        Result·Ok(config)
     }
 
-    fn help_text() -> !String {
+    λ help_text() -> !String {
         "Sigil Compiler - The Jormungandr Bootstrap\n\n" ++
         "USAGE:\n" ++
         "    sigil <command> [options] <files>\n\n" ++
@@ -191,27 +191,27 @@ impl Config {
 // Source Location Utilities
 // ============================================================================
 
-/// Line and column location in source
-pub struct SourceLoc {
-    pub line: !u64,
-    pub col: !u64,
+/// Line and column location ∈ source
+☉ Σ SourceLoc {
+    ☉ line: !u64,
+    ☉ col: !u64,
 }
 
 /// Convert byte offset to line:column given source text
 /// Lines and columns are 1-indexed
-fn offset_to_line_col(source: !&str, offset: !u64) -> !SourceLoc {
-    let mut line = 1;
-    let mut col = 1;
-    let mut pos = 0;
+λ offset_to_line_col(source: !&str, offset: !u64) -> !SourceLoc {
+    ≔ Δ line = 1;
+    ≔ Δ col = 1;
+    ≔ Δ pos = 0;
 
-    for c in source.chars() {
-        if pos >= offset {
-            break;
+    ∀ c ∈ source.chars() {
+        ⎇ pos >= offset {
+            ⊗;
         }
-        if c == '\n' {
+        ⎇ c == '\n' {
             line = line + 1;
             col = 1;
-        } else {
+        } ⎉ {
             col = col + 1;
         }
         pos = pos + 1;
@@ -225,7 +225,7 @@ fn offset_to_line_col(source: !&str, offset: !u64) -> !SourceLoc {
 // ============================================================================
 
 /// The main compiler driver
-pub struct Driver {
+☉ Σ Driver {
     /// Configuration
     config: !Config,
     /// Collected errors
@@ -235,17 +235,17 @@ pub struct Driver {
 }
 
 /// Compile error
-pub struct CompileError {
-    pub message: !String,
-    pub span: ?Span,
-    pub file: ?String,
-    pub notes: ![String],
-    /// Source text for line/column calculation
-    pub source: ?String,
+☉ Σ CompileError {
+    ☉ message: !String,
+    ☉ span: ?Span,
+    ☉ file: ?String,
+    ☉ notes: ![String],
+    /// Source text ∀ line/column calculation
+    ☉ source: ?String,
 }
 
-impl CompileError {
-    pub fn new(message: !String) -> !CompileError {
+⊢ CompileError {
+    ☉ λ new(message: !String) -> !CompileError {
         CompileError {
             message,
             span: null,
@@ -255,28 +255,28 @@ impl CompileError {
         }
     }
 
-    pub fn with_span(mut self, span: !Span) -> !CompileError {
+    ☉ λ with_span(Δ self, span: !Span) -> !CompileError {
         self.span = ?span;
         self
     }
 
-    pub fn with_file(mut self, file: !String) -> !CompileError {
+    ☉ λ with_file(Δ self, file: !String) -> !CompileError {
         self.file = ?file;
         self
     }
 
-    pub fn with_note(mut self, note: !String) -> !CompileError {
+    ☉ λ with_note(Δ self, note: !String) -> !CompileError {
         self.notes.push(note);
         self
     }
 
-    pub fn with_source(mut self, source: !String) -> !CompileError {
+    ☉ λ with_source(Δ self, source: !String) -> !CompileError {
         self.source = ?source;
         self
     }
 
-    pub fn display(self) -> !String {
-        let mut result = String::new();
+    ☉ λ display(self) -> !String {
+        ≔ Δ result = String·new();
 
         // Error header
         result.push_str("error: ");
@@ -284,15 +284,15 @@ impl CompileError {
         result.push('\n');
 
         // Location
-        if let ?file = self.file {
+        ⎇ ≔ ?file = self.file {
             result.push_str("  --> ");
             result.push_str(file);
-            if let ?span = self.span {
-                // Convert byte offset to line:column if source is available
-                if let ?src = self.source {
-                    let loc = offset_to_line_col(src, span.start);
+            ⎇ ≔ ?span = self.span {
+                // Convert byte offset to line:column ⎇ source is available
+                ⎇ ≔ ?src = self.source {
+                    ≔ loc = offset_to_line_col(src, span.start);
                     result.push_str(format!(":{}:{}", loc.line, loc.col));
-                } else {
+                } ⎉ {
                     // Fallback to byte offsets
                     result.push_str(format!(":{}", span.start));
                 }
@@ -301,7 +301,7 @@ impl CompileError {
         }
 
         // Notes
-        for note in self.notes {
+        ∀ note ∈ self.notes {
             result.push_str("  note: ");
             result.push_str(note);
             result.push('\n');
@@ -312,10 +312,10 @@ impl CompileError {
 }
 
 /// Compile warning
-pub struct CompileWarning {
-    pub message: !String,
-    pub span: ?Span,
-    pub file: ?String,
+☉ Σ CompileWarning {
+    ☉ message: !String,
+    ☉ span: ?Span,
+    ☉ file: ?String,
 }
 
 // ============================================================================
@@ -323,29 +323,29 @@ pub struct CompileWarning {
 // ============================================================================
 
 /// Extract tome names from a UseTree
-fn extract_tome_names(tree: !UseTree) -> ![String] {
-    let mut names: ![String] = [];
-    match tree {
-        UseTree::Path { prefix, suffix } => {
+λ extract_tome_names(tree: !UseTree) -> ![String] {
+    ≔ Δ names: ![String] = [];
+    ⌥ tree {
+        UseTree·Path { prefix, suffix } => {
             // The first segment is the tome name
-            let tome_name = prefix.name.clone();
+            ≔ tome_name = prefix.name.clone();
             // Skip "crate", "self", "super", "tome" - these are local references
-            if tome_name != "crate" && tome_name != "self" && tome_name != "super" && tome_name != "tome" {
+            ⎇ tome_name != "crate" && tome_name != "self" && tome_name != "super" && tome_name != "tome" {
                 names.push(tome_name);
             }
         },
-        UseTree::Name(ident) => {
+        UseTree·Name(ident) => {
             // Single name import - could be a tome
-            let tome_name = ident.name.clone();
-            if tome_name != "crate" && tome_name != "self" && tome_name != "super" && tome_name != "tome" {
+            ≔ tome_name = ident.name.clone();
+            ⎇ tome_name != "crate" && tome_name != "self" && tome_name != "super" && tome_name != "tome" {
                 names.push(tome_name);
             }
         },
-        UseTree::Group(trees) => {
+        UseTree·Group(trees) => {
             // Group import - recurse
-            for t in trees.iter() {
-                let sub_names = extract_tome_names(t.clone());
-                for n in sub_names.iter() {
+            ∀ t ∈ trees.iter() {
+                ≔ sub_names = extract_tome_names(t.clone());
+                ∀ n ∈ sub_names.iter() {
                     names.push(n.clone());
                 }
             }
@@ -355,51 +355,51 @@ fn extract_tome_names(tree: !UseTree) -> ![String] {
     names
 }
 
-/// Find tome source file by name in search paths
-fn find_tome_source(tome_name: !String, search_paths: ![String]) -> ?String {
-    for path in search_paths.iter() {
+/// Find tome source file by name ∈ search paths
+λ find_tome_source(tome_name: !String, search_paths: ![String]) -> ?String {
+    ∀ path ∈ search_paths.iter() {
         // Try <path>/<tome_name>/src/lib.sg
-        let lib_path = format!("{}/{}/src/lib.sg", path, tome_name);
-        // We can't easily check if file exists in pure Sigil, so just return the path
-        // The compiler will error later if it doesn't exist
-        return ?lib_path;
+        ≔ lib_path = format!("{}/{}/src/lib.sg", path, tome_name);
+        // We can't easily check ⎇ file exists ∈ pure Sigil, so just ⤺ the path
+        // The compiler will error later ⎇ it doesn't exist
+        ⤺ ?lib_path;
     }
     null
 }
 
 /// Infer tome search path from input file
-fn infer_tome_path(input_file: !String) -> ?String {
+λ infer_tome_path(input_file: !String) -> ?String {
     // If input is /path/to/mytome/src/lib.sg, search path is /path/to
-    // Look for "/src/" in the path and go two levels up
-    let mut chars: ![char] = [];
-    for c in input_file.chars() {
+    // Look ∀ "/src/" ∈ the path and go two levels up
+    ≔ Δ chars: ![char] = [];
+    ∀ c ∈ input_file.chars() {
         chars.push(c);
     }
 
     // Find last occurrence of "/src/"
-    let mut last_src_pos: ?i64 = null;
-    let mut i = 0;
-    while i + 4 < chars.len() {
-        if chars[i] == '/' && chars[i+1] == 's' && chars[i+2] == 'r' && chars[i+3] == 'c' && chars[i+4] == '/' {
+    ≔ Δ last_src_pos: ?i64 = null;
+    ≔ Δ i = 0;
+    ⟳ i + 4 < chars.len() {
+        ⎇ chars[i] == '/' && chars[i+1] == 's' && chars[i+2] == 'r' && chars[i+3] == 'c' && chars[i+4] == '/' {
             last_src_pos = ?i;
         }
         i = i + 1;
     }
 
-    match last_src_pos {
+    ⌥ last_src_pos {
         ?pos => {
             // Find the slash before /src/
-            let mut j = pos - 1;
-            while j >= 0 {
-                if chars[j] == '/' {
+            ≔ Δ j = pos - 1;
+            ⟳ j >= 0 {
+                ⎇ chars[j] == '/' {
                     // Return path up to this point
-                    let mut result = String::new();
-                    let mut k = 0;
-                    while k < j {
+                    ≔ Δ result = String·new();
+                    ≔ Δ k = 0;
+                    ⟳ k < j {
                         result.push(chars[k]);
                         k = k + 1;
                     }
-                    return ?result;
+                    ⤺ ?result;
                 }
                 j = j - 1;
             }
@@ -409,9 +409,9 @@ fn infer_tome_path(input_file: !String) -> ?String {
     }
 }
 
-impl Driver {
+⊢ Driver {
     /// Create a new driver with configuration
-    pub fn new(config: !Config) -> !Driver {
+    ☉ λ new(config: !Config) -> !Driver {
         Driver {
             config,
             errors: [],
@@ -420,29 +420,29 @@ impl Driver {
     }
 
     /// Run the compiler
-    pub fn run(mut self) -> !Result<(), i32> {
-        match self.config.mode {
-            CompileMode::Compile => self.compile(),
-            CompileMode::Run => self.interpret(),
-            CompileMode::Check => self.check(),
-            CompileMode::DumpIr => self.dump_ir(),
-            CompileMode::DumpAst => self.dump_ast(),
-            CompileMode::DumpTokens => self.dump_tokens(),
+    ☉ λ run(Δ self) -> !Result<(), i32> {
+        ⌥ self.config.mode {
+            CompileMode·Compile => self.compile(),
+            CompileMode·Run => self.interpret(),
+            CompileMode·Check => self.check(),
+            CompileMode·DumpIr => self.dump_ir(),
+            CompileMode·DumpAst => self.dump_ast(),
+            CompileMode·DumpTokens => self.dump_tokens(),
         }
     }
 
-    /// Resolve tome imports from AST and return additional files to compile
-    fn resolve_tome_imports(mut self, asts: ![SourceFile], file_paths: ![String]) -> ![String] {
-        let mut additional_files: ![String] = [];
-        let mut resolved_tomes: ![String] = [];  // Track which tomes we've already resolved
-        let mut local_modules: ![String] = [];   // Track locally defined modules
+    /// Resolve tome imports from AST and ⤺ additional files to compile
+    λ resolve_tome_imports(Δ self, asts: ![SourceFile], file_paths: ![String]) -> ![String] {
+        ≔ Δ additional_files: ![String] = [];
+        ≔ Δ resolved_tomes: ![String] = [];  // Track which tomes we've already resolved
+        ≔ Δ local_modules: ![String] = [];   // Track locally defined modules
 
         // First pass: collect all locally defined module names
-        // This prevents us from trying to resolve `use span::...` when `mod span;` is local
-        for ast in asts.iter() {
-            for item in ast.items.iter() {
-                match item.node {
-                    Item::Module(mod_def) => {
+        // This prevents us from trying to resolve `invoke span·...` when `scroll span;` is local
+        ∀ ast ∈ asts.iter() {
+            ∀ item ∈ ast.items.iter() {
+                ⌥ item.node {
+                    Item·Module(mod_def) => {
                         local_modules.push(mod_def.name.name.clone());
                     },
                     _ => {},
@@ -451,20 +451,20 @@ impl Driver {
         }
 
         // Build search paths
-        let mut search_paths = self.config.tome_paths.clone();
+        ≔ Δ search_paths = self.config.tome_paths.clone();
 
         // Infer search path from input files
-        for fp in file_paths.iter() {
-            match infer_tome_path(fp.clone()) {
+        ∀ fp ∈ file_paths.iter() {
+            ⌥ infer_tome_path(fp.clone()) {
                 ?path => {
-                    // Check if already in search paths
-                    let mut found = false;
-                    for sp in search_paths.iter() {
-                        if sp == path {
+                    // Check ⎇ already ∈ search paths
+                    ≔ Δ found = false;
+                    ∀ sp ∈ search_paths.iter() {
+                        ⎇ sp == path {
                             found = true;
                         }
                     }
-                    if !found {
+                    ⎇ !found {
                         search_paths.push(path);
                     }
                 },
@@ -472,63 +472,63 @@ impl Driver {
             }
         }
 
-        if self.config.verbose && search_paths.len() > 0 {
+        ⎇ self.config.verbose && search_paths.len() > 0 {
             println("  Tome search paths:");
-            for sp in search_paths.iter() {
+            ∀ sp ∈ search_paths.iter() {
                 println(format!("    - {}", sp));
             }
         }
 
-        // Scan all ASTs for use/invoke declarations
-        for ast in asts.iter() {
-            for item in ast.items.iter() {
-                match item.node {
-                    Item::Use(decl) => {
-                        let tome_names = extract_tome_names(decl.tree.clone());
-                        for tome_name in tome_names.iter() {
+        // Scan all ASTs ∀ use/invoke declarations
+        ∀ ast ∈ asts.iter() {
+            ∀ item ∈ ast.items.iter() {
+                ⌥ item.node {
+                    Item·Use(decl) => {
+                        ≔ tome_names = extract_tome_names(decl.tree.clone());
+                        ∀ tome_name ∈ tome_names.iter() {
                             // Skip local modules - they're not external tomes
-                            let mut is_local = false;
-                            for lm in local_modules.iter() {
-                                if lm == tome_name {
+                            ≔ Δ is_local = false;
+                            ∀ lm ∈ local_modules.iter() {
+                                ⎇ lm == tome_name {
                                     is_local = true;
                                 }
                             }
-                            if is_local {
-                                continue;
+                            ⎇ is_local {
+                                ↻;
                             }
 
                             // Skip well-known stdlib modules that aren't real tomes
-                            if tome_name == "std" {
-                                continue;
+                            ⎇ tome_name == "std" {
+                                ↻;
                             }
 
-                            // Check if already resolved
-                            let mut already_resolved = false;
-                            for rt in resolved_tomes.iter() {
-                                if rt == tome_name {
+                            // Check ⎇ already resolved
+                            ≔ Δ already_resolved = false;
+                            ∀ rt ∈ resolved_tomes.iter() {
+                                ⎇ rt == tome_name {
                                     already_resolved = true;
                                 }
                             }
-                            if !already_resolved {
+                            ⎇ !already_resolved {
                                 resolved_tomes.push(tome_name.clone());
-                                match find_tome_source(tome_name.clone(), search_paths.clone()) {
+                                ⌥ find_tome_source(tome_name.clone(), search_paths.clone()) {
                                     ?tome_file => {
-                                        // Check if not already in input files
-                                        let mut in_inputs = false;
-                                        for fp in file_paths.iter() {
-                                            if fp == tome_file {
+                                        // Check ⎇ not already ∈ input files
+                                        ≔ Δ in_inputs = false;
+                                        ∀ fp ∈ file_paths.iter() {
+                                            ⎇ fp == tome_file {
                                                 in_inputs = true;
                                             }
                                         }
-                                        if !in_inputs {
-                                            if self.config.verbose {
+                                        ⎇ !in_inputs {
+                                            ⎇ self.config.verbose {
                                                 println(format!("  Resolved tome '{}' -> {}", tome_name, tome_file));
                                             }
                                             additional_files.push(tome_file);
                                         }
                                     },
                                     null => {
-                                        if self.config.verbose {
+                                        ⎇ self.config.verbose {
                                             println(format!("  Warning: Could not resolve tome '{}'", tome_name));
                                         }
                                     },
@@ -551,38 +551,38 @@ impl Driver {
     /// 1. Parse ALL input files first
     /// 2. Build a unified type environment from ALL files
     /// 3. Type check and lower each file using the shared environment
-    fn compile(mut self) -> !Result<(), i32> {
-        if self.config.verbose {
+    λ compile(Δ self) -> !Result<(), i32> {
+        ⎇ self.config.verbose {
             println("Sigil Compiler - Jormungandr Bootstrap");
-            let file_count = self.config.input_files.len();
+            ≔ file_count = self.config.input_files.len();
             println(format!("Compiling {} file(s)...", file_count));
         }
 
         // ================================================================
         // Phase 1: Parse ALL files first (including resolved tomes)
         // ================================================================
-        let mut file_paths: ![String] = [];
-        let mut asts: ![SourceFile] = [];
+        ≔ Δ file_paths: ![String] = [];
+        ≔ Δ asts: ![SourceFile] = [];
 
-        let mut i = 0;
-        while i < self.config.input_files.len() {
-            let file_path = self.config.input_files[i].clone();
-            if self.config.verbose {
+        ≔ Δ i = 0;
+        ⟳ i < self.config.input_files.len() {
+            ≔ file_path = self.config.input_files[i].clone();
+            ⎇ self.config.verbose {
                 println(format!("  Parsing: {}", file_path));
             }
 
-            let source = match self.read_file(file_path.clone()) {
-                Result::Ok(s) => s,
-                Result::Err(code) => {
+            ≔ source = ⌥ self.read_file(file_path.clone()) {
+                Result·Ok(s) => s,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
-            let ast = match self.parse(file_path.clone(), source) {
-                Result::Ok(a) => a,
-                Result::Err(code) => {
+            ≔ ast = ⌥ self.parse(file_path.clone(), source) {
+                Result·Ok(a) => a,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
             file_paths.push(file_path);
@@ -593,37 +593,37 @@ impl Driver {
         // ================================================================
         // Phase 1.5: Resolve external tome imports (iterative)
         // ================================================================
-        if self.config.resolve_tomes {
-            let mut iteration = 0;
-            let max_iterations = 10;  // Prevent infinite loops
+        ⎇ self.config.resolve_tomes {
+            ≔ Δ iteration = 0;
+            ≔ max_iterations = 10;  // Prevent infinite loops
 
-            while iteration < max_iterations {
-                let additional_files = self.resolve_tome_imports(asts.clone(), file_paths.clone());
+            ⟳ iteration < max_iterations {
+                ≔ additional_files = self.resolve_tome_imports(asts.clone(), file_paths.clone());
 
-                if additional_files.is_empty() {
-                    break;  // No more tomes to resolve
+                ⎇ additional_files.is_empty() {
+                    ⊗;  // No more tomes to resolve
                 }
 
                 // Parse additional files
-                for additional_path in additional_files.iter() {
-                    if self.config.verbose {
+                ∀ additional_path ∈ additional_files.iter() {
+                    ⎇ self.config.verbose {
                         println(format!("  Parsing tome: {}", additional_path));
                     }
 
-                    let source = match self.read_file(additional_path.clone()) {
-                        Result::Ok(s) => s,
-                        Result::Err(_code) => {
-                            // File doesn't exist - skip silently for now
+                    ≔ source = ⌥ self.read_file(additional_path.clone()) {
+                        Result·Ok(s) => s,
+                        Result·Err(_code) => {
+                            // File doesn't exist - skip silently ∀ now
                             // This handles the case where tome paths are guessed but don't exist
-                            continue;
+                            ↻;
                         },
                     };
 
-                    let ast = match self.parse(additional_path.clone(), source) {
-                        Result::Ok(a) => a,
-                        Result::Err(code) => {
+                    ≔ ast = ⌥ self.parse(additional_path.clone(), source) {
+                        Result·Ok(a) => a,
+                        Result·Err(code) => {
                             self.print_errors();
-                            return Result::Err(code);
+                            ⤺ Result·Err(code);
                         },
                     };
 
@@ -638,17 +638,17 @@ impl Driver {
         // ================================================================
         // Phase 2: Build unified type environment from ALL files
         // ================================================================
-        if self.config.verbose {
+        ⎇ self.config.verbose {
             println("  Building unified type environment...");
         }
 
-        let mut checker = TypeChecker::new();
+        ≔ Δ checker = TypeChecker·new();
 
         // Pass 1: Collect type definitions from ALL files
-        let mut j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ≔ Δ j = 0;
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.collect_type_def(asts[j].items[k].node.clone());
                 k = k + 1;
             }
@@ -657,20 +657,20 @@ impl Driver {
 
         // Pass 2: Collect function signatures from ALL files
         j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.collect_fn_sig(asts[j].items[k].node.clone());
                 k = k + 1;
             }
             j = j + 1;
         }
 
-        // Pass 3: Check items in ALL files (with complete type environment)
+        // Pass 3: Check items ∈ ALL files (with complete type environment)
         j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.check_item(asts[j].items[k].node.clone());
                 k = k + 1;
             }
@@ -680,27 +680,27 @@ impl Driver {
         // ================================================================
         // Phase 3: Lower each file using the shared type checker
         // ================================================================
-        let mut modules: ![IrModule] = [];
+        ≔ Δ modules: ![IrModule] = [];
 
         j = 0;
-        while j < asts.len() {
-            let file_path = file_paths[j].clone();
-            let ast = asts[j].clone();
+        ⟳ j < asts.len() {
+            ≔ file_path = file_paths[j].clone();
+            ≔ ast = asts[j].clone();
 
-            if self.config.verbose {
+            ⎇ self.config.verbose {
                 println(format!("  Lowering: {}", file_path));
             }
 
             // Lower to IR using the shared checker
-            match lower_file(ast, checker.clone(), file_path.clone()) {
-                Result::Ok(ir) => modules.push(ir),
-                Result::Err(errs) => {
-                    for err in errs {
-                        self.errors.push(CompileError::new(err.message)
+            ⌥ lower_file(ast, checker.clone(), file_path.clone()) {
+                Result·Ok(ir) => modules.push(ir),
+                Result·Err(errs) => {
+                    ∀ err ∈ errs {
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
                     self.print_errors();
-                    return Result::Err(1);
+                    ⤺ Result·Err(1);
                 },
             };
             j = j + 1;
@@ -708,127 +708,127 @@ impl Driver {
 
         // Merge all modules into one unified module
         // NOTE: Type deduplication happens at codegen time using #ifndef guards
-        let main_module = if !modules.is_empty() {
-            let mut merged = modules[0].clone();
+        ≔ main_module = ⎇ !modules.is_empty() {
+            ≔ Δ merged = modules[0].clone();
             // Append functions/types from other modules
-            let mut idx = 1;
-            while idx < modules.len() {
-                let other = modules[idx].clone();
+            ≔ Δ idx = 1;
+            ⟳ idx < modules.len() {
+                ≔ other = modules[idx].clone();
                 // Merge functions (deduplicate by name)
-                let mut fi = 0;
-                while fi < other.functions.len() {
-                    let func = other.functions[fi].clone();
-                    // Check if function already exists in merged
-                    let mut exists = false;
-                    let mut check_idx = 0;
-                    while check_idx < merged.functions.len() {
-                        if merged.functions[check_idx].name == func.name {
+                ≔ Δ fi = 0;
+                ⟳ fi < other.functions.len() {
+                    ≔ func = other.functions[fi].clone();
+                    // Check ⎇ function already exists ∈ merged
+                    ≔ Δ exists = false;
+                    ≔ Δ check_idx = 0;
+                    ⟳ check_idx < merged.functions.len() {
+                        ⎇ merged.functions[check_idx].name == func.name {
                             exists = true;
                         }
                         check_idx = check_idx + 1;
                     }
-                    if !exists {
+                    ⎇ !exists {
                         merged.functions.push(func);
                     }
                     fi = fi + 1;
                 }
                 // Merge types (duplicates will be handled by codegen with #ifndef)
-                let mut ti = 0;
-                while ti < other.types.len() {
+                ≔ Δ ti = 0;
+                ⟳ ti < other.types.len() {
                     merged.types.push(other.types[ti].clone());
                     ti = ti + 1;
                 }
                 // Merge traits
-                let mut tri = 0;
-                while tri < other.traits.len() {
+                ≔ Δ tri = 0;
+                ⟳ tri < other.traits.len() {
                     merged.traits.push(other.traits[tri].clone());
                     tri = tri + 1;
                 }
                 // Merge impls
-                let mut ii = 0;
-                while ii < other.impls.len() {
+                ≔ Δ ii = 0;
+                ⟳ ii < other.impls.len() {
                     merged.impls.push(other.impls[ii].clone());
                     ii = ii + 1;
                 }
                 // Merge constants
-                let mut ci = 0;
-                while ci < other.constants.len() {
+                ≔ Δ ci = 0;
+                ⟳ ci < other.constants.len() {
                     merged.constants.push(other.constants[ci].clone());
                     ci = ci + 1;
                 }
                 idx = idx + 1;
             }
             merged
-        } else {
-            return Result::Err(1);
+        } ⎉ {
+            ⤺ Result·Err(1);
         };
 
         // ================================================================
         // Phase 4: Generate C code
         // ================================================================
-        if self.config.verbose {
+        ⎇ self.config.verbose {
             println("  Generating C code...");
         }
 
-        let mut codegen = CodeGen::new();
-        let c_code = codegen.generate(main_module);
+        ≔ Δ codegen = CodeGen·new();
+        ≔ c_code = codegen.generate(main_module);
 
         // Write output
-        if self.config.output_file.is_some() {
-            let output = self.config.output_file.unwrap();
-            match self.write_file(output, c_code) {
-                Result::Ok(_) => {},
-                Result::Err(code) => {
+        ⎇ self.config.output_file.is_some() {
+            ≔ output = self.config.output_file.unwrap();
+            ⌥ self.write_file(output, c_code) {
+                Result·Ok(_) => {},
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
-            if self.config.verbose {
+            ⎇ self.config.verbose {
                 println(format!("  Wrote: {}", output));
             }
-        } else {
+        } ⎉ {
             print(c_code);
         }
 
-        if self.config.verbose {
+        ⎇ self.config.verbose {
             println("Done!");
         }
 
-        if self.errors.is_empty() {
-            Result::Ok(())
-        } else {
+        ⎇ self.errors.is_empty() {
+            Result·Ok(())
+        } ⎉ {
             self.print_errors();
-            Result::Err(1)
+            Result·Err(1)
         }
     }
 
     /// Run with interpreter
     ///
-    /// Uses multi-file compilation for cross-module support.
-    fn interpret(mut self) -> !Result<(), i32> {
-        if self.config.verbose {
+    /// Uses multi-file compilation ∀ cross-module support.
+    λ interpret(Δ self) -> !Result<(), i32> {
+        ⎇ self.config.verbose {
             println("Sigil Interpreter - Jormungandr Bootstrap");
         }
 
         // Phase 1: Parse ALL files first
-        let mut file_paths: ![String] = [];
-        let mut asts: ![SourceFile] = [];
+        ≔ Δ file_paths: ![String] = [];
+        ≔ Δ asts: ![SourceFile] = [];
 
-        let mut i = 0;
-        while i < self.config.input_files.len() {
-            let file_path = self.config.input_files[i].clone();
-            let source = match self.read_file(file_path.clone()) {
-                Result::Ok(s) => s,
-                Result::Err(code) => {
+        ≔ Δ i = 0;
+        ⟳ i < self.config.input_files.len() {
+            ≔ file_path = self.config.input_files[i].clone();
+            ≔ source = ⌥ self.read_file(file_path.clone()) {
+                Result·Ok(s) => s,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
-            let ast = match self.parse(file_path.clone(), source) {
-                Result::Ok(a) => a,
-                Result::Err(code) => {
+            ≔ ast = ⌥ self.parse(file_path.clone(), source) {
+                Result·Ok(a) => a,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
             file_paths.push(file_path);
@@ -837,30 +837,30 @@ impl Driver {
         }
 
         // Phase 2: Build unified type environment
-        let mut checker = TypeChecker::new();
+        ≔ Δ checker = TypeChecker·new();
 
-        let mut j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ≔ Δ j = 0;
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.collect_type_def(asts[j].items[k].node.clone());
                 k = k + 1;
             }
             j = j + 1;
         }
         j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.collect_fn_sig(asts[j].items[k].node.clone());
                 k = k + 1;
             }
             j = j + 1;
         }
         j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.check_item(asts[j].items[k].node.clone());
                 k = k + 1;
             }
@@ -868,69 +868,69 @@ impl Driver {
         }
 
         // Phase 3: Lower and load modules
-        let mut interpreter = Interpreter::new();
+        ≔ Δ interpreter = Interpreter·new();
 
         j = 0;
-        while j < asts.len() {
-            let file_path = file_paths[j].clone();
-            let ast = asts[j].clone();
-            match lower_file(ast, checker.clone(), file_path.clone()) {
-                Result::Ok(ir) => interpreter.load_module(ir),
-                Result::Err(errs) => {
-                    for err in errs {
-                        self.errors.push(CompileError::new(err.message)
+        ⟳ j < asts.len() {
+            ≔ file_path = file_paths[j].clone();
+            ≔ ast = asts[j].clone();
+            ⌥ lower_file(ast, checker.clone(), file_path.clone()) {
+                Result·Ok(ir) => interpreter.load_module(ir),
+                Result·Err(errs) => {
+                    ∀ err ∈ errs {
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
                     self.print_errors();
-                    return Result::Err(1);
+                    ⤺ Result·Err(1);
                 },
             };
             j = j + 1;
         }
 
         // Run main
-        match interpreter.run() {
-            Result::Ok(result) => {
-                if self.config.verbose {
+        ⌥ interpreter.run() {
+            Result·Ok(result) => {
+                ⎇ self.config.verbose {
                     println(format!("Result: {}", result.value.to_string()));
                 }
-                Result::Ok(())
+                Result·Ok(())
             },
-            Result::Err(err) => {
-                self.errors.push(CompileError::new(format!("runtime error: {}", err.message)));
+            Result·Err(err) => {
+                self.errors.push(CompileError·new(format!("runtime error: {}", err.message)));
                 self.print_errors();
-                Result::Err(1)
+                Result·Err(1)
             },
         }
     }
 
     /// Type check only
     ///
-    /// Uses multi-file type checking for cross-module support.
-    fn check(mut self) -> !Result<(), i32> {
-        if self.config.verbose {
+    /// Uses multi-file type checking ∀ cross-module support.
+    λ check(Δ self) -> !Result<(), i32> {
+        ⎇ self.config.verbose {
             println("Sigil Type Checker");
         }
 
         // Phase 1: Parse ALL files first
-        let mut file_paths: ![String] = [];
-        let mut asts: ![SourceFile] = [];
+        ≔ Δ file_paths: ![String] = [];
+        ≔ Δ asts: ![SourceFile] = [];
 
-        let mut i = 0;
-        while i < self.config.input_files.len() {
-            let file_path = self.config.input_files[i].clone();
-            let source = match self.read_file(file_path.clone()) {
-                Result::Ok(s) => s,
-                Result::Err(code) => {
+        ≔ Δ i = 0;
+        ⟳ i < self.config.input_files.len() {
+            ≔ file_path = self.config.input_files[i].clone();
+            ≔ source = ⌥ self.read_file(file_path.clone()) {
+                Result·Ok(s) => s,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
-            let ast = match self.parse(file_path.clone(), source) {
-                Result::Ok(a) => a,
-                Result::Err(code) => {
+            ≔ ast = ⌥ self.parse(file_path.clone(), source) {
+                Result·Ok(a) => a,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
             file_paths.push(file_path);
@@ -939,13 +939,13 @@ impl Driver {
         }
 
         // Phase 2: Build unified type environment and check
-        let mut checker = TypeChecker::new();
+        ≔ Δ checker = TypeChecker·new();
 
         // Pass 1: Collect type definitions from ALL files
-        let mut j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ≔ Δ j = 0;
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.collect_type_def(asts[j].items[k].node.clone());
                 k = k + 1;
             }
@@ -954,62 +954,62 @@ impl Driver {
 
         // Pass 2: Collect function signatures from ALL files
         j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.collect_fn_sig(asts[j].items[k].node.clone());
                 k = k + 1;
             }
             j = j + 1;
         }
 
-        // Pass 3: Check items in ALL files
+        // Pass 3: Check items ∈ ALL files
         j = 0;
-        while j < asts.len() {
-            if self.config.verbose {
-                let fp = file_paths[j].clone();
+        ⟳ j < asts.len() {
+            ⎇ self.config.verbose {
+                ≔ fp = file_paths[j].clone();
                 println(format!("  Checking: {}", fp));
             }
-            let mut k = 0;
-            while k < asts[j].items.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.check_item(asts[j].items[k].node.clone());
                 k = k + 1;
             }
             j = j + 1;
         }
 
-        if self.errors.is_empty() {
+        ⎇ self.errors.is_empty() {
             println("All files type check successfully!");
-            Result::Ok(())
-        } else {
+            Result·Ok(())
+        } ⎉ {
             self.print_errors();
-            Result::Err(1)
+            Result·Err(1)
         }
     }
 
     /// Dump IR as JSON
     ///
-    /// Uses multi-file compilation for cross-module support.
-    fn dump_ir(mut self) -> !Result<(), i32> {
+    /// Uses multi-file compilation ∀ cross-module support.
+    λ dump_ir(Δ self) -> !Result<(), i32> {
         // Phase 1: Parse ALL files first
-        let mut file_paths: ![String] = [];
-        let mut asts: ![SourceFile] = [];
+        ≔ Δ file_paths: ![String] = [];
+        ≔ Δ asts: ![SourceFile] = [];
 
-        let mut i = 0;
-        while i < self.config.input_files.len() {
-            let file_path = self.config.input_files[i].clone();
-            let source = match self.read_file(file_path.clone()) {
-                Result::Ok(s) => s,
-                Result::Err(code) => {
+        ≔ Δ i = 0;
+        ⟳ i < self.config.input_files.len() {
+            ≔ file_path = self.config.input_files[i].clone();
+            ≔ source = ⌥ self.read_file(file_path.clone()) {
+                Result·Ok(s) => s,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
-            let ast = match self.parse(file_path.clone(), source) {
-                Result::Ok(a) => a,
-                Result::Err(code) => {
+            ≔ ast = ⌥ self.parse(file_path.clone(), source) {
+                Result·Ok(a) => a,
+                Result·Err(code) => {
                     self.print_errors();
-                    return Result::Err(code);
+                    ⤺ Result·Err(code);
                 },
             };
             file_paths.push(file_path);
@@ -1018,30 +1018,30 @@ impl Driver {
         }
 
         // Phase 2: Build unified type environment
-        let mut checker = TypeChecker::new();
+        ≔ Δ checker = TypeChecker·new();
 
-        let mut j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ≔ Δ j = 0;
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.collect_type_def(asts[j].items[k].node.clone());
                 k = k + 1;
             }
             j = j + 1;
         }
         j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.collect_fn_sig(asts[j].items[k].node.clone());
                 k = k + 1;
             }
             j = j + 1;
         }
         j = 0;
-        while j < asts.len() {
-            let mut k = 0;
-            while k < asts[j].items.len() {
+        ⟳ j < asts.len() {
+            ≔ Δ k = 0;
+            ⟳ k < asts[j].items.len() {
                 checker.check_item(asts[j].items[k].node.clone());
                 k = k + 1;
             }
@@ -1050,62 +1050,62 @@ impl Driver {
 
         // Phase 3: Lower and dump IR
         j = 0;
-        while j < asts.len() {
-            let file_path = file_paths[j].clone();
-            let ast = asts[j].clone();
-            match lower_file(ast, checker.clone(), file_path.clone()) {
-                Result::Ok(ir) => {
-                    let json = ir.to_json(true);
-                    match self.config.output_file {
+        ⟳ j < asts.len() {
+            ≔ file_path = file_paths[j].clone();
+            ≔ ast = asts[j].clone();
+            ⌥ lower_file(ast, checker.clone(), file_path.clone()) {
+                Result·Ok(ir) => {
+                    ≔ json = ir.to_json(true);
+                    ⌥ self.config.output_file {
                         ?output => {
-                            match self.write_file(output, json) {
-                                Result::Ok(_) => {},
-                                Result::Err(code) => return Result::Err(code),
+                            ⌥ self.write_file(output, json) {
+                                Result·Ok(_) => {},
+                                Result·Err(code) => ⤺ Result·Err(code),
                             };
                         },
                         null => println(json),
                     }
                 },
-                Result::Err(errs) => {
-                    for err in errs {
-                        self.errors.push(CompileError::new(err.message)
+                Result·Err(errs) => {
+                    ∀ err ∈ errs {
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
                     self.print_errors();
-                    return Result::Err(1);
+                    ⤺ Result·Err(1);
                 },
             };
             j = j + 1;
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     /// Dump AST
-    fn dump_ast(mut self) -> !Result<(), i32> {
-        for file_path in self.config.input_files {
-            let source = self.read_file(file_path)?;
-            let ast = self.parse(file_path, source)?;
+    λ dump_ast(Δ self) -> !Result<(), i32> {
+        ∀ file_path ∈ self.config.input_files {
+            ≔ source = self.read_file(file_path)?;
+            ≔ ast = self.parse(file_path, source)?;
 
-            println(format!("=== AST for {} ===", file_path));
+            println(format!("=== AST ∀ {} ===", file_path));
             println(format!("Items: {}", ast.items.len()));
-            for item in ast.items {
-                    let name = item.node.kind_name();
+            ∀ item ∈ ast.items {
+                    ≔ name = item.node.kind_name();
                 println(format!("  - {}", name));
             }
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     /// Dump tokens
-    fn dump_tokens(mut self) -> !Result<(), i32> {
-        for file_path in self.config.input_files {
-            let source = self.read_file(file_path)?;
+    λ dump_tokens(Δ self) -> !Result<(), i32> {
+        ∀ file_path ∈ self.config.input_files {
+            ≔ source = self.read_file(file_path)?;
 
-            println(format!("=== Tokens for {} ===", file_path));
-            let mut lexer = Lexer::new(source);
+            println(format!("=== Tokens ∀ {} ===", file_path));
+            ≔ Δ lexer = Lexer·new(source);
 
             loop {
-                match lexer.next_token() {
+                ⌥ lexer.next_token() {
                     ?(tok, span) => {
                         println(format!("  {:?} @ {:?}", tok, span));
                     },
@@ -1113,7 +1113,7 @@ impl Driver {
                 }
             }
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     // ========================================================================
@@ -1121,102 +1121,102 @@ impl Driver {
     // ========================================================================
 
     /// Read a source file
-    fn read_file(mut self, path: !&str) -> !Result<String, i32> {
+    λ read_file(Δ self, path: !&str) -> !Result<String, i32> {
         // In a real implementation, this would read from the filesystem
-        // For now, we'll use a placeholder
+        // For now, we'll invoke a placeholder
         extern "C" {
-            fn sigil_read_file(path: *const u8, len: u64) -> *mut u8;
-            fn sigil_file_len() -> u64;
+            λ sigil_read_file(path: *const u8, len: u64) -> *Δ u8;
+            λ sigil_file_len() -> u64;
         }
 
         unsafe {
-            let content_ptr = sigil_read_file(path.as_ptr(), path.len());
-            if content_ptr.is_null() {
-                self.errors.push(CompileError::new(format!("cannot read file: {}", path)));
-                return Result::Err(1);
+            ≔ content_ptr = sigil_read_file(path.as_ptr(), path.len());
+            ⎇ content_ptr.is_null() {
+                self.errors.push(CompileError·new(format!("cannot read file: {}", path)));
+                ⤺ Result·Err(1);
             }
-            let len = sigil_file_len();
-            let content = String::from_raw_parts(content_ptr, len, len);
-            Result::Ok(content)
+            ≔ len = sigil_file_len();
+            ≔ content = String·from_raw_parts(content_ptr, len, len);
+            Result·Ok(content)
         }
     }
 
     /// Write output file
-    fn write_file(mut self, path: !&str, content: !String) -> !Result<(), i32> {
+    λ write_file(Δ self, path: !&str, content: !String) -> !Result<(), i32> {
         extern "C" {
-            fn sigil_write_file(path: *const u8, path_len: u64,
+            λ sigil_write_file(path: *const u8, path_len: u64,
                                content: *const u8, content_len: u64) -> bool;
         }
 
         unsafe {
-            let ok = sigil_write_file(
+            ≔ ok = sigil_write_file(
                 path.as_ptr(), path.len(),
                 content.as_ptr(), content.len()
             );
-            if !ok {
-                self.errors.push(CompileError::new(format!("cannot write file: {}", path)));
-                return Result::Err(1);
+            ⎇ !ok {
+                self.errors.push(CompileError·new(format!("cannot write file: {}", path)));
+                ⤺ Result·Err(1);
             }
         }
-        Result::Ok(())
+        Result·Ok(())
     }
 
     /// Parse source code
-    fn parse(mut self, file: !&str, source: !String) -> !Result<SourceFile, i32> {
-        let mut parser = Parser::new(source.clone());
+    λ parse(Δ self, file: !&str, source: !String) -> !Result<SourceFile, i32> {
+        ≔ Δ parser = Parser·new(source.clone());
 
-        match parser.parse_file() {
-            Result::Ok(ast) => Result::Ok(ast),
-            Result::Err(err) => {
-                let mut compile_err = CompileError::new(err.message());
+        ⌥ parser.parse_file() {
+            Result·Ok(ast) => Result·Ok(ast),
+            Result·Err(err) => {
+                ≔ Δ compile_err = CompileError·new(err.message());
                 compile_err = compile_err.with_file(file.to_string());
                 compile_err = compile_err.with_source(source);
-                // Add span if available
-                if let ?span = err.span() {
+                // Add span ⎇ available
+                ⎇ ≔ ?span = err.span() {
                     compile_err = compile_err.with_span(span);
                 }
                 self.errors.push(compile_err);
-                Result::Err(1)
+                Result·Err(1)
             },
         }
     }
 
     /// Lower AST to IR
-    fn lower(mut self, file: !&str, ast: !SourceFile) -> !Result<IrModule, i32> {
+    λ lower(Δ self, file: !&str, ast: !SourceFile) -> !Result<IrModule, i32> {
         // Type check first
-        let mut checker = TypeChecker::new();
-        match checker.check_file(ast.clone()) {
-            Result::Ok(_) => {},
-            Result::Err(errs) => {
-                for err in errs {
+        ≔ Δ checker = TypeChecker·new();
+        ⌥ checker.check_file(ast.clone()) {
+            Result·Ok(_) => {},
+            Result·Err(errs) => {
+                ∀ err ∈ errs {
                     eprintln(format!("Type error: {}", err.message));
-                    self.errors.push(CompileError::new(err.message)
+                    self.errors.push(CompileError·new(err.message)
                         .with_file(file.to_string()));
                 }
-                return Result::Err(1);
+                ⤺ Result·Err(1);
             },
         }
 
         // Lower to IR
-        match lower_file(ast, checker, file.to_string()) {
-            Result::Ok(ir) => Result::Ok(ir),
-            Result::Err(errs) => {
-                for err in errs {
-                    self.errors.push(CompileError::new(err.message)
+        ⌥ lower_file(ast, checker, file.to_string()) {
+            Result·Ok(ir) => Result·Ok(ir),
+            Result·Err(errs) => {
+                ∀ err ∈ errs {
+                    self.errors.push(CompileError·new(err.message)
                         .with_file(file.to_string()));
                 }
-                Result::Err(1)
+                Result·Err(1)
             },
         }
     }
 
     /// Print collected errors
-    fn print_errors(self) {
-        for err in self.errors {
+    λ print_errors(self) {
+        ∀ err ∈ self.errors {
             eprint(err.display());
         }
         eprintln("");
-        let error_count = self.errors.len();
+        ≔ error_count = self.errors.len();
         eprintln(format!("{} error(s) found", error_count));
     }
 }
@@ -1225,22 +1225,22 @@ impl Driver {
 // Main Entry Point
 // ============================================================================
 
-/// Main entry point for the compiler
-pub fn main(args: ![String]) -> !i32 {
+/// Main entry point ∀ the compiler
+☉ λ main(args: ![String]) -> !i32 {
     // Parse configuration
-    let config = match Config::from_args(args) {
-        Result::Ok(c) => c,
-        Result::Err(msg) => {
+    ≔ config = ⌥ Config·from_args(args) {
+        Result·Ok(c) => c,
+        Result·Err(msg) => {
             eprintln(msg);
-            return 1;
+            ⤺ 1;
         },
     };
 
     // Run compiler
-    let mut driver = Driver::new(config);
-    match driver.run() {
-        Result::Ok(_) => 0,
-        Result::Err(code) => code,
+    ≔ Δ driver = Driver·new(config);
+    ⌥ driver.run() {
+        Result·Ok(_) => 0,
+        Result·Err(code) => code,
     }
 }
 
@@ -1248,12 +1248,12 @@ pub fn main(args: ![String]) -> !i32 {
 // Helper Functions
 // ============================================================================
 
-/// Print functions - implemented in runtime (build.sh header)
+/// Print functions - implemented ∈ runtime (build.sh header)
 extern "C" {
-    fn print(s: !&str);
-    fn println(s: !&str);
-    fn eprint(s: !&str);
-    fn eprintln(s: !&str);
+    λ print(s: !&str);
+    λ println(s: !&str);
+    λ eprint(s: !&str);
+    λ eprintln(s: !&str);
 }
 
 // ============================================================================
@@ -1261,41 +1261,41 @@ extern "C" {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_config_parse_compile() {
-        let args = ["compile", "test.sg", "-o", "test.c"];
-        let config = Config::from_args(args).unwrap();
-        let is_compile = match config.mode { CompileMode::Compile => true, _ => false };
+    λ test_config_parse_compile() {
+        ≔ args = ["compile", "test.sg", "-o", "test.c"];
+        ≔ config = Config·from_args(args).unwrap();
+        ≔ is_compile = ⌥ config.mode { CompileMode·Compile => true, _ => false };
         assert!(is_compile);
         assert_eq!(config.input_files, ["test.sg"]);
         assert_eq!(config.output_file, ?"test.c");
     }
 
     #[test]
-    fn test_config_parse_run() {
-        let args = ["run", "test.sg"];
-        let config = Config::from_args(args).unwrap();
-        let is_run = match config.mode { CompileMode::Run => true, _ => false };
+    λ test_config_parse_run() {
+        ≔ args = ["run", "test.sg"];
+        ≔ config = Config·from_args(args).unwrap();
+        ≔ is_run = ⌥ config.mode { CompileMode·Run => true, _ => false };
         assert!(is_run);
     }
 
     #[test]
-    fn test_config_verbose() {
-        let args = ["check", "-v", "test.sg"];
-        let config = Config::from_args(args).unwrap();
+    λ test_config_verbose() {
+        ≔ args = ["check", "-v", "test.sg"];
+        ≔ config = Config·from_args(args).unwrap();
         assert!(config.verbose);
     }
 
     #[test]
-    fn test_error_display() {
-        let err = CompileError::new("type mismatch")
+    λ test_error_display() {
+        ≔ err = CompileError·new("type mismatch")
             .with_file("test.sg")
             .with_note("expected i64, found string");
 
-        let display = err.display();
+        ≔ display = err.display();
         assert!(display.contains("type mismatch"));
         assert!(display.contains("test.sg"));
         assert!(display.contains("expected i64"));

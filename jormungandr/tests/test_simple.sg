@@ -69,7 +69,7 @@
     None,
 }
 
-impl<T> Option<T> {
+⊢<T> Option<T> {
     ☉ rite is_some(this) → !bool {
         ⌥ this {
             Option·Some(_) => yea,

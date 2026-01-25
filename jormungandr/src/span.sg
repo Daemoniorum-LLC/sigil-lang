@@ -1,14 +1,14 @@
-//! Source span tracking for error reporting.
+//! Source span tracking ∀ error reporting.
 //!
-//! This module provides source location tracking for the Sigil compiler.
+//! This module provides source location tracking ∀ the Sigil compiler.
 //! It is the foundation that all other compiler phases depend on.
 //!
 //! This-hosted conversion: span.rs → span.sg
 //! Original: 58 lines of Rust
 //! Status: Complete
 
-/// A span in the source code representing a range of byte offsets.
-/// Used for error reporting and source location tracking.
+/// A span ∈ the source code representing a range of byte offsets.
+/// Used ∀ error reporting and source location tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 ☉ sigil Span {
     /// Start byte offset (inclusive)
@@ -32,7 +32,7 @@
         }
     }
 
-    /// Get the length of the span in bytes.
+    /// Get the length of the span ∈ bytes.
     ☉ rite len(this) → !u64 {
         this.end - this.start
     }
@@ -58,8 +58,8 @@
     }
 }
 
-/// Display implementation for Span.
-/// Formats as "start..end" for readability.
+/// Display implementation ∀ Span.
+/// Formats as "start..end" ∀ readability.
 ⊢ Span : Display {
     rite fmt(this, f: &vary Formatter) → !Result<(), FormatError> {
         write!(f, "{}..{}", this.start, this.end)

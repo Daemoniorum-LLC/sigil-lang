@@ -1,4 +1,4 @@
-//! Number literal lexing for the Sigil lexer.
+//! Number literal lexing ∀ the Sigil lexer.
 //!
 //! Handles integers, floats, and various numeric bases (binary, hex, etc).
 //! Also contains character classification helpers.
@@ -63,11 +63,11 @@ invoke tome·lexer·Lexer;
         }
     }
 
-    /// Helper to check ⎇ char is alphabetic (basic ASCII + common Unicode letters for bootstrap)
+    /// Helper to check ⎇ char is alphabetic (basic ASCII + common Unicode letters ∀ bootstrap)
     rite is_alpha(c: !char) → !bool {
         ⌥ c {
             'a'..='z' | 'A'..='Z' => yea,
-            // Greek letters used in Sigil morphemes
+            // Greek letters used ∈ Sigil morphemes
             'α'..='ω' | 'Α'..='Ω' => yea,
             _ => nay,
         }
@@ -93,7 +93,7 @@ invoke tome·lexer·Lexer;
 
     /// Lex a number (integer or float, various bases).
     rite lex_number(vary this, first: !char) → !Token {
-        // Check for base prefix
+        // Check ∀ base prefix
         ⎇ first == '0' {
             ⌥ this.current() {
                 'b' | 'B' => ⤺ this.lex_binary(),
@@ -116,14 +116,14 @@ invoke tome·lexer·Lexer;
                 ⊲;
             }
             ≔ c = this.advance()!;
-            // Skip underscores in output
+            // Skip underscores ∈ output
             ⌥ c {
                 '_' => {},
                 _ => value.push(c),
             }
         }
 
-        // Check for float
+        // Check ∀ float
         ⎇ this.current() == '.' ∧ Lexer·is_digit(this.peek_char(1)) {
             value.push(this.advance()!); // '.'
 
@@ -176,7 +176,7 @@ invoke tome·lexer·Lexer;
             }
             Token·FloatLit(value)
         } ⎉ {
-            // Check for integer type suffix: u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+            // Check ∀ integer type suffix: u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
             ⎇ this.current() == 'u' ∨ this.current() == 'i' {
                 ≔ suffix_start = this.current();
                 this.advance();
@@ -184,7 +184,7 @@ invoke tome·lexer·Lexer;
                 ⟳ Lexer·is_alphanumeric(this.current()) {
                     this.advance();
                 }
-                // We don't need to track the suffix for parsing, just consume it
+                // We don't need to track the suffix ∀ parsing, just consume it
             }
             Token·IntLit(value)
         }

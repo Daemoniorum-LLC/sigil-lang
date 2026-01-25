@@ -1,6 +1,6 @@
 //! Sigil Compiler Driver
 //!
-//! This is the main entry point for the Sigil this-hosted compiler.
+//! This is the main entry point ∀ the Sigil this-hosted compiler.
 //! It orchestrates the compilation pipeline:
 //!
 //!   Source → Lexer → Parser → TypeCheck → Lower → IR → (Interp | CodeGen)
@@ -191,7 +191,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 // Source Location Utilities
 // ============================================================================
 
-/// Line and column location in source
+/// Line and column location ∈ source
 ☉ sigil SourceLoc {
     ☉ line: !u64,
     ☉ col: !u64,
@@ -240,7 +240,7 @@ rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
     ☉ span: ?Span,
     ☉ file: ?String,
     ☉ notes: ![String],
-    /// Source text for line/column calculation
+    /// Source text ∀ line/column calculation
     ☉ source: ?String,
 }
 
@@ -355,12 +355,12 @@ rite extract_tome_names(tree: !UseTree) → ![String] {
     names
 }
 
-/// Find tome source file by name in search paths
+/// Find tome source file by name ∈ search paths
 rite find_tome_source(tome_name: !String, search_paths: ![String]) → ?String {
     each path ∈ search_paths.iter() {
         // Try <path>/<tome_name>/src/lib.sg
         ≔ lib_path = format!("{}/{}/src/lib.sg", path, tome_name);
-        // We can't easily check ⎇ file exists in pure Sigil, so just ⤺ the path
+        // We can't easily check ⎇ file exists ∈ pure Sigil, so just ⤺ the path
         // The compiler will error later ⎇ it doesn't exist
         ⤺ ?lib_path;
     }
@@ -370,7 +370,7 @@ rite find_tome_source(tome_name: !String, search_paths: ![String]) → ?String {
 /// Infer tome search path from input file
 rite infer_tome_path(input_file: !String) → ?String {
     // If input is /path/to/mytome/src/lib.sg, search path is /path/to
-    // Look for "/src/" in the path and go two levels up
+    // Look ∀ "/src/" ∈ the path and go two levels up
     ≔ vary chars: ![char] = Vec·new();
     each c ∈ input_file.chars() {
         chars.push(c);
@@ -457,7 +457,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         each fp ∈ file_paths.iter() {
             ⌥ infer_tome_path(fp.clone()) {
                 ?path => {
-                    // Check ⎇ already in search paths
+                    // Check ⎇ already ∈ search paths
                     ≔ vary found = nay;
                     each sp ∈ search_paths.iter() {
                         ⎇ sp == path {
@@ -479,7 +479,7 @@ rite infer_tome_path(input_file: !String) → ?String {
             }
         }
 
-        // Scan all ASTs for use/invoke declarations
+        // Scan all ASTs ∀ use/invoke declarations
         each ast ∈ asts.iter() {
             each item ∈ ast.items.iter() {
                 ⌥ item.node {
@@ -513,7 +513,7 @@ rite infer_tome_path(input_file: !String) → ?String {
                                 resolved_tomes.push(tome_name.clone());
                                 ⌥ find_tome_source(tome_name.clone(), search_paths.clone()) {
                                     ?tome_file => {
-                                        // Check ⎇ not already in input files
+                                        // Check ⎇ not already ∈ input files
                                         ≔ vary in_inputs = nay;
                                         each fp ∈ file_paths.iter() {
                                             ⎇ fp == tome_file {
@@ -613,7 +613,7 @@ rite infer_tome_path(input_file: !String) → ?String {
                     ≔ source = ⌥ this.read_file(additional_path.clone()) {
                         Result·Ok(s) => s,
                         Result·Err(_code) => {
-                            // File doesn't exist - skip silently for now
+                            // File doesn't exist - skip silently ∀ now
                             // This handles the case where tome paths are guessed but don't exist
                             ⊳;
                         },
@@ -666,7 +666,7 @@ rite infer_tome_path(input_file: !String) → ?String {
             j = j + 1;
         }
 
-        // Pass 3: Check items in ALL files (with complete type environment)
+        // Pass 3: Check items ∈ ALL files (with complete type environment)
         j = 0;
         ⟳ j < asts.len() {
             ≔ vary k = 0;
@@ -718,7 +718,7 @@ rite infer_tome_path(input_file: !String) → ?String {
                 ≔ vary fi = 0;
                 ⟳ fi < other.functions.len() {
                     ≔ func = other.functions[fi].clone();
-                    // Check ⎇ function already exists in merged
+                    // Check ⎇ function already exists ∈ merged
                     ≔ vary exists = nay;
                     ≔ vary check_idx = 0;
                     ⟳ check_idx < merged.functions.len() {
@@ -804,7 +804,7 @@ rite infer_tome_path(input_file: !String) → ?String {
 
     /// Run with interpreter
     ///
-    /// Uses multi-file compilation for cross-module support.
+    /// Uses multi-file compilation ∀ cross-module support.
     rite interpret(vary this) → !Result<(), i32> {
         ⎇ this.config.verbose {
             println("Sigil Interpreter - Jormungandr Bootstrap");
@@ -906,7 +906,7 @@ rite infer_tome_path(input_file: !String) → ?String {
 
     /// Type check only
     ///
-    /// Uses multi-file type checking for cross-module support.
+    /// Uses multi-file type checking ∀ cross-module support.
     rite check(vary this) → !Result<(), i32> {
         ⎇ this.config.verbose {
             println("Sigil Type Checker");
@@ -963,7 +963,7 @@ rite infer_tome_path(input_file: !String) → ?String {
             j = j + 1;
         }
 
-        // Pass 3: Check items in ALL files
+        // Pass 3: Check items ∈ ALL files
         j = 0;
         ⟳ j < asts.len() {
             ⎇ this.config.verbose {
@@ -989,7 +989,7 @@ rite infer_tome_path(input_file: !String) → ?String {
 
     /// Dump IR as JSON
     ///
-    /// Uses multi-file compilation for cross-module support.
+    /// Uses multi-file compilation ∀ cross-module support.
     rite dump_ir(vary this) → !Result<(), i32> {
         // Phase 1: Parse ALL files first
         ≔ vary file_paths: ![String] = Vec·new();
@@ -1086,7 +1086,7 @@ rite infer_tome_path(input_file: !String) → ?String {
             ≔ source = this.read_file(file_path)?;
             ≔ ast = this.parse(file_path, source)?;
 
-            println(format!("=== AST for {} ===", file_path));
+            println(format!("=== AST ∀ {} ===", file_path));
             println(format!("Items: {}", ast.items.len()));
             each item ∈ ast.items {
                     ≔ name = item.node.kind_name();
@@ -1101,7 +1101,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         each file_path ∈ this.config.input_files {
             ≔ source = this.read_file(file_path)?;
 
-            println(format!("=== Tokens for {} ===", file_path));
+            println(format!("=== Tokens ∀ {} ===", file_path));
             ≔ vary lexer = Lexer·new(source);
 
             forever {
@@ -1225,7 +1225,7 @@ rite infer_tome_path(input_file: !String) → ?String {
 // Main Entry Point
 // ============================================================================
 
-/// Main entry point for the compiler
+/// Main entry point ∀ the compiler
 ☉ rite main(args: ![String]) → !i32 {
     println("Jormungandr compiler starting...");
     // Parse configuration
@@ -1249,7 +1249,7 @@ rite infer_tome_path(input_file: !String) → ?String {
 // Helper Functions
 // ============================================================================
 
-/// Print functions - implemented in runtime (build.sh header)
+/// Print functions - implemented ∈ runtime (build.sh header)
 extern "C" {
     rite print(s: !&str);
     rite println(s: !&str);

@@ -67,7 +67,7 @@ rite main() {
     assert_eq(substring("hello", 1, 3), "el");
     assert_eq(substring("hello", 0, 5), "hello");
 
-    // char_at - returns char, convert for comparison
+    // char_at - returns char, convert ∀ comparison
     assert_eq(to_string(char_at("hello", 0)), "h");
     assert_eq(to_string(char_at("hello", 4)), "o");
 

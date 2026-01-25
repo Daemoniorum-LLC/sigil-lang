@@ -1,15 +1,15 @@
 // Benchmark: Iterative Fibonacci
 // Tests: Loop performance, variable mutation
 
-fn fib(n: i64) -> i64 {
-    if n <= 1 {
-        return n;
+λ fib(n: i64) -> i64 {
+    ⎇ n <= 1 {
+        ⤺ n;
     }
-    let mut a = 0;
-    let mut b = 1;
-    let mut i = 2;
-    while i <= n {
-        let temp = a + b;
+    ≔ Δ a = 0;
+    ≔ Δ b = 1;
+    ≔ Δ i = 2;
+    ⟳ i <= n {
+        ≔ temp = a + b;
         a = b;
         b = temp;
         i = i + 1;
@@ -17,7 +17,7 @@ fn fib(n: i64) -> i64 {
     b
 }
 
-fn main() {
-    let result = fib(50);
+λ main() {
+    ≔ result = fib(50);
     println(result);
 }

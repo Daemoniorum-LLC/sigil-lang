@@ -1,5 +1,5 @@
-fn main() -> i64 {
-    let x = 10;
-    let y = 32;
+λ main() -> i64 {
+    ≔ x = 10;
+    ≔ y = 32;
     x + y
 }

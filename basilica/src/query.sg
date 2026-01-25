@@ -14,15 +14,15 @@
 //!     |> ν{ 0..20 }                   // LIMIT 20
 //! ```
 
-use shared::{Timestamp, Duration, Value};
-use crate::evidence::{EvidenceLevel, Evidenced, HttpEvidence};
+invoke shared·{Timestamp, Duration, Value};
+invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
 // ============================================================================
 // Query Types
 // ============================================================================
 
 /// A query against a database table
-pub struct Query<T> {
+☉ Σ Query<T> {
     /// Table name
     table: String,
 
@@ -44,16 +44,16 @@ pub struct Query<T> {
     /// Joins
     joins: Vec<Join>,
 
-    /// Parameters (for prepared statements)
+    /// Parameters (∀ prepared statements)
     params: Vec<QueryParam>,
 
-    /// Phantom type for result
-    _marker: std::marker::PhantomData<T>,
+    /// Phantom type ∀ result
+    _marker: std·marker·PhantomData<T>,
 }
 
 /// A filter condition (WHERE clause)
 #[derive(Clone, Debug)]
-pub enum Filter {
+☉ ᛈ Filter {
     /// Simple comparison: field op value
     Compare {
         field: String,
@@ -105,7 +105,7 @@ pub enum Filter {
 
 /// Comparison operator
 #[derive(Clone, Copy, Debug)]
-pub enum CompareOp {
+☉ ᛈ CompareOp {
     Eq,     // =
     Ne,     // !=
     Lt,     // <
@@ -114,46 +114,46 @@ pub enum CompareOp {
     Ge,     // >=
 }
 
-impl CompareOp {
-    pub fn as_sql(&self) -> &'static str {
-        match self {
-            CompareOp::Eq => "=",
-            CompareOp::Ne => "!=",
-            CompareOp::Lt => "<",
-            CompareOp::Le => "<=",
-            CompareOp::Gt => ">",
-            CompareOp::Ge => ">=",
+⊢ CompareOp {
+    ☉ λ as_sql(&self) -> &'static str {
+        ⌥ self {
+            CompareOp·Eq => "=",
+            CompareOp·Ne => "!=",
+            CompareOp·Lt => "<",
+            CompareOp·Le => "<=",
+            CompareOp·Gt => ">",
+            CompareOp·Ge => ">=",
         }
     }
 }
 
 /// Query parameter with evidence tracking
 #[derive(Clone, Debug)]
-pub struct QueryParam {
+☉ Σ QueryParam {
     /// The value
-    pub value: Value,
+    ☉ value: Value,
 
-    /// Evidence level - MUST be ! for SQL parameters
-    pub evidence: EvidenceLevel,
+    /// Evidence level - MUST be ! ∀ SQL parameters
+    ☉ evidence: EvidenceLevel,
 
-    /// Parameter name (for named params)
-    pub name: Option<String>,
+    /// Parameter name (∀ named params)
+    ☉ name: Option<String>,
 }
 
-impl QueryParam {
+⊢ QueryParam {
     /// Create a known (!) parameter
-    pub fn known(value: Value) -> Self {
+    ☉ λ known(value: Value) -> Self {
         Self {
             value,
-            evidence: EvidenceLevel::Known,
+            evidence: EvidenceLevel·Known,
             name: None,
         }
     }
 
-    /// Create from an evidenced value - will fail if not !
-    pub fn from_evidenced<T: Into<Value>>(evidenced: Evidenced<T>) -> Result<Self, QueryError> {
-        if evidenced.level() != EvidenceLevel::Known {
-            return Err(QueryError::EvidenceRequired {
+    /// Create from an evidenced value - will fail ⎇ not !
+    ☉ λ from_evidenced<T: Into<Value>>(evidenced: Evidenced<T>) -> Result<Self, QueryError> {
+        ⎇ evidenced.level() != EvidenceLevel·Known {
+            ⤺ Err(QueryError·EvidenceRequired {
                 actual: evidenced.level(),
                 message: "Query parameters must have ! evidence".to_string(),
             });
@@ -161,16 +161,16 @@ impl QueryParam {
 
         Ok(Self {
             value: evidenced.value.into(),
-            evidence: EvidenceLevel::Known,
+            evidence: EvidenceLevel·Known,
             name: None,
         })
     }
 
     /// Named parameter
-    pub fn named(name: &str, value: Value) -> Self {
+    ☉ λ named(name: &str, value: Value) -> Self {
         Self {
             value,
-            evidence: EvidenceLevel::Known,
+            evidence: EvidenceLevel·Known,
             name: Some(name.to_string()),
         }
     }
@@ -178,20 +178,20 @@ impl QueryParam {
 
 /// Ordering specification
 #[derive(Clone, Debug)]
-pub struct Ordering {
-    pub field: String,
-    pub direction: OrderDirection,
-    pub nulls: NullsOrder,
+☉ Σ Ordering {
+    ☉ field: String,
+    ☉ direction: OrderDirection,
+    ☉ nulls: NullsOrder,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum OrderDirection {
+☉ ᛈ OrderDirection {
     Asc,
     Desc,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum NullsOrder {
+☉ ᛈ NullsOrder {
     First,
     Last,
     Default,
@@ -199,14 +199,14 @@ pub enum NullsOrder {
 
 /// Pagination (LIMIT/OFFSET)
 #[derive(Clone, Debug)]
-pub struct Pagination {
-    pub limit: usize,
-    pub offset: usize,
+☉ Σ Pagination {
+    ☉ limit: usize,
+    ☉ offset: usize,
 }
 
 /// Projection (SELECT)
 #[derive(Clone, Debug)]
-pub enum Projection {
+☉ ᛈ Projection {
     /// All columns
     All,
 
@@ -228,7 +228,7 @@ pub enum Projection {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum AggregateFunc {
+☉ ᛈ AggregateFunc {
     Count,
     Sum,
     Avg,
@@ -238,15 +238,15 @@ pub enum AggregateFunc {
 
 /// Join specification
 #[derive(Clone, Debug)]
-pub struct Join {
-    pub join_type: JoinType,
-    pub table: String,
-    pub alias: Option<String>,
-    pub on: Filter,
+☉ Σ Join {
+    ☉ join_type: JoinType,
+    ☉ table: String,
+    ☉ alias: Option<String>,
+    ☉ on: Filter,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum JoinType {
+☉ ᛈ JoinType {
     Inner,
     Left,
     Right,
@@ -257,19 +257,19 @@ pub enum JoinType {
 // Query Builder
 // ============================================================================
 
-impl<T> Query<T> {
+⊢<T> Query<T> {
     /// Start a query on a table
-    pub fn from(table: &str) -> Self {
+    ☉ λ from(table: &str) -> Self {
         Self {
             table: table.to_string(),
             filters: vec![],
             ordering: vec![],
             pagination: None,
             grouping: vec![],
-            projections: vec![Projection::All],
+            projections: vec![Projection·All],
             joins: vec![],
             params: vec![],
-            _marker: std::marker::PhantomData,
+            _marker: std·marker·PhantomData,
         }
     }
 
@@ -279,40 +279,40 @@ impl<T> Query<T> {
 
     /// Add a filter (WHERE clause)
     /// Symbol: φ
-    pub fn phi(mut self, filter: Filter) -> Self {
+    ☉ λ phi(Δ self, filter: Filter) -> Self {
         self.filters.push(filter);
         self
     }
 
     /// Convenience: filter by field equals value
-    pub fn where_eq(self, field: &str, value: QueryParam) -> Self {
-        self.phi(Filter::Compare {
+    ☉ λ where_eq(self, field: &str, value: QueryParam) -> Self {
+        self.phi(Filter·Compare {
             field: field.to_string(),
-            op: CompareOp::Eq,
+            op: CompareOp·Eq,
             value,
         })
     }
 
     /// Convenience: filter by field greater than value
-    pub fn where_gt(self, field: &str, value: QueryParam) -> Self {
-        self.phi(Filter::Compare {
+    ☉ λ where_gt(self, field: &str, value: QueryParam) -> Self {
+        self.phi(Filter·Compare {
             field: field.to_string(),
-            op: CompareOp::Gt,
+            op: CompareOp·Gt,
             value,
         })
     }
 
     /// Convenience: filter where field is null
-    pub fn where_null(self, field: &str) -> Self {
-        self.phi(Filter::IsNull {
+    ☉ λ where_null(self, field: &str) -> Self {
+        self.phi(Filter·IsNull {
             field: field.to_string(),
             is_null: true,
         })
     }
 
     /// Convenience: filter where field is not null
-    pub fn where_not_null(self, field: &str) -> Self {
-        self.phi(Filter::IsNull {
+    ☉ λ where_not_null(self, field: &str) -> Self {
+        self.phi(Filter·IsNull {
             field: field.to_string(),
             is_null: false,
         })
@@ -324,26 +324,26 @@ impl<T> Query<T> {
 
     /// Add ordering (ORDER BY)
     /// Symbol: σ
-    pub fn sigma(mut self, ordering: Ordering) -> Self {
+    ☉ λ sigma(Δ self, ordering: Ordering) -> Self {
         self.ordering.push(ordering);
         self
     }
 
     /// Convenience: order by field ascending
-    pub fn order_by(self, field: &str) -> Self {
+    ☉ λ order_by(self, field: &str) -> Self {
         self.sigma(Ordering {
             field: field.to_string(),
-            direction: OrderDirection::Asc,
-            nulls: NullsOrder::Default,
+            direction: OrderDirection·Asc,
+            nulls: NullsOrder·Default,
         })
     }
 
     /// Convenience: order by field descending
-    pub fn order_by_desc(self, field: &str) -> Self {
+    ☉ λ order_by_desc(self, field: &str) -> Self {
         self.sigma(Ordering {
             field: field.to_string(),
-            direction: OrderDirection::Desc,
-            nulls: NullsOrder::Default,
+            direction: OrderDirection·Desc,
+            nulls: NullsOrder·Default,
         })
     }
 
@@ -353,22 +353,22 @@ impl<T> Query<T> {
 
     /// Set pagination (LIMIT/OFFSET)
     /// Symbol: ν
-    pub fn nu(mut self, limit: usize, offset: usize) -> Self {
+    ☉ λ nu(Δ self, limit: usize, offset: usize) -> Self {
         self.pagination = Some(Pagination { limit, offset });
         self
     }
 
     /// Convenience: limit results
-    pub fn limit(self, n: usize) -> Self {
+    ☉ λ limit(self, n: usize) -> Self {
         self.nu(n, 0)
     }
 
     /// Convenience: skip first n results
-    pub fn offset(mut self, n: usize) -> Self {
-        if let Some(ref mut p) = self.pagination {
+    ☉ λ offset(Δ self, n: usize) -> Self {
+        ⎇ ≔ Some(ref Δ p) = self.pagination {
             p.offset = n;
-        } else {
-            self.pagination = Some(Pagination { limit: usize::MAX, offset: n });
+        } ⎉ {
+            self.pagination = Some(Pagination { limit: usize·MAX, offset: n });
         }
         self
     }
@@ -379,14 +379,14 @@ impl<T> Query<T> {
 
     /// Set projections (SELECT)
     /// Symbol: τ
-    pub fn tau(mut self, projections: Vec<Projection>) -> Self {
+    ☉ λ tau(Δ self, projections: Vec<Projection>) -> Self {
         self.projections = projections;
         self
     }
 
     /// Convenience: select specific columns
-    pub fn select(self, columns: &[&str]) -> Self {
-        self.tau(columns.iter().map(|c| Projection::Column(c.to_string())).collect())
+    ☉ λ select(self, columns: &[&str]) -> Self {
+        self.tau(columns.iter().map(|c| Projection·Column(c.to_string())).collect())
     }
 
     // ========================================================================
@@ -394,14 +394,14 @@ impl<T> Query<T> {
     // ========================================================================
 
     /// Add grouping (GROUP BY)
-    pub fn group_by(mut self, field: &str) -> Self {
+    ☉ λ group_by(Δ self, field: &str) -> Self {
         self.grouping.push(field.to_string());
         self
     }
 
     /// Add aggregate projection
-    pub fn aggregate(mut self, func: AggregateFunc, column: &str, alias: Option<&str>) -> Self {
-        self.projections.push(Projection::Aggregate {
+    ☉ λ aggregate(Δ self, func: AggregateFunc, column: &str, alias: Option<&str>) -> Self {
+        self.projections.push(Projection·Aggregate {
             func,
             column: column.to_string(),
             alias: alias.map(|s| s.to_string()),
@@ -415,15 +415,15 @@ impl<T> Query<T> {
 
     /// Add a join
     /// Symbol: ζ
-    pub fn zeta(mut self, join: Join) -> Self {
+    ☉ λ zeta(Δ self, join: Join) -> Self {
         self.joins.push(join);
         self
     }
 
     /// Convenience: inner join
-    pub fn inner_join(self, table: &str, on: Filter) -> Self {
+    ☉ λ inner_join(self, table: &str, on: Filter) -> Self {
         self.zeta(Join {
-            join_type: JoinType::Inner,
+            join_type: JoinType·Inner,
             table: table.to_string(),
             alias: None,
             on,
@@ -431,9 +431,9 @@ impl<T> Query<T> {
     }
 
     /// Convenience: left join
-    pub fn left_join(self, table: &str, on: Filter) -> Self {
+    ☉ λ left_join(self, table: &str, on: Filter) -> Self {
         self.zeta(Join {
-            join_type: JoinType::Left,
+            join_type: JoinType·Left,
             table: table.to_string(),
             alias: None,
             on,
@@ -445,27 +445,27 @@ impl<T> Query<T> {
     // ========================================================================
 
     /// Generate SQL and parameters
-    pub fn to_sql(&self) -> (String, Vec<Value>) {
-        let mut sql = String::new();
-        let mut params: Vec<Value> = vec![];
-        let mut param_idx = 1;
+    ☉ λ to_sql(&self) -> (String, Vec<Value>) {
+        ≔ Δ sql = String·new();
+        ≔ Δ params: Vec<Value> = vec![];
+        ≔ Δ param_idx = 1;
 
         // SELECT
         sql.push_str("SELECT ");
-        let proj_strs: Vec<String> = self.projections.iter().map(|p| {
-            match p {
-                Projection::All => "*".to_string(),
-                Projection::Column(c) => c.clone(),
-                Projection::Aliased { expr, alias } => format!("{} AS {}", expr, alias),
-                Projection::Aggregate { func, column, alias } => {
-                    let func_str = match func {
-                        AggregateFunc::Count => "COUNT",
-                        AggregateFunc::Sum => "SUM",
-                        AggregateFunc::Avg => "AVG",
-                        AggregateFunc::Min => "MIN",
-                        AggregateFunc::Max => "MAX",
+        ≔ proj_strs: Vec<String> = self.projections.iter().map(|p| {
+            ⌥ p {
+                Projection·All => "*".to_string(),
+                Projection·Column(c) => c.clone(),
+                Projection·Aliased { expr, alias } => format!("{} AS {}", expr, alias),
+                Projection·Aggregate { func, column, alias } => {
+                    ≔ func_str = ⌥ func {
+                        AggregateFunc·Count => "COUNT",
+                        AggregateFunc·Sum => "SUM",
+                        AggregateFunc·Avg => "AVG",
+                        AggregateFunc·Min => "MIN",
+                        AggregateFunc·Max => "MAX",
                     };
-                    match alias {
+                    ⌥ alias {
                         Some(a) => format!("{}({}) AS {}", func_str, column, a),
                         None => format!("{}({})", func_str, column),
                     }
@@ -479,28 +479,28 @@ impl<T> Query<T> {
         sql.push_str(&self.table);
 
         // JOINS
-        for join in &self.joins {
-            let join_type = match join.join_type {
-                JoinType::Inner => "INNER JOIN",
-                JoinType::Left => "LEFT JOIN",
-                JoinType::Right => "RIGHT JOIN",
-                JoinType::Full => "FULL JOIN",
+        ∀ join ∈ &self.joins {
+            ≔ join_type = ⌥ join.join_type {
+                JoinType·Inner => "INNER JOIN",
+                JoinType·Left => "LEFT JOIN",
+                JoinType·Right => "RIGHT JOIN",
+                JoinType·Full => "FULL JOIN",
             };
             sql.push_str(&format!(" {} {}", join_type, join.table));
-            if let Some(ref alias) = join.alias {
+            ⎇ ≔ Some(ref alias) = join.alias {
                 sql.push_str(&format!(" AS {}", alias));
             }
             sql.push_str(" ON ");
-            let (on_sql, on_params) = self.filter_to_sql(&join.on, &mut param_idx);
+            ≔ (on_sql, on_params) = self.filter_to_sql(&join.on, &Δ param_idx);
             sql.push_str(&on_sql);
             params.extend(on_params);
         }
 
         // WHERE
-        if !self.filters.is_empty() {
+        ⎇ !self.filters.is_empty() {
             sql.push_str(" WHERE ");
-            let filter_strs: Vec<String> = self.filters.iter().map(|f| {
-                let (filter_sql, filter_params) = self.filter_to_sql(f, &mut param_idx);
+            ≔ filter_strs: Vec<String> = self.filters.iter().map(|f| {
+                ≔ (filter_sql, filter_params) = self.filter_to_sql(f, &Δ param_idx);
                 params.extend(filter_params);
                 filter_sql
             }).collect();
@@ -508,23 +508,23 @@ impl<T> Query<T> {
         }
 
         // GROUP BY
-        if !self.grouping.is_empty() {
+        ⎇ !self.grouping.is_empty() {
             sql.push_str(" GROUP BY ");
             sql.push_str(&self.grouping.join(", "));
         }
 
         // ORDER BY
-        if !self.ordering.is_empty() {
+        ⎇ !self.ordering.is_empty() {
             sql.push_str(" ORDER BY ");
-            let order_strs: Vec<String> = self.ordering.iter().map(|o| {
-                let dir = match o.direction {
-                    OrderDirection::Asc => "ASC",
-                    OrderDirection::Desc => "DESC",
+            ≔ order_strs: Vec<String> = self.ordering.iter().map(|o| {
+                ≔ dir = ⌥ o.direction {
+                    OrderDirection·Asc => "ASC",
+                    OrderDirection·Desc => "DESC",
                 };
-                let nulls = match o.nulls {
-                    NullsOrder::First => " NULLS FIRST",
-                    NullsOrder::Last => " NULLS LAST",
-                    NullsOrder::Default => "",
+                ≔ nulls = ⌥ o.nulls {
+                    NullsOrder·First => " NULLS FIRST",
+                    NullsOrder·Last => " NULLS LAST",
+                    NullsOrder·Default => "",
                 };
                 format!("{} {}{}", o.field, dir, nulls)
             }).collect();
@@ -532,11 +532,11 @@ impl<T> Query<T> {
         }
 
         // LIMIT/OFFSET
-        if let Some(ref p) = self.pagination {
-            if p.limit < usize::MAX {
+        ⎇ ≔ Some(ref p) = self.pagination {
+            ⎇ p.limit < usize·MAX {
                 sql.push_str(&format!(" LIMIT {}", p.limit));
             }
-            if p.offset > 0 {
+            ⎇ p.offset > 0 {
                 sql.push_str(&format!(" OFFSET {}", p.offset));
             }
         }
@@ -544,68 +544,68 @@ impl<T> Query<T> {
         (sql, params)
     }
 
-    fn filter_to_sql(&self, filter: &Filter, param_idx: &mut usize) -> (String, Vec<Value>) {
-        let mut params = vec![];
+    λ filter_to_sql(&self, filter: &Filter, param_idx: &Δ usize) -> (String, Vec<Value>) {
+        ≔ Δ params = vec![];
 
-        let sql = match filter {
-            Filter::Compare { field, op, value } => {
+        ≔ sql = ⌥ filter {
+            Filter·Compare { field, op, value } => {
                 params.push(value.value.clone());
-                let idx = *param_idx;
+                ≔ idx = *param_idx;
                 *param_idx += 1;
                 format!("{} {} ${}", field, op.as_sql(), idx)
             }
-            Filter::IsNull { field, is_null } => {
-                if *is_null {
+            Filter·IsNull { field, is_null } => {
+                ⎇ *is_null {
                     format!("{} IS NULL", field)
-                } else {
+                } ⎉ {
                     format!("{} IS NOT NULL", field)
                 }
             }
-            Filter::In { field, values } => {
-                let placeholders: Vec<String> = values.iter().map(|v| {
+            Filter·In { field, values } => {
+                ≔ placeholders: Vec<String> = values.iter().map(|v| {
                     params.push(v.value.clone());
-                    let idx = *param_idx;
+                    ≔ idx = *param_idx;
                     *param_idx += 1;
                     format!("${}", idx)
                 }).collect();
                 format!("{} IN ({})", field, placeholders.join(", "))
             }
-            Filter::Between { field, low, high } => {
+            Filter·Between { field, low, high } => {
                 params.push(low.value.clone());
-                let low_idx = *param_idx;
+                ≔ low_idx = *param_idx;
                 *param_idx += 1;
                 params.push(high.value.clone());
-                let high_idx = *param_idx;
+                ≔ high_idx = *param_idx;
                 *param_idx += 1;
                 format!("{} BETWEEN ${} AND ${}", field, low_idx, high_idx)
             }
-            Filter::Like { field, pattern, case_insensitive } => {
-                let op = if *case_insensitive { "ILIKE" } else { "LIKE" };
+            Filter·Like { field, pattern, case_insensitive } => {
+                ≔ op = ⎇ *case_insensitive { "ILIKE" } ⎉ { "LIKE" };
                 format!("{} {} '{}'", field, op, pattern)
             }
-            Filter::And(filters) => {
-                let strs: Vec<String> = filters.iter().map(|f| {
-                    let (s, p) = self.filter_to_sql(f, param_idx);
+            Filter·And(filters) => {
+                ≔ strs: Vec<String> = filters.iter().map(|f| {
+                    ≔ (s, p) = self.filter_to_sql(f, param_idx);
                     params.extend(p);
                     s
                 }).collect();
                 format!("({})", strs.join(" AND "))
             }
-            Filter::Or(filters) => {
-                let strs: Vec<String> = filters.iter().map(|f| {
-                    let (s, p) = self.filter_to_sql(f, param_idx);
+            Filter·Or(filters) => {
+                ≔ strs: Vec<String> = filters.iter().map(|f| {
+                    ≔ (s, p) = self.filter_to_sql(f, param_idx);
                     params.extend(p);
                     s
                 }).collect();
                 format!("({})", strs.join(" OR "))
             }
-            Filter::Not(f) => {
-                let (s, p) = self.filter_to_sql(f, param_idx);
+            Filter·Not(f) => {
+                ≔ (s, p) = self.filter_to_sql(f, param_idx);
                 params.extend(p);
                 format!("NOT ({})", s)
             }
-            Filter::Raw { sql, params: raw_params } => {
-                for p in raw_params {
+            Filter·Raw { sql, params: raw_params } => {
+                ∀ p ∈ raw_params {
                     params.push(p.value.clone());
                 }
                 sql.clone()
@@ -621,8 +621,8 @@ impl<T> Query<T> {
 // ============================================================================
 
 #[derive(Debug)]
-pub enum QueryError {
-    /// Evidence level insufficient for query parameter
+☉ ᛈ QueryError {
+    /// Evidence level insufficient ∀ query parameter
     EvidenceRequired {
         actual: EvidenceLevel,
         message: String,
@@ -640,36 +640,36 @@ pub enum QueryError {
 // ============================================================================
 
 /// Result of a query execution
-pub struct QueryResult<T> {
+☉ Σ QueryResult<T> {
     /// The rows returned
-    pub rows: Vec<Evidenced<T>>,
+    ☉ rows: Vec<Evidenced<T>>,
 
-    /// Total count (if requested)
-    pub total: Option<usize>,
+    /// Total count (⎇ requested)
+    ☉ total: Option<usize>,
 
     /// Query execution time
-    pub duration: Duration,
+    ☉ duration: Duration,
 
-    /// SQL that was executed (for debugging)
-    pub sql: String,
+    /// SQL that was executed (∀ debugging)
+    ☉ sql: String,
 }
 
-impl<T> QueryResult<T> {
-    /// Check if empty
-    pub fn is_empty(&self) -> bool {
+⊢<T> QueryResult<T> {
+    /// Check ⎇ empty
+    ☉ λ is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 
     /// Get first row
-    pub fn first(&self) -> Option<&Evidenced<T>> {
+    ☉ λ first(&self) -> Option<&Evidenced<T>> {
         self.rows.first()
     }
 
     /// Get first row, consuming result
-    pub fn into_first(mut self) -> Option<Evidenced<T>> {
-        if self.rows.is_empty() {
+    ☉ λ into_first(Δ self) -> Option<Evidenced<T>> {
+        ⎇ self.rows.is_empty() {
             None
-        } else {
+        } ⎉ {
             Some(self.rows.remove(0))
         }
     }

@@ -3,7 +3,7 @@
 // Priority: P0 = Bootstrap Critical
 //
 // Purpose:
-// Validates that runes can be invoked in pipe position using
+// Validates that runes can be invoked ∈ pipe position using
 // the syntax `value|rune!{...}` where the piped value becomes
 // available as implicit context within the rune.
 //

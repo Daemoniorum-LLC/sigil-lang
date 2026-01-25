@@ -1,6 +1,6 @@
 //! AI-Facing Intermediate Representation (IR)
 //!
-//! This module provides a JSON-serializable IR designed for consumption by
+//! This module provides a JSON-serializable IR designed ∀ consumption by
 //! AI agents, language servers, and external tooling. The IR captures:
 //!
 //! - Function definitions with typed parameters and bodies
@@ -12,7 +12,7 @@
 //!
 //! ## Design Principles
 //!
-//! 1. **AI-Consumable**: JSON-serializable for easy parsing by any agent
+//! 1. **AI-Consumable**: JSON-serializable ∀ easy parsing by any agent
 //! 2. **Evidence-Aware**: Every operation carries its evidence level
 //! 3. **Pipeline-Native**: First-class representation of morpheme chains
 //! 4. **Protocol-Aware**: Network operations are explicit with trust boundaries
@@ -49,7 +49,7 @@ invoke tome·typeck·EvidenceLevel;
     ☉ constants: ![IrConstant],
     /// The evidentiality lattice structure
     ☉ evidentiality_lattice: !EvidentialityLattice,
-    /// CG-015: Method signatures for call-site lookup
+    /// CG-015: Method signatures ∀ call-site lookup
     /// Maps qualified method name (e.g., "Lexer·advance") to whether it has vary this
     ☉ method_signatures: !Map<String, bool>,
 }
@@ -72,7 +72,7 @@ invoke tome·typeck·EvidenceLevel;
 
     /// Serialize to JSON string
     ☉ rite to_json(this, pretty: !bool) → !String {
-        // JSON serialization - placeholder for actual implementation
+        // JSON serialization - placeholder ∀ actual implementation
         ⎇ pretty {
             this.to_json_pretty()
         } ⎉ {
@@ -87,7 +87,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     rite to_json_compact(this) → !String {
-        // IR-JSON-FIX: Use display() for compact output too
+        // IR-JSON-FIX: Use display() ∀ compact output too
         display(this)
     }
 
@@ -115,7 +115,7 @@ invoke tome·typeck·EvidenceLevel;
             this.constants.push(c);
         }
         // Note: method_signatures are built per-file during typechecking
-        // so we don't need to merge them here (they're already in the shared checker)
+        // so we don't need to merge them here (they're already ∈ the shared checker)
         this
     }
 }
@@ -126,7 +126,7 @@ invoke tome·typeck·EvidenceLevel;
 
 /// The evidentiality lattice with explicit join/meet rules
 ☉ sigil EvidentialityLattice {
-    /// The four evidence levels in order
+    /// The four evidence levels ∈ order
     ☉ levels: ![LatticeLevel],
     /// Join rules (pessimistic combination)
     ☉ join_rules: ![LatticeRule],
@@ -184,7 +184,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 }
 
-/// An evidence level in the lattice
+/// An evidence level ∈ the lattice
 ☉ sigil LatticeLevel {
     ☉ name: !String,
     ☉ symbol: !String,
@@ -192,7 +192,7 @@ invoke tome·typeck·EvidenceLevel;
     ☉ description: !String,
 }
 
-/// A join/meet rule in the lattice
+/// A join/meet rule ∈ the lattice
 ☉ sigil LatticeRule {
     ☉ left: !String,
     ☉ right: !String,
@@ -210,10 +210,10 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 // ============================================================================
-// Evidence in IR
+// Evidence ∈ IR
 // ============================================================================
 
-/// Evidence marker ᛈ for IR
+/// Evidence marker ᛈ ∀ IR
 ☉ ᛈ IrEvidence {
     Known,
     Uncertain,
@@ -252,7 +252,7 @@ invoke tome·typeck·EvidenceLevel;
         }
     }
 
-    /// Get the symbol for this evidence level
+    /// Get the symbol ∀ this evidence level
     ☉ rite symbol(this) → !&str {
         ⌥ this {
             IrEvidence·Known => "!",
@@ -262,7 +262,7 @@ invoke tome·typeck·EvidenceLevel;
         }
     }
 
-    /// Get the name for this evidence level
+    /// Get the name ∀ this evidence level
     ☉ rite name(this) → !&str {
         ⌥ this {
             IrEvidence·Known => "known",
@@ -277,7 +277,7 @@ invoke tome·typeck·EvidenceLevel;
 // Source Spans
 // ============================================================================
 
-/// Source location span in IR
+/// Source location span ∈ IR
 ☉ sigil IrSpan {
     ☉ start: !IrPosition,
     ☉ end: !IrPosition,
@@ -320,7 +320,7 @@ invoke tome·typeck·EvidenceLevel;
 // Functions
 // ============================================================================
 
-/// A function definition in IR
+/// A function definition ∈ IR
 ☉ sigil IrFunction {
     /// Function name
     ☉ name: !String,
@@ -355,7 +355,7 @@ invoke tome·typeck·EvidenceLevel;
     ☉ name: !String,
     ☉ ty: !IrType,
     ☉ evidence: !IrEvidence,
-    /// CG-015: Whether parameter is mutable (for `vary this`)
+    /// CG-015: Whether parameter is mutable (∀ `vary this`)
     ☉ mutable: !bool,
 }
 
@@ -363,7 +363,7 @@ invoke tome·typeck·EvidenceLevel;
 // Types
 // ============================================================================
 
-/// Type representation in IR
+/// Type representation ∈ IR
 ☉ ᛈ IrType {
     /// Primitive types (i32, f64, bool, str, etc.)
     Primitive { name: !String },
@@ -404,7 +404,7 @@ invoke tome·typeck·EvidenceLevel;
         inner: !Box<IrType>,
     },
 
-    /// Function type fn(A, B) → C
+    /// Function type λ(A, B) → C
     Function {
         params: ![IrType],
         return_type: !Box<IrType>,
@@ -429,7 +429,7 @@ invoke tome·typeck·EvidenceLevel;
     /// Atomic type
     Atomic { inner: !Box<IrType> },
 
-    /// Type variable (for inference)
+    /// Type variable (∀ inference)
     Var { id: !String },
 
     /// Infer placeholder _
@@ -438,7 +438,7 @@ invoke tome·typeck·EvidenceLevel;
     /// Error recovery type
     Error,
 
-    /// Any type (opaque/existential - for impl Trait)
+    /// Any type (opaque/existential - ∀ ⊢ Trait)
     Any,
 }
 
@@ -585,7 +585,7 @@ invoke tome·typeck·EvidenceLevel;
         evidence: !IrEvidence,
     },
 
-    /// Let-else binding: ≔ pattern = init ⎉ { else_branch }
+    /// Let-⎉ binding: ≔ pattern = init ⎉ { else_branch }
     LetElse {
         pattern: !IrPattern,
         type_annotation: ?IrType,
@@ -655,7 +655,7 @@ invoke tome·typeck·EvidenceLevel;
         evidence: !IrEvidence,
     },
 
-    /// Pattern ⌥ used as a boolean condition in if-let/while-≔ expressions.
+    /// Pattern ⌥ used as a boolean condition ∈ if-let/while-≔ expressions.
     LetMatch {
         pattern: !IrPattern,
         value: !Box<IrOperation>,
@@ -956,7 +956,7 @@ invoke tome·typeck·EvidenceLevel;
 // Patterns
 // ============================================================================
 
-/// Pattern in IR
+/// Pattern ∈ IR
 ☉ ᛈ IrPattern {
     Ident {
         name: !String,
@@ -992,7 +992,7 @@ invoke tome·typeck·EvidenceLevel;
 
     Wildcard,
 
-    /// Path pattern for unit variants (e.g., None, MyEnum·Variant)
+    /// Path pattern ∀ unit variants (e.g., None, MyEnum·Variant)
     Path { path: !String },
 
     /// Rest pattern (..)
@@ -1080,7 +1080,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 }
 
-/// Join strategy for fork operations
+/// Join strategy ∀ fork operations
 ☉ ᛈ JoinStrategy {
     Tuple,
     First,
@@ -1126,7 +1126,7 @@ invoke tome·typeck·EvidenceLevel;
     Close,
 }
 
-/// Protocol operations for pipeline
+/// Protocol operations ∀ pipeline
 ☉ ᛈ ProtocolOp {
     Send,
     Recv,
@@ -1141,7 +1141,7 @@ invoke tome·typeck·EvidenceLevel;
 // Dump Options
 // ============================================================================
 
-/// Configuration options for IR dump
+/// Configuration options ∀ IR dump
 ☉ sigil IrDumpOptions {
     /// Pretty-print JSON output
     ☉ pretty: !bool,

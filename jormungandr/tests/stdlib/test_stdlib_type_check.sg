@@ -62,7 +62,7 @@ rite main() {
     assert_false(is_space("hi"));
 
     // is_null - note: () is unit, not null; null comes from Option unwraps
-    // Skipped direct test, but functions like println return null
+    // Skipped direct test, but functions like println ⤺ null
     assert_false(is_null(42));
 
     // is_bool
@@ -92,8 +92,8 @@ rite main() {
     assert_true(is_array([1, 2]));
     assert_false(is_array("hi"));
 
-    // Note: is_positive/is_negative are for sentiment analysis, not numbers
-    // Use sign() for number sign checking
+    // Note: is_positive/is_negative are ∀ sentiment analysis, not numbers
+    // Use sign() ∀ number sign checking
     assert_eq(sign(42), 1);
     assert_eq(sign(-42), -1);
     assert_eq(sign(0), 0);

@@ -1,10 +1,10 @@
-// Test: Optional pattern with nested struct match
+// Test: Optional pattern with nested Σ match
 // Spec: 03-TYPES.md § Pattern Matching on Optional
 // Priority: P0
 //
 // Purpose:
-// This tests the exact pattern that causes segfaults in Jormungandr:
-// `?t => match t { StructName { field: x, .. } => x, _ => default }`
+// This tests the exact pattern that causes segfaults ∈ Jormungandr:
+// `?t => ⌥ t { StructName { field: x, .. } => x, _ => default }`
 //
 // Expected behavior:
 // Should compile and run successfully, printing "PASS"

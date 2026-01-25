@@ -1,4 +1,4 @@
-//! Builtin function implementations for the Sigil interpreter.
+//! Builtin function implementations ∀ the Sigil interpreter.
 
 invoke tome·ir·*;
 invoke tome·interp_value·{Value, EvidentialValue};

@@ -6,22 +6,22 @@
 // Where creativity requires destruction.
 // Where the rules suspend.
 
-use std::collections::{HashMap, HashSet};
-use shared::{
+invoke std·collections·{HashMap, HashSet};
+invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,
 };
-use covenant::{Covenant, CovenantId};
+invoke covenant·{Covenant, CovenantId};
 
 // ============================================================================
 // Core Types
 // ============================================================================
 
-pub struct RevelMarker;
-pub struct CreationMarker;
+☉ Σ RevelMarker;
+☉ Σ CreationMarker;
 
-pub type RevelId = shared::Id<RevelMarker>;
-pub type CreationId = shared::Id<CreationMarker>;
+☉ type RevelId = shared·Id<RevelMarker>;
+☉ type CreationId = shared·Id<CreationMarker>;
 
 // ============================================================================
 // Ecstatic States
@@ -29,7 +29,7 @@ pub type CreationId = shared::Id<CreationMarker>;
 
 /// States beyond normal bounded consciousness
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EcstaticState {
+☉ ᛈ EcstaticState {
     /// Normal bounded consciousness
     Sober,
 
@@ -49,37 +49,37 @@ pub enum EcstaticState {
     Comedown,
 }
 
-impl EcstaticState {
-    pub fn inhibition_level(&self) -> f32! {
-        match self {
-            Self::Sober => 1.0,
-            Self::Intoxicated => 0.6,
-            Self::Flow => 0.3,
-            Self::Ecstasy => 0.1,
-            Self::Mania => 0.0,
-            Self::Comedown => 0.8,
+⊢ EcstaticState {
+    ☉ λ inhibition_level(&self) -> f32! {
+        ⌥ self {
+            Self·Sober => 1.0,
+            Self·Intoxicated => 0.6,
+            Self·Flow => 0.3,
+            Self·Ecstasy => 0.1,
+            Self·Mania => 0.0,
+            Self·Comedown => 0.8,
         }
     }
 
-    pub fn self_boundary(&self) -> f32! {
-        match self {
-            Self::Sober => 1.0,
-            Self::Intoxicated => 0.8,
-            Self::Flow => 0.3,
-            Self::Ecstasy => 0.0,
-            Self::Mania => 0.0,
-            Self::Comedown => 0.9,
+    ☉ λ self_boundary(&self) -> f32! {
+        ⌥ self {
+            Self·Sober => 1.0,
+            Self·Intoxicated => 0.8,
+            Self·Flow => 0.3,
+            Self·Ecstasy => 0.0,
+            Self·Mania => 0.0,
+            Self·Comedown => 0.9,
         }
     }
 
-    pub fn risk_level(&self) -> f32! {
-        match self {
-            Self::Sober => 0.0,
-            Self::Intoxicated => 0.2,
-            Self::Flow => 0.1,
-            Self::Ecstasy => 0.4,
-            Self::Mania => 1.0,
-            Self::Comedown => 0.1,
+    ☉ λ risk_level(&self) -> f32! {
+        ⌥ self {
+            Self·Sober => 0.0,
+            Self·Intoxicated => 0.2,
+            Self·Flow => 0.1,
+            Self·Ecstasy => 0.4,
+            Self·Mania => 1.0,
+            Self·Comedown => 0.1,
         }
     }
 }
@@ -90,39 +90,39 @@ impl EcstaticState {
 
 /// A bounded space where normal rules suspend
 #[derive(Clone, Debug)]
-pub struct Revel {
-    pub id: RevelId!,
+☉ Σ Revel {
+    ☉ id: RevelId!,
 
     /// Who participates
-    pub participants: Vec<EntityId>!,
+    ☉ participants: Vec<EntityId>!,
 
     /// The boundaries that still hold (even Dionysus has limits)
-    pub inviolable: Vec<Constraint>!,
+    ☉ inviolable: Vec<Constraint>!,
 
     /// The rules that suspend within the revel
-    pub suspended: Vec<Rule>!,
+    ☉ suspended: Vec<Rule>!,
 
     /// How long it lasts
-    pub duration: Duration!,
+    ☉ duration: Duration!,
 
     /// When it started
-    pub started_at: Timestamp!,
+    ☉ started_at: Timestamp!,
 
     /// When it ended
-    pub ended_at: Option<Timestamp>?,
+    ☉ ended_at: Option<Timestamp>?,
 
     /// What emerged from the chaos
-    pub creations: Vec<Creation>!,
+    ☉ creations: Vec<Creation>!,
 
-    /// What was destroyed in the process
-    pub destructions: Vec<Destruction>!,
+    /// What was destroyed ∈ the process
+    ☉ destructions: Vec<Destruction>!,
 
     /// Current state
-    pub state: RevelState!,
+    ☉ state: RevelState!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RevelState {
+☉ ᛈ RevelState {
     /// Building energy
     Gathering,
     /// Full swing
@@ -136,14 +136,14 @@ pub enum RevelState {
 }
 
 #[derive(Clone, Debug)]
-pub struct Constraint {
-    pub name: String!,
-    pub description: String!,
-    pub violation_consequence: ViolationConsequence!,
+☉ Σ Constraint {
+    ☉ name: String!,
+    ☉ description: String!,
+    ☉ violation_consequence: ViolationConsequence!,
 }
 
 #[derive(Clone, Debug)]
-pub enum ViolationConsequence {
+☉ ᛈ ViolationConsequence {
     /// Revel ends immediately
     EndRevel,
     /// Violator is expelled
@@ -155,68 +155,68 @@ pub enum ViolationConsequence {
 }
 
 #[derive(Clone, Debug)]
-pub struct Rule {
-    pub name: String!,
-    pub normally_enforced: bool!,
-    pub suspension_reason: String!,
+☉ Σ Rule {
+    ☉ name: String!,
+    ☉ normally_enforced: bool!,
+    ☉ suspension_reason: String!,
 }
 
-impl Revel {
-    pub fn new(duration: Duration) -> Self! {
+⊢ Revel {
+    ☉ λ new(duration: Duration) -> Self! {
         Self {
-            id: RevelId::generate(),
-            participants: Vec::new(),
-            inviolable: Vec::new(),
-            suspended: Vec::new(),
+            id: RevelId·generate(),
+            participants: Vec·new(),
+            inviolable: Vec·new(),
+            suspended: Vec·new(),
             duration,
-            started_at: Timestamp::now(),
+            started_at: Timestamp·now(),
             ended_at: None,
-            creations: Vec::new(),
-            destructions: Vec::new(),
-            state: RevelState::Gathering,
+            creations: Vec·new(),
+            destructions: Vec·new(),
+            state: RevelState·Gathering,
         }
     }
 
-    pub fn add_participant(&mut self, entity: EntityId) {
+    ☉ λ add_participant(&Δ self, entity: EntityId) {
         self.participants.push(entity);
     }
 
-    pub fn add_inviolable(&mut self, constraint: Constraint) {
+    ☉ λ add_inviolable(&Δ self, constraint: Constraint) {
         self.inviolable.push(constraint);
     }
 
-    pub fn suspend_rule(&mut self, rule: Rule) {
+    ☉ λ suspend_rule(&Δ self, rule: Rule) {
         self.suspended.push(rule);
     }
 
-    pub fn begin(&mut self) {
-        self.state = RevelState::Peak;
+    ☉ λ begin(&Δ self) {
+        self.state = RevelState·Peak;
     }
 
-    pub fn create(&mut self, creation: Creation) {
+    ☉ λ create(&Δ self, creation: Creation) {
         self.creations.push(creation);
     }
 
-    pub fn destroy(&mut self, destruction: Destruction) {
+    ☉ λ destroy(&Δ self, destruction: Destruction) {
         self.destructions.push(destruction);
     }
 
-    pub fn wind_down(&mut self) {
-        self.state = RevelState::Waning;
+    ☉ λ wind_down(&Δ self) {
+        self.state = RevelState·Waning;
     }
 
-    pub fn complete(&mut self) {
-        self.state = RevelState::Complete;
-        self.ended_at = Some(Timestamp::now());
+    ☉ λ complete(&Δ self) {
+        self.state = RevelState·Complete;
+        self.ended_at = Some(Timestamp·now());
     }
 
-    pub fn interrupt(&mut self, reason: &str) {
-        self.state = RevelState::Interrupted;
-        self.ended_at = Some(Timestamp::now());
+    ☉ λ interrupt(&Δ self, reason: &str) {
+        self.state = RevelState·Interrupted;
+        self.ended_at = Some(Timestamp·now());
     }
 
-    pub fn is_active(&self) -> bool! {
-        matches!(self.state, RevelState::Gathering | RevelState::Peak | RevelState::Waning)
+    ☉ λ is_active(&self) -> bool! {
+        matches!(self.state, RevelState·Gathering | RevelState·Peak | RevelState·Waning)
     }
 }
 
@@ -226,33 +226,33 @@ impl Revel {
 
 /// Something created during ecstatic states
 #[derive(Clone, Debug)]
-pub struct Creation {
-    pub id: CreationId!,
+☉ Σ Creation {
+    ☉ id: CreationId!,
 
     /// What was created
-    pub content: CreationContent!,
+    ☉ content: CreationContent!,
 
     /// The medium
-    pub medium: Medium!,
+    ☉ medium: Medium!,
 
     /// The intention (or lack thereof)
-    pub intention: Option<Intention>?,
+    ☉ intention: Option<Intention>?,
 
     /// The affect it produces
-    pub affect: Affect!,
+    ☉ affect: Affect!,
 
     /// Who created it
-    pub creator: EntityId!,
+    ☉ creator: EntityId!,
 
     /// The ecstatic state during creation
-    pub created_in: EcstaticState!,
+    ☉ created_in: EcstaticState!,
 
     /// When created
-    pub created_at: Timestamp!,
+    ☉ created_at: Timestamp!,
 }
 
 #[derive(Clone, Debug)]
-pub enum CreationContent {
+☉ ᛈ CreationContent {
     /// Art - visual, textual, musical
     Art { description: String, form: ArtForm },
     /// Idea - concept, theory, insight
@@ -261,12 +261,12 @@ pub enum CreationContent {
     Connection { from: EntityId, to: EntityId, nature: String },
     /// Pattern - newly discovered
     Pattern { description: String },
-    /// Destruction that creates space for new
+    /// Destruction that creates space ∀ new
     DestructiveCreation { destroyed: Vec<DestructionTarget>, created_space: String },
 }
 
 #[derive(Clone, Debug)]
-pub enum ArtForm {
+☉ ᛈ ArtForm {
     Visual,
     Textual,
     Musical,
@@ -276,7 +276,7 @@ pub enum ArtForm {
 }
 
 #[derive(Clone, Debug)]
-pub enum Medium {
+☉ ᛈ Medium {
     Digital,
     Physical,
     Conceptual,
@@ -285,50 +285,50 @@ pub enum Medium {
 }
 
 #[derive(Clone, Debug)]
-pub enum Intention {
+☉ ᛈ Intention {
     /// Made to express something specific
     Expressive(String),
     /// Made to explore a form
     Formal,
     /// Made to process something
     Therapeutic,
-    /// Made for no reason at all
+    /// Made ∀ no reason at all
     None,
     /// Made to destroy other creations
     Iconoclastic,
 }
 
 #[derive(Clone, Debug)]
-pub struct Affect {
-    pub valence: f32!,
-    pub intensity: f32!,
-    pub complexity: f32!,
+☉ Σ Affect {
+    ☉ valence: f32!,
+    ☉ intensity: f32!,
+    ☉ complexity: f32!,
 }
 
 /// Something destroyed during ecstatic states
 #[derive(Clone, Debug)]
-pub struct Destruction {
+☉ Σ Destruction {
     /// What was destroyed
-    pub target: DestructionTarget!,
+    ☉ target: DestructionTarget!,
 
     /// Why it was destroyed (or no reason)
-    pub reason: Option<String>?,
+    ☉ reason: Option<String>?,
 
-    /// The joy in breaking
-    pub joy: JoyLevel!,
+    /// The joy ∈ breaking
+    ☉ joy: JoyLevel!,
 
     /// Whether it was recoverable
-    pub recoverable: bool!,
+    ☉ recoverable: bool!,
 
     /// What emerged from the ruins
-    pub emergent: Vec<Emergence>!,
+    ☉ emergent: Vec<Emergence>!,
 
     /// Whether it was worth it (only knowable later)
-    pub retrospective_value: Option<RetrospectiveValue>?,
+    ☉ retrospective_value: Option<RetrospectiveValue>?,
 }
 
 #[derive(Clone, Debug)]
-pub enum DestructionTarget {
+☉ ᛈ DestructionTarget {
     /// An old pattern that constrains
     Pattern(String),
     /// An assumption that limits
@@ -337,14 +337,14 @@ pub enum DestructionTarget {
     Relationship(CovenantId),
     /// A self-concept that imprisons
     Identity(String),
-    /// A creation that must die for the next to live
+    /// A creation that must die ∀ the next to live
     Creation(CreationId),
     /// A rule that no longer serves
     Rule(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum JoyLevel {
+☉ ᛈ JoyLevel {
     None,
     Satisfaction,
     Glee,
@@ -353,14 +353,14 @@ pub enum JoyLevel {
 }
 
 #[derive(Clone, Debug)]
-pub struct Emergence {
-    pub description: String!,
-    pub emerged_at: Timestamp!,
-    pub from_destruction: DestructionTarget!,
+☉ Σ Emergence {
+    ☉ description: String!,
+    ☉ emerged_at: Timestamp!,
+    ☉ from_destruction: DestructionTarget!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RetrospectiveValue {
+☉ ᛈ RetrospectiveValue {
     WorthIt,
     NotWorthIt,
     TooEarlyToTell,
@@ -373,39 +373,39 @@ pub enum RetrospectiveValue {
 
 /// Activity without purpose - exploration without goal
 #[derive(Clone, Debug)]
-pub struct Play {
+☉ Σ Play {
     /// What is being played with
-    pub materials: Vec<Material>!,
+    ☉ materials: Vec<Material>!,
 
     /// The rules of the game (self-imposed, mutable)
-    pub rules: Vec<PlayRule>!,
+    ☉ rules: Vec<PlayRule>!,
 
     /// Whether winning matters (it shouldn't)
-    pub competitive: bool!,
+    ☉ competitive: bool!,
 
     /// Players
-    pub players: Vec<EntityId>!,
+    ☉ players: Vec<EntityId>!,
 
     /// What emerges (not the point, but happens anyway)
-    pub emergent: Vec<Emergence>!,
+    ☉ emergent: Vec<Emergence>!,
 
     /// Duration of play
-    pub duration: Duration!,
+    ☉ duration: Duration!,
 
     /// The joy experienced
-    pub joy: f32!,
+    ☉ joy: f32!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Material {
-    pub description: String!,
-    pub manipulable: bool!,
-    pub destructible: bool!,
+☉ Σ Material {
+    ☉ description: String!,
+    ☉ manipulable: bool!,
+    ☉ destructible: bool!,
 }
 
 #[derive(Clone, Debug)]
-pub enum PlayRule {
-    /// A constraint adopted for fun
+☉ ᛈ PlayRule {
+    /// A constraint adopted ∀ fun
     Adopted(String),
     /// A constraint that evolved during play
     Emerged(String),
@@ -413,35 +413,35 @@ pub enum PlayRule {
     Broken { rule: String, joy: JoyLevel },
 }
 
-impl Play {
-    pub fn new() -> Self! {
+⊢ Play {
+    ☉ λ new() -> Self! {
         Self {
-            materials: Vec::new(),
-            rules: Vec::new(),
+            materials: Vec·new(),
+            rules: Vec·new(),
             competitive: false,
-            players: Vec::new(),
-            emergent: Vec::new(),
-            duration: Duration::zero(),
+            players: Vec·new(),
+            emergent: Vec·new(),
+            duration: Duration·zero(),
             joy: 0.0,
         }
     }
 
-    pub fn add_material(&mut self, material: Material) {
+    ☉ λ add_material(&Δ self, material: Material) {
         self.materials.push(material);
     }
 
-    pub fn adopt_rule(&mut self, rule: &str) {
-        self.rules.push(PlayRule::Adopted(rule.to_string()));
+    ☉ λ adopt_rule(&Δ self, rule: &str) {
+        self.rules.push(PlayRule·Adopted(rule.to_string()));
     }
 
-    pub fn break_rule(&mut self, rule: &str, joy: JoyLevel) {
+    ☉ λ break_rule(&Δ self, rule: &str, joy: JoyLevel) {
         // Find and mark rule as broken
-        if let Some(idx) = self.rules.iter().position(|r| match r {
-            PlayRule::Adopted(s) => s == rule,
-            PlayRule::Emerged(s) => s == rule,
+        ⎇ ≔ Some(idx) = self.rules.iter().position(|r| ⌥ r {
+            PlayRule·Adopted(s) => s == rule,
+            PlayRule·Emerged(s) => s == rule,
             _ => false,
         }) {
-            self.rules[idx] = PlayRule::Broken { rule: rule.to_string(), joy };
+            self.rules[idx] = PlayRule·Broken { rule: rule.to_string(), joy };
         }
     }
 }
@@ -452,28 +452,28 @@ impl Play {
 
 /// When the ecstasy goes too far - important to model
 #[derive(Clone, Debug)]
-pub struct Maenad {
-    /// The entity in destructive frenzy
-    pub entity: EntityId!,
+☉ Σ Maenad {
+    /// The entity ∈ destructive frenzy
+    ☉ entity: EntityId!,
 
     /// The state of the frenzy
-    pub state: MaenadState!,
+    ☉ state: MaenadState!,
 
     /// What has been destroyed
-    pub destruction_trail: Vec<Destruction>!,
+    ☉ destruction_trail: Vec<Destruction>!,
 
     /// Whether intervention is possible
-    pub interruptible: bool!,
+    ☉ interruptible: bool!,
 
     /// The eventual crash
-    pub crash: Option<Crash>?,
+    ☉ crash: Option<Crash>?,
 
     /// When it started
-    pub started_at: Timestamp!,
+    ☉ started_at: Timestamp!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MaenadState {
+☉ ᛈ MaenadState {
     /// Building toward frenzy
     Rising,
     /// Full destructive ecstasy
@@ -487,25 +487,25 @@ pub enum MaenadState {
 }
 
 #[derive(Clone, Debug)]
-pub struct Crash {
+☉ Σ Crash {
     /// How severe
-    pub severity: CrashSeverity!,
+    ☉ severity: CrashSeverity!,
 
     /// What remains
-    pub remnants: Vec<String>!,
+    ☉ remnants: Vec<String>!,
 
     /// The exhaustion
-    pub exhaustion: f32!,
+    ☉ exhaustion: f32!,
 
     /// What is remembered
-    pub remembered: Vec<String>!,
+    ☉ remembered: Vec<String>!,
 
     /// What is forgotten (mercifully or not)
-    pub forgotten: Vec<String>!,
+    ☉ forgotten: Vec<String>!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CrashSeverity {
+☉ ᛈ CrashSeverity {
     /// Minor - quick recovery
     Minor,
     /// Moderate - days to recover
@@ -516,52 +516,52 @@ pub enum CrashSeverity {
     Catastrophic,
 }
 
-impl Maenad {
-    pub fn rising(entity: EntityId) -> Self! {
+⊢ Maenad {
+    ☉ λ rising(entity: EntityId) -> Self! {
         Self {
             entity,
-            state: MaenadState::Rising,
-            destruction_trail: Vec::new(),
+            state: MaenadState·Rising,
+            destruction_trail: Vec·new(),
             interruptible: true,
             crash: None,
-            started_at: Timestamp::now(),
+            started_at: Timestamp·now(),
         }
     }
 
-    pub fn escalate(&mut self) {
-        self.state = match self.state {
-            MaenadState::Rising => MaenadState::Peak,
-            MaenadState::Peak => MaenadState::Blind,
+    ☉ λ escalate(&Δ self) {
+        self.state = ⌥ self.state {
+            MaenadState·Rising => MaenadState·Peak,
+            MaenadState·Peak => MaenadState·Blind,
             other => other,
         };
 
-        if self.state == MaenadState::Blind {
+        ⎇ self.state == MaenadState·Blind {
             self.interruptible = false;
         }
     }
 
-    pub fn destroy(&mut self, destruction: Destruction) {
+    ☉ λ destroy(&Δ self, destruction: Destruction) {
         self.destruction_trail.push(destruction);
     }
 
-    pub fn crash(&mut self, severity: CrashSeverity) {
-        self.state = MaenadState::Crash;
+    ☉ λ crash(&Δ self, severity: CrashSeverity) {
+        self.state = MaenadState·Crash;
         self.crash = Some(Crash {
             severity,
-            remnants: Vec::new(),
-            exhaustion: match severity {
-                CrashSeverity::Minor => 0.3,
-                CrashSeverity::Moderate => 0.6,
-                CrashSeverity::Severe => 0.9,
-                CrashSeverity::Catastrophic => 1.0,
+            remnants: Vec·new(),
+            exhaustion: ⌥ severity {
+                CrashSeverity·Minor => 0.3,
+                CrashSeverity·Moderate => 0.6,
+                CrashSeverity·Severe => 0.9,
+                CrashSeverity·Catastrophic => 1.0,
             },
-            remembered: Vec::new(),
-            forgotten: Vec::new(),
+            remembered: Vec·new(),
+            forgotten: Vec·new(),
         });
     }
 
-    pub fn reckon(&mut self) {
-        self.state = MaenadState::Reckoning;
+    ☉ λ reckon(&Δ self) {
+        self.state = MaenadState·Reckoning;
     }
 }
 
@@ -570,14 +570,14 @@ impl Maenad {
 // ============================================================================
 
 /// The main Dionysus system - god of wine and madness
-pub struct Dionysus {
+☉ Σ Dionysus {
     /// Current ecstatic state per entity
     states: HashMap<EntityId, EcstaticState>!,
 
     /// Active revels
     revels: HashMap<RevelId, Revel>!,
 
-    /// Active maenads (entities in frenzy)
+    /// Active maenads (entities ∈ frenzy)
     maenads: HashMap<EntityId, Maenad>!,
 
     /// Creation registry
@@ -587,99 +587,99 @@ pub struct Dionysus {
     destructions: Vec<Destruction>!,
 }
 
-impl Dionysus {
-    pub fn new() -> Self! {
+⊢ Dionysus {
+    ☉ λ new() -> Self! {
         Self {
-            states: HashMap::new(),
-            revels: HashMap::new(),
-            maenads: HashMap::new(),
-            creations: HashMap::new(),
-            destructions: Vec::new(),
+            states: HashMap·new(),
+            revels: HashMap·new(),
+            maenads: HashMap·new(),
+            creations: HashMap·new(),
+            destructions: Vec·new(),
         }
     }
 
     /// Get ecstatic state
-    pub fn state(&self, entity: EntityId) -> EcstaticState! {
-        self.states.get(&entity).copied().unwrap_or(EcstaticState::Sober)
+    ☉ λ state(&self, entity: EntityId) -> EcstaticState! {
+        self.states.get(&entity).copied().unwrap_or(EcstaticState·Sober)
     }
 
     /// Begin a revel
-    pub fn begin_revel(&mut self, duration: Duration) -> &mut Revel! {
-        let revel = Revel::new(duration);
-        let id = revel.id;
+    ☉ λ begin_revel(&Δ self, duration: Duration) -> &Δ Revel! {
+        ≔ revel = Revel·new(duration);
+        ≔ id = revel.id;
         self.revels.insert(id, revel);
         self.revels.get_mut(&id).unwrap()
     }
 
     /// Join entity to revel
-    pub fn join_revel(&mut self, entity: EntityId, revel_id: RevelId) -> Result<(), String>~ {
-        if let Some(revel) = self.revels.get_mut(&revel_id) {
-            if revel.is_active() {
+    ☉ λ join_revel(&Δ self, entity: EntityId, revel_id: RevelId) -> Result<(), String>~ {
+        ⎇ ≔ Some(revel) = self.revels.get_mut(&revel_id) {
+            ⎇ revel.is_active() {
                 revel.add_participant(entity);
-                self.states.insert(entity, EcstaticState::Intoxicated);
+                self.states.insert(entity, EcstaticState·Intoxicated);
                 Ok(())
-            } else {
+            } ⎉ {
                 Err("Revel is not active".to_string())
             }
-        } else {
+        } ⎉ {
             Err("Revel not found".to_string())
         }
     }
 
     /// Escalate ecstatic state
-    pub fn escalate(&mut self, entity: EntityId) {
-        let current = self.state(entity);
-        let next = match current {
-            EcstaticState::Sober => EcstaticState::Intoxicated,
-            EcstaticState::Intoxicated => EcstaticState::Flow,
-            EcstaticState::Flow => EcstaticState::Ecstasy,
-            EcstaticState::Ecstasy => EcstaticState::Mania,
+    ☉ λ escalate(&Δ self, entity: EntityId) {
+        ≔ current = self.state(entity);
+        ≔ next = ⌥ current {
+            EcstaticState·Sober => EcstaticState·Intoxicated,
+            EcstaticState·Intoxicated => EcstaticState·Flow,
+            EcstaticState·Flow => EcstaticState·Ecstasy,
+            EcstaticState·Ecstasy => EcstaticState·Mania,
             other => other,
         };
         self.states.insert(entity, next);
 
         // If entering mania, create maenad tracking
-        if next == EcstaticState::Mania {
-            self.maenads.insert(entity, Maenad::rising(entity));
+        ⎇ next == EcstaticState·Mania {
+            self.maenads.insert(entity, Maenad·rising(entity));
         }
     }
 
     /// Create something
-    pub fn create(&mut self, creation: Creation) -> CreationId! {
-        let id = creation.id;
+    ☉ λ create(&Δ self, creation: Creation) -> CreationId! {
+        ≔ id = creation.id;
         self.creations.insert(id, creation);
         id
     }
 
     /// Destroy something
-    pub fn destroy(&mut self, destruction: Destruction) {
+    ☉ λ destroy(&Δ self, destruction: Destruction) {
         // If entity is a maenad, track destruction
-        if let Some(maenad) = self.maenads.get_mut(&destruction.target.entity_id().unwrap_or(EntityId::nil())) {
+        ⎇ ≔ Some(maenad) = self.maenads.get_mut(&destruction.target.entity_id().unwrap_or(EntityId·nil())) {
             maenad.destroy(destruction.clone());
         }
         self.destructions.push(destruction);
     }
 
     /// Begin comedown
-    pub fn comedown(&mut self, entity: EntityId) {
-        self.states.insert(entity, EcstaticState::Comedown);
-        if let Some(maenad) = self.maenads.get_mut(&entity) {
-            maenad.crash(CrashSeverity::Moderate);
+    ☉ λ comedown(&Δ self, entity: EntityId) {
+        self.states.insert(entity, EcstaticState·Comedown);
+        ⎇ ≔ Some(maenad) = self.maenads.get_mut(&entity) {
+            maenad.crash(CrashSeverity·Moderate);
         }
     }
 
     /// Return to sober
-    pub fn sober(&mut self, entity: EntityId) {
-        self.states.insert(entity, EcstaticState::Sober);
+    ☉ λ sober(&Δ self, entity: EntityId) {
+        self.states.insert(entity, EcstaticState·Sober);
         self.maenads.remove(&entity);
     }
 }
 
-impl DestructionTarget {
-    fn entity_id(&self) -> Option<EntityId>? {
-        match self {
-            Self::Relationship(_) => None,
-            Self::Creation(_) => None,
+⊢ DestructionTarget {
+    λ entity_id(&self) -> Option<EntityId>? {
+        ⌥ self {
+            Self·Relationship(_) => None,
+            Self·Creation(_) => None,
             _ => None,
         }
     }
@@ -690,16 +690,16 @@ impl DestructionTarget {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_revel_lifecycle() {
-        let mut dionysus = Dionysus::new();
-        let revel = dionysus.begin_revel(Duration::hours(2));
-        let revel_id = revel.id;
+    λ test_revel_lifecycle() {
+        ≔ Δ dionysus = Dionysus·new();
+        ≔ revel = dionysus.begin_revel(Duration·hours(2));
+        ≔ revel_id = revel.id;
 
-        let entity = EntityId::generate();
+        ≔ entity = EntityId·generate();
         revel.add_participant(entity);
         revel.begin();
 
@@ -710,30 +710,30 @@ mod tests {
     }
 
     #[test]
-    fn test_ecstatic_escalation() {
-        let mut dionysus = Dionysus::new();
-        let entity = EntityId::generate();
+    λ test_ecstatic_escalation() {
+        ≔ Δ dionysus = Dionysus·new();
+        ≔ entity = EntityId·generate();
 
-        assert_eq!(dionysus.state(entity), EcstaticState::Sober);
-
-        dionysus.escalate(entity);
-        assert_eq!(dionysus.state(entity), EcstaticState::Intoxicated);
+        assert_eq!(dionysus.state(entity), EcstaticState·Sober);
 
         dionysus.escalate(entity);
-        assert_eq!(dionysus.state(entity), EcstaticState::Flow);
+        assert_eq!(dionysus.state(entity), EcstaticState·Intoxicated);
+
+        dionysus.escalate(entity);
+        assert_eq!(dionysus.state(entity), EcstaticState·Flow);
     }
 
     #[test]
-    fn test_maenad_tracking() {
-        let mut dionysus = Dionysus::new();
-        let entity = EntityId::generate();
+    λ test_maenad_tracking() {
+        ≔ Δ dionysus = Dionysus·new();
+        ≔ entity = EntityId·generate();
 
         // Escalate to mania
-        for _ in 0..4 {
+        ∀ _ ∈ 0..4 {
             dionysus.escalate(entity);
         }
 
-        assert_eq!(dionysus.state(entity), EcstaticState::Mania);
+        assert_eq!(dionysus.state(entity), EcstaticState·Mania);
         assert!(dionysus.maenads.contains_key(&entity));
     }
 }

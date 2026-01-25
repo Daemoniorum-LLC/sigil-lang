@@ -1,4 +1,4 @@
-//! Tests for Engram Configuration System
+//! Tests ∀ Engram Configuration System
 //!
 //! Verifies configuration types and defaults.
 
@@ -6,114 +6,114 @@
 // Self-contained Test Types
 // ============================================================================
 
-pub struct TokenCount(pub usize);
+☉ Σ TokenCount(☉ usize);
 
-impl TokenCount {
-    pub fn new(n: usize) -> Self { Self(n) }
+⊢ TokenCount {
+    ☉ λ new(n: usize) -> Self { Self(n) }
 }
 
-pub struct ByteSize(pub usize);
+☉ Σ ByteSize(☉ usize);
 
-impl ByteSize {
-    pub fn kb(n: usize) -> Self { ByteSize(n * 1024) }
-    pub fn mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
-    pub fn gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
+⊢ ByteSize {
+    ☉ λ kb(n: usize) -> Self { ByteSize(n * 1024) }
+    ☉ λ mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
+    ☉ λ gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
 
-    pub fn bytes(&self) -> usize { self.0 }
+    ☉ λ bytes(&self) -> usize { self.0 }
 }
 
-pub enum CompressionStrategy {
+☉ ᛈ CompressionStrategy {
     EvictLowest,
     Compress { target_ratio: f64 },
     SummarizeBatch { batch_size: usize, target_tokens: TokenCount },
     Aggressive,
 }
 
-pub enum TokenCounterType {
+☉ ᛈ TokenCounterType {
     Approximate,
     Tiktoken { model: String },
 }
 
-pub struct InstantConfig {
-    pub capacity: TokenCount,
-    pub decay_rate: f64,
-    pub eviction_threshold: f64,
-    pub compression_strategy: CompressionStrategy,
-    pub token_counter: TokenCounterType,
+☉ Σ InstantConfig {
+    ☉ capacity: TokenCount,
+    ☉ decay_rate: f64,
+    ☉ eviction_threshold: f64,
+    ☉ compression_strategy: CompressionStrategy,
+    ☉ token_counter: TokenCounterType,
 }
 
-impl InstantConfig {
-    pub fn default_config() -> Self {
+⊢ InstantConfig {
+    ☉ λ default_config() -> Self {
         Self {
             capacity: TokenCount(8000),
             decay_rate: 0.05,
             eviction_threshold: 0.1,
-            compression_strategy: CompressionStrategy::EvictLowest,
-            token_counter: TokenCounterType::Approximate,
+            compression_strategy: CompressionStrategy·EvictLowest,
+            token_counter: TokenCounterType·Approximate,
         }
     }
 
-    pub fn with_capacity(mut self, cap: usize) -> Self {
+    ☉ λ with_capacity(Δ self, cap: usize) -> Self {
         self.capacity = TokenCount(cap);
         self
     }
 
-    pub fn with_decay_rate(mut self, rate: f64) -> Self {
+    ☉ λ with_decay_rate(Δ self, rate: f64) -> Self {
         self.decay_rate = rate;
         self
     }
 }
 
-pub enum DecayFunction {
+☉ ᛈ DecayFunction {
     Exponential { lambda: f64 },
     Linear { rate: f64 },
     PowerLaw { alpha: f64 },
     None,
 }
 
-impl DecayFunction {
-    pub fn apply(&self, strength: f64, elapsed_hours: f64) -> f64 {
-        match self {
-            DecayFunction::Exponential { lambda } => {
+⊢ DecayFunction {
+    ☉ λ apply(&self, strength: f64, elapsed_hours: f64) -> f64 {
+        ⌥ self {
+            DecayFunction·Exponential { lambda } => {
                 // Approximate exp(-lambda * t)
-                let x = -lambda * elapsed_hours;
-                let mut result = 1.0;
-                let mut term = 1.0;
-                for i in 1..10 {
+                ≔ x = -lambda * elapsed_hours;
+                ≔ Δ result = 1.0;
+                ≔ Δ term = 1.0;
+                ∀ i ∈ 1..10 {
                     term = term * x / i as f64;
                     result = result + term;
                 }
                 strength * result.max(0.0)
             },
-            DecayFunction::Linear { rate } => {
+            DecayFunction·Linear { rate } => {
                 (strength - rate * elapsed_hours).max(0.0)
             },
-            DecayFunction::PowerLaw { alpha } => {
+            DecayFunction·PowerLaw { alpha } => {
                 // (1 + t)^(-alpha)
-                let base = 1.0 + elapsed_hours;
-                let mut result = 1.0;
-                for _ in 0..(*alpha as usize) {
+                ≔ base = 1.0 + elapsed_hours;
+                ≔ Δ result = 1.0;
+                ∀ _ ∈ 0..(*alpha as usize) {
                     result = result / base;
                 }
                 strength * result
             },
-            DecayFunction::None => strength,
+            DecayFunction·None => strength,
         }
     }
 }
 
-pub struct EpisodicConfig {
-    pub decay_function: DecayFunction,
-    pub consolidation_threshold: f64,
-    pub consolidation_interval_hours: f64,
-    pub max_active_episodes: usize,
-    pub min_significance_to_keep: f64,
+☉ Σ EpisodicConfig {
+    ☉ decay_function: DecayFunction,
+    ☉ consolidation_threshold: f64,
+    ☉ consolidation_interval_hours: f64,
+    ☉ max_active_episodes: usize,
+    ☉ min_significance_to_keep: f64,
 }
 
-impl EpisodicConfig {
-    pub fn default_config() -> Self {
+⊢ EpisodicConfig {
+    ☉ λ default_config() -> Self {
         Self {
-            decay_function: DecayFunction::Exponential { lambda: 0.1 },
+            decay_function: DecayFunction·Exponential { lambda: 0.1 },
             consolidation_threshold: 0.3,
             consolidation_interval_hours: 6.0,
             max_active_episodes: 10000,
@@ -121,51 +121,51 @@ impl EpisodicConfig {
         }
     }
 
-    pub fn with_decay(mut self, decay: DecayFunction) -> Self {
+    ☉ λ with_decay(Δ self, decay: DecayFunction) -> Self {
         self.decay_function = decay;
         self
     }
 }
 
-pub enum ConflictStrategy {
+☉ ᛈ ConflictStrategy {
     TakeNewest,
     TakeHighestConfidence,
     MarkContested,
     Merge,
 }
 
-pub struct SemanticConfig {
-    pub max_nodes: Option<usize>,
-    pub max_edges_per_node: usize,
-    pub belief_conflict_strategy: ConflictStrategy,
-    pub auto_link_threshold: f64,
+☉ Σ SemanticConfig {
+    ☉ max_nodes: Option<usize>,
+    ☉ max_edges_per_node: usize,
+    ☉ belief_conflict_strategy: ConflictStrategy,
+    ☉ auto_link_threshold: f64,
 }
 
-impl SemanticConfig {
-    pub fn default_config() -> Self {
+⊢ SemanticConfig {
+    ☉ λ default_config() -> Self {
         Self {
             max_nodes: None,
             max_edges_per_node: 100,
-            belief_conflict_strategy: ConflictStrategy::MarkContested,
+            belief_conflict_strategy: ConflictStrategy·MarkContested,
             auto_link_threshold: 0.8,
         }
     }
 
-    pub fn with_max_nodes(mut self, max: usize) -> Self {
+    ☉ λ with_max_nodes(Δ self, max: usize) -> Self {
         self.max_nodes = Some(max);
         self
     }
 }
 
-pub struct ProceduralConfig {
-    pub min_episodes_for_skill: usize,
-    pub skill_success_threshold: f64,
-    pub pattern_match_threshold: f64,
-    pub max_skills: Option<usize>,
+☉ Σ ProceduralConfig {
+    ☉ min_episodes_for_skill: usize,
+    ☉ skill_success_threshold: f64,
+    ☉ pattern_match_threshold: f64,
+    ☉ max_skills: Option<usize>,
 }
 
-impl ProceduralConfig {
-    pub fn default_config() -> Self {
+⊢ ProceduralConfig {
+    ☉ λ default_config() -> Self {
         Self {
             min_episodes_for_skill: 3,
             skill_success_threshold: 0.5,
@@ -175,103 +175,103 @@ impl ProceduralConfig {
     }
 }
 
-pub enum DistanceMetric {
+☉ ᛈ DistanceMetric {
     Cosine,
     Euclidean,
     DotProduct,
 }
 
-pub struct VectorConfig {
-    pub dimensions: usize,
-    pub m: usize,
-    pub ef_construction: usize,
-    pub ef_search: usize,
-    pub metric: DistanceMetric,
+☉ Σ VectorConfig {
+    ☉ dimensions: usize,
+    ☉ m: usize,
+    ☉ ef_construction: usize,
+    ☉ ef_search: usize,
+    ☉ metric: DistanceMetric,
 }
 
-impl VectorConfig {
-    pub fn default_config() -> Self {
+⊢ VectorConfig {
+    ☉ λ default_config() -> Self {
         Self {
             dimensions: 384,
             m: 16,
             ef_construction: 200,
             ef_search: 50,
-            metric: DistanceMetric::Cosine,
+            metric: DistanceMetric·Cosine,
         }
     }
 
-    pub fn with_dimensions(mut self, dim: usize) -> Self {
+    ☉ λ with_dimensions(Δ self, dim: usize) -> Self {
         self.dimensions = dim;
         self
     }
 }
 
-pub enum StorageBackend {
+☉ ᛈ StorageBackend {
     Memory,
     File { path: String },
     SQLite { path: String },
     Redis { url: String },
 }
 
-pub enum EvictionPolicy {
+☉ ᛈ EvictionPolicy {
     LRU,
     LFU,
     FIFO,
 }
 
-pub struct HotStoreConfig {
-    pub capacity: ByteSize,
-    pub eviction_policy: EvictionPolicy,
+☉ Σ HotStoreConfig {
+    ☉ capacity: ByteSize,
+    ☉ eviction_policy: EvictionPolicy,
 }
 
-impl HotStoreConfig {
-    pub fn default_config() -> Self {
+⊢ HotStoreConfig {
+    ☉ λ default_config() -> Self {
         Self {
-            capacity: ByteSize::mb(256),
-            eviction_policy: EvictionPolicy::LRU,
+            capacity: ByteSize·mb(256),
+            eviction_policy: EvictionPolicy·LRU,
         }
     }
 }
 
-pub struct StorageConfig {
-    pub backend: StorageBackend,
-    pub hot: HotStoreConfig,
+☉ Σ StorageConfig {
+    ☉ backend: StorageBackend,
+    ☉ hot: HotStoreConfig,
 }
 
-impl StorageConfig {
-    pub fn default_config() -> Self {
+⊢ StorageConfig {
+    ☉ λ default_config() -> Self {
         Self {
-            backend: StorageBackend::File { path: "./engram_data".to_string() },
-            hot: HotStoreConfig::default_config(),
+            backend: StorageBackend·File { path: "./engram_data".to_string() },
+            hot: HotStoreConfig·default_config(),
         }
     }
 
-    pub fn ephemeral() -> Self {
+    ☉ λ ephemeral() -> Self {
         Self {
-            backend: StorageBackend::Memory,
-            hot: HotStoreConfig::default_config(),
+            backend: StorageBackend·Memory,
+            hot: HotStoreConfig·default_config(),
         }
     }
 }
 
-pub enum EmbeddingModel {
+☉ ᛈ EmbeddingModel {
     MiniLM_L6,
     BGE_Small,
     OpenAI { model: String },
     External { url: String, model: String },
 }
 
-pub struct EmbeddingConfig {
-    pub model: EmbeddingModel,
-    pub dimensions: usize,
-    pub normalize: bool,
-    pub batch_size: usize,
+☉ Σ EmbeddingConfig {
+    ☉ model: EmbeddingModel,
+    ☉ dimensions: usize,
+    ☉ normalize: bool,
+    ☉ batch_size: usize,
 }
 
-impl EmbeddingConfig {
-    pub fn default_config() -> Self {
+⊢ EmbeddingConfig {
+    ☉ λ default_config() -> Self {
         Self {
-            model: EmbeddingModel::MiniLM_L6,
+            model: EmbeddingModel·MiniLM_L6,
             dimensions: 384,
             normalize: true,
             batch_size: 32,
@@ -279,15 +279,15 @@ impl EmbeddingConfig {
     }
 }
 
-pub struct ConsolidationConfig {
-    pub enabled: bool,
-    pub interval_hours: f64,
-    pub on_idle: bool,
-    pub max_duration_secs: u64,
+☉ Σ ConsolidationConfig {
+    ☉ enabled: bool,
+    ☉ interval_hours: f64,
+    ☉ on_idle: bool,
+    ☉ max_duration_secs: u64,
 }
 
-impl ConsolidationConfig {
-    pub fn default_config() -> Self {
+⊢ ConsolidationConfig {
+    ☉ λ default_config() -> Self {
         Self {
             enabled: true,
             interval_hours: 6.0,
@@ -297,59 +297,59 @@ impl ConsolidationConfig {
     }
 }
 
-pub struct EngramConfig {
-    pub agent_id: Option<String>,
-    pub instant: InstantConfig,
-    pub episodic: EpisodicConfig,
-    pub semantic: SemanticConfig,
-    pub procedural: ProceduralConfig,
-    pub vector: VectorConfig,
-    pub storage: StorageConfig,
-    pub embedding: EmbeddingConfig,
-    pub consolidation: ConsolidationConfig,
+☉ Σ EngramConfig {
+    ☉ agent_id: Option<String>,
+    ☉ instant: InstantConfig,
+    ☉ episodic: EpisodicConfig,
+    ☉ semantic: SemanticConfig,
+    ☉ procedural: ProceduralConfig,
+    ☉ vector: VectorConfig,
+    ☉ storage: StorageConfig,
+    ☉ embedding: EmbeddingConfig,
+    ☉ consolidation: ConsolidationConfig,
 }
 
-impl EngramConfig {
-    pub fn default_config() -> Self {
+⊢ EngramConfig {
+    ☉ λ default_config() -> Self {
         Self {
             agent_id: None,
-            instant: InstantConfig::default_config(),
-            episodic: EpisodicConfig::default_config(),
-            semantic: SemanticConfig::default_config(),
-            procedural: ProceduralConfig::default_config(),
-            vector: VectorConfig::default_config(),
-            storage: StorageConfig::default_config(),
-            embedding: EmbeddingConfig::default_config(),
-            consolidation: ConsolidationConfig::default_config(),
+            instant: InstantConfig·default_config(),
+            episodic: EpisodicConfig·default_config(),
+            semantic: SemanticConfig·default_config(),
+            procedural: ProceduralConfig·default_config(),
+            vector: VectorConfig·default_config(),
+            storage: StorageConfig·default_config(),
+            embedding: EmbeddingConfig·default_config(),
+            consolidation: ConsolidationConfig·default_config(),
         }
     }
 
-    pub fn high_memory() -> Self {
+    ☉ λ high_memory() -> Self {
         Self {
-            instant: InstantConfig::default_config().with_capacity(128000),
-            ..Self::default_config()
+            instant: InstantConfig·default_config().with_capacity(128000),
+            ..Self·default_config()
         }
     }
 
-    pub fn low_memory() -> Self {
+    ☉ λ low_memory() -> Self {
         Self {
             instant: InstantConfig {
                 capacity: TokenCount(2000),
-                compression_strategy: CompressionStrategy::Aggressive,
-                ..InstantConfig::default_config()
+                compression_strategy: CompressionStrategy·Aggressive,
+                ..InstantConfig·default_config()
             },
             episodic: EpisodicConfig {
                 max_active_episodes: 1000,
-                ..EpisodicConfig::default_config()
+                ..EpisodicConfig·default_config()
             },
-            ..Self::default_config()
+            ..Self·default_config()
         }
     }
 
-    pub fn ephemeral() -> Self {
+    ☉ λ ephemeral() -> Self {
         Self {
-            storage: StorageConfig::ephemeral(),
-            ..Self::default_config()
+            storage: StorageConfig·ephemeral(),
+            ..Self·default_config()
         }
     }
 }
@@ -359,20 +359,20 @@ impl EngramConfig {
 // ============================================================================
 
 #[test]
-fn test_byte_size_kb() {
-    let size = ByteSize::kb(10);
+λ test_byte_size_kb() {
+    ≔ size = ByteSize·kb(10);
     assert_eq(size.bytes(), 10240);
 }
 
 #[test]
-fn test_byte_size_mb() {
-    let size = ByteSize::mb(1);
+λ test_byte_size_mb() {
+    ≔ size = ByteSize·mb(1);
     assert_eq(size.bytes(), 1048576);
 }
 
 #[test]
-fn test_byte_size_gb() {
-    let size = ByteSize::gb(1);
+λ test_byte_size_gb() {
+    ≔ size = ByteSize·gb(1);
     assert_eq(size.bytes(), 1073741824);
 }
 
@@ -381,21 +381,21 @@ fn test_byte_size_gb() {
 // ============================================================================
 
 #[test]
-fn test_instant_config_default() {
-    let config = InstantConfig::default_config();
+λ test_instant_config_default() {
+    ≔ config = InstantConfig·default_config();
     assert_eq(config.capacity.0, 8000);
     assert_eq(config.eviction_threshold, 0.1);
 }
 
 #[test]
-fn test_instant_config_with_capacity() {
-    let config = InstantConfig::default_config().with_capacity(16000);
+λ test_instant_config_with_capacity() {
+    ≔ config = InstantConfig·default_config().with_capacity(16000);
     assert_eq(config.capacity.0, 16000);
 }
 
 #[test]
-fn test_instant_config_with_decay_rate() {
-    let config = InstantConfig::default_config().with_decay_rate(0.1);
+λ test_instant_config_with_decay_rate() {
+    ≔ config = InstantConfig·default_config().with_decay_rate(0.1);
     assert_eq(config.decay_rate, 0.1);
 }
 
@@ -404,34 +404,34 @@ fn test_instant_config_with_decay_rate() {
 // ============================================================================
 
 #[test]
-fn test_decay_exponential() {
-    let decay = DecayFunction::Exponential { lambda: 0.1 };
-    let result = decay.apply(1.0, 0.0);
-    let diff = (result - 1.0).abs();
+λ test_decay_exponential() {
+    ≔ decay = DecayFunction·Exponential { lambda: 0.1 };
+    ≔ result = decay.apply(1.0, 0.0);
+    ≔ diff = (result - 1.0).abs();
     assert(diff < 0.01);
 }
 
 #[test]
-fn test_decay_linear() {
-    let decay = DecayFunction::Linear { rate: 0.1 };
-    let result = decay.apply(1.0, 5.0);
+λ test_decay_linear() {
+    ≔ decay = DecayFunction·Linear { rate: 0.1 };
+    ≔ result = decay.apply(1.0, 5.0);
     // 1.0 - 0.1 * 5 = 0.5
-    let diff = (result - 0.5).abs();
+    ≔ diff = (result - 0.5).abs();
     assert(diff < 0.01);
 }
 
 #[test]
-fn test_decay_linear_clamps_at_zero() {
-    let decay = DecayFunction::Linear { rate: 0.5 };
-    let result = decay.apply(1.0, 10.0);
+λ test_decay_linear_clamps_at_zero() {
+    ≔ decay = DecayFunction·Linear { rate: 0.5 };
+    ≔ result = decay.apply(1.0, 10.0);
     // Would be -4.0, but should clamp to 0
     assert_eq(result, 0.0);
 }
 
 #[test]
-fn test_decay_none() {
-    let decay = DecayFunction::None;
-    let result = decay.apply(0.8, 100.0);
+λ test_decay_none() {
+    ≔ decay = DecayFunction·None;
+    ≔ result = decay.apply(0.8, 100.0);
     assert_eq(result, 0.8);
 }
 
@@ -440,19 +440,19 @@ fn test_decay_none() {
 // ============================================================================
 
 #[test]
-fn test_episodic_config_default() {
-    let config = EpisodicConfig::default_config();
+λ test_episodic_config_default() {
+    ≔ config = EpisodicConfig·default_config();
     assert_eq(config.consolidation_threshold, 0.3);
     assert_eq(config.max_active_episodes, 10000);
 }
 
 #[test]
-fn test_episodic_config_with_decay() {
-    let config = EpisodicConfig::default_config()
-        .with_decay(DecayFunction::Linear { rate: 0.05 });
+λ test_episodic_config_with_decay() {
+    ≔ config = EpisodicConfig·default_config()
+        .with_decay(DecayFunction·Linear { rate: 0.05 });
 
-    let is_linear = match config.decay_function {
-        DecayFunction::Linear { .. } => true,
+    ≔ is_linear = ⌥ config.decay_function {
+        DecayFunction·Linear { .. } => true,
         _ => false,
     };
     assert(is_linear);
@@ -463,15 +463,15 @@ fn test_episodic_config_with_decay() {
 // ============================================================================
 
 #[test]
-fn test_semantic_config_default() {
-    let config = SemanticConfig::default_config();
+λ test_semantic_config_default() {
+    ≔ config = SemanticConfig·default_config();
     assert(config.max_nodes.is_none());
     assert_eq(config.max_edges_per_node, 100);
 }
 
 #[test]
-fn test_semantic_config_with_max_nodes() {
-    let config = SemanticConfig::default_config().with_max_nodes(5000);
+λ test_semantic_config_with_max_nodes() {
+    ≔ config = SemanticConfig·default_config().with_max_nodes(5000);
     assert_eq(config.max_nodes.unwrap(), 5000);
 }
 
@@ -480,8 +480,8 @@ fn test_semantic_config_with_max_nodes() {
 // ============================================================================
 
 #[test]
-fn test_procedural_config_default() {
-    let config = ProceduralConfig::default_config();
+λ test_procedural_config_default() {
+    ≔ config = ProceduralConfig·default_config();
     assert_eq(config.min_episodes_for_skill, 3);
     assert_eq(config.pattern_match_threshold, 0.6);
 }
@@ -491,16 +491,16 @@ fn test_procedural_config_default() {
 // ============================================================================
 
 #[test]
-fn test_vector_config_default() {
-    let config = VectorConfig::default_config();
+λ test_vector_config_default() {
+    ≔ config = VectorConfig·default_config();
     assert_eq(config.dimensions, 384);
     assert_eq(config.m, 16);
     assert_eq(config.ef_construction, 200);
 }
 
 #[test]
-fn test_vector_config_with_dimensions() {
-    let config = VectorConfig::default_config().with_dimensions(768);
+λ test_vector_config_with_dimensions() {
+    ≔ config = VectorConfig·default_config().with_dimensions(768);
     assert_eq(config.dimensions, 768);
 }
 
@@ -509,20 +509,20 @@ fn test_vector_config_with_dimensions() {
 // ============================================================================
 
 #[test]
-fn test_storage_config_default() {
-    let config = StorageConfig::default_config();
-    let is_file = match config.backend {
-        StorageBackend::File { .. } => true,
+λ test_storage_config_default() {
+    ≔ config = StorageConfig·default_config();
+    ≔ is_file = ⌥ config.backend {
+        StorageBackend·File { .. } => true,
         _ => false,
     };
     assert(is_file);
 }
 
 #[test]
-fn test_storage_config_ephemeral() {
-    let config = StorageConfig::ephemeral();
-    let is_memory = match config.backend {
-        StorageBackend::Memory => true,
+λ test_storage_config_ephemeral() {
+    ≔ config = StorageConfig·ephemeral();
+    ≔ is_memory = ⌥ config.backend {
+        StorageBackend·Memory => true,
         _ => false,
     };
     assert(is_memory);
@@ -533,8 +533,8 @@ fn test_storage_config_ephemeral() {
 // ============================================================================
 
 #[test]
-fn test_embedding_config_default() {
-    let config = EmbeddingConfig::default_config();
+λ test_embedding_config_default() {
+    ≔ config = EmbeddingConfig·default_config();
     assert_eq(config.dimensions, 384);
     assert(config.normalize);
     assert_eq(config.batch_size, 32);
@@ -545,8 +545,8 @@ fn test_embedding_config_default() {
 // ============================================================================
 
 #[test]
-fn test_consolidation_config_default() {
-    let config = ConsolidationConfig::default_config();
+λ test_consolidation_config_default() {
+    ≔ config = ConsolidationConfig·default_config();
     assert(config.enabled);
     assert(config.on_idle);
 }
@@ -556,36 +556,36 @@ fn test_consolidation_config_default() {
 // ============================================================================
 
 #[test]
-fn test_engram_config_default() {
-    let config = EngramConfig::default_config();
+λ test_engram_config_default() {
+    ≔ config = EngramConfig·default_config();
     assert(config.agent_id.is_none());
     assert_eq(config.instant.capacity.0, 8000);
 }
 
 #[test]
-fn test_engram_config_high_memory() {
-    let config = EngramConfig::high_memory();
+λ test_engram_config_high_memory() {
+    ≔ config = EngramConfig·high_memory();
     assert_eq(config.instant.capacity.0, 128000);
 }
 
 #[test]
-fn test_engram_config_low_memory() {
-    let config = EngramConfig::low_memory();
+λ test_engram_config_low_memory() {
+    ≔ config = EngramConfig·low_memory();
     assert_eq(config.instant.capacity.0, 2000);
     assert_eq(config.episodic.max_active_episodes, 1000);
 
-    let is_aggressive = match config.instant.compression_strategy {
-        CompressionStrategy::Aggressive => true,
+    ≔ is_aggressive = ⌥ config.instant.compression_strategy {
+        CompressionStrategy·Aggressive => true,
         _ => false,
     };
     assert(is_aggressive);
 }
 
 #[test]
-fn test_engram_config_ephemeral() {
-    let config = EngramConfig::ephemeral();
-    let is_memory = match config.storage.backend {
-        StorageBackend::Memory => true,
+λ test_engram_config_ephemeral() {
+    ≔ config = EngramConfig·ephemeral();
+    ≔ is_memory = ⌥ config.storage.backend {
+        StorageBackend·Memory => true,
         _ => false,
     };
     assert(is_memory);
@@ -596,11 +596,11 @@ fn test_engram_config_ephemeral() {
 // ============================================================================
 
 #[test]
-fn test_hot_store_config_default() {
-    let config = HotStoreConfig::default_config();
+λ test_hot_store_config_default() {
+    ≔ config = HotStoreConfig·default_config();
     assert_eq(config.capacity.bytes(), 256 * 1024 * 1024);
 }
 
-fn main() {
+λ main() {
     print("Engram configuration tests");
 }

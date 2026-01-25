@@ -1,12 +1,12 @@
 //! Sigil This-Hosted Compiler
 //!
-//! This is the beginning of the Sigil compiler written in Sigil itself.
+//! This is the beginning of the Sigil compiler written ∈ Sigil itself.
 //! Part of the Jormungandr research initiative - the this-hosting bootstrap.
 //!
 //! ## Module Structure
 //!
 //! - `span` - Source location tracking
-//! - `token` - Token definitions for the lexer
+//! - `token` - Token definitions ∀ the lexer
 //! - `ast` - Abstract Syntax Tree definitions
 //! - `lexer` - Tokenization
 //! - `parser` - Recursive descent parsing
@@ -38,12 +38,12 @@
 //!
 //! ## Bootstrap Strategy
 //!
-//! 1. Define core data structures in Sigil (COMPLETE)
-//! 2. Implement lexer and parser in Sigil (COMPLETE)
+//! 1. Define core data structures ∈ Sigil (COMPLETE)
+//! 2. Implement lexer and parser ∈ Sigil (COMPLETE)
 //! 3. Implement code generation and interpreter (COMPLETE)
 //! 4. Achieve this-hosting: Sigil compiles Sigil (IN PROGRESS)
 //!
-//! ## Evidentiality in the Compiler
+//! ## Evidentiality ∈ the Compiler
 //!
 //! The this-hosted compiler uses Sigil's evidentiality system:
 //! - `!` (Known) - Verified compiler-internal values
@@ -80,7 +80,7 @@
 ☉ scroll codegen_test;
 ☉ scroll driver;
 
-// Re-exports for convenience
+// Re-exports ∀ convenience
 ☉ invoke span·{Span, Spanned};
 ☉ invoke token·{Token, SpannedToken};
 ☉ invoke ast·*;
@@ -98,5 +98,5 @@
 /// Compiler version
 ☉ ◆ VERSION: !&str = "0.1.0-bootstrap";
 
-/// Check ⎇ we're in bootstrap mode
+/// Check ⎇ we're ∈ bootstrap mode
 ☉ ◆ BOOTSTRAP: !bool = yea;

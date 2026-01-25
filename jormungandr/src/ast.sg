@@ -1,4 +1,4 @@
-//! Abstract Syntax Tree for Sigil.
+//! Abstract Syntax Tree ∀ Sigil.
 //!
 //! Represents the polysynthetic structure with evidentiality markers.
 //! This is the core data structure that all compiler phases work with.
@@ -10,7 +10,7 @@
 invoke tome·span·{Span, Spanned};
 
 // ============================================
-// Attributes (for no_std, entry points, etc.)
+// Attributes (∀ no_std, entry points, etc.)
 // ============================================
 
 /// An attribute applied to an item or crate.
@@ -20,7 +20,7 @@ invoke tome·span·{Span, Spanned};
 ☉ sigil Attribute {
     ☉ name: !Ident,
     ☉ args: ?AttrArgs,
-    ☉ is_inner: !bool,  // yea for #![...], nay for #[...]
+    ☉ is_inner: !bool,  // yea ∀ #![...], nay ∀ #[...]
 }
 
 /// Arguments to an attribute.
@@ -32,7 +32,7 @@ invoke tome·span·{Span, Spanned};
     Eq(!Box<Expr>),
 }
 
-/// A single argument in an attribute.
+/// A single argument ∈ an attribute.
 #[derive(Debug, Clone, PartialEq)]
 ☉ ᛈ AttrArg {
     /// Simple identifier: `no_std`
@@ -69,7 +69,7 @@ invoke tome·span·{Span, Spanned};
     ☉ features: ![String] = [],
 }
 
-/// Linker configuration for bare-metal/OS development.
+/// Linker configuration ∀ bare-metal/OS development.
 #[derive(Debug, Clone, PartialEq, Default)]
 ☉ sigil LinkerConfig {
     ☉ script: ?String,
@@ -81,7 +81,7 @@ invoke tome·span·{Span, Spanned};
     ☉ sections: ![SectionConfig] = [],
 }
 
-/// Memory region for linker scripts.
+/// Memory region ∀ linker scripts.
 #[derive(Debug, Clone, PartialEq)]
 ☉ sigil MemoryRegion {
     ☉ name: !String,
@@ -235,7 +235,7 @@ invoke tome·span·{Span, Spanned};
     ☉ items: ![ExternItem],
 }
 
-/// Items that can appear in an extern block.
+/// Items that can appear ∈ an extern block.
 #[derive(Debug, Clone, PartialEq)]
 ☉ ᛈ ExternItem {
     Function(!ExternFunction),
@@ -288,7 +288,7 @@ invoke tome·span·{Span, Spanned};
     Never,
 }
 
-/// Verb aspect for function semantics.
+/// Verb aspect ∀ function semantics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 ☉ ᛈ Aspect {
     Progressive,    // ·ing
@@ -364,7 +364,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 ⊢ Evidentiality {
-    /// Get the symbol for this evidentiality level.
+    /// Get the symbol ∀ this evidentiality level.
     ☉ rite symbol(this) → !char {
         ⌥ this {
             Evidentiality·Known => '!',
@@ -398,7 +398,7 @@ invoke tome·span·{Span, Spanned};
     }
 }
 
-/// Affective markers for sentiment and emotion tracking.
+/// Affective markers ∀ sentiment and emotion tracking.
 #[derive(Debug, Clone, PartialEq, Default)]
 ☉ sigil Affect {
     ☉ sentiment: ?Sentiment,
@@ -490,9 +490,9 @@ invoke tome·span·{Span, Spanned};
     Lifetime(!String),
 }
 
-/// Where clause for bounds.
+/// Where clainvoke ∀ bounds.
 #[derive(Debug, Clone, PartialEq)]
-☉ sigil WhereClause {
+☉ sigil WhereClainvoke {
     ☉ predicates: ![WherePredicate],
 }
 
@@ -517,7 +517,7 @@ invoke tome·span·{Span, Spanned};
     Slice(!Box<TypeExpr>),
     /// Tuple: `(A, B, C)`
     Tuple(![TypeExpr]),
-    /// Function: `fn(A, B) → C`
+    /// Function: `λ(A, B) → C`
     Function {
         params: ![TypeExpr],
         return_type: ?Box<TypeExpr>,
@@ -538,7 +538,7 @@ invoke tome·span·{Span, Spanned};
     Never,
     /// Inferred: `_`
     Infer,
-    /// Impl trait: `impl Trait` or `impl Trait<Assoc = T>`
+    /// Impl trait: `⊢ Trait` or `⊢ Trait<Assoc = T>`
     ImplTrait {
         bounds: ![TypeExpr],
     },
@@ -579,7 +579,7 @@ invoke tome·span·{Span, Spanned};
     ☉ generics: ?[TypeExpr],
 }
 
-/// Memory representation for structs.
+/// Memory representation ∀ structs.
 #[derive(Debug, Clone, PartialEq)]
 ☉ ᛈ StructRepr {
     C,
@@ -791,7 +791,7 @@ invoke tome·span·{Span, Spanned};
         pattern: !Box<Pattern>,
         evidentiality: !Evidentiality,
     },
-    /// Path pattern (for ᛈ unit variants like None)
+    /// Path pattern (∀ ᛈ unit variants like None)
     Path(!TypePath),
     /// Reference pattern: &x or &vary x
     Ref {
@@ -942,14 +942,14 @@ invoke tome·span·{Span, Spanned};
         target: !Box<Expr>,
         value: !Box<Expr>,
     },
-    /// Let expression (for if-≔ patterns): `≔ pattern = expr`
+    /// Let expression (∀ if-≔ patterns): `≔ pattern = expr`
     Let {
         pattern: !Box<Pattern>,
         value: !Box<Expr>,
     },
     /// Unsafe block
     Unsafe(!Block),
-    /// Extern block expression (for FFI declarations inside functions)
+    /// Extern block expression (∀ FFI declarations inside functions)
     ExternBlockExpr(!ExternBlock),
     /// Dereference: `*ptr`
     Deref(!Box<Expr>),
@@ -958,7 +958,7 @@ invoke tome·span·{Span, Spanned};
         mutable: !bool,
         expr: !Box<Expr>,
     },
-    /// Reference expression: `&expr` or `&vary expr` (alias for AddrOf)
+    /// Reference expression: `&expr` or `&vary expr` (alias ∀ AddrOf)
     Reference {
         mutable: !bool,
         expr: !Box<Expr>,
@@ -1081,7 +1081,7 @@ invoke tome·span·{Span, Spanned};
     ☉ att_syntax: !bool = nay,
 }
 
-/// Pipe operation in a chain.
+/// Pipe operation ∈ a chain.
 #[derive(Debug, Clone, PartialEq)]
 ☉ ᛈ PipeOp {
     Transform(!Box<Expr>),      // τ{f}

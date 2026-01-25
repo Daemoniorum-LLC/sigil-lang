@@ -1,8 +1,8 @@
-//! Native Code Generation for Sigil
+//! Native Code Generation ∀ Sigil
 //!
 //! This module generates native code from Sigil IR. For the bootstrap,
 //! we target C as an intermediate language - this is portable and allows
-//! us to leverage existing C compilers for optimization.
+//! us to leverage existing C compilers ∀ optimization.
 //!
 //! ## Strategy
 //!
@@ -28,7 +28,7 @@
 //! int main(int argc, char** argv) { ... }
 //! ```
 //!
-//! ## Evidence in Generated Code
+//! ## Evidence ∈ Generated Code
 //!
 //! Evidence is represented as runtime tags:
 //! - `SIGIL_KNOWN` (0) - Direct computation
@@ -36,17 +36,17 @@
 //! - `SIGIL_REPORTED` (2) - External source
 //! - `SIGIL_PARADOX` (3) - Contradictory
 //!
-//! ## Known Issues for Fixed-Point Compilation
+//! ## Known Issues ∀ Fixed-Point Compilation
 //!
 //! The following issues were discovered during fixed-point bootstrap attempts:
 //!
 //! ### CG-125: Result type representation mismatch
-//! sigil_Ok/sigil_Err store values in `.v.ptr` but generated code accesses `.v.e.data[0]`.
+//! sigil_Ok/sigil_Err store values ∈ `.v.ptr` but generated code accesses `.v.e.data[0]`.
 //! **Fix**: Change sigil_Ok/sigil_Err to invoke `.v.e = { .data = ... }` representation.
 //!
 //! ### CG-126: Vec·is_empty generates String·is_empty
 //! Method resolution doesn't track receiver type, so `vec.is_empty()` becomes
-//! `sigil_String____is_empty(vec)` which fails for arrays.
+//! `sigil_String____is_empty(vec)` which fails ∀ arrays.
 //! **Fix**: Make sigil_String____is_empty handle TAG_ARRAY.
 //!
 //! ### CG-127: struct.field.push() doesn't write back
@@ -75,19 +75,19 @@ invoke tome·typeck·EvidenceLevel;
     /// Temporary variable counter
     temp_counter: !u64,
 
-    /// Label counter for control flow
+    /// Label counter ∀ control flow
     label_counter: !u64,
 
     /// Current function name
     current_function: ?String,
 
-    /// Whether we're in an expression context
+    /// Whether we're ∈ an expression context
     in_expr: !bool,
 
-    /// Buffer for closure functions (emitted before main code)
+    /// Buffer ∀ closure functions (emitted before main code)
     closure_buffer: !String,
 
-    /// CG-015: Method signatures for determining vary this at call sites
+    /// CG-015: Method signatures ∀ determining vary this at call sites
     /// Maps qualified method name (e.g., "Lexer·advance") to whether it has vary this
     method_signatures: !Map<String, bool>,
 
@@ -100,7 +100,7 @@ invoke tome·typeck·EvidenceLevel;
     /// so method calls on this always need &this
     in_closure_body: !bool,
 
-    /// FIX: Track mutable reference parameters (&mut) in current function
+    /// FIX: Track mutable reference parameters (&mut) ∈ current function
     /// These need .v.ptr extraction when passed to struct_set_field
     current_mut_ref_params: ![String],
 }
@@ -126,7 +126,7 @@ invoke tome·typeck·EvidenceLevel;
 
     /// Generate C code from an IR module
     ☉ rite generate(vary this, module: !IrModule) → !String {
-        // CG-015: Copy method signatures for call-site lookup
+        // CG-015: Copy method signatures ∀ call-site lookup
         this.method_signatures = module.method_signatures.clone();
 
         // Emit header
@@ -142,7 +142,7 @@ invoke tome·typeck·EvidenceLevel;
             this.emit_function_decl(func);
         }
 
-        // CG-131: Impl methods are already in module.functions with qualified names
+        // CG-131: Impl methods are already ∈ module.functions with qualified names
         // (added by lower_item), so we skip emitting them again from module.impls
         // to avoid duplicate function definitions
 
@@ -203,7 +203,7 @@ invoke tome·typeck·EvidenceLevel;
         format!("{}_{}", prefix, id)
     }
 
-    /// Generate a unique hash for an ᛈ name (djb2 algorithm, masked to 32-bit)
+    /// Generate a unique hash ∀ an ᛈ name (djb2 algorithm, masked to 32-bit)
     rite hash_enum_name(this, name: !String) → !u32 {
         ≔ vary hash: !u32 = 5381;
         ≔ mask: !u32 = 4294967295;  // 2^32 - 1
@@ -220,7 +220,7 @@ invoke tome·typeck·EvidenceLevel;
 
     /// Emit a line with current indentation
     /// CG-022: Use push_str instead of + to avoid O(n²) string copies
-    /// Note: Interpreter mutates this.output in place, returns null - don't reassign
+    /// Note: Interpreter mutates this.output ∈ place, returns null - don't reassign
     rite line(vary this, s: !&str) {
         each _ ∈ 0..this.indent {
             this.output.push_str("    ");
@@ -234,10 +234,10 @@ invoke tome·typeck·EvidenceLevel;
         this.output.push_str(s);
     }
 
-    /// Helper: open brace (workaround for format! escaping issue)
+    /// Helper: open brace (workaround ∀ format! escaping issue)
     rite open_brace() → !&str { "{" }
 
-    /// Helper: close brace (workaround for format! escaping issue)
+    /// Helper: close brace (workaround ∀ format! escaping issue)
     rite close_brace() → !&str { "}" }
 
     /// Helper: emit line with opening brace at end
@@ -299,7 +299,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("#include <time.h>");
         this.line("");
 
-        // Use include guard for combined compilation
+        // Use include guard ∀ combined compilation
         this.line("#ifndef SIGIL_RUNTIME_H");
         this.line("#define SIGIL_RUNTIME_H");
         this.line("");
@@ -312,7 +312,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("#define SIGIL_PARADOX   3");
         this.line("");
 
-        // IrEvidence ᛈ variant aliases (for generated code matching on IrEvidence)
+        // IrEvidence ᛈ variant aliases (∀ generated code matching on IrEvidence)
         this.line("/* IrEvidence ᛈ variants (aliases) */");
         this.line("#define IREVIDENCE_KNOWN     SIGIL_KNOWN");
         this.line("#define IREVIDENCE_UNCERTAIN SIGIL_UNCERTAIN");
@@ -343,8 +343,8 @@ invoke tome·typeck·EvidenceLevel;
         this.line("#define TAG_MAP 18");
         this.line("");
 
-        // StringBuilder for mutable string building
-        this.line("/* StringBuilder for O(1) amortized append */");
+        // StringBuilder ∀ mutable string building
+        this.line("/* StringBuilder ∀ O(1) amortized append */");
         this.line("typedef sigil StringBuilder {");
         this.indent_push();
         this.line("char* data;");
@@ -396,7 +396,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("bool b;");
         this.line("int64_t i;");
         this.line("double f;");
-        this.line("int32_t c;");  // Use int32_t for full Unicode codepoint support
+        this.line("int32_t c;");  // Use int32_t ∀ full Unicode codepoint support
         this.line("char* s;");
         this.line("sigil { sigil SigilValue* data; size_t len; size_t cap; } arr;");
         this.line("sigil { sigil SigilValue* fields; size_t count; } tup;");
@@ -410,10 +410,10 @@ invoke tome·typeck·EvidenceLevel;
         this.line("static inline SigilValue sigil_sb_finalize(SigilValue v);");
         this.line("");
 
-        // Array header for dynamic arrays (Vec-like operations)
+        // Array header ∀ dynamic arrays (Vec-like operations)
         this.line("#ifndef SIGIL_ARRAY_HEADER_DEFINED");
         this.line("#define SIGIL_ARRAY_HEADER_DEFINED");
-        this.line("/* Array header for shared length tracking */");
+        this.line("/* Array header ∀ shared length tracking */");
         this.line("typedef sigil SigilArrayHeader {");
         this.indent_push();
         this.line("size_t len;");
@@ -432,7 +432,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ (void*)((char*)h + SIGIL_ARRAY_DATA_OFFSET);");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_ARRAY_HEADER_DEFINED */");
+        this.line("#end⎇ /* SIGIL_ARRAY_HEADER_DEFINED */");
         this.line("");
 
         // Value constructors - must come first since IrEvidence methods invoke them
@@ -448,7 +448,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("extern ◆ SigilValue IrEvidence____Reported;");
         this.line("extern ◆ SigilValue IrEvidence____Paradox;");
         this.line("");
-        // CG-072: IrEvidence methods are now generated from the impl block in ir.sg
+        // CG-072: IrEvidence methods are now generated from the ⊢ block ∈ ir.sg
         // Don't emit static inline helpers here to avoid redefinition errors
         // Forward declarations only
         this.line("/* IrEvidence method declarations - implementations generated from ir.sg */");
@@ -461,7 +461,7 @@ invoke tome·typeck·EvidenceLevel;
         this.emit_builtin_decls();
         this.line("");
 
-        // Cross-module ᛈ fallback defines (for pattern matching)
+        // Cross-module ᛈ fallback defines (∀ pattern matching)
         this.line("/* Cross-module ᛈ fallbacks - prevents undefined errors */");
         this.line("/* Note: These invoke impossible values so TAG_ENUM checks fail gracefully, */");
         this.line("/* falling back to sigil_is_struct_variant which handles cross-module enums. */");
@@ -770,7 +770,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("#ifndef IRTYPE_ENUM_ID");
         this.line("#define IRTYPE_ENUM_ID 0xDEAD0005U");
         this.line("#endif");
-        // CG-015: IrType variant fallbacks for cross-module pattern matching
+        // CG-015: IrType variant fallbacks ∀ cross-module pattern matching
         this.line("#ifndef IRTYPE_UNIT");
         this.line("#define IRTYPE_UNIT 0xFFFF");
         this.line("#endif");
@@ -829,7 +829,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("#ifndef IREVIDENCE_ENUM_ID");
         this.line("#define IREVIDENCE_ENUM_ID 0xDEAD0007U");
         this.line("#endif");
-        // CG-073: Additional ᛈ fallbacks for cross-module pattern matching
+        // CG-073: Additional ᛈ fallbacks ∀ cross-module pattern matching
         this.line("#ifndef VISIBILITY_RESTRICTED");
         this.line("#define VISIBILITY_RESTRICTED 0xFFFF");
         this.line("#endif");
@@ -1394,7 +1394,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("");
 
         // Close include guard
-        this.line("#endif /* SIGIL_RUNTIME_H */");
+        this.line("#end⎇ /* SIGIL_RUNTIME_H */");
         this.line("");
 
         // Closure captured variable globals - must be outside include guard
@@ -1472,10 +1472,10 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // Array - uses header format for Vec-like dynamic operations
+        // Array - uses header format ∀ Vec-like dynamic operations
         this.line("static inline SigilValue sigil_array(size_t len) {");
         this.indent_push();
-        this.line("/* Use header format for shared length tracking */");
+        this.line("/* Use header format ∀ shared length tracking */");
         this.line("size_t cap = len < 4 ? 4 : len;");
         this.line("SigilArrayHeader* header = (SigilArrayHeader*)calloc(1, sizeof(SigilArrayHeader) + cap * sizeof(SigilValue));");
         this.line("header->len = len;");
@@ -1568,12 +1568,12 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // Tick function (for loop iteration limit)
+        // Tick function (∀ loop iteration limit)
         this.line("static long long global_tick = 0;");
         this.line("static inline void tick(◆ char* fn) {");
         this.indent_push();
         this.line("global_tick++;");
-        this.line("⎇ (global_tick > 100000000) { fprintf(stderr, \"Infinite loop in %s\\n\", fn); exit(1); }");
+        this.line("⎇ (global_tick > 100000000) { fprintf(stderr, \"Infinite loop ∈ %s\\n\", fn); exit(1); }");
         this.indent_pop();
         this.line("}");
         this.line("");
@@ -1678,7 +1678,7 @@ invoke tome·typeck·EvidenceLevel;
         // CG-152 & CG-153: Additional Vec and String methods
         this.line("SigilValue sigil_Vec____extend(SigilValue v, SigilValue other);");
         this.line("SigilValue sigil_String____clone(SigilValue s);");
-        // CG-160: Generic clone methods for types - no declarations needed, Rust parser generates them
+        // CG-160: Generic clone methods ∀ types - no declarations needed, Rust parser generates them
         this.line("SigilValue sigil_capacity(SigilValue v);");
         this.line("SigilValue sigil_as_mut_ptr(SigilValue v);");
         this.line("");
@@ -1713,7 +1713,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_Map____get(SigilValue m, SigilValue key);");
         this.line("SigilValue sigil_Map____insert(SigilValue m, SigilValue key, SigilValue val);");
         this.line("SigilValue sigil_Map____contains(SigilValue m, SigilValue key);");
-        this.line("/* HashMap is an alias for Map */");
+        this.line("/* HashMap is an alias ∀ Map */");
         this.line("#define sigil_HashMap____new sigil_Map____new");
         this.line("#define sigil_HashMap____get sigil_Map____get");
         this.line("#define sigil_HashMap____insert sigil_Map____insert");
@@ -1726,7 +1726,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_format(◆ char* fmt, ...);");
         this.line("");
 
-        // Cross-module forward declarations for bootstrap
+        // Cross-module forward declarations ∀ bootstrap
         // These allow modules to reference functions from other modules
         this.line("/* Cross-module forward declarations */");
         this.line("/* span.sg */");
@@ -1736,7 +1736,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("extern SigilValue sigil_Span____empty_at(SigilValue pos);");
         this.line("extern SigilValue sigil_Span____dummy(void);");
         this.line("");
-        // Token variant constructors are generated as static inline in token.c
+        // Token variant constructors are generated as static inline ∈ token.c
         // so we don't need forward declarations here
         this.line("");
         this.line("/* ast.sg */");
@@ -1786,7 +1786,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("extern SigilValue sigil_CodeGen____new(void);");
         this.line("extern SigilValue sigil_CodeGen____generate(SigilValue* this, SigilValue ir_module);");
         this.line("");
-        this.line("/* CG-068: Method alias for unqualified generate() calls */");
+        this.line("/* CG-068: Method alias ∀ unqualified generate() calls */");
         this.line("static inline SigilValue sigil_generate(SigilValue this, SigilValue module) {");
         this.line("    ⤺ sigil_CodeGen____generate(&this, module);");
         this.line("}");
@@ -1796,14 +1796,14 @@ invoke tome·typeck·EvidenceLevel;
         this.line("#define IR_VERSION sigil_string(\"1.0.0\")");
         this.line("");
 
-        // Method aliases for unqualified method calls
-        this.line("/* Method aliases for bootstrap compatibility */");
+        // Method aliases ∀ unqualified method calls
+        this.line("/* Method aliases ∀ bootstrap compatibility */");
         this.line("/* These are short forms called without type prefix */");
         this.line("");
 
-        // Result/Option helpers - many are defined as static inline in runtime
-        this.line("/* Note: sigil_Ok, sigil_Err, sigil_is_ok, sigil_is_err are static inline in runtime */");
-        // CG-078: Forward declarations for type-prefixed functions (Lexer takes pointer, Parser utility funcs take value)
+        // Result/Option helpers - many are defined as static inline ∈ runtime
+        this.line("/* Note: sigil_Ok, sigil_Err, sigil_is_ok, sigil_is_err are static inline ∈ runtime */");
+        // CG-078: Forward declarations ∀ type-prefixed functions (Lexer takes pointer, Parser utility funcs take value)
         this.line("SigilValue sigil_Lexer____next_token(SigilValue* this);");
         this.line("SigilValue sigil_Lexer____peek(SigilValue* this);");
         this.line("SigilValue sigil_Parser____parse_file(SigilValue* this);");
@@ -1817,7 +1817,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_TypeEnv____define(SigilValue* this, SigilValue name, SigilValue ty, SigilValue evidence);");
         this.line("SigilValue sigil_TypeEnv____fresh_id(SigilValue* this);");
         this.line("SigilValue sigil_TypeEnv____get_var_id(SigilValue* this, SigilValue name);");
-        // CG-078: Wrapper functions for cross-module calls
+        // CG-078: Wrapper functions ∀ cross-module calls
         this.line("static inline SigilValue sigil_next_token(SigilValue lexer) { ⤺ sigil_Lexer____next_token(&lexer); }");
         this.line("static inline SigilValue sigil_peek(SigilValue lexer) { ⤺ sigil_Lexer____peek(&lexer); }");
         this.line("static inline SigilValue sigil_parse_file(SigilValue parser) { ⤺ sigil_Parser____parse_file(&parser); }");
@@ -1832,10 +1832,10 @@ invoke tome·typeck·EvidenceLevel;
         this.line("static inline SigilValue sigil_define4(SigilValue env, SigilValue name, SigilValue ty, SigilValue ev) { ⤺ sigil_TypeEnv____define(&env, name, ty, ev); }");
         this.line("#define SIGIL_GET_DEFINE_MACRO(_1, _2, _3, _4, NAME, ...) NAME");
         this.line("#define sigil_define(...) SIGIL_GET_DEFINE_MACRO(__VA_ARGS__, sigil_define4, sigil_define3, sigil_define2)(__VA_ARGS__)");
-        // CG-079: Wrappers for TypeEnv methods
+        // CG-079: Wrappers ∀ TypeEnv methods
         this.line("static inline SigilValue sigil_fresh_id(SigilValue env) { ⤺ sigil_TypeEnv____fresh_id(&env); }");
         this.line("static inline SigilValue sigil_get_var_id(SigilValue env, SigilValue name) { ⤺ sigil_TypeEnv____get_var_id(&env, name); }");
-        // CG-080: Missing function declarations for higher-order operations
+        // CG-080: Missing function declarations ∀ higher-order operations
         this.line("SigilValue sigil_collect_results(SigilValue arr);");
         this.line("SigilValue sigil_parse(SigilValue s);");
         this.line("SigilValue sigil_map(SigilValue functor, SigilValue mapper);");
@@ -1851,11 +1851,11 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_Result____ok(SigilValue res);");
         this.line("static inline SigilValue sigil_name(SigilValue ev) { ⤺ sigil_EvidenceLevel____name(ev); }");
         this.line("static inline SigilValue sigil_ok(SigilValue res) { ⤺ sigil_Result____ok(res); }");
-        // CG-081: Bitwise or workaround - sigil_b(a) is a codegen bug for a | b
+        // CG-081: Bitwise or workaround - sigil_b(a) is a codegen bug ∀ a | b
         this.line("static inline SigilValue sigil_b(SigilValue a) { ⤺ a; /* BUG: should be a | b */ }");
-        // CG-082: eval_binary/eval_unary need pointer-to-value dereference in codegen
+        // CG-082: eval_binary/eval_unary need pointer-to-value dereference ∈ codegen
         // These functions take this by value, but are called with this as pointer from eval_with_env
-        // Proper fix requires codegen change to emit (*this) for value-taking methods called on pointer this
+        // Proper fix requires codegen change to emit (*this) ∀ value-taking methods called on pointer this
         this.line("SigilValue sigil_cloned(SigilValue v);");
         this.line("SigilValue sigil_CrateConfig____default(void);");
         this.line("SigilValue sigil_FunctionAttrs____default(void);");
@@ -1887,7 +1887,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_zip(SigilValue a, SigilValue b);");
         this.line("SigilValue sigil_skip(SigilValue iter, SigilValue n);");
         this.line("SigilValue sigil_Map____contains_key(SigilValue m, SigilValue key);");
-        // Entry API for HashMap
+        // Entry API ∀ HashMap
         this.line("static inline SigilValue sigil_entry_marker(◆ char* name) { ⤺ sigil_string(name); }");
         this.line("SigilValue sigil_map_entry_or_default(SigilValue map, SigilValue key);");
         this.line("SigilValue sigil_map_entry_or_insert(SigilValue map, SigilValue key, SigilValue value);");
@@ -1901,7 +1901,7 @@ invoke tome·typeck·EvidenceLevel;
         // CG-075: sigil_next takes value, not pointer
         this.line("SigilValue sigil_next(SigilValue iter);");
         this.line("SigilValue sigil_strip_prefix(SigilValue s, SigilValue prefix);");
-        // CG-151: Forward declaration for String____strip_prefix (used by strip_single_prefix)
+        // CG-151: Forward declaration ∀ String____strip_prefix (used by strip_single_prefix)
         this.line("SigilValue sigil_String____strip_prefix(SigilValue s, SigilValue prefix);");
         // CG-075: sigil_is_truthy wrapper (returns SigilValue bool from C bool)
         this.line("static inline SigilValue sigil_is_truthy(SigilValue v) { ⤺ sigil_bool(sigil_truthy(v)); }");
@@ -1914,13 +1914,13 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_to_json(SigilValue v, SigilValue opts);");
         this.line("SigilValue sigil_kind_name(SigilValue v);");
         this.line("SigilValue sigil_mangle_name(SigilValue this, SigilValue name);");
-        // CG-077: Forward declarations for type-prefixed functions used by wrappers
+        // CG-077: Forward declarations ∀ type-prefixed functions used by wrappers
         this.line("SigilValue sigil_TypeChecker____collect_type_def(SigilValue* this, SigilValue item);");
         this.line("SigilValue sigil_TypeChecker____collect_fn_sig(SigilValue* this, SigilValue item);");
         this.line("SigilValue sigil_TypeChecker____check_item(SigilValue* this, SigilValue item);");
         this.line("SigilValue sigil_Interpreter____load_module(SigilValue* this, SigilValue path);");
         this.line("SigilValue sigil_Interpreter____run(SigilValue* this);");
-        // CG-148: Forward declaration for register_builtins (called from typeck.c before interp.c)
+        // CG-148: Forward declaration ∀ register_builtins (called from typeck.c before interp.c)
         this.line("SigilValue sigil_Interpreter____register_builtins(SigilValue* this);");
         // CG-077: Wrapper functions that take value and forward to type-prefixed versions with pointer
         this.line("static inline SigilValue sigil_collect_type_def(SigilValue this, SigilValue item) { ⤺ sigil_TypeChecker____collect_type_def(&this, item); }");
@@ -1960,7 +1960,7 @@ invoke tome·typeck·EvidenceLevel;
         this.emit_token_decls();
     }
 
-    /// Emit extern declarations for all Token ᛈ variants
+    /// Emit extern declarations ∀ all Token ᛈ variants
     rite emit_token_decls(vary this) {
         this.line("/* token.sg - Token ᛈ variants */");
         // All Token unit variant declarations (generated from token.sg)
@@ -2114,7 +2114,7 @@ invoke tome·typeck·EvidenceLevel;
                 }
                 this.line("");
 
-                // Generate constructor functions for tuple variants
+                // Generate constructor functions ∀ tuple variants
                 each (i, variant) ∈ variants.iter().enumerate() {
                     ⌥ variant.fields {
                         ?vfields ⎇ !vfields.is_empty() => {
@@ -2171,17 +2171,17 @@ invoke tome·typeck·EvidenceLevel;
     /// ⤺ SigilValue. This makes the generated code type-safe.
     rite ir_type_to_c(this, ty: !IrType) → !String {
         ⌥ ty {
-            // All types, including Unit, ⤺ SigilValue for consistency
+            // All types, including Unit, ⤺ SigilValue ∀ consistency
             // This avoids "void value not ignored" errors at call sites
             IrType·Unit => "SigilValue",
-            // All primitive types invoke SigilValue wrapper for type safety
+            // All primitive types invoke SigilValue wrapper ∀ type safety
             IrType·Primitive { .. } => "SigilValue",
             IrType·Array { .. } | IrType·Slice { .. } => "SigilValue",
             IrType·Tuple { .. } => "SigilValue",
             IrType·Named { .. } => {
                 ≔ name = ty.name;
                 // Generic type parameters (single uppercase letters) should be SigilValue
-                // Since we invoke boxed representation for all values
+                // Since we invoke boxed representation ∀ all values
                 ⎇ name.len() == 1 ∧ name.chars().next().unwrap_or('a').is_uppercase() {
                     "SigilValue"
                 } ⎉ {
@@ -2201,7 +2201,7 @@ invoke tome·typeck·EvidenceLevel;
     // ========================================================================
 
     rite emit_function_decl(vary this, func: !IrFunction) {
-        // Main function must always ⤺ SigilValue for the C entry point wrapper
+        // Main function must always ⤺ SigilValue ∀ the C entry point wrapper
         ≔ fn_name = func.name;  // Extract field access
         ≔ is_main = fn_name == "main";
         ≔ ret_type = ⎇ is_main {
@@ -2214,7 +2214,7 @@ invoke tome·typeck·EvidenceLevel;
         ≔ vary is_first = yea;
         each p ∈ func.params.iter() {
             ⎇ !params.is_empty() { params = params + ", "; }
-            // CG-015: Use SigilValue* for mutable this parameter
+            // CG-015: Use SigilValue* ∀ mutable this parameter
             ≔ param_name = p.name;  // Extract field access
             ⎇ is_first ∧ param_name == "this" ∧ p.mutable {
                 params = params + "SigilValue* ";
@@ -2255,7 +2255,7 @@ invoke tome·typeck·EvidenceLevel;
             }
         }
 
-        // Main function must always ⤺ SigilValue for the C entry point wrapper
+        // Main function must always ⤺ SigilValue ∀ the C entry point wrapper
         ≔ is_main = fn_name == "main";
         ≔ ret_type = ⎇ is_main {
             "SigilValue"
@@ -2267,7 +2267,7 @@ invoke tome·typeck·EvidenceLevel;
         ≔ vary is_first = yea;
         each p ∈ func.params.iter() {
             ⎇ !params.is_empty() { params = params + ", "; }
-            // CG-015: Use SigilValue* for mutable this parameter
+            // CG-015: Use SigilValue* ∀ mutable this parameter
             ≔ param_name = p.name;  // Extract field access
             ⎇ is_first ∧ param_name == "this" ∧ p.mutable {
                 params = params + "SigilValue* ";
@@ -2290,7 +2290,7 @@ invoke tome·typeck·EvidenceLevel;
         ⌥ func.body {
             ?body => {
                 ≔ result = this.emit_operation(body);
-                // Always ⤺ a value (SigilValue) for consistency
+                // Always ⤺ a value (SigilValue) ∀ consistency
                 this.line(format!("⤺ {};", result));
             },
             null | Option·None => {
@@ -2304,7 +2304,7 @@ invoke tome·typeck·EvidenceLevel;
 
         this.current_function = null;
         this.current_fn_has_mut_self = nay;  // CG-015: Reset flag
-        this.current_mut_ref_params = [];  // FIX: Reset mut ref params
+        this.current_mut_ref_params = [];  // FIX: Reset Δ ref params
     }
 
     /// Check ⎇ a function name is likely a closure parameter
@@ -2331,7 +2331,7 @@ invoke tome·typeck·EvidenceLevel;
         // Strip evidentiality prefixes from type names
         ≔ stripped = this.strip_evidentiality_prefix(name);
 
-        // Check for C keywords and add prefix
+        // Check ∀ C keywords and add prefix
         // CG-128: Use helper function with early returns to avoid deep nesting
         // that hits the native compiler's depth limit (~14 levels)
         ≔ is_c_keyword = this.is_c_keyword(stripped.as_str());
@@ -2430,7 +2430,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
 
-    /// Check ⎇ any arm in a ⌥ has an evidential pattern (?x) or null pattern
+    /// Check ⎇ any arm ∈ a ⌥ has an evidential pattern (?x) or null pattern
     /// Used by CG-026 fix to determine ⎇ we should skip TAG_REF unwrapping
     /// For nullable types (?T), we ⌥ against TAG_REF/TAG_NULL directly
     rite has_evidential_pattern(this, arms: !Vec<IrMatchArm>) → bool {
@@ -2444,7 +2444,7 @@ invoke tome·typeck·EvidenceLevel;
                     }
                 },
                 IrPattern·Literal { .. } => {
-                    // Check for null literal pattern
+                    // Check ∀ null literal pattern
                     // null pattern indicates we're matching on a nullable type
                     ≔ lit = arm.pattern.value;
                     ⌥ lit {
@@ -2467,8 +2467,8 @@ invoke tome·typeck·EvidenceLevel;
                 //
                 // Evidential values from sigil_with_evidence() are direct values with
                 // evidence metadata set - they're NOT pointer-wrapped like Option·Some.
-                // The evidence field on IrPattern·Ident is used for CONDITION generation
-                // (checking the value has evidence), not for changing how we bind.
+                // The evidence field on IrPattern·Ident is used ∀ CONDITION generation
+                // (checking the value has evidence), not ∀ changing how we bind.
                 //
                 // Both regular and evidential patterns invoke direct binding:
                 //   ≔ x = value;   (regular pattern)
@@ -2493,7 +2493,7 @@ invoke tome·typeck·EvidenceLevel;
                 ≔ path = pattern.path;
                 ≔ fields = pattern.fields;
                 // For Option·Some(v), Result·Ok(v), Result·Err(e), extract inner value from the pointer
-                // These types store their wrapped value in .v.ptr, not .v.e.data[]
+                // These types store their wrapped value ∈ .v.ptr, not .v.e.data[]
                 ⎇ path.contains("Some") ∨ path.contains("Ok") ∨ path.contains("Err") {
                     each (i, elem) ∈ fields.iter().enumerate() {
                         ≔ inner_val = format!("*(SigilValue*){}.v.ptr", value);
@@ -2501,7 +2501,7 @@ invoke tome·typeck·EvidenceLevel;
                     }
                 } ⎉ ⎇ path.contains("·") {
                     // User-defined ᛈ variants - invoke TAG_ENUM representation
-                    // Fields are stored in v.e.data array
+                    // Fields are stored ∈ v.e.data array
                     each (i, elem) ∈ fields.iter().enumerate() {
                         ≔ field_val = format!("{}.v.e.data[{}]", value, i);
                         this.emit_pattern_binding(elem, field_val);
@@ -2558,7 +2558,7 @@ invoke tome·typeck·EvidenceLevel;
                 }
             },
             _ => {
-                // CG-052: Fallback for patterns that didn't ⌥ specific cases
+                // CG-052: Fallback ∀ patterns that didn't ⌥ specific cases
                 // This can happen when the native compiler's pattern matching behaves differently
                 // For now, emit as a comment - the post-processor will fix it
                 this.line(format!("/* Pattern binding: complex = {} */", value));
@@ -2566,8 +2566,8 @@ invoke tome·typeck·EvidenceLevel;
         }
     }
 
-    // CG-083: Emit pattern declarations only (for LetElse scoping fix)
-    // Emits `SigilValue name;` for each variable bound by the pattern
+    // CG-083: Emit pattern declarations only (∀ LetElse scoping fix)
+    // Emits `SigilValue name;` ∀ each variable bound by the pattern
     rite emit_pattern_declarations(vary this, pattern: !IrPattern) {
         ⌥ pattern {
             IrPattern·Ident { .. } => {
@@ -2613,8 +2613,8 @@ invoke tome·typeck·EvidenceLevel;
         }
     }
 
-    // CG-083: Emit pattern assignments only (for LetElse scoping fix)
-    // Emits `name = value;` for each variable bound by the pattern
+    // CG-083: Emit pattern assignments only (∀ LetElse scoping fix)
+    // Emits `name = value;` ∀ each variable bound by the pattern
     rite emit_pattern_assignments(vary this, pattern: !IrPattern, value: !String) {
         ⌥ pattern {
             IrPattern·Ident { .. } => {
@@ -2679,7 +2679,7 @@ invoke tome·typeck·EvidenceLevel;
         }
     }
 
-    /// Emit condition check for a pattern (used in ⌥ expressions)
+    /// Emit condition check ∀ a pattern (used ∈ ⌥ expressions)
     rite emit_pattern_condition(this, pattern: !IrPattern, value: !String) → !String {
         ⌥ pattern {
             IrPattern·Wildcard => "1".to_string(),  // Always matches
@@ -2705,10 +2705,10 @@ invoke tome·typeck·EvidenceLevel;
                         }
                     },
                     LiteralValue·Char(c) => {
-                        // For ASCII chars, invoke char literal; for Unicode, invoke integer
+                        // For ASCII chars, invoke char literal; ∀ Unicode, invoke integer
                         ≔ code = c as u32;
                         ⎇ code < 128 {
-                            // Pre-compute escape to avoid method call in format!
+                            // Pre-compute escape to avoid method call ∈ format!
                             ≔ escaped = this.escape_char(c);
                             format!("({}.tag == TAG_CHAR ∧ {}.v.c == '{}')", value, value, escaped)
                         } ⎉ {
@@ -2716,7 +2716,7 @@ invoke tome·typeck·EvidenceLevel;
                         }
                     },
                     LiteralValue·String(s) => {
-                        // Pre-compute escape to avoid method call in format!
+                        // Pre-compute escape to avoid method call ∈ format!
                         ≔ escaped = this.escape_string(s);
                         format!("({}.tag == TAG_STRING ∧ strcmp({}.v.s, \"{}\") == 0)", value, value, escaped)
                     },
@@ -2740,7 +2740,7 @@ invoke tome·typeck·EvidenceLevel;
                 } ⎉ ⎇ path.contains("·") {
                     // User-defined tuple variant: EnumName·VariantName(data)
                     // For tuple variants (with data), invoke enum_id and variant constant
-                    // CG-200: Fix path splitting for module-qualified paths like "ast·UnaryOp·Not"
+                    // CG-200: Fix path splitting ∀ module-qualified paths like "ast·UnaryOp·Not"
                     // enum_name should be second-to-last element, variant_name should be last
                     ≔ parts = path.split("·");
                     ⎇ parts.len() >= 2 {
@@ -2771,7 +2771,7 @@ invoke tome·typeck·EvidenceLevel;
                     // For unit variants, invoke sigil_enum_eq with the global constant
                     ≔ parts = path.split("·");
                     ≔ c_const_name = parts.join("____");
-                    // Use sigil_enum_eq for direct comparison with global constant
+                    // Use sigil_enum_eq ∀ direct comparison with global constant
                     format!("sigil_enum_eq({}, {})", value, c_const_name)
                 } ⎉ {
                     "1".to_string()
@@ -2795,7 +2795,7 @@ invoke tome·typeck·EvidenceLevel;
                 ≔ vary conditions: ![String] = Vec·new();
                 // CG-027: Check BOTH TAG_STRUCT and TAG_ENUM representations
                 // Native compiler creates ᛈ variants as TAG_ENUM but matching code
-                // was only checking TAG_STRUCT. Need both checks for this-compilation.
+                // was only checking TAG_STRUCT. Need both checks ∀ this-compilation.
                 ⎇ path.contains("·") {
                     // CG-200: Extract ᛈ name and variant name from path like "IrPattern·Ident"
                     // or module-qualified path like "ast·UnaryOp·Not"
@@ -2926,7 +2926,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Emit a closure body inline, binding the closure param to an element variable
-    /// Returns the result expression for the closure body
+    /// Returns the result expression ∀ the closure body
     rite emit_closure_body_inline(vary this, closure_op: !IrOperation, element_var: !String) → !String {
         // Extract closure params and body
         ≔ params = closure_op.params;
@@ -2950,7 +2950,7 @@ invoke tome·typeck·EvidenceLevel;
             MorphemeKind·Transform => {
                 this.line(format!("SigilValue {} = sigil_array({}.v.arr.len);", result, input));
                 ≔ i_var = this.fresh_temp();
-                this.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
+                this.line_open(format!("∀ (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
                 this.indent_push();
                 this.line(format!("SigilValue it = {}.v.arr.data[{}];", input, i_var));
                 ⌥ body {
@@ -2975,7 +2975,7 @@ invoke tome·typeck·EvidenceLevel;
                 this.line(format!("{}.v.arr.data = (SigilValue*)malloc({}.v.arr.len * sizeof(SigilValue));", result, input));
                 this.line(format!("{}.v.arr.cap = {}.v.arr.len;", result, input));
                 ≔ i_var = this.fresh_temp();
-                this.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
+                this.line_open(format!("∀ (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
                 this.indent_push();
                 this.line(format!("SigilValue it = {}.v.arr.data[{}];", input, i_var));
                 ⌥ body {
@@ -3002,7 +3002,7 @@ invoke tome·typeck·EvidenceLevel;
             MorphemeKind·Sum => {
                 this.line(format!("SigilValue {} = sigil_float(0);", result));
                 ≔ i_var = this.fresh_temp();
-                this.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
+                this.line_open(format!("∀ (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
                 this.indent_push();
                 this.line(format!("SigilValue it = {}.v.arr.data[{}];", input, i_var));
                 this.line(format!("{}.v.f += (it.tag == TAG_INT ? (double)it.v.i : it.v.f);", result));
@@ -3013,7 +3013,7 @@ invoke tome·typeck·EvidenceLevel;
             MorphemeKind·Product => {
                 this.line(format!("SigilValue {} = sigil_float(1);", result));
                 ≔ i_var = this.fresh_temp();
-                this.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
+                this.line_open(format!("∀ (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, input, i_var));
                 this.indent_push();
                 this.line(format!("SigilValue it = {}.v.arr.data[{}];", input, i_var));
                 this.line(format!("{}.v.f *= (it.tag == TAG_INT ? (double)it.v.i : it.v.f);", result));
@@ -3055,7 +3055,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     rite emit_binary_rem(this, l: !String, r: !String) → !String {
-        // CG-137: Use concatenation to avoid %% escape issue in format strings
+        // CG-137: Use concatenation to avoid %% escape issue ∈ format strings
         "sigil_int(".to_string() + l.as_str() + ".v.i % " + r.as_str() + ".v.i)"
     }
 
@@ -3104,7 +3104,7 @@ invoke tome·typeck·EvidenceLevel;
             IrEvidence·Uncertain => "SIGIL_UNCERTAIN",
             IrEvidence·Reported => "SIGIL_REPORTED",
             IrEvidence·Paradox => "SIGIL_PARADOX",
-            // Fallback for cross-module ᛈ ID mismatch
+            // Fallback ∀ cross-module ᛈ ID mismatch
             _ => "SIGIL_KNOWN",
         }
     }
@@ -3215,7 +3215,7 @@ invoke tome·typeck·EvidenceLevel;
                     // Convert to hex manually since format! doesn't support {:02x}
                     ≔ d1 = code / 16;
                     ≔ d0 = code % 16;
-                    // For safety, invoke octal for values over 255
+                    // For safety, invoke octal ∀ values over 255
                     ⎇ code <= 255 {
                         // Avoid format! with static method calls - invoke string concat
                         ≔ h1 = CodeGen·hex_digit(d1);
@@ -3247,9 +3247,9 @@ invoke tome·typeck·EvidenceLevel;
     // CG-016: Format! argument translation
     // ========================================================================
 
-    /// Translate method calls in format! tokens to proper C function calls
+    /// Translate method calls ∈ format! tokens to proper C function calls
     /// This handles `this.method(args)` → `sigil_Type____method((*this), args)`
-    /// Uses manual string building since replace() isn't in the interpreter
+    /// Uses manual string building since replace() isn't ∈ the interpreter
     rite translate_format_tokens(this, tokens: !String) → !String {
         // Build result by scanning through the string
         ≔ vary result = String·new();
@@ -3290,13 +3290,13 @@ invoke tome·typeck·EvidenceLevel;
                 ⎇ is_crate ∧ chars[i + 6] != ':' { is_crate = nay; }
 
                 ⎇ is_crate {
-                    // Skip 'tome·' and continue with the identifier
+                    // Skip 'tome·' and ↻ with the identifier
                     i = i + 7;
                     ⊳;
                 }
             }
 
-            // Check for "this." pattern
+            // Check ∀ "this." pattern
             ⎇ i + 5 <= len {
                 ≔ vary is_self = yea;
                 ⎇ chars[i] != 's' { is_self = nay; }
@@ -3309,7 +3309,7 @@ invoke tome·typeck·EvidenceLevel;
                     // Found "this.", now check which method follows
                     ≔ after_self = i + 5;
 
-                    // Check for escape_char(
+                    // Check ∀ escape_char(
                     ⎇ after_self + 12 <= len {
                         ≔ vary is_escape_char = yea;
                         ⎇ chars[after_self] != 'e' { is_escape_char = nay; }
@@ -3334,7 +3334,7 @@ invoke tome·typeck·EvidenceLevel;
                         }
                     }
 
-                    // Check for escape_string(
+                    // Check ∀ escape_string(
                     ⎇ after_self + 14 <= len {
                         ≔ vary is_escape_string = yea;
                         ⎇ chars[after_self] != 'e' { is_escape_string = nay; }
@@ -3361,7 +3361,7 @@ invoke tome·typeck·EvidenceLevel;
                         }
                     }
 
-                    // Check for mangle_name(
+                    // Check ∀ mangle_name(
                     ⎇ after_self + 12 <= len {
                         ≔ vary is_mangle = yea;
                         ⎇ chars[after_self] != 'm' { is_mangle = nay; }
@@ -3386,7 +3386,7 @@ invoke tome·typeck·EvidenceLevel;
                         }
                     }
 
-                    // CG-070: Check for evidence_to_c(
+                    // CG-070: Check ∀ evidence_to_c(
                     ⎇ after_self + 14 <= len {
                         ≔ vary is_evidence = yea;
                         ⎇ chars[after_self] != 'e' { is_evidence = nay; }
@@ -3413,7 +3413,7 @@ invoke tome·typeck·EvidenceLevel;
                         }
                     }
 
-                    // CG-136: Fallback for generic this.field patterns
+                    // CG-136: Fallback ∀ generic this.field patterns
                     // Read the field name after "this."
                     ≔ vary field_end = after_self;
                     ⟳ field_end < len {
@@ -3445,11 +3445,11 @@ invoke tome·typeck·EvidenceLevel;
                 }
             }
 
-            // CG-024: Check for "X as Y" type cast pattern
-            // Look for pattern: identifier + " as " + type
+            // CG-024: Check ∀ "X as Y" type cast pattern
+            // Look ∀ pattern: identifier + " as " + type
             ⎇ i + 4 <= len ∧ chars[i] == ' ' ∧ chars[i + 1] == 'a' ∧ chars[i + 2] == 's' ∧ chars[i + 3] == ' ' {
                 // Found " as ", convert to C cast
-                // The preceding identifier should already be in result
+                // The preceding identifier should already be ∈ result
                 // For numeric casts, wrap with sigil_int to produce SigilValue
                 // Consume " as TYPE" and emit C cast
                 ≔ cast_start = i + 4;
@@ -3466,15 +3466,15 @@ invoke tome·typeck·EvidenceLevel;
                 }
                 ⎇ cast_end > cast_start {
                     // We have a type name, emit cast
-                    // For u32/i32/u64/i64 etc, invoke .v.c for char, .v.i for int
+                    // For u32/i32/u64/i64 etc, invoke .v.c ∀ char, .v.i ∀ int
                     // Since we're inside format!, emit the casted value
-                    result = result + ".v.c";  // Assume char for now (_{:x} pattern)
+                    result = result + ".v.c";  // Assume char ∀ now (_{:x} pattern)
                     i = cast_end;
                     ⊳;
                 }
             }
 
-            // CG-051: Check for field access pattern: identifier.field (not method call)
+            // CG-051: Check ∀ field access pattern: identifier.field (not method call)
             // Skip ⎇ this is 'this' which is handled specially above
             ⎇ i < len ∧ chars[i] >= 'a' ∧ chars[i] <= 'z' ∧ !(chars[i] == 's' ∧ i + 4 < len ∧ chars[i+1] == 'e' ∧ chars[i+2] == 'l' ∧ chars[i+3] == 'f' ∧ chars[i+4] == '.') {
                 // Read identifier
@@ -3489,7 +3489,7 @@ invoke tome·typeck·EvidenceLevel;
                         ⊲;
                     }
                 }
-                // Check for .field (not .method()
+                // Check ∀ .field (not .method()
                 ⎇ ident_end > ident_start ∧ ident_end < len ∧ chars[ident_end] == '.' {
                     ≔ dot_pos = ident_end;
                     ≔ field_start = dot_pos + 1;
@@ -3552,7 +3552,7 @@ invoke tome·typeck·EvidenceLevel;
                             i = field_end;
                             ⊳;
                         }
-                        // Emit sigil_struct_field call for Sigil field access
+                        // Emit sigil_struct_field call ∀ Sigil field access
                         result = result + format!("sigil_struct_field({}, \"{}\")", ident, field).as_str();
                         i = field_end;
                         ⊳;
@@ -3560,7 +3560,7 @@ invoke tome·typeck·EvidenceLevel;
 
                     // CG-052: Handle method calls like .to_string() and .symbol()
                     ⎇ field_end > field_start ∧ field_end < len ∧ chars[field_end] == '(' {
-                        // Check for common method names and translate to sigil function calls
+                        // Check ∀ common method names and translate to sigil function calls
                         ⎇ field == "to_string" {
                             // Skip the empty () after to_string
                             ≔ vary call_end = field_end + 1;
@@ -3619,7 +3619,7 @@ invoke tome·typeck·EvidenceLevel;
                             ⟳ call_end < len ∧ chars[call_end] != ')' {
                                 call_end = call_end + 1;
                             }
-                            // Extract the separator argument and wrap in sigil_string
+                            // Extract the separator argument and wrap ∈ sigil_string
                             ≔ vary sep_arg = "sigil_string(\", \")".to_string();
                             ⎇ call_end > arg_start {
                                 ≔ vary sep_str = String·new();
@@ -3628,7 +3628,7 @@ invoke tome·typeck·EvidenceLevel;
                                     sep_str.push(chars[k]);
                                     k = k + 1;
                                 }
-                                // Wrap the extracted content in sigil_string()
+                                // Wrap the extracted content ∈ sigil_string()
                                 sep_arg = format!("sigil_string({})", sep_str);
                             }
                             ⎇ call_end < len {
@@ -3642,8 +3642,8 @@ invoke tome·typeck·EvidenceLevel;
                 }
             }
 
-            // CG-092: Handle array indexing like "args[0]" in format args
-            // Convert to "args.v.arr.data[0]" for proper C semantics
+            // CG-092: Handle array indexing like "args[0]" ∈ format args
+            // Convert to "args.v.arr.data[0]" ∀ proper C semantics
             ⎇ i < len ∧ ((chars[i] >= 'a' ∧ chars[i] <= 'z') ∨ (chars[i] >= 'A' ∧ chars[i] <= 'Z') ∨ chars[i] == '_') {
                 // Read identifier
                 ≔ arr_start = i;
@@ -3657,7 +3657,7 @@ invoke tome·typeck·EvidenceLevel;
                         ⊲;
                     }
                 }
-                // Check for [ after identifier
+                // Check ∀ [ after identifier
                 ⎇ arr_end > arr_start ∧ arr_end < len ∧ chars[arr_end] == '[' {
                     ≔ bracket_start = arr_end;
                     ≔ idx_start = arr_end + 1;
@@ -3703,7 +3703,7 @@ invoke tome·typeck·EvidenceLevel;
                         }
                         // CG-094: Check ⎇ arr_name is a known C pointer variable
                         // These should not be transformed to .v.arr.data form
-                        // CG-095: Also check for temp variable patterns _tN__fields, _tN__names, _tN__values
+                        // CG-095: Also check ∀ temp variable patterns _tN__fields, _tN__names, _tN__values
                         ≔ is_temp_var = arr_name.contains("__fields") ∨
                                           arr_name.contains("__names") ∨
                                           arr_name.contains("__values");
@@ -3724,7 +3724,7 @@ invoke tome·typeck·EvidenceLevel;
                             format!("{}.v.arr.data[{}.v.i]", arr_name, index_expr)
                         };
 
-                        // CG-092b: Check for chained field/method access after array index
+                        // CG-092b: Check ∀ chained field/method access after array index
                         ≔ after_bracket = idx_end + 1;
                         ⎇ after_bracket < len ∧ chars[after_bracket] == '.' {
                             // Read the field/method name
@@ -3758,14 +3758,14 @@ invoke tome·typeck·EvidenceLevel;
                                         i = call_end;
                                         ⊳;
                                     }
-                                    // Other method - just emit array access for now
+                                    // Other method - just emit array access ∀ now
                                     result = result + arr_access.as_str();
                                     i = after_bracket;
                                     ⊳;
                                 } ⎉ {
-                                    // Field access like .value - check for further chaining
+                                    // Field access like .value - check ∀ further chaining
                                     ≔ field_access = format!("sigil_struct_field({}, \"{}\")", arr_access, chain_name);
-                                    // Check for .to_string() after field
+                                    // Check ∀ .to_string() after field
                                     ⎇ chain_end + 12 <= len {
                                         ≔ vary is_to_string = yea;
                                         ⎇ chars[chain_end] != '.' { is_to_string = nay; }
@@ -3800,11 +3800,11 @@ invoke tome·typeck·EvidenceLevel;
                 }
             }
 
-            // CG-091: Handle arithmetic expressions like "i + 1" or "i - 1" in format args
-            // Convert to "sigil_int(i.v.i + 1)" for proper C semantics
+            // CG-091: Handle arithmetic expressions like "i + 1" or "i - 1" ∈ format args
+            // Convert to "sigil_int(i.v.i + 1)" ∀ proper C semantics
             // CG-141: Handle multiple spaces around operator (e.g., "i +  1")
             ⎇ i < len ∧ chars[i] >= 'a' ∧ chars[i] <= 'z' {
-                // Check for pattern: identifier + space(s) + op + space(s) + number
+                // Check ∀ pattern: identifier + space(s) + op + space(s) + number
                 ≔ arith_start = i;
                 ≔ vary arith_ident_end = i;
                 // Read identifier
@@ -3822,7 +3822,7 @@ invoke tome·typeck·EvidenceLevel;
                 ⟳ after_ident < len ∧ chars[after_ident] == ' ' {
                     after_ident = after_ident + 1;
                 }
-                // Check for + or - operator
+                // Check ∀ + or - operator
                 ⎇ arith_ident_end > arith_start ∧ after_ident < len {
                     ≔ has_plus = chars[after_ident] == '+';
                     ≔ has_minus = chars[after_ident] == '-';
@@ -3862,14 +3862,14 @@ invoke tome·typeck·EvidenceLevel;
             }
 
             // CG-127: Strip stray ? evidence markers
-            // In Sigil, x? marks uncertain evidence, but in C output this should be stripped
+            // In Sigil, x? marks uncertain evidence, but ∈ C output this should be stripped
             // Evidence markers can appear after:
             // - Function calls: foo()?
             // - Array access: arr[i]?
             // - Identifiers: name?
             // - Struct fields: x.field?
             // Note: We only keep ? ⎇ it's part of ternary operator (followed by something then :)
-            // But for simplicity, strip ? after ), ], or ident unless followed by :
+            // But ∀ simplicity, strip ? after ), ], or ident unless followed by :
             ⎇ chars[i] == '?' {
                 // Check ⎇ followed by : (ternary operator) - ⎇ so, keep the ?
                 ≔ is_ternary = ⎇ i + 1 < len { chars[i + 1] == ':' } ⎉ { nay };
@@ -3905,7 +3905,7 @@ invoke tome·typeck·EvidenceLevel;
 
         // CG-132: Post-process chained method calls on function results
         // Patterns like sigil_struct_field(...).to_string() need to become sigil_to_string(sigil_struct_field(...))
-        // Use simple string replacements for common patterns
+        // Use simple string replacements ∀ common patterns
         ≔ vary final_result = result.clone();
 
         // Fix .to_string() on sigil_struct_field results
@@ -3916,7 +3916,7 @@ invoke tome·typeck·EvidenceLevel;
         ≔ vary new_result = String·new();
 
         ⟳ pos < fr_len {
-            // Look for ).to_string()
+            // Look ∀ ).to_string()
             ⎇ pos + 13 <= fr_len {
                 ≔ vary is_ts = yea;
                 ⎇ fr_chars[pos] != ')' { is_ts = nay; }
@@ -3936,7 +3936,7 @@ invoke tome·typeck·EvidenceLevel;
                 ⎇ is_ts {
                     // CG-132 FIX: First push the ')' to new_result since it's part of the function call
                     new_result.push(')');
-                    // Find the matching function call by scanning backwards for balanced parens
+                    // Find the matching function call by scanning backwards ∀ balanced parens
                     // Start from position BEFORE the ')' we just pushed (which is at len-1)
                     ≔ vary paren_depth: !i64 = 1;  // We're matching the ) we just pushed
                     ≔ vary scan: !i64 = new_result.len() as i64 - 2;  // Skip the ) we pushed
@@ -3985,7 +3985,7 @@ invoke tome·typeck·EvidenceLevel;
                 }
             }
 
-            // Look for ).len()
+            // Look ∀ ).len()
             ⎇ pos + 7 <= fr_len {
                 ≔ vary is_len = yea;
                 ⎇ fr_chars[pos] != ')' { is_len = nay; }
@@ -4045,7 +4045,7 @@ invoke tome·typeck·EvidenceLevel;
                 }
             }
 
-            // CG-138: Handle ].to_string() pattern for array subscript results
+            // CG-138: Handle ].to_string() pattern ∀ array subscript results
             ⎇ pos + 13 <= fr_len {
                 ≔ vary is_arr_ts = yea;
                 ⎇ fr_chars[pos] != ']' { is_arr_ts = nay; }
@@ -4109,7 +4109,7 @@ invoke tome·typeck·EvidenceLevel;
                 }
             }
 
-            // CG-134: Look for ).identifier where identifier is a field name (not followed by '(')
+            // CG-134: Look ∀ ).identifier where identifier is a field name (not followed by '(')
             // Pattern: ).fieldname where fieldname is a-z/A-Z/0-9/_
             ⎇ pos + 2 <= fr_len ∧ fr_chars[pos] == ')' ∧ fr_chars[pos + 1] == '.' {
                 // Check ⎇ next chars are an identifier (not a method call)
@@ -4142,7 +4142,7 @@ invoke tome·typeck·EvidenceLevel;
                     // CG-149: Handle .name() method call on evidence values
                     // Pattern: ).name() → sigil_IrEvidence____name(expr)
                     ⎇ field_name == "name" ∧ after == '(' {
-                        // Check for () after name
+                        // Check ∀ () after name
                         ≔ has_parens = ident_end + 1 < fr_len ∧ fr_chars[(ident_end + 1) as usize] == ')';
                         ⎇ has_parens {
                             // It's a .name() call - wrap the preceding expression
@@ -4201,7 +4201,7 @@ invoke tome·typeck·EvidenceLevel;
                                       field_name == "enum_id" ∨ field_name == "variant" ∨ field_name == "fields" ∨
                                       field_name == "count" ∨ field_name == "field_count";
                     ⎇ !is_method ∧ !is_c_member ∧ field_name.len() > 0 {
-                        // This is a field access - wrap in sigil_struct_field
+                        // This is a field access - wrap ∈ sigil_struct_field
                         new_result.push(')');
                         // Scan backwards to find the function call
                         ≔ vary paren_depth: !i64 = 1;
@@ -4250,7 +4250,7 @@ invoke tome·typeck·EvidenceLevel;
             }
 
             // CG-127: Strip stray ? evidence markers
-            // In Sigil, x? marks uncertain evidence, but in C output this should be stripped
+            // In Sigil, x? marks uncertain evidence, but ∈ C output this should be stripped
             // Note: We only keep ? ⎇ it's part of ternary operator (followed by something then :)
             ⎇ fr_chars[pos as usize] == '?' {
                 // Check ⎇ followed by : (ternary operator) - ⎇ so, keep the ?
@@ -4285,7 +4285,7 @@ invoke tome·typeck·EvidenceLevel;
         }
 
         // CG-127 final cleanup: Iterate through and remove any ? followed by ) , ;
-        // This is a safety net in case the character-by-character logic missed any
+        // This is a safety net ∈ case the character-by-character logic missed any
         // IMPORTANT: Do NOT strip ? followed by space - could be ternary operator
         ≔ nr_chars: ![char] = new_result.chars().collect();
         ≔ nr_len = nr_chars.len() as i64;
@@ -4321,11 +4321,11 @@ invoke tome·typeck·EvidenceLevel;
     rite is_known_mut_self_for_type(this, type_name: !&str, method: !&str) → !bool {
         // CG-015: First check the signature registry (populated during lowering)
         ≔ qualified_name = format!("{}·{}", type_name, method);
-        ⎇ ≔ ?has_mut = this.method_signatures.get(qualified_name.as_str()) {
+        ⎇ ≔ ?has_Δ = this.method_signatures.get(qualified_name.as_str()) {
             ⤺ has_mut;  // Don't dereference - Map stores bool directly, not Box<bool>
         }
 
-        // CG-015: Fallback to heuristics for external/cross-module methods
+        // CG-015: Fallback to heuristics ∀ external/cross-module methods
         ⎇ type_name == "Driver" {
             // Driver methods that have vary this
             ⎇ method == "run" { ⤺ yea; }
@@ -4503,7 +4503,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("#ifndef SIGIL_BUILTINS_DEFINED");
         this.line("#define SIGIL_BUILTINS_DEFINED");
         this.emit_builtin_impls();
-        this.line("#endif /* SIGIL_BUILTINS_DEFINED */");
+        this.line("#end⎇ /* SIGIL_BUILTINS_DEFINED */");
 
         // Only emit main entry point ⎇ the module has a main function
         ⎇ has_main {
@@ -4514,7 +4514,7 @@ invoke tome·typeck·EvidenceLevel;
             ⎇ main_has_args {
                 this.line("/* Build args array from command line */");
                 this.line("SigilValue args = sigil_Vec____new();");
-                this.line("for (int i = 1; i < argc; i++) {");  // Skip argv[0] (program name)
+                this.line("∀ (int i = 1; i < argc; i++) {");  // Skip argv[0] (program name)
                 this.line("    args = sigil_push(args, sigil_string(argv[i]));");
                 this.line("}");
                 this.line("SigilValue result = sigil_main(args);");
@@ -4529,7 +4529,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     rite emit_builtin_impls(vary this) {
-        // Forward declare SigilStruct for sigil_display (full typedef comes later)
+        // Forward declare SigilStruct ∀ sigil_display (full typedef comes later)
         this.line("typedef sigil { ◆ char* name; ◆ char** field_names; SigilValue* field_values; size_t num_fields; } SigilStruct;");
         this.line("");
 
@@ -4624,7 +4624,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilStruct* s = (SigilStruct*)v.v.ptr;");
         this.line("⎇ (!s) ⤺ sigil_string(\"<null-struct>\");");
         this.line("size_t total = strlen(s->name ? s->name : \"?\") + 4;");
-        this.line("for (size_t i = 0; i < s->num_fields; i++) {");
+        this.line("∀ (size_t i = 0; i < s->num_fields; i++) {");
         this.indent_push();
         this.line("total += strlen(s->field_names[i]) + 32;");
         this.indent_pop();
@@ -4632,7 +4632,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("char* out = (char*)malloc(total);");
         this.line("char* p = out;");
         this.line("p += sprintf(p, \"%s { \", s->name ? s->name : \"?\");");
-        this.line("for (size_t i = 0; i < s->num_fields; i++) {");
+        this.line("∀ (size_t i = 0; i < s->num_fields; i++) {");
         this.indent_push();
         this.line("⎇ (i > 0) p += sprintf(p, \", \");");
         this.line("SigilValue fv = sigil_display(s->field_values[i]);");
@@ -4651,7 +4651,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("char* out = (char*)malloc(total);");
         this.line("char* p = out;");
         this.line("*p++ = '[';");
-        this.line("for (size_t i = 0; i < len; i++) {");
+        this.line("∀ (size_t i = 0; i < len; i++) {");
         this.indent_push();
         this.line("⎇ (i > 0) { *p++ = ','; *p++ = ' '; }");
         this.line("SigilValue ev = sigil_display(v.v.arr.data[i]);");
@@ -4670,7 +4670,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // Array length helper - reads from header for accurate dynamic length
+        // Array length helper - reads from header ∀ accurate dynamic length
         this.line("#ifndef SIGIL_ARR_LEN_DEFINED");
         this.line("#define SIGIL_ARR_LEN_DEFINED");
         this.line("size_t sigil_arr_len(SigilValue v) {");
@@ -4716,7 +4716,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // sigil_clone - clone a value (shallow copy, structs are copy-by-value in SigilValue)
+        // sigil_clone - clone a value (shallow copy, structs are copy-by-value ∈ SigilValue)
         this.line("SigilValue sigil_clone(SigilValue v) {");
         this.indent_push();
         this.line("⤺ v; /* SigilValue is passed by value, shallow copy is sufficient */");
@@ -4725,18 +4725,18 @@ invoke tome·typeck·EvidenceLevel;
         this.line("");
 
         // sigil_contains - check ⎇ a collection contains an element (guarded)
-        // CG-023: Handle TAG_REF parameters for closure capture analysis
+        // CG-023: Handle TAG_REF parameters ∀ closure capture analysis
         this.line("#ifndef SIGIL_CONTAINS_DEFINED");
         this.line("#define SIGIL_CONTAINS_DEFINED");
         this.line("SigilValue sigil_contains(SigilValue collection, SigilValue element) {");
         this.indent_push();
-        this.line("/* Dereference TAG_REF for collection */");
+        this.line("/* Dereference TAG_REF ∀ collection */");
         this.line("⟳ (collection.tag == TAG_REF ∧ collection.v.ptr) {");
         this.indent_push();
         this.line("collection = *((SigilValue*)collection.v.ptr);");
         this.indent_pop();
         this.line("}");
-        this.line("/* Dereference TAG_REF for element */");
+        this.line("/* Dereference TAG_REF ∀ element */");
         this.line("⟳ (element.tag == TAG_REF ∧ element.v.ptr) {");
         this.indent_push();
         this.line("element = *((SigilValue*)element.v.ptr);");
@@ -4744,7 +4744,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("⎇ (collection.tag == TAG_ARRAY) {");
         this.indent_push();
-        this.line("for (size_t i = 0; i < sigil_arr_len(collection); i++) {");
+        this.line("∀ (size_t i = 0; i < sigil_arr_len(collection); i++) {");
         this.indent_push();
         this.line("⎇ (sigil_eq(collection.v.arr.data[i], element)) ⤺ sigil_bool(yea);");
         this.indent_pop();
@@ -4760,7 +4760,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ sigil_bool(nay);");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_CONTAINS_DEFINED */");
+        this.line("#end⎇ /* SIGIL_CONTAINS_DEFINED */");
         this.line("");
 
         // Vec push - dynamic array push with header support
@@ -4794,14 +4794,14 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ v;");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_VEC_PUSH_DEFINED */");
+        this.line("#end⎇ /* SIGIL_VEC_PUSH_DEFINED */");
         this.line("");
 
         // CG-144: Vec as_slice - identity operation since Vec and slice have same representation
         this.line("#ifndef SIGIL_VEC_AS_SLICE_DEFINED");
         this.line("#define SIGIL_VEC_AS_SLICE_DEFINED");
         this.line("SigilValue sigil_Vec____as_slice(SigilValue v) { ⤺ v; }");
-        this.line("#endif /* SIGIL_VEC_AS_SLICE_DEFINED */");
+        this.line("#end⎇ /* SIGIL_VEC_AS_SLICE_DEFINED */");
         this.line("");
 
         // CG-144: Vec capacity - returns the capacity of an array
@@ -4813,7 +4813,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ sigil_int(0LL);");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_VEC_CAPACITY_DEFINED */");
+        this.line("#end⎇ /* SIGIL_VEC_CAPACITY_DEFINED */");
         this.line("");
 
         // CG-144: Vec clear - clears the array by setting length to 0
@@ -4825,7 +4825,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ v;");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_VEC_CLEAR_DEFINED */");
+        this.line("#end⎇ /* SIGIL_VEC_CLEAR_DEFINED */");
         this.line("");
 
         // CG-160: Vec clone - creates a shallow copy of an array
@@ -4836,7 +4836,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ sigil_clone(v);");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_VEC_CLONE_DEFINED */");
+        this.line("#end⎇ /* SIGIL_VEC_CLONE_DEFINED */");
         this.line("");
 
         // CG-160: Type clone - creates a shallow copy of a type
@@ -4863,7 +4863,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ sigil_int(0LL);");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_STRING_LEN_DEFINED */");
+        this.line("#end⎇ /* SIGIL_STRING_LEN_DEFINED */");
         this.line("");
 
         // Iterator helpers - guarded to avoid conflict with build.sh prelude
@@ -4875,7 +4875,7 @@ invoke tome·typeck·EvidenceLevel;
         this.indent_push();
         this.line("⎇ (v.tag != TAG_ARRAY) ⤺ sigil_array(0);");
         this.line("SigilValue result = sigil_array(v.v.arr.len);");
-        this.line("for (size_t i = 0; i < v.v.arr.len; i++) {");
+        this.line("∀ (size_t i = 0; i < v.v.arr.len; i++) {");
         this.indent_push();
         this.line("SigilValue* fields = (SigilValue*)malloc(2 * sizeof(SigilValue));");
         this.line("fields[0] = sigil_int((long long)i);");
@@ -4895,10 +4895,10 @@ invoke tome·typeck·EvidenceLevel;
         this.line("result.v.arr.cap = v.v.arr.len;");
         this.line("result.v.arr.len = 0;");
         this.line("SigilValue (*fn)(SigilValue) = (SigilValue (*)(SigilValue))pred.v.ptr;");
-        this.line("for (size_t i = 0; i < v.v.arr.len; i++) {");
+        this.line("∀ (size_t i = 0; i < v.v.arr.len; i++) {");
         this.indent_push();
         this.line("SigilValue item = v.v.arr.data[i];");
-        this.line("SigilValue keep = fn(item);");
+        this.line("SigilValue keep = λ(item);");
         this.line("⎇ (sigil_truthy(keep)) {");
         this.indent_push();
         this.line("result.v.arr.data[result.v.arr.len++] = item;");
@@ -4916,22 +4916,22 @@ invoke tome·typeck·EvidenceLevel;
         this.line("/* First pass: count total elements */");
         this.line("size_t total = 0;");
         this.line("SigilValue (*fn)(SigilValue) = (SigilValue (*)(SigilValue))mapper.v.ptr;");
-        this.line("for (size_t i = 0; i < v.v.arr.len; i++) {");
+        this.line("∀ (size_t i = 0; i < v.v.arr.len; i++) {");
         this.indent_push();
-        this.line("SigilValue mapped = fn(v.v.arr.data[i]);");
+        this.line("SigilValue mapped = λ(v.v.arr.data[i]);");
         this.line("⎇ (mapped.tag == TAG_ARRAY) total += mapped.v.arr.len;");
-        this.line("else total += 1;");
+        this.line("⎉ total += 1;");
         this.indent_pop();
         this.line("}");
         this.line("/* Second pass: collect elements */");
         this.line("SigilValue result = sigil_array(total);");
         this.line("size_t idx = 0;");
-        this.line("for (size_t i = 0; i < v.v.arr.len; i++) {");
+        this.line("∀ (size_t i = 0; i < v.v.arr.len; i++) {");
         this.indent_push();
-        this.line("SigilValue mapped = fn(v.v.arr.data[i]);");
+        this.line("SigilValue mapped = λ(v.v.arr.data[i]);");
         this.line("⎇ (mapped.tag == TAG_ARRAY) {");
         this.indent_push();
-        this.line("for (size_t j = 0; j < mapped.v.arr.len; j++) {");
+        this.line("∀ (size_t j = 0; j < mapped.v.arr.len; j++) {");
         this.indent_push();
         this.line("result.v.arr.data[idx++] = mapped.v.arr.data[j];");
         this.indent_pop();
@@ -4947,13 +4947,13 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ result;");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_ITER_DEFINED */");
+        this.line("#end⎇ /* SIGIL_ITER_DEFINED */");
         this.line("");
 
         // HashMap Entry API implementation
         this.line("#ifndef SIGIL_ENTRY_API_DEFINED");
         this.line("#define SIGIL_ENTRY_API_DEFINED");
-        this.line("/* sigil_map_entry_or_default - get or insert default for key */");
+        this.line("/* sigil_map_entry_or_default - get or insert default ∀ key */");
         this.line("SigilValue sigil_map_entry_or_default(SigilValue map, SigilValue key) {");
         this.indent_push();
         this.line("/* Check ⎇ key exists */");
@@ -4963,13 +4963,13 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ existing;");
         this.indent_pop();
         this.line("}");
-        this.line("/* Insert default value (empty array for most common case) */");
+        this.line("/* Insert default value (empty array ∀ most common case) */");
         this.line("SigilValue def = sigil_array(0);");
         this.line("sigil_Map____insert(map, key, def);");
         this.line("⤺ sigil_Map____get(map, key);");
         this.indent_pop();
         this.line("}");
-        this.line("/* sigil_map_entry_or_insert - get or insert specific value for key */");
+        this.line("/* sigil_map_entry_or_insert - get or insert specific value ∀ key */");
         this.line("SigilValue sigil_map_entry_or_insert(SigilValue map, SigilValue key, SigilValue value) {");
         this.indent_push();
         this.line("SigilValue existing = sigil_Map____get(map, key);");
@@ -4982,7 +4982,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ sigil_Map____get(map, key);");
         this.indent_pop();
         this.line("}");
-        this.line("/* sigil_map_entry_or_insert_with - get or insert closure result for key */");
+        this.line("/* sigil_map_entry_or_insert_with - get or insert closure result ∀ key */");
         this.line("SigilValue sigil_map_entry_or_insert_with(SigilValue map, SigilValue key, SigilValue closure) {");
         this.indent_push();
         this.line("SigilValue existing = sigil_Map____get(map, key);");
@@ -4993,12 +4993,12 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("/* Call closure to get default value */");
         this.line("SigilValue (*fn)(void) = (SigilValue (*)(void))closure.v.ptr;");
-        this.line("SigilValue value = rite ? fn() : sigil_unit();");
+        this.line("SigilValue value = rite ? λ() : sigil_unit();");
         this.line("sigil_Map____insert(map, key, value);");
         this.line("⤺ sigil_Map____get(map, key);");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_ENTRY_API_DEFINED */");
+        this.line("#end⎇ /* SIGIL_ENTRY_API_DEFINED */");
         this.line("");
 
         // sigil_join implementation (with guard) - includes pointer validation
@@ -5023,7 +5023,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("size_t total = 0;");
         this.line("◆ char* sep_str = (sep.tag == TAG_STRING ∧ sigil_join_valid_ptr(sep.v.s)) ? sep.v.s : \"\";");
         this.line("size_t sep_len = strlen(sep_str);");
-        this.line("for (size_t i = 0; i < arr_len; i++) {");
+        this.line("∀ (size_t i = 0; i < arr_len; i++) {");
         this.indent_push();
         this.line("SigilValue item = arr.v.arr.data[i];");
         this.line("⎇ (item.tag == TAG_STRING ∧ sigil_join_valid_ptr(item.v.s)) total += strlen(item.v.s);");
@@ -5033,7 +5033,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("char* result = (char*)malloc(total + 1);");
         this.line("⎇ (!result) ⤺ sigil_string(\"\");");
         this.line("result[0] = '\\0';");
-        this.line("for (size_t i = 0; i < arr_len; i++) {");
+        this.line("∀ (size_t i = 0; i < arr_len; i++) {");
         this.indent_push();
         this.line("⎇ (i > 0) strcat(result, sep_str);");
         this.line("SigilValue item = arr.v.arr.data[i];");
@@ -5043,7 +5043,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⤺ sigil_string(result);");
         this.indent_pop();
         this.line("}");
-        this.line("#endif /* SIGIL_JOIN_DEFINED */");
+        this.line("#end⎇ /* SIGIL_JOIN_DEFINED */");
         this.line("");
 
         // Math builtins
@@ -5149,7 +5149,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("s->name = name;");
         this.line("s->field_names = names;");
         this.line("s->field_values = (SigilValue*)malloc(n * sizeof(SigilValue));");
-        this.line("for (size_t i = 0; i < n; i++) s->field_values[i] = values[i];");
+        this.line("∀ (size_t i = 0; i < n; i++) s->field_values[i] = values[i];");
         this.line("s->num_fields = n;");
         this.line("⤺ (SigilValue){ .tag = TAG_STRUCT, .evidence = SIGIL_KNOWN, .v.ptr = s };");
         this.indent_pop();
@@ -5160,7 +5160,7 @@ invoke tome·typeck·EvidenceLevel;
         this.indent_push();
         this.line("⎇ (v.tag != TAG_STRUCT) ⤺ sigil_null();");
         this.line("SigilStruct* s = (SigilStruct*)v.v.ptr;");
-        this.line("for (size_t i = 0; i < s->num_fields; i++) {");
+        this.line("∀ (size_t i = 0; i < s->num_fields; i++) {");
         this.indent_push();
         this.line("⎇ (strcmp(s->field_names[i], field) == 0) ⤺ s->field_values[i];");
         this.indent_pop();
@@ -5174,7 +5174,7 @@ invoke tome·typeck·EvidenceLevel;
         this.indent_push();
         this.line("⎇ (v->tag != TAG_STRUCT) ⤺ sigil_unit();");
         this.line("SigilStruct* s = (SigilStruct*)v->v.ptr;");
-        this.line("for (size_t i = 0; i < s->num_fields; i++) {");
+        this.line("∀ (size_t i = 0; i < s->num_fields; i++) {");
         this.indent_push();
         this.line("⎇ (strcmp(s->field_names[i], field) == 0) { s->field_values[i] = val; ⤺ sigil_unit(); }");
         this.indent_pop();
@@ -5229,7 +5229,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // sigil_enum_eq - compare two ᛈ values for equality
+        // sigil_enum_eq - compare two ᛈ values ∀ equality
         this.line("int sigil_enum_eq(SigilValue a, SigilValue b) {");
         this.indent_push();
         this.line("/* Dereference TAG_REF ⎇ needed */");
@@ -5247,7 +5247,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_tuple(SigilValue* fields, size_t n) {");
         this.indent_push();
         this.line("SigilValue* data = (SigilValue*)malloc(n * sizeof(SigilValue));");
-        this.line("for (size_t i = 0; i < n; i++) data[i] = fields[i];");
+        this.line("∀ (size_t i = 0; i < n; i++) data[i] = fields[i];");
         this.line("SigilValue v = { .tag = TAG_TUPLE, .evidence = SIGIL_KNOWN };");
         this.line("v.v.tup.fields = data;");
         this.line("v.v.tup.count = n;");
@@ -5257,7 +5257,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("");
 
         // Option helpers - using a tagged variant representation
-        // We invoke TAG_NULL for None and a wrapper sigil for Some
+        // We invoke TAG_NULL ∀ None and a wrapper sigil ∀ Some
         this.line("/* Option helpers */");
         this.line("◆ SigilValue Option____None = { .tag = TAG_NULL, .evidence = SIGIL_KNOWN };");
         this.line("");
@@ -5282,7 +5282,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // CG-201: Additional Option/Result/Vec/String runtime functions for this-hosting
+        // CG-201: Additional Option/Result/Vec/String runtime functions ∀ this-hosting
         this.line("SigilValue sigil_Option____unwrap(SigilValue v) {");
         this.indent_push();
         this.line("⎇ (v.tag == TAG_OPTION_SOME ∧ v.v.ptr) ⤺ *((SigilValue*)v.v.ptr);");
@@ -5341,7 +5341,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_any_truthy(SigilValue arr) {");
         this.indent_push();
         this.line("⎇ (arr.tag != TAG_ARRAY ∨ !arr.v.arr.data) ⤺ sigil_bool(nay);");
-        this.line("for (size_t i = 0; i < arr.v.arr.len; i++) { ⎇ (sigil_truthy(arr.v.arr.data[i])) ⤺ sigil_bool(yea); }");
+        this.line("∀ (size_t i = 0; i < arr.v.arr.len; i++) { ⎇ (sigil_truthy(arr.v.arr.data[i])) ⤺ sigil_bool(yea); }");
         this.line("⤺ sigil_bool(nay);");
         this.indent_pop();
         this.line("}");
@@ -5352,7 +5352,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("size_t skip = (size_t)n.v.i;");
         this.line("⎇ (skip >= arr.v.arr.len) ⤺ sigil_array(0);");
         this.line("SigilValue result = sigil_array(arr.v.arr.len - skip);");
-        this.line("for (size_t i = 0; i < arr.v.arr.len - skip; i++) result.v.arr.data[i] = arr.v.arr.data[i + skip];");
+        this.line("∀ (size_t i = 0; i < arr.v.arr.len - skip; i++) result.v.arr.data[i] = arr.v.arr.data[i + skip];");
         this.line("⤺ result;");
         this.indent_pop();
         this.line("}");
@@ -5365,7 +5365,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⎇ (s.tag != TAG_STRING ∨ !s.v.s) ⤺ sigil_array(0);");
         this.line("size_t len = strlen(s.v.s);");
         this.line("SigilValue arr = sigil_array(len);");
-        this.line("for (size_t i = 0; i < len; i++) arr.v.arr.data[i] = sigil_char(s.v.s[i]);");
+        this.line("∀ (size_t i = 0; i < len; i++) arr.v.arr.data[i] = sigil_char(s.v.s[i]);");
         this.line("⤺ arr;");
         this.indent_pop();
         this.line("}");
@@ -5380,7 +5380,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("SigilValue sigil_Vec____extend(SigilValue dst, SigilValue src) {");
         this.indent_push();
         this.line("⎇ (src.tag != TAG_ARRAY ∨ !src.v.arr.data) ⤺ dst;");
-        this.line("for (size_t i = 0; i < src.v.arr.len; i++) dst = sigil_Vec____push(dst, src.v.arr.data[i]);");
+        this.line("∀ (size_t i = 0; i < src.v.arr.len; i++) dst = sigil_Vec____push(dst, src.v.arr.data[i]);");
         this.line("⤺ dst;");
         this.indent_pop();
         this.line("}");
@@ -5431,7 +5431,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⎇ (s.tag != TAG_STRING ∨ !s.v.s) ⤺ sigil_string(\"\");");
         this.line("size_t len = strlen(s.v.s);");
         this.line("char* result = (char*)malloc(len + 1);");
-        this.line("for (size_t i = 0; i < len; i++) {");
+        this.line("∀ (size_t i = 0; i < len; i++) {");
         this.indent_push();
         this.line("result[i] = (s.v.s[i] >= 'a' ∧ s.v.s[i] <= 'z') ? s.v.s[i] - 32 : s.v.s[i];");
         this.indent_pop();
@@ -5447,7 +5447,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⎇ (s.tag != TAG_STRING ∨ !s.v.s) ⤺ sigil_string(\"\");");
         this.line("size_t len = strlen(s.v.s);");
         this.line("char* result = (char*)malloc(len + 1);");
-        this.line("for (size_t i = 0; i < len; i++) {");
+        this.line("∀ (size_t i = 0; i < len; i++) {");
         this.indent_push();
         this.line("result[i] = (s.v.s[i] >= 'A' ∧ s.v.s[i] <= 'Z') ? s.v.s[i] + 32 : s.v.s[i];");
         this.indent_pop();
@@ -5464,7 +5464,7 @@ invoke tome·typeck·EvidenceLevel;
         this.indent_push();
         this.line("SigilValue s = sigil_display(v);");
         this.line("⎇ (s.tag == TAG_STRING ∧ s.v.s) { printf(\"%s\\n\", s.v.s); }");
-        this.line("else { printf(\"<value>\\n\"); }");
+        this.line("⎉ { printf(\"<value>\\n\"); }");
         this.line("⤺ sigil_unit();");
         this.indent_pop();
         this.line("}");
@@ -5488,8 +5488,8 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // File I/O functions for FFI
-        this.line("/* File I/O functions for FFI */");
+        // File I/O functions ∀ FFI
+        this.line("/* File I/O functions ∀ FFI */");
         this.line("static size_t __sigil_last_file_len = 0;");
         this.line("");
 
@@ -5544,7 +5544,7 @@ invoke tome·typeck·EvidenceLevel;
 
         this.line("SigilValue sigil_with_span(SigilValue err, SigilValue span) {");
         this.indent_push();
-        this.line("/* Add span info to error - for now just ⤺ unchanged */");
+        this.line("/* Add span info to error - ∀ now just ⤺ unchanged */");
         this.line("(void)span;");
         this.line("⤺ err;");
         this.indent_pop();
@@ -5553,7 +5553,7 @@ invoke tome·typeck·EvidenceLevel;
 
         this.line("SigilValue sigil_as_ptr(SigilValue s) {");
         this.indent_push();
-        this.line("/* Return the string pointer wrapped as a SigilValue - used for FFI */");
+        this.line("/* Return the string pointer wrapped as a SigilValue - used ∀ FFI */");
         this.line("⎇ (s.tag == TAG_STRING) ⤺ s;");
         this.line("⤺ sigil_null();");
         this.indent_pop();
@@ -5579,7 +5579,7 @@ invoke tome·typeck·EvidenceLevel;
 
         this.line("SigilValue sigil_Map____get(SigilValue m, SigilValue key) {");
         this.indent_push();
-        this.line("/* Stub: ⤺ null for now */");
+        this.line("/* Stub: ⤺ null ∀ now */");
         this.line("(void)m; (void)key;");
         this.line("⤺ sigil_null();");
         this.indent_pop();
@@ -5588,7 +5588,7 @@ invoke tome·typeck·EvidenceLevel;
 
         this.line("SigilValue sigil_Map____insert(SigilValue m, SigilValue key, SigilValue val) {");
         this.indent_push();
-        this.line("/* Stub: no-op for now */");
+        this.line("/* Stub: no-op ∀ now */");
         this.line("(void)m; (void)key; (void)val;");
         this.line("⤺ sigil_unit();");
         this.indent_pop();
@@ -5645,7 +5645,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("◆ char* sep_str = (sep.tag == TAG_STRING ∧ sep.v.s) ? sep.v.s : \"\";");
         this.line("size_t total_len = 0;");
         this.line("size_t sep_len = strlen(sep_str);");
-        this.line("for (size_t i = 0; i < arr.v.arr.len; i++) {");
+        this.line("∀ (size_t i = 0; i < arr.v.arr.len; i++) {");
         this.indent_push();
         this.line("SigilValue s = sigil_display(arr.v.arr.data[i]);");
         this.line("⎇ (s.tag == TAG_STRING ∧ s.v.s) total_len += strlen(s.v.s);");
@@ -5654,7 +5654,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("char* result = (char*)malloc(total_len + 1);");
         this.line("result[0] = '\\0';");
-        this.line("for (size_t i = 0; i < arr.v.arr.len; i++) {");
+        this.line("∀ (size_t i = 0; i < arr.v.arr.len; i++) {");
         this.indent_push();
         this.line("⎇ (i > 0) strcat(result, sep_str);");
         this.line("SigilValue s = sigil_display(arr.v.arr.data[i]);");
@@ -5686,13 +5686,13 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // zip and all for iterator operations
+        // zip and all ∀ iterator operations
         this.line("SigilValue sigil_zip(SigilValue a, SigilValue b) {");
         this.indent_push();
         this.line("⎇ (a.tag != TAG_ARRAY ∨ b.tag != TAG_ARRAY) ⤺ sigil_array(0);");
         this.line("size_t len = a.v.arr.len < b.v.arr.len ? a.v.arr.len : b.v.arr.len;");
         this.line("SigilValue result = sigil_array(len);");
-        this.line("for (size_t i = 0; i < len; i++) {");
+        this.line("∀ (size_t i = 0; i < len; i++) {");
         this.indent_push();
         this.line("SigilValue* fields = (SigilValue*)malloc(2 * sizeof(SigilValue));");
         this.line("fields[0] = a.v.arr.data[i];");
@@ -5712,9 +5712,9 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⎇ (arr.tag != TAG_ARRAY) ⤺ sigil_bool(yea);");
         this.line("typedef SigilValue (*ClosureFn)(SigilValue);");
         this.line("ClosureFn rite = (ClosureFn)closure.v.ptr;");
-        this.line("for (size_t i = 0; i < arr.v.arr.len; i++) {");
+        this.line("∀ (size_t i = 0; i < arr.v.arr.len; i++) {");
         this.indent_push();
-        this.line("SigilValue result = fn(arr.v.arr.data[i]);");
+        this.line("SigilValue result = λ(arr.v.arr.data[i]);");
         this.line("⎇ (!sigil_truthy(result)) ⤺ sigil_bool(nay);");
         this.indent_pop();
         this.line("}");
@@ -5744,7 +5744,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("");
 
         // String builder infrastructure
-        this.line("/* String builder for efficient string concatenation */");
+        this.line("/* String builder ∀ efficient string concatenation */");
         this.line("typedef sigil { size_t len; size_t cap; char data[]; } SigilStringBuilder;");
         this.line("#define SB_INITIAL_CAP 256");
         this.line("#define SB_HEADER_SIZE (sizeof(size_t) * 2)");
@@ -5793,7 +5793,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("⎇ (s.tag != TAG_STRING ∨ !s.v.s) ⤺ s;");
         this.line("char ch = '?';");
         this.line("⎇ (c.tag == TAG_CHAR) ch = c.v.c;");
-        this.line("else ⎇ (c.tag == TAG_INT) ch = (char)c.v.i;");
+        this.line("⎉ ⎇ (c.tag == TAG_INT) ch = (char)c.v.i;");
         this.line("⎇ (is_string_builder(s.v.s)) {");
         this.indent_push();
         this.line("SigilStringBuilder* sb = get_builder(s.v.s);");
@@ -5829,7 +5829,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("size_t len1 = s.v.s ? strlen(s.v.s) : 0;");
         this.line("size_t len2 = str.v.s ? strlen(str.v.s) : 0;");
         this.line("char* result = (char*)malloc(len1 + len2 + 1);");
-        this.line("⎇ (s.v.s) strcpy(result, s.v.s); else result[0] = '\\0';");
+        this.line("⎇ (s.v.s) strcpy(result, s.v.s); ⎉ result[0] = '\\0';");
         this.line("⎇ (str.v.s) strcat(result, str.v.s);");
         this.line("⤺ sigil_string(result);");
         this.indent_pop();
@@ -5901,7 +5901,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("case TAG_ARRAY: {");
         this.indent_push();
         this.line("SigilValue result = sigil_Vec____new();");
-        this.line("for (size_t i = 0; i < v.v.arr.len; i++) result = sigil_Vec____push(result, sigil_cloned(v.v.arr.data[i]));");
+        this.line("∀ (size_t i = 0; i < v.v.arr.len; i++) result = sigil_Vec____push(result, sigil_cloned(v.v.arr.data[i]));");
         this.line("⤺ result;");
         this.indent_pop();
         this.line("}");
@@ -5914,7 +5914,7 @@ invoke tome·typeck·EvidenceLevel;
         this.line("dst->num_fields = src->num_fields;");
         this.line("dst->field_names = (◆ char**)malloc(src->num_fields * sizeof(char*));");
         this.line("dst->field_values = (SigilValue*)malloc(src->num_fields * sizeof(SigilValue));");
-        this.line("for (size_t i = 0; i < src->num_fields; i++) {");
+        this.line("∀ (size_t i = 0; i < src->num_fields; i++) {");
         this.indent_push();
         this.line("dst->field_names[i] = src->field_names[i] ? strdup(src->field_names[i]) : NULL;");
         this.line("dst->field_values[i] = sigil_cloned(src->field_values[i]);");
@@ -5941,10 +5941,10 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // sigil_next - stub for iterator protocol
+        // sigil_next - stub ∀ iterator protocol
         this.line("SigilValue sigil_next(SigilValue iter) {");
         this.indent_push();
-        this.line("/* Iterator next - ⤺ Option·None for stub */");
+        this.line("/* Iterator next - ⤺ Option·None ∀ stub */");
         this.line("⤺ Option____None;");
         this.indent_pop();
         this.line("}");
@@ -5991,10 +5991,10 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // sigil_parse - stub for parsing
+        // sigil_parse - stub ∀ parsing
         this.line("SigilValue sigil_parse(SigilValue s) {");
         this.indent_push();
-        this.line("/* Parse stub - returns int ⎇ numeric, else string */");
+        this.line("/* Parse stub - returns int ⎇ numeric, ⎉ string */");
         this.line("⎇ (s.tag != TAG_STRING ∨ !s.v.s) ⤺ s;");
         this.line("char* endptr;");
         this.line("long val = strtol(s.v.s, &endptr, 10);");
@@ -6004,17 +6004,17 @@ invoke tome·typeck·EvidenceLevel;
         this.line("}");
         this.line("");
 
-        // sigil_map_err - stub for Result error mapping
+        // sigil_map_err - stub ∀ Result error mapping
         this.line("SigilValue sigil_map_err(SigilValue result, SigilValue mapper) {");
         this.indent_push();
-        this.line("/* Map error in Result - ⎇ Err, apply mapper */");
+        this.line("/* Map error ∈ Result - ⎇ Err, apply mapper */");
         this.line("⎇ (sigil_is_struct_variant(result, \"Result·Err\") ∨ sigil_is_struct_variant(result, \"Err\")) {");
         this.indent_push();
         this.line("⎇ (result.v.ptr ∧ mapper.tag == TAG_CLOSURE) {");
         this.indent_push();
         this.line("SigilValue err = *(SigilValue*)result.v.ptr;");
         this.line("SigilValue (*fn)(SigilValue) = (SigilValue (*)(SigilValue))mapper.v.ptr;");
-        this.line("⤺ sigil_Err(fn(err));");
+        this.line("⤺ sigil_Err(λ(err));");
         this.indent_pop();
         this.line("}");
         this.indent_pop();
@@ -6027,7 +6027,7 @@ invoke tome·typeck·EvidenceLevel;
         // sigil_to_json - stub (signature must ⌥ forward declaration)
         this.line("SigilValue sigil_to_json(SigilValue v, SigilValue opts) {");
         this.indent_push();
-        this.line("(void)opts;  /* unused for now */");
+        this.line("(void)opts;  /* unused ∀ now */");
         this.line("⤺ sigil_display(v);  /* Simplified: just display */");
         this.indent_pop();
         this.line("}");
@@ -6058,7 +6058,7 @@ invoke tome·typeck·EvidenceLevel;
         this.indent_push();
         this.line("⎇ (arr.tag != TAG_ARRAY) ⤺ sigil_Err(sigil_string(\"not an array\"));");
         this.line("SigilValue result = sigil_Vec____new();");
-        this.line("for (size_t i = 0; i < arr.v.arr.len; i++) {");
+        this.line("∀ (size_t i = 0; i < arr.v.arr.len; i++) {");
         this.indent_push();
         this.line("SigilValue item = arr.v.arr.data[i];");
         this.line("⎇ (sigil_is_struct_variant(item, \"Result·Err\") ∨ sigil_is_struct_variant(item, \"Err\")) ⤺ item;");

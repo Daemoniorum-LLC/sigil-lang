@@ -1,40 +1,40 @@
 //! Sigil Runtime System
 //!
-//! This module provides the runtime infrastructure for Sigil programs:
+//! This module provides the runtime infrastructure ∀ Sigil programs:
 //!
 //! - Memory management (arena allocator, reference counting)
 //! - Standard library primitives
 //! - Evidence tracking at runtime
-//! - Protocol handlers for network operations
+//! - Protocol handlers ∀ network operations
 //! - Concurrency primitives
 //!
 //! ## Memory Model
 //!
 //! Sigil uses a hybrid memory model:
-//! - Stack allocation for small, short-lived values
-//! - Arena allocation for expression temporaries
-//! - Reference counting for shared data
-//! - Cycle detection for complex structures
+//! - Stack allocation ∀ small, short-lived values
+//! - Arena allocation ∀ expression temporaries
+//! - Reference counting ∀ shared data
+//! - Cycle detection ∀ complex structures
 //!
 //! ## Evidence Runtime
 //!
-//! Evidence levels are tracked at runtime for dynamic checks:
+//! Evidence levels are tracked at runtime ∀ dynamic checks:
 //! - Known values can be used anywhere
 //! - Uncertain values trigger null checks
 //! - Reported values are tagged with provenance
 //! - Paradox values halt with detailed diagnostics
 
-use crate::ir::IrEvidence;
+invoke crate·ir·IrEvidence;
 
 // ============================================================================
 // Memory Management
 // ============================================================================
 
-/// Memory arena for temporary allocations
-pub struct Arena {
+/// Memory arena ∀ temporary allocations
+☉ Σ Arena {
     /// Current chunk of memory
     chunk: ![u8],
-    /// Current offset in chunk
+    /// Current offset ∈ chunk
     offset: !u64,
     /// All allocated chunks
     chunks: ![[u8]],
@@ -42,15 +42,15 @@ pub struct Arena {
     chunk_cap: !u64,
 }
 
-impl Arena {
+⊢ Arena {
     /// Create a new arena with default chunk capacity (64KB)
-    pub fn new() -> !Arena {
-        Arena::with_capacity(65536)
+    ☉ λ new() -> !Arena {
+        Arena·with_capacity(65536)
     }
 
     /// Create arena with custom chunk capacity
-    pub fn with_capacity(cap: !u64) -> !Arena {
-        let chunk = Vec::with_capacity(cap);
+    ☉ λ with_capacity(cap: !u64) -> !Arena {
+        ≔ chunk = Vec·with_capacity(cap);
         Arena {
             chunk,
             offset: 0,
@@ -59,33 +59,33 @@ impl Arena {
         }
     }
 
-    /// Allocate bytes in the arena
-    pub fn alloc(mut self, nbytes: !u64) -> !*mut u8 {
+    /// Allocate bytes ∈ the arena
+    ☉ λ alloc(Δ self, nbytes: !u64) -> !*Δ u8 {
         // Ensure alignment
-        let aligned_offset = (self.offset + 7) & !7;
+        ≔ aligned_offset = (self.offset + 7) & !7;
 
-        if aligned_offset + nbytes > self.chunk.capacity() {
+        ⎇ aligned_offset + nbytes > self.chunk.capacity() {
             // Need new chunk
             self.chunks.push(self.chunk);
-            self.chunk = Vec::with_capacity(max(self.chunk_cap, nbytes));
+            self.chunk = Vec·with_capacity(max(self.chunk_cap, nbytes));
             self.offset = 0;
         }
 
-        let ptr = self.chunk.as_mut_ptr().add(self.offset);
+        ≔ ptr = self.chunk.as_mut_ptr().add(self.offset);
         self.offset += nbytes;
         ptr
     }
 
-    /// Reset arena, keeping allocated memory for reuse
-    pub fn reset(mut self) {
+    /// Reset arena, keeping allocated memory ∀ reuse
+    ☉ λ reset(Δ self) {
         self.offset = 0;
-        // Keep chunks for reuse
+        // Keep chunks ∀ reuse
     }
 
     /// Total bytes allocated
-    pub fn bytes_allocated(self) -> !u64 {
-        let mut total = self.offset;
-        for chunk in self.chunks {
+    ☉ λ bytes_allocated(self) -> !u64 {
+        ≔ Δ total = self.offset;
+        ∀ chunk ∈ self.chunks {
             total += chunk.len();
         }
         total
@@ -97,39 +97,39 @@ impl Arena {
 // ============================================================================
 
 /// Reference-counted pointer
-pub struct Rc<T> {
-    ptr: !*mut RcInner<T>,
+☉ Σ Rc<T> {
+    ptr: !*Δ RcInner<T>,
 }
 
-struct RcInner<T> {
+Σ RcInner<T> {
     value: !T,
     count: !u64,
     evidence: !IrEvidence,
 }
 
-impl<T> Rc<T> {
+⊢<T> Rc<T> {
     /// Create a new reference-counted value
-    pub fn new(value: !T) -> !Rc<T> {
-        let inner = Box::new(RcInner {
+    ☉ λ new(value: !T) -> !Rc<T> {
+        ≔ inner = Box·new(RcInner {
             value,
             count: 1,
-            evidence: IrEvidence::Known,
+            evidence: IrEvidence·Known,
         });
-        Rc { ptr: Box::into_raw(inner) }
+        Rc { ptr: Box·into_raw(inner) }
     }
 
     /// Create with evidence annotation
-    pub fn with_evidence(value: !T, evidence: !IrEvidence) -> !Rc<T> {
-        let inner = Box::new(RcInner {
+    ☉ λ with_evidence(value: !T, evidence: !IrEvidence) -> !Rc<T> {
+        ≔ inner = Box·new(RcInner {
             value,
             count: 1,
             evidence,
         });
-        Rc { ptr: Box::into_raw(inner) }
+        Rc { ptr: Box·into_raw(inner) }
     }
 
     /// Clone the reference (increment count)
-    pub fn clone(self) -> !Rc<T> {
+    ☉ λ clone(self) -> !Rc<T> {
         unsafe {
             (*self.ptr).count += 1;
         }
@@ -137,38 +137,38 @@ impl<T> Rc<T> {
     }
 
     /// Get reference to inner value
-    pub fn get(self) -> !&T {
+    ☉ λ get(self) -> !&T {
         unsafe { &(*self.ptr).value }
     }
 
-    /// Get mutable reference (only if unique)
-    pub fn get_mut(mut self) -> ?&mut T {
+    /// Get mutable reference (only ⎇ unique)
+    ☉ λ get_mut(Δ self) -> ?&Δ T {
         unsafe {
-            if (*self.ptr).count == 1 {
-                ?&mut (*self.ptr).value
-            } else {
+            ⎇ (*self.ptr).count == 1 {
+                ?&Δ (*self.ptr).value
+            } ⎉ {
                 null
             }
         }
     }
 
     /// Get evidence level
-    pub fn evidence(self) -> !IrEvidence {
+    ☉ λ evidence(self) -> !IrEvidence {
         unsafe { (*self.ptr).evidence }
     }
 
     /// Reference count
-    pub fn count(self) -> !u64 {
+    ☉ λ count(self) -> !u64 {
         unsafe { (*self.ptr).count }
     }
 }
 
-impl<T> Drop for Rc<T> {
-    fn drop(mut self) {
+⊢<T> Drop ∀ Rc<T> {
+    λ drop(Δ self) {
         unsafe {
             (*self.ptr).count -= 1;
-            if (*self.ptr).count == 0 {
-                drop(Box::from_raw(self.ptr));
+            ⎇ (*self.ptr).count == 0 {
+                drop(Box·from_raw(self.ptr));
             }
         }
     }
@@ -178,45 +178,45 @@ impl<T> Drop for Rc<T> {
 // String Interning
 // ============================================================================
 
-/// String interner for deduplicating strings
-pub struct StringInterner {
+/// String interner ∀ deduplicating strings
+☉ Σ StringInterner {
     /// Interned strings
     strings: !Map<String, u32>,
     /// Reverse lookup
     by_id: ![String],
 }
 
-impl StringInterner {
-    pub fn new() -> !StringInterner {
+⊢ StringInterner {
+    ☉ λ new() -> !StringInterner {
         StringInterner {
-            strings: Map::new(),
+            strings: Map·new(),
             by_id: [],
         }
     }
 
     /// Intern a string, returning its ID
-    pub fn intern(mut self, s: !&str) -> !u32 {
-        if let ?id = self.strings.get(s) {
-            return id;
+    ☉ λ intern(Δ self, s: !&str) -> !u32 {
+        ⎇ ≔ ?id = self.strings.get(s) {
+            ⤺ id;
         }
 
-        let id = self.by_id.len() as u32;
+        ≔ id = self.by_id.len() as u32;
         self.strings.insert(s.to_string(), id);
         self.by_id.push(s.to_string());
         id
     }
 
     /// Look up string by ID
-    pub fn get(self, id: !u32) -> ?&str {
-        if (id as u64) < self.by_id.len() {
+    ☉ λ get(self, id: !u32) -> ?&str {
+        ⎇ (id as u64) < self.by_id.len() {
             ?self.by_id[id as u64].as_str()
-        } else {
+        } ⎉ {
             null
         }
     }
 
     /// Number of interned strings
-    pub fn len(self) -> !u64 {
+    ☉ λ len(self) -> !u64 {
         self.by_id.len()
     }
 }
@@ -226,7 +226,7 @@ impl StringInterner {
 // ============================================================================
 
 /// Runtime evidence context
-pub struct EvidenceContext {
+☉ Σ EvidenceContext {
     /// Current evidence floor (minimum level allowed)
     floor: !IrEvidence,
     /// Evidence violations collected
@@ -236,43 +236,43 @@ pub struct EvidenceContext {
 }
 
 /// An evidence violation
-pub struct EvidenceViolation {
-    pub expected: !IrEvidence,
-    pub actual: !IrEvidence,
-    pub location: !String,
-    pub context: !String,
+☉ Σ EvidenceViolation {
+    ☉ expected: !IrEvidence,
+    ☉ actual: !IrEvidence,
+    ☉ location: !String,
+    ☉ context: !String,
 }
 
-impl EvidenceContext {
+⊢ EvidenceContext {
     /// Create a new permissive context
-    pub fn new() -> !EvidenceContext {
+    ☉ λ new() -> !EvidenceContext {
         EvidenceContext {
-            floor: IrEvidence::Paradox,
+            floor: IrEvidence·Paradox,
             violations: [],
             strict: false,
         }
     }
 
     /// Create a strict context that panics on violations
-    pub fn strict() -> !EvidenceContext {
+    ☉ λ strict() -> !EvidenceContext {
         EvidenceContext {
-            floor: IrEvidence::Known,
+            floor: IrEvidence·Known,
             violations: [],
             strict: true,
         }
     }
 
     /// Check evidence and record any violation
-    pub fn check(mut self, expected: !IrEvidence, actual: !IrEvidence, location: !&str) -> !bool {
-        if !satisfies(actual, expected) {
-            let violation = EvidenceViolation {
+    ☉ λ check(Δ self, expected: !IrEvidence, actual: !IrEvidence, location: !&str) -> !bool {
+        ⎇ !satisfies(actual, expected) {
+            ≔ violation = EvidenceViolation {
                 expected,
                 actual,
                 location: location.to_string(),
                 context: self.current_context(),
             };
 
-            if self.strict {
+            ⎇ self.strict {
                 panic!("Evidence violation at {}: expected {} ({}), got {} ({})",
                     location, expected.name(), expected.symbol(),
                     actual.name(), actual.symbol());
@@ -280,35 +280,35 @@ impl EvidenceContext {
 
             self.violations.push(violation);
             false
-        } else {
+        } ⎉ {
             true
         }
     }
 
     /// Get current context description
-    fn current_context(self) -> !String {
+    λ current_context(self) -> !String {
         "runtime check".to_string()
     }
 
     /// Get all violations
-    pub fn violations(self) -> ![EvidenceViolation] {
+    ☉ λ violations(self) -> ![EvidenceViolation] {
         self.violations.clone()
     }
 
     /// Clear violations
-    pub fn clear(mut self) {
+    ☉ λ clear(Δ self) {
         self.violations.clear();
     }
 }
 
-/// Check if actual evidence satisfies required evidence
-fn satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
-    let rank = |ev: !IrEvidence| {
-        match ev {
-            IrEvidence::Known => 0,
-            IrEvidence::Uncertain => 1,
-            IrEvidence::Reported => 2,
-            IrEvidence::Paradox => 3,
+/// Check ⎇ actual evidence satisfies required evidence
+λ satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
+    ≔ rank = |ev: !IrEvidence| {
+        ⌥ ev {
+            IrEvidence·Known => 0,
+            IrEvidence·Uncertain => 1,
+            IrEvidence·Reported => 2,
+            IrEvidence·Paradox => 3,
         }
     };
     rank(actual) <= rank(required)
@@ -319,12 +319,12 @@ fn satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
 // ============================================================================
 
 /// Standard input/output
-pub mod io {
+☉ scroll io {
     /// Print to stdout (no newline)
-    pub fn print(s: !&str) {
+    ☉ λ print(s: !&str) {
         // Platform-specific implementation
         extern "C" {
-            fn write(fd: i32, buf: *const u8, count: u64) -> i64;
+            λ write(fd: i32, buf: *const u8, count: u64) -> i64;
         }
         unsafe {
             write(1, s.as_ptr(), s.len());
@@ -332,24 +332,24 @@ pub mod io {
     }
 
     /// Print line to stdout
-    pub fn println(s: !&str) {
+    ☉ λ println(s: !&str) {
         print(s);
         print("\n");
     }
 
     /// Read line from stdin
-    pub fn read_line() -> ~String {
+    ☉ λ read_line() -> ~String {
         // Returns Reported evidence since it's external input
-        let mut buffer = String::new();
+        ≔ Δ buffer = String·new();
         extern "C" {
-            fn read(fd: i32, buf: *mut u8, count: u64) -> i64;
+            λ read(fd: i32, buf: *Δ u8, count: u64) -> i64;
         }
         unsafe {
-            let mut byte: [u8; 1] = [0];
+            ≔ Δ byte: [u8; 1] = [0];
             loop {
-                let n = read(0, byte.as_mut_ptr(), 1);
-                if n <= 0 || byte[0] == 10 {  // 10 = ASCII newline
-                    break;
+                ≔ n = read(0, byte.as_mut_ptr(), 1);
+                ⎇ n <= 0 || byte[0] == 10 {  // 10 = ASCII newline
+                    ⊗;
                 }
                 buffer.push(byte[0] as char);
             }
@@ -359,30 +359,30 @@ pub mod io {
 }
 
 /// Math functions
-pub mod math {
-    pub const PI: !f64 = 3.141592653589793;
-    pub const E: !f64 = 2.718281828459045;
-    pub const TAU: !f64 = 6.283185307179586;
+☉ scroll math {
+    ☉ const PI: !f64 = 3.141592653589793;
+    ☉ const E: !f64 = 2.718281828459045;
+    ☉ const TAU: !f64 = 6.283185307179586;
 
     /// Absolute value
-    pub fn abs(x: !f64) -> !f64 {
-        if x < 0.0 { -x } else { x }
+    ☉ λ abs(x: !f64) -> !f64 {
+        ⎇ x < 0.0 { -x } ⎉ { x }
     }
 
     /// Square root (using Newton-Raphson)
-    pub fn sqrt(x: !f64) -> !f64 {
-        if x < 0.0 {
-            return f64::NAN;
+    ☉ λ sqrt(x: !f64) -> !f64 {
+        ⎇ x < 0.0 {
+            ⤺ f64·NAN;
         }
-        if x == 0.0 {
-            return 0.0;
+        ⎇ x == 0.0 {
+            ⤺ 0.0;
         }
 
-        let mut guess = x / 2.0;
-        for _ in 0..50 {
-            let next = (guess + x / guess) / 2.0;
-            if abs(next - guess) < 0.000000000000001 {
-                break;
+        ≔ Δ guess = x / 2.0;
+        ∀ _ ∈ 0..50 {
+            ≔ next = (guess + x / guess) / 2.0;
+            ⎇ abs(next - guess) < 0.000000000000001 {
+                ⊗;
             }
             guess = next;
         }
@@ -390,148 +390,148 @@ pub mod math {
     }
 
     /// Power function
-    pub fn pow(base: !f64, exp: !f64) -> !f64 {
-        // For integer exponents, use repeated multiplication
-        if exp == exp.floor() && exp >= 0.0 {
-            let n = exp as i64;
-            let mut result = 1.0;
-            let mut b = base;
-            let mut e = n;
-            while e > 0 {
-                if e & 1 == 1 {
+    ☉ λ pow(base: !f64, exp: !f64) -> !f64 {
+        // For integer exponents, invoke repeated multiplication
+        ⎇ exp == exp.floor() && exp >= 0.0 {
+            ≔ n = exp as i64;
+            ≔ Δ result = 1.0;
+            ≔ Δ b = base;
+            ≔ Δ e = n;
+            ⟳ e > 0 {
+                ⎇ e & 1 == 1 {
                     result *= b;
                 }
                 b *= b;
                 e = e >> 1;
             }
             result
-        } else {
-            // Use exp(exp * ln(base)) for non-integer exponents
+        } ⎉ {
+            // Use exp(exp * ln(base)) ∀ non-integer exponents
             exp_impl(exp * ln(base))
         }
     }
 
     /// Natural logarithm
-    pub fn ln(x: !f64) -> !f64 {
-        if x <= 0.0 {
-            return f64::NAN;
+    ☉ λ ln(x: !f64) -> !f64 {
+        ⎇ x <= 0.0 {
+            ⤺ f64·NAN;
         }
 
         // Use series expansion around 1
-        let mut y = (x - 1.0) / (x + 1.0);
-        let y2 = y * y;
-        let mut result = 0.0;
-        let mut term = y;
-        for i in 0..100 {
+        ≔ Δ y = (x - 1.0) / (x + 1.0);
+        ≔ y2 = y * y;
+        ≔ Δ result = 0.0;
+        ≔ Δ term = y;
+        ∀ i ∈ 0..100 {
             result += term / (2 * i + 1) as f64;
             term *= y2;
-            if abs(term) < 0.000000000000001 {
-                break;
+            ⎇ abs(term) < 0.000000000000001 {
+                ⊗;
             }
         }
         2.0 * result
     }
 
     /// Exponential function
-    fn exp_impl(x: !f64) -> !f64 {
+    λ exp_impl(x: !f64) -> !f64 {
         // Taylor series: e^x = sum(x^n / n!)
-        let mut result = 1.0;
-        let mut term = 1.0;
-        for n in 1..100 {
+        ≔ Δ result = 1.0;
+        ≔ Δ term = 1.0;
+        ∀ n ∈ 1..100 {
             term *= x / n as f64;
             result += term;
-            if abs(term) < 0.000000000000001 {
-                break;
+            ⎇ abs(term) < 0.000000000000001 {
+                ⊗;
             }
         }
         result
     }
 
-    pub fn exp(x: !f64) -> !f64 {
+    ☉ λ exp(x: !f64) -> !f64 {
         exp_impl(x)
     }
 
     /// Sine (Taylor series)
-    pub fn sin(x: !f64) -> !f64 {
+    ☉ λ sin(x: !f64) -> !f64 {
         // Reduce to [-π, π]
-        let x = x % TAU;
-        let x = if x > PI { x - TAU } else if x < -PI { x + TAU } else { x };
+        ≔ x = x % TAU;
+        ≔ x = ⎇ x > PI { x - TAU } ⎉ ⎇ x < -PI { x + TAU } ⎉ { x };
 
         // Taylor series
-        let mut result = 0.0;
-        let mut term = x;
-        let x2 = x * x;
-        for n in 0..50 {
+        ≔ Δ result = 0.0;
+        ≔ Δ term = x;
+        ≔ x2 = x * x;
+        ∀ n ∈ 0..50 {
             result += term;
             term *= -x2 / ((2 * n + 2) * (2 * n + 3)) as f64;
-            if abs(term) < 0.000000000000001 {
-                break;
+            ⎇ abs(term) < 0.000000000000001 {
+                ⊗;
             }
         }
         result
     }
 
     /// Cosine
-    pub fn cos(x: !f64) -> !f64 {
+    ☉ λ cos(x: !f64) -> !f64 {
         sin(x + PI / 2.0)
     }
 
     /// Tangent
-    pub fn tan(x: !f64) -> !f64 {
+    ☉ λ tan(x: !f64) -> !f64 {
         sin(x) / cos(x)
     }
 
     /// Floor
-    pub fn floor(x: !f64) -> !f64 {
+    ☉ λ floor(x: !f64) -> !f64 {
         x as i64 as f64
     }
 
     /// Ceiling
-    pub fn ceil(x: !f64) -> !f64 {
-        let f = floor(x);
-        if x > f { f + 1.0 } else { f }
+    ☉ λ ceil(x: !f64) -> !f64 {
+        ≔ f = floor(x);
+        ⎇ x > f { f + 1.0 } ⎉ { f }
     }
 
     /// Round to nearest integer
-    pub fn round(x: !f64) -> !f64 {
+    ☉ λ round(x: !f64) -> !f64 {
         floor(x + 0.5)
     }
 
     /// Minimum
-    pub fn min(a: !f64, b: !f64) -> !f64 {
-        if a < b { a } else { b }
+    ☉ λ min(a: !f64, b: !f64) -> !f64 {
+        ⎇ a < b { a } ⎉ { b }
     }
 
     /// Maximum
-    pub fn max(a: !f64, b: !f64) -> !f64 {
-        if a > b { a } else { b }
+    ☉ λ max(a: !f64, b: !f64) -> !f64 {
+        ⎇ a > b { a } ⎉ { b }
     }
 
     /// Clamp value to range
-    pub fn clamp(x: !f64, lo: !f64, hi: !f64) -> !f64 {
+    ☉ λ clamp(x: !f64, lo: !f64, hi: !f64) -> !f64 {
         max(lo, min(hi, x))
     }
 }
 
 /// String operations
-pub mod string {
+☉ scroll string {
     /// Split string by delimiter
-    pub fn split(s: !&str, delim: !&str) -> ![String] {
-        let mut result: ![String] = [];
-        let mut current = String::new();
+    ☉ λ split(s: !&str, delim: !&str) -> ![String] {
+        ≔ Δ result: ![String] = [];
+        ≔ Δ current = String·new();
 
-        for c in s.chars() {
-            if delim.contains(c) {
-                if !current.is_empty() {
+        ∀ c ∈ s.chars() {
+            ⎇ delim.contains(c) {
+                ⎇ !current.is_empty() {
                     result.push(current);
-                    current = String::new();
+                    current = String·new();
                 }
-            } else {
+            } ⎉ {
                 current.push(c);
             }
         }
 
-        if !current.is_empty() {
+        ⎇ !current.is_empty() {
             result.push(current);
         }
 
@@ -539,14 +539,14 @@ pub mod string {
     }
 
     /// Join strings with separator
-    pub fn join(parts: ![&str], sep: !&str) -> !String {
-        if parts.is_empty() {
-            return String::new();
+    ☉ λ join(parts: ![&str], sep: !&str) -> !String {
+        ⎇ parts.is_empty() {
+            ⤺ String·new();
         }
 
-        let mut result = parts[0].to_string();
-        let mut idx: usize = 1;
-        while idx < parts.len() {
+        ≔ Δ result = parts[0].to_string();
+        ≔ Δ idx: usize = 1;
+        ⟳ idx < parts.len() {
             result.push_str(sep);
             result.push_str(parts[idx]);
             idx = idx + 1;
@@ -555,63 +555,63 @@ pub mod string {
     }
 
     /// Trim whitespace
-    pub fn trim(s: !&str) -> !String {
+    ☉ λ trim(s: !&str) -> !String {
         s.trim().to_string()
     }
 
     /// Convert to uppercase
-    pub fn upper(s: !&str) -> !String {
+    ☉ λ upper(s: !&str) -> !String {
         s.to_uppercase()
     }
 
     /// Convert to lowercase
-    pub fn lower(s: !&str) -> !String {
+    ☉ λ lower(s: !&str) -> !String {
         s.to_lowercase()
     }
 
-    /// Check if string contains substring
-    pub fn contains(s: !&str, needle: !&str) -> !bool {
+    /// Check ⎇ string contains substring
+    ☉ λ contains(s: !&str, needle: !&str) -> !bool {
         s.contains(needle)
     }
 
-    /// Check if starts with prefix
-    pub fn starts_with(s: !&str, prefix: !&str) -> !bool {
+    /// Check ⎇ starts with prefix
+    ☉ λ starts_with(s: !&str, prefix: !&str) -> !bool {
         s.starts_with(prefix)
     }
 
-    /// Check if ends with suffix
-    pub fn ends_with(s: !&str, suffix: !&str) -> !bool {
+    /// Check ⎇ ends with suffix
+    ☉ λ ends_with(s: !&str, suffix: !&str) -> !bool {
         s.ends_with(suffix)
     }
 
     /// Replace all occurrences
-    pub fn replace(s: !&str, from: !&str, to: !&str) -> !String {
+    ☉ λ replace(s: !&str, from: !&str, to: !&str) -> !String {
         s.replace(from, to)
     }
 }
 
 /// Array/collection operations
-pub mod collections {
+☉ scroll collections {
     /// Create range [start, end)
-    pub fn range(start: !i64, end: !i64) -> ![i64] {
-        let mut result: ![i64] = [];
-        for i in start..end {
+    ☉ λ range(start: !i64, end: !i64) -> ![i64] {
+        ≔ Δ result: ![i64] = [];
+        ∀ i ∈ start..end {
             result.push(i);
         }
         result
     }
 
     /// Create range with step
-    pub fn range_step(start: !i64, end: !i64, step: !i64) -> ![i64] {
-        let mut result: ![i64] = [];
-        let mut i = start;
-        if step > 0 {
-            while i < end {
+    ☉ λ range_step(start: !i64, end: !i64, step: !i64) -> ![i64] {
+        ≔ Δ result: ![i64] = [];
+        ≔ Δ i = start;
+        ⎇ step > 0 {
+            ⟳ i < end {
                 result.push(i);
                 i += step;
             }
-        } else if step < 0 {
-            while i > end {
+        } ⎉ ⎇ step < 0 {
+            ⟳ i > end {
                 result.push(i);
                 i += step;
             }
@@ -620,48 +620,48 @@ pub mod collections {
     }
 
     /// Repeat value n times
-    pub fn repeat<T>(value: !T, n: !u64) -> ![T] {
-        let mut result: ![T] = [];
-        for _ in 0..n {
+    ☉ λ repeat<T>(value: !T, n: !u64) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ _ ∈ 0..n {
             result.push(value.clone());
         }
         result
     }
 
     /// Zip two arrays
-    pub fn combineTwo<A, B>(a: ![A], b: ![B]) -> ![(A, B)] {
-        let len = math::min(a.len() as f64, b.len() as f64) as u64;
-        let mut result: ![(A, B)] = [];
-        for i in 0..len {
+    ☉ λ combineTwo<A, B>(a: ![A], b: ![B]) -> ![(A, B)] {
+        ≔ len = math·min(a.len() as f64, b.len() as f64) as u64;
+        ≔ Δ result: ![(A, B)] = [];
+        ∀ i ∈ 0..len {
             result.push((a[i].clone(), b[i].clone()));
         }
         result
     }
 
     /// Enumerate array with indices
-    pub fn enumerate<T>(arr: ![T]) -> ![(u64, T)] {
-        let mut result: ![(u64, T)] = [];
-        for (i, item) in arr.iter().enumerate() {
+    ☉ λ enumerate<T>(arr: ![T]) -> ![(u64, T)] {
+        ≔ Δ result: ![(u64, T)] = [];
+        ∀ (i, item) ∈ arr.iter().enumerate() {
             result.push((i, item.clone()));
         }
         result
     }
 
     /// Reverse array
-    pub fn reverse<T>(arr: ![T]) -> ![T] {
-        let mut result: ![T] = [];
-        for i in (0..arr.len()).rev() {
+    ☉ λ reverse<T>(arr: ![T]) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ i ∈ (0..arr.len()).rev() {
             result.push(arr[i].clone());
         }
         result
     }
 
-    /// Sort array (simple insertion sort for bootstrap)
-    pub fn sort<T: Ord>(arr: ![T]) -> ![T] {
-        let mut result = arr.clone();
-        for i in 1..result.len() {
-            let mut j = i;
-            while j > 0 && result[j - 1] > result[j] {
+    /// Sort array (simple insertion sort ∀ bootstrap)
+    ☉ λ sort<T: Ord>(arr: ![T]) -> ![T] {
+        ≔ Δ result = arr.clone();
+        ∀ i ∈ 1..result.len() {
+            ≔ Δ j = i;
+            ⟳ j > 0 && result[j - 1] > result[j] {
                 result.swap(j - 1, j);
                 j -= 1;
             }
@@ -670,10 +670,10 @@ pub mod collections {
     }
 
     /// Remove duplicates (preserving order)
-    pub fn unique<T: Eq>(arr: ![T]) -> ![T] {
-        let mut result: ![T] = [];
-        for item in arr {
-            if !result.contains(&item) {
+    ☉ λ unique<T: Eq>(arr: ![T]) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ item ∈ arr {
+            ⎇ !result.contains(&item) {
                 result.push(item);
             }
         }
@@ -682,68 +682,68 @@ pub mod collections {
 }
 
 /// Time operations
-pub mod time {
-    /// Get current time in seconds since epoch
-    pub fn now() -> ~f64 {
+☉ scroll time {
+    /// Get current time ∈ seconds since epoch
+    ☉ λ now() -> ~f64 {
         // Returns Reported since it's external state
         extern "C" {
-            fn time(t: *mut i64) -> i64;
+            λ time(t: *Δ i64) -> i64;
         }
         unsafe { time(null) as f64 }
     }
 
-    /// Sleep for given seconds
-    pub fn sleep(seconds: !f64) {
+    /// Sleep ∀ given seconds
+    ☉ λ sleep(seconds: !f64) {
         extern "C" {
-            fn usleep(usec: u32) -> i32;
+            λ usleep(usec: u32) -> i32;
         }
-        let usec = (seconds * 1_000_000.0) as u32;
+        ≔ usec = (seconds * 1_000_000.0) as u32;
         unsafe { usleep(usec); }
     }
 }
 
 /// Random number generation
-pub mod random {
+☉ scroll random {
     /// Simple LCG random state
-    static mut SEED: u64 = 12345;
+    static Δ SEED: u64 = 12345;
 
     /// Set random seed
-    pub fn seed(s: !u64) {
+    ☉ λ seed(s: !u64) {
         unsafe { SEED = s; }
     }
 
     /// Generate random u64
-    pub fn next_u64() -> !u64 {
+    ☉ λ next_u64() -> !u64 {
         unsafe {
             SEED = SEED.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
             SEED
         }
     }
 
-    /// Generate random f64 in [0, 1)
-    pub fn random() -> !f64 {
-        (next_u64() as f64) / (u64::MAX as f64)
+    /// Generate random f64 ∈ [0, 1)
+    ☉ λ random() -> !f64 {
+        (next_u64() as f64) / (u64·MAX as f64)
     }
 
-    /// Generate random integer in [min, max]
-    pub fn randint(min: !i64, max: !i64) -> !i64 {
-        let range = (max - min + 1) as u64;
+    /// Generate random integer ∈ [min, max]
+    ☉ λ randint(min: !i64, max: !i64) -> !i64 {
+        ≔ range = (max - min + 1) as u64;
         min + (next_u64() % range) as i64
     }
 
-    /// Shuffle array in place
-    pub fn shuffle<T>(mut arr: ![T]) {
-        for i in (1..arr.len()).rev() {
-            let j = randint(0, i as i64) as u64;
+    /// Shuffle array ∈ place
+    ☉ λ shuffle<T>(Δ arr: ![T]) {
+        ∀ i ∈ (1..arr.len()).rev() {
+            ≔ j = randint(0, i as i64) as u64;
             arr.swap(i, j);
         }
     }
 
     /// Choose random element
-    pub fn choice<T>(arr: ![T]) -> ?T {
-        if arr.is_empty() {
+    ☉ λ choice<T>(arr: ![T]) -> ?T {
+        ⎇ arr.is_empty() {
             null
-        } else {
+        } ⎉ {
             ?arr[randint(0, arr.len() as i64 - 1) as u64].clone()
         }
     }
@@ -753,195 +753,195 @@ pub mod random {
 // Synchronization Primitives
 // ============================================================================
 
-/// Atomic operations for thread-safe programming
-pub mod sync {
-    pub mod atomic {
-        /// Atomic u64 for counters, IDs, and flags
-        pub struct AtomicU64 {
-            value: !*mut u64,
+/// Atomic operations ∀ thread-safe programming
+☉ scroll sync {
+    ☉ scroll atomic {
+        /// Atomic u64 ∀ counters, IDs, and flags
+        ☉ Σ AtomicU64 {
+            value: !*Δ u64,
         }
 
-        impl AtomicU64 {
+        ⊢ AtomicU64 {
             /// Create a new atomic with initial value
-            pub fn new(initial: !u64) -> !AtomicU64 {
-                let ptr = Box::into_raw(Box::new(initial));
+            ☉ λ new(initial: !u64) -> !AtomicU64 {
+                ≔ ptr = Box·into_raw(Box·new(initial));
                 AtomicU64 { value: ptr }
             }
 
             /// Load the current value (acquire ordering)
-            pub fn load(self) -> !u64 {
+            ☉ λ load(self) -> !u64 {
                 unsafe { *self.value }
             }
 
             /// Store a new value (release ordering)
-            pub fn store(mut self, val: !u64) {
+            ☉ λ store(Δ self, val: !u64) {
                 unsafe { *self.value = val; }
             }
 
             /// Add to the current value, returning the previous value
-            pub fn fetch_add(mut self, val: !u64) -> !u64 {
+            ☉ λ fetch_add(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = prev + val;
                     prev
                 }
             }
 
             /// Subtract from current value, returning previous value
-            pub fn fetch_sub(mut self, val: !u64) -> !u64 {
+            ☉ λ fetch_sub(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = prev - val;
                     prev
                 }
             }
 
             /// Bitwise OR with current value
-            pub fn fetch_or(mut self, val: !u64) -> !u64 {
+            ☉ λ fetch_or(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = prev ⋎ val;
                     prev
                 }
             }
 
             /// Bitwise AND with current value
-            pub fn fetch_and(mut self, val: !u64) -> !u64 {
+            ☉ λ fetch_and(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = prev & val;
                     prev
                 }
             }
 
             /// Bitwise XOR with current value
-            pub fn fetch_xor(mut self, val: !u64) -> !u64 {
+            ☉ λ fetch_xor(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = prev ^ val;
                     prev
                 }
             }
 
             /// Swap with a new value, returning the old value
-            pub fn swap(mut self, val: !u64) -> !u64 {
+            ☉ λ swap(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = val;
                     prev
                 }
             }
 
-            /// Compare and swap: if current == expected, set to new and return true
-            pub fn compare_exchange(mut self, expected: !u64, new: !u64) -> !bool {
+            /// Compare and swap: ⎇ current == expected, set to new and ⤺ true
+            ☉ λ compare_exchange(Δ self, expected: !u64, new: !u64) -> !bool {
                 unsafe {
-                    if *self.value == expected {
+                    ⎇ *self.value == expected {
                         *self.value = new;
                         true
-                    } else {
+                    } ⎉ {
                         false
                     }
                 }
             }
         }
 
-        /// Atomic i64 for signed counters
-        pub struct AtomicI64 {
-            value: !*mut i64,
+        /// Atomic i64 ∀ signed counters
+        ☉ Σ AtomicI64 {
+            value: !*Δ i64,
         }
 
-        impl AtomicI64 {
-            pub fn new(initial: !i64) -> !AtomicI64 {
-                let ptr = Box::into_raw(Box::new(initial));
+        ⊢ AtomicI64 {
+            ☉ λ new(initial: !i64) -> !AtomicI64 {
+                ≔ ptr = Box·into_raw(Box·new(initial));
                 AtomicI64 { value: ptr }
             }
 
-            pub fn load(self) -> !i64 {
+            ☉ λ load(self) -> !i64 {
                 unsafe { *self.value }
             }
 
-            pub fn store(mut self, val: !i64) {
+            ☉ λ store(Δ self, val: !i64) {
                 unsafe { *self.value = val; }
             }
 
-            pub fn fetch_add(mut self, val: !i64) -> !i64 {
+            ☉ λ fetch_add(Δ self, val: !i64) -> !i64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = prev + val;
                     prev
                 }
             }
 
-            pub fn fetch_sub(mut self, val: !i64) -> !i64 {
+            ☉ λ fetch_sub(Δ self, val: !i64) -> !i64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = prev - val;
                     prev
                 }
             }
         }
 
-        /// Atomic bool for flags
-        pub struct AtomicBool {
-            value: !*mut bool,
+        /// Atomic bool ∀ flags
+        ☉ Σ AtomicBool {
+            value: !*Δ bool,
         }
 
-        impl AtomicBool {
-            pub fn new(initial: !bool) -> !AtomicBool {
-                let ptr = Box::into_raw(Box::new(initial));
+        ⊢ AtomicBool {
+            ☉ λ new(initial: !bool) -> !AtomicBool {
+                ≔ ptr = Box·into_raw(Box·new(initial));
                 AtomicBool { value: ptr }
             }
 
-            pub fn load(self) -> !bool {
+            ☉ λ load(self) -> !bool {
                 unsafe { *self.value }
             }
 
-            pub fn store(mut self, val: !bool) {
+            ☉ λ store(Δ self, val: !bool) {
                 unsafe { *self.value = val; }
             }
 
-            pub fn swap(mut self, val: !bool) -> !bool {
+            ☉ λ swap(Δ self, val: !bool) -> !bool {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = val;
                     prev
                 }
             }
 
-            pub fn compare_exchange(mut self, expected: !bool, new: !bool) -> !bool {
+            ☉ λ compare_exchange(Δ self, expected: !bool, new: !bool) -> !bool {
                 unsafe {
-                    if *self.value == expected {
+                    ⎇ *self.value == expected {
                         *self.value = new;
                         true
-                    } else {
+                    } ⎉ {
                         false
                     }
                 }
             }
         }
 
-        /// Atomic usize for indices and lengths
-        pub struct AtomicUsize {
-            value: !*mut u64,
+        /// Atomic usize ∀ indices and lengths
+        ☉ Σ AtomicUsize {
+            value: !*Δ u64,
         }
 
-        impl AtomicUsize {
-            pub fn new(initial: !u64) -> !AtomicUsize {
-                let ptr = Box::into_raw(Box::new(initial));
+        ⊢ AtomicUsize {
+            ☉ λ new(initial: !u64) -> !AtomicUsize {
+                ≔ ptr = Box·into_raw(Box·new(initial));
                 AtomicUsize { value: ptr }
             }
 
-            pub fn load(self) -> !u64 {
+            ☉ λ load(self) -> !u64 {
                 unsafe { *self.value }
             }
 
-            pub fn store(mut self, val: !u64) {
+            ☉ λ store(Δ self, val: !u64) {
                 unsafe { *self.value = val; }
             }
 
-            pub fn fetch_add(mut self, val: !u64) -> !u64 {
+            ☉ λ fetch_add(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    let prev = *self.value;
+                    ≔ prev = *self.value;
                     *self.value = prev + val;
                     prev
                 }
@@ -955,16 +955,16 @@ pub mod sync {
 // ============================================================================
 
 /// Cryptographic hash functions
-pub mod crypto {
+☉ scroll crypto {
     /// CRC32 checksum (IEEE polynomial)
-    pub fn crc32(data: !&[u8]) -> !u32 {
-        let mut crc = 0xFFFFFFFFu32;
-        for byte in data {
+    ☉ λ crc32(data: !&[u8]) -> !u32 {
+        ≔ Δ crc = 0xFFFFFFFFu32;
+        ∀ byte ∈ data {
             crc = crc ^ (*byte as u32);
-            for _ in 0..8 {
-                crc = if crc & 1 != 0 {
+            ∀ _ ∈ 0..8 {
+                crc = ⎇ crc & 1 != 0 {
                     (crc >> 1) ^ 0xEDB88320u32
-                } else {
+                } ⎉ {
                     crc >> 1
                 };
             }
@@ -972,15 +972,15 @@ pub mod crypto {
         !crc
     }
 
-    /// CRC32C (Castagnoli polynomial, used in iSCSI, Btrfs)
-    pub fn crc32c(data: !&[u8]) -> !u32 {
-        let mut crc = 0xFFFFFFFFu32;
-        for byte in data {
+    /// CRC32C (Castagnoli polynomial, used ∈ iSCSI, Btrfs)
+    ☉ λ crc32c(data: !&[u8]) -> !u32 {
+        ≔ Δ crc = 0xFFFFFFFFu32;
+        ∀ byte ∈ data {
             crc = crc ^ (*byte as u32);
-            for _ in 0..8 {
-                crc = if crc & 1 != 0 {
+            ∀ _ ∈ 0..8 {
+                crc = ⎇ crc & 1 != 0 {
                     (crc >> 1) ^ 0x82F63B78u32
-                } else {
+                } ⎉ {
                     crc >> 1
                 };
             }
@@ -988,13 +988,13 @@ pub mod crypto {
         !crc
     }
 
-    /// Adler32 checksum (faster than CRC32, used in zlib)
-    pub fn adler32(data: !&[u8]) -> !u32 {
-        let mod_adler = 65521u32;
-        let mut a = 1u32;
-        let mut b = 0u32;
+    /// Adler32 checksum (faster than CRC32, used ∈ zlib)
+    ☉ λ adler32(data: !&[u8]) -> !u32 {
+        ≔ mod_adler = 65521u32;
+        ≔ Δ a = 1u32;
+        ≔ Δ b = 0u32;
 
-        for byte in data {
+        ∀ byte ∈ data {
             a = (a + (*byte as u32)) % mod_adler;
             b = (b + a) % mod_adler;
         }
@@ -1003,22 +1003,22 @@ pub mod crypto {
     }
 
     /// FNV-1a hash (fast, good distribution)
-    pub fn fnv1a(data: !&[u8]) -> !u64 {
-        let fnv_offset = 14695981039346656037u64;
-        let fnv_prime = 1099511628211u64;
+    ☉ λ fnv1a(data: !&[u8]) -> !u64 {
+        ≔ fnv_offset = 14695981039346656037u64;
+        ≔ fnv_prime = 1099511628211u64;
 
-        let mut hash = fnv_offset;
-        for byte in data {
+        ≔ Δ hash = fnv_offset;
+        ∀ byte ∈ data {
             hash = hash ^ (*byte as u64);
             hash = hash.wrapping_mul(fnv_prime);
         }
         hash
     }
 
-    /// Simple hash for strings (djb2)
-    pub fn hash_string(s: !&str) -> !u64 {
-        let mut hash = 5381u64;
-        for c in s.bytes() {
+    /// Simple hash ∀ strings (djb2)
+    ☉ λ hash_string(s: !&str) -> !u64 {
+        ≔ Δ hash = 5381u64;
+        ∀ c ∈ s.bytes() {
             hash = ((hash << 5) + hash) + (c as u64);
         }
         hash
@@ -1030,61 +1030,61 @@ pub mod crypto {
 // ============================================================================
 
 /// Byte manipulation and binary data utilities
-pub mod bytes {
+☉ scroll bytes {
     /// Read u16 from bytes (little-endian)
-    pub fn read_u16_le(data: !&[u8], offset: !u64) -> !u16 {
-        let lo = data[offset] as u16;
-        let hi = data[offset + 1] as u16;
+    ☉ λ read_u16_le(data: !&[u8], offset: !u64) -> !u16 {
+        ≔ lo = data[offset] as u16;
+        ≔ hi = data[offset + 1] as u16;
         lo ⋎ (hi << 8)
     }
 
     /// Read u16 from bytes (big-endian)
-    pub fn read_u16_be(data: !&[u8], offset: !u64) -> !u16 {
-        let hi = data[offset] as u16;
-        let lo = data[offset + 1] as u16;
+    ☉ λ read_u16_be(data: !&[u8], offset: !u64) -> !u16 {
+        ≔ hi = data[offset] as u16;
+        ≔ lo = data[offset + 1] as u16;
         lo ⋎ (hi << 8)
     }
 
     /// Read u32 from bytes (little-endian)
-    pub fn read_u32_le(data: !&[u8], offset: !u64) -> !u32 {
-        let b0 = data[offset] as u32;
-        let b1 = data[offset + 1] as u32;
-        let b2 = data[offset + 2] as u32;
-        let b3 = data[offset + 3] as u32;
+    ☉ λ read_u32_le(data: !&[u8], offset: !u64) -> !u32 {
+        ≔ b0 = data[offset] as u32;
+        ≔ b1 = data[offset + 1] as u32;
+        ≔ b2 = data[offset + 2] as u32;
+        ≔ b3 = data[offset + 3] as u32;
         b0 ⋎ (b1 << 8) ⋎ (b2 << 16) ⋎ (b3 << 24)
     }
 
     /// Read u32 from bytes (big-endian)
-    pub fn read_u32_be(data: !&[u8], offset: !u64) -> !u32 {
-        let b3 = data[offset] as u32;
-        let b2 = data[offset + 1] as u32;
-        let b1 = data[offset + 2] as u32;
-        let b0 = data[offset + 3] as u32;
+    ☉ λ read_u32_be(data: !&[u8], offset: !u64) -> !u32 {
+        ≔ b3 = data[offset] as u32;
+        ≔ b2 = data[offset + 1] as u32;
+        ≔ b1 = data[offset + 2] as u32;
+        ≔ b0 = data[offset + 3] as u32;
         b0 ⋎ (b1 << 8) ⋎ (b2 << 16) ⋎ (b3 << 24)
     }
 
     /// Read u64 from bytes (little-endian)
-    pub fn read_u64_le(data: !&[u8], offset: !u64) -> !u64 {
-        let lo = read_u32_le(data, offset) as u64;
-        let hi = read_u32_le(data, offset + 4) as u64;
+    ☉ λ read_u64_le(data: !&[u8], offset: !u64) -> !u64 {
+        ≔ lo = read_u32_le(data, offset) as u64;
+        ≔ hi = read_u32_le(data, offset + 4) as u64;
         lo ⋎ (hi << 32)
     }
 
     /// Read u64 from bytes (big-endian)
-    pub fn read_u64_be(data: !&[u8], offset: !u64) -> !u64 {
-        let hi = read_u32_be(data, offset) as u64;
-        let lo = read_u32_be(data, offset + 4) as u64;
+    ☉ λ read_u64_be(data: !&[u8], offset: !u64) -> !u64 {
+        ≔ hi = read_u32_be(data, offset) as u64;
+        ≔ lo = read_u32_be(data, offset + 4) as u64;
         lo ⋎ (hi << 32)
     }
 
     /// Write u16 to bytes (little-endian)
-    pub fn write_u16_le(data: !&mut [u8], offset: !u64, value: !u16) {
+    ☉ λ write_u16_le(data: !&Δ [u8], offset: !u64, value: !u16) {
         data[offset] = (value & 0xFF) as u8;
         data[offset + 1] = ((value >> 8) & 0xFF) as u8;
     }
 
     /// Write u32 to bytes (little-endian)
-    pub fn write_u32_le(data: !&mut [u8], offset: !u64, value: !u32) {
+    ☉ λ write_u32_le(data: !&Δ [u8], offset: !u64, value: !u32) {
         data[offset] = (value & 0xFF) as u8;
         data[offset + 1] = ((value >> 8) & 0xFF) as u8;
         data[offset + 2] = ((value >> 16) & 0xFF) as u8;
@@ -1092,45 +1092,45 @@ pub mod bytes {
     }
 
     /// Write u64 to bytes (little-endian)
-    pub fn write_u64_le(data: !&mut [u8], offset: !u64, value: !u64) {
+    ☉ λ write_u64_le(data: !&Δ [u8], offset: !u64, value: !u64) {
         write_u32_le(data, offset, (value & 0xFFFFFFFF) as u32);
         write_u32_le(data, offset + 4, ((value >> 32) & 0xFFFFFFFF) as u32);
     }
 
     /// Compare byte slices
-    pub fn equals(a: !&[u8], b: !&[u8]) -> !bool {
-        if a.len() != b.len() {
-            return false;
+    ☉ λ equals(a: !&[u8], b: !&[u8]) -> !bool {
+        ⎇ a.len() != b.len() {
+            ⤺ false;
         }
-        for i in 0..a.len() {
-            if a[i] != b[i] {
-                return false;
+        ∀ i ∈ 0..a.len() {
+            ⎇ a[i] != b[i] {
+                ⤺ false;
             }
         }
         true
     }
 
     /// Copy bytes from src to dst
-    pub fn copy(dst: !&mut [u8], dst_offset: !u64, src: !&[u8], src_offset: !u64, count: !u64) {
-        for i in 0..count {
+    ☉ λ copy(dst: !&Δ [u8], dst_offset: !u64, src: !&[u8], src_offset: !u64, count: !u64) {
+        ∀ i ∈ 0..count {
             dst[dst_offset + i] = src[src_offset + i];
         }
     }
 
     /// Fill bytes with a value
-    pub fn fill(data: !&mut [u8], offset: !u64, count: !u64, value: !u8) {
-        for i in 0..count {
+    ☉ λ fill(data: !&Δ [u8], offset: !u64, count: !u64, value: !u8) {
+        ∀ i ∈ 0..count {
             data[offset + i] = value;
         }
     }
 
     /// Hex encode bytes to string
-    pub fn to_hex(data: !&[u8]) -> !String {
-        let hex_chars = "0123456789abcdef";
-        let mut result = String::new();
-        for byte in data {
-            let hi = ((*byte >> 4) & 0x0F) as u64;
-            let lo = (*byte & 0x0F) as u64;
+    ☉ λ to_hex(data: !&[u8]) -> !String {
+        ≔ hex_chars = "0123456789abcdef";
+        ≔ Δ result = String·new();
+        ∀ byte ∈ data {
+            ≔ hi = ((*byte >> 4) & 0x0F) as u64;
+            ≔ lo = (*byte & 0x0F) as u64;
             result.push(hex_chars.chars().nth(hi).unwrap());
             result.push(hex_chars.chars().nth(lo).unwrap());
         }
@@ -1138,13 +1138,13 @@ pub mod bytes {
     }
 
     /// Hex decode string to bytes
-    pub fn from_hex(s: !&str) -> ?[u8] {
-        if s.len() % 2 != 0 {
-            return null;
+    ☉ λ from_hex(s: !&str) -> ?[u8] {
+        ⎇ s.len() % 2 != 0 {
+            ⤺ null;
         }
 
-        let hex_value = |c: char| {
-            match c {
+        ≔ hex_value = |c: char| {
+            ⌥ c {
                 '0' => ?(0 as u8),
                 '1' => ?(1 as u8),
                 '2' => ?(2 as u8),
@@ -1165,14 +1165,14 @@ pub mod bytes {
             }
         };
 
-        let mut result: ![u8] = [];
-        let chars: ![char] = s.chars().collect();
-        let mut i: u64 = 0;
-        while i < chars.len() {
-            let hi = hex_value(chars[i]);
-            let lo = hex_value(chars[i + 1]);
-            if hi.is_none() || lo.is_none() {
-                return null;
+        ≔ Δ result: ![u8] = [];
+        ≔ chars: ![char] = s.chars().collect();
+        ≔ Δ i: u64 = 0;
+        ⟳ i < chars.len() {
+            ≔ hi = hex_value(chars[i]);
+            ≔ lo = hex_value(chars[i + 1]);
+            ⎇ hi.is_none() || lo.is_none() {
+                ⤺ null;
             }
             result.push((hi.unwrap() << 4) ⋎ lo.unwrap());
             i = i + 2;
@@ -1186,13 +1186,13 @@ pub mod bytes {
 // ============================================================================
 
 /// Initialize runtime system
-pub fn init() {
+☉ λ init() {
     // Initialize random seed from time
-    random::seed(time::now() as u64);
+    random·seed(time·now() as u64);
 }
 
 /// Shutdown runtime system
-pub fn shutdown() {
+☉ λ shutdown() {
     // Cleanup resources
 }
 
@@ -1201,64 +1201,64 @@ pub fn shutdown() {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_arena_alloc() {
-        let mut arena = Arena::new();
-        let ptr1 = arena.alloc(100 as u64);
-        let ptr2 = arena.alloc(200 as u64);
+    λ test_arena_alloc() {
+        ≔ Δ arena = Arena·new();
+        ≔ ptr1 = arena.alloc(100 as u64);
+        ≔ ptr2 = arena.alloc(200 as u64);
         assert!(ptr1 != ptr2);
         assert!(arena.bytes_allocated() >= 300 as u64);
     }
 
     #[test]
-    fn test_string_interner() {
-        let mut interner = StringInterner::new();
-        let id1 = interner.intern("hello");
-        let id2 = interner.intern("world");
-        let id3 = interner.intern("hello");
+    λ test_string_interner() {
+        ≔ Δ interner = StringInterner·new();
+        ≔ id1 = interner.intern("hello");
+        ≔ id2 = interner.intern("world");
+        ≔ id3 = interner.intern("hello");
         assert_eq!(id1, id3);
         assert_ne!(id1, id2);
         assert_eq!(interner.get(id1), ?"hello");
     }
 
     #[test]
-    fn test_evidence_check() {
-        let mut ctx = EvidenceContext::new();
-        assert!(ctx.check(IrEvidence::Reported, IrEvidence::Known, "test"));
-        assert!(!ctx.check(IrEvidence::Known, IrEvidence::Reported, "test"));
+    λ test_evidence_check() {
+        ≔ Δ ctx = EvidenceContext·new();
+        assert!(ctx.check(IrEvidence·Reported, IrEvidence·Known, "test"));
+        assert!(!ctx.check(IrEvidence·Known, IrEvidence·Reported, "test"));
         assert_eq!(ctx.violations().len(), 1);
     }
 
     #[test]
-    fn test_math_sqrt() {
-        assert!((math::sqrt(4.0) - 2.0).abs() < 0.0000000001);
-        assert!((math::sqrt(2.0) - 1.41421356).abs() < 0.000001);
+    λ test_math_sqrt() {
+        assert!((math·sqrt(4.0) - 2.0).abs() < 0.0000000001);
+        assert!((math·sqrt(2.0) - 1.41421356).abs() < 0.000001);
     }
 
     #[test]
-    fn test_math_trig() {
-        assert!((math::sin(0.0)).abs() < 0.0000000001);
-        assert!((math::cos(0.0) - 1.0).abs() < 0.0000000001);
-        assert!((math::sin(math::PI / 2.0) - 1.0).abs() < 0.0000000001);
+    λ test_math_trig() {
+        assert!((math·sin(0.0)).abs() < 0.0000000001);
+        assert!((math·cos(0.0) - 1.0).abs() < 0.0000000001);
+        assert!((math·sin(math·PI / 2.0) - 1.0).abs() < 0.0000000001);
     }
 
     #[test]
-    fn test_collections_range() {
-        assert_eq!(collections::range(0, 5), [0, 1, 2, 3, 4]);
-        assert_eq!(collections::range(5, 5), []);
+    λ test_collections_range() {
+        assert_eq!(collections·range(0, 5), [0, 1, 2, 3, 4]);
+        assert_eq!(collections·range(5, 5), []);
     }
 
     #[test]
-    fn test_string_split() {
-        assert_eq!(string::split("a,b,c", ","), ["a", "b", "c"]);
+    λ test_string_split() {
+        assert_eq!(string·split("a,b,c", ","), ["a", "b", "c"]);
     }
 
     #[test]
-    fn test_atomic_u64() {
-        let counter = sync::atomic::AtomicU64::new(0);
+    λ test_atomic_u64() {
+        ≔ counter = sync·atomic·AtomicU64·new(0);
         assert_eq!(counter.load(), 0);
         counter.store(42);
         assert_eq!(counter.load(), 42);
@@ -1267,60 +1267,60 @@ mod tests {
     }
 
     #[test]
-    fn test_atomic_bool() {
-        let flag = sync::atomic::AtomicBool::new(false);
+    λ test_atomic_bool() {
+        ≔ flag = sync·atomic·AtomicBool·new(false);
         assert_eq!(flag.load(), false);
         assert_eq!(flag.swap(true), false);
         assert_eq!(flag.load(), true);
     }
 
     #[test]
-    fn test_crc32() {
+    λ test_crc32() {
         // "Hello" = [72, 101, 108, 108, 111]
-        let data: ![u8] = [72, 101, 108, 108, 111];
-        let checksum = crypto::crc32(&data);
+        ≔ data: ![u8] = [72, 101, 108, 108, 111];
+        ≔ checksum = crypto·crc32(&data);
         // CRC32 should be deterministic
-        assert_eq!(checksum, crypto::crc32(&data));
+        assert_eq!(checksum, crypto·crc32(&data));
     }
 
     #[test]
-    fn test_fnv1a() {
-        let data1: ![u8] = [1, 2, 3];
-        let data2: ![u8] = [1, 2, 4];
+    λ test_fnv1a() {
+        ≔ data1: ![u8] = [1, 2, 3];
+        ≔ data2: ![u8] = [1, 2, 4];
         // Different data should produce different hashes
-        assert_ne!(crypto::fnv1a(&data1), crypto::fnv1a(&data2));
+        assert_ne!(crypto·fnv1a(&data1), crypto·fnv1a(&data2));
         // Same data should produce same hash
-        assert_eq!(crypto::fnv1a(&data1), crypto::fnv1a(&data1));
+        assert_eq!(crypto·fnv1a(&data1), crypto·fnv1a(&data1));
     }
 
     #[test]
-    fn test_bytes_read_write_u32() {
-        let mut data: ![u8] = [0, 0, 0, 0];
-        bytes::write_u32_le(&mut data, 0, 0x12345678);
+    λ test_bytes_read_write_u32() {
+        ≔ Δ data: ![u8] = [0, 0, 0, 0];
+        bytes·write_u32_le(&Δ data, 0, 0x12345678);
         assert_eq!(data[0], 0x78);
         assert_eq!(data[1], 0x56);
         assert_eq!(data[2], 0x34);
         assert_eq!(data[3], 0x12);
-        assert_eq!(bytes::read_u32_le(&data, 0), 0x12345678);
+        assert_eq!(bytes·read_u32_le(&data, 0), 0x12345678);
     }
 
     #[test]
-    fn test_bytes_hex() {
-        let data: ![u8] = [0xDE, 0xAD, 0xBE, 0xEF];
-        let hex = bytes::to_hex(&data);
+    λ test_bytes_hex() {
+        ≔ data: ![u8] = [0xDE, 0xAD, 0xBE, 0xEF];
+        ≔ hex = bytes·to_hex(&data);
         assert_eq!(hex, "deadbeef");
 
-        let decoded = bytes::from_hex("deadbeef");
+        ≔ decoded = bytes·from_hex("deadbeef");
         assert!(decoded.is_some());
         assert_eq!(decoded.unwrap(), data);
     }
 
     #[test]
-    fn test_bytes_equals() {
-        let a: ![u8] = [1, 2, 3];
-        let b: ![u8] = [1, 2, 3];
-        let c: ![u8] = [1, 2, 4];
-        assert!(bytes::equals(&a, &b));
-        assert!(!bytes::equals(&a, &c));
+    λ test_bytes_equals() {
+        ≔ a: ![u8] = [1, 2, 3];
+        ≔ b: ![u8] = [1, 2, 3];
+        ≔ c: ![u8] = [1, 2, 4];
+        assert!(bytes·equals(&a, &b));
+        assert!(!bytes·equals(&a, &c));
     }
 }

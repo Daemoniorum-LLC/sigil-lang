@@ -1,4 +1,4 @@
-//! Tests for Engram Query System
+//! Tests ∀ Engram Query System
 //!
 //! Verifies query building, filters, and result handling.
 
@@ -6,7 +6,7 @@
 // Self-contained Test Types
 // ============================================================================
 
-pub enum Comparator {
+☉ ᛈ Comparator {
     Eq,
     Ne,
     Gt,
@@ -15,46 +15,46 @@ pub enum Comparator {
     Lte,
 }
 
-impl Comparator {
-    pub fn compare(&self, a: f64, b: f64) -> bool {
-        match self {
-            Comparator::Eq => (a - b).abs() < 0.0001,
-            Comparator::Ne => (a - b).abs() >= 0.0001,
-            Comparator::Gt => a > b,
-            Comparator::Lt => a < b,
-            Comparator::Gte => a >= b,
-            Comparator::Lte => a <= b,
+⊢ Comparator {
+    ☉ λ compare(&self, a: f64, b: f64) -> bool {
+        ⌥ self {
+            Comparator·Eq => (a - b).abs() < 0.0001,
+            Comparator·Ne => (a - b).abs() >= 0.0001,
+            Comparator·Gt => a > b,
+            Comparator·Lt => a < b,
+            Comparator·Gte => a >= b,
+            Comparator·Lte => a <= b,
         }
     }
 }
 
-pub enum TimePoint {
+☉ ᛈ TimePoint {
     Now,
     Absolute(u64),
     Relative { amount_secs: u64, is_ago: bool },
 }
 
-impl TimePoint {
-    pub fn now() -> Self { TimePoint::Now }
+⊢ TimePoint {
+    ☉ λ now() -> Self { TimePoint·Now }
 
-    pub fn absolute(ts: u64) -> Self { TimePoint::Absolute(ts) }
+    ☉ λ absolute(ts: u64) -> Self { TimePoint·Absolute(ts) }
 
-    pub fn ago(secs: u64) -> Self {
-        TimePoint::Relative { amount_secs: secs, is_ago: true }
+    ☉ λ ago(secs: u64) -> Self {
+        TimePoint·Relative { amount_secs: secs, is_ago: true }
     }
 
-    pub fn from_now(secs: u64) -> Self {
-        TimePoint::Relative { amount_secs: secs, is_ago: false }
+    ☉ λ from_now(secs: u64) -> Self {
+        TimePoint·Relative { amount_secs: secs, is_ago: false }
     }
 
-    pub fn to_timestamp(&self, current_time: u64) -> u64 {
-        match self {
-            TimePoint::Now => current_time,
-            TimePoint::Absolute(t) => *t,
-            TimePoint::Relative { amount_secs, is_ago } => {
-                if *is_ago {
+    ☉ λ to_timestamp(&self, current_time: u64) -> u64 {
+        ⌥ self {
+            TimePoint·Now => current_time,
+            TimePoint·Absolute(t) => *t,
+            TimePoint·Relative { amount_secs, is_ago } => {
+                ⎇ *is_ago {
                     current_time - amount_secs
-                } else {
+                } ⎉ {
                     current_time + amount_secs
                 }
             }
@@ -62,22 +62,22 @@ impl TimePoint {
     }
 }
 
-pub struct TimeRange {
-    pub start: u64,
-    pub end: u64,
+☉ Σ TimeRange {
+    ☉ start: u64,
+    ☉ end: u64,
 }
 
-impl TimeRange {
-    pub fn new(start: u64, end: u64) -> Self {
+⊢ TimeRange {
+    ☉ λ new(start: u64, end: u64) -> Self {
         Self { start, end }
     }
 
-    pub fn contains(&self, ts: u64) -> bool {
+    ☉ λ contains(&self, ts: u64) -> bool {
         ts >= self.start && ts <= self.end
     }
 }
 
-pub enum TemporalConstraint {
+☉ ᛈ TemporalConstraint {
     During(TimeRange),
     Before(TimePoint),
     After(TimePoint),
@@ -85,89 +85,89 @@ pub enum TemporalConstraint {
     Between(TimePoint, TimePoint),
 }
 
-impl TemporalConstraint {
-    pub fn matches(&self, ts: u64, current_time: u64) -> bool {
-        match self {
-            TemporalConstraint::During(range) => range.contains(ts),
-            TemporalConstraint::Before(point) => ts < point.to_timestamp(current_time),
-            TemporalConstraint::After(point) => ts > point.to_timestamp(current_time),
-            TemporalConstraint::At(point) => {
-                let target = point.to_timestamp(current_time);
+⊢ TemporalConstraint {
+    ☉ λ matches(&self, ts: u64, current_time: u64) -> bool {
+        ⌥ self {
+            TemporalConstraint·During(range) => range.contains(ts),
+            TemporalConstraint·Before(point) => ts < point.to_timestamp(current_time),
+            TemporalConstraint·After(point) => ts > point.to_timestamp(current_time),
+            TemporalConstraint·At(point) => {
+                ≔ target = point.to_timestamp(current_time);
                 // Within 1 second
                 ts >= target.saturating_sub(1) && ts <= target + 1
             },
-            TemporalConstraint::Between(start, end) => {
-                let start_ts = start.to_timestamp(current_time);
-                let end_ts = end.to_timestamp(current_time);
+            TemporalConstraint·Between(start, end) => {
+                ≔ start_ts = start.to_timestamp(current_time);
+                ≔ end_ts = end.to_timestamp(current_time);
                 ts >= start_ts && ts <= end_ts
             }
         }
     }
 }
 
-pub enum MemorySource {
+☉ ᛈ MemorySource {
     Instant,
     Episodic,
     Semantic,
     Procedural,
 }
 
-impl Clone for MemorySource {
-    fn clone(&self) -> Self {
-        match self {
-            MemorySource::Instant => MemorySource::Instant,
-            MemorySource::Episodic => MemorySource::Episodic,
-            MemorySource::Semantic => MemorySource::Semantic,
-            MemorySource::Procedural => MemorySource::Procedural,
+⊢ Clone ∀ MemorySource {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            MemorySource·Instant => MemorySource·Instant,
+            MemorySource·Episodic => MemorySource·Episodic,
+            MemorySource·Semantic => MemorySource·Semantic,
+            MemorySource·Procedural => MemorySource·Procedural,
         }
     }
 }
 
-impl PartialEq for MemorySource {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (MemorySource::Instant, MemorySource::Instant) => true,
-            (MemorySource::Episodic, MemorySource::Episodic) => true,
-            (MemorySource::Semantic, MemorySource::Semantic) => true,
-            (MemorySource::Procedural, MemorySource::Procedural) => true,
+⊢ PartialEq ∀ MemorySource {
+    λ eq(&self, other: &Self) -> bool {
+        ⌥ (self, other) {
+            (MemorySource·Instant, MemorySource·Instant) => true,
+            (MemorySource·Episodic, MemorySource·Episodic) => true,
+            (MemorySource·Semantic, MemorySource·Semantic) => true,
+            (MemorySource·Procedural, MemorySource·Procedural) => true,
             _ => false,
         }
     }
 }
 
-pub struct Memory {
-    pub id: String,
-    pub content: String,
-    pub relevance: f64,
-    pub confidence: f64,
-    pub source: MemorySource,
-    pub timestamp: u64,
+☉ Σ Memory {
+    ☉ id: String,
+    ☉ content: String,
+    ☉ relevance: f64,
+    ☉ confidence: f64,
+    ☉ source: MemorySource,
+    ☉ timestamp: u64,
 }
 
-pub enum Filter {
+☉ ᛈ Filter {
     Confidence { op: Comparator, value: f64 },
     Source(MemorySource),
     MinRelevance(f64),
 }
 
-impl Filter {
-    pub fn matches(&self, memory: &Memory) -> bool {
-        match self {
-            Filter::Confidence { op, value } => op.compare(memory.confidence, *value),
-            Filter::Source(source) => memory.source == *source,
-            Filter::MinRelevance(min) => memory.relevance >= *min,
+⊢ Filter {
+    ☉ λ matches(&self, memory: &Memory) -> bool {
+        ⌥ self {
+            Filter·Confidence { op, value } => op.compare(memory.confidence, *value),
+            Filter·Source(source) => memory.source == *source,
+            Filter·MinRelevance(min) => memory.relevance >= *min,
         }
     }
 }
 
-pub enum QueryHint {
+☉ ᛈ QueryHint {
     MaxCandidates(usize),
     TimeoutMs(u64),
     Approximate(bool),
     NoCache,
 }
 
-pub struct Query {
+☉ Σ Query {
     text: Option<String>,
     entity: Option<String>,
     filters: Vec<Filter>,
@@ -178,171 +178,171 @@ pub struct Query {
     hints: Vec<QueryHint>,
 }
 
-impl Query {
-    pub fn new(text: &str) -> Self {
+⊢ Query {
+    ☉ λ new(text: &str) -> Self {
         Self {
             text: Some(text.to_string()),
             entity: None,
-            filters: Vec::new(),
+            filters: Vec·new(),
             temporal: None,
             limit: 10,
             offset: 0,
             include_gaps: true,
-            hints: Vec::new(),
+            hints: Vec·new(),
         }
     }
 
-    pub fn entity(label: &str) -> Self {
+    ☉ λ entity(label: &str) -> Self {
         Self {
             text: None,
             entity: Some(label.to_string()),
-            filters: Vec::new(),
+            filters: Vec·new(),
             temporal: None,
             limit: 10,
             offset: 0,
             include_gaps: false,
-            hints: Vec::new(),
+            hints: Vec·new(),
         }
     }
 
-    pub fn filter(mut self, f: Filter) -> Self {
+    ☉ λ filter(Δ self, f: Filter) -> Self {
         self.filters.push(f);
         self
     }
 
-    pub fn where_confidence(self, op: Comparator, value: f64) -> Self {
-        self.filter(Filter::Confidence { op, value })
+    ☉ λ where_confidence(self, op: Comparator, value: f64) -> Self {
+        self.filter(Filter·Confidence { op, value })
     }
 
-    pub fn where_source(self, source: MemorySource) -> Self {
-        self.filter(Filter::Source(source))
+    ☉ λ where_source(self, source: MemorySource) -> Self {
+        self.filter(Filter·Source(source))
     }
 
-    pub fn during(mut self, range: TimeRange) -> Self {
-        self.temporal = Some(TemporalConstraint::During(range));
+    ☉ λ during(Δ self, range: TimeRange) -> Self {
+        self.temporal = Some(TemporalConstraint·During(range));
         self
     }
 
-    pub fn before(mut self, point: TimePoint) -> Self {
-        self.temporal = Some(TemporalConstraint::Before(point));
+    ☉ λ before(Δ self, point: TimePoint) -> Self {
+        self.temporal = Some(TemporalConstraint·Before(point));
         self
     }
 
-    pub fn after(mut self, point: TimePoint) -> Self {
-        self.temporal = Some(TemporalConstraint::After(point));
+    ☉ λ after(Δ self, point: TimePoint) -> Self {
+        self.temporal = Some(TemporalConstraint·After(point));
         self
     }
 
-    pub fn limit(mut self, n: usize) -> Self {
+    ☉ λ limit(Δ self, n: usize) -> Self {
         self.limit = n;
         self
     }
 
-    pub fn offset(mut self, n: usize) -> Self {
+    ☉ λ offset(Δ self, n: usize) -> Self {
         self.offset = n;
         self
     }
 
-    pub fn top(self, n: usize) -> Self {
+    ☉ λ top(self, n: usize) -> Self {
         self.limit(n)
     }
 
-    pub fn with_gap_analysis(mut self) -> Self {
+    ☉ λ with_gap_analysis(Δ self) -> Self {
         self.include_gaps = true;
         self
     }
 
-    pub fn hint(mut self, h: QueryHint) -> Self {
+    ☉ λ hint(Δ self, h: QueryHint) -> Self {
         self.hints.push(h);
         self
     }
 
-    pub fn text(&self) -> String {
+    ☉ λ text(&self) -> String {
         self.text.clone().unwrap_or_default()
     }
 
-    pub fn get_limit(&self) -> usize {
+    ☉ λ get_limit(&self) -> usize {
         self.limit
     }
 
-    pub fn has_temporal(&self) -> bool {
+    ☉ λ has_temporal(&self) -> bool {
         self.temporal.is_some()
     }
 
-    pub fn apply_filters(&self, memories: &Vec<Memory>) -> Vec<&Memory> {
+    ☉ λ apply_filters(&self, memories: &Vec<Memory>) -> Vec<&Memory> {
         memories.iter()
             .filter(|m| self.filters.iter().all(|f| f.matches(m)))
             .collect()
     }
 }
 
-pub struct ConfidenceDistribution {
-    pub min: f64,
-    pub max: f64,
-    pub mean: f64,
-    pub median: f64,
+☉ Σ ConfidenceDistribution {
+    ☉ min: f64,
+    ☉ max: f64,
+    ☉ mean: f64,
+    ☉ median: f64,
 }
 
-impl ConfidenceDistribution {
-    pub fn from_values(values: &Vec<f64>) -> Self {
-        if values.is_empty() {
-            return Self { min: 0.0, max: 0.0, mean: 0.0, median: 0.0 };
+⊢ ConfidenceDistribution {
+    ☉ λ from_values(values: &Vec<f64>) -> Self {
+        ⎇ values.is_empty() {
+            ⤺ Self { min: 0.0, max: 0.0, mean: 0.0, median: 0.0 };
         }
 
-        let mut sorted = values.clone();
+        ≔ Δ sorted = values.clone();
         // Simple bubble sort
-        for i in 0..sorted.len() {
-            for j in (i + 1)..sorted.len() {
-                if sorted[j] < sorted[i] {
-                    let temp = sorted[i];
+        ∀ i ∈ 0..sorted.len() {
+            ∀ j ∈ (i + 1)..sorted.len() {
+                ⎇ sorted[j] < sorted[i] {
+                    ≔ temp = sorted[i];
                     sorted[i] = sorted[j];
                     sorted[j] = temp;
                 }
             }
         }
 
-        let min = sorted[0];
-        let max = sorted[sorted.len() - 1];
-        let mean = sorted.iter().sum::<f64>() / sorted.len() as f64;
-        let median = sorted[sorted.len() / 2];
+        ≔ min = sorted[0];
+        ≔ max = sorted[sorted.len() - 1];
+        ≔ mean = sorted.iter().sum·<f64>() / sorted.len() as f64;
+        ≔ median = sorted[sorted.len() / 2];
 
         Self { min, max, mean, median }
     }
 }
 
-pub struct Gap {
-    pub description: String,
-    pub severity: f64,
+☉ Σ Gap {
+    ☉ description: String,
+    ☉ severity: f64,
 }
 
-pub struct RecallResult {
-    pub memories: Vec<Memory>,
-    pub total_found: usize,
-    pub returned: usize,
-    pub confidence: ConfidenceDistribution,
-    pub gaps: Vec<Gap>,
+☉ Σ RecallResult {
+    ☉ memories: Vec<Memory>,
+    ☉ total_found: usize,
+    ☉ returned: usize,
+    ☉ confidence: ConfidenceDistribution,
+    ☉ gaps: Vec<Gap>,
 }
 
-impl RecallResult {
-    pub fn empty() -> Self {
+⊢ RecallResult {
+    ☉ λ empty() -> Self {
         Self {
-            memories: Vec::new(),
+            memories: Vec·new(),
             total_found: 0,
             returned: 0,
             confidence: ConfidenceDistribution { min: 0.0, max: 0.0, mean: 0.0, median: 0.0 },
-            gaps: Vec::new(),
+            gaps: Vec·new(),
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    ☉ λ is_empty(&self) -> bool {
         self.memories.is_empty()
     }
 
-    pub fn has_gaps(&self) -> bool {
+    ☉ λ has_gaps(&self) -> bool {
         !self.gaps.is_empty()
     }
 
-    pub fn high_confidence(&self) -> Vec<&Memory> {
+    ☉ λ high_confidence(&self) -> Vec<&Memory> {
         self.memories.iter().filter(|m| m.confidence > 0.8).collect()
     }
 }
@@ -352,40 +352,40 @@ impl RecallResult {
 // ============================================================================
 
 #[test]
-fn test_query_new() {
-    let q = Query::new("find information about AI");
+λ test_query_new() {
+    ≔ q = Query·new("find information about AI");
     assert_eq(q.text(), "find information about AI");
     assert_eq(q.get_limit(), 10);
 }
 
 #[test]
-fn test_query_entity() {
-    let q = Query::entity("Python");
+λ test_query_entity() {
+    ≔ q = Query·entity("Python");
     assert(q.text().is_empty());
     assert(!q.include_gaps);
 }
 
 #[test]
-fn test_query_with_limit() {
-    let q = Query::new("test").limit(5);
+λ test_query_with_limit() {
+    ≔ q = Query·new("test").limit(5);
     assert_eq(q.get_limit(), 5);
 }
 
 #[test]
-fn test_query_with_offset() {
-    let q = Query::new("test").offset(10);
+λ test_query_with_offset() {
+    ≔ q = Query·new("test").offset(10);
     assert_eq(q.offset, 10);
 }
 
 #[test]
-fn test_query_top_alias() {
-    let q = Query::new("test").top(3);
+λ test_query_top_alias() {
+    ≔ q = Query·new("test").top(3);
     assert_eq(q.get_limit(), 3);
 }
 
 #[test]
-fn test_query_with_gap_analysis() {
-    let q = Query::new("test").with_gap_analysis();
+λ test_query_with_gap_analysis() {
+    ≔ q = Query·new("test").with_gap_analysis();
     assert(q.include_gaps);
 }
 
@@ -394,44 +394,44 @@ fn test_query_with_gap_analysis() {
 // ============================================================================
 
 #[test]
-fn test_comparator_eq() {
-    let cmp = Comparator::Eq;
+λ test_comparator_eq() {
+    ≔ cmp = Comparator·Eq;
     assert(cmp.compare(0.5, 0.5));
     assert(!cmp.compare(0.5, 0.6));
 }
 
 #[test]
-fn test_comparator_ne() {
-    let cmp = Comparator::Ne;
+λ test_comparator_ne() {
+    ≔ cmp = Comparator·Ne;
     assert(cmp.compare(0.5, 0.6));
     assert(!cmp.compare(0.5, 0.5));
 }
 
 #[test]
-fn test_comparator_gt() {
-    let cmp = Comparator::Gt;
+λ test_comparator_gt() {
+    ≔ cmp = Comparator·Gt;
     assert(cmp.compare(0.6, 0.5));
     assert(!cmp.compare(0.5, 0.6));
 }
 
 #[test]
-fn test_comparator_lt() {
-    let cmp = Comparator::Lt;
+λ test_comparator_lt() {
+    ≔ cmp = Comparator·Lt;
     assert(cmp.compare(0.4, 0.5));
     assert(!cmp.compare(0.6, 0.5));
 }
 
 #[test]
-fn test_comparator_gte() {
-    let cmp = Comparator::Gte;
+λ test_comparator_gte() {
+    ≔ cmp = Comparator·Gte;
     assert(cmp.compare(0.5, 0.5));
     assert(cmp.compare(0.6, 0.5));
     assert(!cmp.compare(0.4, 0.5));
 }
 
 #[test]
-fn test_comparator_lte() {
-    let cmp = Comparator::Lte;
+λ test_comparator_lte() {
+    ≔ cmp = Comparator·Lte;
     assert(cmp.compare(0.5, 0.5));
     assert(cmp.compare(0.4, 0.5));
     assert(!cmp.compare(0.6, 0.5));
@@ -442,17 +442,17 @@ fn test_comparator_lte() {
 // ============================================================================
 
 #[test]
-fn test_filter_confidence() {
-    let filter = Filter::Confidence { op: Comparator::Gt, value: 0.7 };
-    let high = Memory {
+λ test_filter_confidence() {
+    ≔ filter = Filter·Confidence { op: Comparator·Gt, value: 0.7 };
+    ≔ high = Memory {
         id: "1".to_string(), content: "test".to_string(),
         relevance: 0.8, confidence: 0.9,
-        source: MemorySource::Semantic, timestamp: 0
+        source: MemorySource·Semantic, timestamp: 0
     };
-    let low = Memory {
+    ≔ low = Memory {
         id: "2".to_string(), content: "test".to_string(),
         relevance: 0.8, confidence: 0.5,
-        source: MemorySource::Semantic, timestamp: 0
+        source: MemorySource·Semantic, timestamp: 0
     };
 
     assert(filter.matches(&high));
@@ -460,17 +460,17 @@ fn test_filter_confidence() {
 }
 
 #[test]
-fn test_filter_source() {
-    let filter = Filter::Source(MemorySource::Episodic);
-    let episodic = Memory {
+λ test_filter_source() {
+    ≔ filter = Filter·Source(MemorySource·Episodic);
+    ≔ episodic = Memory {
         id: "1".to_string(), content: "test".to_string(),
         relevance: 0.8, confidence: 0.9,
-        source: MemorySource::Episodic, timestamp: 0
+        source: MemorySource·Episodic, timestamp: 0
     };
-    let semantic = Memory {
+    ≔ semantic = Memory {
         id: "2".to_string(), content: "test".to_string(),
         relevance: 0.8, confidence: 0.9,
-        source: MemorySource::Semantic, timestamp: 0
+        source: MemorySource·Semantic, timestamp: 0
     };
 
     assert(filter.matches(&episodic));
@@ -478,17 +478,17 @@ fn test_filter_source() {
 }
 
 #[test]
-fn test_filter_min_relevance() {
-    let filter = Filter::MinRelevance(0.6);
-    let high = Memory {
+λ test_filter_min_relevance() {
+    ≔ filter = Filter·MinRelevance(0.6);
+    ≔ high = Memory {
         id: "1".to_string(), content: "test".to_string(),
         relevance: 0.8, confidence: 0.5,
-        source: MemorySource::Instant, timestamp: 0
+        source: MemorySource·Instant, timestamp: 0
     };
-    let low = Memory {
+    ≔ low = Memory {
         id: "2".to_string(), content: "test".to_string(),
         relevance: 0.4, confidence: 0.5,
-        source: MemorySource::Instant, timestamp: 0
+        source: MemorySource·Instant, timestamp: 0
     };
 
     assert(filter.matches(&high));
@@ -496,24 +496,24 @@ fn test_filter_min_relevance() {
 }
 
 #[test]
-fn test_query_apply_filters() {
-    let q = Query::new("test")
-        .where_confidence(Comparator::Gte, 0.7);
+λ test_query_apply_filters() {
+    ≔ q = Query·new("test")
+        .where_confidence(Comparator·Gte, 0.7);
 
-    let memories = vec![
+    ≔ memories = vec![
         Memory {
             id: "1".to_string(), content: "test".to_string(),
             relevance: 0.9, confidence: 0.8,
-            source: MemorySource::Semantic, timestamp: 0
+            source: MemorySource·Semantic, timestamp: 0
         },
         Memory {
             id: "2".to_string(), content: "test".to_string(),
             relevance: 0.5, confidence: 0.5,
-            source: MemorySource::Semantic, timestamp: 0
+            source: MemorySource·Semantic, timestamp: 0
         },
     ];
 
-    let filtered = q.apply_filters(&memories);
+    ≔ filtered = q.apply_filters(&memories);
     assert_eq(filtered.len(), 1);
 }
 
@@ -522,8 +522,8 @@ fn test_query_apply_filters() {
 // ============================================================================
 
 #[test]
-fn test_time_range() {
-    let range = TimeRange::new(100, 200);
+λ test_time_range() {
+    ≔ range = TimeRange·new(100, 200);
     assert(range.contains(150));
     assert(range.contains(100));
     assert(range.contains(200));
@@ -532,68 +532,68 @@ fn test_time_range() {
 }
 
 #[test]
-fn test_time_point_now() {
-    let point = TimePoint::now();
-    let ts = point.to_timestamp(1000);
+λ test_time_point_now() {
+    ≔ point = TimePoint·now();
+    ≔ ts = point.to_timestamp(1000);
     assert_eq(ts, 1000);
 }
 
 #[test]
-fn test_time_point_absolute() {
-    let point = TimePoint::absolute(500);
-    let ts = point.to_timestamp(1000);
+λ test_time_point_absolute() {
+    ≔ point = TimePoint·absolute(500);
+    ≔ ts = point.to_timestamp(1000);
     assert_eq(ts, 500);
 }
 
 #[test]
-fn test_time_point_ago() {
-    let point = TimePoint::ago(100);
-    let ts = point.to_timestamp(1000);
+λ test_time_point_ago() {
+    ≔ point = TimePoint·ago(100);
+    ≔ ts = point.to_timestamp(1000);
     assert_eq(ts, 900);
 }
 
 #[test]
-fn test_time_point_from_now() {
-    let point = TimePoint::from_now(100);
-    let ts = point.to_timestamp(1000);
+λ test_time_point_from_now() {
+    ≔ point = TimePoint·from_now(100);
+    ≔ ts = point.to_timestamp(1000);
     assert_eq(ts, 1100);
 }
 
 #[test]
-fn test_temporal_during() {
-    let constraint = TemporalConstraint::During(TimeRange::new(100, 200));
+λ test_temporal_during() {
+    ≔ constraint = TemporalConstraint·During(TimeRange·new(100, 200));
     assert(constraint.matches(150, 1000));
     assert(!constraint.matches(50, 1000));
 }
 
 #[test]
-fn test_temporal_before() {
-    let constraint = TemporalConstraint::Before(TimePoint::absolute(500));
+λ test_temporal_before() {
+    ≔ constraint = TemporalConstraint·Before(TimePoint·absolute(500));
     assert(constraint.matches(400, 1000));
     assert(!constraint.matches(600, 1000));
 }
 
 #[test]
-fn test_temporal_after() {
-    let constraint = TemporalConstraint::After(TimePoint::absolute(500));
+λ test_temporal_after() {
+    ≔ constraint = TemporalConstraint·After(TimePoint·absolute(500));
     assert(constraint.matches(600, 1000));
     assert(!constraint.matches(400, 1000));
 }
 
 #[test]
-fn test_temporal_between() {
-    let constraint = TemporalConstraint::Between(
-        TimePoint::absolute(100),
-        TimePoint::absolute(300)
+λ test_temporal_between() {
+    ≔ constraint = TemporalConstraint·Between(
+        TimePoint·absolute(100),
+        TimePoint·absolute(300)
     );
     assert(constraint.matches(200, 1000));
     assert(!constraint.matches(400, 1000));
 }
 
 #[test]
-fn test_query_has_temporal() {
-    let q1 = Query::new("test");
-    let q2 = Query::new("test").before(TimePoint::now());
+λ test_query_has_temporal() {
+    ≔ q1 = Query·new("test");
+    ≔ q2 = Query·new("test").before(TimePoint·now());
 
     assert(!q1.has_temporal());
     assert(q2.has_temporal());
@@ -604,11 +604,11 @@ fn test_query_has_temporal() {
 // ============================================================================
 
 #[test]
-fn test_query_with_hints() {
-    let q = Query::new("test")
-        .hint(QueryHint::MaxCandidates(100))
-        .hint(QueryHint::Approximate(true))
-        .hint(QueryHint::NoCache);
+λ test_query_with_hints() {
+    ≔ q = Query·new("test")
+        .hint(QueryHint·MaxCandidates(100))
+        .hint(QueryHint·Approximate(true))
+        .hint(QueryHint·NoCache);
 
     assert_eq(q.hints.len(), 3);
 }
@@ -618,26 +618,26 @@ fn test_query_with_hints() {
 // ============================================================================
 
 #[test]
-fn test_confidence_distribution_empty() {
-    let dist = ConfidenceDistribution::from_values(&Vec::new());
+λ test_confidence_distribution_empty() {
+    ≔ dist = ConfidenceDistribution·from_values(&Vec·new());
     assert_eq(dist.min, 0.0);
     assert_eq(dist.max, 0.0);
 }
 
 #[test]
-fn test_confidence_distribution_single() {
-    let dist = ConfidenceDistribution::from_values(&vec![0.5]);
+λ test_confidence_distribution_single() {
+    ≔ dist = ConfidenceDistribution·from_values(&vec![0.5]);
     assert_eq(dist.min, 0.5);
     assert_eq(dist.max, 0.5);
     assert_eq(dist.mean, 0.5);
 }
 
 #[test]
-fn test_confidence_distribution_multiple() {
-    let dist = ConfidenceDistribution::from_values(&vec![0.2, 0.4, 0.6, 0.8]);
+λ test_confidence_distribution_multiple() {
+    ≔ dist = ConfidenceDistribution·from_values(&vec![0.2, 0.4, 0.6, 0.8]);
     assert_eq(dist.min, 0.2);
     assert_eq(dist.max, 0.8);
-    let mean_diff = (dist.mean - 0.5).abs();
+    ≔ mean_diff = (dist.mean - 0.5).abs();
     assert(mean_diff < 0.01);
 }
 
@@ -646,15 +646,15 @@ fn test_confidence_distribution_multiple() {
 // ============================================================================
 
 #[test]
-fn test_recall_result_empty() {
-    let result = RecallResult::empty();
+λ test_recall_result_empty() {
+    ≔ result = RecallResult·empty();
     assert(result.is_empty());
     assert_eq(result.total_found, 0);
 }
 
 #[test]
-fn test_recall_result_has_gaps() {
-    let mut result = RecallResult::empty();
+λ test_recall_result_has_gaps() {
+    ≔ Δ result = RecallResult·empty();
     assert(!result.has_gaps());
 
     result.gaps.push(Gap {
@@ -665,24 +665,24 @@ fn test_recall_result_has_gaps() {
 }
 
 #[test]
-fn test_recall_result_high_confidence() {
-    let mut result = RecallResult::empty();
+λ test_recall_result_high_confidence() {
+    ≔ Δ result = RecallResult·empty();
     result.memories.push(Memory {
         id: "1".to_string(), content: "high".to_string(),
         relevance: 0.9, confidence: 0.9,
-        source: MemorySource::Semantic, timestamp: 0
+        source: MemorySource·Semantic, timestamp: 0
     });
     result.memories.push(Memory {
         id: "2".to_string(), content: "low".to_string(),
         relevance: 0.9, confidence: 0.5,
-        source: MemorySource::Semantic, timestamp: 0
+        source: MemorySource·Semantic, timestamp: 0
     });
 
-    let high = result.high_confidence();
+    ≔ high = result.high_confidence();
     assert_eq(high.len(), 1);
     assert_eq(high[0].content, "high");
 }
 
-fn main() {
+λ main() {
     print("Engram query system tests");
 }

@@ -1,7 +1,7 @@
-fn double(x: i64) -> i64 {
+λ double(x: i64) -> i64 {
     x + x
 }
 
-fn main() -> i64 {
+λ main() -> i64 {
     double(21)
 }

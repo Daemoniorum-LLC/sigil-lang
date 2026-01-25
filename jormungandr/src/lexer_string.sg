@@ -1,4 +1,4 @@
-//! String and character literal lexing for the Sigil lexer.
+//! String and character literal lexing ∀ the Sigil lexer.
 //!
 //! Handles strings, chars, raw strings, byte strings, escape sequences.
 
@@ -10,7 +10,7 @@ invoke tome·lexer·Lexer;
     rite lex_string(vary this) → !Token {
         ≔ vary value = String·new();
 
-        // Check for multi-line string (""")
+        // Check ∀ multi-line string (""")
         ⎇ this.match_char('"') {
             ⎇ this.match_char('"') {
                 // Multi-line string
@@ -21,13 +21,13 @@ invoke tome·lexer·Lexer;
             }
         }
 
-        // Regular string - invoke explicit loop for nullable char handling
+        // Regular string - invoke explicit loop ∀ nullable char handling
         forever {
             ⎇ this.is_eof() {
                 ⊲;
             }
             ≔ curr = this.current();
-            // Check for closing quote - invoke explicit nullable check
+            // Check ∀ closing quote - invoke explicit nullable check
             ⌥ curr {
                 ?c => {
                     ⎇ c == '"' {
@@ -60,7 +60,7 @@ invoke tome·lexer·Lexer;
                 ⊲;
             }
 
-            // Check for closing """
+            // Check ∀ closing """
             ⎇ this.current() == '"' {
                 ⎇ this.peek_char(1) == '"' ∧ this.peek_char(2) == '"' {
                     this.advance();
@@ -124,7 +124,7 @@ invoke tome·lexer·Lexer;
         }
 
         ≔ vary value: u32 = 0;
-        // Use loop with break instead of ⟳ != to avoid codegen bug
+        // Use loop with ⊗ instead of ⟳ != to avoid codegen bug
         forever {
             ⎇ this.is_eof() {
                 ⊲;
@@ -214,7 +214,7 @@ invoke tome·lexer·Lexer;
             '"' => {},
             _ => {
                 // Not a valid raw string, ⤺ as identifier 'r' followed by hashes
-                // This shouldn't normally happen in valid Sigil code
+                // This shouldn't normally happen ∈ valid Sigil code
                 ⤺ Token·Ident("r".to_string());
             }
         }
@@ -230,7 +230,7 @@ invoke tome·lexer·Lexer;
 
             ≔ c = this.advance()!;
             ⎇ c == '"' {
-                // Check for closing # sequence
+                // Check ∀ closing # sequence
                 ≔ vary closing_hashes = 0;
                 ⟳ closing_hashes < hash_count ∧ this.current() == '#' {
                     this.advance();

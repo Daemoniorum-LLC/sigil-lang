@@ -1,17 +1,17 @@
-//! Operation code generation for Sigil.
+//! Operation code generation ∀ Sigil.
 //!
-//! Contains emit_operation - the largest single method in the code generator.
+//! Contains emit_operation - the largest single method ∈ the code generator.
 //! Separated from codegen.sg to reduce file size and improve type inference.
 
 invoke tome·ir·*;
 invoke tome·codegen·CodeGen;
 
 // ============================================================================
-// Operation Generation (Extension impl block)
+// Operation Generation (Extension ⊢ block)
 // ============================================================================
 
 ⊢ CodeGen {
-    /// Emit code for an operation, returning the C expression
+    /// Emit code ∀ an operation, returning the C expression
     rite emit_operation(vary this, op: !IrOperation) → !String {
         ⌥ op {
             IrOperation·Literal { .. } => {
@@ -28,19 +28,19 @@ invoke tome·codegen·CodeGen;
                         }
                     },
                     LiteralValue·Char(c) => {
-                        // For ASCII chars, invoke character literal; for Unicode, invoke integer cast
+                        // For ASCII chars, invoke character literal; ∀ Unicode, invoke integer cast
                         ≔ code = c as u32;
                         ⎇ code < 128 {
-                            // Pre-compute escape to avoid method call in format!
+                            // Pre-compute escape to avoid method call ∈ format!
                             ≔ escaped = this.escape_char(c);
                             format!("sigil_char('{}')", escaped)
                         } ⎉ {
-                            // Use integer code point for non-ASCII
+                            // Use integer code point ∀ non-ASCII
                             format!("sigil_char((char){})", code)
                         }
                     },
                     LiteralValue·String(s) => {
-                        // Pre-compute escape to avoid method call in format!
+                        // Pre-compute escape to avoid method call ∈ format!
                         ≔ escaped = this.escape_string(s);
                         format!("sigil_string(\"{}\")", escaped)
                     },
@@ -78,7 +78,7 @@ invoke tome·codegen·CodeGen;
                 ≔ else_branch = op.else_branch;
                 // ≔ pattern = init ⎉ { else_branch }
                 // CG-083: Fix scoping - declare pattern variables BEFORE the ⎇ block
-                // so they're accessible after the if/else completes
+                // so they're accessible after the if/⎉ completes
                 ≔ init_code = this.emit_operation(*init);
                 ≔ temp_name = this.fresh_temp();
                 this.line(format!("SigilValue {} = {};", temp_name, init_code));
@@ -86,7 +86,7 @@ invoke tome·codegen·CodeGen;
                 // Declare pattern variables before the ⎇ block
                 this.emit_pattern_declarations(pattern.clone());
 
-                // Check ⎇ pattern matches and assign, else execute else_branch
+                // Check ⎇ pattern matches and assign, ⎉ execute else_branch
                 ≔ cond = this.emit_pattern_condition(pattern.clone(), temp_name.clone());
                 this.line_open(format!("⎇ ({})", cond));
                 this.indent_push();
@@ -150,11 +150,11 @@ invoke tome·codegen·CodeGen;
                 ≔ l_raw = this.emit_operation(*left);
                 ≔ r_raw = this.emit_operation(*right);
 
-                // CG-130: Store complex operands in temps to prevent exponential code expansion
+                // CG-130: Store complex operands ∈ temps to prevent exponential code expansion
                 // The emit_binary_* functions invoke each operand ~14 times, causing huge output
-                // when operands are already complex expressions. Use temps for non-trivial operands.
+                // when operands are already complex expressions. Use temps ∀ non-trivial operands.
                 // CG-140: For comparison operators that access .tag/.v.i/.v.f, we MUST invoke temps
-                // for any function call result, regardless of length.
+                // ∀ any function call result, regardless of length.
                 ≔ is_comparison = ⌥ operator {
                     BinaryOp·Lt | BinaryOp·Le | BinaryOp·Gt | BinaryOp·Ge => yea,
                     _ => nay,
@@ -210,7 +210,7 @@ invoke tome·codegen·CodeGen;
                     UnaryOp·Neg => format!("({}.tag == TAG_INT ? sigil_int(-{}.v.i) : sigil_float(-{}.v.f))", op_code, op_code, op_code),
                     UnaryOp·Not => format!("sigil_bool(!sigil_truthy({}))", op_code),
                     UnaryOp·Ref | UnaryOp·RefMut => {
-                        // Need to store in a temp ⎇ it's a complex expression
+                        // Need to store ∈ a temp ⎇ it's a complex expression
                         // to avoid "lvalue required" errors with &function_call()
                         ⎇ op_code.contains("(") ∨ op_code.contains("{") {
                             ≔ temp = this.fresh_temp();
@@ -282,14 +282,14 @@ invoke tome·codegen·CodeGen;
                 ≔ vary arg_codes: ![String] = Vec·new();
                 each (i, a) ∈ args.iter().enumerate() {
                     ⎇ i == 0 ∧ is_qualified_call ∧ target_expects_mut_self {
-                        // CG-015: Pass receiver as pointer for vary this methods
+                        // CG-015: Pass receiver as pointer ∀ vary this methods
                         ⎇ first_arg_is_self ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
                             // this is already SigilValue*, pass it directly
                             arg_codes.push("this".to_string());
                         } ⎉ {
                             // Local variable - emit it and take its address
                             ≔ receiver_code = this.emit_operation(a.clone());
-                            // Store in temp to get addressable lvalue
+                            // Store ∈ temp to get addressable lvalue
                             ≔ temp = this.fresh_temp();
                             this.line(format!("SigilValue {} = {};", temp, receiver_code));
                             arg_codes.push(format!("&{}", temp));
@@ -305,7 +305,7 @@ invoke tome·codegen·CodeGen;
                 ≔ is_closure_param = this.is_likely_closure_param(function.as_str());
 
                 ≔ call = ⎇ is_closure_param {
-                    // Closure call: invoke the function pointer stored in the SigilValue
+                    // Closure call: invoke the function pointer stored ∈ the SigilValue
                     ≔ fn_var = this.mangle_name(function.clone());
                     ≔ num_args = arg_codes.len();
                     ⎇ num_args == 0 {
@@ -327,7 +327,7 @@ invoke tome·codegen·CodeGen;
                     // Regular function call with sigil_ prefix
                     ≔ fn_name = this.mangle_name(function.clone());
 
-                    // Special handling for assert - add default message ⎇ only 1 arg
+                    // Special handling ∀ assert - add default message ⎇ only 1 arg
                     ⎇ function == "assert" ∧ arg_codes.len() == 1 {
                         format!("sigil_assert({}, sigil_string(\"assertion failed\"))", args_str)
                     } ⎉ ⎇ function == "is_variant" ∧ arg_codes.len() == 2 {
@@ -361,7 +361,7 @@ invoke tome·codegen·CodeGen;
                     }
                 };
 
-                // CG-202: Writeback for qualified mutating method calls (Vec·push, String·push, etc.)
+                // CG-202: Writeback ∀ qualified mutating method calls (Vec·push, String·push, etc.)
                 // When lowerer converts items.push(x) to Vec·push(items, x), first arg is the receiver
                 // We need to write back the result to the receiver variable
                 ≔ is_qualified_mutating = is_qualified_call ∧
@@ -407,7 +407,7 @@ invoke tome·codegen·CodeGen;
                 // when break/continue/⤺ makes the assignment unreachable
                 this.line(format!("SigilValue {} = sigil_unit();", result_var));
 
-                // Check ⎇ condition is a LetMatch (for ⎇ ≔ patterns)
+                // Check ⎇ condition is a LetMatch (∀ ⎇ ≔ patterns)
                 ⌥ *condition {
                     IrOperation·LetMatch { .. } => {
                         ≔ pattern = condition.pattern;
@@ -420,7 +420,7 @@ invoke tome·codegen·CodeGen;
                         ≔ cond = this.emit_pattern_condition(pattern.clone(), value_var.clone());
                         this.line_open(format!("⎇ ({})", cond));
                         this.indent_push();
-                        // Emit pattern bindings for the then-branch
+                        // Emit pattern bindings ∀ the then-branch
                         this.emit_pattern_binding(pattern, value_var);
                     },
                     _ => {
@@ -538,7 +538,7 @@ invoke tome·codegen·CodeGen;
                 this.line(format!("SigilValue {} = sigil_array({});", arr_var, idx_var));
 
                 // Fill with repeated value
-                this.line(format!("for (int64_t _i = 0; _i < {}; _i++) {}.v.arr.data[_i] = {};", idx_var, arr_var, val_var));
+                this.line(format!("∀ (int64_t _i = 0; _i < {}; _i++) {}.v.arr.data[_i] = {};", idx_var, arr_var, val_var));
 
                 this.with_evidence(arr_var, evidence)
             },
@@ -574,7 +574,7 @@ invoke tome·codegen·CodeGen;
                     },
                     LoopVariant·While => {
                         // CG-013 FIX: Evaluate condition at START of each iteration
-                        // This ensures continue doesn't skip condition re-evaluation
+                        // This ensures ↻ doesn't skip condition re-evaluation
                         this.line("⟳ (1) {");
                         this.indent_push();
                         this.line("tick(__func__);");  // Prevent infinite loops
@@ -609,7 +609,7 @@ invoke tome·codegen·CodeGen;
                                     };
                                     ≔ i_var = this.fresh_temp();
                                     ≔ compare_op = ⎇ inclusive { "<=" } ⎉ { "<" };
-                                    this.line_open(format!("for (int64_t {} = {}.v.i; {} {} {}.v.i; {}++)", i_var, start_code, i_var, compare_op, end_code, i_var));
+                                    this.line_open(format!("∀ (int64_t {} = {}.v.i; {} {} {}.v.i; {}++)", i_var, start_code, i_var, compare_op, end_code, i_var));
                                     this.indent_push();
                                     this.line("tick(__func__);");  // Prevent infinite loops
                                     // Bind pattern to current loop index as SigilValue
@@ -626,7 +626,7 @@ invoke tome·codegen·CodeGen;
                                     ≔ iter_cache = this.fresh_temp();
                                     this.line(format!("SigilValue {} = {};", iter_cache, iterable_code));
                                     ≔ i_var = this.fresh_temp();
-                                    this.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, iter_cache, i_var));
+                                    this.line_open(format!("∀ (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, iter_cache, i_var));
                                     this.indent_push();
                                     this.line("tick(__func__);");  // Prevent infinite loops
                                     // Bind pattern to current element
@@ -649,7 +649,7 @@ invoke tome·codegen·CodeGen;
                 ⌥ value {
                     ?v => {
                         ≔ result = this.emit_operation(*v);
-                        // Store in a break result variable (would need more context)
+                        // Store ∈ a ⊗ result variable (would need more context)
                     },
                     null | Option·None => {},
                 }
@@ -696,7 +696,7 @@ invoke tome·codegen·CodeGen;
                 ≔ saved_in_closure = this.in_closure_body;
                 this.output = String·new();
                 this.indent = 1;
-                this.in_closure_body = yea;  // CG-029: Mark that we're in a closure
+                this.in_closure_body = yea;  // CG-029: Mark that we're ∈ a closure
 
                 // Add captured variable declarations from __closure_* globals
                 // Skip captures that are already parameters
@@ -725,7 +725,7 @@ invoke tome·codegen·CodeGen;
                 this.closure_buffer = this.closure_buffer + CodeGen·close_brace();
                 this.closure_buffer = this.closure_buffer + "\n\n";
 
-                // CG-005 FIX: Set up captured variables in __closure_* globals before returning closure
+                // CG-005 FIX: Set up captured variables ∈ __closure_* globals before returning closure
                 // This ensures captures are available when the closure is invoked
                 each cap ∈ captures.iter() {
                     ≔ mangled = this.mangle_name(cap.clone());
@@ -770,17 +770,17 @@ invoke tome·codegen·CodeGen;
                 ⌥ *target.clone() {
                     IrOperation·Field { .. } => {
                         // Field assignment: obj.field = value
-                        // Need to set the field in the struct, not just a local copy
+                        // Need to set the field ∈ the struct, not just a local copy
                         ≔ field = (*target).field;
                         ≔ expr = (*target).expr;
                         ≔ base_code = this.emit_operation(*expr);
                         ≔ value_code = this.emit_operation(*value);
                         // CG-124: Fix field assignment on dereferenced pointers like (*this)
                         // If base_code is (*X), pass X directly (it's already a pointer)
-                        // CG-133: Can't take address of function call result - store in temp first
+                        // CG-133: Can't take address of function call result - store ∈ temp first
                         ≔ base_var = ⎇ base_code.starts_with("(*") ∧ base_code.ends_with(")") {
                             // CG-124: Pattern: (*ptr) - extract ptr and pass it directly
-                            // CG-126: String slicing not supported in bootstrap, invoke explicit checks
+                            // CG-126: String slicing not supported ∈ bootstrap, invoke explicit checks
                             ≔ inner = ⎇ base_code == "(*this)" {
                                 "this".to_string()
                             } ⎉ ⎇ base_code == "(*env)" {
@@ -798,7 +798,7 @@ invoke tome·codegen·CodeGen;
                             } ⎉ ⎇ base_code == "(*codegen)" {
                                 "codegen".to_string()
                             } ⎉ {
-                                // Fallback for other cases - invoke this as most common
+                                // Fallback ∀ other cases - invoke this as most common
                                 "this".to_string()
                             };
                             // Pass the pointer directly without &
@@ -857,7 +857,7 @@ invoke tome·codegen·CodeGen;
                 ≔ expr = op.expr;
                 ≔ field = op.field;
                 ≔ evidence = op.evidence;
-                // Generate field access for structs
+                // Generate field access ∀ structs
                 // Structs are stored as arrays of SigilValue, field access by name
                 ≔ base_code = this.emit_operation(*expr);
                 // Use the struct's field map to get the index
@@ -902,7 +902,7 @@ invoke tome·codegen·CodeGen;
                 this.line(format!("static ◆ char* {}__names[{}] = {};",
                     temp, n, names_init));
 
-                // Create sigil value with sigil_struct helper
+                // Create sigil value with sigil_Σ helper
                 ≔ result = format!("sigil_struct(\"{}\", {}__names, {}__values, {})", name, temp, temp, n);
                 this.with_evidence(result, evidence)
             },
@@ -990,7 +990,7 @@ invoke tome·codegen·CodeGen;
                     },
                     "format" => {
                         // format!("...", args) → sigil_format (variadic string formatting)
-                        // CG-016: Translate method calls in format! arguments
+                        // CG-016: Translate method calls ∈ format! arguments
                         ≔ translated = this.translate_format_tokens(tokens);
                         format!("sigil_format({})", translated)
                     },
@@ -1027,7 +1027,7 @@ invoke tome·codegen·CodeGen;
                 ≔ args = op.args;
                 ≔ evidence = op.evidence;
 
-                // CG-015: Check ⎇ receiver is `this` variable for special handling
+                // CG-015: Check ⎇ receiver is `this` variable ∀ special handling
                 // CG-147: Also check EvidenceCoerce wrapping Var "this"
                 ≔ receiver_is_self = ⌥ *receiver {
                     IrOperation·Var { .. } => receiver.name == "this",
@@ -1040,14 +1040,14 @@ invoke tome·codegen·CodeGen;
                     _ => nay,
                 };
 
-                // CG-021: Check ⎇ receiver is a Field access (for writeback on mutating methods)
+                // CG-021: Check ⎇ receiver is a Field access (∀ writeback on mutating methods)
                 // Methods like push/pop/clear can reallocate arrays, requiring writeback to sigil field
                 // Use empty string to indicate "no field access" since ?String.is_some() has issues
                 ≔ vary field_base_code = "".to_string();
                 ≔ vary field_name_for_writeback = "".to_string();
-                // CG-099: Track variable name for writeback on mutating methods (e.g., result.push(c))
+                // CG-099: Track variable name ∀ writeback on mutating methods (e.g., result.push(c))
                 ≔ vary var_name_for_writeback = "".to_string();
-                // CG-100: Track receiver type name for disambiguating push (String vs Vec)
+                // CG-100: Track receiver type name ∀ disambiguating push (String vs Vec)
                 ≔ vary receiver_type_name = "".to_string();
                 ≔ recv_code = ⌥ *receiver {
                     IrOperation·Field { expr: base_box, field: fname, .. } => {
@@ -1059,10 +1059,10 @@ invoke tome·codegen·CodeGen;
                         temp
                     },
                     IrOperation·Var { name: vname, ty: vty, .. } => {
-                        // CG-099: Track variable name for writeback
+                        // CG-099: Track variable name ∀ writeback
                         var_name_for_writeback = vname.clone();
-                        // CG-100: Track type name for method disambiguation
-                        // CG-161: Handle MutRef/Ref wrappers for vary this methods
+                        // CG-100: Track type name ∀ method disambiguation
+                        // CG-161: Handle MutRef/Ref wrappers ∀ vary this methods
                         ⌥ vty {
                             IrType·Named { name: tname, .. } => {
                                 receiver_type_name = tname.clone();
@@ -1087,7 +1087,7 @@ invoke tome·codegen·CodeGen;
                         }
                         // CG-099 FIX: Directly emit the variable reference instead of calling
                         // emit_operation(*receiver) which would try to invoke the consumed receiver.
-                        // This mirrors the IrOperation·Var handling in emit_operation.
+                        // This mirrors the IrOperation·Var handling ∈ emit_operation.
                         ⎇ vname == "this" ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
                             "(*this)".to_string()
                         } ⎉ ⎇ vname == "_" {
@@ -1099,7 +1099,7 @@ invoke tome·codegen·CodeGen;
                     // CG-100: Handle EvidenceCoerce wrapping a Var or Field
                     IrOperation·EvidenceCoerce { expr: inner_box, .. } => {
                         ⌥ *inner_box {
-                            // CG-121: Handle EvidenceCoerce wrapping Field (for sigil field writeback)
+                            // CG-121: Handle EvidenceCoerce wrapping Field (∀ sigil field writeback)
                             IrOperation·Field { expr: base_box, field: fname, .. } => {
                                 ≔ base_code = this.emit_operation(*base_box);
                                 field_base_code = base_code.clone();
@@ -1142,7 +1142,7 @@ invoke tome·codegen·CodeGen;
                                     this.mangle_name(vname)
                                 }
                             },
-                            // CG-015: Handle EvidenceCoerce wrapping Call (for method chaining)
+                            // CG-015: Handle EvidenceCoerce wrapping Call (∀ method chaining)
                             IrOperation·Call { ty: call_ty, .. } => {
                                 ⌥ call_ty {
                                     IrType·Named { name: tname, .. } => {
@@ -1159,7 +1159,7 @@ invoke tome·codegen·CodeGen;
                                 }
                                 this.emit_operation(*receiver)
                             },
-                            // CG-015: Handle EvidenceCoerce wrapping MethodCall (for method chaining)
+                            // CG-015: Handle EvidenceCoerce wrapping MethodCall (∀ method chaining)
                             IrOperation·MethodCall { ty: mc_ty, .. } => {
                                 ⌥ mc_ty {
                                     IrType·Named { name: tname, .. } => {
@@ -1176,7 +1176,7 @@ invoke tome·codegen·CodeGen;
                                 }
                                 this.emit_operation(*receiver)
                             },
-                            // CG-015: Handle EvidenceCoerce wrapping Try (for method chaining after ?)
+                            // CG-015: Handle EvidenceCoerce wrapping Try (∀ method chaining after ?)
                             IrOperation·Try { ty: try_ty, .. } => {
                                 ⌥ try_ty {
                                     IrType·Named { name: tname, .. } => {
@@ -1196,7 +1196,7 @@ invoke tome·codegen·CodeGen;
                             _ => this.emit_operation(*receiver),
                         }
                     },
-                    // CG-015: Handle Call as receiver - extract type from ⤺ type for vary this lookup
+                    // CG-015: Handle Call as receiver - extract type from ⤺ type ∀ vary this lookup
                     IrOperation·Call { ty: call_ty, .. } => {
                         ⌥ call_ty {
                             IrType·Named { name: tname, .. } => {
@@ -1230,7 +1230,7 @@ invoke tome·codegen·CodeGen;
                         }
                         this.emit_operation(*receiver)
                     },
-                    // CG-015: Handle Try as receiver - unwrapped type for method chaining after ?
+                    // CG-015: Handle Try as receiver - unwrapped type ∀ method chaining after ?
                     IrOperation·Try { ty: try_ty, .. } => {
                         ⌥ try_ty {
                             IrType·Named { name: tname, .. } => {
@@ -1283,7 +1283,7 @@ invoke tome·codegen·CodeGen;
                             format!("sigil_display({})", recv_code)
                         }
                     },
-                    // CG-076: Special case for join to ensure separator is included
+                    // CG-076: Special case ∀ join to ensure separator is included
                     "join" => {
                         ≔ sep = ⎇ arg_codes.is_empty() {
                             "sigil_string(\", \")".to_string()
@@ -1294,7 +1294,7 @@ invoke tome·codegen·CodeGen;
                     },
                     // CG-139: Handle iterator methods
                     "iter" ⎇ arg_codes.is_empty() => {
-                        // iter() returns the receiver wrapped for iteration
+                        // iter() returns the receiver wrapped ∀ iteration
                         format!("sigil_iter({})", recv_code)
                     },
                     "zip" ⎇ arg_codes.len() == 1 => {
@@ -1331,13 +1331,13 @@ invoke tome·codegen·CodeGen;
                             // For entry(), we emit temp vars and ⤺ marker
                             ≔ key_code = arg_codes[0].clone();
                             ≔ entry_var = this.fresh_temp();
-                            // Store map and key for later invoke by or_default/or_insert
+                            // Store map and key ∀ later invoke by or_default/or_insert
                             this.line(format!("SigilValue {}_map = {};", entry_var, recv_code));
                             this.line(format!("SigilValue {}_key = {};", entry_var, key_code));
                             // Return marker that or_default can detect
                             format!("sigil_entry_marker(\"{}\")", entry_var)
                         } ⎉ {
-                            // Fallback for unexpected arg count
+                            // Fallback ∀ unexpected arg count
                             format!("sigil_Map____entry({})", recv_code)
                         }
                     },
@@ -1423,11 +1423,11 @@ invoke tome·codegen·CodeGen;
                         }
                     },
                     _ => {
-                        // CG-020: Use if-else chains for method lookup (| patterns don't work in native)
+                        // CG-020: Use if-⎉ chains ∀ method lookup (| patterns don't work ∈ native)
                         ≔ m = method.as_str();
 
                         // CG-METHOD-FIX: If receiver_type_name is still empty, extract from receiver's type
-                        // This handles user-defined types not in the hardcoded method table
+                        // This handles user-defined types not ∈ the hardcoded method table
                         ⎇ receiver_type_name.len() == 0 ∨ receiver_type_name == "" {
                             ⌥ op.receiver.ty {
                                 IrType·Named { name: tname, .. } => {
@@ -1462,162 +1462,162 @@ invoke tome·codegen·CodeGen;
                         // CG-020: Method lookup table - comments must be on separate lines before the let
                         ≔ type_prefix =
                             ⎇ m == "merge" { "Span" }
-                            else ⎇ m == "overlaps" { "Span" }
-                            else ⎇ m == "empty_at" { "Span" }
-                            else ⎇ m == "map" { "Spanned" }
-                            else ⎇ m == "inner" { "Spanned" }
-                            else ⎇ m == "into_inner" { "Spanned" }
-                            else ⎇ m == "is_keyword" { "Token" }
-                            else ⎇ m == "is_morpheme" { "Token" }
-                            else ⎇ m == "is_evidentiality" { "Token" }
-                            else ⎇ m == "is_affectivity" { "Token" }
-                            else ⎇ m == "is_literal" { "Token" }
-                            else ⎇ m == "is_comparison" { "Token" }
-                            else ⎇ m == "is_assign_op" { "Token" }
-                            else ⎇ m == "is_protocol" { "Token" }
-                            else ⎇ m == "is_intensity" { "Token" }
-                            else ⎇ m == "is_aspect" { "Token" }
-                            else ⎇ m == "is_mood" { "Token" }
-                            else ⎇ m == "is_polarity" { "Token" }
-                            else ⎇ m == "is_some" { "Option" }
-                            else ⎇ m == "is_none" { "Option" }
-                            else ⎇ m == "unwrap" { "Option" }
-                            else ⎇ m == "unwrap_or" { "Option" }
-                            else ⎇ m == "expect" { "Option" }
-                            else ⎇ m == "next_token" { "Lexer" }
-                            else ⎇ m == "peek" { "Lexer" }
-                            else ⎇ m == "peek_is_closure_indicator" { "Lexer" }
-                            else ⎇ m == "peek_is_macro_delimiter" { "Lexer" }
-                            else ⎇ m == "current" { "Lexer" }
-                            else ⎇ m == "is_eof" { "Lexer" }
-                            else ⎇ m == "lex_ident_or_keyword" { "Lexer" }
-                            else ⎇ m == "skip_whitespace" { "Lexer" }
-                            else ⎇ m == "skip_whitespace_and_comments" { "Lexer" }
-                            else ⎇ m == "skip_line_comment" { "Lexer" }
-                            else ⎇ m.starts_with("lex_") { "Lexer" }
-                            else ⎇ m == "match_char" { "Lexer" }
-                            else ⎇ m == "rank" { "EvidenceLevel" }
-                            else ⎇ m == "satisfies" { "EvidenceLevel" }
-                            // CG-075: join is for Vec, not EvidenceLevel
-                            else ⎇ m == "meet" { "EvidenceLevel" }
-                            else ⎇ m.starts_with("parse_") { "Parser" }
-                            else ⎇ m == "consume_if" { "Parser" }
-                            else ⎇ m == "peek_token" { "Parser" }
-                            else ⎇ m == "expect_gt" { "Parser" }
-                            else ⎇ m == "is_closure_start" { "Parser" }
-                            else ⎇ m == "skip_extern_block" { "Parser" }
-                            else ⎇ m == "get" { "Map" }
-                            else ⎇ m == "insert" { "Map" }
-                            else ⎇ m == "contains_key" { "Map" }
-                            else ⎇ m == "remove" { "Map" }
-                            else ⎇ m == "entries" { "Map" }
-                            else ⎇ m == "keys" { "Map" }
-                            else ⎇ m == "values" { "Map" }
+                            ⎉ ⎇ m == "overlaps" { "Span" }
+                            ⎉ ⎇ m == "empty_at" { "Span" }
+                            ⎉ ⎇ m == "map" { "Spanned" }
+                            ⎉ ⎇ m == "inner" { "Spanned" }
+                            ⎉ ⎇ m == "into_inner" { "Spanned" }
+                            ⎉ ⎇ m == "is_keyword" { "Token" }
+                            ⎉ ⎇ m == "is_morpheme" { "Token" }
+                            ⎉ ⎇ m == "is_evidentiality" { "Token" }
+                            ⎉ ⎇ m == "is_affectivity" { "Token" }
+                            ⎉ ⎇ m == "is_literal" { "Token" }
+                            ⎉ ⎇ m == "is_comparison" { "Token" }
+                            ⎉ ⎇ m == "is_assign_op" { "Token" }
+                            ⎉ ⎇ m == "is_protocol" { "Token" }
+                            ⎉ ⎇ m == "is_intensity" { "Token" }
+                            ⎉ ⎇ m == "is_aspect" { "Token" }
+                            ⎉ ⎇ m == "is_mood" { "Token" }
+                            ⎉ ⎇ m == "is_polarity" { "Token" }
+                            ⎉ ⎇ m == "is_some" { "Option" }
+                            ⎉ ⎇ m == "is_none" { "Option" }
+                            ⎉ ⎇ m == "unwrap" { "Option" }
+                            ⎉ ⎇ m == "unwrap_or" { "Option" }
+                            ⎉ ⎇ m == "expect" { "Option" }
+                            ⎉ ⎇ m == "next_token" { "Lexer" }
+                            ⎉ ⎇ m == "peek" { "Lexer" }
+                            ⎉ ⎇ m == "peek_is_closure_indicator" { "Lexer" }
+                            ⎉ ⎇ m == "peek_is_macro_delimiter" { "Lexer" }
+                            ⎉ ⎇ m == "current" { "Lexer" }
+                            ⎉ ⎇ m == "is_eof" { "Lexer" }
+                            ⎉ ⎇ m == "lex_ident_or_keyword" { "Lexer" }
+                            ⎉ ⎇ m == "skip_whitespace" { "Lexer" }
+                            ⎉ ⎇ m == "skip_whitespace_and_comments" { "Lexer" }
+                            ⎉ ⎇ m == "skip_line_comment" { "Lexer" }
+                            ⎉ ⎇ m.starts_with("lex_") { "Lexer" }
+                            ⎉ ⎇ m == "match_char" { "Lexer" }
+                            ⎉ ⎇ m == "rank" { "EvidenceLevel" }
+                            ⎉ ⎇ m == "satisfies" { "EvidenceLevel" }
+                            // CG-075: join is ∀ Vec, not EvidenceLevel
+                            ⎉ ⎇ m == "meet" { "EvidenceLevel" }
+                            ⎉ ⎇ m.starts_with("parse_") { "Parser" }
+                            ⎉ ⎇ m == "consume_if" { "Parser" }
+                            ⎉ ⎇ m == "peek_token" { "Parser" }
+                            ⎉ ⎇ m == "expect_gt" { "Parser" }
+                            ⎉ ⎇ m == "is_closure_start" { "Parser" }
+                            ⎉ ⎇ m == "skip_extern_block" { "Parser" }
+                            ⎉ ⎇ m == "get" { "Map" }
+                            ⎉ ⎇ m == "insert" { "Map" }
+                            ⎉ ⎇ m == "contains_key" { "Map" }
+                            ⎉ ⎇ m == "remove" { "Map" }
+                            ⎉ ⎇ m == "entries" { "Map" }
+                            ⎉ ⎇ m == "keys" { "Map" }
+                            ⎉ ⎇ m == "values" { "Map" }
                             // CG-100: Disambiguate push based on receiver type (String is lowered as "str")
-                            else ⎇ m == "push" { ⎇ receiver_type_name == "String" ∨ receiver_type_name == "str" { "String" } ⎉ { "Vec" } }
-                            // CG-150: Use receiver type for clone method (many types have it)
-                            else ⎇ m == "clone" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "pop" { "Vec" }
-                            else ⎇ m == "first" { "Vec" }
-                            else ⎇ m == "last" { "Vec" }
-                            else ⎇ m == "clear" { "Vec" }
-                            else ⎇ m == "extend" { "Vec" }
-                            else ⎇ m == "with_capacity" { "Vec" }
-                            else ⎇ m == "reserve" { "Vec" }
-                            else ⎇ m == "capacity" { "Vec" }
-                            else ⎇ m == "as_slice" { "Vec" }
-                            else ⎇ m == "join" { "Vec" }
-                            else ⎇ m == "chars" { "String" }
-                            else ⎇ m == "bytes" { "String" }
-                            else ⎇ m == "lines" { "String" }
-                            else ⎇ m == "split" { "String" }
-                            else ⎇ m == "trim" { "String" }
-                            else ⎇ m == "starts_with" { "String" }
-                            else ⎇ m == "ends_with" { "String" }
-                            else ⎇ m == "strip_prefix" { "String" }
-                            else ⎇ m == "strip_suffix" { "String" }
-                            else ⎇ m == "replace" { "String" }
-                            else ⎇ m == "to_lowercase" { "String" }
-                            else ⎇ m == "to_uppercase" { "String" }
-                            else ⎇ m == "find" { "String" }
-                            else ⎇ m == "push_str" { "String" }
-                            else ⎇ m == "as_str" { "String" }
-                            else ⎇ m == "into_raw" { "Box" }
-                            else ⎇ m == "from_raw" { "Box" }
-                            else ⎇ m == "lookup" { "TypeEnv" }
-                            else ⎇ m == "binding_name" { "Pattern" }
-                            else ⎇ m == "evidentiality" { "Pattern" }
-                            else ⎇ m == "message" { "ParseError" }
-                            else ⎇ m == "span" { "ParseError" }
-                            else ⎇ m == "to_string" { "TypeError" }
-                            else ⎇ m == "is_never" { "Type" }
-                            else ⎇ m.starts_with("emit_") { "CodeGen" }
-                            else ⎇ m == "fresh_temp" { "CodeGen" }
-                            else ⎇ m == "fresh_label" { "CodeGen" }
-                            else ⎇ m == "line" { "CodeGen" }
-                            else ⎇ m == "line_open" { "CodeGen" }
-                            else ⎇ m == "line_close" { "CodeGen" }
-                            else ⎇ m == "indent_push" { "CodeGen" }
-                            else ⎇ m == "indent_pop" { "CodeGen" }
-                            else ⎇ m == "generate" { "CodeGen" }
-                            else ⎇ m == "escape_char" { "CodeGen" }
-                            else ⎇ m == "escape_string" { "CodeGen" }
-                            else ⎇ m == "mangle_name" { "CodeGen" }
-                            else ⎇ m == "translate_format_tokens" { "CodeGen" }
-                            else ⎇ m == "with_evidence" { "CodeGen" }
-                            else ⎇ m == "evidence_to_c" { "CodeGen" }
-                            else ⎇ m == "hex_digit" { "CodeGen" }
-                            else ⎇ m == "strip_single_prefix" { "CodeGen" }
-                            else ⎇ m == "register_builtins" { "Interpreter" }
-                            else ⎇ m == "get_output" { "Interpreter" }
-                            else ⎇ m == "load_module" { "Interpreter" }
-                            else ⎇ m == "call_function" { "Interpreter" }
-                            else ⎇ m == "call_builtin" { "Interpreter" }
-                            else ⎇ m == "eval_with_env" { "Interpreter" }
-                            else ⎇ m == "eval_pipeline_step" { "Interpreter" }
-                            else ⎇ m == "eval_morpheme" { "Interpreter" }
-                            else ⎇ m == "run" { "Driver" }
-                            else ⎇ m == "compile" { "Driver" }
-                            else ⎇ m == "interpret" { "Driver" }
-                            else ⎇ m == "dump_ir" { "Driver" }
-                            else ⎇ m == "dump_ast" { "Driver" }
-                            else ⎇ m == "dump_tokens" { "Driver" }
-                            else ⎇ m == "read_file" { "Driver" }
-                            else ⎇ m == "write_file" { "Driver" }
-                            else ⎇ m == "lower" { "Driver" }
-                            else ⎇ m == "print_errors" { "Driver" }
-                            else ⎇ m.starts_with("check_") { "TypeChecker" }
-                            else ⎇ m.starts_with("infer_") { "TypeChecker" }
-                            else ⎇ m.starts_with("collect_") { "TypeChecker" }
-                            else ⎇ m == "qualify_name" { "LoweringContext" }
-                            else ⎇ m == "fresh_id" { "LoweringContext" }
-                            else ⎇ m == "get_var_id" { "LoweringContext" }
-                            else ⎇ m == "current_namespace" { "LoweringContext" }
-                            else ⎇ m == "error" { "LoweringContext" }
-                            else ⎇ m == "unify" { "TypeChecker" }
-                            else ⎇ m == "fresh_var" { "TypeChecker" }
-                            else ⎇ m == "freshen" { "TypeChecker" }
-                            else ⎇ m == "freshen_inner" { "TypeChecker" }
-                            else ⎇ m == "push_scope" { "TypeChecker" }
-                            else ⎇ m == "pop_scope" { "TypeChecker" }
-                            else ⎇ m == "set" { "Environment" }
-                            else ⎇ m == "fresh_id" { "LoweringContext" }
-                            else ⎇ m == "get_var_id" { "LoweringContext" }
-                            else ⎇ m == "alloc" { "Arena" }
-                            else ⎇ m == "reset" { "Arena" }
-                            else ⎇ m == "get_mut" { "Rc" }
-                            else ⎇ m == "drop" { "Rc" }
-                            else ⎇ m == "intern" { "StringInterner" }
-                            // CG-160: Use receiver type for ambiguous methods
-                            else ⎇ m == "advance" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "check" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "define" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "error" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "parse" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "is_empty" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "contains" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "bind_pattern" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
-                            else ⎇ m == "check_evidence" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "push" { ⎇ receiver_type_name == "String" ∨ receiver_type_name == "str" { "String" } ⎉ { "Vec" } }
+                            // CG-150: Use receiver type ∀ clone method (many types have it)
+                            ⎉ ⎇ m == "clone" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "pop" { "Vec" }
+                            ⎉ ⎇ m == "first" { "Vec" }
+                            ⎉ ⎇ m == "last" { "Vec" }
+                            ⎉ ⎇ m == "clear" { "Vec" }
+                            ⎉ ⎇ m == "extend" { "Vec" }
+                            ⎉ ⎇ m == "with_capacity" { "Vec" }
+                            ⎉ ⎇ m == "reserve" { "Vec" }
+                            ⎉ ⎇ m == "capacity" { "Vec" }
+                            ⎉ ⎇ m == "as_slice" { "Vec" }
+                            ⎉ ⎇ m == "join" { "Vec" }
+                            ⎉ ⎇ m == "chars" { "String" }
+                            ⎉ ⎇ m == "bytes" { "String" }
+                            ⎉ ⎇ m == "lines" { "String" }
+                            ⎉ ⎇ m == "split" { "String" }
+                            ⎉ ⎇ m == "trim" { "String" }
+                            ⎉ ⎇ m == "starts_with" { "String" }
+                            ⎉ ⎇ m == "ends_with" { "String" }
+                            ⎉ ⎇ m == "strip_prefix" { "String" }
+                            ⎉ ⎇ m == "strip_suffix" { "String" }
+                            ⎉ ⎇ m == "replace" { "String" }
+                            ⎉ ⎇ m == "to_lowercase" { "String" }
+                            ⎉ ⎇ m == "to_uppercase" { "String" }
+                            ⎉ ⎇ m == "find" { "String" }
+                            ⎉ ⎇ m == "push_str" { "String" }
+                            ⎉ ⎇ m == "as_str" { "String" }
+                            ⎉ ⎇ m == "into_raw" { "Box" }
+                            ⎉ ⎇ m == "from_raw" { "Box" }
+                            ⎉ ⎇ m == "lookup" { "TypeEnv" }
+                            ⎉ ⎇ m == "binding_name" { "Pattern" }
+                            ⎉ ⎇ m == "evidentiality" { "Pattern" }
+                            ⎉ ⎇ m == "message" { "ParseError" }
+                            ⎉ ⎇ m == "span" { "ParseError" }
+                            ⎉ ⎇ m == "to_string" { "TypeError" }
+                            ⎉ ⎇ m == "is_never" { "Type" }
+                            ⎉ ⎇ m.starts_with("emit_") { "CodeGen" }
+                            ⎉ ⎇ m == "fresh_temp" { "CodeGen" }
+                            ⎉ ⎇ m == "fresh_label" { "CodeGen" }
+                            ⎉ ⎇ m == "line" { "CodeGen" }
+                            ⎉ ⎇ m == "line_open" { "CodeGen" }
+                            ⎉ ⎇ m == "line_close" { "CodeGen" }
+                            ⎉ ⎇ m == "indent_push" { "CodeGen" }
+                            ⎉ ⎇ m == "indent_pop" { "CodeGen" }
+                            ⎉ ⎇ m == "generate" { "CodeGen" }
+                            ⎉ ⎇ m == "escape_char" { "CodeGen" }
+                            ⎉ ⎇ m == "escape_string" { "CodeGen" }
+                            ⎉ ⎇ m == "mangle_name" { "CodeGen" }
+                            ⎉ ⎇ m == "translate_format_tokens" { "CodeGen" }
+                            ⎉ ⎇ m == "with_evidence" { "CodeGen" }
+                            ⎉ ⎇ m == "evidence_to_c" { "CodeGen" }
+                            ⎉ ⎇ m == "hex_digit" { "CodeGen" }
+                            ⎉ ⎇ m == "strip_single_prefix" { "CodeGen" }
+                            ⎉ ⎇ m == "register_builtins" { "Interpreter" }
+                            ⎉ ⎇ m == "get_output" { "Interpreter" }
+                            ⎉ ⎇ m == "load_module" { "Interpreter" }
+                            ⎉ ⎇ m == "call_function" { "Interpreter" }
+                            ⎉ ⎇ m == "call_builtin" { "Interpreter" }
+                            ⎉ ⎇ m == "eval_with_env" { "Interpreter" }
+                            ⎉ ⎇ m == "eval_pipeline_step" { "Interpreter" }
+                            ⎉ ⎇ m == "eval_morpheme" { "Interpreter" }
+                            ⎉ ⎇ m == "run" { "Driver" }
+                            ⎉ ⎇ m == "compile" { "Driver" }
+                            ⎉ ⎇ m == "interpret" { "Driver" }
+                            ⎉ ⎇ m == "dump_ir" { "Driver" }
+                            ⎉ ⎇ m == "dump_ast" { "Driver" }
+                            ⎉ ⎇ m == "dump_tokens" { "Driver" }
+                            ⎉ ⎇ m == "read_file" { "Driver" }
+                            ⎉ ⎇ m == "write_file" { "Driver" }
+                            ⎉ ⎇ m == "lower" { "Driver" }
+                            ⎉ ⎇ m == "print_errors" { "Driver" }
+                            ⎉ ⎇ m.starts_with("check_") { "TypeChecker" }
+                            ⎉ ⎇ m.starts_with("infer_") { "TypeChecker" }
+                            ⎉ ⎇ m.starts_with("collect_") { "TypeChecker" }
+                            ⎉ ⎇ m == "qualify_name" { "LoweringContext" }
+                            ⎉ ⎇ m == "fresh_id" { "LoweringContext" }
+                            ⎉ ⎇ m == "get_var_id" { "LoweringContext" }
+                            ⎉ ⎇ m == "current_namespace" { "LoweringContext" }
+                            ⎉ ⎇ m == "error" { "LoweringContext" }
+                            ⎉ ⎇ m == "unify" { "TypeChecker" }
+                            ⎉ ⎇ m == "fresh_var" { "TypeChecker" }
+                            ⎉ ⎇ m == "freshen" { "TypeChecker" }
+                            ⎉ ⎇ m == "freshen_inner" { "TypeChecker" }
+                            ⎉ ⎇ m == "push_scope" { "TypeChecker" }
+                            ⎉ ⎇ m == "pop_scope" { "TypeChecker" }
+                            ⎉ ⎇ m == "set" { "Environment" }
+                            ⎉ ⎇ m == "fresh_id" { "LoweringContext" }
+                            ⎉ ⎇ m == "get_var_id" { "LoweringContext" }
+                            ⎉ ⎇ m == "alloc" { "Arena" }
+                            ⎉ ⎇ m == "reset" { "Arena" }
+                            ⎉ ⎇ m == "get_mut" { "Rc" }
+                            ⎉ ⎇ m == "drop" { "Rc" }
+                            ⎉ ⎇ m == "intern" { "StringInterner" }
+                            // CG-160: Use receiver type ∀ ambiguous methods
+                            ⎉ ⎇ m == "advance" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "check" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "define" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "error" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "parse" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "is_empty" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "contains" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "bind_pattern" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
+                            ⎉ ⎇ m == "check_evidence" { ⎇ receiver_type_name.len() > 0 { receiver_type_name.as_str() } ⎉ { "AMBIGUOUS" } }
                             ⎉ { "" };
 
                         // CG-015: Check ⎇ target method expects vary this
@@ -1627,18 +1627,18 @@ invoke tome·codegen·CodeGen;
                         } ⎉ {
                             nay
                         };
-                        // CG-015: Adjust receiver for vary this methods
+                        // CG-015: Adjust receiver ∀ vary this methods
                         // If target method expects vary this (SigilValue*), we need to pass a pointer
                         // CG-029: In closures, captured this is always a value, never a pointer
                         ≔ final_recv_code = ⎇ target_expects_mut_self {
                             // When target expects vary this, we need to pass a pointer
-                            // If receiver is this AND we're in a vary this method AND NOT in a closure,
+                            // If receiver is this AND we're ∈ a vary this method AND NOT ∈ a closure,
                             // this is already a pointer (SigilValue* this)
                             // Otherwise, take address of the value
                             ⎇ receiver_is_self ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
                                 "this".to_string()
                             } ⎉ {
-                                // CG-133: Can't take address of function call result - store in temp first
+                                // CG-133: Can't take address of function call result - store ∈ temp first
                                 ⎇ recv_code.contains("(") {
                                     ≔ recv_temp = this.fresh_temp();
                                     this.line(format!("SigilValue {} = {};", recv_temp, recv_code));
@@ -1649,7 +1649,7 @@ invoke tome·codegen·CodeGen;
                             }
                         } ⎉ {
                             // CG-090: Target expects value this
-                            // If receiver is this AND we're in a vary this method, this is a pointer
+                            // If receiver is this AND we're ∈ a vary this method, this is a pointer
                             // We need to dereference it to get the value
                             ⎇ receiver_is_self ∧ this.current_fn_has_mut_self ∧ !this.in_closure_body {
                                 "(*this)".to_string()
@@ -1666,7 +1666,7 @@ invoke tome·codegen·CodeGen;
 
                         // CG-METHOD-FIX-V2: Prefer actual receiver type over hardcoded lookup
                         // The type checker knows the receiver's type - that should always take precedence
-                        // Hardcoded lookups (lines 3851-4004) serve as fallback for ambiguous cases
+                        // Hardcoded lookups (lines 3851-4004) serve as fallback ∀ ambiguous cases
                         ≔ effective_type_prefix = ⎇ receiver_type_name.len() > 0 ∧ receiver_type_name != "" ∧ receiver_type_name != "AMBIGUOUS" {
                             receiver_type_name.as_str()
                         } ⎉ ⎇ type_prefix != "" ∧ type_prefix != "AMBIGUOUS" {
@@ -1685,7 +1685,7 @@ invoke tome·codegen·CodeGen;
 
                 // CG-021: Write back result to sigil field ⎇ receiver was a field and method is mutating
                 // Vec methods that can reallocate: push, pop, clear, extend, insert, remove, reserve
-                // CG-022: String·push_str also returns new value (not in-place mutation in C)
+                // CG-022: String·push_str also returns new value (not in-place mutation ∈ C)
                 ≔ is_mutating_method = method == "push" ∨ method == "pop" ∨ method == "clear" ∨
                     method == "extend" ∨ method == "insert" ∨ method == "remove" ∨ method == "reserve" ∨
                     method == "push_str";
@@ -1696,11 +1696,11 @@ invoke tome·codegen·CodeGen;
                 ≔ has_var_info = var_name_for_writeback.len() > 0 ∧ var_name_for_writeback != "this";
 
                 ⎇ is_mutating_method ∧ has_field_info {
-                    // Store result in temp and write back to sigil field
+                    // Store result ∈ temp and write back to sigil field
                     ≔ result_temp = this.fresh_temp();
                     this.line(format!("SigilValue {} = {};", result_temp, call));
-                    // CG-133: Can't take address of function call result - store in temp first
-                    // CG-XXX: Special case for (*ptr) - extract ptr and pass directly to avoid copy
+                    // CG-133: Can't take address of function call result - store ∈ temp first
+                    // CG-XXX: Special case ∀ (*ptr) - extract ptr and pass directly to avoid copy
                     ≔ base_var = ⎇ field_base_code.starts_with("(*") ∧ field_base_code.ends_with(")") {
                         // Extract pointer name from (*ptr) pattern
                         ⎇ field_base_code == "(*this)" {
@@ -1729,7 +1729,7 @@ invoke tome·codegen·CodeGen;
                     } ⎉ {
                         field_base_code
                     };
-                    // FIX: Use & only for non-pointer bases
+                    // FIX: Use & only ∀ non-pointer bases
                     // Check ⎇ base is a mutable reference parameter - needs .v.ptr extraction
                     ≔ vary is_mut_ref_param = nay;
                     ≔ vary i = 0;
@@ -1752,7 +1752,7 @@ invoke tome·codegen·CodeGen;
                     this.with_evidence(result_temp, evidence)
                 } ⎉ ⎇ is_mutating_method ∧ has_var_info {
                     // CG-099: Write back to local variable (e.g., result = result.push(c))
-                    // This is needed because String/Vec methods ⤺ modified values
+                    // This is needed becainvoke String/Vec methods ⤺ modified values
                     ≔ mangled_var = this.mangle_name(var_name_for_writeback);
                     this.line(format!("{} = {};", mangled_var, call));
                     this.with_evidence(mangled_var, evidence)
@@ -1765,7 +1765,7 @@ invoke tome·codegen·CodeGen;
                 ≔ scrutinee = op.scrutinee;
                 ≔ arms = op.arms;
                 ≔ evidence = op.evidence;
-                // Generate ⌥ as if-else chain
+                // Generate ⌥ as if-⎉ chain
                 ≔ scrutinee_code = this.emit_operation(*scrutinee);
                 ≔ scrutinee_var = this.fresh_temp();
                 ≔ result_var = this.fresh_temp();
@@ -1778,7 +1778,7 @@ invoke tome·codegen·CodeGen;
                 ≔ has_evidential = this.has_evidential_pattern(arms.clone());
 
                 ⎇ !has_evidential {
-                    // Only unwrap for non-evidential matches (ᛈ variant destructuring)
+                    // Only unwrap ∀ non-evidential matches (ᛈ variant destructuring)
                     this.line(format!("⎇ ({}.tag == TAG_REF ∧ {}.v.ptr) {} = *((SigilValue*){}.v.ptr);", scrutinee_var, scrutinee_var, scrutinee_var, scrutinee_var));
                 }
                 this.line(format!("SigilValue {};", result_var));

@@ -3,69 +3,69 @@
 //! The Nave is the central hall of a basilica where the congregation gathers.
 //! In Basilica framework, it orchestrates routes, middleware, services, and memory.
 
-use shared::{Timestamp, Duration};
-use crate::route::{Route, RouteRegistry};
-use crate::middleware::{Middleware, MiddlewareChain};
-use crate::service::{Service, ServiceRegistry, ServiceConfig};
-use crate::context::Context;
-use crate::request::Request;
-use crate::response::Response;
-use crate::error::{BasilicaError, BasilicaResult};
+invoke shared·{Timestamp, Duration};
+invoke crate·route·{Route, RouteRegistry};
+invoke crate·middleware·{Middleware, MiddlewareChain};
+invoke crate·service·{Service, ServiceRegistry, ServiceConfig};
+invoke crate·context·Context;
+invoke crate·request·Request;
+invoke crate·response·Response;
+invoke crate·error·{BasilicaError, BasilicaResult};
 
 // Re-exports
-pub use engram::{Engram, EngramConfig};
-pub use covenant::{Covenant, Pact, Mode};
-pub use oracle::{Oracle, OracleConfig};
+☉ invoke engram·{Engram, EngramConfig};
+☉ invoke covenant·{Covenant, Pact, Mode};
+☉ invoke oracle·{Oracle, OracleConfig};
 
 // ============================================================================
 // Nave Configuration
 // ============================================================================
 
-/// Configuration for the Nave application container
+/// Configuration ∀ the Nave application container
 #[derive(Clone, Debug)]
-pub struct NaveConfig {
+☉ Σ NaveConfig {
     /// Application name
-    pub name: String,
+    ☉ name: String,
 
     /// Bind address
-    pub bind_addr: String,
+    ☉ bind_addr: String,
 
     /// Number of worker threads
-    pub workers: usize,
+    ☉ workers: usize,
 
     /// Request timeout
-    pub request_timeout: Duration,
+    ☉ request_timeout: Duration,
 
-    /// Heartbeat interval for services
-    pub heartbeat_interval: Duration,
+    /// Heartbeat interval ∀ services
+    ☉ heartbeat_interval: Duration,
 
     /// Memory configuration (shared across services)
-    pub memory: Option<EngramConfig>,
+    ☉ memory: Option<EngramConfig>,
 
     /// Default covenant mode
-    pub covenant_mode: Mode,
+    ☉ covenant_mode: Mode,
 
     /// Oracle configuration
-    pub oracle: Option<OracleConfig>,
+    ☉ oracle: Option<OracleConfig>,
 
-    /// Enable evidence headers in responses
-    pub evidence_headers: bool,
+    /// Enable evidence headers ∈ responses
+    ☉ evidence_headers: bool,
 
     /// Enable request tracing
-    pub tracing: bool,
+    ☉ tracing: bool,
 }
 
-impl Default for NaveConfig {
-    fn default() -> Self {
+⊢ Default ∀ NaveConfig {
+    λ default() -> Self {
         Self {
             name: "basilica".to_string(),
             bind_addr: "0.0.0.0:8080".to_string(),
             workers: 4,
-            request_timeout: Duration::from_secs(30),
-            heartbeat_interval: Duration::from_secs(60),
-            memory: Some(EngramConfig::default()),
-            covenant_mode: Mode::Collaborative,
-            oracle: Some(OracleConfig::default()),
+            request_timeout: Duration·from_secs(30),
+            heartbeat_interval: Duration·from_secs(60),
+            memory: Some(EngramConfig·default()),
+            covenant_mode: Mode·Collaborative,
+            oracle: Some(OracleConfig·default()),
             evidence_headers: true,
             tracing: true,
         }
@@ -79,7 +79,7 @@ impl Default for NaveConfig {
 /// The application container
 ///
 /// Orchestrates routes, middleware, services, memory, and lifecycle.
-pub struct Nave {
+☉ Σ Nave {
     /// Configuration
     config: NaveConfig,
 
@@ -92,7 +92,7 @@ pub struct Nave {
     /// Service registry
     services: ServiceRegistry,
 
-    /// Shared memory (if configured)
+    /// Shared memory (⎇ configured)
     memory: Option<Engram>,
 
     /// Shared covenant
@@ -109,7 +109,7 @@ pub struct Nave {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NaveState {
+☉ ᛈ NaveState {
     Created,
     Configuring,
     Starting,
@@ -118,23 +118,23 @@ pub enum NaveState {
     Stopped,
 }
 
-impl Nave {
+⊢ Nave {
     /// Create a new Nave with default configuration
-    pub fn new() -> Self {
-        Self::with_config(NaveConfig::default())
+    ☉ λ new() -> Self {
+        Self·with_config(NaveConfig·default())
     }
 
     /// Create with custom configuration
-    pub fn with_config(config: NaveConfig) -> Self {
+    ☉ λ with_config(config: NaveConfig) -> Self {
         Self {
             config,
-            routes: RouteRegistry::new(),
-            middleware: MiddlewareChain::new(),
-            services: ServiceRegistry::new(),
+            routes: RouteRegistry·new(),
+            middleware: MiddlewareChain·new(),
+            services: ServiceRegistry·new(),
             memory: None,
             covenant: None,
             oracle: None,
-            state: NaveState::Created,
+            state: NaveState·Created,
             started_at: None,
         }
     }
@@ -144,26 +144,26 @@ impl Nave {
     // ========================================================================
 
     /// Set application name
-    pub fn name(mut self, name: &str) -> Self {
+    ☉ λ name(Δ self, name: &str) -> Self {
         self.config.name = name.to_string();
         self
     }
 
     /// Configure memory
-    pub fn with_memory(mut self, config: EngramConfig) -> Self {
+    ☉ λ with_memory(Δ self, config: EngramConfig) -> Self {
         self.config.memory = Some(config);
         self
     }
 
     /// Disable memory
-    pub fn without_memory(mut self) -> Self {
+    ☉ λ without_memory(Δ self) -> Self {
         self.config.memory = None;
         self
     }
 
     /// Configure covenant
-    pub fn with_covenant(mut self, pact: Pact) -> Self {
-        self.covenant = Covenant::new()
+    ☉ λ with_covenant(Δ self, pact: Pact) -> Self {
+        self.covenant = Covenant·new()
             .with_pact(pact)
             .with_mode(self.config.covenant_mode)
             .establish()
@@ -172,31 +172,31 @@ impl Nave {
     }
 
     /// Set covenant mode
-    pub fn with_mode(mut self, mode: Mode) -> Self {
+    ☉ λ with_mode(Δ self, mode: Mode) -> Self {
         self.config.covenant_mode = mode;
         self
     }
 
     /// Configure oracle
-    pub fn with_oracle(mut self, config: OracleConfig) -> Self {
+    ☉ λ with_oracle(Δ self, config: OracleConfig) -> Self {
         self.config.oracle = Some(config);
         self
     }
 
     /// Disable oracle
-    pub fn without_oracle(mut self) -> Self {
+    ☉ λ without_oracle(Δ self) -> Self {
         self.config.oracle = None;
         self
     }
 
     /// Enable evidence headers
-    pub fn with_evidence_headers(mut self) -> Self {
+    ☉ λ with_evidence_headers(Δ self) -> Self {
         self.config.evidence_headers = true;
         self
     }
 
     /// Disable evidence headers
-    pub fn without_evidence_headers(mut self) -> Self {
+    ☉ λ without_evidence_headers(Δ self) -> Self {
         self.config.evidence_headers = false;
         self
     }
@@ -206,22 +206,22 @@ impl Nave {
     // ========================================================================
 
     /// Register a single route
-    pub fn route(mut self, route: Route) -> Self {
+    ☉ λ route(Δ self, route: Route) -> Self {
         self.routes.register(route);
         self
     }
 
     /// Register multiple routes
-    pub fn routes(mut self, routes: Vec<Route>) -> Self {
-        for route in routes {
+    ☉ λ routes(Δ self, routes: Vec<Route>) -> Self {
+        ∀ route ∈ routes {
             self.routes.register(route);
         }
         self
     }
 
     /// Mount routes under a prefix
-    pub fn mount(mut self, prefix: &str, routes: Vec<Route>) -> Self {
-        for mut route in routes {
+    ☉ λ mount(Δ self, prefix: &str, routes: Vec<Route>) -> Self {
+        ∀ Δ route ∈ routes {
             route.prefix(prefix);
             self.routes.register(route);
         }
@@ -233,14 +233,14 @@ impl Nave {
     // ========================================================================
 
     /// Add middleware
-    pub fn middleware<M: Middleware + 'static>(mut self, middleware: M) -> Self {
-        self.middleware.add(Box::new(middleware));
+    ☉ λ middleware<M: Middleware + 'static>(Δ self, middleware: M) -> Self {
+        self.middleware.add(Box·new(middleware));
         self
     }
 
     /// Add middleware at the beginning
-    pub fn middleware_first<M: Middleware + 'static>(mut self, middleware: M) -> Self {
-        self.middleware.add_first(Box::new(middleware));
+    ☉ λ middleware_first<M: Middleware + 'static>(Δ self, middleware: M) -> Self {
+        self.middleware.add_first(Box·new(middleware));
         self
     }
 
@@ -249,14 +249,14 @@ impl Nave {
     // ========================================================================
 
     /// Register a daemon service
-    pub fn daemon<S: Service + 'static>(mut self, service: S) -> Self {
-        let name = std::any::type_name::<S>().to_string();
+    ☉ λ daemon<S: Service + 'static>(Δ self, service: S) -> Self {
+        ≔ name = std·any·type_name·<S>().to_string();
         self.services.register(&name, service);
         self
     }
 
     /// Register a named service
-    pub fn daemon_named<S: Service + 'static>(mut self, name: &str, service: S) -> Self {
+    ☉ λ daemon_named<S: Service + 'static>(Δ self, name: &str, service: S) -> Self {
         self.services.register(name, service);
         self
     }
@@ -266,48 +266,48 @@ impl Nave {
     // ========================================================================
 
     /// Set bind address
-    pub fn listen(mut self, addr: &str) -> Self {
+    ☉ λ listen(Δ self, addr: &str) -> Self {
         self.config.bind_addr = addr.to_string();
         self
     }
 
     /// Initialize and run the application
-    pub fn run(mut self) -> BasilicaResult<()> {
-        self.state = NaveState::Starting;
+    ☉ λ run(Δ self) -> BasilicaResult<()> {
+        self.state = NaveState·Starting;
 
-        // Initialize shared memory if configured
-        if let Some(ref config) = self.config.memory {
-            self.memory = Some(Engram::new(config.clone()));
+        // Initialize shared memory ⎇ configured
+        ⎇ ≔ Some(ref config) = self.config.memory {
+            self.memory = Some(Engram·new(config.clone()));
         }
 
-        // Initialize oracle if configured
-        if let Some(ref config) = self.config.oracle {
-            self.oracle = Some(Oracle::new());
+        // Initialize oracle ⎇ configured
+        ⎇ ≔ Some(ref config) = self.config.oracle {
+            self.oracle = Some(Oracle·new());
         }
 
-        // Initialize covenant if not already set
-        if self.covenant.is_none() {
-            self.covenant = Covenant::new()
+        // Initialize covenant ⎇ not already set
+        ⎇ self.covenant.is_none() {
+            self.covenant = Covenant·new()
                 .with_mode(self.config.covenant_mode)
                 .establish()
                 .ok();
         }
 
         // Signal ready
-        self.state = NaveState::Running;
-        self.started_at = Some(Timestamp::now());
+        self.state = NaveState·Running;
+        self.started_at = Some(Timestamp·now());
 
         println!("Nave '{}' listening on {}", self.config.name, self.config.bind_addr);
 
         // In real implementation, would start HTTP server here
-        // For now, just return success
+        // For now, just ⤺ success
         Ok(())
     }
 
     /// Handle a request (called by HTTP server)
-    pub fn handle(&self, request: Request) -> Response<Vec<u8>> {
+    ☉ λ handle(&self, request: Request) -> Response<Vec<u8>> {
         // Create context
-        let ctx = Context::new(
+        ≔ ctx = Context·new(
             request.request_id,
             self.memory.as_ref(),
             self.covenant.as_ref(),
@@ -321,19 +321,19 @@ impl Nave {
         // Return response
 
         // Placeholder
-        Response::ok(b"OK".to_vec())
+        Response·ok(b"OK".to_vec())
     }
 
     /// Graceful shutdown
-    pub fn shutdown(&mut self) {
-        self.state = NaveState::ShuttingDown;
+    ☉ λ shutdown(&Δ self) {
+        self.state = NaveState·ShuttingDown;
 
         // Stop accepting new requests
-        // Wait for in-flight requests
+        // Wait ∀ in-flight requests
         // Terminate services
         // Flush memory
 
-        self.state = NaveState::Stopped;
+        self.state = NaveState·Stopped;
     }
 
     // ========================================================================
@@ -341,32 +341,32 @@ impl Nave {
     // ========================================================================
 
     /// Get application state
-    pub fn state(&self) -> NaveState {
+    ☉ λ state(&self) -> NaveState {
         self.state
     }
 
     /// Get configuration
-    pub fn config(&self) -> &NaveConfig {
+    ☉ λ config(&self) -> &NaveConfig {
         &self.config
     }
 
     /// Get shared memory
-    pub fn memory(&self) -> Option<&Engram> {
+    ☉ λ memory(&self) -> Option<&Engram> {
         self.memory.as_ref()
     }
 
     /// Get shared covenant
-    pub fn covenant(&self) -> Option<&Covenant> {
+    ☉ λ covenant(&self) -> Option<&Covenant> {
         self.covenant.as_ref()
     }
 
     /// Get shared oracle
-    pub fn oracle(&self) -> Option<&Oracle> {
+    ☉ λ oracle(&self) -> Option<&Oracle> {
         self.oracle.as_ref()
     }
 
     /// Get uptime
-    pub fn uptime(&self) -> Option<Duration> {
+    ☉ λ uptime(&self) -> Option<Duration> {
         self.started_at.map(|t| t.elapsed())
     }
 }
@@ -376,7 +376,7 @@ impl Nave {
 // ============================================================================
 
 /// Standard middleware stack
-pub fn default_middleware() -> Vec<Box<dyn Middleware>> {
+☉ λ default_middleware() -> Vec<Box<dyn Middleware>> {
     vec![
         // Request ID generation
         // Logging

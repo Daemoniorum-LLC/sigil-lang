@@ -1,4 +1,4 @@
-// Test: ⊢ Trait for Type
+// Test: ⊢ Trait ∀ Type
 ☉ aspect Summable {
     rite sum(&this) → !i32;
 }

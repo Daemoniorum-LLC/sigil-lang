@@ -17,7 +17,7 @@ rite main() {
     ≔ original = 42;
     ≔ shards = original|scatter(5, 3);  // n=5, k=3
 
-    // Reconstruct using all 5 shards
+    // ReconΣ using all 5 shards
     ≔ reconstructed = shards|∀;
     println(reconstructed);  // Should be 42
 

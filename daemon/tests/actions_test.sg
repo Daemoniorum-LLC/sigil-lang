@@ -1,42 +1,42 @@
 //! Daemon Actions Tests - 19 tests
 
-enum InternalActionType {
+ᛈ InternalActionType {
     Think,
     Plan,
     Reflect,
     UpdateBeliefs,
 }
 
-impl InternalActionType {
-    pub fn name(&self) -> &str {
-        match self {
-            InternalActionType::Think => "think",
-            InternalActionType::Plan => "plan",
-            InternalActionType::Reflect => "reflect",
-            InternalActionType::UpdateBeliefs => "update_beliefs",
+⊢ InternalActionType {
+    ☉ λ name(&self) -> &str {
+        ⌥ self {
+            InternalActionType·Think => "think",
+            InternalActionType·Plan => "plan",
+            InternalActionType·Reflect => "reflect",
+            InternalActionType·UpdateBeliefs => "update_beliefs",
         }
     }
 }
 
-enum CommunicateActionType {
+ᛈ CommunicateActionType {
     Send,
     Broadcast,
     Query,
     Respond,
 }
 
-impl CommunicateActionType {
-    pub fn name(&self) -> &str {
-        match self {
-            CommunicateActionType::Send => "send",
-            CommunicateActionType::Broadcast => "broadcast",
-            CommunicateActionType::Query => "query",
-            CommunicateActionType::Respond => "respond",
+⊢ CommunicateActionType {
+    ☉ λ name(&self) -> &str {
+        ⌥ self {
+            CommunicateActionType·Send => "send",
+            CommunicateActionType·Broadcast => "broadcast",
+            CommunicateActionType·Query => "query",
+            CommunicateActionType·Respond => "respond",
         }
     }
 }
 
-enum GoalActionType {
+ᛈ GoalActionType {
     AddGoal,
     CompleteGoal,
     AbandonGoal,
@@ -44,19 +44,19 @@ enum GoalActionType {
     ResumeGoal,
 }
 
-impl GoalActionType {
-    pub fn name(&self) -> &str {
-        match self {
-            GoalActionType::AddGoal => "add_goal",
-            GoalActionType::CompleteGoal => "complete_goal",
-            GoalActionType::AbandonGoal => "abandon_goal",
-            GoalActionType::SuspendGoal => "suspend_goal",
-            GoalActionType::ResumeGoal => "resume_goal",
+⊢ GoalActionType {
+    ☉ λ name(&self) -> &str {
+        ⌥ self {
+            GoalActionType·AddGoal => "add_goal",
+            GoalActionType·CompleteGoal => "complete_goal",
+            GoalActionType·AbandonGoal => "abandon_goal",
+            GoalActionType·SuspendGoal => "suspend_goal",
+            GoalActionType·ResumeGoal => "resume_goal",
         }
     }
 }
 
-enum ActionType {
+ᛈ ActionType {
     Internal(InternalActionType),
     Tool,
     Communicate(CommunicateActionType),
@@ -64,24 +64,24 @@ enum ActionType {
     Wait,
 }
 
-impl ActionType {
-    pub fn is_internal(&self) -> !bool {
-        match self {
-            ActionType::Internal(_) => true,
+⊢ ActionType {
+    ☉ λ is_internal(&self) -> !bool {
+        ⌥ self {
+            ActionType·Internal(_) => true,
             _ => false,
         }
     }
 
-    pub fn is_external(&self) -> !bool {
-        match self {
-            ActionType::Tool => true,
-            ActionType::Communicate(_) => true,
+    ☉ λ is_external(&self) -> !bool {
+        ⌥ self {
+            ActionType·Tool => true,
+            ActionType·Communicate(_) => true,
             _ => false,
         }
     }
 }
 
-struct ActionResult {
+Σ ActionResult {
     action_id: !u64,
     success: !bool,
     output_len: !usize,
@@ -89,25 +89,25 @@ struct ActionResult {
     duration_ms: !u64,
 }
 
-impl ActionResult {
-    pub fn success(action_id: !u64, output_len: !usize, duration_ms: !u64) -> Self {
+⊢ ActionResult {
+    ☉ λ success(action_id: !u64, output_len: !usize, duration_ms: !u64) -> Self {
         ActionResult { action_id, success: true, output_len, has_error: false, duration_ms }
     }
 
-    pub fn failure(action_id: !u64, duration_ms: !u64) -> Self {
+    ☉ λ failure(action_id: !u64, duration_ms: !u64) -> Self {
         ActionResult { action_id, success: false, output_len: 0, has_error: true, duration_ms }
     }
 
-    pub fn is_success(&self) -> !bool {
+    ☉ λ is_success(&self) -> !bool {
         self.success
     }
 
-    pub fn is_failure(&self) -> !bool {
+    ☉ λ is_failure(&self) -> !bool {
         !self.success
     }
 }
 
-enum ToolError {
+ᛈ ToolError {
     InvalidParams,
     ExecutionFailed,
     Timeout,
@@ -115,36 +115,36 @@ enum ToolError {
     NotAvailable,
 }
 
-impl ToolError {
-    pub fn is_retryable(&self) -> !bool {
-        match self {
-            ToolError::Timeout => true,
-            ToolError::NotAvailable => true,
+⊢ ToolError {
+    ☉ λ is_retryable(&self) -> !bool {
+        ⌥ self {
+            ToolError·Timeout => true,
+            ToolError·NotAvailable => true,
             _ => false,
         }
     }
 
-    pub fn is_permanent(&self) -> !bool {
-        match self {
-            ToolError::InvalidParams => true,
-            ToolError::PermissionDenied => true,
+    ☉ λ is_permanent(&self) -> !bool {
+        ⌥ self {
+            ToolError·InvalidParams => true,
+            ToolError·PermissionDenied => true,
             _ => false,
         }
     }
 }
 
-struct ToolResult {
+Σ ToolResult {
     success: !bool,
     output_len: !usize,
     duration_ms: !u64,
 }
 
-impl ToolResult {
-    pub fn ok(output_len: !usize, duration_ms: !u64) -> Self {
+⊢ ToolResult {
+    ☉ λ ok(output_len: !usize, duration_ms: !u64) -> Self {
         ToolResult { success: true, output_len, duration_ms }
     }
 
-    pub fn err(duration_ms: !u64) -> Self {
+    ☉ λ err(duration_ms: !u64) -> Self {
         ToolResult { success: false, output_len: 0, duration_ms }
     }
 }
@@ -154,129 +154,129 @@ impl ToolResult {
 // ============================================================================
 
 #[test]
-fn test_internal_action_think() {
-    let action = InternalActionType::Think;
+λ test_internal_action_think() {
+    ≔ action = InternalActionType·Think;
     assert(action.name() == "think");
 }
 
 #[test]
-fn test_internal_action_plan() {
-    let action = InternalActionType::Plan;
+λ test_internal_action_plan() {
+    ≔ action = InternalActionType·Plan;
     assert(action.name() == "plan");
 }
 
 #[test]
-fn test_internal_action_reflect() {
-    let action = InternalActionType::Reflect;
+λ test_internal_action_reflect() {
+    ≔ action = InternalActionType·Reflect;
     assert(action.name() == "reflect");
 }
 
 #[test]
-fn test_communicate_action_send() {
-    let action = CommunicateActionType::Send;
+λ test_communicate_action_send() {
+    ≔ action = CommunicateActionType·Send;
     assert(action.name() == "send");
 }
 
 #[test]
-fn test_communicate_action_broadcast() {
-    let action = CommunicateActionType::Broadcast;
+λ test_communicate_action_broadcast() {
+    ≔ action = CommunicateActionType·Broadcast;
     assert(action.name() == "broadcast");
 }
 
 #[test]
-fn test_goal_action_add() {
-    let action = GoalActionType::AddGoal;
+λ test_goal_action_add() {
+    ≔ action = GoalActionType·AddGoal;
     assert(action.name() == "add_goal");
 }
 
 #[test]
-fn test_goal_action_complete() {
-    let action = GoalActionType::CompleteGoal;
+λ test_goal_action_complete() {
+    ≔ action = GoalActionType·CompleteGoal;
     assert(action.name() == "complete_goal");
 }
 
 #[test]
-fn test_action_internal() {
-    let action = ActionType::Internal(InternalActionType::Reflect);
+λ test_action_internal() {
+    ≔ action = ActionType·Internal(InternalActionType·Reflect);
     assert(action.is_internal());
     assert(!action.is_external());
 }
 
 #[test]
-fn test_action_tool() {
-    let action = ActionType::Tool;
+λ test_action_tool() {
+    ≔ action = ActionType·Tool;
     assert(action.is_external());
     assert(!action.is_internal());
 }
 
 #[test]
-fn test_action_communicate() {
-    let action = ActionType::Communicate(CommunicateActionType::Query);
+λ test_action_communicate() {
+    ≔ action = ActionType·Communicate(CommunicateActionType·Query);
     assert(action.is_external());
 }
 
 #[test]
-fn test_action_wait() {
-    let action = ActionType::Wait;
+λ test_action_wait() {
+    ≔ action = ActionType·Wait;
     assert(!action.is_internal());
     assert(!action.is_external());
 }
 
 #[test]
-fn test_action_result_success() {
-    let result = ActionResult::success(1, 10, 100);
+λ test_action_result_success() {
+    ≔ result = ActionResult·success(1, 10, 100);
     assert(result.is_success());
     assert(!result.is_failure());
     assert(!result.has_error);
 }
 
 #[test]
-fn test_action_result_failure() {
-    let result = ActionResult::failure(1, 50);
+λ test_action_result_failure() {
+    ≔ result = ActionResult·failure(1, 50);
     assert(result.is_failure());
     assert(!result.is_success());
     assert(result.has_error);
 }
 
 #[test]
-fn test_tool_error_retryable_timeout() {
-    let error = ToolError::Timeout;
+λ test_tool_error_retryable_timeout() {
+    ≔ error = ToolError·Timeout;
     assert(error.is_retryable());
     assert(!error.is_permanent());
 }
 
 #[test]
-fn test_tool_error_retryable_unavailable() {
-    let error = ToolError::NotAvailable;
+λ test_tool_error_retryable_unavailable() {
+    ≔ error = ToolError·NotAvailable;
     assert(error.is_retryable());
 }
 
 #[test]
-fn test_tool_error_permanent_params() {
-    let error = ToolError::InvalidParams;
+λ test_tool_error_permanent_params() {
+    ≔ error = ToolError·InvalidParams;
     assert(error.is_permanent());
     assert(!error.is_retryable());
 }
 
 #[test]
-fn test_tool_error_permanent_permission() {
-    let error = ToolError::PermissionDenied;
+λ test_tool_error_permanent_permission() {
+    ≔ error = ToolError·PermissionDenied;
     assert(error.is_permanent());
 }
 
 #[test]
-fn test_tool_result_ok() {
-    let result = ToolResult::ok(15, 200);
+λ test_tool_result_ok() {
+    ≔ result = ToolResult·ok(15, 200);
     assert(result.success);
     assert(result.duration_ms == 200);
 }
 
 #[test]
-fn test_tool_result_err() {
-    let result = ToolResult::err(50);
+λ test_tool_result_err() {
+    ≔ result = ToolResult·err(50);
     assert(!result.success);
 }
 
-fn main() {
+λ main() {
     println("Daemon actions tests - 19 tests");
 }

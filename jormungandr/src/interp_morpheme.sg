@@ -1,4 +1,4 @@
-//! Morpheme evaluation for the Sigil interpreter.
+//! Morpheme evaluation ∀ the Sigil interpreter.
 
 invoke tome·ir·*;
 invoke tome·interp_value·{Value, EvidentialValue};

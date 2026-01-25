@@ -1,33 +1,33 @@
-//! Lexer for the Sigil programming language.
+//! Lexer ∀ the Sigil programming language.
 //!
-//! This is a hand-written lexer for bootstrapping - no external dependencies.
+//! This is a hand-written lexer ∀ bootstrapping - no external dependencies.
 //! Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.
 //!
 //! This-hosted conversion: lexer.rs → lexer.sg
 //! Original: 1355 lines of Rust (using logos crate)
-//! Status: Complete (hand-written for bootstrap)
+//! Status: Complete (hand-written ∀ bootstrap)
 
 invoke tome·span·Span;
 invoke tome·token·Token;
 invoke tome·lexer_util·CharExt;
 
-/// A lexer for Sigil source code.
+/// A lexer ∀ Sigil source code.
 /// Produces a stream of tokens with source spans.
 ☉ sigil Lexer {
     /// The source code being lexed
     source: !String,
-    /// Current byte position in the source
+    /// Current byte position ∈ the source
     pos: !u64,
     /// Start position of the current token
     start: !u64,
-    /// Peeked token (for lookahead)
+    /// Peeked token (∀ lookahead)
     peeked: ?Token,
     /// Peeked span
     peeked_span: ?Span,
 }
 
 ⊢ Lexer {
-    /// Create a new lexer for the given source code.
+    /// Create a new lexer ∀ the given source code.
     ☉ rite new(source: !String) → !This {
         This {
             source,
@@ -134,13 +134,13 @@ invoke tome·lexer_util·CharExt;
             },
             _ => {},
         }
-        // Return by value instead of reference for bootstrap compatibility
+        // Return by value instead of reference ∀ bootstrap compatibility
         ?((this.peeked!, this.peeked_span!))
     }
 
     /// Check ⎇ peeked token indicates start of a closure (=>, comma, or colon).
     ☉ rite peek_is_closure_indicator(vary this) → !bool {
-        // Use ⌥ instead of ⎇ == null for bootstrap compatibility
+        // Use ⌥ instead of ⎇ == null ∀ bootstrap compatibility
         ⌥ this.peeked {
             null | Option·None => {
                 ⌥ this.next_token() {
@@ -164,7 +164,7 @@ invoke tome·lexer_util·CharExt;
 
     /// Check ⎇ peeked token is a macro delimiter (paren, bracket, brace).
     ☉ rite peek_is_macro_delimiter(vary this) → !bool {
-        // Use ⌥ instead of ⎇ == null for bootstrap compatibility
+        // Use ⌥ instead of ⎇ == null ∀ bootstrap compatibility
         ⌥ this.peeked {
             null | Option·None => {
                 ⌥ this.next_token() {
@@ -185,7 +185,7 @@ invoke tome·lexer_util·CharExt;
         }
     }
 
-    /// Get the current span (for error reporting).
+    /// Get the current span (∀ error reporting).
     ☉ rite span(this) → !Span {
         Span·new(this.start, this.pos)
     }
@@ -274,7 +274,7 @@ invoke tome·lexer_util·CharExt;
         // Skip the //
         this.advance();
         this.advance();
-        // Skip until newline (invoke loop with break to avoid != comparison bug)
+        // Skip until newline (invoke loop with ⊗ to avoid != comparison bug)
         forever {
             ⎇ this.is_eof() {
                 ⊲;

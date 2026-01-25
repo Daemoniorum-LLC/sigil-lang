@@ -1,30 +1,30 @@
 // Daemon Core Implementation
 // The autonomous agent runtime
 
-use crate::types::*;
-use engram::{Engram, Query, Event};
-use std::time::{Duration, Timestamp};
+invoke crate·types·*;
+invoke engram·{Engram, Query, Event};
+invoke std·time·{Duration, Timestamp};
 
 // ============================================================================
 // Daemon Struct
 // ============================================================================
 
 /// The core daemon - an autonomous agent instance
-pub struct Daemon {
+☉ Σ Daemon {
     /// Identity
-    pub identity: Identity,
+    ☉ identity: Identity,
 
     /// Memory (Engram integration)
-    pub memory: Engram,
+    ☉ memory: Engram,
 
     /// Goal stack
-    pub goals: GoalStack,
+    ☉ goals: GoalStack,
 
     /// Tool registry
-    pub tools: ToolRegistry,
+    ☉ tools: ToolRegistry,
 
     /// Current state
-    pub state: AgentState,
+    ☉ state: AgentState,
 
     /// Configuration
     config: DaemonConfig,
@@ -39,17 +39,17 @@ pub struct Daemon {
     terminate_reason: Option<TerminateReason>,
 }
 
-impl Daemon {
+⊢ Daemon {
     /// Create a new daemon with configuration
-    pub fn new(config: DaemonConfig) -> Self {
-        let identity = Identity::new(&config.name)
+    ☉ λ new(config: DaemonConfig) -> Self {
+        ≔ identity = Identity·new(&config.name)
             .with_description(&config.description);
 
-        let memory = Engram::new(config.memory.clone());
-        let goals = GoalStack::new(config.max_concurrent_goals);
-        let tools = ToolRegistry::new();
-        let state = AgentState::default();
-        let heartbeat = HeartbeatEngine::new(config.heartbeat_interval);
+        ≔ memory = Engram·new(config.memory.clone());
+        ≔ goals = GoalStack·new(config.max_concurrent_goals);
+        ≔ tools = ToolRegistry·new();
+        ≔ state = AgentState·default();
+        ≔ heartbeat = HeartbeatEngine·new(config.heartbeat_interval);
 
         Self {
             identity,
@@ -65,48 +65,48 @@ impl Daemon {
     }
 
     /// Restore daemon from snapshot
-    pub fn restore(snapshot: Snapshot) -> Result<Self, DaemonError> {
+    ☉ λ restore(snapshot: Snapshot) -> Result<Self, DaemonError> {
         // Verify snapshot integrity
-        if !snapshot.verify() {
-            return Err(DaemonError::CorruptSnapshot);
+        ⎇ !snapshot.verify() {
+            ⤺ Err(DaemonError·CorruptSnapshot);
         }
 
-        let config = DaemonConfig {
+        ≔ config = DaemonConfig {
             name: snapshot.identity.name.clone(),
             description: snapshot.identity.description.clone(),
-            ..Default::default()
+            ..Default·default()
         };
 
-        let mut daemon = Self::new(config);
+        ≔ Δ daemon = Self·new(config);
         daemon.identity = snapshot.identity;
-        daemon.memory = Engram::restore(snapshot.memory)?;
-        daemon.goals = GoalStack::from_goals(snapshot.goals);
+        daemon.memory = Engram·restore(snapshot.memory)?;
+        daemon.goals = GoalStack·from_goals(snapshot.goals);
         daemon.state = snapshot.state;
 
         // Record rebirth event
-        daemon.memory.experience(Event::rebirth(daemon.identity.id.clone()));
+        daemon.memory.experience(Event·rebirth(daemon.identity.id.clone()));
 
         Ok(daemon)
     }
 
     /// Spawn and run the daemon
-    pub fn spawn(config: DaemonConfig) -> Self {
-        let daemon = Self::new(config);
+    ☉ λ spawn(config: DaemonConfig) -> Self {
+        ≔ daemon = Self·new(config);
         daemon
     }
 
     /// Run the daemon's main loop
-    pub fn run(&mut self) {
+    ☉ λ run(&Δ self) {
         // Initialize
         self.on_init();
-        self.state.lifecycle = LifecycleState::Ready;
+        self.state.lifecycle = LifecycleState·Ready;
         self.on_ready();
-        self.state.lifecycle = LifecycleState::Running;
+        self.state.lifecycle = LifecycleState·Running;
 
         // Main heartbeat loop
         loop {
             // Execute heartbeat
-            match self.heartbeat.beat(self) {
+            ⌥ self.heartbeat.beat(self) {
                 Ok(result) => {
                     self.on_heartbeat_complete(result);
                 }
@@ -115,9 +115,9 @@ impl Daemon {
                 }
             }
 
-            // Check for termination
-            if self.should_terminate {
-                break;
+            // Check ∀ termination
+            ⎇ self.should_terminate {
+                ⊗;
             }
 
             // Sleep until next heartbeat
@@ -125,8 +125,8 @@ impl Daemon {
         }
 
         // Terminate
-        self.on_terminate(self.terminate_reason.take().unwrap_or(TerminateReason::Manual));
-        self.state.lifecycle = LifecycleState::Terminated;
+        self.on_terminate(self.terminate_reason.take().unwrap_or(TerminateReason·Manual));
+        self.state.lifecycle = LifecycleState·Terminated;
     }
 
     // ========================================================================
@@ -134,37 +134,37 @@ impl Daemon {
     // ========================================================================
 
     /// Called once at initialization
-    fn on_init(&mut self) {
+    λ on_init(&Δ self) {
         // Subclasses override this
     }
 
     /// Called when daemon becomes ready
-    fn on_ready(&mut self) {
+    λ on_ready(&Δ self) {
         // Subclasses override this
     }
 
     /// Called after each heartbeat
-    fn on_heartbeat_complete(&mut self, result: HeartbeatResult) {
+    λ on_heartbeat_complete(&Δ self, result: HeartbeatResult) {
         self.state.metrics.heartbeats += 1;
         // Subclasses can override
     }
 
     /// Called when heartbeat has an error
-    fn on_heartbeat_error(&mut self, error: HeartbeatError) {
+    λ on_heartbeat_error(&Δ self, error: HeartbeatError) {
         self.state.metrics.errors += 1;
-        self.memory.experience(Event::error(error.to_string()));
+        self.memory.experience(Event·error(error.to_string()));
     }
 
     /// Called before termination
-    fn on_terminate(&mut self, reason: TerminateReason) {
+    λ on_terminate(&Δ self, reason: TerminateReason) {
         // Save final snapshot
-        if let Ok(snapshot) = self.snapshot() {
+        ⎇ ≔ Ok(snapshot) = self.snapshot() {
             self.save_snapshot(snapshot);
         }
 
         // Cleanup tools
-        for tool_name in self.tools.list() {
-            if let Some(tool) = self.tools.get(tool_name) {
+        ∀ tool_name ∈ self.tools.list() {
+            ⎇ ≔ Some(tool) = self.tools.get(tool_name) {
                 tool.cleanup();
             }
         }
@@ -178,15 +178,15 @@ impl Daemon {
     // ========================================================================
 
     /// Perceive the environment
-    pub fn perceive(&mut self) -> Vec<Observation> {
+    ☉ λ perceive(&Δ self) -> Vec<Observation> {
         // Collect observations from various sources
-        let mut observations = Vec::new();
+        ≔ Δ observations = Vec·new();
 
         // Time elapsed since last heartbeat
         observations.push(Observation {
             source: "system".to_string(),
-            content: Value::duration(self.heartbeat.last_beat.elapsed()),
-            timestamp: Timestamp::now(),
+            content: Value·duration(self.heartbeat.last_beat.elapsed()),
+            timestamp: Timestamp·now(),
             salience: 0.1,
         });
 
@@ -194,18 +194,18 @@ impl Daemon {
         observations
     }
 
-    /// Build context for deliberation
-    pub fn attend(&self) -> Result<Context, DaemonError> {
-        let current_goal = self.goals.current().cloned();
+    /// Build context ∀ deliberation
+    ☉ λ attend(&self) -> Result<Context, DaemonError> {
+        ≔ current_goal = self.goals.current().cloned();
 
-        // Query memory for relevant information
-        let goal_context = current_goal.as_ref()
+        // Query memory ∀ relevant information
+        ≔ goal_context = current_goal.as_ref()
             .map(|g| g.description.clone())
             .unwrap_or_default();
 
         // Get episodic memories of similar situations
-        let memories = self.memory.recall(
-            Query::similar_to(&goal_context)
+        ≔ memories = self.memory.recall(
+            Query·similar_to(&goal_context)
                 .limit(10)
         ).into_iter()
         .map(|r| Memory {
@@ -217,8 +217,8 @@ impl Daemon {
         .collect();
 
         // Get semantic knowledge
-        let knowledge = self.memory.recall(
-            Query::relevant_to(&goal_context)
+        ≔ knowledge = self.memory.recall(
+            Query·relevant_to(&goal_context)
                 .from_semantic()
                 .limit(20)
         ).into_iter()
@@ -231,8 +231,8 @@ impl Daemon {
         .collect();
 
         // Get applicable skills
-        let skills = self.memory.recall(
-            Query::skills_for(&goal_context)
+        ≔ skills = self.memory.recall(
+            Query·skills_for(&goal_context)
                 .limit(5)
         ).into_iter()
         .map(|r| Skill {
@@ -253,63 +253,63 @@ impl Daemon {
     }
 
     /// Decide what action to take
-    pub fn deliberate(&self, context: &Context) -> Result<Action, DaemonError> {
+    ☉ λ deliberate(&self, context: &Context) -> Result<Action, DaemonError> {
         // Get current goal
-        let goal = context.current_goal.as_ref()
-            .ok_or(DaemonError::NoActiveGoal)?;
+        ≔ goal = context.current_goal.as_ref()
+            .ok_or(DaemonError·NoActiveGoal)?;
 
         // Get relevant tools
-        let relevant_tools = self.tools.for_context(context);
+        ≔ relevant_tools = self.tools.for_context(context);
 
         // Use skills and knowledge to decide
         // This is where more sophisticated reasoning would happen
         // For now, simple heuristic
 
-        // If we have a skill for this, use it
-        if let Some(skill) = context.skills.first() {
-            return Ok(Action::Internal(InternalAction::Think {
+        // If we have a skill ∀ this, invoke it
+        ⎇ ≔ Some(skill) = context.skills.first() {
+            ⤺ Ok(Action·Internal(InternalAction·Think {
                 about: format!("Applying skill: {}", skill.name),
             }));
         }
 
         // If we have relevant tools, consider using them
-        if let Some(tool) = relevant_tools.first() {
-            return Ok(Action::Tool {
+        ⎇ ≔ Some(tool) = relevant_tools.first() {
+            ⤺ Ok(Action·Tool {
                 name: tool.name().to_string(),
-                params: Value::empty(),
+                params: Value·empty(),
             });
         }
 
         // Default: think about the goal
-        Ok(Action::Internal(InternalAction::Think {
+        Ok(Action·Internal(InternalAction·Think {
             about: goal.description.clone(),
         }))
     }
 
     /// Execute an action
-    pub fn execute(&mut self, action: Action) -> Result<ActionResult, DaemonError> {
-        let action_id = ActionId::new();
-        let start = Timestamp::now();
+    ☉ λ execute(&Δ self, action: Action) -> Result<ActionResult, DaemonError> {
+        ≔ action_id = ActionId·new();
+        ≔ start = Timestamp·now();
 
-        let result = match &action {
-            Action::Internal(internal) => {
+        ≔ result = ⌥ &action {
+            Action·Internal(internal) => {
                 self.execute_internal(internal)
             }
-            Action::Tool { name, params } => {
+            Action·Tool { name, params } => {
                 self.execute_tool(name, params)
             }
-            Action::Communicate(comm) => {
+            Action·Communicate(comm) => {
                 self.execute_communication(comm)
             }
-            Action::Goal(goal_action) => {
+            Action·Goal(goal_action) => {
                 self.execute_goal_action(goal_action)
             }
-            Action::Wait(duration) => {
-                std::thread::sleep(*duration);
+            Action·Wait(duration) => {
+                std·thread·sleep(*duration);
                 Ok(ActionResult {
                     action_id: action_id.clone(),
                     success: true,
-                    output: Value::empty(),
+                    output: Value·empty(),
                     error: None,
                     duration: *duration,
                     side_effects: vec![],
@@ -320,61 +320,61 @@ impl Daemon {
         // Update metrics
         self.state.metrics.actions_taken += 1;
 
-        // Record in memory
-        let outcome = result.as_ref().map(|r| r.success).unwrap_or(false);
-        self.memory.experience(Event::action_taken(action.name(), outcome));
+        // Record ∈ memory
+        ≔ outcome = result.as_ref().map(|r| r.success).unwrap_or(false);
+        self.memory.experience(Event·action_taken(action.name(), outcome));
 
         result
     }
 
-    fn execute_internal(&mut self, action: &InternalAction) -> Result<ActionResult, DaemonError> {
-        let action_id = ActionId::new();
-        let start = Timestamp::now();
+    λ execute_internal(&Δ self, action: &InternalAction) -> Result<ActionResult, DaemonError> {
+        ≔ action_id = ActionId·new();
+        ≔ start = Timestamp·now();
 
-        match action {
-            InternalAction::Think { about } => {
-                // Record thought in instant memory
+        ⌥ action {
+            InternalAction·Think { about } => {
+                // Record thought ∈ instant memory
                 self.memory.attend(about);
 
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string(format!("Thought about: {}", about)),
+                    output: Value·string(format!("Thought about: {}", about)),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
                 })
             }
-            InternalAction::Plan { goal } => {
+            InternalAction·Plan { goal } => {
                 // Would integrate with Omen here
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string("Plan generated"),
+                    output: Value·string("Plan generated"),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
                 })
             }
-            InternalAction::Reflect => {
+            InternalAction·Reflect => {
                 // Consolidate recent experiences
                 self.memory.consolidate();
 
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string("Reflected on experiences"),
+                    output: Value·string("Reflected on experiences"),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
                 })
             }
-            InternalAction::UpdateBeliefs { evidence } => {
+            InternalAction·UpdateBeliefs { evidence } => {
                 // Would integrate with Omen belief system
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string("Beliefs updated"),
+                    output: Value·string("Beliefs updated"),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
@@ -383,19 +383,19 @@ impl Daemon {
         }
     }
 
-    fn execute_tool(&mut self, name: &str, params: &Value) -> Result<ActionResult, DaemonError> {
-        let action_id = ActionId::new();
-        let start = Timestamp::now();
+    λ execute_tool(&Δ self, name: &str, params: &Value) -> Result<ActionResult, DaemonError> {
+        ≔ action_id = ActionId·new();
+        ≔ start = Timestamp·now();
 
-        let tool = self.tools.get(name)
-            .ok_or(DaemonError::ToolNotFound(name.to_string()))?;
+        ≔ tool = self.tools.get(name)
+            .ok_or(DaemonError·ToolNotFound(name.to_string()))?;
 
         // Check capability
-        if !self.identity.constitution.allowed_actions.is_allowed(name) {
-            return Err(DaemonError::ActionNotAllowed(name.to_string()));
+        ⎇ !self.identity.constitution.allowed_actions.is_allowed(name) {
+            ⤺ Err(DaemonError·ActionNotAllowed(name.to_string()));
         }
 
-        match tool.execute(params.clone()) {
+        ⌥ tool.execute(params.clone()) {
             Ok(result) => {
                 Ok(ActionResult {
                     action_id,
@@ -407,82 +407,82 @@ impl Daemon {
                 })
             }
             Err(e) => {
-                Err(DaemonError::ToolExecutionFailed(format!("{:?}", e)))
+                Err(DaemonError·ToolExecutionFailed(format!("{:?}", e)))
             }
         }
     }
 
-    fn execute_communication(&mut self, action: &CommunicateAction) -> Result<ActionResult, DaemonError> {
-        let action_id = ActionId::new();
-        let start = Timestamp::now();
+    λ execute_communication(&Δ self, action: &CommunicateAction) -> Result<ActionResult, DaemonError> {
+        ≔ action_id = ActionId·new();
+        ≔ start = Timestamp·now();
 
         // Would integrate with Commune here
         Ok(ActionResult {
             action_id,
             success: true,
-            output: Value::string("Message sent"),
+            output: Value·string("Message sent"),
             error: None,
             duration: start.elapsed(),
             side_effects: vec![],
         })
     }
 
-    fn execute_goal_action(&mut self, action: &GoalAction) -> Result<ActionResult, DaemonError> {
-        let action_id = ActionId::new();
-        let start = Timestamp::now();
+    λ execute_goal_action(&Δ self, action: &GoalAction) -> Result<ActionResult, DaemonError> {
+        ≔ action_id = ActionId·new();
+        ≔ start = Timestamp·now();
 
-        match action {
-            GoalAction::AddGoal(goal) => {
+        ⌥ action {
+            GoalAction·AddGoal(goal) => {
                 self.goals.push(goal.clone());
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string(format!("Goal added: {}", goal.description)),
+                    output: Value·string(format!("Goal added: {}", goal.description)),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
                 })
             }
-            GoalAction::CompleteGoal { id, outcome } => {
+            GoalAction·CompleteGoal { id, outcome } => {
                 self.goals.complete(id.clone(), outcome.clone());
                 self.state.metrics.goals_completed += 1;
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string("Goal completed"),
+                    output: Value·string("Goal completed"),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
                 })
             }
-            GoalAction::AbandonGoal { id, reason } => {
+            GoalAction·AbandonGoal { id, reason } => {
                 self.goals.abandon(id.clone(), reason.clone());
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string(format!("Goal abandoned: {}", reason)),
+                    output: Value·string(format!("Goal abandoned: {}", reason)),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
                 })
             }
-            GoalAction::SuspendGoal { id, reason } => {
+            GoalAction·SuspendGoal { id, reason } => {
                 self.goals.suspend(id.clone(), reason.clone());
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string(format!("Goal suspended: {}", reason)),
+                    output: Value·string(format!("Goal suspended: {}", reason)),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
                 })
             }
-            GoalAction::ResumeGoal { id } => {
+            GoalAction·ResumeGoal { id } => {
                 self.goals.resume(id.clone());
                 Ok(ActionResult {
                     action_id,
                     success: true,
-                    output: Value::string("Goal resumed"),
+                    output: Value·string("Goal resumed"),
                     error: None,
                     duration: start.elapsed(),
                     side_effects: vec![],
@@ -492,11 +492,11 @@ impl Daemon {
     }
 
     /// Learn from an action's result
-    pub fn learn(&mut self, action: &Action, result: &ActionResult) {
-        // Store as procedural memory if successful
-        if result.success {
+    ☉ λ learn(&Δ self, action: &Action, result: &ActionResult) {
+        // Store as procedural memory ⎇ successful
+        ⎇ result.success {
             self.memory.learn_from_success(action.name(), result);
-        } else if let Some(error) = &result.error {
+        } ⎉ ⎇ ≔ Some(error) = &result.error {
             self.memory.learn_from_failure(action.name(), error);
         }
     }
@@ -506,16 +506,16 @@ impl Daemon {
     // ========================================================================
 
     /// Create a snapshot of current state
-    pub fn snapshot(&self) -> Result<Snapshot, DaemonError> {
-        let memory_snapshot = self.memory.snapshot()?;
+    ☉ λ snapshot(&self) -> Result<Snapshot, DaemonError> {
+        ≔ memory_snapshot = self.memory.snapshot()?;
 
-        let mut snapshot = Snapshot {
+        ≔ Δ snapshot = Snapshot {
             version: 1,
             identity: self.identity.clone(),
             memory: memory_snapshot,
             goals: self.goals.all().cloned().collect(),
             state: self.state.clone(),
-            timestamp: Timestamp::now(),
+            timestamp: Timestamp·now(),
             checksum: [0u8; 32],
         };
 
@@ -525,8 +525,8 @@ impl Daemon {
         Ok(snapshot)
     }
 
-    fn save_snapshot(&self, snapshot: Snapshot) {
-        if let Some(path) = &self.config.storage_path {
+    λ save_snapshot(&self, snapshot: Snapshot) {
+        ⎇ ≔ Some(path) = &self.config.storage_path {
             // Would save to filesystem
         }
     }
@@ -536,30 +536,30 @@ impl Daemon {
     // ========================================================================
 
     /// Request termination
-    pub fn terminate(&mut self, reason: TerminateReason) {
+    ☉ λ terminate(&Δ self, reason: TerminateReason) {
         self.should_terminate = true;
         self.terminate_reason = Some(reason);
-        self.state.lifecycle = LifecycleState::Terminating {
+        self.state.lifecycle = LifecycleState·Terminating {
             reason: self.terminate_reason.clone().unwrap(),
         };
     }
 
-    /// Check if should terminate
-    pub fn should_terminate(&self) -> bool {
+    /// Check ⎇ should terminate
+    ☉ λ should_terminate(&self) -> bool {
         self.should_terminate
     }
 
     /// Suspend the daemon
-    pub fn suspend(&mut self, reason: &str) {
-        self.state.lifecycle = LifecycleState::Suspended {
+    ☉ λ suspend(&Δ self, reason: &str) {
+        self.state.lifecycle = LifecycleState·Suspended {
             reason: reason.to_string(),
-            since: Timestamp::now(),
+            since: Timestamp·now(),
         };
     }
 
     /// Resume from suspension
-    pub fn resume(&mut self) {
-        self.state.lifecycle = LifecycleState::Running;
+    ☉ λ resume(&Δ self) {
+        self.state.lifecycle = LifecycleState·Running;
     }
 }
 
@@ -568,7 +568,7 @@ impl Daemon {
 // ============================================================================
 
 /// Manages daemon goals
-pub struct GoalStack {
+☉ Σ GoalStack {
     /// Goals by ID
     goals: HashMap<GoalId, Goal>,
 
@@ -578,50 +578,50 @@ pub struct GoalStack {
     /// Maximum concurrent goals
     max_goals: usize,
 
-    /// Completed goals (for history)
+    /// Completed goals (∀ history)
     history: Vec<Goal>,
 }
 
-impl GoalStack {
-    pub fn new(max_goals: usize) -> Self {
+⊢ GoalStack {
+    ☉ λ new(max_goals: usize) -> Self {
         Self {
-            goals: HashMap::new(),
-            hierarchy: HashMap::new(),
+            goals: HashMap·new(),
+            hierarchy: HashMap·new(),
             max_goals,
-            history: Vec::new(),
+            history: Vec·new(),
         }
     }
 
-    pub fn from_goals(goals: Vec<Goal>) -> Self {
-        let mut stack = Self::new(10);
-        for goal in goals {
+    ☉ λ from_goals(goals: Vec<Goal>) -> Self {
+        ≔ Δ stack = Self·new(10);
+        ∀ goal ∈ goals {
             stack.push(goal);
         }
         stack
     }
 
     /// Get current highest-priority active goal
-    pub fn current(&self) -> Option<&Goal> {
+    ☉ λ current(&self) -> Option<&Goal> {
         self.goals.values()
             .filter(|g| g.is_active())
             .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
     }
 
     /// Push a new goal
-    pub fn push(&mut self, mut goal: Goal) {
-        // Activate if under limit
-        let active_count = self.goals.values()
+    ☉ λ push(&Δ self, Δ goal: Goal) {
+        // Activate ⎇ under limit
+        ≔ active_count = self.goals.values()
             .filter(|g| g.is_active())
             .count();
 
-        if active_count < self.max_goals {
-            goal.status = GoalStatus::Active;
+        ⎇ active_count < self.max_goals {
+            goal.status = GoalStatus·Active;
         }
 
-        let id = goal.id.clone();
+        ≔ id = goal.id.clone();
 
         // Track hierarchy
-        if let Some(parent) = &goal.parent {
+        ⎇ ≔ Some(parent) = &goal.parent {
             self.hierarchy.entry(parent.clone())
                 .or_default()
                 .push(id.clone());
@@ -631,61 +631,61 @@ impl GoalStack {
     }
 
     /// Complete a goal
-    pub fn complete(&mut self, id: GoalId, outcome: Outcome) {
-        if let Some(goal) = self.goals.get_mut(&id) {
-            goal.status = GoalStatus::Completed {
-                at: Timestamp::now(),
+    ☉ λ complete(&Δ self, id: GoalId, outcome: Outcome) {
+        ⎇ ≔ Some(goal) = self.goals.get_mut(&id) {
+            goal.status = GoalStatus·Completed {
+                at: Timestamp·now(),
                 outcome,
             };
 
-            // Check if parent can be completed
-            if let Some(parent_id) = &goal.parent {
+            // Check ⎇ parent can be completed
+            ⎇ ≔ Some(parent_id) = &goal.parent {
                 self.check_parent_completion(parent_id.clone());
             }
         }
     }
 
     /// Abandon a goal
-    pub fn abandon(&mut self, id: GoalId, reason: String) {
-        if let Some(goal) = self.goals.get_mut(&id) {
-            goal.status = GoalStatus::Abandoned {
-                at: Timestamp::now(),
+    ☉ λ abandon(&Δ self, id: GoalId, reason: String) {
+        ⎇ ≔ Some(goal) = self.goals.get_mut(&id) {
+            goal.status = GoalStatus·Abandoned {
+                at: Timestamp·now(),
                 reason,
             };
         }
     }
 
     /// Suspend a goal
-    pub fn suspend(&mut self, id: GoalId, reason: String) {
-        if let Some(goal) = self.goals.get_mut(&id) {
-            goal.status = GoalStatus::Suspended { reason };
+    ☉ λ suspend(&Δ self, id: GoalId, reason: String) {
+        ⎇ ≔ Some(goal) = self.goals.get_mut(&id) {
+            goal.status = GoalStatus·Suspended { reason };
         }
     }
 
     /// Resume a goal
-    pub fn resume(&mut self, id: GoalId) {
-        if let Some(goal) = self.goals.get_mut(&id) {
-            if matches!(goal.status, GoalStatus::Suspended { .. }) {
-                goal.status = GoalStatus::Active;
+    ☉ λ resume(&Δ self, id: GoalId) {
+        ⎇ ≔ Some(goal) = self.goals.get_mut(&id) {
+            ⎇ matches!(goal.status, GoalStatus·Suspended { .. }) {
+                goal.status = GoalStatus·Active;
             }
         }
     }
 
     /// Get all goals
-    pub fn all(&self) -> impl Iterator<Item = &Goal> {
+    ☉ λ all(&self) -> ⊢ Iterator<Item = &Goal> {
         self.goals.values()
     }
 
-    fn check_parent_completion(&mut self, parent_id: GoalId) {
-        if let Some(children) = self.hierarchy.get(&parent_id) {
-            let all_complete = children.iter().all(|child_id| {
+    λ check_parent_completion(&Δ self, parent_id: GoalId) {
+        ⎇ ≔ Some(children) = self.hierarchy.get(&parent_id) {
+            ≔ all_complete = children.iter().all(|child_id| {
                 self.goals.get(child_id)
                     .map(|g| g.is_complete())
                     .unwrap_or(true)
             });
 
-            if all_complete {
-                self.complete(parent_id, Outcome::Success(Value::empty()));
+            ⎇ all_complete {
+                self.complete(parent_id, Outcome·Success(Value·empty()));
             }
         }
     }
@@ -696,67 +696,67 @@ impl GoalStack {
 // ============================================================================
 
 /// Manages the daemon heartbeat cycle
-pub struct HeartbeatEngine {
+☉ Σ HeartbeatEngine {
     /// Heartbeat interval
     interval: Duration,
 
     /// Last heartbeat time
-    pub last_beat: Timestamp,
+    ☉ last_beat: Timestamp,
 
     /// Metrics
     metrics: HeartbeatMetrics,
 }
 
-pub struct HeartbeatMetrics {
-    pub total_beats: u64,
-    pub total_duration: Duration,
-    pub avg_duration: Duration,
+☉ Σ HeartbeatMetrics {
+    ☉ total_beats: u64,
+    ☉ total_duration: Duration,
+    ☉ avg_duration: Duration,
 }
 
-impl HeartbeatEngine {
-    pub fn new(interval: Duration) -> Self {
+⊢ HeartbeatEngine {
+    ☉ λ new(interval: Duration) -> Self {
         Self {
             interval,
-            last_beat: Timestamp::now(),
+            last_beat: Timestamp·now(),
             metrics: HeartbeatMetrics {
                 total_beats: 0,
-                total_duration: Duration::zero(),
-                avg_duration: Duration::zero(),
+                total_duration: Duration·zero(),
+                avg_duration: Duration·zero(),
             },
         }
     }
 
     /// Execute one heartbeat cycle
-    pub fn beat(&mut self, daemon: &mut Daemon) -> Result<HeartbeatResult, HeartbeatError> {
-        let start = Timestamp::now();
+    ☉ λ beat(&Δ self, daemon: &Δ Daemon) -> Result<HeartbeatResult, HeartbeatError> {
+        ≔ start = Timestamp·now();
 
         // Phase 1: Perceive
-        let observations = daemon.perceive();
+        ≔ observations = daemon.perceive();
 
         // Phase 2: Remember
-        for obs in &observations {
-            daemon.memory.experience(Event::observation(obs.clone()));
+        ∀ obs ∈ &observations {
+            daemon.memory.experience(Event·observation(obs.clone()));
         }
 
         // Phase 3: Reflect (build context)
-        let context = daemon.attend()?;
+        ≔ context = daemon.attend()?;
 
         // Phase 4: Deliberate
-        let action = daemon.deliberate(&context)?;
+        ≔ action = daemon.deliberate(&context)?;
 
         // Phase 5: Act
-        let result = daemon.execute(action.clone())?;
+        ≔ result = daemon.execute(action.clone())?;
 
         // Phase 6: Learn
         daemon.learn(&action, &result);
 
         // Update metrics
-        let duration = start.elapsed();
+        ≔ duration = start.elapsed();
         self.metrics.total_beats += 1;
         self.metrics.total_duration = self.metrics.total_duration + duration;
         self.metrics.avg_duration = self.metrics.total_duration / self.metrics.total_beats as u32;
 
-        self.last_beat = Timestamp::now();
+        self.last_beat = Timestamp·now();
 
         Ok(HeartbeatResult {
             observations,
@@ -768,35 +768,35 @@ impl HeartbeatEngine {
     }
 
     /// Wait until next heartbeat should occur
-    pub fn wait_for_next(&self) {
-        let elapsed = self.last_beat.elapsed();
-        if elapsed < self.interval {
-            std::thread::sleep(self.interval - elapsed);
+    ☉ λ wait_for_next(&self) {
+        ≔ elapsed = self.last_beat.elapsed();
+        ⎇ elapsed < self.interval {
+            std·thread·sleep(self.interval - elapsed);
         }
     }
 }
 
-pub struct HeartbeatResult {
-    pub observations: Vec<Observation>,
-    pub context: Context,
-    pub action: Action,
-    pub result: ActionResult,
-    pub duration: Duration,
+☉ Σ HeartbeatResult {
+    ☉ observations: Vec<Observation>,
+    ☉ context: Context,
+    ☉ action: Action,
+    ☉ result: ActionResult,
+    ☉ duration: Duration,
 }
 
-pub enum HeartbeatError {
+☉ ᛈ HeartbeatError {
     PerceptionFailed(String),
     ContextFailed(String),
     DeliberationFailed(String),
     ExecutionFailed(String),
 }
 
-impl From<DaemonError> for HeartbeatError {
-    fn from(e: DaemonError) -> Self {
-        match e {
-            DaemonError::NoActiveGoal => HeartbeatError::DeliberationFailed("No active goal".to_string()),
-            DaemonError::ToolNotFound(t) => HeartbeatError::ExecutionFailed(format!("Tool not found: {}", t)),
-            _ => HeartbeatError::ExecutionFailed(format!("{:?}", e)),
+⊢ From<DaemonError> ∀ HeartbeatError {
+    λ from(e: DaemonError) -> Self {
+        ⌥ e {
+            DaemonError·NoActiveGoal => HeartbeatError·DeliberationFailed("No active goal".to_string()),
+            DaemonError·ToolNotFound(t) => HeartbeatError·ExecutionFailed(format!("Tool not found: {}", t)),
+            _ => HeartbeatError·ExecutionFailed(format!("{:?}", e)),
         }
     }
 }
@@ -805,7 +805,7 @@ impl From<DaemonError> for HeartbeatError {
 // Errors
 // ============================================================================
 
-pub enum DaemonError {
+☉ ᛈ DaemonError {
     CorruptSnapshot,
     NoActiveGoal,
     ToolNotFound(String),
@@ -815,16 +815,16 @@ pub enum DaemonError {
     ConfigurationError(String),
 }
 
-impl std::fmt::Debug for DaemonError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DaemonError::CorruptSnapshot => write!(f, "CorruptSnapshot"),
-            DaemonError::NoActiveGoal => write!(f, "NoActiveGoal"),
-            DaemonError::ToolNotFound(t) => write!(f, "ToolNotFound({})", t),
-            DaemonError::ToolExecutionFailed(e) => write!(f, "ToolExecutionFailed({})", e),
-            DaemonError::ActionNotAllowed(a) => write!(f, "ActionNotAllowed({})", a),
-            DaemonError::MemoryError(e) => write!(f, "MemoryError({})", e),
-            DaemonError::ConfigurationError(e) => write!(f, "ConfigurationError({})", e),
+⊢ std·fmt·Debug ∀ DaemonError {
+    λ fmt(&self, f: &Δ std·fmt·Formatter<'_>) -> std·fmt·Result {
+        ⌥ self {
+            DaemonError·CorruptSnapshot => write!(f, "CorruptSnapshot"),
+            DaemonError·NoActiveGoal => write!(f, "NoActiveGoal"),
+            DaemonError·ToolNotFound(t) => write!(f, "ToolNotFound({})", t),
+            DaemonError·ToolExecutionFailed(e) => write!(f, "ToolExecutionFailed({})", e),
+            DaemonError·ActionNotAllowed(a) => write!(f, "ActionNotAllowed({})", a),
+            DaemonError·MemoryError(e) => write!(f, "MemoryError({})", e),
+            DaemonError·ConfigurationError(e) => write!(f, "ConfigurationError({})", e),
         }
     }
 }

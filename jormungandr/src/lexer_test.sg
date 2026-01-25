@@ -1,4 +1,4 @@
-//! Tests for the Sigil lexer.
+//! Tests ∀ the Sigil lexer.
 //!
 //! Separated from lexer.sg to reduce file size and improve type inference.
 

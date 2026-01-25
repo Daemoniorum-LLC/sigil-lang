@@ -2,7 +2,7 @@
 // Spec: 11-HOLOGRAPHIC.md § 11.2.2 (Gap Analysis)
 // Priority: P1 - Specification Compliance
 //
-// The ◊ operator should wrap results in Predicted evidentiality.
+// The ◊ operator should wrap results ∈ Predicted evidentiality.
 // This test verifies the evidentiality is correctly propagated.
 //
 // @sdd_gap Section 11.2.2 - Possibility evidentiality missing

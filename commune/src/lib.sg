@@ -1,11 +1,11 @@
-// Commune - Multi-Agent Communication Infrastructure for Sigil
+// Commune - Multi-Agent Communication Infrastructure ∀ Sigil
 // Public API
 
-pub mod types;
-pub mod commune;
+☉ scroll types;
+☉ scroll commune;
 
 // Re-export core types
-pub use types::{
+☉ invoke types·{
     // Identity
     AgentId,
     MessageId,
@@ -67,7 +67,7 @@ pub use types::{
     Vector,
 };
 
-pub use commune::{
+☉ invoke commune·{
     Commune,
     AgentInfo,
     AgentStatus,
@@ -89,49 +89,49 @@ pub use commune::{
 // ============================================================================
 
 /// Create a local commune (in-process communication)
-pub fn local() -> Commune {
-    Commune::local()
+☉ λ local() -> Commune {
+    Commune·local()
 }
 
 /// Create a commune with custom configuration
-pub fn with_config(config: CommuneConfig) -> Commune {
-    Commune::new(config)
+☉ λ with_config(config: CommuneConfig) -> Commune {
+    Commune·new(config)
 }
 
 /// Create a simple intent
-pub fn inform(to: AgentId, topic: &str, content: Value) -> Intent {
-    Intent::Inform {
+☉ λ inform(to: AgentId, topic: &str, content: Value) -> Intent {
+    Intent·Inform {
         topic: topic.to_string(),
         content,
     }
 }
 
 /// Create a query intent
-pub fn query(question: &str) -> Intent {
-    Intent::Query {
+☉ λ query(question: &str) -> Intent {
+    Intent·Query {
         question: question.to_string(),
-        context: Value::empty(),
+        context: Value·empty(),
     }
 }
 
 /// Create a delegate intent
-pub fn delegate(task: Task) -> Intent {
-    Intent::Delegate {
+☉ λ delegate(task: Task) -> Intent {
+    Intent·Delegate {
         task,
         constraints: vec![],
     }
 }
 
 /// Create a proposal
-pub fn propose(description: &str, content: Value) -> Proposal {
-    Proposal::new(description, content, Duration::hours(24))
+☉ λ propose(description: &str, content: Value) -> Proposal {
+    Proposal·new(description, content, Duration·hours(24))
 }
 
 // ============================================================================
 // Agent Macro
 // ============================================================================
 
-/// Macro for defining communicating agents
+/// Macro ∀ defining communicating agents
 #[macro_export]
 macro_rules! communicating_agent {
     (
@@ -140,11 +140,11 @@ macro_rules! communicating_agent {
         $(on_message: |$msg_self:ident, $msg:ident| $msg_body:block)?
     ) => {
         {
-            let info = AgentInfo {
-                id: AgentId::new(),
+            ≔ info = AgentInfo {
+                id: AgentId·new(),
                 name: $name.to_string(),
                 capabilities: vec![$($cap.to_string()),*],
-                status: AgentStatus::Online,
+                status: AgentStatus·Online,
             };
             info
         }
@@ -155,32 +155,32 @@ macro_rules! communicating_agent {
 // Helper Types
 // ============================================================================
 
-use std::time::Duration as StdDuration;
+invoke std·time·Duration as StdDuration;
 
-pub struct Duration {
+☉ Σ Duration {
     nanos: u64,
 }
 
-impl Duration {
-    pub fn zero() -> Self { Self { nanos: 0 } }
-    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-    pub fn hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
-    pub fn days(d: u64) -> Self { Self { nanos: d * 86_400_000_000_000 } }
+⊢ Duration {
+    ☉ λ zero() -> Self { Self { nanos: 0 } }
+    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ λ days(d: u64) -> Self { Self { nanos: d * 86_400_000_000_000 } }
 
-    pub fn as_nanos(&self) -> u64 { self.nanos }
+    ☉ λ as_nanos(&self) -> u64 { self.nanos }
 }
 
-impl Copy for Duration {}
-impl Clone for Duration {
-    fn clone(&self) -> Self { *self }
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration {
+    λ clone(&self) -> Self { *self }
 }
 
-pub struct Value {
+☉ Σ Value {
     inner: Vec<u8>,
 }
 
-impl Value {
-    pub fn empty() -> Self { Self { inner: vec![] } }
-    pub fn string(s: &str) -> Self { Self { inner: s.as_bytes().to_vec() } }
+⊢ Value {
+    ☉ λ empty() -> Self { Self { inner: vec![] } }
+    ☉ λ string(s: &str) -> Self { Self { inner: s.as_bytes().to_vec() } }
 }

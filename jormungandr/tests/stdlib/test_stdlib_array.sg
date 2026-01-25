@@ -61,7 +61,7 @@ rite main() {
     // mean
     assert_eq(mean([2, 4, 6]), 4.0);
 
-    // Note: contains/index_of for arrays bypass type checker but work at runtime
+    // Note: contains/index_of ∀ arrays bypass type checker but work at runtime
     // Tested separately with simpler approach
 
     // slice

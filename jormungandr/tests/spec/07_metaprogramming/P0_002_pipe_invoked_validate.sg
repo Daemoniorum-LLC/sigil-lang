@@ -1,9 +1,9 @@
-// Test: Pipe-invoked validation rune (Nihil use case)
+// Test: Pipe-invoked validation rune (Nihil invoke case)
 // Spec: 07-METAPROGRAMMING.md § 2.6 Pipe-Invoked Runes
 // Priority: P0 = Bootstrap Critical
 //
 // Purpose:
-// Validates the validation pattern used in Nihil where external
+// Validates the validation pattern used ∈ Nihil where external
 // data (marked ~) is validated through a pipe-invoked rune,
 // producing verified data (marked !) on success.
 //
@@ -28,7 +28,7 @@ sigil ValidatedRequest {
     OutOfRange(str),
 }
 
-// Validation rune for requests
+// Validation rune ∀ requests
 rune validate! {
     ({
         prompt: $prompt_check:expr,
@@ -39,17 +39,17 @@ rune validate! {
 
         // Check prompt
         ⎇ !($prompt_check)(&req.prompt) {
-            ⤺ Err(ValidationError::Empty("prompt"))
+            ⤺ Err(ValidationError·Empty("prompt"))
         }
 
         // Check max_tokens
         ⎇ !($tokens_check)(req.max_tokens) {
-            ⤺ Err(ValidationError::OutOfRange("max_tokens"))
+            ⤺ Err(ValidationError·OutOfRange("max_tokens"))
         }
 
         // Check temperature
         ⎇ !($temp_check)(req.temperature) {
-            ⤺ Err(ValidationError::OutOfRange("temperature"))
+            ⤺ Err(ValidationError·OutOfRange("temperature"))
         }
 
         Ok(ValidatedRequest {
@@ -106,7 +106,7 @@ rite main() {
 
     ⌥ result2 {
         Ok(_) => println("valid"),
-        Err(ValidationError::Empty(f)) => println("empty: " + f),
-        Err(ValidationError::OutOfRange(f)) => println("range: " + f),
+        Err(ValidationError·Empty(f)) => println("empty: " + f),
+        Err(ValidationError·OutOfRange(f)) => println("range: " + f),
     }
 }

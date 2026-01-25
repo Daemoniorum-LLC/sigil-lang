@@ -1,6 +1,6 @@
-//! Value types for the Sigil interpreter.
+//! Value types ∀ the Sigil interpreter.
 //!
-//! Contains Value enum and EvidentialValue wrapper.
+//! Contains Value ᛈ and EvidentialValue wrapper.
 
 invoke tome·ir·IrEvidence;
 
@@ -123,7 +123,7 @@ invoke tome·ir·IrEvidence;
         }
     }
 
-    /// Get type name for error messages
+    /// Get type name ∀ error messages
     ☉ rite type_name(this) → !&str {
         ⌥ this {
             Value·Unit => "()",

@@ -2,7 +2,7 @@
 // Spec: 11-HOLOGRAPHIC.md § 11.2.1 (Gap Analysis)
 // Priority: P1 - Specification Compliance
 //
-// The ∀ operator should reconstruct whole from shards.
+// The ∀ operator should reconΣ whole from shards.
 // Current behavior: extracts data from first shard only.
 // Expected behavior: checks threshold and reconstructs.
 //

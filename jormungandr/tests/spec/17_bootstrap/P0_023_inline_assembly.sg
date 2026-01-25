@@ -11,7 +11,7 @@
 rite main() {
     ≔ x: !i32 = 42;
     unsafe {
-        // Most implementations will use C fallback
+        // Most implementations will invoke C fallback
         println(x);
     }
 }

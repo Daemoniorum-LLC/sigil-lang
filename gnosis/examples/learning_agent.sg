@@ -1,7 +1,7 @@
 // Example: Building a learning agent with Gnosis
 // Demonstrates how agents learn from experience and grow over time
 
-use gnosis::{
+invoke gnosis·{
     Gnosis, Experience, Context, Action, ExperienceOutcome,
     Feedback, FeedbackType, SkillDefinition, SkillTransfer,
     ReflectionPeriod, HumanId, DomainKnowledge,
@@ -9,18 +9,18 @@ use gnosis::{
 };
 
 // A coding assistant that learns and improves
-struct CodingAssistant {
+Σ CodingAssistant {
     gnosis: Gnosis,
     human_id: HumanId,
 }
 
-impl CodingAssistant {
-    fn new() -> Self {
-        let mut gnosis = Gnosis::new();
+⊢ CodingAssistant {
+    λ new() -> Self {
+        ≔ Δ gnosis = Gnosis·new();
 
         // Define skills the agent will develop
         gnosis.define_skill(
-            SkillDefinition::new("coding")
+            SkillDefinition·new("coding")
                 .with_subskill("debugging")
                 .with_subskill("refactoring")
                 .with_subskill("testing")
@@ -28,27 +28,27 @@ impl CodingAssistant {
         );
 
         gnosis.define_skill(
-            SkillDefinition::new("communication")
+            SkillDefinition·new("communication")
                 .with_subskill("explanation")
                 .with_subskill("summarization")
                 .with_subskill("teaching")
         );
 
         gnosis.define_skill(
-            SkillDefinition::new("problem_solving")
+            SkillDefinition·new("problem_solving")
                 .with_subskill("analysis")
                 .with_subskill("design")
                 .with_subskill("optimization")
         );
 
         // Skills can transfer between domains
-        gnosis.register_transfer(SkillTransfer::new(
+        gnosis.register_transfer(SkillTransfer·new(
             "debugging", "analysis", 0.5
         ));
-        gnosis.register_transfer(SkillTransfer::new(
+        gnosis.register_transfer(SkillTransfer·new(
             "refactoring", "design", 0.4
         ));
-        gnosis.register_transfer(SkillTransfer::new(
+        gnosis.register_transfer(SkillTransfer·new(
             "explanation", "documentation", 0.6
         ));
 
@@ -58,66 +58,66 @@ impl CodingAssistant {
         }
     }
 
-    fn set_human(&mut self, human_id: &str) {
+    λ set_human(&Δ self, human_id: &str) {
         self.human_id = HumanId { id: human_id.to_string() };
     }
 
-    fn help_with_bug(&mut self, bug_description: &str, success: bool, quality: f32) {
+    λ help_with_bug(&Δ self, bug_description: &str, success: bool, quality: f32) {
         // Record the experience
-        let context = Context::new("debugging")
+        ≔ context = Context·new("debugging")
             .with_domain("rust")
             .with_human(self.human_id.clone());
 
-        let action = Action::new("systematic_debugging")
+        ≔ action = Action·new("systematic_debugging")
             .with_skill("debugging")
             .with_skill("analysis");
 
-        let outcome = if success {
-            ExperienceOutcome::success(quality)
-        } else {
-            ExperienceOutcome::failure("Unable to identify root cause")
+        ≔ outcome = ⎇ success {
+            ExperienceOutcome·success(quality)
+        } ⎉ {
+            ExperienceOutcome·failure("Unable to identify root cause")
         };
 
-        self.gnosis.experience(Experience::new(context, action, outcome));
+        self.gnosis.experience(Experience·new(context, action, outcome));
     }
 
-    fn refactor_code(&mut self, improvement_type: &str, quality: f32) {
-        let context = Context::new("refactoring")
+    λ refactor_code(&Δ self, improvement_type: &str, quality: f32) {
+        ≔ context = Context·new("refactoring")
             .with_domain("rust")
             .with_human(self.human_id.clone());
 
-        let action = Action::new(improvement_type)
+        ≔ action = Action·new(improvement_type)
             .with_skill("refactoring")
             .with_skill("design");
 
-        let outcome = ExperienceOutcome::success(quality);
+        ≔ outcome = ExperienceOutcome·success(quality);
 
-        self.gnosis.experience(Experience::new(context, action, outcome));
+        self.gnosis.experience(Experience·new(context, action, outcome));
     }
 
-    fn explain_concept(&mut self, concept: &str, understood: bool) {
-        let context = Context::new("teaching")
+    λ explain_concept(&Δ self, concept: &str, understood: bool) {
+        ≔ context = Context·new("teaching")
             .with_domain("programming_concepts")
             .with_human(self.human_id.clone());
 
-        let action = Action::new("concept_explanation")
+        ≔ action = Action·new("concept_explanation")
             .with_skill("explanation")
             .with_skill("teaching");
 
-        let outcome = if understood {
-            ExperienceOutcome::success(0.9)
-        } else {
-            ExperienceOutcome::success(0.4) // Partially successful
+        ≔ outcome = ⎇ understood {
+            ExperienceOutcome·success(0.9)
+        } ⎉ {
+            ExperienceOutcome·success(0.4) // Partially successful
         };
 
-        self.gnosis.experience(Experience::new(context, action, outcome));
+        self.gnosis.experience(Experience·new(context, action, outcome));
     }
 
-    fn receive_feedback(&mut self, feedback_type: FeedbackType) {
-        let context = Context::new("interaction")
+    λ receive_feedback(&Δ self, feedback_type: FeedbackType) {
+        ≔ context = Context·new("interaction")
             .with_human(self.human_id.clone());
 
-        let feedback = Feedback::from_human(
+        ≔ feedback = Feedback·from_human(
             self.human_id.clone(),
             feedback_type,
             context,
@@ -126,25 +126,25 @@ impl CodingAssistant {
         self.gnosis.learn_from_feedback(feedback);
     }
 
-    fn get_communication_style(&self) -> CommunicationStyle {
+    λ get_communication_style(&self) -> CommunicationStyle {
         // Get style adapted to this human's preferences
         self.gnosis.adapted_style(&self.human_id)
     }
 
-    fn adapt_to_domain(&mut self, domain: &str) {
-        let knowledge = DomainKnowledge::new()
+    λ adapt_to_domain(&Δ self, domain: &str) {
+        ≔ knowledge = DomainKnowledge·new()
             .with_term("borrow checker", "Rust's compile-time memory safety enforcement")
             .with_term("ownership", "Rust's memory management model")
-            .with_convention("Use snake_case for function names")
-            .with_convention("Prefer Result over panic for error handling");
+            .with_convention("Use snake_case ∀ function names")
+            .with_convention("Prefer Result over panic ∀ error handling");
 
         self.gnosis.adapt_to_domain(domain, knowledge);
     }
 
-    fn show_skill_progress(&self) {
+    λ show_skill_progress(&self) {
         println!("=== Skill Progress ===\n");
 
-        for skill in self.gnosis.all_skills() {
+        ∀ skill ∈ self.gnosis.all_skills() {
             println!("{}: {} ({:.0}%)",
                 skill.name,
                 skill.level().to_string(),
@@ -155,35 +155,35 @@ impl CodingAssistant {
         }
     }
 
-    fn daily_reflection(&self) {
-        let reflection = self.gnosis.reflect(ReflectionPeriod::Daily);
+    λ daily_reflection(&self) {
+        ≔ reflection = self.gnosis.reflect(ReflectionPeriod·Daily);
         println!("{}", reflection.to_summary());
     }
 
-    fn weekly_reflection(&self) {
-        let reflection = self.gnosis.reflect(ReflectionPeriod::Weekly);
+    λ weekly_reflection(&self) {
+        ≔ reflection = self.gnosis.reflect(ReflectionPeriod·Weekly);
         println!("{}", reflection.to_summary());
     }
 
-    fn suggest_approach(&self, task_type: &str) {
-        let context = Context::new(task_type);
-        let suggestions = self.gnosis.suggest_approach(&context);
+    λ suggest_approach(&self, task_type: &str) {
+        ≔ context = Context·new(task_type);
+        ≔ suggestions = self.gnosis.suggest_approach(&context);
 
-        println!("=== Approach Suggestions for {} ===\n", task_type);
+        println!("=== Approach Suggestions ∀ {} ===\n", task_type);
 
-        if let Some(best) = suggestions.best() {
+        ⎇ ≔ Some(best) = suggestions.best() {
             println!("Recommended: {} (success rate: {:.0}%)",
                 best.approach,
                 best.success_rate * 100.0
             );
-        } else {
+        } ⎉ {
             println!("No prior experience with this task type - will explore");
         }
     }
 }
 
-fn main() {
-    let mut assistant = CodingAssistant::new();
+λ main() {
+    ≔ Δ assistant = CodingAssistant·new();
 
     // Set the human we're working with
     assistant.set_human("alice");
@@ -195,9 +195,9 @@ fn main() {
     println!("=== Recording Experiences ===\n");
 
     // Successful debugging sessions
-    assistant.help_with_bug("null pointer in login handler", true, 0.9);
-    assistant.help_with_bug("race condition in async code", true, 0.7);
-    assistant.help_with_bug("memory leak in cache", true, 0.85);
+    assistant.help_with_bug("null pointer ∈ login handler", true, 0.9);
+    assistant.help_with_bug("race condition ∈ async code", true, 0.7);
+    assistant.help_with_bug("memory leak ∈ cache", true, 0.85);
 
     // Failed debugging attempt
     assistant.help_with_bug("intermittent test failure", false, 0.0);
@@ -212,11 +212,11 @@ fn main() {
 
     // Receive feedback from human
     println!("Processing feedback...\n");
-    assistant.receive_feedback(FeedbackType::TooVerbose);
-    assistant.receive_feedback(FeedbackType::GoodApproach);
+    assistant.receive_feedback(FeedbackType·TooVerbose);
+    assistant.receive_feedback(FeedbackType·GoodApproach);
 
     // Check adapted communication style
-    let style = assistant.get_communication_style();
+    ≔ style = assistant.get_communication_style();
     println!("Adapted style:");
     println!("  Verbosity: {:.2} (negative = concise)", style.verbosity);
     println!("  Formality: {:.2}", style.formality);
@@ -235,11 +235,11 @@ fn main() {
 
     // Show growth patterns
     println!("\n=== Insights ===");
-    let reflection = assistant.gnosis.reflect(ReflectionPeriod::Daily);
-    for insight in reflection.insights() {
+    ≔ reflection = assistant.gnosis.reflect(ReflectionPeriod·Daily);
+    ∀ insight ∈ reflection.insights() {
         println!("Observation: {}", insight.observation);
         println!("Implication: {}", insight.implication);
-        if let Some(action) = &insight.action {
+        ⎇ ≔ Some(action) = &insight.action {
             println!("Suggested action: {}", action);
         }
         println!();

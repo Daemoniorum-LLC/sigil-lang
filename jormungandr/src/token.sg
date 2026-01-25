@@ -1,4 +1,4 @@
-//! Token definitions for the Sigil lexer.
+//! Token definitions ∀ the Sigil lexer.
 //!
 //! This module defines all token types produced by the lexer.
 //! Includes polysynthetic morphemes, evidentiality markers, and Unicode symbols.
@@ -9,7 +9,7 @@
 
 invoke tome·span·Span;
 
-/// Token types for the Sigil programming language.
+/// Token types ∀ the Sigil programming language.
 /// Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.
 #[derive(Debug, Clone, PartialEq)]
 ☉ ᛈ Token {
@@ -106,7 +106,7 @@ invoke tome·span·Span;
     Mu,         // μ, Μ - Middle/median
     Chi,        // χ, Χ - Random/choice
     Nu,         // ν, Ν - Nth element
-    Xi,         // ξ, Ξ - Next in sequence
+    Xi,         // ξ, Ξ - Next ∈ sequence
     Hourglass,  // ⌛ - Await symbol
 
     // ========================================
@@ -116,7 +116,7 @@ invoke tome·span·Span;
     Gpu,        // ⊛, gpu - GPU compute shader
 
     // ========================================
-    // Quantifiers (for AI-native set operations)
+    // Quantifiers (∀ AI-native set operations)
     // ========================================
     ForAll,         // ∀ - Universal quantification
     Exists,         // ∃ - Existential quantification
@@ -384,10 +384,10 @@ invoke tome·span·Span;
     // ========================================
     // Attribute keywords
     // ========================================
-    Repr,           // repr (for #[repr(...)])
-    Align,          // align (for #[align(...)])
-    Test,           // test (for #[test])
-    Default,        // default (for default implementations)
+    Repr,           // repr (∀ #[repr(...)])
+    Align,          // align (∀ #[align(...)])
+    Test,           // test (∀ #[test])
+    Default,        // default (∀ default implementations)
 
     // ========================================
     // Special

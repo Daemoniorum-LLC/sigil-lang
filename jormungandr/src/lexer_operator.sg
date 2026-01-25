@@ -1,4 +1,4 @@
-//! Operator lexing for the Sigil lexer.
+//! Operator lexing ∀ the Sigil lexer.
 //!
 //! Handles lexing of operators like +, -, *, /, =, etc.
 
@@ -39,7 +39,7 @@ invoke tome·lexer·Lexer;
         }
     }
 
-    /// Lex / or /= (comments handled in skip_whitespace)
+    /// Lex / or /= (comments handled ∈ skip_whitespace)
     rite lex_slash(vary this) → !Token {
         ⎇ this.match_char('=') {
             Token·SlashEq

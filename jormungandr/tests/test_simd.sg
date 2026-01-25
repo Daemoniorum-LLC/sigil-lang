@@ -3,8 +3,8 @@
 //! Tests SIMD vector types, intrinsics, and operations.
 //! Target: 100% SIMD coverage each regression detection.
 
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers

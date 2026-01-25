@@ -1,4 +1,4 @@
-// Demo: Linear Types in Sigil
+// Demo: Linear Types ∈ Sigil
 // Compile-time enforcement of the no-cloning theorem
 
 // ═══════════════════════════════════════════════════════════════
@@ -34,7 +34,7 @@ rite demo_quantum_sim() {
     ≔ measured = q.state;
     println(measured);  // 0
 
-    // q is now consumed - can't use it again!
+    // q is now consumed - can't invoke it again!
 }
 
 // ═══════════════════════════════════════════════════════════════

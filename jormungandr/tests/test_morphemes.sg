@@ -193,7 +193,7 @@
     // This is polysynthetic: the incorporated form is a unit
 
     // For testing, we'll simulate with method chains
-    // Real incorporation would use the · operator
+    // Real incorporation would invoke the · operator
 
     ⤺ yea;
 }

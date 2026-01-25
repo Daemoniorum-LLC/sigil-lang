@@ -1,4 +1,4 @@
-//! Tests for the Sigil interpreter.
+//! Tests ∀ the Sigil interpreter.
 //!
 //! Separated from interp.sg to reduce file size and improve type inference.
 

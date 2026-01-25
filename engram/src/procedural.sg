@@ -1,11 +1,11 @@
 // Procedural Memory Module
 // Skill memory - how to do things
 
-module engram::procedural
+module engram·procedural
 
-use engram::types::*
-use engram::config::ProceduralConfig
-use engram::episodic::Episode
+invoke engram·types·*
+invoke engram·config·ProceduralConfig
+invoke engram·episodic·Episode
 
 // ============================================================================
 // Procedural Memory
@@ -16,25 +16,25 @@ use engram::episodic::Episode
 /// Stores skills - patterns of action that have worked before.
 /// Skills are learned from successful episodic experiences and
 /// refined through ongoing feedback.
-pub struct ProceduralMemory {
+☉ Σ ProceduralMemory {
     /// Skills indexed by ID
     skills: HashMap<SkillId, Skill>,
 
-    /// Pattern index for fast matching
+    /// Pattern index ∀ fast matching
     patterns: Vec<(TriggerPattern, SkillId)>,
 
     /// Configuration
     config: ProceduralConfig,
 }
 
-impl ProceduralMemory {
+⊢ ProceduralMemory {
     // ========================================================================
     // Construction
     // ========================================================================
 
-    pub fn new(config: ProceduralConfig) -> EngramResult<Self>! {
+    ☉ λ new(config: ProceduralConfig) -> EngramResult<Self>! {
         Ok(Self {
-            skills: HashMap::new(),
+            skills: HashMap·new(),
             patterns: vec![],
             config,
         })
@@ -45,32 +45,32 @@ impl ProceduralMemory {
     // ========================================================================
 
     /// Learn a new skill from episodes
-    pub fn learn_from_episodes(episodes: Vec<Episode>) -> Option<Skill> {
+    ☉ λ learn_from_episodes(episodes: Vec<Episode>) -> Option<Skill> {
         // Need minimum episodes
-        if episodes.len() < self.config.min_episodes_for_skill {
-            return None
+        ⎇ episodes.len() < self.config.min_episodes_for_skill {
+            ⤺ None
         }
 
         // Filter to successful episodes
-        let successful: Vec<_> = episodes.iter()
+        ≔ successful: Vec<_> = episodes.iter()
             .filter(|e| e.outcome.is_success())
             .collect()
 
-        if successful.len() < self.config.min_episodes_for_skill {
-            return None
+        ⎇ successful.len() < self.config.min_episodes_for_skill {
+            ⤺ None
         }
 
         // Extract common pattern
-        let trigger = self.extract_trigger_pattern(&successful)?
+        ≔ trigger = self.extract_trigger_pattern(&successful)?
 
         // Extract procedure
-        let procedure = self.extract_procedure(&successful)?
+        ≔ procedure = self.extract_procedure(&successful)?
 
         // Compute success rate
-        let success_rate = successful.len() as f64 / episodes.len() as f64
+        ≔ success_rate = successful.len() as f64 / episodes.len() as f64
 
-        let skill = Skill {
-            id: SkillId::new().unwrap(),
+        ≔ skill = Skill {
+            id: SkillId·new().unwrap(),
             name: self.generate_skill_name(&trigger, &procedure),
             description: self.generate_description(&successful),
             trigger: trigger.clone(),
@@ -81,18 +81,18 @@ impl ProceduralMemory {
                 success_count: successful.len() as u32,
                 failure_count: (episodes.len() - successful.len()) as u32,
                 success_rate,
-                avg_duration: Duration::zero(),
+                avg_duration: Duration·zero(),
             },
             refinements: vec![],
             failure_modes: vec![],
             source_episodes: episodes.iter().map(|e| e.id.clone()).collect(),
-            created_at: Instant::now(),
+            created_at: Instant·now(),
             last_used: None,
             enabled: true,
         }
 
         // Register
-        let id = skill.id.clone()
+        ≔ id = skill.id.clone()
         self.skills.insert(id.clone(), skill.clone())
         self.patterns.push((trigger, id))
 
@@ -100,25 +100,25 @@ impl ProceduralMemory {
     }
 
     /// Register a skill directly
-    pub fn register(skill: Skill) -> SkillId {
-        let id = skill.id.clone()
-        let trigger = skill.trigger.clone()
+    ☉ λ register(skill: Skill) -> SkillId {
+        ≔ id = skill.id.clone()
+        ≔ trigger = skill.trigger.clone()
         self.skills.insert(id.clone(), skill)
         self.patterns.push((trigger, id.clone()))
         id
     }
 
     /// Find skills matching the current situation
-    pub fn match_situation(context: &Context) -> Vec<SkillMatch> {
-        let context_text = context.to_string().to_lowercase()
+    ☉ λ match_situation(context: &Context) -> Vec<SkillMatch> {
+        ≔ context_text = context.to_string().to_lowercase()
 
-        let mut matches: Vec<_> = self.patterns.iter()
+        ≔ Δ matches: Vec<_> = self.patterns.iter()
             .filter_map(|(pattern, skill_id)| {
-                let score = self.match_pattern(pattern, &context_text)
-                if score >= self.config.pattern_match_threshold {
-                    let skill = self.skills.get(skill_id)?;
-                    if !skill.enabled {
-                        return None
+                ≔ score = self.match_pattern(pattern, &context_text)
+                ⎇ score >= self.config.pattern_match_threshold {
+                    ≔ skill = self.skills.get(skill_id)?;
+                    ⎇ !skill.enabled {
+                        ⤺ None
                     }
                     Some(SkillMatch {
                         skill: skill.clone(),
@@ -126,16 +126,16 @@ impl ProceduralMemory {
                         preconditions_met: true,  // Simplified
                         failed_preconditions: vec![],
                     })
-                } else {
+                } ⎉ {
                     None
                 }
             })
             .collect()
 
-        // Sort by match score * success rate
+        // Sort by ⌥ score * success rate
         matches.sort_by(|a, b| {
-            let score_a = a.match_score * a.skill.stats.success_rate
-            let score_b = b.match_score * b.skill.stats.success_rate
+            ≔ score_a = a.match_score * a.skill.stats.success_rate
+            ≔ score_b = b.match_score * b.skill.stats.success_rate
             score_b.partial_cmp(&score_a).unwrap()
         })
 
@@ -143,23 +143,23 @@ impl ProceduralMemory {
     }
 
     /// Get a specific skill
-    pub fn get(id: SkillId) -> Option<&Skill> {
+    ☉ λ get(id: SkillId) -> Option<&Skill> {
         self.skills.get(&id)
     }
 
     /// Record feedback from skill execution
-    pub fn feedback(skill_id: SkillId, episode: Episode) {
-        if let Some(skill) = self.skills.get_mut(&skill_id) {
+    ☉ λ feedback(skill_id: SkillId, episode: Episode) {
+        ⎇ ≔ Some(skill) = self.skills.get_mut(&skill_id) {
             skill.stats.execution_count += 1
-            skill.last_used = Some(Instant::now())
+            skill.last_used = Some(Instant·now())
 
-            match &episode.outcome {
-                Outcome::Success { .. } => {
+            ⌥ &episode.outcome {
+                Outcome·Success { .. } => {
                     skill.stats.success_count += 1
                     // Exponential moving average
                     skill.stats.success_rate = skill.stats.success_rate * 0.9 + 0.1
                 }
-                Outcome::Failure { error, .. } => {
+                Outcome·Failure { error, .. } => {
                     skill.stats.failure_count += 1
                     skill.stats.success_rate = skill.stats.success_rate * 0.9
 
@@ -171,18 +171,18 @@ impl ProceduralMemory {
                         occurrences: 1,
                     })
                 }
-                Outcome::Partial { .. } => {
+                Outcome·Partial { .. } => {
                     skill.stats.success_rate = skill.stats.success_rate * 0.9 + 0.05
                 }
                 _ => {}
             }
 
             // Update average duration
-            if let Some(duration) = episode.duration() {
-                if skill.stats.avg_duration == Duration::zero() {
+            ⎇ ≔ Some(duration) = episode.duration() {
+                ⎇ skill.stats.avg_duration == Duration·zero() {
                     skill.stats.avg_duration = duration
-                } else {
-                    skill.stats.avg_duration = Duration::from_secs_f64(
+                } ⎉ {
+                    skill.stats.avg_duration = Duration·from_secs_f64(
                         skill.stats.avg_duration.as_secs_f64() * 0.9
                         + duration.as_secs_f64() * 0.1
                     )
@@ -192,12 +192,12 @@ impl ProceduralMemory {
     }
 
     /// Disable a skill
-    pub fn disable(skill_id: SkillId) -> EngramResult<()>! {
-        if let Some(skill) = self.skills.get_mut(&skill_id) {
+    ☉ λ disable(skill_id: SkillId) -> EngramResult<()>! {
+        ⎇ ≔ Some(skill) = self.skills.get_mut(&skill_id) {
             skill.enabled = false
             Ok(())
-        } else {
-            Err(EngramError::NotFound {
+        } ⎉ {
+            Err(EngramError·NotFound {
                 id: skill_id.to_string(),
                 memory_type: "procedural".to_string(),
             })
@@ -208,10 +208,10 @@ impl ProceduralMemory {
     // Usage Information
     // ========================================================================
 
-    pub fn usage() -> MemorySystemUsage {
+    ☉ λ usage() -> MemorySystemUsage {
         MemorySystemUsage {
             item_count: self.skills.len(),
-            bytes_used: self.skills.len() * std::mem::size_of::<Skill>(),
+            bytes_used: self.skills.len() * std·mem·size_of·<Skill>(),
             capacity: self.config.max_skills,
         }
     }
@@ -220,28 +220,28 @@ impl ProceduralMemory {
     // Internal Helpers
     // ========================================================================
 
-    fn extract_trigger_pattern(episodes: &[&Episode]) -> Option<TriggerPattern> {
+    λ extract_trigger_pattern(episodes: &[&Episode]) -> Option<TriggerPattern> {
         // Extract common keywords from contexts
-        let mut word_counts: HashMap<String, usize> = HashMap::new()
+        ≔ Δ word_counts: HashMap<String, usize> = HashMap·new()
 
-        for episode in episodes {
-            let text = episode.context.to_string().to_lowercase()
-            for word in text.split_whitespace() {
-                if word.len() > 3 {  // Skip short words
+        ∀ episode ∈ episodes {
+            ≔ text = episode.context.to_string().to_lowercase()
+            ∀ word ∈ text.split_whitespace() {
+                ⎇ word.len() > 3 {  // Skip short words
                     *word_counts.entry(word.to_string()).or_insert(0) += 1
                 }
             }
         }
 
-        // Keep words that appear in majority of episodes
-        let threshold = episodes.len() / 2
-        let keywords: Vec<_> = word_counts.into_iter()
+        // Keep words that appear ∈ majority of episodes
+        ≔ threshold = episodes.len() / 2
+        ≔ keywords: Vec<_> = word_counts.into_iter()
             .filter(|(_, count)| *count >= threshold)
             .map(|(word, count)| (word, count as f64 / episodes.len() as f64))
             .collect()
 
-        if keywords.is_empty() {
-            return None
+        ⎇ keywords.is_empty() {
+            ⤺ None
         }
 
         Some(TriggerPattern {
@@ -251,26 +251,26 @@ impl ProceduralMemory {
         })
     }
 
-    fn extract_procedure(episodes: &[&Episode]) -> Option<Procedure> {
+    λ extract_procedure(episodes: &[&Episode]) -> Option<Procedure> {
         // Extract common event sequences
-        // Simplified: just use events from first episode as template
-        let first = episodes.first()?;
+        // Simplified: just invoke events from first episode as template
+        ≔ first = episodes.first()?;
 
-        let steps: Vec<_> = first.events.iter()
+        ≔ steps: Vec<_> = first.events.iter()
             .filter(|e| matches!(e.event_type,
-                EventType::ToolCall | EventType::Decision | EventType::AgentResponse
+                EventType·ToolCall | EventType·Decision | EventType·AgentResponse
             ))
             .map(|e| ProcedureStep {
                 description: format!("{:?}", e.event_type),
-                action: Action::Custom {
+                action: Action·Custom {
                     name: format!("{:?}", e.event_type),
                     data: e.content.clone(),
                 },
             })
             .collect()
 
-        if steps.is_empty() {
-            return None
+        ⎇ steps.is_empty() {
+            ⤺ None
         }
 
         Some(Procedure {
@@ -279,31 +279,31 @@ impl ProceduralMemory {
         })
     }
 
-    fn match_pattern(pattern: &TriggerPattern, context: &str) -> f64 {
-        let mut total_weight = 0.0
-        let mut matched_weight = 0.0
+    λ match_pattern(pattern: &TriggerPattern, context: &str) -> f64 {
+        ≔ Δ total_weight = 0.0
+        ≔ Δ matched_weight = 0.0
 
-        for (keyword, weight) in pattern.keywords.iter().zip(&pattern.weights) {
+        ∀ (keyword, weight) ∈ pattern.keywords.iter().zip(&pattern.weights) {
             total_weight += weight
-            if context.contains(keyword) {
+            ⎇ context.contains(keyword) {
                 matched_weight += weight
             }
         }
 
-        if total_weight == 0.0 { 0.0 } else { matched_weight / total_weight }
+        ⎇ total_weight == 0.0 { 0.0 } ⎉ { matched_weight / total_weight }
     }
 
-    fn generate_skill_name(trigger: &TriggerPattern, procedure: &Procedure) -> String {
-        let keywords = trigger.keywords.iter()
+    λ generate_skill_name(trigger: &TriggerPattern, procedure: &Procedure) -> String {
+        ≔ keywords = trigger.keywords.iter()
             .take(3)
             .cloned()
-            .collect::<Vec<_>>()
+            .collect·<Vec<_>>()
             .join("_")
 
         format!("skill_{}", keywords)
     }
 
-    fn generate_description(episodes: &[&Episode]) -> String {
+    λ generate_description(episodes: &[&Episode]) -> String {
         format!(
             "Skill learned from {} successful episodes",
             episodes.len()
@@ -316,62 +316,62 @@ impl ProceduralMemory {
 // ============================================================================
 
 /// A skill - a pattern of action
-pub struct Skill {
-    pub id: SkillId,
-    pub name: String,
-    pub description: String,
+☉ Σ Skill {
+    ☉ id: SkillId,
+    ☉ name: String,
+    ☉ description: String,
 
     /// When to apply this skill
-    pub trigger: TriggerPattern,
+    ☉ trigger: TriggerPattern,
 
     /// Conditions that must be met
-    pub preconditions: Vec<Precondition>,
+    ☉ preconditions: Vec<Precondition>,
 
     /// What to do
-    pub procedure: Procedure,
+    ☉ procedure: Procedure,
 
     /// Performance statistics
-    pub stats: SkillStats,
+    ☉ stats: SkillStats,
 
     /// Learned adjustments
-    pub refinements: Vec<Refinement>,
+    ☉ refinements: Vec<Refinement>,
 
     /// Known ways this skill can fail
-    pub failure_modes: Vec<FailureMode>,
+    ☉ failure_modes: Vec<FailureMode>,
 
     /// Episodes this skill was learned from
-    pub source_episodes: Vec<EpisodeId>,
+    ☉ source_episodes: Vec<EpisodeId>,
 
-    pub created_at: Instant,
-    pub last_used: Option<Instant>,
-    pub enabled: bool,
+    ☉ created_at: Instant,
+    ☉ last_used: Option<Instant>,
+    ☉ enabled: bool,
 }
 
 /// Pattern that triggers a skill
-pub struct TriggerPattern {
-    pub keywords: Vec<String>,
-    pub weights: Vec<f64>,
-    pub threshold: f64,
+☉ Σ TriggerPattern {
+    ☉ keywords: Vec<String>,
+    ☉ weights: Vec<f64>,
+    ☉ threshold: f64,
 }
 
-/// A precondition for skill execution
-pub struct Precondition {
-    pub description: String,
-    pub required: bool,
+/// A precondition ∀ skill execution
+☉ Σ Precondition {
+    ☉ description: String,
+    ☉ required: bool,
 }
 
 /// A procedure - sequence of steps
-pub struct Procedure {
-    pub steps: Vec<ProcedureStep>,
-    pub estimated_duration: Option<Duration>,
+☉ Σ Procedure {
+    ☉ steps: Vec<ProcedureStep>,
+    ☉ estimated_duration: Option<Duration>,
 }
 
-pub struct ProcedureStep {
-    pub description: String,
-    pub action: Action,
+☉ Σ ProcedureStep {
+    ☉ description: String,
+    ☉ action: Action,
 }
 
-pub enum Action {
+☉ ᛈ Action {
     CallTool { tool: String, args: Value },
     AskUser { question: String },
     Respond { template: String },
@@ -379,33 +379,33 @@ pub enum Action {
 }
 
 /// Skill execution statistics
-pub struct SkillStats {
-    pub execution_count: u32,
-    pub success_count: u32,
-    pub failure_count: u32,
-    pub success_rate: f64,
-    pub avg_duration: Duration,
+☉ Σ SkillStats {
+    ☉ execution_count: u32,
+    ☉ success_count: u32,
+    ☉ failure_count: u32,
+    ☉ success_rate: f64,
+    ☉ avg_duration: Duration,
 }
 
 /// A refinement to a skill
-pub struct Refinement {
-    pub condition: String,
-    pub modification: String,
-    pub learned_from: EpisodeId,
+☉ Σ Refinement {
+    ☉ condition: String,
+    ☉ modification: String,
+    ☉ learned_from: EpisodeId,
 }
 
 /// A known failure mode
-pub struct FailureMode {
-    pub trigger_context: String,
-    pub failure_type: String,
-    pub recovery: Option<String>,
-    pub occurrences: u32,
+☉ Σ FailureMode {
+    ☉ trigger_context: String,
+    ☉ failure_type: String,
+    ☉ recovery: Option<String>,
+    ☉ occurrences: u32,
 }
 
 /// Result of matching skills to situation
-pub struct SkillMatch {
-    pub skill: Skill,
-    pub match_score: f64,
-    pub preconditions_met: bool,
-    pub failed_preconditions: Vec<String>,
+☉ Σ SkillMatch {
+    ☉ skill: Skill,
+    ☉ match_score: f64,
+    ☉ preconditions_met: bool,
+    ☉ failed_preconditions: Vec<String>,
 }

@@ -1,4 +1,4 @@
-//! Type checker for Sigil.
+//! Type checker ∀ Sigil.
 //!
 //! Implements bidirectional type inference with evidentiality tracking.
 //! The type system enforces that evidence levels propagate correctly
@@ -6,7 +6,7 @@
 //!
 //! ## Evidence Lattice
 //!
-//! Evidence levels form a lattice for tracking data certainty:
+//! Evidence levels form a lattice ∀ tracking data certainty:
 //!
 //! ```
 //!     Known (!) < Uncertain (?) < Reported (~) < Paradox (‽)
@@ -24,7 +24,7 @@ invoke tome·span·Span;
 // Core Types
 // ============================================================================
 
-/// Internal type representation for the type checker.
+/// Internal type representation ∀ the type checker.
 ☉ ᛈ Type {
     // Primitive types
     Unit,
@@ -85,16 +85,16 @@ invoke tome·span·Span;
     // Atomic type
     Atomic(!Box<Type>),
 
-    // Type variable for inference
+    // Type variable ∀ inference
     Var(!TypeVar),
 
-    // Error type (for error recovery)
+    // Error type (∀ error recovery)
     Error,
 
     // Never type (diverging)
     Never,
 
-    // Any type (opaque/existential - for impl Trait)
+    // Any type (opaque/existential - ∀ ⊢ Trait)
     Any,
 }
 
@@ -178,18 +178,18 @@ invoke tome·span·Span;
                 ≔ is_async = this.is_async;
                 ≔ prefix = ⎇ is_async { "async " } ⎉ { "" };
                 ≔ param_str = params|τ{p => p.to_string()}|join(", ");
-                format!("{}fn({}) → {}", prefix, param_str, return_type.to_string())
+                format!("{}λ({}) → {}", prefix, param_str, return_type.to_string())
             },
             Type·Ref { .. } => {
                 ≔ mutable = this.mutable;
                 ≔ inner = this.inner;
-                ≔ mut_str = ⎇ mutable { "mut " } ⎉ { "" };
+                ≔ mut_str = ⎇ mutable { "Δ " } ⎉ { "" };
                 format!("&{}{}", mut_str, inner.to_string())
             },
             Type·Ptr { .. } => {
                 ≔ mutable = this.mutable;
                 ≔ inner = this.inner;
-                ≔ mut_str = ⎇ mutable { "mut " } ⎉ { "◆ " };
+                ≔ mut_str = ⎇ mutable { "Δ " } ⎉ { "◆ " };
                 format!("*{}{}", mut_str, inner.to_string())
             },
             Type·Evidential { .. } => {
@@ -269,7 +269,7 @@ invoke tome·span·Span;
 // Evidence Levels
 // ============================================================================
 
-/// Evidence levels in the type system.
+/// Evidence levels ∈ the type system.
 ///
 /// Evidence forms a lattice:
 ///   Known (!) < Uncertain (?) < Reported (~) < Paradox (‽)
@@ -293,7 +293,7 @@ invoke tome·span·Span;
 }
 
 ⊢ EvidenceLevel {
-    /// Get numeric rank for comparison (lower = more certain)
+    /// Get numeric rank ∀ comparison (lower = more certain)
     rite rank(this) → !i32 {
         ⌥ this {
             EvidenceLevel·Known => 0,
@@ -303,7 +303,7 @@ invoke tome·span·Span;
         }
     }
 
-    /// Join two evidence levels (least upper bound in lattice).
+    /// Join two evidence levels (least upper bound ∈ lattice).
     /// Returns the least certain of the two.
     ☉ rite join(this, other: !EvidenceLevel) → !EvidenceLevel {
         ⎇ this.rank() >= other.rank() {
@@ -363,21 +363,21 @@ invoke tome·span·Span;
     ///
     /// Returns yea ⎇ `this` (actual) can be used where `required` is expected.
     ☉ rite satisfies(this, required: !EvidenceLevel) → !bool {
-        // More certain evidence (lower in lattice) can satisfy less certain requirements
+        // More certain evidence (lower ∈ lattice) can satisfy less certain requirements
         this.rank() <= required.rank()
     }
 
-    /// Compare for ordering
+    /// Compare ∀ ordering
     ☉ rite cmp(this, other: !EvidenceLevel) → !Ordering {
         ≔ a = this.rank();
         ≔ b = other.rank();
         ⎇ a < b { Ordering·Less }
-        else ⎇ a > b { Ordering·Greater }
+        ⎉ ⎇ a > b { Ordering·Greater }
         ⎉ { Ordering·Equal }
     }
 }
 
-/// Ordering result for comparisons
+/// Ordering result ∀ comparisons
 ☉ ᛈ Ordering {
     Less,
     Equal,
@@ -388,7 +388,7 @@ invoke tome·span·Span;
 // Type Variables
 // ============================================================================
 
-/// Type variable for inference
+/// Type variable ∀ inference
 ☉ sigil TypeVar {
     ☉ id: !u32,
 }
@@ -452,11 +452,11 @@ invoke tome·span·Span;
 // Type Environment
 // ============================================================================
 
-/// Type environment for scoped variable lookups
+/// Type environment ∀ scoped variable lookups
 ☉ sigil TypeEnv {
     /// Variable bindings: name → (type, evidence)
     bindings: !Map<String, (Type, EvidenceLevel)>,
-    /// Parent scope (for nested scopes)
+    /// Parent scope (∀ nested scopes)
     parent: ?Box<TypeEnv>,
 }
 
@@ -495,7 +495,7 @@ invoke tome·span·Span;
         null
     }
 
-    /// Clone this environment (for multi-file compilation)
+    /// Clone this environment (∀ multi-file compilation)
     ☉ rite clone(this) → !TypeEnv {
         TypeEnv {
             bindings: this.bindings.clone(),
@@ -511,7 +511,7 @@ invoke tome·span·Span;
 // Type Definitions
 // ============================================================================
 
-/// Type definitions for user-defined types
+/// Type definitions ∀ user-defined types
 ☉ ᛈ TypeDef {
     Struct {
         generics: ![String],
@@ -551,7 +551,7 @@ invoke tome·span·Span;
     /// Collected errors
     errors: ![TypeError],
 
-    /// Current This type (set during impl block checking)
+    /// Current This type (set during ⊢ block checking)
     current_self_type: ?String,
 }
 
@@ -573,7 +573,7 @@ invoke tome·span·Span;
         checker
     }
 
-    /// Clone this type checker (shallow copy for multi-file compilation)
+    /// Clone this type checker (shallow copy ∀ multi-file compilation)
     ☉ rite clone(this) → !TypeChecker {
         TypeChecker {
             env: this.env.clone(),
@@ -597,7 +597,7 @@ invoke tome·span·Span;
             }
         };
 
-        // Type variable for polymorphic functions
+        // Type variable ∀ polymorphic functions
         ≔ any = Type·Var(TypeVar·new(9999));
         ≔ f64_ty = Type·Float(FloatWidth·F64);
         ≔ i64_ty = Type·Int(IntWidth·I64);
@@ -760,7 +760,7 @@ invoke tome·span·Span;
     }
 
     /// Freshen a type by replacing all type variables with fresh ones
-    /// This is used for polymorphic built-in functions
+    /// This is used ∀ polymorphic built-in functions
     rite freshen(vary this, ty: !Type) → !Type {
         ≔ vary mapping: !Map<u32, Type> = Map·new();
         this.freshen_inner(ty, mapping)
@@ -852,7 +852,7 @@ invoke tome·span·Span;
             yea
         } ⎉ {
             ≔ vary err = TypeError·new(format!(
-                "evidence mismatch {}: expected {} ({}), found {} ({})",
+                "evidence mis⌥ {}: expected {} ({}), found {} ({})",
                 context,
                 expected.name(),
                 expected.symbol(),
@@ -913,12 +913,12 @@ invoke tome·span·Span;
             this.check_item(item.node);
         }
 
-        // Report errors but continue - allows lowering and codegen to proceed
-        // even with type errors (for development/bootstrapping)
+        // Report errors but ↻ - allows lowering and codegen to proceed
+        // even with type errors (∀ development/bootstrapping)
         each error ∈ this.errors {
             // Use format! + function call instead of eprintln! macro
             ≔ msg = format!("Type error: {}", error.message);
-            // eprintln is not available from this module - skip debug output for bootstrap
+            // eprintln is not available from this module - skip debug output ∀ bootstrap
             // eprintln(msg);
         }
         Result·Ok(())
@@ -1030,7 +1030,7 @@ invoke tome·span·Span;
                     _ => "".to_string(),
                 };
 
-                // Set current This type for convert_type to resolve This
+                // Set current This type ∀ convert_type to resolve This
                 this.current_self_type = ?type_name;
 
                 // Register each function with qualified name Type·method
@@ -1069,7 +1069,7 @@ invoke tome·span·Span;
         ⌥ item {
             Item·Function(f) => this.check_function(f),
             Item·Impl(impl_block) => {
-                // Extract type name for This resolution
+                // Extract type name ∀ This resolution
                 ≔ type_name = ⌥ impl_block.self_ty {
                     TypeExpr·Path(p) => {
                         ⎇ p.segments.len() > 0 {
@@ -1084,7 +1084,7 @@ invoke tome·span·Span;
                 // Set current This type
                 this.current_self_type = type_name;
 
-                // Check each function in the impl block
+                // Check each function ∈ the ⊢ block
                 each impl_item ∈ impl_block.items {
                     ⎇ ≔ ImplItem·Function(f) = impl_item {
                         this.check_function(f);
@@ -1099,7 +1099,7 @@ invoke tome·span·Span;
                 ≔ inferred = this.infer_expr(c.value);
                 ⎇ !this.unify(declared, inferred) {
                     this.error(TypeError·new(format!(
-                        "type mismatch in ◆ '{}': expected {}, found {}",
+                        "type mis⌥ ∈ ◆ '{}': expected {}, found {}",
                         c.name.name, declared.to_string(), inferred.to_string()
                     )).with_span(c.name.span));
                 }
@@ -1109,7 +1109,7 @@ invoke tome·span·Span;
                 ≔ inferred = this.infer_expr(s.value);
                 ⎇ !this.unify(declared, inferred) {
                     this.error(TypeError·new(format!(
-                        "type mismatch in static '{}': expected {}, found {}",
+                        "type mis⌥ ∈ static '{}': expected {}, found {}",
                         s.name.name, declared.to_string(), inferred.to_string()
                     )).with_span(s.name.span));
                 }
@@ -1141,7 +1141,7 @@ invoke tome·span·Span;
             ≔ body_type = this.check_block(body);
 
             // Check ⤺ type
-            ≔ expected_return = ⌥ func.return_type {
+            ≔ expected_⤺ = ⌥ func.return_type {
                 ?t => this.convert_type(t),
                 null | Option·None => Type·Unit,
             };
@@ -1149,12 +1149,12 @@ invoke tome·span·Span;
             // Check structural type compatibility
             ⎇ !this.unify(expected_return, body_type) {
                 this.error(TypeError·new(format!(
-                    "⤺ type mismatch in '{}': expected {}, found {}",
+                    "⤺ type mis⌥ ∈ '{}': expected {}, found {}",
                     func.name.name, expected_return.to_string(), body_type.to_string()
                 )).with_span(func.name.span));
             }
 
-            // Evidence inference for ⤺ types
+            // Evidence inference ∀ ⤺ types
             ≔ has_explicit_evidence = this.type_has_explicit_evidence(func.return_type);
             ≔ actual_evidence = this.get_evidence(body_type);
 
@@ -1245,7 +1245,7 @@ invoke tome·span·Span;
                     (?d, ?i) => {
                         ⎇ !this.unify(d, i) {
                             this.error(TypeError·new(format!(
-                                "type mismatch in ≔ binding: expected {}, found {}",
+                                "type mis⌥ ∈ ≔ binding: expected {}, found {}",
                                 d.to_string(), i.to_string()
                             )));
                         }
@@ -1283,7 +1283,7 @@ invoke tome·span·Span;
                     (?d, ?i) => {
                         ⎇ !this.unify(d, i) {
                             this.error(TypeError·new(format!(
-                                "type mismatch in let-else binding: expected {}, found {}",
+                                "type mis⌥ ∈ let-⎉ binding: expected {}, found {}",
                                 d.to_string(), i.to_string()
                             )));
                         }
@@ -1306,7 +1306,7 @@ invoke tome·span·Span;
                 // Bind pattern variables
                 this.bind_pattern(pattern, final_ty, evidence);
 
-                // Check else branch (must diverge)
+                // Check ⎉ branch (must diverge)
                 this.infer_expr(else_branch);
 
                 Type·Unit
@@ -1394,7 +1394,7 @@ invoke tome·span·Span;
                         }
 
                         // Check argument types and evidence
-                        for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
+                        ∀ (i, (param, arg)) ∈ params.iter().zip(arg_types.iter()).enumerate() {
                             ⎇ !this.unify(param, arg) {
                                 this.error(TypeError·new(format!(
                                     "argument type mismatch: expected {}, found {}",
@@ -1402,7 +1402,7 @@ invoke tome·span·Span;
                                 )));
                             }
 
-                            // Check evidence for non-polymorphic parameters
+                            // Check evidence ∀ non-polymorphic parameters
                             ≔ is_var = ⌥ param { Type·Var(_) => yea, _ => nay };
                             ⎇ !is_var {
                                 ≔ expected_ev = this.get_evidence(param);
@@ -1415,7 +1415,7 @@ invoke tome·span·Span;
                     },
                     // Type variables can be called - assume it's a function, ⤺ fresh var
                     Type·Var(_) => this.fresh_var(),
-                    // Generic type parameters (like F where F: fn(T) → U) can be called
+                    // Generic type parameters (like F where F: λ(T) → U) can be called
                     // Check ⎇ it looks like a single-letter type param
                     Type·Named { .. } => {
                         ≔ type_name = fn_inner.name;
@@ -1542,7 +1542,7 @@ invoke tome·span·Span;
                 ≔ value_ty = this.infer_expr(*value);
                 ⎇ !this.unify(target_ty, value_ty) {
                     this.error(TypeError·new(format!(
-                        "type mismatch in assignment: expected {}, found {}",
+                        "type mis⌥ ∈ assignment: expected {}, found {}",
                         target_ty.to_string(), value_ty.to_string()
                     )));
                 }
@@ -1734,7 +1734,7 @@ invoke tome·span·Span;
                         }
                     },
 
-                    // Entry methods (for HashMap entry API)
+                    // Entry methods (∀ HashMap entry API)
                     (Type·Named { name, generics }, "or_default") => {
                         ⎇ name == "Entry" ∧ generics.len() >= 2 {
                             // or_default() returns &vary V
@@ -1774,7 +1774,7 @@ invoke tome·span·Span;
                     (_, "to_string") => Type·Str,
                     (_, "into") => this.fresh_var(),
 
-                    // Default: ⤺ fresh var for unrecognized methods
+                    // Default: ⤺ fresh var ∀ unrecognized methods
                     _ => this.fresh_var(),
                 }
             },
@@ -1784,7 +1784,7 @@ invoke tome·span·Span;
                 ≔ field = expr.field;
                 ≔ recv_ty = this.infer_expr(*field_expr);
 
-                // Look up field type in sigil definition
+                // Look up field type ∈ sigil definition
                 ⌥ recv_ty {
                     Type·Named { .. } => {
                         ≔ name = recv_ty.name;
@@ -1845,7 +1845,7 @@ invoke tome·span·Span;
                 }
 
                 // Handle Uncertain/Known/Reported prefixed type names
-                // (generated by the interpreter for evidential types)
+                // (generated by the interpreter ∀ evidential types)
                 ≔ base_name = ⎇ name.starts_with("Uncertain") {
                     name[9..].to_string()
                 } ⎉ ⎇ name.starts_with("Known") {
@@ -1868,7 +1868,7 @@ invoke tome·span·Span;
                     each field_init ∈ fields {
                         ⎇ ≔ ?val = field_init.value {
                             ≔ val_ty = this.infer_expr(val);
-                            // Find field in sigil def and check type
+                            // Find field ∈ sigil def and check type
                             each (def_name, def_ty) ∈ def_fields {
                                 ⎇ def_name == field_init.name.name {
                                     ⎇ !this.unify(def_ty, val_ty) {
@@ -1961,7 +1961,7 @@ invoke tome·span·Span;
             Expr·Let { .. } => {
                 ≔ pattern = expr.pattern;
                 ≔ value = expr.value;
-                // Let expression in if-≔ returns bool
+                // Let expression ∈ if-≔ returns bool
                 ≔ init_ty = this.infer_expr(*value);
                 this.bind_pattern(pattern, init_ty, EvidenceLevel·Known);
                 Type·Bool
@@ -2345,7 +2345,7 @@ invoke tome·span·Span;
                         "assume! cannot demote evidence from {} ({}) to {} ({})",
                         evidence.name(), evidence.symbol(),
                         target_ev.name(), target_ev.symbol()
-                    )).with_note("assume! is for promoting evidence, not demoting"));
+                    )).with_note("assume! is ∀ promoting evidence, not demoting"));
                 }
 
                 ⤺ Type·Evidential {
@@ -2410,7 +2410,7 @@ invoke tome·span·Span;
                 }
             },
 
-            // Macro invocation in pipe: |macro!{...}
+            // Macro invocation ∈ pipe: |macro!{...}
             PipeOp·Macro { name: _, tokens: _ } => this.fresh_var(),
         };
 
@@ -2518,7 +2518,7 @@ invoke tome·span·Span;
     // ========================================================================
 
     /// Fully resolve a type by following substitution chains
-    /// Detects cycles and returns the last variable in the chain ⎇ a cycle is found
+    /// Detects cycles and returns the last variable ∈ the chain ⎇ a cycle is found
     rite resolve_type(this, ty: !Type) → !Type {
         ⌥ ty {
             Type·Var(v) => {
@@ -2527,7 +2527,7 @@ invoke tome·span·Span;
                 forever {
                     ⌥ current {
                         Type·Var(cv) => {
-                            // Check for cycle
+                            // Check ∀ cycle
                             ⎇ seen.contains(cv.id) {
                                 // Cycle detected, ⤺ the current variable
                                 ⤺ current;
@@ -2566,7 +2566,7 @@ invoke tome·span·Span;
             (Type·Error, _) | (_, Type·Error) => yea,
             (Type·Never, _) | (_, Type·Never) => yea,
 
-            // Allow integer types to unify with each other (for literal coercion)
+            // Allow integer types to unify with each other (∀ literal coercion)
             (Type·Int(_), Type·Int(_)) => yea,
             (Type·Float(a), Type·Float(b)) => a == b,
 
@@ -2614,7 +2614,7 @@ invoke tome·span·Span;
             (Type·Evidential { inner: a, .. }, b) => this.unify(*a, b),
             (a, Type·Evidential { inner: b, .. }) => this.unify(a, *b),
 
-            // Type variables - invoke resolve to break cycles
+            // Type variables - invoke resolve to ⊗ cycles
             (Type·Var(v), t) => {
                 ≔ resolved_a = this.resolve_type(Type·Var(v.clone()));
                 ⌥ resolved_a {
@@ -2796,7 +2796,7 @@ invoke tome·span·Span;
             TypeExpr·Never => Type·Never,
             TypeExpr·Infer => Type·Var(TypeVar·new(0)),
 
-            // impl Trait and dyn Trait - for now, treat as opaque types
+            // ⊢ Trait and dyn Trait - ∀ now, treat as opaque types
             TypeExpr·ImplTrait { bounds } => {
                 // Use the first bound as the type, or Any ⎇ empty
                 ⎇ bounds.is_empty() {
@@ -2815,7 +2815,7 @@ invoke tome·span·Span;
             }
 
             TypeExpr·QualifiedPath { base, trait_path, item, args } => {
-                // <Type as Trait>·Item - construct qualified name
+                // <Type as Trait>·Item - conΣ qualified name
                 ≔ base_str = this.type_to_name(*base);
                 ≔ trait_str = trait_path.segments|τ{s => s.ident.name}|join("·");
                 ≔ name = format!("<{} as {}>·{}", base_str, trait_str, item);
@@ -2843,7 +2843,7 @@ invoke tome·span·Span;
 // Pattern Extension Trait
 // ============================================================================
 
-/// Extension methods for Pattern
+/// Extension methods ∀ Pattern
 ⊢ Pattern {
     /// Get the evidentiality annotation ⎇ present
     ☉ rite evidentiality(this) → ?Evidentiality {
@@ -2886,7 +2886,7 @@ scroll tests {
     }
 
     #[test]
-    rite test_type_mismatch() {
+    rite test_type_mis⌥() {
         assert!(check("rite main() { ≔ x: bool = 42; }").is_err());
     }
 
@@ -2926,7 +2926,7 @@ scroll tests {
     }
 
     #[test]
-    rite test_function_return() {
+    rite test_function_⤺() {
         assert!(check(r#"
             rite add(a: i64, b: i64) → i64 {
                 ⤺ a + b;

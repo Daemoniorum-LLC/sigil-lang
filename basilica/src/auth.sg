@@ -8,27 +8,27 @@
 //! # Example
 //!
 //! ```sigil
-//! use basilica::prelude::*;
-//! use basilica::auth::{AuthMiddleware, AuthConfig, JwtConfig};
+//! invoke basilica·prelude·*;
+//! invoke basilica·auth·{AuthMiddleware, AuthConfig, JwtConfig};
 //!
-//! let auth = AuthMiddleware::jwt(
-//!     JwtConfig::new("your-secret-key")
+//! ≔ auth = AuthMiddleware·jwt(
+//!     JwtConfig·new("your-secret-key")
 //!         .issuer("sanctum")
 //!         .audience("sanctum-api")
 //! );
 //!
-//! Nave::new()
+//! Nave·new()
 //!     .middleware(auth)
 //!     .run();
 //! ```
 
-use shared::{Timestamp, Duration, TrustLevel};
-use crate::middleware::{Middleware, MiddlewareResult};
-use crate::request::Request;
-use crate::response::{Response, StatusCode};
-use crate::context::Context;
-use crate::evidence::{HttpEvidence, EvidenceLevel};
-use crate::error::BasilicaError;
+invoke shared·{Timestamp, Duration, TrustLevel};
+invoke crate·middleware·{Middleware, MiddlewareResult};
+invoke crate·request·Request;
+invoke crate·response·{Response, StatusCode};
+invoke crate·context·Context;
+invoke crate·evidence·{HttpEvidence, EvidenceLevel};
+invoke crate·error·BasilicaError;
 
 // ============================================================================
 // Authentication Types
@@ -36,143 +36,143 @@ use crate::error::BasilicaError;
 
 /// Authenticated user information
 #[derive(Clone, Debug)]
-pub struct AuthenticatedUser {
+☉ Σ AuthenticatedUser {
     /// User ID (UUID)
-    pub id: [u8; 16],
+    ☉ id: [u8; 16],
 
     /// Username or email
-    pub username: String,
+    ☉ username: String,
 
     /// Display name
-    pub display_name: Option<String>,
+    ☉ display_name: Option<String>,
 
     /// Roles/permissions
-    pub roles: Vec<String>,
+    ☉ roles: Vec<String>,
 
-    /// Trust level for this user
-    pub trust_level: TrustLevel,
+    /// Trust level ∀ this user
+    ☉ trust_level: TrustLevel,
 
     /// When the token was issued
-    pub issued_at: Timestamp,
+    ☉ issued_at: Timestamp,
 
     /// When the token expires
-    pub expires_at: Timestamp,
+    ☉ expires_at: Timestamp,
 
     /// Custom claims
-    pub claims: std::collections::HashMap<String, String>,
+    ☉ claims: std·collections·HashMap<String, String>,
 }
 
-impl AuthenticatedUser {
-    /// Check if user has a specific role
-    pub fn has_role(&self, role: &str) -> bool {
+⊢ AuthenticatedUser {
+    /// Check ⎇ user has a specific role
+    ☉ λ has_role(&self, role: &str) -> bool {
         self.roles.iter().any(|r| r == role)
     }
 
-    /// Check if user has any of the specified roles
-    pub fn has_any_role(&self, roles: &[&str]) -> bool {
+    /// Check ⎇ user has any of the specified roles
+    ☉ λ has_any_role(&self, roles: &[&str]) -> bool {
         roles.iter().any(|r| self.has_role(r))
     }
 
-    /// Check if user has all of the specified roles
-    pub fn has_all_roles(&self, roles: &[&str]) -> bool {
+    /// Check ⎇ user has all of the specified roles
+    ☉ λ has_all_roles(&self, roles: &[&str]) -> bool {
         roles.iter().all(|r| self.has_role(r))
     }
 
-    /// Check if token is expired
-    pub fn is_expired(&self) -> bool {
+    /// Check ⎇ token is expired
+    ☉ λ is_expired(&self) -> bool {
         self.expires_at.is_past()
     }
 
     /// Get a custom claim
-    pub fn claim(&self, key: &str) -> Option<&String> {
+    ☉ λ claim(&self, key: &str) -> Option<&String> {
         self.claims.get(key)
     }
 
     /// Convert to HTTP evidence
-    pub fn to_evidence(&self) -> HttpEvidence {
-        HttpEvidence::Authenticated {
+    ☉ λ to_evidence(&self) -> HttpEvidence {
+        HttpEvidence·Authenticated {
             user_id: self.id,
             trust: self.trust_level,
-            verified_at: Timestamp::now(),
+            verified_at: Timestamp·now(),
         }
     }
 }
 
 /// Anonymous user (not authenticated)
 #[derive(Clone, Debug, Default)]
-pub struct AnonymousUser {
-    /// Client IP (if available)
-    pub ip: Option<String>,
+☉ Σ AnonymousUser {
+    /// Client IP (⎇ available)
+    ☉ ip: Option<String>,
 
-    /// Request ID for tracing
-    pub request_id: Option<String>,
+    /// Request ID ∀ tracing
+    ☉ request_id: Option<String>,
 }
 
-impl AnonymousUser {
-    pub fn new() -> Self {
-        Self::default()
+⊢ AnonymousUser {
+    ☉ λ new() -> Self {
+        Self·default()
     }
 
-    pub fn with_ip(mut self, ip: &str) -> Self {
+    ☉ λ with_ip(Δ self, ip: &str) -> Self {
         self.ip = Some(ip.to_string());
         self
     }
 
     /// Convert to HTTP evidence (reported/external)
-    pub fn to_evidence(&self) -> HttpEvidence {
-        HttpEvidence::External {
+    ☉ λ to_evidence(&self) -> HttpEvidence {
+        HttpEvidence·External {
             source: self.ip.clone().unwrap_or_else(|| "anonymous".to_string()),
-            fetched_at: Timestamp::now(),
-            api_confidence: Some(0.3), // Low confidence for anonymous
+            fetched_at: Timestamp·now(),
+            api_confidence: Some(0.3), // Low confidence ∀ anonymous
         }
     }
 }
 
 /// Current user - either authenticated or anonymous
 #[derive(Clone, Debug)]
-pub enum CurrentUser {
+☉ ᛈ CurrentUser {
     Authenticated(AuthenticatedUser),
     Anonymous(AnonymousUser),
 }
 
-impl CurrentUser {
-    /// Check if authenticated
-    pub fn is_authenticated(&self) -> bool {
-        matches!(self, CurrentUser::Authenticated(_))
+⊢ CurrentUser {
+    /// Check ⎇ authenticated
+    ☉ λ is_authenticated(&self) -> bool {
+        matches!(self, CurrentUser·Authenticated(_))
     }
 
-    /// Get authenticated user if present
-    pub fn authenticated(&self) -> Option<&AuthenticatedUser> {
-        match self {
-            CurrentUser::Authenticated(user) => Some(user),
-            CurrentUser::Anonymous(_) => None,
+    /// Get authenticated user ⎇ present
+    ☉ λ authenticated(&self) -> Option<&AuthenticatedUser> {
+        ⌥ self {
+            CurrentUser·Authenticated(user) => Some(user),
+            CurrentUser·Anonymous(_) => None,
         }
     }
 
-    /// Get user ID if authenticated
-    pub fn user_id(&self) -> Option<[u8; 16]> {
+    /// Get user ID ⎇ authenticated
+    ☉ λ user_id(&self) -> Option<[u8; 16]> {
         self.authenticated().map(|u| u.id)
     }
 
-    /// Get the evidence level for this user's requests
-    pub fn evidence_level(&self) -> EvidenceLevel {
-        match self {
-            CurrentUser::Authenticated(user) => {
-                if user.trust_level.is_high() {
-                    EvidenceLevel::Known
-                } else {
-                    EvidenceLevel::Uncertain
+    /// Get the evidence level ∀ this user's requests
+    ☉ λ evidence_level(&self) -> EvidenceLevel {
+        ⌥ self {
+            CurrentUser·Authenticated(user) => {
+                ⎇ user.trust_level.is_high() {
+                    EvidenceLevel·Known
+                } ⎉ {
+                    EvidenceLevel·Uncertain
                 }
             }
-            CurrentUser::Anonymous(_) => EvidenceLevel::Reported,
+            CurrentUser·Anonymous(_) => EvidenceLevel·Reported,
         }
     }
 
     /// Convert to HTTP evidence
-    pub fn to_evidence(&self) -> HttpEvidence {
-        match self {
-            CurrentUser::Authenticated(user) => user.to_evidence(),
-            CurrentUser::Anonymous(anon) => anon.to_evidence(),
+    ☉ λ to_evidence(&self) -> HttpEvidence {
+        ⌥ self {
+            CurrentUser·Authenticated(user) => user.to_evidence(),
+            CurrentUser·Anonymous(anon) => anon.to_evidence(),
         }
     }
 }
@@ -183,38 +183,38 @@ impl CurrentUser {
 
 /// JWT authentication configuration
 #[derive(Clone, Debug)]
-pub struct JwtConfig {
-    /// Secret key for HS256 (or public key for RS256)
-    pub secret: String,
+☉ Σ JwtConfig {
+    /// Secret key ∀ HS256 (or public key ∀ RS256)
+    ☉ secret: String,
 
     /// Algorithm (HS256, RS256, etc.)
-    pub algorithm: String,
+    ☉ algorithm: String,
 
     /// Expected issuer
-    pub issuer: Option<String>,
+    ☉ issuer: Option<String>,
 
     /// Expected audience
-    pub audience: Option<String>,
+    ☉ audience: Option<String>,
 
     /// Clock skew tolerance (seconds)
-    pub clock_skew: u32,
+    ☉ clock_skew: u32,
 
     /// Header name to extract token from
-    pub header_name: String,
+    ☉ header_name: String,
 
     /// Token prefix (e.g., "Bearer")
-    pub token_prefix: String,
+    ☉ token_prefix: String,
 
     /// Also check cookies
-    pub check_cookies: bool,
+    ☉ check_cookies: bool,
 
-    /// Cookie name for token
-    pub cookie_name: String,
+    /// Cookie name ∀ token
+    ☉ cookie_name: String,
 }
 
-impl JwtConfig {
+⊢ JwtConfig {
     /// Create a new JWT configuration with secret
-    pub fn new(secret: &str) -> Self {
+    ☉ λ new(secret: &str) -> Self {
         Self {
             secret: secret.to_string(),
             algorithm: "HS256".to_string(),
@@ -229,49 +229,49 @@ impl JwtConfig {
     }
 
     /// Set expected issuer
-    pub fn issuer(mut self, issuer: &str) -> Self {
+    ☉ λ issuer(Δ self, issuer: &str) -> Self {
         self.issuer = Some(issuer.to_string());
         self
     }
 
     /// Set expected audience
-    pub fn audience(mut self, audience: &str) -> Self {
+    ☉ λ audience(Δ self, audience: &str) -> Self {
         self.audience = Some(audience.to_string());
         self
     }
 
     /// Set algorithm
-    pub fn algorithm(mut self, alg: &str) -> Self {
+    ☉ λ algorithm(Δ self, alg: &str) -> Self {
         self.algorithm = alg.to_string();
         self
     }
 
     /// Set clock skew tolerance
-    pub fn clock_skew(mut self, seconds: u32) -> Self {
+    ☉ λ clock_skew(Δ self, seconds: u32) -> Self {
         self.clock_skew = seconds;
         self
     }
 
     /// Set header name
-    pub fn header(mut self, name: &str) -> Self {
+    ☉ λ header(Δ self, name: &str) -> Self {
         self.header_name = name.to_lowercase();
         self
     }
 
     /// Set token prefix
-    pub fn prefix(mut self, prefix: &str) -> Self {
+    ☉ λ prefix(Δ self, prefix: &str) -> Self {
         self.token_prefix = prefix.to_string();
         self
     }
 
     /// Disable cookie checking
-    pub fn no_cookies(mut self) -> Self {
+    ☉ λ no_cookies(Δ self) -> Self {
         self.check_cookies = false;
         self
     }
 
     /// Set cookie name
-    pub fn cookie(mut self, name: &str) -> Self {
+    ☉ λ cookie(Δ self, name: &str) -> Self {
         self.cookie_name = name.to_string();
         self
     }
@@ -283,25 +283,25 @@ impl JwtConfig {
 
 /// Overall authentication configuration
 #[derive(Clone, Debug)]
-pub struct AuthConfig {
+☉ Σ AuthConfig {
     /// JWT configuration
-    pub jwt: Option<JwtConfig>,
+    ☉ jwt: Option<JwtConfig>,
 
     /// Paths that don't require authentication
-    pub public_paths: Vec<String>,
+    ☉ public_paths: Vec<String>,
 
     /// Paths that require specific roles
-    pub role_requirements: Vec<(String, Vec<String>)>,
+    ☉ role_requirements: Vec<(String, Vec<String>)>,
 
     /// Allow anonymous access (set user to Anonymous instead of rejecting)
-    pub allow_anonymous: bool,
+    ☉ allow_anonymous: bool,
 
-    /// Trust level for new users
-    pub default_trust: TrustLevel,
+    /// Trust level ∀ new users
+    ☉ default_trust: TrustLevel,
 }
 
-impl Default for AuthConfig {
-    fn default() -> Self {
+⊢ Default ∀ AuthConfig {
+    λ default() -> Self {
         Self {
             jwt: None,
             public_paths: vec![
@@ -311,39 +311,39 @@ impl Default for AuthConfig {
             ],
             role_requirements: vec![],
             allow_anonymous: false,
-            default_trust: TrustLevel::new(0.5),
+            default_trust: TrustLevel·new(0.5),
         }
     }
 }
 
-impl AuthConfig {
+⊢ AuthConfig {
     /// Create a new auth configuration
-    pub fn new() -> Self {
-        Self::default()
+    ☉ λ new() -> Self {
+        Self·default()
     }
 
     /// Set JWT configuration
-    pub fn with_jwt(mut self, jwt: JwtConfig) -> Self {
+    ☉ λ with_jwt(Δ self, jwt: JwtConfig) -> Self {
         self.jwt = Some(jwt);
         self
     }
 
     /// Add a public path
-    pub fn public(mut self, path: &str) -> Self {
+    ☉ λ public(Δ self, path: &str) -> Self {
         self.public_paths.push(path.to_string());
         self
     }
 
     /// Add public paths
-    pub fn public_paths(mut self, paths: &[&str]) -> Self {
-        for path in paths {
+    ☉ λ public_paths(Δ self, paths: &[&str]) -> Self {
+        ∀ path ∈ paths {
             self.public_paths.push(path.to_string());
         }
         self
     }
 
-    /// Require role for a path
-    pub fn require_role(mut self, path: &str, roles: &[&str]) -> Self {
+    /// Require role ∀ a path
+    ☉ λ require_role(Δ self, path: &str, roles: &[&str]) -> Self {
         self.role_requirements.push((
             path.to_string(),
             roles.iter().map(|s| s.to_string()).collect()
@@ -352,44 +352,44 @@ impl AuthConfig {
     }
 
     /// Allow anonymous access
-    pub fn allow_anonymous(mut self) -> Self {
+    ☉ λ allow_anonymous(Δ self) -> Self {
         self.allow_anonymous = true;
         self
     }
 
     /// Set default trust level
-    pub fn default_trust(mut self, trust: f64) -> Self {
-        self.default_trust = TrustLevel::new(trust);
+    ☉ λ default_trust(Δ self, trust: f64) -> Self {
+        self.default_trust = TrustLevel·new(trust);
         self
     }
 
-    /// Check if path is public
-    pub fn is_public(&self, path: &str) -> bool {
-        for public_path in &self.public_paths {
-            if path == public_path {
-                return true;
+    /// Check ⎇ path is public
+    ☉ λ is_public(&self, path: &str) -> bool {
+        ∀ public_path ∈ &self.public_paths {
+            ⎇ path == public_path {
+                ⤺ true;
             }
-            // Prefix match with wildcard
-            if public_path.ends_with("/*") {
-                let prefix = &public_path[..public_path.len() - 2];
-                if path.starts_with(prefix) {
-                    return true;
+            // Prefix ⌥ with wildcard
+            ⎇ public_path.ends_with("/*") {
+                ≔ prefix = &public_path[..public_path.len() - 2];
+                ⎇ path.starts_with(prefix) {
+                    ⤺ true;
                 }
             }
         }
         false
     }
 
-    /// Get required roles for a path
-    pub fn required_roles(&self, path: &str) -> Option<&[String]> {
-        for (pattern, roles) in &self.role_requirements {
-            if path == pattern {
-                return Some(roles);
+    /// Get required roles ∀ a path
+    ☉ λ required_roles(&self, path: &str) -> Option<&[String]> {
+        ∀ (pattern, roles) ∈ &self.role_requirements {
+            ⎇ path == pattern {
+                ⤺ Some(roles);
             }
-            if pattern.ends_with("/*") {
-                let prefix = &pattern[..pattern.len() - 2];
-                if path.starts_with(prefix) {
-                    return Some(roles);
+            ⎇ pattern.ends_with("/*") {
+                ≔ prefix = &pattern[..pattern.len() - 2];
+                ⎇ path.starts_with(prefix) {
+                    ⤺ Some(roles);
                 }
             }
         }
@@ -401,44 +401,44 @@ impl AuthConfig {
 // Authentication Middleware
 // ============================================================================
 
-/// Middleware for JWT authentication
-pub struct AuthMiddleware {
+/// Middleware ∀ JWT authentication
+☉ Σ AuthMiddleware {
     config: AuthConfig,
 }
 
-impl AuthMiddleware {
+⊢ AuthMiddleware {
     /// Create a new auth middleware
-    pub fn new(config: AuthConfig) -> Self {
+    ☉ λ new(config: AuthConfig) -> Self {
         Self { config }
     }
 
     /// Create with JWT configuration
-    pub fn jwt(jwt_config: JwtConfig) -> Self {
-        Self::new(AuthConfig::new().with_jwt(jwt_config))
+    ☉ λ jwt(jwt_config: JwtConfig) -> Self {
+        Self·new(AuthConfig·new().with_jwt(jwt_config))
     }
 
     /// Extract token from request
-    fn extract_token(&self, req: &Request) -> Option<String> {
-        let jwt_config = self.config.jwt.as_ref()?;
+    λ extract_token(&self, req: &Request) -> Option<String> {
+        ≔ jwt_config = self.config.jwt.as_ref()?;
 
         // Try header first
-        if let Some(header_value) = req.headers().get(&jwt_config.header_name) {
-            let prefix = &jwt_config.token_prefix;
-            if header_value.starts_with(prefix) {
-                let token = header_value[prefix.len()..].trim();
-                if !token.is_empty() {
-                    return Some(token.to_string());
+        ⎇ ≔ Some(header_value) = req.headers().get(&jwt_config.header_name) {
+            ≔ prefix = &jwt_config.token_prefix;
+            ⎇ header_value.starts_with(prefix) {
+                ≔ token = header_value[prefix.len()..].trim();
+                ⎇ !token.is_empty() {
+                    ⤺ Some(token.to_string());
                 }
             }
         }
 
         // Try cookie
-        if jwt_config.check_cookies {
-            if let Some(cookies) = req.headers().get("cookie") {
-                for cookie in cookies.split(';') {
-                    let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
-                    if parts.len() == 2 && parts[0] == jwt_config.cookie_name {
-                        return Some(parts[1].to_string());
+        ⎇ jwt_config.check_cookies {
+            ⎇ ≔ Some(cookies) = req.headers().get("cookie") {
+                ∀ cookie ∈ cookies.split(';') {
+                    ≔ parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
+                    ⎇ parts.len() == 2 && parts[0] == jwt_config.cookie_name {
+                        ⤺ Some(parts[1].to_string());
                     }
                 }
             }
@@ -447,10 +447,10 @@ impl AuthMiddleware {
         None
     }
 
-    /// Validate JWT token (placeholder - actual implementation would use jwt crate)
-    fn validate_token(&self, token: &str) -> Result<AuthenticatedUser, AuthError> {
-        let jwt_config = self.config.jwt.as_ref()
-            .ok_or(AuthError::NotConfigured)?;
+    /// Validate JWT token (placeholder - actual implementation would invoke jwt crate)
+    λ validate_token(&self, token: &str) -> Result<AuthenticatedUser, AuthError> {
+        ≔ jwt_config = self.config.jwt.as_ref()
+            .ok_or(AuthError·NotConfigured)?;
 
         // This is a placeholder - actual implementation would:
         // 1. Decode and verify JWT signature
@@ -458,60 +458,60 @@ impl AuthMiddleware {
         // 3. Validate issuer/audience
         // 4. Extract claims
 
-        // For now, return a mock validation result
-        // In production, use the `jsonwebtoken` crate
+        // For now, ⤺ a mock validation result
+        // In production, invoke the `jsonwebtoken` crate
 
         // Simulate token validation
-        if token.is_empty() {
-            return Err(AuthError::InvalidToken("Empty token".to_string()));
+        ⎇ token.is_empty() {
+            ⤺ Err(AuthError·InvalidToken("Empty token".to_string()));
         }
 
-        // Mock user for demonstration
+        // Mock user ∀ demonstration
         Ok(AuthenticatedUser {
             id: [0u8; 16], // Would be extracted from token
             username: "user@example.com".to_string(),
             display_name: Some("User".to_string()),
             roles: vec!["user".to_string()],
             trust_level: self.config.default_trust,
-            issued_at: Timestamp::now(),
-            expires_at: Timestamp::now().add(Duration::from_secs(3600)),
-            claims: std::collections::HashMap::new(),
+            issued_at: Timestamp·now(),
+            expires_at: Timestamp·now().add(Duration·from_secs(3600)),
+            claims: std·collections·HashMap·new(),
         })
     }
 }
 
-impl Middleware for AuthMiddleware {
-    fn before(&self, req: &mut Request, ctx: &mut Context) -> MiddlewareResult {
-        let path = req.path();
+⊢ Middleware ∀ AuthMiddleware {
+    λ before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
+        ≔ path = req.path();
 
-        // Skip auth for public paths
-        if self.config.is_public(path) {
-            ctx.set("user", CurrentUser::Anonymous(AnonymousUser::new()));
-            return MiddlewareResult::Continue;
+        // Skip auth ∀ public paths
+        ⎇ self.config.is_public(path) {
+            ctx.set("user", CurrentUser·Anonymous(AnonymousUser·new()));
+            ⤺ MiddlewareResult·Continue;
         }
 
         // Try to extract and validate token
-        let user = match self.extract_token(req) {
+        ≔ user = ⌥ self.extract_token(req) {
             Some(token) => {
-                match self.validate_token(&token) {
+                ⌥ self.validate_token(&token) {
                     Ok(user) => {
                         // Check role requirements
-                        if let Some(required) = self.config.required_roles(path) {
-                            if !user.has_any_role(&required.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
-                                return MiddlewareResult::Response(
-                                    Response::forbidden("Insufficient permissions")
+                        ⎇ ≔ Some(required) = self.config.required_roles(path) {
+                            ⎇ !user.has_any_role(&required.iter().map(|s| s.as_str()).collect·<Vec<_>>()) {
+                                ⤺ MiddlewareResult·Response(
+                                    Response·forbidden("Insufficient permissions")
                                         .into_response()
                                 );
                             }
                         }
-                        CurrentUser::Authenticated(user)
+                        CurrentUser·Authenticated(user)
                     }
                     Err(e) => {
-                        if self.config.allow_anonymous {
-                            CurrentUser::Anonymous(AnonymousUser::new())
-                        } else {
-                            return MiddlewareResult::Response(
-                                Response::unauthorized(&e.to_string())
+                        ⎇ self.config.allow_anonymous {
+                            CurrentUser·Anonymous(AnonymousUser·new())
+                        } ⎉ {
+                            ⤺ MiddlewareResult·Response(
+                                Response·unauthorized(&e.to_string())
                                     .into_response()
                             );
                         }
@@ -519,21 +519,21 @@ impl Middleware for AuthMiddleware {
                 }
             }
             None => {
-                if self.config.allow_anonymous {
-                    CurrentUser::Anonymous(AnonymousUser::new())
-                } else {
-                    return MiddlewareResult::Response(
-                        Response::unauthorized("Authentication required")
+                ⎇ self.config.allow_anonymous {
+                    CurrentUser·Anonymous(AnonymousUser·new())
+                } ⎉ {
+                    ⤺ MiddlewareResult·Response(
+                        Response·unauthorized("Authentication required")
                             .into_response()
                     );
                 }
             }
         };
 
-        // Store user in context
+        // Store user ∈ context
         ctx.set("user", user);
 
-        MiddlewareResult::Continue
+        MiddlewareResult·Continue
     }
 }
 
@@ -543,7 +543,7 @@ impl Middleware for AuthMiddleware {
 
 /// Authentication-related errors
 #[derive(Clone, Debug)]
-pub enum AuthError {
+☉ ᛈ AuthError {
     /// Auth not configured
     NotConfigured,
 
@@ -572,18 +572,18 @@ pub enum AuthError {
     InsufficientPermissions,
 }
 
-impl std::fmt::Display for AuthError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AuthError::NotConfigured => write!(f, "Authentication not configured"),
-            AuthError::NoToken => write!(f, "No authentication token provided"),
-            AuthError::InvalidToken(msg) => write!(f, "Invalid token: {}", msg),
-            AuthError::TokenExpired => write!(f, "Token has expired"),
-            AuthError::InvalidSignature => write!(f, "Invalid token signature"),
-            AuthError::InvalidIssuer => write!(f, "Invalid token issuer"),
-            AuthError::InvalidAudience => write!(f, "Invalid token audience"),
-            AuthError::MissingClaim(claim) => write!(f, "Missing required claim: {}", claim),
-            AuthError::InsufficientPermissions => write!(f, "Insufficient permissions"),
+⊢ std·fmt·Display ∀ AuthError {
+    λ fmt(&self, f: &Δ std·fmt·Formatter<'_>) -> std·fmt·Result {
+        ⌥ self {
+            AuthError·NotConfigured => write!(f, "Authentication not configured"),
+            AuthError·NoToken => write!(f, "No authentication token provided"),
+            AuthError·InvalidToken(msg) => write!(f, "Invalid token: {}", msg),
+            AuthError·TokenExpired => write!(f, "Token has expired"),
+            AuthError·InvalidSignature => write!(f, "Invalid token signature"),
+            AuthError·InvalidIssuer => write!(f, "Invalid token issuer"),
+            AuthError·InvalidAudience => write!(f, "Invalid token audience"),
+            AuthError·MissingClaim(claim) => write!(f, "Missing required claim: {}", claim),
+            AuthError·InsufficientPermissions => write!(f, "Insufficient permissions"),
         }
     }
 }
@@ -592,50 +592,50 @@ impl std::fmt::Display for AuthError {
 // Context Extensions
 // ============================================================================
 
-/// Extension trait for accessing auth from context
-pub trait AuthContext {
+/// Extension Θ ∀ accessing auth from context
+☉ Θ AuthContext {
     /// Get the current user
-    fn current_user(&self) -> Option<&CurrentUser>;
+    λ current_user(&self) -> Option<&CurrentUser>;
 
-    /// Get authenticated user (None if anonymous)
-    fn authenticated_user(&self) -> Option<&AuthenticatedUser>;
+    /// Get authenticated user (None ⎇ anonymous)
+    λ authenticated_user(&self) -> Option<&AuthenticatedUser>;
 
-    /// Check if request is authenticated
-    fn is_authenticated(&self) -> bool;
+    /// Check ⎇ request is authenticated
+    λ is_authenticated(&self) -> bool;
 
-    /// Require authentication, returning error if not authenticated
-    fn require_auth(&self) -> Result<&AuthenticatedUser, BasilicaError>;
+    /// Require authentication, returning error ⎇ not authenticated
+    λ require_auth(&self) -> Result<&AuthenticatedUser, BasilicaError>;
 
     /// Require specific role
-    fn require_role(&self, role: &str) -> Result<&AuthenticatedUser, BasilicaError>;
+    λ require_role(&self, role: &str) -> Result<&AuthenticatedUser, BasilicaError>;
 }
 
-impl AuthContext for Context {
-    fn current_user(&self) -> Option<&CurrentUser> {
-        self.get::<CurrentUser>("user")
+⊢ AuthContext ∀ Context {
+    λ current_user(&self) -> Option<&CurrentUser> {
+        self.get·<CurrentUser>("user")
     }
 
-    fn authenticated_user(&self) -> Option<&AuthenticatedUser> {
+    λ authenticated_user(&self) -> Option<&AuthenticatedUser> {
         self.current_user()?.authenticated()
     }
 
-    fn is_authenticated(&self) -> bool {
+    λ is_authenticated(&self) -> bool {
         self.current_user()
             .map(|u| u.is_authenticated())
             .unwrap_or(false)
     }
 
-    fn require_auth(&self) -> Result<&AuthenticatedUser, BasilicaError> {
+    λ require_auth(&self) -> Result<&AuthenticatedUser, BasilicaError> {
         self.authenticated_user()
-            .ok_or(BasilicaError::Unauthorized("Authentication required".to_string()))
+            .ok_or(BasilicaError·Unauthorized("Authentication required".to_string()))
     }
 
-    fn require_role(&self, role: &str) -> Result<&AuthenticatedUser, BasilicaError> {
-        let user = self.require_auth()?;
-        if user.has_role(role) {
+    λ require_role(&self, role: &str) -> Result<&AuthenticatedUser, BasilicaError> {
+        ≔ user = self.require_auth()?;
+        ⎇ user.has_role(role) {
             Ok(user)
-        } else {
-            Err(BasilicaError::Forbidden(format!("Role '{}' required", role)))
+        } ⎉ {
+            Err(BasilicaError·Forbidden(format!("Role '{}' required", role)))
         }
     }
 }
@@ -644,12 +644,12 @@ impl AuthContext for Context {
 // Convenience Functions
 // ============================================================================
 
-/// Create an authentication middleware for Sanctum
-pub fn sanctum_auth(secret: &str) -> AuthMiddleware {
-    AuthMiddleware::new(
-        AuthConfig::new()
+/// Create an authentication middleware ∀ Sanctum
+☉ λ sanctum_auth(secret: &str) -> AuthMiddleware {
+    AuthMiddleware·new(
+        AuthConfig·new()
             .with_jwt(
-                JwtConfig::new(secret)
+                JwtConfig·new(secret)
                     .issuer("sanctum")
                     .audience("sanctum-api")
             )

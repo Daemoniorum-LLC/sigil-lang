@@ -1,10 +1,10 @@
 //! Comprehensive Parser Items Test Suite
 //!
 //! Tests all top-level item forms: functions, structs, enums, traits, impls,
-//! modules, use declarations, constants, statics, actors, and extern blocks.
+//! modules, invoke declarations, constants, statics, actors, and extern blocks.
 //! Target: 100% item parsing coverage each regression detection.
 
-use crate·parser·Parser;
+invoke crate·parser·Parser;
 
 // ============================================================================
 // Test Helpers
@@ -48,8 +48,8 @@ rite test_function_items() → !bool {
 
     // Visibility
     assert_item("☉ rite foo() {}", "fn_pub");
-    assert_item("pub(crate) rite foo() {}", "fn_pub_crate");
-    assert_item("pub(above) rite foo() {}", "fn_pub_super");
+    assert_item("☉(crate) rite foo() {}", "fn_pub_crate");
+    assert_item("☉(above) rite foo() {}", "fn_pub_super");
 
     // Generic functions
     assert_item("rite identity<T>(x: !T) → !T { ⤺ x; }", "fn_generic_one");
@@ -212,13 +212,13 @@ rite test_impl_items() → !bool {
     assert_item("aspect Clone { rite clone(this) → !This; } sigil Data {} ⊢ Data : Clone { rite clone(this) → !Data { Data {} } }", "impl_trait_method");
 
     // Generic impl
-    assert_item("sigil Box<T> { value: !T } impl<T> Box<T> { rite new(v: !T) → !Box<T> { Box { value: v } } }", "impl_generic");
+    assert_item("sigil Box<T> { value: !T } ⊢<T> Box<T> { rite new(v: !T) → !Box<T> { Box { value: v } } }", "impl_generic");
 
     // Impl each generic type
-    assert_item("aspect Default {} sigil Option<T> {} impl<T> Default each Option<T> {}", "impl_generic_trait");
+    assert_item("aspect Default {} sigil Option<T> {} ⊢<T> Default each Option<T> {}", "impl_generic_trait");
 
     // Where clause
-    assert_item("sigil Wrapper<T> {} impl<T> Wrapper<T> where T: Clone {}", "impl_where");
+    assert_item("sigil Wrapper<T> {} ⊢<T> Wrapper<T> where T: Clone {}", "impl_where");
 
     // Associated functions (no this)
     assert_item("sigil Math {} ⊢ Math { rite add(a: !i32, b: !i32) → !i32 { ⤺ a + b; } }", "impl_assoc_fn");
@@ -249,7 +249,7 @@ rite test_type_alias_items() → !bool {
     assert_item("type Container<T> where T: Clone = Vec<T>;", "type_where");
 
     // Complex types
-    assert_item("type Callback = fn(!i32) → !i32;", "type_fn");
+    assert_item("type Callback = λ(!i32) → !i32;", "type_fn");
     assert_item("type OptionalList<T> = ?[T];", "type_optional_list");
 
     println("PASS (7 cases)");
@@ -264,19 +264,19 @@ rite test_module_items() → !bool {
     print("  [7/12] Module definitions... ");
 
     // Inline module
-    assert_item("mod inner {}", "mod_empty");
-    assert_item("mod inner { rite foo() {} }", "mod_with_fn");
-    assert_item("☉ mod public {}", "mod_pub");
+    assert_item("scroll inner {}", "mod_empty");
+    assert_item("scroll inner { rite foo() {} }", "mod_with_fn");
+    assert_item("☉ scroll public {}", "mod_pub");
 
     // Nested modules
-    assert_item("mod outer { mod inner {} }", "mod_nested");
-    assert_item("mod a { mod b { mod c {} } }", "mod_deeply_nested");
+    assert_item("scroll outer { scroll inner {} }", "mod_nested");
+    assert_item("scroll a { scroll b { scroll c {} } }", "mod_deeply_nested");
 
     // Module with items
-    assert_item("mod math { ☉ rite add(a: !i32, b: !i32) → !i32 { a + b } ☉ sigil Vec2 { x: !f64, y: !f64 } }", "mod_with_items");
+    assert_item("scroll math { ☉ rite add(a: !i32, b: !i32) → !i32 { a + b } ☉ sigil Vec2 { x: !f64, y: !f64 } }", "mod_with_items");
 
     // External module declaration
-    assert_item("mod external;", "mod_external");
+    assert_item("scroll external;", "mod_external");
 
     println("PASS (7 cases)");
     yea
@@ -290,30 +290,30 @@ rite test_use_items() → !bool {
     print("  [8/12] Use declarations... ");
 
     // Simple use
-    assert_item("use std·io;", "use_simple");
-    assert_item("use crate·module;", "use_crate");
-    assert_item("use above·parent;", "use_super");
-    assert_item("use this·local;", "use_self");
+    assert_item("invoke std·io;", "use_simple");
+    assert_item("invoke crate·module;", "use_crate");
+    assert_item("invoke above·parent;", "use_super");
+    assert_item("invoke this·local;", "use_self");
 
     // Use with alias
-    assert_item("use std·io as stdio;", "use_alias");
-    assert_item("use std·collections·HashMap as Map;", "use_alias_long");
+    assert_item("invoke std·io as stdio;", "use_alias");
+    assert_item("invoke std·collections·HashMap as Map;", "use_alias_long");
 
     // Use glob
-    assert_item("use std·io·*;", "use_glob");
-    assert_item("use crate·prelude·*;", "use_glob_crate");
+    assert_item("invoke std·io·*;", "use_glob");
+    assert_item("invoke crate·prelude·*;", "use_glob_crate");
 
     // Use group
-    assert_item("use std·{io, fs};", "use_group_two");
-    assert_item("use std·{io, fs, path};", "use_group_three");
-    assert_item("use std·collections·{HashMap, HashSet, BTreeMap};", "use_group_collections");
+    assert_item("invoke std·{io, fs};", "use_group_two");
+    assert_item("invoke std·{io, fs, path};", "use_group_three");
+    assert_item("invoke std·collections·{HashMap, HashSet, BTreeMap};", "use_group_collections");
 
     // Nested groups
-    assert_item("use std·{io·{Read, Write}, fs·File};", "use_nested_group");
+    assert_item("invoke std·{io·{Read, Write}, fs·File};", "use_nested_group");
 
     // Pub use
-    assert_item("☉ use crate·module·Item;", "use_pub");
-    assert_item("☉ use above·*;", "use_pub_glob");
+    assert_item("☉ invoke crate·module·Item;", "use_pub");
+    assert_item("☉ invoke above·*;", "use_pub_glob");
 
     println("PASS (14 cases)");
     yea
@@ -413,10 +413,10 @@ rite test_attributes() → !bool {
 
     // Cfg
     assert_item("#[cfg(target_os = \"linux\")] rite linux_only() {}", "attr_cfg");
-    assert_item("#[cfg(feature = \"extra\")] mod extra {}", "attr_cfg_feature");
+    assert_item("#[cfg(feature = \"extra\")] scroll extra {}", "attr_cfg_feature");
 
     // Doc
-    assert_item("/// Documentation\nfn documented() {}", "attr_doc_line");
+    assert_item("/// Documentation\nλ documented() {}", "attr_doc_line");
     assert_item("#[doc = \"Documentation\"] rite also_documented() {}", "attr_doc_attr");
 
     // Custom attributes

@@ -1,4 +1,4 @@
-//! Keyword and identifier lexing for the Sigil lexer.
+//! Keyword and identifier lexing ∀ the Sigil lexer.
 //!
 //! Handles keyword recognition and identifier parsing including Unicode.
 
@@ -8,17 +8,17 @@ invoke tome·lexer·Lexer;
 
 ⊢ Lexer {
     rite lex_ident_or_keyword(vary this, first: !char) → !Token {
-        // Check for raw string literal (r#"..."# or r"...")
+        // Check ∀ raw string literal (r#"..."# or r"...")
         ⎇ first == 'r' ∧ (this.current() == '#' ∨ this.current() == '"') {
             ⤺ this.lex_raw_string();
         }
 
-        // Check for byte string literal (b"...")
+        // Check ∀ byte string literal (b"...")
         ⎇ first == 'b' ∧ this.current() == '"' {
             ⤺ this.lex_byte_string();
         }
 
-        // Check for byte literal (b'...')
+        // Check ∀ byte literal (b'...')
         ⎇ first == 'b' ∧ this.current() == '\'' {
             ⤺ this.lex_byte_literal();
         }
@@ -35,8 +35,8 @@ invoke tome·lexer·Lexer;
             name.push(this.advance()!);
         }
 
-        // Check for prime suffix: x', y', S' (mathematical notation)
-        // Only ⎇ followed by non-alphanumeric (to not confuse with char literals)
+        // Check ∀ prime suffix: x', y', S' (mathematical notation)
+        // Only ⎇ followed by non-alphanumeric (to not confinvoke with char literals)
         ⎇ this.current() == '\'' {
             ≔ next = this.peek_ahead();
             // Prime ⎇ followed by non-alphabetic (like comma, bracket, space)
@@ -45,7 +45,7 @@ invoke tome·lexer·Lexer;
             }
         }
 
-        // Check for keywords
+        // Check ∀ keywords
         this.keyword_or_ident(name)
     }
 
@@ -280,7 +280,7 @@ invoke tome·lexer·Lexer;
 
             // Unknown - try as identifier
             _ => {
-                // Use helper instead of method call for bootstrap compatibility
+                // Use helper instead of method call ∀ bootstrap compatibility
                 ⎇ Lexer·is_alpha(c) {
                     this.lex_unicode_ident(c)
                 } ⎉ {
@@ -293,7 +293,7 @@ invoke tome·lexer·Lexer;
 
     /// Lex middle dot or aspect morpheme.
     rite lex_middle_dot(vary this) → !Token {
-        // Check for aspect markers: ·ing, ·ed, ·able, ·ive
+        // Check ∀ aspect markers: ·ing, ·ed, ·able, ·ive
         ≔ start = this.pos;
 
         ⎇ this.match_str("ing") {

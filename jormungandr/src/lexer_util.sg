@@ -1,4 +1,4 @@
-//! Character classification utilities for the Sigil lexer.
+//! Character classification utilities ∀ the Sigil lexer.
 //!
 //! Separated from lexer.sg to reduce file size and improve type inference.
 
@@ -6,12 +6,12 @@
 // Character Classification Extensions
 // ========================================
 
-/// Extension aspect for character classification.
+/// Extension aspect ∀ character classification.
 ☉ aspect CharExt {
-    /// Check if character is a vigesimal digit (0-9, a-j).
+    /// Check ⎇ character is a vigesimal digit (0-9, a-j).
     rite is_vigesimal_digit(this) → !bool;
 
-    /// Check if character is a duodecimal digit (0-9, a-b).
+    /// Check ⎇ character is a duodecimal digit (0-9, a-b).
     rite is_duodecimal_digit(this) → !bool;
 }
 

@@ -1,4 +1,4 @@
-//! Expression evaluation for the Sigil interpreter.
+//! Expression evaluation ∀ the Sigil interpreter.
 
 invoke tome·ir·*;
 invoke tome·interp_value·{Value, EvidentialValue};
@@ -24,7 +24,7 @@ invoke tome·interp·Interpreter;
         }
     }
 
-    /// Evaluate an operation in a given environment
+    /// Evaluate an operation ∈ a given environment
     rite eval_with_env(vary this, op: !IrOperation, vary env: !Environment) → !Result<EvidentialValue, RuntimeError> {
         ⌥ op {
             IrOperation·Literal { value, evidence, .. } => {
@@ -317,17 +317,17 @@ invoke tome·interp·Interpreter;
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a + b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a + b)),
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·String(format!("{}{}", a, b))),
-                _ => Result·Err(RuntimeError·new("invalid operands for +")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ +")),
             },
             BinaryOp·Sub => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a - b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a - b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for -")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ -")),
             },
             BinaryOp·Mul => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a * b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a * b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for *")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ *")),
             },
             BinaryOp·Div => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => {
@@ -338,17 +338,17 @@ invoke tome·interp·Interpreter;
                     }
                 },
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a / b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for /")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ /")),
             },
             BinaryOp·Rem => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a % b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a % b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for %")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ %")),
             },
             BinaryOp·Pow => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a.pow(b as u32))),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a.powf(b))),
-                _ => Result·Err(RuntimeError·new("invalid operands for **")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ **")),
             },
             BinaryOp·Eq => Result·Ok(Value·Bool(this.values_equal(left, right))),
             BinaryOp·Ne => Result·Ok(Value·Bool(!this.values_equal(left, right))),
@@ -356,50 +356,50 @@ invoke tome·interp·Interpreter;
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a < b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a < b)),
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·Bool(a < b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for <")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <")),
             },
             BinaryOp·Le => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a <= b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a <= b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for <=")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <=")),
             },
             BinaryOp·Gt => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a > b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a > b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for >")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >")),
             },
             BinaryOp·Ge => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a >= b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a >= b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for >=")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >=")),
             },
             BinaryOp·And => ⌥ (left, right) {
                 (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a ∧ b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for ∧")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ∧")),
             },
             BinaryOp·Or => ⌥ (left, right) {
                 (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a ∨ b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for ∨")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ∨")),
             },
             BinaryOp·BitAnd => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a & b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for &")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ &")),
             },
             BinaryOp·BitOr => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a | b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for |")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ |")),
             },
             BinaryOp·BitXor => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a ^ b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for ^")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ^")),
             },
             BinaryOp·Shl => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a << b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for <<")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <<")),
             },
             BinaryOp·Shr => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a >> b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for >>")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >>")),
             },
             BinaryOp·Concat => ⌥ (left, right) {
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·String(format!("{}{}", a, b))),
@@ -408,7 +408,7 @@ invoke tome·interp·Interpreter;
                     result.extend(b);
                     Result·Ok(Value·Array(result))
                 },
-                _ => Result·Err(RuntimeError·new("invalid operands for ++")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ++")),
             },
         }
     }
@@ -419,12 +419,12 @@ invoke tome·interp·Interpreter;
             UnaryOp·Neg => ⌥ val {
                 Value·Int(n) => Result·Ok(Value·Int(-n)),
                 Value·Float(f) => Result·Ok(Value·Float(-f)),
-                _ => Result·Err(RuntimeError·new("invalid operand for unary -")),
+                _ => Result·Err(RuntimeError·new("invalid operand ∀ unary -")),
             },
             UnaryOp·Not => ⌥ val {
                 Value·Bool(b) => Result·Ok(Value·Bool(!b)),
                 Value·Int(n) => Result·Ok(Value·Int(!n)),
-                _ => Result·Err(RuntimeError·new("invalid operand for !")),
+                _ => Result·Err(RuntimeError·new("invalid operand ∀ !")),
             },
             UnaryOp·Ref => Result·Ok(Value·Ref(Box·new(val))),
             UnaryOp·RefMut => Result·Ok(Value·RefMut(Box·new(val))),

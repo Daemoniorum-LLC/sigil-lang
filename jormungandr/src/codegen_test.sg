@@ -1,4 +1,4 @@
-//! Tests for the Sigil code generator.
+//! Tests ∀ the Sigil code generator.
 //!
 //! Separated from codegen.sg to reduce file size and improve type inference.
 

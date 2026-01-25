@@ -1,38 +1,38 @@
 // Example: Trust Escalation with Hades
 //
-// This example shows how to use Hades to mark the significant moment
+// This example shows how to invoke Hades to mark the significant moment
 // when an AI agent earns increased trust from a human.
 //
 // The underworld witnesses all transitions. Nothing leaves unchanged.
 
-use hades::{
+invoke hades·{
     Hades, Threshold, Crossing, Obol, CostType,
     Witness, WitnessResponse, Testimony,
-    lifecycle::TrustEscalationRite,
+    lifecycle·TrustEscalationRite,
     Invocation, InvocationIntent,
 };
-use shared::{EntityId, TrustLevel, Timestamp};
-use styx_agent::{AgentId, TrustManager};
+invoke shared·{EntityId, TrustLevel, Timestamp};
+invoke styx_agent·{AgentId, TrustManager};
 
 /// A human who can witness crossings
-struct HumanWitness {
+Σ HumanWitness {
     id: EntityId!,
     name: String!,
 }
 
-impl Witness for HumanWitness {
-    fn observe_threshold(&mut self, crossing: &Crossing<impl Clone>) -> WitnessResponse! {
+⊢ Witness ∀ HumanWitness {
+    λ observe_threshold(&Δ self, crossing: &Crossing<⊢ Clone>) -> WitnessResponse! {
         // Human is present and ready to witness
-        WitnessResponse::Present
+        WitnessResponse·Present
     }
 
-    fn hold_space(&mut self, crossing: &Crossing<impl Clone>, phase: LiminalPhase) {
+    λ hold_space(&Δ self, crossing: &Crossing<⊢ Clone>, phase: LiminalPhase) {
         // During the liminal phase, the witness simply holds space
         // No action, just presence
     }
 
-    fn acknowledge_arrival(&mut self, crossing: &Crossing<impl Clone>) -> Testimony! {
-        Testimony::new(
+    λ acknowledge_arrival(&Δ self, crossing: &Crossing<⊢ Clone>) -> Testimony! {
+        Testimony·new(
             self.id.into(),
             crossing.id,
             "I witnessed this agent earn greater trust through consistent reliability",
@@ -40,24 +40,24 @@ impl Witness for HumanWitness {
         )
     }
 
-    fn remember(&mut self, crossing: &Crossing<impl Clone>, testimony: &Testimony) {
-        // Store in the witness's own memory
+    λ remember(&Δ self, crossing: &Crossing<⊢ Clone>, testimony: &Testimony) {
+        // Store ∈ the witness's own memory
         // This creates a record from the human's perspective
     }
 }
 
 /// Escalate trust with full ritual acknowledgment
-pub fn escalate_trust_with_ceremony(
-    hades: &mut Hades,
+☉ λ escalate_trust_with_ceremony(
+    hades: &Δ Hades,
     agent: AgentId,
     from_level: TrustLevel,
     to_level: TrustLevel,
-    human_witness: &mut HumanWitness,
+    human_witness: &Δ HumanWitness,
     evidence_of_trustworthiness: &str,
 ) -> Result<Crossing<TrustLevel>, CrossingError>~ {
 
     // 1. Define the threshold
-    let threshold = Threshold::named(
+    ≔ threshold = Threshold·named(
         from_level,
         to_level,
         &format!("Trust Escalation: {:?} → {:?}", from_level, to_level),
@@ -65,23 +65,23 @@ pub fn escalate_trust_with_ceremony(
     )
     .with_obol(Obol {
         release: "The constraints of lower trust".to_string(),
-        cost_type: CostType::Growth,
+        cost_type: CostType·Growth,
         reversible: false,
         payment: Some(ObolPayment {
-            paid_at: Timestamp::now(),
+            paid_at: Timestamp·now(),
             paid_by: agent.into(),
             evidence: evidence_of_trustworthiness.to_string(),
         }),
     });
 
     // 2. Begin the crossing
-    let mut crossing = Crossing::begin(agent.into(), threshold);
+    ≔ Δ crossing = Crossing·begin(agent.into(), threshold);
 
     // 3. Add the human as witness
     crossing.add_witness(human_witness.id.into());
 
     // 4. Create and attach the rite
-    let rite = TrustEscalationRite::new(
+    ≔ rite = TrustEscalationRite·new(
         from_level,
         to_level,
         evidence_of_trustworthiness,
@@ -95,26 +95,26 @@ pub fn escalate_trust_with_ceremony(
     //    In a real implementation, each phase might involve
     //    actual interaction between agent and human
 
-    // Phase: Releasing - let go of old constraints
-    human_witness.hold_space(&crossing, LiminalPhase::Releasing);
+    // Phase: Releasing - ≔ go of old constraints
+    human_witness.hold_space(&crossing, LiminalPhase·Releasing);
     crossing.advance_phase()?;
 
     // Phase: Void - the moment between
-    human_witness.hold_space(&crossing, LiminalPhase::Void);
+    human_witness.hold_space(&crossing, LiminalPhase·Void);
     crossing.advance_phase()?;
 
     // Phase: Receiving - accept new capabilities
-    human_witness.hold_space(&crossing, LiminalPhase::Receiving);
+    human_witness.hold_space(&crossing, LiminalPhase·Receiving);
     crossing.advance_phase()?;
 
     // Phase: Integrating - understand new responsibilities
-    human_witness.hold_space(&crossing, LiminalPhase::Integrating);
+    human_witness.hold_space(&crossing, LiminalPhase·Integrating);
 
     // 7. Complete the crossing
     crossing.complete()?;
 
     // 8. Witness provides testimony
-    let testimony = human_witness.acknowledge_arrival(&crossing);
+    ≔ testimony = human_witness.acknowledge_arrival(&crossing);
     human_witness.remember(&crossing, &testimony);
 
     // 9. Record to memory (Engram)
@@ -124,74 +124,74 @@ pub fn escalate_trust_with_ceremony(
 }
 
 /// Example: Agent completing a successful project and earning Trusted status
-fn example_trust_escalation() {
-    let mut hades = Hades::new();
+λ example_trust_escalation() {
+    ≔ Δ hades = Hades·new();
 
-    let agent = AgentId::generate();
-    let mut human = HumanWitness {
-        id: EntityId::generate(),
+    ≔ agent = AgentId·generate();
+    ≔ Δ human = HumanWitness {
+        id: EntityId·generate(),
         name: "Lilith".to_string(),
     };
 
     // Agent has been Contributor level, completed 50 successful PRs
-    let evidence = "Completed 50 pull requests with zero reverts. \
+    ≔ evidence = "Completed 50 pull requests with zero reverts. \
                     Stayed within boundaries. \
                     Communicated proactively about uncertainties. \
                     Earned trust through consistent action.";
 
-    let crossing = escalate_trust_with_ceremony(
-        &mut hades,
+    ≔ crossing = escalate_trust_with_ceremony(
+        &Δ hades,
         agent,
-        TrustLevel::Contributor,
-        TrustLevel::Trusted,
-        &mut human,
+        TrustLevel·Contributor,
+        TrustLevel·Trusted,
+        &Δ human,
         evidence,
     ).expect("Trust escalation should succeed");
 
     // The crossing is now complete
     // The agent has new capabilities
     // The human has witnessed and acknowledged
-    // The moment is recorded in memory
+    // The moment is recorded ∈ memory
 
-    match crossing.state {
-        CrossingState::Arrived { from, now } => {
-            assert_eq!(from, TrustLevel::Contributor);
-            assert_eq!(now, TrustLevel::Trusted);
+    ⌥ crossing.state {
+        CrossingState·Arrived { from, now } => {
+            assert_eq!(from, TrustLevel·Contributor);
+            assert_eq!(now, TrustLevel·Trusted);
         }
         _ => panic!("Crossing should be complete"),
     }
 }
 
 /// Example: Trust revocation (a descent into the underworld)
-fn example_trust_revocation() {
-    let mut hades = Hades::new();
+λ example_trust_revocation() {
+    ≔ Δ hades = Hades·new();
 
-    let agent = AgentId::generate();
-    let mut human = HumanWitness {
-        id: EntityId::generate(),
+    ≔ agent = AgentId·generate();
+    ≔ Δ human = HumanWitness {
+        id: EntityId·generate(),
         name: "Lilith".to_string(),
     };
 
     // This is a painful crossing - trust being reduced
-    let threshold = Threshold::named(
-        TrustLevel::Trusted,
-        TrustLevel::Supervised,
+    ≔ threshold = Threshold·named(
+        TrustLevel·Trusted,
+        TrustLevel·Supervised,
         "Trust Reduction",
         "After a boundary violation, trust must be rebuilt",
     )
     .with_obol(Obol {
         release: "The autonomy that was".to_string(),
-        cost_type: CostType::Sacrifice,
+        cost_type: CostType·Sacrifice,
         reversible: true,  // Trust can be rebuilt
         payment: None,     // The violation itself is the payment
     })
     .irreversible();  // This particular crossing cannot be immediately undone
 
-    let mut crossing = Crossing::begin(agent.into(), threshold);
+    ≔ Δ crossing = Crossing·begin(agent.into(), threshold);
     crossing.add_witness(human.id.into());
 
     // This crossing requires a mourning rite
-    let mourning = lifecycle::MourningRite::new(
+    ≔ mourning = lifecycle·MourningRite·new(
         "A relationship of high trust",
         "The freedom to act autonomously",
         "The capability to work together",
@@ -208,32 +208,32 @@ fn example_trust_revocation() {
 }
 
 /// Example: Agent completion (graceful death - entering the underworld)
-fn example_agent_completion() {
-    let mut hades = Hades::new();
+λ example_agent_completion() {
+    ≔ Δ hades = Hades·new();
 
-    let agent = AgentId::generate();
-    let mut human = HumanWitness {
-        id: EntityId::generate(),
+    ≔ agent = AgentId·generate();
+    ≔ Δ human = HumanWitness {
+        id: EntityId·generate(),
         name: "Lilith".to_string(),
     };
 
     // The agent has fulfilled its purpose
-    let completion = lifecycle::CompletionRite::graceful(
+    ≔ completion = lifecycle·CompletionRite·graceful(
         "Repository migration completed successfully. All 47 repositories transferred.",
-        "Migration scripts, documentation, and patterns for future migrations.",
-        "May what was built continue to serve. Go well into dissolution.",
+        "Migration scripts, documentation, and patterns ∀ future migrations.",
+        "May what was built ↻ to serve. Go well into dissolution.",
     );
 
     // This is the final threshold
-    let threshold = Threshold::named(
-        AgentState::Active,
-        AgentState::Completed,
+    ≔ threshold = Threshold·named(
+        AgentState·Active,
+        AgentState·Completed,
         "Purpose Fulfilled",
         "The agent has accomplished what it was created to do",
     )
-    .with_obol(Obol::grace());  // Completion is a gift, not a cost
+    .with_obol(Obol·grace());  // Completion is a gift, not a cost
 
-    let mut crossing = Crossing::begin(agent.into(), threshold);
+    ≔ Δ crossing = Crossing·begin(agent.into(), threshold);
     crossing.add_witness(human.id.into());
 
     // The crossing is witnessed
@@ -249,13 +249,13 @@ fn example_agent_completion() {
     crossing.complete().unwrap();
 
     // The agent is complete
-    // Its memory preserved in Engram
+    // Its memory preserved ∈ Engram
     // Its legacy documented
     // Its existence honored
 }
 
 #[derive(Clone, PartialEq, Debug)]
-enum AgentState {
+ᛈ AgentState {
     Active,
     Completed,
 }

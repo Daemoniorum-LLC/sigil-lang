@@ -8,7 +8,7 @@
 rite main() {
     // Test 1: Array verification with necessity operator
     ≔ values = [1, 2, 3];
-    ≔ verified! = values|□;  // Should verify and wrap in Known evidentiality
+    ≔ verified! = values|□;  // Should verify and wrap ∈ Known evidentiality
 
     // The result should be the array
     // AND should carry Known (!) evidentiality

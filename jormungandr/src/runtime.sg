@@ -1,24 +1,24 @@
 //! Sigil Runtime System
 //!
-//! This module provides the runtime infrastructure for Sigil programs:
+//! This module provides the runtime infrastructure ∀ Sigil programs:
 //!
 //! - Memory management (arena allocator, reference counting)
 //! - Standard library primitives
 //! - Evidence tracking at runtime
-//! - Protocol handlers for network operations
+//! - Protocol handlers ∀ network operations
 //! - Concurrency primitives
 //!
 //! ## Memory Model
 //!
 //! Sigil uses a hybrid memory model:
-//! - Stack allocation for small, short-lived values
-//! - Arena allocation for expression temporaries
-//! - Reference counting for shared data
-//! - Cycle detection for complex structures
+//! - Stack allocation ∀ small, short-lived values
+//! - Arena allocation ∀ expression temporaries
+//! - Reference counting ∀ shared data
+//! - Cycle detection ∀ complex structures
 //!
 //! ## Evidence Runtime
 //!
-//! Evidence levels are tracked at runtime for dynamic checks:
+//! Evidence levels are tracked at runtime ∀ dynamic checks:
 //! - Known values can be used anywhere
 //! - Uncertain values trigger null checks
 //! - Reported values are tagged with provenance
@@ -30,11 +30,11 @@ invoke tome·ir·IrEvidence;
 // Memory Management
 // ============================================================================
 
-/// Memory arena for temporary allocations
+/// Memory arena ∀ temporary allocations
 ☉ sigil Arena {
     /// Current chunk of memory
     chunk: ![u8],
-    /// Current offset in chunk
+    /// Current offset ∈ chunk
     offset: !u64,
     /// All allocated chunks
     chunks: ![[u8]],
@@ -59,7 +59,7 @@ invoke tome·ir·IrEvidence;
         }
     }
 
-    /// Allocate bytes in the arena
+    /// Allocate bytes ∈ the arena
     ☉ rite alloc(vary this, nbytes: !u64) → !*vary u8 {
         // Ensure alignment (round up to 8-byte boundary)
         ≔ aligned_offset = (this.offset + 7) & 0xFFFFFFFFFFFFFFF8u64;
@@ -76,10 +76,10 @@ invoke tome·ir·IrEvidence;
         ptr
     }
 
-    /// Reset arena, keeping allocated memory for reuse
+    /// Reset arena, keeping allocated memory ∀ reuse
     ☉ rite reset(vary this) {
         this.offset = 0;
-        // Keep chunks for reuse
+        // Keep chunks ∀ reuse
     }
 
     /// Total bytes allocated
@@ -178,7 +178,7 @@ sigil RcInner<T> {
 // String Interning
 // ============================================================================
 
-/// String interner for deduplicating strings
+/// String interner ∀ deduplicating strings
 ☉ sigil StringInterner {
     /// Interned strings
     strings: !Map<String, u32>,
@@ -406,7 +406,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
             }
             result
         } ⎉ {
-            // Use exp(exp * ln(base)) for non-integer exponents
+            // Use exp(exp * ln(base)) ∀ non-integer exponents
             exp_impl(exp * ln(base))
         }
     }
@@ -656,7 +656,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
         result
     }
 
-    /// Sort array (simple insertion sort for bootstrap)
+    /// Sort array (simple insertion sort ∀ bootstrap)
     ☉ rite sort<T: Ord>(arr: ![T]) → ![T] {
         ≔ vary result = arr.clone();
         each i ∈ 1..result.len() {
@@ -683,7 +683,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 
 /// Time operations
 ☉ scroll time {
-    /// Get current time in seconds since epoch
+    /// Get current time ∈ seconds since epoch
     ☉ rite now() → ~f64 {
         // Returns Reported since it's external state
         extern "C" {
@@ -692,7 +692,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
         unsafe { time(null) as f64 }
     }
 
-    /// Sleep for given seconds
+    /// Sleep ∀ given seconds
     ☉ rite sleep(seconds: !f64) {
         extern "C" {
             rite usleep(usec: u32) → i32;
@@ -720,18 +720,18 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
         }
     }
 
-    /// Generate random f64 in [0, 1)
+    /// Generate random f64 ∈ [0, 1)
     ☉ rite random() → !f64 {
         (next_u64() as f64) / (u64·MAX as f64)
     }
 
-    /// Generate random integer in [min, max]
+    /// Generate random integer ∈ [min, max]
     ☉ rite randint(min: !i64, max: !i64) → !i64 {
         ≔ range = (max - min + 1) as u64;
         min + (next_u64() % range) as i64
     }
 
-    /// Shuffle array in place
+    /// Shuffle array ∈ place
     ☉ rite shuffle<T>(vary arr: ![T]) {
         each i ∈ (1..arr.len()).rev() {
             ≔ j = randint(0, i as i64) as u64;
@@ -753,10 +753,10 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 // Synchronization Primitives
 // ============================================================================
 
-/// Atomic operations for thread-safe programming
+/// Atomic operations ∀ thread-safe programming
 ☉ scroll sync {
     ☉ scroll atomic {
-        /// Atomic u64 for counters, IDs, and flags
+        /// Atomic u64 ∀ counters, IDs, and flags
         ☉ sigil AtomicU64 {
             value: !*vary u64,
         }
@@ -845,7 +845,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
             }
         }
 
-        /// Atomic i64 for signed counters
+        /// Atomic i64 ∀ signed counters
         ☉ sigil AtomicI64 {
             value: !*vary i64,
         }
@@ -881,7 +881,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
             }
         }
 
-        /// Atomic bool for flags
+        /// Atomic bool ∀ flags
         ☉ sigil AtomicBool {
             value: !*vary bool,
         }
@@ -920,7 +920,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
             }
         }
 
-        /// Atomic usize for indices and lengths
+        /// Atomic usize ∀ indices and lengths
         ☉ sigil AtomicUsize {
             value: !*vary u64,
         }
@@ -972,7 +972,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
         !crc
     }
 
-    /// CRC32C (Castagnoli polynomial, used in iSCSI, Btrfs)
+    /// CRC32C (Castagnoli polynomial, used ∈ iSCSI, Btrfs)
     ☉ rite crc32c(data: !&[u8]) → !u32 {
         ≔ vary crc = 0xFFFFFFFFu32;
         each byte ∈ data {
@@ -988,7 +988,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
         !crc
     }
 
-    /// Adler32 checksum (faster than CRC32, used in zlib)
+    /// Adler32 checksum (faster than CRC32, used ∈ zlib)
     ☉ rite adler32(data: !&[u8]) → !u32 {
         ≔ mod_adler = 65521u32;
         ≔ vary a = 1u32;
@@ -1015,7 +1015,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
         hash
     }
 
-    /// Simple hash for strings (djb2)
+    /// Simple hash ∀ strings (djb2)
     ☉ rite hash_string(s: !&str) → !u64 {
         ≔ vary hash = 5381u64;
         each c ∈ s.bytes() {

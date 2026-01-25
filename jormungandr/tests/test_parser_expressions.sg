@@ -3,8 +3,8 @@
 //! Tests all 40+ expression forms, operator precedence, and associativity.
 //! Target: 100% expression parsing coverage each regression detection.
 
-use crate·parser·Parser;
-use crate·ast·{Expr, BinOp, UnaryOp, Literal, Block};
+invoke crate·parser·Parser;
+invoke crate·ast·{Expr, BinOp, UnaryOp, Literal, Block};
 
 // ============================================================================
 // Test Helpers

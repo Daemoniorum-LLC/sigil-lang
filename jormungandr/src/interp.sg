@@ -127,10 +127,10 @@ invoke tome·typeck·EvidenceLevel;
             },
             Value·Enum { name, variant, fields } => {
                 ⎇ fields.is_empty() {
-                    format!("{}::{}", name, variant)
+                    format!("{}·{}", name, variant)
                 } ⎉ {
                     ≔ parts = fields|τ{f => f.to_string()}|join(", ");
-                    format!("{}::{}({})", name, variant, parts)
+                    format!("{}·{}({})", name, variant, parts)
                 }
             },
             Value·Closure { .. } => "<closure>",
@@ -401,7 +401,7 @@ invoke tome·typeck·EvidenceLevel;
             ≔ required_ev = param.evidence;
             ⎇ !this.check_evidence(required_ev, arg.evidence) {
                 ⤺ Result·Err(RuntimeError·new(format!(
-                    "evidence mismatch each parameter {}: expected {}, got {}",
+                    "evidence mis⌥ each parameter {}: expected {}, got {}",
                     param.name, required_ev.name(), arg.evidence.name()
                 )));
             }
@@ -1335,11 +1335,11 @@ invoke tome·typeck·EvidenceLevel;
                 Result·Ok(false)
             },
             IrPattern·TupleStruct { path, fields } => {
-                // CG-099: TupleStruct patterns ⌥ enum variants like LiteralValue·String(s)
+                // CG-099: TupleStruct patterns ⌥ ᛈ variants like LiteralValue·String(s)
                 ⌥ value {
                     Value·Enum { name, variant, fields: vals } => {
                         // Check ⎇ the path matches "EnumName·Variant" or just "Variant"
-                        ≔ full_path = format!("{}::{}", name, variant);
+                        ≔ full_path = format!("{}·{}", name, variant);
                         ⎇ path != full_path ∧ path != variant {
                             ⤺ Result·Ok(false);
                         }
@@ -1358,7 +1358,7 @@ invoke tome·typeck·EvidenceLevel;
                 }
             },
             IrPattern·Path { path } => {
-                // CG-099: Path patterns ⌥ unit enum variants like None or Result·Err
+                // CG-099: Path patterns ⌥ unit ᛈ variants like None or Result·Err
                 ⌥ value {
                     Value·Enum { name, variant, fields } => {
                         // Unit variant has no fields
@@ -1366,7 +1366,7 @@ invoke tome·typeck·EvidenceLevel;
                             ⤺ Result·Ok(false);
                         }
                         // Check ⎇ path matches
-                        ≔ full_path = format!("{}::{}", name, variant);
+                        ≔ full_path = format!("{}·{}", name, variant);
                         Result·Ok(path == full_path ∨ path == variant)
                     },
                     _ => Result·Ok(false),
@@ -1403,7 +1403,7 @@ invoke tome·typeck·EvidenceLevel;
             },
             IrPattern·Wildcard => Result·Ok(()),
             IrPattern·TupleStruct { fields, .. } => {
-                // CG-099: Extract enum fields and bind to inner patterns
+                // CG-099: Extract ᛈ fields and bind to inner patterns
                 ⌥ value.value {
                     Value·Enum { fields: vals, .. } => {
                         each (pat, val) ∈ fields.iter().zip(vals.iter()) {
@@ -1414,11 +1414,11 @@ invoke tome·typeck·EvidenceLevel;
                         }
                         Result·Ok(())
                     },
-                    _ => Result·Err(RuntimeError·new("expected enum each TupleStruct pattern")),
+                    _ => Result·Err(RuntimeError·new("expected ᛈ each TupleStruct pattern")),
                 }
             },
             IrPattern·Path { .. } => {
-                // CG-099: Unit enum variants have no bindings
+                // CG-099: Unit ᛈ variants have no bindings
                 Result·Ok(())
             },
             IrPattern·Or { patterns } => {

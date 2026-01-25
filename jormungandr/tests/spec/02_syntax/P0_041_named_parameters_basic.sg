@@ -1,10 +1,10 @@
-// Test: Basic named parameter syntax in function calls
+// Test: Basic named parameter syntax ∈ function calls
 // Spec: 02-SYNTAX.md § 3.7 Named Parameters
 // Priority: P0 = Bootstrap Critical
 //
 // Purpose:
 // Validates that functions can be called with named arguments
-// in the form `func(name: value)` instead of purely positional.
+// ∈ the form `func(name: value)` instead of purely positional.
 //
 // Expected behavior:
 // Named parameters are matched by name to function parameters,
