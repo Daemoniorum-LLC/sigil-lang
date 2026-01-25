@@ -7161,6 +7161,465 @@ fn register_concurrency(interp: &mut Interpreter) {
 
     // HttpMethod enum variants are already registered earlier as Value::Variant
 
+    // --- HTTP Convenience Functions ---
+
+    // Http·get(url) - Simple GET request (convenience wrapper)
+    define(interp, "Http·get", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(raw)) = borrowed.get("raw") {
+                    raw.to_string()
+                } else {
+                    return Err(RuntimeError::new("Invalid URL object"));
+                }
+            }
+            _ => return Err(RuntimeError::new("Http·get requires URL string")),
+        };
+
+        use std::io::{Read, Write as IoWrite};
+
+        // Parse URL
+        let (scheme, rest) = if let Some(pos) = url.find("://") {
+            (&url[..pos], &url[pos + 3..])
+        } else {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new("Invalid URL - missing scheme".to_string()))])),
+            });
+        };
+
+        if scheme != "http" {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Unsupported scheme: {} (only http supported)", scheme)))])),
+            });
+        }
+
+        let (host_port, path) = if let Some(pos) = rest.find('/') {
+            (&rest[..pos], &rest[pos..])
+        } else {
+            (rest, "/")
+        };
+
+        let (host, port): (&str, u16) = if let Some(pos) = host_port.rfind(':') {
+            let port_str = &host_port[pos + 1..];
+            (&host_port[..pos], port_str.parse().unwrap_or(80))
+        } else {
+            (host_port, 80)
+        };
+
+        let addr = format!("{}:{}", host, port);
+        let request = format!(
+            "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Sigil/1.0\r\nConnection: close\r\n\r\n",
+            path, host
+        );
+
+        match std::net::TcpStream::connect(&addr) {
+            Ok(mut stream) => {
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+                let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(10)));
+
+                if stream.write_all(request.as_bytes()).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Write failed".to_string()))])),
+                    });
+                }
+
+                let mut response = Vec::new();
+                if stream.read_to_end(&mut response).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Read failed".to_string()))])),
+                    });
+                }
+
+                // Parse HTTP response
+                let response_str = String::from_utf8_lossy(&response);
+                let status_code: i64 = response_str
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+
+                // Find body (after empty line)
+                let body_start = response_str.find("\r\n\r\n")
+                    .map(|i| i + 4)
+                    .or_else(|| response_str.find("\n\n").map(|i| i + 2))
+                    .unwrap_or(response_str.len());
+
+                let body = &response_str[body_start..];
+
+                // Parse headers
+                let mut headers: Vec<Value> = vec![];
+                for line in response_str[..body_start].lines().skip(1) {
+                    if line.is_empty() || line == "\r" { break; }
+                    if let Some((key, val)) = line.split_once(':') {
+                        headers.push(Value::Tuple(Rc::new(vec![
+                            Value::String(Rc::new(key.trim().to_string())),
+                            Value::String(Rc::new(val.trim().to_string())),
+                        ])));
+                    }
+                }
+
+                let mut resp_fields = HashMap::new();
+                resp_fields.insert("status".to_string(), Value::Int(status_code));
+                resp_fields.insert("ok".to_string(), Value::Bool(status_code >= 200 && status_code < 300));
+                resp_fields.insert("body".to_string(), Value::String(Rc::new(body.to_string())));
+                resp_fields.insert("headers".to_string(), Value::Array(Rc::new(RefCell::new(headers))));
+
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Struct {
+                        name: "HttpResponse".to_string(),
+                        fields: Rc::new(RefCell::new(resp_fields)),
+                    }])),
+                })
+            }
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Connection failed: {}", e)))])),
+            }),
+        }
+    });
+
+    // Http·post(url, body) - Simple POST request (convenience wrapper)
+    define(interp, "Http·post", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(raw)) = borrowed.get("raw") {
+                    raw.to_string()
+                } else {
+                    return Err(RuntimeError::new("Invalid URL object"));
+                }
+            }
+            _ => return Err(RuntimeError::new("Http·post requires URL string")),
+        };
+
+        let body_bytes: Vec<u8> = match &args[1] {
+            Value::String(s) => s.as_bytes().to_vec(),
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(b) = v { Some(*b as u8) } else { None }
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("Http·post requires body (string or bytes)")),
+        };
+
+        use std::io::{Read, Write as IoWrite};
+
+        // Parse URL
+        let (scheme, rest) = if let Some(pos) = url.find("://") {
+            (&url[..pos], &url[pos + 3..])
+        } else {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new("Invalid URL - missing scheme".to_string()))])),
+            });
+        };
+
+        if scheme != "http" {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Unsupported scheme: {} (only http supported)", scheme)))])),
+            });
+        }
+
+        let (host_port, path) = if let Some(pos) = rest.find('/') {
+            (&rest[..pos], &rest[pos..])
+        } else {
+            (rest, "/")
+        };
+
+        let (host, port): (&str, u16) = if let Some(pos) = host_port.rfind(':') {
+            let port_str = &host_port[pos + 1..];
+            (&host_port[..pos], port_str.parse().unwrap_or(80))
+        } else {
+            (host_port, 80)
+        };
+
+        let addr = format!("{}:{}", host, port);
+        let request = format!(
+            "POST {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Sigil/1.0\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+            path, host, body_bytes.len()
+        );
+
+        match std::net::TcpStream::connect(&addr) {
+            Ok(mut stream) => {
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+                let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(10)));
+
+                // Send headers
+                if stream.write_all(request.as_bytes()).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Write headers failed".to_string()))])),
+                    });
+                }
+
+                // Send body
+                if stream.write_all(&body_bytes).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Write body failed".to_string()))])),
+                    });
+                }
+
+                let mut response = Vec::new();
+                if stream.read_to_end(&mut response).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Read failed".to_string()))])),
+                    });
+                }
+
+                // Parse HTTP response
+                let response_str = String::from_utf8_lossy(&response);
+                let status_code: i64 = response_str
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+
+                // Find body (after empty line)
+                let body_start = response_str.find("\r\n\r\n")
+                    .map(|i| i + 4)
+                    .or_else(|| response_str.find("\n\n").map(|i| i + 2))
+                    .unwrap_or(response_str.len());
+
+                let resp_body = &response_str[body_start..];
+
+                // Parse headers
+                let mut headers: Vec<Value> = vec![];
+                for line in response_str[..body_start].lines().skip(1) {
+                    if line.is_empty() || line == "\r" { break; }
+                    if let Some((key, val)) = line.split_once(':') {
+                        headers.push(Value::Tuple(Rc::new(vec![
+                            Value::String(Rc::new(key.trim().to_string())),
+                            Value::String(Rc::new(val.trim().to_string())),
+                        ])));
+                    }
+                }
+
+                let mut resp_fields = HashMap::new();
+                resp_fields.insert("status".to_string(), Value::Int(status_code));
+                resp_fields.insert("ok".to_string(), Value::Bool(status_code >= 200 && status_code < 300));
+                resp_fields.insert("body".to_string(), Value::String(Rc::new(resp_body.to_string())));
+                resp_fields.insert("headers".to_string(), Value::Array(Rc::new(RefCell::new(headers))));
+
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Struct {
+                        name: "HttpResponse".to_string(),
+                        fields: Rc::new(RefCell::new(resp_fields)),
+                    }])),
+                })
+            }
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Connection failed: {}", e)))])),
+            }),
+        }
+    });
+
+    // Http·request(method, url, headers, body) - Full control HTTP request
+    define(interp, "Http·request", Some(4), |_, args| {
+        let method = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Variant { variant_name, .. } => variant_name.clone(),
+            _ => return Err(RuntimeError::new("Http·request requires method string")),
+        };
+
+        let url = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Http·request requires URL string")),
+        };
+
+        let custom_headers: Vec<(String, String)> = match &args[2] {
+            Value::Array(arr) => {
+                arr.borrow().iter().filter_map(|h| {
+                    if let Value::Tuple(t) = h {
+                        if t.len() >= 2 {
+                            let key = if let Value::String(s) = &t[0] { s.to_string() } else { return None };
+                            let val = if let Value::String(s) = &t[1] { s.to_string() } else { return None };
+                            return Some((key, val));
+                        }
+                    }
+                    None
+                }).collect()
+            }
+            Value::Null => vec![],
+            _ => vec![],
+        };
+
+        let body_bytes: Option<Vec<u8>> = match &args[3] {
+            Value::String(s) => Some(s.as_bytes().to_vec()),
+            Value::Array(arr) => {
+                Some(arr.borrow().iter().filter_map(|v| {
+                    if let Value::Int(b) = v { Some(*b as u8) } else { None }
+                }).collect())
+            }
+            Value::Null => None,
+            _ => None,
+        };
+
+        use std::io::{Read, Write as IoWrite};
+
+        // Parse URL
+        let (scheme, rest) = if let Some(pos) = url.find("://") {
+            (&url[..pos], &url[pos + 3..])
+        } else {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new("Invalid URL - missing scheme".to_string()))])),
+            });
+        };
+
+        if scheme != "http" {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Unsupported scheme: {}", scheme)))])),
+            });
+        }
+
+        let (host_port, path) = if let Some(pos) = rest.find('/') {
+            (&rest[..pos], &rest[pos..])
+        } else {
+            (rest, "/")
+        };
+
+        let (host, port): (&str, u16) = if let Some(pos) = host_port.rfind(':') {
+            let port_str = &host_port[pos + 1..];
+            (&host_port[..pos], port_str.parse().unwrap_or(80))
+        } else {
+            (host_port, 80)
+        };
+
+        let addr = format!("{}:{}", host, port);
+
+        // Build request
+        let mut request = format!("{} {} HTTP/1.1\r\n", method, path);
+        request.push_str(&format!("Host: {}\r\n", host));
+        request.push_str("User-Agent: Sigil/1.0\r\n");
+
+        for (key, val) in &custom_headers {
+            request.push_str(&format!("{}: {}\r\n", key, val));
+        }
+
+        if let Some(ref body) = body_bytes {
+            request.push_str(&format!("Content-Length: {}\r\n", body.len()));
+        }
+
+        request.push_str("Connection: close\r\n\r\n");
+
+        match std::net::TcpStream::connect(&addr) {
+            Ok(mut stream) => {
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+                let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(10)));
+
+                if stream.write_all(request.as_bytes()).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Write headers failed".to_string()))])),
+                    });
+                }
+
+                if let Some(body) = body_bytes {
+                    if stream.write_all(&body).is_err() {
+                        return Ok(Value::Variant {
+                            enum_name: "Result".to_string(),
+                            variant_name: "Err".to_string(),
+                            fields: Some(Rc::new(vec![Value::String(Rc::new("Write body failed".to_string()))])),
+                        });
+                    }
+                }
+
+                let mut response = Vec::new();
+                if stream.read_to_end(&mut response).is_err() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Err".to_string(),
+                        fields: Some(Rc::new(vec![Value::String(Rc::new("Read failed".to_string()))])),
+                    });
+                }
+
+                let response_str = String::from_utf8_lossy(&response);
+                let status_code: i64 = response_str
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+
+                let body_start = response_str.find("\r\n\r\n")
+                    .map(|i| i + 4)
+                    .or_else(|| response_str.find("\n\n").map(|i| i + 2))
+                    .unwrap_or(response_str.len());
+
+                let resp_body = &response_str[body_start..];
+
+                let mut headers: Vec<Value> = vec![];
+                for line in response_str[..body_start].lines().skip(1) {
+                    if line.is_empty() || line == "\r" { break; }
+                    if let Some((key, val)) = line.split_once(':') {
+                        headers.push(Value::Tuple(Rc::new(vec![
+                            Value::String(Rc::new(key.trim().to_string())),
+                            Value::String(Rc::new(val.trim().to_string())),
+                        ])));
+                    }
+                }
+
+                let mut resp_fields = HashMap::new();
+                resp_fields.insert("status".to_string(), Value::Int(status_code));
+                resp_fields.insert("ok".to_string(), Value::Bool(status_code >= 200 && status_code < 300));
+                resp_fields.insert("body".to_string(), Value::String(Rc::new(resp_body.to_string())));
+                resp_fields.insert("headers".to_string(), Value::Array(Rc::new(RefCell::new(headers))));
+
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Struct {
+                        name: "HttpResponse".to_string(),
+                        fields: Rc::new(RefCell::new(resp_fields)),
+                    }])),
+                })
+            }
+            Err(e) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!("Connection failed: {}", e)))])),
+            }),
+        }
+    });
+
     // --- TLS/SSL ---
 
     // tls_init - Initialize TLS library

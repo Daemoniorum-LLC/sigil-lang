@@ -1,6 +1,7 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
 use sigil_parser::lower::lower_source_file;
+use sigil_parser::lsp::start_lsp;
 use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
 #[cfg(feature = "jit")]
@@ -62,6 +63,7 @@ fn main() -> ExitCode {
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
+        eprintln!("  lsp             Start Language Server Protocol server");
         eprintln!();
         eprintln!("Project Commands:");
         eprintln!("  new <name>      Create a new Sigil project");
@@ -297,6 +299,7 @@ fn main() -> ExitCode {
                 eprintln!("  --init                  Generate default .sigillint.toml");
                 eprintln!("  --list                  List all available lint rules");
                 eprintln!("  --explain=<RULE>        Show detailed docs for a rule (code or name)");
+                eprintln!("  --evidentiality         Enable strict evidentiality checking");
                 return ExitCode::from(1);
             }
             let format = if args.iter().any(|a| a == "--format=json") {
@@ -319,11 +322,26 @@ fn main() -> ExitCode {
             let watch_mode = args.iter().any(|a| a == "--watch");
             let parallel = args.iter().any(|a| a == "--parallel");
             let show_stats = args.iter().any(|a| a == "--stats");
+            let evidentiality_mode = args.iter().any(|a| a == "--evidentiality");
+
+            // Find the path argument (first non-flag after "lint")
+            let path = args.iter().skip(2)
+                .find(|a| !a.starts_with("--") && !a.starts_with("-c"))
+                .map(|s| s.as_str());
+
+            let path = match path {
+                Some(p) => p,
+                None => {
+                    eprintln!("Error: missing file or directory argument");
+                    eprintln!("Usage: sigil lint <path> [options]");
+                    return ExitCode::from(1);
+                }
+            };
 
             if watch_mode {
-                lint_watch(&args[2], format, config_path)
+                lint_watch(path, format, config_path)
             } else {
-                lint_path(&args[2], format, config_path, apply_fix, parallel, show_stats)
+                lint_path(path, format, config_path, apply_fix, parallel, show_stats, evidentiality_mode)
             }
         }
         "dump-ir" => {
@@ -361,6 +379,7 @@ fn main() -> ExitCode {
             lex_file(&args[2])
         }
         "repl" => repl(),
+        "lsp" => start_lsp(),
         "new" => {
             if args.len() < 3 {
                 eprintln!("Error: missing project name");
@@ -375,12 +394,18 @@ fn main() -> ExitCode {
         "migrate" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil migrate <file.sg> [--dry-run] [--backup]");
+                eprintln!("Usage: sigil migrate <file.sg> [--dry-run] [--backup] [--evidentiality]");
+                eprintln!();
+                eprintln!("Options:");
+                eprintln!("  --dry-run        Show changes without applying");
+                eprintln!("  --backup         Create .bak backup before modifying");
+                eprintln!("  --evidentiality  Add evidentiality markers to external data sources");
                 return ExitCode::from(1);
             }
             let dry_run = args.iter().any(|a| a == "--dry-run");
             let backup = args.iter().any(|a| a == "--backup");
-            migrate_file(&args[2], dry_run, backup)
+            let evidentiality = args.iter().any(|a| a == "--evidentiality");
+            migrate_file(&args[2], dry_run, backup, evidentiality)
         }
         _ => {
             // Treat as file if it ends with .sigil or .sg
@@ -1695,12 +1720,12 @@ fn lint_init() -> ExitCode {
 /// - Unreachable code (E0700)
 /// - Infinite loops (E0701)
 /// - Division by zero (E0702)
-fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_fix: bool, parallel: bool, show_stats: bool) -> ExitCode {
-    use sigil_parser::lint::{lint_source_with_config, lint_directory, lint_directory_parallel, apply_fixes, generate_sarif, LintConfig};
+fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_fix: bool, parallel: bool, show_stats: bool, evidentiality_mode: bool) -> ExitCode {
+    use sigil_parser::lint::{lint_source_with_config, lint_directory, lint_directory_parallel, apply_fixes, generate_sarif, LintConfig, LintLevel};
     use std::path::Path;
 
     // Load config
-    let config = if let Some(cfg_path) = config_path {
+    let mut config = if let Some(cfg_path) = config_path {
         match LintConfig::from_file(Path::new(cfg_path)) {
             Ok(cfg) => cfg,
             Err(e) => {
@@ -1711,6 +1736,19 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
     } else {
         LintConfig::find_and_load()
     };
+
+    // Enable strict evidentiality checking if requested
+    if evidentiality_mode {
+        eprintln!("Evidentiality mode enabled: enforcing data provenance markers");
+        // Set all evidentiality-related lints to Deny
+        config.levels.insert("unvalidated_external_data".to_string(), LintLevel::Deny);
+        config.levels.insert("evidentiality_violation".to_string(), LintLevel::Deny);
+        config.levels.insert("certainty_downgrade".to_string(), LintLevel::Deny);
+        config.levels.insert("evidentiality_mismatch".to_string(), LintLevel::Deny);
+        config.levels.insert("uncertainty_unhandled".to_string(), LintLevel::Warn);
+        config.levels.insert("reported_without_attribution".to_string(), LintLevel::Warn);
+        config.levels.insert("missing_evidentiality_marker".to_string(), LintLevel::Warn);
+    }
 
     let target = Path::new(path);
 
@@ -3248,7 +3286,16 @@ fn build_project() -> ExitCode {
 /// - continue → ↻ (cycle-arrow)
 /// - :: → · (middledot)
 /// - &mut → &Δ
-fn migrate_file(path: &str, dry_run: bool, backup: bool) -> ExitCode {
+///
+/// With --evidentiality flag, also adds evidentiality markers to external data sources:
+/// - Http·get/post/request → ~ (Reported)
+/// - File·read/write → ~ (Reported)
+/// - Env·var → ? (Uncertain)
+/// - stdin/readline → ? (Uncertain)
+/// - Model·predict/infer → ◊ (Predicted)
+/// - rand/random → ? (Uncertain)
+/// - Time·now → ~ (Reported)
+fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -3257,53 +3304,41 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool) -> ExitCode {
         }
     };
 
-    // Define replacements (order matters - more specific first)
-    let replacements = [
-        // Multi-character patterns first
-        ("&mut ", "&Δ "),
-        ("&mut\t", "&Δ\t"),
-        ("&mut(", "&Δ("),
+    // Simple replacements (not keywords - always replace)
+    let simple_replacements = [
         ("::", "·"),
-        // Keywords - use word boundaries (followed by space, newline, or paren)
-        ("fn ", "λ "),
-        ("fn(", "λ("),
-        ("let ", "≔ "),
-        ("let\t", "≔\t"),
-        ("mut ", "Δ "),
-        ("mut,", "Δ,"),
-        ("struct ", "Σ "),
-        ("impl ", "⊢ "),
-        ("impl<", "⊢<"),
-        ("trait ", "Θ "),
-        ("enum ", "ᛈ "),
-        ("pub ", "☉ "),
-        ("pub(", "☉("),
-        ("mod ", "scroll "),
-        ("use ", "invoke "),
-        ("if ", "⎇ "),
-        ("if(", "⎇("),
-        ("else ", "⎉ "),
-        ("else{", "⎉{"),
-        ("match ", "⌥ "),
-        ("match(", "⌥("),
-        ("while ", "⟳ "),
-        ("while(", "⟳("),
-        ("for ", "∀ "),
-        ("for(", "∀("),
-        (" in ", " ∈ "),
-        ("return ", "⤺ "),
-        ("return;", "⤺;"),
-        ("return(", "⤺("),
-        ("break;", "⊗;"),
-        ("break ", "⊗ "),
-        ("continue;", "↻;"),
-        ("continue ", "↻ "),
+    ];
+
+    // Keyword replacements - require word boundary before (start of line, whitespace, or punctuation)
+    // Format: (keyword, replacement, suffixes_to_match)
+    let keyword_replacements: &[(&str, &str, &[&str])] = &[
+        ("&mut", "&Δ", &[" ", "\t", "("]),
+        ("fn", "λ", &[" ", "("]),
+        ("let", "≔", &[" ", "\t"]),
+        ("mut", "Δ", &[" ", ","]),
+        ("struct", "Σ", &[" "]),
+        ("impl", "⊢", &[" ", "<"]),
+        ("trait", "Θ", &[" "]),
+        ("enum", "ᛈ", &[" "]),
+        ("pub", "☉", &[" ", "("]),
+        ("mod", "scroll", &[" "]),
+        ("use", "invoke", &[" "]),
+        ("if", "⎇", &[" ", "("]),
+        ("else", "⎉", &[" ", "{"]),
+        ("match", "⌥", &[" ", "("]),
+        ("while", "⟳", &[" ", "("]),
+        ("for", "∀", &[" ", "("]),
+        ("return", "⤺", &[" ", ";", "("]),
+        ("break", "⊗", &[";", " "]),
+        ("continue", "↻", &[";", " "]),
     ];
 
     let mut result = source.clone();
     let mut changes = 0;
+    let mut ev_changes = 0;
 
-    for (from, to) in &replacements {
+    // Apply simple replacements
+    for (from, to) in &simple_replacements {
         let count = result.matches(from).count();
         if count > 0 {
             changes += count;
@@ -3311,13 +3346,176 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool) -> ExitCode {
         }
     }
 
-    if changes == 0 {
-        println!("✓ {} - no Rust syntax found, already native Sigil", path);
+    // Apply keyword replacements with word boundary check
+    for (keyword, replacement, suffixes) in keyword_replacements {
+        for suffix in *suffixes {
+            let pattern = format!("{}{}", keyword, suffix);
+            let replacement_str = format!("{}{}", replacement, suffix);
+
+            // Only replace if preceded by word boundary (start, whitespace, newline, or certain punctuation)
+            let mut new_result = String::with_capacity(result.len());
+            let mut last_end = 0;
+
+            for (idx, _) in result.match_indices(&pattern) {
+                // Check if this is at a word boundary
+                let is_word_boundary = if idx == 0 {
+                    true
+                } else {
+                    let prev_char = result[..idx].chars().last().unwrap();
+                    !prev_char.is_alphanumeric() && prev_char != '_'
+                };
+
+                if is_word_boundary {
+                    new_result.push_str(&result[last_end..idx]);
+                    new_result.push_str(&replacement_str);
+                    last_end = idx + pattern.len();
+                    changes += 1;
+                }
+            }
+            new_result.push_str(&result[last_end..]);
+            result = new_result;
+        }
+    }
+
+    // Special case: " in " -> " ∈ " (always safe, has spaces on both sides)
+    let in_count = result.matches(" in ").count();
+    if in_count > 0 {
+        changes += in_count;
+        result = result.replace(" in ", " ∈ ");
+    }
+
+    // Apply evidentiality markers if requested
+    if evidentiality {
+        // External data source patterns and their markers
+        // Format: (pattern, marker_symbol, marker_name)
+        let external_data_sources: &[(&str, &str, &str)] = &[
+            // HTTP/Network - Reported (~)
+            ("Http·get", "~", "Reported"),
+            ("Http·post", "~", "Reported"),
+            ("Http·put", "~", "Reported"),
+            ("Http·delete", "~", "Reported"),
+            ("Http·request", "~", "Reported"),
+            ("fetch(", "~", "Reported"),
+            ("TcpStream·connect", "~", "Reported"),
+            ("Socket·recv", "~", "Reported"),
+            ("WebSocket·receive", "~", "Reported"),
+
+            // File I/O - Reported (~)
+            ("File·read", "~", "Reported"),
+            ("File·open", "~", "Reported"),
+            ("fs·read", "~", "Reported"),
+            ("std·fs·read", "~", "Reported"),
+
+            // User Input - Uncertain (?)
+            ("stdin", "?", "Uncertain"),
+            ("readline", "?", "Uncertain"),
+            ("Env·var", "?", "Uncertain"),
+            ("Env·get", "?", "Uncertain"),
+            ("std·env·var", "?", "Uncertain"),
+            ("args()", "?", "Uncertain"),
+
+            // Database - Reported (~)
+            ("Db·query", "~", "Reported"),
+            ("Db·execute", "~", "Reported"),
+            ("query(", "~", "Reported"),
+
+            // System - Reported (~)
+            ("Time·now", "~", "Reported"),
+            ("Instant·now", "~", "Reported"),
+            ("SystemTime·now", "~", "Reported"),
+
+            // Random - Uncertain (?)
+            ("rand·", "?", "Uncertain"),
+            ("random(", "?", "Uncertain"),
+            ("Rng·", "?", "Uncertain"),
+
+            // ML/AI - Predicted (◊)
+            ("Model·predict", "◊", "Predicted"),
+            ("Model·infer", "◊", "Predicted"),
+            ("model·forward", "◊", "Predicted"),
+            ("llm·complete", "◊", "Predicted"),
+            ("llm·chat", "◊", "Predicted"),
+            ("embed(", "◊", "Predicted"),
+
+            // JSON/Parsing - Uncertain (?)
+            ("json·parse", "?", "Uncertain"),
+            ("serde·deserialize", "?", "Uncertain"),
+            ("from_str(", "?", "Uncertain"),
+        ];
+
+        // Look for let bindings with external data sources
+        // Pattern: ≔ <varname> = <external_call>
+        // We need to add marker after varname if not present
+        for (pattern, marker, _name) in external_data_sources {
+            // Find lines with this pattern in a let binding
+            let lines: Vec<&str> = result.lines().collect();
+            let mut new_lines: Vec<String> = Vec::with_capacity(lines.len());
+
+            for line in lines {
+                let mut new_line = line.to_string();
+
+                // Check if line contains the external data pattern
+                if line.contains(pattern) {
+                    // Check if it's a let binding: ≔ varname = ...pattern...
+                    if let Some(let_pos) = line.find("≔ ") {
+                        let after_let = &line[let_pos + "≔ ".len()..];
+
+                        // Find the variable name (up to = or :)
+                        if let Some(eq_pos) = after_let.find(" = ") {
+                            let var_part = &after_let[..eq_pos];
+                            let var_name = var_part.trim();
+
+                            // Check if variable already has an evidentiality marker
+                            let has_marker = var_name.ends_with('!')
+                                || var_name.ends_with('?')
+                                || var_name.ends_with('~')
+                                || var_name.ends_with('◊')
+                                || var_name.ends_with('‽');
+
+                            if !has_marker && !var_name.contains(':') {
+                                // Add the marker after the variable name
+                                let old_pattern = format!("≔ {} = ", var_name);
+                                let new_pattern = format!("≔ {}{} = ", var_name, marker);
+
+                                if line.contains(&old_pattern) {
+                                    new_line = line.replace(&old_pattern, &new_pattern);
+                                    ev_changes += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                new_lines.push(new_line);
+            }
+
+            result = new_lines.join("\n");
+            // Preserve trailing newline if original had one
+            if source.ends_with('\n') && !result.ends_with('\n') {
+                result.push('\n');
+            }
+        }
+    }
+
+    let total_changes = changes + ev_changes;
+
+    if total_changes == 0 {
+        if evidentiality {
+            println!("✓ {} - no migrations needed (syntax and evidentiality up to date)", path);
+        } else {
+            println!("✓ {} - no Rust syntax found, already native Sigil", path);
+        }
         return ExitCode::SUCCESS;
     }
 
     if dry_run {
-        println!("=== Dry run: {} changes would be made to {} ===", changes, path);
+        println!("=== Dry run: {} changes would be made to {} ===", total_changes, path);
+        if changes > 0 {
+            println!("  Syntax changes: {}", changes);
+        }
+        if ev_changes > 0 {
+            println!("  Evidentiality markers added: {}", ev_changes);
+        }
         println!();
         println!("{}", result);
         println!();
@@ -3341,13 +3539,22 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    println!("✓ Migrated {} ({} replacements)", path, changes);
+    println!("✓ Migrated {} ({} replacements)", path, total_changes);
     println!();
-    println!("Converted Rust syntax to native Sigil:");
-    println!("  λ (fn), ≔ (let), Δ (mut), Σ (struct), ⊢ (impl)");
-    println!("  Θ (trait), ᛈ (enum), ☉ (pub), · (::)");
-    println!("  ⎇/⎉ (if/else), ⌥ (match), ⟳ (while), ∀/∈ (for/in)");
-    println!("  ⤺ (return), ⊗ (break), ↻ (continue)");
+    if changes > 0 {
+        println!("Converted Rust syntax to native Sigil:");
+        println!("  λ (fn), ≔ (let), Δ (mut), Σ (struct), ⊢ (impl)");
+        println!("  Θ (trait), ᛈ (enum), ☉ (pub), · (::)");
+        println!("  ⎇/⎉ (if/else), ⌥ (match), ⟳ (while), ∀/∈ (for/in)");
+        println!("  ⤺ (return), ⊗ (break), ↻ (continue)");
+    }
+    if ev_changes > 0 {
+        println!();
+        println!("Added evidentiality markers ({} variables):", ev_changes);
+        println!("  ~ (Reported) - HTTP, File I/O, Database, Time");
+        println!("  ? (Uncertain) - User input, Environment, Random, Parsing");
+        println!("  ◊ (Predicted) - ML models, LLM completions");
+    }
 
     ExitCode::SUCCESS
 }

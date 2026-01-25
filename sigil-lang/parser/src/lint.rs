@@ -2884,6 +2884,237 @@ impl Linter {
         }
     }
 
+    // ============================================
+    // Evidentiality Checking
+    // ============================================
+
+    /// External data sources that require evidentiality markers.
+    /// Returns (pattern, suggested_marker, marker_symbol, rationale)
+    const EXTERNAL_DATA_SOURCES: &'static [(&'static str, &'static str, &'static str, &'static str)] = &[
+        // HTTP/Network - data from external systems
+        ("Http·get", "Reported", "~", "HTTP responses come from external systems"),
+        ("Http·post", "Reported", "~", "HTTP responses come from external systems"),
+        ("Http·request", "Reported", "~", "HTTP responses come from external systems"),
+        ("HttpClient·get", "Reported", "~", "HTTP responses come from external systems"),
+        ("HttpClient·post", "Reported", "~", "HTTP responses come from external systems"),
+        ("WebSocket·connect", "Reported", "~", "WebSocket data comes from external systems"),
+        ("WebSocket·recv", "Reported", "~", "WebSocket data comes from external systems"),
+        ("TcpStream·connect", "Reported", "~", "Network data comes from external systems"),
+        ("TcpStream·read", "Reported", "~", "Network data comes from external systems"),
+        ("UdpSocket·recv", "Reported", "~", "Network data comes from external systems"),
+
+        // File I/O - data from filesystem
+        ("File·read", "Reported", "~", "file contents may have changed externally"),
+        ("File·open", "Reported", "~", "file existence/contents are external state"),
+        ("File·read_to_string", "Reported", "~", "file contents may have changed externally"),
+        ("Fs·read", "Reported", "~", "file contents may have changed externally"),
+        ("Fs·read_dir", "Reported", "~", "directory contents are external state"),
+
+        // User input - unverified data
+        ("stdin·read", "Uncertain", "?", "user input is unverified"),
+        ("stdin·read_line", "Uncertain", "?", "user input is unverified"),
+        ("Stdin·read", "Uncertain", "?", "user input is unverified"),
+        ("Env·var", "Uncertain", "?", "environment variables are external input"),
+        ("Env·args", "Uncertain", "?", "command line arguments are external input"),
+
+        // Database - external persistent state
+        ("Db·query", "Reported", "~", "database contents are external state"),
+        ("Db·execute", "Reported", "~", "database results reflect external state"),
+        ("Sql·query", "Reported", "~", "database contents are external state"),
+        ("Redis·get", "Reported", "~", "cache contents are external state"),
+
+        // System calls - external system state
+        ("Sys·read", "Reported", "~", "system call returns external data"),
+        ("Sys·recv", "Reported", "~", "network data is external"),
+        ("Sys·recvfrom", "Reported", "~", "network data is external"),
+
+        // Time - external world state
+        ("Time·now", "Reported", "~", "current time is external state"),
+        ("Instant·now", "Reported", "~", "current time is external state"),
+        ("SystemTime·now", "Reported", "~", "current time is external state"),
+
+        // Random - non-deterministic
+        ("Random·next", "Uncertain", "?", "random values are non-deterministic"),
+        ("Rng·gen", "Uncertain", "?", "random values are non-deterministic"),
+        ("rand", "Uncertain", "?", "random values are non-deterministic"),
+
+        // ML/AI predictions
+        ("Model·predict", "Predicted", "◊", "ML predictions are probabilistic"),
+        ("Model·infer", "Predicted", "◊", "ML inference is probabilistic"),
+        ("Llm·complete", "Predicted", "◊", "LLM outputs are probabilistic"),
+        ("Llm·chat", "Predicted", "◊", "LLM outputs are probabilistic"),
+
+        // JSON/Parsing - may fail or be malformed
+        ("Json·parse", "Uncertain", "?", "parsed data may be malformed"),
+        ("Toml·parse", "Uncertain", "?", "parsed data may be malformed"),
+        ("Yaml·parse", "Uncertain", "?", "parsed data may be malformed"),
+        ("Xml·parse", "Uncertain", "?", "parsed data may be malformed"),
+    ];
+
+    /// Check if a function call is to an external data source and emit lint if unmarked.
+    #[allow(dead_code)]
+    fn check_external_data_source(&mut self, func_name: &str, has_evidentiality: bool, span: Span) {
+        if has_evidentiality {
+            return; // Already marked, nothing to do
+        }
+
+        for (pattern, marker_name, marker_symbol, rationale) in Self::EXTERNAL_DATA_SOURCES {
+            if func_name == *pattern || func_name.ends_with(&format!("·{}", pattern.split('·').last().unwrap_or(pattern))) {
+                self.emit_with_fix(
+                    LintId::UnvalidatedExternalData,
+                    format!(
+                        "external data source `{}` requires evidentiality marker",
+                        func_name
+                    ),
+                    span,
+                    format!(
+                        "add `{}` ({}) marker: {}",
+                        marker_symbol, marker_name, rationale
+                    ),
+                    format!("{}  // mark result with {}", func_name, marker_symbol),
+                );
+                return;
+            }
+        }
+    }
+
+    /// Check a let binding for missing evidentiality on external data.
+    fn check_let_evidentiality(&mut self, var_name: &str, var_evidentiality: Option<&crate::ast::Evidentiality>, init_expr: &Expr, span: Span) {
+        // Check if the init expression is a call to an external data source
+        if let Some(func_name) = Self::extract_call_name(init_expr) {
+            for (pattern, marker_name, marker_symbol, rationale) in Self::EXTERNAL_DATA_SOURCES {
+                if func_name == *pattern || func_name.contains(pattern) {
+                    let expected_marker = Self::symbol_to_evidentiality(marker_symbol);
+
+                    match var_evidentiality {
+                        None => {
+                            // Missing marker - emit error with fix
+                            self.emit_with_fix(
+                                LintId::UnvalidatedExternalData,
+                                format!(
+                                    "variable `{}` receives external data from `{}` without evidentiality marker",
+                                    var_name, func_name
+                                ),
+                                span,
+                                format!(
+                                    "mark variable with `{}` ({}) suffix: `{}{}`\n   = note: {}",
+                                    marker_symbol, marker_name, var_name, marker_symbol, rationale
+                                ),
+                                format!("{}{}", var_name, marker_symbol),
+                            );
+                        }
+                        Some(actual_marker) => {
+                            // Marker present - check if it's correct
+                            if let Some(expected) = expected_marker {
+                                if *actual_marker != expected {
+                                    let actual_symbol = Self::evidentiality_to_symbol(actual_marker);
+                                    let actual_name = Self::evidentiality_to_name(actual_marker);
+                                    self.emit_with_fix(
+                                        LintId::EvidentialityMismatch,
+                                        format!(
+                                            "variable `{}` has incorrect evidentiality marker `{}` ({}) for data from `{}`",
+                                            var_name, actual_symbol, actual_name, func_name
+                                        ),
+                                        span,
+                                        format!(
+                                            "change marker to `{}` ({}): `{}{}`\n   = note: {}\n   = note: `{}` implies {} but {} data is {}",
+                                            marker_symbol, marker_name, var_name, marker_symbol, rationale,
+                                            actual_symbol, actual_name, pattern, marker_name
+                                        ),
+                                        format!("{}{}", var_name, marker_symbol),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Convert evidentiality symbol to enum variant
+    fn symbol_to_evidentiality(symbol: &str) -> Option<crate::ast::Evidentiality> {
+        match symbol {
+            "!" => Some(crate::ast::Evidentiality::Known),
+            "?" => Some(crate::ast::Evidentiality::Uncertain),
+            "~" => Some(crate::ast::Evidentiality::Reported),
+            "◊" => Some(crate::ast::Evidentiality::Predicted),
+            "‽" => Some(crate::ast::Evidentiality::Paradox),
+            _ => None,
+        }
+    }
+
+    /// Convert evidentiality enum to symbol
+    fn evidentiality_to_symbol(ev: &crate::ast::Evidentiality) -> &'static str {
+        match ev {
+            crate::ast::Evidentiality::Known => "!",
+            crate::ast::Evidentiality::Uncertain => "?",
+            crate::ast::Evidentiality::Reported => "~",
+            crate::ast::Evidentiality::Predicted => "◊",
+            crate::ast::Evidentiality::Paradox => "‽",
+        }
+    }
+
+    /// Convert evidentiality enum to human-readable name
+    fn evidentiality_to_name(ev: &crate::ast::Evidentiality) -> &'static str {
+        match ev {
+            crate::ast::Evidentiality::Known => "Known/Verified",
+            crate::ast::Evidentiality::Uncertain => "Uncertain/Unverified",
+            crate::ast::Evidentiality::Reported => "Reported/External",
+            crate::ast::Evidentiality::Predicted => "Predicted/Speculative",
+            crate::ast::Evidentiality::Paradox => "Paradox/Contradiction",
+        }
+    }
+
+    /// Extract the function name from a call expression.
+    fn extract_call_name(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Call { func, .. } => {
+                match func.as_ref() {
+                    Expr::Path(path) => {
+                        Some(path.segments.iter()
+                            .map(|s| s.ident.name.clone())
+                            .collect::<Vec<_>>()
+                            .join("·"))
+                    }
+                    Expr::Field { expr: base, field, .. } => {
+                        if let Some(base_name) = Self::extract_call_name(base) {
+                            Some(format!("{}·{}", base_name, field.name))
+                        } else {
+                            Some(field.name.clone())
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            Expr::MethodCall { receiver, method, .. } => {
+                if let Some(receiver_type) = Self::extract_type_name(receiver) {
+                    Some(format!("{}·{}", receiver_type, method.name))
+                } else {
+                    Some(method.name.clone())
+                }
+            }
+            Expr::Await { expr: inner, .. } => Self::extract_call_name(inner),
+            Expr::Try(inner) => Self::extract_call_name(inner),
+            _ => None,
+        }
+    }
+
+    /// Try to extract a type name from an expression (for method calls).
+    fn extract_type_name(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Path(path) => {
+                Some(path.segments.iter()
+                    .map(|s| s.ident.name.clone())
+                    .collect::<Vec<_>>()
+                    .join("·"))
+            }
+            Expr::Call { func, .. } => Self::extract_type_name(func),
+            _ => None,
+        }
+    }
+
     // AST Visitor methods
     fn visit_source_file(&mut self, file: &SourceFile) {
         for item in &file.items {
@@ -3083,10 +3314,19 @@ impl Linter {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Let { pattern, init, .. } => {
-                if let Pattern::Ident { name, .. } = pattern {
+                if let Pattern::Ident { name, evidentiality, .. } = pattern {
                     self.check_reserved(&name.name, name.span);
                     self.check_shadowing(&name.name, name.span);
                     self.declared_vars.insert(name.name.clone(), (name.span, false));
+
+                    // Check for external data sources without evidentiality markers
+                    // Note: evidentiality can be stored in Pattern::Ident.evidentiality OR in Ident.evidentiality
+                    // The parser stores unambiguous markers (~, ◊, ‽) in Ident.evidentiality
+                    // and ambiguous markers (!, ?) in Pattern.evidentiality
+                    let effective_evidentiality = evidentiality.as_ref().or(name.evidentiality.as_ref());
+                    if let Some(ref init_expr) = init {
+                        self.check_let_evidentiality(&name.name, effective_evidentiality, init_expr, name.span);
+                    }
                 }
                 self.visit_pattern(pattern);
                 if let Some(ref e) = init {
@@ -3094,10 +3334,15 @@ impl Linter {
                 }
             }
             Stmt::LetElse { pattern, init, else_branch, .. } => {
-                if let Pattern::Ident { name, .. } = pattern {
+                if let Pattern::Ident { name, evidentiality, .. } = pattern {
                     self.check_reserved(&name.name, name.span);
                     self.check_shadowing(&name.name, name.span);
                     self.declared_vars.insert(name.name.clone(), (name.span, false));
+
+                    // Check for external data sources without evidentiality markers
+                    // Note: evidentiality can be in Pattern or Ident (see Stmt::Let comment)
+                    let effective_evidentiality = evidentiality.as_ref().or(name.evidentiality.as_ref());
+                    self.check_let_evidentiality(&name.name, effective_evidentiality, init, name.span);
                 }
                 self.visit_pattern(pattern);
                 self.visit_expr(init);
