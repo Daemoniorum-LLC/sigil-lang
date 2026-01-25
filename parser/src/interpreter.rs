@@ -879,6 +879,24 @@ fn ast_to_value_item(item: &Spanned<Item>) -> Value {
                 Value::String(Rc::new("Plurality".to_string())),
             );
         }
+        Item::Form(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Form".to_string())),
+            );
+        }
+        Item::Translations(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Translations".to_string())),
+            );
+        }
+        Item::LocaleEnum(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("LocaleEnum".to_string())),
+            );
+        }
     }
 
     Value::Struct {

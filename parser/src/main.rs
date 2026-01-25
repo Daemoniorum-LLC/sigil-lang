@@ -2636,6 +2636,15 @@ fn print_item_summary(item: &sigil_parser::Item) {
                 }
             }
         }
+        Item::Form(f) => {
+            println!("  form {}", f.name.name);
+        }
+        Item::Translations(t) => {
+            println!("  translations {}", t.name.name);
+        }
+        Item::LocaleEnum(l) => {
+            println!("  locale_enum {}", l.name.name);
+        }
     }
 }
 

@@ -1272,6 +1272,7 @@ impl<'a> Parser<'a> {
             is_const,
             is_unsafe,
             attrs,
+            outer_attrs: Vec::new(),
             name,
             aspect,
             generics,
@@ -2294,7 +2295,7 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::RBrace)?;
 
-        Ok(ExternBlock { abi, items })
+        Ok(ExternBlock { abi, items, outer_attrs: Vec::new() })
     }
 
     /// Parse an extern function declaration (no body).
