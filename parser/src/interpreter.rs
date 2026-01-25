@@ -4142,9 +4142,10 @@ impl Interpreter {
                     let arr_b = b.borrow();
 
                     // Check if this is an array of Shard structs
-                    let is_shard_array = arr_a.first().map_or(false, |v| {
-                        matches!(v, Value::Struct { name, .. } if name == "Shard")
-                    });
+                    let is_shard_array = arr_a.first().map_or(
+                        false,
+                        |v| matches!(v, Value::Struct { name, .. } if name == "Shard"),
+                    );
 
                     if is_shard_array {
                         // Deduplicate by index field
@@ -8780,7 +8781,10 @@ impl Interpreter {
                             // Pass the Ref as the receiver (for &mut self methods)
                             // Reorder named args to match function params (skip first param which is self)
                             let reordered = if f.params.len() > 1 {
-                                Self::reorder_named_args(&f.params[1..].to_vec(), arg_entries.clone())?
+                                Self::reorder_named_args(
+                                    &f.params[1..].to_vec(),
+                                    arg_entries.clone(),
+                                )?
                             } else {
                                 arg_values.clone()
                             };
@@ -8829,7 +8833,10 @@ impl Interpreter {
 
                                             // Reorder named args to match function params (skip first param which is self)
                                             let reordered = if f.params.len() > 1 {
-                                                Self::reorder_named_args(&f.params[1..].to_vec(), arg_entries.clone())?
+                                                Self::reorder_named_args(
+                                                    &f.params[1..].to_vec(),
+                                                    arg_entries.clone(),
+                                                )?
                                             } else {
                                                 arg_values.clone()
                                             };
@@ -11036,7 +11043,10 @@ impl Interpreter {
 
                                         // Reorder named args to match function params (skip first param which is self)
                                         let reordered = if f.params.len() > 1 {
-                                            Self::reorder_named_args(&f.params[1..].to_vec(), arg_entries.clone())?
+                                            Self::reorder_named_args(
+                                                &f.params[1..].to_vec(),
+                                                arg_entries.clone(),
+                                            )?
                                         } else {
                                             arg_values.clone()
                                         };
@@ -11621,7 +11631,8 @@ impl Interpreter {
                             })
                             .transpose()?
                             .unwrap_or_default();
-                        value = self.call_incorporation_method(&value, &segment.name.name, seg_args)?;
+                        value =
+                            self.call_incorporation_method(&value, &segment.name.name, seg_args)?;
                     }
                     return Ok(value);
                 } else {
@@ -13159,7 +13170,12 @@ impl Interpreter {
                                 let mut coeffs: Vec<i64> = vec![original_value];
                                 for i in 1..k {
                                     // Deterministic "random" coefficients for reproducibility
-                                    coeffs.push((original_value.wrapping_mul(17).wrapping_add(i as i64 * 31)) % 997);
+                                    coeffs.push(
+                                        (original_value
+                                            .wrapping_mul(17)
+                                            .wrapping_add(i as i64 * 31))
+                                            % 997,
+                                    );
                                 }
 
                                 // Evaluate polynomial at points 1, 2, ..., n
@@ -13181,9 +13197,14 @@ impl Interpreter {
 
                                     let mut shard_fields = std::collections::HashMap::new();
                                     shard_fields.insert("index".to_string(), Value::Int(x));
-                                    shard_fields.insert("data".to_string(), Value::Int(encoded_data));
-                                    shard_fields.insert("_k_threshold".to_string(), Value::Int(k as i64));
-                                    shard_fields.insert("_original".to_string(), Value::Int(original_value));
+                                    shard_fields
+                                        .insert("data".to_string(), Value::Int(encoded_data));
+                                    shard_fields
+                                        .insert("_k_threshold".to_string(), Value::Int(k as i64));
+                                    shard_fields.insert(
+                                        "_original".to_string(),
+                                        Value::Int(original_value),
+                                    );
                                     shards.push(Value::Struct {
                                         name: "Shard".to_string(),
                                         fields: Rc::new(RefCell::new(shard_fields)),
@@ -14568,7 +14589,9 @@ impl Interpreter {
                                         let fields_ref = fields.borrow();
                                         let idx = fields_ref.get("index");
                                         let data = fields_ref.get("data");
-                                        if let (Some(Value::Int(x)), Some(Value::Int(y))) = (idx, data) {
+                                        if let (Some(Value::Int(x)), Some(Value::Int(y))) =
+                                            (idx, data)
+                                        {
                                             if *x == 0 {
                                                 has_index_zero = true;
                                             }

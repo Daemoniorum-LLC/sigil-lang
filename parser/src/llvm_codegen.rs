@@ -1247,7 +1247,11 @@ pub mod llvm {
                     .last()
                     .map(|s| s.ident.name.clone())
                     .ok_or_else(|| "Empty impl type path".to_string()),
-                ast::TypeExpr::Evidential { inner, evidentiality, .. } => {
+                ast::TypeExpr::Evidential {
+                    inner,
+                    evidentiality,
+                    ..
+                } => {
                     // Handle ?T (Option<T>) and !T (Result<T>) type impls
                     let inner_name = self.extract_impl_type_name(inner)?;
                     match evidentiality {
@@ -1274,7 +1278,8 @@ pub mod llvm {
                     if elements.is_empty() {
                         Ok("Unit".to_string())
                     } else {
-                        let names: Result<Vec<_>, _> = elements.iter()
+                        let names: Result<Vec<_>, _> = elements
+                            .iter()
                             .map(|e| self.extract_impl_type_name(e))
                             .collect();
                         Ok(format!("Tuple_{}", names?.join("_")))
@@ -1696,7 +1701,9 @@ pub mod llvm {
                         .ok_or("Empty path")?;
 
                     // Build full path for qualified lookups
-                    let full_path: String = path.segments.iter()
+                    let full_path: String = path
+                        .segments
+                        .iter()
                         .map(|s| s.ident.name.as_str())
                         .collect::<Vec<_>>()
                         .join("::");
@@ -1717,7 +1724,9 @@ pub mod llvm {
                     } else if path.segments.len() > 1 {
                         // Qualified path like Token::LParen or Type::Variant
                         // Check if it's a qualified enum variant
-                        let type_name = path.segments.first()
+                        let type_name = path
+                            .segments
+                            .first()
                             .map(|s| s.ident.name.as_str())
                             .unwrap_or("");
 
@@ -1730,7 +1739,9 @@ pub mod llvm {
 
                         // Fallback: treat as a constant enum value (use hash of name as discriminant)
                         // This handles cases like Token::LParen, TokenKind::Fn, etc.
-                        let hash = full_path.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+                        let hash = full_path
+                            .bytes()
+                            .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
                         Ok(self.context.i64_type().const_int(hash, false))
                     } else {
                         // Check if it's an unqualified enum variant (search all enums)
@@ -1741,9 +1752,14 @@ pub mod llvm {
                         }
 
                         // Check if it might be a constant (UPPER_CASE naming convention)
-                        if name.chars().all(|c| c.is_uppercase() || c == '_' || c.is_numeric()) {
+                        if name
+                            .chars()
+                            .all(|c| c.is_uppercase() || c == '_' || c.is_numeric())
+                        {
                             // Treat as constant - use hash of name
-                            let hash = name.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+                            let hash = name
+                                .bytes()
+                                .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
                             return Ok(self.context.i64_type().const_int(hash, false));
                         }
 
@@ -1853,20 +1869,28 @@ pub mod llvm {
                             }
                             // Fallback: use offset-based field access for assignment
                             let offset = match field_name.as_str() {
-                                "0" => 0u64, "1" => 1, "2" => 2, "3" => 3,
+                                "0" => 0u64,
+                                "1" => 1,
+                                "2" => 2,
+                                "3" => 3,
                                 "start" | "first" | "x" | "name" | "key" | "id" => 0,
                                 "end" | "second" | "y" | "value" | "ty" => 1,
                                 "z" | "third" | "body" | "args" => 2,
                                 _ => 0, // Default to first field
                             };
                             let offset_val = self.context.i64_type().const_int(offset * 8, false);
-                            let field_ptr_int = self.builder
+                            let field_ptr_int = self
+                                .builder
                                 .build_int_add(struct_ptr_int, offset_val, "field_ptr")
                                 .map_err(|e| e.to_string())?;
                             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
                             let field_ptr = self
                                 .builder
-                                .build_int_to_ptr(field_ptr_int, ptr_type, &format!("{}_ptr", field_name))
+                                .build_int_to_ptr(
+                                    field_ptr_int,
+                                    ptr_type,
+                                    &format!("{}_ptr", field_name),
+                                )
                                 .map_err(|e| e.to_string())?;
                             self.builder
                                 .build_store(field_ptr, val)
@@ -1877,7 +1901,8 @@ pub mod llvm {
                             // Dereference assignment: *ptr = val
                             let ptr_val = self.compile_expr(fn_value, scope, expr)?;
                             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                            let ptr = self.builder
+                            let ptr = self
+                                .builder
                                 .build_int_to_ptr(ptr_val, ptr_type, "deref_ptr")
                                 .map_err(|e| e.to_string())?;
                             self.builder
@@ -1890,14 +1915,21 @@ pub mod llvm {
                             let base = self.compile_expr(fn_value, scope, expr)?;
                             let idx = self.compile_expr(fn_value, scope, index)?;
                             // Calculate element pointer: base + (idx * 8)
-                            let offset = self.builder
-                                .build_int_mul(idx, self.context.i64_type().const_int(8, false), "idx_offset")
+                            let offset = self
+                                .builder
+                                .build_int_mul(
+                                    idx,
+                                    self.context.i64_type().const_int(8, false),
+                                    "idx_offset",
+                                )
                                 .map_err(|e| e.to_string())?;
-                            let elem_ptr_int = self.builder
+                            let elem_ptr_int = self
+                                .builder
                                 .build_int_add(base, offset, "elem_ptr")
                                 .map_err(|e| e.to_string())?;
                             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                            let elem_ptr = self.builder
+                            let elem_ptr = self
+                                .builder
                                 .build_int_to_ptr(elem_ptr_int, ptr_type, "index_ptr")
                                 .map_err(|e| e.to_string())?;
                             self.builder
@@ -2005,7 +2037,8 @@ pub mod llvm {
 
                     // Unknown struct type - create dynamic struct on the fly
                     // Build field types (all i64 for now)
-                    let field_types: Vec<BasicTypeEnum> = fields.iter()
+                    let field_types: Vec<BasicTypeEnum> = fields
+                        .iter()
                         .map(|_| self.context.i64_type().into())
                         .collect();
 
@@ -2101,9 +2134,11 @@ pub mod llvm {
                     // - General: first field at offset 0, etc.
                     let field_offset = match field_name.as_str() {
                         // First field (offset 0)
-                        "start" | "first" | "x" | "line" | "lo" | "begin" | "name" | "key" | "id" | "data" | "value" => Some(0u64),
+                        "start" | "first" | "x" | "line" | "lo" | "begin" | "name" | "key"
+                        | "id" | "data" | "value" => Some(0u64),
                         // Second field (offset 1)
-                        "end" | "second" | "y" | "col" | "hi" | "suffix" | "span" | "ty" | "type" => Some(1u64),
+                        "end" | "second" | "y" | "col" | "hi" | "suffix" | "span" | "ty"
+                        | "type" => Some(1u64),
                         // Third field (offset 2)
                         "z" | "third" | "depth" | "body" | "args" | "params" => Some(2u64),
                         // Fourth field (offset 3)
@@ -2336,7 +2371,11 @@ pub mod llvm {
                             .map_err(|e| e.to_string())?;
                         let field_ptr = self
                             .builder
-                            .build_int_to_ptr(field_ptr_int, ptr_type, &format!("{}_ptr", field_name))
+                            .build_int_to_ptr(
+                                field_ptr_int,
+                                ptr_type,
+                                &format!("{}_ptr", field_name),
+                            )
                             .map_err(|e| e.to_string())?;
                         let field_value = self
                             .builder
@@ -2348,7 +2387,8 @@ pub mod llvm {
                     // Fallback: use offset 0 for unknown fields
                     // This is lenient but allows compilation to proceed
                     let offset_val = self.context.i64_type().const_int(0, false);
-                    let field_ptr_int = self.builder
+                    let field_ptr_int = self
+                        .builder
                         .build_int_add(struct_ptr_int, offset_val, "fallback_field_ptr")
                         .map_err(|e| e.to_string())?;
                     let field_ptr = self
@@ -2447,7 +2487,9 @@ pub mod llvm {
                         // Extract pattern bindings and add to scope
                         // For patterns like `Enum::Variant { field1, field2 }` or `Enum::Variant(x)`
                         match &arm.pattern {
-                            ast::Pattern::TupleStruct { path: _, fields, .. } => {
+                            ast::Pattern::TupleStruct {
+                                path: _, fields, ..
+                            } => {
                                 // Bind each field pattern as a variable
                                 // For simplicity, assume scrutinee is a pointer to struct data
                                 for (i, field_pattern) in fields.iter().enumerate() {
@@ -2455,28 +2497,46 @@ pub mod llvm {
                                         // Create a variable for this binding
                                         // For enums with data, field 0 is often at offset 8 (after tag)
                                         let offset = (i as u64 + 1) * 8; // Skip tag byte
-                                        let offset_val = self.context.i64_type().const_int(offset, false);
+                                        let offset_val =
+                                            self.context.i64_type().const_int(offset, false);
 
-                                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                                        let ptr_type =
+                                            self.context.ptr_type(inkwell::AddressSpace::default());
                                         let scrutinee_ptr = self
                                             .builder
                                             .build_int_to_ptr(scrutinee, ptr_type, "scrutinee_ptr")
                                             .map_err(|e| e.to_string())?;
                                         let scrutinee_int = self
                                             .builder
-                                            .build_ptr_to_int(scrutinee_ptr, self.context.i64_type(), "scr_int")
+                                            .build_ptr_to_int(
+                                                scrutinee_ptr,
+                                                self.context.i64_type(),
+                                                "scr_int",
+                                            )
                                             .map_err(|e| e.to_string())?;
                                         let field_ptr_int = self
                                             .builder
-                                            .build_int_add(scrutinee_int, offset_val, "field_ptr_int")
+                                            .build_int_add(
+                                                scrutinee_int,
+                                                offset_val,
+                                                "field_ptr_int",
+                                            )
                                             .map_err(|e| e.to_string())?;
                                         let field_ptr = self
                                             .builder
-                                            .build_int_to_ptr(field_ptr_int, ptr_type, &format!("{}_ptr", name.name))
+                                            .build_int_to_ptr(
+                                                field_ptr_int,
+                                                ptr_type,
+                                                &format!("{}_ptr", name.name),
+                                            )
                                             .map_err(|e| e.to_string())?;
                                         let field_val = self
                                             .builder
-                                            .build_load(self.context.i64_type(), field_ptr, &name.name)
+                                            .build_load(
+                                                self.context.i64_type(),
+                                                field_ptr,
+                                                &name.name,
+                                            )
                                             .map_err(|e| e.to_string())?;
 
                                         let alloca = self
@@ -2490,11 +2550,14 @@ pub mod llvm {
                                     }
                                 }
                             }
-                            ast::Pattern::Struct { path: _, fields, .. } => {
+                            ast::Pattern::Struct {
+                                path: _, fields, ..
+                            } => {
                                 // Bind each field pattern as a variable
                                 for (i, field_pattern) in fields.iter().enumerate() {
                                     // Get binding name: use pattern if present, else use field name (shorthand)
-                                    let binding_name = if let Some(ref pat) = field_pattern.pattern {
+                                    let binding_name = if let Some(ref pat) = field_pattern.pattern
+                                    {
                                         if let ast::Pattern::Ident { name, .. } = pat {
                                             Some(name.name.clone())
                                         } else {
@@ -2508,24 +2571,38 @@ pub mod llvm {
                                     if let Some(name) = binding_name {
                                         // Use field index for offset
                                         let offset = (i as u64 + 1) * 8;
-                                        let offset_val = self.context.i64_type().const_int(offset, false);
+                                        let offset_val =
+                                            self.context.i64_type().const_int(offset, false);
 
-                                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                                        let ptr_type =
+                                            self.context.ptr_type(inkwell::AddressSpace::default());
                                         let scrutinee_ptr = self
                                             .builder
                                             .build_int_to_ptr(scrutinee, ptr_type, "scrutinee_ptr")
                                             .map_err(|e| e.to_string())?;
                                         let scrutinee_int = self
                                             .builder
-                                            .build_ptr_to_int(scrutinee_ptr, self.context.i64_type(), "scr_int")
+                                            .build_ptr_to_int(
+                                                scrutinee_ptr,
+                                                self.context.i64_type(),
+                                                "scr_int",
+                                            )
                                             .map_err(|e| e.to_string())?;
                                         let field_ptr_int = self
                                             .builder
-                                            .build_int_add(scrutinee_int, offset_val, "field_ptr_int")
+                                            .build_int_add(
+                                                scrutinee_int,
+                                                offset_val,
+                                                "field_ptr_int",
+                                            )
                                             .map_err(|e| e.to_string())?;
                                         let field_ptr = self
                                             .builder
-                                            .build_int_to_ptr(field_ptr_int, ptr_type, &format!("{}_ptr", name))
+                                            .build_int_to_ptr(
+                                                field_ptr_int,
+                                                ptr_type,
+                                                &format!("{}_ptr", name),
+                                            )
                                             .map_err(|e| e.to_string())?;
                                         let field_val = self
                                             .builder
@@ -2586,7 +2663,11 @@ pub mod llvm {
                         // All arms returned early - merge block is unreachable
                         // Delete the empty merge block and return dummy value
                         // The actual return happens in the arms themselves
-                        unsafe { merge_bb.delete().map_err(|_| "Failed to delete unreachable merge block")?; }
+                        unsafe {
+                            merge_bb
+                                .delete()
+                                .map_err(|_| "Failed to delete unreachable merge block")?;
+                        }
                         return Ok(self.context.i64_type().const_int(0, false));
                     }
 
@@ -2698,7 +2779,11 @@ pub mod llvm {
                             // Convert bool (i1) to i64
                             let result = self
                                 .builder
-                                .build_int_z_extend(is_empty, self.context.i64_type(), "is_empty_i64")
+                                .build_int_z_extend(
+                                    is_empty,
+                                    self.context.i64_type(),
+                                    "is_empty_i64",
+                                )
                                 .map_err(|e| e.to_string())?;
                             return Ok(result);
                         }
@@ -2712,13 +2797,19 @@ pub mod llvm {
                             if let Some(callee) = self.module.get_function(fn_name) {
                                 let call = self
                                     .builder
-                                    .build_call(callee, &[receiver_val.into(), prefix.into()], "starts_with")
+                                    .build_call(
+                                        callee,
+                                        &[receiver_val.into(), prefix.into()],
+                                        "starts_with",
+                                    )
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call
                                     .try_as_basic_value()
                                     .left()
                                     .map(|v| v.into_int_value())
-                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    }));
                             }
                             // Fallback: return false (0)
                             return Ok(self.context.i64_type().const_int(0, false));
@@ -2744,7 +2835,9 @@ pub mod llvm {
                                     .try_as_basic_value()
                                     .left()
                                     .map(|v| v.into_int_value())
-                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    }));
                             }
                             return Ok(receiver_val);
                         }
@@ -2780,16 +2873,23 @@ pub mod llvm {
                                 return Err("push_str requires a string argument".to_string());
                             }
                             let other = self.compile_expr(fn_value, scope, &args[0])?;
-                            if let Some(callee) = self.module.get_function("sigil_string_push_str") {
+                            if let Some(callee) = self.module.get_function("sigil_string_push_str")
+                            {
                                 let call = self
                                     .builder
-                                    .build_call(callee, &[receiver_val.into(), other.into()], "push_str")
+                                    .build_call(
+                                        callee,
+                                        &[receiver_val.into(), other.into()],
+                                        "push_str",
+                                    )
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call
                                     .try_as_basic_value()
                                     .left()
                                     .map(|v| v.into_int_value())
-                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    }));
                             }
                             // Fallback: return the string unchanged
                             return Ok(receiver_val);
@@ -2803,7 +2903,11 @@ pub mod llvm {
                             // Try vec push first
                             if let Some(callee) = self.module.get_function("sigil_vec_push") {
                                 self.builder
-                                    .build_call(callee, &[receiver_val.into(), item.into()], "vec_push")
+                                    .build_call(
+                                        callee,
+                                        &[receiver_val.into(), item.into()],
+                                        "vec_push",
+                                    )
                                     .map_err(|e| e.to_string())?;
                                 return Ok(receiver_val);
                             }
@@ -2815,16 +2919,23 @@ pub mod llvm {
                                 return Err("contains requires an argument".to_string());
                             }
                             let needle = self.compile_expr(fn_value, scope, &args[0])?;
-                            if let Some(callee) = self.module.get_function("sigil_string_contains") {
+                            if let Some(callee) = self.module.get_function("sigil_string_contains")
+                            {
                                 let call = self
                                     .builder
-                                    .build_call(callee, &[receiver_val.into(), needle.into()], "contains")
+                                    .build_call(
+                                        callee,
+                                        &[receiver_val.into(), needle.into()],
+                                        "contains",
+                                    )
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call
                                     .try_as_basic_value()
                                     .left()
                                     .map(|v| v.into_int_value())
-                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    }));
                             }
                             // Fallback: return false
                             return Ok(self.context.i64_type().const_int(0, false));
@@ -2840,13 +2951,17 @@ pub mod llvm {
                         "join" => {
                             // vec.join(sep) - for now return empty string
                             if let Some(callee) = self.module.get_function("sigil_string_new") {
-                                let call = self.builder.build_call(callee, &[], "join_result")
+                                let call = self
+                                    .builder
+                                    .build_call(callee, &[], "join_result")
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call
                                     .try_as_basic_value()
                                     .left()
                                     .map(|v| v.into_int_value())
-                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    }));
                             }
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
@@ -3182,7 +3297,10 @@ pub mod llvm {
             let s = value.replace('_', "");
 
             // Strip known type suffixes (must check longer ones first)
-            let suffixes = ["isize", "usize", "i128", "u128", "i64", "u64", "i32", "u32", "i16", "u16", "i8", "u8"];
+            let suffixes = [
+                "isize", "usize", "i128", "u128", "i64", "u64", "i32", "u32", "i16", "u16", "i8",
+                "u8",
+            ];
             let s = suffixes.iter().fold(s, |acc, suffix| {
                 if acc.ends_with(suffix) {
                     acc[..acc.len() - suffix.len()].to_string()
@@ -3193,16 +3311,21 @@ pub mod llvm {
 
             // Parse based on prefix
             if s.starts_with("0x") || s.starts_with("0X") {
-                u64::from_str_radix(&s[2..], 16).map_err(|_| format!("Invalid hex integer: {}", value))
+                u64::from_str_radix(&s[2..], 16)
+                    .map_err(|_| format!("Invalid hex integer: {}", value))
             } else if s.starts_with("0b") || s.starts_with("0B") {
-                u64::from_str_radix(&s[2..], 2).map_err(|_| format!("Invalid binary integer: {}", value))
+                u64::from_str_radix(&s[2..], 2)
+                    .map_err(|_| format!("Invalid binary integer: {}", value))
             } else if s.starts_with("0o") || s.starts_with("0O") {
-                u64::from_str_radix(&s[2..], 8).map_err(|_| format!("Invalid octal integer: {}", value))
+                u64::from_str_radix(&s[2..], 8)
+                    .map_err(|_| format!("Invalid octal integer: {}", value))
             } else {
-                s.parse::<u64>().or_else(|_| {
-                    // Try parsing as signed and reinterpreting
-                    s.parse::<i64>().map(|v| v as u64)
-                }).map_err(|_| format!("Invalid integer: {}", value))
+                s.parse::<u64>()
+                    .or_else(|_| {
+                        // Try parsing as signed and reinterpreting
+                        s.parse::<i64>().map(|v| v as u64)
+                    })
+                    .map_err(|_| format!("Invalid integer: {}", value))
             }
         }
 
@@ -5039,28 +5162,37 @@ pub mod llvm {
                 ast::Pattern::Ident { name, .. } => vec![name.name.clone()],
                 ast::Pattern::Tuple(elements) => {
                     // Tuple pattern like (a, b) or (x, y, z)
-                    elements.iter().filter_map(|elem| {
-                        if let ast::Pattern::Ident { name, .. } = elem {
-                            Some(name.name.clone())
-                        } else {
-                            None
-                        }
-                    }).collect()
+                    elements
+                        .iter()
+                        .filter_map(|elem| {
+                            if let ast::Pattern::Ident { name, .. } = elem {
+                                Some(name.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
                 }
                 ast::Pattern::TupleStruct { path, fields, .. } => {
                     // TupleStruct pattern like Some(x) or Pair(a, b)
-                    fields.iter().filter_map(|f| {
-                        if let ast::Pattern::Ident { name, .. } = f {
-                            Some(name.name.clone())
-                        } else {
-                            None
-                        }
-                    }).collect()
+                    fields
+                        .iter()
+                        .filter_map(|f| {
+                            if let ast::Pattern::Ident { name, .. } = f {
+                                Some(name.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
                 }
                 _ => vec!["_item".to_string()], // Fallback for unsupported patterns
             };
 
-            let var_name = var_names.first().cloned().unwrap_or_else(|| "_item".to_string());
+            let var_name = var_names
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "_item".to_string());
 
             // Evaluate iterator to get array
             let iter_val = self.compile_expr(fn_value, scope, iter)?;
@@ -5228,8 +5360,11 @@ pub mod llvm {
             };
 
             // Resolve Self:: and This:: to the actual type name
-            let full_path = if full_path.starts_with("Self::") || full_path.starts_with("This::")
-                             || full_path.starts_with("Self·") || full_path.starts_with("This·") {
+            let full_path = if full_path.starts_with("Self::")
+                || full_path.starts_with("This::")
+                || full_path.starts_with("Self·")
+                || full_path.starts_with("This·")
+            {
                 if let Some(ref self_type) = self.current_self_type {
                     // Replace Self/This with actual type name
                     let method = if full_path.contains("::") {
@@ -5240,7 +5375,10 @@ pub mod llvm {
                     // eprintln!("DEBUG: Resolving Self/This to {}::{}", self_type, method);
                     format!("{}::{}", self_type, method)
                 } else {
-                    return Err(format!("Self/This used outside of impl block: {}", full_path));
+                    return Err(format!(
+                        "Self/This used outside of impl block: {}",
+                        full_path
+                    ));
                 }
             } else {
                 full_path
@@ -5269,11 +5407,17 @@ pub mod llvm {
                 return Ok(self.context.i64_type().const_int(0, false));
             }
             if full_path == "String::new" || full_path == "String·new" {
-                let str_new_fn = self.module.get_function("sigil_string_new")
+                let str_new_fn = self
+                    .module
+                    .get_function("sigil_string_new")
                     .ok_or("sigil_string_new not declared")?;
-                let call = self.builder.build_call(str_new_fn, &[], "string_new")
+                let call = self
+                    .builder
+                    .build_call(str_new_fn, &[], "string_new")
                     .map_err(|e| e.to_string())?;
-                return Ok(call.try_as_basic_value().left()
+                return Ok(call
+                    .try_as_basic_value()
+                    .left()
                     .map(|v| v.into_int_value())
                     .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
             }
@@ -5288,7 +5432,11 @@ pub mod llvm {
                 return Ok(self.context.i64_type().const_int(0, false));
             }
             // Print functions - handle both strings and integers
-            if full_path == "println" || full_path == "print" || full_path == "eprintln" || full_path == "eprint" {
+            if full_path == "println"
+                || full_path == "print"
+                || full_path == "eprintln"
+                || full_path == "eprint"
+            {
                 let is_stderr = full_path == "eprintln" || full_path == "eprint";
                 let with_newline = full_path == "println" || full_path == "eprintln";
 
@@ -5301,22 +5449,37 @@ pub mod llvm {
                         if let Expr::Literal(Literal::String(s)) = &args[0] {
                             let str_ptr = self.create_global_string(s, "print_str");
                             let print_fn_name = if is_stderr {
-                                if with_newline { "eprintln" } else { "eprint" }
+                                if with_newline {
+                                    "eprintln"
+                                } else {
+                                    "eprint"
+                                }
                             } else {
-                                if with_newline { "println" } else { "print" }
+                                if with_newline {
+                                    "println"
+                                } else {
+                                    "print"
+                                }
                             };
                             // Try extern C functions first, fall back to sigil_print_str
                             if let Some(print_fn) = self.module.get_function(print_fn_name) {
-                                self.builder.build_call(print_fn, &[str_ptr.into()], "print_call")
+                                self.builder
+                                    .build_call(print_fn, &[str_ptr.into()], "print_call")
                                     .map_err(|e| e.to_string())?;
-                            } else if let Some(print_fn) = self.module.get_function("sigil_print_str") {
-                                self.builder.build_call(print_fn, &[str_ptr.into()], "print_call")
+                            } else if let Some(print_fn) =
+                                self.module.get_function("sigil_print_str")
+                            {
+                                self.builder
+                                    .build_call(print_fn, &[str_ptr.into()], "print_call")
                                     .map_err(|e| e.to_string())?;
                                 // Add newline if needed
                                 if with_newline {
                                     let nl_ptr = self.create_global_string("\n", "newline");
-                                    if let Some(write_fn) = self.module.get_function("sigil_write_str") {
-                                        self.builder.build_call(write_fn, &[nl_ptr.into()], "nl_call")
+                                    if let Some(write_fn) =
+                                        self.module.get_function("sigil_write_str")
+                                    {
+                                        self.builder
+                                            .build_call(write_fn, &[nl_ptr.into()], "nl_call")
                                             .map_err(|e| e.to_string())?;
                                     }
                                 }
@@ -5326,13 +5489,16 @@ pub mod llvm {
                         // For non-string arguments, compile and print as int
                         let arg = self.compile_expr(fn_value, scope, &args[0])?;
                         if let Some(print_fn) = self.module.get_function("sigil_print_int") {
-                            self.builder.build_call(print_fn, &[arg.into()], "print_call")
+                            self.builder
+                                .build_call(print_fn, &[arg.into()], "print_call")
                                 .map_err(|e| e.to_string())?;
                         }
                         // Add newline for println/eprintln with non-string
                         if with_newline {
-                            if let Some(print_nl) = self.module.get_function("sigil_print_newline") {
-                                self.builder.build_call(print_nl, &[], "nl_call")
+                            if let Some(print_nl) = self.module.get_function("sigil_print_newline")
+                            {
+                                self.builder
+                                    .build_call(print_nl, &[], "nl_call")
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -5341,7 +5507,8 @@ pub mod llvm {
                     // No args - just print newline for println/eprintln
                     if with_newline {
                         if let Some(print_nl) = self.module.get_function("sigil_print_newline") {
-                            self.builder.build_call(print_nl, &[], "nl_call")
+                            self.builder
+                                .build_call(print_nl, &[], "nl_call")
                                 .map_err(|e| e.to_string())?;
                         }
                     }
@@ -5360,13 +5527,18 @@ pub mod llvm {
             if full_path == "panic" || full_path == "panic!" || full_path == "unreachable" {
                 // Print error and abort
                 if let Some(panic_fn) = self.module.get_function("sigil_panic") {
-                    self.builder.build_call(panic_fn, &[], "panic_call")
+                    self.builder
+                        .build_call(panic_fn, &[], "panic_call")
                         .map_err(|e| e.to_string())?;
                 }
                 return Ok(self.context.i64_type().const_int(0, false));
             }
             // assert functions
-            if full_path == "assert" || full_path == "assert!" || full_path == "assert_eq" || full_path == "assert_eq!" {
+            if full_path == "assert"
+                || full_path == "assert!"
+                || full_path == "assert_eq"
+                || full_path == "assert_eq!"
+            {
                 // For now, just evaluate arguments and ignore
                 for arg in args {
                     self.compile_expr(fn_value, scope, arg)?;
@@ -6682,10 +6854,15 @@ pub mod llvm {
 
             // Handle generic struct constructors (TypeName::new, TypeName::default, etc.)
             // These allocate a struct and return a pointer/value
-            if full_path.ends_with("::new") || full_path.ends_with("·new")
-                || full_path.ends_with("::default") || full_path.ends_with("·default")
-                || full_path.ends_with("::create") || full_path.ends_with("·create")
-                || full_path.ends_with("::init") || full_path.ends_with("·init") {
+            if full_path.ends_with("::new")
+                || full_path.ends_with("·new")
+                || full_path.ends_with("::default")
+                || full_path.ends_with("·default")
+                || full_path.ends_with("::create")
+                || full_path.ends_with("·create")
+                || full_path.ends_with("::init")
+                || full_path.ends_with("·init")
+            {
                 // For struct constructors, we need to allocate and initialize
                 // For now, return a placeholder value (0 = null pointer)
                 // TODO: Implement proper struct allocation
@@ -6693,8 +6870,11 @@ pub mod llvm {
             }
 
             // Handle functions that return new data structures
-            if full_path.ends_with("::with_capacity") || full_path.ends_with("·with_capacity")
-                || full_path.ends_with("::from_iter") || full_path.ends_with("·from_iter") {
+            if full_path.ends_with("::with_capacity")
+                || full_path.ends_with("·with_capacity")
+                || full_path.ends_with("::from_iter")
+                || full_path.ends_with("·from_iter")
+            {
                 return Ok(self.context.i64_type().const_int(0, false));
             }
 

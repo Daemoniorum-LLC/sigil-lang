@@ -2029,7 +2029,7 @@ impl<'a> Parser<'a> {
             self.expect(Token::Bang)?; // consume '!'
         } else if is_rune {
             self.advance(); // consume 'rune'
-            // rune name! { ... } - consume the ! after the name
+                            // rune name! { ... } - consume the ! after the name
         } else {
             self.expect(Token::Macro)?;
         }
@@ -2295,7 +2295,11 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::RBrace)?;
 
-        Ok(ExternBlock { abi, items, outer_attrs: Vec::new() })
+        Ok(ExternBlock {
+            abi,
+            items,
+            outer_attrs: Vec::new(),
+        })
     }
 
     /// Parse an extern function declaration (no body).
