@@ -419,6 +419,7 @@ impl Optimizer {
         };
 
         ast::Function {
+            doc_comments: vec![],
             visibility: Visibility::default(),
             is_async: false,
             is_const: false,
@@ -496,6 +497,7 @@ impl Optimizer {
         };
 
         ast::Function {
+            doc_comments: original.doc_comments.clone(),
             visibility: original.visibility,
             is_async: original.is_async,
             is_const: original.is_const,
@@ -557,6 +559,7 @@ impl Optimizer {
 
         // 1. Create implementation function (renamed original with calls redirected)
         let impl_func = ast::Function {
+            doc_comments: vec![],
             visibility: Visibility::default(),
             is_async: func.is_async,
             is_const: func.is_const,
@@ -604,6 +607,7 @@ impl Optimizer {
         };
 
         let cache_init_func = ast::Function {
+            doc_comments: vec![],
             visibility: Visibility::default(),
             is_async: false,
             is_const: false,
@@ -874,6 +878,7 @@ impl Optimizer {
         };
 
         ast::Function {
+            doc_comments: original.doc_comments.clone(),
             visibility: original.visibility,
             is_async: original.is_async,
             is_const: original.is_const,
@@ -1008,6 +1013,7 @@ impl Optimizer {
         };
 
         ast::Function {
+            doc_comments: func.doc_comments.clone(),
             visibility: func.visibility.clone(),
             is_async: func.is_async,
             is_const: func.is_const,

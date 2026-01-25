@@ -8,4 +8,6 @@
     ≔ c: Tensor<[2, 4]> = a @ b;  // Matrix multiply
     println(c.shape[0]);
     println(c.shape[1]);
+    // Verify computed value: sum of 3 ones = 3
+    println(c[0][0]);
 }

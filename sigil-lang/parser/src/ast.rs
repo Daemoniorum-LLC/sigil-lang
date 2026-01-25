@@ -40,6 +40,30 @@ pub enum AttrArg {
     KeyValue { key: Ident, value: Box<Expr> },
 }
 
+// ============================================
+// Doc Comments (SGDOC Evidential Documentation)
+// ============================================
+
+/// Evidential documentation comment attached to an item.
+/// Supports the 5-marker evidentiality lattice: !, ~, ?, ◊, ‽
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocComment {
+    /// The evidentiality marker for this documentation
+    pub evidentiality: Evidentiality,
+    /// Whether this is an inner doc comment (documents the enclosing item)
+    pub is_inner: bool,
+    /// The text content of the documentation
+    pub content: String,
+    /// Source span
+    pub span: Span,
+}
+
+impl DocComment {
+    pub fn new(evidentiality: Evidentiality, is_inner: bool, content: String, span: Span) -> Self {
+        Self { evidentiality, is_inner, content, span }
+    }
+}
+
 /// Crate-level configuration derived from inner attributes.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CrateConfig {
@@ -445,6 +469,8 @@ pub enum Aspect {
 /// Function definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
+    /// Doc comments attached to this function (SGDOC)
+    pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub is_async: bool,
     pub is_const: bool,
@@ -769,6 +795,8 @@ pub enum StructRepr {
 /// Struct definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDef {
+    /// Doc comments attached to this struct (SGDOC)
+    pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub attrs: StructAttrs,
     pub name: Ident,
@@ -795,6 +823,8 @@ pub struct FieldDef {
 /// Enum definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDef {
+    /// Doc comments attached to this enum (SGDOC)
+    pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub name: Ident,
     pub generics: Option<Generics>,
@@ -811,6 +841,8 @@ pub struct EnumVariant {
 /// Trait definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitDef {
+    /// Doc comments attached to this trait (SGDOC)
+    pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub name: Ident,
     pub generics: Option<Generics>,
@@ -828,6 +860,8 @@ pub enum TraitItem {
 /// Impl block.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImplBlock {
+    /// Doc comments attached to this impl block (SGDOC)
+    pub doc_comments: Vec<DocComment>,
     pub generics: Option<Generics>,
     pub trait_: Option<TypePath>,
     pub self_ty: TypeExpr,
@@ -853,6 +887,8 @@ pub struct TypeAlias {
 /// Module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
+    /// Doc comments attached to this module (SGDOC)
+    pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub name: Ident,
     pub items: Option<Vec<Spanned<Item>>>,
@@ -877,6 +913,8 @@ pub enum UseTree {
 /// Const definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDef {
+    /// Doc comments attached to this const (SGDOC)
+    pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub name: Ident,
     pub ty: TypeExpr,
@@ -886,6 +924,8 @@ pub struct ConstDef {
 /// Static definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticDef {
+    /// Doc comments attached to this static (SGDOC)
+    pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub mutable: bool,
     pub name: Ident,

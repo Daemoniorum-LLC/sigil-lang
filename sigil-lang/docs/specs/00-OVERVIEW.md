@@ -1,5 +1,8 @@
 # Sigil Language Specification
 
+> **Status:** ! Stable (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 > *"Each symbol binds intent to execution"*
 
 ## Overview

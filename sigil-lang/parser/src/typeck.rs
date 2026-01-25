@@ -493,8 +493,8 @@ pub struct TypeChecker {
     stdlib_functions: std::collections::HashSet<String>,
     /// Associated functions/methods per type: type_name -> (method_name -> method_type)
     impl_methods: HashMap<String, HashMap<String, Type>>,
-    /// Current Self type when inside an impl block
-    current_self_type: Option<String>,
+    /// Current Self type when inside an impl block (includes generic type variables)
+    current_self_type: Option<Type>,
     /// Current generic type parameters (name -> type variable)
     current_generics: HashMap<String, Type>,
     /// Expected return type for the current function (for checking return statements)
@@ -1301,18 +1301,24 @@ impl TypeChecker {
                 // Get the type name being implemented
                 let type_name = self.type_path_to_name(&impl_block.self_ty);
 
-                // Set current_self_type so Self resolves correctly in convert_type
-                self.current_self_type = Some(type_name.clone());
-
                 // Set up generic type parameters as type variables
+                // Must do this FIRST so we can include generics in current_self_type
+                let mut generic_types = Vec::new();
                 if let Some(ref generics) = impl_block.generics {
                     for param in &generics.params {
                         if let crate::ast::GenericParam::Type { name, .. } = param {
                             let type_var = self.fresh_var();
-                            self.current_generics.insert(name.name.clone(), type_var);
+                            self.current_generics.insert(name.name.clone(), type_var.clone());
+                            generic_types.push(type_var);
                         }
                     }
                 }
+
+                // Set current_self_type with generics so Self resolves correctly
+                self.current_self_type = Some(Type::Named {
+                    name: type_name.clone(),
+                    generics: generic_types,
+                });
 
                 // Collect associated functions/methods
                 for impl_item in &impl_block.items {
@@ -1393,19 +1399,27 @@ impl TypeChecker {
                 }
             }
             Item::Impl(impl_block) => {
-                // Set current_self_type so Self resolves correctly
+                // Get the type name being implemented
                 let type_name = self.type_path_to_name(&impl_block.self_ty);
-                self.current_self_type = Some(type_name);
 
                 // Set up generic type parameters as type variables
+                // Must do this FIRST so we can include generics in current_self_type
+                let mut generic_types = Vec::new();
                 if let Some(ref generics) = impl_block.generics {
                     for param in &generics.params {
                         if let crate::ast::GenericParam::Type { name, .. } = param {
                             let type_var = self.fresh_var();
-                            self.current_generics.insert(name.name.clone(), type_var);
+                            self.current_generics.insert(name.name.clone(), type_var.clone());
+                            generic_types.push(type_var);
                         }
                     }
                 }
+
+                // Set current_self_type with generics so Self resolves correctly
+                self.current_self_type = Some(Type::Named {
+                    name: type_name,
+                    generics: generic_types,
+                });
 
                 // Check each function in the impl block
                 for impl_item in &impl_block.items {
@@ -3347,13 +3361,10 @@ impl TypeChecker {
                         "usize" => return Type::Int(IntSize::USize),
                         "f32" => return Type::Float(FloatSize::F32),
                         "f64" => return Type::Float(FloatSize::F64),
-                        // Handle Self type - resolve to current impl type
+                        // Handle Self type - resolve to current impl type (with generics)
                         "Self" => {
                             if let Some(ref self_ty) = self.current_self_type {
-                                return Type::Named {
-                                    name: self_ty.clone(),
-                                    generics: vec![],
-                                };
+                                return self_ty.clone();
                             }
                         }
                         _ => {

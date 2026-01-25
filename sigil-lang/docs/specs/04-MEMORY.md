@@ -1,5 +1,8 @@
 # Sigil Memory Model Specification
 
+> **Status:** ! Stable (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 ## 1. Overview
 
 Sigil provides memory safety without garbage collection through **ownership semantics** — a compile-time system that tracks resource lifetime and access. This design draws from Rust while adding polysynthetic ergonomics that reduce friction.

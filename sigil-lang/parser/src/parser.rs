@@ -120,11 +120,10 @@ impl<'a> Parser<'a> {
 
         let mut items = Vec::new();
         while !self.is_eof() {
-            // Skip comments
-            while matches!(
-                self.current_token(),
-                Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_) | Token::DocComment(_))
-            ) {
+            // Note: parse_item calls collect_doc_comments() internally to capture
+            // evidential doc comments (//!, //~, //?, //◊, //‽) before items.
+            // We only skip regular comments here, not doc comments.
+            while self.check_regular_comment() {
                 self.advance();
             }
             if self.is_eof() {
@@ -877,14 +876,157 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Skip any comments
+    /// Check if a token is any kind of comment (including evidential doc comments)
+    fn is_comment_token(tok: &Token) -> bool {
+        matches!(tok, Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+            || tok.is_doc_comment()
+    }
+
+    /// Skip any comments (including evidential doc comments)
     pub(crate) fn skip_comments(&mut self) {
-        while matches!(
-            self.current_token(),
-            Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::DocComment(_))
-        ) {
-            self.advance();
+        while let Some(tok) = self.current_token() {
+            if Self::is_comment_token(&tok) {
+                self.advance();
+            } else {
+                break;
+            }
         }
+    }
+
+    /// Check if the current token is a comment
+    pub(crate) fn current_is_comment(&self) -> bool {
+        self.current_token().map(|t| Self::is_comment_token(&t)).unwrap_or(false)
+    }
+
+    /// Check if the current token is a regular (non-doc) comment
+    /// This skips regular comments but preserves doc comments for collection
+    fn check_regular_comment(&self) -> bool {
+        matches!(
+            self.current_token(),
+            Some(Token::LineComment(_)) | Some(Token::TildeComment(_)) | Some(Token::BlockComment(_))
+        )
+    }
+
+    /// Collect doc comments preceding the next item (skipping regular comments)
+    /// Returns Vec<DocComment> to attach to the parsed item
+    pub(crate) fn collect_doc_comments(&mut self) -> Vec<crate::ast::DocComment> {
+        use crate::ast::{DocComment, Evidentiality};
+
+        let mut doc_comments = Vec::new();
+
+        while let Some((tok, span)) = self.current.clone() {
+            // Check if it's a doc comment token
+            match &tok {
+                Token::DocCommentVerified(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Known,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentVerifiedInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Known,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentReported(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Reported,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentReportedInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Reported,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentUncertain(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Uncertain,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentUncertainInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Uncertain,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentPredicted(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Predicted,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentPredictedInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Predicted,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentParadox(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Paradox,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentParadoxInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Paradox,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocComment(content) => {
+                    // Legacy /// comments map to Reported (default)
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Reported,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                // Skip regular comments but don't break
+                Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_) => {
+                    self.advance();
+                }
+                // Stop on non-comment tokens
+                _ => break,
+            }
+        }
+
+        doc_comments
     }
 
     /// Check if the current token is `>`, including pending `>` from split `>>`.
@@ -1049,6 +1191,9 @@ impl<'a> Parser<'a> {
 
         let start_span = self.current_span();
 
+        // Collect doc comments first (SGDOC)
+        let doc_comments = self.collect_doc_comments();
+
         // Collect outer attributes (#[...] or @[...])
         let mut outer_attrs = Vec::new();
         while self.check(&Token::Hash) || self.check(&Token::At) {
@@ -1059,23 +1204,23 @@ impl<'a> Parser<'a> {
 
         let item = match self.current_token() {
             Some(Token::Fn) | Some(Token::Async) => {
-                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                Item::Function(self.parse_function_with_doc_comments(visibility, outer_attrs, doc_comments)?)
             }
             Some(Token::Struct) => {
-                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
+                Item::Struct(self.parse_struct_with_doc_comments(visibility, outer_attrs, doc_comments)?)
             }
-            Some(Token::Enum) => Item::Enum(self.parse_enum(visibility)?),
-            Some(Token::Trait) => Item::Trait(self.parse_trait(visibility)?),
-            Some(Token::Impl) => Item::Impl(self.parse_impl()?),
+            Some(Token::Enum) => Item::Enum(self.parse_enum_with_doc_comments(visibility, doc_comments)?),
+            Some(Token::Trait) => Item::Trait(self.parse_trait_with_doc_comments(visibility, doc_comments)?),
+            Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc_comments(doc_comments)?),
             Some(Token::Unsafe) => {
                 // unsafe impl, unsafe fn, unsafe trait
                 self.advance(); // consume 'unsafe'
                 match self.current_token() {
-                    Some(Token::Impl) => Item::Impl(self.parse_impl()?),
+                    Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc_comments(doc_comments)?),
                     Some(Token::Fn) | Some(Token::Async) => {
-                        Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                        Item::Function(self.parse_function_with_doc_comments(visibility, outer_attrs, doc_comments)?)
                     }
-                    Some(Token::Trait) => Item::Trait(self.parse_trait(visibility)?),
+                    Some(Token::Trait) => Item::Trait(self.parse_trait_with_doc_comments(visibility, doc_comments)?),
                     Some(t) => {
                         return Err(ParseError::UnexpectedToken {
                             expected: "impl, fn, or trait after unsafe".to_string(),
@@ -1087,27 +1232,27 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(Token::Type) => Item::TypeAlias(self.parse_type_alias(visibility)?),
-            Some(Token::Mod) => Item::Module(self.parse_module(visibility)?),
+            Some(Token::Mod) => Item::Module(self.parse_module_with_doc_comments(visibility, doc_comments)?),
             Some(Token::Use) => Item::Use(self.parse_use(visibility)?),
             Some(Token::Const) => {
                 // Check if this is `const fn` (const function) or just `const X: T = ...`
                 if self.peek_next().map(|t| matches!(t, Token::Fn | Token::Async)) == Some(true) {
-                    Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                    Item::Function(self.parse_function_with_doc_comments(visibility, outer_attrs, doc_comments)?)
                 } else {
-                    Item::Const(self.parse_const(visibility)?)
+                    Item::Const(self.parse_const_with_doc_comments(visibility, doc_comments)?)
                 }
             }
-            Some(Token::Static) => Item::Static(self.parse_static(visibility)?),
+            Some(Token::Static) => Item::Static(self.parse_static_with_doc_comments(visibility, doc_comments)?),
             Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
             Some(Token::Extern) => Item::ExternBlock(self.parse_extern_block()?),
             Some(Token::Macro) | Some(Token::MacroRules) => Item::Macro(self.parse_macro_def(visibility)?),
             Some(Token::Naked) => {
                 // naked fn -> function with naked attribute
-                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                Item::Function(self.parse_function_with_doc_comments(visibility, outer_attrs, doc_comments)?)
             }
             Some(Token::Packed) => {
                 // packed struct -> struct with packed attribute
-                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
+                Item::Struct(self.parse_struct_with_doc_comments(visibility, outer_attrs, doc_comments)?)
             }
             // Plurality items (DAEMONIORUM extensions)
             Some(Token::Alter) => {
@@ -1185,13 +1330,22 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function(&mut self, visibility: Visibility) -> ParseResult<Function> {
-        self.parse_function_with_attrs(visibility, Vec::new())
+        self.parse_function_with_doc_comments(visibility, Vec::new(), vec![])
     }
 
     fn parse_function_with_attrs(
         &mut self,
         visibility: Visibility,
         outer_attrs: Vec<Attribute>,
+    ) -> ParseResult<Function> {
+        self.parse_function_with_doc_comments(visibility, outer_attrs, vec![])
+    }
+
+    fn parse_function_with_doc_comments(
+        &mut self,
+        visibility: Visibility,
+        outer_attrs: Vec<Attribute>,
+        doc_comments: Vec<crate::ast::DocComment>,
     ) -> ParseResult<Function> {
         // Parse function attributes from outer attributes
         let mut attrs = self.process_function_attrs(&outer_attrs);
@@ -1294,6 +1448,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Function {
+            doc_comments,
             visibility,
             is_async,
             is_const,
@@ -1376,7 +1531,26 @@ impl<'a> Parser<'a> {
         func_attrs
     }
 
+    fn parse_struct_with_doc_comments(
+        &mut self,
+        visibility: Visibility,
+        outer_attrs: Vec<Attribute>,
+        doc_comments: Vec<crate::ast::DocComment>,
+    ) -> ParseResult<StructDef> {
+        let mut result = self.parse_struct_with_attrs_internal(visibility, outer_attrs)?;
+        result.doc_comments = doc_comments;
+        Ok(result)
+    }
+
     fn parse_struct_with_attrs(
+        &mut self,
+        visibility: Visibility,
+        outer_attrs: Vec<Attribute>,
+    ) -> ParseResult<StructDef> {
+        self.parse_struct_with_attrs_internal(visibility, outer_attrs)
+    }
+
+    fn parse_struct_with_attrs_internal(
         &mut self,
         visibility: Visibility,
         outer_attrs: Vec<Attribute>,
@@ -1471,6 +1645,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(StructDef {
+            doc_comments: vec![], // TODO: collect doc comments
             visibility,
             attrs,
             name,
@@ -1500,6 +1675,16 @@ impl<'a> Parser<'a> {
             // Custom derive
             _ => Ok(DeriveTrait::Custom(name.to_string())),
         }
+    }
+
+    fn parse_enum_with_doc_comments(
+        &mut self,
+        visibility: Visibility,
+        doc_comments: Vec<crate::ast::DocComment>,
+    ) -> ParseResult<EnumDef> {
+        let mut result = self.parse_enum(visibility)?;
+        result.doc_comments = doc_comments;
+        Ok(result)
     }
 
     fn parse_enum(&mut self, visibility: Visibility) -> ParseResult<EnumDef> {
@@ -1546,6 +1731,7 @@ impl<'a> Parser<'a> {
         self.expect(Token::RBrace)?;
 
         Ok(EnumDef {
+            doc_comments: vec![], // TODO: collect doc comments
             visibility,
             name,
             generics,
@@ -1583,6 +1769,16 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_trait_with_doc_comments(
+        &mut self,
+        visibility: Visibility,
+        doc_comments: Vec<crate::ast::DocComment>,
+    ) -> ParseResult<TraitDef> {
+        let mut result = self.parse_trait(visibility)?;
+        result.doc_comments = doc_comments;
+        Ok(result)
+    }
+
     fn parse_trait(&mut self, visibility: Visibility) -> ParseResult<TraitDef> {
         self.expect(Token::Trait)?;
         let name = self.parse_ident()?;
@@ -1612,6 +1808,7 @@ impl<'a> Parser<'a> {
         self.expect(Token::RBrace)?;
 
         Ok(TraitDef {
+            doc_comments: vec![], // TODO: collect doc comments
             visibility,
             name,
             generics,
@@ -1660,6 +1857,15 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_impl_with_doc_comments(
+        &mut self,
+        doc_comments: Vec<crate::ast::DocComment>,
+    ) -> ParseResult<ImplBlock> {
+        let mut result = self.parse_impl()?;
+        result.doc_comments = doc_comments;
+        Ok(result)
+    }
+
     fn parse_impl(&mut self) -> ParseResult<ImplBlock> {
         self.expect(Token::Impl)?;
         let generics = self.parse_generics_opt()?;
@@ -1667,13 +1873,23 @@ impl<'a> Parser<'a> {
         // Parse either `Trait for Type` or just `Type`
         let first_type = self.parse_type()?;
 
+        // Support both `⊢ Trait ∀ Type` and `⊢ Type : Trait` syntax
         let (trait_, self_ty) = if self.consume_if(&Token::ForAll) {
+            // Traditional syntax: ⊢ Trait ∀ Type (impl Trait for Type)
             let self_ty = self.parse_type()?;
             let trait_path = match first_type {
                 TypeExpr::Path(p) => p,
                 _ => return Err(ParseError::Custom("expected trait path".to_string())),
             };
             (Some(trait_path), self_ty)
+        } else if self.consume_if(&Token::Colon) {
+            // Sigil prose syntax: ⊢ Type : Trait (impl Trait for Type)
+            let trait_ty = self.parse_type()?;
+            let trait_path = match trait_ty {
+                TypeExpr::Path(p) => p,
+                _ => return Err(ParseError::Custom("expected trait path".to_string())),
+            };
+            (Some(trait_path), first_type)
         } else {
             (None, first_type)
         };
@@ -1716,6 +1932,7 @@ impl<'a> Parser<'a> {
         self.expect(Token::RBrace)?;
 
         Ok(ImplBlock {
+            doc_comments: vec![], // TODO: collect doc comments
             generics,
             trait_,
             self_ty,
@@ -1773,6 +1990,16 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_module_with_doc_comments(
+        &mut self,
+        visibility: Visibility,
+        doc_comments: Vec<crate::ast::DocComment>,
+    ) -> ParseResult<Module> {
+        let mut result = self.parse_module(visibility)?;
+        result.doc_comments = doc_comments;
+        Ok(result)
+    }
+
     fn parse_module(&mut self, visibility: Visibility) -> ParseResult<Module> {
         self.expect(Token::Mod)?;
         let name = self.parse_ident()?;
@@ -1802,6 +2029,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Module {
+            doc_comments: vec![], // TODO: collect doc comments
             visibility,
             name,
             items,
@@ -1964,6 +2192,16 @@ impl<'a> Parser<'a> {
         Ok(UseTree::Name(name))
     }
 
+    fn parse_const_with_doc_comments(
+        &mut self,
+        visibility: Visibility,
+        doc_comments: Vec<crate::ast::DocComment>,
+    ) -> ParseResult<ConstDef> {
+        let mut result = self.parse_const(visibility)?;
+        result.doc_comments = doc_comments;
+        Ok(result)
+    }
+
     fn parse_const(&mut self, visibility: Visibility) -> ParseResult<ConstDef> {
         self.expect(Token::Const)?;
         let name = self.parse_ident()?;
@@ -1975,11 +2213,22 @@ impl<'a> Parser<'a> {
         self.expect_semi_or_item_start()?;
 
         Ok(ConstDef {
+            doc_comments: vec![],
             visibility,
             name,
             ty,
             value,
         })
+    }
+
+    fn parse_static_with_doc_comments(
+        &mut self,
+        visibility: Visibility,
+        doc_comments: Vec<crate::ast::DocComment>,
+    ) -> ParseResult<StaticDef> {
+        let mut result = self.parse_static(visibility)?;
+        result.doc_comments = doc_comments;
+        Ok(result)
     }
 
     fn parse_static(&mut self, visibility: Visibility) -> ParseResult<StaticDef> {
@@ -1994,6 +2243,7 @@ impl<'a> Parser<'a> {
         self.expect_semi_or_item_start()?;
 
         Ok(StaticDef {
+            doc_comments: vec![],
             visibility,
             mutable,
             name,
@@ -3595,6 +3845,12 @@ impl<'a> Parser<'a> {
             Some(Token::ProtoSend) => true,   // |⇒{...}
             Some(Token::ProtoRecv) => true,   // |⇐
             Some(Token::ProtoStream) => true, // |≋{...}
+            Some(Token::Connect) => true,     // |connect
+            Some(Token::ProtoConnect) => true, // |⊸
+            Some(Token::Close) => true,       // |close
+            Some(Token::Timeout) => true,     // |timeout{...}
+            Some(Token::ProtoTimeout) => true, // |⏱{...}
+            Some(Token::Retry) => true,       // |retry{...}
             // Other pipe operation keywords
             Some(Token::Header) => true,   // |header{...}
             Some(Token::Body) => true,     // |body{...}
@@ -7760,9 +8016,20 @@ impl<'a> Parser<'a> {
                             }
                             continue;
                         }
+                        // Handle binding mode (ref, ref mut/Δ) in struct patterns: { ref x } or { ref Δ x }
+                        let has_ref = self.consume_if(&Token::Ref);
+                        let has_mut = has_ref && self.consume_if(&Token::Mut);
+
                         let field_name = self.parse_ident()?;
                         let pattern = if self.consume_if(&Token::Colon) {
                             Some(self.parse_pattern()?)
+                        } else if has_ref {
+                            // Shorthand with binding mode: { ref x } means field x bound by ref
+                            Some(Pattern::RefBinding {
+                                mutable: has_mut,
+                                name: field_name.clone(),
+                                evidentiality: None,
+                            })
                         } else {
                             None
                         };
@@ -7874,9 +8141,19 @@ impl<'a> Parser<'a> {
                             }
                             continue;
                         }
+                        // Handle binding mode (ref, ref mut/Δ) in struct patterns
+                        let has_ref = self.consume_if(&Token::Ref);
+                        let has_mut = has_ref && self.consume_if(&Token::Mut);
+
                         let field_name = self.parse_ident()?;
                         let pattern = if self.consume_if(&Token::Colon) {
                             Some(self.parse_pattern()?)
+                        } else if has_ref {
+                            Some(Pattern::RefBinding {
+                                mutable: has_mut,
+                                name: field_name.clone(),
+                                evidentiality: None,
+                            })
                         } else {
                             None
                         };
@@ -7961,9 +8238,19 @@ impl<'a> Parser<'a> {
                                 continue;
                             }
 
+                            // Handle binding mode (ref, ref mut/Δ) in struct patterns
+                            let has_ref = self.consume_if(&Token::Ref);
+                            let has_mut = has_ref && self.consume_if(&Token::Mut);
+
                             let field_name = self.parse_ident()?;
                             let pattern = if self.consume_if(&Token::Colon) {
                                 Some(self.parse_pattern()?)
+                            } else if has_ref {
+                                Some(Pattern::RefBinding {
+                                    mutable: has_mut,
+                                    name: field_name.clone(),
+                                    evidentiality: None,
+                                })
                             } else {
                                 // Shorthand: field punning
                                 None
@@ -8011,9 +8298,19 @@ impl<'a> Parser<'a> {
                             rest = true;
                             break;
                         }
+                        // Handle binding mode (ref, ref mut/Δ) in struct patterns
+                        let has_ref = self.consume_if(&Token::Ref);
+                        let has_mut = has_ref && self.consume_if(&Token::Mut);
+
                         let field_name = self.parse_ident()?;
                         let pattern = if self.consume_if(&Token::Colon) {
                             Some(self.parse_pattern()?)
+                        } else if has_ref {
+                            Some(Pattern::RefBinding {
+                                mutable: has_mut,
+                                name: field_name.clone(),
+                                evidentiality: None,
+                            })
                         } else {
                             None
                         };
@@ -8348,6 +8645,7 @@ impl<'a> Parser<'a> {
             // Other contextual keywords
             Token::Ref => Some("ref"),
             Token::Null => Some("null"),
+            Token::Fn => Some("rite"),  // Allow 'rite' as identifier (Sigil prose alternative to fn)
             _ => None,
         }
     }

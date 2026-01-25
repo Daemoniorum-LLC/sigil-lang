@@ -60,6 +60,7 @@ fn main() -> ExitCode {
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
         eprintln!("  dump-ir <file>  Dump AI-facing IR as JSON (for agents/tooling)");
+        eprintln!("  doc-extract <file>  Extract SGDOC documentation from source file");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
         eprintln!("  repl            Start interactive REPL");
@@ -363,6 +364,36 @@ fn main() -> ExitCode {
                 None
             };
             dump_ir_file(&args[2], pretty, output.as_deref())
+        }
+        "doc-extract" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil doc-extract <file.sg> [--format=<json|markdown|html>] [-o output]");
+                eprintln!();
+                eprintln!("Options:");
+                eprintln!("  --format=json      Output as JSON (default)");
+                eprintln!("  --format=markdown  Output as Markdown");
+                eprintln!("  --format=html      Output as HTML");
+                eprintln!("  -o <file>          Write to file instead of stdout");
+                return ExitCode::from(1);
+            }
+            let format = if args.iter().any(|a| a == "--format=markdown" || a == "--format=md") {
+                "markdown"
+            } else if args.iter().any(|a| a == "--format=html") {
+                "html"
+            } else {
+                "json"
+            };
+            let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
+                if pos + 1 < args.len() {
+                    Some(args[pos + 1].clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            doc_extract_file(&args[2], format, output.as_deref())
         }
         "parse" => {
             if args.len() < 3 {
@@ -2072,6 +2103,236 @@ fn dump_ir_file(path: &str, pretty: bool, output: Option<&str>) -> ExitCode {
         }
         None => {
             println!("{}", json);
+        }
+    }
+
+    ExitCode::SUCCESS
+}
+
+/// Extract SGDOC documentation from a Sigil source file
+fn doc_extract_file(path: &str, format: &str, output: Option<&str>) -> ExitCode {
+    use sigil_parser::ast::{DocComment, Evidentiality, Item};
+    use std::collections::HashMap;
+
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Parse the source
+    let mut parser = Parser::new(&source);
+    let ast = match parser.parse_file() {
+        Ok(ast) => ast,
+        Err(e) => {
+            eprintln!("Parse error in '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Helper to convert evidentiality to string
+    fn ev_to_str(ev: &Evidentiality) -> &'static str {
+        match ev {
+            Evidentiality::Known => "verified",
+            Evidentiality::Reported => "reported",
+            Evidentiality::Uncertain => "uncertain",
+            Evidentiality::Predicted => "predicted",
+            Evidentiality::Paradox => "paradox",
+        }
+    }
+
+    fn ev_to_badge(ev: &Evidentiality) -> &'static str {
+        match ev {
+            Evidentiality::Known => "✓",
+            Evidentiality::Reported => "○",
+            Evidentiality::Uncertain => "?",
+            Evidentiality::Predicted => "◊",
+            Evidentiality::Paradox => "‽",
+        }
+    }
+
+    fn type_expr_to_string(ty: &sigil_parser::ast::TypeExpr) -> String {
+        use sigil_parser::ast::TypeExpr;
+        match ty {
+            TypeExpr::Path(path) => path.segments.iter()
+                .map(|seg| seg.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::"),
+            _ => "?".to_string(),
+        }
+    }
+
+    fn type_path_to_string(path: &sigil_parser::ast::TypePath) -> String {
+        path.segments.iter()
+            .map(|seg| seg.ident.name.clone())
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+
+    // Extract documented items
+    #[derive(Debug)]
+    struct DocSection {
+        name: String,
+        item_type: String,
+        claims: Vec<(String, String, bool, usize)>, // (content, evidentiality, is_inner, line)
+    }
+
+    let mut sections = Vec::new();
+
+    for spanned_item in &ast.items {
+        let item = &spanned_item.node;
+        let (doc_comments, name, item_type): (&Vec<DocComment>, String, &str) = match item {
+            Item::Function(f) => (&f.doc_comments, f.name.name.clone(), "function"),
+            Item::Struct(s) => (&s.doc_comments, s.name.name.clone(), "struct"),
+            Item::Enum(e) => (&e.doc_comments, e.name.name.clone(), "enum"),
+            Item::Trait(t) => (&t.doc_comments, t.name.name.clone(), "trait"),
+            Item::Impl(i) => {
+                let name = match &i.trait_ {
+                    Some(t) => format!("{}::{}", type_path_to_string(t), type_expr_to_string(&i.self_ty)),
+                    None => format!("impl {}", type_expr_to_string(&i.self_ty)),
+                };
+                (&i.doc_comments, name, "impl")
+            }
+            Item::Module(m) => (&m.doc_comments, m.name.name.clone(), "module"),
+            Item::Const(c) => (&c.doc_comments, c.name.name.clone(), "const"),
+            Item::Static(s) => (&s.doc_comments, s.name.name.clone(), "static"),
+            _ => continue,
+        };
+
+        if doc_comments.is_empty() {
+            continue;
+        }
+
+        let claims: Vec<(String, String, bool, usize)> = doc_comments.iter().map(|dc| {
+            (dc.content.clone(), ev_to_str(&dc.evidentiality).to_string(), dc.is_inner, dc.span.start)
+        }).collect();
+
+        sections.push(DocSection {
+            name,
+            item_type: item_type.to_string(),
+            claims,
+        });
+    }
+
+    // Format output
+    let file_name = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("untitled");
+
+    let result = match format {
+        "markdown" | "md" => {
+            let mut md = String::new();
+            md.push_str(&format!("# Documentation: {}\n\n", file_name));
+            md.push_str(&format!("Auto-extracted documentation from {}\n\n", path));
+
+            for (i, section) in sections.iter().enumerate() {
+                let section_id = format!("{}.{}", i + 1, section.item_type.chars().next().unwrap_or('x'));
+                md.push_str(&format!("## {} {}\n\n", section_id, section.name));
+
+                for (content, ev, _is_inner, _line) in &section.claims {
+                    let badge = match ev.as_str() {
+                        "verified" => "✓",
+                        "reported" => "○",
+                        "uncertain" => "?",
+                        "predicted" => "◊",
+                        "paradox" => "‽",
+                        _ => "-",
+                    };
+                    md.push_str(&format!("- {} {}\n", badge, content));
+                }
+                md.push('\n');
+            }
+            md
+        }
+        "html" => {
+            let mut html = String::new();
+            html.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+            html.push_str("<meta charset=\"UTF-8\">\n");
+            html.push_str(&format!("<title>Documentation: {}</title>\n", file_name));
+            html.push_str("<style>\n");
+            html.push_str("body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 2em; }\n");
+            html.push_str(".claim { padding: 0.5em 1em; margin: 0.25em 0; border-left: 4px solid; }\n");
+            html.push_str(".verified { border-color: #22c55e; background: #f0fdf4; }\n");
+            html.push_str(".reported { border-color: #3b82f6; background: #eff6ff; }\n");
+            html.push_str(".uncertain { border-color: #f59e0b; background: #fffbeb; }\n");
+            html.push_str(".predicted { border-color: #8b5cf6; background: #f5f3ff; }\n");
+            html.push_str(".paradox { border-color: #ef4444; background: #fef2f2; }\n");
+            html.push_str(".badge { font-weight: bold; margin-right: 0.5em; }\n");
+            html.push_str("</style>\n</head>\n<body>\n");
+            html.push_str(&format!("<h1>Documentation: {}</h1>\n", file_name));
+            html.push_str(&format!("<p>Auto-extracted documentation from {}</p>\n", path));
+
+            for (i, section) in sections.iter().enumerate() {
+                let section_id = format!("{}.{}", i + 1, section.item_type.chars().next().unwrap_or('x'));
+                html.push_str(&format!("<h2 id=\"section-{}\">{} {}</h2>\n", section_id, section_id, section.name));
+                html.push_str("<div class=\"claims\">\n");
+
+                for (content, ev, _is_inner, _line) in &section.claims {
+                    let (css_class, badge) = match ev.as_str() {
+                        "verified" => ("verified", "✓"),
+                        "reported" => ("reported", "○"),
+                        "uncertain" => ("uncertain", "?"),
+                        "predicted" => ("predicted", "◊"),
+                        "paradox" => ("paradox", "‽"),
+                        _ => ("", "-"),
+                    };
+                    html.push_str(&format!(
+                        "<div class=\"claim {}\"><span class=\"badge\">{}</span>{}</div>\n",
+                        css_class, badge, content
+                    ));
+                }
+                html.push_str("</div>\n");
+            }
+            html.push_str("</body>\n</html>");
+            html
+        }
+        _ => {
+            // JSON format (default)
+            let mut json = String::new();
+            json.push_str("{\n");
+            json.push_str(&format!("  \"title\": \"Documentation: {}\",\n", file_name));
+            json.push_str(&format!("  \"source\": \"{}\",\n", path));
+            json.push_str("  \"sections\": [\n");
+
+            for (i, section) in sections.iter().enumerate() {
+                if i > 0 { json.push_str(",\n"); }
+                json.push_str("    {\n");
+                json.push_str(&format!("      \"name\": \"{}\",\n", section.name));
+                json.push_str(&format!("      \"type\": \"{}\",\n", section.item_type));
+                json.push_str("      \"claims\": [\n");
+
+                for (j, (content, ev, is_inner, line)) in section.claims.iter().enumerate() {
+                    if j > 0 { json.push_str(",\n"); }
+                    json.push_str("        {\n");
+                    json.push_str(&format!("          \"content\": \"{}\",\n", content.replace('\\', "\\\\").replace('"', "\\\"")));
+                    json.push_str(&format!("          \"evidentiality\": \"{}\",\n", ev));
+                    json.push_str(&format!("          \"is_inner\": {},\n", is_inner));
+                    json.push_str(&format!("          \"line\": {}\n", line));
+                    json.push_str("        }");
+                }
+                json.push_str("\n      ]\n");
+                json.push_str("    }");
+            }
+            json.push_str("\n  ]\n");
+            json.push_str("}\n");
+            json
+        }
+    };
+
+    // Output
+    match output {
+        Some(output_path) => {
+            if let Err(e) = fs::write(output_path, &result) {
+                eprintln!("Error writing to '{}': {}", output_path, e);
+                return ExitCode::from(1);
+            }
+            eprintln!("Documentation written to: {}", output_path);
+        }
+        None => {
+            println!("{}", result);
         }
     }
 

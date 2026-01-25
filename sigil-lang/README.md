@@ -2,9 +2,9 @@
 
 A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM. Now with comprehensive **Agent Infrastructure** for building intelligent, self-aware systems.
 
-## v1.0.0 - Production Ready
+## v0.4.0 - Native Syntax & Self-Hosting
 
-This release introduces a complete suite of agent frameworks and memory systems:
+This release completes the transition to native Sigil syntax and introduces self-hosting capabilities:
 
 - **🛡️ Aegis** - Security & safety framework
 - **✨ Anima** - Soul & consciousness modeling
@@ -119,7 +119,7 @@ CC=clang-18 cargo build --release --features llvm
 ## Hello World
 
 ```sigil
-fn main() {
+λ main() {
     println("Hello, Sigil!")
 }
 ```
@@ -131,7 +131,7 @@ fn main() {
 Transform data with elegant pipeline syntax:
 
 ```sigil
-let result = data
+≔ result = data
     |tau{_ * 2}       // Map: double each element
     |phi{_ > 10}      // Filter: keep if > 10
     |sigma            // Sort ascending
@@ -145,9 +145,9 @@ Provides significant code reduction in real-world applications.
 Track data provenance at the type level:
 
 ```sigil
-let computed! = 1 + 1          // Known: verified truth
-let found? = map.get(key)       // Uncertain: may be absent
-let data~ = api.fetch(url)      // Reported: external, untrusted
+≔ computed! = 1 + 1          // Known: verified truth
+≔ found? = map.get(key)       // Uncertain: may be absent
+≔ data~ = api.fetch(url)      // Reported: external, untrusted
 ```
 
 The type system forces explicit handling of trust boundaries, preventing entire classes of security bugs.
@@ -157,12 +157,12 @@ The type system forces explicit handling of trust boundaries, preventing entire 
 Native support for game/graphics development:
 
 ```sigil
-let pos = vec3(1.0, 2.0, 3.0)
-let rot = quat_from_axis_angle(vec3(0, 1, 0), 0.5)
-let transformed = quat_rotate(rot, pos)
+≔ pos = vec3(1.0, 2.0, 3.0)
+≔ rot = quat_from_axis_angle(vec3(0, 1, 0), 0.5)
+≔ transformed = quat_rotate(rot, pos)
 
-let force = spring_force(p1, p2, rest_length, stiffness)
-let next_pos = verlet_integrate(pos, prev_pos, accel, dt)
+≔ force = spring_force(p1, p2, rest_length, stiffness)
+≔ next_pos = verlet_integrate(pos, prev_pos, accel, dt)
 ```
 
 ### Geometric Algebra
@@ -170,28 +170,28 @@ let next_pos = verlet_integrate(pos, prev_pos, accel, dt)
 Full Cl(3,0,0) multivector support:
 
 ```sigil
-let mv = mv_new(1.0, 2.0, 3.0, 4.0, 0.5, 0.6, 0.7, 0.1)
-let rotor = rotor_from_axis_angle(vec3(0, 1, 0), 0.5)
-let rotated = rotor_apply(rotor, vec3(1, 0, 0))
+≔ mv = mv_new(1.0, 2.0, 3.0, 4.0, 0.5, 0.6, 0.7, 0.1)
+≔ rotor = rotor_from_axis_angle(vec3(0, 1, 0), 0.5)
+≔ rotated = rotor_apply(rotor, vec3(1, 0, 0))
 ```
 
 ### Automatic Differentiation
 
 ```sigil
-fn f(x) { return x * x }
-let derivative = grad(f, 3.0)        // 6.0
-let j = jacobian(multi_fn, [x, y])   // Jacobian matrix
-let h = hessian(f, [x, y])           // Hessian matrix
+λ f(x) { x * x }
+≔ derivative = grad(f, 3.0)        // 6.0
+≔ j = jacobian(multi_fn, [x, y])   // Jacobian matrix
+≔ h = hessian(f, [x, y])           // Hessian matrix
 ```
 
 ### Entity Component System
 
 ```sigil
-let world = ecs_world()
-let entity = ecs_spawn(world)
+≔ world = ecs_world()
+≔ entity = ecs_spawn(world)
 ecs_attach(entity, "Position", pos)
 ecs_attach(entity, "Velocity", vel)
-let movables = ecs_query(world, "Position", "Velocity")
+≔ movables = ecs_query(world, "Position", "Velocity")
 ```
 
 ### Polycultural Mathematics
@@ -200,14 +200,14 @@ Multi-base numeral systems with cultural awareness:
 
 ```sigil
 // Vigesimal (Mayan base-20)
-let mayan = vigesimal_encode(400)       // "100" (1×20² + 0×20 + 0)
-let decoded = vigesimal_decode("100")   // 400
+≔ mayan = vigesimal_encode(400)       // "100" (1×20² + 0×20 + 0)
+≔ decoded = vigesimal_decode("100")   // 400
 
 // Sexagesimal (Babylonian base-60)
-let time = sexagesimal_encode(3661)     // "1:1:1" (1h 1m 1s)
+≔ time = sexagesimal_encode(3661)     // "1:1:1" (1h 1m 1s)
 
 // Cultural numerology
-let sacred = sacred_number(7, "hebrew") // {name: "zayin", meaning: "completeness"}
+≔ sacred = sacred_number(7, "hebrew") // {name: "zayin", meaning: "completeness"}
 ```
 
 ### Polycultural Audio
@@ -216,17 +216,17 @@ World tuning systems and sacred frequencies:
 
 ```sigil
 // 22-Shruti Indian tuning
-let shruti = shruti_freq(1)             // 256.0 Hz (Sa)
+≔ shruti = shruti_freq(1)             // 256.0 Hz (Sa)
 
 // Arabic quarter-tones (24-TET)
-let maqam = arabic_quarter_freq(0)      // 440.0 Hz
+≔ maqam = arabic_quarter_freq(0)      // 440.0 Hz
 
 // Sacred frequencies
-let om = sacred_freq("om")              // 136.1 Hz
-let solfeggio = sacred_freq("528")      // 528.0 Hz (DNA repair)
+≔ om = sacred_freq("om")              // 136.1 Hz
+≔ solfeggio = sacred_freq("528")      // 528.0 Hz (DNA repair)
 
 // Chakra frequencies with colors
-let heart = chakra_freq("heart")        // 639.0 Hz
+≔ heart = chakra_freq("heart")        // 639.0 Hz
 ```
 
 ### Spirituality & Divination
@@ -235,27 +235,27 @@ I Ching, gematria, archetypes, and sacred geometry:
 
 ```sigil
 // I Ching divination
-let reading = cast_iching()             // Yarrow stalk casting
-let hex = hexagram(reading.primary)     // 64 hexagrams with judgments
-println(hex.symbol + " " + hex.name)    // "䷀ Creative"
+≔ reading = cast_iching()             // Yarrow stalk casting
+≔ hex = hexagram(reading.primary)     // 64 hexagrams with judgments
+println(hex.symbol + " " + hex.name)  // "䷀ Creative"
 
 // Sacred geometry
-let golden = phi()                      // 1.618033988749895
-let fibs = fibonacci(10)                // [1,1,2,3,5,8,13,21,34,55]
-let tetra = platonic_solid("tetrahedron") // {faces: 4, element: "fire"}
+≔ golden = phi()                      // 1.618033988749895
+≔ fibs = fibonacci(10)                // [1,1,2,3,5,8,13,21,34,55]
+≔ tetra = platonic_solid("tetrahedron") // {faces: 4, element: "fire"}
 
 // Gematria (Hebrew, Greek, Arabic, English)
-let value = gematria("love", "hebrew")  // Calculate numeric value
-let matches = gematria_match(13, "hebrew") // Words with value 13
+≔ value = gematria("love", "hebrew")  // Calculate numeric value
+≔ matches = gematria_match(13, "hebrew") // Words with value 13
 
 // Jungian archetypes
-let hero = archetype("hero")            // {shadow: "arrogance", gift: "courage"}
+≔ hero = archetype("hero")            // {shadow: "arrogance", gift: "courage"}
 
 // Astrology
-let sign = zodiac("scorpio")            // {symbol: "♏", element: "water"}
+≔ sign = zodiac("scorpio")            // {symbol: "♏", element: "water"}
 
 // Tarot
-let card = draw_tarot()                 // Random Major Arcana
+≔ card = draw_tarot()                 // Random Major Arcana
 ```
 
 ### Polycultural Color
@@ -264,27 +264,27 @@ Color meaning varies across cultures - Sigil respects this:
 
 ```sigil
 // Chinese Wu Xing (五行)
-let fire = wu_xing("fire")              // {color: "Red", emotion: "Joy", organ: "Heart"}
+≔ fire = wu_xing("fire")              // {color: "Red", emotion: "Joy", organ: "Heart"}
 
 // Hindu chakra colors
-let heart = chakra_color("heart")       // {color: "Green", mantra: "YAM", freq: 639.0}
+≔ heart = chakra_color("heart")       // {color: "Green", mantra: "YAM", freq: 639.0}
 
 // Mayan directional colors
-let east = maya_direction("east")       // {color: "Red", deity: "Chac"}
+≔ east = maya_direction("east")       // {color: "Red", deity: "Chac"}
 
 // Yoruba Orisha colors
-let oshun = orisha_color("oshun")       // {colors: "Yellow, gold", domain: "Rivers, love"}
+≔ oshun = orisha_color("oshun")       // {colors: "Yellow, gold", domain: "Rivers, love"}
 
 // Japanese traditional colors
-let sakura = nihon_iro("sakura")        // {hex: "#FFB7C5", meaning: "transience"}
+≔ sakura = nihon_iro("sakura")        // {hex: "#FFB7C5", meaning: "transience"}
 
 // Cross-cultural emotion→color mapping
-let joy_west = emotion_color("joy", "western")  // Gold (#FFD700)
-let joy_china = emotion_color("joy", "chinese") // Red (#FF0000) - 红
-let joy_japan = emotion_color("joy", "japanese") // Sakura (#FFB7C5)
+≔ joy_west = emotion_color("joy", "western")  // Gold (#FFD700)
+≔ joy_china = emotion_color("joy", "chinese") // Red (#FF0000) - 红
+≔ joy_japan = emotion_color("joy", "japanese") // Sakura (#FFB7C5)
 
 // Full synesthesia with cultural context
-let unified = synesthesia("love", "indian")
+≔ unified = synesthesia("love", "indian")
 // → {color: red, chakra: "Root", wu_xing: "Fire (火)", frequency: 639}
 ```
 
@@ -310,7 +310,7 @@ sigil-lang/
 │   │   ├── interpreter.rs   # Tree-walking interpreter
 │   │   └── stdlib.rs    # Standard library
 │   ├── runtime/         # C runtime for AOT binaries
-│   └── tests/           # Test suite (244 tests)
+│   └── tests/           # Test suite (577 tests)
 ├── rust_comparison/     # Benchmarks vs Rust
 ├── docs/                # Language specification
 │   ├── GETTING_STARTED.md
@@ -325,9 +325,9 @@ sigil-lang/
 ## Testing
 
 ```bash
-cd parser
-cargo test              # Run all 244 tests
-cargo test --release    # Optimized test run
+cd jormungandr/tests
+./run_tests_rust.sh      # Run all 577 tests (100% pass rate)
+./run_tests_rust.sh --priority P0  # Run P0 tests only (376 tests)
 ```
 
 ## Documentation

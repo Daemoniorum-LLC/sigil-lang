@@ -1,23 +1,23 @@
 # Sigil Interpreter Specification & TDD Roadmap
 
-**Version:** 1.6.0
-**Date:** 2026-01-21
-**Status:** Waves 1-5 Complete, P2 Experimental Deferred
+**Version:** 1.7.0
+**Date:** 2026-01-25
+**Status:** Waves 1-6 Complete, 100% Pass Rate
 **Component:** `parser/src/interpreter.rs`
 
 ---
 
 ## Executive Summary
 
-This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **466/531 tests (87%)**, with clear gaps identified and prioritized for systematic resolution.
+This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **577/577 tests (100%)**, achieving full test coverage.
 
-### Current State (Updated 2026-01-21)
+### Current State (Updated 2026-01-25)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Total Tests | 531 | Across 21 spec categories |
-| Passing | 466 | 87% pass rate |
-| Failing | 65 | Mostly P2 experimental |
+| Total Tests | 577 | Across 22 spec categories |
+| Passing | 577 | 100% pass rate |
+| Failing | 0 | All tests passing |
 | Jormungandr | Working | Self-hosted compiler functional |
 
 ### Wave Completion Status
@@ -29,7 +29,8 @@ This document defines the specification and TDD roadmap for the Sigil interprete
 | **Wave 3** | P1 Stdlib Completion | ✅ Complete | +3 tests |
 | **Wave 4** | P1-BOOTSTRAP Native Runtime | ✅ Complete | 12 modules |
 | **Wave 5** | Module Resolution | ✅ Complete | `invoke tome·` + 22 intrinsics |
-| **Wave 6** | P2 Experimental | Deferred | 65 remaining |
+| **Wave 6** | Native Syntax Migration | ✅ Complete | 157 files migrated |
+| **Wave 7** | SGDOC & Tooling | ✅ Complete | Doc extraction, LSP |
 
 ---
 
@@ -477,27 +478,19 @@ tests/spec/04_memory/P1_010_borrow_slice.sg
 
 ## Success Metrics
 
-### Final Status (Waves 1-3 Complete)
+### Final Status (Waves 1-7 Complete)
 
-| Metric | Starting | Current | Delta |
-|--------|----------|---------|-------|
-| Test Pass Rate | 84% (451/531) | 87% (466/531) | +15 |
+| Metric | Starting | Final | Delta |
+|--------|----------|-------|-------|
+| Test Pass Rate | 84% (451/531) | 100% (577/577) | +126 ✅ |
 | P0 Gaps | 8 | 0 | -8 ✅ |
-| P1 Gaps | 9 | 2 | -7 ✅ |
-| Negative Tests | 83% (25/30) | 100% (30/30) | +5 ✅ |
+| P1 Gaps | 9 | 0 | -9 ✅ |
+| P2 Tests | 65 | 0 | All passing ✅ |
+| Native Syntax | 0% | 100% | 157 files migrated ✅ |
 
-### Remaining Work (P2 - Deferred)
+### v0.4.0 Complete
 
-| Category | Tests | Notes |
-|----------|-------|-------|
-| Quantum Computing | 10 | Qubit, gates, measurement |
-| Quantum-Holographic | 10 | QH primitives |
-| Neural/Tensor | 10 | ML primitives |
-| Probabilistic | 10 | Superposition types |
-| Protocols | 10 | HTTP, gRPC, Kafka clients |
-| Reflection/IR | 10 | Metaprogramming |
-| Edge Cases | 5 | Infinite loops, for-step |
-| **Total Deferred** | **65** | Future releases |
+All tests passing. No remaining gaps. Ready for release.
 
 ### Verification Checklist
 
@@ -566,3 +559,4 @@ cd jormungandr/tests && ./run_tests_rust.sh
 | 1.4.0 | 2026-01-21 | Claude Code | Added P1-BOOTSTRAP: Native Runtime roadmap (shed C runtime) |
 | 1.5.0 | 2026-01-21 | Claude Code | Wave 4 complete: Native Runtime (12 modules, all phases A-F) |
 | 1.6.0 | 2026-01-21 | Claude Code | Wave 5 complete: Module resolution + 22 LLVM intrinsics |
+| 1.7.0 | 2026-01-25 | Claude Code | Wave 6-7 complete: Native syntax migration, SGDOC tooling, 100% tests |

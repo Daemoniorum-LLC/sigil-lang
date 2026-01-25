@@ -1,5 +1,8 @@
 # Sigil Type System Specification
 
+> **Status:** ! Stable (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 ## 1. Overview
 
 Sigil's type system combines:

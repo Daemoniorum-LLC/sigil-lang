@@ -188,10 +188,11 @@ pub struct ActorInner {
 /// Evidence level at runtime
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Evidence {
-    Known,     // !
-    Uncertain, // ?
-    Reported,  // ~
-    Paradox,   // ‽
+    Known,     // ! - Verified/certain
+    Uncertain, // ? - Needs investigation
+    Reported,  // ~ - From external source
+    Paradox,   // ‽ - Contradictory
+    Predicted, // ◊ - Future/planned
 }
 
 /// Runtime affect markers for sentiment and emotion tracking
@@ -330,6 +331,7 @@ impl fmt::Debug for Value {
                     Evidence::Uncertain => write!(f, "?"),
                     Evidence::Reported => write!(f, "~"),
                     Evidence::Paradox => write!(f, "‽"),
+                    Evidence::Predicted => write!(f, "◊"),
                 }
             }
             Value::Map(map) => {
@@ -993,6 +995,9 @@ pub struct Interpreter {
     pub function_spans: HashMap<String, crate::span::Span>,
     /// Source text for line number calculation in IR export
     pub source_text: Option<String>,
+    /// HTTP client for protocol support
+    #[cfg(feature = "http-client")]
+    http_client: Option<reqwest::blocking::Client>,
 }
 
 /// Type definition for structs/enums
@@ -1058,7 +1063,19 @@ impl Interpreter {
             const_defs: Vec::new(),
             function_spans: HashMap::new(),
             source_text: None,
+            #[cfg(feature = "http-client")]
+            http_client: None,
         };
+
+        // Initialize HTTP client if feature is enabled
+        #[cfg(feature = "http-client")]
+        {
+            interp.http_client = reqwest::blocking::Client::builder()
+                .user_agent(format!("sigil/{}", env!("CARGO_PKG_VERSION")))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .ok();
+        }
 
         // Register built-in functions
         interp.register_builtins();
@@ -3599,6 +3616,31 @@ impl Interpreter {
                             Err(RuntimeError::new("assertion failed"))
                         }
                     }
+                    // SGDOC evidential macros - doc!("text") expands to Claim·verified("text")
+                    "doc" => {
+                        // doc!("text") -> Claim·verified("text") (Known/Verified)
+                        let content = self.eval_format_macro(tokens)?;
+                        if let Value::String(s) = content {
+                            let func_clone = self.globals.borrow().get("Claim·verified").map(|v| v.clone());
+                            match func_clone {
+                                Some(Value::BuiltIn(b)) => {
+                                    self.call_builtin(&b, vec![
+                                        Value::String(s),
+                                        Value::String(Rc::new(String::new())),
+                                    ])
+                                }
+                                Some(Value::Function(f)) => {
+                                    self.call_function(&f, vec![
+                                        Value::String(s),
+                                        Value::String(Rc::new(String::new())),
+                                    ])
+                                }
+                                _ => Err(RuntimeError::new("doc! requires SGDOC stdlib (Claim·verified not found)"))
+                            }
+                        } else {
+                            Err(RuntimeError::new("doc! expects string argument"))
+                        }
+                    }
                     _ => {
                         // Check for user-defined rune
                         if let Some(rune_def) = self.defined_runes.get(macro_name).cloned() {
@@ -4999,6 +5041,51 @@ impl Interpreter {
     }
 
     fn eval_call(&mut self, func_expr: &Expr, args: &[Expr]) -> Result<Value, RuntimeError> {
+        // Check for SGDOC shorthand: doc~("text"), doc?("text"), doc◊("text")
+        // The evidentiality marker is stored on the identifier itself, not as Expr::Evidential
+        // So we check if the path is a single-segment "doc" with evidentiality
+        if let Expr::Path(path) = func_expr {
+            if path.segments.len() == 1 {
+                let seg = &path.segments[0];
+                if seg.ident.name == "doc" {
+                    if let Some(evidentiality) = &seg.ident.evidentiality {
+                        // This is doc~(), doc◊(), etc. - expand to Claim constructor
+                        if !args.is_empty() {
+                            let content = self.evaluate(&args[0])?;
+                            let source = if args.len() >= 2 {
+                                self.evaluate(&args[1])?
+                            } else {
+                                Value::String(Rc::new(String::new()))
+                            };
+
+                            // Map evidentiality to the appropriate Claim constructor
+                            let func_name = match evidentiality {
+                                Evidentiality::Known => "Claim·verified",
+                                Evidentiality::Reported => "Claim·reported",
+                                Evidentiality::Uncertain => "Claim·uncertain",
+                                Evidentiality::Predicted => "Claim·predicted",
+                                Evidentiality::Paradox => "Claim·uncertain", // Fallback
+                            };
+
+                            let func_clone = self.globals.borrow().get(func_name).map(|v| v.clone());
+                            return match func_clone {
+                                Some(Value::BuiltIn(b)) => {
+                                    self.call_builtin(&b, vec![content, source])
+                                }
+                                Some(Value::Function(f)) => {
+                                    self.call_function(&f, vec![content, source])
+                                }
+                                _ => Err(RuntimeError::new(format!(
+                                    "doc{:?} requires SGDOC stdlib ({} not found)",
+                                    evidentiality, func_name
+                                )))
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
         // Check if func_expr is a path that might be a variant constructor or tuple struct
         if let Expr::Path(path) = func_expr {
             let qualified_name = path.segments.iter()
@@ -12542,6 +12629,42 @@ impl Interpreter {
         }
     }
 
+    /// Convert a Sigil Value to serde_json::Value for serialization
+    fn value_to_serde_json(&self, value: &Value) -> serde_json::Value {
+        match value {
+            Value::Null => serde_json::Value::Null,
+            Value::Bool(b) => serde_json::Value::Bool(*b),
+            Value::Int(i) => serde_json::json!(*i),
+            Value::Float(f) => serde_json::json!(*f),
+            Value::String(s) => serde_json::Value::String(s.to_string()),
+            Value::Array(arr) => {
+                let items: Vec<serde_json::Value> = arr
+                    .borrow()
+                    .iter()
+                    .map(|v| self.value_to_serde_json(v))
+                    .collect();
+                serde_json::Value::Array(items)
+            }
+            Value::Map(m) => {
+                let mut obj = serde_json::Map::new();
+                for (k, v) in m.borrow().iter() {
+                    obj.insert(k.clone(), self.value_to_serde_json(v));
+                }
+                serde_json::Value::Object(obj)
+            }
+            Value::Struct { name, fields } => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("__type__".to_string(), serde_json::Value::String(name.clone()));
+                for (k, v) in fields.borrow().iter() {
+                    obj.insert(k.clone(), self.value_to_serde_json(v));
+                }
+                serde_json::Value::Object(obj)
+            }
+            Value::Evidential { value, .. } => self.value_to_serde_json(value),
+            _ => serde_json::Value::String(format!("{:?}", value)),
+        }
+    }
+
     /// Send data over a protocol connection
     fn protocol_send(&mut self, connection: &Value, data: &Value) -> Result<Value, RuntimeError> {
         // Extract connection info and send data
@@ -12551,26 +12674,149 @@ impl Interpreter {
                 if let Some(Value::String(protocol)) = obj.get("__protocol__") {
                     match protocol.as_str() {
                         "http" | "https" => {
-                            // For HTTP, "send" means execute the request
-                            // The data becomes the body
-                            #[cfg(debug_assertions)]
-                            eprintln!("[HTTP] Would send request with body: {:?}", data);
-                            Ok(Value::Map(Rc::new(RefCell::new({
-                                let mut response = HashMap::new();
-                                response.insert("status".to_string(), Value::Int(200));
-                                response.insert("body".to_string(), data.clone());
-                                response.insert(
-                                    "__protocol__".to_string(),
-                                    Value::String(Rc::new("http_response".to_string())),
-                                );
-                                response
-                            }))))
+                            // Real HTTP implementation using reqwest
+                            #[cfg(feature = "http-client")]
+                            {
+                                if let Some(ref client) = self.http_client {
+                                    // Extract URL from connection
+                                    let url = match obj.get("url") {
+                                        Some(Value::String(u)) => u.to_string(),
+                                        _ => return Err(RuntimeError::new("HTTP connection missing url")),
+                                    };
+
+                                    // Extract method (default GET, or POST if body is non-empty)
+                                    let method = match obj.get("method") {
+                                        Some(Value::String(m)) => m.to_uppercase(),
+                                        _ => {
+                                            // Infer POST if data is non-empty
+                                            let has_body = match data {
+                                                Value::String(s) => !s.is_empty(),
+                                                Value::Map(m) => !m.borrow().is_empty(),
+                                                _ => false,
+                                            };
+                                            if has_body { "POST".to_string() } else { "GET".to_string() }
+                                        }
+                                    };
+
+                                    // Build request
+                                    let mut req = match method.as_str() {
+                                        "GET" => client.get(&url),
+                                        "POST" => client.post(&url),
+                                        "PUT" => client.put(&url),
+                                        "DELETE" => client.delete(&url),
+                                        "PATCH" => client.patch(&url),
+                                        "HEAD" => client.head(&url),
+                                        _ => return Err(RuntimeError::new(format!("Unsupported HTTP method: {}", method))),
+                                    };
+
+                                    // Add headers if present
+                                    if let Some(Value::Map(headers)) = obj.get("headers") {
+                                        for (k, v) in headers.borrow().iter() {
+                                            if let Value::String(val) = v {
+                                                req = req.header(k, val.as_str());
+                                            }
+                                        }
+                                    }
+
+                                    // Add body for POST/PUT/PATCH
+                                    if method == "POST" || method == "PUT" || method == "PATCH" {
+                                        match data {
+                                            Value::String(s) => req = req.body(s.to_string()),
+                                            Value::Map(m) => {
+                                                // Convert map to JSON string
+                                                let mut json_map = serde_json::Map::new();
+                                                for (k, v) in m.borrow().iter() {
+                                                    json_map.insert(k.clone(), self.value_to_serde_json(v));
+                                                }
+                                                let json_str = serde_json::Value::Object(json_map).to_string();
+                                                req = req.header("Content-Type", "application/json")
+                                                    .body(json_str);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+
+                                    // Execute request
+                                    match req.send() {
+                                        Ok(resp) => {
+                                            let status = resp.status().as_u16() as i64;
+                                            let body = resp.text().unwrap_or_default();
+
+                                            Ok(Value::Map(Rc::new(RefCell::new({
+                                                let mut response = HashMap::new();
+                                                response.insert("status".to_string(), Value::Int(status));
+                                                response.insert("body".to_string(), Value::String(Rc::new(body)));
+                                                response.insert(
+                                                    "__protocol__".to_string(),
+                                                    Value::String(Rc::new("http_response".to_string())),
+                                                );
+                                                response
+                                            }))))
+                                        }
+                                        Err(e) => Err(RuntimeError::new(format!("HTTP request failed: {}", e))),
+                                    }
+                                } else {
+                                    Err(RuntimeError::new("HTTP client not initialized"))
+                                }
+                            }
+                            #[cfg(not(feature = "http-client"))]
+                            {
+                                Err(RuntimeError::new("HTTP support requires 'http-client' feature"))
+                            }
                         }
                         "ws" | "wss" => {
-                            // For WebSocket, send a message
-                            #[cfg(debug_assertions)]
-                            eprintln!("[WebSocket] Would send message: {:?}", data);
-                            Ok(Value::Bool(true)) // Message sent successfully
+                            // Real WebSocket implementation using tungstenite
+                            #[cfg(feature = "websocket")]
+                            {
+                                use tungstenite::{connect, Message as WsMessage};
+
+                                // Extract URL from connection
+                                let url = match obj.get("url") {
+                                    Some(Value::String(u)) => u.to_string(),
+                                    _ => return Err(RuntimeError::new("WebSocket connection missing url")),
+                                };
+
+                                // Connect to WebSocket server
+                                let (mut socket, _response) = connect(&url)
+                                    .map_err(|e| RuntimeError::new(format!("WebSocket connect failed: {}", e)))?;
+
+                                // Convert data to message
+                                let msg = match data {
+                                    Value::String(s) => WsMessage::Text(s.to_string()),
+                                    Value::Array(arr) => {
+                                        let bytes: Vec<u8> = arr.borrow().iter().filter_map(|v| {
+                                            if let Value::Int(n) = v { Some(*n as u8) } else { None }
+                                        }).collect();
+                                        WsMessage::Binary(bytes)
+                                    }
+                                    _ => WsMessage::Text(format!("{:?}", data)),
+                                };
+
+                                // Send message
+                                socket.send(msg)
+                                    .map_err(|e| RuntimeError::new(format!("WebSocket send failed: {}", e)))?;
+
+                                // For request-response pattern, wait for one response
+                                let response = socket.read()
+                                    .map_err(|e| RuntimeError::new(format!("WebSocket receive failed: {}", e)))?;
+
+                                // Close connection
+                                let _ = socket.close(None);
+
+                                // Return response
+                                match response {
+                                    WsMessage::Text(text) => Ok(Value::String(Rc::new(text))),
+                                    WsMessage::Binary(bytes) => {
+                                        let values: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                                        Ok(Value::Array(Rc::new(RefCell::new(values))))
+                                    }
+                                    _ => Ok(Value::Null),
+                                }
+                            }
+                            #[cfg(not(feature = "websocket"))]
+                            {
+                                Err(RuntimeError::new("WebSocket support requires 'websocket' feature"))
+                            }
                         }
                         "grpc" => {
                             // For gRPC, send the request message
@@ -12709,7 +12955,7 @@ impl Interpreter {
     fn protocol_connect(
         &mut self,
         target: &Value,
-        _config: Option<&Value>,
+        config: Option<&Value>,
     ) -> Result<Value, RuntimeError> {
         match target {
             Value::String(url) => {
@@ -12740,16 +12986,22 @@ impl Interpreter {
                 eprintln!("[{}] Would connect to: {}", protocol, url);
 
                 // Return a connection object
-                Ok(Value::Map(Rc::new(RefCell::new({
-                    let mut conn = HashMap::new();
-                    conn.insert(
-                        "__protocol__".to_string(),
-                        Value::String(Rc::new(protocol.to_string())),
-                    );
-                    conn.insert("url".to_string(), Value::String(url.clone()));
-                    conn.insert("connected".to_string(), Value::Bool(true));
-                    conn
-                }))))
+                let mut conn = HashMap::new();
+                conn.insert(
+                    "__protocol__".to_string(),
+                    Value::String(Rc::new(protocol.to_string())),
+                );
+                conn.insert("url".to_string(), Value::String(url.clone()));
+                conn.insert("connected".to_string(), Value::Bool(true));
+
+                // Apply config options if provided
+                if let Some(Value::Map(cfg)) = config {
+                    for (key, value) in cfg.borrow().iter() {
+                        conn.insert(key.clone(), value.clone());
+                    }
+                }
+
+                Ok(Value::Map(Rc::new(RefCell::new(conn))))
             }
             Value::Map(obj) => {
                 // Already a connection config object
@@ -13651,7 +13903,7 @@ impl Interpreter {
     }
 
     /// Combine two evidence levels, returning the "worst" (most uncertain) one.
-    /// Order: Known < Uncertain < Reported < Paradox
+    /// Order: Known < Uncertain < Reported < Predicted < Paradox
     fn combine_evidence(a: Option<Evidence>, b: Option<Evidence>) -> Option<Evidence> {
         match (a, b) {
             (None, None) => None,
@@ -13661,7 +13913,8 @@ impl Interpreter {
                     Evidence::Known => 0,
                     Evidence::Uncertain => 1,
                     Evidence::Reported => 2,
-                    Evidence::Paradox => 3,
+                    Evidence::Predicted => 3,
+                    Evidence::Paradox => 4,
                 };
                 if rank(a) >= rank(b) {
                     Some(a)

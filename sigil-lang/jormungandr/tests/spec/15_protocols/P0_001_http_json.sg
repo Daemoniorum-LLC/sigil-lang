@@ -1,0 +1,17 @@
+// Test: HTTP GET with JSON response body
+// Spec: 15-PROTOCOLS.md § 4 HTTP Support
+// Priority: P0 - Bootstrap Critical
+//
+// This test makes a REAL HTTP GET and reads the JSON response
+
+λ main() {
+    // GET request returns JSON data from httpbin
+    ≔ conn = "https://httpbin.org/json"|connect;
+    ≔ response~ = conn|send{""};
+
+    // Check status
+    println(response~.status);
+
+    // Print body (should be JSON string)
+    println(response~.body);
+}

@@ -1,5 +1,8 @@
 # Sigil Syntax Specification
 
+> **Status:** ! Stable (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 ## 1. Program Structure
 
 A Sigil program consists of a series of items organized into modules.

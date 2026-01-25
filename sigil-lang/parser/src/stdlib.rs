@@ -222,6 +222,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_ai_ir(interp);
     // Phase 24: Native Runtime - syscall layer for C-free execution
     register_sys(interp);
+    // Phase 25: SGDOC - Agent-optimized documentation with evidentiality
+    register_sgdoc(interp);
 }
 
 // Helper to define a builtin
@@ -413,6 +415,7 @@ fn register_core(interp: &mut Interpreter) {
                 Evidence::Uncertain => "uncertain",
                 Evidence::Reported => "reported",
                 Evidence::Paradox => "paradox",
+                Evidence::Predicted => "predicted",
             },
             Value::Affective { .. } => "affective",
             Value::Map(_) => "map",
@@ -2712,6 +2715,7 @@ fn register_evidence(interp: &mut Interpreter) {
                     Evidence::Uncertain => "uncertain",
                     Evidence::Reported => "reported",
                     Evidence::Paradox => "paradox",
+                    Evidence::Predicted => "predicted",
                 };
                 Ok(Value::String(Rc::new(level.to_string())))
             }
@@ -2819,6 +2823,7 @@ fn register_evidence(interp: &mut Interpreter) {
                 Evidence::Uncertain => "uncertain",
                 Evidence::Reported => "reported",
                 Evidence::Paradox => "paradox",
+                Evidence::Predicted => "predicted",
             }
             .to_string(),
         )))
@@ -3751,6 +3756,68 @@ fn register_io(interp: &mut Interpreter) {
 // TIME FUNCTIONS
 // ============================================================================
 
+/// Decompose Unix timestamp (seconds) into (year, month, day, hour, minute, second)
+fn decompose_timestamp(secs: u64) -> (i64, u32, i64, u64, u64, u64) {
+    let secs_per_day = 86400u64;
+    let secs_per_hour = 3600u64;
+    let secs_per_min = 60u64;
+
+    let days = secs / secs_per_day;
+    let remainder = secs % secs_per_day;
+    let hours = remainder / secs_per_hour;
+    let remainder = remainder % secs_per_hour;
+    let minutes = remainder / secs_per_min;
+    let seconds = remainder % secs_per_min;
+
+    // Calculate year/month/day from days since 1970-01-01
+    let mut year = 1970i64;
+    let mut remaining_days = days as i64;
+
+    loop {
+        let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+
+    let is_leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_months = if is_leap {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let mut month = 1u32;
+    for &days_in_month in &days_in_months {
+        if remaining_days < days_in_month {
+            break;
+        }
+        remaining_days -= days_in_month;
+        month += 1;
+    }
+    let day = remaining_days + 1;
+
+    (year, month, day, hours, minutes, seconds)
+}
+
+/// Format Unix timestamp (seconds) as ISO8601 string
+fn format_iso8601(secs: u64) -> String {
+    let (year, month, day, hours, minutes, seconds) = decompose_timestamp(secs);
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hours, minutes, seconds)
+}
+
+/// Get current time as ISO8601 string
+fn format_iso8601_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format_iso8601(secs)
+}
+
 fn register_time(interp: &mut Interpreter) {
     // now - current Unix timestamp in milliseconds
     define(interp, "now", Some(0), |_, _| {
@@ -3774,6 +3841,42 @@ fn register_time(interp: &mut Interpreter) {
             .duration_since(UNIX_EPOCH)
             .unwrap_or(Duration::ZERO);
         Ok(Value::Int(duration.as_micros() as i64))
+    });
+
+    // Time·iso8601 - current time as ISO8601 string (YYYY-MM-DDTHH:MM:SSZ)
+    define(interp, "Time·iso8601", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(format_iso8601_now())))
+    });
+
+    // format_time - format Unix timestamp (seconds) as ISO8601 string
+    define(interp, "format_time", Some(1), |_, args| {
+        match &args[0] {
+            Value::Int(secs) => {
+                let timestamp = *secs as u64;
+                Ok(Value::String(Rc::new(format_iso8601(timestamp))))
+            }
+            _ => Err(RuntimeError::new("format_time() requires integer timestamp in seconds")),
+        }
+    });
+
+    // Time·format - format timestamp with custom format string
+    // Supported: %Y (year), %m (month), %d (day), %H (hour), %M (minute), %S (second)
+    define(interp, "Time·format", Some(2), |_, args| {
+        match (&args[0], &args[1]) {
+            (Value::Int(secs), Value::String(fmt)) => {
+                let timestamp = *secs as u64;
+                let (year, month, day, hours, minutes, seconds) = decompose_timestamp(timestamp);
+                let result = fmt.as_str()
+                    .replace("%Y", &format!("{:04}", year))
+                    .replace("%m", &format!("{:02}", month))
+                    .replace("%d", &format!("{:02}", day))
+                    .replace("%H", &format!("{:02}", hours))
+                    .replace("%M", &format!("{:02}", minutes))
+                    .replace("%S", &format!("{:02}", seconds));
+                Ok(Value::String(Rc::new(result)))
+            }
+            _ => Err(RuntimeError::new("Time·format(timestamp, format_string) requires int and string")),
+        }
     });
 
     // sleep - sleep for milliseconds
@@ -28549,6 +28652,7 @@ fn register_agent_tools(interp: &mut Interpreter) {
                             "?" => Evidence::Uncertain,
                             "~" => Evidence::Reported,
                             "‽" => Evidence::Paradox,
+                            "◊" => Evidence::Predicted,
                             _ => Evidence::Reported,
                         };
                         params.push(ToolParameter {
@@ -36091,6 +36195,1249 @@ struct FakeEpoll {
     fds: Vec<i64>,
 }
 
+// ============================================================================
+// SGDOC - Agent-Optimized Documentation with Evidentiality
+// ============================================================================
+//
+// SGDOC provides structured documentation types with evidentiality markers,
+// enabling documentation claims to carry their certainty level explicitly.
+//
+// Evidentiality in documentation:
+//   ! (Verified)  - Claim backed by passing test
+//   ~ (Reported)  - Claim from spec, not yet tested
+//   ? (Uncertain) - Needs investigation
+//   ◊ (Predicted) - Planned/future feature
+
+fn register_sgdoc(interp: &mut Interpreter) {
+    // =========================================================================
+    // Helper Functions for Creating SGDOC Structs
+    // =========================================================================
+
+    /// Create a DocMeta struct
+    fn create_doc_meta(
+        title: String,
+        version: (u32, u32, u32),
+        status: &str,
+    ) -> Value {
+        let mut fields = HashMap::new();
+        fields.insert("title".to_string(), Value::String(Rc::new(title)));
+
+        // Version as struct
+        let mut ver_fields = HashMap::new();
+        ver_fields.insert("major".to_string(), Value::Int(version.0 as i64));
+        ver_fields.insert("minor".to_string(), Value::Int(version.1 as i64));
+        ver_fields.insert("patch".to_string(), Value::Int(version.2 as i64));
+        fields.insert("version".to_string(), Value::Struct {
+            name: "SemVer".to_string(),
+            fields: Rc::new(RefCell::new(ver_fields)),
+        });
+
+        // Timestamps - using shared time formatting function
+        let now = format_iso8601_now();
+        fields.insert("status".to_string(), Value::String(Rc::new(status.to_string())));
+        fields.insert("created".to_string(), Value::String(Rc::new(now.clone())));
+        fields.insert("updated".to_string(), Value::String(Rc::new(now)));
+        fields.insert("authors".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+        fields.insert("spec_refs".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+        fields.insert("code_refs".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+        Value::Struct {
+            name: "DocMeta".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        }
+    }
+
+    /// Create a Claim struct with evidentiality
+    fn create_claim(content: String, evidentiality: &str, test_ref: Option<String>, spec_ref: Option<String>) -> Value {
+        let mut fields = HashMap::new();
+        let content_rc = Rc::new(content);
+        fields.insert("content".to_string(), Value::String(Rc::clone(&content_rc)));
+        fields.insert("evidentiality".to_string(), Value::String(Rc::new(evidentiality.to_string())));
+
+        // Evidence markers as symbols
+        let evidence = match evidentiality {
+            "verified" | "!" => Evidence::Known,
+            "reported" | "~" => Evidence::Reported,
+            "uncertain" | "?" => Evidence::Uncertain,
+            "predicted" | "◊" => Evidence::Predicted,
+            _ => Evidence::Uncertain,
+        };
+        fields.insert("evidence".to_string(), Value::Evidential {
+            value: Box::new(Value::String(Rc::clone(&content_rc))),
+            evidence,
+        });
+
+        fields.insert("test_ref".to_string(), match test_ref {
+            Some(s) => Value::String(Rc::new(s)),
+            None => Value::Null,
+        });
+        fields.insert("spec_ref".to_string(), match spec_ref {
+            Some(s) => Value::String(Rc::new(s)),
+            None => Value::Null,
+        });
+
+        Value::Struct {
+            name: "Claim".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        }
+    }
+
+    // =========================================================================
+    // DocMeta Constructors
+    // =========================================================================
+
+    // DocMeta·new(title, major, minor, patch) -> DocMeta
+    define(interp, "DocMeta·new", Some(4), |_, args| {
+        let title = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("DocMeta·new: title must be string")),
+        };
+        let major = match &args[1] {
+            Value::Int(n) => *n as u32,
+            _ => 0,
+        };
+        let minor = match &args[2] {
+            Value::Int(n) => *n as u32,
+            _ => 0,
+        };
+        let patch = match &args[3] {
+            Value::Int(n) => *n as u32,
+            _ => 0,
+        };
+        Ok(create_doc_meta(title, (major, minor, patch), "draft"))
+    });
+
+    // DocMeta·stable(meta) -> DocMeta with status = "stable"
+    define(interp, "DocMeta·stable", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "DocMeta" => {
+                let mut new_fields = fields.borrow().clone();
+                new_fields.insert("status".to_string(), Value::String(Rc::new("stable".to_string())));
+                Ok(Value::Struct {
+                    name: "DocMeta".to_string(),
+                    fields: Rc::new(RefCell::new(new_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("DocMeta·stable: expected DocMeta struct")),
+        }
+    });
+
+    // =========================================================================
+    // Claim Constructors with Evidentiality
+    // =========================================================================
+
+    // Claim·verified(content, test_ref) -> Claim!
+    // Creates a verified claim backed by a test
+    define(interp, "Claim·verified", Some(2), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Claim·verified: content must be string")),
+        };
+        let test_ref = match &args[1] {
+            Value::String(s) => Some(s.to_string()),
+            Value::Null => None,
+            _ => None,
+        };
+        Ok(create_claim(content, "verified", test_ref, None))
+    });
+
+    // Claim·reported(content, spec_ref) -> Claim~
+    // Creates a reported claim from a spec
+    define(interp, "Claim·reported", Some(2), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Claim·reported: content must be string")),
+        };
+        let spec_ref = match &args[1] {
+            Value::String(s) => Some(s.to_string()),
+            Value::Null => None,
+            _ => None,
+        };
+        Ok(create_claim(content, "reported", None, spec_ref))
+    });
+
+    // Claim·uncertain(content) -> Claim?
+    // Creates an uncertain claim needing investigation
+    define(interp, "Claim·uncertain", Some(1), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Claim·uncertain: content must be string")),
+        };
+        Ok(create_claim(content, "uncertain", None, None))
+    });
+
+    // Claim·predicted(content, spec_ref) -> Claim◊
+    // Creates a predicted/planned claim
+    define(interp, "Claim·predicted", Some(2), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Claim·predicted: content must be string")),
+        };
+        let spec_ref = match &args[1] {
+            Value::String(s) => Some(s.to_string()),
+            Value::Null => None,
+            _ => None,
+        };
+        Ok(create_claim(content, "predicted", None, spec_ref))
+    });
+
+    // =========================================================================
+    // Shorthand Claim Constructors
+    // =========================================================================
+    // These provide quick claim creation without requiring refs.
+    // Named with middledot syntax for parser compatibility.
+
+    // Claim·v(content) -> Claim! (verified shorthand)
+    define(interp, "Claim·v", Some(1), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => format!("{:?}", args[0]),
+        };
+        Ok(create_claim(content, "verified", None, None))
+    });
+
+    // Claim·r(content) -> Claim~ (reported shorthand)
+    define(interp, "Claim·r", Some(1), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => format!("{:?}", args[0]),
+        };
+        Ok(create_claim(content, "reported", None, None))
+    });
+
+    // Claim·u(content) -> Claim? (uncertain shorthand)
+    define(interp, "Claim·u", Some(1), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => format!("{:?}", args[0]),
+        };
+        Ok(create_claim(content, "uncertain", None, None))
+    });
+
+    // Claim·p(content) -> Claim◊ (predicted shorthand)
+    define(interp, "Claim·p", Some(1), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => format!("{:?}", args[0]),
+        };
+        Ok(create_claim(content, "predicted", None, None))
+    });
+
+    // =========================================================================
+    // Section and Doc Constructors
+    // =========================================================================
+
+    // Section·new(id, title) -> Section
+    define(interp, "Section·new", Some(2), |_, args| {
+        let id = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Section·new: id must be string")),
+        };
+        let title = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Section·new: title must be string")),
+        };
+
+        let mut fields = HashMap::new();
+        fields.insert("id".to_string(), Value::String(Rc::new(id)));
+        fields.insert("title".to_string(), Value::String(Rc::new(title)));
+        fields.insert("claims".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+        fields.insert("subsections".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+        Ok(Value::Struct {
+            name: "Section".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Section·add_claim(section, claim) -> Section
+    define(interp, "Section·add_claim", Some(2), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Section" => {
+                let mut new_fields = fields.borrow().clone();
+                if let Some(Value::Array(claims)) = new_fields.get("claims") {
+                    claims.borrow_mut().push(args[1].clone());
+                }
+                Ok(Value::Struct {
+                    name: "Section".to_string(),
+                    fields: Rc::new(RefCell::new(new_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("Section·add_claim: expected Section struct")),
+        }
+    });
+
+    // Doc·new(meta, summary) -> Doc
+    define(interp, "Doc·new", Some(2), |_, args| {
+        let meta = args[0].clone();
+        let summary = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Doc·new: summary must be string")),
+        };
+
+        let mut fields = HashMap::new();
+        fields.insert("meta".to_string(), meta);
+        fields.insert("summary".to_string(), Value::String(Rc::new(summary)));
+        fields.insert("sections".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+        fields.insert("examples".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+        fields.insert("see_also".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+        Ok(Value::Struct {
+            name: "Doc".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Doc·add_section(doc, section) -> Doc
+    define(interp, "Doc·add_section", Some(2), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Doc" => {
+                let mut new_fields = fields.borrow().clone();
+                if let Some(Value::Array(sections)) = new_fields.get("sections") {
+                    sections.borrow_mut().push(args[1].clone());
+                }
+                Ok(Value::Struct {
+                    name: "Doc".to_string(),
+                    fields: Rc::new(RefCell::new(new_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("Doc·add_section: expected Doc struct")),
+        }
+    });
+
+    // =========================================================================
+    // Example Constructors
+    // =========================================================================
+
+    // Example·new(title, code, expected_output) -> Example
+    define(interp, "Example·new", Some(3), |_, args| {
+        let title = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Example·new: title must be string")),
+        };
+        let code = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Example·new: code must be string")),
+        };
+        let expected = args[2].clone();
+
+        let mut fields = HashMap::new();
+        fields.insert("title".to_string(), Value::String(Rc::new(title)));
+        fields.insert("code".to_string(), Value::String(Rc::new(code)));
+        fields.insert("expected".to_string(), expected);
+        fields.insert("verified".to_string(), Value::Bool(false));
+
+        Ok(Value::Struct {
+            name: "Example".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Example·verify(example) -> Example with verified = true
+    define(interp, "Example·verify", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Example" => {
+                let mut new_fields = fields.borrow().clone();
+                new_fields.insert("verified".to_string(), Value::Bool(true));
+                Ok(Value::Struct {
+                    name: "Example".to_string(),
+                    fields: Rc::new(RefCell::new(new_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("Example·verify: expected Example struct")),
+        }
+    });
+
+    // =========================================================================
+    // Reference Constructors
+    // =========================================================================
+
+    // SpecRef·new(spec, section) -> SpecRef
+    define(interp, "SpecRef·new", Some(2), |_, args| {
+        let spec = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("SpecRef·new: spec must be string")),
+        };
+        let section = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("SpecRef·new: section must be string")),
+        };
+
+        let mut fields = HashMap::new();
+        fields.insert("spec".to_string(), Value::String(Rc::new(spec)));
+        fields.insert("section".to_string(), Value::String(Rc::new(section)));
+        fields.insert("verified".to_string(), Value::Bool(false));
+
+        Ok(Value::Struct {
+            name: "SpecRef".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // CodeRef·new(path, symbol?) -> CodeRef
+    define(interp, "CodeRef·new", Some(2), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("CodeRef·new: path must be string")),
+        };
+        let symbol = match &args[1] {
+            Value::String(s) => Value::String(s.clone()),
+            _ => Value::Null,
+        };
+
+        let mut fields = HashMap::new();
+        fields.insert("path".to_string(), Value::String(Rc::new(path)));
+        fields.insert("symbol".to_string(), symbol);
+        fields.insert("line".to_string(), Value::Null);
+
+        Ok(Value::Struct {
+            name: "CodeRef".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // TestRef·new(file, test_name) -> TestRef
+    define(interp, "TestRef·new", Some(2), |_, args| {
+        let file = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("TestRef·new: file must be string")),
+        };
+        let test_name = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("TestRef·new: test_name must be string")),
+        };
+
+        let mut fields = HashMap::new();
+        fields.insert("file".to_string(), Value::String(Rc::new(file)));
+        fields.insert("test_name".to_string(), Value::String(Rc::new(test_name)));
+        fields.insert("last_run".to_string(), Value::Null);
+        fields.insert("passed".to_string(), Value::Null);
+
+        Ok(Value::Struct {
+            name: "TestRef".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // =========================================================================
+    // Claim Operations
+    // =========================================================================
+
+    // Claim·promote(claim, test_ref) -> Claim!
+    // Promote a claim to verified by adding test evidence
+    define(interp, "Claim·promote", Some(2), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Claim" => {
+                let mut new_fields = fields.borrow().clone();
+                new_fields.insert("evidentiality".to_string(), Value::String(Rc::new("verified".to_string())));
+                new_fields.insert("test_ref".to_string(), args[1].clone());
+
+                // Update the evidential wrapper
+                if let Some(Value::Evidential { value, .. }) = new_fields.get("evidence") {
+                    new_fields.insert("evidence".to_string(), Value::Evidential {
+                        value: value.clone(),
+                        evidence: Evidence::Known,
+                    });
+                }
+
+                Ok(Value::Struct {
+                    name: "Claim".to_string(),
+                    fields: Rc::new(RefCell::new(new_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("Claim·promote: expected Claim struct")),
+        }
+    });
+
+    // Claim·demote(claim) -> Claim?
+    // Demote a claim to uncertain (e.g., when test fails)
+    define(interp, "Claim·demote", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Claim" => {
+                let mut new_fields = fields.borrow().clone();
+                new_fields.insert("evidentiality".to_string(), Value::String(Rc::new("uncertain".to_string())));
+
+                // Update the evidential wrapper
+                if let Some(Value::Evidential { value, .. }) = new_fields.get("evidence") {
+                    new_fields.insert("evidence".to_string(), Value::Evidential {
+                        value: value.clone(),
+                        evidence: Evidence::Uncertain,
+                    });
+                }
+
+                Ok(Value::Struct {
+                    name: "Claim".to_string(),
+                    fields: Rc::new(RefCell::new(new_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("Claim·demote: expected Claim struct")),
+        }
+    });
+
+    // Claim·is_verified(claim) -> bool
+    define(interp, "Claim·is_verified", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Claim" => {
+                let fields = fields.borrow();
+                match fields.get("evidentiality") {
+                    Some(Value::String(s)) => Ok(Value::Bool(s.as_str() == "verified")),
+                    _ => Ok(Value::Bool(false)),
+                }
+            }
+            _ => Ok(Value::Bool(false)),
+        }
+    });
+
+    // =========================================================================
+    // Verification and Rendering
+    // =========================================================================
+
+    // Doc·verify(doc) -> VerificationReport
+    // Placeholder - full implementation would run tests and check refs
+    define(interp, "Doc·verify", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Doc" => {
+                let fields = fields.borrow();
+
+                // Count claims by evidentiality
+                let mut verified = 0i64;
+                let mut reported = 0i64;
+                let mut uncertain = 0i64;
+                let mut predicted = 0i64;
+
+                if let Some(Value::Array(sections)) = fields.get("sections") {
+                    for section in sections.borrow().iter() {
+                        if let Value::Struct { fields: sec_fields, .. } = section {
+                            if let Some(Value::Array(claims)) = sec_fields.borrow().get("claims") {
+                                for claim in claims.borrow().iter() {
+                                    if let Value::Struct { fields: claim_fields, .. } = claim {
+                                        if let Some(Value::String(ev)) = claim_fields.borrow().get("evidentiality") {
+                                            match ev.as_str() {
+                                                "verified" => verified += 1,
+                                                "reported" => reported += 1,
+                                                "uncertain" => uncertain += 1,
+                                                "predicted" => predicted += 1,
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let mut report_fields = HashMap::new();
+                report_fields.insert("verified_count".to_string(), Value::Int(verified));
+                report_fields.insert("reported_count".to_string(), Value::Int(reported));
+                report_fields.insert("uncertain_count".to_string(), Value::Int(uncertain));
+                report_fields.insert("predicted_count".to_string(), Value::Int(predicted));
+                report_fields.insert("total_claims".to_string(), Value::Int(verified + reported + uncertain + predicted));
+                report_fields.insert("verification_ratio".to_string(),
+                    if verified + reported + uncertain + predicted > 0 {
+                        Value::Float(verified as f64 / (verified + reported + uncertain + predicted) as f64)
+                    } else {
+                        Value::Float(0.0)
+                    }
+                );
+                report_fields.insert("failures".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                Ok(Value::Struct {
+                    name: "VerificationReport".to_string(),
+                    fields: Rc::new(RefCell::new(report_fields)),
+                })
+            }
+            _ => Err(RuntimeError::new("Doc·verify: expected Doc struct")),
+        }
+    });
+
+    // Doc·to_markdown(doc) -> String
+    // Render document to markdown with evidentiality badges
+    define(interp, "Doc·to_markdown", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Doc" => {
+                let fields = fields.borrow();
+                let mut md = String::new();
+
+                // Title from meta
+                if let Some(Value::Struct { fields: meta_fields, .. }) = fields.get("meta") {
+                    if let Some(Value::String(title)) = meta_fields.borrow().get("title") {
+                        md.push_str(&format!("# {}\n\n", title));
+                    }
+                }
+
+                // Summary
+                if let Some(Value::String(summary)) = fields.get("summary") {
+                    md.push_str(&format!("{}\n\n", summary));
+                }
+
+                // Sections
+                if let Some(Value::Array(sections)) = fields.get("sections") {
+                    for section in sections.borrow().iter() {
+                        if let Value::Struct { fields: sec_fields, .. } = section {
+                            let sec_fields = sec_fields.borrow();
+                            if let (Some(Value::String(id)), Some(Value::String(title))) =
+                                (sec_fields.get("id"), sec_fields.get("title")) {
+                                md.push_str(&format!("## {} {}\n\n", id, title));
+                            }
+
+                            // Claims with badges
+                            if let Some(Value::Array(claims)) = sec_fields.get("claims") {
+                                for claim in claims.borrow().iter() {
+                                    if let Value::Struct { fields: claim_fields, .. } = claim {
+                                        let claim_fields = claim_fields.borrow();
+                                        let badge = match claim_fields.get("evidentiality") {
+                                            Some(Value::String(s)) => match s.as_str() {
+                                                "verified" => "✓",
+                                                "reported" => "○",
+                                                "uncertain" => "?",
+                                                "predicted" => "◊",
+                                                _ => "-",
+                                            },
+                                            _ => "-",
+                                        };
+                                        if let Some(Value::String(content)) = claim_fields.get("content") {
+                                            md.push_str(&format!("- {} {}\n", badge, content));
+                                        }
+                                    }
+                                }
+                            }
+                            md.push('\n');
+                        }
+                    }
+                }
+
+                Ok(Value::String(Rc::new(md)))
+            }
+            _ => Err(RuntimeError::new("Doc·to_markdown: expected Doc struct")),
+        }
+    });
+
+    // Doc·to_html(doc) -> String
+    // Render document to HTML with evidentiality styling
+    define(interp, "Doc·to_html", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Doc" => {
+                let fields = fields.borrow();
+                let mut html = String::new();
+
+                html.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+                html.push_str("<meta charset=\"UTF-8\">\n");
+                html.push_str("<style>\n");
+                html.push_str(".claim { padding: 0.25em 0.5em; margin: 0.25em 0; border-left: 3px solid; }\n");
+                html.push_str(".verified { border-color: #22c55e; background: #f0fdf4; }\n");
+                html.push_str(".reported { border-color: #3b82f6; background: #eff6ff; }\n");
+                html.push_str(".uncertain { border-color: #f59e0b; background: #fffbeb; }\n");
+                html.push_str(".predicted { border-color: #8b5cf6; background: #f5f3ff; }\n");
+                html.push_str(".badge { font-weight: bold; margin-right: 0.5em; }\n");
+                html.push_str(".badge-verified::before { content: '✓'; color: #22c55e; }\n");
+                html.push_str(".badge-reported::before { content: '○'; color: #3b82f6; }\n");
+                html.push_str(".badge-uncertain::before { content: '?'; color: #f59e0b; }\n");
+                html.push_str(".badge-predicted::before { content: '◊'; color: #8b5cf6; }\n");
+                html.push_str("</style>\n");
+
+                // Title from meta
+                if let Some(Value::Struct { fields: meta_fields, .. }) = fields.get("meta") {
+                    if let Some(Value::String(title)) = meta_fields.borrow().get("title") {
+                        html.push_str(&format!("<title>{}</title>\n", title));
+                    }
+                }
+                html.push_str("</head>\n<body>\n");
+
+                // Title as h1
+                if let Some(Value::Struct { fields: meta_fields, .. }) = fields.get("meta") {
+                    if let Some(Value::String(title)) = meta_fields.borrow().get("title") {
+                        html.push_str(&format!("<h1>{}</h1>\n", title));
+                    }
+                }
+
+                // Summary
+                if let Some(Value::String(summary)) = fields.get("summary") {
+                    html.push_str(&format!("<p class=\"summary\">{}</p>\n", summary));
+                }
+
+                // Sections
+                if let Some(Value::Array(sections)) = fields.get("sections") {
+                    for section in sections.borrow().iter() {
+                        if let Value::Struct { fields: sec_fields, .. } = section {
+                            let sec_fields = sec_fields.borrow();
+                            if let (Some(Value::String(id)), Some(Value::String(title))) =
+                                (sec_fields.get("id"), sec_fields.get("title")) {
+                                html.push_str(&format!("<h2 id=\"section-{}\">{} {}</h2>\n", id, id, title));
+                            }
+
+                            // Claims with styling
+                            if let Some(Value::Array(claims)) = sec_fields.get("claims") {
+                                html.push_str("<div class=\"claims\">\n");
+                                for claim in claims.borrow().iter() {
+                                    if let Value::Struct { fields: claim_fields, .. } = claim {
+                                        let claim_fields = claim_fields.borrow();
+                                        let (css_class, badge_class) = match claim_fields.get("evidentiality") {
+                                            Some(Value::String(s)) => match s.as_str() {
+                                                "verified" => ("verified", "badge-verified"),
+                                                "reported" => ("reported", "badge-reported"),
+                                                "uncertain" => ("uncertain", "badge-uncertain"),
+                                                "predicted" => ("predicted", "badge-predicted"),
+                                                _ => ("", ""),
+                                            },
+                                            _ => ("", ""),
+                                        };
+                                        if let Some(Value::String(content)) = claim_fields.get("content") {
+                                            html.push_str(&format!(
+                                                "<div class=\"claim {}\"><span class=\"badge {}\"></span>{}</div>\n",
+                                                css_class, badge_class, content
+                                            ));
+                                        }
+                                    }
+                                }
+                                html.push_str("</div>\n");
+                            }
+                        }
+                    }
+                }
+
+                html.push_str("</body>\n</html>");
+                Ok(Value::String(Rc::new(html)))
+            }
+            _ => Err(RuntimeError::new("Doc·to_html: expected Doc struct")),
+        }
+    });
+
+    // Doc·to_json(doc) -> String
+    // Render document to JSON for tooling
+    define(interp, "Doc·to_json", Some(1), |_, args| {
+        // Reuse the JSON serialization from json module
+        match &args[0] {
+            Value::Struct { .. } => {
+                // Simple JSON serialization
+                fn value_to_json(v: &Value, depth: usize) -> String {
+                    if depth > 20 { return "\"...\"".to_string(); }
+                    match v {
+                        Value::Null => "null".to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        Value::Int(n) => n.to_string(),
+                        Value::Float(f) => f.to_string(),
+                        Value::String(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+                        Value::Array(arr) => {
+                            let items: Vec<String> = arr.borrow().iter()
+                                .map(|v| value_to_json(v, depth + 1))
+                                .collect();
+                            format!("[{}]", items.join(", "))
+                        }
+                        Value::Struct { name, fields } => {
+                            let mut pairs: Vec<String> = vec![
+                                format!("\"__type__\": \"{}\"", name)
+                            ];
+                            for (k, v) in fields.borrow().iter() {
+                                pairs.push(format!("\"{}\": {}", k, value_to_json(v, depth + 1)));
+                            }
+                            format!("{{{}}}", pairs.join(", "))
+                        }
+                        Value::Evidential { value, evidence } => {
+                            let ev_str = match evidence {
+                                Evidence::Known => "verified",
+                                Evidence::Reported => "reported",
+                                Evidence::Uncertain => "uncertain",
+                                Evidence::Predicted => "predicted",
+                                Evidence::Paradox => "paradox",
+                            };
+                            format!("{{\"__evidential__\": \"{}\", \"value\": {}}}", ev_str, value_to_json(value, depth + 1))
+                        }
+                        _ => format!("\"<{:?}>\"", v),
+                    }
+                }
+                Ok(Value::String(Rc::new(value_to_json(&args[0], 0))))
+            }
+            _ => Err(RuntimeError::new("Doc·to_json: expected Doc struct")),
+        }
+    });
+
+    // =========================================================================
+    // Query Functions
+    // =========================================================================
+
+    // Doc·claims(doc) -> Vec<Claim>
+    // Extract all claims from a document
+    define(interp, "Doc·claims", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Doc" => {
+                let fields = fields.borrow();
+                let mut all_claims = Vec::new();
+
+                if let Some(Value::Array(sections)) = fields.get("sections") {
+                    for section in sections.borrow().iter() {
+                        if let Value::Struct { fields: sec_fields, .. } = section {
+                            if let Some(Value::Array(claims)) = sec_fields.borrow().get("claims") {
+                                for claim in claims.borrow().iter() {
+                                    all_claims.push(claim.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(Value::Array(Rc::new(RefCell::new(all_claims))))
+            }
+            _ => Err(RuntimeError::new("Doc·claims: expected Doc struct")),
+        }
+    });
+
+    // Doc·unverified_claims(doc) -> Vec<Claim>
+    // Extract claims that are not verified
+    define(interp, "Doc·unverified_claims", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Doc" => {
+                let fields = fields.borrow();
+                let mut unverified = Vec::new();
+
+                if let Some(Value::Array(sections)) = fields.get("sections") {
+                    for section in sections.borrow().iter() {
+                        if let Value::Struct { fields: sec_fields, .. } = section {
+                            if let Some(Value::Array(claims)) = sec_fields.borrow().get("claims") {
+                                for claim in claims.borrow().iter() {
+                                    if let Value::Struct { fields: claim_fields, .. } = claim {
+                                        if let Some(Value::String(ev)) = claim_fields.borrow().get("evidentiality") {
+                                            if ev.as_str() != "verified" {
+                                                unverified.push(claim.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(Value::Array(Rc::new(RefCell::new(unverified))))
+            }
+            _ => Err(RuntimeError::new("Doc·unverified_claims: expected Doc struct")),
+        }
+    });
+
+    // =========================================================================
+    // Source Code Extraction
+    // =========================================================================
+
+    // Doc·extract(source_path) -> Doc
+    // Extract documentation from a Sigil source file by parsing its doc comments
+    // Returns a Doc with sections for each documented item
+    define(interp, "Doc·extract", Some(1), |_, args| {
+        use crate::{Parser, ast::{Evidentiality as AstEvidentiality, Item}};
+        use std::fs;
+
+        let source_path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Doc·extract: source_path must be string")),
+        };
+
+        // Read the source file
+        let source = match fs::read_to_string(&source_path) {
+            Ok(s) => s,
+            Err(e) => return Err(RuntimeError::new(format!("Doc·extract: failed to read file: {}", e))),
+        };
+
+        // Parse the file
+        let mut parser = Parser::new(&source);
+        let file = match parser.parse_file() {
+            Ok(f) => f,
+            Err(e) => return Err(RuntimeError::new(format!("Doc·extract: parse error: {}", e))),
+        };
+
+        // Helper: convert AST evidentiality to SGDOC string
+        fn evidentiality_to_string(ev: &AstEvidentiality) -> &'static str {
+            match ev {
+                AstEvidentiality::Known => "verified",
+                AstEvidentiality::Reported => "reported",
+                AstEvidentiality::Uncertain => "uncertain",
+                AstEvidentiality::Predicted => "predicted",
+                AstEvidentiality::Paradox => "paradox",
+            }
+        }
+
+        // Helper: convert AST evidentiality to Evidence enum
+        fn evidentiality_to_evidence(ev: &AstEvidentiality) -> Evidence {
+            match ev {
+                AstEvidentiality::Known => Evidence::Known,
+                AstEvidentiality::Reported => Evidence::Reported,
+                AstEvidentiality::Uncertain => Evidence::Uncertain,
+                AstEvidentiality::Predicted => Evidence::Predicted,
+                AstEvidentiality::Paradox => Evidence::Paradox,
+            }
+        }
+
+        // Helper: create a Claim from a doc comment
+        fn doc_comment_to_claim(content: String, evidentiality: &AstEvidentiality, is_inner: bool, line: usize) -> Value {
+            let mut fields = HashMap::new();
+            let ev_str = evidentiality_to_string(evidentiality);
+            let content_rc = Rc::new(content);
+
+            fields.insert("content".to_string(), Value::String(Rc::clone(&content_rc)));
+            fields.insert("evidentiality".to_string(), Value::String(Rc::new(ev_str.to_string())));
+            fields.insert("is_inner".to_string(), Value::Bool(is_inner));
+            fields.insert("line".to_string(), Value::Int(line as i64));
+            fields.insert("evidence".to_string(), Value::Evidential {
+                value: Box::new(Value::String(Rc::clone(&content_rc))),
+                evidence: evidentiality_to_evidence(evidentiality),
+            });
+            fields.insert("test_ref".to_string(), Value::Null);
+            fields.insert("spec_ref".to_string(), Value::Null);
+
+            Value::Struct {
+                name: "Claim".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            }
+        }
+
+        // Helper: create a Section from claims
+        fn create_section(id: String, title: String, item_type: String, claims: Vec<Value>) -> Value {
+            let mut fields = HashMap::new();
+            fields.insert("id".to_string(), Value::String(Rc::new(id)));
+            fields.insert("title".to_string(), Value::String(Rc::new(title)));
+            fields.insert("item_type".to_string(), Value::String(Rc::new(item_type)));
+            fields.insert("claims".to_string(), Value::Array(Rc::new(RefCell::new(claims))));
+            fields.insert("examples".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+            fields.insert("subsections".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+            Value::Struct {
+                name: "Section".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            }
+        }
+
+        // Helper: convert TypeExpr to string for display
+        fn type_expr_to_string(ty: &crate::ast::TypeExpr) -> String {
+            use crate::ast::TypeExpr;
+            match ty {
+                TypeExpr::Path(path) => {
+                    path.segments.iter()
+                        .map(|seg| seg.ident.name.clone())
+                        .collect::<Vec<_>>()
+                        .join("::")
+                }
+                TypeExpr::Reference { mutable, inner, .. } => {
+                    if *mutable {
+                        format!("&mut {}", type_expr_to_string(inner))
+                    } else {
+                        format!("&{}", type_expr_to_string(inner))
+                    }
+                }
+                TypeExpr::Pointer { mutable, inner } => {
+                    if *mutable {
+                        format!("*mut {}", type_expr_to_string(inner))
+                    } else {
+                        format!("*const {}", type_expr_to_string(inner))
+                    }
+                }
+                TypeExpr::Array { element, .. } => {
+                    format!("[{}; N]", type_expr_to_string(element))
+                }
+                TypeExpr::Slice(inner) => {
+                    format!("[{}]", type_expr_to_string(inner))
+                }
+                TypeExpr::Tuple(types) => {
+                    let inner = types.iter()
+                        .map(|t| type_expr_to_string(t))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("({})", inner)
+                }
+                _ => "?".to_string(),
+            }
+        }
+
+        // Helper: convert TypePath to string for display
+        fn type_path_to_string(path: &crate::ast::TypePath) -> String {
+            path.segments.iter()
+                .map(|seg| seg.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::")
+        }
+
+        // Extract sections from items
+        let mut sections = Vec::new();
+        let mut section_counter = 0;
+
+        for spanned_item in &file.items {
+            let item = &spanned_item.node;
+            let (doc_comments, name, item_type): (&Vec<crate::ast::DocComment>, String, &str) = match item {
+                Item::Function(f) => {
+                    (&f.doc_comments, f.name.name.clone(), "function")
+                }
+                Item::Struct(s) => {
+                    (&s.doc_comments, s.name.name.clone(), "struct")
+                }
+                Item::Enum(e) => {
+                    (&e.doc_comments, e.name.name.clone(), "enum")
+                }
+                Item::Trait(t) => {
+                    (&t.doc_comments, t.name.name.clone(), "trait")
+                }
+                Item::Impl(i) => {
+                    let name = match &i.trait_ {
+                        Some(t) => format!("{}::{}", type_path_to_string(t), type_expr_to_string(&i.self_ty)),
+                        None => format!("impl {}", type_expr_to_string(&i.self_ty)),
+                    };
+                    (&i.doc_comments, name, "impl")
+                }
+                Item::Module(m) => {
+                    (&m.doc_comments, m.name.name.clone(), "module")
+                }
+                Item::Const(c) => {
+                    (&c.doc_comments, c.name.name.clone(), "const")
+                }
+                Item::Static(s) => {
+                    (&s.doc_comments, s.name.name.clone(), "static")
+                }
+                _ => continue, // Skip items without doc comment support
+            };
+
+            if doc_comments.is_empty() {
+                continue; // Skip undocumented items
+            }
+
+            section_counter += 1;
+            let section_id = format!("{}.{}", section_counter, item_type.chars().next().unwrap_or('x'));
+
+            let claims: Vec<Value> = doc_comments.iter().map(|dc| {
+                let line = dc.span.start; // Use span start as line number
+                doc_comment_to_claim(dc.content.clone(), &dc.evidentiality, dc.is_inner, line)
+            }).collect();
+
+            sections.push(create_section(section_id, name, item_type.to_string(), claims));
+        }
+
+        // Create the document
+        let file_name = std::path::Path::new(&source_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("untitled")
+            .to_string();
+
+        let meta = create_doc_meta(
+            format!("Documentation: {}", file_name),
+            (0, 1, 0),
+            "extracted"
+        );
+
+        let mut doc_fields = HashMap::new();
+        doc_fields.insert("meta".to_string(), meta);
+        doc_fields.insert("summary".to_string(), Value::String(Rc::new(
+            format!("Auto-extracted documentation from {}", source_path)
+        )));
+        doc_fields.insert("sections".to_string(), Value::Array(Rc::new(RefCell::new(sections))));
+
+        Ok(Value::Struct {
+            name: "Doc".to_string(),
+            fields: Rc::new(RefCell::new(doc_fields)),
+        })
+    });
+
+    // Doc·extract_string(source_code, file_name) -> Doc
+    // Extract documentation from a source string (no file I/O)
+    define(interp, "Doc·extract_string", Some(2), |_, args| {
+        use crate::{Parser, ast::{Evidentiality as AstEvidentiality, Item}};
+
+        let source = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Doc·extract_string: source must be string")),
+        };
+
+        let file_name = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Doc·extract_string: file_name must be string")),
+        };
+
+        // Parse the source
+        let mut parser = Parser::new(&source);
+        let file = match parser.parse_file() {
+            Ok(f) => f,
+            Err(e) => return Err(RuntimeError::new(format!("Doc·extract_string: parse error: {}", e))),
+        };
+
+        // Helper: convert AST evidentiality to SGDOC string
+        fn evidentiality_to_string(ev: &AstEvidentiality) -> &'static str {
+            match ev {
+                AstEvidentiality::Known => "verified",
+                AstEvidentiality::Reported => "reported",
+                AstEvidentiality::Uncertain => "uncertain",
+                AstEvidentiality::Predicted => "predicted",
+                AstEvidentiality::Paradox => "paradox",
+            }
+        }
+
+        // Helper: convert AST evidentiality to Evidence enum
+        fn evidentiality_to_evidence(ev: &AstEvidentiality) -> Evidence {
+            match ev {
+                AstEvidentiality::Known => Evidence::Known,
+                AstEvidentiality::Reported => Evidence::Reported,
+                AstEvidentiality::Uncertain => Evidence::Uncertain,
+                AstEvidentiality::Predicted => Evidence::Predicted,
+                AstEvidentiality::Paradox => Evidence::Paradox,
+            }
+        }
+
+        // Helper: create a Claim from a doc comment
+        fn doc_comment_to_claim(content: String, evidentiality: &AstEvidentiality, is_inner: bool, line: usize) -> Value {
+            let mut fields = HashMap::new();
+            let ev_str = evidentiality_to_string(evidentiality);
+            let content_rc = Rc::new(content);
+
+            fields.insert("content".to_string(), Value::String(Rc::clone(&content_rc)));
+            fields.insert("evidentiality".to_string(), Value::String(Rc::new(ev_str.to_string())));
+            fields.insert("is_inner".to_string(), Value::Bool(is_inner));
+            fields.insert("line".to_string(), Value::Int(line as i64));
+            fields.insert("evidence".to_string(), Value::Evidential {
+                value: Box::new(Value::String(Rc::clone(&content_rc))),
+                evidence: evidentiality_to_evidence(evidentiality),
+            });
+            fields.insert("test_ref".to_string(), Value::Null);
+            fields.insert("spec_ref".to_string(), Value::Null);
+
+            Value::Struct {
+                name: "Claim".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            }
+        }
+
+        // Helper: create a Section from claims
+        fn create_section(id: String, title: String, item_type: String, claims: Vec<Value>) -> Value {
+            let mut fields = HashMap::new();
+            fields.insert("id".to_string(), Value::String(Rc::new(id)));
+            fields.insert("title".to_string(), Value::String(Rc::new(title)));
+            fields.insert("item_type".to_string(), Value::String(Rc::new(item_type)));
+            fields.insert("claims".to_string(), Value::Array(Rc::new(RefCell::new(claims))));
+            fields.insert("examples".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+            fields.insert("subsections".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+            Value::Struct {
+                name: "Section".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            }
+        }
+
+        // Helper: convert TypeExpr to string for display
+        fn type_expr_to_string(ty: &crate::ast::TypeExpr) -> String {
+            use crate::ast::TypeExpr;
+            match ty {
+                TypeExpr::Path(path) => {
+                    path.segments.iter()
+                        .map(|seg| seg.ident.name.clone())
+                        .collect::<Vec<_>>()
+                        .join("::")
+                }
+                TypeExpr::Reference { mutable, inner, .. } => {
+                    if *mutable {
+                        format!("&mut {}", type_expr_to_string(inner))
+                    } else {
+                        format!("&{}", type_expr_to_string(inner))
+                    }
+                }
+                TypeExpr::Pointer { mutable, inner } => {
+                    if *mutable {
+                        format!("*mut {}", type_expr_to_string(inner))
+                    } else {
+                        format!("*const {}", type_expr_to_string(inner))
+                    }
+                }
+                TypeExpr::Array { element, .. } => {
+                    format!("[{}; N]", type_expr_to_string(element))
+                }
+                TypeExpr::Slice(inner) => {
+                    format!("[{}]", type_expr_to_string(inner))
+                }
+                TypeExpr::Tuple(types) => {
+                    let inner = types.iter()
+                        .map(|t| type_expr_to_string(t))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("({})", inner)
+                }
+                _ => "?".to_string(),
+            }
+        }
+
+        // Helper: convert TypePath to string for display
+        fn type_path_to_string(path: &crate::ast::TypePath) -> String {
+            path.segments.iter()
+                .map(|seg| seg.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::")
+        }
+
+        // Extract sections from items
+        let mut sections = Vec::new();
+        let mut section_counter = 0;
+
+        for spanned_item in &file.items {
+            let item = &spanned_item.node;
+            let (doc_comments, name, item_type): (&Vec<crate::ast::DocComment>, String, &str) = match item {
+                Item::Function(f) => {
+                    (&f.doc_comments, f.name.name.clone(), "function")
+                }
+                Item::Struct(s) => {
+                    (&s.doc_comments, s.name.name.clone(), "struct")
+                }
+                Item::Enum(e) => {
+                    (&e.doc_comments, e.name.name.clone(), "enum")
+                }
+                Item::Trait(t) => {
+                    (&t.doc_comments, t.name.name.clone(), "trait")
+                }
+                Item::Impl(i) => {
+                    let name = match &i.trait_ {
+                        Some(t) => format!("{}::{}", type_path_to_string(t), type_expr_to_string(&i.self_ty)),
+                        None => format!("impl {}", type_expr_to_string(&i.self_ty)),
+                    };
+                    (&i.doc_comments, name, "impl")
+                }
+                Item::Module(m) => {
+                    (&m.doc_comments, m.name.name.clone(), "module")
+                }
+                Item::Const(c) => {
+                    (&c.doc_comments, c.name.name.clone(), "const")
+                }
+                Item::Static(s) => {
+                    (&s.doc_comments, s.name.name.clone(), "static")
+                }
+                _ => continue, // Skip items without doc comment support
+            };
+
+            if doc_comments.is_empty() {
+                continue; // Skip undocumented items
+            }
+
+            section_counter += 1;
+            let section_id = format!("{}.{}", section_counter, item_type.chars().next().unwrap_or('x'));
+
+            let claims: Vec<Value> = doc_comments.iter().map(|dc| {
+                let line = dc.span.start; // Use span start as line number
+                doc_comment_to_claim(dc.content.clone(), &dc.evidentiality, dc.is_inner, line)
+            }).collect();
+
+            sections.push(create_section(section_id, name, item_type.to_string(), claims));
+        }
+
+        // Create the document
+        let meta = create_doc_meta(
+            format!("Documentation: {}", file_name),
+            (0, 1, 0),
+            "extracted"
+        );
+
+        let mut doc_fields = HashMap::new();
+        doc_fields.insert("meta".to_string(), meta);
+        doc_fields.insert("summary".to_string(), Value::String(Rc::new(
+            format!("Auto-extracted documentation from {}", file_name)
+        )));
+        doc_fields.insert("sections".to_string(), Value::Array(Rc::new(RefCell::new(sections))));
+
+        Ok(Value::Struct {
+            name: "Doc".to_string(),
+            fields: Rc::new(RefCell::new(doc_fields)),
+        })
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -39173,5 +40520,210 @@ mod tests {
             );
             assert!(matches!(result, Ok(Value::Int(30))));
         }
+    }
+
+    // ========== SGDOC TESTS ==========
+
+    #[test]
+    fn test_sgdoc_claim_verified() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ claim = Claim·verified("Test claim", "test.sg");
+                ⤺ Claim·is_verified(claim);
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Bool(true))));
+    }
+
+    #[test]
+    fn test_sgdoc_claim_shorthand() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ v = Claim·v("Verified");
+                ≔ r = Claim·r("Reported");
+                ≔ u = Claim·u("Uncertain");
+                ≔ p = Claim·p("Predicted");
+                ⤺ Claim·is_verified(v);
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Bool(true))));
+    }
+
+    #[test]
+    fn test_sgdoc_claim_not_verified() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ claim = Claim·uncertain("Needs investigation");
+                ⤺ Claim·is_verified(claim);
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Bool(false))));
+    }
+
+    #[test]
+    fn test_sgdoc_claim_promote() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ claim = Claim·uncertain("Was uncertain");
+                ≔ promoted = Claim·promote(claim, "test.sg");
+                ⤺ Claim·is_verified(promoted);
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Bool(true))));
+    }
+
+    #[test]
+    fn test_sgdoc_claim_demote() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ claim = Claim·verified("Was verified", "test.sg");
+                ≔ demoted = Claim·demote(claim);
+                ⤺ Claim·is_verified(demoted);
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Bool(false))));
+    }
+
+    #[test]
+    fn test_sgdoc_doc_new() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ meta = DocMeta·new("Test", 0, 4, 0);
+                ≔ doc = Doc·new(meta, "Summary");
+                ⤺ 1;
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Int(1))));
+    }
+
+    #[test]
+    fn test_sgdoc_section_add_claim() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ claim = Claim·v("Test");
+                ≔ Δ section = Section·new("1", "First");
+                section = Section·add_claim(section, claim);
+                ⤺ 1;
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Int(1))));
+    }
+
+    #[test]
+    fn test_sgdoc_doc_verify() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ meta = DocMeta·new("Test", 0, 4, 0);
+                ≔ Δ doc = Doc·new(meta, "Summary");
+                ≔ Δ section = Section·new("1", "Section");
+                section = Section·add_claim(section, Claim·v("Verified"));
+                section = Section·add_claim(section, Claim·r("Reported"));
+                doc = Doc·add_section(doc, section);
+                ≔ report = Doc·verify(doc);
+                ⤺ 1;
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Int(1))));
+    }
+
+    #[test]
+    fn test_sgdoc_doc_unverified_claims() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ meta = DocMeta·new("Test", 0, 4, 0);
+                ≔ Δ doc = Doc·new(meta, "Summary");
+                ≔ Δ section = Section·new("1", "Section");
+                section = Section·add_claim(section, Claim·v("Verified"));
+                section = Section·add_claim(section, Claim·r("Reported"));
+                section = Section·add_claim(section, Claim·u("Uncertain"));
+                doc = Doc·add_section(doc, section);
+                ≔ unverified = Doc·unverified_claims(doc);
+                ⤺ len(unverified);
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Int(2))));
+    }
+
+    #[test]
+    fn test_sgdoc_example_verify() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ ex = Example·new("Test", "code", "output");
+                ≔ verified = Example·verify(ex);
+                ⤺ 1;
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Int(1))));
+    }
+
+    #[test]
+    fn test_sgdoc_to_markdown() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ meta = DocMeta·new("Test", 0, 4, 0);
+                ≔ Δ doc = Doc·new(meta, "Summary");
+                ≔ Δ section = Section·new("1", "Section");
+                section = Section·add_claim(section, Claim·v("Verified claim"));
+                doc = Doc·add_section(doc, section);
+                ≔ md = Doc·to_markdown(doc);
+                ⤺ contains(md, "Test");
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Bool(true))));
+    }
+
+    #[test]
+    fn test_sgdoc_to_html() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ meta = DocMeta·new("Test", 0, 4, 0);
+                ≔ Δ doc = Doc·new(meta, "Summary");
+                ≔ Δ section = Section·new("1", "Section");
+                section = Section·add_claim(section, Claim·v("Verified claim"));
+                doc = Doc·add_section(doc, section);
+                ≔ html = Doc·to_html(doc);
+                ⤺ contains(html, "<html");
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Bool(true))));
+    }
+
+    #[test]
+    fn test_sgdoc_to_json() {
+        let result = eval(
+            r#"
+            λ main() {
+                ≔ meta = DocMeta·new("Test", 0, 4, 0);
+                ≔ doc = Doc·new(meta, "Summary");
+                ≔ json = Doc·to_json(doc);
+                ⤺ contains(json, "Doc");
+            }
+        "#,
+        );
+        assert!(matches!(result, Ok(Value::Bool(true))));
     }
 }

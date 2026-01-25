@@ -1,5 +1,8 @@
 # Neural Networks and Differentiable Programming
 
+> **Status:** ~ Experimental (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 > *"A neural network is a function approximator that learns its own features."*
 
 > *"The weights of a trained network holographically encode the training data."*

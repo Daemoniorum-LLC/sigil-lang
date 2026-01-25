@@ -1,5 +1,8 @@
 # Sigil Lexical Specification
 
+> **Status:** ! Stable (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 ## 1. Character Set
 
 Sigil source files are UTF-8 encoded. The language uses both ASCII operators and Unicode sigils for maximum expressiveness.
