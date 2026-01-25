@@ -1,0 +1,725 @@
+//! # DAEMONIORUM Audio System
+//!
+//! Atmospheric audio engine designed for psychological horror with plurality mechanics.
+//!
+//! ## Architecture
+//!
+//! ```
+//!                          ┌─────────────────────┐
+//!                          │    AudioManager     │
+//!                          │  (main controller)  │
+//!                          └──────────┬──────────┘
+//!                                     │
+//!        ┌────────────────────────────┼────────────────────────────┐
+//!        │                            │                            │
+//!        ▼                            ▼                            ▼
+//! ┌─────────────┐             ┌─────────────┐             ┌─────────────┐
+//! │   Ambient   │             │    Music    │             │   Voices    │
+//! │   System    │             │   System    │             │   System    │
+//! └─────────────┘             └─────────────┘             └─────────────┘
+//!        │                            │                            │
+//!        ▼                            ▼                            ▼
+//! ┌─────────────┐             ┌─────────────┐             ┌─────────────┐
+//! │  Atmosphere │             │   Layers    │             │  Internal   │
+//! │   Loops     │             │  (stems)    │             │  Whispers   │
+//! └─────────────┘             └─────────────┘             └─────────────┘
+//!
+//!                          ┌─────────────────────┐
+//!                          │    Effects Bus      │
+//!                          │ (reverb, distort)   │
+//!                          └──────────┬──────────┘
+//!                                     │
+//!                          ┌──────────▼──────────┐
+//!                          │   Reality Filter    │
+//!                          │ (perception warp)   │
+//!                          └─────────────────────┘
+//! ```
+//!
+//! ## Key Features
+//!
+//! - **Reality-Aware Audio**: Sounds distort as reality fractures
+//! - **Alter Signatures**: Each alter has subtle audio presence
+//! - **Internal Voices**: Whispered system communication
+//! - **Reactive Music**: Stems layer based on tension/danger
+//! - **Spatial Audio**: 3D positioning for horror ambience
+
+pub mod sounds;
+pub mod ambient;
+pub mod music;
+pub mod effects;
+pub mod internal;
+
+use std::collections::HashMap;
+use std::time::Duration;
+
+use crate::system::{PluralSystem, Alter, RealityLayer};
+use crate::events::events::GameEvent;
+
+// ============================================================================
+// CORE AUDIO TYPES
+// ============================================================================
+
+/// Unique identifier for audio assets
+type AudioId = String;
+
+/// Audio channel for mixing
+type AudioChannel = enum {
+    /// Master channel (all audio routes through)
+    Master,
+    /// Sound effects (one-shots, impacts)
+    SFX,
+    /// Ambient loops (environment)
+    Ambient,
+    /// Music (layered stems)
+    Music,
+    /// Internal voices (system communication)
+    Voices,
+    /// UI sounds (menus, notifications)
+    UI,
+};
+
+/// Audio playback state
+type PlaybackState = enum {
+    /// Not playing
+    Stopped,
+    /// Currently playing
+    Playing,
+    /// Paused
+    Paused,
+    /// Fading in
+    FadingIn { target_volume: f32, remaining_ms: u64 },
+    /// Fading out
+    FadingOut { remaining_ms: u64 },
+};
+
+/// A loaded audio asset
+type AudioAsset = struct {
+    /// Unique identifier
+    id: AudioId!,
+    /// Display name
+    name: String!,
+    /// Asset path/URL
+    path: String!,
+    /// Duration in milliseconds
+    duration_ms: u64!,
+    /// Default volume (0.0 - 1.0)
+    default_volume: f32!,
+    /// Whether this loops
+    looping: bool!,
+    /// Channel this belongs to
+    channel: AudioChannel!,
+    /// Loaded and ready to play
+    loaded: bool!,
+};
+
+/// An active audio instance (playing sound)
+type AudioInstance = struct {
+    /// Instance ID (unique per playback)
+    instance_id: u64!,
+    /// Asset being played
+    asset_id: AudioId!,
+    /// Current playback state
+    state: PlaybackState!,
+    /// Current volume (0.0 - 1.0)
+    volume: f32!,
+    /// Playback rate (1.0 = normal)
+    playback_rate: f32!,
+    /// Current position in milliseconds
+    position_ms: u64!,
+    /// Spatial position (if 3D audio)
+    spatial_position: Option<SpatialPosition>?,
+    /// Applied effects
+    effects: Vec<AudioEffectId>!,
+};
+
+/// 3D spatial position for audio
+type SpatialPosition = struct {
+    x: f32!,
+    y: f32!,
+    z: f32!,
+};
+
+/// Audio effect identifier
+type AudioEffectId = String;
+
+// ============================================================================
+// AUDIO MANAGER
+// ============================================================================
+
+/// Main audio system controller
+type AudioManager = struct {
+    /// Loaded audio assets
+    assets: HashMap<AudioId, AudioAsset>!,
+    /// Active audio instances
+    instances: HashMap<u64, AudioInstance>!,
+    /// Next instance ID
+    next_instance_id: u64!,
+
+    /// Channel volumes
+    channel_volumes: HashMap<AudioChannel, f32>!,
+    /// Master volume
+    master_volume: f32!,
+    /// Muted state
+    muted: bool!,
+
+    /// Subsystems
+    ambient_system: ambient::AmbientSystem!,
+    music_system: music::MusicSystem!,
+    voice_system: internal::VoiceSystem!,
+    effects_bus: effects::EffectsBus!,
+
+    /// Current reality layer (affects audio processing)
+    reality_layer: RealityLayer!,
+    /// Reality distortion intensity (0.0 - 1.0)
+    reality_distortion: f32!,
+
+    /// Web Audio context handle (for WASM)
+    #[cfg(target_arch = "wasm32")]
+    audio_context: web_sys::AudioContext?,
+};
+
+impl AudioManager {
+    /// Create new audio manager
+    pub fn new() -> Self! {
+        let mut channel_volumes = HashMap::new();
+        channel_volumes·insert(AudioChannel::Master, 1.0);
+        channel_volumes·insert(AudioChannel::SFX, 0.8);
+        channel_volumes·insert(AudioChannel::Ambient, 0.6);
+        channel_volumes·insert(AudioChannel::Music, 0.7);
+        channel_volumes·insert(AudioChannel::Voices, 0.9);
+        channel_volumes·insert(AudioChannel::UI, 0.5);
+
+        Self {
+            assets: HashMap::new(),
+            instances: HashMap::new(),
+            next_instance_id: 1,
+            channel_volumes,
+            master_volume: 1.0,
+            muted: false,
+            ambient_system: ambient::AmbientSystem::new(),
+            music_system: music::MusicSystem::new(),
+            voice_system: internal::VoiceSystem::new(),
+            effects_bus: effects::EffectsBus::new(),
+            reality_layer: RealityLayer::Grounded,
+            reality_distortion: 0.0,
+            #[cfg(target_arch = "wasm32")]
+            audio_context: None,
+        }
+    }
+
+    /// Initialize audio system
+    pub fn init(mut self) -> Result<(), AudioError>! {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use web_sys::AudioContext;
+            self.audio_context = Some(AudioContext::new()
+                ·map_err(|_| AudioError::InitFailed("Failed to create AudioContext".to_string()))?);
+        }
+
+        // Initialize effects bus
+        self.effects_bus·init()?;
+
+        // Load core audio assets
+        self·load_core_assets()?;
+
+        Ok(())
+    }
+
+    /// Load core audio assets
+    fn load_core_assets(mut self) -> Result<(), AudioError>! {
+        // Register all sound effects
+        for sound in sounds::ALL_SOUNDS {
+            self·register_asset(sound·clone())?;
+        }
+
+        // Register ambient loops
+        for ambient in ambient::ALL_AMBIENT {
+            self·register_asset(ambient·clone())?;
+        }
+
+        // Register music stems
+        for stem in music::ALL_STEMS {
+            self·register_asset(stem·clone())?;
+        }
+
+        // Register voice samples
+        for voice in internal::ALL_VOICES {
+            self·register_asset(voice·clone())?;
+        }
+
+        Ok(())
+    }
+
+    /// Register an audio asset
+    pub fn register_asset(mut self, asset: AudioAsset) -> Result<(), AudioError>! {
+        self.assets·insert(asset.id·clone(), asset);
+        Ok(())
+    }
+
+    /// Load an asset (fetch audio data)
+    pub async fn load_asset(mut self, asset_id: &AudioId) -> Result<(), AudioError>! {
+        let asset = self.assets·get_mut(asset_id)
+            ·ok_or(AudioError::AssetNotFound(asset_id·clone()))?;
+
+        // In WASM, fetch and decode the audio
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Fetch audio file
+            // Decode to AudioBuffer
+            // Store buffer reference
+        }
+
+        asset.loaded = true;
+        Ok(())
+    }
+
+    // ========================================================================
+    // PLAYBACK CONTROL
+    // ========================================================================
+
+    /// Play a sound effect (one-shot)
+    pub fn play_sfx(mut self, sound_id: &str) -> Result<u64, AudioError>! {
+        self·play(sound_id, PlayOptions {
+            channel: AudioChannel::SFX,
+            volume: None,
+            looping: false,
+            fade_in_ms: None,
+            spatial: None,
+        })
+    }
+
+    /// Play a sound with options
+    pub fn play(mut self, asset_id: &str, options: PlayOptions) -> Result<u64, AudioError>! {
+        let asset = self.assets·get(asset_id)
+            ·ok_or(AudioError::AssetNotFound(asset_id.to_string()))?;
+
+        if !asset.loaded {
+            return Err(AudioError::AssetNotLoaded(asset_id.to_string()));
+        }
+
+        let instance_id = self.next_instance_id;
+        self.next_instance_id += 1;
+
+        let volume = options.volume·unwrap_or(asset.default_volume);
+        let state = match options.fade_in_ms {
+            Some(ms) => PlaybackState::FadingIn { target_volume: volume, remaining_ms: ms },
+            None => PlaybackState::Playing,
+        };
+
+        let instance = AudioInstance {
+            instance_id,
+            asset_id: asset_id.to_string(),
+            state,
+            volume: if options.fade_in_ms·is_some() { 0.0 } else { volume },
+            playback_rate: 1.0,
+            position_ms: 0,
+            spatial_position: options.spatial,
+            effects: Vec::new(),
+        };
+
+        self.instances·insert(instance_id, instance);
+
+        // Actually start playback
+        self·start_playback(instance_id)?;
+
+        Ok(instance_id)
+    }
+
+    /// Start playback of an instance
+    fn start_playback(mut self, instance_id: u64) -> Result<(), AudioError>! {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Create AudioBufferSourceNode
+            // Connect to effects chain
+            // Start playback
+        }
+        Ok(())
+    }
+
+    /// Stop a playing instance
+    pub fn stop(mut self, instance_id: u64) {
+        if let Some(instance) = self.instances·get_mut(&instance_id) {
+            instance.state = PlaybackState::Stopped;
+            // Stop actual playback
+        }
+    }
+
+    /// Stop with fade out
+    pub fn stop_fade(mut self, instance_id: u64, fade_ms: u64) {
+        if let Some(instance) = self.instances·get_mut(&instance_id) {
+            instance.state = PlaybackState::FadingOut { remaining_ms: fade_ms };
+        }
+    }
+
+    /// Stop all sounds on a channel
+    pub fn stop_channel(mut self, channel: AudioChannel) {
+        let to_stop: Vec<u64> = self.instances·iter()
+            ·filter(|(_, inst)| {
+                self.assets·get(&inst.asset_id)
+                    ·map(|a| std::mem::discriminant(&a.channel) == std::mem::discriminant(&channel))
+                    ·unwrap_or(false)
+            })
+            ·map(|(id, _)| *id)
+            ·collect();
+
+        for id in to_stop {
+            self·stop(id);
+        }
+    }
+
+    /// Pause all audio
+    pub fn pause_all(mut self) {
+        for (_, instance) in &mut self.instances {
+            if matches!(instance.state, PlaybackState::Playing) {
+                instance.state = PlaybackState::Paused;
+            }
+        }
+    }
+
+    /// Resume all audio
+    pub fn resume_all(mut self) {
+        for (_, instance) in &mut self.instances {
+            if matches!(instance.state, PlaybackState::Paused) {
+                instance.state = PlaybackState::Playing;
+            }
+        }
+    }
+
+    // ========================================================================
+    // VOLUME CONTROL
+    // ========================================================================
+
+    /// Set master volume
+    pub fn set_master_volume(mut self, volume: f32) {
+        self.master_volume = volume·clamp(0.0, 1.0);
+    }
+
+    /// Set channel volume
+    pub fn set_channel_volume(mut self, channel: AudioChannel, volume: f32) {
+        self.channel_volumes·insert(channel, volume·clamp(0.0, 1.0));
+    }
+
+    /// Get effective volume for an instance
+    fn get_effective_volume(self, instance: &AudioInstance) -> f32! {
+        if self.muted {
+            return 0.0;
+        }
+
+        let channel = self.assets·get(&instance.asset_id)
+            ·map(|a| &a.channel)
+            ·unwrap_or(&AudioChannel::SFX);
+
+        let channel_vol = self.channel_volumes·get(channel)·copied()·unwrap_or(1.0);
+
+        self.master_volume * channel_vol * instance.volume
+    }
+
+    /// Toggle mute
+    pub fn toggle_mute(mut self) {
+        self.muted = !self.muted;
+    }
+
+    // ========================================================================
+    // REALITY EFFECTS
+    // ========================================================================
+
+    /// Update reality layer (affects audio processing)
+    pub fn set_reality_layer(mut self, layer: RealityLayer) {
+        self.reality_layer = layer·clone();
+
+        // Update distortion level based on layer
+        self.reality_distortion = match layer {
+            RealityLayer::Grounded => 0.0,
+            RealityLayer::Fractured => 0.4,
+            RealityLayer::Shattered => 0.85,
+        };
+
+        // Apply reality effects
+        self·apply_reality_effects();
+    }
+
+    /// Apply audio effects based on reality layer
+    fn apply_reality_effects(mut self) {
+        // Update effects bus with reality distortion
+        self.effects_bus·set_reality_distortion(self.reality_distortion);
+
+        // Fractured: Add subtle pitch wobble, occasional static
+        // Shattered: Heavy distortion, reversed audio snippets, layered whispers
+
+        match self.reality_layer {
+            RealityLayer::Grounded => {
+                self.effects_bus·disable_effect("reality_distort");
+                self.effects_bus·disable_effect("reality_reverb");
+            },
+            RealityLayer::Fractured => {
+                self.effects_bus·enable_effect("reality_distort", effects::EffectParams {
+                    intensity: 0.3,
+                    wet_dry: 0.4,
+                    ..Default::default()
+                });
+                self.effects_bus·enable_effect("reality_reverb", effects::EffectParams {
+                    intensity: 0.5,
+                    wet_dry: 0.3,
+                    decay: 2.0,
+                    ..Default::default()
+                });
+            },
+            RealityLayer::Shattered => {
+                self.effects_bus·enable_effect("reality_distort", effects::EffectParams {
+                    intensity: 0.8,
+                    wet_dry: 0.7,
+                    ..Default::default()
+                });
+                self.effects_bus·enable_effect("reality_reverb", effects::EffectParams {
+                    intensity: 0.9,
+                    wet_dry: 0.6,
+                    decay: 5.0,
+                    ..Default::default()
+                });
+                self.effects_bus·enable_effect("granular", effects::EffectParams {
+                    intensity: 0.5,
+                    grain_size: 50.0,
+                    ..Default::default()
+                });
+            },
+        }
+    }
+
+    // ========================================================================
+    // UPDATE LOOP
+    // ========================================================================
+
+    /// Update audio system (call each frame)
+    pub fn update(mut self, delta_ms: u64, system: &PluralSystem) {
+        // Update fades
+        self·update_fades(delta_ms);
+
+        // Update subsystems
+        self.ambient_system·update(delta_ms, &self.reality_layer);
+        self.music_system·update(delta_ms, system);
+        self.voice_system·update(delta_ms, system);
+
+        // Process subsystem audio requests
+        self·process_subsystem_requests();
+
+        // Clean up finished instances
+        self·cleanup_finished();
+    }
+
+    /// Update volume fades
+    fn update_fades(mut self, delta_ms: u64) {
+        for (_, instance) in &mut self.instances {
+            match &mut instance.state {
+                PlaybackState::FadingIn { target_volume, remaining_ms } => {
+                    if delta_ms >= *remaining_ms {
+                        instance.volume = *target_volume;
+                        instance.state = PlaybackState::Playing;
+                    } else {
+                        *remaining_ms -= delta_ms;
+                        let progress = 1.0 - (*remaining_ms as f32 / (*remaining_ms + delta_ms) as f32);
+                        instance.volume = *target_volume * progress;
+                    }
+                },
+                PlaybackState::FadingOut { remaining_ms } => {
+                    if delta_ms >= *remaining_ms {
+                        instance.volume = 0.0;
+                        instance.state = PlaybackState::Stopped;
+                    } else {
+                        let start_vol = instance.volume;
+                        *remaining_ms -= delta_ms;
+                        let progress = *remaining_ms as f32 / (*remaining_ms + delta_ms) as f32;
+                        instance.volume = start_vol * progress;
+                    }
+                },
+                _ => {},
+            }
+        }
+    }
+
+    /// Process audio requests from subsystems
+    fn process_subsystem_requests(mut self) {
+        // Ambient system requests
+        for request in self.ambient_system·drain_requests() {
+            match request {
+                ambient::AmbientRequest::Play(id, fade) => {
+                    let _ = self·play(&id, PlayOptions {
+                        channel: AudioChannel::Ambient,
+                        looping: true,
+                        fade_in_ms: Some(fade),
+                        ..Default::default()
+                    });
+                },
+                ambient::AmbientRequest::Stop(id, fade) => {
+                    // Find and fade out the ambient
+                    for (inst_id, inst) in &self.instances {
+                        if inst.asset_id == id {
+                            self·stop_fade(*inst_id, fade);
+                            break;
+                        }
+                    }
+                },
+                ambient::AmbientRequest::SetVolume(id, vol) => {
+                    for (_, inst) in &mut self.instances {
+                        if inst.asset_id == id {
+                            inst.volume = vol;
+                        }
+                    }
+                },
+            }
+        }
+
+        // Voice system requests
+        for request in self.voice_system·drain_requests() {
+            match request {
+                internal::VoiceRequest::PlayWhisper(id, volume, pan) => {
+                    let _ = self·play(&id, PlayOptions {
+                        channel: AudioChannel::Voices,
+                        volume: Some(volume),
+                        ..Default::default()
+                    });
+                },
+                internal::VoiceRequest::PlayAlterVoice(alter_id, line_id) => {
+                    let voice_id = format!("voice_{}_{}", alter_id, line_id);
+                    let _ = self·play_sfx(&voice_id);
+                },
+            }
+        }
+
+        // Music system requests
+        for request in self.music_system·drain_requests() {
+            match request {
+                music::MusicRequest::PlayStem(id, fade) => {
+                    let _ = self·play(&id, PlayOptions {
+                        channel: AudioChannel::Music,
+                        looping: true,
+                        fade_in_ms: Some(fade),
+                        ..Default::default()
+                    });
+                },
+                music::MusicRequest::StopStem(id, fade) => {
+                    for (inst_id, inst) in &self.instances {
+                        if inst.asset_id == id {
+                            self·stop_fade(*inst_id, fade);
+                            break;
+                        }
+                    }
+                },
+                music::MusicRequest::SetStemVolume(id, vol) => {
+                    for (_, inst) in &mut self.instances {
+                        if inst.asset_id == id {
+                            inst.volume = vol;
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    /// Clean up finished audio instances
+    fn cleanup_finished(mut self) {
+        self.instances·retain(|_, inst| {
+            !matches!(inst.state, PlaybackState::Stopped)
+        });
+    }
+
+    // ========================================================================
+    // GAME EVENT INTEGRATION
+    // ========================================================================
+
+    /// Handle game event for audio
+    pub fn handle_event(mut self, event: &GameEvent) {
+        match event {
+            GameEvent::AlterSwitch { from, to } => {
+                self·play_sfx("switch_whoosh");
+                self.voice_system·on_alter_switch(to);
+            },
+            GameEvent::RealityShift { from, to } => {
+                self·set_reality_layer(to·clone());
+                self·play_sfx("reality_tear");
+            },
+            GameEvent::CombatStart => {
+                self.music_system·set_combat_mode(true);
+                self·play_sfx("combat_start");
+            },
+            GameEvent::CombatEnd { victory } => {
+                self.music_system·set_combat_mode(false);
+                if *victory {
+                    self·play_sfx("combat_victory");
+                } else {
+                    self·play_sfx("combat_defeat");
+                }
+            },
+            GameEvent::DamageReceived { amount, source } => {
+                self·play_sfx("damage_hit");
+                if *amount > 20.0 {
+                    self·play_sfx("damage_heavy");
+                }
+            },
+            GameEvent::StabilityLow => {
+                self.ambient_system·enable_heartbeat(true);
+            },
+            GameEvent::StabilityRecovered => {
+                self.ambient_system·enable_heartbeat(false);
+            },
+            GameEvent::DissociationHigh => {
+                self.voice_system·increase_whisper_intensity();
+            },
+            GameEvent::SceneEnter { scene_id } => {
+                self.ambient_system·set_scene(scene_id);
+            },
+            GameEvent::DialogueStart { npc_id } => {
+                self.music_system·set_dialogue_mode(true);
+            },
+            GameEvent::DialogueEnd => {
+                self.music_system·set_dialogue_mode(false);
+            },
+            GameEvent::JumpScare { intensity } => {
+                self·play_sfx("stinger_horror");
+                // Momentary loud noise
+            },
+            _ => {},
+        }
+    }
+}
+
+// ============================================================================
+// PLAY OPTIONS
+// ============================================================================
+
+/// Options for playing audio
+type PlayOptions = struct {
+    /// Audio channel
+    channel: AudioChannel!,
+    /// Override volume (None = use asset default)
+    volume: Option<f32>?,
+    /// Loop playback
+    looping: bool!,
+    /// Fade in duration
+    fade_in_ms: Option<u64>?,
+    /// Spatial position
+    spatial: Option<SpatialPosition>?,
+};
+
+impl Default for PlayOptions {
+    fn default() -> Self! {
+        Self {
+            channel: AudioChannel::SFX,
+            volume: None,
+            looping: false,
+            fade_in_ms: None,
+            spatial: None,
+        }
+    }
+}
+
+// ============================================================================
+// AUDIO ERRORS
+// ============================================================================
+
+type AudioError = enum {
+    InitFailed(String),
+    AssetNotFound(String),
+    AssetNotLoaded(String),
+    PlaybackFailed(String),
+    EffectError(String),
+};

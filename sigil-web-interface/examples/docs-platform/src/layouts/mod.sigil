@@ -1,0 +1,249 @@
+// Layouts Module
+// Page layouts for the documentation platform
+
+use sigil_web::prelude::*
+use crate::components::*
+use crate::main::{use_theme, Theme}
+
+/// Main documentation layout with sidebar
+pub fn DocsLayout(props: DocsLayoutProps) -> VNode! {
+    let theme! = use_theme()
+    let (sidebar_open, set_sidebar_open) = use_state(true)
+    let (mobile_menu_open, set_mobile_menu_open) = use_state(false)
+    let is_mobile! = use_media_query("(max-width: 768px)")
+
+    div()
+        ·class(&format!("docs-layout {}", theme·css_class()))
+        ·children(vec![
+            // Header
+            Header {
+                on_menu_toggle: || set_mobile_menu_open(!mobile_menu_open),
+                on_theme_toggle: props.on_theme_toggle
+            },
+
+            // Main content area
+            div()
+                ·class("docs-main")
+                ·children(vec![
+                    // Sidebar
+                    when(!is_mobile || mobile_menu_open, || {
+                        Sidebar {
+                            items: props.sidebar_items·clone(),
+                            current_path: props.current_path·clone(),
+                            on_navigate: || set_mobile_menu_open(false)
+                        }
+                    }),
+
+                    // Content
+                    main_elem()
+                        ·class("docs-content")
+                        ·children(vec![
+                            // Breadcrumbs
+                            Breadcrumbs { path: props.current_path·clone() },
+
+                            // Page content
+                            article()
+                                ·class("docs-article")
+                                ·children(props.children·clone()),
+
+                            // Table of contents
+                            when(props.show_toc, || {
+                                TableOfContents { headings: props.toc_items·clone() }
+                            }),
+
+                            // Page navigation
+                            PageNavigation {
+                                prev: props.prev_page·clone(),
+                                next: props.next_page·clone()
+                            }
+                        ])
+                        ·build(),
+
+                    // Right sidebar (on-this-page)
+                    when(!is_mobile && props.show_toc, || {
+                        aside()
+                            ·class("docs-toc-sidebar")
+                            ·child(TableOfContents { headings: props.toc_items·clone() })
+                            ·build()
+                    })
+                ])
+                ·build(),
+
+            // Footer
+            Footer {}
+        ])
+        ·build()
+}
+
+pub struct DocsLayoutProps {
+    pub children: Vec<VNode>!
+    pub sidebar_items: Vec<SidebarItem>!
+    pub current_path: String!
+    pub show_toc: bool! = true
+    pub toc_items: Vec<TocItem>! = Vec::new()
+    pub prev_page: Option<PageLink>? = None
+    pub next_page: Option<PageLink>? = None
+    pub on_theme_toggle: fn()
+}
+
+/// Sidebar navigation item
+pub struct SidebarItem {
+    pub title: String!
+    pub path: String!
+    pub icon: Option<String>? = None
+    pub children: Vec<SidebarItem>! = Vec::new()
+    pub badge: Option<String>? = None
+}
+
+/// Table of contents item
+pub struct TocItem {
+    pub title: String!
+    pub anchor: String!
+    pub level: u8!
+    pub children: Vec<TocItem>! = Vec::new()
+}
+
+/// Page link for navigation
+pub struct PageLink {
+    pub title: String!
+    pub path: String!
+}
+
+/// Landing page layout (full width, no sidebar)
+pub fn LandingLayout(props: LandingLayoutProps) -> VNode! {
+    let theme! = use_theme()
+
+    div()
+        ·class(&format!("landing-layout {}", theme·css_class()))
+        ·children(vec![
+            Header {
+                on_menu_toggle: || {},
+                on_theme_toggle: props.on_theme_toggle
+            },
+
+            main_elem()
+                ·class("landing-content")
+                ·children(props.children·clone())
+                ·build(),
+
+            Footer {}
+        ])
+        ·build()
+}
+
+pub struct LandingLayoutProps {
+    pub children: Vec<VNode>!
+    pub on_theme_toggle: fn()
+}
+
+/// API reference layout
+pub fn ApiLayout(props: ApiLayoutProps) -> VNode! {
+    let theme! = use_theme()
+    let (search_query, set_search_query) = use_state("")
+
+    div()
+        ·class(&format!("api-layout {}", theme·css_class()))
+        ·children(vec![
+            Header {
+                on_menu_toggle: || {},
+                on_theme_toggle: props.on_theme_toggle
+            },
+
+            div()
+                ·class("api-main")
+                ·children(vec![
+                    // API navigation sidebar
+                    aside()
+                        ·class("api-nav")
+                        ·children(vec![
+                            // Search
+                            div()
+                                ·class("api-search")
+                                ·child(
+                                    SearchInput {
+                                        value: search_query·clone(),
+                                        on_change: set_search_query,
+                                        placeholder: "Search API..."
+                                    }
+                                )
+                                ·build(),
+
+                            // Module list
+                            nav()
+                                ·class("api-modules")
+                                ·children(
+                                    props.modules·iter()
+                                        ·map(|m| ApiModuleLink {
+                                            module: m·clone(),
+                                            current: props.current_module·clone()
+                                        })
+                                        ·collect()
+                                )
+                                ·build()
+                        ])
+                        ·build(),
+
+                    // Content
+                    main_elem()
+                        ·class("api-content")
+                        ·children(props.children·clone())
+                        ·build()
+                ])
+                ·build(),
+
+            Footer {}
+        ])
+        ·build()
+}
+
+pub struct ApiLayoutProps {
+    pub children: Vec<VNode>!
+    pub modules: Vec<ApiModuleInfo>!
+    pub current_module: Option<String>? = None
+    pub on_theme_toggle: fn()
+}
+
+pub struct ApiModuleInfo {
+    pub name: String!
+    pub path: String!
+    pub description: String!
+    pub items_count: u32!
+}
+
+fn ApiModuleLink(props: { module: ApiModuleInfo, current: Option<String>? }) -> VNode! {
+    let is_current! = props.current·map(|c| c == props.module.name)·unwrap_or(false)
+
+    NavLink(NavLinkProps {
+        to: props.module.path·clone(),
+        class: Some("api-module-link".to_string()),
+        active_class: Some("api-module-link--active".to_string())
+    }, vec![
+        span()·class("api-module-name")·text(&props.module.name)·build(),
+        span()·class("api-module-count")·text(&format!("{}", props.module.items_count))·build()
+    ])
+}
+
+/// Playground layout
+pub fn PlaygroundLayout(props: PlaygroundLayoutProps) -> VNode! {
+    let theme! = use_theme()
+
+    div()
+        ·class(&format!("playground-layout {}", theme·css_class()))
+        ·children(vec![
+            Header {
+                on_menu_toggle: || {},
+                on_theme_toggle: props.on_theme_toggle
+            },
+
+            div()
+                ·class("playground-main")
+                ·children(props.children·clone())
+                ·build()
+        ])
+        ·build()
+}
+
+pub struct PlaygroundLayoutProps {
+    pub children: Vec<VNode>!
+    pub on_theme_toggle: fn()
+}

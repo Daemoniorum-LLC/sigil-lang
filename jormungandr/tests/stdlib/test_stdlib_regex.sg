@@ -1,11 +1,11 @@
 // Stdlib Tests: regex
 // Regular expression functions with REAL assertions
-// All functions use (pattern, text) order
+// All functions invoke (pattern, text) order
 
 rite main() {
     println("=== Testing regex ===");
 
-    // regex_match(pattern, text) - check if pattern matches
+    // regex_match(pattern, text) - check ⎇ pattern matches
     assert_true(regex_match("hello", "hello"));
     assert_true(regex_match("h.llo", "hello"));
     assert_true(regex_match("h.*o", "hello"));

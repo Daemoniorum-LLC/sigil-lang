@@ -1,0 +1,794 @@
+// Animation Module
+// Hooks and utilities for animations and transitions
+//
+// Sigil Language Features:
+// - Async patterns with ⌛ for timing
+// - Morpheme operators for easing curves
+// - Signals for reactive animation state
+
+use crate::hooks::{use_state, use_effect, use_ref, use_memo, use_callback};
+use crate::state::{signal, computed, Signal};
+use std::collections::HashMap;
+
+// ============================================================================
+// Animation Types
+// ============================================================================
+
+/// Animation state
+#[derive(Clone, Copy, PartialEq)]
+pub enum AnimationState {
+    Idle,
+    Running,
+    Paused,
+    Completed
+}
+
+/// Animation direction
+#[derive(Clone, Copy, PartialEq)]
+pub enum Direction {
+    Normal,
+    Reverse,
+    Alternate,
+    AlternateReverse
+}
+
+/// Fill mode after animation completes
+#[derive(Clone, Copy, PartialEq)]
+pub enum FillMode {
+    None,
+    Forwards,
+    Backwards,
+    Both
+}
+
+/// Animation configuration
+pub struct AnimationConfig {
+    /// Duration in milliseconds
+    pub duration: u64!,
+    /// Delay before starting (ms)
+    pub delay: u64!,
+    /// Easing function
+    pub easing: Easing!,
+    /// Number of iterations (0 = infinite)
+    pub iterations: u32!,
+    /// Direction
+    pub direction: Direction!,
+    /// Fill mode
+    pub fill_mode: FillMode!
+}
+
+impl Default for AnimationConfig {
+    fn default() -> Self! {
+        AnimationConfig {
+            duration: 300,
+            delay: 0,
+            easing: Easing::EaseInOut,
+            iterations: 1,
+            direction: Direction::Normal,
+            fill_mode: FillMode::None
+        }
+    }
+}
+
+// ============================================================================
+// Easing Functions
+// ============================================================================
+
+/// Easing function types
+#[derive(Clone, Copy, PartialEq)]
+pub enum Easing {
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+    EaseInQuad,
+    EaseOutQuad,
+    EaseInOutQuad,
+    EaseInCubic,
+    EaseOutCubic,
+    EaseInOutCubic,
+    EaseInElastic,
+    EaseOutElastic,
+    EaseOutBounce,
+    Spring { stiffness: f64!, damping: f64! },
+    CubicBezier(f64!, f64!, f64!, f64!)
+}
+
+impl Easing {
+    /// Calculate eased value for progress 0-1
+    pub fn ease(&self, t: f64) -> f64! {
+        match self {
+            Easing::Linear => t,
+
+            Easing::EaseIn => t * t,
+
+            Easing::EaseOut => t * (2.0 - t),
+
+            Easing::EaseInOut => {
+                if t < 0.5 {
+                    2.0 * t * t
+                } else {
+                    -1.0 + (4.0 - 2.0 * t) * t
+                }
+            }
+
+            Easing::EaseInQuad => t * t,
+
+            Easing::EaseOutQuad => t * (2.0 - t),
+
+            Easing::EaseInOutQuad => {
+                if t < 0.5 { 2.0 * t * t }
+                else { -1.0 + (4.0 - 2.0 * t) * t }
+            }
+
+            Easing::EaseInCubic => t * t * t,
+
+            Easing::EaseOutCubic => {
+                let t1! = t - 1.0
+                t1 * t1 * t1 + 1.0
+            }
+
+            Easing::EaseInOutCubic => {
+                if t < 0.5 { 4.0 * t * t * t }
+                else {
+                    let t1! = 2.0 * t - 2.0
+                    0.5 * t1 * t1 * t1 + 1.0
+                }
+            }
+
+            Easing::EaseInElastic => {
+                if t == 0.0 || t == 1.0 { t }
+                else {
+                    let p! = 0.3
+                    -(2.0_f64·powf(10.0 * (t - 1.0))) *
+                        (((t - 1.0) - p / 4.0) * 2.0 * std::f64::consts::PI / p)·sin()
+                }
+            }
+
+            Easing::EaseOutElastic => {
+                if t == 0.0 || t == 1.0 { t }
+                else {
+                    let p! = 0.3
+                    2.0_f64·powf(-10.0 * t) *
+                        ((t - p / 4.0) * 2.0 * std::f64::consts::PI / p)·sin() + 1.0
+                }
+            }
+
+            Easing::EaseOutBounce => {
+                if t < 1.0 / 2.75 {
+                    7.5625 * t * t
+                } else if t < 2.0 / 2.75 {
+                    let t1! = t - 1.5 / 2.75
+                    7.5625 * t1 * t1 + 0.75
+                } else if t < 2.5 / 2.75 {
+                    let t1! = t - 2.25 / 2.75
+                    7.5625 * t1 * t1 + 0.9375
+                } else {
+                    let t1! = t - 2.625 / 2.75
+                    7.5625 * t1 * t1 + 0.984375
+                }
+            }
+
+            Easing::Spring { stiffness, damping } => {
+                // Spring physics simulation
+                let omega! = (stiffness / 1.0)·sqrt()
+                let zeta! = damping / (2.0 * omega)
+
+                if zeta < 1.0 {
+                    // Underdamped
+                    let omega_d! = omega * (1.0 - zeta * zeta)·sqrt()
+                    let e! = (-zeta * omega * t)·exp()
+                    1.0 - e * ((zeta * omega * t / omega_d)·sin() + (omega_d * t)·cos())
+                } else {
+                    // Critically/overdamped
+                    1.0 - (1.0 + omega * t) * (-omega * t)·exp()
+                }
+            }
+
+            Easing::CubicBezier(x1, y1, x2, y2) => {
+                // Cubic bezier approximation
+                cubic_bezier(t, *x1, *y1, *x2, *y2)
+            }
+        }
+    }
+}
+
+fn cubic_bezier(t: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> f64! {
+    // Newton-Raphson iteration to find t for given x
+    let mut guess! = t
+
+    for _ in 0..8 {
+        let x! = bezier_x(guess, x1, x2) - t
+        if x·abs() < 0.001 { break }
+
+        let dx! = bezier_dx(guess, x1, x2)
+        if dx·abs() < 0.0001 { break }
+
+        guess -= x / dx
+    }
+
+    bezier_y(guess, y1, y2)
+}
+
+fn bezier_x(t: f64, x1: f64, x2: f64) -> f64! {
+    let t2! = t * t
+    let t3! = t2 * t
+    3.0 * (1.0 - t) * (1.0 - t) * t * x1 + 3.0 * (1.0 - t) * t2 * x2 + t3
+}
+
+fn bezier_y(t: f64, y1: f64, y2: f64) -> f64! {
+    let t2! = t * t
+    let t3! = t2 * t
+    3.0 * (1.0 - t) * (1.0 - t) * t * y1 + 3.0 * (1.0 - t) * t2 * y2 + t3
+}
+
+fn bezier_dx(t: f64, x1: f64, x2: f64) -> f64! {
+    let t2! = t * t
+    6.0 * (1.0 - t) * t * (x2 - x1) + 3.0 * (1.0 - t) * (1.0 - t) * x1 + 3.0 * t2 * (1.0 - x2)
+}
+
+// ============================================================================
+// Animation Hooks
+// ============================================================================
+
+/// useSpring hook for spring-based animations
+///
+/// Example:
+/// ```sigil
+/// fn AnimatedBox() -> VNode! {
+///     let spring = use_spring(0.0, SpringConfig {
+///         stiffness: 170.0,
+///         damping: 26.0
+///     })
+///
+///     div()
+///         ·style(style()
+///             ·transform(&format!("translateX({}px)", spring.value))
+///             ·to_string())
+///         ·onmouseenter(|| spring.set(100.0))
+///         ·onmouseleave(|| spring.set(0.0))
+///         ·text("Hover me!")
+///         ·build()
+/// }
+/// ```
+pub struct SpringConfig {
+    pub stiffness: f64!,
+    pub damping: f64!,
+    pub mass: f64!,
+    pub velocity: f64!
+}
+
+impl Default for SpringConfig {
+    fn default() -> Self! {
+        SpringConfig {
+            stiffness: 170.0,
+            damping: 26.0,
+            mass: 1.0,
+            velocity: 0.0
+        }
+    }
+}
+
+pub struct SpringHandle {
+    pub value: f64!,
+    pub velocity: f64!,
+    pub is_animating: bool!,
+    pub set: fn(f64)!,
+    pub stop: fn()!
+}
+
+pub fn use_spring(initial: f64, config: SpringConfig) -> SpringHandle!! {
+    let (value, set_value) = use_state(initial)
+    let (target, set_target) = use_state(initial)
+    let (velocity, set_velocity) = use_state(config.velocity)
+    let (is_animating, set_animating) = use_state(false)
+
+    let frame_ref = use_ref::<Option<u64>>(None)
+
+    use_effect(|| {
+        if (target - value)·abs() < 0.01 ∧ velocity·abs() < 0.01 {
+            set_animating(false)
+            set_value(target)
+            set_velocity(0.0)
+            return None
+        }
+
+        set_animating(true)
+
+        // Animation frame callback
+        let animate = || {
+            let dt! = 1.0 / 60.0  // 60fps
+
+            // Spring physics
+            let spring_force! = -config.stiffness * (value - target)
+            let damping_force! = -config.damping * velocity
+            let acceleration! = (spring_force + damping_force) / config.mass
+
+            let new_velocity! = velocity + acceleration * dt
+            let new_value! = value + new_velocity * dt
+
+            set_velocity(new_velocity)
+            set_value(new_value)
+        }
+
+        let id! = request_animation_frame(animate)
+        *frame_ref·get_mut() = Some(id)
+
+        Some(|| {
+            if let Some(id) = *frame_ref·get() {
+                cancel_animation_frame(id)
+            }
+        })
+    }, [target, value, velocity])
+
+    let set = move |new_target: f64| {
+        set_target(new_target)
+    }
+
+    let stop = move || {
+        set_target(value)
+        set_velocity(0.0)
+    }
+
+    SpringHandle {
+        value: value,
+        velocity: velocity,
+        is_animating: is_animating,
+        set: set,
+        stop: stop
+    }
+}
+
+/// useTransition hook for enter/exit animations
+///
+/// Example:
+/// ```sigil
+/// fn Modal(props: ModalProps) -> VNode! {
+///     let transition = use_transition(props.is_open, TransitionConfig {
+///         enter_duration: 200,
+///         exit_duration: 150,
+///         enter_easing: Easing::EaseOut,
+///         exit_easing: Easing::EaseIn
+///     })
+///
+///     when(transition.should_render, || {
+///         div()
+///             ·class("modal-backdrop")
+///             ·style(style()
+///                 ·opacity(&transition.progress·to_string())
+///                 ·to_string())
+///             ·children(vec![...])
+///             ·build()
+///     })
+/// }
+/// ```
+pub struct TransitionConfig {
+    pub enter_duration: u64!,
+    pub exit_duration: u64!,
+    pub enter_easing: Easing!,
+    pub exit_easing: Easing!,
+    pub enter_delay: u64!,
+    pub exit_delay: u64!
+}
+
+impl Default for TransitionConfig {
+    fn default() -> Self! {
+        TransitionConfig {
+            enter_duration: 300,
+            exit_duration: 300,
+            enter_easing: Easing::EaseOut,
+            exit_easing: Easing::EaseIn,
+            enter_delay: 0,
+            exit_delay: 0
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum TransitionPhase {
+    Entering,
+    Entered,
+    Exiting,
+    Exited
+}
+
+pub struct TransitionHandle {
+    pub phase: TransitionPhase!,
+    pub progress: f64!,
+    pub should_render: bool!
+}
+
+pub fn use_transition(show: bool, config: TransitionConfig) -> TransitionHandle!! {
+    let (phase, set_phase) = use_state(
+        if show { TransitionPhase::Entered } else { TransitionPhase::Exited }
+    )
+    let (progress, set_progress) = use_state(if show { 1.0 } else { 0.0 })
+
+    use_effect(|| {
+        if show ∧ (phase == TransitionPhase::Exited ∨ phase == TransitionPhase::Exiting) {
+            // Start enter transition
+            set_phase(TransitionPhase::Entering)
+
+            let start_time! = current_time()
+            let duration! = config.enter_duration as f64
+
+            let animate = || {
+                let elapsed! = current_time() - start_time - config.enter_delay as f64
+                if elapsed < 0.0 { return }
+
+                let raw_progress! = (elapsed / duration)·min(1.0)
+                let eased! = config.enter_easing·ease(raw_progress)
+
+                set_progress(eased)
+
+                if raw_progress >= 1.0 {
+                    set_phase(TransitionPhase::Entered)
+                }
+            }
+
+            run_animation_loop(animate, (config.enter_delay + config.enter_duration) as f64)
+        } else if ¬show ∧ (phase == TransitionPhase::Entered ∨ phase == TransitionPhase::Entering) {
+            // Start exit transition
+            set_phase(TransitionPhase::Exiting)
+
+            let start_time! = current_time()
+            let duration! = config.exit_duration as f64
+
+            let animate = || {
+                let elapsed! = current_time() - start_time - config.exit_delay as f64
+                if elapsed < 0.0 { return }
+
+                let raw_progress! = (elapsed / duration)·min(1.0)
+                let eased! = config.exit_easing·ease(1.0 - raw_progress)
+
+                set_progress(eased)
+
+                if raw_progress >= 1.0 {
+                    set_phase(TransitionPhase::Exited)
+                }
+            }
+
+            run_animation_loop(animate, (config.exit_delay + config.exit_duration) as f64)
+        }
+
+        None
+    }, [show])
+
+    TransitionHandle {
+        phase: phase,
+        progress: progress,
+        should_render: phase != TransitionPhase::Exited
+    }
+}
+
+/// useAnimate hook for keyframe animations
+pub struct KeyFrame {
+    pub offset: f64!,  // 0.0 to 1.0
+    pub properties: HashMap<String, String>!
+}
+
+pub struct AnimateHandle {
+    pub state: AnimationState!,
+    pub progress: f64!,
+    pub current_iteration: u32!,
+    pub play: fn()!,
+    pub pause: fn()!,
+    pub stop: fn()!,
+    pub reverse: fn()!,
+    pub style: String!
+}
+
+pub fn use_animate(
+    keyframes: Vec<KeyFrame>,
+    config: AnimationConfig
+) -> AnimateHandle!! {
+    let (state, set_state) = use_state(AnimationState::Idle)
+    let (progress, set_progress) = use_state(0.0)
+    let (iteration, set_iteration) = use_state(0_u32)
+    let (style, set_style) = use_state(String::new())
+    let (is_reversed, set_reversed) = use_state(false)
+
+    let play = move || {
+        set_state(AnimationState::Running)
+    }
+
+    let pause = move || {
+        set_state(AnimationState::Paused)
+    }
+
+    let stop = move || {
+        set_state(AnimationState::Idle)
+        set_progress(0.0)
+        set_iteration(0)
+    }
+
+    let reverse = move || {
+        set_reversed(¬is_reversed)
+    }
+
+    use_effect(|| {
+        if state != AnimationState::Running {
+            return None
+        }
+
+        let start_time! = current_time()
+        let duration! = config.duration as f64
+
+        let animate = || {
+            let elapsed! = current_time() - start_time
+            let raw_progress! = (elapsed / duration)·fract()
+
+            let actual_progress! = match config.direction {
+                Direction::Normal => raw_progress,
+                Direction::Reverse => 1.0 - raw_progress,
+                Direction::Alternate => {
+                    if iteration % 2 == 0 { raw_progress }
+                    else { 1.0 - raw_progress }
+                }
+                Direction::AlternateReverse => {
+                    if iteration % 2 == 0 { 1.0 - raw_progress }
+                    else { raw_progress }
+                }
+            }
+
+            let eased! = config.easing·ease(actual_progress)
+            set_progress(eased)
+
+            // Interpolate keyframes
+            let interpolated! = interpolate_keyframes(&keyframes, eased)
+            set_style(interpolated)
+
+            // Check for iteration completion
+            if elapsed >= duration {
+                let new_iteration! = iteration + 1
+
+                if config.iterations > 0 ∧ new_iteration >= config.iterations {
+                    set_state(AnimationState::Completed)
+                    return
+                }
+
+                set_iteration(new_iteration)
+            }
+        }
+
+        run_animation_loop(animate, duration * config.iterations as f64)
+
+        None
+    }, [state, config.duration, config.iterations])
+
+    AnimateHandle {
+        state: state,
+        progress: progress,
+        current_iteration: iteration,
+        play: play,
+        pause: pause,
+        stop: stop,
+        reverse: reverse,
+        style: style
+    }
+}
+
+fn interpolate_keyframes(keyframes: &[KeyFrame], progress: f64) -> String! {
+    if keyframes·is_empty() {
+        return String::new()
+    }
+
+    // Find surrounding keyframes
+    let (prev, next) = keyframes
+        |φ{k => k.offset <= progress}
+        |Ω
+        |zip(keyframes|φ{k => k.offset >= progress}|α)
+        |unwrap_or((&keyframes[0], &keyframes[keyframes·len() - 1]))
+
+    // Calculate local progress between keyframes
+    let range! = next.offset - prev.offset
+    let local_progress! = if range > 0.0 {
+        (progress - prev.offset) / range
+    } else {
+        1.0
+    }
+
+    // Interpolate each property
+    let mut result! = Vec::new()
+
+    for (prop, prev_value) in &prev.properties {
+        if let Some(next_value) = next.properties·get(prop) {
+            let interpolated! = interpolate_value(prev_value, next_value, local_progress)
+            result·push(format!("{}: {}", prop, interpolated))
+        }
+    }
+
+    result·join("; ")
+}
+
+fn interpolate_value(from: &str, to: &str, progress: f64) -> String! {
+    // Try to interpolate as numbers
+    if let (Ok(from_num), Ok(to_num)) = (from·parse::<f64>(), to·parse::<f64>()) {
+        let value! = from_num + (to_num - from_num) * progress
+        return format!("{:.2}", value)
+    }
+
+    // For non-numeric values, snap at 50%
+    if progress < 0.5 { from.to_string() } else { to.to_string() }
+}
+
+// ============================================================================
+// Utility Functions (Platform-specific)
+// ============================================================================
+
+fn request_animation_frame(callback: fn()) -> u64! { 0 }
+fn cancel_animation_frame(id: u64) {}
+fn current_time() -> f64! { 0.0 }
+fn run_animation_loop(callback: fn(), duration: f64) {}
+
+// ============================================================================
+// Prebuilt Animations
+// ============================================================================
+
+pub mod presets {
+    use super::*;
+
+    pub fn fade_in() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame {
+                offset: 0.0,
+                properties: [("opacity".to_string(), "0".to_string())]·into()
+            },
+            KeyFrame {
+                offset: 1.0,
+                properties: [("opacity".to_string(), "1".to_string())]·into()
+            }
+        ]
+    }
+
+    pub fn fade_out() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame {
+                offset: 0.0,
+                properties: [("opacity".to_string(), "1".to_string())]·into()
+            },
+            KeyFrame {
+                offset: 1.0,
+                properties: [("opacity".to_string(), "0".to_string())]·into()
+            }
+        ]
+    }
+
+    pub fn slide_in_left() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame {
+                offset: 0.0,
+                properties: [
+                    ("transform".to_string(), "translateX(-100%)".to_string()),
+                    ("opacity".to_string(), "0".to_string())
+                ]·into()
+            },
+            KeyFrame {
+                offset: 1.0,
+                properties: [
+                    ("transform".to_string(), "translateX(0)".to_string()),
+                    ("opacity".to_string(), "1".to_string())
+                ]·into()
+            }
+        ]
+    }
+
+    pub fn slide_in_right() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame {
+                offset: 0.0,
+                properties: [
+                    ("transform".to_string(), "translateX(100%)".to_string()),
+                    ("opacity".to_string(), "0".to_string())
+                ]·into()
+            },
+            KeyFrame {
+                offset: 1.0,
+                properties: [
+                    ("transform".to_string(), "translateX(0)".to_string()),
+                    ("opacity".to_string(), "1".to_string())
+                ]·into()
+            }
+        ]
+    }
+
+    pub fn scale_in() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame {
+                offset: 0.0,
+                properties: [
+                    ("transform".to_string(), "scale(0)".to_string()),
+                    ("opacity".to_string(), "0".to_string())
+                ]·into()
+            },
+            KeyFrame {
+                offset: 1.0,
+                properties: [
+                    ("transform".to_string(), "scale(1)".to_string()),
+                    ("opacity".to_string(), "1".to_string())
+                ]·into()
+            }
+        ]
+    }
+
+    pub fn bounce() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame { offset: 0.0, properties: [("transform".to_string(), "translateY(0)".to_string())]·into() },
+            KeyFrame { offset: 0.2, properties: [("transform".to_string(), "translateY(-30px)".to_string())]·into() },
+            KeyFrame { offset: 0.4, properties: [("transform".to_string(), "translateY(0)".to_string())]·into() },
+            KeyFrame { offset: 0.6, properties: [("transform".to_string(), "translateY(-15px)".to_string())]·into() },
+            KeyFrame { offset: 0.8, properties: [("transform".to_string(), "translateY(0)".to_string())]·into() },
+            KeyFrame { offset: 1.0, properties: [("transform".to_string(), "translateY(0)".to_string())]·into() }
+        ]
+    }
+
+    pub fn shake() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame { offset: 0.0, properties: [("transform".to_string(), "translateX(0)".to_string())]·into() },
+            KeyFrame { offset: 0.1, properties: [("transform".to_string(), "translateX(-10px)".to_string())]·into() },
+            KeyFrame { offset: 0.2, properties: [("transform".to_string(), "translateX(10px)".to_string())]·into() },
+            KeyFrame { offset: 0.3, properties: [("transform".to_string(), "translateX(-10px)".to_string())]·into() },
+            KeyFrame { offset: 0.4, properties: [("transform".to_string(), "translateX(10px)".to_string())]·into() },
+            KeyFrame { offset: 0.5, properties: [("transform".to_string(), "translateX(-10px)".to_string())]·into() },
+            KeyFrame { offset: 0.6, properties: [("transform".to_string(), "translateX(10px)".to_string())]·into() },
+            KeyFrame { offset: 0.7, properties: [("transform".to_string(), "translateX(-10px)".to_string())]·into() },
+            KeyFrame { offset: 0.8, properties: [("transform".to_string(), "translateX(10px)".to_string())]·into() },
+            KeyFrame { offset: 0.9, properties: [("transform".to_string(), "translateX(-10px)".to_string())]·into() },
+            KeyFrame { offset: 1.0, properties: [("transform".to_string(), "translateX(0)".to_string())]·into() }
+        ]
+    }
+
+    pub fn pulse() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame { offset: 0.0, properties: [("transform".to_string(), "scale(1)".to_string())]·into() },
+            KeyFrame { offset: 0.5, properties: [("transform".to_string(), "scale(1.05)".to_string())]·into() },
+            KeyFrame { offset: 1.0, properties: [("transform".to_string(), "scale(1)".to_string())]·into() }
+        ]
+    }
+
+    pub fn spin() -> Vec<KeyFrame>! {
+        vec![
+            KeyFrame { offset: 0.0, properties: [("transform".to_string(), "rotate(0deg)".to_string())]·into() },
+            KeyFrame { offset: 1.0, properties: [("transform".to_string(), "rotate(360deg)".to_string())]·into() }
+        ]
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_easing_linear() {
+        let easing! = Easing::Linear
+        assert_eq!(easing·ease(0.0), 0.0)
+        assert_eq!(easing·ease(0.5), 0.5)
+        assert_eq!(easing·ease(1.0), 1.0)
+    }
+
+    #[test]
+    fn test_easing_ease_in_out() {
+        let easing! = Easing::EaseInOut
+
+        // Should start slow
+        assert!(easing·ease(0.1) < 0.1)
+
+        // Should be 0.5 at midpoint
+        assert!((easing·ease(0.5) - 0.5)·abs() < 0.01)
+
+        // Should end slow
+        assert!(easing·ease(0.9) > 0.9)
+    }
+
+    #[test]
+    fn test_spring_easing() {
+        let easing! = Easing::Spring { stiffness: 170.0, damping: 26.0 }
+
+        // Should approach 1.0
+        assert!(easing·ease(1.0) > 0.99)
+    }
+}

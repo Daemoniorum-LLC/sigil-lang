@@ -1,0 +1,13 @@
+// Test: Extern write function (emulated)
+// Spec: 08-FFI.md § 1.2 FFI Emulation
+// Priority: P1 - Standard Feature
+
+extern "C" {
+    λ write(fd: !i32, buf: *const !u8, count: !usize) -> !isize;
+}
+
+λ main() {
+    // fd=1 is stdout ∈ emulated FFI
+    write(1, "Hello from FFI", 14);
+    println("");
+}

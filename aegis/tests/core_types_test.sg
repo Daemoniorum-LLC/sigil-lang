@@ -1,102 +1,102 @@
 //! Aegis Core Types Tests - 26 tests
 
-struct AgentId {
+Σ AgentId {
     len: !usize,
     valid: !bool,
 }
 
-impl AgentId {
-    pub fn new(len: !usize) -> Self {
-        let valid = len > 0 && len <= 64;
+⊢ AgentId {
+    ☉ λ new(len: !usize) -> Self {
+        ≔ valid = len > 0 && len <= 64;
         AgentId { len, valid }
     }
 }
 
-struct Timestamp {
+Σ Timestamp {
     seconds: !u64,
     nanos: !u32,
 }
 
-impl Timestamp {
-    pub fn new(seconds: !u64, nanos: !u32) -> Self {
+⊢ Timestamp {
+    ☉ λ new(seconds: !u64, nanos: !u32) -> Self {
         Timestamp { seconds, nanos }
     }
 
-    pub fn is_before(&self, other: &Timestamp) -> !bool {
+    ☉ λ is_before(&self, other: &Timestamp) -> !bool {
         self.seconds < other.seconds ||
             (self.seconds == other.seconds && self.nanos < other.nanos)
     }
 
-    pub fn is_after(&self, other: &Timestamp) -> !bool {
+    ☉ λ is_after(&self, other: &Timestamp) -> !bool {
         self.seconds > other.seconds ||
             (self.seconds == other.seconds && self.nanos > other.nanos)
     }
 }
 
-struct Duration {
+Σ Duration {
     secs: !u64,
     millis: !u64,
     zero: !bool,
 }
 
-impl Duration {
-    pub fn new(secs: !u64) -> Self {
+⊢ Duration {
+    ☉ λ new(secs: !u64) -> Self {
         Duration { secs, millis: secs * 1000, zero: secs == 0 }
     }
 
-    pub fn from_millis(millis: !u64) -> Self {
+    ☉ λ from_millis(millis: !u64) -> Self {
         Duration { secs: millis / 1000, millis, zero: millis == 0 }
     }
 }
 
-enum SecurityLevel {
+ᛈ SecurityLevel {
     Development,
     Standard,
     Hardened,
     Paranoid,
 }
 
-impl SecurityLevel {
-    pub fn is_production_ready(&self) -> !bool {
-        match self {
-            SecurityLevel::Development => false,
+⊢ SecurityLevel {
+    ☉ λ is_production_ready(&self) -> !bool {
+        ⌥ self {
+            SecurityLevel·Development => false,
             _ => true,
         }
     }
 
-    pub fn requires_encryption(&self) -> !bool {
-        match self {
-            SecurityLevel::Development => false,
+    ☉ λ requires_encryption(&self) -> !bool {
+        ⌥ self {
+            SecurityLevel·Development => false,
             _ => true,
         }
     }
 
-    pub fn allows_network(&self) -> !bool {
-        match self {
-            SecurityLevel::Paranoid => false,
+    ☉ λ allows_network(&self) -> !bool {
+        ⌥ self {
+            SecurityLevel·Paranoid => false,
             _ => true,
         }
     }
 }
 
-struct Hash {
+Σ Hash {
     len: !usize,
     empty: !bool,
     first: !u8,
 }
 
-impl Hash {
-    pub fn new(len: !usize, first: !u8) -> Self {
+⊢ Hash {
+    ☉ λ new(len: !usize, first: !u8) -> Self {
         Hash { len, empty: len == 0, first }
     }
 }
 
-struct Signature {
+Σ Signature {
     len: !usize,
 }
 
-impl Signature {
-    pub fn new(len: !usize) -> Self {
+⊢ Signature {
+    ☉ λ new(len: !usize) -> Self {
         Signature { len }
     }
 }
@@ -106,32 +106,32 @@ impl Signature {
 // ============================================================================
 
 #[test]
-fn test_agent_id_creation() {
-    let id = AgentId::new(9);
+λ test_agent_id_creation() {
+    ≔ id = AgentId·new(9);
     assert(id.len == 9);
 }
 
 #[test]
-fn test_agent_id_validity_valid() {
-    let id = AgentId::new(14);
+λ test_agent_id_validity_valid() {
+    ≔ id = AgentId·new(14);
     assert(id.valid);
 }
 
 #[test]
-fn test_agent_id_validity_empty() {
-    let id = AgentId::new(0);
+λ test_agent_id_validity_empty() {
+    ≔ id = AgentId·new(0);
     assert(!id.valid);
 }
 
 #[test]
-fn test_agent_id_max_length() {
-    let id = AgentId::new(64);
+λ test_agent_id_max_length() {
+    ≔ id = AgentId·new(64);
     assert(id.valid);
 }
 
 #[test]
-fn test_agent_id_too_long() {
-    let id = AgentId::new(100);
+λ test_agent_id_too_long() {
+    ≔ id = AgentId·new(100);
     assert(!id.valid);
 }
 
@@ -140,39 +140,39 @@ fn test_agent_id_too_long() {
 // ============================================================================
 
 #[test]
-fn test_timestamp_creation() {
-    let ts = Timestamp::new(1705500000, 500);
+λ test_timestamp_creation() {
+    ≔ ts = Timestamp·new(1705500000, 500);
     assert(ts.seconds == 1705500000);
     assert(ts.nanos == 500);
 }
 
 #[test]
-fn test_timestamp_seconds() {
-    let ts = Timestamp::new(1000, 0);
+λ test_timestamp_seconds() {
+    ≔ ts = Timestamp·new(1000, 0);
     assert(ts.seconds == 1000);
     assert(ts.nanos == 0);
 }
 
 #[test]
-fn test_timestamp_is_before() {
-    let earlier = Timestamp::new(1000, 0);
-    let later = Timestamp::new(2000, 0);
+λ test_timestamp_is_before() {
+    ≔ earlier = Timestamp·new(1000, 0);
+    ≔ later = Timestamp·new(2000, 0);
     assert(earlier.is_before(&later));
     assert(!later.is_before(&earlier));
 }
 
 #[test]
-fn test_timestamp_is_after() {
-    let earlier = Timestamp::new(1000, 0);
-    let later = Timestamp::new(2000, 0);
+λ test_timestamp_is_after() {
+    ≔ earlier = Timestamp·new(1000, 0);
+    ≔ later = Timestamp·new(2000, 0);
     assert(later.is_after(&earlier));
     assert(!earlier.is_after(&later));
 }
 
 #[test]
-fn test_timestamp_same_second_different_nanos() {
-    let ts1 = Timestamp::new(1000, 100);
-    let ts2 = Timestamp::new(1000, 200);
+λ test_timestamp_same_second_different_nanos() {
+    ≔ ts1 = Timestamp·new(1000, 100);
+    ≔ ts2 = Timestamp·new(1000, 200);
     assert(ts1.is_before(&ts2));
     assert(ts2.is_after(&ts1));
 }
@@ -182,29 +182,29 @@ fn test_timestamp_same_second_different_nanos() {
 // ============================================================================
 
 #[test]
-fn test_duration_creation() {
-    let d = Duration::new(10);
+λ test_duration_creation() {
+    ≔ d = Duration·new(10);
     assert(d.secs == 10);
 }
 
 #[test]
-fn test_duration_from_secs() {
-    let d = Duration::new(60);
+λ test_duration_from_secs() {
+    ≔ d = Duration·new(60);
     assert(d.secs == 60);
     assert(d.millis == 60000);
 }
 
 #[test]
-fn test_duration_from_millis() {
-    let d = Duration::from_millis(2500);
+λ test_duration_from_millis() {
+    ≔ d = Duration·from_millis(2500);
     assert(d.secs == 2);
     assert(d.millis == 2500);
 }
 
 #[test]
-fn test_duration_is_zero() {
-    let zero = Duration::new(0);
-    let nonzero = Duration::new(1);
+λ test_duration_is_zero() {
+    ≔ zero = Duration·new(0);
+    ≔ nonzero = Duration·new(1);
     assert(zero.zero);
     assert(!nonzero.zero);
 }
@@ -214,32 +214,32 @@ fn test_duration_is_zero() {
 // ============================================================================
 
 #[test]
-fn test_security_level_development() {
-    let level = SecurityLevel::Development;
+λ test_security_level_development() {
+    ≔ level = SecurityLevel·Development;
     assert(!level.is_production_ready());
     assert(!level.requires_encryption());
     assert(level.allows_network());
 }
 
 #[test]
-fn test_security_level_standard() {
-    let level = SecurityLevel::Standard;
+λ test_security_level_standard() {
+    ≔ level = SecurityLevel·Standard;
     assert(level.is_production_ready());
     assert(level.requires_encryption());
     assert(level.allows_network());
 }
 
 #[test]
-fn test_security_level_hardened() {
-    let level = SecurityLevel::Hardened;
+λ test_security_level_hardened() {
+    ≔ level = SecurityLevel·Hardened;
     assert(level.is_production_ready());
     assert(level.requires_encryption());
     assert(level.allows_network());
 }
 
 #[test]
-fn test_security_level_paranoid() {
-    let level = SecurityLevel::Paranoid;
+λ test_security_level_paranoid() {
+    ≔ level = SecurityLevel·Paranoid;
     assert(level.is_production_ready());
     assert(level.requires_encryption());
     assert(!level.allows_network());
@@ -250,22 +250,22 @@ fn test_security_level_paranoid() {
 // ============================================================================
 
 #[test]
-fn test_hash_creation() {
-    let h = Hash::new(4, 0xde);
+λ test_hash_creation() {
+    ≔ h = Hash·new(4, 0xde);
     assert(h.len == 4);
 }
 
 #[test]
-fn test_hash_is_empty() {
-    let empty = Hash::new(0, 0);
-    let nonempty = Hash::new(1, 1);
+λ test_hash_is_empty() {
+    ≔ empty = Hash·new(0, 0);
+    ≔ nonempty = Hash·new(1, 1);
     assert(empty.empty);
     assert(!nonempty.empty);
 }
 
 #[test]
-fn test_hash_first_byte() {
-    let h = Hash::new(4, 0xde);
+λ test_hash_first_byte() {
+    ≔ h = Hash·new(4, 0xde);
     assert(h.first == 0xde);
 }
 
@@ -274,17 +274,17 @@ fn test_hash_first_byte() {
 // ============================================================================
 
 #[test]
-fn test_signature_creation() {
-    let sig = Signature::new(4);
+λ test_signature_creation() {
+    ≔ sig = Signature·new(4);
     assert(sig.len == 4);
 }
 
 #[test]
-fn test_signature_64_bytes() {
-    let sig = Signature::new(64);
+λ test_signature_64_bytes() {
+    ≔ sig = Signature·new(64);
     assert(sig.len == 64);
 }
 
-fn main() {
+λ main() {
     println("Aegis core types tests - 26 tests");
 }

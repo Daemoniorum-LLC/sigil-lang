@@ -165,13 +165,8 @@ impl WasmCompiler {
             }
             PipeOp::NecessityMethod { .. } => Err(WasmError::unsupported("necessity method call")),
 
-            // Function call in pipe
-            PipeOp::Call(func) => {
-                // Compile the function expression and call it
-                self.compile_expr(func)?;
-                // The function result is now on the stack
-                Ok(())
-            }
+            // Function call in pipe context
+            PipeOp::Call(_) => Err(WasmError::unsupported("call in pipe context")),
         }
     }
 
@@ -803,9 +798,9 @@ impl WasmCompiler {
         match expr {
             Expr::Closure {
                 params,
-                return_type: _,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // Create a new function for this closure (is_move handled in closure compilation)
                 let fn_name = format!("__closure_{}", self.functions.len());
@@ -1095,9 +1090,9 @@ impl WasmCompiler {
         match func_expr {
             Expr::Closure {
                 params,
-                return_type: _,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // Inline closure: bind parameter and compile body (is_move irrelevant for inline)
                 if params.len() != 1 {
@@ -1154,9 +1149,9 @@ impl WasmCompiler {
         match func_expr {
             Expr::Closure {
                 params,
-                return_type: _,
                 body,
                 is_move: _,
+                return_type: _,
             } => {
                 // is_move irrelevant for inline binary closure application
                 if params.len() != 2 {
@@ -1337,13 +1332,13 @@ mod tests {
                 },
                 ty: None,
             }],
-            return_type: None,
             body: Box::new(Expr::Binary {
                 left: Box::new(make_path("x")),
                 op: crate::ast::BinOp::Mul,
                 right: Box::new(make_int(2)),
             }),
             is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack
@@ -1377,13 +1372,13 @@ mod tests {
                 },
                 ty: None,
             }],
-            return_type: None,
             body: Box::new(Expr::Binary {
                 left: Box::new(make_path("x")),
                 op: crate::ast::BinOp::Gt,
                 right: Box::new(make_int(0)),
             }),
             is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack
@@ -1427,13 +1422,13 @@ mod tests {
                     ty: None,
                 },
             ],
-            return_type: None,
             body: Box::new(Expr::Binary {
                 left: Box::new(make_path("a")),
                 op: crate::ast::BinOp::Add,
                 right: Box::new(make_path("b")),
             }),
             is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack

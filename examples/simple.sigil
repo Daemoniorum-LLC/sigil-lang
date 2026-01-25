@@ -1,6 +1,5 @@
-// Simple Sigil example
 rite main() → i64 {
     ≔ x = 2 + 3;
     print(x);
-    x
+    ⤺ x;
 }

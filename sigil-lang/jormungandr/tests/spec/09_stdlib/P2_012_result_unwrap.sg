@@ -1,0 +1,9 @@
+// Test: Result unwrap
+// Spec: 09-STDLIB.md § 3.2 Result
+// Priority: P2 - Enhancement
+
+λ main() {
+    ≔ res: Result<i32, String> = Result·Ok(99);
+    ≔ val: !i32 = res.unwrap();
+    println(val);
+}

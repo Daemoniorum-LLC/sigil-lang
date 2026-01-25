@@ -1,52 +1,52 @@
 //! Commune Swarm Tests - 20 tests
 
-struct Vector {
+Σ Vector {
     x: !f32,
     y: !f32,
     z: !f32,
 }
 
-impl Vector {
-    pub fn new(x: !f32, y: !f32, z: !f32) -> Self {
+⊢ Vector {
+    ☉ λ new(x: !f32, y: !f32, z: !f32) -> Self {
         Vector { x, y, z }
     }
 
-    pub fn zero() -> Self {
+    ☉ λ zero() -> Self {
         Vector { x: 0.0, y: 0.0, z: 0.0 }
     }
 
-    pub fn one() -> Self {
+    ☉ λ one() -> Self {
         Vector { x: 1.0, y: 1.0, z: 1.0 }
     }
 
-    pub fn magnitude_squared(&self) -> !f32 {
+    ☉ λ magnitude_squared(&self) -> !f32 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
 
-    pub fn is_zero(&self) -> !bool {
+    ☉ λ is_zero(&self) -> !bool {
         self.magnitude_squared() == 0.0
     }
 
-    pub fn dot(&self, other: &Vector) -> !f32 {
+    ☉ λ dot(&self, other: &Vector) -> !f32 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    pub fn distance_squared(&self, other: &Vector) -> !f32 {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
-        let dz = self.z - other.z;
+    ☉ λ distance_squared(&self, other: &Vector) -> !f32 {
+        ≔ dx = self.x - other.x;
+        ≔ dy = self.y - other.y;
+        ≔ dz = self.z - other.z;
         dx * dx + dy * dy + dz * dz
     }
 }
 
-struct SwarmConfig {
+Σ SwarmConfig {
     max_members: !usize,
     max_velocity: !f32,
     communication_radius: !f32,
 }
 
-impl SwarmConfig {
-    pub fn default_config() -> Self {
+⊢ SwarmConfig {
+    ☉ λ default_config() -> Self {
         SwarmConfig {
             max_members: 100,
             max_velocity: 1.0,
@@ -54,7 +54,7 @@ impl SwarmConfig {
         }
     }
 
-    pub fn small_swarm() -> Self {
+    ☉ λ small_swarm() -> Self {
         SwarmConfig {
             max_members: 10,
             max_velocity: 2.0,
@@ -62,7 +62,7 @@ impl SwarmConfig {
         }
     }
 
-    pub fn large_swarm() -> Self {
+    ☉ λ large_swarm() -> Self {
         SwarmConfig {
             max_members: 1000,
             max_velocity: 0.5,
@@ -71,15 +71,15 @@ impl SwarmConfig {
     }
 }
 
-struct SwarmStats {
+Σ SwarmStats {
     member_count: !usize,
     active_count: !usize,
     goal_count: !usize,
     discovery_count: !usize,
 }
 
-impl SwarmStats {
-    pub fn new() -> Self {
+⊢ SwarmStats {
+    ☉ λ new() -> Self {
         SwarmStats {
             member_count: 0,
             active_count: 0,
@@ -88,31 +88,31 @@ impl SwarmStats {
         }
     }
 
-    pub fn add_member(&mut self, active: !bool) {
+    ☉ λ add_member(&Δ self, active: !bool) {
         self.member_count = self.member_count + 1;
-        if active {
+        ⎇ active {
             self.active_count = self.active_count + 1;
         }
     }
 
-    pub fn add_goal(&mut self) {
+    ☉ λ add_goal(&Δ self) {
         self.goal_count = self.goal_count + 1;
     }
 
-    pub fn add_discovery(&mut self) {
+    ☉ λ add_discovery(&Δ self) {
         self.discovery_count = self.discovery_count + 1;
     }
 
-    pub fn activity_ratio(&self) -> !f32 {
-        if self.member_count == 0 {
+    ☉ λ activity_ratio(&self) -> !f32 {
+        ⎇ self.member_count == 0 {
             0.0
-        } else {
+        } ⎉ {
             self.active_count as !f32 / self.member_count as !f32
         }
     }
 }
 
-enum BehaviorType {
+ᛈ BehaviorType {
     Separation,
     Alignment,
     Cohesion,
@@ -120,58 +120,58 @@ enum BehaviorType {
     Avoidance,
 }
 
-impl BehaviorType {
-    pub fn default_weight(&self) -> !f32 {
-        match self {
-            BehaviorType::Separation => 1.5,
-            BehaviorType::Alignment => 1.0,
-            BehaviorType::Cohesion => 1.0,
-            BehaviorType::GoalSeeking => 2.0,
-            BehaviorType::Avoidance => 3.0,
+⊢ BehaviorType {
+    ☉ λ default_weight(&self) -> !f32 {
+        ⌥ self {
+            BehaviorType·Separation => 1.5,
+            BehaviorType·Alignment => 1.0,
+            BehaviorType·Cohesion => 1.0,
+            BehaviorType·GoalSeeking => 2.0,
+            BehaviorType·Avoidance => 3.0,
         }
     }
 
-    pub fn is_repulsive(&self) -> !bool {
-        match self {
-            BehaviorType::Separation => true,
-            BehaviorType::Avoidance => true,
+    ☉ λ is_repulsive(&self) -> !bool {
+        ⌥ self {
+            BehaviorType·Separation => true,
+            BehaviorType·Avoidance => true,
             _ => false,
         }
     }
 }
 
-struct BehaviorRule {
+Σ BehaviorRule {
     behavior: BehaviorType,
     weight: !f32,
     active: !bool,
 }
 
-impl BehaviorRule {
-    pub fn new(behavior: BehaviorType) -> Self {
-        let weight = behavior.default_weight();
+⊢ BehaviorRule {
+    ☉ λ new(behavior: BehaviorType) -> Self {
+        ≔ weight = behavior.default_weight();
         BehaviorRule { behavior, weight, active: true }
     }
 
-    pub fn with_weight(mut self, weight: !f32) -> Self {
+    ☉ λ with_weight(Δ self, weight: !f32) -> Self {
         self.weight = weight;
         self
     }
 
-    pub fn disabled(mut self) -> Self {
+    ☉ λ disabled(Δ self) -> Self {
         self.active = false;
         self
     }
 
-    pub fn effective_weight(&self) -> !f32 {
-        if self.active {
+    ☉ λ effective_weight(&self) -> !f32 {
+        ⎇ self.active {
             self.weight
-        } else {
+        } ⎉ {
             0.0
         }
     }
 }
 
-struct SwarmGoal {
+Σ SwarmGoal {
     priority: !f32,
     target_x: !f32,
     target_y: !f32,
@@ -179,8 +179,8 @@ struct SwarmGoal {
     achieved: !bool,
 }
 
-impl SwarmGoal {
-    pub fn new(priority: !f32, x: !f32, y: !f32, z: !f32) -> Self {
+⊢ SwarmGoal {
+    ☉ λ new(priority: !f32, x: !f32, y: !f32, z: !f32) -> Self {
         SwarmGoal {
             priority,
             target_x: x,
@@ -190,14 +190,14 @@ impl SwarmGoal {
         }
     }
 
-    pub fn mark_achieved(&mut self) {
+    ☉ λ mark_achieved(&Δ self) {
         self.achieved = true;
     }
 
-    pub fn distance_to(&self, x: !f32, y: !f32, z: !f32) -> !f32 {
-        let dx = self.target_x - x;
-        let dy = self.target_y - y;
-        let dz = self.target_z - z;
+    ☉ λ distance_to(&self, x: !f32, y: !f32, z: !f32) -> !f32 {
+        ≔ dx = self.target_x - x;
+        ≔ dy = self.target_y - y;
+        ≔ dz = self.target_z - z;
         dx * dx + dy * dy + dz * dz
     }
 }
@@ -207,8 +207,8 @@ impl SwarmGoal {
 // ============================================================================
 
 #[test]
-fn test_vector_zero() {
-    let v = Vector::zero();
+λ test_vector_zero() {
+    ≔ v = Vector·zero();
     assert(v.x == 0.0);
     assert(v.y == 0.0);
     assert(v.z == 0.0);
@@ -216,63 +216,63 @@ fn test_vector_zero() {
 }
 
 #[test]
-fn test_vector_one() {
-    let v = Vector::one();
+λ test_vector_one() {
+    ≔ v = Vector·one();
     assert(v.x == 1.0);
     assert(!v.is_zero());
 }
 
 #[test]
-fn test_vector_magnitude_squared() {
-    let v = Vector::new(3.0, 4.0, 0.0);
+λ test_vector_magnitude_squared() {
+    ≔ v = Vector·new(3.0, 4.0, 0.0);
     assert(v.magnitude_squared() == 25.0);
 }
 
 #[test]
-fn test_vector_dot() {
-    let a = Vector::new(1.0, 2.0, 3.0);
-    let b = Vector::new(4.0, 5.0, 6.0);
+λ test_vector_dot() {
+    ≔ a = Vector·new(1.0, 2.0, 3.0);
+    ≔ b = Vector·new(4.0, 5.0, 6.0);
     // 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32
     assert(a.dot(&b) == 32.0);
 }
 
 #[test]
-fn test_vector_distance_squared() {
-    let a = Vector::zero();
-    let b = Vector::new(3.0, 4.0, 0.0);
+λ test_vector_distance_squared() {
+    ≔ a = Vector·zero();
+    ≔ b = Vector·new(3.0, 4.0, 0.0);
     assert(a.distance_squared(&b) == 25.0);
 }
 
 #[test]
-fn test_swarm_config_default() {
-    let cfg = SwarmConfig::default_config();
+λ test_swarm_config_default() {
+    ≔ cfg = SwarmConfig·default_config();
     assert(cfg.max_members == 100);
     assert(cfg.max_velocity == 1.0);
 }
 
 #[test]
-fn test_swarm_config_small() {
-    let cfg = SwarmConfig::small_swarm();
+λ test_swarm_config_small() {
+    ≔ cfg = SwarmConfig·small_swarm();
     assert(cfg.max_members == 10);
     assert(cfg.max_velocity == 2.0);
 }
 
 #[test]
-fn test_swarm_config_large() {
-    let cfg = SwarmConfig::large_swarm();
+λ test_swarm_config_large() {
+    ≔ cfg = SwarmConfig·large_swarm();
     assert(cfg.max_members == 1000);
 }
 
 #[test]
-fn test_swarm_stats_new() {
-    let stats = SwarmStats::new();
+λ test_swarm_stats_new() {
+    ≔ stats = SwarmStats·new();
     assert(stats.member_count == 0);
     assert(stats.activity_ratio() == 0.0);
 }
 
 #[test]
-fn test_swarm_stats_add_member() {
-    let mut stats = SwarmStats::new();
+λ test_swarm_stats_add_member() {
+    ≔ Δ stats = SwarmStats·new();
     stats.add_member(true);
     stats.add_member(false);
     assert(stats.member_count == 2);
@@ -280,8 +280,8 @@ fn test_swarm_stats_add_member() {
 }
 
 #[test]
-fn test_swarm_stats_activity_ratio() {
-    let mut stats = SwarmStats::new();
+λ test_swarm_stats_activity_ratio() {
+    ≔ Δ stats = SwarmStats·new();
     stats.add_member(true);
     stats.add_member(true);
     stats.add_member(false);
@@ -290,67 +290,67 @@ fn test_swarm_stats_activity_ratio() {
 }
 
 #[test]
-fn test_behavior_type_separation() {
-    let b = BehaviorType::Separation;
+λ test_behavior_type_separation() {
+    ≔ b = BehaviorType·Separation;
     assert(b.default_weight() == 1.5);
     assert(b.is_repulsive());
 }
 
 #[test]
-fn test_behavior_type_cohesion() {
-    let b = BehaviorType::Cohesion;
+λ test_behavior_type_cohesion() {
+    ≔ b = BehaviorType·Cohesion;
     assert(b.default_weight() == 1.0);
     assert(!b.is_repulsive());
 }
 
 #[test]
-fn test_behavior_type_avoidance() {
-    let b = BehaviorType::Avoidance;
+λ test_behavior_type_avoidance() {
+    ≔ b = BehaviorType·Avoidance;
     assert(b.default_weight() == 3.0);
     assert(b.is_repulsive());
 }
 
 #[test]
-fn test_behavior_rule_new() {
-    let rule = BehaviorRule::new(BehaviorType::GoalSeeking);
+λ test_behavior_rule_new() {
+    ≔ rule = BehaviorRule·new(BehaviorType·GoalSeeking);
     assert(rule.weight == 2.0);
     assert(rule.active);
 }
 
 #[test]
-fn test_behavior_rule_with_weight() {
-    let rule = BehaviorRule::new(BehaviorType::Alignment).with_weight(5.0);
+λ test_behavior_rule_with_weight() {
+    ≔ rule = BehaviorRule·new(BehaviorType·Alignment).with_weight(5.0);
     assert(rule.weight == 5.0);
 }
 
 #[test]
-fn test_behavior_rule_disabled() {
-    let rule = BehaviorRule::new(BehaviorType::Separation).disabled();
+λ test_behavior_rule_disabled() {
+    ≔ rule = BehaviorRule·new(BehaviorType·Separation).disabled();
     assert(!rule.active);
     assert(rule.effective_weight() == 0.0);
 }
 
 #[test]
-fn test_swarm_goal_new() {
-    let goal = SwarmGoal::new(0.8, 10.0, 20.0, 30.0);
+λ test_swarm_goal_new() {
+    ≔ goal = SwarmGoal·new(0.8, 10.0, 20.0, 30.0);
     assert(goal.priority == 0.8);
     assert(!goal.achieved);
 }
 
 #[test]
-fn test_swarm_goal_achieved() {
-    let mut goal = SwarmGoal::new(0.5, 0.0, 0.0, 0.0);
+λ test_swarm_goal_achieved() {
+    ≔ Δ goal = SwarmGoal·new(0.5, 0.0, 0.0, 0.0);
     goal.mark_achieved();
     assert(goal.achieved);
 }
 
 #[test]
-fn test_swarm_goal_distance() {
-    let goal = SwarmGoal::new(1.0, 3.0, 4.0, 0.0);
-    let dist = goal.distance_to(0.0, 0.0, 0.0);
+λ test_swarm_goal_distance() {
+    ≔ goal = SwarmGoal·new(1.0, 3.0, 4.0, 0.0);
+    ≔ dist = goal.distance_to(0.0, 0.0, 0.0);
     assert(dist == 25.0);
 }
 
-fn main() {
+λ main() {
     println("Commune swarm tests - 20 tests");
 }

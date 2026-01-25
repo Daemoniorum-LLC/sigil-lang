@@ -1,0 +1,18 @@
+// Test: Evidence lattice rule - Uncertain + Reported = Uncertain
+// Spec: 03-TYPES.md § 2.2 Evidence Lattice
+// Priority: P0
+//
+// Purpose:
+// Validates that combining Uncertain (?) and Reported (~) evidence
+// follows the pessimistic lattice rule: ? + ~ = ?
+//
+// Expected behavior:
+// When adding an Uncertain value and a Reported value, the result
+// should have Uncertain evidence. Should print 176 (99 + 77).
+
+λ main() {
+    ≔ x: ?i32 = 99;
+    ≔ y: ~i32 = 77;
+    ≔ z = x + y;  // Should be ?i32
+    println(z);
+}

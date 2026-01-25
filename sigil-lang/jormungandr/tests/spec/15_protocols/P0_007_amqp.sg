@@ -1,0 +1,13 @@
+// Test: AMQP (RabbitMQ)
+// Spec: 15-PROTOCOLS.md § 8 AMQP Support
+// Priority: P0 - Bootstrap Critical
+
+invoke protocol·amqp·{Connection, Channel, Queue};
+
+async λ main() {
+    ≔ conn = Connection·connect("amqp://localhost")|await~;
+    ≔ ch = conn.create_channel()|await~;
+    ≔ queue = ch.declare_queue("tasks")|await~;
+    ch.publish("", "tasks", "hello")|await;
+    println(1);
+}

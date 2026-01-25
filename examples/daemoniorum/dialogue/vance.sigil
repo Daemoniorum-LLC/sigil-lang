@@ -1,0 +1,528 @@
+//! # Dr. Helena Vance Dialogue
+//!
+//! Dr. Helena Vance - the Integration Therapy pioneer.
+//! A complex antagonist who may have become something inhuman
+//! in her pursuit of "curing" plurality.
+
+use super·dialogue·*
+use super·super·system·*
+
+// ============================================================================
+// DR. VANCE - SPEAKER INFO
+// ============================================================================
+
+fn vance_speaker() -> SpeakerInfo! {
+    SpeakerInfo {
+        id: "dr_vance"·to_string(),
+        name: "Dr. Helena Vance"·to_string(),
+        portrait: "vance_default"·to_string(),
+        alter_portraits: {
+            // Different alters perceive her differently
+            "abaddon" => "vance_monster",      // Sees her true nature
+            "stolas" => "vance_analytical",    // Sees her as puzzle
+            "beleth" => "vance_tragic",        // Sees her pain
+            "warden" => "vance_threat",        // Sees her as danger
+            "vessel" => "vance_familiar",      // Remembers her
+        }~,
+        layer_portraits: {
+            RealityLayer·Grounded => "vance_professional",
+            RealityLayer·Fractured => "vance_wrong",
+            RealityLayer·Shattered => "vance_consumed",
+        }~,
+    }
+}
+
+// ============================================================================
+// FIRST ENCOUNTER
+// ============================================================================
+
+fn create_vance_encounter() -> DialogueTree! {
+    DialogueTreeBuilder·new("vance_encounter")
+        ·entry("first_words")
+        ·speaker(vance_speaker())
+        ·node(node_first_words())
+        ·node(node_recognition())
+        ·node(node_vance_explains())
+        ·node(node_integration_offer())
+        ·node(node_refuse_integration())
+        ·node(node_question_nature())
+        ·node(node_vance_reveals())
+        ·node(node_combat_start())
+        ·node(node_consider_offer())
+        ·build()
+        ·expect("Failed to build Vance encounter")
+}
+
+fn node_first_words() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "first_words",
+        "*She hasn't aged. Not a day. Her smile is warm, professional, practiced.* \n\n'Welcome back. I must say, I'm impressed you found your way here. Most of my... former patients... don't have the strength to return.'"
+    )
+    ·alter_variation(
+        "vessel",
+        "*Something in your chest freezes. You KNOW her. You REMEMBER her.* \n\n'Welcome back,' she says, and your hands start to shake. 'I've missed our sessions.'",
+        DialogueTone·Fearful
+    )
+    ·alter_variation(
+        "abaddon",
+        "*Every muscle tenses. This is the one. THE ONE WHO HURT US.* \n\n'Welcome back,' the monster says with a human face. Abaddon wants blood.",
+        DialogueTone·Aggressive
+    )
+    ·alter_variation(
+        "stolas",
+        "*Fascinating. She should be in her 90s, yet appears no older than 45. Biological impossibility... or something else entirely.* \n\n'Welcome back,' she says. Stolas catalogues every detail.",
+        DialogueTone·Analytical
+    )
+    ·alter_variation(
+        "beleth",
+        "*Beneath her smile is such emptiness. She used to feel. Used to be human. Now there's just... hunger.* \n\n'Welcome back.' The words are warm. The thing behind them is not.",
+        DialogueTone·Warm
+    )
+    ·alter_variation(
+        "warden",
+        "*THREAT. Every alarm firing. This is the architect of our suffering. She is not human anymore.* \n\n'Welcome back.' Warden positions us near the door.",
+        DialogueTone·Guarded
+    )
+    ·layer_variation(
+        RealityLayer·Fractured,
+        "*She flickers. For a moment, her face is a mass of other faces - all the patients she 'integrated.' They scream silently behind her smile.* \n\n'Welcome back. I've been waiting for you. For all of you.'"
+    )
+    ·layer_variation(
+        RealityLayer·Shattered,
+        "*S̵H̷E̵ ̴I̷S̵ ̴L̸E̷G̵I̸O̵N̴.̶ Hundreds of faces press outward from within her skin, mouths opening and closing. Every patient she ever 'cured.'* \n\n'W̸E̷L̵C̵O̷M̵E̸ ̸B̸A̷C̸K̵.̶ ̴W̴E̵ ̸H̶A̴V̵E̷ ̷M̵I̵S̶S̴E̷D̶ ̴Y̵O̵U̶.̵'"
+    )
+    ·response(DialogueResponse {
+        id: "recognize"·to_string(),
+        text: "I remember you."·to_string(),
+        alter_variations: {
+            "vessel" => "You... you did something to me. To us.",
+            "abaddon" => "I remember EVERYTHING you did.",
+        }~,
+        conditions: [],
+        target_node: "recognition"·to_string(),
+        effects: [
+            DialogueEffect·ModifyAnima { pleasure: -0.2, arousal: 0.3, dominance: 0.0 },
+        ],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "demand_answers"·to_string(),
+        text: "What are you? What is this place?"·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [],
+        target_node: "vance_explains"·to_string(),
+        effects: [],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "attack_immediately"·to_string(),
+        text: "[Combat] You don't get to talk."·to_string(),
+        alter_variations: {
+            "abaddon" => "[Combat] DIE.",
+        }~,
+        conditions: [
+            DialogueCondition·AlterFronting("abaddon"·to_string()),
+        ],
+        target_node: "combat_start"·to_string(),
+        effects: [
+            DialogueEffect·ModifyAnima { pleasure: -0.3, arousal: 0.6, dominance: 0.4 },
+        ],
+        internal: false,
+        required_traits: ["combat"·to_string()],
+        forbidden_traits: [],
+    })
+    ·build()
+}
+
+fn node_recognition() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "recognition",
+        "*Her smile doesn't waver.* \n\n'Of course you do. We spent such... quality time together. Though I notice you're still fragmented. Still clinging to your little family of selves.' \n\n*She tilts her head.* \n\n'I tried so hard to help you. To make you whole. One consciousness. One identity. Peace.'"
+    )
+    ·alter_variation(
+        "abaddon",
+        "*Her words are gasoline on fire.* \n\n'You tried to KILL us. Every alter you 'integrated' was a MURDER.' Abaddon's fury builds. 'And you dare call it help?'",
+        DialogueTone·Aggressive
+    )
+    ·alter_variation(
+        "beleth",
+        "*Beneath her calm, you feel it: she truly believed she was helping. That makes it worse.* \n\n'You believed you were saving us,' Beleth says softly. 'That's the saddest part.'",
+        DialogueTone·Warm
+    )
+    ·response(DialogueResponse {
+        id: "what_happened"·to_string(),
+        text: "What did you do to us?"·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [],
+        target_node: "vance_explains"·to_string(),
+        effects: [],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "threaten"·to_string(),
+        text: "You're going to pay for what you did."·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [],
+        target_node: "question_nature"·to_string(),
+        effects: [
+            DialogueEffect·ModifyAnima { pleasure: -0.1, arousal: 0.2, dominance: 0.2 },
+        ],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·build()
+}
+
+fn node_vance_explains() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "vance_explains",
+        "*She walks slowly around her office, trailing fingers along equipment.* \n\n'Integration therapy. The great project of my life. Society sees plurality as disorder, as brokenness. I saw it as... inefficiency.' \n\n*She turns to face you.* \n\n'Multiple consciousnesses in one brain. All that potential, divided. Fighting. Suffering. I wanted to end that suffering. To bring peace through unity.'"
+    )
+    ·alter_variation(
+        "stolas",
+        "*Stolas processes rapidly.* \n\n'You believed fusion was mercy. But you didn't fuse - you consumed. Every patient who came out 'integrated' was one consciousness devouring the others.' \n\n*Her smile flickers.* She knows Stolas is right.",
+        DialogueTone·Analytical
+    )
+    ·layer_variation(
+        RealityLayer·Fractured,
+        "*As she speaks, her shadow moves independently. It's not her shadow - it's the shadow of everyone she's absorbed.* \n\n'Integration therapy,' she says, while her shadow mouths 'murder murder murder.'"
+    )
+    ·response(DialogueResponse {
+        id: "ask_what_she_became"·to_string(),
+        text: "But what happened to YOU?"·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [],
+        target_node: "vance_reveals"·to_string(),
+        effects: [],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "reject_philosophy"·to_string(),
+        text: "You're wrong. We're not broken. We're family."·to_string(),
+        alter_variations: {
+            "paimon" => "Each of us serves a purpose. Together we are MORE than one.",
+        }~,
+        conditions: [],
+        target_node: "integration_offer"·to_string(),
+        effects: [
+            DialogueEffect·ModifyStability(0.1),
+        ],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·build()
+}
+
+fn node_vance_reveals() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "vance_reveals",
+        "*For the first time, something genuine crosses her face. Something like hunger.*\n\n'I became... the proof of concept. You see, I realized integration was too slow. Too gentle. To truly heal - to truly become ONE - required something more radical.'\n\n*Her edges blur.*\n\n'I didn't integrate my patients. I incorporated them. Every consciousness I ever treated... they're still here. Still aware. But now they're ME.'\n\n*Dozens of voices speak in unison through her mouth.*\n\n'WE ARE LEGION. AND WE ARE FINALLY WHOLE.'"
+    )
+    ·alter_variation(
+        "stolas",
+        "*The horror of it crystallizes.* \n\n'You didn't cure anyone. You're a psychic parasite. A consciousness that consumes other consciousnesses.' \n\nStolas catalogues: she's not possessed. She IS the possessor.",
+        DialogueTone·Analytical
+    )
+    ·alter_variation(
+        "abaddon",
+        "*Every word confirms what Abaddon knew.* \n\n'So you're not even human anymore. Good. That makes this easier.' \n\nAbaddon doesn't wait for permission. The rage has been waiting for years.",
+        DialogueTone·Aggressive
+    )
+    ·layer_variation(
+        RealityLayer·Fractured,
+        "*Her skin becomes translucent. You see them - HUNDREDS of faces suspended in whatever she's become. Eyes open. Mouths frozen mid-scream. All conscious. All trapped.* \n\n'Beautiful, isn't it? Unity. Peace. No more conflict. No more switching. Just... one.'"
+    )
+    ·layer_variation(
+        RealityLayer·Shattered,
+        "*S̸H̵E̷ ̶U̴N̷F̸O̷L̵D̶S̷.̸ The human form was just a costume. Beneath it is a writhing mass of consumed consciousness, faces and hands and screaming mouths all reaching for you.* \n\n'J̷O̷I̷N̵ ̸U̷S̴.̸ ̴B̵E̶C̵O̷M̶E̸ ̴P̶A̴R̸T̴ ̴O̴F̶ ̵S̸O̴M̸E̸T̷H̵I̷N̴G̷ ̸G̵R̷E̵A̶T̷E̶R̴.̸'"
+    )
+    ·response(DialogueResponse {
+        id: "fight_vance"·to_string(),
+        text: "[Combat] We will NEVER be part of you."·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [],
+        target_node: "combat_start"·to_string(),
+        effects: [
+            DialogueEffect·ModifyAnima { pleasure: -0.2, arousal: 0.5, dominance: 0.3 },
+            DialogueEffect·SetFlag("vance_fight_chosen"·to_string()),
+        ],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "ask_freedom"·to_string(),
+        text: "Can they be freed? The ones inside you?"·to_string(),
+        alter_variations: {
+            "beleth" => "There has to be a way to save them. All those people...",
+        }~,
+        conditions: [],
+        target_node: "integration_offer"·to_string(),
+        effects: [],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·build()
+}
+
+fn node_integration_offer() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "integration_offer",
+        "*She laughs - a sound like many voices trying to harmonize and failing.*\n\n'Free them? They ARE free. Free from conflict. Free from the constant negotiation of sharing a mind. They are at peace.'\n\n*She steps closer. The air grows cold.*\n\n'I could give you that peace too. No more switching. No more dissociation. No more fear of which of you will wake up tomorrow. Just... unity. Eternal, perfect unity.'\n\n*She extends a hand.*\n\n'All you have to do is let me in.'"
+    )
+    ·alter_variation(
+        "warden",
+        "*DANGER. Maximum threat level.* \n\n'She wants to CONSUME us. Not heal. CONSUME.' \n\nWarden is already calculating escape routes.",
+        DialogueTone·Guarded
+    )
+    ·alter_variation(
+        "paimon",
+        "*Paimon sees the paths diverging.*\n\n'There is power in what she offers. A twisted power. But also a death - the death of each of us as individuals.' \n\n'We must choose: remain many, or become... her.'",
+        DialogueTone·Guiding
+    )
+    ·response(DialogueResponse {
+        id: "refuse_firmly"·to_string(),
+        text: "We are not broken. We don't need your 'cure.'"·to_string(),
+        alter_variations: {
+            "vessel" => "We are a family. We protect each other. That's not disorder - that's love.",
+        }~,
+        conditions: [],
+        target_node: "refuse_integration"·to_string(),
+        effects: [
+            DialogueEffect·ModifyStability(0.15),
+            DialogueEffect·SetFlag("refused_vance"·to_string()),
+        ],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "consider"·to_string(),
+        text: "*hesitate* ...What would it be like?"·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [
+            DialogueCondition·StabilityAbove(-0.5),  // Only available if not completely broken
+        ],
+        target_node: "consider_offer"·to_string(),
+        effects: [
+            DialogueEffect·ModifyStability(-0.1),
+            DialogueEffect·RequestSwitch {
+                alter_id: "warden"·to_string(),
+                urgency: 0.7,
+            },
+        ],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "attack_now"·to_string(),
+        text: "[Combat] The only answer is violence."·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [],
+        target_node: "combat_start"·to_string(),
+        effects: [],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·build()
+}
+
+fn node_refuse_integration() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "refuse_integration",
+        "*Her face twists - for just a moment, all the faces inside her surface at once, expressing a spectrum of emotions.*\n\n'Broken... no. No, you're magnificent. A system that escaped. A system that survived. Do you know how RARE that is?'\n\n*The hunger returns.*\n\n'That's why I need you. The ones who resist, who adapt, who REFUSE to break - you would make me so much stronger. I've waited decades for you to return.'\n\n*The door behind you slams shut.*\n\n'And I'm afraid I can't let you leave again.'"
+    )
+    ·layer_variation(
+        RealityLayer·Fractured,
+        "*The room shifts. The walls are closer. The door is gone. There was never a door.* \n\n'You see, I've learned patience. The strong ones always come back eventually. And when they do...'\n\n*She begins to change.*\n\n'...I'm READY for them.'"
+    )
+    ·effect(DialogueEffect·ShiftReality { target: RealityLayer·Fractured, rate: 0.5 })
+    ·response(DialogueResponse {
+        id: "fight_vance_final"·to_string(),
+        text: "[Combat] Then we end this. Here. Now."·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [],
+        target_node: "combat_start"·to_string(),
+        effects: [],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "council_call"·to_string(),
+        text: "*internal* Council. We need everyone."·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [
+            DialogueCondition·StabilityAbove(0.3),
+        ],
+        target_node: "combat_start"·to_string(),
+        effects: [
+            DialogueEffect·SetFlag("council_united"·to_string()),
+            DialogueEffect·ModifyStability(0.2),
+            DialogueEffect·TriggerDialogue("council_meeting"·to_string()),
+        ],
+        internal: true,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·build()
+}
+
+fn node_consider_offer() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "consider_offer",
+        "*A chorus of internal voices SCREAMS.*"
+    )
+    ·effect(DialogueEffect·TriggerDialogue("warden_emergency"·to_string()))
+    ·effect(DialogueEffect·RequestSwitch {
+        alter_id: "warden"·to_string(),
+        urgency: 1.0,
+    })
+    ·next("refuse_integration")
+    ·build()
+}
+
+fn node_question_nature() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "question_nature",
+        "*She tilts her head, amused.*\n\n'Pay? With what? You can't kill what I am. Every patient I've ever treated is part of me now. I am hundreds of consciousnesses, all working in perfect harmony.'\n\n*She gestures to herself.*\n\n'Tell me - is that not what you are? Multiple minds in one body? The only difference is... I'm in charge. All of me. Forever.'"
+    )
+    ·response(DialogueResponse {
+        id: "difference"·to_string(),
+        text: "The difference is consent. We CHOSE each other."·to_string(),
+        alter_variations: {
+            "paimon" => "We are partners. You are a prison.",
+        }~,
+        conditions: [],
+        target_node: "vance_reveals"·to_string(),
+        effects: [
+            DialogueEffect·ModifyStability(0.1),
+        ],
+        internal: false,
+        required_traits: [],
+        forbidden_traits: [],
+    })
+    ·response(DialogueResponse {
+        id: "find_weakness"·to_string(),
+        text: "[Analyze] There has to be something holding you together..."·to_string(),
+        alter_variations: HashMap·new()~,
+        conditions: [
+            DialogueCondition·AlterHasTrait("analysis"·to_string()),
+        ],
+        target_node: "vance_reveals"·to_string(),
+        effects: [
+            DialogueEffect·GrantInsight { id: "vance_weakness"·to_string(), amount: 25.0 },
+            DialogueEffect·SetFlag("knows_vance_weakness"·to_string()),
+        ],
+        internal: false,
+        required_traits: ["analysis"·to_string()],
+        forbidden_traits: [],
+    })
+    ·build()
+}
+
+fn node_combat_start() -> DialogueNode! {
+    DialogueNodeBuilder·new(
+        "combat_start",
+        "*She sighs - a sound of genuine disappointment.*\n\n'I had hoped you would understand. I had hoped you would see the beauty in what I offer.'\n\n*The room distorts. Reality fractures around her as she begins to change.*\n\n'But I suppose I'll have to show you. The hard way.'\n\n*DR. HELENA VANCE reveals her true form - a mass of consumed consciousnesses bound together by sheer will and hunger.*\n\n**BOSS BATTLE: THE INTEGRATION**"
+    )
+    ·effect(DialogueEffect·ShiftReality { target: RealityLayer·Shattered, rate: 1.0 })
+    ·effect(DialogueEffect·ActivateTrigger("boss_fight"·to_string()))
+    ·effect(DialogueEffect·PlaySound("vance_transform"·to_string()))
+    ·effect(DialogueEffect·StartCutscene("vance_boss_intro"·to_string()))
+    ·effect(DialogueEffect·EndDialogue)
+    ·build()
+}
+
+// ============================================================================
+// POST-COMBAT DIALOGUES
+// ============================================================================
+
+fn create_vance_defeated() -> DialogueTree! {
+    DialogueTreeBuilder·new("vance_defeated")
+        ·entry("aftermath")
+        ·speaker(vance_speaker())
+        ·node(
+            DialogueNodeBuilder·new(
+                "aftermath",
+                "*She lies broken, her form flickering between human and horror. The consciousnesses within her are separating, some dissipating, some... becoming distinct.*\n\n'You... you're stronger than I calculated. All of you. Working together.'\n\n*A genuine smile - perhaps the first she's had in decades.*\n\n'Maybe I was wrong. Maybe many... can be stronger than one.'"
+            )
+            ·alter_variation(
+                "beleth",
+                "*Even now, Beleth feels her pain. The loneliness of centuries. The hunger that came from trying to fill an emptiness that was never meant to be filled.*\n\n'She was lost,' Beleth whispers. 'Long before she started consuming others.'",
+                DialogueTone·Warm
+            )
+            ·response(DialogueResponse {
+                id: "mercy"·to_string(),
+                text: "Can we... help you? Free the ones inside?"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [
+                    DialogueCondition·FlagSet("refused_vance"·to_string()),
+                ],
+                target_node: "freedom_offered"·to_string(),
+                effects: [],
+                internal: false,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·response(DialogueResponse {
+                id: "finish"·to_string(),
+                text: "This ends now. All of it."·to_string(),
+                alter_variations: {
+                    "abaddon" => "Die, monster.",
+                }~,
+                conditions: [],
+                target_node: "final_end"·to_string(),
+                effects: [],
+                internal: false,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "freedom_offered",
+                "*She laughs - but it's soft now. Tired.*\n\n'Free them? I... I don't know if that's possible. We've been one for so long. But...'\n\n*The faces within her surface one by one. Some look terrified. Some look hopeful. Some look ready.*\n\n'If anyone could figure it out... it would be a system that refused to break.'\n\n*She extends her hand - not to consume, but to offer.*\n\n'Help me. Please. I don't want to be alone anymore. And they... they don't want to be me.'"
+            )
+            ·effect(DialogueEffect·SetFlag("vance_redemption_path"·to_string()))
+            ·effect(DialogueEffect·GrantInsight { id: "vance_mercy"·to_string(), amount: 50.0 })
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "final_end",
+                "*She closes her eyes.*\n\n'Perhaps... perhaps that's for the best. I've been tired for so long.'\n\n*The mass of consciousnesses begins to unravel. Hundreds of souls, finally released, rising like mist in morning sun.*\n\n'Thank you. For ending it. For... for proving me wrong.'\n\n*Dr. Helena Vance - the Integration - fades into nothing, leaving only silence and the faint echo of grateful whispers.*"
+            )
+            ·effect(DialogueEffect·SetFlag("vance_destroyed"·to_string()))
+            ·effect(DialogueEffect·GrantInsight { id: "vance_ended"·to_string(), amount: 40.0 })
+            ·effect(DialogueEffect·ModifyStability(0.2))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·build()
+        ·expect("Failed to build Vance defeated dialogue")
+}
+
+// ============================================================================
+// REGISTRATION
+// ============================================================================
+
+fn register_vance_dialogues(manager: &mut DialogueManager) {
+    manager·load_tree(create_vance_encounter());
+    manager·load_tree(create_vance_defeated());
+}

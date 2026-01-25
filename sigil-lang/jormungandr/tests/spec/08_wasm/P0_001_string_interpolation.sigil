@@ -1,0 +1,114 @@
+//! P0_001: String Interpolation in WASM
+//!
+//! Tests for compiling `f"Hello, {name}!"` syntax to WebAssembly.
+//! This is the #1 blocker for Qliphoth component rendering.
+//!
+//! Note: Sigil uses f"..." prefix for interpolated strings (like Python/Kotlin)
+
+// Test 1: Basic variable interpolation
+fn test_basic_interpolation() {
+    let name = "World";
+    let msg = f"Hello, {name}!";
+    assert_eq(msg, "Hello, World!");
+}
+
+// Test 2: Expression interpolation
+fn test_expression_interpolation() {
+    let x = 5;
+    let msg = f"Value: {x + 1}";
+    assert_eq(msg, "Value: 6");
+}
+
+// Test 3: Multiple interpolations
+fn test_multiple_interpolation() {
+    let first = "John";
+    let last = "Doe";
+    let msg = f"{first} {last}";
+    assert_eq(msg, "John Doe");
+}
+
+// Test 4: Integer interpolation
+fn test_int_interpolation() {
+    let n = 42;
+    let msg = f"The answer is {n}";
+    assert_eq(msg, "The answer is 42");
+}
+
+// Test 5: Escape braces (literal braces)
+fn test_escape_braces() {
+    let msg = f"Literal: {{not interpolated}}";
+    assert_eq(msg, "Literal: {not interpolated}");
+}
+
+// Test 6: Empty string interpolation
+fn test_empty_string_interpolation() {
+    let empty = "";
+    let msg = f"Start{empty}End";
+    assert_eq(msg, "StartEnd");
+}
+
+// Test 7: Adjacent interpolations
+fn test_adjacent_interpolation() {
+    let a = "Hello";
+    let b = "World";
+    let msg = f"{a}{b}";
+    assert_eq(msg, "HelloWorld");
+}
+
+// Test 8: Interpolation at start
+fn test_interpolation_at_start() {
+    let greeting = "Hello";
+    let msg = f"{greeting}, friend!";
+    assert_eq(msg, "Hello, friend!");
+}
+
+// Test 9: Interpolation at end
+fn test_interpolation_at_end() {
+    let name = "Alice";
+    let msg = f"Goodbye, {name}";
+    assert_eq(msg, "Goodbye, Alice");
+}
+
+// Test 10: Only interpolation (no literal text)
+fn test_only_interpolation() {
+    let value = "standalone";
+    let msg = f"{value}";
+    assert_eq(msg, "standalone");
+}
+
+fn main() {
+    print("Running string interpolation tests...");
+
+    test_basic_interpolation();
+    print("  [PASS] test_basic_interpolation");
+
+    test_expression_interpolation();
+    print("  [PASS] test_expression_interpolation");
+
+    test_multiple_interpolation();
+    print("  [PASS] test_multiple_interpolation");
+
+    test_int_interpolation();
+    print("  [PASS] test_int_interpolation");
+
+    test_escape_braces();
+    print("  [PASS] test_escape_braces");
+
+    test_empty_string_interpolation();
+    print("  [PASS] test_empty_string_interpolation");
+
+    test_adjacent_interpolation();
+    print("  [PASS] test_adjacent_interpolation");
+
+    test_interpolation_at_start();
+    print("  [PASS] test_interpolation_at_start");
+
+    test_interpolation_at_end();
+    print("  [PASS] test_interpolation_at_end");
+
+    test_only_interpolation();
+    print("  [PASS] test_only_interpolation");
+
+    print("");
+    print("All string interpolation tests passed!");
+}

@@ -1,0 +1,471 @@
+//! Socket Layer Tests
+//!
+//! TDD Red Phase: Tests ∀ SocketAddr, TcpStream, TcpListener, UdpSocket
+//!
+//! Test IDs: SOCK-001 through SOCK-007, TCP-001 through TCP-013, UDP-001 through UDP-005
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 4
+
+invoke stdlib·net·socket·*;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+λ test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
+    ⎇ actual != expected {
+        panic(format!("[{}] FAIL: {} - expected {}, got {}", test_id, msg, expected, actual));
+    }
+}
+
+λ test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
+    ⌥ result {
+        Result·Ok(v) => v,
+        Result·Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
+    }
+}
+
+λ test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
+    ⌥ result {
+        Result·Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
+        Result·Err(e) => e,
+    }
+}
+
+λ test_assert_true(cond: bool, test_id: &str, msg: &str) {
+    ⎇ !cond {
+        panic(format!("[{}] FAIL: {}", test_id, msg));
+    }
+}
+
+// ============================================================================
+// SOCK-001: test_socket_addr_ipv4_parse
+// Parse "192.168.1.1:8080"
+// ============================================================================
+
+λ test_socket_addr_ipv4_parse() -> bool {
+    print("  [SOCK-001] SocketAddr IPv4 parse... ");
+
+    ≔ addr = test_assert_ok(SocketAddr·parse("192.168.1.1:8080"), "SOCK-001", "parse");
+
+    test_assert_eq(addr.port(), 8080, "SOCK-001", "port");
+
+    ⌥ addr.ip() {
+        IpAddr·V4(octets) => {
+            test_assert_eq(octets[0], 192, "SOCK-001", "octet 0");
+            test_assert_eq(octets[1], 168, "SOCK-001", "octet 1");
+            test_assert_eq(octets[2], 1, "SOCK-001", "octet 2");
+            test_assert_eq(octets[3], 1, "SOCK-001", "octet 3");
+        }
+        _ => panic("[SOCK-001] FAIL: expected IPv4"),
+    }
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SOCK-002: test_socket_addr_ipv4_localhost
+// Parse "127.0.0.1:80"
+// ============================================================================
+
+λ test_socket_addr_ipv4_localhost() -> bool {
+    print("  [SOCK-002] SocketAddr localhost... ");
+
+    ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:80"), "SOCK-002", "parse");
+
+    test_assert_eq(addr.port(), 80, "SOCK-002", "port");
+
+    ⌥ addr.ip() {
+        IpAddr·V4(octets) => {
+            test_assert_eq(octets[0], 127, "SOCK-002", "octet 0");
+            test_assert_eq(octets[1], 0, "SOCK-002", "octet 1");
+            test_assert_eq(octets[2], 0, "SOCK-002", "octet 2");
+            test_assert_eq(octets[3], 1, "SOCK-002", "octet 3");
+        }
+        _ => panic("[SOCK-002] FAIL: expected IPv4"),
+    }
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SOCK-003: test_socket_addr_ipv6_parse
+// Parse "[·1]:8080"
+// ============================================================================
+
+λ test_socket_addr_ipv6_parse() -> bool {
+    print("  [SOCK-003] SocketAddr IPv6 parse... ");
+
+    ≔ addr = test_assert_ok(SocketAddr·parse("[·1]:8080"), "SOCK-003", "parse");
+
+    test_assert_eq(addr.port(), 8080, "SOCK-003", "port");
+    test_assert_true(addr.ip().is_v6(), "SOCK-003", "should be IPv6");
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SOCK-004: test_socket_addr_ipv6_full
+// Parse full IPv6 address (stretch goal)
+// ============================================================================
+
+λ test_socket_addr_ipv6_full() -> bool {
+    print("  [SOCK-004] SocketAddr IPv6 full... ");
+
+    // Full IPv6 parsing is complex - test ·1 ∀ now
+    ≔ result = SocketAddr·parse("[2001:db8·1]:443");
+
+    // This may fail until full IPv6 parsing is implemented
+    ⌥ result {
+        Result·Ok(addr) => {
+            test_assert_eq(addr.port(), 443, "SOCK-004", "port");
+            println("PASS");
+        }
+        Result·Err(_) => {
+            println("SKIP (IPv6 full parsing not implemented)");
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// SOCK-005: test_socket_addr_invalid
+// Parse "invalid" should error
+// ============================================================================
+
+λ test_socket_addr_invalid() -> bool {
+    print("  [SOCK-005] SocketAddr invalid... ");
+
+    ≔ result = SocketAddr·parse("invalid");
+    test_assert_err(result, "SOCK-005", "should fail");
+
+    ≔ result2 = SocketAddr·parse("no-port");
+    test_assert_err(result2, "SOCK-005", "should fail without port");
+
+    ≔ result3 = SocketAddr·parse("256.1.2.3:80");
+    test_assert_err(result3, "SOCK-005", "should fail with invalid octet");
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SOCK-006: test_socket_addr_to_sockaddr
+// Convert to raw sockaddr struct
+// ============================================================================
+
+λ test_socket_addr_to_sockaddr() -> bool {
+    print("  [SOCK-006] SocketAddr to_raw... ");
+
+    ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:8080"), "SOCK-006", "parse");
+    ≔ (raw, len) = addr.to_raw();
+
+    // Verify sockaddr_in structure
+    test_assert_eq(len, 16, "SOCK-006", "sockaddr_in length");
+    test_assert_eq(raw[0], 2, "SOCK-006", "AF_INET");  // sin_family
+    test_assert_eq(raw[2], 31, "SOCK-006", "port high byte");  // 8080 >> 8 = 31
+    test_assert_eq(raw[3], 144, "SOCK-006", "port low byte");  // 8080 & 0xFF = 144
+    test_assert_eq(raw[4], 127, "SOCK-006", "addr byte 0");
+    test_assert_eq(raw[5], 0, "SOCK-006", "addr byte 1");
+    test_assert_eq(raw[6], 0, "SOCK-006", "addr byte 2");
+    test_assert_eq(raw[7], 1, "SOCK-006", "addr byte 3");
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SOCK-007: test_socket_addr_from_sockaddr
+// Parse from raw sockaddr
+// ============================================================================
+
+λ test_socket_addr_from_sockaddr() -> bool {
+    print("  [SOCK-007] SocketAddr from_raw... ");
+
+    // Create a raw sockaddr_in
+    ≔ Δ raw: [u8; 16] = [0; 16];
+    raw[0] = 2;    // AF_INET
+    raw[2] = 0;    // port 80 high byte
+    raw[3] = 80;   // port 80 low byte
+    raw[4] = 10;   // 10.0.0.1
+    raw[5] = 0;
+    raw[6] = 0;
+    raw[7] = 1;
+
+    ≔ addr = test_assert_ok(SocketAddr·from_raw(&raw, 16), "SOCK-007", "from_raw");
+
+    test_assert_eq(addr.port(), 80, "SOCK-007", "port");
+    ⌥ addr.ip() {
+        IpAddr·V4(octets) => {
+            test_assert_eq(octets[0], 10, "SOCK-007", "octet 0");
+            test_assert_eq(octets[3], 1, "SOCK-007", "octet 3");
+        }
+        _ => panic("[SOCK-007] FAIL: expected IPv4"),
+    }
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// TCP Tests
+// ============================================================================
+
+// TCP-001: test_tcp_connect_localhost
+λ test_tcp_connect_localhost() -> bool {
+    print("  [TCP-001] TcpStream connect localhost... ");
+
+    // This test requires a server running on localhost
+    // For unit test, verify the API exists and errors correctly
+    ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:12345"), "TCP-001", "parse");
+    ≔ result = TcpStream·connect(&addr);
+
+    // Expect ConnectionRefused since nothing is listening
+    ≔ err = test_assert_err(result, "TCP-001", "should fail (no server)");
+    ⌥ err {
+        SocketError·ConnectionRefused => {}
+        _ => panic(format!("[TCP-001] FAIL: expected ConnectionRefused, got {:?}", err)),
+    }
+
+    println("PASS (refused expected)");
+    true
+}
+
+// TCP-002: test_tcp_connect_by_hostname
+λ test_tcp_connect_by_hostname() -> bool {
+    print("  [TCP-002] TcpStream connect by hostname... ");
+
+    // DNS resolution not implemented yet
+    ≔ result = TcpStream·connect_host("localhost", 12345);
+
+    // Should either work (⎇ localhost resolves to 127.0.0.1) or fail
+    ⌥ result {
+        Result·Ok(stream) => {
+            // Unexpected - a server was listening
+            stream.close();
+        }
+        Result·Err(SocketError·InvalidAddress) => {
+            // DNS not implemented
+        }
+        Result·Err(SocketError·ConnectionRefused) => {
+            // DNS worked, but no server
+        }
+        Result·Err(e) => {
+            panic(format!("[TCP-002] FAIL: unexpected error {:?}", e));
+        }
+    }
+
+    println("PASS");
+    true
+}
+
+// TCP-003: test_tcp_connect_refused
+λ test_tcp_connect_refused() -> bool {
+    print("  [TCP-003] TcpStream connect refused... ");
+
+    ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:1"), "TCP-003", "parse");
+    ≔ result = TcpStream·connect(&addr);
+
+    ≔ err = test_assert_err(result, "TCP-003", "should fail");
+    ⌥ err {
+        SocketError·ConnectionRefused | SocketError·Syscall { .. } => {}
+        _ => panic(format!("[TCP-003] FAIL: expected ConnectionRefused, got {:?}", err)),
+    }
+
+    println("PASS");
+    true
+}
+
+// TCP-007: test_tcp_read_exact_eof
+λ test_tcp_read_exact_eof() -> bool {
+    print("  [TCP-007] TcpStream read_exact eof... ");
+
+    // Can't test without connected socket
+    // Verify the method exists by checking type signature
+
+    println("SKIP (requires connected socket)");
+    true
+}
+
+// TCP-013: test_tcp_peer_addr
+λ test_tcp_peer_addr() -> bool {
+    print("  [TCP-013] TcpStream peer_addr... ");
+
+    // Can't test without connected socket
+    println("SKIP (requires connected socket)");
+    true
+}
+
+// ============================================================================
+// UDP Tests
+// ============================================================================
+
+// UDP-001: test_udp_bind
+λ test_udp_bind() -> bool {
+    print("  [UDP-001] UdpSocket bind... ");
+
+    // Bind to port 0 (OS assigns)
+    ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:0"), "UDP-001", "parse");
+    ≔ socket = test_assert_ok(UdpSocket·bind(&addr), "UDP-001", "bind");
+
+    // Check we got a port
+    ⎇ ≔ Some(local) = socket.local_addr() {
+        test_assert_true(local.port() > 0, "UDP-001", "should have assigned port");
+    } ⎉ {
+        // local_addr might be None on some systems
+    }
+
+    socket.close();
+    println("PASS");
+    true
+}
+
+// UDP-002: test_udp_bind_any_port
+λ test_udp_bind_any_port() -> bool {
+    print("  [UDP-002] UdpSocket bind any port... ");
+
+    ≔ addr = test_assert_ok(SocketAddr·parse("0.0.0.0:0"), "UDP-002", "parse");
+    ≔ socket = test_assert_ok(UdpSocket·bind(&addr), "UDP-002", "bind");
+
+    socket.close();
+    println("PASS");
+    true
+}
+
+// UDP-005: test_udp_roundtrip
+λ test_udp_roundtrip() -> bool {
+    print("  [UDP-005] UdpSocket roundtrip... ");
+
+    // Create two sockets
+    ≔ addr1 = test_assert_ok(SocketAddr·parse("127.0.0.1:0"), "UDP-005", "parse addr1");
+    ≔ socket1 = test_assert_ok(UdpSocket·bind(&addr1), "UDP-005", "bind socket1");
+
+    ≔ addr2 = test_assert_ok(SocketAddr·parse("127.0.0.1:0"), "UDP-005", "parse addr2");
+    ≔ socket2 = test_assert_ok(UdpSocket·bind(&addr2), "UDP-005", "bind socket2");
+
+    // Get actual addresses
+    ≔ local1 = socket1.local_addr().unwrap();
+    ≔ local2 = socket2.local_addr().unwrap();
+
+    // Send from socket1 to socket2
+    ≔ data: [u8; 5] = [72, 101, 108, 108, 111]; // "Hello"
+    ≔ sent = test_assert_ok(socket1.send_to(&data, local2), "UDP-005", "send_to");
+    test_assert_eq(sent, 5, "UDP-005", "sent bytes");
+
+    // Receive on socket2
+    ≔ Δ buf: [u8; 64] = [0; 64];
+    ≔ (received, sender) = test_assert_ok(socket2.recv_from(&Δ buf), "UDP-005", "recv_from");
+
+    test_assert_eq(received, 5, "UDP-005", "received bytes");
+    test_assert_eq(buf[0], 72, "UDP-005", "data[0]");
+    test_assert_eq(buf[4], 111, "UDP-005", "data[4]");
+
+    // Verify sender is socket1
+    test_assert_eq(sender.port(), local1.port(), "UDP-005", "sender port");
+
+    socket1.close();
+    socket2.close();
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// TcpListener Tests
+// ============================================================================
+
+λ test_tcp_listener_bind() -> bool {
+    print("  [TCP-LIS-001] TcpListener bind... ");
+
+    ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:0"), "TCP-LIS-001", "parse");
+    ≔ listener = test_assert_ok(TcpListener·bind(&addr), "TCP-LIS-001", "bind");
+
+    // Check we got a port
+    test_assert_true(listener.local_addr().port() > 0, "TCP-LIS-001", "should have port");
+
+    println("PASS");
+    true
+}
+
+λ test_tcp_listener_accept_nonblocking() -> bool {
+    print("  [TCP-LIS-002] TcpListener accept nonblocking... ");
+
+    ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:0"), "TCP-LIS-002", "parse");
+    ≔ Δ listener = test_assert_ok(TcpListener·bind(&addr), "TCP-LIS-002", "bind");
+
+    // Set non-blocking
+    test_assert_ok(listener.set_nonblocking(true), "TCP-LIS-002", "set_nonblocking");
+
+    // Accept should ⤺ WouldBlock since no connections
+    ≔ result = listener.accept();
+    ≔ err = test_assert_err(result, "TCP-LIS-002", "should fail");
+
+    ⌥ err {
+        SocketError·WouldBlock => {}
+        _ => panic(format!("[TCP-LIS-002] FAIL: expected WouldBlock, got {:?}", err)),
+    }
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ λ main() -> !i32 {
+    println("===========================================");
+    println("Socket Layer Tests");
+    println("TDD Red Phase - Tests should FAIL");
+    println("===========================================");
+    println("");
+
+    ≔ Δ passed: i32 = 0;
+    ≔ Δ failed: i32 = 0;
+
+    println("--- SocketAddr Tests ---");
+    ⎇ test_socket_addr_ipv4_parse() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_socket_addr_ipv4_localhost() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_socket_addr_ipv6_parse() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_socket_addr_ipv6_full() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_socket_addr_invalid() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_socket_addr_to_sockaddr() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_socket_addr_from_sockaddr() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- TcpStream Tests ---");
+    ⎇ test_tcp_connect_localhost() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_tcp_connect_by_hostname() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_tcp_connect_refused() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_tcp_read_exact_eof() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_tcp_peer_addr() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- TcpListener Tests ---");
+    ⎇ test_tcp_listener_bind() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_tcp_listener_accept_nonblocking() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- UdpSocket Tests ---");
+    ⎇ test_udp_bind() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_udp_bind_any_port() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_udp_roundtrip() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("===========================================");
+    println("Results: {}/{} tests passed", passed, passed + failed);
+    println("===========================================");
+
+    ⎇ failed > 0 {
+        println("");
+        println("RED PHASE: {} tests failing (expected)", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All tests passed!");
+    ⤺ 0;
+}

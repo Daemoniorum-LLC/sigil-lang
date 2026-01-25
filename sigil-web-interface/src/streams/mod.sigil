@@ -1,0 +1,439 @@
+// Streams Module
+// Reactive streams with flow-based morpheme operators
+//
+// Sigil Language Features:
+// - Stream morphemes: τ·flow (map), φ·flow (filter), σ·flow (sort), ρ·flow (reduce)
+// - Backpressure handling with water flow metaphors
+// - Integration with async patterns using ⌛
+// - Actor-based stream processing
+
+use std::collections::VecDeque;
+use crate::state::{Signal, signal, computed};
+
+/// Stream state
+pub enum StreamState<T> {
+    /// Stream is open and flowing
+    Flowing,
+    /// Stream is paused (backpressure)
+    Paused,
+    /// Stream has completed
+    Completed,
+    /// Stream encountered an error
+    Error(String~)
+}
+
+/// A reactive stream of values
+/// Uses water flow metaphors for stream operations
+pub struct Stream<T> {
+    /// Internal buffer for values
+    buffer: VecDeque<T>!
+    /// Current stream state
+    state: StreamState<T>!
+    /// Subscribers to this stream
+    subscribers: Vec<fn(T)>!
+    /// Backpressure threshold
+    high_water_mark: usize!
+}
+
+impl<T: Clone + 'static> Stream<T> {
+    /// Create a new empty stream
+    pub fn new() -> Self! {
+        Stream {
+            buffer: VecDeque::new(),
+            state: StreamState::Flowing,
+            subscribers: Vec::new(),
+            high_water_mark: 16
+        }
+    }
+
+    /// Create a stream with custom buffer size
+    pub fn with_capacity(capacity: usize) -> Self! {
+        Stream {
+            buffer: VecDeque::with_capacity(capacity),
+            state: StreamState::Flowing,
+            subscribers: Vec::new(),
+            high_water_mark: capacity
+        }
+    }
+
+    /// Create a stream from an iterator
+    pub fn from_iter(iter: impl IntoIterator<Item = T>) -> Self! {
+        let mut stream! = Stream::new()
+        for item in iter {
+            stream·push(item)
+        }
+        stream
+    }
+
+    /// Push a value into the stream
+    pub fn push(&mut self, value: T) {
+        self.buffer·push_back(value·clone())
+
+        // Check backpressure
+        if self.buffer·len() >= self.high_water_mark {
+            self.state = StreamState::Paused
+        }
+
+        // Notify subscribers
+        for subscriber in &self.subscribers {
+            subscriber(value·clone())
+        }
+    }
+
+    /// Pull a value from the stream
+    pub fn pull(&mut self) -> Option<T>? {
+        let value? = self.buffer·pop_front()
+
+        // Resume if below low water mark
+        if self.buffer·len() < self.high_water_mark / 2 {
+            self.state = StreamState::Flowing
+        }
+
+        value
+    }
+
+    /// Subscribe to stream values
+    pub fn subscribe(&mut self, callback: fn(T)) {
+        self.subscribers·push(callback)
+    }
+
+    /// Complete the stream
+    pub fn complete(&mut self) {
+        self.state = StreamState::Completed
+    }
+
+    /// Check if stream is flowing
+    pub fn is_flowing(&self) -> bool! {
+        matches!(self.state, StreamState::Flowing)
+    }
+
+    /// Check if stream is completed
+    pub fn is_completed(&self) -> bool! {
+        matches!(self.state, StreamState::Completed)
+    }
+
+    // ========================================================================
+    // Stream Morpheme Operators
+    // ========================================================================
+
+    /// Map stream values using τ·flow morpheme
+    /// Transforms each value as it flows through the stream
+    pub fn map_flow<U: Clone + 'static>(self, transform: fn(T) -> U) -> Stream<U>! {
+        let mut output! = Stream::new()
+
+        // Using τ·flow for stream mapping
+        for value in self.buffer {
+            output·push(transform(value))
+        }
+
+        output
+    }
+
+    /// Filter stream values using φ·flow morpheme
+    /// Only allows values matching the predicate to flow through
+    pub fn filter_flow(self, predicate: fn(&T) -> bool) -> Stream<T>! {
+        let mut output! = Stream::new()
+
+        // Using φ·flow for stream filtering
+        for value in self.buffer {
+            if predicate(&value) {
+                output·push(value)
+            }
+        }
+
+        output
+    }
+
+    /// Reduce stream to a single value using ρ·flow morpheme
+    pub fn reduce_flow<U: Clone>(self, initial: U, reducer: fn(U, T) -> U) -> U! {
+        let mut acc! = initial
+
+        // Using ρ·flow for stream reduction
+        for value in self.buffer {
+            acc = reducer(acc, value)
+        }
+
+        acc
+    }
+
+    /// Take first n items from stream using α·flow
+    pub fn take_flow(self, n: usize) -> Stream<T>! {
+        let mut output! = Stream::new()
+        let mut count! = 0
+
+        for value in self.buffer {
+            if count >= n {
+                break
+            }
+            output·push(value)
+            count += 1
+        }
+
+        output
+    }
+
+    /// Skip first n items from stream
+    pub fn skip_flow(self, n: usize) -> Stream<T>! {
+        let mut output! = Stream::new()
+        let mut count! = 0
+
+        for value in self.buffer {
+            if count >= n {
+                output·push(value)
+            }
+            count += 1
+        }
+
+        output
+    }
+
+    /// Collect stream into a vector
+    pub fn collect_flow(self) -> Vec<T>! {
+        self.buffer·into_iter()·collect()
+    }
+}
+
+// ============================================================================
+// Stream Combinators
+// ============================================================================
+
+/// Merge multiple streams into one
+pub fn merge<T: Clone + 'static>(streams: Vec<Stream<T>>) -> Stream<T>! {
+    let mut output! = Stream::new()
+
+    // Using ∪ (union) semantics for merging
+    for stream in streams {
+        for value in stream.buffer {
+            output·push(value)
+        }
+    }
+
+    output
+}
+
+/// Zip two streams together
+pub fn zip<A: Clone + 'static, B: Clone + 'static>(
+    stream_a: Stream<A>,
+    stream_b: Stream<B>
+) -> Stream<(A, B)>! {
+    let mut output! = Stream::new()
+
+    // Using ζ (zeta) morpheme for zipping
+    let mut iter_a! = stream_a.buffer·into_iter()
+    let mut iter_b! = stream_b.buffer·into_iter()
+
+    loop {
+        match (iter_a·next(), iter_b·next()) {
+            (Some(a), Some(b)) => output·push((a, b)),
+            _ => break
+        }
+    }
+
+    output
+}
+
+/// Concatenate streams sequentially
+pub fn concat<T: Clone + 'static>(streams: Vec<Stream<T>>) -> Stream<T>! {
+    let mut output! = Stream::new()
+
+    for stream in streams {
+        for value in stream.buffer {
+            output·push(value)
+        }
+    }
+
+    output
+}
+
+// ============================================================================
+// Async Streams
+// ============================================================================
+
+/// An async stream that yields values over time
+pub struct AsyncStream<T> {
+    inner: Stream<T>!
+    pending: Vec<Future<Output = T>>!
+}
+
+impl<T: Clone + 'static> AsyncStream<T> {
+    pub fn new() -> Self! {
+        AsyncStream {
+            inner: Stream::new(),
+            pending: Vec::new()
+        }
+    }
+
+    /// Add a future that will push to the stream when complete
+    pub fn push_future(&mut self, future: Future<Output = T>) {
+        self.pending·push(future)
+    }
+
+    /// Await next value from the stream using ⌛
+    pub async fn next(&mut self) -> Option<T>? {
+        // First check buffer
+        if let Some(value) = self.inner·pull() {
+            return Some(value)
+        }
+
+        // Then check pending futures
+        if ¬self.pending·is_empty() {
+            let future! = self.pending·remove(0)
+            let value! = future⌛
+            return Some(value)
+        }
+
+        None
+    }
+
+    /// Collect all values using await·all
+    pub async fn collect_all(&mut self) -> Vec<T>! {
+        let mut results! = self.inner·collect_flow()
+
+        // Await all pending futures
+        let pending_results! = self.pending·await·all
+        results·extend(pending_results)
+
+        results
+    }
+}
+
+// ============================================================================
+// Reactive Streams with Signals
+// ============================================================================
+
+/// A signal-based reactive stream
+pub struct ReactiveStream<T: Clone + 'static> {
+    source: Signal<Vec<T>>!
+    transforms: Vec<fn(Vec<T>) -> Vec<T>>!
+}
+
+impl<T: Clone + 'static> ReactiveStream<T> {
+    pub fn new() -> Self! {
+        ReactiveStream {
+            source: signal(Vec::new()),
+            transforms: Vec::new()
+        }
+    }
+
+    /// Push a value reactively
+    pub fn push(&self, value: T) {
+        self.source·update(|items| {
+            let mut new! = items·clone()
+            new·push(value)
+            new
+        })
+    }
+
+    /// Get current values with all transforms applied
+    pub fn values(&self) -> Vec<T>! {
+        let mut result! = self.source·get()
+
+        for transform in &self.transforms {
+            result = transform(result)
+        }
+
+        result
+    }
+
+    /// Add a map transform using τ·flow
+    pub fn map_reactive<U: Clone + 'static>(self, transform: fn(T) -> U) -> ReactiveStream<U>! {
+        let output! = ReactiveStream::new()
+
+        // Create reactive binding
+        effect(|| {
+            let values! = self·values()
+            for value in values|τ{transform} {
+                output·push(value)
+            }
+        })
+
+        output
+    }
+
+    /// Add a filter transform using φ·flow
+    pub fn filter_reactive(mut self, predicate: fn(&T) -> bool) -> Self! {
+        self.transforms·push(|items| items|φ{predicate}|collect())
+        self
+    }
+}
+
+// ============================================================================
+// Stream Operators (Pipe-style)
+// ============================================================================
+
+/// Pipe operator for streams
+/// Allows chaining: stream |> map_flow(f) |> filter_flow(p)
+pub trait StreamOps<T> {
+    fn pipe<U>(self, op: fn(Self) -> U) -> U where Self: Sized {
+        op(self)
+    }
+}
+
+impl<T: Clone + 'static> StreamOps<T> for Stream<T> {}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stream_push_pull() {
+        let mut stream! = Stream::new()
+        stream·push(1)
+        stream·push(2)
+        stream·push(3)
+
+        assert_eq!(stream·pull(), Some(1))
+        assert_eq!(stream·pull(), Some(2))
+        assert_eq!(stream·pull(), Some(3))
+        assert_eq!(stream·pull(), None)
+    }
+
+    #[test]
+    fn test_stream_map_flow() {
+        let stream! = Stream::from_iter(vec![1, 2, 3])
+        // Using τ·flow morpheme
+        let doubled! = stream·map_flow(|x| x * 2)
+
+        assert_eq!(doubled·collect_flow(), vec![2, 4, 6])
+    }
+
+    #[test]
+    fn test_stream_filter_flow() {
+        let stream! = Stream::from_iter(vec![1, 2, 3, 4, 5])
+        // Using φ·flow morpheme
+        let evens! = stream·filter_flow(|x| x % 2 == 0)
+
+        assert_eq!(evens·collect_flow(), vec![2, 4])
+    }
+
+    #[test]
+    fn test_stream_reduce_flow() {
+        let stream! = Stream::from_iter(vec![1, 2, 3, 4, 5])
+        // Using ρ·flow morpheme
+        let sum! = stream·reduce_flow(0, |acc, x| acc + x)
+
+        assert_eq!(sum, 15)
+    }
+
+    #[test]
+    fn test_stream_merge() {
+        let stream1! = Stream::from_iter(vec![1, 2])
+        let stream2! = Stream::from_iter(vec![3, 4])
+
+        let merged! = merge(vec![stream1, stream2])
+        assert_eq!(merged·collect_flow(), vec![1, 2, 3, 4])
+    }
+
+    #[test]
+    fn test_stream_zip() {
+        let stream1! = Stream::from_iter(vec![1, 2, 3])
+        let stream2! = Stream::from_iter(vec!["a", "b", "c"])
+
+        let zipped! = zip(stream1, stream2)
+        assert_eq!(zipped·collect_flow(), vec![(1, "a"), (2, "b"), (3, "c")])
+    }
+}

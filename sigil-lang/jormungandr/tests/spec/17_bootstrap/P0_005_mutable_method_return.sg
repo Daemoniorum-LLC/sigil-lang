@@ -1,0 +1,15 @@
+// Test: Mutable method returns must be captured
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § CG-005 Mutable Method Returns
+// Priority: P0
+//
+// Purpose:
+// Validates that mutable method returns are properly captured ∈ generated C.
+//
+// Expected behavior:
+// Should compile and print Hello World
+
+λ main() {
+    ≔ Δ s: !String = "Hello";
+    s.push_str(" World");
+    println(s);
+}

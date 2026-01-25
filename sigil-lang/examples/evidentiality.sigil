@@ -1,0 +1,108 @@
+//! Evidentiality System
+//! Track the provenance and certainty of data at the type level.
+
+use io·File
+use http·Client
+use json·parse
+
+// Evidentiality markers:
+// ! = known (direct observation, computed locally)
+// ? = uncertain (may fail, optional)
+// ~ = reported (external source, untrusted)
+// ‽ = paradox (trust boundary, requires validation)
+
+struct User {
+    id: u64,
+    name: str,
+    email: str,
+}
+
+// Function that returns known data (computed locally)
+fn compute_hash(data: [u8]!) -> u64! {
+    // Direct computation = known result
+    data|fold(0u64, {acc, byte => acc * 31 + byte as u64})!
+}
+
+// Function that returns uncertain data (might fail)
+fn read_file(path: str!) -> str? {
+    // File operations might fail
+    File·open(path)?|read_to_string?
+}
+
+// Function that returns reported data (from external source)
+async fn fetch_user(id: u64!) -> User~ {
+    // HTTP responses are reported (untrusted)
+    let response~ = Client·new()|get("/users/{id}")⌛
+    response~|json·parse~
+}
+
+// Processing reported data requires validation
+fn process_external_user(user~: User~) -> User! {
+    // Must validate to promote ~ to !
+    let validated! = user~|validate!{u =>
+        u.id > 0 && u.name.len > 0 && u.email·contains("@")
+    }
+    validated!
+}
+
+// Combining evidentiality
+fn load_config() -> Config? {
+    // Read from file (uncertain)
+    let contents? = read_file("config.toml")?
+
+    // Parse (might fail)
+    let parsed? = toml·parse(contents?)?
+
+    // Return combined uncertainty
+    parsed?
+}
+
+// Evidentiality propagates through operations
+fn example() {
+    let local_data! = compute_local()!     // Known
+    let file_data? = read_file("data.txt")? // Uncertain
+    let api_data~ = fetch_api()~           // Reported
+
+    // Combining: result takes worst evidentiality
+    let combined~ = process(local_data!, file_data?, api_data~)
+
+    // Must explicitly handle uncertainty
+    match file_data? {
+        Some(data!) => use_data(data!),
+        None => handle_missing(),
+    }
+
+    // Must validate reported data
+    let trusted! = api_data~|validate!{is_valid}
+}
+
+// Pattern matching preserves evidentiality
+fn handle_result(result: Result<User~, Error>?) {
+    match result? {
+        Ok(user~) => {
+            // user is still reported
+            let name~ = user~.name
+
+            // Validate before using
+            if name~|is_valid_name! {
+                let trusted_name! = name~|trust!
+                greet(trusted_name!)
+            }
+        }
+        Err(e!) => log_error(e!),
+    }
+}
+
+fn main() {
+    // Local computation is known
+    let x! = 42!
+
+    // Uncertainty must be handled
+    let maybe? = get_optional()?
+
+    // Reported data from external sources
+    let external~ = fetch_external()~
+
+    // Promote through validation
+    let validated! = external~|validate!{check_invariants}
+}

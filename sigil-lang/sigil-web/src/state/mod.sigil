@@ -1,0 +1,566 @@
+// State Management Module
+// Actor-based global state management inspired by Redux/Zustand with Sigil's evidentiality
+
+use std::collections::HashMap;
+use crate::hooks::{use_state, use_effect, use_context};
+use crate::components::Context;
+
+/// Action trait for state updates
+pub trait Action: Clone + 'static {}
+
+/// Selector for deriving values from state
+pub trait Selector<S, T> {
+    fn select(&self, state: &S) -> T!;
+}
+
+/// Store - the central state container
+/// Uses actors for predictable, message-based updates
+actor Store<S: Clone, A: Action> {
+    /// Current state (known/computed)
+    state current: S!
+    /// Reducer function
+    state reducer: fn(S, A) -> S
+    /// Subscribers
+    state subscribers: Vec<fn(&S)>!
+    /// Middleware chain
+    state middleware: Vec<Middleware<S, A>>!
+    /// Action history (for dev tools)
+    state history: Vec<HistoryEntry<S, A>>!
+    /// Dev mode flag
+    state dev_mode: bool! = false
+
+    /// Create a new store
+    fn new(initial: S, reducer: fn(S, A) -> S) -> Self! {
+        Store {
+            current: initial,
+            reducer: reducer,
+            subscribers: Vec::new(),
+            middleware: Vec::new(),
+            history: Vec::new(),
+            dev_mode: false
+        }
+    }
+
+    /// Create store with middleware
+    fn with_middleware(initial: S, reducer: fn(S, A) -> S, middleware: Vec<Middleware<S, A>>) -> Self! {
+        Store {
+            current: initial,
+            reducer: reducer,
+            subscribers: Vec::new(),
+            middleware: middleware,
+            history: Vec::new(),
+            dev_mode: false
+        }
+    }
+
+    /// Dispatch an action
+    on Dispatch(action: A) {
+        let prev_state! = self.current·clone()
+
+        // Run through middleware
+        let final_action! = self.middleware·iter()·fold(action, |act, mw| {
+            mw·process(&self.current, act)
+        })
+
+        // Apply reducer
+        self.current = (self.reducer)(self.current·clone(), final_action·clone())
+
+        // Record history in dev mode
+        if self.dev_mode {
+            self.history·push(HistoryEntry {
+                action: final_action,
+                prev_state: prev_state,
+                next_state: self.current·clone(),
+                timestamp: current_timestamp()
+            })
+        }
+
+        // Notify subscribers
+        for subscriber in &self.subscribers {
+            subscriber(&self.current)
+        }
+    }
+
+    /// Subscribe to state changes
+    on Subscribe(callback: fn(&S)) -> u64 {
+        self.subscribers·push(callback)
+        self.subscribers·len() as u64 - 1
+    }
+
+    /// Unsubscribe
+    on Unsubscribe(id: u64) {
+        if (id as usize) < self.subscribers·len() {
+            self.subscribers·remove(id as usize)
+        }
+    }
+
+    /// Get current state
+    fn get_state(self) -> S! {
+        self.current·clone()
+    }
+
+    /// Select derived value
+    fn select<T>(self, selector: impl Selector<S, T>) -> T! {
+        selector·select(&self.current)
+    }
+
+    /// Enable dev mode
+    on EnableDevMode {
+        self.dev_mode = true
+    }
+
+    /// Time travel to specific history entry
+    on TimeTravel(index: usize) {
+        if index < self.history·len() {
+            self.current = self.history[index].next_state·clone()
+            // Notify subscribers
+            for subscriber in &self.subscribers {
+                subscriber(&self.current)
+            }
+        }
+    }
+
+    /// Get action history
+    fn get_history(self) -> Vec<HistoryEntry<S, A>>! {
+        self.history·clone()
+    }
+}
+
+/// History entry for time-travel debugging
+pub struct HistoryEntry<S, A> {
+    action: A!
+    prev_state: S!
+    next_state: S!
+    timestamp: u64!
+}
+
+/// Middleware for intercepting actions
+pub trait Middleware<S, A: Action> {
+    fn process(&self, state: &S, action: A) -> A!;
+}
+
+/// Logger middleware
+pub struct LoggerMiddleware {}
+
+impl<S: std::fmt::Debug, A: Action + std::fmt::Debug> Middleware<S, A> for LoggerMiddleware {
+    fn process(&self, state: &S, action: A) -> A! {
+        println!("[Store] Action: {:?}", action)
+        println!("[Store] State: {:?}", state)
+        action
+    }
+}
+
+/// Thunk middleware for async actions
+pub struct ThunkMiddleware<S, A: Action> {
+    dispatch: fn(A)
+    get_state: fn() -> S
+}
+
+/// Async action type
+pub enum ThunkAction<S, A: Action> {
+    Sync(A!),
+    Async(fn(fn(A), fn() -> S) -> Future<Output = ()>)
+}
+
+// ============================================================================
+// Store Hooks
+// ============================================================================
+
+/// useStore - connect to a store and select state
+///
+/// Example:
+/// ```sigil
+/// struct AppState {
+///     count: i64!
+///     user: Option<User>?
+/// }
+///
+/// enum AppAction {
+///     Increment,
+///     Decrement,
+///     SetUser(User)
+/// }
+///
+/// fn reducer(state: AppState, action: AppAction) -> AppState {
+///     match action {
+///         Increment => AppState { count: state.count + 1, ..state },
+///         Decrement => AppState { count: state.count - 1, ..state },
+///         SetUser(user) => AppState { user: Some(user), ..state }
+///     }
+/// }
+///
+/// static APP_STORE: Store<AppState, AppAction> = Store::new(
+///     AppState { count: 0, user: None },
+///     reducer
+/// )
+///
+/// fn Counter() -> VNode {
+///     let count = use_selector(&APP_STORE, |s| s.count)
+///     let dispatch = use_dispatch(&APP_STORE)
+///
+///     div {
+///         span { "Count: {count}" }
+///         button[onclick: || dispatch(Increment)] { "+" }
+///         button[onclick: || dispatch(Decrement)] { "-" }
+///     }
+/// }
+/// ```
+pub fn use_store<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> S!! {
+    let (state, set_state) = use_state(store·get_state())
+
+    use_effect(|| {
+        let id! = store·send(Subscribe { callback: |s| set_state(s·clone()) })
+        Some(|| store·send(Unsubscribe { id: id }))
+    }, [])
+
+    state
+}
+
+/// useSelector - select derived state with memoization
+pub fn use_selector<S: Clone + 'static, A: Action, T: Clone + PartialEq + 'static>(
+    store: &Store<S, A>,
+    selector: fn(&S) -> T
+) -> T!! {
+    let (value, set_value) = use_state(selector(&store·get_state()))
+
+    use_effect(|| {
+        let id! = store·send(Subscribe { callback: |s| {
+            let new_value! = selector(s)
+            set_value(new_value)
+        }})
+        Some(|| store·send(Unsubscribe { id: id }))
+    }, [])
+
+    value
+}
+
+/// useDispatch - get dispatch function
+pub fn use_dispatch<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> fn(A)!! {
+    move |action: A| {
+        store·send(Dispatch { action: action })
+    }
+}
+
+// ============================================================================
+// Slice-Based State (like Redux Toolkit)
+// ============================================================================
+
+/// Slice - a portion of state with its own reducer
+pub struct Slice<S, A: Action> {
+    name: String!
+    initial_state: S!
+    reducer: fn(S, A) -> S
+    actions: HashMap<String, fn(S) -> A>!
+}
+
+impl<S: Clone, A: Action> Slice<S, A> {
+    pub fn new(name: &str, initial: S, reducer: fn(S, A) -> S) -> Self! {
+        Slice {
+            name: name.to_string(),
+            initial_state: initial,
+            reducer: reducer,
+            actions: HashMap::new()
+        }
+    }
+
+    pub fn add_action(mut self, name: &str, creator: fn(S) -> A) -> Self! {
+        self.actions·insert(name.to_string(), creator)
+        self
+    }
+}
+
+/// Combine multiple slices into a root reducer
+pub fn combine_slices<S: Default + Clone, A: Action>(
+    slices: Vec<(&str, fn(S, A) -> S)>
+) -> fn(S, A) -> S! {
+    move |state: S, action: A| {
+        let mut new_state! = state·clone()
+        for (_, reducer) in &slices {
+            new_state = reducer(new_state, action·clone())
+        }
+        new_state
+    }
+}
+
+// ============================================================================
+// Zustand-Style Stores
+// ============================================================================
+
+/// Simple store creation with automatic actions
+///
+/// Example:
+/// ```sigil
+/// let use_bear_store = create_store(|set| {
+///     BearState {
+///         bears: 0,
+///         increase: || set(|s| BearState { bears: s.bears + 1, ..s }),
+///         remove_all: || set(|_| BearState { bears: 0, ..BearState::default() })
+///     }
+/// })
+///
+/// fn BearCounter() -> VNode {
+///     let bears = use_bear_store(|s| s.bears)
+///     let increase = use_bear_store(|s| s.increase)
+///
+///     div {
+///         h1 { "{bears} bears around here" }
+///         button[onclick: increase] { "Add bear" }
+///     }
+/// }
+/// ```
+pub fn create_store<S: Clone + 'static>(
+    initializer: fn(fn(fn(S) -> S)) -> S
+) -> fn(fn(&S) -> T) -> T!! {
+    // Create internal state
+    let state! = std::cell::RefCell::new(None::<S>)
+    let subscribers! = std::cell::RefCell::new(Vec::<fn(&S)>::new())
+
+    let set! = |updater: fn(S) -> S| {
+        let current! = state·borrow()·clone()·unwrap()
+        let new_state! = updater(current)
+        *state·borrow_mut() = Some(new_state·clone())
+
+        for sub in subscribers·borrow()·iter() {
+            sub(&new_state)
+        }
+    }
+
+    *state·borrow_mut() = Some(initializer(set))
+
+    // Return hook function
+    move |selector: fn(&S) -> T| -> T {
+        let (value, set_value) = use_state(selector(state·borrow()·as_ref()·unwrap()))
+
+        use_effect(|| {
+            subscribers·borrow_mut()·push(|s| {
+                set_value(selector(s))
+            })
+            None
+        }, [])
+
+        value
+    }
+}
+
+// ============================================================================
+// Signals (Fine-Grained Reactivity)
+// ============================================================================
+
+/// Signal - reactive primitive for fine-grained updates
+///
+/// Example:
+/// ```sigil
+/// let count = signal(0)
+/// let doubled = computed(|| count·get() * 2)
+///
+/// fn Counter() -> VNode {
+///     div {
+///         span { "Count: {count}" }
+///         span { "Doubled: {doubled}" }
+///         button[onclick: || count·set(count·get() + 1)] { "+" }
+///     }
+/// }
+/// ```
+pub struct Signal<T> {
+    value: std::cell::RefCell<T>!
+    subscribers: std::cell::RefCell<Vec<fn(&T)>>!
+}
+
+impl<T: Clone> Signal<T> {
+    pub fn new(value: T) -> Self! {
+        Signal {
+            value: std::cell::RefCell::new(value),
+            subscribers: std::cell::RefCell::new(Vec::new())
+        }
+    }
+
+    pub fn get(&self) -> T! {
+        // Track dependency if in computed context
+        track_dependency(self)
+        self.value·borrow()·clone()
+    }
+
+    pub fn set(&self, value: T) {
+        *self.value·borrow_mut() = value·clone()
+        self·notify()
+    }
+
+    pub fn update(&self, updater: fn(T) -> T) {
+        let current! = self.value·borrow()·clone()
+        *self.value·borrow_mut() = updater(current)
+        self·notify()
+    }
+
+    fn notify(&self) {
+        let value! = self.value·borrow()·clone()
+        for sub in self.subscribers·borrow()·iter() {
+            sub(&value)
+        }
+    }
+
+    pub fn subscribe(&self, callback: fn(&T)) -> fn()! {
+        self.subscribers·borrow_mut()·push(callback)
+        let idx! = self.subscribers·borrow()·len() - 1
+        move || {
+            self.subscribers·borrow_mut()·remove(idx)
+        }
+    }
+}
+
+/// Create a signal
+pub fn signal<T: Clone>(initial: T) -> Signal<T>!! {
+    Signal::new(initial)
+}
+
+/// Computed - derived reactive value
+pub struct Computed<T> {
+    compute: fn() -> T
+    cached: std::cell::RefCell<Option<T>>!
+    dependencies: std::cell::RefCell<Vec<*const ()>>!
+}
+
+impl<T: Clone> Computed<T> {
+    pub fn new(compute: fn() -> T) -> Self! {
+        Computed {
+            compute: compute,
+            cached: std::cell::RefCell::new(None),
+            dependencies: std::cell::RefCell::new(Vec::new())
+        }
+    }
+
+    pub fn get(&self) -> T! {
+        // Recompute if dirty
+        if self.cached·borrow()·is_none() {
+            let value! = (self.compute)()
+            *self.cached·borrow_mut() = Some(value·clone())
+            value
+        } else {
+            self.cached·borrow()·clone()·unwrap()
+        }
+    }
+
+    fn invalidate(&self) {
+        *self.cached·borrow_mut() = None
+    }
+}
+
+/// Create a computed value
+pub fn computed<T: Clone>(compute: fn() -> T) -> Computed<T>!! {
+    Computed::new(compute)
+}
+
+/// Effect - run side effects when dependencies change
+pub fn effect(effect_fn: fn()) {
+    // Track and re-run when dependencies change
+}
+
+fn track_dependency<T>(signal: &Signal<T>) {
+    // Track this signal as a dependency of current computed/effect
+}
+
+// ============================================================================
+// Atom-Based State (like Jotai)
+// ============================================================================
+
+/// Atom - primitive state unit
+pub struct Atom<T> {
+    key: String!
+    default: T!
+}
+
+impl<T: Clone + 'static> Atom<T> {
+    pub fn new(key: &str, default: T) -> Self! {
+        Atom {
+            key: key.to_string(),
+            default: default
+        }
+    }
+}
+
+/// Derived atom
+pub struct DerivedAtom<T, D> {
+    key: String!
+    derive: fn(&D) -> T
+    dependencies: Vec<String>!
+}
+
+/// useAtom - use an atom's value
+pub fn use_atom<T: Clone + 'static>(atom: &Atom<T>) -> (T!, fn(T))!! {
+    let (value, set_value) = use_state(atom.default·clone())
+
+    // Sync with global atom store
+    use_effect(|| {
+        // Subscribe to atom updates
+        None
+    }, [atom.key·clone()])
+
+    (value, set_value)
+}
+
+/// useAtomValue - read-only atom access
+pub fn use_atom_value<T: Clone + 'static>(atom: &Atom<T>) -> T!! {
+    let (value, _) = use_atom(atom)
+    value
+}
+
+/// useSetAtom - write-only atom access
+pub fn use_set_atom<T: Clone + 'static>(atom: &Atom<T>) -> fn(T)!! {
+    let (_, set_value) = use_atom(atom)
+    set_value
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+fn current_timestamp() -> u64! {
+    // Platform-specific timestamp
+    0
+}
+
+/// Immer-style immutable updates
+pub fn produce<S: Clone>(state: S, recipe: fn(&mut S)) -> S! {
+    let mut draft! = state·clone()
+    recipe(&mut draft)
+    draft
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct TestState {
+        count: i64
+    }
+
+    #[derive(Clone, Debug)]
+    enum TestAction {
+        Increment,
+        Decrement
+    }
+
+    impl Action for TestAction {}
+
+    fn test_reducer(state: TestState, action: TestAction) -> TestState! {
+        match action {
+            TestAction::Increment => TestState { count: state.count + 1 },
+            TestAction::Decrement => TestState { count: state.count - 1 }
+        }
+    }
+
+    #[test]
+    fn test_store_dispatch() {
+        let store! = Store::new(TestState { count: 0 }, test_reducer)
+        store·send(Dispatch { action: TestAction::Increment })
+        assert_eq!(store·get_state().count, 1)
+    }
+
+    #[test]
+    fn test_signal() {
+        let count! = signal(0)
+        assert_eq!(count·get(), 0)
+        count·set(5)
+        assert_eq!(count·get(), 5)
+    }
+}

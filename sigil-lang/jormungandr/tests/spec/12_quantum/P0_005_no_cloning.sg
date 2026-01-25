@@ -1,0 +1,11 @@
+// Test: No-cloning theorem enforcement
+// Spec: 12-QUANTUM.md § 2.1 The No-Cloning Theorem
+// Priority: P0 - Bootstrap Critical
+// EXPECT: Compile error - cannot invoke linear value twice
+
+λ main() {
+    ≔ q: linear Qubit = Qubit·zero();
+    ≔ a = q|H;
+    ≔ b = q|X;  // ERROR: q already consumed
+    println(0);
+}

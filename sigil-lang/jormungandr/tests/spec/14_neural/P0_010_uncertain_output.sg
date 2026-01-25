@@ -1,0 +1,14 @@
+// Test: Neural network outputs are uncertain (◊)
+// Spec: 14-NEURAL.md § 1 Overview
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    ≔ model = Sequential·new([
+        Linear·<784, 256>·new(),
+        ReLU·new(),
+        Linear·<256, 10>·new(),
+    ]);
+    ≔ input: Tensor<[784]> = randn();
+    ≔ output◊: Tensor<[10]> = model.forward(input);  // Predictions are uncertain
+    println(output◊.shape[0]);
+}

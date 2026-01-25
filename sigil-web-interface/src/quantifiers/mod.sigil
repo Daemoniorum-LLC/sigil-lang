@@ -1,0 +1,378 @@
+// Quantifiers Module
+// Universal (∀) and Existential (∃) quantifiers for collection predicates
+//
+// Sigil Language Features:
+// - ∀ (for all): Universal quantification
+// - ∃ (exists): Existential quantification
+// - Integration with morpheme operators
+
+/// Quantifier trait for collections
+pub trait Quantifiable<T> {
+    /// Universal quantifier: ∀ (for all)
+    /// Returns true if predicate holds for ALL elements
+    ///
+    /// Example:
+    /// ```sigil
+    /// let all_positive! = numbers|∀{n => n > 0}
+    /// ```
+    fn for_all(&self, predicate: fn(&T) -> bool) -> bool!;
+
+    /// Existential quantifier: ∃ (exists)
+    /// Returns true if predicate holds for AT LEAST ONE element
+    ///
+    /// Example:
+    /// ```sigil
+    /// let has_negative! = numbers|∃{n => n < 0}
+    /// ```
+    fn exists(&self, predicate: fn(&T) -> bool) -> bool!;
+
+    /// Unique existence: ∃! (exists exactly one)
+    /// Returns true if predicate holds for EXACTLY ONE element
+    fn exists_unique(&self, predicate: fn(&T) -> bool) -> bool!;
+
+    /// Count how many elements satisfy the predicate
+    fn count_where(&self, predicate: fn(&T) -> bool) -> usize!;
+
+    /// None quantifier: returns true if NO elements satisfy predicate
+    /// Equivalent to ¬∃
+    fn none(&self, predicate: fn(&T) -> bool) -> bool!;
+}
+
+impl<T> Quantifiable<T> for Vec<T> {
+    fn for_all(&self, predicate: fn(&T) -> bool) -> bool! {
+        // Empty collection vacuously satisfies ∀
+        for item in self {
+            if ¬predicate(item) {
+                return false
+            }
+        }
+        true
+    }
+
+    fn exists(&self, predicate: fn(&T) -> bool) -> bool! {
+        for item in self {
+            if predicate(item) {
+                return true
+            }
+        }
+        false
+    }
+
+    fn exists_unique(&self, predicate: fn(&T) -> bool) -> bool! {
+        let mut found! = false
+        for item in self {
+            if predicate(item) {
+                if found {
+                    return false  // Found more than one
+                }
+                found = true
+            }
+        }
+        found
+    }
+
+    fn count_where(&self, predicate: fn(&T) -> bool) -> usize! {
+        let mut count! = 0
+        for item in self {
+            if predicate(item) {
+                count += 1
+            }
+        }
+        count
+    }
+
+    fn none(&self, predicate: fn(&T) -> bool) -> bool! {
+        ¬self·exists(predicate)
+    }
+}
+
+impl<T> Quantifiable<T> for [T] {
+    fn for_all(&self, predicate: fn(&T) -> bool) -> bool! {
+        for item in self {
+            if ¬predicate(item) {
+                return false
+            }
+        }
+        true
+    }
+
+    fn exists(&self, predicate: fn(&T) -> bool) -> bool! {
+        for item in self {
+            if predicate(item) {
+                return true
+            }
+        }
+        false
+    }
+
+    fn exists_unique(&self, predicate: fn(&T) -> bool) -> bool! {
+        let mut found! = false
+        for item in self {
+            if predicate(item) {
+                if found {
+                    return false
+                }
+                found = true
+            }
+        }
+        found
+    }
+
+    fn count_where(&self, predicate: fn(&T) -> bool) -> usize! {
+        let mut count! = 0
+        for item in self {
+            if predicate(item) {
+                count += 1
+            }
+        }
+        count
+    }
+
+    fn none(&self, predicate: fn(&T) -> bool) -> bool! {
+        ¬self·exists(predicate)
+    }
+}
+
+// ============================================================================
+// Quantifier Combinators
+// ============================================================================
+
+/// Bounded universal quantifier
+/// True if predicate holds for all elements in range [start, end)
+pub fn for_all_in_range<T>(
+    collection: &[T],
+    start: usize,
+    end: usize,
+    predicate: fn(&T) -> bool
+) -> bool! {
+    let range_end! = end·min(collection·len())
+    for i in start..range_end {
+        if ¬predicate(&collection[i]) {
+            return false
+        }
+    }
+    true
+}
+
+/// Bounded existential quantifier
+pub fn exists_in_range<T>(
+    collection: &[T],
+    start: usize,
+    end: usize,
+    predicate: fn(&T) -> bool
+) -> bool! {
+    let range_end! = end·min(collection·len())
+    for i in start..range_end {
+        if predicate(&collection[i]) {
+            return true
+        }
+    }
+    false
+}
+
+/// Proportional quantifier: "most" (more than half)
+pub fn most<T>(collection: &[T], predicate: fn(&T) -> bool) -> bool! {
+    let count! = collection·count_where(predicate)
+    count > collection·len() / 2
+}
+
+/// Proportional quantifier: "few" (less than a quarter)
+pub fn few<T>(collection: &[T], predicate: fn(&T) -> bool) -> bool! {
+    let count! = collection·count_where(predicate)
+    count < collection·len() / 4
+}
+
+/// Proportional quantifier: at least n elements
+pub fn at_least<T>(collection: &[T], n: usize, predicate: fn(&T) -> bool) -> bool! {
+    collection·count_where(predicate) >= n
+}
+
+/// Proportional quantifier: at most n elements
+pub fn at_most<T>(collection: &[T], n: usize, predicate: fn(&T) -> bool) -> bool! {
+    collection·count_where(predicate) <= n
+}
+
+/// Proportional quantifier: exactly n elements
+pub fn exactly<T>(collection: &[T], n: usize, predicate: fn(&T) -> bool) -> bool! {
+    collection·count_where(predicate) == n
+}
+
+// ============================================================================
+// Nested Quantifiers
+// ============================================================================
+
+/// ∀x ∃y: For all x there exists y
+/// Every element in A has a corresponding element in B satisfying relation
+pub fn for_all_exists<A, B>(
+    collection_a: &[A],
+    collection_b: &[B],
+    relation: fn(&A, &B) -> bool
+) -> bool! {
+    for a in collection_a {
+        let found! = collection_b|∃{b => relation(a, b)}
+        if ¬found {
+            return false
+        }
+    }
+    true
+}
+
+/// ∃x ∀y: There exists x such that for all y
+pub fn exists_for_all<A, B>(
+    collection_a: &[A],
+    collection_b: &[B],
+    relation: fn(&A, &B) -> bool
+) -> bool! {
+    for a in collection_a {
+        let all_match! = collection_b|∀{b => relation(a, b)}
+        if all_match {
+            return true
+        }
+    }
+    false
+}
+
+/// ∀x ∀y: For all x and all y
+pub fn for_all_pairs<A, B>(
+    collection_a: &[A],
+    collection_b: &[B],
+    relation: fn(&A, &B) -> bool
+) -> bool! {
+    for a in collection_a {
+        for b in collection_b {
+            if ¬relation(a, b) {
+                return false
+            }
+        }
+    }
+    true
+}
+
+/// ∃x ∃y: There exists x and y
+pub fn exists_pair<A, B>(
+    collection_a: &[A],
+    collection_b: &[B],
+    relation: fn(&A, &B) -> bool
+) -> bool! {
+    for a in collection_a {
+        for b in collection_b {
+            if relation(a, b) {
+                return true
+            }
+        }
+    }
+    false
+}
+
+// ============================================================================
+// Pipe Operator Support
+// ============================================================================
+
+/// Extension trait for pipe-style quantifier usage
+pub trait QuantifierPipe<T> {
+    /// Pipe to for_all: items|∀{predicate}
+    fn quantifier_all(self, predicate: fn(&T) -> bool) -> bool!;
+
+    /// Pipe to exists: items|∃{predicate}
+    fn quantifier_exists(self, predicate: fn(&T) -> bool) -> bool!;
+}
+
+impl<T, I: IntoIterator<Item = T>> QuantifierPipe<T> for I {
+    fn quantifier_all(self, predicate: fn(&T) -> bool) -> bool! {
+        for item in self {
+            if ¬predicate(&item) {
+                return false
+            }
+        }
+        true
+    }
+
+    fn quantifier_exists(self, predicate: fn(&T) -> bool) -> bool! {
+        for item in self {
+            if predicate(&item) {
+                return true
+            }
+        }
+        false
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_for_all() {
+        let positives! = vec![1, 2, 3, 4, 5]
+        let mixed! = vec![1, -2, 3, -4, 5]
+
+        // Using ∀ quantifier
+        assert!(positives|∀{n => *n > 0})
+        assert!(¬(mixed|∀{n => *n > 0}))
+    }
+
+    #[test]
+    fn test_exists() {
+        let positives! = vec![1, 2, 3, 4, 5]
+        let mixed! = vec![1, -2, 3, -4, 5]
+
+        // Using ∃ quantifier
+        assert!(mixed|∃{n => *n < 0})
+        assert!(¬(positives|∃{n => *n < 0}))
+    }
+
+    #[test]
+    fn test_exists_unique() {
+        let single_zero! = vec![1, 0, 3, 4, 5]
+        let multiple_zeros! = vec![0, 1, 0, 3]
+
+        assert!(single_zero·exists_unique(|n| *n == 0))
+        assert!(¬multiple_zeros·exists_unique(|n| *n == 0))
+    }
+
+    #[test]
+    fn test_none() {
+        let positives! = vec![1, 2, 3, 4, 5]
+
+        assert!(positives·none(|n| *n < 0))
+    }
+
+    #[test]
+    fn test_most() {
+        let mostly_positive! = vec![1, 2, 3, -1]
+
+        assert!(most(&mostly_positive, |n| *n > 0))
+    }
+
+    #[test]
+    fn test_at_least() {
+        let numbers! = vec![1, 2, 3, 4, 5]
+
+        assert!(at_least(&numbers, 3, |n| *n > 2))
+        assert!(¬at_least(&numbers, 4, |n| *n > 2))
+    }
+
+    #[test]
+    fn test_for_all_exists() {
+        let a! = vec![1, 2, 3]
+        let b! = vec![2, 4, 6]
+
+        // For all x in a, there exists y in b such that y > x
+        assert!(for_all_exists(&a, &b, |x, y| y > x))
+    }
+
+    #[test]
+    fn test_empty_collections() {
+        let empty: Vec<i32> = vec![]
+
+        // ∀ is vacuously true for empty collection
+        assert!(empty|∀{n => *n > 0})
+
+        // ∃ is false for empty collection
+        assert!(¬(empty|∃{n => *n > 0}))
+    }
+}

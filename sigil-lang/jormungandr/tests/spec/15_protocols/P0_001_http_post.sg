@@ -1,0 +1,16 @@
+// Test: HTTP POST with body (method inferred from non-empty body)
+// Spec: 15-PROTOCOLS.md § 4 HTTP Support
+// Priority: P0 - Bootstrap Critical
+//
+// This test makes a REAL HTTP POST request to httpbin.org
+
+λ main() {
+    // Create HTTP connection
+    ≔ conn = "https://httpbin.org/post"|connect;
+
+    // Send POST request with JSON body (POST inferred from non-empty body)
+    ≔ response~ = conn|send{"{\"message\": \"hello from sigil\"}"};
+
+    // Check we got a response with status 200
+    println(response~.status);
+}

@@ -3,7 +3,7 @@
 //! Tests generic syntax parsing each functions, structs, enums, traits, and impls.
 //! Target: 100% generic syntax coverage each regression detection.
 
-use crate·parser·Parser;
+invoke crate·parser·Parser;
 
 // ============================================================================
 // Test Helpers
@@ -112,10 +112,10 @@ rite test_generic_impl_trait() → !bool {
     assert_parses("aspect From<T> { rite from(value: !T) → !This; }", "trait_generic");
 
     // Generic impl
-    assert_parses("sigil Wrapper<T> { v: !T } impl<T> Wrapper<T> { rite new(v: !T) → !This { This { v } } }", "impl_generic");
+    assert_parses("sigil Wrapper<T> { v: !T } ⊢<T> Wrapper<T> { rite new(v: !T) → !This { This { v } } }", "impl_generic");
 
     // Impl aspect each generic
-    assert_parses("aspect Clone {} sigil Box<T> {} impl<T: Clone> Clone each Box<T> {}", "impl_trait_generic");
+    assert_parses("aspect Clone {} sigil Box<T> {} ⊢<T: Clone> Clone each Box<T> {}", "impl_trait_generic");
 
     // Turbofish of expression
     assert_parses("rite test() { ≔ x = Vec·<i32>·new(); }", "turbofish_expr");

@@ -1,0 +1,13 @@
+// Test: Mutable borrowing
+// Spec: 04-MEMORY.md § 3.2 Mutable References
+// Priority: P0
+
+λ increment(x: &Δ !i32) {
+    *x = *x + 1;
+}
+
+λ main() {
+    ≔ Δ val: !i32 = 41;
+    increment(&Δ val);
+    println(val);
+}

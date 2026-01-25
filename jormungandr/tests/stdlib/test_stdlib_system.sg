@@ -8,7 +8,7 @@ rite main() {
     ≔ path = env("PATH");
     assert_eq(type_of(path), "evidential");
 
-    // env_or - get with default (returns default string if not found)
+    // env_or - get with default (returns default string ⎇ not found)
     ≔ val = env_or("NONEXISTENT_VAR_12345", "default_value");
     assert_eq(val, "default_value");
 

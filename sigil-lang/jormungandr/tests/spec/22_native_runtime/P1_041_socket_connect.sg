@@ -1,0 +1,54 @@
+// Test socket connect operations
+// This tests the native runtime networking syscalls
+// Priority: P1
+
+λ main() {
+    // Test: Create and connect a TCP socket (simulated)
+    ≔ sock = Sys·socket(AF_INET(), SOCK_STREAM(), 0);
+
+    ⎇ sock >= 0 {
+        println("socket: OK");
+
+        // Connect (in interpreter mode, this always succeeds)
+        ≔ result = Sys·connect(sock, 0, 16);
+        ⎇ result == 0 {
+            println("connect: OK");
+
+            // Send some data (simulated)
+            ≔ sent = Sys·send(sock, 0, 5, 0);
+            ⎇ sent == 5 {
+                println("send: OK");
+            } ⎉ {
+                println("send: FAILED");
+            }
+
+            // Receive (returns 0 ∈ interpreter - EOF)
+            ≔ received = Sys·recv(sock, 0, 1024, 0);
+            ⎇ received >= 0 {
+                println("recv: OK");
+            } ⎉ {
+                println("recv: FAILED");
+            }
+
+            // Shutdown
+            ≔ shut = Sys·shutdown(sock, SHUT_RDWR());
+            ⎇ shut == 0 {
+                println("shutdown: OK");
+            } ⎉ {
+                println("shutdown: FAILED");
+            }
+        } ⎉ {
+            println("connect: FAILED");
+        }
+
+        // Close
+        ≔ closed = Sys·close(sock);
+        ⎇ closed == 0 {
+            println("close: OK");
+        } ⎉ {
+            println("close: FAILED");
+        }
+    } ⎉ {
+        println("socket: FAILED");
+    }
+}

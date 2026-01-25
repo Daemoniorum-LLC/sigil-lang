@@ -1,70 +1,266 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google Analytics -->
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sigil - Infrastructure for AI Minds | Data Provenance at the Type Level</title>
+    <meta name="description" content="Sigil is a programming language designed for AI agents. Evidentiality markers track data provenance in the type system. 9-layer agent infrastructure for memory, planning, collaboration, and safety.">
+    <meta name="keywords" content="sigil, programming language, AI agents, type safety, data provenance, evidentiality, agent infrastructure, LLM">
+    <link rel="canonical" href="https://sigil-lang.com">
 
-    // Default: deny analytics until user consents
-    gtag('consent', 'default', {
-      'analytics_storage': 'denied'
-    });
+    <!-- Open Graph -->
+    <meta property="og:title" content="Sigil - Infrastructure for AI Minds">
+    <meta property="og:description" content="A programming language designed for AI agents. Evidentiality markers track data provenance. 9-layer infrastructure for memory, planning, and collaboration.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://sigil-lang.com">
+    <meta property="og:image" content="https://sigil-lang.com/images/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Sigil - Infrastructure for AI Minds">
+    <meta name="twitter:description" content="A programming language designed for AI agents. Evidentiality markers track data provenance. 9-layer infrastructure for memory, planning, and collaboration.">
+    <meta name="twitter:image" content="https://sigil-lang.com/images/og-image.png">
 
-    // Initialize GA4 after consent is granted
-    function initGA4() {
-      gtag('consent', 'update', { 'analytics_storage': 'granted' });
-      gtag('js', new Date());
-      gtag('config', 'G-J7K2SF002F');
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "Sigil",
+        "description": "A programming language designed for AI agents. Features evidentiality markers (!, ?, ◊, ~, ‽) for data provenance tracking and a 9-layer agent infrastructure for memory, planning, collaboration, and safety.",
+        "programmingLanguage": "Sigil",
+        "codeRepository": "https://github.com/Daemoniorum-LLC/sigil-lang",
+        "license": "https://opensource.org/licenses/MIT",
+        "version": "1.0.0",
+        "author": {
+            "@type": "Organization",
+            "name": "Daemoniorum LLC",
+            "url": "https://www.daemoniorum.com"
+        },
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "keywords": ["programming language", "AI agents", "type safety", "data provenance", "evidentiality", "agent infrastructure", "LLVM", "LLM"]
     }
+    </script>
 
-    // Check for existing consent
-    if (localStorage.getItem('analytics_consent') === 'granted') {
-      initGA4();
-    }
-  </script>
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-J7K2SF002F"></script>
+    <!-- Favicons & PWA -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛤</text></svg>">
+    <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#14A088">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sigil - Infrastructure for AI Minds | Data Provenance at the Type Level</title>
-  <meta name="description" content="Sigil is a programming language designed for AI agents. Evidentiality markers track data provenance in the type system. 9-layer agent infrastructure for memory, planning, collaboration, and safety.">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <!-- Fonts & Styles -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css">
+    <!-- Preload WASM -->
+    <link rel="preload" href="./site.wasm" as="fetch" crossorigin>
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
+    <style>
+        /* Critical CSS - Inlined for fast first paint */
+        :root {
+            --bg-primary: #050507;
+            --bg-secondary: #0a0a0d;
+            --text-primary: #e8e8ec;
+            --text-secondary: #a0a0aa;
+            --accent: #14A088;
+            --accent-light: #1AB89D;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            height: 100%;
+            font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Loading screen */
+        #loading {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-primary);
+            z-index: 9999;
+            transition: opacity 0.3s ease;
+        }
+
+        #loading.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 3px solid var(--bg-secondary);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loader-sigil {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .loader-text {
+            margin-top: 1.5rem;
+            font-size: 1rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.05em;
+        }
+
+        .loader-sub {
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--accent);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        #app {
+            min-height: 100vh;
+        }
+
+        /* Error state */
+        .error {
+            text-align: center;
+            padding: 2rem;
+            max-width: 600px;
+        }
+
+        .error h1 {
+            color: #D47171;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .error pre {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.875rem;
+            text-align: left;
+        }
+
+        .error button {
+            margin-top: 1.5rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .error button:hover {
+            background: var(--accent-light);
+        }
+
+        /* Built with Sigil badge */
+        .built-with {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.25rem;
+            border: 1px solid rgba(20, 160, 136, 0.2);
+            z-index: 100;
+        }
+
+        .built-with a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+    </style>
 </head>
 <body>
-  <a href="#main-content" class="skip-link">Skip to main content</a>
+    <div id="loading">
+        <div class="loader-sigil">⛤</div>
+        <div class="loader"></div>
+        <div class="loader-text">Loading Sigil Website</div>
+        <div class="loader-sub">Compiled from Sigil → WebAssembly</div>
+    </div>
 
-  <div id="app"></div>
+    <div id="app"></div>
 
-  <script type="module">
-    import { SigilRuntime } from './sigil_runtime.js';
+    <div class="built-with">
+        Built with <a href="https://sigil-lang.com">Sigil</a> + <a href="https://github.com/Daemoniorum-LLC/qliphoth">Qliphoth</a>
+    </div>
 
-    async function run() {
-      try {
-        const runtime = new SigilRuntime();
-        const response = await fetch('./public/wasm/index.wasm');
-        const bytes = await response.arrayBuffer();
-        const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
-        runtime.init(instance);
+    <script type="module">
+        async function init() {
+            try {
+                // Load the WASM module
+                const module = await import('./site.js');
+                const instance = await module.default();
 
-        if (instance.exports.main) {
-          instance.exports.main();
+                // Hide loader
+                document.getElementById('loading').classList.add('hidden');
+
+                // Initialize Sigil runtime
+                if (instance._sigil_init) {
+                    instance._sigil_init();
+                }
+
+                console.log('[Sigil] Website initialized');
+                console.log('[Sigil] Fixed point achieved: This site was compiled by a self-hosting Sigil compiler');
+
+            } catch (error) {
+                console.error('[Sigil] Initialization failed:', error);
+
+                // Show error with fallback option
+                document.getElementById('loading').innerHTML = `
+                    <div class="error">
+                        <h1>WebAssembly Loading Failed</h1>
+                        <p>The WASM module could not be loaded. This might happen if:</p>
+                        <ul style="text-align: left; margin: 1rem 0; color: #a0a0aa;">
+                            <li>Emscripten build is not available yet</li>
+                            <li>Your browser doesn't support WebAssembly</li>
+                            <li>There's a network error</li>
+                        </ul>
+                        <pre>${error.message}</pre>
+                        <p style="margin-top: 1rem; color: #a0a0aa;">
+                            You can view the <a href="../website/index.html" style="color: #14A088;">static HTML version</a> instead.
+                        </p>
+                        <button onclick="location.reload()">Retry</button>
+                    </div>
+                `;
+            }
         }
-      } catch (error) {
-        console.error('WASM Error:', error);
-        document.getElementById('app').innerHTML = '<p style="color: red; padding: 2rem;">Error loading page: ' + error.message + '</p>';
-      }
-    }
 
-    run();
-  </script>
+        init();
+    </script>
 </body>
 </html>

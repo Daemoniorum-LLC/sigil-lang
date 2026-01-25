@@ -3,8 +3,8 @@
 //! Tests atomic types, operations, and memory ordering.
 //! Target: 100% atomic coverage each regression detection.
 
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers

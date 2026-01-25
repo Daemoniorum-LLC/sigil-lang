@@ -1,0 +1,8 @@
+// Test: Zero value ∀ i32
+// Spec: 03-TYPES.md § 3.1 Integer Types
+// Priority: P0
+
+λ main() {
+    ≔ x: !i32 = 0;
+    println(x);
+}

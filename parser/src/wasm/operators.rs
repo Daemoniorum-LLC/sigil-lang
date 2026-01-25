@@ -95,50 +95,11 @@ impl WasmCompiler {
                 func.push(Instruction::I64ExtendI32U);
             }
 
-            // Matrix/tensor operations - call runtime math functions
-            BinOp::MatMul => {
-                // Matrix multiplication: A @ B
-                // For WASM, this calls a runtime function
-                let matmul_idx = self.get_func("math_matmul").ok_or_else(|| {
-                    WasmError::internal(
-                        "math_matmul not found - matrix operations require runtime support",
-                    )
-                })?;
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::Call(matmul_idx));
-            }
-
-            BinOp::Hadamard => {
-                // Hadamard/element-wise product: A ⊙ B
-                let hadamard_idx = self.get_func("math_hadamard").ok_or_else(|| {
-                    WasmError::internal(
-                        "math_hadamard not found - element-wise operations require runtime support",
-                    )
-                })?;
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::Call(hadamard_idx));
-            }
-
-            BinOp::TensorProd => {
-                // Tensor/outer product: A ⊗ B
-                let tensor_idx = self.get_func("math_tensor_prod").ok_or_else(|| {
-                    WasmError::internal(
-                        "math_tensor_prod not found - tensor operations require runtime support",
-                    )
-                })?;
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::Call(tensor_idx));
-            }
-
-            BinOp::Convolve => {
-                // Convolution/merge: A ⊛ B (holographic shard merging)
-                let convolve_idx = self.get_func("math_convolve").ok_or_else(|| {
-                    WasmError::internal(
-                        "math_convolve not found - convolution operations require runtime support",
-                    )
-                })?;
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::Call(convolve_idx));
+            // Matrix/tensor operations - not supported in WASM yet
+            BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd | BinOp::Convolve => {
+                return Err(WasmError::internal(
+                    "Matrix/tensor operators not yet supported in WASM backend",
+                ));
             }
         }
         Ok(())

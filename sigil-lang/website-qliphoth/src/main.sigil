@@ -1,0 +1,282 @@
+// Sigil-lang.com - Single-file WASM version
+// Proof that Sigil compiles to WebAssembly
+//
+// This demonstrates:
+// - Sigil syntax (evidentiality markers, morpheme operators)
+// - WASM compilation (Sigil → WebAssembly)
+// - Web integration (DOM manipulation via vdom imports)
+
+// === DOM Helpers ===
+// These call the pre-registered WASM imports
+
+fn create_element(tag: &str!) -> i32! {
+    vdom_create_vnode(tag)
+}
+
+fn create_text(content: &str!) -> i32! {
+    vdom_create_text_vnode(content)
+}
+
+fn set_class(element: i32!, class_name: &str!) {
+    vdom_set_vnode_str_prop(element, "class", class_name)
+}
+
+fn append_child(parent: i32!, child: i32!) {
+    vdom_append_vnode_child(parent, child)
+}
+
+fn mount(element: i32!, selector: &str!) {
+    vdom_mount_vnode(element, selector);
+}
+
+// === Components ===
+
+fn header() -> i32! {
+    let nav! = create_element("nav");
+    set_class(nav, "site-nav");
+
+    let brand! = create_element("div");
+    set_class(brand, "brand");
+    let title! = create_text("Sigil");
+    append_child(brand, title);
+    append_child(nav, brand);
+
+    let links! = create_element("div");
+    set_class(links, "nav-links");
+
+    let docs! = create_element("a");
+    set_class(docs, "nav-link");
+    let docs_text! = create_text("Docs");
+    append_child(docs, docs_text);
+    append_child(links, docs);
+
+    let github! = create_element("a");
+    set_class(github, "nav-link");
+    let gh_text! = create_text("GitHub");
+    append_child(github, gh_text);
+    append_child(links, github);
+
+    let version! = create_element("span");
+    set_class(version, "version-badge");
+    let ver_text! = create_text("v1.0");
+    append_child(version, ver_text);
+    append_child(links, version);
+
+    append_child(nav, links);
+    nav
+}
+
+fn hero() -> i32! {
+    let section! = create_element("section");
+    set_class(section, "hero");
+
+    let h1! = create_element("h1");
+    let heading! = create_text("Sigil");
+    append_child(h1, heading);
+    append_child(section, h1);
+
+    let tagline! = create_element("p");
+    set_class(tagline, "tagline");
+    let text! = create_text("Type-safe data provenance through evidentiality markers");
+    append_child(tagline, text);
+    append_child(section, tagline);
+
+    let sub! = create_element("p");
+    set_class(sub, "subtitle");
+    let sub_text! = create_text("A systems language designed for AI agents");
+    append_child(sub, sub_text);
+    append_child(section, sub);
+
+    // Evidentiality markers display - all 5 markers
+    let markers! = create_element("div");
+    set_class(markers, "ev-display");
+
+    let known! = create_element("span");
+    set_class(known, "ev ev-known");
+    let known_text! = create_text("! known");
+    append_child(known, known_text);
+    append_child(markers, known);
+
+    let uncertain! = create_element("span");
+    set_class(uncertain, "ev ev-uncertain");
+    let uncertain_text! = create_text("? uncertain");
+    append_child(uncertain, uncertain_text);
+    append_child(markers, uncertain);
+
+    let predicted! = create_element("span");
+    set_class(predicted, "ev ev-predicted");
+    let predicted_text! = create_text("◊ predicted");
+    append_child(predicted, predicted_text);
+    append_child(markers, predicted);
+
+    let reported! = create_element("span");
+    set_class(reported, "ev ev-reported");
+    let reported_text! = create_text("~ reported");
+    append_child(reported, reported_text);
+    append_child(markers, reported);
+
+    let paradox! = create_element("span");
+    set_class(paradox, "ev ev-paradox");
+    let paradox_text! = create_text("‽ paradox");
+    append_child(paradox, paradox_text);
+    append_child(markers, paradox);
+
+    append_child(section, markers);
+    section
+}
+
+fn announcement() -> i32! {
+    let banner! = create_element("div");
+    set_class(banner, "announcement-banner");
+
+    let badge! = create_element("span");
+    set_class(badge, "badge");
+    let badge_text! = create_text("FIXED POINT");
+    append_child(badge, badge_text);
+    append_child(banner, badge);
+
+    let msg! = create_element("p");
+    let msg_text! = create_text("The Sigil compiler now compiles itself. This page was compiled from Sigil to WebAssembly.");
+    append_child(msg, msg_text);
+    append_child(banner, msg);
+
+    banner
+}
+
+fn features_section() -> i32! {
+    let section! = create_element("section");
+    set_class(section, "features-section");
+
+    let h2! = create_element("h2");
+    let heading! = create_text("Language Features");
+    append_child(h2, heading);
+    append_child(section, h2);
+
+    let grid! = create_element("div");
+    set_class(grid, "features-grid");
+
+    // Feature 1: Evidentiality
+    let f1! = create_element("div");
+    set_class(f1, "feature-card");
+    let f1_title! = create_element("h3");
+    let f1_title_text! = create_text("Evidentiality Markers");
+    append_child(f1_title, f1_title_text);
+    append_child(f1, f1_title);
+    let f1_desc! = create_element("p");
+    let f1_desc_text! = create_text("Track data provenance at the type level with !, ?, ◊, ~, and ‽ markers.");
+    append_child(f1_desc, f1_desc_text);
+    append_child(f1, f1_desc);
+    append_child(grid, f1);
+
+    // Feature 2: Morpheme Operators
+    let f2! = create_element("div");
+    set_class(f2, "feature-card");
+    let f2_title! = create_element("h3");
+    let f2_title_text! = create_text("Morpheme Operators");
+    append_child(f2_title, f2_title_text);
+    append_child(f2, f2_title);
+    let f2_desc! = create_element("p");
+    let f2_desc_text! = create_text("Parallel pipelines, async composition, and functional transforms built into syntax.");
+    append_child(f2_desc, f2_desc_text);
+    append_child(f2, f2_desc);
+    append_child(grid, f2);
+
+    // Feature 3: WASM Target
+    let f3! = create_element("div");
+    set_class(f3, "feature-card");
+    let f3_title! = create_element("h3");
+    let f3_title_text! = create_text("WebAssembly Native");
+    append_child(f3_title, f3_title_text);
+    append_child(f3, f3_title);
+    let f3_desc! = create_element("p");
+    let f3_desc_text! = create_text("Compile directly to WASM for web, edge, and embedded deployments.");
+    append_child(f3_desc, f3_desc_text);
+    append_child(f3, f3_desc);
+    append_child(grid, f3);
+
+    // Feature 4: Self-Hosting
+    let f4! = create_element("div");
+    set_class(f4, "feature-card");
+    let f4_title! = create_element("h3");
+    let f4_title_text! = create_text("Self-Hosting Compiler");
+    append_child(f4_title, f4_title_text);
+    append_child(f4, f4_title);
+    let f4_desc! = create_element("p");
+    let f4_desc_text! = create_text("The Sigil compiler is written in Sigil - fixed point achieved January 2026.");
+    append_child(f4_desc, f4_desc_text);
+    append_child(f4, f4_desc);
+    append_child(grid, f4);
+
+    append_child(section, grid);
+    section
+}
+
+fn code_example() -> i32! {
+    let section! = create_element("section");
+    set_class(section, "code-section");
+
+    let h2! = create_element("h2");
+    let heading! = create_text("Evidentiality in Action");
+    append_child(h2, heading);
+    append_child(section, h2);
+
+    let desc! = create_element("p");
+    set_class(desc, "code-desc");
+    let desc_text! = create_text("Sigil tracks where data comes from at the type level:");
+    append_child(desc, desc_text);
+    append_child(section, desc);
+
+    let pre! = create_element("pre");
+    set_class(pre, "code-block");
+
+    let code! = create_text(
+        "// Evidentiality markers track data provenance\n" ++
+        "fn fetch_user(id: i64?) -> User~ {\n" ++
+        "    // id is uncertain (?) - from user input\n" ++
+        "    // return is reported (~) - from external API\n" ++
+        "    let response~ = http::get(url);\n" ++
+        "    parse_user(response)\n" ++
+        "}\n\n" ++
+        "// Morpheme operators for data pipelines\n" ++
+        "let results! = data\n" ++
+        "    |> validate?\n" ++
+        "    |> transform!\n" ++
+        "    ||> process_parallel;\n"
+    );
+    append_child(pre, code);
+    append_child(section, pre);
+
+    section
+}
+
+fn footer() -> i32! {
+    let ft! = create_element("footer");
+    set_class(ft, "site-footer");
+
+    let text! = create_text("2025-2026 Daemoniorum LLC - Built with Sigil + Qliphoth");
+    append_child(ft, text);
+
+    ft
+}
+
+// === Main App ===
+
+fn app() -> i32! {
+    let root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+    append_child(root, hero());
+    append_child(root, features_section());
+    append_child(root, code_example());
+    append_child(root, footer());
+
+    root
+}
+
+pub fn main() {
+    console_log_i64(42);
+    let root_element! = app();
+    mount(root_element, "#app");
+}

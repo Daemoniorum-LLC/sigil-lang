@@ -203,9 +203,9 @@ impl<'a> Parser<'a> {
             None => return Err(ParseError::UnexpectedEof),
         };
 
-        // Check for path continuation: attr_name::next_segment::...
+        // Check for path continuation: attr_name::next_segment or attr_name·next_segment
         let mut full_name = first_name;
-        while self.consume_if(&Token::ColonColon) {
+        while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
             let segment = match self.current_token().cloned() {
                 Some(Token::Ident(name)) => {
                     self.advance();
@@ -213,13 +213,14 @@ impl<'a> Parser<'a> {
                 }
                 Some(t) => {
                     return Err(ParseError::UnexpectedToken {
-                        expected: "identifier after ::".to_string(),
+                        expected: "identifier after path separator".to_string(),
                         found: t,
                         span: self.current_span(),
                     })
                 }
                 None => return Err(ParseError::UnexpectedEof),
             };
+            // Normalize to :: for consistency in AST
             full_name = format!("{}::{}", full_name, segment);
         }
 
@@ -714,11 +715,6 @@ impl<'a> Parser<'a> {
         matches!(&self.current, Some((token, _)) if std::mem::discriminant(token) == std::mem::discriminant(expected))
     }
 
-    /// Check if current token is an identifier with a specific name
-    fn check_ident_name(&self, name: &str) -> bool {
-        matches!(&self.current, Some((Token::Ident(n), _)) if n == name)
-    }
-
     /// Peek at the next token (after current) without consuming anything.
     pub(crate) fn peek_next(&mut self) -> Option<&Token> {
         self.lexer.peek().map(|(t, _)| t)
@@ -964,10 +960,59 @@ impl<'a> Parser<'a> {
     fn parse_item(&mut self) -> ParseResult<Spanned<Item>> {
         let start_span = self.current_span();
 
-        // Collect outer attributes (#[...] or @[...])
+        // Collect outer attributes (#[...] or @[...] or //@ rune: ...)
         let mut outer_attrs = Vec::new();
         while self.check(&Token::Hash) || self.check(&Token::At) {
             outer_attrs.push(self.parse_outer_attribute()?);
+        }
+
+        // Handle //@ rune: annotations as attributes
+        while let Some(Token::RuneAnnotation(content)) = self.current_token().cloned() {
+            let span = self.current_span();
+            self.advance();
+
+            // Parse the rune annotation content (e.g., "test", "derive(Clone, Debug)")
+            let content = content.trim_start_matches("//@ rune:").trim();
+            if content.starts_with("derive(") {
+                // Parse as derive attribute
+                let derive_content = content
+                    .strip_prefix("derive(")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .unwrap_or("");
+                let args: Vec<AttrArg> = derive_content
+                    .split(',')
+                    .map(|s| {
+                        AttrArg::Ident(Ident {
+                            name: s.trim().to_string(),
+                            evidentiality: None,
+                            affect: None,
+                            span: span.clone(),
+                        })
+                    })
+                    .collect();
+                outer_attrs.push(Attribute {
+                    name: Ident {
+                        name: "derive".to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: span.clone(),
+                    },
+                    args: Some(AttrArgs::Paren(args)),
+                    is_inner: false,
+                });
+            } else {
+                // Parse as simple attribute (e.g., "test" -> #[test])
+                outer_attrs.push(Attribute {
+                    name: Ident {
+                        name: content.to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: span.clone(),
+                    },
+                    args: None,
+                    is_inner: false,
+                });
+            }
         }
 
         let visibility = self.parse_visibility()?;
@@ -1018,76 +1063,8 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Static) => Item::Static(self.parse_static(visibility)?),
             Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
-            Some(Token::Form) => Item::Form(self.parse_form(visibility)?),
-            Some(Token::Translations) => Item::Translations(self.parse_translations(visibility)?),
-            Some(Token::Locale) => Item::LocaleEnum(self.parse_locale_enum(visibility)?),
-            Some(Token::Extern) => {
-                // Peek ahead to determine if this is an extern block or extern function
-                // extern "C" { ... } -> extern block
-                // extern "C" fn/rite ... -> extern function
-                self.advance(); // consume 'extern'
-
-                // Parse optional ABI string
-                let abi = if let Some(Token::StringLit(s)) = self.current_token().cloned() {
-                    self.advance();
-                    s
-                } else {
-                    "C".to_string()
-                };
-
-                if self.check(&Token::LBrace) {
-                    // It's an extern block
-                    self.expect(Token::LBrace)?;
-                    let mut items = Vec::new();
-                    while !self.check(&Token::RBrace) && !self.is_eof() {
-                        self.skip_comments();
-                        if self.check(&Token::RBrace) {
-                            break;
-                        }
-                        let vis = self.parse_visibility()?;
-                        self.skip_comments();
-                        match self.current_token() {
-                            Some(Token::Fn) | Some(Token::Lambda) => {
-                                items.push(ExternItem::Function(self.parse_extern_function(vis)?));
-                            }
-                            Some(Token::Static) => {
-                                items.push(ExternItem::Static(self.parse_extern_static(vis)?));
-                            }
-                            Some(Token::Type) => {
-                                items.push(ExternItem::Type(self.parse_extern_type(vis)?));
-                            }
-                            Some(token) => {
-                                return Err(ParseError::UnexpectedToken {
-                                    expected: "fn, static, or type".to_string(),
-                                    found: token.clone(),
-                                    span: self.current_span(),
-                                });
-                            }
-                            None => return Err(ParseError::UnexpectedEof),
-                        }
-                    }
-                    self.expect(Token::RBrace)?;
-                    Item::ExternBlock(ExternBlock {
-                        abi,
-                        items,
-                        outer_attrs,
-                    })
-                } else if self.check(&Token::Fn) || self.check(&Token::Lambda) {
-                    // It's an extern function: extern "C" fn/rite name(...) { ... }
-                    let mut func = self.parse_function_with_attrs(visibility, outer_attrs)?;
-                    // Set no_mangle by default for extern functions
-                    func.attrs.no_mangle = true;
-                    func.attrs.calling_convention = Some(abi);
-                    Item::Function(func)
-                } else {
-                    return Err(ParseError::UnexpectedToken {
-                        expected: "{ or fn".to_string(),
-                        found: self.current_token().cloned().unwrap_or(Token::Semi),
-                        span: self.current_span(),
-                    });
-                }
-            }
-            Some(Token::Macro) | Some(Token::MacroRules) => {
+            Some(Token::Extern) => Item::ExternBlock(self.parse_extern_block()?),
+            Some(Token::Macro) | Some(Token::MacroRules) | Some(Token::Rune) => {
                 Item::Macro(self.parse_macro_def(visibility)?)
             }
             Some(Token::Naked) => {
@@ -1295,7 +1272,7 @@ impl<'a> Parser<'a> {
             is_const,
             is_unsafe,
             attrs,
-            outer_attrs,
+            outer_attrs: Vec::new(),
             name,
             aspect,
             generics,
@@ -2042,18 +2019,27 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a macro definition: `macro name { ... }` or `macro name(...) { ... }`
-    /// Also supports Rust-style: `macro_rules! name { ... }`
+    /// Also supports Rust-style: `macro_rules! name { ... }` and Sigil: `rune name! { ... }`
     fn parse_macro_def(&mut self, visibility: Visibility) -> ParseResult<MacroDef> {
-        // Handle both `macro` and `macro_rules` keywords
+        // Handle `macro`, `macro_rules!`, and `rune ... !` keywords
         let is_macro_rules = self.check(&Token::MacroRules);
+        let is_rune = self.check(&Token::Rune);
         if is_macro_rules {
             self.advance(); // consume 'macro_rules'
             self.expect(Token::Bang)?; // consume '!'
+        } else if is_rune {
+            self.advance(); // consume 'rune'
+                            // rune name! { ... } - consume the ! after the name
         } else {
             self.expect(Token::Macro)?;
         }
 
         let name = self.parse_ident()?;
+
+        // For rune definitions, consume the trailing ! after the name
+        if is_rune && self.check(&Token::Bang) {
+            self.advance(); // consume '!'
+        }
 
         // Collect the entire macro body as a string (we don't interpret macros)
         // Could be: macro name { ... } or macro name(...) { ... } or macro name($arg:ty) { ... }
@@ -2268,513 +2254,8 @@ impl<'a> Parser<'a> {
         })
     }
 
-    // ========================================================================
-    // Evidential Forms
-    // ========================================================================
-
-    /// Parse an evidential form definition.
-    ///
-    /// ```sigil
-    /// form ContactForm {
-    ///     field email: String~ → String! {
-    ///         validate: |v| v.contains("@"),
-    ///         error: "Invalid email",
-    ///     }
-    ///     aegis: { audit: true }
-    /// }
-    /// ```
-    fn parse_form(&mut self, visibility: Visibility) -> ParseResult<FormDef> {
-        self.expect(Token::Form)?;
-        let name = self.parse_ident()?;
-        let generics = self.parse_generics_opt()?;
-
-        self.expect(Token::LBrace)?;
-
-        let mut fields = Vec::new();
-        let mut aegis = None;
-
-        while !self.check(&Token::RBrace) && !self.is_eof() {
-            self.skip_comments();
-
-            if self.check(&Token::Field) {
-                fields.push(self.parse_form_field()?);
-            } else if self.check_ident_name("aegis") {
-                aegis = Some(self.parse_form_aegis_config()?);
-            } else if self.check(&Token::RBrace) {
-                break;
-            } else {
-                match self.current_token() {
-                    Some(t) => {
-                        return Err(ParseError::UnexpectedToken {
-                            expected: "field or aegis".to_string(),
-                            found: t.clone(),
-                            span: self.current_span(),
-                        });
-                    }
-                    None => return Err(ParseError::UnexpectedEof),
-                }
-            }
-        }
-
-        self.expect(Token::RBrace)?;
-
-        Ok(FormDef {
-            visibility,
-            name,
-            generics,
-            fields,
-            aegis,
-        })
-    }
-
-    /// Parse a form field definition.
-    ///
-    /// `field email: String~ → String! { validate: ..., error: ... }`
-    fn parse_form_field(&mut self) -> ParseResult<FormFieldDef> {
-        self.expect(Token::Field)?;
-        let name = self.parse_ident()?;
-        self.expect(Token::Colon)?;
-
-        // Parse input type
-        let input_type = self.parse_type()?;
-
-        // Parse arrow and output type
-        self.expect(Token::Arrow)?;
-        let output_type = self.parse_type()?;
-
-        // Parse optional field body with validation/transform/error
-        let (validate, transform, error, default, required) = if self.check(&Token::LBrace) {
-            self.parse_form_field_body()?
-        } else {
-            (None, None, None, None, true)
-        };
-
-        // Optional trailing comma
-        self.consume_if(&Token::Comma);
-
-        Ok(FormFieldDef {
-            name,
-            input_type,
-            output_type,
-            validate,
-            transform,
-            error,
-            default,
-            required,
-        })
-    }
-
-    /// Parse the body of a form field with validation rules.
-    ///
-    /// `{ validate: |v| ..., transform: |v| ..., error: "...", default: ..., required: false }`
-    fn parse_form_field_body(
-        &mut self,
-    ) -> ParseResult<(
-        Option<Box<Expr>>,
-        Option<Box<Expr>>,
-        Option<String>,
-        Option<Box<Expr>>,
-        bool,
-    )> {
-        self.expect(Token::LBrace)?;
-
-        let mut validate = None;
-        let mut transform = None;
-        let mut error = None;
-        let mut default = None;
-        let mut required = true;
-
-        while !self.check(&Token::RBrace) && !self.is_eof() {
-            self.skip_comments();
-
-            if self.check_ident_name("validate") {
-                self.advance(); // consume "validate"
-                self.expect(Token::Colon)?;
-                validate = Some(Box::new(self.parse_expr()?));
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("transform") {
-                self.advance(); // consume "transform"
-                self.expect(Token::Colon)?;
-                transform = Some(Box::new(self.parse_expr()?));
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("error") {
-                self.advance(); // consume "error"
-                self.expect(Token::Colon)?;
-                if let Some(Token::StringLit(s)) = self.current_token().cloned() {
-                    self.advance();
-                    error = Some(s);
-                } else {
-                    match self.current_token() {
-                        Some(t) => {
-                            return Err(ParseError::UnexpectedToken {
-                                expected: "string literal for error message".to_string(),
-                                found: t.clone(),
-                                span: self.current_span(),
-                            });
-                        }
-                        None => return Err(ParseError::UnexpectedEof),
-                    }
-                }
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("default") {
-                self.advance(); // consume "default"
-                self.expect(Token::Colon)?;
-                default = Some(Box::new(self.parse_expr()?));
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("required") {
-                self.advance(); // consume "required"
-                self.expect(Token::Colon)?;
-                if let Some(Token::True) = self.current_token() {
-                    self.advance();
-                    required = true;
-                } else if let Some(Token::False) = self.current_token() {
-                    self.advance();
-                    required = false;
-                } else if self.check_ident_name("yea") {
-                    self.advance();
-                    required = true;
-                } else if self.check_ident_name("nay") {
-                    self.advance();
-                    required = false;
-                } else {
-                    match self.current_token() {
-                        Some(t) => {
-                            return Err(ParseError::UnexpectedToken {
-                                expected: "true/false or yea/nay".to_string(),
-                                found: t.clone(),
-                                span: self.current_span(),
-                            });
-                        }
-                        None => return Err(ParseError::UnexpectedEof),
-                    }
-                }
-                self.consume_if(&Token::Comma);
-            } else if self.check(&Token::RBrace) {
-                break;
-            } else {
-                match self.current_token() {
-                    Some(t) => {
-                        return Err(ParseError::UnexpectedToken {
-                            expected: "validate, transform, error, default, or required"
-                                .to_string(),
-                            found: t.clone(),
-                            span: self.current_span(),
-                        });
-                    }
-                    None => return Err(ParseError::UnexpectedEof),
-                }
-            }
-        }
-
-        self.expect(Token::RBrace)?;
-
-        Ok((validate, transform, error, default, required))
-    }
-
-    /// Parse Aegis security configuration for a form.
-    ///
-    /// `aegis: { audit: true, injection_check: true, identity: required }`
-    fn parse_form_aegis_config(&mut self) -> ParseResult<FormAegisConfig> {
-        self.parse_ident()?; // consume "aegis"
-        self.expect(Token::Colon)?;
-        self.expect(Token::LBrace)?;
-
-        let mut config = FormAegisConfig::default();
-
-        while !self.check(&Token::RBrace) && !self.is_eof() {
-            self.skip_comments();
-
-            if self.check_ident_name("audit") {
-                self.advance();
-                self.expect(Token::Colon)?;
-                config.audit = self.parse_bool_value()?;
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("injection_check") {
-                self.advance();
-                self.expect(Token::Colon)?;
-                config.injection_check = self.parse_bool_value()?;
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("identity") {
-                self.advance();
-                self.expect(Token::Colon)?;
-                config.identity = self.parse_identity_requirement()?;
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("memory_protection") {
-                self.advance();
-                self.expect(Token::Colon)?;
-                config.memory_protection = self.parse_bool_value()?;
-                self.consume_if(&Token::Comma);
-            } else if self.check(&Token::RBrace) {
-                break;
-            } else {
-                match self.current_token() {
-                    Some(t) => {
-                        return Err(ParseError::UnexpectedToken {
-                            expected: "audit, injection_check, identity, or memory_protection"
-                                .to_string(),
-                            found: t.clone(),
-                            span: self.current_span(),
-                        });
-                    }
-                    None => return Err(ParseError::UnexpectedEof),
-                }
-            }
-        }
-
-        self.expect(Token::RBrace)?;
-
-        Ok(config)
-    }
-
-    /// Parse a boolean value (true/false or yea/nay)
-    fn parse_bool_value(&mut self) -> ParseResult<bool> {
-        if let Some(Token::True) = self.current_token() {
-            self.advance();
-            Ok(true)
-        } else if let Some(Token::False) = self.current_token() {
-            self.advance();
-            Ok(false)
-        } else if self.check_ident_name("yea") {
-            self.advance();
-            Ok(true)
-        } else if self.check_ident_name("nay") {
-            self.advance();
-            Ok(false)
-        } else {
-            match self.current_token() {
-                Some(t) => Err(ParseError::UnexpectedToken {
-                    expected: "true/false or yea/nay".to_string(),
-                    found: t.clone(),
-                    span: self.current_span(),
-                }),
-                None => Err(ParseError::UnexpectedEof),
-            }
-        }
-    }
-
-    /// Parse identity requirement (none, optional, required)
-    fn parse_identity_requirement(&mut self) -> ParseResult<FormIdentityRequirement> {
-        if self.check_ident_name("none") {
-            self.advance();
-            Ok(FormIdentityRequirement::None)
-        } else if self.check_ident_name("optional") {
-            self.advance();
-            Ok(FormIdentityRequirement::Optional)
-        } else if self.check_ident_name("required") {
-            self.advance();
-            Ok(FormIdentityRequirement::Required)
-        } else {
-            match self.current_token() {
-                Some(t) => Err(ParseError::UnexpectedToken {
-                    expected: "none, optional, or required".to_string(),
-                    found: t.clone(),
-                    span: self.current_span(),
-                }),
-                None => Err(ParseError::UnexpectedEof),
-            }
-        }
-    }
-
-    // ========================================================================
-    // Type-Safe Internationalization (i18n) Parsing
-    // ========================================================================
-
-    /// Parse a translations block:
-    /// ```sigil
-    /// translations Rights {
-    ///     locale: Locale,
-    ///     miranda_title: String! = match locale { ... }
-    ///     greeting(name: String): String! = match locale { ... }
-    /// }
-    /// ```
-    fn parse_translations(&mut self, visibility: Visibility) -> ParseResult<TranslationsDef> {
-        self.expect(Token::Translations)?;
-        let name = self.parse_ident()?;
-        let generics = self.parse_generics_opt()?;
-
-        self.expect(Token::LBrace)?;
-
-        // Parse locale declaration: `locale: Locale,`
-        self.skip_comments();
-        if !self.check(&Token::Locale) {
-            return Err(ParseError::Custom(
-                "translations block must start with 'locale: <type>,'".to_string(),
-            ));
-        }
-        self.advance(); // consume "locale" keyword
-        self.expect(Token::Colon)?;
-        let locale_type = self.parse_type()?;
-        self.consume_if(&Token::Comma);
-
-        // Parse translation entries
-        let mut entries = Vec::new();
-        while !self.check(&Token::RBrace) && !self.is_eof() {
-            self.skip_comments();
-            if self.check(&Token::RBrace) {
-                break;
-            }
-
-            let entry = self.parse_translation_entry()?;
-            entries.push(entry);
-            self.consume_if(&Token::Comma);
-        }
-
-        self.expect(Token::RBrace)?;
-
-        Ok(TranslationsDef {
-            visibility,
-            name,
-            generics,
-            locale_type,
-            entries,
-        })
-    }
-
-    /// Parse a translation entry (property or method)
-    fn parse_translation_entry(&mut self) -> ParseResult<TranslationEntry> {
-        let name = self.parse_ident()?;
-
-        // Check if it's a method (has parentheses) or property
-        if self.check(&Token::LParen) {
-            // Method: greeting(name: String): String! = match locale { ... }
-            self.expect(Token::LParen)?;
-            let params = self.parse_params()?;
-            self.expect(Token::RParen)?;
-            self.expect(Token::Colon)?;
-            let return_type = self.parse_type()?;
-            self.expect(Token::Eq)?;
-            let body = self.parse_expr()?;
-
-            Ok(TranslationEntry::Method(TranslationMethod {
-                name,
-                params,
-                return_type,
-                body: Box::new(body),
-            }))
-        } else {
-            // Property: title: String! = match locale { ... }
-            self.expect(Token::Colon)?;
-            let return_type = self.parse_type()?;
-            self.expect(Token::Eq)?;
-            let body = self.parse_expr()?;
-
-            Ok(TranslationEntry::Property(TranslationProperty {
-                name,
-                return_type,
-                body: Box::new(body),
-            }))
-        }
-    }
-
-    /// Parse a locale enum:
-    /// ```sigil
-    /// locale enum Locale {
-    ///     En { code: "en", name: "English" },
-    ///     Es { code: "es", name: "Español", fallback: En },
-    /// }
-    /// ```
-    fn parse_locale_enum(&mut self, visibility: Visibility) -> ParseResult<LocaleEnumDef> {
-        self.expect(Token::Locale)?;
-        self.expect(Token::Enum)?;
-        let name = self.parse_ident()?;
-
-        self.expect(Token::LBrace)?;
-
-        let mut variants = Vec::new();
-        while !self.check(&Token::RBrace) && !self.is_eof() {
-            self.skip_comments();
-            if self.check(&Token::RBrace) {
-                break;
-            }
-
-            let variant = self.parse_locale_variant()?;
-            variants.push(variant);
-            self.consume_if(&Token::Comma);
-        }
-
-        self.expect(Token::RBrace)?;
-
-        Ok(LocaleEnumDef {
-            visibility,
-            name,
-            variants,
-        })
-    }
-
-    /// Parse a locale variant with metadata:
-    /// `En { code: "en", name: "English", rtl: false, fallback: Es }`
-    fn parse_locale_variant(&mut self) -> ParseResult<LocaleVariant> {
-        let name = self.parse_ident()?;
-        self.expect(Token::LBrace)?;
-
-        let mut variant = LocaleVariant {
-            name,
-            ..Default::default()
-        };
-
-        while !self.check(&Token::RBrace) && !self.is_eof() {
-            self.skip_comments();
-            if self.check(&Token::RBrace) {
-                break;
-            }
-
-            if self.check_ident_name("code") {
-                self.advance();
-                self.expect(Token::Colon)?;
-                if let Some(Token::StringLit(s)) = self.current_token().cloned() {
-                    self.advance();
-                    variant.code = s;
-                } else {
-                    return Err(ParseError::Custom(
-                        "expected string literal for locale code".to_string(),
-                    ));
-                }
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("name") {
-                self.advance();
-                self.expect(Token::Colon)?;
-                if let Some(Token::StringLit(s)) = self.current_token().cloned() {
-                    self.advance();
-                    variant.display_name = s;
-                } else {
-                    return Err(ParseError::Custom(
-                        "expected string literal for locale display name".to_string(),
-                    ));
-                }
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("rtl") {
-                self.advance();
-                self.expect(Token::Colon)?;
-                variant.rtl = self.parse_bool_value()?;
-                self.consume_if(&Token::Comma);
-            } else if self.check_ident_name("fallback") {
-                self.advance();
-                self.expect(Token::Colon)?;
-                variant.fallback = Some(self.parse_ident()?);
-                self.consume_if(&Token::Comma);
-            } else if self.check(&Token::RBrace) {
-                break;
-            } else {
-                match self.current_token() {
-                    Some(t) => {
-                        return Err(ParseError::UnexpectedToken {
-                            expected: "code, name, rtl, or fallback".to_string(),
-                            found: t.clone(),
-                            span: self.current_span(),
-                        });
-                    }
-                    None => return Err(ParseError::UnexpectedEof),
-                }
-            }
-        }
-
-        self.expect(Token::RBrace)?;
-
-        Ok(variant)
-    }
-
     /// Parse an extern block: `extern "C" { ... }`
-    fn parse_extern_block(&mut self, outer_attrs: Vec<Attribute>) -> ParseResult<ExternBlock> {
+    fn parse_extern_block(&mut self) -> ParseResult<ExternBlock> {
         self.expect(Token::Extern)?;
 
         // Parse ABI string (default to "C")
@@ -2790,19 +2271,10 @@ impl<'a> Parser<'a> {
         let mut items = Vec::new();
 
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            // Skip comments inside extern block
-            self.skip_comments();
-            if self.check(&Token::RBrace) {
-                break;
-            }
-
             let visibility = self.parse_visibility()?;
 
-            // Skip comments after visibility
-            self.skip_comments();
-
             match self.current_token() {
-                Some(Token::Fn) | Some(Token::Lambda) => {
+                Some(Token::Fn) => {
                     items.push(ExternItem::Function(
                         self.parse_extern_function(visibility)?,
                     ));
@@ -2810,12 +2282,9 @@ impl<'a> Parser<'a> {
                 Some(Token::Static) => {
                     items.push(ExternItem::Static(self.parse_extern_static(visibility)?));
                 }
-                Some(Token::Type) => {
-                    items.push(ExternItem::Type(self.parse_extern_type(visibility)?));
-                }
                 Some(token) => {
                     return Err(ParseError::UnexpectedToken {
-                        expected: "fn, static, or type".to_string(),
+                        expected: "fn or static".to_string(),
                         found: token.clone(),
                         span: self.current_span(),
                     });
@@ -2829,7 +2298,7 @@ impl<'a> Parser<'a> {
         Ok(ExternBlock {
             abi,
             items,
-            outer_attrs,
+            outer_attrs: Vec::new(),
         })
     }
 
@@ -2900,30 +2369,6 @@ impl<'a> Parser<'a> {
         Ok(ExternStatic {
             visibility,
             mutable,
-            name,
-            ty,
-        })
-    }
-
-    /// Parse an extern type: either opaque (`type Name;`) or alias (`type Name = T;`)
-    fn parse_extern_type(&mut self, visibility: Visibility) -> ParseResult<ExternType> {
-        self.expect(Token::Type)?;
-        let name = self.parse_ident()?;
-
-        // Check for opaque type (no body) vs type alias
-        let ty = if self.check(&Token::Eq) {
-            // Type alias: type Callback = rite(i32) → i32;
-            self.advance(); // consume '='
-            Some(self.parse_type()?)
-        } else {
-            // Opaque type: type GtkWidget;
-            None
-        };
-
-        self.expect(Token::Semi)?;
-
-        Ok(ExternType {
-            visibility,
             name,
             ty,
         })
@@ -4145,15 +3590,15 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse either a type or a lifetime (for trait bounds like `T: Trait + 'static`)
-    /// Also handles HRTB: `for<'de> Deserialize<'de>`
+    /// Also handles HRTB: `∀<'de> Deserialize<'de>` (or `for<'de>`)
     /// Also handles associated type bindings: `Output = Type`
     fn parse_type_or_lifetime(&mut self) -> ParseResult<TypeExpr> {
         if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
             self.advance();
             Ok(TypeExpr::Lifetime(name))
-        } else if self.check(&Token::For) {
-            // Higher-ranked trait bound: for<'a, 'b> Trait<'a, 'b>
-            self.advance(); // consume 'for'
+        } else if self.check(&Token::ForAll) || self.check(&Token::For) {
+            // Higher-ranked trait bound: ∀<'a, 'b> Trait<'a, 'b>
+            self.advance(); // consume '∀' or 'for'
             self.expect(Token::Lt)?; // <
             let mut lifetimes = Vec::new();
             if let Some(Token::Lifetime(lt)) = self.current_token().cloned() {
@@ -5633,43 +5078,6 @@ impl<'a> Parser<'a> {
                     }],
                 }))
             }
-            // Handle crate/tome and super/above as path starts in expressions
-            Some(Token::Crate) | Some(Token::Super) | Some(Token::IntensityUp) => {
-                let keyword = self.current_token().cloned();
-                let span = self.current_span();
-                self.advance();
-
-                let keyword_name = match keyword {
-                    Some(Token::Crate) => "crate",
-                    Some(Token::Super) | Some(Token::IntensityUp) => "super",
-                    _ => unreachable!(),
-                };
-
-                let mut segments = vec![PathSegment {
-                    ident: Ident {
-                        name: keyword_name.to_string(),
-                        evidentiality: None,
-                        affect: None,
-                        span,
-                    },
-                    generics: None,
-                }];
-
-                // Continue parsing path: crate::module::item or super::item
-                while self.consume_if(&Token::ColonColon) || self.consume_if(&Token::MiddleDot) {
-                    if self.check(&Token::Lt) {
-                        self.advance();
-                        let types = self.parse_type_list()?;
-                        self.expect_gt()?;
-                        if let Some(last) = segments.last_mut() {
-                            last.generics = Some(types);
-                        }
-                        continue;
-                    }
-                    segments.push(self.parse_path_segment()?);
-                }
-                Ok(Expr::Path(TypePath { segments }))
-            }
             Some(Token::SelfUpper) => {
                 // Self keyword as expression (struct constructor or path start)
                 let span = self.current_span();
@@ -5731,8 +5139,6 @@ impl<'a> Parser<'a> {
             Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(Token::Simd) => self.parse_simd_expr(),
             Some(Token::Atomic) => self.parse_atomic_expr(),
-            // Template expression: ⟨div⟩...⟨/div⟩
-            Some(Token::TemplateOpen) => self.parse_template_expr(),
             // Implicit self field access: `.field` desugars to `self.field`
             // This allows more concise method bodies:
             //   fn increment(mut self) { .count += 1; }
@@ -5847,8 +5253,8 @@ impl<'a> Parser<'a> {
                     let operand = self.parse_asm_operand(AsmOperandKind::Output)?;
                     outputs.push(operand);
                 }
-                // Handle `in` which is a keyword (Token::In)
-                Some(Token::In) => {
+                // Handle `in` as identifier (ASM-specific, not Sigil's `of` keyword)
+                Some(Token::Ident(ref name)) if name == "in" => {
                     self.advance();
                     let operand = self.parse_asm_operand(AsmOperandKind::Input)?;
                     inputs.push(operand);
@@ -6358,340 +5764,6 @@ impl<'a> Parser<'a> {
                 Ok(ordering)
             }
             _ => Err(ParseError::Custom("expected memory ordering".to_string())),
-        }
-    }
-
-    // ==========================================
-    // Template Expression Parsing (STE)
-    // ==========================================
-
-    /// Parse a template expression: `⟨div[class: "card"]⟩...⟨/div⟩`
-    ///
-    /// Syntax:
-    /// ```sigil
-    /// ⟨article[class: "card", id: my_id]⟩
-    ///     ⟨h2⟩ "Title" ⟨/h2⟩
-    ///     { items |φ{_.active} |τ{i → ⟨li⟩ "{i.name}" ⟨/li⟩} }
-    /// ⟨/article⟩
-    /// ```
-    fn parse_template_expr(&mut self) -> ParseResult<Expr> {
-        self.expect(Token::TemplateOpen)?;
-
-        // Check for fragment: ⟨⟩...⟨/⟩
-        if self.check(&Token::TemplateClose) {
-            self.advance();
-            let children = self.parse_template_children()?;
-            self.expect(Token::TemplateCloseStart)?;
-            self.expect(Token::TemplateClose)?;
-            return Ok(Expr::TemplateFragment { children });
-        }
-
-        // Parse tag name
-        let tag = self.parse_template_tag()?;
-
-        // Parse optional attributes: [attr: value, ...]
-        let (attrs, events, key, ref_callback) = if self.check(&Token::LBracket) {
-            self.parse_template_attrs()?
-        } else {
-            (Vec::new(), Vec::new(), None, None)
-        };
-
-        // Check for self-closing: /⟩
-        if self.check(&Token::TemplateSelfClose) {
-            self.advance();
-            return Ok(Expr::Template(TemplateElement {
-                tag,
-                attrs,
-                events,
-                children: Vec::new(),
-                self_closing: true,
-                key,
-                ref_callback,
-            }));
-        }
-
-        // Expect closing angle bracket
-        self.expect(Token::TemplateClose)?;
-
-        // Parse children
-        let children = self.parse_template_children()?;
-
-        // Expect closing tag: ⟨/tagname⟩
-        self.expect(Token::TemplateCloseStart)?;
-        let closing_tag = self.parse_template_tag()?;
-
-        // Verify tag names match
-        if !self.template_tags_match(&tag, &closing_tag) {
-            return Err(ParseError::Custom(format!(
-                "mismatched template tags: opening {:?} but closing {:?}",
-                tag, closing_tag
-            )));
-        }
-
-        self.expect(Token::TemplateClose)?;
-
-        Ok(Expr::Template(TemplateElement {
-            tag,
-            attrs,
-            events,
-            children,
-            self_closing: false,
-            key,
-            ref_callback,
-        }))
-    }
-
-    /// Parse a template tag name (element or component)
-    fn parse_template_tag(&mut self) -> ParseResult<TemplateTag> {
-        let ident = self.parse_ident()?;
-
-        // Check if it's a component (PascalCase) or element (lowercase)
-        if ident
-            .name
-            .chars()
-            .next()
-            .map(|c| c.is_uppercase())
-            .unwrap_or(false)
-        {
-            // Component path - might be qualified like MyModule·Button
-            let mut segments = vec![PathSegment {
-                ident,
-                generics: None,
-            }];
-
-            while self.consume_if(&Token::MiddleDot) {
-                let next_ident = self.parse_ident()?;
-                segments.push(PathSegment {
-                    ident: next_ident,
-                    generics: None,
-                });
-            }
-
-            Ok(TemplateTag::Component(TypePath { segments }))
-        } else {
-            Ok(TemplateTag::Element(ident.name))
-        }
-    }
-
-    /// Parse template attributes: [class: "foo", id: bar, on_click: handler]
-    fn parse_template_attrs(
-        &mut self,
-    ) -> ParseResult<(
-        Vec<TemplateAttr>,
-        Vec<TemplateEvent>,
-        Option<Box<Expr>>,
-        Option<Box<Expr>>,
-    )> {
-        self.expect(Token::LBracket)?;
-
-        let mut attrs = Vec::new();
-        let mut events = Vec::new();
-        let mut key = None;
-        let mut ref_callback = None;
-
-        while !self.check(&Token::RBracket) {
-            let name = self.parse_ident()?;
-            self.expect(Token::Colon)?;
-            let value = self.parse_expr()?;
-
-            // Check for evidentiality marker
-            let evidentiality = self.parse_optional_evidentiality();
-
-            // Handle special attributes
-            if name.name == "key" {
-                key = Some(Box::new(value));
-            } else if name.name == "ref" {
-                ref_callback = Some(Box::new(value));
-            } else if name.name.starts_with("on_") {
-                // Event handler
-                let event_name = name.name.strip_prefix("on_").unwrap().to_string();
-                events.push(TemplateEvent {
-                    event: Ident {
-                        name: event_name,
-                        evidentiality: None,
-                        affect: None,
-                        span: name.span,
-                    },
-                    handler: value,
-                });
-            } else {
-                attrs.push(TemplateAttr {
-                    name,
-                    value,
-                    evidentiality,
-                });
-            }
-
-            if !self.consume_if(&Token::Comma) {
-                break;
-            }
-        }
-
-        self.expect(Token::RBracket)?;
-        Ok((attrs, events, key, ref_callback))
-    }
-
-    /// Parse optional evidentiality marker after a value
-    fn parse_optional_evidentiality(&mut self) -> Option<Evidentiality> {
-        match self.current_token() {
-            Some(Token::Bang) => {
-                self.advance();
-                Some(Evidentiality::Known)
-            }
-            Some(Token::Question) => {
-                self.advance();
-                Some(Evidentiality::Uncertain)
-            }
-            Some(Token::Tilde) => {
-                self.advance();
-                Some(Evidentiality::Reported)
-            }
-            Some(Token::Interrobang) => {
-                self.advance();
-                Some(Evidentiality::Paradox)
-            }
-            _ => None,
-        }
-    }
-
-    /// Parse template children (elements, text, expressions)
-    fn parse_template_children(&mut self) -> ParseResult<Vec<TemplateChild>> {
-        let mut children = Vec::new();
-
-        loop {
-            match self.current_token() {
-                // End of children
-                Some(Token::TemplateCloseStart) => break,
-                // Nested element
-                Some(Token::TemplateOpen) => {
-                    let child_expr = self.parse_template_expr()?;
-                    match child_expr {
-                        Expr::Template(el) => {
-                            children.push(TemplateChild::Element(Box::new(el)));
-                        }
-                        Expr::TemplateFragment {
-                            children: frag_children,
-                        } => {
-                            children.push(TemplateChild::Fragment(frag_children));
-                        }
-                        _ => {
-                            return Err(ParseError::Custom(
-                                "unexpected expression in template".to_string(),
-                            ));
-                        }
-                    }
-                }
-                // Expression in braces
-                Some(Token::LBrace) => {
-                    self.advance();
-                    let expr = self.parse_expr()?;
-                    self.expect(Token::RBrace)?;
-                    children.push(TemplateChild::Expr(Box::new(expr)));
-                }
-                // Text content (string literal)
-                Some(Token::StringLit(s)) => {
-                    let text = s.clone();
-                    self.advance();
-                    children.push(TemplateChild::Text(text));
-                }
-                // Interpolated string
-                Some(Token::InterpolatedStringLit(s)) => {
-                    let text = s.clone();
-                    self.advance();
-                    // Parse interpolations
-                    let parts = self.parse_template_interpolation(&text)?;
-                    children.push(TemplateChild::Interpolation { parts });
-                }
-                // End of template or unexpected token
-                _ => break,
-            }
-        }
-
-        Ok(children)
-    }
-
-    /// Parse interpolated string into parts
-    fn parse_template_interpolation(
-        &mut self,
-        text: &str,
-    ) -> ParseResult<Vec<TemplateInterpolationPart>> {
-        // Simple parsing: split on { and }
-        let mut parts = Vec::new();
-        let mut current = String::new();
-        let mut chars = text.chars().peekable();
-        let mut in_expr = false;
-        let mut expr_str = String::new();
-
-        while let Some(c) = chars.next() {
-            if c == '{' && !in_expr {
-                if !current.is_empty() {
-                    parts.push(TemplateInterpolationPart::Text(current.clone()));
-                    current.clear();
-                }
-                in_expr = true;
-            } else if c == '}' && in_expr {
-                // Parse the expression string
-                // For now, just store as text - full parsing would require a sub-parser
-                let (expr_text, evidentiality) = self.extract_expr_with_evidentiality(&expr_str);
-                parts.push(TemplateInterpolationPart::Expr {
-                    expr: Box::new(Expr::Path(TypePath {
-                        segments: vec![PathSegment {
-                            ident: Ident {
-                                name: expr_text,
-                                evidentiality: None,
-                                affect: None,
-                                span: self.current_span(),
-                            },
-                            generics: None,
-                        }],
-                    })),
-                    evidentiality,
-                });
-                expr_str.clear();
-                in_expr = false;
-            } else if in_expr {
-                expr_str.push(c);
-            } else {
-                current.push(c);
-            }
-        }
-
-        if !current.is_empty() {
-            parts.push(TemplateInterpolationPart::Text(current));
-        }
-
-        Ok(parts)
-    }
-
-    /// Extract expression text and optional evidentiality marker from interpolation
-    fn extract_expr_with_evidentiality(&self, s: &str) -> (String, Option<Evidentiality>) {
-        let s = s.trim();
-        if s.ends_with('!') {
-            (s[..s.len() - 1].to_string(), Some(Evidentiality::Known))
-        } else if s.ends_with('?') {
-            (s[..s.len() - 1].to_string(), Some(Evidentiality::Uncertain))
-        } else if s.ends_with('~') {
-            (s[..s.len() - 1].to_string(), Some(Evidentiality::Reported))
-        } else if s.ends_with('‽') {
-            (s[..s.len() - 3].to_string(), Some(Evidentiality::Paradox)) // ‽ is 3 bytes
-        } else {
-            (s.to_string(), None)
-        }
-    }
-
-    /// Check if two template tags match
-    fn template_tags_match(&self, opening: &TemplateTag, closing: &TemplateTag) -> bool {
-        match (opening, closing) {
-            (TemplateTag::Element(a), TemplateTag::Element(b)) => a == b,
-            (TemplateTag::Component(a), TemplateTag::Component(b)) => {
-                // Compare paths
-                a.segments.len() == b.segments.len()
-                    && a.segments
-                        .iter()
-                        .zip(b.segments.iter())
-                        .all(|(sa, sb)| sa.ident.name == sb.ident.name)
-            }
-            _ => false,
         }
     }
 
@@ -7861,24 +6933,6 @@ impl<'a> Parser<'a> {
             });
         }
 
-        // Try to detect anonymous struct literal: `{ ident: expr, ... }`
-        // Pattern: starts with Ident followed by Colon (not FatArrow which is closure)
-        // Also handle empty struct `{}` and struct update `{ ..expr }`
-        let is_anonymous_struct = matches!(self.current_token(), Some(Token::Ident(_)))
-            && matches!(self.peek_next(), Some(Token::Colon))
-            || matches!(self.current_token(), Some(Token::DotDot)); // `{ ..expr }` update syntax
-
-        if is_anonymous_struct {
-            // Parse as anonymous struct literal with empty path
-            let (fields, rest) = self.parse_struct_fields()?;
-            self.expect(Token::RBrace)?;
-            return Ok(Expr::Struct {
-                path: TypePath { segments: vec![] }, // Empty path = anonymous struct
-                fields,
-                rest,
-            });
-        }
-
         // Parse as block
         let mut stmts = Vec::new();
         let mut final_expr = None;
@@ -8423,26 +7477,22 @@ impl<'a> Parser<'a> {
 
                 // These must be followed by :: for a path pattern
                 if !self.consume_if(&Token::ColonColon) && !self.consume_if(&Token::MiddleDot) {
-                    // Allow these keywords as identifier patterns when not followed by path separator
-                    // `this` or `ξ` → "self"
-                    // `above` or `↑` → "above"
-                    // `tome` → "tome"
-                    let ident_name = match &keyword {
-                        Some(Token::SelfLower) | Some(Token::Xi) => "self",
-                        Some(Token::Super) | Some(Token::IntensityUp) => "above",
-                        Some(Token::Crate) => "tome",
-                        _ => unreachable!(),
-                    };
-                    return Ok(Pattern::Ident {
-                        mutable: false,
-                        name: Ident {
-                            name: ident_name.to_string(),
-                            evidentiality: None,
-                            affect: None,
-                            span,
-                        },
-                        evidentiality: self.parse_evidentiality_opt(),
-                    });
+                    // Just `this` or `ξ` as an identifier pattern
+                    if matches!(keyword, Some(Token::SelfLower) | Some(Token::Xi)) {
+                        return Ok(Pattern::Ident {
+                            mutable: false,
+                            name: Ident {
+                                name: "self".to_string(),
+                                evidentiality: None,
+                                affect: None,
+                                span,
+                            },
+                            evidentiality: self.parse_evidentiality_opt(),
+                        });
+                    }
+                    return Err(ParseError::Custom(
+                        "expected · after crate/super in path pattern".to_string(),
+                    ));
                 }
 
                 // Build the path starting with crate/self/super
@@ -8996,8 +8046,6 @@ impl<'a> Parser<'a> {
             Token::Null => Some("null"),
             // Neural network keywords - allow as identifiers for struct fields
             Token::Linear => Some("linear"),
-            // i18n/localization keywords - allow as identifiers for struct fields
-            Token::Locale => Some("locale"),
             _ => None,
         }
     }
@@ -9759,93 +8807,14 @@ mod tests {
     fn test_parse_actor() {
         // Simplified actor without compound assignment
         let source = r#"
-
             actor Counter {
                 state: i64 = 0
-                on Increment(n: i64) { ⤺ ξ.state + n; }
-            }
-        
-"#;
-        let mut parser = Parser::new(source);
-        let file = parser.parse_file().unwrap();
-        assert_eq!(file.items.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_form_simple() {
-        let source = r#"
-            form ContactForm {
-                field email: String~ → String! {
-                    validate: |v| v·contains("@"),
-                    error: "Invalid email",
-                }
+                on Increment(n: i64) { ⤺ self.state + n; }
             }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
-
-        if let Item::Form(form) = &file.items[0].node {
-            assert_eq!(form.name.name, "ContactForm");
-            assert_eq!(form.fields.len(), 1);
-            assert_eq!(form.fields[0].name.name, "email");
-            assert!(form.fields[0].validate.is_some());
-            assert_eq!(form.fields[0].error, Some("Invalid email".to_string()));
-        } else {
-            panic!("Expected Form item");
-        }
-    }
-
-    #[test]
-    fn test_parse_form_with_aegis() {
-        let source = r#"
-            form SecureForm {
-                field password: String~ → String! {
-                    validate: |v| v·len() >= 8,
-                    error: "Password too short",
-                }
-                aegis: {
-                    audit: yea,
-                    injection_check: yea,
-                    identity: required,
-                }
-            }
-        "#;
-        let mut parser = Parser::new(source);
-        let file = parser.parse_file().unwrap();
-        assert_eq!(file.items.len(), 1);
-
-        if let Item::Form(form) = &file.items[0].node {
-            assert!(form.aegis.is_some());
-            let aegis = form.aegis.as_ref().unwrap();
-            assert!(aegis.audit);
-            assert!(aegis.injection_check);
-            assert_eq!(aegis.identity, FormIdentityRequirement::Required);
-        } else {
-            panic!("Expected Form item");
-        }
-    }
-
-    #[test]
-    fn test_parse_form_with_transform() {
-        let source = r#"
-            form NormalizedInput {
-                field email: String~ → String! {
-                    validate: |v| v·contains("@"),
-                    transform: |v| v·trim()·to_lowercase(),
-                    error: "Invalid email",
-                }
-            }
-        "#;
-        let mut parser = Parser::new(source);
-        let file = parser.parse_file().unwrap();
-        assert_eq!(file.items.len(), 1);
-
-        if let Item::Form(form) = &file.items[0].node {
-            assert!(form.fields[0].transform.is_some());
-        } else {
-            panic!("Expected Form item");
-        }
     }
 
     #[test]
@@ -9860,32 +8829,28 @@ mod tests {
     fn test_parse_labeled_loops() {
         // Test labeled loop with break
         let source = r#"
-
             rite test() {
                 'outer: forever {
-                    'inner: ⟳ yea {
+                    'inner: ⟳ true {
                         ⊲ 'outer;
                     }
                 }
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
 
         // Test labeled for with continue
         let source2 = r#"
-
             rite test2() {
-                'rows: each i of 0..10 {
-                    'cols: each j of 0..10 {
+                'rows: each i ∈ 0..10 {
+                    'cols: each j ∈ 0..10 {
                         ⎇ j == 5 { ⊳ 'rows; }
                     }
                 }
             }
-        
-"#;
+        "#;
         let mut parser2 = Parser::new(source2);
         let file2 = parser2.parse_file().unwrap();
         assert_eq!(file2.items.len(), 1);
@@ -9894,15 +8859,13 @@ mod tests {
     #[test]
     fn test_parse_inline_asm() {
         let source = r#"
-
             rite outb(port: u16, value: u8) {
                 asm!("out dx, al",
-                    of("dx") port,
-                    of("al") value,
+                    in("dx") port,
+                    in("al") value,
                     options(nostack));
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9917,17 +8880,15 @@ mod tests {
     #[test]
     fn test_parse_inline_asm_with_outputs() {
         let source = r#"
-
             rite inb(port: u16) → u8 {
                 ≔ result: u8 = 0;
-                asm!("of al, dx",
+                asm!("in al, dx",
                     out("al") result,
-                    of("dx") port,
+                    in("dx") port,
                     options(nostack, nomem));
                 ⤺ result;
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9936,12 +8897,10 @@ mod tests {
     #[test]
     fn test_parse_volatile_read() {
         let source = r#"
-
             rite read_mmio(addr: *vary u32) → u32 {
                 ⤺ volatile read<u32>(addr);
             }
-
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9950,12 +8909,10 @@ mod tests {
     #[test]
     fn test_parse_volatile_write() {
         let source = r#"
-
             rite write_mmio(addr: *vary u32, value: u32) {
                 volatile write<u32>(addr, value);
             }
-
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9964,13 +8921,11 @@ mod tests {
     #[test]
     fn test_parse_naked_function() {
         let source = r#"
-
             naked rite interrupt_handler() {
                 asm!("push rax; push rbx; call handler_impl; pop rbx; pop rax; iretq",
                     options(nostack));
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9985,7 +8940,6 @@ mod tests {
     #[test]
     fn test_parse_packed_struct() {
         let source = r#"
-
             packed sigil GDTEntry {
                 limit_low: u16,
                 base_low: u16,
@@ -9994,8 +8948,7 @@ mod tests {
                 granularity: u8,
                 base_high: u8,
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10016,15 +8969,13 @@ mod tests {
     #[test]
     fn test_parse_no_std_attribute() {
         let source = r#"
-
             #![no_std]
             #![no_main]
 
             rite kernel_main() → ! {
                 forever {}
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10036,12 +8987,10 @@ mod tests {
     #[test]
     fn test_parse_feature_attribute() {
         let source = r#"
-
             #![feature(asm, naked_functions)]
 
             rite main() → i64 { 0 }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10056,13 +9005,11 @@ mod tests {
     #[test]
     fn test_parse_target_attribute() {
         let source = r#"
-
             #![no_std]
             #![target(arch = "x86_64", os = "none")]
 
             rite kernel_main() { }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10079,15 +9026,13 @@ mod tests {
     #[test]
     fn test_parse_panic_handler() {
         let source = r#"
-
             #![no_std]
 
             #[panic_handler]
             rite panic(info: *◆ PanicInfo) → ! {
                 forever {}
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10105,7 +9050,6 @@ mod tests {
     #[test]
     fn test_parse_entry_point() {
         let source = r#"
-
             #![no_std]
             #![no_main]
 
@@ -10114,8 +9058,7 @@ mod tests {
             rite _start() → ! {
                 forever {}
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10131,11 +9074,9 @@ mod tests {
     #[test]
     fn test_parse_link_section() {
         let source = r#"
-
             #[link_section = ".text.boot"]
             rite boot_code() { }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10150,7 +9091,6 @@ mod tests {
     #[test]
     fn test_parse_linker_config() {
         let source = r#"
-
             #![no_std]
             #![linker_script = "kernel.ld"]
             #![entry_point = "_start"]
@@ -10158,8 +9098,7 @@ mod tests {
             #![stack_size = 0x4000]
 
             rite kernel_main() { }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10177,14 +9116,12 @@ mod tests {
     #[test]
     fn test_parse_interrupt_handler() {
         let source = r#"
-
             #[interrupt(32)]
             #[naked]
             rite timer_handler() {
                 asm!("iretq", options(nostack));
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10199,7 +9136,6 @@ mod tests {
     #[test]
     fn test_parse_inline_attributes() {
         let source = r#"
-
             #[inline]
             rite fast() → i64 { 0 }
 
@@ -10208,8 +9144,7 @@ mod tests {
 
             #[inline(never)]
             rite never_inline() → i64 { 0 }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
 
@@ -10229,12 +9164,10 @@ mod tests {
     #[test]
     fn test_parse_simd_type() {
         let source = r#"
-
             rite vec_add(a: simd<f32, 4>, b: simd<f32, 4>) → simd<f32, 4> {
                 ⤺ simd.add(a, b);
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10258,12 +9191,10 @@ mod tests {
     #[test]
     fn test_parse_simd_literal() {
         let source = r#"
-
             rite make_vec() → simd<f32, 4> {
                 ⤺ simd[1.0, 2.0, 3.0, 4.0];
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10272,13 +9203,11 @@ mod tests {
     #[test]
     fn test_parse_simd_intrinsics() {
         let source = r#"
-
             rite dot_product(a: simd<f32, 4>, b: simd<f32, 4>) → f32 {
                 ≔ prod = simd.mul(a, b);
                 ⤺ simd.hadd(prod);
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10287,12 +9216,10 @@ mod tests {
     #[test]
     fn test_parse_simd_shuffle() {
         let source = r#"
-
             rite interleave(a: simd<f32, 4>, b: simd<f32, 4>) → simd<f32, 4> {
                 ⤺ simd.shuffle(a, b, [0, 4, 1, 5]);
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10301,12 +9228,10 @@ mod tests {
     #[test]
     fn test_parse_atomic_type() {
         let source = r#"
-
             sigil Counter {
                 value: atomic<i64>,
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10329,12 +9254,10 @@ mod tests {
     #[test]
     fn test_parse_atomic_operations() {
         let source = r#"
-
             rite increment(ptr: *vary i64) → i64 {
                 ⤺ atomic.fetch_add(ptr, 1, SeqCst);
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10343,13 +9266,11 @@ mod tests {
     #[test]
     fn test_parse_atomic_compare_exchange() {
         let source = r#"
-
             rite cas(ptr: *vary i64, expected: i64, new: i64) → bool {
                 ≔ result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
                 ⤺ result;
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10358,12 +9279,10 @@ mod tests {
     #[test]
     fn test_parse_atomic_fence() {
         let source = r#"
-
             rite memory_barrier() {
                 atomic.fence(SeqCst);
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10372,15 +9291,13 @@ mod tests {
     #[test]
     fn test_parse_derive_macro() {
         let source = r#"
-
             #[derive(Debug, Clone, Component)]
             sigil Position {
                 x: f32,
                 y: f32,
                 z: f32,
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10398,13 +9315,11 @@ mod tests {
     #[test]
     fn test_parse_repr_c_struct() {
         let source = r#"
-
             #[repr(C)]
             sigil FFIStruct {
-                value: i32,
+                field: i32,
             }
-
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10419,15 +9334,13 @@ mod tests {
     #[test]
     fn test_parse_allocator_trait() {
         let source = r#"
-
             aspect Allocator {
                 type Error;
 
                 rite allocate(size: usize, align: usize) → *vary u8;
                 rite deallocate(ptr: *vary u8, size: usize, align: usize);
             }
-        
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10444,15 +9357,13 @@ mod tests {
     #[test]
     fn test_parse_where_clause() {
         let source = r#"
-
             rite alloc_array<T, A>(allocator: &vary A, count: usize) → *vary T
             ∋
                 A: Allocator,
             {
                 ⤺ allocator.allocate(count, 8);
             }
-
-"#;
+        "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -10464,260 +9375,5 @@ mod tests {
         } else {
             panic!("Expected function");
         }
-    }
-
-    #[test]
-    fn test_parse_simple_template() {
-        // Simple template element
-        let source = r#"⟨div⟩ "Hello" ⟨/div⟩"#;
-        let mut parser = Parser::new(source);
-        let expr = parser.parse_expr().unwrap();
-
-        if let Expr::Template(el) = expr {
-            assert!(matches!(el.tag, TemplateTag::Element(ref s) if s == "div"));
-            assert_eq!(el.children.len(), 1);
-            assert!(matches!(el.children[0], TemplateChild::Text(ref s) if s == "Hello"));
-        } else {
-            panic!("Expected Template, got {:?}", expr);
-        }
-    }
-
-    #[test]
-    fn test_parse_template_with_attrs() {
-        // Template with attributes
-        let source = r#"⟨div[class: "card", id: my_id]⟩ ⟨/div⟩"#;
-        let mut parser = Parser::new(source);
-        let expr = parser.parse_expr().unwrap();
-
-        if let Expr::Template(el) = expr {
-            assert!(matches!(el.tag, TemplateTag::Element(ref s) if s == "div"));
-            assert_eq!(el.attrs.len(), 2);
-            assert_eq!(el.attrs[0].name.name, "class");
-            assert_eq!(el.attrs[1].name.name, "id");
-        } else {
-            panic!("Expected Template, got {:?}", expr);
-        }
-    }
-
-    #[test]
-    fn test_parse_self_closing_template() {
-        // Self-closing template
-        let source = r#"⟨input[type: "text"]/⟩"#;
-        let mut parser = Parser::new(source);
-        let expr = parser.parse_expr().unwrap();
-
-        if let Expr::Template(el) = expr {
-            assert!(matches!(el.tag, TemplateTag::Element(ref s) if s == "input"));
-            assert!(el.self_closing);
-            assert_eq!(el.attrs.len(), 1);
-        } else {
-            panic!("Expected Template, got {:?}", expr);
-        }
-    }
-
-    #[test]
-    fn test_parse_nested_template() {
-        // Nested templates
-        let source = r#"⟨div⟩ ⟨span⟩ "Hello" ⟨/span⟩ ⟨/div⟩"#;
-        let mut parser = Parser::new(source);
-        let expr = parser.parse_expr().unwrap();
-
-        if let Expr::Template(el) = expr {
-            assert!(matches!(el.tag, TemplateTag::Element(ref s) if s == "div"));
-            assert_eq!(el.children.len(), 1);
-            if let TemplateChild::Element(inner) = &el.children[0] {
-                assert!(matches!(inner.tag, TemplateTag::Element(ref s) if s == "span"));
-            } else {
-                panic!("Expected nested element");
-            }
-        } else {
-            panic!("Expected Template, got {:?}", expr);
-        }
-    }
-
-    #[test]
-    fn test_parse_template_with_expression() {
-        // Template with embedded expression
-        let source = r#"⟨div⟩ { count + 1 } ⟨/div⟩"#;
-        let mut parser = Parser::new(source);
-        let expr = parser.parse_expr().unwrap();
-
-        if let Expr::Template(el) = expr {
-            assert_eq!(el.children.len(), 1);
-            assert!(matches!(el.children[0], TemplateChild::Expr(_)));
-        } else {
-            panic!("Expected Template, got {:?}", expr);
-        }
-    }
-
-    #[test]
-    fn test_parse_component_template() {
-        // Component (PascalCase)
-        let source = r#"⟨MyButton[on_click: handle_click]⟩ "Click me" ⟨/MyButton⟩"#;
-        let mut parser = Parser::new(source);
-        let expr = parser.parse_expr().unwrap();
-
-        if let Expr::Template(el) = expr {
-            if let TemplateTag::Component(path) = &el.tag {
-                assert_eq!(path.segments[0].ident.name, "MyButton");
-            } else {
-                panic!("Expected Component tag");
-            }
-            assert_eq!(el.events.len(), 1);
-            assert_eq!(el.events[0].event.name, "click");
-        } else {
-            panic!("Expected Template, got {:?}", expr);
-        }
-    }
-
-    // ========================================================================
-    // Type-Safe i18n Tests
-    // ========================================================================
-
-    #[test]
-    fn test_parse_translations_simple() {
-        let source = r#"
-            translations Common {
-                locale: Lang,
-
-                app_name: String! = ⌥ lang {
-                    En => "My App",
-                    Es => "Mi App",
-                }
-            }
-        "#;
-        let mut parser = Parser::new(source);
-        let file = parser.parse_file().unwrap();
-        assert_eq!(file.items.len(), 1);
-
-        if let Item::Translations(t) = &file.items[0].node {
-            assert_eq!(t.name.name, "Common");
-            assert_eq!(t.entries.len(), 1);
-            if let TranslationEntry::Property(p) = &t.entries[0] {
-                assert_eq!(p.name.name, "app_name");
-            } else {
-                panic!("Expected TranslationProperty");
-            }
-        } else {
-            panic!("Expected Translations item, got {:?}", file.items[0].node);
-        }
-    }
-
-    #[test]
-    fn test_parse_translations_with_method() {
-        let source = r#"
-            translations Greetings {
-                locale: Lang,
-
-                hello: String! = ⌥ lang {
-                    En => "Hello",
-                    Es => "Hola",
-                }
-
-                greeting(name: String): String! = ⌥ lang {
-                    En => format!("Hello, {}!", name),
-                    Es => format!("¡Hola, {}!", name),
-                }
-            }
-        "#;
-        let mut parser = Parser::new(source);
-        let file = parser.parse_file().unwrap();
-        assert_eq!(file.items.len(), 1);
-
-        if let Item::Translations(t) = &file.items[0].node {
-            assert_eq!(t.name.name, "Greetings");
-            assert_eq!(t.entries.len(), 2);
-
-            // First entry is a property
-            if let TranslationEntry::Property(p) = &t.entries[0] {
-                assert_eq!(p.name.name, "hello");
-            } else {
-                panic!("Expected TranslationProperty for first entry");
-            }
-
-            // Second entry is a method
-            if let TranslationEntry::Method(m) = &t.entries[1] {
-                assert_eq!(m.name.name, "greeting");
-                assert_eq!(m.params.len(), 1);
-                // Check param name via Pattern::Ident
-                if let Pattern::Ident { name, .. } = &m.params[0].pattern {
-                    assert_eq!(name.name, "name");
-                } else {
-                    panic!("Expected Ident pattern for param");
-                }
-            } else {
-                panic!("Expected TranslationMethod for second entry");
-            }
-        } else {
-            panic!("Expected Translations item");
-        }
-    }
-
-    #[test]
-    fn test_parse_locale_enum_simple() {
-        let source = r#"
-            locale ᛈ Locale {
-                En { code: "en", name: "English" },
-                Es { code: "es", name: "Español" },
-            }
-        "#;
-        let mut parser = Parser::new(source);
-        let file = parser.parse_file().unwrap();
-        assert_eq!(file.items.len(), 1);
-
-        if let Item::LocaleEnum(l) = &file.items[0].node {
-            assert_eq!(l.name.name, "Locale");
-            assert_eq!(l.variants.len(), 2);
-
-            assert_eq!(l.variants[0].name.name, "En");
-            assert_eq!(l.variants[0].code, "en");
-            assert_eq!(l.variants[0].display_name, "English");
-            assert!(!l.variants[0].rtl);
-
-            assert_eq!(l.variants[1].name.name, "Es");
-            assert_eq!(l.variants[1].code, "es");
-            assert_eq!(l.variants[1].display_name, "Español");
-        } else {
-            panic!("Expected LocaleEnum item, got {:?}", file.items[0].node);
-        }
-    }
-
-    #[test]
-    fn test_parse_locale_enum_with_rtl_and_fallback() {
-        let source = r#"
-            locale ᛈ Locale {
-                En { code: "en", name: "English" },
-                Ar { code: "ar", name: "العربية", rtl: yea, fallback: En },
-            }
-        "#;
-        let mut parser = Parser::new(source);
-        let file = parser.parse_file().unwrap();
-        assert_eq!(file.items.len(), 1);
-
-        if let Item::LocaleEnum(l) = &file.items[0].node {
-            assert_eq!(l.variants.len(), 2);
-
-            // Arabic variant with RTL and fallback
-            assert_eq!(l.variants[1].name.name, "Ar");
-            assert_eq!(l.variants[1].code, "ar");
-            assert!(l.variants[1].rtl);
-            assert!(l.variants[1].fallback.is_some());
-            assert_eq!(l.variants[1].fallback.as_ref().unwrap().name, "En");
-        } else {
-            panic!("Expected LocaleEnum item");
-        }
-    }
-
-    #[test]
-    fn test_parse_translations_error_no_locale() {
-        // Should fail if locale declaration is missing
-        let source = r#"
-            translations Bad {
-                title: String! = "Hello"
-            }
-        "#;
-        let mut parser = Parser::new(source);
-        let result = parser.parse_file();
-        assert!(result.is_err());
     }
 }

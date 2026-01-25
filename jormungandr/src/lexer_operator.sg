@@ -1,0 +1,185 @@
+//! Operator lexing ∀ the Sigil lexer.
+//!
+//! Handles lexing of operators like +, -, *, /, =, etc.
+
+invoke tome·span·Span;
+invoke tome·token·Token;
+invoke tome·lexer·Lexer;
+
+⊢ Lexer {
+    rite lex_plus(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·PlusEq
+        } ⎉ ⎇ this.match_char('+') {
+            Token·PlusPlus
+        } ⎉ {
+            Token·Plus
+        }
+    }
+
+    /// Lex - or -= or ->
+    rite lex_minus(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·MinusEq
+        } ⎉ ⎇ this.match_char('>') {
+            Token·Arrow
+        } ⎉ {
+            Token·Minus
+        }
+    }
+
+    /// Lex * or *= or **
+    rite lex_star(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·StarEq
+        } ⎉ ⎇ this.match_char('*') {
+            Token·StarStar
+        } ⎉ {
+            Token·Star
+        }
+    }
+
+    /// Lex / or /= (comments handled ∈ skip_whitespace)
+    rite lex_slash(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·SlashEq
+        } ⎉ {
+            Token·Slash
+        }
+    }
+
+    /// Lex = or == or =>
+    rite lex_eq(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·EqEq
+        } ⎉ ⎇ this.match_char('>') {
+            Token·FatArrow
+        } ⎉ {
+            Token·Eq
+        }
+    }
+
+    /// Lex ! or !=
+    rite lex_bang(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·NotEq
+        } ⎉ {
+            Token·Bang
+        }
+    }
+
+    /// Lex < or <= or << or <<= or <-
+    rite lex_lt(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·LtEq
+        } ⎉ ⎇ this.match_char('<') {
+            ⎇ this.match_char('=') {
+                Token·ShlEq
+            } ⎉ {
+                Token·Shl
+            }
+        } ⎉ ⎇ this.match_char('-') {
+            Token·LeftArrow
+        } ⎉ {
+            Token·Lt
+        }
+    }
+
+    /// Lex > or >= or >> or >>=
+    rite lex_gt(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·GtEq
+        } ⎉ ⎇ this.match_char('>') {
+            ⎇ this.match_char('=') {
+                Token·ShrEq
+            } ⎉ {
+                Token·Shr
+            }
+        } ⎉ {
+            Token·Gt
+        }
+    }
+
+    /// Lex & or ∧
+    rite lex_amp(vary this) → !Token {
+        ⎇ this.match_char('&') {
+            Token·AndAnd
+        } ⎉ ⎇ this.match_char('=') {
+            Token·AmpEq
+        } ⎉ {
+            Token·Amp
+        }
+    }
+
+    /// Lex | or ∨ or |=
+    rite lex_pipe(vary this) → !Token {
+        ⎇ this.match_char('|') {
+            Token·OrOr
+        } ⎉ ⎇ this.match_char('=') {
+            Token·PipeEq
+        } ⎉ {
+            Token·Pipe
+        }
+    }
+
+    /// Lex ^ or ^=
+    rite lex_caret(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·CaretEq
+        } ⎉ {
+            Token·Caret
+        }
+    }
+
+    /// Lex % or %=
+    rite lex_percent(vary this) → !Token {
+        ⎇ this.match_char('=') {
+            Token·PercentEq
+        } ⎉ {
+            Token·Percent
+        }
+    }
+
+    /// Lex : or ·
+    rite lex_colon(vary this) → !Token {
+        ⎇ this.match_char(':') {
+            Token·ColonColon
+        } ⎉ {
+            Token·Colon
+        }
+    }
+
+    /// Lex . or .. or ..=
+    rite lex_dot(vary this) → !Token {
+        ⎇ this.match_char('.') {
+            ⎇ this.match_char('=') {
+                Token·DotDotEq
+            } ⎉ {
+                Token·DotDot
+            }
+        } ⎉ {
+            Token·Dot
+        }
+    }
+
+    /// Lex # or #!
+    rite lex_hash(vary this) → !Token {
+        ⎇ this.match_char('!') {
+            Token·HashBang
+        } ⎉ {
+            Token·Hash
+        }
+    }
+
+    /// Lex _ as underscore or as identifier
+    rite lex_underscore_or_ident(vary this) → !Token {
+        // Check ⎇ followed by alphanumeric (making it an identifier)
+        ⌥ this.current() {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
+                this.lex_ident_rest()
+            }
+            _ => Token·Underscore,
+        }
+    }
+
+}

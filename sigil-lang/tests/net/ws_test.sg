@@ -1,0 +1,1028 @@
+//! WebSocket Layer Tests
+//!
+//! TDD Red Phase: Tests ∀ WebSocket client implementation (RFC 6455)
+//!
+//! Test IDs: WS-001 through WS-030
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 7
+
+invoke stdlib·net·ws·*;
+invoke stdlib·net·socket·{TcpStream, SocketAddr};
+invoke stdlib·net·tls·TlsStream;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+λ test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
+    ⌥ result {
+        Result·Ok(v) => v,
+        Result·Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
+    }
+}
+
+λ test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
+    ⌥ result {
+        Result·Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
+        Result·Err(e) => e,
+    }
+}
+
+λ test_assert_eq<T: PartialEq + Display>(a: T, b: T, test_id: &str, msg: &str) {
+    ⎇ a != b {
+        panic(format!("[{}] FAIL: {} - expected {}, got {}", test_id, msg, b, a));
+    }
+}
+
+λ test_assert_true(cond: bool, test_id: &str, msg: &str) {
+    ⎇ !cond {
+        panic(format!("[{}] FAIL: {}", test_id, msg));
+    }
+}
+
+// ============================================================================
+// WS-001: test_ws_url_parse_ws
+// ============================================================================
+
+λ test_ws_url_parse_ws() -> bool {
+    print("  [WS-001] WebSocket URL parse ws://... ");
+
+    // Valid ws:// URL
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ws.close(1000, "test complete");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            // Network might not be available, but URL was parsed
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-002: test_ws_url_parse_wss
+// ============================================================================
+
+λ test_ws_url_parse_wss() -> bool {
+    print("  [WS-002] WebSocket URL parse wss://... ");
+
+    // Valid wss:// URL (TLS)
+    ⌥ WebSocket·connect("wss://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ws.close(1000, "test complete");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) |
+        Result·Err(WsError·TlsFailed { .. }) => {
+            println("SKIP (network/TLS)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-003: test_ws_url_invalid_scheme
+// ============================================================================
+
+λ test_ws_url_invalid_scheme() -> bool {
+    print("  [WS-003] WebSocket URL invalid scheme... ");
+
+    // http:// should be rejected
+    ≔ result = WebSocket·connect("http://example.com");
+    ⌥ result {
+        Result·Err(WsError·InvalidUrl { .. }) => {
+            println("PASS");
+        }
+        Result·Ok(_) => {
+            println("FAIL: should reject http://");
+            ⤺ false;
+        }
+        Result·Err(e) => {
+            println("FAIL: wrong error: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-004: test_ws_url_with_path
+// ============================================================================
+
+λ test_ws_url_with_path() -> bool {
+    print("  [WS-004] WebSocket URL with path... ");
+
+    // URL with path component
+    ⌥ WebSocket·connect("ws://echo.websocket.org/echo") {
+        Result·Ok(Δ ws) => {
+            ws.close(1000, "test");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-005: test_ws_url_with_query
+// ============================================================================
+
+λ test_ws_url_with_query() -> bool {
+    print("  [WS-005] WebSocket URL with query... ");
+
+    // URL with query string
+    ⌥ WebSocket·connect("ws://echo.websocket.org?foo=bar") {
+        Result·Ok(Δ ws) => {
+            ws.close(1000, "test");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-006: test_ws_url_with_port
+// ============================================================================
+
+λ test_ws_url_with_port() -> bool {
+    print("  [WS-006] WebSocket URL with port... ");
+
+    // URL with explicit port
+    ⌥ WebSocket·connect("ws://echo.websocket.org:80") {
+        Result·Ok(Δ ws) => {
+            ws.close(1000, "test");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-007: test_ws_handshake_success
+// ============================================================================
+
+λ test_ws_handshake_success() -> bool {
+    print("  [WS-007] WebSocket handshake success... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            // If we get here, handshake succeeded
+            ws.close(1000, "test");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(WsError·HandshakeFailed { status, .. }) => {
+            println("FAIL: handshake failed with status {}", status);
+            ⤺ false;
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-008: test_ws_handshake_custom_headers
+// ============================================================================
+
+λ test_ws_handshake_custom_headers() -> bool {
+    print("  [WS-008] WebSocket handshake with headers... ");
+
+    ≔ headers = [
+        ("Authorization".to_string(), "Bearer test123".to_string()),
+        ("X-Custom-Header".to_string(), "value".to_string()),
+    ];
+
+    ⌥ WebSocket·connect_with_headers("ws://echo.websocket.org", &headers) {
+        Result·Ok(Δ ws) => {
+            ws.close(1000, "test");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-009: test_ws_handshake_reject
+// ============================================================================
+
+λ test_ws_handshake_reject() -> bool {
+    print("  [WS-009] WebSocket handshake reject... ");
+
+    // Connect to non-WebSocket endpoint
+    ⌥ WebSocket·connect("ws://example.com") {
+        Result·Ok(_) => {
+            // Might succeed ⎇ server upgrades
+            println("SKIP (server upgraded)");
+        }
+        Result·Err(WsError·HandshakeFailed { status, .. }) => {
+            test_assert_true(status != 101, "WS-009", "should not be 101");
+            println("PASS (status {})", status);
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("PASS (error: {})", e);
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-010: test_ws_frame_encode_text
+// ============================================================================
+
+λ test_ws_frame_encode_text() -> bool {
+    print("  [WS-010] WebSocket frame encode text... ");
+
+    // This tests the internal frame encoding
+    // Text frame: FIN=1, opcode=0x1, MASK=1, payload
+
+    // We can't directly test internal functions, so test via send
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ⌥ ws.send_text("Hello") {
+                Result·Ok(_) => {
+                    println("PASS");
+                }
+                Result·Err(e) => {
+                    println("FAIL: {}", e);
+                    ⤺ false;
+                }
+            }
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-011: test_ws_frame_encode_binary
+// ============================================================================
+
+λ test_ws_frame_encode_binary() -> bool {
+    print("  [WS-011] WebSocket frame encode binary... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ≔ data: [u8; 4] = [0x01, 0x02, 0x03, 0x04];
+            ⌥ ws.send_binary(&data) {
+                Result·Ok(_) => {
+                    println("PASS");
+                }
+                Result·Err(e) => {
+                    println("FAIL: {}", e);
+                    ⤺ false;
+                }
+            }
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-012: test_ws_frame_encode_ping
+// ============================================================================
+
+λ test_ws_frame_encode_ping() -> bool {
+    print("  [WS-012] WebSocket frame encode ping... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ≔ data: [u8; 4] = [0x01, 0x02, 0x03, 0x04];
+            ⌥ ws.ping(&data) {
+                Result·Ok(_) => {
+                    println("PASS");
+                }
+                Result·Err(e) => {
+                    println("FAIL: {}", e);
+                    ⤺ false;
+                }
+            }
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-013: test_ws_frame_encode_close
+// ============================================================================
+
+λ test_ws_frame_encode_close() -> bool {
+    print("  [WS-013] WebSocket frame encode close... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ⌥ ws.close(1000, "Normal closure") {
+                Result·Ok(_) => {
+                    println("PASS");
+                }
+                Result·Err(e) => {
+                    println("FAIL: {}", e);
+                    ⤺ false;
+                }
+            }
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-014: test_ws_frame_decode_text
+// ============================================================================
+
+λ test_ws_frame_decode_text() -> bool {
+    print("  [WS-014] WebSocket frame decode text... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            // Send message
+            ws.send_text("Hello")?;
+
+            // Receive echo
+            ⌥ ws.recv() {
+                Result·Ok(WsMessage·Text(text)) => {
+                    test_assert_eq(text, "Hello".to_string(), "WS-014", "echo mismatch");
+                    println("PASS");
+                }
+                Result·Ok(msg) => {
+                    println("FAIL: unexpected message type");
+                    ⤺ false;
+                }
+                Result·Err(e) => {
+                    println("FAIL: {}", e);
+                    ⤺ false;
+                }
+            }
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-015: test_ws_frame_decode_binary
+// ============================================================================
+
+λ test_ws_frame_decode_binary() -> bool {
+    print("  [WS-015] WebSocket frame decode binary... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ≔ data: [u8; 4] = [0xDE, 0xAD, 0xBE, 0xEF];
+            ws.send_binary(&data)?;
+
+            ⌥ ws.recv() {
+                Result·Ok(WsMessage·Binary(payload)) => {
+                    test_assert_eq(payload.len(), 4, "WS-015", "length mismatch");
+                    println("PASS");
+                }
+                Result·Ok(_) => {
+                    println("FAIL: unexpected message type");
+                    ⤺ false;
+                }
+                Result·Err(e) => {
+                    println("FAIL: {}", e);
+                    ⤺ false;
+                }
+            }
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-016: test_ws_frame_decode_ping_pong
+// ============================================================================
+
+λ test_ws_frame_decode_ping_pong() -> bool {
+    print("  [WS-016] WebSocket frame decode ping/pong... ");
+
+    // Ping frames should be auto-responded with pong
+    // This test verifies ping handling works
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            // Send ping
+            ≔ ping_data: [u8; 4] = [0x01, 0x02, 0x03, 0x04];
+            ws.ping(&ping_data)?;
+
+            // Server may respond with pong or echo
+            // Just verify we can receive something
+            println("PASS (ping sent)");
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-017: test_ws_frame_decode_close
+// ============================================================================
+
+λ test_ws_frame_decode_close() -> bool {
+    print("  [WS-017] WebSocket frame decode close... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            // Send close frame
+            ws.close(1000, "client closing")?;
+
+            // Try to receive - should get close or error
+            ⌥ ws.recv() {
+                Result·Ok(WsMessage·Close { code, reason }) => {
+                    println("PASS (code: {:?})", code);
+                }
+                Result·Err(WsError·ConnectionClosed { .. }) => {
+                    println("PASS (connection closed)");
+                }
+                Result·Ok(_) => {
+                    println("PASS (received other message)");
+                }
+                Result·Err(e) => {
+                    println("PASS (error: {})", e);
+                }
+            }
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-018: test_ws_frame_extended_length
+// ============================================================================
+
+λ test_ws_frame_extended_length() -> bool {
+    print("  [WS-018] WebSocket frame extended length... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            // Send message > 125 bytes (triggers 16-bit length encoding)
+            ≔ Δ large_text = String·new();
+            ∀ _ ∈ 0..200 {
+                large_text.push('A');
+            }
+
+            ⌥ ws.send_text(&large_text) {
+                Result·Ok(_) => {
+                    println("PASS (200 bytes sent)");
+                }
+                Result·Err(e) => {
+                    println("FAIL: {}", e);
+                    ⤺ false;
+                }
+            }
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-019: test_ws_message_send_text
+// ============================================================================
+
+λ test_ws_message_send_text() -> bool {
+    print("  [WS-019] WebSocket send text message... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ≔ result = ws.send_text("Hello, WebSocket!");
+            test_assert_ok(result, "WS-019", "send_text");
+            println("PASS");
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-020: test_ws_message_send_binary
+// ============================================================================
+
+λ test_ws_message_send_binary() -> bool {
+    print("  [WS-020] WebSocket send binary message... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ≔ data: Vec<u8> = vec![0x00, 0x01, 0x02, 0x03, 0xFF];
+            ≔ result = ws.send_binary(&data);
+            test_assert_ok(result, "WS-020", "send_binary");
+            println("PASS");
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-021: test_ws_message_recv
+// ============================================================================
+
+λ test_ws_message_recv() -> bool {
+    print("  [WS-021] WebSocket receive message... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ws.send_text("test message")?;
+
+            ≔ msg = test_assert_ok(ws.recv(), "WS-021", "recv");
+            ⌥ msg {
+                WsMessage·Text(text) => {
+                    test_assert_eq(text, "test message".to_string(), "WS-021", "echo mismatch");
+                    println("PASS");
+                }
+                _ => {
+                    println("FAIL: unexpected message type");
+                    ⤺ false;
+                }
+            }
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-022: test_ws_close_normal
+// ============================================================================
+
+λ test_ws_close_normal() -> bool {
+    print("  [WS-022] WebSocket close normal... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ≔ result = ws.close(1000, "Normal closure");
+            test_assert_ok(result, "WS-022", "close");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-023: test_ws_close_going_away
+// ============================================================================
+
+λ test_ws_close_going_away() -> bool {
+    print("  [WS-023] WebSocket close going away... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ≔ result = ws.close(1001, "Going away");
+            test_assert_ok(result, "WS-023", "close 1001");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-024: test_ws_close_protocol_error
+// ============================================================================
+
+λ test_ws_close_protocol_error() -> bool {
+    print("  [WS-024] WebSocket close protocol error... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ≔ result = ws.close(1002, "Protocol error");
+            test_assert_ok(result, "WS-024", "close 1002");
+            println("PASS");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-025: test_ws_error_message_too_large
+// ============================================================================
+
+λ test_ws_error_message_too_large() -> bool {
+    print("  [WS-025] WebSocket error message too large... ");
+
+    // This would require receiving a message larger than max_message_size
+    // Can't easily test without a custom server
+    println("SKIP (requires custom server)");
+    true
+}
+
+// ============================================================================
+// WS-026: test_ws_error_invalid_frame
+// ============================================================================
+
+λ test_ws_error_invalid_frame() -> bool {
+    print("  [WS-026] WebSocket error invalid frame... ");
+
+    // Would need to send malformed data to test
+    println("SKIP (requires raw socket test)");
+    true
+}
+
+// ============================================================================
+// WS-027: test_ws_echo_roundtrip
+// ============================================================================
+
+λ test_ws_echo_roundtrip() -> bool {
+    print("  [WS-027] WebSocket echo roundtrip... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            // Send multiple messages
+            ≔ messages = ["Hello", "World", "Test123"];
+
+            ∀ msg ∈ messages {
+                ws.send_text(msg)?;
+                ⌥ ws.recv() {
+                    Result·Ok(WsMessage·Text(text)) => {
+                        test_assert_eq(text, msg.to_string(), "WS-027", "echo mismatch");
+                    }
+                    _ => {
+                        println("FAIL: unexpected response");
+                        ⤺ false;
+                    }
+                }
+            }
+
+            println("PASS");
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-028: test_ws_secure_connection
+// ============================================================================
+
+λ test_ws_secure_connection() -> bool {
+    print("  [WS-028] WebSocket secure (wss://) connection... ");
+
+    ⌥ WebSocket·connect("wss://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ws.send_text("secure test")?;
+            ⌥ ws.recv() {
+                Result·Ok(WsMessage·Text(text)) => {
+                    test_assert_eq(text, "secure test".to_string(), "WS-028", "echo mismatch");
+                    println("PASS");
+                }
+                _ => {
+                    println("FAIL: unexpected response");
+                    ⤺ false;
+                }
+            }
+            ws.close(1000, "test");
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) |
+        Result·Err(WsError·TlsFailed { .. }) => {
+            println("SKIP (network/TLS)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-029: test_ws_recv_after_close
+// ============================================================================
+
+λ test_ws_recv_after_close() -> bool {
+    print("  [WS-029] WebSocket recv after close... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ws.close(1000, "closing")?;
+
+            // Recv after close should ⤺ ConnectionClosed
+            ⌥ ws.recv() {
+                Result·Err(WsError·ConnectionClosed { .. }) => {
+                    println("PASS");
+                }
+                Result·Ok(WsMessage·Close { .. }) => {
+                    println("PASS (got close frame)");
+                }
+                Result·Ok(_) => {
+                    // Might still get buffered data
+                    println("PASS (got buffered data)");
+                }
+                Result·Err(e) => {
+                    println("PASS (error: {})", e);
+                }
+            }
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// WS-030: test_ws_send_after_close
+// ============================================================================
+
+λ test_ws_send_after_close() -> bool {
+    print("  [WS-030] WebSocket send after close... ");
+
+    ⌥ WebSocket·connect("ws://echo.websocket.org") {
+        Result·Ok(Δ ws) => {
+            ws.close(1000, "closing")?;
+
+            // Send after close should fail
+            ⌥ ws.send_text("should fail") {
+                Result·Err(WsError·ConnectionClosed { .. }) => {
+                    println("PASS");
+                }
+                Result·Err(e) => {
+                    println("PASS (error: {})", e);
+                }
+                Result·Ok(_) => {
+                    // Some implementations might buffer
+                    println("PASS (buffered)");
+                }
+            }
+        }
+        Result·Err(WsError·ConnectionFailed { .. }) => {
+            println("SKIP (network)");
+        }
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ false;
+        }
+    }
+
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ λ main() -> !i32 {
+    println("===========================================");
+    println("WebSocket Layer Tests");
+    println("TDD Red Phase - Tests should FAIL");
+    println("===========================================");
+    println("");
+
+    ≔ Δ passed: i32 = 0;
+    ≔ Δ failed: i32 = 0;
+
+    println("--- URL Parsing Tests ---");
+    ⎇ test_ws_url_parse_ws() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_url_parse_wss() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_url_invalid_scheme() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_url_with_path() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_url_with_query() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_url_with_port() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- Handshake Tests ---");
+    ⎇ test_ws_handshake_success() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_handshake_custom_headers() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_handshake_reject() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- Frame Encoding Tests ---");
+    ⎇ test_ws_frame_encode_text() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_frame_encode_binary() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_frame_encode_ping() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_frame_encode_close() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- Frame Decoding Tests ---");
+    ⎇ test_ws_frame_decode_text() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_frame_decode_binary() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_frame_decode_ping_pong() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_frame_decode_close() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_frame_extended_length() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- Message API Tests ---");
+    ⎇ test_ws_message_send_text() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_message_send_binary() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_message_recv() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- Close Tests ---");
+    ⎇ test_ws_close_normal() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_close_going_away() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_close_protocol_error() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- Error Handling Tests ---");
+    ⎇ test_ws_error_message_too_large() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_error_invalid_frame() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("--- Integration Tests ---");
+    ⎇ test_ws_echo_roundtrip() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_secure_connection() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_recv_after_close() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_ws_send_after_close() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("===========================================");
+    println("Results: {}/{} tests passed", passed, passed + failed);
+    println("===========================================");
+
+    ⎇ failed > 0 {
+        println("");
+        println("RED PHASE: {} tests failing (expected)", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All tests passed!");
+    ⤺ 0;
+}

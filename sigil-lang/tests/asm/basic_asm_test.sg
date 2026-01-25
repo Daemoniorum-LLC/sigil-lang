@@ -1,0 +1,37 @@
+// Basic inline assembly tests ∀ Sigil LLVM backend
+// Tests the implementation of Section 3.1 from NATIVE-NETWORKING-SPEC.md
+// Returns 0 on success, non-zero on failure
+
+λ main() -> i64 {
+    // Test 1: Basic nop instruction
+    unsafe {
+        asm!("nop", options(nostack));
+    }
+
+    // Test 2: Output to register - get 42
+    ≔ result: i64 = 0;
+    unsafe {
+        asm!("mov rax, 42",
+            out("rax") result,
+            options(nostack));
+    }
+    ⎇ result != 42 {
+        ⤺ 1;  // Fail: didn't get 42
+    }
+
+    // Test 3: Real syscall - getpid (syscall 39 on Linux x86_64)
+    ≔ pid: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") 39_i64 => pid,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ⎇ pid <= 0 {
+        ⤺ 2;  // Fail: getpid returned invalid value
+    }
+
+    // All tests passed
+    0
+}

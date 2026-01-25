@@ -1,16 +1,16 @@
 //! Daemon Goals Tests - 19 tests
 
-struct GoalId {
+Σ GoalId {
     value: !u64,
 }
 
-impl GoalId {
-    pub fn new(value: !u64) -> Self {
+⊢ GoalId {
+    ☉ λ new(value: !u64) -> Self {
         GoalId { value }
     }
 }
 
-enum GoalStatus {
+ᛈ GoalStatus {
     Pending,
     Active,
     Blocked,
@@ -20,32 +20,32 @@ enum GoalStatus {
     Abandoned,
 }
 
-impl GoalStatus {
-    pub fn is_active(&self) -> !bool {
-        match self {
-            GoalStatus::Active => true,
+⊢ GoalStatus {
+    ☉ λ is_active(&self) -> !bool {
+        ⌥ self {
+            GoalStatus·Active => true,
             _ => false,
         }
     }
 
-    pub fn is_complete(&self) -> !bool {
-        match self {
-            GoalStatus::Completed { .. } => true,
-            GoalStatus::Failed => true,
-            GoalStatus::Abandoned => true,
+    ☉ λ is_complete(&self) -> !bool {
+        ⌥ self {
+            GoalStatus·Completed { .. } => true,
+            GoalStatus·Failed => true,
+            GoalStatus·Abandoned => true,
             _ => false,
         }
     }
 
-    pub fn is_blocked(&self) -> !bool {
-        match self {
-            GoalStatus::Blocked => true,
+    ☉ λ is_blocked(&self) -> !bool {
+        ⌥ self {
+            GoalStatus·Blocked => true,
             _ => false,
         }
     }
 }
 
-struct Goal {
+Σ Goal {
     id: GoalId,
     desc_len: !usize,
     priority: !f32,
@@ -53,96 +53,96 @@ struct Goal {
     has_parent: !bool,
 }
 
-impl Goal {
-    pub fn new(id: !u64, desc_len: !usize) -> Self {
+⊢ Goal {
+    ☉ λ new(id: !u64, desc_len: !usize) -> Self {
         Goal {
-            id: GoalId::new(id),
+            id: GoalId·new(id),
             desc_len,
             priority: 0.5,
-            status: GoalStatus::Pending,
+            status: GoalStatus·Pending,
             has_parent: false,
         }
     }
 
-    pub fn with_priority(mut self, priority: !f32) -> Self {
-        self.priority = if priority < 0.0 { 0.0 } else if priority > 1.0 { 1.0 } else { priority };
+    ☉ λ with_priority(Δ self, priority: !f32) -> Self {
+        self.priority = ⎇ priority < 0.0 { 0.0 } ⎉ ⎇ priority > 1.0 { 1.0 } ⎉ { priority };
         self
     }
 
-    pub fn with_parent(mut self) -> Self {
+    ☉ λ with_parent(Δ self) -> Self {
         self.has_parent = true;
         self
     }
 
-    pub fn activate(mut self) -> Self {
-        self.status = GoalStatus::Active;
+    ☉ λ activate(Δ self) -> Self {
+        self.status = GoalStatus·Active;
         self
     }
 
-    pub fn block(mut self) -> Self {
-        self.status = GoalStatus::Blocked;
+    ☉ λ block(Δ self) -> Self {
+        self.status = GoalStatus·Blocked;
         self
     }
 
-    pub fn complete(mut self, success: !bool) -> Self {
-        self.status = GoalStatus::Completed { success };
+    ☉ λ complete(Δ self, success: !bool) -> Self {
+        self.status = GoalStatus·Completed { success };
         self
     }
 
-    pub fn fail(mut self) -> Self {
-        self.status = GoalStatus::Failed;
+    ☉ λ fail(Δ self) -> Self {
+        self.status = GoalStatus·Failed;
         self
     }
 
-    pub fn abandon(mut self) -> Self {
-        self.status = GoalStatus::Abandoned;
+    ☉ λ abandon(Δ self) -> Self {
+        self.status = GoalStatus·Abandoned;
         self
     }
 
-    pub fn is_active(&self) -> !bool {
+    ☉ λ is_active(&self) -> !bool {
         self.status.is_active()
     }
 
-    pub fn is_complete(&self) -> !bool {
+    ☉ λ is_complete(&self) -> !bool {
         self.status.is_complete()
     }
 }
 
-struct GoalStack {
+Σ GoalStack {
     count: !usize,
     active_count: !usize,
     max_goals: !usize,
 }
 
-impl GoalStack {
-    pub fn new(max_goals: !usize) -> Self {
+⊢ GoalStack {
+    ☉ λ new(max_goals: !usize) -> Self {
         GoalStack { count: 0, active_count: 0, max_goals }
     }
 
-    pub fn push_inactive(&mut self) -> !bool {
-        if self.count >= self.max_goals {
+    ☉ λ push_inactive(&Δ self) -> !bool {
+        ⎇ self.count >= self.max_goals {
             false
-        } else {
+        } ⎉ {
             self.count = self.count + 1;
             true
         }
     }
 
-    pub fn push_active(&mut self) -> !bool {
-        if self.count >= self.max_goals {
+    ☉ λ push_active(&Δ self) -> !bool {
+        ⎇ self.count >= self.max_goals {
             false
-        } else {
+        } ⎉ {
             self.count = self.count + 1;
             self.active_count = self.active_count + 1;
             true
         }
     }
 
-    pub fn is_empty(&self) -> !bool {
+    ☉ λ is_empty(&self) -> !bool {
         self.count == 0
     }
 
-    pub fn has_active(&self) -> !bool {
+    ☉ λ has_active(&self) -> !bool {
         self.active_count > 0
     }
 }
@@ -152,136 +152,136 @@ impl GoalStack {
 // ============================================================================
 
 #[test]
-fn test_goal_creation() {
-    let goal = Goal::new(1, 12);
+λ test_goal_creation() {
+    ≔ goal = Goal·new(1, 12);
     assert(goal.priority == 0.5);
     assert(!goal.is_active());
 }
 
 #[test]
-fn test_goal_with_priority() {
-    let goal = Goal::new(1, 13).with_priority(0.9);
+λ test_goal_with_priority() {
+    ≔ goal = Goal·new(1, 13).with_priority(0.9);
     assert(goal.priority == 0.9);
 }
 
 #[test]
-fn test_goal_priority_clamped_high() {
-    let goal = Goal::new(1, 4).with_priority(1.5);
+λ test_goal_priority_clamped_high() {
+    ≔ goal = Goal·new(1, 4).with_priority(1.5);
     assert(goal.priority == 1.0);
 }
 
 #[test]
-fn test_goal_priority_clamped_low() {
-    let goal = Goal::new(1, 4).with_priority(-0.5);
+λ test_goal_priority_clamped_low() {
+    ≔ goal = Goal·new(1, 4).with_priority(-0.5);
     assert(goal.priority == 0.0);
 }
 
 #[test]
-fn test_goal_activate() {
-    let goal = Goal::new(1, 4).activate();
+λ test_goal_activate() {
+    ≔ goal = Goal·new(1, 4).activate();
     assert(goal.is_active());
 }
 
 #[test]
-fn test_goal_complete_success() {
-    let goal = Goal::new(1, 4).complete(true);
+λ test_goal_complete_success() {
+    ≔ goal = Goal·new(1, 4).complete(true);
     assert(goal.is_complete());
     assert(!goal.is_active());
 }
 
 #[test]
-fn test_goal_complete_failure() {
-    let goal = Goal::new(1, 4).complete(false);
+λ test_goal_complete_failure() {
+    ≔ goal = Goal·new(1, 4).complete(false);
     assert(goal.is_complete());
 }
 
 #[test]
-fn test_goal_fail() {
-    let goal = Goal::new(1, 4).fail();
+λ test_goal_fail() {
+    ≔ goal = Goal·new(1, 4).fail();
     assert(goal.is_complete());
 }
 
 #[test]
-fn test_goal_abandon() {
-    let goal = Goal::new(1, 4).abandon();
+λ test_goal_abandon() {
+    ≔ goal = Goal·new(1, 4).abandon();
     assert(goal.is_complete());
 }
 
 #[test]
-fn test_goal_block() {
-    let goal = Goal::new(1, 4).block();
+λ test_goal_block() {
+    ≔ goal = Goal·new(1, 4).block();
     assert(!goal.is_active());
     assert(!goal.is_complete());
 }
 
 #[test]
-fn test_goal_with_parent() {
-    let goal = Goal::new(2, 8).with_parent();
+λ test_goal_with_parent() {
+    ≔ goal = Goal·new(2, 8).with_parent();
     assert(goal.has_parent);
 }
 
 #[test]
-fn test_goal_status_pending() {
-    let status = GoalStatus::Pending;
+λ test_goal_status_pending() {
+    ≔ status = GoalStatus·Pending;
     assert(!status.is_active());
     assert(!status.is_complete());
 }
 
 #[test]
-fn test_goal_status_active() {
-    let status = GoalStatus::Active;
+λ test_goal_status_active() {
+    ≔ status = GoalStatus·Active;
     assert(status.is_active());
     assert(!status.is_complete());
 }
 
 #[test]
-fn test_goal_status_blocked() {
-    let status = GoalStatus::Blocked;
+λ test_goal_status_blocked() {
+    ≔ status = GoalStatus·Blocked;
     assert(!status.is_active());
     assert(status.is_blocked());
 }
 
 #[test]
-fn test_goal_stack_creation() {
-    let stack = GoalStack::new(5);
+λ test_goal_stack_creation() {
+    ≔ stack = GoalStack·new(5);
     assert(stack.is_empty());
     assert(stack.count == 0);
 }
 
 #[test]
-fn test_goal_stack_push() {
-    let mut stack = GoalStack::new(5);
+λ test_goal_stack_push() {
+    ≔ Δ stack = GoalStack·new(5);
     assert(stack.push_inactive());
     assert(stack.count == 1);
 }
 
 #[test]
-fn test_goal_stack_max_limit() {
-    let mut stack = GoalStack::new(2);
-    let _ = stack.push_inactive();
-    let _ = stack.push_inactive();
-    let result = stack.push_inactive();
+λ test_goal_stack_max_limit() {
+    ≔ Δ stack = GoalStack·new(2);
+    ≔ _ = stack.push_inactive();
+    ≔ _ = stack.push_inactive();
+    ≔ result = stack.push_inactive();
     assert(!result);
     assert(stack.count == 2);
 }
 
 #[test]
-fn test_goal_stack_active_count() {
-    let mut stack = GoalStack::new(5);
-    let _ = stack.push_active();
-    let _ = stack.push_inactive();
-    let _ = stack.push_active();
+λ test_goal_stack_active_count() {
+    ≔ Δ stack = GoalStack·new(5);
+    ≔ _ = stack.push_active();
+    ≔ _ = stack.push_inactive();
+    ≔ _ = stack.push_active();
     assert(stack.active_count == 2);
 }
 
 #[test]
-fn test_goal_stack_has_active() {
-    let mut stack = GoalStack::new(5);
+λ test_goal_stack_has_active() {
+    ≔ Δ stack = GoalStack·new(5);
     assert(!stack.has_active());
-    let _ = stack.push_active();
+    ≔ _ = stack.push_active();
     assert(stack.has_active());
 }
 
-fn main() {
+λ main() {
     println("Daemon goals tests - 19 tests");
 }

@@ -1,0 +1,14 @@
+// Test: C codegen emits main() wrapper
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.1 Main Function Wrapper
+// Priority: P0
+//
+// Purpose:
+// Validates that the compiler emits a proper C main() function wrapper
+// that calls the Sigil main() function.
+//
+// Expected behavior:
+// Should compile to C with main() wrapper and print 42
+
+λ main() {
+    println(42);
+}

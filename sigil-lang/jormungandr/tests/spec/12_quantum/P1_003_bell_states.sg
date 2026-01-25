@@ -1,0 +1,41 @@
+// Test: All four Bell states
+// Spec: 12-QUANTUM.md § 4.2 Creating Entanglement
+// Priority: P1 - Core Feature
+
+λ main() {
+    // Test Phi+ state: (|00⟩ + |11⟩) / √2
+    ≔ phi_plus = bell_state(BellState·PhiPlus());
+    ≔ (a, b) = phi_plus|measure_both;
+    println(a == b);  // true: always correlated
+
+    // Test Psi+ state: (|01⟩ + |10⟩) / √2
+    ≔ psi_plus = bell_state(BellState·PsiPlus());
+    ≔ (c, d) = psi_plus|measure_both;
+    println(c != d);  // true: always anti-correlated
+}
+
+λ bell_state(which: BellState) -> Entangled<Qubit, Qubit> {
+    ≔ q0: linear Qubit = Qubit·zero();
+    ≔ q1: linear Qubit = Qubit·zero();
+
+    // Match on the string value, not the function
+    ⌥ which {
+        "PhiPlus" => {
+            ≔ q0h: linear Qubit = q0|H;
+            ≔ (qc, qt): (Qubit, Qubit) = CNOT(q0h, q1);
+            Entangled·new(qc, qt)
+        }
+        "PsiPlus" => {
+            ≔ q0h: linear Qubit = q0|H;
+            ≔ (qc, qt): (Qubit, Qubit) = CNOT(q0h, q1);
+            ≔ qtx: linear Qubit = qt|X;
+            Entangled·new(qc, qtx)
+        }
+        _ => {
+            // Other Bell states (default to PhiPlus)
+            ≔ q0h: linear Qubit = q0|H;
+            ≔ (qc, qt): (Qubit, Qubit) = CNOT(q0h, q1);
+            Entangled·new(qc, qt)
+        }
+    }
+}

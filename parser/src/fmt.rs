@@ -486,9 +486,9 @@ mod tests {
         let config = FormatConfig::default();
         let formatter = Formatter::new(config);
 
-        let input = "fn main(){let x=1+2;}";
+        let input = "rite main(){≔ x=1+2;}";
         let formatted = formatter.format_source(input).unwrap();
-        assert!(formatted.contains("fn main()"));
+        assert!(formatted.contains("rite main()"));
     }
 
     #[test]
@@ -496,9 +496,9 @@ mod tests {
         let config = FormatConfig::default();
         let formatter = Formatter::new(config);
 
-        let input = "fn main() {\nlet x = 1;\n}";
+        let input = "rite main() {\n≔ x = 1;\n}";
         let formatted = formatter.format_source(input).unwrap();
-        assert!(formatted.contains("    let x")); // 4 spaces indent
+        assert!(formatted.contains("    ≔ x")); // 4 spaces indent
     }
 
     #[test]
@@ -506,7 +506,7 @@ mod tests {
         let config = FormatConfig::default();
         let formatter = Formatter::new(config);
 
-        let input = r#"let s = "hello   world";"#;
+        let input = r#"≔ s = "hello   world";"#;
         let formatted = formatter.format_source(input).unwrap();
         assert!(formatted.contains("\"hello   world\""));
     }

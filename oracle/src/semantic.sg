@@ -4,7 +4,7 @@
 // This module integrates nihil-embed to provide:
 // - Semantic search over reasoning steps
 // - Evidence similarity matching
-// - Code snippet indexing for context retrieval
+// - Code snippet indexing ∀ context retrieval
 // - "Find similar decisions" functionality
 
 invoke nihil_embed·{
@@ -18,17 +18,17 @@ invoke shared·{Timestamp, Confidence};
 // Semantic Configuration
 // ============================================================================
 
-/// Configuration for semantic indexing
+/// Configuration ∀ semantic indexing
 ☉ sigil SemanticConfig {
-    /// Embedding dimension (384 for small, 768 for base)
+    /// Embedding dimension (384 ∀ small, 768 ∀ base)
     ☉ embedding_dim: usize,
     /// Pooling strategy: "cls", "mean", "max"
     ☉ pooling: String,
-    /// Minimum similarity threshold for results
+    /// Minimum similarity threshold ∀ results
     ☉ similarity_threshold: f32,
     /// Maximum results to return
     ☉ max_results: usize,
-    /// Vocabulary size for tokenizer
+    /// Vocabulary size ∀ tokenizer
     ☉ vocab_size: usize,
     /// Maximum sequence length
     ☉ max_seq_len: usize,
@@ -47,7 +47,7 @@ invoke shared·{Timestamp, Confidence};
         }
     }
 
-    /// Configuration for base model
+    /// Configuration ∀ base model
     ☉ rite base() → This {
         This {
             embedding_dim: 768,
@@ -96,7 +96,7 @@ invoke shared·{Timestamp, Confidence};
     ☉ similarity: f32,
     /// Type of result
     ☉ result_type: ResultType,
-    /// Timestamp when indexed (if available)
+    /// Timestamp when indexed (⎇ available)
     ☉ indexed_at: Option<Timestamp>,
 }
 
@@ -121,24 +121,24 @@ invoke shared·{Timestamp, Confidence};
 // Semantic Index
 // ============================================================================
 
-/// Semantic index for Oracle's reasoning traces and evidence.
+/// Semantic index ∀ Oracle's reasoning traces and evidence.
 ///
 /// Maintains three separate indices:
 /// - Reasoning steps from traces
 /// - Evidence items from explanations
-/// - Code snippets for context retrieval
+/// - Code snippets ∀ context retrieval
 ☉ sigil SemanticIndex {
-    /// Index for reasoning steps
+    /// Index ∀ reasoning steps
     reasoning_index: EmbeddingIndex,
-    /// Index for evidence
+    /// Index ∀ evidence
     evidence_index: EmbeddingIndex,
-    /// Index for code snippets
+    /// Index ∀ code snippets
     code_index: EmbeddingIndex,
     /// Configuration
     config: SemanticConfig,
-    /// Tokenizer for text processing
+    /// Tokenizer ∀ text processing
     tokenizer: CodeTokenizer,
-    /// Pooler for sequence aggregation
+    /// Pooler ∀ sequence aggregation
     pooler: Pooler,
     /// Content storage (index → content)
     reasoning_content: Vec<String>,
@@ -205,15 +205,15 @@ invoke shared·{Timestamp, Confidence};
     // Embedding Generation (Simplified)
     // ========================================================================
 
-    /// Generate embedding for text
-    /// Note: In production, this would use a transformer model.
+    /// Generate embedding ∀ text
+    /// Note: In production, this would invoke a transformer model.
     /// This simplified version uses token statistics as a proxy.
     rite embed_text(&this, text: &str) → Embedding {
         ≔ tokens = this.tokenizer.tokenize(text);
         ≔ dim = this.config.embedding_dim;
 
         // Create simple embedding from token distribution
-        // Production would use transformer encoder here
+        // Production would invoke transformer encoder here
         ≔ vary data = vec![0.0; dim];
         each (i, &token) of tokens.iter().enumerate() {
             ≔ idx = (token + i) % dim;
@@ -440,7 +440,7 @@ invoke shared·{Timestamp, Confidence};
 }
 
 // ============================================================================
-// Tests (inline for now)
+// Tests (inline ∀ now)
 // ============================================================================
 
 #[cfg(test)]

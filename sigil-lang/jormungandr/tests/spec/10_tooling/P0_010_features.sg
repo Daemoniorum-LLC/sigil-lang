@@ -1,0 +1,10 @@
+// Test: Feature flags
+// Spec: 10-TOOLING.md § 2.5 Features
+// Priority: P0 - Bootstrap Critical
+
+#[cfg(feature = "async")]
+λ async_fn() { }
+
+λ main() {
+    println(1);
+}

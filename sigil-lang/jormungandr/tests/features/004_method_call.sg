@@ -1,0 +1,30 @@
+// Test: Call method on Σ instance
+☉ Σ Calculator {
+    result: !i32
+}
+
+⊢ Calculator {
+    λ new() -> !Calculator {
+        Calculator { result: 0 }
+    }
+
+    λ add(&Δ self, value: !i32) {
+        self.result = self.result + value;
+    }
+
+    λ multiply(&Δ self, value: !i32) {
+        self.result = self.result * value;
+    }
+
+    λ get_result(&self) -> !i32 {
+        self.result
+    }
+}
+
+λ main() {
+    ≔ Δ calc: !Calculator = Calculator·new();
+    calc.add(5);
+    calc.add(3);
+    calc.multiply(2);
+    println(calc.get_result());
+}

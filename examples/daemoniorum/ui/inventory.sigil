@@ -1,0 +1,652 @@
+//! DAEMONIORUM Game UI - Inventory System
+//!
+//! Grid-based inventory display with:
+//! - Item cards with rarity coloring
+//! - Category filtering
+//! - Item details on hover/selection
+//! - Use and drop actions
+
+use super::tokens::colors;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/// Item rarity levels
+type ItemRarity = enum {
+    Common,
+    Uncommon,
+    Rare,
+    Legendary,
+    Unique,
+}
+
+/// Item category
+type ItemCategory = enum {
+    Consumable,
+    KeyItem,
+    Memory,
+    Equipment,
+    Material,
+    Document,
+}
+
+/// Inventory item
+type Item = struct {
+    id: String!,
+    name: String!,
+    description: String!,
+    icon: String!,
+    category: ItemCategory!,
+    rarity: ItemRarity!,
+    quantity: u32!,
+    stackable: bool!,
+    max_stack: u32!,
+    usable: bool!,
+    flavor_text: Option<String>?,
+    effects: Vec<ItemEffect>?,
+    alter_restriction: Option<String>?,
+}
+
+/// Item effect
+type ItemEffect = struct {
+    effect_type: EffectType!,
+    value: i32!,
+    stat: Option<String>?,
+    status: Option<String>?,
+}
+
+type EffectType = enum {
+    Heal,
+    RestoreEnergy,
+    RemoveStatus,
+    ApplyStatus,
+    BoostStat,
+    RestoreStability,
+}
+
+/// Inventory state
+type InventoryState = struct {
+    items: Vec<Item>!,
+    key_items: Vec<Item>!,
+    max_slots: u32!,
+    currency: u64!,
+}
+
+// ============================================================================
+// PROPS TYPES
+// ============================================================================
+
+/// Props for inventory panel
+type InventoryPanelProps = struct {
+    inventory: InventoryState!,
+    on_use_item: Option<fn(Item)>?,
+    on_drop_item: Option<fn(Item)>?,
+    on_close: Option<fn()>?,
+}
+
+/// Props for item card
+type ItemCardProps = struct {
+    item: Item!,
+    is_selected: bool!,
+    on_click: fn()!,
+}
+
+/// Props for item details panel
+type ItemDetailsPanelProps = struct {
+    item: Item!,
+    on_use: Option<fn(Item)>?,
+    on_drop: Option<fn(Item)>?,
+    on_close: fn()!,
+}
+
+/// Props for compact inventory
+type CompactInventoryProps = struct {
+    inventory: InventoryState!,
+    on_open: Option<fn()>?,
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/// Get color for rarity
+fn get_rarity_color(rarity: ItemRarity!) -> String! {
+    match rarity {
+        ItemRarity::Common => colors::RARITY_COMMON.to_string(),
+        ItemRarity::Uncommon => colors::RARITY_UNCOMMON.to_string(),
+        ItemRarity::Rare => colors::RARITY_RARE.to_string(),
+        ItemRarity::Legendary => colors::RARITY_LEGENDARY.to_string(),
+        ItemRarity::Unique => colors::RARITY_UNIQUE.to_string(),
+    }
+}
+
+/// Format effect for display
+fn format_effect(effect: ItemEffect!) -> String! {
+    match effect.effect_type {
+        EffectType::Heal => format!("Restores {} HP", effect.value),
+        EffectType::RestoreEnergy => format!("Restores {} Energy", effect.value),
+        EffectType::RemoveStatus => format!("Removes {}", effect.status·unwrap_or("status".to_string())),
+        EffectType::ApplyStatus => format!("Applies {}", effect.status·unwrap_or("status".to_string())),
+        EffectType::BoostStat => format!("+{} {}", effect.value, effect.stat·unwrap_or("stat".to_string())),
+        EffectType::RestoreStability => format!("Restores {} Stability", effect.value),
+    }
+}
+
+/// Category to display string
+fn category_to_string(category: ItemCategory!) -> String! {
+    match category {
+        ItemCategory::Consumable => "Consumable".to_string(),
+        ItemCategory::KeyItem => "Key Item".to_string(),
+        ItemCategory::Memory => "Memory".to_string(),
+        ItemCategory::Equipment => "Equipment".to_string(),
+        ItemCategory::Material => "Material".to_string(),
+        ItemCategory::Document => "Document".to_string(),
+    }
+}
+
+// ============================================================================
+// MAIN INVENTORY PANEL
+// ============================================================================
+
+#[component]
+pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
+    let (selected_category, set_selected_category) = use_signal::<Option<ItemCategory>>(None);
+    let (selected_item, set_selected_item) = use_signal::<Option<Item>>(None);
+    let (search_query, set_search_query) = use_signal(String::new());
+
+    let categories = ["All", "Consumable", "KeyItem", "Memory", "Equipment", "Material", "Document"];
+
+    // Filter items based on category and search
+    let filtered_items = props.inventory.items·iter()
+        ·|φ|item| {
+            // Category filter
+            let category_match = match &selected_category() {
+                None => true,
+                Some(cat) => item.category == *cat,
+            };
+
+            // Search filter
+            let query = search_query()·to_lowercase();
+            let search_match = query·is_empty() ||
+                item.name·to_lowercase()·contains(&query) ||
+                item.description·to_lowercase()·contains(&query);
+
+            category_match && search_match
+        }
+        ·collect::<Vec<_>>();
+
+    let item_count = props.inventory.items·iter()·|τ|i| i.quantity·sum::<u32>();
+
+    html! {
+        <div style="display: flex; flex-direction: column; height: 100%; border-radius: 0.75rem; overflow: hidden; \
+                    background: linear-gradient(135deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.95) 100%); \
+                    border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 0 40px rgba(0,0,0,0.5);">
+
+            // Header
+            <div style="display: flex; align-items: center; justify-content: space-between; \
+                        padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <h2 style="font-size: 1.125rem; font-weight: bold; color: white;">{"Inventory"}</h2>
+                    <span style="padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; \
+                                 background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6);">
+                        {item_count}{"/"}{props.inventory.max_slots}
+                    </span>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    // Currency display
+                    <div style="display: flex; align-items: center; gap: 0.375rem; \
+                                padding: 0.25rem 0.75rem; border-radius: 0.5rem; background: rgba(251,191,36,0.2);">
+                        <span style="color: #fbbf24;">{"◉"}</span>
+                        <span style="font-size: 0.875rem; font-weight: 500; color: #fcd34d;">
+                            {props.inventory.currency}
+                        </span>
+                    </div>
+
+                    // Close button
+                    {if let Some(on_close) = &props.on_close {
+                        html! {
+                            <button
+                                onclick={on_close·clone()}
+                                style="padding: 0.375rem; border-radius: 0.5rem; \
+                                       background: transparent; cursor: pointer; \
+                                       color: rgba(255,255,255,0.6);"
+                            >
+                                <span style="font-size: 1.25rem;">{"×"}</span>
+                            </button>
+                        }
+                    } else { html! {} }}
+                </div>
+            </div>
+
+            // Search and filters
+            <div style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                // Search input
+                <div style="position: relative; margin-bottom: 0.75rem;">
+                    <input
+                        type="text"
+                        value={search_query()}
+                        oninput={move |e| set_search_query(e.value())}
+                        placeholder="Search items..."
+                        style="width: 100%; padding: 0.5rem 1rem; border-radius: 0.5rem; \
+                               background: rgba(0,0,0,0.4); color: white; \
+                               border: 1px solid rgba(255,255,255,0.1); outline: none;"
+                    />
+                    {if !search_query()·is_empty() {
+                        html! {
+                            <button
+                                onclick={move || set_search_query(String::new())}
+                                style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); \
+                                       color: rgba(255,255,255,0.4); cursor: pointer; background: transparent;"
+                            >
+                                {"×"}
+                            </button>
+                        }
+                    } else { html! {} }}
+                </div>
+
+                // Category tabs
+                <div style="display: flex; gap: 0.25rem; overflow-x: auto; padding-bottom: 0.25rem;">
+                    {categories·iter()·|τ|cat| {
+                        let is_selected = (*cat == "All" && selected_category()·is_none()) ||
+                            (selected_category()·map(|c| category_to_string(c) == *cat)·unwrap_or(false));
+
+                        html! {
+                            <button
+                                onclick={move || {
+                                    if *cat == "All" {
+                                        set_selected_category(None);
+                                    } else {
+                                        // Map string to category
+                                        let category = match *cat {
+                                            "Consumable" => Some(ItemCategory::Consumable),
+                                            "KeyItem" => Some(ItemCategory::KeyItem),
+                                            "Memory" => Some(ItemCategory::Memory),
+                                            "Equipment" => Some(ItemCategory::Equipment),
+                                            "Material" => Some(ItemCategory::Material),
+                                            "Document" => Some(ItemCategory::Document),
+                                            _ => None,
+                                        };
+                                        set_selected_category(category);
+                                    }
+                                }}
+                                style={format!(
+                                    "padding: 0.375rem 0.75rem; border-radius: 0.5rem; \
+                                     font-size: 0.75rem; font-weight: 500; white-space: nowrap; \
+                                     cursor: pointer; transition: all 0.2s; \
+                                     background: {}; color: {};",
+                                    if is_selected { "rgba(255,255,255,0.2)" } else { "rgba(255,255,255,0.05)" },
+                                    if is_selected { "white" } else { "rgba(255,255,255,0.6)" }
+                                )}
+                            >
+                                {*cat}
+                            </button>
+                        }
+                    }·collect::<Vec<_>>()}
+                </div>
+            </div>
+
+            // Main content area
+            <div style="flex: 1; display: flex; overflow: hidden;">
+                // Item grid
+                <div style="flex: 1; padding: 1rem; overflow-y: auto;">
+                    {if filtered_items·is_empty() {
+                        html! {
+                            <div style="display: flex; flex-direction: column; align-items: center; \
+                                        justify-content: center; height: 100%; color: rgba(255,255,255,0.4);">
+                                <span style="font-size: 2.25rem; margin-bottom: 0.5rem;">{"◇"}</span>
+                                <span style="font-size: 0.875rem;">{"No items found"}</span>
+                            </div>
+                        }
+                    } else {
+                        html! {
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;">
+                                {filtered_items·iter()·|τ|item| {
+                                    html! {
+                                        <ItemCard
+                                            item={item·clone()}
+                                            is_selected={selected_item()·map(|s| s.id == item.id)·unwrap_or(false)}
+                                            on_click={move || set_selected_item(Some(item·clone()))}
+                                        />
+                                    }
+                                }·collect::<Vec<_>>()}
+                            </div>
+                        }
+                    }}
+                </div>
+
+                // Item details panel (shown when item selected)
+                {if let Some(item) = selected_item() {
+                    html! {
+                        <ItemDetailsPanel
+                            item={item}
+                            on_use={props.on_use_item·clone()}
+                            on_drop={props.on_drop_item·clone()}
+                            on_close={move || set_selected_item(None)}
+                        />
+                    }
+                } else { html! {} }}
+            </div>
+
+            // Key Items section
+            {if !props.inventory.key_items·is_empty() {
+                html! {
+                    <div style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <div style="font-size: 0.75rem; font-weight: 500; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">
+                            {"Key Items"}
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem;">
+                            {props.inventory.key_items·iter()·|τ|item| {
+                                html! {
+                                    <KeyItemBadge
+                                        item={item·clone()}
+                                        on_click={move || set_selected_item(Some(item·clone()))}
+                                    />
+                                }
+                            }·collect::<Vec<_>>()}
+                        </div>
+                    </div>
+                }
+            } else { html! {} }}
+        </div>
+    }
+}
+
+// ============================================================================
+// ITEM CARD
+// ============================================================================
+
+#[component]
+pub fn ItemCard(props: ItemCardProps!) -> Element! {
+    let item! = &props.item;
+    let rarity_color! = get_rarity_color(item.rarity);
+
+    html! {
+        <button
+            onclick={props.on_click}
+            style={format!(
+                "position: relative; display: flex; flex-direction: column; align-items: center; \
+                 padding: 0.75rem; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s; \
+                 background: {}; border: 1px solid {}; {}",
+                if props.is_selected { format!("linear-gradient(135deg, {}30, rgba(0,0,0,0.4))", rarity_color) }
+                else { "rgba(0,0,0,0.4)".to_string() },
+                if props.is_selected { &rarity_color } else { "rgba(255,255,255,0.1)" },
+                if props.is_selected { format!("box-shadow: 0 0 15px {}30; outline: 2px solid {};", rarity_color, rarity_color) }
+                else { "".to_string() }
+            )}
+        >
+            // Rarity indicator dot
+            <div style={format!(
+                "position: absolute; top: 0.25rem; right: 0.25rem; width: 0.5rem; height: 0.5rem; \
+                 border-radius: 9999px; background: {}; box-shadow: 0 0 6px {};",
+                rarity_color, rarity_color
+            )}></div>
+
+            // Icon
+            <div style={format!(
+                "font-size: 1.875rem; margin-bottom: 0.5rem; \
+                 filter: drop-shadow(0 0 4px {}40);",
+                rarity_color
+            )}>
+                {&item.icon}
+            </div>
+
+            // Name
+            <div style="font-size: 0.75rem; font-weight: 500; color: white; text-align: center; \
+                        width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                {&item.name}
+            </div>
+
+            // Quantity badge (for stackable items)
+            {if item.stackable && item.quantity > 1 {
+                html! {
+                    <div style={format!(
+                        "position: absolute; bottom: 0.25rem; right: 0.25rem; \
+                         padding: 0.125rem 0.375rem; border-radius: 0.25rem; \
+                         font-size: 0.75rem; font-weight: bold; \
+                         background: rgba(0,0,0,0.6); color: {};",
+                        rarity_color
+                    )}>
+                        {item.quantity}
+                    </div>
+                }
+            } else { html! {} }}
+        </button>
+    }
+}
+
+// ============================================================================
+// ITEM DETAILS PANEL
+// ============================================================================
+
+#[component]
+pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
+    let item! = &props.item;
+    let rarity_color! = get_rarity_color(item.rarity);
+
+    html! {
+        <div style={format!(
+            "width: 16rem; padding: 1rem; border-left: 1px solid rgba(255,255,255,0.1); \
+             display: flex; flex-direction: column; \
+             background: linear-gradient(180deg, {}10 0%, transparent 100%);",
+            rarity_color
+        )}>
+            // Header
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1rem;">
+                <div>
+                    // Rarity badge
+                    <div style={format!(
+                        "font-size: 0.75rem; font-weight: 500; padding: 0.125rem 0.5rem; \
+                         border-radius: 9999px; display: inline-block; margin-bottom: 0.25rem; \
+                         background: {}20; color: {};",
+                        rarity_color, rarity_color
+                    )}>
+                        {format!("{:?}", item.rarity)}
+                    </div>
+                    <h3 style="font-size: 1.125rem; font-weight: bold; color: white;">
+                        {&item.name}
+                    </h3>
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">
+                        {category_to_string(item.category)}
+                    </div>
+                </div>
+                <button
+                    onclick={props.on_close}
+                    style="padding: 0.25rem; border-radius: 0.25rem; background: transparent; \
+                           cursor: pointer; color: rgba(255,255,255,0.6);"
+                >
+                    {"×"}
+                </button>
+            </div>
+
+            // Icon display
+            <div style={format!(
+                "width: 5rem; height: 5rem; margin: 0 auto 1rem; border-radius: 0.75rem; \
+                 display: flex; align-items: center; justify-content: center; font-size: 3rem; \
+                 background: radial-gradient(circle at center, {}30, transparent); \
+                 box-shadow: 0 0 30px {}20;",
+                rarity_color, rarity_color
+            )}>
+                {&item.icon}
+            </div>
+
+            // Description
+            <p style="font-size: 0.875rem; color: rgba(255,255,255,0.8); margin-bottom: 1rem;">
+                {&item.description}
+            </p>
+
+            // Flavor text
+            {if let Some(ref flavor) = item.flavor_text {
+                html! {
+                    <p style="font-size: 0.75rem; color: rgba(255,255,255,0.5); font-style: italic; \
+                              margin-bottom: 1rem; border-left: 2px solid rgba(255,255,255,0.2); \
+                              padding-left: 0.75rem;">
+                        {"\""}{flavor}{"\""}
+                    </p>
+                }
+            } else { html! {} }}
+
+            // Effects
+            {if let Some(ref effects) = item.effects {
+                if !effects·is_empty() {
+                    html! {
+                        <div style="margin-bottom: 1rem;">
+                            <div style="font-size: 0.75rem; font-weight: 500; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">
+                                {"Effects"}
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                {effects·iter()·|τ|effect| {
+                                    html! {
+                                        <div style="font-size: 0.75rem; padding: 0.25rem 0.5rem; \
+                                                    border-radius: 0.25rem; background: rgba(255,255,255,0.05); \
+                                                    color: rgba(255,255,255,0.8);">
+                                            {format_effect(effect·clone())}
+                                        </div>
+                                    }
+                                }·collect::<Vec<_>>()}
+                            </div>
+                        </div>
+                    }
+                } else { html! {} }
+            } else { html! {} }}
+
+            // Alter restriction warning
+            {if let Some(ref restriction) = item.alter_restriction {
+                html! {
+                    <div style="font-size: 0.75rem; color: rgba(251,191,36,0.8); margin-bottom: 1rem;">
+                        {"⚠ Can only be used by "}{restriction}
+                    </div>
+                }
+            } else { html! {} }}
+
+            // Quantity display
+            {if item.stackable {
+                html! {
+                    <div style="font-size: 0.875rem; color: rgba(255,255,255,0.6); margin-bottom: 1rem;">
+                        {"Quantity: "}<span style="color: white; font-weight: 500;">{item.quantity}</span>
+                        {if item.max_stack > 1 {
+                            html! { <span style="color: rgba(255,255,255,0.4);">{"/"}{item.max_stack}</span> }
+                        } else { html! {} }}
+                    </div>
+                }
+            } else { html! {} }}
+
+            // Spacer
+            <div style="flex: 1;"></div>
+
+            // Action buttons
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                // Use button
+                {if item.usable {
+                    if let Some(on_use) = &props.on_use {
+                        html! {
+                            <button
+                                onclick={move || on_use(item·clone())}
+                                style={format!(
+                                    "width: 100%; padding: 0.5rem; border-radius: 0.5rem; \
+                                     font-weight: 500; cursor: pointer; transition: all 0.2s; \
+                                     background: linear-gradient(90deg, {}80, {}60); \
+                                     color: white; box-shadow: 0 0 15px {}40;",
+                                    rarity_color, rarity_color, rarity_color
+                                )}
+                            >
+                                {"Use"}
+                            </button>
+                        }
+                    } else { html! {} }
+                } else { html! {} }}
+
+                // Drop button (not for key items)
+                {if item.category != ItemCategory::KeyItem {
+                    if let Some(on_drop) = &props.on_drop {
+                        html! {
+                            <button
+                                onclick={move || on_drop(item·clone())}
+                                style="width: 100%; padding: 0.5rem; border-radius: 0.5rem; \
+                                       font-weight: 500; cursor: pointer; transition: all 0.2s; \
+                                       background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.6);"
+                            >
+                                {"Drop"}
+                            </button>
+                        }
+                    } else { html! {} }
+                } else { html! {} }}
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// KEY ITEM BADGE
+// ============================================================================
+
+type KeyItemBadgeProps = struct {
+    item: Item!,
+    on_click: fn()!,
+}
+
+#[component]
+pub fn KeyItemBadge(props: KeyItemBadgeProps!) -> Element! {
+    let item! = &props.item;
+
+    html! {
+        <button
+            onclick={props.on_click}
+            style="display: flex; align-items: center; gap: 0.5rem; \
+                   padding: 0.375rem 0.75rem; border-radius: 0.5rem; \
+                   background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.3); \
+                   cursor: pointer; transition: all 0.2s;"
+            title={&item.description}
+        >
+            <span>{&item.icon}</span>
+            <span style="font-size: 0.75rem; font-weight: 500; color: #fcd34d; white-space: nowrap;">
+                {&item.name}
+            </span>
+        </button>
+    }
+}
+
+// ============================================================================
+// COMPACT INVENTORY (for HUD)
+// ============================================================================
+
+#[component]
+pub fn CompactInventory(props: CompactInventoryProps!) -> Element! {
+    let recent_items = props.inventory.items·iter()·take(4)·collect::<Vec<_>>();
+    let total_items = props.inventory.items·iter()·|τ|i| i.quantity·sum::<u32>();
+
+    html! {
+        <button
+            onclick={props.on_open·unwrap_or(|| {})}
+            style="display: flex; align-items: center; gap: 0.5rem; \
+                   padding: 0.5rem 0.75rem; border-radius: 0.5rem; \
+                   background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); \
+                   cursor: pointer; transition: all 0.2s;"
+        >
+            // Recent items preview
+            <div style="display: flex;">
+                {recent_items·iter()·enumerate()·|τ|(i, item)| {
+                    html! {
+                        <div style={format!(
+                            "width: 1.5rem; height: 1.5rem; border-radius: 0.25rem; \
+                             background: rgba(0,0,0,0.6); display: flex; align-items: center; \
+                             justify-content: center; font-size: 0.75rem; \
+                             border: 1px solid rgba(255,255,255,0.1); \
+                             margin-left: {}; z-index: {};",
+                            if i > 0 { "-0.25rem" } else { "0" },
+                            4 - i
+                        )}>
+                            {&item.icon}
+                        </div>
+                    }
+                }·collect::<Vec<_>>()}
+            </div>
+
+            // Count
+            <span style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">
+                {total_items}{"/"}{props.inventory.max_slots}
+            </span>
+        </button>
+    }
+}

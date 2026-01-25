@@ -1,0 +1,7 @@
+// Test: Modulo with negative numbers
+// Spec: Edge Cases - Arithmetic
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    println(-7 % 3);  // Result depends on language spec (-1 or 2)
+}

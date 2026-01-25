@@ -1,0 +1,15 @@
+// Test: Mut keyword
+// Spec: 01-LEXICAL.md § 1.1 Keywords
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate Δ keyword enables mutability.
+//
+// Expected behavior:
+// Should print 99
+
+λ main() {
+    ≔ Δ x: !i32 = 42;
+    x = 99;
+    println(x);
+}

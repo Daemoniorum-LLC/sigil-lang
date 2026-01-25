@@ -1,0 +1,10 @@
+// Test: QH compression
+// Spec: 13-QUANTUM-HOLOGRAPHIC.md § 10 Compression
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    ≔ data: Vec<i32> = (0..1000)|collect;
+    ≔ compressed: QHCompressed<Vec<i32>> = data|qh_compress;
+    ≔ ratio = compressed.size() as f64 / data.len() as f64;
+    println(ratio < 1.0);
+}

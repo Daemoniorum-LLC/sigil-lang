@@ -1,20 +1,20 @@
-// Benchmark: Fibonacci for LLVM backend
+// Benchmark: Fibonacci ∀ LLVM backend
 // Returns 0 on success (result verification)
 
-fn fib(n: i64) -> i64 {
-    if n <= 1 {
+λ fib(n: i64) -> i64 {
+    ⎇ n <= 1 {
         n
-    } else {
+    } ⎉ {
         fib(n - 1) + fib(n - 2)
     }
 }
 
-fn main() -> i64 {
-    let result = fib(35);
-    // Return 0 if correct, 1 if wrong
-    if result == 9227465 {
+λ main() -> i64 {
+    ≔ result = fib(35);
+    // Return 0 ⎇ correct, 1 ⎇ wrong
+    ⎇ result == 9227465 {
         0
-    } else {
+    } ⎉ {
         1
     }
 }

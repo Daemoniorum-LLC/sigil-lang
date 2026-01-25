@@ -1,0 +1,16 @@
+// Test: Real WebSocket echo test
+// Spec: 15-PROTOCOLS.md § 5 WebSocket Support
+// Priority: P0 - Bootstrap Critical
+//
+// This test connects to a REAL WebSocket echo server
+
+λ main() {
+    // Connect to Postman's WebSocket echo server
+    ≔ conn = "wss://ws.postman-echo.com/raw"|connect;
+
+    // Send a message and receive echo
+    ≔ response! = conn|send{"Hello from Sigil!"};
+
+    // Print the echoed response
+    println(response!);
+}

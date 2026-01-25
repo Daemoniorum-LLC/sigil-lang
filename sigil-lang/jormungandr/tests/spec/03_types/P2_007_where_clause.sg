@@ -1,0 +1,22 @@
+// Test: Where clainvoke ∈ generics
+// Spec: 03-TYPES.md § 6.2 Where Clauses
+// Priority: P2 - Enhancement
+
+Θ Display {
+    λ show(&self);
+}
+
+Σ Wrapper<T> {
+    value: T,
+}
+
+⊢<T> Wrapper<T> where T: Display {
+    λ display(&self) {
+        self.value.show();
+    }
+}
+
+λ main() {
+    // Just verify it parses
+    println(1);
+}

@@ -1,0 +1,15 @@
+// Test: simplest possible parameter ∈ asm
+λ identity(x: i64) -> i64 {
+    ≔ result: i64 = 0;
+    unsafe {
+        asm!("mov rax, rdi",
+            in("rdi") x,
+            out("rax") result,
+            options(nostack));
+    }
+    result
+}
+
+λ main() -> i64 {
+    identity(42)
+}

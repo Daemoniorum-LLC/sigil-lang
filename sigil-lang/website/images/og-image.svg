@@ -1,0 +1,37 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#050507"/>
+
+  <!-- Subtle gradient glow -->
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="40%" r="60%" fx="50%" fy="40%">
+      <stop offset="0%" stop-color="#14A088" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#050507" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- Logo icon -->
+  <text x="600" y="220" font-family="serif" font-size="120" fill="#14A088" text-anchor="middle" dominant-baseline="middle">⛤</text>
+
+  <!-- Title -->
+  <text x="600" y="330" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="#e8e8ec" text-anchor="middle">Sigil</text>
+
+  <!-- Tagline -->
+  <text x="600" y="400" font-family="system-ui, -apple-system, sans-serif" font-size="28" fill="#a0a0aa" text-anchor="middle">Track Data Provenance at the Type Level</text>
+
+  <!-- Evidence markers -->
+  <g font-family="monospace" font-size="24" font-weight="700">
+    <text x="420" y="480" fill="#14A088">!</text>
+    <text x="450" y="480" fill="#a0a0aa" font-weight="400" font-size="18">Known</text>
+
+    <text x="550" y="480" fill="#D4A017">?</text>
+    <text x="580" y="480" fill="#a0a0aa" font-weight="400" font-size="18">Uncertain</text>
+
+    <text x="700" y="480" fill="#6B9BD1">~</text>
+    <text x="730" y="480" fill="#a0a0aa" font-weight="400" font-size="18">Reported</text>
+  </g>
+
+  <!-- URL -->
+  <text x="600" y="570" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#6c6c76" text-anchor="middle">sigil-lang.com</text>
+</svg>

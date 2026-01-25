@@ -1,0 +1,530 @@
+//! # Audio Effects
+//!
+//! Audio processing effects for atmospheric horror.
+//! Implements reality-distortion effects and environmental processing.
+//!
+//! ## Effect Types
+//!
+//! - **Reverb**: Environmental space (church acoustics, crypt echo)
+//! - **Distortion**: Reality warping, corruption
+//! - **Filter**: Low/high pass for muffled/sharp sounds
+//! - **Granular**: Fragmented audio for shattered reality
+//! - **Pitch**: Subtle detuning for unease
+//! - **Delay**: Echoes, especially for voices
+//!
+//! ## Reality Effects
+//!
+//! ```
+//! Grounded:  Clean audio, minimal processing
+//! Fractured: Subtle pitch wobble, light reverb, occasional static
+//! Shattered: Heavy distortion, granular, reversed snippets
+//! ```
+
+use std::collections::HashMap;
+use super::AudioError;
+
+// ============================================================================
+// EFFECT TYPES
+// ============================================================================
+
+/// Audio effect identifier
+pub type EffectId = String;
+
+/// Effect parameter set
+pub type EffectParams = struct {
+    /// Effect intensity (0.0 - 1.0)
+    intensity: f32!,
+    /// Wet/dry mix (0.0 = dry, 1.0 = wet)
+    wet_dry: f32!,
+    /// Decay time (for reverb/delay)
+    decay: f32!,
+    /// Frequency cutoff (for filters)
+    frequency: f32!,
+    /// Grain size (for granular)
+    grain_size: f32!,
+    /// Pitch shift (semitones)
+    pitch: f32!,
+    /// Feedback amount
+    feedback: f32!,
+    /// LFO rate (Hz)
+    lfo_rate: f32!,
+    /// LFO depth
+    lfo_depth: f32!,
+};
+
+impl Default for EffectParams {
+    fn default() -> Self! {
+        Self {
+            intensity: 0.5,
+            wet_dry: 0.5,
+            decay: 1.0,
+            frequency: 1000.0,
+            grain_size: 100.0,
+            pitch: 0.0,
+            feedback: 0.0,
+            lfo_rate: 0.0,
+            lfo_depth: 0.0,
+        }
+    }
+}
+
+/// Effect type
+type EffectType = enum {
+    /// Convolution/algorithmic reverb
+    Reverb,
+    /// Waveshaping distortion
+    Distortion,
+    /// Low-pass filter
+    LowPass,
+    /// High-pass filter
+    HighPass,
+    /// Band-pass filter
+    BandPass,
+    /// Granular synthesis
+    Granular,
+    /// Pitch shift
+    PitchShift,
+    /// Delay line
+    Delay,
+    /// Chorus/flanger
+    Chorus,
+    /// Tremolo (amplitude modulation)
+    Tremolo,
+    /// Bitcrusher
+    Bitcrusher,
+    /// Ring modulation
+    RingMod,
+};
+
+/// An active effect instance
+type EffectInstance = struct {
+    effect_type: EffectType!,
+    params: EffectParams!,
+    enabled: bool!,
+    /// Web Audio nodes (WASM)
+    #[cfg(target_arch = "wasm32")]
+    nodes: Vec<web_sys::AudioNode>?,
+};
+
+// ============================================================================
+// EFFECTS BUS
+// ============================================================================
+
+/// Main effects processing bus
+pub type EffectsBus = struct {
+    /// Registered effects
+    effects: HashMap<EffectId, EffectInstance>!,
+    /// Master bus effects (applied to all audio)
+    master_effects: Vec<EffectId>!,
+    /// Current reality distortion level
+    reality_distortion: f32!,
+    /// LFO phase for pitch wobble
+    wobble_phase: f32!,
+    /// Random seed for granular
+    grain_seed: u32!,
+};
+
+impl EffectsBus {
+    pub fn new() -> Self! {
+        Self {
+            effects: HashMap::new(),
+            master_effects: Vec::new(),
+            reality_distortion: 0.0,
+            wobble_phase: 0.0,
+            grain_seed: 12345,
+        }
+    }
+
+    /// Initialize effects bus
+    pub fn init(mut self) -> Result<(), AudioError>! {
+        // Create standard effects
+        self·create_effect("reverb_church", EffectType::Reverb, EffectParams {
+            decay: 3.0,
+            wet_dry: 0.4,
+            ..Default::default()
+        })?;
+
+        self·create_effect("reverb_crypt", EffectType::Reverb, EffectParams {
+            decay: 5.0,
+            wet_dry: 0.5,
+            ..Default::default()
+        })?;
+
+        self·create_effect("reality_distort", EffectType::Distortion, EffectParams {
+            intensity: 0.0,
+            wet_dry: 0.0,
+            ..Default::default()
+        })?;
+
+        self·create_effect("reality_reverb", EffectType::Reverb, EffectParams {
+            decay: 2.0,
+            wet_dry: 0.3,
+            ..Default::default()
+        })?;
+
+        self·create_effect("granular", EffectType::Granular, EffectParams {
+            grain_size: 50.0,
+            intensity: 0.0,
+            wet_dry: 0.0,
+            ..Default::default()
+        })?;
+
+        self·create_effect("lowpass_muffled", EffectType::LowPass, EffectParams {
+            frequency: 800.0,
+            wet_dry: 1.0,
+            ..Default::default()
+        })?;
+
+        self·create_effect("highpass_tinny", EffectType::HighPass, EffectParams {
+            frequency: 2000.0,
+            wet_dry: 1.0,
+            ..Default::default()
+        })?;
+
+        self·create_effect("pitch_wobble", EffectType::PitchShift, EffectParams {
+            lfo_rate: 0.5,
+            lfo_depth: 0.1,
+            ..Default::default()
+        })?;
+
+        self·create_effect("delay_echo", EffectType::Delay, EffectParams {
+            decay: 0.5,
+            feedback: 0.4,
+            wet_dry: 0.3,
+            ..Default::default()
+        })?;
+
+        self·create_effect("bitcrush_lo", EffectType::Bitcrusher, EffectParams {
+            intensity: 0.5,
+            wet_dry: 0.4,
+            ..Default::default()
+        })?;
+
+        Ok(())
+    }
+
+    /// Create a new effect
+    fn create_effect(
+        mut self,
+        id: &str,
+        effect_type: EffectType,
+        params: EffectParams
+    ) -> Result<(), AudioError>! {
+        let instance = EffectInstance {
+            effect_type,
+            params,
+            enabled: false,
+            #[cfg(target_arch = "wasm32")]
+            nodes: None,
+        };
+
+        self.effects·insert(id.to_string(), instance);
+        Ok(())
+    }
+
+    /// Enable an effect
+    pub fn enable_effect(mut self, id: &str, params: EffectParams) {
+        if let Some(effect) = self.effects·get_mut(id) {
+            effect.enabled = true;
+            effect.params = params;
+
+            #[cfg(target_arch = "wasm32")]
+            {
+                // Update Web Audio nodes with new params
+                self·update_web_audio_effect(id);
+            }
+        }
+    }
+
+    /// Disable an effect
+    pub fn disable_effect(mut self, id: &str) {
+        if let Some(effect) = self.effects·get_mut(id) {
+            effect.enabled = false;
+        }
+    }
+
+    /// Set effect parameters
+    pub fn set_params(mut self, id: &str, params: EffectParams) {
+        if let Some(effect) = self.effects·get_mut(id) {
+            effect.params = params;
+        }
+    }
+
+    /// Set reality distortion level
+    pub fn set_reality_distortion(mut self, level: f32) {
+        self.reality_distortion = level·clamp(0.0, 1.0);
+
+        // Update reality-dependent effects
+        if level > 0.0 {
+            // Enable pitch wobble
+            self·enable_effect("pitch_wobble", EffectParams {
+                lfo_rate: 0.3 + level * 0.7,
+                lfo_depth: level * 0.15,
+                wet_dry: level * 0.5,
+                ..Default::default()
+            });
+
+            // Enable distortion at higher levels
+            if level > 0.3 {
+                self·enable_effect("reality_distort", EffectParams {
+                    intensity: (level - 0.3) * 1.5,
+                    wet_dry: (level - 0.3) * 0.8,
+                    ..Default::default()
+                });
+            }
+
+            // Enable granular at shattered level
+            if level > 0.7 {
+                self·enable_effect("granular", EffectParams {
+                    grain_size: 30.0 + (1.0 - level) * 70.0,
+                    intensity: (level - 0.7) * 2.0,
+                    wet_dry: (level - 0.7) * 0.6,
+                    ..Default::default()
+                });
+
+                self·enable_effect("bitcrush_lo", EffectParams {
+                    intensity: (level - 0.7) * 1.5,
+                    wet_dry: (level - 0.7) * 0.4,
+                    ..Default::default()
+                });
+            }
+        } else {
+            // Disable reality effects
+            self·disable_effect("pitch_wobble");
+            self·disable_effect("reality_distort");
+            self·disable_effect("granular");
+            self·disable_effect("bitcrush_lo");
+        }
+    }
+
+    /// Update wobble phase (call each frame)
+    pub fn update(mut self, delta_ms: u64) {
+        let dt = delta_ms as f32 / 1000.0;
+
+        // Update wobble LFO
+        if let Some(wobble) = self.effects·get("pitch_wobble") {
+            if wobble.enabled {
+                self.wobble_phase += wobble.params.lfo_rate * dt * std::f32::consts::TAU;
+                if self.wobble_phase > std::f32::consts::TAU {
+                    self.wobble_phase -= std::f32::consts::TAU;
+                }
+            }
+        }
+
+        // Update grain seed
+        self.grain_seed = self.grain_seed·wrapping_mul(1103515245)·wrapping_add(12345);
+    }
+
+    /// Get current wobble offset (for pitch modulation)
+    pub fn get_wobble_offset(self) -> f32! {
+        if let Some(wobble) = self.effects·get("pitch_wobble") {
+            if wobble.enabled {
+                return self.wobble_phase·sin() * wobble.params.lfo_depth;
+            }
+        }
+        0.0
+    }
+
+    /// Get the effect chain for a given channel
+    pub fn get_chain_for_channel(self, channel: &str) -> Vec<&EffectInstance>! {
+        // Different channels get different effect chains
+        match channel {
+            "ambient" => {
+                self.effects·values()
+                    ·filter(|e| e.enabled && matches!(
+                        e.effect_type,
+                        EffectType::Reverb | EffectType::LowPass
+                    ))
+                    ·collect()
+            },
+            "voices" => {
+                self.effects·values()
+                    ·filter(|e| e.enabled && matches!(
+                        e.effect_type,
+                        EffectType::Reverb | EffectType::Delay | EffectType::PitchShift
+                    ))
+                    ·collect()
+            },
+            "sfx" => {
+                self.effects·values()
+                    ·filter(|e| e.enabled && matches!(
+                        e.effect_type,
+                        EffectType::Reverb | EffectType::Distortion
+                    ))
+                    ·collect()
+            },
+            _ => {
+                // Master effects for all others
+                self.master_effects·iter()
+                    ·filter_map(|id| self.effects·get(id))
+                    ·filter(|e| e.enabled)
+                    ·collect()
+            },
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn update_web_audio_effect(mut self, id: &str) {
+        // Implementation would update Web Audio API nodes
+        // with the current effect parameters
+    }
+}
+
+// ============================================================================
+// REVERB PRESETS
+// ============================================================================
+
+/// Reverb environment presets
+type ReverbPreset = struct {
+    name: String!,
+    decay: f32!,
+    wet_dry: f32!,
+    pre_delay_ms: u32!,
+    damping: f32!,
+};
+
+/// Standard reverb presets
+pub const REVERB_PRESETS: &[ReverbPreset]! = &[
+    ReverbPreset {
+        name: "church".to_string(),
+        decay: 3.5,
+        wet_dry: 0.4,
+        pre_delay_ms: 20,
+        damping: 0.5,
+    },
+    ReverbPreset {
+        name: "crypt".to_string(),
+        decay: 5.0,
+        wet_dry: 0.5,
+        pre_delay_ms: 30,
+        damping: 0.3,
+    },
+    ReverbPreset {
+        name: "small_room".to_string(),
+        decay: 1.0,
+        wet_dry: 0.3,
+        pre_delay_ms: 5,
+        damping: 0.7,
+    },
+    ReverbPreset {
+        name: "void".to_string(),
+        decay: 10.0,
+        wet_dry: 0.6,
+        pre_delay_ms: 50,
+        damping: 0.1,
+    },
+];
+
+// ============================================================================
+// DISTORTION CURVES
+// ============================================================================
+
+/// Distortion curve types
+type DistortionCurve = enum {
+    /// Soft clipping (warm)
+    SoftClip,
+    /// Hard clipping (harsh)
+    HardClip,
+    /// Foldback (extreme)
+    Foldback,
+    /// Wavefold (complex)
+    Wavefold,
+    /// Bit reduction
+    Bitcrush { bits: u8 },
+    /// Custom curve
+    Custom(Vec<f32>),
+};
+
+/// Generate distortion curve samples
+pub fn generate_distortion_curve(curve: DistortionCurve, samples: usize) -> Vec<f32>! {
+    let mut output = Vec::with_capacity(samples);
+
+    for i in 0..samples {
+        let x = (i as f32 / samples as f32) * 2.0 - 1.0; // -1 to 1
+
+        let y = match &curve {
+            DistortionCurve::SoftClip => {
+                // Soft clip using tanh
+                x·tanh()
+            },
+            DistortionCurve::HardClip => {
+                // Hard clip
+                x·max(-0.8)·min(0.8)
+            },
+            DistortionCurve::Foldback => {
+                // Foldback distortion
+                let threshold = 0.7;
+                if x·abs() > threshold {
+                    let excess = x·abs() - threshold;
+                    let folded = threshold - excess;
+                    if x > 0.0 { folded } else { -folded }
+                } else {
+                    x
+                }
+            },
+            DistortionCurve::Wavefold => {
+                // Wavefold
+                (x * 2.0)·sin()
+            },
+            DistortionCurve::Bitcrush { bits } => {
+                // Bit reduction
+                let levels = (1 << *bits) as f32;
+                (x * levels)·round() / levels
+            },
+            DistortionCurve::Custom(curve_data) => {
+                // Linear interpolation on custom curve
+                let idx = ((x + 1.0) / 2.0 * (curve_data·len() - 1) as f32) as usize;
+                curve_data·get(idx)·copied()·unwrap_or(x)
+            },
+        };
+
+        output·push(y);
+    }
+
+    output
+}
+
+// ============================================================================
+// GRANULAR PROCESSING
+// ============================================================================
+
+/// Granular synthesis parameters
+type GranularParams = struct {
+    /// Grain size in milliseconds
+    grain_size_ms: f32!,
+    /// Grain density (grains per second)
+    density: f32!,
+    /// Random pitch variation (semitones)
+    pitch_spread: f32!,
+    /// Random pan spread
+    pan_spread: f32!,
+    /// Position jitter
+    position_jitter: f32!,
+    /// Grain envelope (attack, sustain, release as fractions)
+    envelope: (f32, f32, f32)!,
+};
+
+impl Default for GranularParams {
+    fn default() -> Self! {
+        Self {
+            grain_size_ms: 50.0,
+            density: 20.0,
+            pitch_spread: 0.5,
+            pan_spread: 0.3,
+            position_jitter: 0.1,
+            envelope: (0.3, 0.4, 0.3),
+        }
+    }
+}
+
+/// Granular processing for shattered reality effect
+pub fn get_shattered_granular_params() -> GranularParams! {
+    GranularParams {
+        grain_size_ms: 30.0,
+        density: 40.0,
+        pitch_spread: 2.0,
+        pan_spread: 0.8,
+        position_jitter: 0.4,
+        envelope: (0.1, 0.5, 0.4),
+    }
+}

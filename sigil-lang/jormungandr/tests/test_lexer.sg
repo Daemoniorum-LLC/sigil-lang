@@ -1,0 +1,667 @@
+//! Comprehensive Lexer Test Suite
+//!
+//! Tests all token types, numeric bases, escapes, and Unicode symbols.
+//! Target: 100% lexer coverage ∀ regression detection.
+
+invoke crate·lexer·Lexer;
+invoke crate·token·Token;
+invoke crate·span·Span;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/// Lex a string and ⤺ the first token
+λ lex_one(source: !&str) -> ?Token {
+    ≔ Δ lexer = Lexer·new(source.to_string());
+    ⌥ lexer.next_token() {
+        ?(token, _) => ?token,
+        null => null,
+    }
+}
+
+/// Lex a string and ⤺ all tokens as a vector
+λ lex_all(source: !&str) -> ![Token] {
+    ≔ Δ lexer = Lexer·new(source.to_string());
+    ≔ Δ tokens: ![Token] = [];
+    loop {
+        ⌥ lexer.next_token() {
+            ?(token, _) => tokens.push(token),
+            null => ⊗,
+        }
+    }
+    tokens
+}
+
+/// Assert that lexing produces expected token
+λ assert_token(source: !&str, expected: !Token, name: !&str) {
+    ⌥ lex_one(source) {
+        ?token => {
+            ⎇ token != expected {
+                panic(format!("FAIL {}: expected {:?}, got {:?}", name, expected, token));
+            }
+        },
+        null => panic(format!("FAIL {}: no token produced", name)),
+    }
+}
+
+/// Assert lexing produces expected number of tokens
+λ assert_token_count(source: !&str, expected: !u64, name: !&str) {
+    ≔ tokens = lex_all(source);
+    ⎇ tokens.len() != expected {
+        panic(format!("FAIL {}: expected {} tokens, got {}", name, expected, tokens.len()));
+    }
+}
+
+// ============================================================================
+// 1. SINGLE CHARACTER TOKENS
+// ============================================================================
+
+λ test_single_char_tokens() -> !bool {
+    print("  [1/15] Single character tokens... ");
+
+    assert_token("(", Token·LParen, "lparen");
+    assert_token(")", Token·RParen, "rparen");
+    assert_token("{", Token·LBrace, "lbrace");
+    assert_token("}", Token·RBrace, "rbrace");
+    assert_token("[", Token·LBracket, "lbracket");
+    assert_token("]", Token·RBracket, "rbracket");
+    assert_token(";", Token·Semi, "semi");
+    assert_token(",", Token·Comma, "comma");
+    assert_token("@", Token·At, "at");
+    assert_token("^", Token·Caret, "caret");
+    assert_token("%", Token·Percent, "percent");
+    assert_token("!", Token·Bang, "bang");
+    assert_token("?", Token·Question, "question");
+    assert_token("~", Token·Tilde, "tilde");
+
+    println("PASS (14 cases)");
+    true
+}
+
+// ============================================================================
+// 2. MULTI-CHARACTER OPERATORS
+// ============================================================================
+
+λ test_operators() -> !bool {
+    print("  [2/15] Multi-character operators... ");
+
+    // Plus variants
+    assert_token("+", Token·Plus, "plus");
+    assert_token("+=", Token·PlusEq, "plus_eq");
+
+    // Minus variants
+    assert_token("-", Token·Minus, "minus");
+    assert_token("-=", Token·MinusEq, "minus_eq");
+    assert_token("->", Token·Arrow, "arrow");
+
+    // Star variants
+    assert_token("*", Token·Star, "star");
+    assert_token("*=", Token·StarEq, "star_eq");
+    assert_token("**", Token·StarStar, "star_star");
+
+    // Slash
+    assert_token("/", Token·Slash, "slash");
+
+    // Equals variants
+    assert_token("=", Token·Eq, "eq");
+    assert_token("==", Token·EqEq, "eq_eq");
+    assert_token("=>", Token·FatArrow, "fat_arrow");
+
+    // Comparison
+    assert_token("<", Token·Lt, "lt");
+    assert_token("<=", Token·LtEq, "lt_eq");
+    assert_token("<<", Token·Shl, "shl");
+    assert_token("<-", Token·LeftArrow, "left_arrow");
+    assert_token(">", Token·Gt, "gt");
+    assert_token(">=", Token·GtEq, "gt_eq");
+    assert_token(">>", Token·Shr, "shr");
+
+    // Logical
+    assert_token("&", Token·Amp, "amp");
+    assert_token("&&", Token·AmpAmp, "amp_amp");
+    assert_token("|", Token·Pipe, "pipe");
+    assert_token("||", Token·PipePipe, "pipe_pipe");
+
+    // Dots
+    assert_token(".", Token·Dot, "dot");
+    assert_token("..", Token·DotDot, "dot_dot");
+    assert_token("..=", Token·DotDotEq, "dot_dot_eq");
+
+    // Colon
+    assert_token(":", Token·Colon, "colon");
+    assert_token("·", Token·ColonColon, "colon_colon");
+
+    // Hash
+    assert_token("#", Token·Hash, "hash");
+    assert_token("#!", Token·HashBang, "hash_bang");
+
+    println("PASS (30 cases)");
+    true
+}
+
+// ============================================================================
+// 3. KEYWORDS - DEFINITIONS
+// ============================================================================
+
+λ test_keywords_definitions() -> !bool {
+    print("  [3/15] Keywords (definitions)... ");
+
+    assert_token("λ", Token·Fn, "λ");
+    assert_token("async", Token·Async, "async");
+    assert_token("≔", Token·Let, "≔");
+    assert_token("Δ", Token·Mut, "Δ");
+    assert_token("const", Token·Const, "const");
+    assert_token("type", Token·Type, "type");
+    assert_token("Σ", Token·Struct, "Σ");
+    assert_token("ᛈ", Token·Enum, "ᛈ");
+    assert_token("Θ", Token·Trait, "Θ");
+    assert_token("⊢", Token·Impl, "⊢");
+    assert_token("scroll", Token·Mod, "scroll");
+    assert_token("invoke", Token·Use, "invoke");
+    assert_token("☉", Token·Pub, "☉");
+    assert_token("actor", Token·Actor, "actor");
+    assert_token("saga", Token·Saga, "saga");
+    assert_token("scope", Token·Scope, "scope");
+    assert_token("rune", Token·Rune, "rune");
+
+    println("PASS (17 cases)");
+    true
+}
+
+// ============================================================================
+// 4. KEYWORDS - CONTROL FLOW
+// ============================================================================
+
+λ test_keywords_control() -> !bool {
+    print("  [4/15] Keywords (control flow)... ");
+
+    assert_token("⎇", Token·If, "⎇");
+    assert_token("⎉", Token·Else, "⎉");
+    assert_token("⌥", Token·Match, "⌥");
+    assert_token("loop", Token·Loop, "loop");
+    assert_token("⟳", Token·While, "⟳");
+    assert_token("∀", Token·For, "∀");
+    assert_token("in", Token·In, "in");
+    assert_token("⊗", Token·Break, "⊗");
+    assert_token("↻", Token·Continue, "↻");
+    assert_token("⤺", Token·Return, "⤺");
+    assert_token("yield", Token·Yield, "yield");
+    assert_token("await", Token·Await, "await");
+
+    println("PASS (12 cases)");
+    true
+}
+
+// ============================================================================
+// 5. KEYWORDS - OTHER
+// ============================================================================
+
+λ test_keywords_other() -> !bool {
+    print("  [5/15] Keywords (other)... ");
+
+    assert_token("self", Token·SelfLower, "self");
+    assert_token("Self", Token·SelfUpper, "Self");
+    assert_token("super", Token·Super, "super");
+    assert_token("crate", Token·Crate, "crate");
+    assert_token("where", Token·Where, "where");
+    assert_token("as", Token·As, "as");
+    assert_token("dyn", Token·Dyn, "dyn");
+    assert_token("move", Token·Move, "move");
+    assert_token("ref", Token·Ref, "ref");
+    assert_token("static", Token·Static, "static");
+    assert_token("unsafe", Token·Unsafe, "unsafe");
+    assert_token("extern", Token·Extern, "extern");
+    assert_token("true", Token·True, "true");
+    assert_token("false", Token·False, "false");
+    assert_token("null", Token·Null, "null");
+
+    println("PASS (15 cases)");
+    true
+}
+
+// ============================================================================
+// 6. NUMERIC LITERALS - DECIMAL
+// ============================================================================
+
+λ test_numbers_decimal() -> !bool {
+    print("  [6/15] Decimal numbers... ");
+
+    // Basic integers
+    ⌥ lex_one("0") {
+        ?Token·Int(v, _) => assert(v == 0, "0 should be 0"),
+        _ => panic("0 should lex as Int"),
+    }
+
+    ⌥ lex_one("42") {
+        ?Token·Int(v, _) => assert(v == 42, "42 should be 42"),
+        _ => panic("42 should lex as Int"),
+    }
+
+    ⌥ lex_one("1234567890") {
+        ?Token·Int(v, _) => assert(v == 1234567890, "large int"),
+        _ => panic("large int should lex"),
+    }
+
+    // Underscores
+    ⌥ lex_one("1_000_000") {
+        ?Token·Int(v, _) => assert(v == 1000000, "underscore int"),
+        _ => panic("underscore int should lex"),
+    }
+
+    // Floats
+    ⌥ lex_one("3.14") {
+        ?Token·Float(v) => assert(v > 3.13 && v < 3.15, "3.14 float"),
+        _ => panic("3.14 should lex as Float"),
+    }
+
+    ⌥ lex_one("0.5") {
+        ?Token·Float(v) => assert(v > 0.4 && v < 0.6, "0.5 float"),
+        _ => panic("0.5 should lex as Float"),
+    }
+
+    // Scientific notation
+    ⌥ lex_one("1e10") {
+        ?Token·Float(v) => assert(v > 9e9, "1e10"),
+        _ => panic("1e10 should lex as Float"),
+    }
+
+    ⌥ lex_one("2.5E-3") {
+        ?Token·Float(v) => assert(v < 0.003, "2.5E-3"),
+        _ => panic("2.5E-3 should lex as Float"),
+    }
+
+    println("PASS (8 cases)");
+    true
+}
+
+// ============================================================================
+// 7. NUMERIC LITERALS - OTHER BASES
+// ============================================================================
+
+λ test_numbers_bases() -> !bool {
+    print("  [7/15] Non-decimal bases... ");
+
+    // Binary
+    ⌥ lex_one("0b1010") {
+        ?Token·Int(v, _) => assert(v == 10, "binary 1010 = 10"),
+        _ => panic("binary should lex"),
+    }
+
+    ⌥ lex_one("0b1111_0000") {
+        ?Token·Int(v, _) => assert(v == 240, "binary with underscore"),
+        _ => panic("binary underscore should lex"),
+    }
+
+    // Octal
+    ⌥ lex_one("0o755") {
+        ?Token·Int(v, _) => assert(v == 493, "octal 755 = 493"),
+        _ => panic("octal should lex"),
+    }
+
+    // Hexadecimal
+    ⌥ lex_one("0xFF") {
+        ?Token·Int(v, _) => assert(v == 255, "hex FF = 255"),
+        _ => panic("hex should lex"),
+    }
+
+    ⌥ lex_one("0xDEAD_BEEF") {
+        ?Token·Int(v, _) => assert(v == 3735928559, "hex DEADBEEF"),
+        _ => panic("hex deadbeef should lex"),
+    }
+
+    // Lowercase hex
+    ⌥ lex_one("0xabcdef") {
+        ?Token·Int(v, _) => assert(v == 11259375, "hex abcdef"),
+        _ => panic("hex lowercase should lex"),
+    }
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 8. STRING LITERALS
+// ============================================================================
+
+λ test_strings() -> !bool {
+    print("  [8/15] String literals... ");
+
+    // Basic string
+    ⌥ lex_one("\"hello\"") {
+        ?Token·String(s) => assert(s == "hello", "basic string"),
+        _ => panic("basic string should lex"),
+    }
+
+    // Empty string
+    ⌥ lex_one("\"\"") {
+        ?Token·String(s) => assert(s == "", "empty string"),
+        _ => panic("empty string should lex"),
+    }
+
+    // String with spaces
+    ⌥ lex_one("\"hello world\"") {
+        ?Token·String(s) => assert(s == "hello world", "string with space"),
+        _ => panic("string with space should lex"),
+    }
+
+    // Escape sequences
+    ⌥ lex_one("\"line1\\nline2\"") {
+        ?Token·String(s) => assert(s.contains("\n"), "newline escape"),
+        _ => panic("newline escape should lex"),
+    }
+
+    ⌥ lex_one("\"tab\\there\"") {
+        ?Token·String(s) => assert(s.contains("\t"), "tab escape"),
+        _ => panic("tab escape should lex"),
+    }
+
+    ⌥ lex_one("\"quote\\\"here\"") {
+        ?Token·String(s) => assert(s.contains("\""), "quote escape"),
+        _ => panic("quote escape should lex"),
+    }
+
+    ⌥ lex_one("\"back\\\\slash\"") {
+        ?Token·String(s) => assert(s.contains("\\"), "backslash escape"),
+        _ => panic("backslash escape should lex"),
+    }
+
+    println("PASS (7 cases)");
+    true
+}
+
+// ============================================================================
+// 9. CHARACTER LITERALS
+// ============================================================================
+
+λ test_chars() -> !bool {
+    print("  [9/15] Character literals... ");
+
+    // Basic char
+    ⌥ lex_one("'a'") {
+        ?Token·Char(c) => assert(c == 'a', "basic char"),
+        _ => panic("basic char should lex"),
+    }
+
+    // Digit char
+    ⌥ lex_one("'5'") {
+        ?Token·Char(c) => assert(c == '5', "digit char"),
+        _ => panic("digit char should lex"),
+    }
+
+    // Escape chars
+    ⌥ lex_one("'\\n'") {
+        ?Token·Char(c) => assert(c == '\n', "newline char"),
+        _ => panic("newline char should lex"),
+    }
+
+    ⌥ lex_one("'\\t'") {
+        ?Token·Char(c) => assert(c == '\t', "tab char"),
+        _ => panic("tab char should lex"),
+    }
+
+    ⌥ lex_one("'\\''") {
+        ?Token·Char(c) => assert(c == '\'', "quote char"),
+        _ => panic("quote char should lex"),
+    }
+
+    ⌥ lex_one("'\\\\'") {
+        ?Token·Char(c) => assert(c == '\\', "backslash char"),
+        _ => panic("backslash char should lex"),
+    }
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 10. IDENTIFIERS
+// ============================================================================
+
+λ test_identifiers() -> !bool {
+    print("  [10/15] Identifiers... ");
+
+    // Simple identifier
+    ⌥ lex_one("foo") {
+        ?Token·Ident(s) => assert(s == "foo", "simple ident"),
+        _ => panic("simple ident should lex"),
+    }
+
+    // Underscore prefix
+    ⌥ lex_one("_foo") {
+        ?Token·Ident(s) => assert(s == "_foo", "underscore prefix"),
+        _ => panic("underscore prefix should lex"),
+    }
+
+    // With numbers
+    ⌥ lex_one("foo123") {
+        ?Token·Ident(s) => assert(s == "foo123", "ident with numbers"),
+        _ => panic("ident with numbers should lex"),
+    }
+
+    // Mixed case
+    ⌥ lex_one("FooBar") {
+        ?Token·Ident(s) => assert(s == "FooBar", "mixed case"),
+        _ => panic("mixed case should lex"),
+    }
+
+    // All caps
+    ⌥ lex_one("FOO_BAR") {
+        ?Token·Ident(s) => assert(s == "FOO_BAR", "all caps"),
+        _ => panic("all caps should lex"),
+    }
+
+    // Single underscore is wildcard pattern, but _x is ident
+    ⌥ lex_one("_") {
+        ?Token·Underscore => {},
+        _ => panic("underscore should be Underscore token"),
+    }
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 11. MORPHEMES (GREEK LETTERS)
+// ============================================================================
+
+λ test_morphemes() -> !bool {
+    print("  [11/15] Morphemes (Greek letters)... ");
+
+    assert_token("τ", Token·Tau, "tau lowercase");
+    assert_token("Τ", Token·Tau, "tau uppercase");
+    assert_token("φ", Token·Phi, "phi lowercase");
+    assert_token("Φ", Token·Phi, "phi uppercase");
+    assert_token("σ", Token·Sigma, "sigma lowercase");
+    assert_token("Σ", Token·Sigma, "sigma uppercase");
+    assert_token("ρ", Token·Rho, "rho");
+    assert_token("λ", Token·Lambda, "lambda");
+    assert_token("Π", Token·Pi, "pi");
+    assert_token("α", Token·Alpha, "alpha");
+    assert_token("ω", Token·Omega, "omega lowercase");
+    assert_token("Ω", Token·Omega, "omega uppercase");
+    assert_token("μ", Token·Mu, "mu");
+    assert_token("χ", Token·Chi, "chi");
+    assert_token("ν", Token·Nu, "nu");
+    assert_token("ξ", Token·Xi, "xi");
+    assert_token("δ", Token·Delta, "delta");
+    assert_token("ε", Token·Epsilon, "epsilon");
+
+    println("PASS (18 cases)");
+    true
+}
+
+// ============================================================================
+// 12. MATHEMATICAL OPERATORS
+// ============================================================================
+
+λ test_math_operators() -> !bool {
+    print("  [12/15] Mathematical operators... ");
+
+    // Quantifiers
+    assert_token("∀", Token·ForAll, "forall");
+    assert_token("∃", Token·Exists, "exists");
+    assert_token("∈", Token·ElementOf, "element_of");
+    assert_token("∉", Token·NotElementOf, "not_element_of");
+
+    // Set operations
+    assert_token("∪", Token·Union, "union");
+    assert_token("∩", Token·Intersection, "intersection");
+    assert_token("⊂", Token·Subset, "subset");
+    assert_token("⊆", Token·SubsetEq, "subset_eq");
+    assert_token("⊃", Token·Superset, "superset");
+    assert_token("⊇", Token·SupersetEq, "superset_eq");
+
+    // Logic
+    assert_token("∧", Token·LogicAnd, "logic_and");
+    assert_token("∨", Token·LogicOr, "logic_or");
+    assert_token("¬", Token·LogicNot, "logic_not");
+    assert_token("⊻", Token·LogicXor, "logic_xor");
+    assert_token("⊤", Token·Top, "top");
+    assert_token("⊥", Token·Bottom, "bottom");
+
+    // Analysis
+    assert_token("∫", Token·Integral, "integral");
+    assert_token("∂", Token·Partial, "partial");
+    assert_token("√", Token·Sqrt, "sqrt");
+    assert_token("∇", Token·Nabla, "nabla");
+
+    println("PASS (20 cases)");
+    true
+}
+
+// ============================================================================
+// 13. APL-INSPIRED OPERATORS
+// ============================================================================
+
+λ test_apl_operators() -> !bool {
+    print("  [13/15] APL-inspired operators... ");
+
+    assert_token("⍋", Token·GradeUp, "grade_up");
+    assert_token("⍒", Token·GradeDown, "grade_down");
+    assert_token("⌽", Token·Rotate, "rotate");
+    assert_token("↻", Token·CycleArrow, "cycle");
+    assert_token("⌺", Token·QuadDiamond, "windows");
+    assert_token("⊞", Token·SquaredPlus, "chunks");
+    assert_token("⍳", Token·Iota, "iota");
+
+    // Category theory
+    assert_token("∘", Token·Compose, "compose");
+    assert_token("⊗", Token·Tensor, "tensor");
+    assert_token("⊕", Token·DirectSum, "direct_sum");
+
+    // Data operations
+    assert_token("⋈", Token·Bowtie, "bowtie");
+
+    println("PASS (11 cases)");
+    true
+}
+
+// ============================================================================
+// 14. COMMENTS AND WHITESPACE
+// ============================================================================
+
+λ test_comments_whitespace() -> !bool {
+    print("  [14/15] Comments and whitespace... ");
+
+    // Line comment - lexer typically skips, but should not error
+    ≔ tokens = lex_all("// this is a comment\n42");
+    // Should produce just the Int token (comments may or may not be kept)
+    assert(tokens.len() >= 1, "should lex after comment");
+
+    // Multiple whitespace types
+    ≔ tokens2 = lex_all("  \t\n  42");
+    assert(tokens2.len() >= 1, "whitespace before token");
+
+    // Empty input
+    ≔ tokens3 = lex_all("");
+    assert(tokens3.len() == 0, "empty produces no tokens");
+
+    // Only whitespace
+    ≔ tokens4 = lex_all("   \t\n  ");
+    assert(tokens4.len() == 0, "only whitespace");
+
+    // Multiple tokens with whitespace
+    ≔ tokens5 = lex_all("foo bar baz");
+    assert(tokens5.len() == 3, "three idents");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 15. TOKEN SEQUENCES
+// ============================================================================
+
+λ test_token_sequences() -> !bool {
+    print("  [15/15] Token sequences... ");
+
+    // Function signature
+    ≔ tokens1 = lex_all("λ main() -> i32");
+    assert(tokens1.len() == 7, "λ signature tokens");
+
+    // Let binding
+    ≔ tokens2 = lex_all("≔ x: i32 = 42;");
+    assert(tokens2.len() == 7, "≔ binding tokens");
+
+    // If expression
+    ≔ tokens3 = lex_all("⎇ x > 0 { 1 } ⎉ { 0 }");
+    assert(tokens3.len() == 13, "⎇ expression tokens");
+
+    // Pipeline
+    ≔ tokens4 = lex_all("data|τ{f}|φ{p}");
+    assert(tokens4.len() >= 8, "pipeline tokens");
+
+    // Struct definition
+    ≔ tokens5 = lex_all("Σ Point { x: i32, y: i32 }");
+    assert(tokens5.len() == 12, "Σ tokens");
+
+    // Match expression
+    ≔ tokens6 = lex_all("⌥ x { Some(v) => v, None => 0 }");
+    assert(tokens6.len() >= 14, "⌥ tokens");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// MAIN TEST RUNNER
+// ============================================================================
+
+☉ λ main() -> !i32 {
+    println("=== Lexer Test Suite ===");
+    println("");
+
+    ≔ Δ passed = 0;
+    ≔ Δ failed = 0;
+
+    ⎇ test_single_char_tokens() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_operators() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_keywords_definitions() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_keywords_control() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_keywords_other() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_numbers_decimal() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_numbers_bases() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_strings() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_chars() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_identifiers() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_morphemes() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_math_operators() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_apl_operators() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_comments_whitespace() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_token_sequences() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("=== Results ===");
+    println(format!("Passed: {}/15 test groups", passed));
+    println(format!("Total test cases: ~134"));
+
+    ⎇ failed > 0 {
+        println(format!("FAILED: {} groups", failed));
+        ⤺ 1;
+    }
+
+    println("");
+    println("All lexer tests passed!");
+    ⤺ 0;
+}

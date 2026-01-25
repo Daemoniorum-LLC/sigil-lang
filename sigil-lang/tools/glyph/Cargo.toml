@@ -1,0 +1,21 @@
+[package]
+name = "sigil-glyph"
+version = "0.1.0"
+edition = "2021"
+description = "Glyph - Code formatter for the Sigil programming language"
+authors = ["Daemoniorum, Inc."]
+license = "MIT"
+
+[[bin]]
+name = "sigil-glyph"
+path = "src/main.rs"
+
+[dependencies]
+# Sigil parser
+sigil-parser = { path = "../../parser", default-features = false }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# File handling
+walkdir = "2"

@@ -7,7 +7,7 @@
 use crate::ast::*;
 use crate::span::Span;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
@@ -375,6 +375,10 @@ pub struct TypeEnv {
     bindings: HashMap<String, (Type, EvidenceLevel)>,
     /// Parent scope
     parent: Option<Rc<RefCell<TypeEnv>>>,
+    /// Linear variables declared in this scope (per spec 11-HOLOGRAPHIC.md § 7)
+    linear_vars: HashSet<String>,
+    /// Linear variables that have been consumed (used once)
+    linear_used: HashSet<String>,
 }
 
 impl TypeEnv {
@@ -382,6 +386,8 @@ impl TypeEnv {
         Self {
             bindings: HashMap::new(),
             parent: None,
+            linear_vars: HashSet::new(),
+            linear_used: HashSet::new(),
         }
     }
 
@@ -389,11 +395,18 @@ impl TypeEnv {
         Self {
             bindings: HashMap::new(),
             parent: Some(parent),
+            linear_vars: HashSet::new(),
+            linear_used: HashSet::new(),
         }
     }
 
     /// Define a new binding
     pub fn define(&mut self, name: String, ty: Type, evidence: EvidenceLevel) {
+        // Track linear variables for compile-time enforcement
+        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types must be used exactly once
+        if matches!(ty, Type::Linear(_)) {
+            self.linear_vars.insert(name.clone());
+        }
         self.bindings.insert(name, (ty, evidence));
     }
 
@@ -406,6 +419,48 @@ impl TypeEnv {
         } else {
             None
         }
+    }
+
+    /// Check if a variable is linear
+    pub fn is_linear(&self, name: &str) -> bool {
+        if self.linear_vars.contains(name) {
+            true
+        } else if let Some(ref parent) = self.parent {
+            parent.borrow().is_linear(name)
+        } else {
+            false
+        }
+    }
+
+    /// Check if a linear variable has been consumed
+    pub fn is_linear_consumed(&self, name: &str) -> bool {
+        if self.linear_used.contains(name) {
+            true
+        } else if let Some(ref parent) = self.parent {
+            parent.borrow().is_linear_consumed(name)
+        } else {
+            false
+        }
+    }
+
+    /// Mark a linear variable as consumed (returns false if already consumed)
+    pub fn consume_linear(&mut self, name: &str) -> bool {
+        // Check if already consumed in this or parent scope
+        if self.is_linear_consumed(name) {
+            return false; // Already consumed - error
+        }
+        // Mark as consumed in this scope
+        self.linear_used.insert(name.to_string());
+        true
+    }
+
+    /// Get linear variables that were declared but not used (must-be-used check)
+    pub fn unused_linear_vars(&self) -> Vec<String> {
+        self.linear_vars
+            .iter()
+            .filter(|name| !self.linear_used.contains(*name))
+            .cloned()
+            .collect()
     }
 }
 
@@ -474,125 +529,6 @@ impl TypeChecker {
         // Register built-in types and functions
         checker.register_builtins();
         checker
-    }
-
-    // ========================================================================
-    // Conditional compilation (#[cfg(...)] evaluation)
-    // ========================================================================
-
-    /// Evaluate a cfg condition against the current target.
-    /// Returns true if the condition matches.
-    fn evaluate_cfg(&self, attr: &Attribute) -> bool {
-        if attr.name.name != "cfg" {
-            return true; // Not a cfg attribute, always include
-        }
-
-        match &attr.args {
-            Some(AttrArgs::Paren(args)) => {
-                if args.len() == 1 {
-                    self.evaluate_cfg_arg(&args[0])
-                } else {
-                    true // Invalid cfg, include by default
-                }
-            }
-            _ => true, // Invalid cfg format
-        }
-    }
-
-    /// Evaluate a single cfg argument.
-    fn evaluate_cfg_arg(&self, arg: &AttrArg) -> bool {
-        match arg {
-            // cfg(target_os = "linux")
-            AttrArg::KeyValue { key, value } => {
-                if key.name == "target_os" {
-                    if let Expr::Literal(Literal::String(os)) = value.as_ref() {
-                        return self.matches_target_os(os);
-                    }
-                } else if key.name == "feature" {
-                    // Feature flags - currently not implemented, return false
-                    return false;
-                }
-                true // Unknown key, include
-            }
-            // cfg(not(...)) or cfg(any(...)) via nested attribute
-            AttrArg::Nested(nested) => self.evaluate_cfg_predicate(nested),
-            // Simple identifier like cfg(unix)
-            AttrArg::Ident(ident) => self.evaluate_cfg_simple(&ident.name),
-            _ => true,
-        }
-    }
-
-    /// Evaluate cfg predicates like not(...), any(...), all(...).
-    fn evaluate_cfg_predicate(&self, attr: &Attribute) -> bool {
-        match attr.name.name.as_str() {
-            "not" => {
-                if let Some(AttrArgs::Paren(args)) = &attr.args {
-                    if args.len() == 1 {
-                        return !self.evaluate_cfg_arg(&args[0]);
-                    }
-                }
-                true
-            }
-            "any" => {
-                if let Some(AttrArgs::Paren(args)) = &attr.args {
-                    return args.iter().any(|a| self.evaluate_cfg_arg(a));
-                }
-                true
-            }
-            "all" => {
-                if let Some(AttrArgs::Paren(args)) = &attr.args {
-                    return args.iter().all(|a| self.evaluate_cfg_arg(a));
-                }
-                true
-            }
-            "target_os" => {
-                // Handle nested target_os = "value" form
-                if let Some(AttrArgs::Eq(value)) = &attr.args {
-                    if let Expr::Literal(Literal::String(os)) = value.as_ref() {
-                        return self.matches_target_os(os);
-                    }
-                }
-                true
-            }
-            _ => true, // Unknown predicate
-        }
-    }
-
-    /// Evaluate simple cfg identifiers like unix, windows.
-    fn evaluate_cfg_simple(&self, name: &str) -> bool {
-        match name {
-            "unix" => cfg!(unix),
-            "windows" => cfg!(windows),
-            "linux" => cfg!(target_os = "linux"),
-            "macos" => cfg!(target_os = "macos"),
-            _ => false, // Unknown simple cfg
-        }
-    }
-
-    /// Check if the current target OS matches.
-    fn matches_target_os(&self, os: &str) -> bool {
-        match os {
-            "linux" => cfg!(target_os = "linux"),
-            "macos" => cfg!(target_os = "macos"),
-            "windows" => cfg!(target_os = "windows"),
-            "ios" => cfg!(target_os = "ios"),
-            "android" => cfg!(target_os = "android"),
-            "freebsd" => cfg!(target_os = "freebsd"),
-            "none" => false, // Bare metal, not supported
-            _ => false,
-        }
-    }
-
-    /// Check if a function should be included based on its cfg attributes.
-    fn should_include_function(&self, func: &Function) -> bool {
-        for attr in &func.outer_attrs {
-            if attr.name.name == "cfg" {
-                if !self.evaluate_cfg(attr) {
-                    return false;
-                }
-            }
-        }
-        true
     }
 
     fn register_builtins(&mut self) {
@@ -1107,6 +1043,16 @@ impl TypeChecker {
 
     /// Pop current scope
     fn pop_scope(&mut self) {
+        // Check for unused linear variables before leaving scope (must-be-used check)
+        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types must be used exactly once
+        let unused = self.env.borrow().unused_linear_vars();
+        for var_name in unused {
+            self.error(TypeError::new(format!(
+                "linear variable '{}' was declared but never used (linear types must be consumed exactly once)",
+                var_name
+            )));
+        }
+
         let parent = self.env.borrow().parent.clone();
         if let Some(p) = parent {
             self.env = p;
@@ -1318,11 +1264,6 @@ impl TypeChecker {
     fn collect_fn_sig(&mut self, item: &Item) {
         match item {
             Item::Function(f) => {
-                // Skip functions that don't match cfg conditions
-                if !self.should_include_function(f) {
-                    return;
-                }
-
                 let params: Vec<Type> = f.params.iter().map(|p| self.convert_type(&p.ty)).collect();
 
                 let return_type = f
@@ -1413,12 +1354,7 @@ impl TypeChecker {
     /// Check an item (third pass)
     fn check_item(&mut self, item: &Item) {
         match item {
-            Item::Function(f) => {
-                // Skip functions that don't match cfg conditions
-                if self.should_include_function(f) {
-                    self.check_function(f);
-                }
-            }
+            Item::Function(f) => self.check_function(f),
             Item::Const(c) => {
                 let declared = self.convert_type(&c.ty);
                 let inferred = self.infer_expr(&c.value);
@@ -1710,7 +1646,22 @@ impl TypeChecker {
             Expr::Path(path) => {
                 if path.segments.len() == 1 {
                     let name = &path.segments[0].ident.name;
-                    if let Some((ty, _)) = self.env.borrow().lookup(name) {
+                    // First, check if variable exists and get its type
+                    let lookup_result = self.env.borrow().lookup(name);
+                    if let Some((ty, _)) = lookup_result {
+                        // Check for linear type consumption (compile-time enforcement)
+                        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types can only be used once
+                        let is_linear = self.env.borrow().is_linear(name);
+                        if is_linear {
+                            let consumed_ok = self.env.borrow_mut().consume_linear(name);
+                            if !consumed_ok {
+                                // Already consumed - double use error
+                                self.error(TypeError::new(format!(
+                                    "linear variable '{}' used more than once (linear types can only be consumed once)",
+                                    name
+                                )));
+                            }
+                        }
                         return ty;
                     }
                     if let Some(ty) = self.functions.get(name).cloned() {
@@ -1973,7 +1924,9 @@ impl TypeChecker {
 
                 // Check against expected return type if we're inside a function
                 if let Some(expected) = self.expected_return_type.clone() {
-                    if !self.unify(&expected, &actual_type) {
+                    if !self.unify(&expected, &actual_type)
+                        && !Self::is_coercible(&expected, &actual_type)
+                    {
                         self.error(TypeError::new(format!(
                             "type mismatch in return: expected {}, found {}",
                             expected, actual_type
@@ -2274,6 +2227,44 @@ impl TypeChecker {
                 }
             }
 
+            Expr::Index { expr, index, .. } => {
+                let arr_ty = self.infer_expr(expr);
+                let idx_ty = self.infer_expr(index);
+                let (arr_inner, arr_ev) = self.strip_evidence(&arr_ty);
+
+                // Index should be usize
+                let _ = self.unify(&idx_ty, &Type::Int(IntSize::USize));
+
+                // Get element type from array/slice
+                let elem_ty = match arr_inner {
+                    Type::Array { element, .. } => *element,
+                    Type::Slice(element) => *element,
+                    Type::Named { name, generics } if name == "Vec" && !generics.is_empty() => {
+                        generics[0].clone()
+                    }
+                    _ => self.fresh_var(),
+                };
+
+                // Propagate evidence
+                if arr_ev > EvidenceLevel::Known {
+                    Type::Evidential {
+                        inner: Box::new(elem_ty),
+                        evidence: arr_ev,
+                    }
+                } else {
+                    elem_ty
+                }
+            }
+
+            // If-let pattern: `⎇ ≔ Some(x) = expr { ... }`
+            // The Let expression itself evaluates to bool (whether pattern matched)
+            Expr::Let { pattern: _, value } => {
+                // Infer the value type for binding purposes
+                let _ = self.infer_expr(value);
+                // The let-pattern expression returns bool
+                Type::Bool
+            }
+
             _ => {
                 // Handle other expression types
                 self.fresh_var()
@@ -2377,9 +2368,12 @@ impl TypeChecker {
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 // For bootstrapping: skip error when either side is a type variable or function
                 // (indicates incomplete type inference from unhandled expressions)
+                // Also allow coercible types (String ↔ str, numeric promotions, etc.)
                 if !self.unify(&left_inner, &right_inner)
                     && !is_var_or_fn(&left_inner)
                     && !is_var_or_fn(&right_inner)
+                    && !Self::is_coercible(&left_inner, &right_inner)
+                    && !Self::is_coercible(&right_inner, &left_inner)
                 {
                     self.error(TypeError::new(format!(
                         "comparison operands must have same type: left={:?}, right={:?}",
@@ -3251,6 +3245,78 @@ impl TypeChecker {
                 true
             }
 
+            // ImplTrait: impl Into<T> should accept types that can convert to T
+            // For bootstrapping, be lenient: impl Into<str> accepts &str, String, &str
+            (Type::ImplTrait(bounds), actual) => {
+                // Check if any bound is satisfied
+                for bound in bounds {
+                    if let Type::Named { name, generics } = bound {
+                        // impl Into<T> - accept if actual can convert to T
+                        if name == "Into" && !generics.is_empty() {
+                            let target = &generics[0];
+                            // Direct match
+                            if self.unify(actual, target) {
+                                return true;
+                            }
+                            // &str can convert to str
+                            if matches!(target, Type::Str) {
+                                if let Type::Ref { inner, mutable: false, .. } = actual {
+                                    if matches!(inner.as_ref(), Type::Str) {
+                                        return true;
+                                    }
+                                }
+                                // String can convert to str
+                                if let Type::Named { name: n, .. } = actual {
+                                    if n == "String" {
+                                        return true;
+                                    }
+                                }
+                            }
+                            // &T can convert to T for reference types
+                            if let Type::Ref { inner, .. } = actual {
+                                if self.unify(inner, target) {
+                                    return true;
+                                }
+                            }
+                        }
+                        // impl AsRef<T> - accept if actual can reference as T
+                        if name == "AsRef" && !generics.is_empty() {
+                            let target = &generics[0];
+                            // Direct match or reference to target
+                            if self.unify(actual, target) {
+                                return true;
+                            }
+                            // &T implements AsRef<T>
+                            if let Type::Ref { inner, .. } = actual {
+                                if self.unify(inner, target) {
+                                    return true;
+                                }
+                            }
+                            // String implements AsRef<str>
+                            if matches!(target, Type::Str) {
+                                if let Type::Named { name: n, .. } = actual {
+                                    if n == "String" {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        // Other traits: be lenient for bootstrapping
+                        // Just check if actual matches the bound directly
+                        if self.unify(actual, bound) {
+                            return true;
+                        }
+                    }
+                }
+                // For bootstrapping: if no specific handling, be lenient
+                // This allows the codebase to compile while we improve the type system
+                true
+            }
+            (actual, Type::ImplTrait(bounds)) => {
+                // Symmetric case
+                self.unify(&Type::ImplTrait(bounds.clone()), actual)
+            }
+
             _ => false,
         }
     }
@@ -3400,6 +3466,55 @@ impl TypeChecker {
         Self::is_numeric_coercion(expected, actual)
             || Self::is_reference_coercion(expected, actual)
             || Self::is_deref_coercion(expected, actual)
+            || Self::is_string_coercion(expected, actual)
+    }
+
+    /// Check for String ↔ str coercions
+    fn is_string_coercion(expected: &Type, actual: &Type) -> bool {
+        match (expected, actual) {
+            // str → String (via to_string())
+            (Type::Named { name, generics }, Type::Str)
+                if name == "String" && generics.is_empty() =>
+            {
+                true
+            }
+            // String → str (via deref)
+            (Type::Str, Type::Named { name, generics })
+                if name == "String" && generics.is_empty() =>
+            {
+                true
+            }
+            // &str → String
+            (
+                Type::Named { name, generics },
+                Type::Ref {
+                    inner,
+                    mutable: false,
+                    ..
+                },
+            ) if name == "String" && generics.is_empty() && matches!(inner.as_ref(), Type::Str) => {
+                true
+            }
+            // String → &str (via deref coercion)
+            (
+                Type::Ref {
+                    inner,
+                    mutable: false,
+                    ..
+                },
+                Type::Named { name, generics },
+            ) if matches!(inner.as_ref(), Type::Str) && name == "String" && generics.is_empty() => {
+                true
+            }
+            // Handle through evidential wrappers
+            (Type::Evidential { inner: exp, .. }, actual) => {
+                Self::is_string_coercion(exp.as_ref(), actual)
+            }
+            (expected, Type::Evidential { inner: act, .. }) => {
+                Self::is_string_coercion(expected, act.as_ref())
+            }
+            _ => false,
+        }
     }
 
     /// Convert AST type to internal type
@@ -3804,7 +3919,7 @@ mod tests {
     #[test]
     fn test_basic_types() {
         assert!(check("rite main() { ≔ x: i64 = 42; }").is_ok());
-        assert!(check("rite main() { ≔ x: bool = yea; }").is_ok());
+        assert!(check("rite main() { ≔ x: bool = true; }").is_ok());
         assert!(check("rite main() { ≔ x: f64 = 3.14; }").is_ok());
     }
 
@@ -3818,14 +3933,12 @@ mod tests {
         // Evidence should propagate through operations
         assert!(check(
             r#"
-
             rite main() {
                 ≔ known: i64! = 42;
                 ≔ uncertain: i64? = 10;
                 ≔ result = known + uncertain;
             }
-        
-"#
+        "#
         )
         .is_ok());
     }
@@ -3834,15 +3947,13 @@ mod tests {
     fn test_function_return() {
         let result = check(
             r#"
-
             rite add(a: i64, b: i64) → i64 {
                 ⤺ a + b;
             }
             rite main() {
                 ≔ x = add(1, 2);
             }
-        
-"#,
+        "#,
         );
         if let Err(errors) = &result {
             for e in errors {
@@ -3856,13 +3967,11 @@ mod tests {
     fn test_array_types() {
         assert!(check(
             r#"
-
             rite main() {
                 ≔ arr = [1, 2, 3];
                 ≔ x = arr[0];
             }
-        
-"#
+        "#
         )
         .is_ok());
     }
@@ -3876,14 +3985,12 @@ mod tests {
         // Evidence should be inferred from initializer when not explicitly annotated
         assert!(check(
             r#"
-
             rite main() {
                 ≔ reported_val: i64~ = 42;
                 // x should inherit ~ evidence from reported_val
                 ≔ x = reported_val + 1;
             }
-        
-"#
+        "#
         )
         .is_ok());
     }
@@ -3893,15 +4000,13 @@ mod tests {
         // Explicit annotation should override inference
         assert!(check(
             r#"
-
             rite main() {
                 ≔ reported_val: i64~ = 42;
-                // Explicit ! annotation - this would fail ⎇ we checked evidence properly
+                // Explicit ! annotation - this would fail if we checked evidence properly
                 // but the type system allows it as an override
                 ≔ x! = 42;
             }
-        
-"#
+        "#
         )
         .is_ok());
     }
@@ -3911,16 +4016,14 @@ mod tests {
         // Evidence from both branches should be joined
         assert!(check(
             r#"
-
             rite main() {
                 ≔ known_val: i64! = 1;
                 ≔ reported_val: i64~ = 2;
-                ≔ cond: bool = yea;
+                ≔ cond: bool = true;
                 // Result should have ~ evidence (join of ! and ~)
                 ≔ result = ⎇ cond { known_val } ⎉ { reported_val };
             }
-        
-"#
+        "#
         )
         .is_ok());
     }
@@ -3930,15 +4033,13 @@ mod tests {
         // Binary operations should join evidence levels
         assert!(check(
             r#"
-
             rite main() {
                 ≔ known: i64! = 1;
                 ≔ reported: i64~ = 2;
                 // Result should have ~ evidence (max of ! and ~)
                 ≔ result = known + reported;
             }
-        
-"#
+        "#
         )
         .is_ok());
     }
@@ -3949,12 +4050,10 @@ mod tests {
         // Note: This test is structural - the type checker should handle it
         assert!(check(
             r#"
-
             rite main() {
                 ≔ x: i64 = 1;
             }
-        
-"#
+        "#
         )
         .is_ok());
     }

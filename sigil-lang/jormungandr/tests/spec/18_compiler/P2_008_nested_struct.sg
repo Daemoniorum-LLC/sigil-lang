@@ -1,0 +1,26 @@
+// Test: Deeply nested Σ
+// Spec: 18-COMPILER.md § 4.2 Structs
+// Priority: P2 - Enhancement
+
+Σ Level3 {
+    value: !i32,
+}
+
+Σ Level2 {
+    l3: Level3,
+}
+
+Σ Level1 {
+    l2: Level2,
+}
+
+λ main() {
+    ≔ obj = Level1 {
+        l2: Level2 {
+            l3: Level3 {
+                value: 42,
+            },
+        },
+    };
+    println(obj.l2.l3.value);
+}

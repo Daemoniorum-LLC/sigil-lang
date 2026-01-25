@@ -1,0 +1,14 @@
+// Test: #[derive(Default)] attribute
+// Spec: 07-METAPROGRAMMING.md § 2.1 Derive Macros
+// Priority: P1 - Standard Feature
+
+#[derive(Default)]
+☉ Σ Point {
+    x: !i32,
+    y: !i32
+}
+
+λ main() {
+    // Test that derive(Default) is recognized
+    println("derive recognized");
+}

@@ -1,0 +1,22 @@
+// Test: Nested Σ field access
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § CG-001 Nested Field Access
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate nested Σ field access generates correct C.
+//
+// Expected behavior:
+// Should print 42
+
+☉ Σ Inner {
+    value: !i32
+}
+
+☉ Σ Outer {
+    inner: !Inner
+}
+
+λ main() {
+    ≔ o: !Outer = Outer { inner: Inner { value: 42 } };
+    println(o.inner.value);
+}

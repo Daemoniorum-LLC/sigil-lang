@@ -1,0 +1,18 @@
+// Test: Immutable borrowing
+// Spec: 04-MEMORY.md § 3.1 Borrowing
+// Priority: P0
+//
+// Purpose:
+// Validates that immutable references (&T) work correctly.
+//
+// Expected behavior:
+// Should compile and print 42
+
+λ read_value(x: &!i32) -> !i32 {
+    *x
+}
+
+λ main() {
+    ≔ val: !i32 = 42;
+    println(read_value(&val));
+}

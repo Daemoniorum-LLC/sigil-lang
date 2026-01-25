@@ -391,9 +391,12 @@ pub mod jit {
                             stat.name.name
                         );
                     }
-                    ExternItem::Type(_) => {
-                        // Type aliases are handled at parse time for JIT
-                        // No additional codegen needed
+                    ExternItem::Type(ty) => {
+                        // TODO: Implement extern type aliases
+                        eprintln!(
+                            "Warning: extern type '{}' not yet implemented",
+                            ty.name.name
+                        );
                     }
                 }
             }
@@ -3667,7 +3670,7 @@ pub mod jit {
     /// Shader structure:
     /// ```wgsl
     /// @compute @workgroup_size(256)
-    /// rite main(@builtin(global_invocation_id) id: vec3<u32>) {
+    /// fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     ///     let idx = id.x;
     ///     output[idx] = transform(input[idx]);
     /// }
@@ -3973,7 +3976,6 @@ pub mod jit {
         #[test]
         fn test_extern_block_parsing_and_declaration() {
             let source = r#"
-
                 extern "C" {
                     rite abs(x: c_int) → c_int;
                     rite strlen(s: *◆ c_char) → usize;
@@ -3982,8 +3984,7 @@ pub mod jit {
                 rite main() → i64 {
                     42
                 }
-            
-"#;
+            "#;
 
             let mut compiler = JitCompiler::new().unwrap();
             let result = compiler.compile(source);
@@ -4019,7 +4020,6 @@ pub mod jit {
         #[test]
         fn test_extern_variadic_function() {
             let source = r#"
-
                 extern "C" {
                     rite printf(fmt: *◆ c_char, ...) → c_int;
                 }
@@ -4027,8 +4027,7 @@ pub mod jit {
                 rite main() → i64 {
                     0
                 }
-            
-"#;
+            "#;
 
             let mut compiler = JitCompiler::new().unwrap();
             let result = compiler.compile(source);
@@ -4045,7 +4044,6 @@ pub mod jit {
         #[test]
         fn test_extern_c_abi_only() {
             let source = r#"
-
                 extern "Rust" {
                     rite some_func(x: i32) → i32;
                 }
@@ -4053,8 +4051,7 @@ pub mod jit {
                 rite main() → i64 {
                     0
                 }
-            
-"#;
+            "#;
 
             let mut compiler = JitCompiler::new().unwrap();
             let result = compiler.compile(source);
@@ -4079,14 +4076,12 @@ pub mod jit {
             for (type_name, expected_cl_type) in test_cases {
                 let source = format!(
                     r#"
-
                     extern "C" {{
                         rite test_func(x: {}) → {};
                     }}
 
                     rite main() → i64 {{ 0 }}
-                
-"#,
+                "#,
                     type_name, type_name
                 );
 

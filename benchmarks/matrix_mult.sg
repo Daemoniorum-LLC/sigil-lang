@@ -1,20 +1,20 @@
 // Benchmark: Matrix Multiplication (flattened)
 // Tests: Nested loops, array indexing, arithmetic
 
-fn matrix_mult(size: i64) -> i64 {
-    let n = size;
-    let total = n * n;
+λ matrix_mult(size: i64) -> i64 {
+    ≔ n = size;
+    ≔ total = n * n;
 
     // Create flattened matrices (row-major)
-    let mut a: Vec<i64> = Vec::new();
-    let mut b: Vec<i64> = Vec::new();
-    let mut c: Vec<i64> = Vec::new();
+    ≔ Δ a: Vec<i64> = Vec·new();
+    ≔ Δ b: Vec<i64> = Vec·new();
+    ≔ Δ c: Vec<i64> = Vec·new();
 
     // Initialize
-    let mut idx = 0;
-    while idx < total {
-        let i = idx / n;
-        let j = idx % n;
+    ≔ Δ idx = 0;
+    ⟳ idx < total {
+        ≔ i = idx / n;
+        ≔ j = idx % n;
         a.push(i + j);
         b.push(i * j);
         c.push(0);
@@ -22,19 +22,19 @@ fn matrix_mult(size: i64) -> i64 {
     }
 
     // Multiply: c[i,j] = sum(a[i,k] * b[k,j])
-    let mut i = 0;
-    while i < n {
-        let mut j = 0;
-        while j < n {
-            let mut sum = 0;
-            let mut k = 0;
-            while k < n {
-                let a_idx = i * n + k;
-                let b_idx = k * n + j;
+    ≔ Δ i = 0;
+    ⟳ i < n {
+        ≔ Δ j = 0;
+        ⟳ j < n {
+            ≔ Δ sum = 0;
+            ≔ Δ k = 0;
+            ⟳ k < n {
+                ≔ a_idx = i * n + k;
+                ≔ b_idx = k * n + j;
                 sum = sum + a[a_idx] * b[b_idx];
                 k = k + 1;
             }
-            let c_idx = i * n + j;
+            ≔ c_idx = i * n + j;
             c[c_idx] = sum;
             j = j + 1;
         }
@@ -45,7 +45,7 @@ fn matrix_mult(size: i64) -> i64 {
     c[total - 1]
 }
 
-fn main() {
-    let result = matrix_mult(100);
+λ main() {
+    ≔ result = matrix_mult(100);
     println(result);
 }

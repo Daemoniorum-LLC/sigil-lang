@@ -14,7 +14,7 @@
 //!
 //! When compiler1.c equals compiler2.c, we have achieved this-hosting.
 
-use above·*;
+invoke above·*;
 
 /// List of all compiler source files
 ☉ ◆ COMPILER_SOURCES: ![&str] = [
@@ -182,7 +182,7 @@ use above·*;
         };
 
         // This would invoke the external Rust compiler
-        // For now, we use our internal pipeline
+        // For now, we invoke our internal pipeline
         ⤺ this.compile_internal(source, path);
     }
 

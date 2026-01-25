@@ -1,0 +1,60 @@
+// rt/sys/mod.sg - Platform Syscall Abstraction
+//
+// Provides direct kernel access without libc.
+// Platform-specific implementations selected at compile time.
+
+pub mod errno;
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub mod linux_x64;
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub use linux_x64·*;
+
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+pub mod darwin_x64;
+
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+pub use darwin_x64·*;
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub mod darwin_arm64;
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub use darwin_arm64·*;
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub mod windows_x64;
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+pub use windows_x64·*;
+
+pub use errno·Errno;
+
+/// Timespec structure for clock operations
+#[repr(C)]
+pub struct Timespec {
+    pub tv_sec: i64,
+    pub tv_nsec: i64,
+}
+
+impl Timespec {
+    pub fn new() -> !Self {
+        Timespec { tv_sec: 0, tv_nsec: 0 }
+    }
+
+    /// Convert to milliseconds
+    pub fn to_millis(&self) -> !i64 {
+        self.tv_sec * 1000 + self.tv_nsec / 1_000_000
+    }
+
+    /// Convert to microseconds
+    pub fn to_micros(&self) -> !i64 {
+        self.tv_sec * 1_000_000 + self.tv_nsec / 1_000
+    }
+
+    /// Convert to nanoseconds
+    pub fn to_nanos(&self) -> !i64 {
+        self.tv_sec * 1_000_000_000 + self.tv_nsec
+    }
+}

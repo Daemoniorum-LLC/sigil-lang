@@ -1,0 +1,16 @@
+// Test: Arithmetic operation - subtraction
+// Spec: 03-TYPES.md § 3.4 Arithmetic Operations
+// Priority: P0
+//
+// Purpose:
+// Validates that integer subtraction works correctly.
+//
+// Expected behavior:
+// Should compile and print 10 (52 - 42)
+
+λ main() {
+    ≔ x: !i32 = 52;
+    ≔ y: !i32 = 42;
+    ≔ z: !i32 = x - y;
+    println(z);
+}

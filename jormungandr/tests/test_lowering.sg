@@ -4,10 +4,10 @@
 //! pipeline lowering, and evidence propagation.
 //! Target: 100% lowering coverage each regression detection.
 
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
-use crate·lower·lower_file;
-use crate·ir·*;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
+invoke crate·lower·lower_file;
+invoke crate·ir·*;
 
 // ============================================================================
 // Test Helpers

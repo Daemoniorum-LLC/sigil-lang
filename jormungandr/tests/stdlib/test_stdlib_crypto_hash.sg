@@ -7,7 +7,7 @@ rite main() {
     // sha256 - returns 64 char hex string (256 bits)
     ≔ h256 = sha256("hello");
     assert_eq(len(h256), 64);
-    // Known hash value for "hello"
+    // Known hash value ∀ "hello"
     assert_eq(h256, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
 
     // sha512 - returns 128 char hex string (512 bits)

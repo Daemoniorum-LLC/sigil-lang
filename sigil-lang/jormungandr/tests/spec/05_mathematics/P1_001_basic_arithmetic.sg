@@ -1,0 +1,29 @@
+// Test: Basic arithmetic operations
+// Spec: 05-MATHEMATICS.md § 1.1 Arithmetic
+// Priority: P1 - Standard Feature
+
+λ main() {
+    // Addition
+    ≔ a: !i32 = 10 + 5;
+    println(a);
+
+    // Subtraction
+    ≔ b: !i32 = 10 - 3;
+    println(b);
+
+    // Multiplication
+    ≔ c: !i32 = 6 * 7;
+    println(c);
+
+    // Division
+    ≔ d: !i32 = 20 / 4;
+    println(d);
+
+    // Float arithmetic
+    ≔ e: !f64 = 3.5 + 2.5;
+    println(e);
+
+    // Negative numbers
+    ≔ f: !i32 = -5 + 3;
+    println(f);
+}

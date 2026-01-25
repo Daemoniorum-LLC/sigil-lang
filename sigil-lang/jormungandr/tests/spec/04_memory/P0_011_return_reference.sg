@@ -1,0 +1,19 @@
+// Test: Returning a reference from function
+// Spec: 04-MEMORY.md § 3.4 Reference Returns
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate functions can ⤺ references.
+//
+// Expected behavior:
+// Should print 42
+
+λ get_ref(x: &!i32) -> &!i32 {
+    x
+}
+
+λ main() {
+    ≔ val: !i32 = 42;
+    ≔ r: &!i32 = get_ref(&val);
+    println(*r);
+}

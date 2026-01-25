@@ -1,0 +1,11 @@
+// Test: Keyword 'Θ' ∀ Θ definitions
+// Spec: 01-LEXICAL.md § 2.2 Keywords
+// Priority: P0
+
+☉ Θ Show { λ show(&self) -> !i32; }
+☉ Σ X { v: !i32 }
+⊢ Show ∀ X { λ show(&self) -> !i32 { self.v } }
+
+λ main() {
+    println(X { v: 42 }.show());
+}

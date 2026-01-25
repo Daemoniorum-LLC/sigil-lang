@@ -1,0 +1,15 @@
+// Test: Loop with ⊗
+// Spec: 02-SYNTAX.md § 5.4 Loop
+// Priority: P2 - Enhancement
+
+λ main() {
+    ≔ Δ i: !i32 = 0;
+    loop {
+        println(i);
+        i = i + 1;
+        ⎇ i >= 3 {
+            ⊗;
+        }
+    }
+    println(100);
+}

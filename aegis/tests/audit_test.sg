@@ -1,30 +1,30 @@
 //! Aegis Audit Tests - 15 tests
 
-struct AuditId {
+Σ AuditId {
     bytes: ![!u8; 16],
 }
 
-impl AuditId {
-    pub fn new() -> Self {
+⊢ AuditId {
+    ☉ λ new() -> Self {
         AuditId { bytes: [0; 16] }
     }
 }
 
-struct Timestamp {
+Σ Timestamp {
     nanos: !u64,
 }
 
-impl Timestamp {
-    pub fn now() -> Self {
+⊢ Timestamp {
+    ☉ λ now() -> Self {
         Timestamp { nanos: 1705500000_000_000_000 }
     }
 
-    pub fn from_nanos(nanos: !u64) -> Self {
+    ☉ λ from_nanos(nanos: !u64) -> Self {
         Timestamp { nanos }
     }
 }
 
-enum AuditAction {
+ᛈ AuditAction {
     ToolInvoked,
     GoalProposed,
     GoalAccepted,
@@ -33,14 +33,14 @@ enum AuditAction {
     SecurityAlert,
 }
 
-enum AuditOutcome {
+ᛈ AuditOutcome {
     Success,
     Failure,
     Blocked,
     Warning,
 }
 
-struct AuditEntry {
+Σ AuditEntry {
     id: AuditId,
     timestamp: Timestamp,
     action: AuditAction,
@@ -49,11 +49,11 @@ struct AuditEntry {
     hash: ![!u8; 32],
 }
 
-impl AuditEntry {
-    pub fn new(action: AuditAction, outcome: AuditOutcome) -> Self {
+⊢ AuditEntry {
+    ☉ λ new(action: AuditAction, outcome: AuditOutcome) -> Self {
         AuditEntry {
-            id: AuditId::new(),
-            timestamp: Timestamp::now(),
+            id: AuditId·new(),
+            timestamp: Timestamp·now(),
             action,
             outcome,
             prev_hash: [0; 32],
@@ -61,59 +61,59 @@ impl AuditEntry {
         }
     }
 
-    pub fn with_prev_hash(mut self, prev: ![!u8; 32]) -> Self {
+    ☉ λ with_prev_hash(Δ self, prev: ![!u8; 32]) -> Self {
         self.prev_hash = prev;
         self
     }
 }
 
-enum AuditLevel {
+ᛈ AuditLevel {
     Verbose,
     Standard,
     Security,
     Minimal,
 }
 
-struct AuditConfig {
+Σ AuditConfig {
     max_entries: !usize,
     persist: !bool,
     level: AuditLevel,
 }
 
-impl AuditConfig {
-    pub fn default_config() -> Self {
+⊢ AuditConfig {
+    ☉ λ default_config() -> Self {
         AuditConfig {
             max_entries: 10000,
             persist: true,
-            level: AuditLevel::Standard,
+            level: AuditLevel·Standard,
         }
     }
 
-    pub fn verbose() -> Self {
+    ☉ λ verbose() -> Self {
         AuditConfig {
             max_entries: 100000,
             persist: true,
-            level: AuditLevel::Verbose,
+            level: AuditLevel·Verbose,
         }
     }
 
-    pub fn minimal() -> Self {
+    ☉ λ minimal() -> Self {
         AuditConfig {
             max_entries: 1000,
             persist: false,
-            level: AuditLevel::Minimal,
+            level: AuditLevel·Minimal,
         }
     }
 }
 
-struct AuditLog {
+Σ AuditLog {
     entry_count: !usize,
     config: AuditConfig,
     last_hash: ![!u8; 32],
 }
 
-impl AuditLog {
-    pub fn new(config: AuditConfig) -> Self {
+⊢ AuditLog {
+    ☉ λ new(config: AuditConfig) -> Self {
         AuditLog {
             entry_count: 0,
             config,
@@ -121,15 +121,15 @@ impl AuditLog {
         }
     }
 
-    pub fn log(&mut self, action: AuditAction, outcome: AuditOutcome) {
+    ☉ λ log(&Δ self, action: AuditAction, outcome: AuditOutcome) {
         self.entry_count = self.entry_count + 1;
     }
 
-    pub fn count(&self) -> !usize {
+    ☉ λ count(&self) -> !usize {
         self.entry_count
     }
 
-    pub fn is_empty(&self) -> !bool {
+    ☉ λ is_empty(&self) -> !bool {
         self.entry_count == 0
     }
 }
@@ -139,13 +139,13 @@ impl AuditLog {
 // ============================================================================
 
 #[test]
-fn test_audit_action_types() {
-    let tool = AuditAction::ToolInvoked;
-    let proposed = AuditAction::GoalProposed;
-    let accepted = AuditAction::GoalAccepted;
-    let rejected = AuditAction::GoalRejected;
-    let resource = AuditAction::ResourceAccessed;
-    let alert = AuditAction::SecurityAlert;
+λ test_audit_action_types() {
+    ≔ tool = AuditAction·ToolInvoked;
+    ≔ proposed = AuditAction·GoalProposed;
+    ≔ accepted = AuditAction·GoalAccepted;
+    ≔ rejected = AuditAction·GoalRejected;
+    ≔ resource = AuditAction·ResourceAccessed;
+    ≔ alert = AuditAction·SecurityAlert;
     assert(true);
 }
 
@@ -154,11 +154,11 @@ fn test_audit_action_types() {
 // ============================================================================
 
 #[test]
-fn test_audit_outcome_types() {
-    let success = AuditOutcome::Success;
-    let failure = AuditOutcome::Failure;
-    let blocked = AuditOutcome::Blocked;
-    let warning = AuditOutcome::Warning;
+λ test_audit_outcome_types() {
+    ≔ success = AuditOutcome·Success;
+    ≔ failure = AuditOutcome·Failure;
+    ≔ blocked = AuditOutcome·Blocked;
+    ≔ warning = AuditOutcome·Warning;
     assert(true);
 }
 
@@ -167,15 +167,15 @@ fn test_audit_outcome_types() {
 // ============================================================================
 
 #[test]
-fn test_audit_entry_creation() {
-    let entry = AuditEntry::new(AuditAction::ToolInvoked, AuditOutcome::Success);
+λ test_audit_entry_creation() {
+    ≔ entry = AuditEntry·new(AuditAction·ToolInvoked, AuditOutcome·Success);
     assert(entry.timestamp.nanos > 0);
 }
 
 #[test]
-fn test_audit_entry_with_prev_hash() {
-    let prev: ![!u8; 32] = [1; 32];
-    let entry = AuditEntry::new(AuditAction::ToolInvoked, AuditOutcome::Success)
+λ test_audit_entry_with_prev_hash() {
+    ≔ prev: ![!u8; 32] = [1; 32];
+    ≔ entry = AuditEntry·new(AuditAction·ToolInvoked, AuditOutcome·Success)
         .with_prev_hash(prev);
     assert(entry.prev_hash[0] == 1);
 }
@@ -185,21 +185,21 @@ fn test_audit_entry_with_prev_hash() {
 // ============================================================================
 
 #[test]
-fn test_audit_config_default() {
-    let config = AuditConfig::default_config();
+λ test_audit_config_default() {
+    ≔ config = AuditConfig·default_config();
     assert(config.max_entries == 10000);
     assert(config.persist);
 }
 
 #[test]
-fn test_audit_config_verbose() {
-    let config = AuditConfig::verbose();
+λ test_audit_config_verbose() {
+    ≔ config = AuditConfig·verbose();
     assert(config.max_entries == 100000);
 }
 
 #[test]
-fn test_audit_config_minimal() {
-    let config = AuditConfig::minimal();
+λ test_audit_config_minimal() {
+    ≔ config = AuditConfig·minimal();
     assert(config.max_entries == 1000);
     assert(!config.persist);
 }
@@ -209,35 +209,35 @@ fn test_audit_config_minimal() {
 // ============================================================================
 
 #[test]
-fn test_audit_log_creation() {
-    let log = AuditLog::new(AuditConfig::default_config());
+λ test_audit_log_creation() {
+    ≔ log = AuditLog·new(AuditConfig·default_config());
     assert(log.is_empty());
     assert(log.count() == 0);
 }
 
 #[test]
-fn test_audit_log_single_entry() {
-    let mut log = AuditLog::new(AuditConfig::default_config());
-    log.log(AuditAction::ToolInvoked, AuditOutcome::Success);
+λ test_audit_log_single_entry() {
+    ≔ Δ log = AuditLog·new(AuditConfig·default_config());
+    log.log(AuditAction·ToolInvoked, AuditOutcome·Success);
     assert(!log.is_empty());
     assert(log.count() == 1);
 }
 
 #[test]
-fn test_audit_log_multiple_entries() {
-    let mut log = AuditLog::new(AuditConfig::default_config());
-    log.log(AuditAction::ToolInvoked, AuditOutcome::Success);
-    log.log(AuditAction::GoalProposed, AuditOutcome::Success);
-    log.log(AuditAction::GoalAccepted, AuditOutcome::Success);
+λ test_audit_log_multiple_entries() {
+    ≔ Δ log = AuditLog·new(AuditConfig·default_config());
+    log.log(AuditAction·ToolInvoked, AuditOutcome·Success);
+    log.log(AuditAction·GoalProposed, AuditOutcome·Success);
+    log.log(AuditAction·GoalAccepted, AuditOutcome·Success);
     assert(log.count() == 3);
 }
 
 #[test]
-fn test_audit_log_mixed_outcomes() {
-    let mut log = AuditLog::new(AuditConfig::default_config());
-    log.log(AuditAction::GoalProposed, AuditOutcome::Success);
-    log.log(AuditAction::GoalRejected, AuditOutcome::Blocked);
-    log.log(AuditAction::SecurityAlert, AuditOutcome::Warning);
+λ test_audit_log_mixed_outcomes() {
+    ≔ Δ log = AuditLog·new(AuditConfig·default_config());
+    log.log(AuditAction·GoalProposed, AuditOutcome·Success);
+    log.log(AuditAction·GoalRejected, AuditOutcome·Blocked);
+    log.log(AuditAction·SecurityAlert, AuditOutcome·Warning);
     assert(log.count() == 3);
 }
 
@@ -246,14 +246,14 @@ fn test_audit_log_mixed_outcomes() {
 // ============================================================================
 
 #[test]
-fn test_audit_level_types() {
-    let verbose = AuditLevel::Verbose;
-    let standard = AuditLevel::Standard;
-    let security = AuditLevel::Security;
-    let minimal = AuditLevel::Minimal;
+λ test_audit_level_types() {
+    ≔ verbose = AuditLevel·Verbose;
+    ≔ standard = AuditLevel·Standard;
+    ≔ security = AuditLevel·Security;
+    ≔ minimal = AuditLevel·Minimal;
     assert(true);
 }
 
-fn main() {
+λ main() {
     println("Aegis audit tests - 13 tests");
 }

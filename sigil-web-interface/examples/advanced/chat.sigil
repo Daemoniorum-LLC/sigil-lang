@@ -1,0 +1,717 @@
+// Real-Time Chat Application
+// Demonstrates advanced Sigil Web features including:
+// - Channels for real-time messaging (voice/listen)
+// - Streams for message flow
+// - Async patterns with ⌛
+// - Actor-based state management
+// - Quantifiers for message filtering
+// - Full use of morpheme operators
+
+use sigil_web::prelude::*
+use std::collections::HashMap;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/// A chat message
+struct Message {
+    id: u64!
+    user_id: u64!
+    username: String!
+    content: String!
+    timestamp: u64!
+    reactions: HashMap<String, Vec<u64>>!  // emoji -> user_ids
+    is_edited: bool!
+    reply_to: Option<u64>?
+}
+
+/// A chat room
+struct Room {
+    id: u64!
+    name: String!
+    members: Vec<u64>!
+    messages: Vec<Message>!
+    is_private: bool!
+}
+
+/// Current user
+struct User {
+    id: u64!
+    username: String!
+    avatar_url: String?
+    status: UserStatus!
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum UserStatus {
+    Online,
+    Away,
+    Busy,
+    Offline
+}
+
+/// Chat events sent through channels
+enum ChatEvent {
+    NewMessage(Message!),
+    MessageEdited { id: u64!, content: String! },
+    MessageDeleted(u64!),
+    UserJoined { room_id: u64!, user: User! },
+    UserLeft { room_id: u64!, user_id: u64! },
+    UserTyping { room_id: u64!, user_id: u64! },
+    ReactionAdded { message_id: u64!, emoji: String!, user_id: u64! }
+}
+
+// ============================================================================
+// Chat Store (Actor-based State Management)
+// ============================================================================
+
+struct ChatState {
+    current_user: Option<User>?
+    rooms: Vec<Room>!
+    active_room_id: Option<u64>?
+    typing_users: HashMap<u64, Vec<u64>>!  // room_id -> user_ids
+    unread_counts: HashMap<u64, usize>!    // room_id -> count
+}
+
+enum ChatAction {
+    SetUser(User!),
+    AddRoom(Room!),
+    SetActiveRoom(u64!),
+    AddMessage { room_id: u64!, message: Message! },
+    EditMessage { room_id: u64!, message_id: u64!, content: String! },
+    DeleteMessage { room_id: u64!, message_id: u64! },
+    AddReaction { room_id: u64!, message_id: u64!, emoji: String! },
+    SetTyping { room_id: u64!, user_id: u64!, is_typing: bool! },
+    MarkAsRead(u64!),
+    UserStatusChanged { user_id: u64!, status: UserStatus! }
+}
+
+impl Action for ChatAction {}
+
+fn chat_reducer(state: ChatState, action: ChatAction) -> ChatState! {
+    match action {
+        ChatAction::SetUser(user) => {
+            ChatState { current_user: Some(user), ..state }
+        }
+
+        ChatAction::AddRoom(room) => {
+            let mut rooms! = state.rooms·clone()
+            rooms·push(room)
+            ChatState { rooms: rooms, ..state }
+        }
+
+        ChatAction::SetActiveRoom(room_id) => {
+            ChatState { active_room_id: Some(room_id), ..state }
+        }
+
+        ChatAction::AddMessage { room_id, message } => {
+            // Using τ morpheme to update the matching room
+            let rooms! = state.rooms|τ{r =>
+                if r.id == room_id {
+                    let mut messages! = r.messages·clone()
+                    messages·push(message·clone())
+                    Room { messages: messages, ..r }
+                } else {
+                    r
+                }
+            }|collect()
+
+            // Update unread if not active room
+            let mut unread! = state.unread_counts·clone()
+            if state.active_room_id != Some(room_id) {
+                let count! = unread·get(&room_id)·unwrap_or(&0)
+                unread·insert(room_id, count + 1)
+            }
+
+            ChatState { rooms: rooms, unread_counts: unread, ..state }
+        }
+
+        ChatAction::EditMessage { room_id, message_id, content } => {
+            let rooms! = state.rooms|τ{r =>
+                if r.id == room_id {
+                    let messages! = r.messages|τ{m =>
+                        if m.id == message_id {
+                            Message { content: content·clone(), is_edited: true, ..m }
+                        } else {
+                            m
+                        }
+                    }|collect()
+                    Room { messages: messages, ..r }
+                } else {
+                    r
+                }
+            }|collect()
+
+            ChatState { rooms: rooms, ..state }
+        }
+
+        ChatAction::DeleteMessage { room_id, message_id } => {
+            let rooms! = state.rooms|τ{r =>
+                if r.id == room_id {
+                    // Using φ morpheme to filter out the deleted message
+                    let messages! = r.messages|φ{m => m.id != message_id}|collect()
+                    Room { messages: messages, ..r }
+                } else {
+                    r
+                }
+            }|collect()
+
+            ChatState { rooms: rooms, ..state }
+        }
+
+        ChatAction::AddReaction { room_id, message_id, emoji } => {
+            let user_id! = state.current_user·as_ref()·map(|u| u.id)·unwrap_or(0)
+
+            let rooms! = state.rooms|τ{r =>
+                if r.id == room_id {
+                    let messages! = r.messages|τ{m =>
+                        if m.id == message_id {
+                            let mut reactions! = m.reactions·clone()
+                            let users! = reactions·entry(emoji·clone())·or_insert(Vec::new())
+                            if ¬(user_id ∈ users) {
+                                users·push(user_id)
+                            }
+                            Message { reactions: reactions, ..m }
+                        } else {
+                            m
+                        }
+                    }|collect()
+                    Room { messages: messages, ..r }
+                } else {
+                    r
+                }
+            }|collect()
+
+            ChatState { rooms: rooms, ..state }
+        }
+
+        ChatAction::SetTyping { room_id, user_id, is_typing } => {
+            let mut typing! = state.typing_users·clone()
+            let users! = typing·entry(room_id)·or_insert(Vec::new())
+
+            if is_typing ∧ ¬(user_id ∈ users) {
+                users·push(user_id)
+            } else if ¬is_typing {
+                users·retain(|id| *id != user_id)
+            }
+
+            ChatState { typing_users: typing, ..state }
+        }
+
+        ChatAction::MarkAsRead(room_id) => {
+            let mut unread! = state.unread_counts·clone()
+            unread·insert(room_id, 0)
+            ChatState { unread_counts: unread, ..state }
+        }
+
+        ChatAction::UserStatusChanged { user_id, status } => {
+            // Update user status in all rooms
+            state
+        }
+    }
+}
+
+static CHAT_STORE: Store<ChatState, ChatAction> = Store::new(
+    ChatState {
+        current_user: None,
+        rooms: Vec::new(),
+        active_room_id: None,
+        typing_users: HashMap::new(),
+        unread_counts: HashMap::new()
+    },
+    chat_reducer
+)
+
+// ============================================================================
+// WebSocket Channel Integration
+// ============================================================================
+
+/// WebSocket connection using channels
+struct ChatConnection {
+    /// Outgoing messages (voice)
+    send_voice: Voice<ChatEvent>!
+    /// Incoming messages (listen)
+    recv_listen: Listen<ChatEvent>!
+    /// Connection state
+    is_connected: Signal<bool>!
+}
+
+impl ChatConnection {
+    /// Connect to chat server
+    pub async fn connect(url: &str) -> Result<Self, String~>! {
+        let (send_voice, send_listen) = channel::<ChatEvent>()
+        let (recv_voice, recv_listen) = channel::<ChatEvent>()
+        let is_connected! = signal(false)
+
+        // Spawn WebSocket handler
+        Thread·spin(async move {
+            // Simulated WebSocket connection
+            is_connected·set(true)
+
+            loop {
+                // Listen for outgoing messages and send to server
+                match send_listen·try_listen() {
+                    Ok(event) => {
+                        // Send to WebSocket
+                        ws_send(&event)⌛
+                    }
+                    Err(_) => {}
+                }
+
+                // Check for incoming messages from server
+                if let Some(event) = ws_receive()⌛ {
+                    let _ = recv_voice·voice(event)
+                }
+
+                yield_now()⌛
+            }
+        })
+
+        Ok(ChatConnection {
+            send_voice: send_voice,
+            recv_listen: recv_listen,
+            is_connected: is_connected
+        })
+    }
+
+    /// Send a chat event
+    pub fn send(&self, event: ChatEvent) {
+        let _ = self.send_voice·voice(event)
+    }
+
+    /// Subscribe to incoming events
+    pub fn on_event(&self, handler: fn(ChatEvent)) {
+        // Process incoming events
+        effect(|| {
+            loop {
+                match self.recv_listen·try_listen() {
+                    Ok(event) => handler(event),
+                    Err(_) => break
+                }
+            }
+        })
+    }
+}
+
+// Placeholder WebSocket functions
+async fn ws_send(event: &ChatEvent) {}
+async fn ws_receive() -> Option<ChatEvent>? { None }
+async fn yield_now() {}
+
+// ============================================================================
+// Components
+// ============================================================================
+
+/// Main Chat Application
+component ChatApp {
+    state connection: Option<ChatConnection>? = None
+
+    fn on_mount(&mut self) {
+        // Connect to chat server
+        spawn_async(async {
+            match ChatConnection::connect("wss://chat.example.com")⌛ {
+                Ok(conn~) => {
+                    self.connection = Some(conn~)
+
+                    // Subscribe to events
+                    conn~·on_event(|event| {
+                        let dispatch = use_dispatch(&CHAT_STORE)
+                        match event {
+                            ChatEvent::NewMessage(msg) => {
+                                dispatch(ChatAction::AddMessage {
+                                    room_id: 0, // TODO: get from message
+                                    message: msg
+                                })
+                            }
+                            // Handle other events...
+                            _ => {}
+                        }
+                    })
+                }
+                Err(e~) => {
+                    console_error!("Failed to connect: {}", e~)
+                }
+            }
+        })
+    }
+
+    fn render(self) -> VNode {
+        let state! = use_store(&CHAT_STORE)
+
+        div()
+            ·class("chat-app")
+            ·children(vec![
+                // Sidebar with room list
+                RoomList {}·to_vnode(),
+
+                // Main chat area
+                match state.active_room_id {
+                    Some(room_id) => {
+                        let room? = state.rooms|φ{r => r.id == room_id}|α
+                        match room {
+                            Some(r) => ChatRoom { room: r·clone() }·to_vnode(),
+                            None => div()·text("Room not found")·build()
+                        }
+                    }
+                    None => {
+                        div()
+                            ·class("no-room-selected")
+                            ·text("Select a room to start chatting")
+                            ·build()
+                    }
+                },
+
+                // Online users panel
+                OnlineUsers {}·to_vnode()
+            ])
+            ·build()
+    }
+}
+
+/// Room list sidebar
+fn RoomList() -> VNode! {
+    let state! = use_store(&CHAT_STORE)
+    let dispatch = use_dispatch(&CHAT_STORE)
+
+    aside()
+        ·class("room-list")
+        ·children(vec![
+            h2()·text("Rooms")·build(),
+
+            ul()
+                ·class("rooms")
+                ·children(
+                    // Using τ morpheme to map rooms to list items
+                    state.rooms|τ{room =>
+                        let is_active! = state.active_room_id == Some(room.id)
+                        let unread! = state.unread_counts·get(&room.id)·unwrap_or(&0)
+
+                        li()
+                            ·class(classes()
+                                ·add("room-item")
+                                ·add_if(is_active, "active")
+                                ·add_if(*unread > 0, "has-unread")
+                                ·to_string())
+                            ·onclick(|| {
+                                dispatch(ChatAction::SetActiveRoom(room.id))
+                                dispatch(ChatAction::MarkAsRead(room.id))
+                            })
+                            ·children(vec![
+                                span()·class("room-name")·text(&room.name)·build(),
+                                when(*unread > 0, || {
+                                    span()
+                                        ·class("unread-badge")
+                                        ·text(&unread·to_string())
+                                        ·build()
+                                }),
+                                when(room.is_private, || {
+                                    span()·class("private-icon")·text("🔒")·build()
+                                })
+                            ])
+                            ·build()
+                    }|collect()
+                )
+                ·build()
+        ])
+        ·build()
+}
+
+/// Chat room component
+component ChatRoom {
+    props room: Room!
+    state message_input: String! = ""
+    state is_typing: bool! = false
+
+    fn render(self) -> VNode {
+        let dispatch = use_dispatch(&CHAT_STORE)
+        let state! = use_store(&CHAT_STORE)
+        let typing_users! = state.typing_users·get(&self.room.id)·unwrap_or(&Vec::new())
+
+        div()
+            ·class("chat-room")
+            ·children(vec![
+                // Room header
+                header()
+                    ·class("room-header")
+                    ·children(vec![
+                        h2()·text(&self.room.name)·build(),
+                        span()
+                            ·class("member-count")
+                            ·text(&format!("{} members", self.room.members·len()))
+                            ·build()
+                    ])
+                    ·build(),
+
+                // Message list
+                div()
+                    ·class("message-list")
+                    ·children(
+                        // Using τ morpheme and grouping by date
+                        self.room.messages|τ{msg =>
+                            MessageBubble {
+                                message: msg·clone(),
+                                is_own: state.current_user·as_ref()
+                                    ·map(|u| u.id == msg.user_id)
+                                    ·unwrap_or(false)
+                            }·to_vnode()
+                        }|collect()
+                    )
+                    ·build(),
+
+                // Typing indicator
+                when(¬typing_users·is_empty(), || {
+                    div()
+                        ·class("typing-indicator")
+                        ·text(&format!(
+                            "{} typing...",
+                            typing_users|τ{id => format!("User {}", id)}|collect::<Vec<_>>()·join(", ")
+                        ))
+                        ·build()
+                }),
+
+                // Message input
+                self·render_input()
+            ])
+            ·build()
+    }
+
+    fn render_input(&self) -> VNode! {
+        let dispatch = use_dispatch(&CHAT_STORE)
+
+        form()
+            ·class("message-input-form")
+            ·onsubmit(|| {
+                if ¬self.message_input·trim()·is_empty() {
+                    self·send_message()
+                }
+            })
+            ·children(vec![
+                input()
+                    ·class("message-input")
+                    ·attr("placeholder", "Type a message...")
+                    ·attr("value", &self.message_input)
+                    ·oninput(|v| {
+                        self.message_input = v
+
+                        // Update typing status
+                        if ¬self.is_typing ∧ ¬v·is_empty() {
+                            self.is_typing = true
+                            dispatch(ChatAction::SetTyping {
+                                room_id: self.room.id,
+                                user_id: 0, // current user
+                                is_typing: true
+                            })
+                        }
+                    })
+                    ·onblur(|| {
+                        if self.is_typing {
+                            self.is_typing = false
+                            dispatch(ChatAction::SetTyping {
+                                room_id: self.room.id,
+                                user_id: 0,
+                                is_typing: false
+                            })
+                        }
+                    })
+                    ·build(),
+
+                button()
+                    ·class("send-button")
+                    ·attr("type", "submit")
+                    ·text("Send")
+                    ·build()
+            ])
+            ·build()
+    }
+
+    fn send_message(&mut self) {
+        let dispatch = use_dispatch(&CHAT_STORE)
+        let state! = use_store(&CHAT_STORE)
+
+        if let Some(user) = &state.current_user {
+            let message! = Message {
+                id: generate_id(),
+                user_id: user.id,
+                username: user.username·clone(),
+                content: self.message_input·trim()·to_string(),
+                timestamp: current_timestamp(),
+                reactions: HashMap::new(),
+                is_edited: false,
+                reply_to: None
+            }
+
+            dispatch(ChatAction::AddMessage {
+                room_id: self.room.id,
+                message: message
+            })
+
+            self.message_input = "".to_string()
+            self.is_typing = false
+        }
+    }
+}
+
+/// Individual message bubble
+component MessageBubble {
+    props message: Message!
+    props is_own: bool!
+    state show_reactions: bool! = false
+
+    fn render(self) -> VNode {
+        let dispatch = use_dispatch(&CHAT_STORE)
+
+        div()
+            ·class(classes()
+                ·add("message-bubble")
+                ·add_if(self.is_own, "own-message")
+                ·add_if(self.message.reply_to·is_some(), "is-reply")
+                ·to_string())
+            ·children(vec![
+                // Username (for other users' messages)
+                when(¬self.is_own, || {
+                    span()·class("message-username")·text(&self.message.username)·build()
+                }),
+
+                // Message content
+                p()·class("message-content")·text(&self.message.content)·build(),
+
+                // Edited indicator
+                when(self.message.is_edited, || {
+                    span()·class("edited-indicator")·text("(edited)")·build()
+                }),
+
+                // Reactions
+                when(¬self.message.reactions·is_empty(), || {
+                    div()
+                        ·class("reactions")
+                        ·children(
+                            self.message.reactions·iter()
+                                |τ{|(emoji, users)| {
+                                    button()
+                                        ·class("reaction")
+                                        ·onclick(|| {
+                                            dispatch(ChatAction::AddReaction {
+                                                room_id: 0, // TODO
+                                                message_id: self.message.id,
+                                                emoji: emoji·clone()
+                                            })
+                                        })
+                                        ·text(&format!("{} {}", emoji, users·len()))
+                                        ·build()
+                                }}
+                                |collect()
+                        )
+                        ·build()
+                }),
+
+                // Timestamp
+                span()
+                    ·class("message-time")
+                    ·text(&format_timestamp(self.message.timestamp))
+                    ·build(),
+
+                // Actions
+                div()
+                    ·class("message-actions")
+                    ·children(vec![
+                        button()
+                            ·class("action-btn")
+                            ·onclick(|| self.show_reactions = ¬self.show_reactions)
+                            ·text("😀")
+                            ·build(),
+                        when(self.is_own, || {
+                            button()
+                                ·class("action-btn")
+                                ·onclick(|| {
+                                    // Edit message
+                                })
+                                ·text("✏️")
+                                ·build()
+                        }),
+                        when(self.is_own, || {
+                            button()
+                                ·class("action-btn delete")
+                                ·onclick(|| {
+                                    dispatch(ChatAction::DeleteMessage {
+                                        room_id: 0,
+                                        message_id: self.message.id
+                                    })
+                                })
+                                ·text("🗑️")
+                                ·build()
+                        })
+                    ])
+                    ·build()
+            ])
+            ·build()
+    }
+}
+
+/// Online users panel
+fn OnlineUsers() -> VNode! {
+    let state! = use_store(&CHAT_STORE)
+
+    // Get members of active room
+    let members! = match state.active_room_id {
+        Some(room_id) => {
+            state.rooms
+                |φ{r => r.id == room_id}
+                |α
+                |map(|r| r.members·clone())
+                |unwrap_or(Vec::new())
+        }
+        None => Vec::new()
+    }
+
+    aside()
+        ·class("online-users")
+        ·children(vec![
+            h3()·text("Online")·build(),
+
+            ul()
+                ·class("user-list")
+                ·children(
+                    members|τ{user_id =>
+                        li()
+                            ·class("user-item")
+                            ·children(vec![
+                                span()·class("status-dot online")·build(),
+                                span()·text(&format!("User {}", user_id))·build()
+                            ])
+                            ·build()
+                    }|collect()
+                )
+                ·build()
+        ])
+        ·build()
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+fn generate_id() -> u64! {
+    // Simple ID generation
+    static mut COUNTER: u64 = 0
+    unsafe {
+        COUNTER += 1
+        COUNTER
+    }
+}
+
+fn current_timestamp() -> u64! {
+    0 // Platform-specific
+}
+
+fn format_timestamp(ts: u64) -> String! {
+    "12:34 PM".to_string() // Simplified
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
+fn main() {
+    App::mount("#root", ChatApp::new())
+}

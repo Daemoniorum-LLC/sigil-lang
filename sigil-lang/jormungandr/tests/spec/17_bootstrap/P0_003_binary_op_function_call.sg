@@ -1,0 +1,17 @@
+// Test: Binary operations generate function calls
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § CG-002 Binary Operations
+// Priority: P0
+//
+// Purpose:
+// Validates that binary operations like + generate sigil_add() calls
+// rather than direct C operators.
+//
+// Expected behavior:
+// Should compile and print 84 (42 + 42)
+
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = 42;
+    ≔ z: !i32 = x + y;
+    println(z);
+}

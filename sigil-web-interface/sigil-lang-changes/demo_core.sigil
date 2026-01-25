@@ -1,0 +1,36 @@
+// demo_core.sigil - Core WASM demo testing basic functionality
+
+pub fn demo_arithmetic() {
+    let a = 100;
+    let b = 7;
+
+    // Basic operations
+    print(a + b);
+    print(a - b);
+    print(a * b);
+    print(a / b);
+    print(a % b);
+
+    // Comparisons
+    let is_greater = a > b;
+    let is_equal = a == b;
+    print(is_greater);
+    print(is_equal);
+}
+
+pub fn demo_control() {
+    let x = 10;
+    let result = if x > 5 { x * 2 } else { x };
+    print(result);
+
+    let mut counter = 0;
+    while counter < 5 {
+        counter = counter + 1;
+    }
+    print(counter);
+}
+
+pub fn main() {
+    demo_arithmetic();
+    demo_control();
+}

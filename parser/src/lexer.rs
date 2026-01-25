@@ -308,19 +308,6 @@ pub enum Token {
     Actor,
     #[token("saga")]
     Saga,
-
-    // Evidential Forms (form declarations with validation)
-    #[token("form")]
-    Form,
-    #[token("field")]
-    Field,
-
-    // Type-Safe Internationalization
-    #[token("translations")]
-    Translations,
-    #[token("locale")]
-    Locale,
-
     #[token("scope")]
     Scope,
     #[token("rune")]
@@ -441,12 +428,13 @@ pub enum Token {
     #[token("@‽")]
     AlterSourceBlended,
 
-    // Boolean literals (Sigil-native only)
+    // Boolean literals
     // Note: ⊤/⊥ handled by Token::Top/Bottom - parser is context-aware
-    #[token("yea")] // yea for true
-    #[token("yay")] // yay for true (alias)
+    #[token("yea")] // yea for true (Sigil-native)
+    #[token("true")] // true for compatibility
     True,
-    #[token("nay")] // nay for false
+    #[token("nay")] // nay for false (Sigil-native)
+    #[token("false")] // false for compatibility
     False,
 
     // Null literal
@@ -900,20 +888,6 @@ pub enum Token {
     LBracket,
     #[token("]")]
     RBracket,
-
-    // === Template Delimiters (STE - Sigil Template Expressions) ===
-    // Mathematical angle brackets avoid conflict with <> generics
-    #[token("⟨/")]
-    TemplateCloseStart, // Closing tag start ⟨/div⟩ (U+27E8 + /)
-
-    #[token("⟨")]
-    TemplateOpen, // Template opening angle (U+27E8)
-
-    #[token("⟩")]
-    TemplateClose, // Template closing angle (U+27E9)
-
-    #[token("/⟩")]
-    TemplateSelfClose, // Self-closing tag end /⟩
 
     // === Special symbols ===
     #[token("∅")]
@@ -1718,91 +1692,5 @@ mod tests {
             process_escape_sequences(r"hello\u{1F600}world"),
             "hello😀world"
         );
-    }
-
-    #[test]
-    fn test_template_tokens() {
-        // Test template opening bracket
-        let mut lexer = Lexer::new("⟨div⟩");
-        match lexer.next_token() {
-            Some((Token::TemplateOpen, _)) => {}
-            other => panic!("Expected TemplateOpen, got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::Ident(s), _)) => assert_eq!(s, "div"),
-            other => panic!("Expected Ident 'div', got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::TemplateClose, _)) => {}
-            other => panic!("Expected TemplateClose, got {:?}", other),
-        }
-
-        // Test closing tag
-        let mut lexer = Lexer::new("⟨/div⟩");
-        match lexer.next_token() {
-            Some((Token::TemplateCloseStart, _)) => {}
-            other => panic!("Expected TemplateCloseStart, got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::Ident(s), _)) => assert_eq!(s, "div"),
-            other => panic!("Expected Ident 'div', got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::TemplateClose, _)) => {}
-            other => panic!("Expected TemplateClose, got {:?}", other),
-        }
-
-        // Test self-closing tag
-        let mut lexer = Lexer::new("⟨input/⟩");
-        match lexer.next_token() {
-            Some((Token::TemplateOpen, _)) => {}
-            other => panic!("Expected TemplateOpen, got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::Ident(s), _)) => assert_eq!(s, "input"),
-            other => panic!("Expected Ident 'input', got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::TemplateSelfClose, _)) => {}
-            other => panic!("Expected TemplateSelfClose, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_template_with_attributes() {
-        // Test template with bracket attributes
-        let mut lexer = Lexer::new("⟨div[class: \"card\"]⟩");
-        match lexer.next_token() {
-            Some((Token::TemplateOpen, _)) => {}
-            other => panic!("Expected TemplateOpen, got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::Ident(s), _)) => assert_eq!(s, "div"),
-            other => panic!("Expected Ident 'div', got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::LBracket, _)) => {}
-            other => panic!("Expected LBracket, got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::Ident(s), _)) => assert_eq!(s, "class"),
-            other => panic!("Expected Ident 'class', got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::Colon, _)) => {}
-            other => panic!("Expected Colon, got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::StringLit(s), _)) => assert_eq!(s, "card"),
-            other => panic!("Expected StringLit 'card', got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::RBracket, _)) => {}
-            other => panic!("Expected RBracket, got {:?}", other),
-        }
-        match lexer.next_token() {
-            Some((Token::TemplateClose, _)) => {}
-            other => panic!("Expected TemplateClose, got {:?}", other),
-        }
     }
 }

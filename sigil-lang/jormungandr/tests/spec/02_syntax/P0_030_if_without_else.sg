@@ -1,0 +1,16 @@
+// Test: If expression without ⎉
+// Spec: 02-SYNTAX.md § 4.1 Conditional Expressions
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate ⎇ without ⎉ works correctly.
+//
+// Expected behavior:
+// Should print 42
+
+λ main() {
+    ≔ x: !i32 = 42;
+    ⎇ x > 0 {
+        println(x);
+    }
+}

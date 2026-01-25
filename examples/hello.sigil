@@ -1,6 +1,6 @@
 // Hello World in Sigil
 
-rite greet(name: String) {
+rite greet(name) {
     print("Hello, " + name + "!");
 }
 
@@ -26,5 +26,5 @@ rite main() → i64 {
         print("x is 10 or less");
     }
 
-    0
+    ⤺ 0;
 }

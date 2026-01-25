@@ -1,0 +1,24 @@
+// Test: Lifetime annotation basic usage
+// Spec: 04-MEMORY.md § 4.1 Lifetime Annotations
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate lifetime annotations work correctly.
+//
+// Expected behavior:
+// Should print 42
+
+λ longest<'a>(x: &'a !i32, y: &'a !i32) -> &'a !i32 {
+    ⎇ *x > *y {
+        x
+    } ⎉ {
+        y
+    }
+}
+
+λ main() {
+    ≔ a: !i32 = 42;
+    ≔ b: !i32 = 13;
+    ≔ result: &!i32 = longest(&a, &b);
+    println(*result);
+}

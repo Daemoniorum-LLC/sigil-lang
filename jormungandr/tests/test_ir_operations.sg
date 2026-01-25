@@ -4,7 +4,7 @@
 //! and pipeline morpheme representations.
 //! Target: 100% IR operation coverage each regression detection.
 
-use crate·ir·*;
+invoke crate·ir·*;
 
 // ============================================================================
 // Test Helpers
@@ -199,7 +199,7 @@ rite test_variable_operations() → !bool {
     };
 
     // Let-⎉ binding
-    ≔ let_else = IrOperation·LetElse {
+    ≔ let_⎉ = IrOperation·LetElse {
         pattern: IrPattern·Variant {
             enum_name: "Option".to_string(),
             variant: "Some".to_string(),
@@ -325,7 +325,7 @@ rite test_unary_operations() → !bool {
     };
 
     // Mutable reference
-    ≔ _ref_mut = IrOperation·Unary {
+    ≔ _ref_Δ = IrOperation·Unary {
         operator: UnaryOp·RefMut,
         operand: int_operand.clone(),
         ty: IrType·Ref { mutable: yea, inner: Box·new(i32_type()) },

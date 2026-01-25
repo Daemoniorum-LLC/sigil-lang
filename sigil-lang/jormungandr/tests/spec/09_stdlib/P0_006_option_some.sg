@@ -1,0 +1,17 @@
+// Test: Option·Some variant
+// Spec: 09-STDLIB.md § 3.1 Option Type
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate Option·Some can be created and matched.
+//
+// Expected behavior:
+// Should print 42
+
+λ main() {
+    ≔ opt: !Option<i32> = Option·Some(42);
+    ⌥ opt {
+        Option·Some(x) => println(x),
+        Option·None => println(0)
+    }
+}

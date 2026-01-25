@@ -14,7 +14,7 @@ rite main() {
     ≔ val = take_ref(r);
     println(val);
 
-    // Can still use mutable ref after reborrow ends
+    // Can still invoke mutable ref after reborrow ends
     *r = 100;
     println(*r);
 }

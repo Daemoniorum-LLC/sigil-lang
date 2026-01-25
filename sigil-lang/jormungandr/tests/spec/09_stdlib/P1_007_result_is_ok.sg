@@ -1,0 +1,20 @@
+// Test: Result is_ok and is_err
+// Spec: 09-STDLIB.md § 3.2 Result
+// Priority: P1 - Production Ready
+
+λ main() {
+    ≔ ok: Result<i32, String> = Result·Ok(42);
+    ≔ err: Result<i32, String> = Result·Err("error");
+
+    ⎇ ok.is_ok() {
+        println(1);
+    } ⎉ {
+        println(0);
+    }
+
+    ⎇ err.is_err() {
+        println(1);
+    } ⎉ {
+        println(0);
+    }
+}

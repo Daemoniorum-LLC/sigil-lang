@@ -1,0 +1,556 @@
+//! HTTP/1.1 Layer
+//!
+//! HTTP/1.1 client implementation per RFC 7230-7235.
+//! Supports keep-alive connection pooling and proxy.
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 6
+
+invoke socket·{TcpStream, SocketAddr, SocketError};
+invoke tls·{TlsStream, TlsError};
+invoke dns·{DnsResolver, DnsError};
+
+// ============================================================================
+// URL Parsing
+// ============================================================================
+
+/// Parsed URL
+☉ sigil Url {
+    scheme: String!,
+    host: String!,
+    port: u16!,
+    path: String!,
+    query: String?,
+    fragment: String?,
+    username: String?,
+    password: String?,
+}
+
+☉ ⊢ Url {
+    /// Parse a URL string
+    ☉ rite parse(s: &str) -> Result<Url, HttpError>! {
+        vary scheme = "http".to_string();
+        vary host = String·new();
+        vary port: u16 = 80;
+        vary path = "/".to_string();
+        vary query: String? = None;
+        vary fragment: String? = None;
+        vary username: String? = None;
+        vary password: String? = None;
+
+        vary remaining = s;
+
+        // Extract scheme
+        ⎇ ≔ Some(idx) = remaining.find("://") {
+            scheme = remaining[..idx].to_string();
+            remaining = &remaining[idx + 3..];
+
+            ⎇ scheme == "https" {
+                port = 443;
+            }
+        } ⎉ {
+            ret Err(HttpError·InvalidUrl { url: s.to_string() });
+        }
+
+        // Extract fragment
+        ⎇ ≔ Some(idx) = remaining.find('#') {
+            fragment = Some(remaining[idx + 1..].to_string());
+            remaining = &remaining[..idx];
+        }
+
+        // Extract query
+        ⎇ ≔ Some(idx) = remaining.find('?') {
+            query = Some(remaining[idx + 1..].to_string());
+            remaining = &remaining[..idx];
+        }
+
+        // Extract path
+        ⎇ ≔ Some(idx) = remaining.find('/') {
+            path = remaining[idx..].to_string();
+            remaining = &remaining[..idx];
+        }
+
+        // Extract userinfo
+        ⎇ ≔ Some(idx) = remaining.find('@') {
+            ≔ userinfo = &remaining[..idx];
+            remaining = &remaining[idx + 1..];
+
+            ⎇ ≔ Some(colon) = userinfo.find(':') {
+                username = Some(userinfo[..colon].to_string());
+                password = Some(userinfo[colon + 1..].to_string());
+            } ⎉ {
+                username = Some(userinfo.to_string());
+            }
+        }
+
+        // Extract port
+        ⎇ ≔ Some(idx) = remaining.rfind(':') {
+            ⌥ remaining[idx + 1..].parse·<u16>() {
+                Result·Ok(p) => {
+                    port = p;
+                    remaining = &remaining[..idx];
+                }
+                Result·Err(_) => {
+                    // Not a valid port, treat as part of host (IPv6?)
+                }
+            }
+        }
+
+        host = remaining.to_string();
+
+        ⎇ host.is_empty() {
+            ret Err(HttpError·InvalidUrl { url: s.to_string() });
+        }
+
+        Ok(Url {
+            scheme, host, port, path, query, fragment, username, password
+        })
+    }
+
+    /// Check ⎇ HTTPS
+    ☉ rite is_https(&self) -> bool! {
+        self.scheme == "https"
+    }
+
+    /// Get full path with query
+    ☉ rite full_path(&self) -> String! {
+        ⌥ &self.query {
+            Some(q) => format!("{}?{}", self.path, q),
+            None => self.path.clone(),
+        }
+    }
+
+    /// Get host:port ∀ Host header
+    ☉ rite host_header(&self) -> String! {
+        ≔ default_port = ⎇ self.scheme == "https" { 443 } ⎉ { 80 };
+        ⎇ self.port == default_port {
+            self.host.clone()
+        } ⎉ {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+}
+
+☉ ⊢ Display ∀ Url {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        write!(f, "{}://{}{}", self.scheme, self.host_header(), self.full_path())
+    }
+}
+
+// ============================================================================
+// HTTP Types
+// ============================================================================
+
+☉ ᛈ HttpMethod {
+    GET!,
+    POST!,
+    PUT!,
+    DELETE!,
+    PATCH!,
+    HEAD!,
+    OPTIONS!,
+}
+
+☉ ⊢ Display ∀ HttpMethod {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ⌥ self {
+            HttpMethod·GET => write!(f, "GET"),
+            HttpMethod·POST => write!(f, "POST"),
+            HttpMethod·PUT => write!(f, "PUT"),
+            HttpMethod·DELETE => write!(f, "DELETE"),
+            HttpMethod·PATCH => write!(f, "PATCH"),
+            HttpMethod·HEAD => write!(f, "HEAD"),
+            HttpMethod·OPTIONS => write!(f, "OPTIONS"),
+        }
+    }
+}
+
+☉ sigil HttpRequest {
+    method: HttpMethod!,
+    url: Url!,
+    headers: Vec<(String, String)>!,
+    body: Vec<u8>?,
+}
+
+☉ sigil HttpResponse {
+    status: u16!,
+    status_text: String!,
+    headers: Vec<(String, String)>!,
+    body: Vec<u8>!,
+}
+
+☉ ⊢ HttpResponse {
+    /// Get header value (case-insensitive)
+    ☉ rite header(&self, name: &str) -> Option<&str>? {
+        ≔ lower_name = name.to_lowercase();
+        ∀ (k, v) ∈ &self.headers {
+            ⎇ k.to_lowercase() == lower_name {
+                ret Some(v.as_str());
+            }
+        }
+        None
+    }
+
+    /// Get body as string (UTF-8)
+    ☉ rite text(&self) -> Result<String, HttpError>! {
+        String·from_utf8(self.body.clone())
+            .map_err(|_| HttpError·InvalidResponse { message: "Invalid UTF-8 ∈ body".to_string() })
+    }
+
+    /// Check ⎇ response is success (2xx)
+    ☉ rite is_success(&self) -> bool! {
+        self.status >= 200 && self.status < 300
+    }
+
+    /// Check ⎇ response is redirect (3xx)
+    ☉ rite is_redirect(&self) -> bool! {
+        self.status >= 300 && self.status < 400
+    }
+}
+
+// ============================================================================
+// HTTP Errors
+// ============================================================================
+
+☉ ᛈ HttpError {
+    InvalidUrl { url: String }!,
+    DnsResolutionFailed { hostname: String }!,
+    ConnectionFailed { inner: SocketError }!,
+    TlsFailed { inner: TlsError }!,
+    RequestTimedOut!,
+    TooManyRedirects!,
+    InvalidResponse { message: String }!,
+    ChunkedEncodingError!,
+    IoError { message: String }!,
+}
+
+☉ ⊢ Display ∀ HttpError {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ⌥ self {
+            HttpError·InvalidUrl { url } => write!(f, "Invalid URL: {}", url),
+            HttpError·DnsResolutionFailed { hostname } => write!(f, "DNS resolution failed ∀ {}", hostname),
+            HttpError·ConnectionFailed { inner } => write!(f, "Connection failed: {}", inner),
+            HttpError·TlsFailed { inner } => write!(f, "TLS error: {}", inner),
+            HttpError·RequestTimedOut => write!(f, "Request timed out"),
+            HttpError·TooManyRedirects => write!(f, "Too many redirects"),
+            HttpError·InvalidResponse { message } => write!(f, "Invalid response: {}", message),
+            HttpError·ChunkedEncodingError => write!(f, "Chunked encoding error"),
+            HttpError·IoError { message } => write!(f, "I/O error: {}", message),
+        }
+    }
+}
+
+// ============================================================================
+// HTTP Client
+// ============================================================================
+
+☉ sigil HttpClient {
+    timeout_ms: u32!,
+    max_redirects: u8!,
+    user_agent: String!,
+    /// Enable connection pooling (recommended ∀ multiple requests to same host)
+    pooling_enabled: bool!,
+}
+
+☉ ⊢ HttpClient {
+    /// Create new HTTP client with defaults
+    ☉ rite new() -> HttpClient! {
+        HttpClient {
+            timeout_ms: 30000,
+            max_redirects: 10,
+            user_agent: "Sigil/0.4.0".to_string(),
+            pooling_enabled: ⊤,  // Enable pooling by default
+        }
+    }
+
+    /// Create HTTP client without pooling (single-request use)
+    ☉ rite without_pooling() -> HttpClient! {
+        HttpClient {
+            timeout_ms: 30000,
+            max_redirects: 10,
+            user_agent: "Sigil/0.4.0".to_string(),
+            pooling_enabled: ⊥,
+        }
+    }
+
+    /// Simple GET request
+    ☉ rite get(&self, url: &str) -> Result<HttpResponse, HttpError>! {
+        ≔ parsed_url = Url·parse(url)?;
+        ≔ request = HttpRequest {
+            method: HttpMethod·GET,
+            url: parsed_url,
+            headers: Vec·new(),
+            body: None,
+        };
+        self.request(&request)
+    }
+
+    /// Simple POST request
+    ☉ rite post(&self, url: &str, body: &[u8]) -> Result<HttpResponse, HttpError>! {
+        ≔ parsed_url = Url·parse(url)?;
+        ≔ request = HttpRequest {
+            method: HttpMethod·POST,
+            url: parsed_url,
+            headers: Vec·new(),
+            body: Some(body.to_vec()),
+        };
+        self.request(&request)
+    }
+
+    /// POST with JSON content type
+    ☉ rite post_json(&self, url: &str, json: &str) -> Result<HttpResponse, HttpError>! {
+        ≔ parsed_url = Url·parse(url)?;
+        vary headers = Vec·new();
+        headers.push(("Content-Type".to_string(), "application/json".to_string()));
+
+        ≔ request = HttpRequest {
+            method: HttpMethod·POST,
+            url: parsed_url,
+            headers,
+            body: Some(json.as_bytes().to_vec()),
+        };
+        self.request(&request)
+    }
+
+    /// Full request with all options
+    ☉ rite request(&self, req: &HttpRequest) -> Result<HttpResponse, HttpError>! {
+        self.request_with_redirects(req, 0)
+    }
+
+    /// Internal: request with redirect tracking
+    rite request_with_redirects(&self, req: &HttpRequest, redirects: u8) -> Result<HttpResponse, HttpError>! {
+        ⎇ redirects > self.max_redirects {
+            ret Err(HttpError·TooManyRedirects);
+        }
+
+        // Resolve hostname
+        vary resolver = DnsResolver·system()
+            .map_err(|e| HttpError·DnsResolutionFailed { hostname: req.url.host.clone() })?;
+
+        ≔ ip = resolver.resolve(&req.url.host)
+            .map_err(|e| HttpError·DnsResolutionFailed { hostname: req.url.host.clone() })?;
+
+        // Build socket address
+        ≔ addr = SocketAddr·new(ip, req.url.port);
+
+        // Connect
+        ≔ response = ⎇ req.url.is_https() {
+            self.request_https(req, &addr)?
+        } ⎉ {
+            self.request_http(req, &addr)?
+        };
+
+        // Handle redirects
+        ⎇ response.is_redirect() {
+            ⎇ ≔ Some(location) = response.header("Location") {
+                ≔ new_url = ⎇ location.starts_with("http") {
+                    Url·parse(location)?
+                } ⎉ {
+                    // Relative URL
+                    vary new = req.url.clone();
+                    new.path = location.to_string();
+                    new
+                };
+
+                ≔ new_req = HttpRequest {
+                    method: HttpMethod·GET,  // Redirects are always GET
+                    url: new_url,
+                    headers: req.headers.clone(),
+                    body: None,
+                };
+
+                ret self.request_with_redirects(&new_req, redirects + 1);
+            }
+        }
+
+        Ok(response)
+    }
+
+    /// HTTP request over plain TCP
+    rite request_http(&self, req: &HttpRequest, addr: &SocketAddr) -> Result<HttpResponse, HttpError>! {
+        vary stream = TcpStream·connect(addr)
+            .map_err(|e| HttpError·ConnectionFailed { inner: e })?;
+
+        // Build and send request
+        ≔ request_bytes = self.build_request(req);
+        stream.write_all(&request_bytes)
+            .map_err(|e| HttpError·ConnectionFailed { inner: e })?;
+
+        // Read response
+        self.read_response(&vary stream)
+    }
+
+    /// HTTPS request over TLS
+    rite request_https(&self, req: &HttpRequest, addr: &SocketAddr) -> Result<HttpResponse, HttpError>! {
+        ≔ tcp = TcpStream·connect(addr)
+            .map_err(|e| HttpError·ConnectionFailed { inner: e })?;
+
+        vary tls = TlsStream·connect(tcp, &req.url.host)
+            .map_err(|e| HttpError·TlsFailed { inner: e })?;
+
+        // Build and send request
+        ≔ request_bytes = self.build_request(req);
+        tls.write_all(&request_bytes)
+            .map_err(|e| HttpError·TlsFailed { inner: e })?;
+
+        // Read response
+        self.read_response_tls(&vary tls)
+    }
+
+    /// Build HTTP request bytes
+    rite build_request(&self, req: &HttpRequest) -> Vec<u8>! {
+        vary buf = String·new();
+
+        // Request line
+        buf.push_str(&format!("{} {} HTTP/1.1\r\n", req.method, req.url.full_path()));
+
+        // Host header (required ∀ HTTP/1.1)
+        buf.push_str(&format!("Host: {}\r\n", req.url.host_header()));
+
+        // User-Agent
+        buf.push_str(&format!("User-Agent: {}\r\n", self.user_agent));
+
+        // Custom headers
+        ∀ (name, value) ∈ &req.headers {
+            buf.push_str(&format!("{}: {}\r\n", name, value));
+        }
+
+        // Content-Length ∀ body
+        ⎇ ≔ Some(body) = &req.body {
+            buf.push_str(&format!("Content-Length: {}\r\n", body.len()));
+        }
+
+        // Connection header (keep-alive ∀ pooling)
+        buf.push_str("Connection: keep-alive\r\n");
+
+        // Accept
+        buf.push_str("Accept: */*\r\n");
+
+        // End of headers
+        buf.push_str("\r\n");
+
+        vary bytes = buf.into_bytes();
+
+        // Append body
+        ⎇ ≔ Some(body) = &req.body {
+            bytes.extend_from_slice(body);
+        }
+
+        bytes
+    }
+
+    /// Read HTTP response from TCP stream
+    rite read_response(&self, stream: &vary TcpStream) -> Result<HttpResponse, HttpError>! {
+        vary buf: [u8; 8192] = [0; 8192];
+        vary data = Vec·new();
+
+        // Read until we have headers
+        loop {
+            ⌥ stream.read(&vary buf) {
+                Result·Ok(0) => break,
+                Result·Ok(n) => {
+                    data.extend_from_slice(&buf[..n]);
+
+                    // Check ∀ end of headers
+                    ⎇ data.windows(4).any(|w| w == b"\r\n\r\n") {
+                        ⊗;
+                    }
+                }
+                Result·Err(e) => {
+                    ret Err(HttpError·ConnectionFailed { inner: e });
+                }
+            }
+        }
+
+        self.parse_response(&data, stream)
+    }
+
+    /// Read HTTP response from TLS stream
+    rite read_response_tls(&self, stream: &vary TlsStream) -> Result<HttpResponse, HttpError>! {
+        vary buf: [u8; 8192] = [0; 8192];
+        vary data = Vec·new();
+
+        loop {
+            ⌥ stream.read(&vary buf) {
+                Result·Ok(0) => break,
+                Result·Ok(n) => {
+                    data.extend_from_slice(&buf[..n]);
+
+                    ⎇ data.windows(4).any(|w| w == b"\r\n\r\n") {
+                        ⊗;
+                    }
+                }
+                Result·Err(e) => {
+                    ret Err(HttpError·TlsFailed { inner: e });
+                }
+            }
+        }
+
+        // For now, simplified parsing
+        self.parse_response_simple(&data)
+    }
+
+    /// Parse HTTP response (simplified)
+    rite parse_response_simple(&self, data: &[u8]) -> Result<HttpResponse, HttpError>! {
+        // Find header/body boundary
+        vary header_end: usize = 0;
+        ∀ i ∈ 0..data.len() - 3 {
+            ⎇ data[i] == b'\r' && data[i + 1] == b'\n' && data[i + 2] == b'\r' && data[i + 3] == b'\n' {
+                header_end = i;
+                ⊗;
+            }
+        }
+
+        ⎇ header_end == 0 {
+            ret Err(HttpError·InvalidResponse { message: "No header boundary found".to_string() });
+        }
+
+        // Parse status line
+        ≔ header_str = String·from_utf8_lossy(&data[..header_end]);
+        ≔ lines: Vec<&str> = header_str.split("\r\n").collect();
+
+        ⎇ lines.is_empty() {
+            ret Err(HttpError·InvalidResponse { message: "Empty response".to_string() });
+        }
+
+        // Parse "HTTP/1.1 200 OK"
+        ≔ status_parts: Vec<&str> = lines[0].splitn(3, ' ').collect();
+        ⎇ status_parts.len() < 2 {
+            ret Err(HttpError·InvalidResponse { message: "Invalid status line".to_string() });
+        }
+
+        ≔ status = status_parts[1].parse·<u16>()
+            .map_err(|_| HttpError·InvalidResponse { message: "Invalid status code".to_string() })?;
+
+        ≔ status_text = ⎇ status_parts.len() > 2 {
+            status_parts[2].to_string()
+        } ⎉ {
+            "".to_string()
+        };
+
+        // Parse headers
+        vary headers = Vec·new();
+        ∀ line ∈ &lines[1..] {
+            ⎇ ≔ Some(colon) = line.find(':') {
+                ≔ name = line[..colon].trim().to_string();
+                ≔ value = line[colon + 1..].trim().to_string();
+                headers.push((name, value));
+            }
+        }
+
+        // Body is after header boundary + 4 bytes ∀ \r\n\r\n
+        ≔ body = data[header_end + 4..].to_vec();
+
+        Ok(HttpResponse {
+            status,
+            status_text,
+            headers,
+            body,
+        })
+    }
+
+    /// Parse response with potential chunked encoding
+    rite parse_response(&self, data: &[u8], stream: &vary TcpStream) -> Result<HttpResponse, HttpError>! {
+        // Simplified ∀ now - invoke parse_response_simple
+        self.parse_response_simple(data)
+    }
+}

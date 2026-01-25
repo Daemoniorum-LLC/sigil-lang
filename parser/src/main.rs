@@ -3,8 +3,6 @@
 use sigil_parser::lower::lower_source_file;
 use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
-#[cfg(feature = "wasm")]
-use sigil_parser::wasm::WasmTarget;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
 #[cfg(feature = "wasm")]
@@ -204,9 +202,7 @@ fn main() -> ExitCode {
         "wasm" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!(
-                    "Usage: sigil wasm <file.sigil> [-o output.wasm] [--target browser|wasi]"
-                );
+                eprintln!("Usage: sigil wasm <file.sigil> [-o output.wasm]");
                 return ExitCode::from(1);
             }
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
@@ -226,27 +222,7 @@ fn main() -> ExitCode {
                     .to_string()
                     + ".wasm"
             };
-            // Parse target option: --target wasi or --target browser
-            let target = if let Some(pos) = args.iter().position(|a| a == "--target") {
-                if pos + 1 < args.len() {
-                    match WasmTarget::from_str(&args[pos + 1]) {
-                        Some(t) => t,
-                        None => {
-                            eprintln!(
-                                "Error: invalid target '{}'. Use 'browser' or 'wasi'",
-                                args[pos + 1]
-                            );
-                            return ExitCode::from(1);
-                        }
-                    }
-                } else {
-                    eprintln!("Error: --target requires an argument (browser or wasi)");
-                    return ExitCode::from(1);
-                }
-            } else {
-                WasmTarget::Browser
-            };
-            wasm_compile_file(&args[2], &output, target)
+            wasm_compile_file(&args[2], &output)
         }
         #[cfg(not(feature = "wasm"))]
         "wasm" => {
@@ -1447,16 +1423,6 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> Exit
         args.push("-ldl");
     }
 
-    // Add libraries from #[link("name")] attributes on extern blocks
-    let link_libs: Vec<String> = compiler
-        .get_link_libraries()
-        .iter()
-        .map(|lib| format!("-l{}", lib))
-        .collect();
-    for lib in &link_libs {
-        args.push(lib);
-    }
-
     let link_result = Command::new(&linker).args(&args).status();
 
     // Clean up object file
@@ -1586,7 +1552,7 @@ fn find_linker() -> String {
 
 /// Compile a Sigil source file to WebAssembly.
 #[cfg(feature = "wasm")]
-fn wasm_compile_file(path: &str, output: &str, target: WasmTarget) -> ExitCode {
+fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -1595,14 +1561,10 @@ fn wasm_compile_file(path: &str, output: &str, target: WasmTarget) -> ExitCode {
         }
     };
 
-    let target_name = if target.is_wasi() { "WASI" } else { "Browser" };
-    println!(
-        "Compiling {} -> {} (WebAssembly, target: {})",
-        path, output, target_name
-    );
+    println!("Compiling {} -> {} (WebAssembly)", path, output);
 
-    // Create WASM compiler with specified target
-    let mut compiler = WasmCompiler::with_target(target);
+    // Create WASM compiler and compile
+    let mut compiler = WasmCompiler::new();
     match compiler.compile(&source) {
         Ok(wasm_bytes) => {
             // Write the WASM bytes to output file
@@ -1621,9 +1583,6 @@ fn wasm_compile_file(path: &str, output: &str, target: WasmTarget) -> ExitCode {
             };
 
             println!("Successfully compiled to: {} ({})", output, size_str);
-            if target.is_wasi() {
-                println!("Run with: wasmtime run {} [args...]", output);
-            }
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -2678,30 +2637,13 @@ fn print_item_summary(item: &sigil_parser::Item) {
             }
         }
         Item::Form(f) => {
-            println!(
-                "  form {} ({} fields{})",
-                f.name.name,
-                f.fields.len(),
-                if f.aegis.is_some() {
-                    ", with aegis"
-                } else {
-                    ""
-                }
-            );
+            println!("  form {}", f.name.name);
         }
         Item::Translations(t) => {
-            println!(
-                "  translations {} ({} entries)",
-                t.name.name,
-                t.entries.len()
-            );
+            println!("  translations {}", t.name.name);
         }
         Item::LocaleEnum(l) => {
-            println!(
-                "  locale enum {} ({} locales)",
-                l.name.name,
-                l.variants.len()
-            );
+            println!("  locale_enum {}", l.name.name);
         }
     }
 }

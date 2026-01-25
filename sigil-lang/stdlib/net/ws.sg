@@ -1,0 +1,419 @@
+//! WebSocket Layer
+//!
+//! WebSocket client implementation per RFC 6455.
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 7
+
+invoke socket·{TcpStream, SocketAddr, SocketError};
+invoke tls·{TlsStream, TlsError};
+invoke http·{Url, HttpError};
+invoke dns·DnsResolver;
+
+// ============================================================================
+// WebSocket Types
+// ============================================================================
+
+☉ ᛈ WsMessage {
+    Text(String)!,
+    Binary(Vec<u8>)!,
+    Ping(Vec<u8>)!,
+    Pong(Vec<u8>)!,
+    Close { code: u16?, reason: String? }!,
+}
+
+// Frame opcodes
+≔ OPCODE_CONTINUATION: u8 = 0x0;
+≔ OPCODE_TEXT: u8 = 0x1;
+≔ OPCODE_BINARY: u8 = 0x2;
+≔ OPCODE_CLOSE: u8 = 0x8;
+≔ OPCODE_PING: u8 = 0x9;
+≔ OPCODE_PONG: u8 = 0xA;
+
+// ============================================================================
+// WebSocket Errors
+// ============================================================================
+
+☉ ᛈ WsError {
+    InvalidUrl { url: String }!,
+    ConnectionFailed { inner: SocketError }!,
+    TlsFailed { inner: TlsError }!,
+    HandshakeFailed { status: u16, message: String }!,
+    InvalidFrame { message: String }!,
+    ConnectionClosed { code: u16?, reason: String? }!,
+    MessageTooLarge { size: usize, max: usize }!,
+    IoError { message: String }!,
+}
+
+☉ ⊢ Display ∀ WsError {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ⌥ self {
+            WsError·InvalidUrl { url } => write!(f, "Invalid WebSocket URL: {}", url),
+            WsError·ConnectionFailed { inner } => write!(f, "Connection failed: {}", inner),
+            WsError·TlsFailed { inner } => write!(f, "TLS error: {}", inner),
+            WsError·HandshakeFailed { status, message } => {
+                write!(f, "WebSocket handshake failed ({}): {}", status, message)
+            }
+            WsError·InvalidFrame { message } => write!(f, "Invalid WebSocket frame: {}", message),
+            WsError·ConnectionClosed { code, reason } => {
+                write!(f, "WebSocket closed: {:?} {:?}", code, reason)
+            }
+            WsError·MessageTooLarge { size, max } => {
+                write!(f, "Message too large: {} > {}", size, max)
+            }
+            WsError·IoError { message } => write!(f, "I/O error: {}", message),
+        }
+    }
+}
+
+// ============================================================================
+// WebSocket Connection
+// ============================================================================
+
+/// Internal connection type (TCP or TLS)
+ᛈ WsConnection {
+    Tcp(TcpStream)!,
+    Tls(TlsStream)!,
+}
+
+/// WebSocket client connection
+☉ sigil WebSocket {
+    conn: WsConnection!,
+    connected: bool!,
+    mask_key: [u8; 4]!,
+    url: Url!,
+    max_message_size: usize!,
+}
+
+☉ ⊢ WebSocket {
+    /// Connect to WebSocket URL (ws:// or wss://)
+    ☉ rite connect(url: &str) -> Result<WebSocket, WsError>! {
+        Self·connect_with_headers(url, &[])
+    }
+
+    /// Connect with custom headers (∀ auth, etc.)
+    ☉ rite connect_with_headers(url: &str, headers: &[(String, String)]) -> Result<WebSocket, WsError>! {
+        ≔ parsed = Url·parse(url)
+            .map_err(|_| WsError·InvalidUrl { url: url.to_string() })?;
+
+        // Validate scheme
+        ⎇ parsed.scheme != "ws" && parsed.scheme != "wss" {
+            ret Err(WsError·InvalidUrl { url: url.to_string() });
+        }
+
+        // Resolve hostname
+        vary resolver = DnsResolver·system()
+            .map_err(|_| WsError·ConnectionFailed {
+                inner: SocketError·InvalidAddress
+            })?;
+
+        ≔ ip = resolver.resolve(&parsed.host)
+            .map_err(|_| WsError·ConnectionFailed {
+                inner: SocketError·InvalidAddress
+            })?;
+
+        ≔ addr = SocketAddr·new(ip, parsed.port);
+
+        // Connect
+        ≔ conn = ⎇ parsed.scheme == "wss" {
+            ≔ tcp = TcpStream·connect(&addr)
+                .map_err(|e| WsError·ConnectionFailed { inner: e })?;
+
+            ≔ tls = TlsStream·connect(tcp, &parsed.host)
+                .map_err(|e| WsError·TlsFailed { inner: e })?;
+
+            WsConnection·Tls(tls)
+        } ⎉ {
+            ≔ tcp = TcpStream·connect(&addr)
+                .map_err(|e| WsError·ConnectionFailed { inner: e })?;
+
+            WsConnection·Tcp(tcp)
+        };
+
+        // Generate random mask key
+        // In production, invoke a proper CSPRNG
+        ≔ mask_key: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
+
+        vary ws = WebSocket {
+            conn,
+            connected: false,
+            mask_key,
+            url: parsed,
+            max_message_size: 16 * 1024 * 1024,  // 16 MB default
+        };
+
+        // Perform handshake
+        ws.handshake(headers)?;
+
+        Ok(ws)
+    }
+
+    /// Perform WebSocket handshake
+    rite handshake(&vary self, extra_headers: &[(String, String)]) -> Result<(), WsError>! {
+        // Generate Sec-WebSocket-Key (should be random base64)
+        ≔ key = "dGhlIHNhbXBsZSBub25jZQ==";  // Example from RFC
+
+        // Build handshake request
+        vary request = format!(
+            "GET {} HTTP/1.1\r\n\
+             Host: {}\r\n\
+             Upgrade: websocket\r\n\
+             Connection: Upgrade\r\n\
+             Sec-WebSocket-Key: {}\r\n\
+             Sec-WebSocket-Version: 13\r\n",
+            self.url.full_path(),
+            self.url.host_header(),
+            key
+        );
+
+        // Add custom headers
+        ∀ (name, value) ∈ extra_headers {
+            request.push_str(&format!("{}: {}\r\n", name, value));
+        }
+
+        request.push_str("\r\n");
+
+        // Send handshake
+        self.write_all(request.as_bytes())?;
+
+        // Read response
+        vary buf: [u8; 1024] = [0; 1024];
+        ≔ n = self.read(&vary buf)?;
+
+        // Parse response
+        ≔ response = String·from_utf8_lossy(&buf[..n]);
+
+        ⎇ !response.starts_with("HTTP/1.1 101") {
+            // Extract status code
+            ≔ status = ⎇ response.len() > 12 {
+                response[9..12].parse·<u16>().unwrap_or(0)
+            } ⎉ {
+                0
+            };
+
+            ret Err(WsError·HandshakeFailed {
+                status,
+                message: response.to_string(),
+            });
+        }
+
+        // Verify Sec-WebSocket-Accept (simplified)
+        // In production, compute SHA-1 of key + magic string and compare
+
+        self.connected = true;
+        Ok(())
+    }
+
+    /// Send text message
+    ☉ rite send_text(&vary self, text: &str) -> Result<(), WsError>! {
+        self.send_frame(OPCODE_TEXT, text.as_bytes(), true)
+    }
+
+    /// Send binary message
+    ☉ rite send_binary(&vary self, data: &[u8]) -> Result<(), WsError>! {
+        self.send_frame(OPCODE_BINARY, data, true)
+    }
+
+    /// Receive next message (blocks)
+    ☉ rite recv(&vary self) -> Result<WsMessage, WsError>! {
+        ⎇ !self.connected {
+            ret Err(WsError·ConnectionClosed { code: None, reason: None });
+        }
+
+        // Read frame header
+        vary header: [u8; 2] = [0; 2];
+        self.read_exact(&vary header)?;
+
+        ≔ fin = (header[0] & 0x80) != 0;
+        ≔ opcode = header[0] & 0x0F;
+        ≔ masked = (header[1] & 0x80) != 0;
+        vary payload_len = (header[1] & 0x7F) as usize;
+
+        // Extended payload length
+        ⎇ payload_len == 126 {
+            vary ext: [u8; 2] = [0; 2];
+            self.read_exact(&vary ext)?;
+            payload_len = ((ext[0] as usize) << 8) | (ext[1] as usize);
+        } ⎉ ⎇ payload_len == 127 {
+            vary ext: [u8; 8] = [0; 8];
+            self.read_exact(&vary ext)?;
+            payload_len = ((ext[4] as usize) << 24)
+                | ((ext[5] as usize) << 16)
+                | ((ext[6] as usize) << 8)
+                | (ext[7] as usize);
+        }
+
+        // Check message size
+        ⎇ payload_len > self.max_message_size {
+            ret Err(WsError·MessageTooLarge {
+                size: payload_len,
+                max: self.max_message_size,
+            });
+        }
+
+        // Read mask (⎇ present - server frames are usually unmasked)
+        vary mask: [u8; 4] = [0; 4];
+        ⎇ masked {
+            self.read_exact(&vary mask)?;
+        }
+
+        // Read payload
+        vary payload = vec![0u8; payload_len];
+        self.read_exact(&vary payload)?;
+
+        // Unmask ⎇ needed
+        ⎇ masked {
+            ∀ i ∈ 0..payload.len() {
+                payload[i] ^= mask[i % 4];
+            }
+        }
+
+        // Return appropriate message type
+        ⌥ opcode {
+            OPCODE_TEXT => {
+                ≔ text = String·from_utf8(payload)
+                    .map_err(|_| WsError·InvalidFrame { message: "Invalid UTF-8".to_string() })?;
+                Ok(WsMessage·Text(text))
+            }
+            OPCODE_BINARY => {
+                Ok(WsMessage·Binary(payload))
+            }
+            OPCODE_PING => {
+                // Auto-respond with pong
+                self.send_frame(OPCODE_PONG, &payload, true)?;
+                Ok(WsMessage·Ping(payload))
+            }
+            OPCODE_PONG => {
+                Ok(WsMessage·Pong(payload))
+            }
+            OPCODE_CLOSE => {
+                vary code: u16? = None;
+                vary reason: String? = None;
+
+                ⎇ payload.len() >= 2 {
+                    code = Some(((payload[0] as u16) << 8) | (payload[1] as u16));
+                    ⎇ payload.len() > 2 {
+                        reason = String·from_utf8(payload[2..].to_vec()).ok();
+                    }
+                }
+
+                self.connected = false;
+                Ok(WsMessage·Close { code, reason })
+            }
+            _ => {
+                Err(WsError·InvalidFrame {
+                    message: format!("Unknown opcode: {}", opcode)
+                })
+            }
+        }
+    }
+
+    /// Send ping
+    ☉ rite ping(&vary self, data: &[u8]) -> Result<(), WsError>! {
+        self.send_frame(OPCODE_PING, data, true)
+    }
+
+    /// Close connection gracefully
+    ☉ rite close(&vary self, code: u16, reason: &str) -> Result<(), WsError>! {
+        ⎇ !self.connected {
+            ret Ok(());
+        }
+
+        // Build close frame payload
+        vary payload = Vec·new();
+        payload.push((code >> 8) as u8);
+        payload.push((code & 0xFF) as u8);
+        payload.extend_from_slice(reason.as_bytes());
+
+        self.send_frame(OPCODE_CLOSE, &payload, true)?;
+        self.connected = false;
+
+        Ok(())
+    }
+
+    /// Send WebSocket frame
+    rite send_frame(&vary self, opcode: u8, data: &[u8], fin: bool) -> Result<(), WsError>! {
+        vary frame = Vec·new();
+
+        // First byte: FIN + opcode
+        ≔ first_byte = ⎇ fin { 0x80 | opcode } ⎉ { opcode };
+        frame.push(first_byte);
+
+        // Second byte: MASK (always 1 ∀ client) + payload length
+        ⎇ data.len() < 126 {
+            frame.push(0x80 | data.len() as u8);
+        } ⎉ ⎇ data.len() < 65536 {
+            frame.push(0x80 | 126);
+            frame.push((data.len() >> 8) as u8);
+            frame.push((data.len() & 0xFF) as u8);
+        } ⎉ {
+            frame.push(0x80 | 127);
+            frame.push(0);
+            frame.push(0);
+            frame.push(0);
+            frame.push(0);
+            frame.push((data.len() >> 24) as u8);
+            frame.push((data.len() >> 16) as u8);
+            frame.push((data.len() >> 8) as u8);
+            frame.push((data.len() & 0xFF) as u8);
+        }
+
+        // Masking key
+        frame.extend_from_slice(&self.mask_key);
+
+        // Masked payload
+        ∀ (i, byte) ∈ data.iter().enumerate() {
+            frame.push(byte ^ self.mask_key[i % 4]);
+        }
+
+        self.write_all(&frame)
+    }
+
+    /// Internal: write to connection
+    rite write_all(&vary self, data: &[u8]) -> Result<(), WsError>! {
+        ⌥ &vary self.conn {
+            WsConnection·Tcp(ref vary tcp) => {
+                tcp.write_all(data)
+                    .map_err(|e| WsError·ConnectionFailed { inner: e })
+            }
+            WsConnection·Tls(ref vary tls) => {
+                tls.write_all(data)
+                    .map_err(|e| WsError·TlsFailed { inner: e })
+            }
+        }
+    }
+
+    /// Internal: read from connection
+    rite read(&vary self, buf: &vary [u8]) -> Result<usize, WsError>! {
+        ⌥ &vary self.conn {
+            WsConnection·Tcp(ref vary tcp) => {
+                tcp.read(buf)
+                    .map_err(|e| WsError·ConnectionFailed { inner: e })
+            }
+            WsConnection·Tls(ref vary tls) => {
+                tls.read(buf)
+                    .map_err(|e| WsError·TlsFailed { inner: e })
+            }
+        }
+    }
+
+    /// Internal: read exact bytes
+    rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), WsError>! {
+        vary total = 0;
+        ⟳ total < buf.len() {
+            ≔ n = self.read(&vary buf[total..])?;
+            ⎇ n == 0 {
+                ret Err(WsError·ConnectionClosed { code: None, reason: None });
+            }
+            total += n;
+        }
+        Ok(())
+    }
+}
+
+☉ ⊢ Drop ∀ WebSocket {
+    ☉ rite drop(&vary self) {
+        ⎇ self.connected {
+            self.close(1000, "Normal closure");
+        }
+    }
+}

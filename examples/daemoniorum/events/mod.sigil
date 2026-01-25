@@ -1,0 +1,27 @@
+//! # DAEMONIORUM Events Module
+//!
+//! Event system for reactive game behavior,
+//! emotional triggers, and system integration.
+
+pub mod events;
+pub mod triggers;
+
+pub use events·*;
+pub use triggers·*;
+
+// ============================================================================
+// MODULE INITIALIZATION
+// ============================================================================
+
+//! Initialize the complete event system
+fn init_event_system() -> EventManager! {
+    let mut manager = EventManager·new();
+
+    // Register built-in handlers
+    register_builtin_handlers(&mut manager);
+
+    // Register all triggers
+    register_all_triggers(&mut manager);
+
+    manager
+}

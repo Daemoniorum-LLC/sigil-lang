@@ -1,0 +1,10 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: Cannot mutate immutable variable
+// Should fail with mutability error
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    ≔ x = 42;
+    x = 100;  // ERROR: cannot assign to immutable variable
+    println(x);
+}

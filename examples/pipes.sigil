@@ -1,4 +1,3 @@
-// Pipe operations in Sigil
 rite main() → i64 {
     ≔ nums = [1, 2, 3, 4, 5];
 
@@ -10,5 +9,5 @@ rite main() → i64 {
     ≔ total = nums|Σ;
     print(total);
 
-    0
+    ⤺ 0;
 }

@@ -1,0 +1,10 @@
+// Test: Basic Σ definition with typed fields
+☉ Σ Point {
+    x: !i32,
+    y: !i32
+}
+
+λ main() {
+    ≔ p: !Point = Point { x: 10, y: 20 };
+    println(p.x);
+}

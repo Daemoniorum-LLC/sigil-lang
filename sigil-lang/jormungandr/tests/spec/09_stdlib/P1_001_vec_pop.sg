@@ -1,0 +1,22 @@
+// Test: Vec pop operation
+// Spec: 09-STDLIB.md § 4.1 Vec
+// Priority: P1 - Production Ready
+
+λ main() {
+    ≔ Δ v: Vec<i32> = vec![1, 2, 3];
+
+    // Pop returns Option·Some(last element)
+    ⌥ v.pop() {
+        Option·Some(val) => println(val),
+        Option·None => println("empty"),
+    }
+
+    // Length is now 2
+    println(v.len());
+
+    // Pop again
+    ⌥ v.pop() {
+        Option·Some(val) => println(val),
+        Option·None => println("empty"),
+    }
+}

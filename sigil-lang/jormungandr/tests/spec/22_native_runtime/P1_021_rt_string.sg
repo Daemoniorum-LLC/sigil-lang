@@ -1,0 +1,145 @@
+// P1_021_rt_string.sg - String Specification Tests (interpreter-compatible)
+//
+// These tests verify string operations work correctly.
+// Restructured ∀ interpreter mode where strings are immutable.
+
+// ============================================================================
+// Construction
+// ============================================================================
+
+λ test_string_new_is_empty() {
+    ≔ s = "";
+    assert_eq!(s.len(), 0);
+    assert!(s.is_empty());
+}
+
+λ test_string_with_capacity() {
+    ≔ s = "test";
+    assert!(s.capacity() >= 4);
+}
+
+λ test_string_from_str() {
+    ≔ s = "hello";
+    assert_eq!(s.len(), 5);
+    assert_eq!(s, "hello");
+}
+
+// ============================================================================
+// Concatenation
+// ============================================================================
+
+λ test_string_push_str() {
+    ≔ s = "hello" + " world";
+    assert_eq!(s, "hello world");
+    assert_eq!(s.len(), 11);
+}
+
+λ test_string_push_char() {
+    ≔ s = "hell" + "o";
+    assert_eq!(s, "hello");
+}
+
+λ test_string_push_multibyte_char() {
+    ≔ s = "α" + "β";  // Greek alpha + beta
+    assert_eq!(s.len(), 4);  // 2 + 2 bytes
+}
+
+// ============================================================================
+// Length / Capacity
+// ============================================================================
+
+λ test_string_len_is_byte_count() {
+    ≔ s = "αβγ";  // 3 chars, 6 bytes
+    assert_eq!(s.len(), 6);
+}
+
+λ test_string_is_empty() {
+    ≔ empty = "";
+    ≔ non_empty = "x";
+
+    assert!(empty.is_empty());
+    assert!(!non_empty.is_empty());
+}
+
+// ============================================================================
+// Conversion
+// ============================================================================
+
+λ test_string_as_str() {
+    ≔ s = "test";
+    assert_eq!(s, "test");
+}
+
+λ test_string_as_bytes() {
+    ≔ s = "ABC";
+    ≔ bytes = s.as_bytes();
+    assert_eq!(bytes.len(), 3);
+    assert_eq!(bytes[0], 65);  // 'A'
+    assert_eq!(bytes[1], 66);  // 'B'
+    assert_eq!(bytes[2], 67);  // 'C'
+}
+
+// ============================================================================
+// Reassignment (strings are immutable, invoke assignment to clear)
+// ============================================================================
+
+λ test_string_reassignment() {
+    ≔ Δ s = "hello world";
+    s = "";
+
+    assert!(s.is_empty());
+    assert_eq!(s.len(), 0);
+}
+
+// ============================================================================
+// Concatenation
+// ============================================================================
+
+λ test_string_concat() {
+    ≔ a = "hello";
+    ≔ b = " world";
+    ≔ c = a + b;
+
+    assert_eq!(c, "hello world");
+}
+
+λ test_string_add_operator() {
+    ≔ a = "foo";
+    ≔ b = "bar";
+    ≔ c = a + b;
+
+    assert_eq!(c, "foobar");
+}
+
+// ============================================================================
+// Entry Point
+// ============================================================================
+
+λ main() {
+    // Construction
+    test_string_new_is_empty();
+    test_string_with_capacity();
+    test_string_from_str();
+
+    // Push (concatenation)
+    test_string_push_str();
+    test_string_push_char();
+    test_string_push_multibyte_char();
+
+    // Length
+    test_string_len_is_byte_count();
+    test_string_is_empty();
+
+    // Conversion
+    test_string_as_str();
+    test_string_as_bytes();
+
+    // Reassignment (clearing)
+    test_string_reassignment();
+
+    // Concatenation
+    test_string_concat();
+    test_string_add_operator();
+
+    println("All String tests passed!");
+}

@@ -1,0 +1,591 @@
+//! Comprehensive Type Checker Traits Test Suite
+//!
+//! Tests Θ definitions, implementations, bounds, associated types,
+//! supertraits, and method resolution.
+//! Target: 100% Θ system coverage ∀ regression detection.
+
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/// Parse and type check a source string
+λ check_source(source: !&str) -> !bool {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
+        Result·Ok(a) => a,
+        Result·Err(_) => ⤺ false,
+    };
+    ≔ Δ checker = TypeChecker·new();
+    ⌥ checker.check_file(ast) {
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
+    }
+}
+
+/// Assert that type checking succeeds
+λ assert_checks(source: !&str, name: !&str) {
+    ⎇ !check_source(source) {
+        panic(format!("FAIL {}: type check failed", name));
+    }
+}
+
+/// Assert that type checking fails
+λ assert_fails(source: !&str, name: !&str) {
+    ⎇ check_source(source) {
+        panic(format!("FAIL {}: type check should have failed", name));
+    }
+}
+
+// ============================================================================
+// 1. BASIC TRAIT DEFINITIONS
+// ============================================================================
+
+λ test_basic_traits() -> !bool {
+    print("  [1/10] Basic Θ definitions... ");
+
+    // Empty marker Θ
+    assert_checks("Θ Marker {}", "empty_trait");
+
+    // Trait with method
+    assert_checks("
+        Θ Greet {
+            λ greet(self) -> !String;
+        }
+    ", "trait_one_method");
+
+    // Trait with multiple methods
+    assert_checks("
+        Θ Collection {
+            λ len(self) -> !usize;
+            λ is_empty(self) -> !bool;
+            λ clear(Δ self);
+        }
+    ", "trait_multi_methods");
+
+    // Public Θ
+    assert_checks("☉ Θ PublicTrait {}", "pub_trait");
+
+    // Trait with generic parameter
+    assert_checks("
+        Θ Container<T> {
+            λ get(self) -> !T;
+            λ set(Δ self, value: !T);
+        }
+    ", "generic_trait");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 2. TRAIT IMPLEMENTATIONS
+// ============================================================================
+
+λ test_trait_impls() -> !bool {
+    print("  [2/10] Trait implementations... ");
+
+    // Basic implementation
+    assert_checks("
+        Θ Greet {
+            λ greet(self) -> !String;
+        }
+        Σ Person { name: !String }
+        ⊢ Greet ∀ Person {
+            λ greet(self) -> !String {
+                ⤺ format!(\"Hello, {}\", self.name);
+            }
+        }
+    ", "basic_impl");
+
+    // Implement ∀ multiple types
+    assert_checks("
+        Θ Show {
+            λ show(self) -> !String;
+        }
+        Σ Foo {}
+        Σ Bar {}
+        ⊢ Show ∀ Foo {
+            λ show(self) -> !String { ⤺ \"Foo\"; }
+        }
+        ⊢ Show ∀ Bar {
+            λ show(self) -> !String { ⤺ \"Bar\"; }
+        }
+    ", "impl_multiple_types");
+
+    // Generic implementation
+    assert_checks("
+        Θ Default {
+            λ default() -> !Self;
+        }
+        Σ Wrapper<T> { value: !T }
+        ⊢<T> Default ∀ Wrapper<T> where T: Default {
+            λ default() -> !Wrapper<T> {
+                Wrapper { value: T·default() }
+            }
+        }
+    ", "generic_impl");
+
+    // Missing method should fail
+    assert_fails("
+        Θ Required {
+            λ must_implement(self);
+        }
+        Σ Missing {}
+        ⊢ Required ∀ Missing {}
+    ", "missing_method");
+
+    // Wrong method signature should fail
+    assert_fails("
+        Θ Exact {
+            λ method(self) -> !i32;
+        }
+        Σ Wrong {}
+        ⊢ Exact ∀ Wrong {
+            λ method(self) -> !String { ⤺ \"\"; }
+        }
+    ", "wrong_signature");
+
+    println("PASS (5 cases)");
+    true
+}
+
+// ============================================================================
+// 3. DEFAULT METHOD IMPLEMENTATIONS
+// ============================================================================
+
+λ test_default_methods() -> !bool {
+    print("  [3/10] Default method implementations... ");
+
+    // Trait with default implementation
+    assert_checks("
+        Θ WithDefault {
+            λ required(self) -> !i32;
+            λ optional(self) -> !i32 {
+                ⤺ self.required() * 2;
+            }
+        }
+        Σ Implementor {}
+        ⊢ WithDefault ∀ Implementor {
+            λ required(self) -> !i32 { ⤺ 21; }
+        }
+    ", "default_method");
+
+    // Override default implementation
+    assert_checks("
+        Θ Overridable {
+            λ method(self) -> !i32 { ⤺ 0; }
+        }
+        Σ Custom {}
+        ⊢ Overridable ∀ Custom {
+            λ method(self) -> !i32 { ⤺ 42; }
+        }
+    ", "override_default");
+
+    // Multiple defaults
+    assert_checks("
+        Θ ManyDefaults {
+            λ a(self) -> !i32 { ⤺ 1; }
+            λ b(self) -> !i32 { ⤺ 2; }
+            λ c(self) -> !i32 { ⤺ self.a() + self.b(); }
+        }
+        Σ User {}
+        ⊢ ManyDefaults ∀ User {}
+    ", "multiple_defaults");
+
+    println("PASS (3 cases)");
+    true
+}
+
+// ============================================================================
+// 4. ASSOCIATED TYPES
+// ============================================================================
+
+λ test_associated_types() -> !bool {
+    print("  [4/10] Associated types... ");
+
+    // Basic associated type
+    assert_checks("
+        Θ Iterator {
+            type Item;
+            λ next(Δ self) -> ?Self·Item;
+        }
+        Σ RangeIter { current: !i32, end: !i32 }
+        ⊢ Iterator ∀ RangeIter {
+            type Item = i32;
+            λ next(Δ self) -> ?i32 {
+                ⎇ self.current < self.end {
+                    ≔ val = self.current;
+                    self.current = self.current + 1;
+                    ⤺ ?val;
+                }
+                ⤺ null;
+            }
+        }
+    ", "associated_type_basic");
+
+    // Multiple associated types
+    assert_checks("
+        Θ Mapping {
+            type Key;
+            type Value;
+            λ get(self, key: !Self·Key) -> ?Self·Value;
+        }
+        Σ StringMap {}
+        ⊢ Mapping ∀ StringMap {
+            type Key = String;
+            type Value = String;
+            λ get(self, key: !String) -> ?String { ⤺ null; }
+        }
+    ", "multiple_associated_types");
+
+    // Associated type with bounds
+    assert_checks("
+        Θ Bounded {
+            type Output: Clone;
+            λ produce(self) -> !Self·Output;
+        }
+    ", "associated_type_bounded");
+
+    println("PASS (3 cases)");
+    true
+}
+
+// ============================================================================
+// 5. ASSOCIATED CONSTANTS
+// ============================================================================
+
+λ test_associated_constants() -> !bool {
+    print("  [5/10] Associated constants... ");
+
+    // Basic associated constant
+    assert_checks("
+        Θ HasMax {
+            const MAX: i32;
+        }
+        Σ SmallInt {}
+        ⊢ HasMax ∀ SmallInt {
+            const MAX: i32 = 127;
+        }
+    ", "associated_const_basic");
+
+    // Default associated constant
+    assert_checks("
+        Θ WithDefault {
+            const DEFAULT: i32 = 0;
+        }
+        Σ UseDefault {}
+        ⊢ WithDefault ∀ UseDefault {}
+    ", "associated_const_default");
+
+    // Multiple associated constants
+    assert_checks("
+        Θ Limits {
+            const MIN: i32;
+            const MAX: i32;
+        }
+        Σ Byte {}
+        ⊢ Limits ∀ Byte {
+            const MIN: i32 = 0;
+            const MAX: i32 = 255;
+        }
+    ", "multiple_consts");
+
+    println("PASS (3 cases)");
+    true
+}
+
+// ============================================================================
+// 6. TRAIT BOUNDS
+// ============================================================================
+
+λ test_trait_bounds() -> !bool {
+    print("  [6/10] Trait bounds... ");
+
+    // Single bound
+    assert_checks("
+        Θ Clone { λ clone(self) -> !Self; }
+        λ duplicate<T: Clone>(x: !T) -> !(T, T) {
+            ⤺ (x.clone(), x);
+        }
+    ", "single_bound");
+
+    // Multiple bounds
+    assert_checks("
+        Θ Clone { λ clone(self) -> !Self; }
+        Θ Debug { λ debug(self) -> !String; }
+        λ debug_clone<T: Clone + Debug>(x: !T) -> !String {
+            ⤺ x.debug();
+        }
+    ", "multiple_bounds");
+
+    // Where clause
+    assert_checks("
+        Θ Clone { λ clone(self) -> !Self; }
+        λ process<T>(items: ![T]) -> ![T] where T: Clone {
+            ⤺ items;
+        }
+    ", "where_clause");
+
+    // Complex where clause
+    assert_checks("
+        Θ A {}
+        Θ B {}
+        Θ C {}
+        λ complex<T, U>(a: !T, b: !U) where T: A + B, U: C {
+        }
+    ", "complex_where");
+
+    // Bound on associated type
+    assert_checks("
+        Θ Iterator { type Item; }
+        Θ Clone {}
+        λ collect_clones<I>(iter: !I) where I: Iterator, I·Item: Clone {
+        }
+    ", "associated_type_bound");
+
+    // Unsatisfied bound should fail
+    assert_fails("
+        Θ Required {}
+        λ needs_trait<T: Required>(x: !T) {}
+        Σ NoImpl {}
+        λ main() { needs_trait(NoImpl {}); }
+    ", "unsatisfied_bound");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 7. SUPERTRAITS
+// ============================================================================
+
+λ test_supertraits() -> !bool {
+    print("  [7/10] Supertraits... ");
+
+    // Single supertrait
+    assert_checks("
+        Θ Base {
+            λ base_method(self) -> !i32;
+        }
+        Θ Derived: Base {
+            λ derived_method(self) -> !i32;
+        }
+        Σ Impl {}
+        ⊢ Base ∀ Impl {
+            λ base_method(self) -> !i32 { ⤺ 1; }
+        }
+        ⊢ Derived ∀ Impl {
+            λ derived_method(self) -> !i32 { ⤺ 2; }
+        }
+    ", "single_supertrait");
+
+    // Multiple supertraits
+    assert_checks("
+        Θ A { λ a(self); }
+        Θ B { λ b(self); }
+        Θ C: A + B { λ c(self); }
+        Σ Multi {}
+        ⊢ A ∀ Multi { λ a(self) {} }
+        ⊢ B ∀ Multi { λ b(self) {} }
+        ⊢ C ∀ Multi { λ c(self) {} }
+    ", "multiple_supertraits");
+
+    // Transitive supertraits
+    assert_checks("
+        Θ First { λ first(self); }
+        Θ Second: First { λ second(self); }
+        Θ Third: Second { λ third(self); }
+    ", "transitive_supertraits");
+
+    // Missing superΘ ⊢ should fail
+    assert_fails("
+        Θ Base { λ base(self); }
+        Θ Derived: Base { λ derived(self); }
+        Σ Incomplete {}
+        ⊢ Derived ∀ Incomplete {
+            λ derived(self) {}
+        }
+    ", "missing_supertrait");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 8. OBJECT SAFETY
+// ============================================================================
+
+λ test_object_safety() -> !bool {
+    print("  [8/10] Object safety... ");
+
+    // Object-safe Θ
+    assert_checks("
+        Θ ObjectSafe {
+            λ method(self);
+        }
+        λ use_dyn(obj: &dyn ObjectSafe) {
+            obj.method();
+        }
+    ", "object_safe_basic");
+
+    // Trait with Self ∈ ⤺ is not object-safe
+    assert_checks("
+        Θ NotObjectSafe {
+            λ clone(self) -> !Self;
+        }
+    ", "not_object_safe_clone");
+
+    // Trait object with multiple traits
+    assert_checks("
+        Θ Read { λ read(self); }
+        Θ Write { λ write(self); }
+        λ read_write(obj: &(dyn Read + Write)) {}
+    ", "multi_trait_object");
+
+    println("PASS (3 cases)");
+    true
+}
+
+// ============================================================================
+// 9. METHOD RESOLUTION
+// ============================================================================
+
+λ test_method_resolution() -> !bool {
+    print("  [9/10] Method resolution... ");
+
+    // Inherent method takes priority
+    assert_checks("
+        Θ Trait {
+            λ method(self) -> !i32 { ⤺ 1; }
+        }
+        Σ Type {}
+        ⊢ Type {
+            λ method(self) -> !i32 { ⤺ 2; }
+        }
+        ⊢ Trait ∀ Type {}
+        λ main() {
+            ≔ t = Type {};
+            ≔ _x = t.method();  // Calls inherent, returns 2
+        }
+    ", "inherent_priority");
+
+    // Explicit Θ method call
+    assert_checks("
+        Θ A { λ method(self) -> !i32; }
+        Θ B { λ method(self) -> !i32; }
+        Σ Type {}
+        ⊢ A ∀ Type { λ method(self) -> !i32 { ⤺ 1; } }
+        ⊢ B ∀ Type { λ method(self) -> !i32 { ⤺ 2; } }
+        λ main() {
+            ≔ t = Type {};
+            ≔ _a = A·method(t);
+            ≔ _b = B·method(t);
+        }
+    ", "explicit_trait_method");
+
+    // Auto-ref ∀ method call
+    assert_checks("
+        Σ Value { x: !i32 }
+        ⊢ Value {
+            λ get(self) -> !i32 { self.x }
+            λ get_ref(&self) -> !i32 { self.x }
+        }
+        λ main() {
+            ≔ v = Value { x: 42 };
+            ≔ _a = v.get();
+            ≔ _b = v.get_ref();
+        }
+    ", "auto_ref");
+
+    // Method on generic type
+    assert_checks("
+        Θ Process {
+            λ process(self) -> !i32;
+        }
+        λ call_process<T: Process>(x: !T) -> !i32 {
+            ⤺ x.process();
+        }
+    ", "method_on_generic");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 10. COHERENCE AND ORPHAN RULES
+// ============================================================================
+
+λ test_coherence() -> !bool {
+    print("  [10/10] Coherence rules... ");
+
+    // Local type implementing foreign Θ (allowed)
+    assert_checks("
+        Θ ForeignTrait {}
+        Σ LocalType {}
+        ⊢ ForeignTrait ∀ LocalType {}
+    ", "local_for_foreign");
+
+    // Local Θ ∀ foreign type (allowed ∈ same crate)
+    assert_checks("
+        Θ LocalTrait {}
+        ⊢ LocalTrait ∀ i32 {}
+    ", "local_trait_foreign_type");
+
+    // Blanket implementation
+    assert_checks("
+        Θ ToString {
+            λ to_string(self) -> !String;
+        }
+        ⊢<T> ToString ∀ T where T: Debug {
+            λ to_string(self) -> !String { ⤺ \"\"; }
+        }
+    ", "blanket_impl");
+
+    // Negative ⊢ marker (⎇ supported)
+    assert_checks("
+        Θ Marker {}
+        Σ NotMarker {}
+        // NotMarker deliberately does not implement Marker
+    ", "no_impl");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ λ main() -> !i32 {
+    println("Testing Type Checker Traits...");
+    println("");
+
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
+
+    ⎇ test_basic_traits() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_trait_impls() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_default_methods() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_associated_types() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_associated_constants() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_trait_bounds() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_supertraits() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_object_safety() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_method_resolution() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_coherence() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    ⎇ failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All Θ system tests passed! (~40 test cases)");
+    ⤺ 0;
+}

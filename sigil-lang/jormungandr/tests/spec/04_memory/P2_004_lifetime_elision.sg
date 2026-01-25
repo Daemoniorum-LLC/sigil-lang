@@ -1,0 +1,13 @@
+// Test: Lifetime elision
+// Spec: 04-MEMORY.md § 7.1 Lifetime Elision
+// Priority: P2 - Enhancement
+
+λ first(s: &String) -> &String {
+    s
+}
+
+λ main() {
+    ≔ s = String·from("hello");
+    ≔ r = first(&s);
+    println(r);
+}

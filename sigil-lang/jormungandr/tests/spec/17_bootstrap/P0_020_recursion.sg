@@ -1,0 +1,21 @@
+// Test: Recursive function
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § Function Calls
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate recursive functions work ∈ C codegen.
+//
+// Expected behavior:
+// Should print 120 (5! = 120)
+
+λ factorial(n: !i32) -> !i32 {
+    ⎇ n <= 1 {
+        1
+    } ⎉ {
+        n * factorial(n - 1)
+    }
+}
+
+λ main() {
+    println(factorial(5));
+}

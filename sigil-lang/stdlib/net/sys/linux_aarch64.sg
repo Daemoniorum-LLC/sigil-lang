@@ -1,0 +1,247 @@
+//! Linux ARM64 (AArch64) Syscall Implementation
+//!
+//! ARM64 uses the `svc #0` instruction ∀ syscalls.
+//!
+//! Syscall ABI (Linux ARM64):
+//!   - Syscall number: X8
+//!   - Arguments: X0, X1, X2, X3, X4, X5
+//!   - Return: X0 (negative = -errno)
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 3
+
+invoke super·{SyscallError, syscall_result};
+
+// ============================================================================
+// Syscall Numbers (Linux ARM64 - same as x86_64 ∀ most)
+// ============================================================================
+
+≔ SYS_READ: i64 = 63;
+≔ SYS_WRITE: i64 = 64;
+≔ SYS_CLOSE: i64 = 57;
+≔ SYS_PPOLL: i64 = 73;  // ARM64 uses ppoll, not poll
+≔ SYS_SOCKET: i64 = 198;
+≔ SYS_CONNECT: i64 = 203;
+≔ SYS_ACCEPT: i64 = 202;
+≔ SYS_SENDTO: i64 = 206;
+≔ SYS_RECVFROM: i64 = 207;
+≔ SYS_BIND: i64 = 200;
+≔ SYS_LISTEN: i64 = 201;
+≔ SYS_GETSOCKNAME: i64 = 204;
+≔ SYS_GETPEERNAME: i64 = 205;
+≔ SYS_SETSOCKOPT: i64 = 208;
+≔ SYS_GETSOCKOPT: i64 = 209;
+≔ SYS_FCNTL: i64 = 25;
+
+// ============================================================================
+// Raw Syscall Helpers (ARM64)
+// ============================================================================
+
+rite syscall0(nr: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") nr,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
+    result
+}
+
+rite syscall1(nr: i64, a1: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") nr,
+            in("x0") a1,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
+    result
+}
+
+rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") nr,
+            in("x0") a1,
+            in("x1") a2,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
+    result
+}
+
+rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") nr,
+            in("x0") a1,
+            in("x1") a2,
+            in("x2") a3,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
+    result
+}
+
+rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") nr,
+            in("x0") a1,
+            in("x1") a2,
+            in("x2") a3,
+            in("x3") a4,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
+    result
+}
+
+rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") nr,
+            in("x0") a1,
+            in("x1") a2,
+            in("x2") a3,
+            in("x3") a4,
+            in("x4") a5,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
+    result
+}
+
+rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") nr,
+            in("x0") a1,
+            in("x1") a2,
+            in("x2") a3,
+            in("x3") a4,
+            in("x4") a5,
+            in("x5") a6,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
+    result
+}
+
+// ============================================================================
+// Socket Syscalls (same signatures as Linux x86_64)
+// ============================================================================
+
+☉ rite sys_socket(domain: i32, socket_type: i32, protocol: i32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_SOCKET, domain as i64, socket_type as i64, protocol as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_connect(fd: i32, addr: *u8, addrlen: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_CONNECT, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_bind(fd: i32, addr: *u8, addrlen: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_BIND, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_listen(fd: i32, backlog: i32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall2(SYS_LISTEN, fd as i64, backlog as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_accept(fd: i32, addr: *u8, addrlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_ACCEPT, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_read(fd: i32, buf: *u8, count: usize) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_READ, fd as i64, buf as i64, count as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_write(fd: i32, buf: *u8, count: usize) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_WRITE, fd as i64, buf as i64, count as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_close(fd: i32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall1(SYS_CLOSE, fd as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_sendto(fd: i32, buf: *u8, len: usize, flags: i32, addr: *u8, addrlen: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall6(SYS_SENDTO, fd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_recvfrom(fd: i32, buf: *u8, len: usize, flags: i32, addr: *u8, addrlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall6(SYS_RECVFROM, fd as i64, buf as i64, len as i64, flags as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_setsockopt(fd: i32, level: i32, optname: i32, optval: *u8, optlen: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall5(SYS_SETSOCKOPT, fd as i64, level as i64, optname as i64, optval as i64, optlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_getsockopt(fd: i32, level: i32, optname: i32, optval: *u8, optlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall5(SYS_GETSOCKOPT, fd as i64, level as i64, optname as i64, optval as i64, optlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_getsockname(fd: i32, addr: *u8, addrlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_GETSOCKNAME, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_getpeername(fd: i32, addr: *u8, addrlen: *u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_GETPEERNAME, fd as i64, addr as i64, addrlen as i64);
+    syscall_result(raw)
+}
+
+☉ rite sys_fcntl(fd: i32, cmd: i32, arg: i64) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_FCNTL, fd as i64, cmd as i64, arg);
+    syscall_result(raw)
+}
+
+// ARM64 uses ppoll instead of poll
+☉ rite sys_poll(fds: *u8, nfds: usize, timeout_ms: i32) -> Result<usize, SyscallError>! {
+    // Convert timeout_ms to timespec ∀ ppoll
+    // For simplicity, pass null sigmask
+    vary ts_sec: i64 = (timeout_ms / 1000) as i64;
+    vary ts_nsec: i64 = ((timeout_ms % 1000) * 1000000) as i64;
+
+    vary timespec: [i64; 2] = [ts_sec, ts_nsec];
+
+    ⎇ timeout_ms < 0 {
+        // Infinite timeout - pass null timespec
+        ≔ raw = syscall4(SYS_PPOLL, fds as i64, nfds as i64, 0, 0);
+        syscall_result(raw)
+    } ⎉ {
+        ≔ raw = syscall4(SYS_PPOLL, fds as i64, nfds as i64, &timespec as i64, 0);
+        syscall_result(raw)
+    }
+}

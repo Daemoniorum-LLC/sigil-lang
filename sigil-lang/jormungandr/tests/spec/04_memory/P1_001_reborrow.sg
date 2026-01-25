@@ -1,0 +1,20 @@
+// Test: Reborrowing a mutable reference
+// Spec: 04-MEMORY.md § 3.3 Borrow Rules
+// Priority: P1 - Production Ready
+
+λ take_ref(r: &i32) -> !i32 {
+    *r
+}
+
+λ main() {
+    ≔ Δ x: !i32 = 42;
+    ≔ r: &Δ i32 = &Δ x;
+
+    // Reborrow as immutable - should work
+    ≔ val = take_ref(r);
+    println(val);
+
+    // Can still invoke mutable ref after reborrow ends
+    *r = 100;
+    println(*r);
+}

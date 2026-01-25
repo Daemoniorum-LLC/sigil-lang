@@ -1,0 +1,15 @@
+// Test: Assignment to mutable variable
+// Spec: 02-SYNTAX.md § 2.2 Assignment
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate assignment to Δ variables works.
+//
+// Expected behavior:
+// Should print 99
+
+λ main() {
+    ≔ Δ x: !i32 = 42;
+    x = 99;
+    println(x);
+}

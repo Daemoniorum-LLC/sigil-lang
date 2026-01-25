@@ -1,0 +1,18 @@
+// Test: Enum with multiple variants
+// Spec: 03-TYPES.md § 2.3 Enum
+// Priority: P2 - Enhancement
+
+ᛈ Status {
+    Active,
+    Inactive,
+    Pending
+}
+
+λ main() {
+    ≔ s: Status = Status·Active;
+    ⌥ s {
+        Status·Active => println(1),
+        Status·Inactive => println(2),
+        Status·Pending => println(3)
+    }
+}

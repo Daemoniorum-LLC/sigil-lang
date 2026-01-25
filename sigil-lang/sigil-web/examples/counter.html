@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sigil Counter Demo</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+        }
+        .counter-container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 40px 60px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        h1 {
+            color: #9d4edd;
+            margin: 0 0 10px 0;
+            font-size: 2em;
+        }
+        .subtitle {
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+        .count-display {
+            font-size: 5em;
+            font-weight: bold;
+            color: #e0aaff;
+            margin: 30px 0;
+            text-shadow: 0 0 20px rgba(157, 78, 221, 0.5);
+            transition: transform 0.1s ease;
+        }
+        .count-display.bump {
+            transform: scale(1.1);
+        }
+        .button-row {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        button {
+            background: linear-gradient(135deg, #7b2cbf 0%, #9d4edd 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 60px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(157, 78, 221, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button.reset {
+            background: linear-gradient(135deg, #3c096c 0%, #5a189a 100%);
+        }
+        .console {
+            margin-top: 30px;
+            background: #0f0f23;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85em;
+            max-height: 200px;
+            overflow-y: auto;
+            text-align: left;
+            width: 100%;
+            max-width: 400px;
+        }
+        .console-line {
+            margin: 2px 0;
+            color: #7ec8e3;
+        }
+        .console-line.state {
+            color: #50fa7b;
+        }
+        .badge {
+            display: inline-block;
+            background: #9d4edd;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.7em;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <div class="counter-container">
+        <h1>Sigil Counter <span class="badge">WASM</span></h1>
+        <p class="subtitle">Interactive component powered by Sigil + WebAssembly</p>
+
+        <div class="count-display" id="count">0</div>
+
+        <div class="button-row">
+            <button onclick="decrement()">−</button>
+            <button onclick="increment()">+</button>
+            <button class="reset" onclick="reset()">Reset</button>
+        </div>
+
+        <div class="console" id="console"></div>
+    </div>
+
+    <script type="module">
+        // Sigil WASM Runtime (minimal version for counter)
+        const strings = new Map();
+        let stringCounter = 0x30000;
+
+        function allocString(str) {
+            const id = ++stringCounter;
+            strings.set(id, str);
+            return id;
+        }
+
+        function loadDataStrings(memory) {
+            const view = new Uint8Array(memory.buffer);
+            for (let i = 0; i < Math.min(view.length - 4, 0x10000); i++) {
+                const len = view[i] | (view[i+1] << 8) | (view[i+2] << 16) | (view[i+3] << 24);
+                if (len > 0 && len < 500 && i + 4 + len <= view.length) {
+                    const bytes = view.slice(i + 4, i + 4 + len);
+                    let valid = true;
+                    for (const b of bytes) {
+                        if (b !== 0x09 && b !== 0x0A && b !== 0x0D && (b < 0x20 || b > 0x7E)) {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if (valid) {
+                        strings.set(i, new TextDecoder().decode(bytes));
+                    }
+                }
+            }
+        }
+
+        const consoleEl = document.getElementById('console');
+        const countEl = document.getElementById('count');
+
+        function log(msg, isState = false) {
+            const line = document.createElement('div');
+            line.className = 'console-line' + (isState ? ' state' : '');
+            line.textContent = msg;
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function updateDisplay() {
+            if (window.instance?.exports.get_count) {
+                const count = Number(window.instance.exports.get_count());
+                countEl.textContent = count;
+                countEl.classList.add('bump');
+                setTimeout(() => countEl.classList.remove('bump'), 100);
+            }
+        }
+
+        const imports = {
+            console: {
+                log_i64: (val) => log(`[i64] ${val}`),
+                log_f64: (val) => log(`[f64] ${val}`),
+                log_str: (ptr) => log(strings.get(ptr) || `[ptr:${ptr}]`),
+                print: (val) => {
+                    const v = Number(val);
+                    const str = strings.get(v);
+                    const msg = str !== undefined ? str : String(v);
+                    log(msg, msg.includes('[STATE]'));
+                },
+            },
+            string: {
+                concat: (a, b) => allocString((strings.get(a) || '') + (strings.get(b) || '')),
+                from_int: (n) => allocString(String(n)),
+                from_float: (n) => allocString(String(n)),
+                length: (s) => (strings.get(s) || '').length,
+                slice: (s, start, end) => allocString((strings.get(s) || '').slice(start, end)),
+                eq: (a, b) => (strings.get(a) || '') === (strings.get(b) || '') ? 1 : 0,
+                parse_int: (s) => BigInt(parseInt(strings.get(s) || '0')),
+                parse_float: (s) => parseFloat(strings.get(s) || '0'),
+                lines: () => 0, split_whitespace: () => 0, split: () => 0,
+                trim: (s) => allocString((strings.get(s) || '').trim()),
+                trim_start: (s) => allocString((strings.get(s) || '').trimStart()),
+                trim_end: (s) => allocString((strings.get(s) || '').trimEnd()),
+                to_uppercase: (s) => allocString((strings.get(s) || '').toUpperCase()),
+                to_lowercase: (s) => allocString((strings.get(s) || '').toLowerCase()),
+                contains: (a, b) => (strings.get(a) || '').includes(strings.get(b) || '') ? 1 : 0,
+                starts_with: (a, b) => (strings.get(a) || '').startsWith(strings.get(b) || '') ? 1 : 0,
+                ends_with: (a, b) => (strings.get(a) || '').endsWith(strings.get(b) || '') ? 1 : 0,
+                replace: (s, a, b) => allocString((strings.get(s) || '').replaceAll(strings.get(a) || '', strings.get(b) || '')),
+                chars: () => 0,
+            },
+            morpheme: { array_new: () => 0, array_push: () => {}, array_get: () => BigInt(0), array_set: () => {}, array_len: () => 0, array_map: () => 0, array_filter: () => 0, array_parallel_map: () => 0, array_parallel_filter: () => 0, array_parallel_reduce: () => BigInt(0), array_reduce: () => BigInt(0), array_sort: () => 0, array_first: () => BigInt(0), array_last: () => BigInt(0), array_nth: () => BigInt(0), array_sum: () => BigInt(0), array_product: () => BigInt(1), array_min: () => BigInt(0), array_max: () => BigInt(0), array_all: () => 0, array_any: () => 0, array_random_element: () => BigInt(0) },
+            math: { sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, pow: Math.pow, exp: Math.exp, log: Math.log, floor: Math.floor, ceil: Math.ceil, round: Math.round, abs: Math.abs, abs_int: (x) => x < 0n ? -x : x, random: Math.random, clamp: (x, min, max) => Math.max(min, Math.min(max, x)), clamp_int: (x, min, max) => x < min ? min : x > max ? max : x, min: Math.min, max: Math.max, min_int: (a, b) => a < b ? a : b, max_int: (a, b) => a > b ? a : b, signum: Math.sign, signum_int: (x) => x < 0n ? -1n : x > 0n ? 1n : 0n },
+            dom: { create_element: () => 0, create_text: () => 0, set_attribute: () => {}, remove_attribute: () => {}, set_property: () => {}, append_child: () => {}, insert_before: () => {}, remove_child: () => {}, replace_child: () => {}, set_text_content: () => {}, get_element_by_id: () => 0, query_selector: () => 0, clone_node: () => 0 },
+            events: { add_listener: () => 0, remove_listener: () => {}, prevent_default: () => {}, stop_propagation: () => {}, get_target: () => 0, get_value: () => 0 },
+            timing: { now: () => Date.now(), set_timeout: () => 0, clear_timeout: () => {}, set_interval: () => 0, clear_interval: () => {}, request_animation_frame: () => 0 },
+            fetch: { start: () => 0, poll: () => 0, get_status: () => 0, get_body: () => 0, abort: () => {} },
+            storage: { local_get: () => 0, local_set: () => {}, local_remove: () => {} },
+            router: { push_state: () => {}, replace_state: () => {}, get_pathname: () => 0 },
+            memory: { alloc: (n) => Number(n), realloc: (p, n) => Number(n), free: () => {}, heap_alloc: (n) => n },
+            vdom: { create_vnode: () => 1, create_text_vnode: () => 2, create_fragment: () => 3, set_vnode_prop: () => {}, set_vnode_str_prop: () => {}, append_vnode_child: () => {}, diff_and_patch: () => {}, mount_vnode: () => 1, dispose: () => {} },
+            signal: { create: () => 0, get: () => BigInt(0), set: () => {}, subscribe: () => 0, unsubscribe: () => {}, batch_start: () => {}, batch_end: () => {}, computed: () => 0, effect: () => 0 },
+            async: { promise_new: () => 0, promise_resolve: () => {}, promise_reject: () => {}, promise_then: () => 0, promise_catch: () => 0, promise_all: () => 0, promise_race: () => 0, spawn: () => 0, yield_now: () => {}, await_promise: () => BigInt(0), create_continuation: () => 0, resume: () => {} },
+            browser: { window: () => 0, document: () => 0, inner_width: () => 0, inner_height: () => 0, add_event_listener: () => 0, remove_event_listener: () => {}, match_media: () => 0, mql_matches: () => 0, mql_add_listener: () => 0, mql_remove_listener: () => {} },
+        };
+
+        // Load WASM
+        async function loadWasm() {
+            try {
+                // Try to load counter_simple.wasm from same directory
+                const response = await fetch('counter_simple.wasm');
+                const buffer = await response.arrayBuffer();
+                const { instance } = await WebAssembly.instantiate(buffer, imports);
+
+                window.instance = instance;
+
+                if (instance.exports.memory) {
+                    loadDataStrings(instance.exports.memory);
+                }
+
+                log('WASM module loaded');
+                log('Exports: ' + Object.keys(instance.exports).join(', '));
+
+                // Run main
+                instance.exports.main?.();
+
+                // Initial display update
+                updateDisplay();
+
+            } catch (err) {
+                log('Error loading WASM: ' + err.message);
+                console.error(err);
+            }
+        }
+
+        // Global functions for buttons
+        window.increment = function() {
+            window.instance?.exports.increment?.();
+            updateDisplay();
+        };
+
+        window.decrement = function() {
+            window.instance?.exports.decrement?.();
+            updateDisplay();
+        };
+
+        window.reset = function() {
+            window.instance?.exports.reset?.();
+            updateDisplay();
+        };
+
+        // Load on page ready
+        loadWasm();
+    </script>
+</body>
+</html>

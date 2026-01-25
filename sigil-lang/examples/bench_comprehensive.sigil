@@ -1,0 +1,472 @@
+// Comprehensive Sigil Benchmark Suite
+// Tests multiple algorithm categories across all backends
+
+// ============================================================
+// 1. NUMERIC ALGORITHMS
+// ============================================================
+
+fn gcd(a, b) {
+    let temp = 0;
+    while b != 0 {
+        temp = b;
+        b = a - (a / b) * b;
+        a = temp;
+    }
+    return a;
+}
+
+fn collatz_steps(n) {
+    let steps = 0;
+    while n != 1 {
+        if n / 2 * 2 == n {
+            n = n / 2;
+        } else {
+            n = 3 * n + 1;
+        }
+        steps = steps + 1;
+    }
+    return steps;
+}
+
+fn fib_iterative(n) {
+    if n <= 1 {
+        return n;
+    }
+    let a = 0;
+    let b = 1;
+    let i = 2;
+    let temp = 0;
+    while i <= n {
+        temp = a + b;
+        a = b;
+        b = temp;
+        i = i + 1;
+    }
+    return b;
+}
+
+fn is_prime(n) {
+    if n < 2 {
+        return 0;
+    }
+    let i = 2;
+    while i * i <= n {
+        if n / i * i == n {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn benchmark_numeric() {
+    print("--- Numeric Algorithms ---");
+
+    // GCD benchmark (10k pairs)
+    let start = now();
+    let i = 0;
+    let total = 0;
+    while i < 10000 {
+        total = total + gcd(48 * i + 1, 18 * i + 1);
+        i = i + 1;
+    }
+    let gcd_time = now() - start;
+    print("GCD (10k pairs):");
+    print(gcd_time);
+
+    // Collatz benchmark
+    let start2 = now();
+    let max_steps = 0;
+    let steps = 0;
+    i = 1;
+    while i <= 10000 {
+        steps = collatz_steps(i);
+        if steps > max_steps {
+            max_steps = steps;
+        }
+        i = i + 1;
+    }
+    let collatz_time = now() - start2;
+    print("Collatz (1-10000):");
+    print(collatz_time);
+    print("Max steps:");
+    print(max_steps);
+
+    // Iterative Fibonacci
+    let start3 = now();
+    i = 0;
+    let f = 0;
+    while i < 100000 {
+        f = fib_iterative(50);
+        i = i + 1;
+    }
+    let fib_time = now() - start3;
+    print("Iterative fib(50) x 100k:");
+    print(fib_time);
+
+    // Prime checking
+    let start4 = now();
+    let count = 0;
+    i = 2;
+    while i < 10000 {
+        count = count + is_prime(i);
+        i = i + 1;
+    }
+    let prime_time = now() - start4;
+    print("Prime check (2-10000):");
+    print(prime_time);
+    print("Primes found (should be 1229):");
+    print(count);
+}
+
+// ============================================================
+// 2. RECURSIVE ALGORITHMS
+// ============================================================
+
+fn fib(n) {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn ackermann(m, n) {
+    if m == 0 {
+        return n + 1;
+    }
+    if n == 0 {
+        return ackermann(m - 1, 1);
+    }
+    return ackermann(m - 1, ackermann(m, n - 1));
+}
+
+fn tak(x, y, z) {
+    if y >= x {
+        return z;
+    }
+    return tak(tak(x - 1, y, z), tak(y - 1, z, x), tak(z - 1, x, y));
+}
+
+fn benchmark_recursive() {
+    print("--- Recursive Algorithms ---");
+
+    // Fibonacci 30
+    let start = now();
+    let result = fib(30);
+    let fib_time = now() - start;
+    print("fib(30) recursive:");
+    print(fib_time);
+    print("Result (should be 832040):");
+    print(result);
+
+    // Fibonacci 35
+    let start2 = now();
+    let result2 = fib(35);
+    let fib35_time = now() - start2;
+    print("fib(35) recursive:");
+    print(fib35_time);
+    print("Result (should be 9227465):");
+    print(result2);
+
+    // Ackermann (3, 7) = 1021
+    let start3 = now();
+    let result3 = ackermann(3, 7);
+    let ack_time = now() - start3;
+    print("ackermann(3, 7):");
+    print(ack_time);
+    print("Result (should be 1021):");
+    print(result3);
+
+    // Takeuchi (TAK) function
+    let start4 = now();
+    let result4 = tak(18, 12, 6);
+    let tak_time = now() - start4;
+    print("tak(18, 12, 6):");
+    print(tak_time);
+    print("Result (should be 7):");
+    print(result4);
+}
+
+// ============================================================
+// 3. FLOATING POINT OPERATIONS
+// ============================================================
+
+fn benchmark_float() {
+    print("--- Floating Point ---");
+
+    // Leibniz formula for pi
+    let start = now();
+    let pi = 0.0;
+    let sign = 1.0;
+    let i = 0;
+    while i < 100000 {
+        pi = pi + sign / (2.0 * i + 1.0);
+        sign = 0.0 - sign;
+        i = i + 1;
+    }
+    pi = pi * 4.0;
+    let pi_time = now() - start;
+    print("Pi approximation (100k terms):");
+    print(pi_time);
+    print("Pi value:");
+    print(pi);
+
+    // Newton-Raphson sqrt
+    let start2 = now();
+    i = 0;
+    let x = 0.0;
+    let guess = 0.0;
+    let j = 0;
+    while i < 10000 {
+        x = i * 1.0 + 1.0;
+        guess = x / 2.0;
+        j = 0;
+        while j < 10 {
+            guess = (guess + x / guess) / 2.0;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    let sqrt_time = now() - start2;
+    print("Newton-Raphson sqrt (10k iterations):");
+    print(sqrt_time);
+
+    // Sine approximation (Taylor series)
+    let start3 = now();
+    i = 0;
+    let sum = 0.0;
+    while i < 10000 {
+        let angle = (i * 1.0) / 1000.0;
+        // sin(x) ≈ x - x³/6 + x⁵/120 - x⁷/5040
+        let x2 = angle * angle;
+        let x3 = x2 * angle;
+        let x5 = x3 * x2;
+        let x7 = x5 * x2;
+        let sin_approx = angle - x3 / 6.0 + x5 / 120.0 - x7 / 5040.0;
+        sum = sum + sin_approx;
+        i = i + 1;
+    }
+    let sin_time = now() - start3;
+    print("Sine Taylor (10k iterations):");
+    print(sin_time);
+}
+
+// ============================================================
+// 4. LOOP PERFORMANCE
+// ============================================================
+
+fn benchmark_loops() {
+    print("--- Loop Performance ---");
+
+    // Simple accumulation
+    let start = now();
+    let i = 0;
+    let sum = 0;
+    while i < 1000000 {
+        sum = sum + i;
+        i = i + 1;
+    }
+    let loop_time = now() - start;
+    print("Sum 1M integers:");
+    print(loop_time);
+    print("Result (should be 499999500000):");
+    print(sum);
+
+    // Nested loops
+    let start2 = now();
+    let outer = 0;
+    let inner = 0;
+    let count = 0;
+    while outer < 1000 {
+        inner = 0;
+        while inner < 1000 {
+            count = count + 1;
+            inner = inner + 1;
+        }
+        outer = outer + 1;
+    }
+    let nested_time = now() - start2;
+    print("Nested loops (1000x1000):");
+    print(nested_time);
+    print("Count (should be 1000000):");
+    print(count);
+
+    // Function call overhead
+    let start3 = now();
+    i = 0;
+    while i < 100000 {
+        let g = gcd(48, 18);
+        i = i + 1;
+    }
+    let call_time = now() - start3;
+    print("Function calls (100k gcd(48,18)):");
+    print(call_time);
+}
+
+// ============================================================
+// 5. ARRAY OPERATIONS (Read-only)
+// ============================================================
+
+fn array_sum(arr) {
+    let total = 0;
+    let i = 0;
+    let n = len(arr);
+    while i < n {
+        total = total + arr[i];
+        i = i + 1;
+    }
+    return total;
+}
+
+fn array_max(arr) {
+    let max_val = arr[0];
+    let i = 1;
+    let n = len(arr);
+    while i < n {
+        if arr[i] > max_val {
+            max_val = arr[i];
+        }
+        i = i + 1;
+    }
+    return max_val;
+}
+
+fn benchmark_arrays() {
+    print("--- Array Operations ---");
+
+    // Create array
+    let arr = [];
+    let i = 0;
+    while i < 10000 {
+        arr = arr + [i];
+        i = i + 1;
+    }
+
+    // Array sum
+    let start = now();
+    i = 0;
+    let total = 0;
+    while i < 100 {
+        total = array_sum(arr);
+        i = i + 1;
+    }
+    let sum_time = now() - start;
+    print("Array sum (10k elements x 100):");
+    print(sum_time);
+
+    // Array max
+    let start2 = now();
+    i = 0;
+    let max_val = 0;
+    while i < 100 {
+        max_val = array_max(arr);
+        i = i + 1;
+    }
+    let max_time = now() - start2;
+    print("Array max (10k elements x 100):");
+    print(max_time);
+
+    // Array creation
+    let start3 = now();
+    i = 0;
+    while i < 1000 {
+        let temp = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let s = array_sum(temp);
+        i = i + 1;
+    }
+    let create_time = now() - start3;
+    print("Array create+sum (10 elements x 1000):");
+    print(create_time);
+}
+
+// ============================================================
+// 6. PIPE OPERATIONS (Sigil-specific)
+// ============================================================
+
+fn benchmark_pipes() {
+    print("--- Pipe Operations ---");
+
+    let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    let i = 0;
+    let result = [];
+
+    // Simple transform
+    let start = now();
+    i = 0;
+    while i < 10000 {
+        result = data|τ{_ * 2};
+        i = i + 1;
+    }
+    let transform_time = now() - start;
+    print("Transform x10k (τ):");
+    print(transform_time);
+
+    // Filter
+    let start2 = now();
+    i = 0;
+    while i < 10000 {
+        result = data|φ{_ > 10};
+        i = i + 1;
+    }
+    let filter_time = now() - start2;
+    print("Filter x10k (φ):");
+    print(filter_time);
+
+    // Chained operations
+    let start3 = now();
+    i = 0;
+    while i < 10000 {
+        result = data|τ{_ * 2}|φ{_ > 20}|τ{_ + 1};
+        i = i + 1;
+    }
+    let chain_time = now() - start3;
+    print("Chain x10k (τ|φ|τ):");
+    print(chain_time);
+
+    // Reduce
+    let start4 = now();
+    i = 0;
+    let s = 0;
+    while i < 10000 {
+        s = data|σ{0}{_a + _b};
+        i = i + 1;
+    }
+    let reduce_time = now() - start4;
+    print("Reduce x10k (σ):");
+    print(reduce_time);
+}
+
+// ============================================================
+// MAIN
+// ============================================================
+
+fn main() {
+    print("============================================================");
+    print("   SIGIL COMPREHENSIVE BENCHMARK SUITE");
+    print("============================================================");
+    print("");
+
+    benchmark_numeric();
+    print("");
+
+    benchmark_recursive();
+    print("");
+
+    benchmark_float();
+    print("");
+
+    benchmark_loops();
+    print("");
+
+    benchmark_arrays();
+    print("");
+
+    benchmark_pipes();
+    print("");
+
+    print("============================================================");
+    print("   BENCHMARK COMPLETE");
+    print("============================================================");
+
+    return 0;
+}

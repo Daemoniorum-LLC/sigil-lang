@@ -1,0 +1,63 @@
+// Test: Reed-Solomon Erasure Coding
+// Spec: 11-HOLOGRAPHIC.md § 2.5 (Reed-Solomon Implementation)
+// Priority: P1 - Specification Compliance
+//
+// scatter encodes data using polynomial evaluation (Reed-Solomon)
+// ∀ reconstructs original data via Lagrange interpolation
+// Must tolerate loss of (n-k) shards
+
+sigil Shard {
+    index: i32!,
+    data: i32!,
+}
+
+rite main() {
+    // Test 1: Full round-trip with all shards
+    println("Test 1: Full reconstruction");
+    ≔ original = 42;
+    ≔ shards = original|scatter(5, 3);  // n=5, k=3
+
+    // ReconΣ using all 5 shards
+    ≔ reconstructed = shards|∀;
+    println(reconstructed);  // Should be 42
+
+    // Test 2: Reconstruction with minimum k shards
+    println("Test 2: Minimum shard reconstruction");
+    ≔ original2 = 100;
+    ≔ all_shards = original2|scatter(6, 3);  // n=6, k=3
+
+    // Take only first 3 shards (k=3 is minimum needed)
+    ≔ subset = [
+        all_shards[0],
+        all_shards[1],
+        all_shards[2],
+    ];
+
+    ≔ recovered = subset|∀;
+    println(recovered);  // Should be 100
+
+    // Test 3: Verify shard indices are sequential
+    println("Test 3: Shard indices");
+    ≔ test_shards = 7|scatter(4, 2);
+    ≔ vary i = 0;
+    ⟳ i < test_shards|len {
+        ≔ shard = test_shards[i];
+        println(shard.index);  // Should be 1, 2, 3, 4
+        i = i + 1;
+    }
+
+    // Test 4: Different subset (skip first shard)
+    println("Test 4: Non-contiguous shards");
+    ≔ original4 = 256;
+    ≔ shards4 = original4|scatter(5, 3);
+
+    // Use shards 2, 3, 4 (skipping shard 1)
+    ≔ alt_subset = [
+        shards4[1],  // index 2
+        shards4[2],  // index 3
+        shards4[3],  // index 4
+    ];
+
+    ≔ alt_recovered = alt_subset|∀;
+    println(alt_recovered);  // Should still be 256
+}

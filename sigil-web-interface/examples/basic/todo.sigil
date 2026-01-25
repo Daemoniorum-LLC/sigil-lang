@@ -1,0 +1,480 @@
+// Todo App Example
+// Demonstrates CRUD operations, lists, and form handling
+//
+// Sigil Language Features Demonstrated:
+// - Morpheme operators: τ (map), φ (filter), σ (sort), ρ (reduce), α (first), Ω (last)
+// - Set operations: ∪ (union), ∩ (intersection), ∈ (contains), ∉ (not contains)
+// - Logical operators: ∧ (and), ∨ (or), ¬ (not)
+// - Quantifiers: ∀ (for all), ∃ (exists)
+// - Evidentiality markers: ! (known), ? (uncertain), ~ (external)
+// - Parallel morphemes: par·τ, par·φ for concurrent operations
+
+use sigil_web::prelude::*
+use std::collections::HashMap;
+
+/// Todo item structure
+struct Todo {
+    id: u64!
+    text: String!
+    completed: bool!
+    priority: Priority!
+    tags: Vec<String>!
+}
+
+#[derive(Clone, Copy, PartialEq, Ord)]
+enum Priority {
+    Low,
+    Medium,
+    High
+}
+
+/// Todo list component with full CRUD functionality
+component TodoApp {
+    state todos: Vec<Todo>! = Vec::new()
+    state next_id: u64! = 1
+    state filter: Filter! = Filter::All
+    state input_text: String! = ""
+    state editing_id: Option<u64>? = None
+    state sort_by: SortBy! = SortBy::Created
+
+    fn render(self) -> VNode {
+        div()
+            ·class("todo-app")
+            ·children(vec![
+                // Header
+                header()
+                    ·class("todo-header")
+                    ·children(vec![
+                        h1()·text("Todos")·build(),
+                        self·render_input()
+                    ])
+                    ·build(),
+
+                // Main content
+                when(¬self.todos·is_empty(), || {
+                    section()
+                        ·class("todo-main")
+                        ·children(vec![
+                            // Toggle all
+                            div()
+                                ·class("toggle-all-container")
+                                ·children(vec![
+                                    input()
+                                        ·attr("type", "checkbox")
+                                        ·attr("id", "toggle-all")
+                                        ·attr("checked", self·all_completed())
+                                        ·onchange(|_| self·toggle_all())
+                                        ·build(),
+                                    label()
+                                        ·attr("for", "toggle-all")
+                                        ·text("Mark all as complete")
+                                        ·build()
+                                ])
+                                ·build(),
+
+                            // Sort controls
+                            self·render_sort_controls(),
+
+                            // Todo list - using τ morpheme for mapping
+                            ul()
+                                ·class("todo-list")
+                                ·children(
+                                    self·sorted_filtered_todos()
+                                        |τ{todo => self·render_todo_item(todo)}
+                                        |collect()
+                                )
+                                ·build()
+                        ])
+                        ·build()
+                }),
+
+                // Footer
+                when(¬self.todos·is_empty(), || {
+                    self·render_footer()
+                }),
+
+                // Stats panel
+                when(¬self.todos·is_empty(), || {
+                    self·render_stats()
+                })
+            ])
+            ·build()
+    }
+
+    fn render_input(&self) -> VNode! {
+        form()
+            ·class("todo-input-form")
+            ·onsubmit(|| {
+                if ¬self.input_text·trim()·is_empty() {
+                    self·add_todo()
+                }
+            })
+            ·child(
+                input()
+                    ·class("todo-input")
+                    ·attr("placeholder", "What needs to be done?")
+                    ·attr("value", &self.input_text)
+                    ·attr("autofocus", true)
+                    ·oninput(|v| self.input_text = v)
+                    ·build()
+            )
+            ·build()
+    }
+
+    fn render_sort_controls(&self) -> VNode! {
+        div()
+            ·class("sort-controls")
+            ·children(vec![
+                span()·text("Sort by: ")·build(),
+                button()
+                    ·class(classes()
+                        ·add("sort-btn")
+                        ·add_if(self.sort_by == SortBy::Created, "active")
+                        ·to_string())
+                    ·onclick(|| self.sort_by = SortBy::Created)
+                    ·text("Created")
+                    ·build(),
+                button()
+                    ·class(classes()
+                        ·add("sort-btn")
+                        ·add_if(self.sort_by == SortBy::Priority, "active")
+                        ·to_string())
+                    ·onclick(|| self.sort_by = SortBy::Priority)
+                    ·text("Priority")
+                    ·build(),
+                button()
+                    ·class(classes()
+                        ·add("sort-btn")
+                        ·add_if(self.sort_by == SortBy::Alphabetical, "active")
+                        ·to_string())
+                    ·onclick(|| self.sort_by = SortBy::Alphabetical)
+                    ·text("A-Z")
+                    ·build()
+            ])
+            ·build()
+    }
+
+    fn render_todo_item(&self, todo: &Todo) -> VNode! {
+        let is_editing! = self.editing_id == Some(todo.id)
+
+        li()
+            ·class(classes()
+                ·add("todo-item")
+                ·add_if(todo.completed, "completed")
+                ·add_if(is_editing, "editing")
+                ·add_if(todo.priority == Priority::High, "high-priority")
+                ·to_string())
+            ·key(&todo.id·to_string())
+            ·children(vec![
+                // View mode
+                when(¬is_editing, || {
+                    div()
+                        ·class("todo-view")
+                        ·children(vec![
+                            input()
+                                ·attr("type", "checkbox")
+                                ·class("todo-toggle")
+                                ·attr("checked", todo.completed)
+                                ·onchange(|_| self·toggle_todo(todo.id))
+                                ·build(),
+
+                            // Priority indicator
+                            span()
+                                ·class(classes()
+                                    ·add("priority-indicator")
+                                    ·add(match todo.priority {
+                                        Priority::High => "priority-high",
+                                        Priority::Medium => "priority-medium",
+                                        Priority::Low => "priority-low"
+                                    })
+                                    ·to_string())
+                                ·build(),
+
+                            label()
+                                ·class("todo-label")
+                                ·ondblclick(|| self.editing_id = Some(todo.id))
+                                ·text(&todo.text)
+                                ·build(),
+
+                            // Tags using τ morpheme
+                            div()
+                                ·class("todo-tags")
+                                ·children(
+                                    todo.tags|τ{tag =>
+                                        span()
+                                            ·class("tag")
+                                            ·text(tag)
+                                            ·build()
+                                    }|collect()
+                                )
+                                ·build(),
+
+                            button()
+                                ·class("todo-destroy")
+                                ·onclick(|| self·remove_todo(todo.id))
+                                ·text("×")
+                                ·build()
+                        ])
+                        ·build()
+                }),
+
+                // Edit mode
+                when(is_editing, || {
+                    input()
+                        ·class("todo-edit")
+                        ·attr("value", &todo.text)
+                        ·attr("autofocus", true)
+                        ·onblur(|| self.editing_id = None)
+                        ·onkeydown(|e| {
+                            if e·is_enter() ∨ e·is_escape() {
+                                self.editing_id = None
+                            }
+                        })
+                        ·oninput(|v| self·update_todo(todo.id, v))
+                        ·build()
+                })
+            ])
+            ·build()
+    }
+
+    fn render_footer(&self) -> VNode! {
+        // Using morpheme operators for counting
+        let active_count! = self.todos|φ{t => ¬t.completed}|len()
+        let completed_count! = self.todos·len() - active_count
+
+        footer()
+            ·class("todo-footer")
+            ·children(vec![
+                // Item count
+                span()
+                    ·class("todo-count")
+                    ·text(&format!(
+                        "{} item{} left",
+                        active_count,
+                        if active_count == 1 { "" } else { "s" }
+                    ))
+                    ·build(),
+
+                // Filters
+                ul()
+                    ·class("todo-filters")
+                    ·children(vec![
+                        self·render_filter_button(Filter::All, "All"),
+                        self·render_filter_button(Filter::Active, "Active"),
+                        self·render_filter_button(Filter::Completed, "Completed"),
+                        self·render_filter_button(Filter::HighPriority, "High Priority")
+                    ])
+                    ·build(),
+
+                // Clear completed
+                when(completed_count > 0, || {
+                    button()
+                        ·class("clear-completed")
+                        ·onclick(|| self·clear_completed())
+                        ·text("Clear completed")
+                        ·build()
+                })
+            ])
+            ·build()
+    }
+
+    fn render_stats(&self) -> VNode! {
+        // Compute statistics using morpheme operators
+        let total! = self.todos·len()
+        let completed! = self.todos|φ{t => t.completed}|len()
+        let active! = self.todos|φ{t => ¬t.completed}|len()
+
+        // Priority counts using φ (filter) morpheme
+        let high_priority! = self.todos|φ{t => t.priority == Priority::High}|len()
+        let medium_priority! = self.todos|φ{t => t.priority == Priority::Medium}|len()
+        let low_priority! = self.todos|φ{t => t.priority == Priority::Low}|len()
+
+        // Check using quantifiers
+        let all_done! = self.todos|∀{t => t.completed}         // ∀ for all
+        let any_high! = self.todos|∃{t => t.priority == Priority::High}  // ∃ exists
+
+        // Collect all unique tags using set union
+        let all_tags! = self.todos
+            |τ{t => t.tags·clone()}
+            |flatten()
+            |unique()
+            |collect::<Vec<_>>()
+
+        div()
+            ·class("todo-stats")
+            ·children(vec![
+                h3()·text("Statistics")·build(),
+
+                div()·class("stat-row")·children(vec![
+                    span()·text(&format!("Total: {}", total))·build(),
+                    span()·text(&format!("Active: {}", active))·build(),
+                    span()·text(&format!("Completed: {}", completed))·build()
+                ])·build(),
+
+                div()·class("stat-row")·children(vec![
+                    span()·class("priority-high")·text(&format!("High: {}", high_priority))·build(),
+                    span()·class("priority-medium")·text(&format!("Medium: {}", medium_priority))·build(),
+                    span()·class("priority-low")·text(&format!("Low: {}", low_priority))·build()
+                ])·build(),
+
+                div()·class("stat-row")·children(vec![
+                    span()·text(&format!("All done: {}", if all_done { "Yes" } else { "No" }))·build(),
+                    span()·text(&format!("Has urgent: {}", if any_high { "Yes" } else { "No" }))·build()
+                ])·build(),
+
+                // Display all tags
+                when(¬all_tags·is_empty(), || {
+                    div()·class("all-tags")·children(vec![
+                        span()·text("Tags: ")·build(),
+                        span()·text(&all_tags·join(", "))·build()
+                    ])·build()
+                })
+            ])
+            ·build()
+    }
+
+    fn render_filter_button(&self, filter: Filter, label: &str) -> VNode! {
+        li()
+            ·child(
+                button()
+                    ·class(classes()
+                        ·add("filter-btn")
+                        ·add_if(self.filter == filter, "selected")
+                        ·to_string())
+                    ·onclick(|| self.filter = filter)
+                    ·text(label)
+                    ·build()
+            )
+            ·build()
+    }
+
+    // Actions
+    fn add_todo(&mut self) {
+        let todo! = Todo {
+            id: self.next_id,
+            text: self.input_text·trim()·to_string(),
+            completed: false,
+            priority: Priority::Medium,
+            tags: Vec::new()
+        }
+        self.todos·push(todo)
+        self.next_id += 1
+        self.input_text = "".to_string()
+    }
+
+    fn remove_todo(&mut self, id: u64) {
+        // Using φ morpheme for filtering
+        self.todos = self.todos|φ{t => t.id != id}|collect()
+    }
+
+    fn toggle_todo(&mut self, id: u64) {
+        // Using τ morpheme for mapping with conditional update
+        self.todos = self.todos|τ{t =>
+            if t.id == id {
+                Todo { completed: ¬t.completed, ..t }
+            } else {
+                t
+            }
+        }|collect()
+    }
+
+    fn update_todo(&mut self, id: u64, text: String) {
+        self.todos = self.todos|τ{t =>
+            if t.id == id {
+                Todo { text: text·clone(), ..t }
+            } else {
+                t
+            }
+        }|collect()
+    }
+
+    fn toggle_all(&mut self) {
+        let all_completed! = self·all_completed()
+        // Using τ morpheme to update all todos
+        self.todos = self.todos|τ{t =>
+            Todo { completed: ¬all_completed, ..t }
+        }|collect()
+    }
+
+    fn clear_completed(&mut self) {
+        // Using φ morpheme for filtering
+        self.todos = self.todos|φ{t => ¬t.completed}|collect()
+    }
+
+    // Helpers
+    fn all_completed(&self) -> bool! {
+        // Using ∀ quantifier for "all" check
+        ¬self.todos·is_empty() ∧ self.todos|∀{t => t.completed}
+    }
+
+    fn sorted_filtered_todos(&self) -> Vec<&Todo>! {
+        // First filter using φ morpheme
+        let filtered! = self.todos
+            |φ{t => match self.filter {
+                Filter::All => true,
+                Filter::Active => ¬t.completed,
+                Filter::Completed => t.completed,
+                Filter::HighPriority => t.priority == Priority::High
+            }}
+            |collect::<Vec<_>>()
+
+        // Then sort using σ morpheme with custom comparator
+        match self.sort_by {
+            SortBy::Created => filtered,  // Already in creation order
+            SortBy::Priority => filtered|σ{|a, b| b.priority·cmp(&a.priority)}|collect(),
+            SortBy::Alphabetical => filtered|σ{|a, b| a.text·cmp(&b.text)}|collect()
+        }
+    }
+}
+
+/// Filter state
+#[derive(Clone, Copy, PartialEq)]
+enum Filter {
+    All,
+    Active,
+    Completed,
+    HighPriority
+}
+
+/// Sort options
+#[derive(Clone, Copy, PartialEq)]
+enum SortBy {
+    Created,
+    Priority,
+    Alphabetical
+}
+
+/// Todo app with async data fetching
+/// Demonstrates ⌛ for await and ~ for external data
+fn TodoAppWithFetch() -> VNode! {
+    // Fetch todos from API - data marked as external (~)
+    let todos~ = use_fetch::<Vec<Todo>>("/api/todos")
+
+    match todos~ {
+        AsyncState::Loading => {
+            div()·class("loading")·child(Spinner {})·build()
+        }
+        AsyncState::Error(e~) => {
+            div()·class("error")·text(&format!("Failed to load: {}", e~))·build()
+        }
+        AsyncState::Success(data~) => {
+            div()
+                ·class("todo-list-fetched")
+                ·children(
+                    // Transform external data using τ morpheme
+                    data~|τ{todo~ =>
+                        div()
+                            ·class("todo-item")
+                            ·text(&todo~.text)
+                            ·build()
+                    }|collect()
+                )
+                ·build()
+        }
+        AsyncState::Idle => VNode::Empty
+    }
+}
+
+fn main() {
+    App::mount("#root", TodoApp::new())
+}

@@ -1,0 +1,24 @@
+// Test: AtomicBool toggle
+// Spec: 06-CONCURRENCY.md § 5.3 Atomics
+// Priority: P1 - Production Ready
+
+λ main() {
+    ≔ flag: AtomicBool = AtomicBool·new(false);
+
+    // Initial
+    ⎇ flag.load() {
+        println(1);
+    } ⎉ {
+        println(0);
+    }
+
+    // Store true
+    flag.store(true);
+
+    // After store
+    ⎇ flag.load() {
+        println(1);
+    } ⎉ {
+        println(0);
+    }
+}

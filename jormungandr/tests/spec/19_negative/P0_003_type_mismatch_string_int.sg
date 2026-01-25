@@ -1,5 +1,5 @@
 // EXPECTED: Static type checking should catch this error
-// Negative Test: Type mismatch - assigning string to int
+// Negative Test: Type mis⌥ - assigning string to int
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 

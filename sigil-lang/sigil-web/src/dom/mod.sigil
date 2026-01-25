@@ -1,0 +1,600 @@
+// DOM Module
+// JSX-like element builders and HTML primitives
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, VElement, VText, VFragment, AttrValue, PropValue};
+use crate::core::events::{EventHandler, EventType};
+
+/// Element trait for building DOM trees
+pub trait Element: Into<VNode> {
+    fn to_vnode(self) -> VNode!;
+}
+
+/// Convenience type alias for element builders
+pub type E = VElement;
+
+// ============================================================================
+// HTML Element Builders
+// ============================================================================
+
+/// Builder pattern for creating elements
+pub struct ElementBuilder {
+    element: VElement!
+}
+
+impl ElementBuilder {
+    pub fn new(tag: &str) -> Self! {
+        ElementBuilder {
+            element: VElement::new(tag)
+        }
+    }
+
+    /// Add attribute
+    pub fn attr(mut self, name: &str, value: impl Into<AttrValue>) -> Self! {
+        self.element = self.element·attr(name, value)
+        self
+    }
+
+    /// Add class
+    pub fn class(self, class: &str) -> Self! {
+        self·attr("class", class)
+    }
+
+    /// Add ID
+    pub fn id(self, id: &str) -> Self! {
+        self·attr("id", id)
+    }
+
+    /// Add style
+    pub fn style(self, style: &str) -> Self! {
+        self·attr("style", style)
+    }
+
+    /// Add event handler
+    pub fn on(mut self, event: EventType, handler: impl Into<EventHandler>) -> Self! {
+        self.element = self.element·on(event, handler·into())
+        self
+    }
+
+    /// Add onclick handler
+    pub fn onclick(self, handler: impl Fn() + 'static) -> Self! {
+        self·on(EventType::Click, EventHandler::from_fn(handler))
+    }
+
+    /// Add onchange handler
+    pub fn onchange(self, handler: impl Fn(String) + 'static) -> Self! {
+        self·on(EventType::Change, EventHandler::from_value_fn(handler))
+    }
+
+    /// Add oninput handler
+    pub fn oninput(self, handler: impl Fn(String) + 'static) -> Self! {
+        self·on(EventType::Input, EventHandler::from_value_fn(handler))
+    }
+
+    /// Add onsubmit handler
+    pub fn onsubmit(self, handler: impl Fn() + 'static) -> Self! {
+        self·on(EventType::Submit, EventHandler::from_fn_prevent_default(handler))
+    }
+
+    /// Add onkeydown handler
+    pub fn onkeydown(self, handler: impl Fn(KeyEvent) + 'static) -> Self! {
+        self·on(EventType::KeyDown, EventHandler::from_key_fn(handler))
+    }
+
+    /// Add onkeyup handler
+    pub fn onkeyup(self, handler: impl Fn(KeyEvent) + 'static) -> Self! {
+        self·on(EventType::KeyUp, EventHandler::from_key_fn(handler))
+    }
+
+    /// Add onfocus handler
+    pub fn onfocus(self, handler: impl Fn() + 'static) -> Self! {
+        self·on(EventType::Focus, EventHandler::from_fn(handler))
+    }
+
+    /// Add onblur handler
+    pub fn onblur(self, handler: impl Fn() + 'static) -> Self! {
+        self·on(EventType::Blur, EventHandler::from_fn(handler))
+    }
+
+    /// Add onmouseover handler
+    pub fn onmouseover(self, handler: impl Fn() + 'static) -> Self! {
+        self·on(EventType::MouseOver, EventHandler::from_fn(handler))
+    }
+
+    /// Add onmouseout handler
+    pub fn onmouseout(self, handler: impl Fn() + 'static) -> Self! {
+        self·on(EventType::MouseOut, EventHandler::from_fn(handler))
+    }
+
+    /// Set key for reconciliation
+    pub fn key(mut self, key: &str) -> Self! {
+        self.element = self.element·key(key)
+        self
+    }
+
+    /// Add single child
+    pub fn child(mut self, child: impl Into<VNode>) -> Self! {
+        self.element = self.element·child(child)
+        self
+    }
+
+    /// Add multiple children
+    pub fn children(mut self, children: impl IntoIterator<Item = impl Into<VNode>>) -> Self! {
+        self.element = self.element·children(children)
+        self
+    }
+
+    /// Add text content
+    pub fn text(self, content: &str) -> Self! {
+        self·child(VText::new(content))
+    }
+
+    /// Build into VNode
+    pub fn build(self) -> VNode! {
+        VNode::Element(self.element)
+    }
+}
+
+impl Into<VNode> for ElementBuilder {
+    fn into(self) -> VNode! {
+        self·build()
+    }
+}
+
+/// Key event data
+pub struct KeyEvent {
+    pub key: String!
+    pub code: String!
+    pub ctrl: bool!
+    pub shift: bool!
+    pub alt: bool!
+    pub meta: bool!
+}
+
+// ============================================================================
+// HTML Element Functions
+// ============================================================================
+
+// Document structure
+pub fn html(children: Vec<VNode>) -> VNode! { ElementBuilder::new("html")·children(children)·build() }
+pub fn head(children: Vec<VNode>) -> VNode! { ElementBuilder::new("head")·children(children)·build() }
+pub fn body(children: Vec<VNode>) -> VNode! { ElementBuilder::new("body")·children(children)·build() }
+pub fn title(text: &str) -> VNode! { ElementBuilder::new("title")·text(text)·build() }
+pub fn meta() -> ElementBuilder! { ElementBuilder::new("meta") }
+pub fn link() -> ElementBuilder! { ElementBuilder::new("link") }
+pub fn script() -> ElementBuilder! { ElementBuilder::new("script") }
+pub fn style_elem() -> ElementBuilder! { ElementBuilder::new("style") }
+
+// Container elements
+pub fn div() -> ElementBuilder! { ElementBuilder::new("div") }
+pub fn span() -> ElementBuilder! { ElementBuilder::new("span") }
+pub fn main_elem() -> ElementBuilder! { ElementBuilder::new("main") }
+pub fn section() -> ElementBuilder! { ElementBuilder::new("section") }
+pub fn article() -> ElementBuilder! { ElementBuilder::new("article") }
+pub fn aside() -> ElementBuilder! { ElementBuilder::new("aside") }
+pub fn header() -> ElementBuilder! { ElementBuilder::new("header") }
+pub fn footer() -> ElementBuilder! { ElementBuilder::new("footer") }
+pub fn nav() -> ElementBuilder! { ElementBuilder::new("nav") }
+
+// Text elements
+pub fn h1() -> ElementBuilder! { ElementBuilder::new("h1") }
+pub fn h2() -> ElementBuilder! { ElementBuilder::new("h2") }
+pub fn h3() -> ElementBuilder! { ElementBuilder::new("h3") }
+pub fn h4() -> ElementBuilder! { ElementBuilder::new("h4") }
+pub fn h5() -> ElementBuilder! { ElementBuilder::new("h5") }
+pub fn h6() -> ElementBuilder! { ElementBuilder::new("h6") }
+pub fn p() -> ElementBuilder! { ElementBuilder::new("p") }
+pub fn pre() -> ElementBuilder! { ElementBuilder::new("pre") }
+pub fn code() -> ElementBuilder! { ElementBuilder::new("code") }
+pub fn blockquote() -> ElementBuilder! { ElementBuilder::new("blockquote") }
+pub fn em() -> ElementBuilder! { ElementBuilder::new("em") }
+pub fn strong() -> ElementBuilder! { ElementBuilder::new("strong") }
+pub fn small() -> ElementBuilder! { ElementBuilder::new("small") }
+pub fn mark() -> ElementBuilder! { ElementBuilder::new("mark") }
+pub fn del() -> ElementBuilder! { ElementBuilder::new("del") }
+pub fn ins() -> ElementBuilder! { ElementBuilder::new("ins") }
+pub fn sub() -> ElementBuilder! { ElementBuilder::new("sub") }
+pub fn sup() -> ElementBuilder! { ElementBuilder::new("sup") }
+
+// Links and media
+pub fn a() -> ElementBuilder! { ElementBuilder::new("a") }
+pub fn img() -> ElementBuilder! { ElementBuilder::new("img") }
+pub fn video() -> ElementBuilder! { ElementBuilder::new("video") }
+pub fn audio() -> ElementBuilder! { ElementBuilder::new("audio") }
+pub fn source() -> ElementBuilder! { ElementBuilder::new("source") }
+pub fn iframe() -> ElementBuilder! { ElementBuilder::new("iframe") }
+pub fn canvas() -> ElementBuilder! { ElementBuilder::new("canvas") }
+pub fn svg() -> ElementBuilder! { ElementBuilder::new("svg") }
+pub fn path() -> ElementBuilder! { ElementBuilder::new("path") }
+
+// Lists
+pub fn ul() -> ElementBuilder! { ElementBuilder::new("ul") }
+pub fn ol() -> ElementBuilder! { ElementBuilder::new("ol") }
+pub fn li() -> ElementBuilder! { ElementBuilder::new("li") }
+pub fn dl() -> ElementBuilder! { ElementBuilder::new("dl") }
+pub fn dt() -> ElementBuilder! { ElementBuilder::new("dt") }
+pub fn dd() -> ElementBuilder! { ElementBuilder::new("dd") }
+
+// Tables
+pub fn table() -> ElementBuilder! { ElementBuilder::new("table") }
+pub fn thead() -> ElementBuilder! { ElementBuilder::new("thead") }
+pub fn tbody() -> ElementBuilder! { ElementBuilder::new("tbody") }
+pub fn tfoot() -> ElementBuilder! { ElementBuilder::new("tfoot") }
+pub fn tr() -> ElementBuilder! { ElementBuilder::new("tr") }
+pub fn th() -> ElementBuilder! { ElementBuilder::new("th") }
+pub fn td() -> ElementBuilder! { ElementBuilder::new("td") }
+
+// Forms
+pub fn form() -> ElementBuilder! { ElementBuilder::new("form") }
+pub fn input() -> ElementBuilder! { ElementBuilder::new("input") }
+pub fn textarea() -> ElementBuilder! { ElementBuilder::new("textarea") }
+pub fn select() -> ElementBuilder! { ElementBuilder::new("select") }
+pub fn option() -> ElementBuilder! { ElementBuilder::new("option") }
+pub fn optgroup() -> ElementBuilder! { ElementBuilder::new("optgroup") }
+pub fn button() -> ElementBuilder! { ElementBuilder::new("button") }
+pub fn label() -> ElementBuilder! { ElementBuilder::new("label") }
+pub fn fieldset() -> ElementBuilder! { ElementBuilder::new("fieldset") }
+pub fn legend() -> ElementBuilder! { ElementBuilder::new("legend") }
+pub fn datalist() -> ElementBuilder! { ElementBuilder::new("datalist") }
+pub fn output() -> ElementBuilder! { ElementBuilder::new("output") }
+pub fn progress() -> ElementBuilder! { ElementBuilder::new("progress") }
+pub fn meter() -> ElementBuilder! { ElementBuilder::new("meter") }
+
+// Other elements
+pub fn br() -> VNode! { ElementBuilder::new("br")·build() }
+pub fn hr() -> VNode! { ElementBuilder::new("hr")·build() }
+pub fn details() -> ElementBuilder! { ElementBuilder::new("details") }
+pub fn summary() -> ElementBuilder! { ElementBuilder::new("summary") }
+pub fn dialog() -> ElementBuilder! { ElementBuilder::new("dialog") }
+pub fn menu() -> ElementBuilder! { ElementBuilder::new("menu") }
+pub fn template() -> ElementBuilder! { ElementBuilder::new("template") }
+pub fn slot() -> ElementBuilder! { ElementBuilder::new("slot") }
+
+// ============================================================================
+// Fragment and Conditional Rendering
+// ============================================================================
+
+/// Create a fragment (multiple elements without wrapper)
+pub fn fragment(children: Vec<VNode>) -> VNode! {
+    VNode::Fragment(VFragment::new(children))
+}
+
+/// Create text node
+pub fn text(content: &str) -> VNode! {
+    VNode::Text(VText::new(content))
+}
+
+/// Conditional rendering helper
+pub fn when(condition: bool, element: fn() -> VNode) -> VNode! {
+    if condition {
+        element()
+    } else {
+        VNode::Empty
+    }
+}
+
+/// Conditional rendering with else
+pub fn if_else(condition: bool, if_true: fn() -> VNode, if_false: fn() -> VNode) -> VNode! {
+    if condition {
+        if_true()
+    } else {
+        if_false()
+    }
+}
+
+/// Map collection to elements
+pub fn map_to_elements<T, F>(items: impl IntoIterator<Item = T>, mapper: F) -> Vec<VNode>!
+where
+    F: Fn(T) -> VNode
+{
+    items·into_iter()·map(mapper)·collect()
+}
+
+/// Map collection to keyed elements
+pub fn map_to_keyed<T, K, F>(items: impl IntoIterator<Item = T>, key_fn: fn(&T) -> K, mapper: F) -> Vec<VNode>!
+where
+    K: ToString,
+    F: Fn(T) -> VNode
+{
+    items·into_iter()·map(|item| {
+        let key! = key_fn(&item)·to_string()
+        let node! = mapper(item)
+        // Add key to node
+        node
+    })·collect()
+}
+
+// ============================================================================
+// JSX-like Macro (Compile-time transformation)
+// ============================================================================
+
+/// JSX-like syntax macro
+///
+/// Example:
+/// ```sigil
+/// jsx! {
+///     <div class="container">
+///         <h1>Hello, {name}!</h1>
+///         <button onclick={handle_click}>Click me</button>
+///         {items|τ{item => <li key={item.id}>{item.name}</li>}|fragment}
+///     </div>
+/// }
+/// ```
+#[macro_export]
+macro_rules! jsx {
+    // Self-closing tag
+    (<$tag:ident $($attr:ident = $value:expr),* />) => {
+        $crate::dom::$tag()
+            $(.attr(stringify!($attr), $value))*
+            .build()
+    };
+
+    // Tag with children
+    (<$tag:ident $($attr:ident = $value:expr),*> $($child:tt)* </$end_tag:ident>) => {
+        $crate::dom::$tag()
+            $(.attr(stringify!($attr), $value))*
+            .children(vec![$($crate::jsx_child!($child)),*])
+            .build()
+    };
+
+    // Expression
+    ({$expr:expr}) => {
+        $expr
+    };
+
+    // Text
+    ($text:literal) => {
+        $crate::dom::text($text)
+    };
+}
+
+#[macro_export]
+macro_rules! jsx_child {
+    ({$expr:expr}) => { $expr.into() };
+    ($text:literal) => { $crate::dom::text($text) };
+    (<$($rest:tt)*>) => { $crate::jsx!(<$($rest)*>) };
+}
+
+// ============================================================================
+// Sigil Template Syntax
+// ============================================================================
+
+/// Native Sigil template syntax using block expressions
+///
+/// Example:
+/// ```sigil
+/// div {
+///     class: "container"
+///     id: "main"
+///
+///     h1 { "Welcome, {user.name}!" }
+///
+///     if logged_in {
+///         nav {
+///             a[href: "/dashboard"] { "Dashboard" }
+///             a[href: "/settings"] { "Settings" }
+///         }
+///     }
+///
+///     ul {
+///         for item in items {
+///             li[key: item.id] { item.name }
+///         }
+///     }
+///
+///     button[onclick: handle_click] { "Submit" }
+/// }
+/// ```
+
+/// Template element with attribute syntax [attr: value]
+#[macro_export]
+macro_rules! el {
+    // Element with attributes in brackets and children in braces
+    ($tag:ident [$($attr:ident : $value:expr),* $(,)?] { $($children:tt)* }) => {
+        $crate::dom::$tag()
+            $(.attr(stringify!($attr), $value))*
+            .children($crate::el_children!($($children)*))
+            .build()
+    };
+
+    // Element with only children
+    ($tag:ident { $($children:tt)* }) => {
+        $crate::dom::$tag()
+            .children($crate::el_children!($($children)*))
+            .build()
+    };
+
+    // Self-closing element with attributes
+    ($tag:ident [$($attr:ident : $value:expr),* $(,)?]) => {
+        $crate::dom::$tag()
+            $(.attr(stringify!($attr), $value))*
+            .build()
+    };
+
+    // Self-closing element
+    ($tag:ident) => {
+        $crate::dom::$tag().build()
+    };
+}
+
+#[macro_export]
+macro_rules! el_children {
+    () => { vec![] };
+
+    // Text literal
+    ($text:literal $($rest:tt)*) => {
+        {
+            let mut children = vec![$crate::dom::text($text)];
+            children.extend($crate::el_children!($($rest)*));
+            children
+        }
+    };
+
+    // Expression in braces
+    ({ $expr:expr } $($rest:tt)*) => {
+        {
+            let mut children = vec![$expr.into()];
+            children.extend($crate::el_children!($($rest)*));
+            children
+        }
+    };
+
+    // Nested element
+    ($tag:ident $($rest:tt)*) => {
+        {
+            let (child, remaining) = $crate::el_parse_element!($tag $($rest)*);
+            let mut children = vec![child];
+            // Parse remaining
+            children
+        }
+    };
+}
+
+// ============================================================================
+// CSS-in-Sigil
+// ============================================================================
+
+/// Inline style builder
+pub struct Style {
+    properties: HashMap<String, String>!
+}
+
+impl Style {
+    pub fn new() -> Self! {
+        Style { properties: HashMap::new() }
+    }
+
+    pub fn prop(mut self, name: &str, value: &str) -> Self! {
+        self.properties·insert(name.to_string(), value.to_string())
+        self
+    }
+
+    // Common properties
+    pub fn display(self, value: &str) -> Self! { self·prop("display", value) }
+    pub fn position(self, value: &str) -> Self! { self·prop("position", value) }
+    pub fn width(self, value: &str) -> Self! { self·prop("width", value) }
+    pub fn height(self, value: &str) -> Self! { self·prop("height", value) }
+    pub fn margin(self, value: &str) -> Self! { self·prop("margin", value) }
+    pub fn padding(self, value: &str) -> Self! { self·prop("padding", value) }
+    pub fn color(self, value: &str) -> Self! { self·prop("color", value) }
+    pub fn background(self, value: &str) -> Self! { self·prop("background", value) }
+    pub fn background_color(self, value: &str) -> Self! { self·prop("background-color", value) }
+    pub fn font_size(self, value: &str) -> Self! { self·prop("font-size", value) }
+    pub fn font_weight(self, value: &str) -> Self! { self·prop("font-weight", value) }
+    pub fn text_align(self, value: &str) -> Self! { self·prop("text-align", value) }
+    pub fn border(self, value: &str) -> Self! { self·prop("border", value) }
+    pub fn border_radius(self, value: &str) -> Self! { self·prop("border-radius", value) }
+    pub fn box_shadow(self, value: &str) -> Self! { self·prop("box-shadow", value) }
+    pub fn flex(self, value: &str) -> Self! { self·prop("flex", value) }
+    pub fn flex_direction(self, value: &str) -> Self! { self·prop("flex-direction", value) }
+    pub fn justify_content(self, value: &str) -> Self! { self·prop("justify-content", value) }
+    pub fn align_items(self, value: &str) -> Self! { self·prop("align-items", value) }
+    pub fn gap(self, value: &str) -> Self! { self·prop("gap", value) }
+    pub fn grid(self, value: &str) -> Self! { self·prop("grid", value) }
+    pub fn grid_template_columns(self, value: &str) -> Self! { self·prop("grid-template-columns", value) }
+    pub fn transition(self, value: &str) -> Self! { self·prop("transition", value) }
+    pub fn transform(self, value: &str) -> Self! { self·prop("transform", value) }
+    pub fn opacity(self, value: &str) -> Self! { self·prop("opacity", value) }
+    pub fn cursor(self, value: &str) -> Self! { self·prop("cursor", value) }
+    pub fn overflow(self, value: &str) -> Self! { self·prop("overflow", value) }
+    pub fn z_index(self, value: &str) -> Self! { self·prop("z-index", value) }
+
+    pub fn to_string(&self) -> String! {
+        self.properties·iter()
+            ·map(|(k, v)| format!("{}: {}", k, v))
+            ·collect::<Vec<_>>()
+            ·join("; ")
+    }
+}
+
+impl Into<AttrValue> for Style {
+    fn into(self) -> AttrValue! {
+        AttrValue::String(self·to_string())
+    }
+}
+
+/// CSS class builder with conditional classes
+pub struct Classes {
+    classes: Vec<String>!
+}
+
+impl Classes {
+    pub fn new() -> Self! {
+        Classes { classes: Vec::new() }
+    }
+
+    pub fn add(mut self, class: &str) -> Self! {
+        self.classes·push(class.to_string())
+        self
+    }
+
+    pub fn add_if(mut self, condition: bool, class: &str) -> Self! {
+        if condition {
+            self.classes·push(class.to_string())
+        }
+        self
+    }
+
+    pub fn to_string(&self) -> String! {
+        self.classes·join(" ")
+    }
+}
+
+impl Into<AttrValue> for Classes {
+    fn into(self) -> AttrValue! {
+        AttrValue::String(self·to_string())
+    }
+}
+
+/// Quick class builder
+pub fn classes() -> Classes! {
+    Classes::new()
+}
+
+/// Quick style builder
+pub fn style() -> Style! {
+    Style::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_element_builder() {
+        let el! = div()
+            ·class("container")
+            ·id("main")
+            ·text("Hello")
+            ·build()
+
+        match el {
+            VNode::Element(e) => {
+                assert_eq!(e.tag, "div")
+            }
+            _ => panic!("Expected element")
+        }
+    }
+
+    #[test]
+    fn test_style_builder() {
+        let s! = style()
+            ·display("flex")
+            ·color("red")
+            ·to_string()
+
+        assert!(s·contains("display: flex"))
+        assert!(s·contains("color: red"))
+    }
+
+    #[test]
+    fn test_classes_builder() {
+        let c! = classes()
+            ·add("btn")
+            ·add_if(true, "btn-primary")
+            ·add_if(false, "btn-disabled")
+            ·to_string()
+
+        assert_eq!(c, "btn btn-primary")
+    }
+}

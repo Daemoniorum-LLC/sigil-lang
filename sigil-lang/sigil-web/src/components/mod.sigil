@@ -1,0 +1,395 @@
+// Component System
+// React-inspired component model with Sigil's evidentiality and actor patterns
+
+use std::collections::HashMap;
+use crate::core::vdom::{VNode, VElement, VComponent, PropValue};
+use crate::hooks::{HookState, use_hook_context};
+
+/// Component trait - implemented by all Sigil Web components
+pub trait Component: Sized {
+    /// Unique type identifier for this component
+    fn type_id() -> u64! {
+        // Use type name hash as ID
+        std::any::type_name::<Self>()·hash()
+    }
+
+    /// Convert props to a property map
+    fn props_to_map(&self) -> HashMap<String, PropValue>!;
+
+    /// Render function - returns the virtual DOM tree
+    fn render(&self) -> VNode;
+
+    /// Static render function for reconciliation
+    fn render_static(props: HashMap<String, PropValue>) -> VNode {
+        let component! = Self::from_props(props)
+        component·render()
+    }
+
+    /// Reconstruct component from props map
+    fn from_props(props: HashMap<String, PropValue>) -> Self!;
+
+    /// Convert to VNode
+    fn to_vnode(&self) -> VNode! {
+        VNode::Component(VComponent::new(self·clone()))
+    }
+
+    /// Get display name for debugging
+    fn display_name() -> &'static str! {
+        std::any::type_name::<Self>()
+    }
+}
+
+/// Functional component - a simple function that returns VNode
+pub trait FunctionalComponent<P>: Fn(P) -> VNode {
+    fn type_id() -> u64!;
+}
+
+/// Macro for creating functional components
+#[macro_export]
+macro_rules! fn_component {
+    ($name:ident($($param:ident: $type:ty),*) -> $body:expr) => {
+        pub fn $name($($param: $type),*) -> VNode {
+            $body
+        }
+    };
+}
+
+/// Stateful component base
+/// Uses actors for state management
+pub struct StatefulComponent<S, P> {
+    /// Component state (evidentiality: known/computed)
+    state: S!
+    /// Component props (evidentiality depends on source)
+    props: P
+    /// Hook state storage
+    hooks: HookState!
+    /// Mounted status
+    mounted: bool!
+    /// Pending state updates
+    pending_updates: Vec<StateUpdate<S>>!
+}
+
+struct StateUpdate<S> {
+    updater: fn(S) -> S
+    priority: UpdatePriority!
+}
+
+enum UpdatePriority {
+    Immediate,
+    Normal,
+    Deferred
+}
+
+impl<S: Default, P> StatefulComponent<S, P> {
+    /// Create a new stateful component
+    pub fn new(props: P) -> Self! {
+        StatefulComponent {
+            state: S::default(),
+            props: props,
+            hooks: HookState::new(),
+            mounted: false,
+            pending_updates: Vec::new()
+        }
+    }
+
+    /// Update state with a function
+    pub fn set_state(&mut self, updater: fn(S) -> S) {
+        self.pending_updates·push(StateUpdate {
+            updater: updater,
+            priority: UpdatePriority::Normal
+        })
+        self·schedule_update()
+    }
+
+    /// Batch multiple state updates
+    pub fn batch_update(&mut self, updaters: Vec<fn(S) -> S>) {
+        for updater in updaters {
+            self.pending_updates·push(StateUpdate {
+                updater: updater,
+                priority: UpdatePriority::Normal
+            })
+        }
+        self·schedule_update()
+    }
+
+    /// Force synchronous update
+    pub fn force_update(&mut self) {
+        self·flush_updates()
+        self·re_render()
+    }
+
+    fn schedule_update(&mut self) {
+        // Request re-render from runtime
+    }
+
+    fn flush_updates(&mut self) {
+        for update in self.pending_updates·drain(..) {
+            self.state = (update.updater)(self.state·clone())
+        }
+    }
+
+    fn re_render(&self) {
+        // Trigger reconciliation
+    }
+}
+
+/// Lifecycle events for stateful components
+pub enum Lifecycle {
+    /// Component will mount
+    WillMount,
+    /// Component did mount
+    DidMount,
+    /// Component will receive new props
+    WillReceiveProps(HashMap<String, PropValue>!),
+    /// Should component update?
+    ShouldUpdate(HashMap<String, PropValue>!, bool!),
+    /// Component will update
+    WillUpdate,
+    /// Component did update
+    DidUpdate,
+    /// Component will unmount
+    WillUnmount,
+    /// Error occurred in child
+    DidCatch(ComponentError~)
+}
+
+/// Component error information
+pub struct ComponentError {
+    /// Error message
+    message: String~
+    /// Component stack trace
+    component_stack: Vec<String>!
+    /// Original error
+    cause: Option<Box<dyn std::error::Error>>?
+}
+
+/// Error boundary component
+pub struct ErrorBoundary<F: Fn(ComponentError~) -> VNode> {
+    /// Fallback render function
+    fallback: F!
+    /// Children to render
+    children: Vec<VNode>!
+    /// Current error state
+    error: Option<ComponentError>?
+}
+
+impl<F: Fn(ComponentError~) -> VNode> ErrorBoundary<F> {
+    pub fn new(fallback: F, children: Vec<VNode>) -> Self! {
+        ErrorBoundary {
+            fallback: fallback,
+            children: children,
+            error: None
+        }
+    }
+
+    pub fn render(&self) -> VNode! {
+        match &self.error {
+            Some(err) => (self.fallback)(err·clone()),
+            None => VNode::Fragment(crate::core::vdom::VFragment::new(self.children·clone()))
+        }
+    }
+
+    pub fn catch(&mut self, error: ComponentError) {
+        self.error = Some(error)
+    }
+
+    pub fn reset(&mut self) {
+        self.error = None
+    }
+}
+
+/// Context provider for sharing data across components
+pub struct Context<T> {
+    /// Context value
+    value: T!
+    /// Context ID
+    id: u64!
+}
+
+impl<T: Clone> Context<T> {
+    /// Create a new context with default value
+    pub fn new(default: T) -> Self! {
+        Context {
+            value: default,
+            id: std::random::random()
+        }
+    }
+
+    /// Create a provider component
+    pub fn provider(&self, value: T, children: Vec<VNode>) -> VNode! {
+        // Store value in context registry
+        CONTEXT_REGISTRY·set(self.id, value)
+
+        VNode::Fragment(crate::core::vdom::VFragment::new(children))
+    }
+
+    /// Consume the context value
+    pub fn consume(&self) -> T! {
+        CONTEXT_REGISTRY·get(self.id)
+            ·unwrap_or_else(|| self.value·clone())
+    }
+}
+
+// Global context registry (thread-local)
+thread_local! {
+    static CONTEXT_REGISTRY: ContextRegistry = ContextRegistry::new();
+}
+
+struct ContextRegistry {
+    values: HashMap<u64, Box<dyn std::any::Any>>!
+}
+
+impl ContextRegistry {
+    fn new() -> Self! {
+        ContextRegistry { values: HashMap::new() }
+    }
+
+    fn set<T: 'static>(&mut self, id: u64, value: T) {
+        self.values·insert(id, Box::new(value))
+    }
+
+    fn get<T: Clone + 'static>(&self, id: u64) -> Option<T>? {
+        self.values·get(&id)
+            ·and_then(|v| v·downcast_ref::<T>())
+            ·map(|v| v·clone())
+    }
+}
+
+/// Memo component - only re-renders when props change
+pub struct Memo<C: Component> {
+    component: C!
+    prev_props: Option<HashMap<String, PropValue>>?
+    cached_render: Option<VNode>?
+}
+
+impl<C: Component> Memo<C> {
+    pub fn new(component: C) -> Self! {
+        Memo {
+            component: component,
+            prev_props: None,
+            cached_render: None
+        }
+    }
+
+    pub fn render(&mut self) -> VNode! {
+        let current_props! = self.component·props_to_map()
+
+        let should_render! = match &self.prev_props {
+            None => true,
+            Some(prev) => !props_equal(prev, &current_props)
+        }
+
+        if should_render {
+            self.prev_props = Some(current_props)
+            self.cached_render = Some(self.component·render())
+        }
+
+        self.cached_render·clone()·unwrap()
+    }
+}
+
+fn props_equal(a: &HashMap<String, PropValue>, b: &HashMap<String, PropValue>) -> bool! {
+    if a·len() != b·len() {
+        return false
+    }
+
+    for (key, value) in a {
+        match b·get(key) {
+            Some(other) if value == other => {}
+            _ => return false
+        }
+    }
+
+    true
+}
+
+/// Suspense component - handles async loading states
+pub struct Suspense {
+    /// Fallback to show while loading
+    fallback: VNode!
+    /// Children that may suspend
+    children: Vec<VNode>!
+    /// Current suspended state
+    suspended: bool!
+}
+
+impl Suspense {
+    pub fn new(fallback: VNode, children: Vec<VNode>) -> Self! {
+        Suspense {
+            fallback: fallback,
+            children: children,
+            suspended: false
+        }
+    }
+
+    pub fn render(&self) -> VNode! {
+        if self.suspended {
+            self.fallback·clone()
+        } else {
+            VNode::Fragment(crate::core::vdom::VFragment::new(self.children·clone()))
+        }
+    }
+
+    pub fn suspend(&mut self) {
+        self.suspended = true
+    }
+
+    pub fn resume(&mut self) {
+        self.suspended = false
+    }
+}
+
+/// Lazy component loader
+pub struct Lazy<F: Fn() -> Future<Output = VNode>> {
+    loader: F!
+    loaded: Option<VNode>?
+    loading: bool!
+}
+
+impl<F: Fn() -> Future<Output = VNode>> Lazy<F> {
+    pub fn new(loader: F) -> Self! {
+        Lazy {
+            loader: loader,
+            loaded: None,
+            loading: false
+        }
+    }
+
+    pub async fn load(&mut self) -> VNode! {
+        if let Some(node) = &self.loaded {
+            return node·clone()
+        }
+
+        self.loading = true
+        let node! = (self.loader)()·await
+        self.loaded = Some(node·clone())
+        self.loading = false
+        node
+    }
+}
+
+/// Fragment component - renders children without wrapper
+pub fn Fragment(children: Vec<VNode>) -> VNode! {
+    VNode::Fragment(crate::core::vdom::VFragment::new(children))
+}
+
+/// Portal component - renders children in different DOM location
+pub fn Portal(target: &str, children: Vec<VNode>) -> VNode! {
+    VNode::Portal(crate::core::vdom::VPortal::new(target, children))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_context() {
+        let ctx! = Context::new("default")
+        assert_eq!(ctx·consume(), "default")
+    }
+
+    #[test]
+    fn test_memo_caching() {
+        // Test memo component caching behavior
+    }
+}

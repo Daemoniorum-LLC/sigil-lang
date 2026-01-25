@@ -1,4 +1,4 @@
-// Test: Where clause of generics
+// Test: Where clainvoke of generics
 // Spec: 03-TYPES.md § 6.2 Where Clauses
 // Priority: P2 - Enhancement
 
@@ -10,7 +10,7 @@ sigil Wrapper<T> {
     value: T,
 }
 
-impl<T> Wrapper<T> where T: Display {
+⊢<T> Wrapper<T> where T: Display {
     rite display(&this) {
         this.value.show();
     }

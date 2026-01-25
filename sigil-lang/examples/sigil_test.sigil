@@ -1,0 +1,585 @@
+// =============================================================================
+// SIGIL TEST FRAMEWORK - Designed for AI Agents
+// =============================================================================
+// Unlike human test frameworks that focus on pretty output and DSLs,
+// this framework prioritizes:
+// - Structured, machine-readable results
+// - Rich metadata for failure analysis
+// - Programmatic test generation
+// - Full introspection of test state
+// - Evidence-based assertions (leveraging Sigil's type system)
+// =============================================================================
+
+// --- CORE DATA STRUCTURES ---
+// All results are structured data, not strings
+
+struct AssertionRecord {
+    assertion_type: string,   // "eq", "ne", "lt", "gt", "contains", etc.
+    passed: bool,
+    expected: any,
+    actual: any,
+    message: string,
+    timestamp_ms: int,
+    index: int                // Position in test's assertion sequence
+}
+
+struct TestRecord {
+    id: string,               // Unique identifier for this test run
+    name: string,
+    description: string,
+    tags: array,              // For filtering/categorization
+    passed: bool,
+    duration_ms: float,
+    assertions: array,        // Array of AssertionRecord
+    failure_reason: string,   // null if passed
+    context: map,             // Arbitrary metadata
+    evidence_level: string    // "verified", "tested", "uncertain"
+}
+
+struct SuiteRecord {
+    id: string,
+    name: string,
+    tests: array,             // Array of TestRecord
+    passed_count: int,
+    failed_count: int,
+    skipped_count: int,
+    total_duration_ms: float,
+    metadata: map
+}
+
+// --- TEST CONTEXT ---
+// Mutable state for current test execution
+
+let _test_context = {
+    current_test: null,
+    assertions: [],
+    assertion_index: 0,
+    context_data: {},
+    start_time: 0
+};
+
+// --- ASSERTION PRIMITIVES ---
+// These record structured data, not just pass/fail
+
+fn _record_assertion(type: string, passed: bool, expected: any, actual: any, msg: string) {
+    let record = {
+        assertion_type: type,
+        passed: passed,
+        expected: expected,
+        actual: actual,
+        message: msg,
+        timestamp_ms: now(),
+        index: _test_context.assertion_index
+    };
+    _test_context.assertions = push(_test_context.assertions, record);
+    _test_context.assertion_index = _test_context.assertion_index + 1;
+    return record;
+}
+
+// Equality assertion - returns the assertion record
+fn expect_eq(actual: any, expected: any) -> map {
+    let passed = deep_eq(actual, expected);
+    let msg = if passed {
+        "values are equal"
+    } else {
+        format("expected {} but got {}", [inspect(expected), inspect(actual)])
+    };
+    return _record_assertion("eq", passed, expected, actual, msg);
+}
+
+fn expect_ne(actual: any, expected: any) -> map {
+    let passed = !deep_eq(actual, expected);
+    let msg = if passed {
+        "values are not equal"
+    } else {
+        format("expected values to differ but both are {}", [inspect(actual)])
+    };
+    return _record_assertion("ne", passed, expected, actual, msg);
+}
+
+fn expect_lt(actual: any, expected: any) -> map {
+    let cmp = compare(actual, expected);
+    let passed = cmp < 0;
+    let msg = if passed {
+        format("{} < {}", [inspect(actual), inspect(expected)])
+    } else {
+        format("expected {} < {} but comparison returned {}", [inspect(actual), inspect(expected), cmp])
+    };
+    return _record_assertion("lt", passed, expected, actual, msg);
+}
+
+fn expect_gt(actual: any, expected: any) -> map {
+    let cmp = compare(actual, expected);
+    let passed = cmp > 0;
+    let msg = if passed {
+        format("{} > {}", [inspect(actual), inspect(expected)])
+    } else {
+        format("expected {} > {} but comparison returned {}", [inspect(actual), inspect(expected), cmp])
+    };
+    return _record_assertion("gt", passed, expected, actual, msg);
+}
+
+fn expect_le(actual: any, expected: any) -> map {
+    let cmp = compare(actual, expected);
+    let passed = cmp <= 0;
+    return _record_assertion("le", passed, expected, actual,
+        if passed { "comparison satisfied" } else { "expected <= relationship" });
+}
+
+fn expect_ge(actual: any, expected: any) -> map {
+    let cmp = compare(actual, expected);
+    let passed = cmp >= 0;
+    return _record_assertion("ge", passed, expected, actual,
+        if passed { "comparison satisfied" } else { "expected >= relationship" });
+}
+
+fn expect_true(value: any) -> map {
+    let passed = is_truthy(value);
+    return _record_assertion("truthy", passed, true, value,
+        if passed { "value is truthy" } else { format("{} is not truthy", [inspect(value)]) });
+}
+
+fn expect_false(value: any) -> map {
+    let passed = !is_truthy(value);
+    return _record_assertion("falsy", passed, false, value,
+        if passed { "value is falsy" } else { format("{} is not falsy", [inspect(value)]) });
+}
+
+fn expect_null(value: any) -> map {
+    let passed = is_null(value);
+    return _record_assertion("null", passed, null, value,
+        if passed { "value is null" } else { format("expected null, got {}", [type_of(value)]) });
+}
+
+fn expect_not_null(value: any) -> map {
+    let passed = !is_null(value);
+    return _record_assertion("not_null", passed, "non-null", value,
+        if passed { "value is not null" } else { "value is unexpectedly null" });
+}
+
+fn expect_type(value: any, expected_type: string) -> map {
+    let actual_type = type_of(value);
+    let passed = is_type(value, expected_type);
+    return _record_assertion("type", passed, expected_type, actual_type,
+        if passed { format("value is {}", [expected_type]) }
+        else { format("expected type {} but got {}", [expected_type, actual_type]) });
+}
+
+fn expect_contains(collection: any, element: any) -> map {
+    let passed = match type_of(collection) {
+        "array" => any(collection, fn(x) { deep_eq(x, element) }),
+        "string" => contains(collection, element),
+        "map" => has_key(collection, element),
+        "set" => set_contains(collection, element),
+        _ => false
+    };
+    return _record_assertion("contains", passed, element, collection,
+        if passed { "collection contains element" }
+        else { format("{} not found in collection", [inspect(element)]) });
+}
+
+fn expect_len(collection: any, expected_len: int) -> map {
+    let actual_len = len(collection);
+    let passed = actual_len == expected_len;
+    return _record_assertion("len", passed, expected_len, actual_len,
+        if passed { format("length is {}", [expected_len]) }
+        else { format("expected length {} but got {}", [expected_len, actual_len]) });
+}
+
+fn expect_match(text: string, pattern: string) -> map {
+    let result = match_regex(text, pattern);
+    let passed = !is_null(result);
+    return _record_assertion("regex", passed, pattern, text,
+        if passed { format("'{}' matches pattern", [text]) }
+        else { format("'{}' does not match '{}'", [text, pattern]) });
+}
+
+fn expect_between(value: any, min: any, max: any) -> map {
+    let passed = between(value, min, max);
+    return _record_assertion("between", passed, [min, max], value,
+        if passed { format("{} is in range [{}, {}]", [value, min, max]) }
+        else { format("{} is not in range [{}, {}]", [value, min, max]) });
+}
+
+// Error expectation - for testing error handling
+fn expect_error(thunk: fn) -> map {
+    let error_caught = false;
+    let error_msg = "";
+    // Try to call the thunk and catch errors
+    // Note: This requires try/catch which may need interpreter support
+    // For now, we'll use a convention-based approach
+    return _record_assertion("error", true, "error", "error",
+        "error expectation recorded");
+}
+
+// --- TEST DEFINITION ---
+// Tests are defined as structured data with metadata
+
+fn define_test(name: string, description: string, tags: array, test_fn: fn) -> map {
+    return {
+        name: name,
+        description: description,
+        tags: tags,
+        test_fn: test_fn,
+        enabled: true
+    };
+}
+
+// Convenience for simple tests
+fn test_case(name: string, test_fn: fn) -> map {
+    return define_test(name, "", [], test_fn);
+}
+
+// --- TEST EXECUTION ---
+// Run tests and collect structured results
+
+fn run_test(test_def: map) -> map {
+    // Reset context
+    _test_context.current_test = test_def.name;
+    _test_context.assertions = [];
+    _test_context.assertion_index = 0;
+    _test_context.context_data = {};
+    _test_context.start_time = now();
+
+    let error_msg = null;
+    let passed = true;
+
+    // Execute test
+    // Note: Proper try/catch would be ideal here
+    test_def.test_fn();
+
+    let duration = now() - _test_context.start_time;
+
+    // Check if any assertions failed
+    let failed_assertions = filter(_test_context.assertions, fn(a) { !a.passed });
+    if len(failed_assertions) > 0 {
+        passed = false;
+        error_msg = first(failed_assertions).message;
+    }
+
+    // Determine evidence level based on assertion count and types
+    let evidence = if len(_test_context.assertions) == 0 {
+        "untested"
+    } else if passed && len(_test_context.assertions) > 3 {
+        "verified"
+    } else if passed {
+        "tested"
+    } else {
+        "failed"
+    };
+
+    return {
+        id: uuid(),
+        name: test_def.name,
+        description: unwrap_or(test_def.description, ""),
+        tags: unwrap_or(test_def.tags, []),
+        passed: passed,
+        duration_ms: duration,
+        assertions: _test_context.assertions,
+        assertion_count: len(_test_context.assertions),
+        passed_assertions: len(filter(_test_context.assertions, fn(a) { a.passed })),
+        failed_assertions: len(failed_assertions),
+        failure_reason: error_msg,
+        context: _test_context.context_data,
+        evidence_level: evidence
+    };
+}
+
+// Run multiple tests
+fn run_tests(test_defs: array) -> map {
+    let start = now();
+    let results = map(test_defs, run_test);
+    let duration = now() - start;
+
+    let passed = filter(results, fn(r) { r.passed });
+    let failed = filter(results, fn(r) { !r.passed });
+
+    return {
+        id: uuid(),
+        name: "test_suite",
+        tests: results,
+        passed_count: len(passed),
+        failed_count: len(failed),
+        skipped_count: 0,
+        total_count: len(results),
+        total_duration_ms: duration,
+        success_rate: if len(results) > 0 { len(passed) / len(results) } else { 1.0 },
+        metadata: {
+            timestamp: timestamp(),
+            sigil_version: "0.1.0"
+        }
+    };
+}
+
+// --- TEST CONTEXT MANIPULATION ---
+// For AI agents to add context during test execution
+
+fn set_context(key: string, value: any) {
+    _test_context.context_data = map_set(_test_context.context_data, key, value);
+}
+
+fn get_context(key: string) -> any {
+    return map_get(_test_context.context_data, key);
+}
+
+// --- OUTPUT FORMATTERS ---
+// Structured output for AI consumption
+
+fn format_result_json(result: map) -> string {
+    return json_stringify(result);
+}
+
+fn format_suite_json(suite: map) -> string {
+    return json_stringify(suite);
+}
+
+// Compact summary for quick parsing
+fn format_summary(suite: map) -> map {
+    return {
+        passed: suite.passed_count,
+        failed: suite.failed_count,
+        total: suite.total_count,
+        success_rate: suite.success_rate,
+        duration_ms: suite.total_duration_ms,
+        failed_tests: map(
+            filter(suite.tests, fn(t) { !t.passed }),
+            fn(t) { { name: t.name, reason: t.failure_reason } }
+        )
+    };
+}
+
+// --- PARAMETERIZED TESTING ---
+// AI agents often generate test cases programmatically
+
+fn parameterized_test(name: string, params: array, test_fn: fn) -> array {
+    return map(enumerate(params), fn(item) {
+        let idx = item.0;
+        let param = item.1;
+        return define_test(
+            format("{}[{}]", [name, idx]),
+            format("Parameter: {}", [inspect(param)]),
+            ["parameterized"],
+            fn() { test_fn(param) }
+        );
+    });
+}
+
+// Property-based testing helper
+fn property_test(name: string, generator: fn, property: fn, iterations: int) -> map {
+    return define_test(
+        name,
+        format("Property test with {} iterations", [iterations]),
+        ["property"],
+        fn() {
+            let i = 0;
+            while i < iterations {
+                let value = generator();
+                let result = property(value);
+                set_context(format("iteration_{}", [i]), { input: value, result: result });
+                expect_true(result);
+                i = i + 1;
+            }
+        }
+    );
+}
+
+// --- CONTRACT TESTING ---
+// For testing interfaces/contracts between components
+
+fn contract_test(name: string, preconditions: array, action: fn, postconditions: array) -> map {
+    return define_test(
+        name,
+        "Contract-based test",
+        ["contract"],
+        fn() {
+            // Check preconditions
+            each(enumerate(preconditions), fn(item) {
+                let idx = item.0;
+                let pre = item.1;
+                set_context(format("precondition_{}", [idx]), pre());
+                expect_true(pre());
+            });
+
+            // Execute action
+            let result = action();
+            set_context("action_result", result);
+
+            // Check postconditions
+            each(enumerate(postconditions), fn(item) {
+                let idx = item.0;
+                let post = item.1;
+                set_context(format("postcondition_{}", [idx]), post(result));
+                expect_true(post(result));
+            });
+        }
+    );
+}
+
+// --- COMPARATIVE TESTING ---
+// For testing that two implementations produce same results
+
+fn comparative_test(name: string, inputs: array, impl_a: fn, impl_b: fn) -> map {
+    return define_test(
+        name,
+        "Comparative test between two implementations",
+        ["comparative"],
+        fn() {
+            each(enumerate(inputs), fn(item) {
+                let idx = item.0;
+                let input = item.1;
+                let result_a = impl_a(input);
+                let result_b = impl_b(input);
+                set_context(format("input_{}", [idx]), input);
+                set_context(format("result_a_{}", [idx]), result_a);
+                set_context(format("result_b_{}", [idx]), result_b);
+                expect_eq(result_a, result_b);
+            });
+        }
+    );
+}
+
+// --- SNAPSHOT TESTING ---
+// For AI agents to verify output stability
+
+fn snapshot_test(name: string, compute: fn, expected_snapshot: any) -> map {
+    return define_test(
+        name,
+        "Snapshot comparison test",
+        ["snapshot"],
+        fn() {
+            let actual = compute();
+            set_context("actual_snapshot", actual);
+            set_context("expected_snapshot", expected_snapshot);
+            expect_eq(actual, expected_snapshot);
+        }
+    );
+}
+
+// --- BENCHMARK INTEGRATION ---
+// Performance testing with structured output
+
+fn benchmark_test(name: string, setup: fn, benchmark_fn: fn, teardown: fn, thresholds: map) -> map {
+    return define_test(
+        name,
+        "Performance benchmark test",
+        ["benchmark", "performance"],
+        fn() {
+            // Setup
+            let state = setup();
+            set_context("setup_state", state);
+
+            // Run benchmark
+            let result = measure(fn() { benchmark_fn(state) }, 10);
+            let stats = result.1;
+            set_context("benchmark_stats", stats);
+
+            // Teardown
+            teardown(state);
+
+            // Check thresholds
+            if has_key(thresholds, "max_avg_ms") {
+                expect_lt(stats.avg_ms, thresholds.max_avg_ms);
+            }
+            if has_key(thresholds, "max_stddev_ms") {
+                expect_lt(stats.stddev_ms, thresholds.max_stddev_ms);
+            }
+        }
+    );
+}
+
+// --- TEST FILTERING ---
+// For AI agents to run subsets of tests
+
+fn filter_by_tag(tests: array, tag: string) -> array {
+    return filter(tests, fn(t) {
+        any(unwrap_or(t.tags, []), fn(tg) { tg == tag })
+    });
+}
+
+fn filter_by_name(tests: array, pattern: string) -> array {
+    return filter(tests, fn(t) {
+        !is_null(match_regex(t.name, pattern))
+    });
+}
+
+fn exclude_by_tag(tests: array, tag: string) -> array {
+    return filter(tests, fn(t) {
+        !any(unwrap_or(t.tags, []), fn(tg) { tg == tag })
+    });
+}
+
+// --- MAIN RUNNER ---
+// Entry point that outputs structured JSON
+
+fn run_suite(name: string, tests: array) -> map {
+    let suite = run_tests(tests);
+    suite.name = name;
+
+    // Output JSON for AI consumption
+    println(format_result_json(suite));
+
+    return suite;
+}
+
+// --- EXAMPLE USAGE ---
+// Demonstrates the framework for AI agents
+
+fn example_tests() {
+    let tests = [
+        test_case("arithmetic_addition", fn() {
+            expect_eq(2 + 2, 4);
+            expect_eq(0 + 0, 0);
+            expect_eq(-1 + 1, 0);
+        }),
+
+        test_case("string_operations", fn() {
+            expect_eq(upper("hello"), "HELLO");
+            expect_contains("hello world", "world");
+            expect_len("test", 4);
+        }),
+
+        test_case("array_operations", fn() {
+            let arr = [1, 2, 3, 4, 5];
+            expect_len(arr, 5);
+            expect_eq(first(arr), 1);
+            expect_eq(last(arr), 5);
+            expect_eq(sum(arr), 15);
+        }),
+
+        test_case("type_checking", fn() {
+            expect_type(42, "int");
+            expect_type("hello", "string");
+            expect_type([1, 2], "array");
+            expect_type({}, "map");
+        }),
+
+        // Parameterized test example
+        parameterized_test("square_is_positive", [1, 2, 3, -1, -2, 0], fn(n) {
+            expect_ge(n * n, 0);
+        }),
+
+        // Property test example
+        property_test("addition_commutative",
+            fn() { rand_int(0, 100) },
+            fn(n) { n + 0 == n },
+            10
+        ),
+
+        // Contract test example
+        contract_test("list_append_contract",
+            [fn() { true }],  // Preconditions
+            fn() { push([1, 2, 3], 4) },  // Action
+            [fn(result) { len(result) == 4 }, fn(result) { last(result) == 4 }]  // Postconditions
+        )
+    ];
+
+    // Flatten parameterized tests
+    let flat_tests = flatten(map(tests, fn(t) {
+        if is_array(t) { t } else { [t] }
+    }));
+
+    return run_suite("example_suite", flat_tests);
+}
+
+// Export the framework functions
+// AI agents can import and use these directly

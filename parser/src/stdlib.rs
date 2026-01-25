@@ -5939,62 +5939,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         })
     });
 
-    // TcpListener::accept - accept a connection from the listener
-    define(interp, "TcpListener·accept", Some(1), |_, args| {
-        let listener_id = match &args[0] {
-            Value::Map(m) => {
-                let borrowed = m.borrow();
-                if let Some(Value::Int(id)) = borrowed.get("__listener_id__") {
-                    *id as u64
-                } else {
-                    return Err(RuntimeError::new("TcpListener missing __listener_id__"));
-                }
-            }
-            _ => {
-                return Err(RuntimeError::new(
-                    "TcpListener::accept requires TcpListener",
-                ))
-            }
-        };
-
-        if let Some(guard) = get_listener_registry().lock().ok() {
-            if let Some(listener) = guard.get(&listener_id) {
-                match listener.accept() {
-                    Ok((stream, addr)) => {
-                        // Store the stream in the stream registry
-                        let stream_id = store_tcp_stream(stream);
-
-                        let mut map = HashMap::new();
-                        map.insert(
-                            "__type__".to_string(),
-                            Value::String(Rc::new("TcpStream".to_string())),
-                        );
-                        map.insert("__stream_id__".to_string(), Value::Int(stream_id as i64));
-                        map.insert(
-                            "peer_addr".to_string(),
-                            Value::String(Rc::new(addr.to_string())),
-                        );
-
-                        Ok(Value::Variant {
-                            enum_name: "Result".to_string(),
-                            variant_name: "Ok".to_string(),
-                            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
-                        })
-                    }
-                    Err(e) => Ok(Value::Variant {
-                        enum_name: "Result".to_string(),
-                        variant_name: "Err".to_string(),
-                        fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
-                    }),
-                }
-            } else {
-                Err(RuntimeError::new("TcpListener not found in registry"))
-            }
-        } else {
-            Err(RuntimeError::new("Failed to lock listener registry"))
-        }
-    });
-
     // SocketAddr::parse - parse a socket address string
     define(interp, "SocketAddr·parse", Some(1), |_, args| {
         let addr_str = match &args[0] {
@@ -7864,6 +7808,13 @@ fn register_fs(interp: &mut Interpreter) {
     define(interp, "std·fs·create_dir_all", Some(1), |_, args| {
         let path = match &args[0] {
             Value::String(s) => s.to_string(),
+            Value::Ref(r) => {
+                if let Value::String(s) = &*r.borrow() {
+                    s.to_string()
+                } else {
+                    return Err(RuntimeError::new("create_dir_all() requires string path"));
+                }
+            }
             _ => return Err(RuntimeError::new("create_dir_all() requires string path")),
         };
         match std::fs::create_dir_all(&path) {
@@ -14027,11 +13978,11 @@ fn register_tensor(interp: &mut Interpreter) {
 //
 // ```sigil
 // // Scalar function gradient
-// fn f(x) { return x * x; }
+// fn f(x) { ⤺ x * x; }
 // let df = grad(f, 3.0);  // Returns 6.0 (derivative of x² at x=3)
 //
 // // Multi-variable gradient
-// fn g(x) { return get(x, 0)*get(x, 0) + get(x, 1)*get(x, 1); }
+// fn g(x) { ⤺ get(x, 0)*get(x, 0) + get(x, 1)*get(x, 1); }
 // let dg = grad(g, [1.0, 2.0]);  // Returns [2.0, 4.0]
 //
 // // Hessian of f at point x
@@ -14054,7 +14005,7 @@ fn register_autodiff(interp: &mut Interpreter) {
                 "grad() requires function and point arguments.\n\
                  Usage: grad(f, x) or grad(f, x, step_size)\n\
                  Example:\n\
-                   fn f(x) { return x * x; }\n\
+                   fn f(x) { ⤺ x * x; }\n\
                    let derivative = grad(f, 3.0);  // Returns 6.0",
             ));
         }
@@ -14065,7 +14016,7 @@ fn register_autodiff(interp: &mut Interpreter) {
                 return Err(RuntimeError::new(
                     "grad() first argument must be a function.\n\
                  Got non-function value. Define a function first:\n\
-                   fn my_func(x) { return x * x; }\n\
+                   fn my_func(x) { ⤺ x * x; }\n\
                    grad(my_func, 2.0)",
                 ))
             }
@@ -25549,7 +25500,7 @@ const HEXAGRAMS: [(&str, &str, &str, &str, &str, &str); 64] = [
         "解",
         "Xiè",
         "Deliverance",
-        "Southwest favorable; return brings fortune; haste brings fortune",
+        "Southwest favorable; ⤺ brings fortune; haste brings fortune",
         "Thunder",
         "Water",
     ),
@@ -29883,7 +29834,7 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             return Err(RuntimeError::new("Vectors must have same dimension"));
         }
 
-        let mut sum_sq: f64 = 0.0;
+        let mut sum_sq = 0.0;
         for (a, b) in vec_a.iter().zip(vec_b.iter()) {
             let a_val = match a {
                 Value::Float(f) => *f,
@@ -29943,7 +29894,7 @@ fn register_agent_vectors(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("vec_normalize requires array")),
         };
 
-        let mut mag: f64 = 0.0;
+        let mut mag = 0.0;
         for v in vec.iter() {
             let val = match v {
                 Value::Float(f) => *f,
@@ -30022,9 +29973,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
                 continue;
             }
 
-            let mut dot: f64 = 0.0;
-            let mut mag_a: f64 = 0.0;
-            let mut mag_b: f64 = 0.0;
+            let mut dot = 0.0;
+            let mut mag_a = 0.0;
+            let mut mag_b = 0.0;
 
             for (a, b) in query.iter().zip(vec_b.iter()) {
                 let a_val = match a {
@@ -30188,9 +30139,9 @@ fn register_agent_vectors(interp: &mut Interpreter) {
                 continue;
             }
 
-            let mut dot: f64 = 0.0;
-            let mut mag_a: f64 = 0.0;
-            let mut mag_b: f64 = 0.0;
+            let mut dot = 0.0;
+            let mut mag_a = 0.0;
+            let mut mag_b = 0.0;
 
             for (a, b) in query.iter().zip(vec_b.iter()) {
                 let a_val = match a {
@@ -31004,7 +30955,7 @@ fn register_agent_reasoning(interp: &mut Interpreter) {
                     all_satisfied = false;
                 }
 
-                let mut r: HashMap<String, Value> = HashMap::new();
+                let mut r = HashMap::new();
                 r.insert("constraint".to_string(), constraint.clone());
                 r.insert("satisfied".to_string(), Value::Bool(satisfied));
                 results.push(Value::Map(Rc::new(RefCell::new(r))));
@@ -31842,27 +31793,6 @@ mod tests {
     // ========== CORE FUNCTIONS ==========
 
     #[test]
-    fn test_boolean_and_or() {
-        // Simple boolean and (∧ is Sigil's native AND operator)
-        assert!(matches!(
-            eval("rite main() → bool { ⤺ yea ∧ yea; }"),
-            Ok(Value::Bool(true))
-        ));
-
-        // Simple boolean or (∨ is Sigil's native OR operator)
-        assert!(matches!(
-            eval("rite main() → bool { ⤺ nay ∨ yea; }"),
-            Ok(Value::Bool(true))
-        ));
-
-        // Chained ∧
-        assert!(matches!(
-            eval("rite main() → bool { ≔ a = yea; ≔ b = yea; ≔ c = yea; ⤺ a ∧ b ∧ c; }"),
-            Ok(Value::Bool(true))
-        ));
-    }
-
-    #[test]
     fn test_math_functions() {
         assert!(matches!(
             eval("rite main() { ⤺ abs(-5); }"),
@@ -32040,14 +31970,12 @@ mod tests {
         // Sarcastic values should make the interpolated string uncertain
         let result = eval(
             r#"
-
             rite main() {
                 ≔ s = sarcastic("totally fine");
                 ≔ msg = f"Status: {s}";
                 ⤺ msg;
             }
-        
-"#,
+        "#,
         );
 
         match result {
@@ -32065,13 +31993,11 @@ mod tests {
         // Test the affect_to_evidence builtin function
         let result = eval(
             r#"
-
             rite main() {
                 ≔ s = sarcastic("sure");
                 ⤺ affect_to_evidence(s);
             }
-        
-"#,
+        "#,
         );
 
         match result {
@@ -32086,14 +32012,12 @@ mod tests {
         // Test converting affective to evidential
         let result = eval(
             r#"
-
             rite main() {
                 ≔ s = sarcastic(42);
                 ≔ ev = affect_as_evidence(s);
                 ⤺ ev;
             }
-        
-"#,
+        "#,
         );
 
         match result {
@@ -32111,13 +32035,11 @@ mod tests {
         // Test checking if affect implies uncertainty
         let result = eval(
             r#"
-
             rite main() {
                 ≔ s = sarcastic("yes");
                 ⤺ is_affect_uncertain(s);
             }
-        
-"#,
+        "#,
         );
 
         assert!(matches!(result, Ok(Value::Bool(true))));
@@ -32128,13 +32050,11 @@ mod tests {
         // High confidence should imply known evidence
         let result = eval(
             r#"
-
             rite main() {
                 ≔ v = high_confidence(42);
                 ⤺ affect_to_evidence(v);
             }
-        
-"#,
+        "#,
         );
 
         match result {
@@ -32149,13 +32069,11 @@ mod tests {
         // Low confidence should imply uncertain evidence
         let result = eval(
             r#"
-
             rite main() {
                 ≔ v = low_confidence(42);
                 ⤺ affect_to_evidence(v);
             }
-        
-"#,
+        "#,
         );
 
         match result {
@@ -32181,15 +32099,15 @@ mod tests {
     fn test_iter_any_all() {
         // any/all take only array, check truthiness of elements
         assert!(matches!(
-            eval("rite main() { ⤺ any([nay, yea, nay]); }"),
+            eval("rite main() { ⤺ any([false, true, false]); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("rite main() { ⤺ all([yea, yea, yea]); }"),
+            eval("rite main() { ⤺ all([true, true, true]); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("rite main() { ⤺ all([yea, nay, yea]); }"),
+            eval("rite main() { ⤺ all([true, false, true]); }"),
             Ok(Value::Bool(false))
         ));
     }
@@ -32749,7 +32667,7 @@ mod tests {
             Ok(Value::Bool(false))
         ));
         assert!(matches!(
-            eval("rite main() { ⤺ is_bool(yea); }"),
+            eval("rite main() { ⤺ is_bool(true); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
@@ -32813,11 +32731,11 @@ mod tests {
     #[test]
     fn test_guard() {
         assert!(matches!(
-            eval("rite main() { ⤺ guard(yea, 42); }"),
+            eval("rite main() { ⤺ guard(true, 42); }"),
             Ok(Value::Int(42))
         ));
         assert!(matches!(
-            eval("rite main() { ⤺ guard(nay, 42); }"),
+            eval("rite main() { ⤺ guard(false, 42); }"),
             Ok(Value::Null)
         ));
     }
@@ -32825,26 +32743,26 @@ mod tests {
     #[test]
     fn test_when_unless() {
         assert!(matches!(
-            eval("rite main() { ⤺ when(yea, 42); }"),
+            eval("rite main() { ⤺ when(true, 42); }"),
             Ok(Value::Int(42))
         ));
         assert!(matches!(
-            eval("rite main() { ⤺ when(nay, 42); }"),
+            eval("rite main() { ⤺ when(false, 42); }"),
             Ok(Value::Null)
         ));
         assert!(matches!(
-            eval("rite main() { ⤺ unless(nay, 42); }"),
+            eval("rite main() { ⤺ unless(false, 42); }"),
             Ok(Value::Int(42))
         ));
         assert!(matches!(
-            eval("rite main() { ⤺ unless(yea, 42); }"),
+            eval("rite main() { ⤺ unless(true, 42); }"),
             Ok(Value::Null)
         ));
     }
 
     #[test]
     fn test_cond() {
-        let result = eval("rite main() { ⤺ cond([[nay, 1], [yea, 2], [yea, 3]]); }");
+        let result = eval("rite main() { ⤺ cond([[false, 1], [true, 2], [true, 3]]); }");
         assert!(matches!(result, Ok(Value::Int(2))));
     }
 
@@ -33403,7 +33321,7 @@ mod tests {
 
     #[test]
     fn test_aspect_progressive_parsing() {
-        // rite name·ing should parse with progressive aspect
+        // fn name·ing should parse with progressive aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
         let mut parser = Parser::new("rite process·ing() { ⤺ 42; }");
@@ -33418,7 +33336,7 @@ mod tests {
 
     #[test]
     fn test_aspect_perfective_parsing() {
-        // rite name·ed should parse with perfective aspect
+        // fn name·ed should parse with perfective aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
         let mut parser = Parser::new("rite process·ed() { ⤺ 42; }");
@@ -33433,10 +33351,10 @@ mod tests {
 
     #[test]
     fn test_aspect_potential_parsing() {
-        // rite name·able should parse with potential aspect
+        // fn name·able should parse with potential aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("rite parse·able() { ⤺ yea; }");
+        let mut parser = Parser::new("rite parse·able() { ⤺ true; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "parse");
@@ -33448,7 +33366,7 @@ mod tests {
 
     #[test]
     fn test_aspect_resultative_parsing() {
-        // rite name·ive should parse with resultative aspect
+        // fn name·ive should parse with resultative aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
         let mut parser = Parser::new("rite destruct·ive() { ⤺ 42; }");
@@ -33657,14 +33575,12 @@ mod tests {
         // Rotate [1, 0, 0] by 90 degrees around Z axis should give [0, 1, 0]
         let result = eval(
             r#"
-
             rite main() {
                 ≔ q = quat_from_axis_angle(vec3(0, 0, 1), 1.5707963);
                 ≔ v = vec3(1, 0, 0);
                 ⤺ quat_rotate(q, v);
             }
-        
-"#,
+        "#,
         );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
@@ -33685,14 +33601,12 @@ mod tests {
         // Interpolate between identity and 90° rotation
         let result = eval(
             r#"
-
             rite main() {
                 ≔ q1 = quat_identity();
                 ≔ q2 = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963);
                 ⤺ quat_slerp(q1, q2, 0.5);
             }
-        
-"#,
+        "#,
         );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
@@ -33788,14 +33702,12 @@ mod tests {
     fn test_mat4_translate() {
         let result = eval(
             r#"
-
             rite main() {
                 ≔ t = mat4_translate(5.0, 10.0, 15.0);
                 ≔ v = vec4(0, 0, 0, 1);
                 ⤺ mat4_transform(t, v);
             }
-        
-"#,
+        "#,
         );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
@@ -33826,15 +33738,13 @@ mod tests {
     fn test_mat4_look_at() {
         let result = eval(
             r#"
-
             rite main() {
                 ≔ eye = vec3(0, 0, 5);
                 ≔ center = vec3(0, 0, 0);
                 ≔ up = vec3(0, 1, 0);
                 ⤺ mat4_look_at(eye, center, up);
             }
-        
-"#,
+        "#,
         );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
@@ -33849,13 +33759,11 @@ mod tests {
         // Inverse of identity should be identity
         let result = eval(
             r#"
-
             rite main() {
                 ≔ m = mat4_identity();
                 ⤺ mat4_inverse(m);
             }
-        
-"#,
+        "#,
         );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
@@ -33878,14 +33786,12 @@ mod tests {
         // mat3_transform
         let result = eval(
             r#"
-
             rite main() {
                 ≔ m = mat3_identity();
                 ≔ v = vec3(1, 2, 3);
                 ⤺ mat3_transform(m, v);
             }
-        
-"#,
+        "#,
         );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
@@ -33903,13 +33809,11 @@ mod tests {
         // Convert identity quaternion to matrix - should be identity
         let result = eval(
             r#"
-
             rite main() {
                 ≔ q = quat_identity();
                 ⤺ quat_to_mat4(q);
             }
-        
-"#,
+        "#,
         );
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
@@ -33930,14 +33834,12 @@ mod tests {
         // Basic channel send/receive
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch = channel_new();
                 channel_send(ch, 42);
                 ⤺ channel_recv(ch);
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(42))));
     }
@@ -33947,7 +33849,6 @@ mod tests {
         // Send multiple values and receive in order (FIFO)
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch = channel_new();
                 channel_send(ch, 1);
@@ -33958,8 +33859,7 @@ mod tests {
                 ≔ c = channel_recv(ch);
                 ⤺ a * 100 + b * 10 + c;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(123))));
     }
@@ -33969,7 +33869,6 @@ mod tests {
         // Test sending 1000 messages through a channel
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch = channel_new();
                 ≔ count = 1000;
@@ -33991,8 +33890,7 @@ mod tests {
                 // Sum of 0..999 = 499500
                 ⤺ sum;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(499500))));
     }
@@ -34002,7 +33900,6 @@ mod tests {
         // Test that complex values survive channel transport
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch = channel_new();
 
@@ -34021,8 +33918,7 @@ mod tests {
                 // Verify by combining results
                 ⤺ int_val + floor(float_val) + len(str_val) + len(arr_val);
             }
-        
-"#,
+        "#,
         );
         // 42 + 3 + 5 + 3 = 53
         assert!(matches!(result, Ok(Value::Int(53))));
@@ -34034,15 +33930,13 @@ mod tests {
         // Check that it returns a Variant type (not panicking/erroring)
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch = channel_new();
                 ≔ result = channel_try_recv(ch);
-                // Can't pattern match variants of interpreter, so just verify it returns
+                // Can't pattern match variants in interpreter, so just verify it returns
                 ⤺ type_of(result);
             }
-        
-"#,
+        "#,
         );
         // The result should be a string "variant" or similar
         assert!(result.is_ok());
@@ -34053,17 +33947,15 @@ mod tests {
         // try_recv with value - verify channel works (blocking recv confirms)
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch = channel_new();
                 channel_send(ch, 99);
                 // Use blocking recv since try_recv returns Option variant
-                // which can't be pattern matched of interpreter
+                // which can't be pattern matched in interpreter
                 ≔ val = channel_recv(ch);
                 ⤺ val;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(99))));
     }
@@ -34073,15 +33965,13 @@ mod tests {
         // recv_timeout on empty channel should timeout without error
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch = channel_new();
                 ≔ result = channel_recv_timeout(ch, 10);  // 10ms timeout
                 // Just verify it completes without blocking forever
                 ⤺ 42;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(42))));
     }
@@ -34091,14 +33981,12 @@ mod tests {
         // Basic actor creation and messaging
         let result = eval(
             r#"
-
             rite main() {
                 ≔ act = spawn_actor("test_actor");
                 send_to_actor(act, "ping", 42);
                 ⤺ get_actor_msg_count(act);
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(1))));
     }
@@ -34108,7 +33996,6 @@ mod tests {
         // Send 10000 messages to an actor rapidly
         let result = eval(
             r#"
-
             rite main() {
                 ≔ act = spawn_actor("stress_actor");
                 ≔ count = 10000;
@@ -34119,8 +34006,7 @@ mod tests {
                 }
                 ⤺ get_actor_msg_count(act);
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(10000))));
     }
@@ -34130,7 +34016,6 @@ mod tests {
         // Verify pending count accuracy
         let result = eval(
             r#"
-
             rite main() {
                 ≔ act = spawn_actor("pending_test");
 
@@ -34152,8 +34037,7 @@ mod tests {
                 // Should have 5 pending initially, 3 after receiving 2
                 ⤺ pending_before * 10 + pending_after;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(53)))); // 5*10 + 3 = 53
     }
@@ -34164,7 +34048,6 @@ mod tests {
         // Note: Our actor uses pop() which is LIFO, so last sent = first received
         let result = eval(
             r#"
-
             rite main() {
                 ≔ act = spawn_actor("order_test");
                 send_to_actor(act, "a", 1);
@@ -34177,11 +34060,10 @@ mod tests {
                 ≔ r3 = recv_from_actor(act);
 
                 // Return the message types concatenated via their first char values
-                // c=3, b=2, a=1 of our test
+                // c=3, b=2, a=1 in our test
                 ⤺ get_actor_pending(act);  // Should be 0 after draining
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(0))));
     }
@@ -34192,14 +34074,12 @@ mod tests {
         // Verify via pending count that no messages were added
         let result = eval(
             r#"
-
             rite main() {
                 ≔ act = spawn_actor("empty_actor");
                 // No messages sent, so pending should be 0
                 ⤺ get_actor_pending(act);
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(0))));
     }
@@ -34209,15 +34089,13 @@ mod tests {
         // tell_actor should work the same as send_to_actor
         let result = eval(
             r#"
-
             rite main() {
                 ≔ act = spawn_actor("tell_test");
                 tell_actor(act, "hello", 123);
                 tell_actor(act, "world", 456);
                 ⤺ get_actor_msg_count(act);
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(2))));
     }
@@ -34227,13 +34105,11 @@ mod tests {
         // Verify actor name is stored correctly
         let result = eval(
             r#"
-
             rite main() {
                 ≔ act = spawn_actor("my_special_actor");
                 ⤺ get_actor_name(act);
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::String(s)) if s.as_str() == "my_special_actor"));
     }
@@ -34243,7 +34119,6 @@ mod tests {
         // Multiple actors should be independent
         let result = eval(
             r#"
-
             rite main() {
                 ≔ a1 = spawn_actor("actor1");
                 ≔ a2 = spawn_actor("actor2");
@@ -34262,8 +34137,7 @@ mod tests {
 
                 ⤺ c1 * 100 + c2 * 10 + c3;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(123)))); // 1*100 + 2*10 + 3 = 123
     }
@@ -34273,7 +34147,6 @@ mod tests {
         // Multiple channels should be independent
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch1 = channel_new();
                 ≔ ch2 = channel_new();
@@ -34289,8 +34162,7 @@ mod tests {
 
                 ⤺ v1 + v2 + v3;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(600))));
     }
@@ -34300,13 +34172,11 @@ mod tests {
         // thread_sleep should work without error
         let result = eval(
             r#"
-
             rite main() {
                 thread_sleep(1);  // Sleep 1ms
                 ⤺ 42;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(42))));
     }
@@ -34316,13 +34186,11 @@ mod tests {
         // thread_yield should work without error
         let result = eval(
             r#"
-
             rite main() {
                 thread_yield();
                 ⤺ 42;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(42))));
     }
@@ -34332,13 +34200,11 @@ mod tests {
         // thread_id should return a string
         let result = eval(
             r#"
-
             rite main() {
                 ≔ id = thread_id();
                 ⤺ len(id) > 0;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Bool(true))));
     }
@@ -34348,7 +34214,6 @@ mod tests {
         // Interleaved sends and receives
         let result = eval(
             r#"
-
             rite main() {
                 ≔ ch = channel_new();
                 ≔ vary sum = 0;
@@ -34361,12 +34226,11 @@ mod tests {
                     sum = sum + a + b;
                     i = i + 1;
                 }
-                // Sum: sum of i + i*2 each i of 0..99
-                // = sum of 3*i each i of 0..99 = 3 * (99*100/2) = 3 * 4950 = 14850
+                // Sum: sum of i + i*2 for i in 0..99
+                // = sum of 3*i for i in 0..99 = 3 * (99*100/2) = 3 * 4950 = 14850
                 ⤺ sum;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(14850))));
     }
@@ -34376,7 +34240,6 @@ mod tests {
         // Send and receive many messages
         let result = eval(
             r#"
-
             rite main() {
                 ≔ act = spawn_actor("recv_stress");
                 ≔ count = 1000;
@@ -34395,8 +34258,7 @@ mod tests {
 
                 ⤺ drained;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(1000))));
     }
@@ -34430,7 +34292,7 @@ mod tests {
             // Deeply nested brackets shouldn't cause stack overflow
             let open: String = (0..depth).map(|_| '(').collect();
             let close: String = (0..depth).map(|_| ')').collect();
-            let code = format!("rite main() {{ return {}1{}; }}", open, close);
+            let code = format!("rite main() {{ ⤺ {}1{}; }}", open, close);
             let mut parser = Parser::new(&code);
             let _ = parser.parse_file();
         }
@@ -34456,6 +34318,16 @@ mod tests {
 
     // --- GEOMETRIC ALGEBRA PROPERTY TESTS ---
 
+    // Helper to format floats ensuring decimal point (Sigil requires 0.0, not 0)
+    fn fmt_float(f: f64) -> String {
+        let s = format!("{}", f);
+        if s.contains('.') || s.contains('e') || s.contains('E') {
+            s
+        } else {
+            format!("{}.0", s)
+        }
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -34465,7 +34337,6 @@ mod tests {
             // e_i ^ e_j = -e_j ^ e_i (bivector anticommutativity)
             // Test via wedge product: a ^ b = -(b ^ a)
             let code = format!(r#"
-
                 rite main() {{
                     ≔ a = vec3({}, {}, {});
                     ≔ b = vec3({}, {}, {});
@@ -34475,13 +34346,9 @@ mod tests {
                     ≔ diff_y = get(ab, 1) + get(ba, 1);
                     ≔ diff_z = get(ab, 2) + get(ba, 2);
                     ≔ eps = 0.001;
-                    ≔ ok_x = eps > abs(diff_x);
-                    ≔ ok_y = eps > abs(diff_y);
-                    ≔ ok_z = eps > abs(diff_z);
-                    ⤺ ok_x ∧ ok_y ∧ ok_z;
+                    ⤺ eps > abs(diff_x) ∧ eps > abs(diff_y) ∧ eps > abs(diff_z);
                 }}
-
-"#, x1, y1, z1, x2, y2, z2);
+            "#, fmt_float(x1), fmt_float(y1), fmt_float(z1), fmt_float(x2), fmt_float(y2), fmt_float(z2));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34491,7 +34358,6 @@ mod tests {
                                      x2 in -100.0f64..100.0, y2 in -100.0f64..100.0, z2 in -100.0f64..100.0) {
             // a · b = b · a (dot product commutativity)
             let code = format!(r#"
-
                 rite main() {{
                     ≔ a = vec3({}, {}, {});
                     ≔ b = vec3({}, {}, {});
@@ -34500,8 +34366,7 @@ mod tests {
                     ≔ eps = 0.001;
                     ⤺ eps > abs(ab - ba);
                 }}
-            
-"#, x1, y1, z1, x2, y2, z2);
+            "#, fmt_float(x1), fmt_float(y1), fmt_float(z1), fmt_float(x2), fmt_float(y2), fmt_float(z2));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34510,7 +34375,6 @@ mod tests {
         fn test_quat_identity_preserves_vector(x in -100.0f64..100.0, y in -100.0f64..100.0, z in -100.0f64..100.0) {
             // Rotating by identity quaternion should preserve the vector
             let code = format!(r#"
-
                 rite main() {{
                     ≔ v = vec3({}, {}, {});
                     ≔ q = quat_identity();
@@ -34519,13 +34383,9 @@ mod tests {
                     ≔ diff_y = abs(get(v, 1) - get(rotated, 1));
                     ≔ diff_z = abs(get(v, 2) - get(rotated, 2));
                     ≔ eps = 0.001;
-                    ≔ ok_x = eps > diff_x;
-                    ≔ ok_y = eps > diff_y;
-                    ≔ ok_z = eps > diff_z;
-                    ⤺ ok_x ∧ ok_y ∧ ok_z;
+                    ⤺ eps > diff_x ∧ eps > diff_y ∧ eps > diff_z;
                 }}
-
-"#, x, y, z);
+            "#, fmt_float(x), fmt_float(y), fmt_float(z));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34535,7 +34395,6 @@ mod tests {
                                                           angle in -3.14f64..3.14) {
             // q(2θ) should equal q(θ) * q(θ)
             let code = format!(r#"
-
                 rite main() {{
                     ≔ v = vec3({}, {}, {});
                     ≔ axis = vec3(0.0, 1.0, 0.0);
@@ -34543,20 +34402,17 @@ mod tests {
                     ≔ q2 = quat_from_axis_angle(axis, {} * 2.0);
                     ≔ q1q1 = quat_mul(q1, q1);
                     ≔ eps = 0.01;
-                    ≔ ok0 = eps > abs(get(q2, 0) - get(q1q1, 0));
-                    ≔ ok1 = eps > abs(get(q2, 1) - get(q1q1, 1));
-                    ≔ ok2 = eps > abs(get(q2, 2) - get(q1q1, 2));
-                    ≔ ok3 = eps > abs(get(q2, 3) - get(q1q1, 3));
-                    ≔ same = ok0 ∧ ok1 ∧ ok2 ∧ ok3;
-                    ≔ neg0 = eps > abs(get(q2, 0) + get(q1q1, 0));
-                    ≔ neg1 = eps > abs(get(q2, 1) + get(q1q1, 1));
-                    ≔ neg2 = eps > abs(get(q2, 2) + get(q1q1, 2));
-                    ≔ neg3 = eps > abs(get(q2, 3) + get(q1q1, 3));
-                    ≔ neg_same = neg0 ∧ neg1 ∧ neg2 ∧ neg3;
+                    ≔ same = eps > abs(get(q2, 0) - get(q1q1, 0)) ∧
+                               eps > abs(get(q2, 1) - get(q1q1, 1)) ∧
+                               eps > abs(get(q2, 2) - get(q1q1, 2)) ∧
+                               eps > abs(get(q2, 3) - get(q1q1, 3));
+                    ≔ neg_same = eps > abs(get(q2, 0) + get(q1q1, 0)) ∧
+                                   eps > abs(get(q2, 1) + get(q1q1, 1)) ∧
+                                   eps > abs(get(q2, 2) + get(q1q1, 2)) ∧
+                                   eps > abs(get(q2, 3) + get(q1q1, 3));
                     ⤺ same ∨ neg_same;
                 }}
-            
-"#, x, y, z, angle, angle);
+            "#, fmt_float(x), fmt_float(y), fmt_float(z), fmt_float(angle), fmt_float(angle));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34567,7 +34423,6 @@ mod tests {
                                      x3 in -100.0f64..100.0, y3 in -100.0f64..100.0, z3 in -100.0f64..100.0) {
             // (a + b) + c = a + (b + c)
             let code = format!(r#"
-
                 rite main() {{
                     ≔ a = vec3({}, {}, {});
                     ≔ b = vec3({}, {}, {});
@@ -34578,15 +34433,11 @@ mod tests {
                     ≔ diff_y = abs(get(ab_c, 1) - get(a_bc, 1));
                     ≔ diff_z = abs(get(ab_c, 2) - get(a_bc, 2));
                     ≔ eps = 0.001;
-                    ≔ ok_x = eps > diff_x;
-                    ≔ ok_y = eps > diff_y;
-                    ≔ ok_z = eps > diff_z;
-                    ⤺ ok_x ∧ ok_y ∧ ok_z;
+                    ⤺ eps > diff_x ∧ eps > diff_y ∧ eps > diff_z;
                 }}
-            
-"#, x1, y1, z1, x2, y2, z2, x3, y3, z3);
+            "#, fmt_float(x1), fmt_float(y1), fmt_float(z1), fmt_float(x2), fmt_float(y2), fmt_float(z2), fmt_float(x3), fmt_float(y3), fmt_float(z3));
             let result = eval(&code);
-            assert!(matches!(result, Ok(Value::Bool(true))));
+            assert!(matches!(result, Ok(Value::Bool(true))), "Got: {:?}, code: {}", result, code);
         }
 
         #[test]
@@ -34594,7 +34445,6 @@ mod tests {
                                         s1 in -10.0f64..10.0, s2 in -10.0f64..10.0) {
             // (s1 + s2) * v = s1*v + s2*v
             let code = format!(r#"
-
                 rite main() {{
                     ≔ v = vec3({}, {}, {});
                     ≔ s1 = {};
@@ -34605,13 +34455,9 @@ mod tests {
                     ≔ diff_y = abs(get(combined, 1) - get(separate, 1));
                     ≔ diff_z = abs(get(combined, 2) - get(separate, 2));
                     ≔ eps = 0.01;
-                    ≔ ok_x = eps > diff_x;
-                    ≔ ok_y = eps > diff_y;
-                    ≔ ok_z = eps > diff_z;
-                    ⤺ ok_x ∧ ok_y ∧ ok_z;
+                    ⤺ eps > diff_x ∧ eps > diff_y ∧ eps > diff_z;
                 }}
-            
-"#, x, y, z, s1, s2);
+            "#, fmt_float(x), fmt_float(y), fmt_float(z), fmt_float(s1), fmt_float(s2));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34626,15 +34472,13 @@ mod tests {
         fn test_grad_of_constant_is_zero(c in -100.0f64..100.0, x in -100.0f64..100.0) {
             // d/dx(c) = 0
             let code = format!(r#"
-
                 rite main() {{
                     rite constant(x) {{ ⤺ {}; }}
                     ≔ g = grad(constant, {});
                     ≔ eps = 0.001;
                     ⤺ eps > abs(g);
                 }}
-            
-"#, c, x);
+            "#, fmt_float(c), fmt_float(x));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34643,15 +34487,13 @@ mod tests {
         fn test_grad_of_x_is_one(x in -100.0f64..100.0) {
             // d/dx(x) = 1
             let code = format!(r#"
-
                 rite main() {{
                     rite identity(x) {{ ⤺ x; }}
                     ≔ g = grad(identity, {});
                     ≔ eps = 0.001;
                     ⤺ eps > abs(g - 1.0);
                 }}
-            
-"#, x);
+            "#, fmt_float(x));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34660,7 +34502,6 @@ mod tests {
         fn test_grad_of_x_squared(x in -50.0f64..50.0) {
             // d/dx(x^2) = 2x
             let code = format!(r#"
-
                 rite main() {{
                     rite square(x) {{ ⤺ x * x; }}
                     ≔ g = grad(square, {});
@@ -34668,8 +34509,7 @@ mod tests {
                     ≔ eps = 0.1;
                     ⤺ eps > abs(g - expected);
                 }}
-            
-"#, x, x);
+            "#, fmt_float(x), fmt_float(x));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34678,15 +34518,13 @@ mod tests {
         fn test_grad_linearity(a in -10.0f64..10.0, b in -10.0f64..10.0, x in -10.0f64..10.0) {
             // d/dx(a*x + b) = a
             let code = format!(r#"
-
                 rite main() {{
                     rite lin(x) {{ ⤺ {} * x + {}; }}
                     ≔ g = grad(lin, {});
                     ≔ eps = 0.1;
                     ⤺ eps > abs(g - {});
                 }}
-            
-"#, a, b, x, a);
+            "#, fmt_float(a), fmt_float(b), fmt_float(x), fmt_float(a));
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34742,14 +34580,12 @@ mod tests {
         fn test_array_len_after_push(initial_len in 0..20usize, value in -100i64..100) {
             let initial: String = (0..initial_len).map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ");
             let code = format!(r#"
-
                 rite main() {{
                     ≔ arr = [{}];
                     push(arr, {});
                     ⤺ len(arr);
                 }}
-            
-"#, initial, value);
+            "#, initial, value);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Int(n)) if n == (initial_len + 1) as i64));
         }
@@ -34758,23 +34594,21 @@ mod tests {
         fn test_reverse_reverse_identity(elements in prop::collection::vec(-100i64..100, 0..10)) {
             let arr_str = elements.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
             let code = format!(r#"
-
                 rite main() {{
                     ≔ arr = [{}];
                     ≔ rev1 = reverse(arr);
                     ≔ rev2 = reverse(rev1);
-                    ≔ vary same = yea;
+                    ≔ vary same = true;
                     ≔ vary i = 0;
                     ⟳ i < len(arr) {{
                         ⎇ get(arr, i) != get(rev2, i) {{
-                            same = nay;
+                            same = false;
                         }}
                         i = i + 1;
                     }}
                     ⤺ same;
                 }}
-            
-"#, arr_str);
+            "#, arr_str);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -34801,7 +34635,6 @@ mod tests {
         // Create and discard arrays many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ vary i = 0;
                 ⟳ i < 1000 {
@@ -34813,10 +34646,9 @@ mod tests {
                 }
                 ⤺ i;
             }
-        
-"#,
+        "#,
         );
-        assert!(matches!(result, Ok(Value::Int(1000))));
+        assert!(matches!(result, Ok(Value::Int(1000))), "Got: {:?}", result);
     }
 
     #[test]
@@ -34824,7 +34656,6 @@ mod tests {
         // Call functions many times to test function frame cleanup
         let result = eval(
             r#"
-
             rite fib(n) {
                 ⎇ n <= 1 { ⤺ n; }
                 ⤺ fib(n - 1) + fib(n - 2);
@@ -34838,8 +34669,7 @@ mod tests {
                 }
                 ⤺ total;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(5500))));
     }
@@ -34849,7 +34679,6 @@ mod tests {
         // Create and discard maps many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ vary i = 0;
                 ⟳ i < 500 {
@@ -34862,8 +34691,7 @@ mod tests {
                 }
                 ⤺ i;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(500))));
     }
@@ -34873,7 +34701,6 @@ mod tests {
         // Create and discard strings many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ vary i = 0;
                 ⟳ i < 1000 {
@@ -34886,8 +34713,7 @@ mod tests {
                 }
                 ⤺ i;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(1000))));
     }
@@ -34897,7 +34723,6 @@ mod tests {
         // Create and discard ECS entities many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ world = ecs_world();
                 ≔ vary i = 0;
@@ -34910,8 +34735,7 @@ mod tests {
                 }
                 ⤺ i;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(500))));
     }
@@ -34921,7 +34745,6 @@ mod tests {
         // Create and use channels many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ vary i = 0;
                 ⟳ i < 500 {
@@ -34934,8 +34757,7 @@ mod tests {
                 }
                 ⤺ i;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(500))));
     }
@@ -34945,7 +34767,6 @@ mod tests {
         // Create actors and send messages many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ vary i = 0;
                 ⟳ i < 100 {
@@ -34957,8 +34778,7 @@ mod tests {
                 }
                 ⤺ i;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(100))));
     }
@@ -34968,7 +34788,6 @@ mod tests {
         // Create and compute with vec3s many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ vary i = 0;
                 ⟳ i < 1000 {
@@ -34983,8 +34802,7 @@ mod tests {
                 }
                 ⤺ i;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(1000))));
     }
@@ -34994,7 +34812,6 @@ mod tests {
         // Create and call closures many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ vary i = 0;
                 ≔ vary total = 0;
@@ -35006,8 +34823,7 @@ mod tests {
                 }
                 ⤺ total;
             }
-        
-"#,
+        "#,
         );
         // Sum of (i+1) for i from 0 to 499 = sum of 1 to 500 = 500*501/2 = 125250
         assert!(matches!(result, Ok(Value::Int(125250))));
@@ -35018,7 +34834,6 @@ mod tests {
         // Create nested arrays and maps many times
         let result = eval(
             r#"
-
             rite main() {
                 ≔ vary i = 0;
                 ⟳ i < 200 {
@@ -35032,8 +34847,7 @@ mod tests {
                 }
                 ⤺ i;
             }
-        
-"#,
+        "#,
         );
         assert!(matches!(result, Ok(Value::Int(200))));
     }
@@ -35044,14 +34858,12 @@ mod tests {
         for _ in 0..50 {
             let result = eval(
                 r#"
-
                 rite main() {
                     ≔ arr = [1, 2, 3, 4, 5];
                     ≔ total = sum(arr);
                     ⤺ total * 2;
                 }
-            
-"#,
+            "#,
             );
             assert!(matches!(result, Ok(Value::Int(30))));
         }

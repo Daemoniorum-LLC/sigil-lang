@@ -1,0 +1,10 @@
+//! # DAEMONIORUM Combat Module
+//!
+//! Turn-based combat with alter abilities, enemy types,
+//! and plurality-aware mechanics.
+
+pub mod combat;
+pub mod enemies;
+
+pub use combat·*;
+pub use enemies·*;

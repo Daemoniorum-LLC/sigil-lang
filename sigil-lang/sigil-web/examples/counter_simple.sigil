@@ -1,0 +1,43 @@
+/// Simple Interactive Counter
+///
+/// Uses only print to demonstrate state management.
+/// The JS runtime will handle the actual DOM updates.
+
+// Global state
+static mut COUNT: i64 = 0;
+
+/// Increment the count
+pub fn increment() {
+    COUNT = COUNT + 1;
+    print(f"[STATE] count = {COUNT}");
+}
+
+/// Decrement the count
+pub fn decrement() {
+    COUNT = COUNT - 1;
+    print(f"[STATE] count = {COUNT}");
+}
+
+/// Reset the count
+pub fn reset() {
+    COUNT = 0;
+    print("[STATE] count = 0");
+}
+
+/// Get current count
+pub fn get_count() -> i64 {
+    COUNT
+}
+
+/// Initialize the counter
+pub fn main() {
+    print("=== Sigil Counter Demo ===");
+    print("");
+    print(f"Initial count: {COUNT}");
+    print("");
+    print("Exported functions:");
+    print("  increment() - Add 1");
+    print("  decrement() - Subtract 1");
+    print("  reset()     - Reset to 0");
+    print("  get_count() - Get current value");
+}

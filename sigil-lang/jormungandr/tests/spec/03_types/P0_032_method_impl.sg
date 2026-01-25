@@ -1,0 +1,24 @@
+// Test: Method implementation
+// Spec: 03-TYPES.md § 4.2 Implementations
+// Priority: P0
+//
+// Purpose:
+// Validates that methods can be implemented on structs.
+//
+// Expected behavior:
+// Should compile and print 84
+
+☉ Σ Counter {
+    value: !i32
+}
+
+⊢ Counter {
+    ☉ λ double(&self) -> !i32 {
+        self.value * 2
+    }
+}
+
+λ main() {
+    ≔ c: !Counter = Counter { value: 42 };
+    println(c.double());
+}

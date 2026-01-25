@@ -1,142 +1,142 @@
-//! Tests for Gnosis Core Types
+//! Tests ∀ Gnosis Core Types
 //!
 //! Verifies Context, Action, ExperienceOutcome, and utility types.
 
-use std::collections::HashMap;
+invoke std·collections·HashMap;
 
 // ============================================================================
 // Self-contained Test Types
 // ============================================================================
 
-pub struct Duration { nanos: u64 }
+☉ Σ Duration { nanos: u64 }
 
-impl Duration {
-    pub fn zero() -> Self { Self { nanos: 0 } }
-    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-    pub fn hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
-    pub fn as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
-    pub fn as_nanos(&self) -> u64 { self.nanos }
+⊢ Duration {
+    ☉ λ zero() -> Self { Self { nanos: 0 } }
+    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ λ as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
+    ☉ λ as_nanos(&self) -> u64 { self.nanos }
 }
 
-impl Copy for Duration {}
-impl Clone for Duration { fn clone(&self) -> Self { *self } }
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
 
-pub struct Timestamp { nanos: u64 }
+☉ Σ Timestamp { nanos: u64 }
 
-impl Timestamp {
-    pub fn now() -> Self { Self { nanos: 1_000_000_000 } }
-    pub fn from_nanos(nanos: u64) -> Self { Self { nanos } }
+⊢ Timestamp {
+    ☉ λ now() -> Self { Self { nanos: 1_000_000_000 } }
+    ☉ λ from_nanos(nanos: u64) -> Self { Self { nanos } }
 }
 
-impl PartialOrd for Timestamp {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+⊢ PartialOrd ∀ Timestamp {
+    λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
         self.nanos.partial_cmp(&other.nanos)
     }
 }
 
-impl PartialEq for Timestamp {
-    fn eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+⊢ PartialEq ∀ Timestamp {
+    λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
 }
 
-pub struct HumanId { id: String }
+☉ Σ HumanId { id: String }
 
-impl HumanId {
-    pub fn new(id: &str) -> Self { Self { id: id.to_string() } }
+⊢ HumanId {
+    ☉ λ new(id: &str) -> Self { Self { id: id.to_string() } }
 }
 
-impl Clone for HumanId {
-    fn clone(&self) -> Self { Self { id: self.id.clone() } }
+⊢ Clone ∀ HumanId {
+    λ clone(&self) -> Self { Self { id: self.id.clone() } }
 }
 
-impl PartialEq for HumanId {
-    fn eq(&self, other: &Self) -> bool { self.id == other.id }
+⊢ PartialEq ∀ HumanId {
+    λ eq(&self, other: &Self) -> bool { self.id == other.id }
 }
 
-impl std::hash::Hash for HumanId {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+⊢ std·hash·Hash ∀ HumanId {
+    λ hash<H: std·hash·Hasher>(&self, state: &Δ H) {
         self.id.hash(state);
     }
 }
 
-impl Eq for HumanId {}
+⊢ Eq ∀ HumanId {}
 
-pub struct ExperienceId { id: String }
+☉ Σ ExperienceId { id: String }
 
-impl ExperienceId {
-    pub fn generate() -> Self { Self { id: "exp_001".to_string() } }
+⊢ ExperienceId {
+    ☉ λ generate() -> Self { Self { id: "exp_001".to_string() } }
 }
 
-impl Clone for ExperienceId {
-    fn clone(&self) -> Self { Self { id: self.id.clone() } }
+⊢ Clone ∀ ExperienceId {
+    λ clone(&self) -> Self { Self { id: self.id.clone() } }
 }
 
 #[derive(Clone)]
-pub struct Context {
-    pub task_type: String,
-    pub constraints: Vec<String>,
-    pub domain: Option<String>,
-    pub human_id: Option<HumanId>,
-    pub features: HashMap<String, String>,
+☉ Σ Context {
+    ☉ task_type: String,
+    ☉ constraints: Vec<String>,
+    ☉ domain: Option<String>,
+    ☉ human_id: Option<HumanId>,
+    ☉ features: HashMap<String, String>,
 }
 
-impl Context {
-    pub fn new(task_type: &str) -> Self {
+⊢ Context {
+    ☉ λ new(task_type: &str) -> Self {
         Self {
             task_type: task_type.to_string(),
             constraints: vec![],
             domain: None,
             human_id: None,
-            features: HashMap::new(),
+            features: HashMap·new(),
         }
     }
 
-    pub fn with_domain(mut self, domain: &str) -> Self {
+    ☉ λ with_domain(Δ self, domain: &str) -> Self {
         self.domain = Some(domain.to_string());
         self
     }
 
-    pub fn with_human(mut self, human_id: HumanId) -> Self {
+    ☉ λ with_human(Δ self, human_id: HumanId) -> Self {
         self.human_id = Some(human_id);
         self
     }
 
-    pub fn with_constraint(mut self, constraint: &str) -> Self {
+    ☉ λ with_constraint(Δ self, constraint: &str) -> Self {
         self.constraints.push(constraint.to_string());
         self
     }
 
-    pub fn with_feature(mut self, key: &str, value: &str) -> Self {
+    ☉ λ with_feature(Δ self, key: &str, value: &str) -> Self {
         self.features.insert(key.to_string(), value.to_string());
         self
     }
 
-    pub fn similar_to(&self, other: &Context) -> bool {
+    ☉ λ similar_to(&self, other: &Context) -> bool {
         self.task_type == other.task_type
     }
 
-    pub fn matches(&self, other: &Context) -> bool {
+    ☉ λ matches(&self, other: &Context) -> bool {
         self.task_type == other.task_type && self.domain == other.domain
     }
 
-    pub fn has_constraint(&self, constraint: &str) -> bool {
+    ☉ λ has_constraint(&self, constraint: &str) -> bool {
         self.constraints.contains(&constraint.to_string())
     }
 
-    pub fn has_feature(&self, key: &str) -> bool {
+    ☉ λ has_feature(&self, key: &str) -> bool {
         self.features.contains_key(key)
     }
 }
 
 #[derive(Clone)]
-pub struct Action {
-    pub approach: String,
-    pub skills: Vec<String>,
-    pub details: Option<String>,
+☉ Σ Action {
+    ☉ approach: String,
+    ☉ skills: Vec<String>,
+    ☉ details: Option<String>,
 }
 
-impl Action {
-    pub fn new(approach: &str) -> Self {
+⊢ Action {
+    ☉ λ new(approach: &str) -> Self {
         Self {
             approach: approach.to_string(),
             skills: vec![],
@@ -144,35 +144,35 @@ impl Action {
         }
     }
 
-    pub fn with_skill(mut self, skill: &str) -> Self {
+    ☉ λ with_skill(Δ self, skill: &str) -> Self {
         self.skills.push(skill.to_string());
         self
     }
 
-    pub fn with_details(mut self, details: &str) -> Self {
+    ☉ λ with_details(Δ self, details: &str) -> Self {
         self.details = Some(details.to_string());
         self
     }
 
-    pub fn skill_count(&self) -> usize {
+    ☉ λ skill_count(&self) -> usize {
         self.skills.len()
     }
 
-    pub fn has_skill(&self, skill: &str) -> bool {
+    ☉ λ has_skill(&self, skill: &str) -> bool {
         self.skills.contains(&skill.to_string())
     }
 }
 
 #[derive(Clone)]
-pub struct ExperienceOutcome {
-    pub success: bool,
-    pub quality: f32,
-    pub unexpected: bool,
-    pub details: Option<String>,
+☉ Σ ExperienceOutcome {
+    ☉ success: bool,
+    ☉ quality: f32,
+    ☉ unexpected: bool,
+    ☉ details: Option<String>,
 }
 
-impl ExperienceOutcome {
-    pub fn success(quality: f32) -> Self {
+⊢ ExperienceOutcome {
+    ☉ λ success(quality: f32) -> Self {
         Self {
             success: true,
             quality: quality.clamp(0.0, 1.0),
@@ -181,7 +181,7 @@ impl ExperienceOutcome {
         }
     }
 
-    pub fn failure(details: &str) -> Self {
+    ☉ λ failure(details: &str) -> Self {
         Self {
             success: false,
             quality: 0.0,
@@ -190,7 +190,7 @@ impl ExperienceOutcome {
         }
     }
 
-    pub fn unexpected(quality: f32) -> Self {
+    ☉ λ unexpected(quality: f32) -> Self {
         Self {
             success: true,
             quality: quality.clamp(0.0, 1.0),
@@ -199,88 +199,88 @@ impl ExperienceOutcome {
         }
     }
 
-    pub fn with_details(mut self, details: &str) -> Self {
+    ☉ λ with_details(Δ self, details: &str) -> Self {
         self.details = Some(details.to_string());
         self
     }
 
-    pub fn is_high_quality(&self) -> bool {
+    ☉ λ is_high_quality(&self) -> bool {
         self.success && self.quality >= 0.8
     }
 
-    pub fn is_low_quality(&self) -> bool {
+    ☉ λ is_low_quality(&self) -> bool {
         !self.success || self.quality < 0.5
     }
 }
 
 #[derive(Clone)]
-pub struct Experience {
-    pub id: ExperienceId,
-    pub context: Context,
-    pub action: Action,
-    pub outcome: ExperienceOutcome,
-    pub timestamp: Timestamp,
+☉ Σ Experience {
+    ☉ id: ExperienceId,
+    ☉ context: Context,
+    ☉ action: Action,
+    ☉ outcome: ExperienceOutcome,
+    ☉ timestamp: Timestamp,
 }
 
-impl Experience {
-    pub fn new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
+⊢ Experience {
+    ☉ λ new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
         Self {
-            id: ExperienceId::generate(),
+            id: ExperienceId·generate(),
             context,
             action,
             outcome,
-            timestamp: Timestamp::now(),
+            timestamp: Timestamp·now(),
         }
     }
 
-    pub fn skills_exercised(&self) -> Option<Vec<String>> {
-        if self.action.skills.is_empty() {
+    ☉ λ skills_exercised(&self) -> Option<Vec<String>> {
+        ⎇ self.action.skills.is_empty() {
             None
-        } else {
+        } ⎉ {
             Some(self.action.skills.clone())
         }
     }
 
-    pub fn was_successful(&self) -> bool {
+    ☉ λ was_successful(&self) -> bool {
         self.outcome.success
     }
 
-    pub fn quality(&self) -> f32 {
+    ☉ λ quality(&self) -> f32 {
         self.outcome.quality
     }
 }
 
-pub struct Confidence { value: f64 }
+☉ Σ Confidence { value: f64 }
 
-impl Confidence {
-    pub fn new(value: f64) -> Self {
+⊢ Confidence {
+    ☉ λ new(value: f64) -> Self {
         Self { value: value.clamp(0.0, 1.0) }
     }
 
-    pub fn zero() -> Self { Self { value: 0.0 } }
-    pub fn full() -> Self { Self { value: 1.0 } }
+    ☉ λ zero() -> Self { Self { value: 0.0 } }
+    ☉ λ full() -> Self { Self { value: 1.0 } }
 
-    pub fn value(&self) -> f64 { self.value }
+    ☉ λ value(&self) -> f64 { self.value }
 
-    pub fn is_high(&self) -> bool { self.value >= 0.7 }
-    pub fn is_low(&self) -> bool { self.value < 0.3 }
+    ☉ λ is_high(&self) -> bool { self.value >= 0.7 }
+    ☉ λ is_low(&self) -> bool { self.value < 0.3 }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub enum Priority {
+☉ ᛈ Priority {
     Critical,
     High,
     Normal,
     Low,
 }
 
-impl Priority {
-    pub fn as_int(&self) -> u8 {
-        match self {
-            Priority::Critical => 4,
-            Priority::High => 3,
-            Priority::Normal => 2,
-            Priority::Low => 1,
+⊢ Priority {
+    ☉ λ as_int(&self) -> u8 {
+        ⌥ self {
+            Priority·Critical => 4,
+            Priority·High => 3,
+            Priority·Normal => 2,
+            Priority·Low => 1,
         }
     }
 }
@@ -290,26 +290,26 @@ impl Priority {
 // ============================================================================
 
 #[test]
-fn test_duration_zero() {
-    let d = Duration::zero();
+λ test_duration_zero() {
+    ≔ d = Duration·zero();
     assert_eq(d.as_secs(), 0);
 }
 
 #[test]
-fn test_duration_seconds() {
-    let d = Duration::seconds(30);
+λ test_duration_seconds() {
+    ≔ d = Duration·seconds(30);
     assert_eq(d.as_secs(), 30);
 }
 
 #[test]
-fn test_duration_minutes() {
-    let d = Duration::minutes(5);
+λ test_duration_minutes() {
+    ≔ d = Duration·minutes(5);
     assert_eq(d.as_secs(), 300);
 }
 
 #[test]
-fn test_duration_hours() {
-    let d = Duration::hours(2);
+λ test_duration_hours() {
+    ≔ d = Duration·hours(2);
     assert_eq(d.as_secs(), 7200);
 }
 
@@ -318,21 +318,21 @@ fn test_duration_hours() {
 // ============================================================================
 
 #[test]
-fn test_timestamp_now() {
-    let t = Timestamp::now();
+λ test_timestamp_now() {
+    ≔ t = Timestamp·now();
     assert(t.nanos > 0);
 }
 
 #[test]
-fn test_timestamp_from_nanos() {
-    let t = Timestamp::from_nanos(5000);
+λ test_timestamp_from_nanos() {
+    ≔ t = Timestamp·from_nanos(5000);
     assert_eq(t.nanos, 5000);
 }
 
 #[test]
-fn test_timestamp_comparison() {
-    let t1 = Timestamp::from_nanos(100);
-    let t2 = Timestamp::from_nanos(200);
+λ test_timestamp_comparison() {
+    ≔ t1 = Timestamp·from_nanos(100);
+    ≔ t2 = Timestamp·from_nanos(200);
     assert(t1 < t2);
 }
 
@@ -341,29 +341,29 @@ fn test_timestamp_comparison() {
 // ============================================================================
 
 #[test]
-fn test_human_id_new() {
-    let id = HumanId::new("user_123");
+λ test_human_id_new() {
+    ≔ id = HumanId·new("user_123");
     assert_eq(id.id, "user_123");
 }
 
 #[test]
-fn test_human_id_equality() {
-    let id1 = HumanId::new("user_1");
-    let id2 = HumanId::new("user_1");
+λ test_human_id_equality() {
+    ≔ id1 = HumanId·new("user_1");
+    ≔ id2 = HumanId·new("user_1");
     assert(id1 == id2);
 }
 
 #[test]
-fn test_human_id_inequality() {
-    let id1 = HumanId::new("user_1");
-    let id2 = HumanId::new("user_2");
+λ test_human_id_inequality() {
+    ≔ id1 = HumanId·new("user_1");
+    ≔ id2 = HumanId·new("user_2");
     assert(id1 != id2);
 }
 
 #[test]
-fn test_human_id_clone() {
-    let id1 = HumanId::new("test");
-    let id2 = id1.clone();
+λ test_human_id_clone() {
+    ≔ id1 = HumanId·new("test");
+    ≔ id2 = id1.clone();
     assert(id1 == id2);
 }
 
@@ -372,15 +372,15 @@ fn test_human_id_clone() {
 // ============================================================================
 
 #[test]
-fn test_experience_id_generate() {
-    let id = ExperienceId::generate();
+λ test_experience_id_generate() {
+    ≔ id = ExperienceId·generate();
     assert(!id.id.is_empty());
 }
 
 #[test]
-fn test_experience_id_clone() {
-    let id1 = ExperienceId::generate();
-    let id2 = id1.clone();
+λ test_experience_id_clone() {
+    ≔ id1 = ExperienceId·generate();
+    ≔ id2 = id1.clone();
     assert_eq(id1.id, id2.id);
 }
 
@@ -389,27 +389,27 @@ fn test_experience_id_clone() {
 // ============================================================================
 
 #[test]
-fn test_context_new() {
-    let ctx = Context::new("code_review");
+λ test_context_new() {
+    ≔ ctx = Context·new("code_review");
     assert_eq(ctx.task_type, "code_review");
     assert(ctx.domain.is_none());
 }
 
 #[test]
-fn test_context_with_domain() {
-    let ctx = Context::new("analysis").with_domain("security");
+λ test_context_with_domain() {
+    ≔ ctx = Context·new("analysis").with_domain("security");
     assert_eq(ctx.domain.unwrap(), "security");
 }
 
 #[test]
-fn test_context_with_human() {
-    let ctx = Context::new("chat").with_human(HumanId::new("alice"));
+λ test_context_with_human() {
+    ≔ ctx = Context·new("chat").with_human(HumanId·new("alice"));
     assert(ctx.human_id.is_some());
 }
 
 #[test]
-fn test_context_with_constraint() {
-    let ctx = Context::new("task")
+λ test_context_with_constraint() {
+    ≔ ctx = Context·new("task")
         .with_constraint("time_limit")
         .with_constraint("memory_limit");
     assert_eq(ctx.constraints.len(), 2);
@@ -417,37 +417,37 @@ fn test_context_with_constraint() {
 }
 
 #[test]
-fn test_context_with_feature() {
-    let ctx = Context::new("task")
+λ test_context_with_feature() {
+    ≔ ctx = Context·new("task")
         .with_feature("language", "rust");
     assert(ctx.has_feature("language"));
 }
 
 #[test]
-fn test_context_similar_to() {
-    let ctx1 = Context::new("debugging");
-    let ctx2 = Context::new("debugging").with_domain("frontend");
+λ test_context_similar_to() {
+    ≔ ctx1 = Context·new("debugging");
+    ≔ ctx2 = Context·new("debugging").with_domain("frontend");
     assert(ctx1.similar_to(&ctx2));
 }
 
 #[test]
-fn test_context_not_similar() {
-    let ctx1 = Context::new("debugging");
-    let ctx2 = Context::new("testing");
+λ test_context_not_similar() {
+    ≔ ctx1 = Context·new("debugging");
+    ≔ ctx2 = Context·new("testing");
     assert(!ctx1.similar_to(&ctx2));
 }
 
 #[test]
-fn test_context_matches() {
-    let ctx1 = Context::new("analysis").with_domain("security");
-    let ctx2 = Context::new("analysis").with_domain("security");
+λ test_context_matches() {
+    ≔ ctx1 = Context·new("analysis").with_domain("security");
+    ≔ ctx2 = Context·new("analysis").with_domain("security");
     assert(ctx1.matches(&ctx2));
 }
 
 #[test]
-fn test_context_not_matches() {
-    let ctx1 = Context::new("analysis").with_domain("security");
-    let ctx2 = Context::new("analysis").with_domain("performance");
+λ test_context_not_matches() {
+    ≔ ctx1 = Context·new("analysis").with_domain("security");
+    ≔ ctx2 = Context·new("analysis").with_domain("performance");
     assert(!ctx1.matches(&ctx2));
 }
 
@@ -456,15 +456,15 @@ fn test_context_not_matches() {
 // ============================================================================
 
 #[test]
-fn test_action_new() {
-    let action = Action::new("step_through_debugger");
+λ test_action_new() {
+    ≔ action = Action·new("step_through_debugger");
     assert_eq(action.approach, "step_through_debugger");
     assert_eq(action.skill_count(), 0);
 }
 
 #[test]
-fn test_action_with_skill() {
-    let action = Action::new("refactor")
+λ test_action_with_skill() {
+    ≔ action = Action·new("refactor")
         .with_skill("rust")
         .with_skill("testing");
     assert_eq(action.skill_count(), 2);
@@ -472,16 +472,16 @@ fn test_action_with_skill() {
 }
 
 #[test]
-fn test_action_with_details() {
-    let action = Action::new("explain")
+λ test_action_with_details() {
+    ≔ action = Action·new("explain")
         .with_details("Used analogies");
     assert(action.details.is_some());
 }
 
 #[test]
-fn test_action_clone() {
-    let a1 = Action::new("test").with_skill("python");
-    let a2 = a1.clone();
+λ test_action_clone() {
+    ≔ a1 = Action·new("test").with_skill("python");
+    ≔ a2 = a1.clone();
     assert_eq(a1.approach, a2.approach);
 }
 
@@ -490,54 +490,54 @@ fn test_action_clone() {
 // ============================================================================
 
 #[test]
-fn test_outcome_success() {
-    let outcome = ExperienceOutcome::success(0.9);
+λ test_outcome_success() {
+    ≔ outcome = ExperienceOutcome·success(0.9);
     assert(outcome.success);
     assert_eq(outcome.quality, 0.9);
     assert(!outcome.unexpected);
 }
 
 #[test]
-fn test_outcome_failure() {
-    let outcome = ExperienceOutcome::failure("timeout");
+λ test_outcome_failure() {
+    ≔ outcome = ExperienceOutcome·failure("timeout");
     assert(!outcome.success);
     assert_eq(outcome.quality, 0.0);
 }
 
 #[test]
-fn test_outcome_unexpected() {
-    let outcome = ExperienceOutcome::unexpected(0.7);
+λ test_outcome_unexpected() {
+    ≔ outcome = ExperienceOutcome·unexpected(0.7);
     assert(outcome.success);
     assert(outcome.unexpected);
 }
 
 #[test]
-fn test_outcome_quality_clamped() {
-    let outcome = ExperienceOutcome::success(1.5);
+λ test_outcome_quality_clamped() {
+    ≔ outcome = ExperienceOutcome·success(1.5);
     assert_eq(outcome.quality, 1.0);
 }
 
 #[test]
-fn test_outcome_is_high_quality() {
-    let high = ExperienceOutcome::success(0.85);
-    let low = ExperienceOutcome::success(0.5);
+λ test_outcome_is_high_quality() {
+    ≔ high = ExperienceOutcome·success(0.85);
+    ≔ low = ExperienceOutcome·success(0.5);
     assert(high.is_high_quality());
     assert(!low.is_high_quality());
 }
 
 #[test]
-fn test_outcome_is_low_quality() {
-    let failure = ExperienceOutcome::failure("error");
-    let low = ExperienceOutcome::success(0.3);
-    let good = ExperienceOutcome::success(0.7);
+λ test_outcome_is_low_quality() {
+    ≔ failure = ExperienceOutcome·failure("error");
+    ≔ low = ExperienceOutcome·success(0.3);
+    ≔ good = ExperienceOutcome·success(0.7);
     assert(failure.is_low_quality());
     assert(low.is_low_quality());
     assert(!good.is_low_quality());
 }
 
 #[test]
-fn test_outcome_with_details() {
-    let outcome = ExperienceOutcome::success(0.8)
+λ test_outcome_with_details() {
+    ≔ outcome = ExperienceOutcome·success(0.8)
         .with_details("Completed ahead of schedule");
     assert(outcome.details.is_some());
 }
@@ -547,49 +547,49 @@ fn test_outcome_with_details() {
 // ============================================================================
 
 #[test]
-fn test_experience_new() {
-    let exp = Experience::new(
-        Context::new("coding"),
-        Action::new("write_tests"),
-        ExperienceOutcome::success(0.9)
+λ test_experience_new() {
+    ≔ exp = Experience·new(
+        Context·new("coding"),
+        Action·new("write_tests"),
+        ExperienceOutcome·success(0.9)
     );
     assert(exp.was_successful());
     assert_eq(exp.quality(), 0.9);
 }
 
 #[test]
-fn test_experience_skills_exercised_some() {
-    let exp = Experience::new(
-        Context::new("coding"),
-        Action::new("implement").with_skill("rust").with_skill("async"),
-        ExperienceOutcome::success(0.8)
+λ test_experience_skills_exercised_some() {
+    ≔ exp = Experience·new(
+        Context·new("coding"),
+        Action·new("implement").with_skill("rust").with_skill("async"),
+        ExperienceOutcome·success(0.8)
     );
-    let skills = exp.skills_exercised();
+    ≔ skills = exp.skills_exercised();
     assert(skills.is_some());
     assert_eq(skills.unwrap().len(), 2);
 }
 
 #[test]
-fn test_experience_skills_exercised_none() {
-    let exp = Experience::new(
-        Context::new("reading"),
-        Action::new("review"),
-        ExperienceOutcome::success(0.7)
+λ test_experience_skills_exercised_none() {
+    ≔ exp = Experience·new(
+        Context·new("reading"),
+        Action·new("review"),
+        ExperienceOutcome·success(0.7)
     );
     assert(exp.skills_exercised().is_none());
 }
 
 #[test]
-fn test_experience_was_successful() {
-    let success = Experience::new(
-        Context::new("task"),
-        Action::new("do"),
-        ExperienceOutcome::success(0.9)
+λ test_experience_was_successful() {
+    ≔ success = Experience·new(
+        Context·new("task"),
+        Action·new("do"),
+        ExperienceOutcome·success(0.9)
     );
-    let failure = Experience::new(
-        Context::new("task"),
-        Action::new("do"),
-        ExperienceOutcome::failure("error")
+    ≔ failure = Experience·new(
+        Context·new("task"),
+        Action·new("do"),
+        ExperienceOutcome·failure("error")
     );
     assert(success.was_successful());
     assert(!failure.was_successful());
@@ -600,41 +600,41 @@ fn test_experience_was_successful() {
 // ============================================================================
 
 #[test]
-fn test_confidence_new() {
-    let c = Confidence::new(0.75);
+λ test_confidence_new() {
+    ≔ c = Confidence·new(0.75);
     assert_eq(c.value(), 0.75);
 }
 
 #[test]
-fn test_confidence_clamped() {
-    let c = Confidence::new(1.5);
+λ test_confidence_clamped() {
+    ≔ c = Confidence·new(1.5);
     assert_eq(c.value(), 1.0);
 }
 
 #[test]
-fn test_confidence_zero() {
-    let c = Confidence::zero();
+λ test_confidence_zero() {
+    ≔ c = Confidence·zero();
     assert_eq(c.value(), 0.0);
 }
 
 #[test]
-fn test_confidence_full() {
-    let c = Confidence::full();
+λ test_confidence_full() {
+    ≔ c = Confidence·full();
     assert_eq(c.value(), 1.0);
 }
 
 #[test]
-fn test_confidence_is_high() {
-    let high = Confidence::new(0.8);
-    let low = Confidence::new(0.5);
+λ test_confidence_is_high() {
+    ≔ high = Confidence·new(0.8);
+    ≔ low = Confidence·new(0.5);
     assert(high.is_high());
     assert(!low.is_high());
 }
 
 #[test]
-fn test_confidence_is_low() {
-    let low = Confidence::new(0.2);
-    let mid = Confidence::new(0.5);
+λ test_confidence_is_low() {
+    ≔ low = Confidence·new(0.2);
+    ≔ mid = Confidence·new(0.5);
     assert(low.is_low());
     assert(!mid.is_low());
 }
@@ -644,35 +644,35 @@ fn test_confidence_is_low() {
 // ============================================================================
 
 #[test]
-fn test_priority_critical() {
-    let p = Priority::Critical;
+λ test_priority_critical() {
+    ≔ p = Priority·Critical;
     assert_eq(p.as_int(), 4);
 }
 
 #[test]
-fn test_priority_high() {
-    let p = Priority::High;
+λ test_priority_high() {
+    ≔ p = Priority·High;
     assert_eq(p.as_int(), 3);
 }
 
 #[test]
-fn test_priority_normal() {
-    let p = Priority::Normal;
+λ test_priority_normal() {
+    ≔ p = Priority·Normal;
     assert_eq(p.as_int(), 2);
 }
 
 #[test]
-fn test_priority_low() {
-    let p = Priority::Low;
+λ test_priority_low() {
+    ≔ p = Priority·Low;
     assert_eq(p.as_int(), 1);
 }
 
 #[test]
-fn test_priority_equality() {
-    assert(Priority::High == Priority::High);
-    assert(Priority::Low != Priority::High);
+λ test_priority_equality() {
+    assert(Priority·High == Priority·High);
+    assert(Priority·Low != Priority·High);
 }
 
-fn main() {
+λ main() {
     print("Gnosis types tests");
 }

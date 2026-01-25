@@ -1,0 +1,18 @@
+// Test: Return statement ∈ function
+// Spec: 02-SYNTAX.md § 5.1 Return Statements
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate ⤺ statement works correctly.
+//
+// Expected behavior:
+// Should ⤺ 42 and print it.
+
+λ get_value() -> !i32 {
+    ⤺ 42;
+}
+
+λ main() {
+    ≔ x: !i32 = get_value();
+    println(x);
+}

@@ -1,0 +1,34 @@
+// Test: Struct implementing multiple traits
+// Spec: Feature Interaction - Multiple Traits
+// Priority: P0 - Bootstrap Critical
+
+Θ HasName {
+    λ name(&self) -> String;
+}
+
+Θ HasValue {
+    λ value(&self) -> i32;
+}
+
+Σ Item {
+    n: String,
+    v: i32,
+}
+
+⊢ HasName ∀ Item {
+    λ name(&self) -> String {
+        ⤺ self.n.clone();
+    }
+}
+
+⊢ HasValue ∀ Item {
+    λ value(&self) -> i32 {
+        ⤺ self.v;
+    }
+}
+
+λ main() {
+    ≔ item = Item { n: "test".to_string(), v: 42 };
+    println(item.name());
+    println(item.value());
+}

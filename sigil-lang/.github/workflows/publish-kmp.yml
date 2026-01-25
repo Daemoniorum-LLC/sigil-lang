@@ -1,0 +1,115 @@
+name: Publish KMP
+
+on:
+  push:
+    tags:
+      - 'kmp-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.1.0)'
+        required: true
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.parallel=true
+
+jobs:
+  publish:
+    name: Publish to Maven Central
+    runs-on: macos-latest  # macOS for iOS builds
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Set version from tag or input
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/kmp-v}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          # Update version in build.gradle.kts
+          sed -i '' "s/version = \".*\"/version = \"$VERSION\"/" sigil-kmp/build.gradle.kts
+
+      - name: Build
+        working-directory: sigil-kmp
+        run: ./gradlew build -x test
+
+      - name: Publish to Maven Central
+        working-directory: sigil-kmp
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
+        run: |
+          ./gradlew publishAllPublicationsToMavenCentralRepository
+
+      - name: Publish to GitHub Packages
+        working-directory: sigil-kmp
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./gradlew publishAllPublicationsToGitHubPackagesRepository
+
+  publish-npm:
+    name: Publish JS to npm
+    runs-on: ubuntu-latest
+    needs: publish
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build JS target
+        working-directory: sigil-kmp
+        run: ./gradlew jsNodeProductionLibraryDistribution
+
+      - name: Prepare npm package
+        run: |
+          mkdir -p npm-package
+          cp -r sigil-kmp/build/dist/js/productionLibrary/* npm-package/
+          cat > npm-package/package.json << 'EOF'
+          {
+            "name": "@daemoniorum/sigil",
+            "version": "${{ env.VERSION }}",
+            "description": "Sigil - Polysynthetic programming language with epistemic types for AI",
+            "main": "sigil-kmp.js",
+            "types": "sigil-kmp.d.ts",
+            "repository": {
+              "type": "git",
+              "url": "https://github.com/Daemoniorum-LLC/sigil-lang"
+            },
+            "keywords": ["sigil", "programming-language", "ai", "epistemic-types", "kotlin"],
+            "author": "Lilith Crook <lilith@daemoniorum.com>",
+            "license": "SEE LICENSE IN LICENSE"
+          }
+          EOF
+
+      - name: Publish to npm
+        working-directory: npm-package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

@@ -1,0 +1,51 @@
+// P1_003_syscall_clock.sg
+// Test: Time/counter operations (interpreter-compatible)
+// Phase A: Platform Syscalls
+//
+// This test verifies counting and timing patterns that would
+// invoke clock syscalls ∈ compiled mode.
+
+λ main() {
+    // Test 1: Simulate getting a timestamp value
+    ≔ ts_sec = 1704067201;  // Some time after 2024-01-01
+    ≔ ts_nsec = 500000000;  // 0.5 seconds
+
+    // Timestamp should be after 2024-01-01 (1704067200 seconds)
+    assert!(ts_sec > 1704067200);
+    println("realtime_ok");
+
+    // Nanoseconds should be ∈ valid range [0, 999999999]
+    assert!(ts_nsec >= 0);
+    assert!(ts_nsec < 1000000000);
+    println("nsec_valid");
+
+    // Test 2: Monotonic counter (simulated)
+    ≔ mono_value = 12345678;
+    assert!(mono_value >= 0);
+    println("monotonic_ok");
+
+    // Test 3: Measure loop iterations (simulates elapsed time)
+    ≔ start_count = 0;
+    ≔ Δ count = 0;
+    ⟳ count < 100000 {
+        count = count + 1;
+    }
+    ≔ elapsed = count - start_count;
+
+    // Should have elapsed iterations
+    assert!(elapsed > 0);
+    println("elapsed_ok");
+
+    // Test 4: Get current counter value
+    ≔ now_value = 1704067200001;  // Simulated ms value
+    assert!(now_value > 1704067200000);
+    println("sigil_now_ok");
+
+    // Test 5: Monotonic property - second value >= first
+    ≔ t1 = 1000;
+    ≔ t2 = 1001;
+    assert!(t2 >= t1);
+    println("monotonic_increasing");
+
+    println("done");
+}

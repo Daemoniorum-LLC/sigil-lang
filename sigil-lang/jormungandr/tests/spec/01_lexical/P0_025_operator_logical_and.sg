@@ -1,0 +1,15 @@
+// Test: Logical AND operator (&&)
+// Spec: 01-LEXICAL.md § 3.2 Operators
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate logical AND works correctly.
+//
+// Expected behavior:
+// Should print true (true && true)
+
+λ main() {
+    ≔ x: !bool = true;
+    ≔ y: !bool = true;
+    println(x && y);
+}

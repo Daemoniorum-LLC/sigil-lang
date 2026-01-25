@@ -1,0 +1,13 @@
+// P0_001: Σ (uppercase sigma) should parse as Σ keyword
+// Priority: P0
+// Category: Native Symbols
+// Expected: Program compiles and runs, printing "x = 42"
+
+Σ Point {
+    x: i64,
+}
+
+λ main() {
+    ≔ p = Point { x: 42 };
+    println!("x = {}", p.x);
+}

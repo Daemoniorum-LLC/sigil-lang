@@ -1,0 +1,14 @@
+// Test: Recursive function
+// Spec: Edge Cases - Recursion
+// Priority: P0 - Bootstrap Critical
+
+λ factorial(n: i32) -> i32 {
+    ⎇ n <= 1 {
+        ⤺ 1;
+    }
+    ⤺ n * factorial(n - 1);
+}
+
+λ main() {
+    println(factorial(5));  // 120
+}

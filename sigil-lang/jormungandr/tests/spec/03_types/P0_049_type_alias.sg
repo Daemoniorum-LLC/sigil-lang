@@ -1,0 +1,16 @@
+// Test: Type alias basic usage
+// Spec: 03-TYPES.md § 6.1 Type Aliases
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate type aliases work correctly.
+//
+// Expected behavior:
+// Should print 42
+
+type MyInt = !i32;
+
+λ main() {
+    ≔ x: MyInt = 42;
+    println(x);
+}

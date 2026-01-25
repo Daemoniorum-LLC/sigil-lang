@@ -1,0 +1,112 @@
+# Project Files
+persona-admin-ui/node_modules/
+persona-admin-ui/node_modules/*
+/kotlin-persona
+/generators
+/spring-persona/
+/temp/
+/temp-ui/
+.intellijPlatform/
+
+# Node.js
+/node_modules/
+**/node_modules/
+/package-lock.json
+**/dist/
+**/.next/
+**/.output/
+**/.turbo/
+**/.vite/
+**/coverage/
+
+# PDF generation (keep HTML, ignore PDF)
+BUSINESS_PLAN.pdf
+
+# Gradle and build outputs
+.gradle/
+**/.gradle/
+build/
+**/build/
+out/
+**/out/
+.kotlin/
+
+# IDEs
+.idea/
+**/.idea/
+*.iml
+.vscode/
+**/.vscode/
+
+# OS
+**/.DS_Store
+
+# Logs
+logs/
+!**/src/**/logs/
+*.log
+*.out
+/persona-admin-ui/node_modules/*
+/temp-ui
+/temp
+/spring-persona
+/build/
+persona-demo/.env
+
+# Environment variables and secrets - NEVER commit these files
+.env
+.env.local
+.env.*.local
+hydra/.env
+*/.env
+credentials.json
+**/credentials.json
+secrets.yaml
+**/secrets.yaml
+*.credentials
+**/*.credentials
+
+# Ignore root-level test directories created accidentally
+# /src/  # REMOVED - was preventing source code from being committed!
+# /test/ # REMOVED - was preventing tests from being committed!
+
+# Autonomous development logs and artifacts
+autonomous-logs/
+*.pid
+keepalive.log
+hydra-keepalive.log
+
+# Separate project directories (have own repos)
+# These modules now live as sibling directories in /development/projects/
+# They are referenced in settings.gradle.kts as external projects
+# No need to ignore them here since they're no longer subdirectories
+
+# Grimoire IDE Starter variants (developer workspace)
+# Keep these tracked for now but ignore build artifacts
+docs/developer/lilith/grimoire*/target/
+docs/developer/lilith/grimoire*/Cargo.lock
+docs/developer/lilith/ide-starter*/target/
+docs/developer/lilith/ide-starter*/Cargo.lock
+
+# Test artifacts
+test-results/
+test-file.txt
+tmp/hsperfdata_root/
+hydra-0.1.0.jar
+BOOT-INF/
+*.jar
+workspace/
+.gradle-local/**
+leviathan/leviathan.out
+*.out
+*/*.out
+
+# TypeScript build artifacts
+*.tsbuildinfo
+**/tsconfig.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Rust
+**/target/
+moloch/target/

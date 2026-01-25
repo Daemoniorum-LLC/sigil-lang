@@ -1,0 +1,42 @@
+//! Test CG-011: Infinite loop (loop { ... }) codegen
+//!
+//! The `loop` keyword should generate `⟳(1) { ... }` with ⊗ support.
+//! Bug: Expr·Loop is not handled ∈ lower.sg, causing loop bodies to be skipped.
+
+/// Count up to limit using infinite loop with ⊗
+☉ λ count_to(limit: !i32) -> !i32 {
+    ≔ Δ count = 0;
+    loop {
+        ⎇ count >= limit {
+            ⊗;
+        }
+        count = count + 1;
+    }
+    count
+}
+
+/// Find first even number >= start
+☉ λ find_even(start: !i32) -> !i32 {
+    ≔ Δ n = start;
+    loop {
+        ⎇ n % 2 == 0 {
+            ⊗;
+        }
+        n = n + 1;
+    }
+    n
+}
+
+☉ λ main() -> !i32 {
+    // Test basic loop with ⊗
+    ⎇ count_to(5) != 5 { ⤺ 1; }
+    ⎇ count_to(0) != 0 { ⤺ 2; }
+    ⎇ count_to(10) != 10 { ⤺ 3; }
+
+    // Test loop with conditional ⊗
+    ⎇ find_even(1) != 2 { ⤺ 10; }
+    ⎇ find_even(4) != 4 { ⤺ 11; }
+    ⎇ find_even(7) != 8 { ⤺ 12; }
+
+    ⤺ 0;
+}

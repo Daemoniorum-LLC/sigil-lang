@@ -1,0 +1,12 @@
+// Test: Raw pointer types ∈ function signatures
+// Spec: 08-FFI.md § 2.1 Pointer Types
+// Priority: P1 - Standard Feature
+
+extern "C" {
+    λ memcpy(dest: *Δ !u8, src: *const !u8, n: !usize) -> *Δ !u8;
+}
+
+λ main() {
+    // Pointer types are parsed
+    println("pointer types ok");
+}

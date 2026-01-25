@@ -4,8 +4,8 @@
 //! with evidence boundaries and trust propagation.
 //! Target: 100% protocol coverage each regression detection.
 
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers

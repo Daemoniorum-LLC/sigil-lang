@@ -1,0 +1,38 @@
+// Sigil Standard Library Demo
+
+fn main() {
+    // Math functions
+    let x = sqrt(16.0);
+    print(x);
+
+    let y = pow(2.0, 10.0);
+    print(y);
+
+    // Collection functions
+    let nums = [1, 2, 3, 4, 5];
+    let total = sum(nums);
+    print(total);
+
+    let doubled = nums|τ{_ * 2};
+    print(doubled);
+
+    // String functions
+    let s = "hello world";
+    let upper_s = upper(s);
+    print(upper_s);
+
+    // Evidence functions
+    let certain = known(42);
+    let uncertain_val = uncertain(100);
+    print(evidence_of(certain));
+    print(evidence_of(uncertain_val));
+
+    // Poly-cultural math (cycles)
+    let pitch = octave(14);
+    print(pitch);
+
+    let frequency = freq(69);
+    print(frequency);
+
+    return 0;
+}

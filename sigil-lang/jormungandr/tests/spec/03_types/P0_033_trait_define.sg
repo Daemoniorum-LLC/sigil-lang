@@ -1,0 +1,28 @@
+// Test: Trait definition
+// Spec: 03-TYPES.md § 5.1 Trait Definitions
+// Priority: P0
+//
+// Purpose:
+// Validates that traits can be defined.
+//
+// Expected behavior:
+// Should compile and print 42
+
+☉ Θ Valuable {
+    λ get_value(&self) -> !i32;
+}
+
+☉ Σ Item {
+    value: !i32
+}
+
+⊢ Valuable ∀ Item {
+    λ get_value(&self) -> !i32 {
+        self.value
+    }
+}
+
+λ main() {
+    ≔ item: !Item = Item { value: 42 };
+    println(item.get_value());
+}

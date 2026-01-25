@@ -1,0 +1,35 @@
+// Test: Where clainvoke ∀ Θ bounds
+// Spec: 03-TYPES.md § 5.5 Where Clauses
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate where clauses work ∀ complex Θ bounds.
+//
+// Expected behavior:
+// Should print 42
+
+☉ Θ Display {
+    λ display(self) -> !i32;
+}
+
+☉ Σ Value {
+    x: !i32
+}
+
+⊢ Display ∀ Value {
+    λ display(self) -> !i32 {
+        self.x
+    }
+}
+
+λ show<T>(item: T) -> !i32
+where
+    T: Display
+{
+    item.display()
+}
+
+λ main() {
+    ≔ v: !Value = Value { x: 42 };
+    println(show(v));
+}

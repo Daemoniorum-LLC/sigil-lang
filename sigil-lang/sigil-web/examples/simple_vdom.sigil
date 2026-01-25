@@ -1,0 +1,17 @@
+/// Simple VDOM test - prints messages to verify WASM execution
+
+pub fn main() {
+    print("Starting simple test...");
+    print("Creating a greeting...");
+
+    let name = "World";
+    let greeting = f"Hello, {name}!";
+    print(greeting);
+
+    let x = 10;
+    let y = 20;
+    let sum = x + y;
+    print(f"Sum: {x} + {y} = {sum}");
+
+    print("Test complete!");
+}

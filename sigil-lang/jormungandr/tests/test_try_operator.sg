@@ -1,0 +1,307 @@
+//! Test the Try (?) operator ∀ Result error propagation
+//!
+//! The Try operator (`?`) is used to propagate errors from Result types:
+//! - On Result·Ok(value), unwrap and ⤺ the value
+//! - On Result·Err(e), ⤺ early with the error
+//!
+//! This is essential ∀ the self-hosted compiler which uses Result
+//! extensively ∀ error handling (parsing, type checking, lowering, etc.)
+
+/// Simple Result type ∀ testing
+☉ ᛈ Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+
+⊢<T, E> Result<T, E> {
+    ☉ λ is_ok(self) -> !bool {
+        ⌥ self {
+            Result·Ok(_) => true,
+            Result·Err(_) => false,
+        }
+    }
+
+    ☉ λ is_err(self) -> !bool {
+        !self.is_ok()
+    }
+
+    ☉ λ unwrap(self) -> !T {
+        ⌥ self {
+            Result·Ok(v) => v,
+            Result·Err(_) => panic("called unwrap on Err"),
+        }
+    }
+
+    ☉ λ unwrap_err(self) -> !E {
+        ⌥ self {
+            Result·Ok(_) => panic("called unwrap_err on Ok"),
+            Result·Err(e) => e,
+        }
+    }
+}
+
+// ============================================================================
+// Basic Try Operator Tests
+// ============================================================================
+
+/// A function that can fail
+λ might_fail(should_fail: !bool) -> !Result<i32, String> {
+    ⎇ should_fail {
+        ⤺ Result·Err("intentional failure".to_string());
+    }
+    ⤺ Result·Ok(42);
+}
+
+/// Test basic try operator with success
+λ test_try_success() -> !Result<i32, String> {
+    ≔ value = might_fail(false)?;  // Should unwrap to 42
+    ⤺ Result·Ok(value + 1);    // Should ⤺ Ok(43)
+}
+
+/// Test basic try operator with failure
+λ test_try_failure() -> !Result<i32, String> {
+    ≔ value = might_fail(true)?;   // Should ⤺ early with Err
+    ⤺ Result·Ok(value + 1);    // This line should not be reached
+}
+
+/// Test chained try operators
+λ test_try_chain() -> !Result<i32, String> {
+    ≔ a = might_fail(false)?;  // Ok(42)
+    ≔ b = might_fail(false)?;  // Ok(42)
+    ≔ c = might_fail(false)?;  // Ok(42)
+    ⤺ Result·Ok(a + b + c);  // Ok(126)
+}
+
+/// Test try ∈ expression position
+λ test_try_in_expression() -> !Result<i32, String> {
+    ≔ result = might_fail(false)? + might_fail(false)?;
+    ⤺ Result·Ok(result);  // Ok(84)
+}
+
+// ============================================================================
+// Try with Different Error Types
+// ============================================================================
+
+/// Parse an integer from a string
+λ parse_int(s: !&str) -> !Result<i32, String> {
+    // Simplified: only handles single digits ∀ testing
+    ⎇ s.len() == 0 {
+        ⤺ Result·Err("empty string".to_string());
+    }
+    ≔ c = s.chars().next().unwrap();
+    ⎇ c >= '0' && c <= '9' {
+        ⤺ Result·Ok((c as i32) - ('0' as i32));
+    }
+    ⤺ Result·Err(format!("invalid digit: {}", c));
+}
+
+/// Read and parse (simulated)
+λ read_and_parse(input: !&str) -> !Result<i32, String> {
+    ≔ value = parse_int(input)?;
+    ⤺ Result·Ok(value * 10);
+}
+
+/// Test try with parsing
+λ test_try_parsing() -> !Result<(), String> {
+    ≔ result = read_and_parse("5")?;
+    assert(result == 50, "parsed 5 * 10 should be 50");
+    ⤺ Result·Ok(());
+}
+
+// ============================================================================
+// Try ∈ Control Flow
+// ============================================================================
+
+/// Process a list with early ⤺ on error
+λ process_list(items: ![i32]) -> !Result<i32, String> {
+    ≔ Δ sum: !i32 = 0;
+    ∀ item ∈ items {
+        // Fail ⎇ any item is negative
+        ⎇ item < 0 {
+            ⤺ Result·Err(format!("negative value: {}", item));
+        }
+        sum = sum + item;
+    }
+    ⤺ Result·Ok(sum);
+}
+
+/// Test try with loops
+λ test_try_with_loop() -> !Result<(), String> {
+    ≔ good_list: ![i32] = [1, 2, 3, 4, 5];
+    ≔ sum = process_list(good_list)?;
+    assert(sum == 15, "sum of 1..5 should be 15");
+    ⤺ Result·Ok(());
+}
+
+// ============================================================================
+// Try ∈ Nested Functions
+// ============================================================================
+
+/// Inner function that can fail
+λ inner_operation(x: !i32) -> !Result<i32, String> {
+    ⎇ x == 0 {
+        ⤺ Result·Err("division by zero".to_string());
+    }
+    ⤺ Result·Ok(100 / x);
+}
+
+/// Outer function using try
+λ outer_operation(x: !i32) -> !Result<i32, String> {
+    ≔ result = inner_operation(x)?;
+    ⤺ Result·Ok(result + 1);
+}
+
+/// Test nested try
+λ test_nested_try() -> !Result<(), String> {
+    ≔ result = outer_operation(10)?;
+    assert(result == 11, "100/10 + 1 should be 11");
+    ⤺ Result·Ok(());
+}
+
+// ============================================================================
+// Try ∈ Method Calls
+// ============================================================================
+
+☉ Σ Calculator {
+    value: !i32,
+}
+
+⊢ Calculator {
+    ☉ λ new() -> !Calculator {
+        Calculator { value: 0 }
+    }
+
+    ☉ λ add(Δ self, x: !i32) -> !Result<Calculator, String> {
+        self.value = self.value + x;
+        ⤺ Result·Ok(self);
+    }
+
+    ☉ λ divide(Δ self, x: !i32) -> !Result<Calculator, String> {
+        ⎇ x == 0 {
+            ⤺ Result·Err("division by zero".to_string());
+        }
+        self.value = self.value / x;
+        ⤺ Result·Ok(self);
+    }
+
+    ☉ λ result(self) -> !i32 {
+        ⤺ self.value;
+    }
+}
+
+/// Test try with method chaining
+λ test_try_method_chain() -> !Result<(), String> {
+    ≔ calc = Calculator·new()
+        .add(100)?
+        .divide(10)?
+        .add(5)?;
+
+    assert(calc.result() == 15, "100/10 + 5 should be 15");
+    ⤺ Result·Ok(());
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+/// Run all try operator tests
+☉ λ main() -> !i32 {
+    println("Testing Try (?) operator...");
+    println("");
+
+    // Test 1: Basic success
+    print("  [1/8] test_try_success... ");
+    ⌥ test_try_success() {
+        Result·Ok(v) => {
+            assert(v == 43, "should ⤺ Ok(43)");
+            println("PASS");
+        },
+        Result·Err(e) => {
+            println("FAIL: unexpected error: {}", e);
+            ⤺ 1;
+        },
+    }
+
+    // Test 2: Basic failure
+    print("  [2/8] test_try_failure... ");
+    ⌥ test_try_failure() {
+        Result·Ok(_) => {
+            println("FAIL: should have returned Err");
+            ⤺ 1;
+        },
+        Result·Err(e) => {
+            assert(e == "intentional failure", "error message should ⌥");
+            println("PASS");
+        },
+    }
+
+    // Test 3: Chained try
+    print("  [3/8] test_try_chain... ");
+    ⌥ test_try_chain() {
+        Result·Ok(v) => {
+            assert(v == 126, "42 + 42 + 42 should be 126");
+            println("PASS");
+        },
+        Result·Err(e) => {
+            println("FAIL: unexpected error: {}", e);
+            ⤺ 1;
+        },
+    }
+
+    // Test 4: Try ∈ expression
+    print("  [4/8] test_try_in_expression... ");
+    ⌥ test_try_in_expression() {
+        Result·Ok(v) => {
+            assert(v == 84, "42 + 42 should be 84");
+            println("PASS");
+        },
+        Result·Err(e) => {
+            println("FAIL: unexpected error: {}", e);
+            ⤺ 1;
+        },
+    }
+
+    // Test 5: Try with parsing
+    print("  [5/8] test_try_parsing... ");
+    ⌥ test_try_parsing() {
+        Result·Ok(_) => println("PASS"),
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ 1;
+        },
+    }
+
+    // Test 6: Try with loops
+    print("  [6/8] test_try_with_loop... ");
+    ⌥ test_try_with_loop() {
+        Result·Ok(_) => println("PASS"),
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ 1;
+        },
+    }
+
+    // Test 7: Nested try
+    print("  [7/8] test_nested_try... ");
+    ⌥ test_nested_try() {
+        Result·Ok(_) => println("PASS"),
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ 1;
+        },
+    }
+
+    // Test 8: Method chain with try
+    print("  [8/8] test_try_method_chain... ");
+    ⌥ test_try_method_chain() {
+        Result·Ok(_) => println("PASS"),
+        Result·Err(e) => {
+            println("FAIL: {}", e);
+            ⤺ 1;
+        },
+    }
+
+    println("");
+    println("All Try operator tests passed!");
+    ⤺ 0;
+}

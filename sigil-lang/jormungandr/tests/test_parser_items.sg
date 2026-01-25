@@ -1,0 +1,465 @@
+//! Comprehensive Parser Items Test Suite
+//!
+//! Tests all top-level item forms: functions, structs, enums, traits, impls,
+//! modules, invoke declarations, constants, statics, actors, and extern blocks.
+//! Target: 100% item parsing coverage ∀ regression detection.
+
+invoke crate·parser·Parser;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/// Parse a file containing the given item
+λ parse_item(source: !&str) -> !bool {
+    ≔ Δ parser = Parser·new(source.to_string());
+    ⌥ parser.parse_file() {
+        Result·Ok(_) => true,
+        Result·Err(_) => false,
+    }
+}
+
+/// Assert that item parsing succeeds
+λ assert_item(source: !&str, name: !&str) {
+    ⎇ !parse_item(source) {
+        panic(format!("FAIL {}: failed to parse item", name));
+    }
+}
+
+/// Assert that item parsing fails
+λ assert_item_fails(source: !&str, name: !&str) {
+    ⎇ parse_item(source) {
+        panic(format!("FAIL {}: should have failed to parse", name));
+    }
+}
+
+// ============================================================================
+// 1. FUNCTION DEFINITIONS
+// ============================================================================
+
+λ test_function_items() -> !bool {
+    print("  [1/12] Function definitions... ");
+
+    // Basic function
+    assert_item("λ foo() {}", "fn_empty");
+    assert_item("λ foo() -> !i32 { ⤺ 42; }", "fn_return");
+    assert_item("λ foo(x: !i32) -> !i32 { ⤺ x; }", "fn_one_param");
+    assert_item("λ foo(x: !i32, y: !i32) -> !i32 { ⤺ x + y; }", "fn_two_params");
+
+    // Visibility
+    assert_item("☉ λ foo() {}", "fn_pub");
+    assert_item("☉(crate) λ foo() {}", "fn_pub_crate");
+    assert_item("☉(super) λ foo() {}", "fn_pub_super");
+
+    // Generic functions
+    assert_item("λ identity<T>(x: !T) -> !T { ⤺ x; }", "fn_generic_one");
+    assert_item("λ swap<A, B>(a: !A, b: !B) -> !(B, A) { ⤺ (b, a); }", "fn_generic_two");
+
+    // Where clauses
+    assert_item("λ foo<T>(x: !T) where T: Clone { }", "fn_where_single");
+    assert_item("λ foo<T, U>(x: !T, y: !U) where T: Clone, U: Debug { }", "fn_where_multi");
+
+    // Async functions
+    assert_item("async λ fetch() -> !String { ⤺ \"\"; }", "fn_async");
+    assert_item("☉ async λ fetch_data() -> !Response { }", "fn_pub_async");
+
+    // Unsafe functions
+    assert_item("unsafe λ dangerous() {}", "fn_unsafe");
+    assert_item("☉ unsafe λ raw_ptr() -> !*const u8 { }", "fn_pub_unsafe");
+
+    // Const functions
+    assert_item("const λ value() -> !i32 { ⤺ 42; }", "fn_const");
+
+    // Extern functions
+    assert_item("extern \"C\" λ callback() {}", "fn_extern_c");
+
+    println("PASS (17 cases)");
+    true
+}
+
+// ============================================================================
+// 2. STRUCT DEFINITIONS
+// ============================================================================
+
+λ test_struct_items() -> !bool {
+    print("  [2/12] Struct definitions... ");
+
+    // Unit Σ
+    assert_item("Σ Unit;", "struct_unit");
+    assert_item("☉ Σ PublicUnit;", "struct_pub_unit");
+
+    // Tuple Σ
+    assert_item("Σ Pair(i32, i32);", "struct_tuple_pair");
+    assert_item("Σ Wrapper(!String);", "struct_tuple_wrapper");
+    assert_item("☉ Σ Color(u8, u8, u8);", "struct_tuple_color");
+
+    // Named Σ
+    assert_item("Σ Point { x: !i32, y: !i32 }", "struct_named_basic");
+    assert_item("Σ Point { x: !i32, y: !i32, }", "struct_trailing_comma");
+    assert_item("☉ Σ User { ☉ name: !String, age: !u32 }", "struct_pub_fields");
+
+    // Generic structs
+    assert_item("Σ Box<T> { value: !T }", "struct_generic_one");
+    assert_item("Σ Pair<A, B> { first: !A, second: !B }", "struct_generic_two");
+    assert_item("Σ Option<T> { value: ?T }", "struct_generic_optional");
+
+    // With where clause
+    assert_item("Σ Container<T> where T: Clone { value: !T }", "struct_where");
+
+    // Evidentiality ∈ fields
+    assert_item("Σ Data { known: !i32, uncertain: ?i32, reported: ~String }", "struct_evidential");
+
+    // Repr attribute
+    assert_item("#[repr(C)] Σ FFI { x: !i32 }", "struct_repr_c");
+    assert_item("#[repr(packed)] Σ Packed { a: !u8, b: !u32 }", "struct_repr_packed");
+
+    println("PASS (15 cases)");
+    true
+}
+
+// ============================================================================
+// 3. ENUM DEFINITIONS
+// ============================================================================
+
+λ test_enum_items() -> !bool {
+    print("  [3/12] Enum definitions... ");
+
+    // Unit variants
+    assert_item("ᛈ Direction { North, South, East, West }", "enum_unit_variants");
+    assert_item("☉ ᛈ Status { Active, Inactive }", "enum_pub");
+
+    // Tuple variants
+    assert_item("ᛈ Option<T> { Some(T), None }", "enum_option");
+    assert_item("ᛈ Result<T, E> { Ok(T), Err(E) }", "enum_result");
+
+    // Struct variants
+    assert_item("ᛈ Shape { Circle { radius: !f64 }, Rectangle { width: !f64, height: !f64 } }", "enum_struct_variants");
+
+    // Mixed variants
+    assert_item("ᛈ Message { Quit, Move { x: !i32, y: !i32 }, Write(!String), Color(u8, u8, u8) }", "enum_mixed");
+
+    // With discriminants
+    assert_item("ᛈ Code { A = 0, B = 1, C = 2 }", "enum_discriminants");
+
+    // Generic
+    assert_item("ᛈ Either<L, R> { Left(L), Right(R) }", "enum_generic_either");
+
+    // With where clause
+    assert_item("ᛈ Container<T> where T: Clone { Value(T), Empty }", "enum_where");
+
+    // Repr attribute
+    assert_item("#[repr(u8)] ᛈ Small { A, B, C }", "enum_repr_u8");
+    assert_item("#[repr(C)] ᛈ FFIEnum { X, Y }", "enum_repr_c");
+
+    println("PASS (11 cases)");
+    true
+}
+
+// ============================================================================
+// 4. TRAIT DEFINITIONS
+// ============================================================================
+
+λ test_trait_items() -> !bool {
+    print("  [4/12] Trait definitions... ");
+
+    // Empty Θ
+    assert_item("Θ Marker {}", "trait_empty");
+    assert_item("☉ Θ PublicMarker {}", "trait_pub");
+
+    // Method declarations
+    assert_item("Θ Greet { λ greet(self); }", "trait_method_decl");
+    assert_item("Θ Clone { λ clone(self) -> !Self; }", "trait_clone");
+
+    // Default implementations
+    assert_item("Θ Default { λ default() -> !Self { Self {} } }", "trait_default_impl");
+    assert_item("Θ ToString { λ to_string(self) -> !String { ⤺ \"\"; } }", "trait_default_method");
+
+    // Associated types
+    assert_item("Θ Iterator { type Item; λ next(Δ self) -> ?Self·Item; }", "trait_assoc_type");
+
+    // Associated constants
+    assert_item("Θ Constants { const MAX: i32; }", "trait_assoc_const");
+    assert_item("Θ WithDefault { const DEFAULT: i32 = 0; }", "trait_const_default");
+
+    // Generic Θ
+    assert_item("Θ From<T> { λ from(value: !T) -> !Self; }", "trait_generic");
+    assert_item("Θ Into<T> { λ into(self) -> !T; }", "trait_generic_into");
+
+    // Supertraits
+    assert_item("Θ Ord: Eq + PartialOrd {}", "trait_supertrait");
+    assert_item("Θ Debug: Display {}", "trait_single_super");
+
+    // Where clause
+    assert_item("Θ Container<T> where T: Clone { λ get(self) -> !T; }", "trait_where");
+
+    println("PASS (14 cases)");
+    true
+}
+
+// ============================================================================
+// 5. IMPL BLOCKS
+// ============================================================================
+
+λ test_impl_items() -> !bool {
+    print("  [5/12] Impl blocks... ");
+
+    // Inherent ⊢
+    assert_item("Σ Foo {} ⊢ Foo { λ new() -> !Foo { Foo {} } }", "impl_inherent");
+    assert_item("Σ Counter { value: !i32 } ⊢ Counter { λ inc(Δ self) { self.value = self.value + 1; } }", "impl_method");
+
+    // Trait ⊢
+    assert_item("Θ Greet {} Σ Person {} ⊢ Greet ∀ Person {}", "impl_trait_empty");
+    assert_item("Θ Clone { λ clone(self) -> !Self; } Σ Data {} ⊢ Clone ∀ Data { λ clone(self) -> !Data { Data {} } }", "impl_trait_method");
+
+    // Generic ⊢
+    assert_item("Σ Box<T> { value: !T } ⊢<T> Box<T> { λ new(v: !T) -> !Box<T> { Box { value: v } } }", "impl_generic");
+
+    // Impl ∀ generic type
+    assert_item("Θ Default {} Σ Option<T> {} ⊢<T> Default ∀ Option<T> {}", "impl_generic_trait");
+
+    // Where clause
+    assert_item("Σ Wrapper<T> {} ⊢<T> Wrapper<T> where T: Clone {}", "impl_where");
+
+    // Associated functions (no self)
+    assert_item("Σ Math {} ⊢ Math { λ add(a: !i32, b: !i32) -> !i32 { ⤺ a + b; } }", "impl_assoc_fn");
+
+    // Multiple methods
+    assert_item("Σ Point { x: !i32, y: !i32 } ⊢ Point { λ x(self) -> !i32 { self.x } λ y(self) -> !i32 { self.y } λ sum(self) -> !i32 { self.x + self.y } }", "impl_multi_methods");
+
+    println("PASS (9 cases)");
+    true
+}
+
+// ============================================================================
+// 6. TYPE ALIAS
+// ============================================================================
+
+λ test_type_alias_items() -> !bool {
+    print("  [6/12] Type aliases... ");
+
+    // Simple alias
+    assert_item("type Int = i32;", "type_simple");
+    assert_item("☉ type String = std·string·String;", "type_pub");
+
+    // Generic alias
+    assert_item("type Result<T> = std·result·Result<T, Error>;", "type_generic_one");
+    assert_item("type Map<K, V> = std·collections·HashMap<K, V>;", "type_generic_two");
+
+    // With where clause
+    assert_item("type Container<T> where T: Clone = Vec<T>;", "type_where");
+
+    // Complex types
+    assert_item("type Callback = λ(!i32) -> !i32;", "type_fn");
+    assert_item("type OptionalList<T> = ?[T];", "type_optional_list");
+
+    println("PASS (7 cases)");
+    true
+}
+
+// ============================================================================
+// 7. MODULE DEFINITIONS
+// ============================================================================
+
+λ test_module_items() -> !bool {
+    print("  [7/12] Module definitions... ");
+
+    // Inline module
+    assert_item("scroll inner {}", "mod_empty");
+    assert_item("scroll inner { λ foo() {} }", "mod_with_fn");
+    assert_item("☉ scroll public {}", "mod_pub");
+
+    // Nested modules
+    assert_item("scroll outer { scroll inner {} }", "mod_nested");
+    assert_item("scroll a { scroll b { scroll c {} } }", "mod_deeply_nested");
+
+    // Module with items
+    assert_item("scroll math { ☉ λ add(a: !i32, b: !i32) -> !i32 { a + b } ☉ Σ Vec2 { x: !f64, y: !f64 } }", "mod_with_items");
+
+    // External module declaration
+    assert_item("scroll external;", "mod_external");
+
+    println("PASS (7 cases)");
+    true
+}
+
+// ============================================================================
+// 8. USE DECLARATIONS
+// ============================================================================
+
+λ test_use_items() -> !bool {
+    print("  [8/12] Use declarations... ");
+
+    // Simple invoke
+    assert_item("invoke std·io;", "use_simple");
+    assert_item("invoke crate·module;", "use_crate");
+    assert_item("invoke super·parent;", "use_super");
+    assert_item("invoke self·local;", "use_self");
+
+    // Use with alias
+    assert_item("invoke std·io as stdio;", "use_alias");
+    assert_item("invoke std·collections·HashMap as Map;", "use_alias_long");
+
+    // Use glob
+    assert_item("invoke std·io·*;", "use_glob");
+    assert_item("invoke crate·prelude·*;", "use_glob_crate");
+
+    // Use group
+    assert_item("invoke std·{io, fs};", "use_group_two");
+    assert_item("invoke std·{io, fs, path};", "use_group_three");
+    assert_item("invoke std·collections·{HashMap, HashSet, BTreeMap};", "use_group_collections");
+
+    // Nested groups
+    assert_item("invoke std·{io·{Read, Write}, fs·File};", "use_nested_group");
+
+    // Pub invoke
+    assert_item("☉ invoke crate·module·Item;", "use_pub");
+    assert_item("☉ invoke super·*;", "use_pub_glob");
+
+    println("PASS (14 cases)");
+    true
+}
+
+// ============================================================================
+// 9. CONST AND STATIC
+// ============================================================================
+
+λ test_const_static_items() -> !bool {
+    print("  [9/12] Const and static definitions... ");
+
+    // Constants
+    assert_item("const PI: f64 = 3.14159;", "const_float");
+    assert_item("const MAX: i32 = 100;", "const_int");
+    assert_item("const NAME: &str = \"Sigil\";", "const_str");
+    assert_item("☉ const VERSION: &str = \"1.0.0\";", "const_pub");
+
+    // Static variables
+    assert_item("static COUNTER: i32 = 0;", "static_int");
+    assert_item("static Δ BUFFER: [u8; 1024] = [0; 1024];", "static_mut_array");
+    assert_item("☉ static INSTANCE: Option<()> = None;", "static_pub");
+
+    // Complex const expressions
+    assert_item("const DOUBLED: i32 = 21 * 2;", "const_expr");
+    assert_item("const FLAGS: u32 = 0b1010 | 0b0101;", "const_bitwise");
+
+    println("PASS (9 cases)");
+    true
+}
+
+// ============================================================================
+// 10. ACTOR DEFINITIONS
+// ============================================================================
+
+λ test_actor_items() -> !bool {
+    print("  [10/12] Actor definitions... ");
+
+    // Basic actor
+    assert_item("actor Counter { value: !i32 }", "actor_basic");
+    assert_item("☉ actor PublicCounter { count: !i32 }", "actor_pub");
+
+    // Actor with methods (in ⊢)
+    assert_item("actor Timer { elapsed: !u64 } ⊢ Timer { λ tick(Δ self) { self.elapsed = self.elapsed + 1; } }", "actor_with_impl");
+
+    // Generic actor
+    assert_item("actor Buffer<T> { data: ![T] }", "actor_generic");
+
+    println("PASS (4 cases)");
+    true
+}
+
+// ============================================================================
+// 11. EXTERN BLOCKS
+// ============================================================================
+
+λ test_extern_items() -> !bool {
+    print("  [11/12] Extern blocks... ");
+
+    // C extern block
+    assert_item("extern \"C\" { λ printf(fmt: *const u8, ...) -> i32; }", "extern_c_printf");
+    assert_item("extern \"C\" { λ malloc(size: u64) -> *Δ u8; λ free(ptr: *Δ u8); }", "extern_c_malloc_free");
+
+    // Static ∈ extern
+    assert_item("extern \"C\" { static errno: i32; }", "extern_static");
+    assert_item("extern \"C\" { static Δ buffer: [u8; 256]; }", "extern_static_mut");
+
+    // Other ABIs
+    assert_item("extern \"system\" { λ GetLastError() -> u32; }", "extern_system");
+
+    // Visibility
+    assert_item("extern \"C\" { ☉ λ public_fn(); }", "extern_pub_fn");
+
+    println("PASS (6 cases)");
+    true
+}
+
+// ============================================================================
+// 12. ATTRIBUTES
+// ============================================================================
+
+λ test_attributes() -> !bool {
+    print("  [12/12] Attributes... ");
+
+    // Derive
+    assert_item("#[derive(Debug)] Σ Foo {}", "attr_derive_one");
+    assert_item("#[derive(Debug, Clone, Copy)] Σ Bar {}", "attr_derive_multi");
+
+    // Repr
+    assert_item("#[repr(C)] Σ FFI {}", "attr_repr_c");
+    assert_item("#[repr(transparent)] Σ Wrapper(i32);", "attr_repr_transparent");
+
+    // Inline
+    assert_item("#[inline] λ fast() {}", "attr_inline");
+    assert_item("#[inline(always)] λ always_inline() {}", "attr_inline_always");
+    assert_item("#[inline(never)] λ never_inline() {}", "attr_inline_never");
+
+    // Cfg
+    assert_item("#[cfg(target_os = \"linux\")] λ linux_only() {}", "attr_cfg");
+    assert_item("#[cfg(feature = \"extra\")] scroll extra {}", "attr_cfg_feature");
+
+    // Doc
+    assert_item("/// Documentation\nλ documented() {}", "attr_doc_line");
+    assert_item("#[doc = \"Documentation\"] λ also_documented() {}", "attr_doc_attr");
+
+    // Custom attributes
+    assert_item("#[test] λ test_something() {}", "attr_test");
+    assert_item("#[bench] λ benchmark() {}", "attr_bench");
+
+    println("PASS (13 cases)");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ λ main() -> !i32 {
+    println("Testing Parser Items...");
+    println("");
+
+    ≔ Δ passed: !i32 = 0;
+    ≔ Δ failed: !i32 = 0;
+
+    ⎇ test_function_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_struct_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_enum_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_trait_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_impl_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_type_alias_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_module_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_use_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_const_static_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_actor_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_extern_items() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_attributes() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    ⎇ failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All parser item tests passed! (~126 test cases)");
+    ⤺ 0;
+}

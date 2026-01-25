@@ -1,0 +1,240 @@
+// rt/alloc/arena.sg - Arena Allocator
+//
+// Simple bump allocator with arena semantics.
+// Fast O(1) allocation, bulk deallocation.
+//
+// Memory Layout:
+//   Block: [prev_block_ptr: *u8 | data...]
+//   Arena tracks current block and allocation pointer
+
+invoke tome·rt·sys·{mmap_anon, munmap, Errno};
+
+/// Default block size: 64KB
+const DEFAULT_BLOCK_SIZE: u64 = 64 * 1024;
+
+/// Alignment for all allocations
+const ALIGNMENT: u64 = 8;
+
+/// Block header size (pointer to previous block)
+const HEADER_SIZE: u64 = 8;
+
+/// Memory arena for bulk allocation
+pub struct Arena {
+    /// Current allocation pointer
+    ptr: *mut u8,
+    /// End of current block
+    end: *mut u8,
+    /// Head of block list (current block)
+    block_head: *mut u8,
+    /// Block size for new allocations
+    block_size: u64,
+    /// Total allocated bytes (for stats)
+    total_allocated: u64,
+}
+
+impl Arena {
+    /// Create arena with default 64KB blocks
+    pub fn new() -> !Self {
+        Self·with_block_size(DEFAULT_BLOCK_SIZE)
+    }
+
+    /// Create arena with custom block size
+    pub fn with_block_size(size: u64) -> !Self {
+        let actual_size = if size < 4096 { 4096 } else { size };
+        Arena {
+            ptr: null_mut(),
+            end: null_mut(),
+            block_head: null_mut(),
+            block_size: actual_size,
+            total_allocated: 0,
+        }
+    }
+
+    /// Create uninitialized arena (for static initialization)
+    pub const fn uninitialized() -> !Self {
+        Arena {
+            ptr: null_mut(),
+            end: null_mut(),
+            block_head: null_mut(),
+            block_size: DEFAULT_BLOCK_SIZE,
+            total_allocated: 0,
+        }
+    }
+
+    /// Allocate bytes with 8-byte alignment
+    pub fn alloc(&mut self, size: u64) -> *mut u8 {
+        if size == 0 {
+            self.ptr  // Return current ptr for zero-size
+        } else {
+            // Align size to 8 bytes (using division to avoid bitwise NOT type issue)
+            let aligned_size = ((size + ALIGNMENT - 1) / ALIGNMENT) * ALIGNMENT;
+
+            // Check if we need to grow
+            let available = self.end as u64 - self.ptr as u64;
+            if aligned_size > available {
+                if !self.grow(aligned_size) {
+                    null_mut()
+                } else {
+                    // Bump allocate
+                    let result = self.ptr;
+                    self.ptr = unsafe { self.ptr.add(aligned_size as usize) };
+                    self.total_allocated += aligned_size;
+                    result
+                }
+            } else {
+                // Bump allocate
+                let result = self.ptr;
+                self.ptr = unsafe { self.ptr.add(aligned_size as usize) };
+                self.total_allocated += aligned_size;
+                result
+            }
+        }
+    }
+
+    /// Allocate and zero-initialize
+    pub fn alloc_zeroed(&mut self, size: u64) -> *mut u8 {
+        let ptr = self.alloc(size);
+        if !ptr.is_null() {
+            unsafe {
+                // Zero the memory
+                let mut p = ptr;
+                let mut remaining = size;
+                while remaining >= 8 {
+                    *(p as *mut u64) = 0;
+                    p = p.add(8);
+                    remaining -= 8;
+                }
+                while remaining > 0 {
+                    *p = 0;
+                    p = p.add(1);
+                    remaining -= 1;
+                }
+            }
+        }
+        ptr
+    }
+
+    /// Allocate space for a typed value
+    pub fn alloc_sized(&mut self, size: u64, align: u64) -> *mut u8 {
+        // Ensure alignment is at least ALIGNMENT
+        let actual_align = if align > ALIGNMENT { align } else { ALIGNMENT };
+
+        // Current pointer alignment (using division to avoid bitwise NOT)
+        let current = self.ptr as u64;
+        let aligned = ((current + actual_align - 1) / actual_align) * actual_align;
+        let padding = aligned - current;
+
+        // Allocate with padding
+        let total = padding + size;
+
+        let available = self.end as u64 - self.ptr as u64;
+        if total > available {
+            if !self.grow(total) {
+                null_mut()
+            } else {
+                // Recalculate after grow (using division to avoid bitwise NOT)
+                let new_aligned = ((self.ptr as u64 + actual_align - 1) / actual_align) * actual_align;
+                let new_padding = new_aligned - self.ptr as u64;
+                self.ptr = unsafe { self.ptr.add(new_padding as usize) };
+
+                let result = self.ptr;
+                self.ptr = unsafe { self.ptr.add(size as usize) };
+                self.total_allocated += size;
+                result
+            }
+        } else {
+            self.ptr = unsafe { self.ptr.add(padding as usize) };
+
+            let result = self.ptr;
+            self.ptr = unsafe { self.ptr.add(size as usize) };
+            self.total_allocated += size;
+            result
+        }
+    }
+
+    /// Reset arena (keeps allocated blocks, resets pointer)
+    pub fn reset(&mut self) {
+        if !self.block_head.is_null() {
+            // Reset to start of first (most recent) block, after header
+            self.ptr = unsafe { self.block_head.add(HEADER_SIZE as usize) };
+            // Find end of this block
+            // For simplicity, we'll just keep current end
+            // A more complete implementation would track block sizes
+        }
+        self.total_allocated = 0;
+    }
+
+    /// Free all memory
+    pub fn free_all(&mut self) {
+        let mut current = self.block_head;
+
+        while !current.is_null() {
+            // Read previous block pointer from header
+            let prev = unsafe { *(current as *const *mut u8) };
+
+            // Unmap this block
+            // Note: We don't track individual block sizes, so use block_size
+            // A more robust implementation would store size in header
+            let _ = munmap(current, self.block_size);
+
+            current = prev;
+        }
+
+        self.block_head = null_mut();
+        self.ptr = null_mut();
+        self.end = null_mut();
+        self.total_allocated = 0;
+    }
+
+    /// Get total bytes allocated
+    pub fn allocated(&self) -> !u64 {
+        self.total_allocated
+    }
+
+    /// Check if arena is empty
+    pub fn is_empty(&self) -> !bool {
+        self.block_head.is_null()
+    }
+
+    // Private: grow arena by allocating new block
+    fn grow(&mut self, min_size: u64) -> !bool {
+        // Calculate block size (at least min_size + header)
+        let needed = min_size + HEADER_SIZE;
+        let size = if needed > self.block_size { needed } else { self.block_size };
+
+        // Allocate new block via mmap
+        let result = mmap_anon(size);
+
+        match result {
+            Ok(new_block) => {
+                // Store previous block pointer in header
+                unsafe {
+                    *(new_block as *mut *mut u8) = self.block_head;
+                }
+
+                // Update arena state
+                self.block_head = new_block;
+                self.ptr = unsafe { new_block.add(HEADER_SIZE as usize) };
+                self.end = unsafe { new_block.add(size as usize) };
+
+                true
+            },
+            Err(_) => false,
+        }
+    }
+}
+
+impl Drop for Arena {
+    fn drop(&mut self) {
+        self.free_all();
+    }
+}
+
+// ============================================================================
+// Null pointer helper
+// ============================================================================
+
+#[inline]
+fn null_mut() -> *mut u8 {
+    0 as *mut u8
+}

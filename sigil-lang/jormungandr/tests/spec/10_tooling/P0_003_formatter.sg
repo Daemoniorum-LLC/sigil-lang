@@ -1,0 +1,7 @@
+// Test: Code formatter (Glyph)
+// Spec: 10-TOOLING.md § 3 Glyph
+// Priority: P0 - Bootstrap Critical
+//
+// Formatter should normalize this code
+
+λ main(){≔ x:!i32=42;println(x);}

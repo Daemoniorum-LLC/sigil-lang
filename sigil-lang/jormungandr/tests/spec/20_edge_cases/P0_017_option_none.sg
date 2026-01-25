@@ -1,0 +1,8 @@
+// Test: Option·None handling
+// Spec: Edge Cases - Optional Values
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    ≔ opt: Option<i32> = None;
+    println(opt.is_none());
+}

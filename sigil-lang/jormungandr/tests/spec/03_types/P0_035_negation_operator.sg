@@ -1,0 +1,14 @@
+// Test: Unary negation operator
+// Spec: 03-TYPES.md § 3.4 Arithmetic Operations
+// Priority: P0
+//
+// Purpose:
+// Validates that unary negation works on integers.
+//
+// Expected behavior:
+// Should compile and print -42
+
+λ main() {
+    ≔ x: !i32 = -42;
+    println(x);
+}

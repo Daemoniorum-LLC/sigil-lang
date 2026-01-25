@@ -6,15 +6,15 @@ rite main() {
 
     // env·var - returns Result type
     ≔ path_result = env·var("PATH");
-    assert_eq(type_of(path_result), "Result::Ok");
+    assert_eq(type_of(path_result), "Result·Ok");
 
     // HOME should exist on most systems
     ≔ home_result = env·var("HOME");
-    assert_eq(type_of(home_result), "Result::Ok");
+    assert_eq(type_of(home_result), "Result·Ok");
 
-    // Non-existent variable returns Result::Err
+    // Non-existent variable returns Result·Err
     ≔ nonexist = env·var("TOTALLY_NONEXISTENT_VAR_12345");
-    assert_eq(type_of(nonexist), "Result::Err");
+    assert_eq(type_of(nonexist), "Result·Err");
 
     println("ALL ENV TESTS PASSED!");
 }
