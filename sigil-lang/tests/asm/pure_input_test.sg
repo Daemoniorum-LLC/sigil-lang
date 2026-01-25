@@ -1,7 +1,7 @@
 // Test pure input operand with local variable
-fn main() -> i64 {
-    let x: i64 = 5;
-    let result: i64 = 0;
+λ main() -> i64 {
+    ≔ x: i64 = 5;
+    ≔ result: i64 = 0;
     unsafe {
         asm!("mov rax, rdi",
             in("rdi") x,

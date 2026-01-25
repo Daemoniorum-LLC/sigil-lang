@@ -1,9 +1,9 @@
 //! Linux x86_64 Syscall Layer
 //!
-//! Raw system call wrappers for networking operations on Linux x86_64.
+//! Raw system call wrappers ∀ networking operations on Linux x86_64.
 //! Uses inline assembly to invoke syscalls directly without libc.
 //!
-//! All functions return the raw syscall result:
+//! All functions ⤺ the raw syscall result:
 //! - Positive/zero values are success
 //! - Negative values are -errno
 //!
@@ -33,8 +33,8 @@ const SYS_FCNTL: i64 = 72;
 // ============================================================================
 
 /// syscall with 0 arguments
-fn syscall0(num: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall0(num: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -46,8 +46,8 @@ fn syscall0(num: i64) -> i64 {
 }
 
 /// syscall with 1 argument
-fn syscall1(num: i64, arg1: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall1(num: i64, arg1: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -60,8 +60,8 @@ fn syscall1(num: i64, arg1: i64) -> i64 {
 }
 
 /// syscall with 2 arguments
-fn syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -75,8 +75,8 @@ fn syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
 }
 
 /// syscall with 3 arguments
-fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -91,8 +91,8 @@ fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
 }
 
 /// syscall with 4 arguments (uses r10 instead of rcx)
-fn syscall4(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall4(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -108,8 +108,8 @@ fn syscall4(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64) -> i64 {
 }
 
 /// syscall with 5 arguments
-fn syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -126,8 +126,8 @@ fn syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> 
 }
 
 /// syscall with 6 arguments
-fn syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -150,131 +150,131 @@ fn syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg
 // ============================================================================
 
 /// Read from file descriptor
-pub fn sys_read(fd: i64, buf: i64, count: i64) -> i64 {
+☉ λ sys_read(fd: i64, buf: i64, count: i64) -> i64 {
     syscall3(SYS_READ, fd, buf, count)
 }
 
 /// Write to file descriptor
-pub fn sys_write(fd: i64, buf: i64, count: i64) -> i64 {
+☉ λ sys_write(fd: i64, buf: i64, count: i64) -> i64 {
     syscall3(SYS_WRITE, fd, buf, count)
 }
 
 /// Close file descriptor
-pub fn sys_close(fd: i64) -> i64 {
+☉ λ sys_close(fd: i64) -> i64 {
     syscall1(SYS_CLOSE, fd)
 }
 
 /// Create socket
 /// domain: AF_INET (2), AF_INET6 (10)
 /// type: SOCK_STREAM (1), SOCK_DGRAM (2)
-/// protocol: 0 for default
-pub fn sys_socket(domain: i64, socket_type: i64, protocol: i64) -> i64 {
+/// protocol: 0 ∀ default
+☉ λ sys_socket(domain: i64, socket_type: i64, protocol: i64) -> i64 {
     syscall3(SYS_SOCKET, domain, socket_type, protocol)
 }
 
 /// Connect socket to address
-pub fn sys_connect(fd: i64, addr: i64, addrlen: i64) -> i64 {
+☉ λ sys_connect(fd: i64, addr: i64, addrlen: i64) -> i64 {
     syscall3(SYS_CONNECT, fd, addr, addrlen)
 }
 
 /// Accept connection on listening socket
-pub fn sys_accept(fd: i64, addr: i64, addrlen: i64) -> i64 {
+☉ λ sys_accept(fd: i64, addr: i64, addrlen: i64) -> i64 {
     syscall3(SYS_ACCEPT, fd, addr, addrlen)
 }
 
 /// Bind socket to address
-pub fn sys_bind(fd: i64, addr: i64, addrlen: i64) -> i64 {
+☉ λ sys_bind(fd: i64, addr: i64, addrlen: i64) -> i64 {
     syscall3(SYS_BIND, fd, addr, addrlen)
 }
 
-/// Listen for connections on socket
-pub fn sys_listen(fd: i64, backlog: i64) -> i64 {
+/// Listen ∀ connections on socket
+☉ λ sys_listen(fd: i64, backlog: i64) -> i64 {
     syscall2(SYS_LISTEN, fd, backlog)
 }
 
 /// Set socket option
-pub fn sys_setsockopt(fd: i64, level: i64, optname: i64, optval: i64, optlen: i64) -> i64 {
+☉ λ sys_setsockopt(fd: i64, level: i64, optname: i64, optval: i64, optlen: i64) -> i64 {
     syscall5(SYS_SETSOCKOPT, fd, level, optname, optval, optlen)
 }
 
 /// Get socket option
-pub fn sys_getsockopt(fd: i64, level: i64, optname: i64, optval: i64, optlen: i64) -> i64 {
+☉ λ sys_getsockopt(fd: i64, level: i64, optname: i64, optval: i64, optlen: i64) -> i64 {
     syscall5(SYS_GETSOCKOPT, fd, level, optname, optval, optlen)
 }
 
 /// Send data on socket
-pub fn sys_sendto(fd: i64, buf: i64, len: i64, flags: i64, addr: i64, addrlen: i64) -> i64 {
+☉ λ sys_sendto(fd: i64, buf: i64, len: i64, flags: i64, addr: i64, addrlen: i64) -> i64 {
     syscall6(SYS_SENDTO, fd, buf, len, flags, addr, addrlen)
 }
 
 /// Receive data from socket
-pub fn sys_recvfrom(fd: i64, buf: i64, len: i64, flags: i64, addr: i64, addrlen: i64) -> i64 {
+☉ λ sys_recvfrom(fd: i64, buf: i64, len: i64, flags: i64, addr: i64, addrlen: i64) -> i64 {
     syscall6(SYS_RECVFROM, fd, buf, len, flags, addr, addrlen)
 }
 
-/// File control (for non-blocking mode)
-pub fn sys_fcntl(fd: i64, cmd: i64, arg: i64) -> i64 {
+/// File control (∀ non-blocking mode)
+☉ λ sys_fcntl(fd: i64, cmd: i64, arg: i64) -> i64 {
     syscall3(SYS_FCNTL, fd, cmd, arg)
 }
 
-/// Poll for events
-pub fn sys_poll(fds: i64, nfds: i64, timeout: i64) -> i64 {
+/// Poll ∀ events
+☉ λ sys_poll(fds: i64, nfds: i64, timeout: i64) -> i64 {
     syscall3(SYS_POLL, fds, nfds, timeout)
 }
 
 // ============================================================================
-// Constants for Socket Operations
+// Constants ∀ Socket Operations
 // ============================================================================
 
 // Address families
-pub const AF_INET: i64 = 2;
-pub const AF_INET6: i64 = 10;
+☉ const AF_INET: i64 = 2;
+☉ const AF_INET6: i64 = 10;
 
 // Socket types
-pub const SOCK_STREAM: i64 = 1;  // TCP
-pub const SOCK_DGRAM: i64 = 2;   // UDP
+☉ const SOCK_STREAM: i64 = 1;  // TCP
+☉ const SOCK_DGRAM: i64 = 2;   // UDP
 
 // Socket options
-pub const SOL_SOCKET: i64 = 1;
-pub const SO_REUSEADDR: i64 = 2;
-pub const SO_REUSEPORT: i64 = 15;
+☉ const SOL_SOCKET: i64 = 1;
+☉ const SO_REUSEADDR: i64 = 2;
+☉ const SO_REUSEPORT: i64 = 15;
 
 // fcntl commands
-pub const F_GETFL: i64 = 3;
-pub const F_SETFL: i64 = 4;
-pub const O_NONBLOCK: i64 = 2048;
+☉ const F_GETFL: i64 = 3;
+☉ const F_SETFL: i64 = 4;
+☉ const O_NONBLOCK: i64 = 2048;
 
 // Error codes (as negative values from syscalls)
-pub const EPERM: i64 = -1;
-pub const ENOENT: i64 = -2;
-pub const EINTR: i64 = -4;
-pub const EBADF: i64 = -9;
-pub const EAGAIN: i64 = -11;
-pub const ENOMEM: i64 = -12;
-pub const EACCES: i64 = -13;
-pub const EINVAL: i64 = -22;
-pub const EPIPE: i64 = -32;
-pub const EADDRINUSE: i64 = -98;
-pub const ECONNREFUSED: i64 = -111;
+☉ const EPERM: i64 = -1;
+☉ const ENOENT: i64 = -2;
+☉ const EINTR: i64 = -4;
+☉ const EBADF: i64 = -9;
+☉ const EAGAIN: i64 = -11;
+☉ const ENOMEM: i64 = -12;
+☉ const EACCES: i64 = -13;
+☉ const EINVAL: i64 = -22;
+☉ const EPIPE: i64 = -32;
+☉ const EADDRINUSE: i64 = -98;
+☉ const ECONNREFUSED: i64 = -111;
 
 // ============================================================================
 // Test: Create and close a TCP socket
 // ============================================================================
 
-fn main() -> i64 {
+λ main() -> i64 {
     // Create a TCP socket (AF_INET=2, SOCK_STREAM=1, protocol=0)
-    let fd = sys_socket(AF_INET, SOCK_STREAM, 0);
+    ≔ fd = sys_socket(AF_INET, SOCK_STREAM, 0);
 
-    if fd < 0 {
+    ⎇ fd < 0 {
         // Socket creation failed
         fd  // Return the error code
-    } else {
+    } ⎉ {
         // Socket created successfully, now close it
-        let close_result = sys_close(fd);
+        ≔ close_result = sys_close(fd);
 
-        if close_result < 0 {
+        ⎇ close_result < 0 {
             close_result  // Return close error
-        } else {
+        } ⎉ {
             0  // Success!
         }
     }

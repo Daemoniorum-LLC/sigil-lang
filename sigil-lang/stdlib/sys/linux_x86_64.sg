@@ -11,7 +11,7 @@
 //!
 //! Spec: docs/specs/SIGIL-NATIVE-RUNTIME-SPEC.md
 
-use super::{SyscallError, syscall_result, syscall_result_zero};
+invoke super·{SyscallError, syscall_result, syscall_result_zero};
 
 // ============================================================================
 // Syscall Numbers (Linux x86_64)
@@ -70,7 +70,7 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
 ≔ SYS_EPOLL_CTL: i64 = 233;
 ≔ SYS_EPOLL_WAIT: i64 = 232;
 
-// Socket (for networking, also exported by net/sys/)
+// Socket (∀ networking, also exported by net/sys/)
 ≔ SYS_SOCKET: i64 = 41;
 ≔ SYS_CONNECT: i64 = 42;
 ≔ SYS_ACCEPT: i64 = 43;
@@ -263,19 +263,19 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
 /// # Arguments
 /// - `path`: Path to the file (null-terminated)
 /// - `flags`: Open flags (O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, etc.)
-/// - `mode`: File mode (permissions) for created files
+/// - `mode`: File mode (permissions) ∀ created files
 ///
 /// # Returns
 /// File descriptor, or error
 ☉ rite sys_open(path: *u8, flags: i32, mode: u32) -> Result<i32, SyscallError>! {
     ≔ raw = syscall3(SYS_OPEN, path as i64, flags as i64, mode as i64);
-    match syscall_result(raw) {
+    ⌥ syscall_result(raw) {
         Ok(fd) => Ok(fd as i32),
         Err(e) => Err(e),
     }
 }
 
-/// Seek in a file
+/// Seek ∈ a file
 ///
 /// # Arguments
 /// - `fd`: File descriptor
@@ -289,7 +289,7 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
     ⎇ raw >= 0 {
         Ok(raw as i64)
     } ⎉ {
-        Err(SyscallError::from_errno((-raw) as i32))
+        Err(SyscallError·from_errno((-raw) as i32))
     }
 }
 
@@ -315,15 +315,15 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
 
 /// Memory map a region
 ///
-/// This is the foundation for libc-free memory allocation.
+/// This is the foundation ∀ libc-free memory allocation.
 ///
 /// # Arguments
-/// - `addr`: Suggested address (usually null for kernel to choose)
+/// - `addr`: Suggested address (usually null ∀ kernel to choose)
 /// - `length`: Size of mapping
 /// - `prot`: Protection flags (PROT_READ, PROT_WRITE, PROT_EXEC)
 /// - `flags`: Mapping flags (MAP_PRIVATE, MAP_ANONYMOUS, etc.)
-/// - `fd`: File descriptor (-1 for anonymous mapping)
-/// - `offset`: Offset in file
+/// - `fd`: File descriptor (-1 ∀ anonymous mapping)
+/// - `offset`: Offset ∈ file
 ///
 /// # Returns
 /// Address of mapped region, or error
@@ -332,7 +332,7 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
     ⎇ raw >= 0 || (raw as u64) < 0xFFFFFFFFFFFF0000 {
         Ok(raw as *vary u8)
     } ⎉ {
-        Err(SyscallError::from_errno((-raw) as i32))
+        Err(SyscallError·from_errno((-raw) as i32))
     }
 }
 
@@ -372,7 +372,7 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
     ⎇ raw >= 0 || (raw as u64) < 0xFFFFFFFFFFFF0000 {
         Ok(raw as *vary u8)
     } ⎉ {
-        Err(SyscallError::from_errno((-raw) as i32))
+        Err(SyscallError·from_errno((-raw) as i32))
     }
 }
 
@@ -431,13 +431,13 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
 // Time Syscalls
 // ============================================================================
 
-/// Timespec structure for time syscalls
-☉ struct Timespec {
+/// Timespec structure ∀ time syscalls
+☉ Σ Timespec {
     ☉ tv_sec: i64,    // Seconds
     ☉ tv_nsec: i64,   // Nanoseconds
 }
 
-☉ impl Timespec {
+☉ ⊢ Timespec {
     /// Create a timespec from milliseconds
     ☉ rite from_millis(ms: u64) -> Timespec! {
         Timespec {
@@ -475,11 +475,11 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
     syscall_result_zero(raw)
 }
 
-/// Sleep for a duration
+/// Sleep ∀ a duration
 ///
 /// # Arguments
 /// - `req`: Requested sleep duration
-/// - `rem`: Remaining time if interrupted (can be null)
+/// - `rem`: Remaining time ⎇ interrupted (can be null)
 ☉ rite sys_nanosleep(req: *Timespec, rem: *vary Timespec) -> Result<(), SyscallError>! {
     ≔ raw = syscall2(SYS_NANOSLEEP, req as i64, rem as i64);
     syscall_result_zero(raw)
@@ -532,20 +532,20 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
     Ok(())
 }
 
-/// Sleep for milliseconds
+/// Sleep ∀ milliseconds
 ☉ rite sleep_ms(ms: u64) -> Result<(), SyscallError>! {
-    ≔ req = Timespec::from_millis(ms);
+    ≔ req = Timespec·from_millis(ms);
     sys_nanosleep(&req, null)
 }
 
-/// Get current monotonic time in nanoseconds
+/// Get current monotonic time ∈ nanoseconds
 ☉ rite now_nanos() -> Result<u64, SyscallError>! {
     vary ts = Timespec { tv_sec: 0, tv_nsec: 0 };
     sys_clock_gettime(CLOCK_MONOTONIC, &vary ts)?;
     Ok(ts.to_nanos())
 }
 
-/// Get current monotonic time in milliseconds
+/// Get current monotonic time ∈ milliseconds
 ☉ rite now_millis() -> Result<u64, SyscallError>! {
     vary ts = Timespec { tv_sec: 0, tv_nsec: 0 };
     sys_clock_gettime(CLOCK_MONOTONIC, &vary ts)?;
@@ -554,7 +554,7 @@ use super::{SyscallError, syscall_result, syscall_result_zero};
 
 /// Allocate memory via mmap (anonymous, private, read-write)
 ///
-/// This is the building block for higher-level allocators.
+/// This is the building block ∀ higher-level allocators.
 ☉ rite mmap_alloc(size: usize) -> Result<*vary u8, SyscallError>! {
     sys_mmap(
         null as *u8,

@@ -6,20 +6,20 @@
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 8
 
-use socket::{TcpStream, SocketError};
+invoke socket·{TcpStream, SocketError};
 
 // Platform-specific implementations
 #[cfg(target_os = "linux")]
-use openssl::*;
+invoke openssl·*;
 
 #[cfg(target_os = "macos")]
-use security::*;
+invoke security·*;
 
 // ============================================================================
 // TLS Errors
 // ============================================================================
 
-☉ enum TlsError {
+☉ ᛈ TlsError {
     HandshakeFailed { message: String }!,
     CertificateError { message: String }!,
     ProtocolError { message: String }!,
@@ -28,25 +28,25 @@ use security::*;
     LibraryError { code: i32, message: String }!,
 }
 
-☉ impl Display for TlsError {
+☉ ⊢ Display ∀ TlsError {
     ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
-        match self {
-            TlsError::HandshakeFailed { message } => {
+        ⌥ self {
+            TlsError·HandshakeFailed { message } => {
                 write!(f, "TLS handshake failed: {}", message)
             }
-            TlsError::CertificateError { message } => {
+            TlsError·CertificateError { message } => {
                 write!(f, "Certificate error: {}", message)
             }
-            TlsError::ProtocolError { message } => {
+            TlsError·ProtocolError { message } => {
                 write!(f, "TLS protocol error: {}", message)
             }
-            TlsError::IoError { inner } => {
+            TlsError·IoError { inner } => {
                 write!(f, "TLS I/O error: {}", inner)
             }
-            TlsError::NotConnected => {
+            TlsError·NotConnected => {
                 write!(f, "TLS not connected")
             }
-            TlsError::LibraryError { code, message } => {
+            TlsError·LibraryError { code, message } => {
                 write!(f, "TLS library error {}: {}", code, message)
             }
         }
@@ -66,10 +66,10 @@ use security::*;
     hostname: String!,
 }
 
-☉ impl TlsStream {
+☉ ⊢ TlsStream {
     /// Wrap a TCP connection with TLS (client mode)
     ///
-    /// Performs the TLS handshake with the given hostname for SNI.
+    /// Performs the TLS handshake with the given hostname ∀ SNI.
     ☉ rite connect(stream: TcpStream, hostname: &str) -> Result<TlsStream, TlsError>! {
         // Initialize TLS library (idempotent)
         tls_init()?;
@@ -87,8 +87,8 @@ use security::*;
         ssl_set_hostname(ssl, hostname)?;
 
         // Perform handshake
-        match ssl_connect(ssl) {
-            Result::Ok(_) => {
+        ⌥ ssl_connect(ssl) {
+            Result·Ok(_) => {
                 Ok(TlsStream {
                     inner: stream,
                     ssl_ctx,
@@ -97,7 +97,7 @@ use security::*;
                     hostname: hostname.to_string(),
                 })
             }
-            Result::Err(e) => {
+            Result·Err(e) => {
                 ssl_free(ssl);
                 ssl_ctx_free(ssl_ctx);
                 Err(e)
@@ -108,7 +108,7 @@ use security::*;
     /// Read decrypted data
     ☉ rite read(&vary self, buf: &vary [u8]) -> Result<usize, TlsError>! {
         ⎇ !self.connected {
-            ret Err(TlsError::NotConnected);
+            ret Err(TlsError·NotConnected);
         }
 
         ssl_read(self.ssl, buf)
@@ -119,18 +119,18 @@ use security::*;
         vary total_read: usize = 0;
         vary remaining = buf;
 
-        while total_read < buf.len() {
-            match self.read(remaining) {
-                Result::Ok(0) => {
-                    ret Err(TlsError::IoError {
-                        inner: SocketError::UnexpectedEof
+        ⟳ total_read < buf.len() {
+            ⌥ self.read(remaining) {
+                Result·Ok(0) => {
+                    ret Err(TlsError·IoError {
+                        inner: SocketError·UnexpectedEof
                     });
                 }
-                Result::Ok(n) => {
+                Result·Ok(n) => {
                     total_read += n;
                     remaining = &vary remaining[n..];
                 }
-                Result::Err(e) => ret Err(e),
+                Result·Err(e) => ret Err(e),
             }
         }
 
@@ -140,16 +140,16 @@ use security::*;
     /// Write data (will be encrypted)
     ☉ rite write_all(&vary self, buf: &[u8]) -> Result<(), TlsError>! {
         ⎇ !self.connected {
-            ret Err(TlsError::NotConnected);
+            ret Err(TlsError·NotConnected);
         }
 
         vary total_written: usize = 0;
 
-        while total_written < buf.len() {
+        ⟳ total_written < buf.len() {
             ≔ remaining = &buf[total_written..];
-            match ssl_write(self.ssl, remaining) {
-                Result::Ok(n) => total_written += n,
-                Result::Err(e) => ret Err(e),
+            ⌥ ssl_write(self.ssl, remaining) {
+                Result·Ok(n) => total_written += n,
+                Result·Err(e) => ret Err(e),
             }
         }
 
@@ -162,7 +162,7 @@ use security::*;
             ssl_shutdown(self.ssl)?;
             ssl_free(self.ssl);
             ssl_ctx_free(self.ssl_ctx);
-            self.inner.close().map_err(|e| TlsError::IoError { inner: e })?;
+            self.inner.close().map_err(|e| TlsError·IoError { inner: e })?;
             self.connected = false;
         }
         Ok(())
@@ -171,24 +171,24 @@ use security::*;
     /// Get the negotiated protocol (e.g., "TLSv1.3")
     ☉ rite protocol_version(&self) -> Result<String, TlsError>! {
         ⎇ !self.connected {
-            ret Err(TlsError::NotConnected);
+            ret Err(TlsError·NotConnected);
         }
 
         ssl_get_version(self.ssl)
     }
 
-    /// Check if connection is still valid
+    /// Check ⎇ connection is still valid
     ☉ rite is_connected(&self) -> bool! {
         self.connected
     }
 
-    /// Get the hostname used for SNI
+    /// Get the hostname used ∀ SNI
     ☉ rite hostname(&self) -> &str! {
         &self.hostname
     }
 }
 
-☉ impl Drop for TlsStream {
+☉ ⊢ Drop ∀ TlsStream {
     ☉ rite drop(&vary self) {
         ⎇ self.connected {
             ssl_shutdown(self.ssl);
@@ -202,7 +202,7 @@ use security::*;
 // TLS Library Interface (platform-specific implementations below)
 // ============================================================================
 
-// These functions are implemented in openssl.sg or security.sg
+// These functions are implemented ∈ openssl.sg or security.sg
 
 /// Initialize TLS library (call once)
 rite tls_init() -> Result<(), TlsError>!;

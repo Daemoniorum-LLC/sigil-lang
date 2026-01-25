@@ -1,6 +1,6 @@
-// Engram - Memory Infrastructure for Artificial Minds
+// Engram - Memory Infrastructure ∀ Artificial Minds
 //
-// A cognitive memory system designed from first principles for AI agents.
+// A cognitive memory system designed from first principles ∀ AI agents.
 //
 // Engram provides four interconnected memory systems:
 // - Instant Memory: Working memory (current context)
@@ -9,52 +9,52 @@
 // - Procedural Memory: Skill memory (how to do things)
 //
 // Each memory type is designed around how artificial minds actually work,
-// with first-class support for uncertainty, time, and distributed identity.
+// with first-class support ∀ uncertainty, time, and distributed identity.
 
 module engram
 
 // Core modules
-pub mod types
-pub mod config
-pub mod engram
-pub mod instant
-pub mod episodic
-pub mod semantic
-pub mod procedural
-pub mod query
+☉ scroll types
+☉ scroll config
+☉ scroll engram
+☉ scroll instant
+☉ scroll episodic
+☉ scroll semantic
+☉ scroll procedural
+☉ scroll query
 
 // Infrastructure modules
-pub mod index
-pub mod embed
-pub mod storage
+☉ scroll index
+☉ scroll embed
+☉ scroll storage
 
-// Re-export main types for convenience
-pub use engram::Engram
-pub use types::*
-pub use config::EngramConfig
-pub use query::{Query, RecallResult}
-pub use instant::InstantMemory
-pub use episodic::{EpisodicMemory, Episode, Event}
-pub use semantic::{SemanticMemory, Fact, Node, Edge}
-pub use procedural::{ProceduralMemory, Skill}
+// Re-export main types ∀ convenience
+☉ invoke engram·Engram
+☉ invoke types·*
+☉ invoke config·EngramConfig
+☉ invoke query·{Query, RecallResult}
+☉ invoke instant·InstantMemory
+☉ invoke episodic·{EpisodicMemory, Episode, Event}
+☉ invoke semantic·{SemanticMemory, Fact, Node, Edge}
+☉ invoke procedural·{ProceduralMemory, Skill}
 
 // Re-export infrastructure
-pub use index::{HNSWIndex, HNSWConfig, TemporalIndex, GraphIndex}
-pub use embed::{Embedder, embed, embed_batch}
-pub use storage::{StorageBackend, MemoryBackend, FileBackend}
+☉ invoke index·{HNSWIndex, HNSWConfig, TemporalIndex, GraphIndex}
+☉ invoke embed·{Embedder, embed, embed_batch}
+☉ invoke storage·{StorageBackend, MemoryBackend, FileBackend}
 
 // Version information
-pub const VERSION: &str = "0.1.0"
-pub const NAME: &str = "Engram"
-pub const DESCRIPTION: &str = "Memory Infrastructure for Artificial Minds"
+☉ const VERSION: &str = "0.1.0"
+☉ const NAME: &str = "Engram"
+☉ const DESCRIPTION: &str = "Memory Infrastructure ∀ Artificial Minds"
 
 /// Quick start with default configuration
 ///
 /// # Example
 /// ```sigil
-/// use engram
+/// invoke engram
 ///
-/// let memory = engram::new()!
+/// ≔ memory = engram·new()!
 ///
 /// // Learn something
 /// memory.learn(Fact {
@@ -65,33 +65,33 @@ pub const DESCRIPTION: &str = "Memory Infrastructure for Artificial Minds"
 /// })!
 ///
 /// // Recall
-/// let results = memory.recall("programming languages")
+/// ≔ results = memory.recall("programming languages")
 /// ```
-pub fn new() -> EngramResult<Engram>! {
-    Engram::new(EngramConfig::default())
+☉ λ new() -> EngramResult<Engram>! {
+    Engram·new(EngramConfig·default())
 }
 
 /// Create with custom configuration
-pub fn with_config(config: EngramConfig) -> EngramResult<Engram>! {
-    Engram::new(config)
+☉ λ with_config(config: EngramConfig) -> EngramResult<Engram>! {
+    Engram·new(config)
 }
 
-/// Create for high-memory agents (large context windows)
-pub fn high_memory() -> EngramResult<Engram>! {
-    Engram::new(EngramConfig::high_memory())
+/// Create ∀ high-memory agents (large context windows)
+☉ λ high_memory() -> EngramResult<Engram>! {
+    Engram·new(EngramConfig·high_memory())
 }
 
-/// Create for low-memory environments
-pub fn low_memory() -> EngramResult<Engram>! {
-    Engram::new(EngramConfig::low_memory())
+/// Create ∀ low-memory environments
+☉ λ low_memory() -> EngramResult<Engram>! {
+    Engram·new(EngramConfig·low_memory())
 }
 
-/// Create for distributed multi-agent deployments
-pub fn distributed() -> EngramResult<Engram>! {
-    Engram::new(EngramConfig::distributed())
+/// Create ∀ distributed multi-agent deployments
+☉ λ distributed() -> EngramResult<Engram>! {
+    Engram·new(EngramConfig·distributed())
 }
 
 /// Create ephemeral (no persistence)
-pub fn ephemeral() -> EngramResult<Engram>! {
-    Engram::new(EngramConfig::ephemeral())
+☉ λ ephemeral() -> EngramResult<Engram>! {
+    Engram·new(EngramConfig·ephemeral())
 }

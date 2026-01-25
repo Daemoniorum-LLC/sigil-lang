@@ -1,6 +1,6 @@
 //! DNS Resolver - Pure Sigil Implementation
 //!
-//! Implements DNS query/response for A (IPv4) record lookups.
+//! Implements DNS query/response ∀ A (IPv4) record lookups.
 //! Uses UDP port 53 to communicate with DNS servers.
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 5
@@ -57,8 +57,8 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 // Syscall Wrappers
 // ============================================================================
 
-fn syscall1(num: i64, arg1: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall1(num: i64, arg1: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -70,8 +70,8 @@ fn syscall1(num: i64, arg1: i64) -> i64 {
     ret
 }
 
-fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -85,8 +85,8 @@ fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ret
 }
 
-fn syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -102,8 +102,8 @@ fn syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> 
     ret
 }
 
-fn syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -121,22 +121,22 @@ fn syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg
 }
 
 // Allocate memory via mmap
-fn alloc_mem(size: i64) -> i64 {
+λ alloc_mem(size: i64) -> i64 {
     // mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
     syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
 }
 
 // Free memory via munmap
-fn free_mem(ptr: i64, size: i64) -> i64 {
+λ free_mem(ptr: i64, size: i64) -> i64 {
     syscall3(SYS_MUNMAP, ptr, size, 0)
 }
 
 // Set socket receive timeout (seconds)
-fn set_socket_timeout(fd: i64, seconds: i64) -> i64 {
-    // struct timeval { tv_sec, tv_usec } - 16 bytes on x86_64
-    let timeval = alloc_mem(16);
-    if timeval < 0 {
-        return -1;
+λ set_socket_timeout(fd: i64, seconds: i64) -> i64 {
+    // Σ timeval { tv_sec, tv_usec } - 16 bytes on x86_64
+    ≔ timeval = alloc_mem(16);
+    ⎇ timeval < 0 {
+        ⤺ -1;
     }
     // Write tv_sec (8 bytes)
     write_byte(timeval, 0, seconds & 255);
@@ -157,7 +157,7 @@ fn set_socket_timeout(fd: i64, seconds: i64) -> i64 {
     write_byte(timeval, 14, 0);
     write_byte(timeval, 15, 0);
 
-    let ret = syscall5(SYS_SETSOCKOPT, fd, SOL_SOCKET, SO_RCVTIMEO, timeval, 16);
+    ≔ ret = syscall5(SYS_SETSOCKOPT, fd, SOL_SOCKET, SO_RCVTIMEO, timeval, 16);
     free_mem(timeval, 16);
     ret
 }
@@ -166,9 +166,9 @@ fn set_socket_timeout(fd: i64, seconds: i64) -> i64 {
 // Memory Operations (byte-level)
 // ============================================================================
 
-fn write_byte(buf: i64, offset: i64, value: i64) -> i64 {
+λ write_byte(buf: i64, offset: i64, value: i64) -> i64 {
     unsafe {
-        let ptr = buf + offset;
+        ≔ ptr = buf + offset;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr,
             in("al") value as i8,
@@ -177,18 +177,18 @@ fn write_byte(buf: i64, offset: i64, value: i64) -> i64 {
     offset + 1
 }
 
-fn write_u16_be(buf: i64, offset: i64, value: i64) -> i64 {
-    let hi = value >> 8 & 255;
-    let lo = value & 255;
+λ write_u16_be(buf: i64, offset: i64, value: i64) -> i64 {
+    ≔ hi = value >> 8 & 255;
+    ≔ lo = value & 255;
     unsafe {
-        let ptr = buf + offset;
+        ≔ ptr = buf + offset;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr,
             in("al") hi as i8,
             options(nostack));
     }
     unsafe {
-        let ptr = buf + offset + 1;
+        ≔ ptr = buf + offset + 1;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr,
             in("al") lo as i8,
@@ -197,10 +197,10 @@ fn write_u16_be(buf: i64, offset: i64, value: i64) -> i64 {
     offset + 2
 }
 
-fn read_byte(buf: i64, offset: i64) -> i64 {
-    let value: i64 = 0;
+λ read_byte(buf: i64, offset: i64) -> i64 {
+    ≔ value: i64 = 0;
     unsafe {
-        let ptr = buf + offset;
+        ≔ ptr = buf + offset;
         asm!("movzx rax, byte ptr [rdi]",
             in("rdi") ptr,
             out("rax") value,
@@ -209,19 +209,19 @@ fn read_byte(buf: i64, offset: i64) -> i64 {
     value
 }
 
-fn read_u16_be(buf: i64, offset: i64) -> i64 {
-    let u16_hi: i64 = 0;
-    let u16_lo: i64 = 0;
+λ read_u16_be(buf: i64, offset: i64) -> i64 {
+    ≔ u16_hi: i64 = 0;
+    ≔ u16_lo: i64 = 0;
     u16_hi = read_byte(buf, offset);
     u16_lo = read_byte(buf, offset + 1);
     u16_hi << 8 | u16_lo
 }
 
-fn read_u32_be(buf: i64, offset: i64) -> i64 {
-    let u32_b0: i64 = 0;
-    let u32_b1: i64 = 0;
-    let u32_b2: i64 = 0;
-    let u32_b3: i64 = 0;
+λ read_u32_be(buf: i64, offset: i64) -> i64 {
+    ≔ u32_b0: i64 = 0;
+    ≔ u32_b1: i64 = 0;
+    ≔ u32_b2: i64 = 0;
+    ≔ u32_b3: i64 = 0;
     u32_b0 = read_byte(buf, offset);
     u32_b1 = read_byte(buf, offset + 1);
     u32_b2 = read_byte(buf, offset + 2);
@@ -233,29 +233,29 @@ fn read_u32_be(buf: i64, offset: i64) -> i64 {
 // DNS Query Building
 // ============================================================================
 
-// Encode a domain name in DNS label format
+// Encode a domain name ∈ DNS label format
 // "example.com" -> [7]example[3]com[0]
 // Returns the new offset after writing
-fn encode_domain_name(buf: i64, offset: i64, domain: i64, domain_len: i64) -> i64 {
-    let out_offset: i64 = offset;
-    let label_start: i64 = 0;
-    let label_len: i64 = 0;
-    let i: i64 = 0;
-    let j: i64 = 0;
-    let ch: i64 = 0;
-    let c: i64 = 0;
+λ encode_domain_name(buf: i64, offset: i64, domain: i64, domain_len: i64) -> i64 {
+    ≔ out_offset: i64 = offset;
+    ≔ label_start: i64 = 0;
+    ≔ label_len: i64 = 0;
+    ≔ i: i64 = 0;
+    ≔ j: i64 = 0;
+    ≔ ch: i64 = 0;
+    ≔ c: i64 = 0;
 
-    while i < domain_len {
+    ⟳ i < domain_len {
         ch = read_byte(domain, i);
 
-        if ch == 46 {  // '.'
+        ⎇ ch == 46 {  // '.'
             // Write label length
             label_len = i - label_start;
             out_offset = write_byte(buf, out_offset, label_len);
 
             // Write label bytes
             j = label_start;
-            while j < i {
+            ⟳ j < i {
                 c = read_byte(domain, j);
                 out_offset = write_byte(buf, out_offset, c);
                 j = j + 1;
@@ -268,10 +268,10 @@ fn encode_domain_name(buf: i64, offset: i64, domain: i64, domain_len: i64) -> i6
 
     // Write final label
     label_len = domain_len - label_start;
-    if label_len > 0 {
+    ⎇ label_len > 0 {
         out_offset = write_byte(buf, out_offset, label_len);
         j = label_start;
-        while j < domain_len {
+        ⟳ j < domain_len {
             c = read_byte(domain, j);
             out_offset = write_byte(buf, out_offset, c);
             j = j + 1;
@@ -283,10 +283,10 @@ fn encode_domain_name(buf: i64, offset: i64, domain: i64, domain_len: i64) -> i6
     out_offset
 }
 
-// Build a DNS query packet for an A record lookup
+// Build a DNS query packet ∀ an A record lookup
 // Returns the packet length
-fn build_dns_query(buf: i64, query_id: i64, domain: i64, domain_len: i64) -> i64 {
-    let offset: i64 = 0;
+λ build_dns_query(buf: i64, query_id: i64, domain: i64, domain_len: i64) -> i64 {
+    ≔ offset: i64 = 0;
 
     // Header (12 bytes)
     offset = write_u16_be(buf, offset, query_id);        // Transaction ID
@@ -308,22 +308,22 @@ fn build_dns_query(buf: i64, query_id: i64, domain: i64, domain_len: i64) -> i64
 // DNS Response Parsing
 // ============================================================================
 
-// Skip a domain name in DNS format (handles compression)
+// Skip a domain name ∈ DNS format (handles compression)
 // Returns the offset after the name
-fn skip_dns_name(buf: i64, offset: i64) -> i64 {
-    let pos: i64 = offset;
+λ skip_dns_name(buf: i64, offset: i64) -> i64 {
+    ≔ pos: i64 = offset;
 
-    while pos < offset + 256 {  // Safety limit
-        let len = read_byte(buf, pos);
+    ⟳ pos < offset + 256 {  // Safety limit
+        ≔ len = read_byte(buf, pos);
 
-        if len == 0 {
+        ⎇ len == 0 {
             // End of name
-            return pos + 1;
+            ⤺ pos + 1;
         }
 
-        if len & 192 == 192 {  // 0xC0
+        ⎇ len & 192 == 192 {  // 0xC0
             // Compression pointer (2 bytes)
-            return pos + 2;
+            ⤺ pos + 2;
         }
 
         // Regular label
@@ -335,66 +335,66 @@ fn skip_dns_name(buf: i64, offset: i64) -> i64 {
 
 // Parse DNS response and extract the first A record IP address
 // Returns packed IPv4 (4 bytes) or negative error code
-fn parse_dns_response(buf: i64, len: i64, expected_id: i64) -> i64 {
-    if len < 12 {
-        return DNS_ERR_FORMAT;
+λ parse_dns_response(buf: i64, len: i64, expected_id: i64) -> i64 {
+    ⎇ len < 12 {
+        ⤺ DNS_ERR_FORMAT;
     }
 
     // Check transaction ID
-    let resp_id = read_u16_be(buf, 0);
-    if resp_id != expected_id {
-        return DNS_ERR_FORMAT;
+    ≔ resp_id = read_u16_be(buf, 0);
+    ⎇ resp_id != expected_id {
+        ⤺ DNS_ERR_FORMAT;
     }
 
     // Check flags
-    let flags = read_u16_be(buf, 2);
-    if flags & DNS_FLAG_QR == 0 {
-        return DNS_ERR_FORMAT;  // Not a response
+    ≔ flags = read_u16_be(buf, 2);
+    ⎇ flags & DNS_FLAG_QR == 0 {
+        ⤺ DNS_ERR_FORMAT;  // Not a response
     }
 
     // Check RCODE (lower 4 bits of flags)
-    let rcode = flags & 15;
-    if rcode == 3 {
-        return DNS_ERR_NOTFOUND;  // NXDOMAIN
+    ≔ rcode = flags & 15;
+    ⎇ rcode == 3 {
+        ⤺ DNS_ERR_NOTFOUND;  // NXDOMAIN
     }
-    if rcode != 0 {
-        return DNS_ERR_FORMAT;
+    ⎇ rcode != 0 {
+        ⤺ DNS_ERR_FORMAT;
     }
 
-    let qdcount = read_u16_be(buf, 4);
-    let ancount = read_u16_be(buf, 6);
+    ≔ qdcount = read_u16_be(buf, 4);
+    ≔ ancount = read_u16_be(buf, 6);
 
-    if ancount == 0 {
-        return DNS_ERR_NOTFOUND;
+    ⎇ ancount == 0 {
+        ⤺ DNS_ERR_NOTFOUND;
     }
 
     // Skip header (12 bytes)
-    let offset: i64 = 12;
+    ≔ offset: i64 = 12;
 
     // Skip question section
-    let q: i64 = 0;
-    while q < qdcount {
+    ≔ q: i64 = 0;
+    ⟳ q < qdcount {
         offset = skip_dns_name(buf, offset);
         offset = offset + 4;  // Skip QTYPE and QCLASS
         q = q + 1;
     }
 
     // Parse answer section
-    let a: i64 = 0;
-    while a < ancount {
+    ≔ a: i64 = 0;
+    ⟳ a < ancount {
         offset = skip_dns_name(buf, offset);
 
-        let rtype = read_u16_be(buf, offset);
-        let rclass = read_u16_be(buf, offset + 2);
+        ≔ rtype = read_u16_be(buf, offset);
+        ≔ rclass = read_u16_be(buf, offset + 2);
         // TTL at offset + 4 (4 bytes)
-        let rdlength = read_u16_be(buf, offset + 8);
+        ≔ rdlength = read_u16_be(buf, offset + 8);
 
         offset = offset + 10;  // Move past type, class, ttl, rdlength
 
-        if rtype == DNS_TYPE_A && rclass == DNS_CLASS_IN && rdlength == 4 {
-            // Found an A record - return the IP
-            let ip = read_u32_be(buf, offset);
-            return ip;
+        ⎇ rtype == DNS_TYPE_A && rclass == DNS_CLASS_IN && rdlength == 4 {
+            // Found an A record - ⤺ the IP
+            ≔ ip = read_u32_be(buf, offset);
+            ⤺ ip;
         }
 
         // Skip this record's data
@@ -409,13 +409,13 @@ fn parse_dns_response(buf: i64, len: i64, expected_id: i64) -> i64 {
 // Socket Address Helpers
 // ============================================================================
 
-fn sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
+λ sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
     // Clear buffer
-    let i: i64 = 0;
-    while i < 16 {
-        let offset: i64 = i;
+    ≔ i: i64 = 0;
+    ⟳ i < 16 {
+        ≔ offset: i64 = i;
         unsafe {
-            let ptr = buf + offset;
+            ≔ ptr = buf + offset;
             asm!("mov byte ptr [rdi], 0",
                 in("rdi") ptr,
                 options(nostack));
@@ -431,17 +431,17 @@ fn sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
     }
 
     // sin_port (network byte order)
-    let port_hi = port >> 8 & 255;
-    let port_lo = port & 255;
+    ≔ port_hi = port >> 8 & 255;
+    ≔ port_lo = port & 255;
     unsafe {
-        let ptr2 = buf + 2;
+        ≔ ptr2 = buf + 2;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr2,
             in("al") port_hi as i8,
             options(nostack));
     }
     unsafe {
-        let ptr3 = buf + 3;
+        ≔ ptr3 = buf + 3;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr3,
             in("al") port_lo as i8,
@@ -449,33 +449,33 @@ fn sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
     }
 
     // sin_addr (network byte order - big endian)
-    let b0 = ip_packed >> 24 & 255;
-    let b1 = ip_packed >> 16 & 255;
-    let b2 = ip_packed >> 8 & 255;
-    let b3 = ip_packed & 255;
+    ≔ b0 = ip_packed >> 24 & 255;
+    ≔ b1 = ip_packed >> 16 & 255;
+    ≔ b2 = ip_packed >> 8 & 255;
+    ≔ b3 = ip_packed & 255;
     unsafe {
-        let ptr = buf + 4;
+        ≔ ptr = buf + 4;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr,
             in("al") b0 as i8,
             options(nostack));
     }
     unsafe {
-        let ptr = buf + 5;
+        ≔ ptr = buf + 5;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr,
             in("al") b1 as i8,
             options(nostack));
     }
     unsafe {
-        let ptr = buf + 6;
+        ≔ ptr = buf + 6;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr,
             in("al") b2 as i8,
             options(nostack));
     }
     unsafe {
-        let ptr = buf + 7;
+        ≔ ptr = buf + 7;
         asm!("mov byte ptr [rdi], al",
             in("rdi") ptr,
             in("al") b3 as i8,
@@ -494,62 +494,62 @@ fn sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
 // domain: pointer to domain string
 // domain_len: length of domain string
 // Returns: packed IPv4 address or negative error code
-fn dns_resolve(dns_server: i64, domain: i64, domain_len: i64) -> i64 {
+λ dns_resolve(dns_server: i64, domain: i64, domain_len: i64) -> i64 {
     // Allocate buffers via mmap
-    let buf = alloc_mem(2048);
-    if buf < 0 {
-        return DNS_ERR_SOCKET;  // Use socket error for memory failure
+    ≔ buf = alloc_mem(2048);
+    ⎇ buf < 0 {
+        ⤺ DNS_ERR_SOCKET;  // Use socket error ∀ memory failure
     }
 
-    let query_buf = buf;            // 0-511: query buffer
-    let response_buf = buf + 512;   // 512-1023: response buffer
-    let sockaddr_buf = buf + 1024;  // 1024-1039: sockaddr buffer
+    ≔ query_buf = buf;            // 0-511: query buffer
+    ≔ response_buf = buf + 512;   // 512-1023: response buffer
+    ≔ sockaddr_buf = buf + 1024;  // 1024-1039: sockaddr buffer
 
     // Create UDP socket
-    let fd = syscall3(SYS_SOCKET, AF_INET, SOCK_DGRAM, 0);
-    if fd < 0 {
+    ≔ fd = syscall3(SYS_SOCKET, AF_INET, SOCK_DGRAM, 0);
+    ⎇ fd < 0 {
         free_mem(buf, 2048);
-        return DNS_ERR_SOCKET;
+        ⤺ DNS_ERR_SOCKET;
     }
 
     // Set 3 second receive timeout
     set_socket_timeout(fd, 3);
 
     // Build query
-    let query_id: i64 = 4660;  // 0x1234 - Simple ID (should be random in production)
-    let query_len = build_dns_query(query_buf, query_id, domain, domain_len);
+    ≔ query_id: i64 = 4660;  // 0x1234 - Simple ID (should be random ∈ production)
+    ≔ query_len = build_dns_query(query_buf, query_id, domain, domain_len);
 
     // Create DNS server address
-    let sockaddr_len = sockaddr_in_create(sockaddr_buf, dns_server, DNS_PORT);
+    ≔ sockaddr_len = sockaddr_in_create(sockaddr_buf, dns_server, DNS_PORT);
 
     // Send query
-    let sent = syscall6(SYS_SENDTO, fd, query_buf, query_len, 0, sockaddr_buf, sockaddr_len);
-    if sent < 0 {
+    ≔ sent = syscall6(SYS_SENDTO, fd, query_buf, query_len, 0, sockaddr_buf, sockaddr_len);
+    ⎇ sent < 0 {
         syscall1(SYS_CLOSE, fd);
         free_mem(buf, 2048);
-        return DNS_ERR_SEND;
+        ⤺ DNS_ERR_SEND;
     }
 
     // Receive response
-    // Note: In production, use poll/select with timeout
-    let addrlen_ptr = buf + 1536;  // Use later part of buffer for addrlen
+    // Note: In production, invoke poll/select with timeout
+    ≔ addrlen_ptr = buf + 1536;  // Use later part of buffer ∀ addrlen
     unsafe {
         asm!("mov qword ptr [rdi], 16",
             in("rdi") addrlen_ptr,
             options(nostack));
     }
 
-    let received = syscall6(SYS_RECVFROM, fd, response_buf, 512, 0, sockaddr_buf, addrlen_ptr);
+    ≔ received = syscall6(SYS_RECVFROM, fd, response_buf, 512, 0, sockaddr_buf, addrlen_ptr);
 
     syscall1(SYS_CLOSE, fd);
 
-    if received < 0 {
+    ⎇ received < 0 {
         free_mem(buf, 2048);
-        return DNS_ERR_RECV;
+        ⤺ DNS_ERR_RECV;
     }
 
     // Parse response
-    let result = parse_dns_response(response_buf, received, query_id);
+    ≔ result = parse_dns_response(response_buf, received, query_id);
 
     free_mem(buf, 2048);
     result
@@ -560,16 +560,16 @@ fn dns_resolve(dns_server: i64, domain: i64, domain_len: i64) -> i64 {
 // ============================================================================
 
 // Test 1: Encode domain name
-fn test_encode_domain() -> i64 {
-    let buf = alloc_mem(256);
-    if buf < 0 {
-        return 99;  // mmap failed
+λ test_encode_domain() -> i64 {
+    ≔ buf = alloc_mem(256);
+    ⎇ buf < 0 {
+        ⤺ 99;  // mmap failed
     }
 
     // Write "example.com" to input buffer
     // e=0x65 x=0x78 a=0x61 m=0x6d p=0x70 l=0x6c e=0x65 .=0x2e
     // c=0x63 o=0x6f m=0x6d
-    let domain = buf + 128;
+    ≔ domain = buf + 128;
     write_byte(domain, 0, 101);   // e
     write_byte(domain, 1, 120);   // x
     write_byte(domain, 2, 97);    // a
@@ -582,30 +582,30 @@ fn test_encode_domain() -> i64 {
     write_byte(domain, 9, 111);   // o
     write_byte(domain, 10, 109);  // m
 
-    let output = buf;
-    let end_offset = encode_domain_name(output, 0, domain, 11);
+    ≔ output = buf;
+    ≔ end_offset = encode_domain_name(output, 0, domain, 11);
 
     // Should produce: [7]example[3]com[0]
     // Total: 1 + 7 + 1 + 3 + 1 = 13 bytes
-    let result: i64 = 0;
+    ≔ result: i64 = 0;
 
-    if end_offset != 13 {
+    ⎇ end_offset != 13 {
         free_mem(buf, 256);
-        return 1;
+        ⤺ 1;
     }
 
     // Check length bytes
-    if read_byte(output, 0) != 7 {
+    ⎇ read_byte(output, 0) != 7 {
         free_mem(buf, 256);
-        return 2;
+        ⤺ 2;
     }
-    if read_byte(output, 8) != 3 {
+    ⎇ read_byte(output, 8) != 3 {
         free_mem(buf, 256);
-        return 3;
+        ⤺ 3;
     }
-    if read_byte(output, 12) != 0 {
+    ⎇ read_byte(output, 12) != 0 {
         free_mem(buf, 256);
-        return 4;
+        ⤺ 4;
     }
 
     free_mem(buf, 256);
@@ -613,44 +613,44 @@ fn test_encode_domain() -> i64 {
 }
 
 // Test 2: Build DNS query
-fn test_build_query() -> i64 {
-    let buf = alloc_mem(512);
-    if buf < 0 {
-        return 99;  // mmap failed
+λ test_build_query() -> i64 {
+    ≔ buf = alloc_mem(512);
+    ⎇ buf < 0 {
+        ⤺ 99;  // mmap failed
     }
 
     // Create domain "a.b"
-    let domain = buf + 256;
+    ≔ domain = buf + 256;
     write_byte(domain, 0, 97);   // a
     write_byte(domain, 1, 46);   // .
     write_byte(domain, 2, 98);   // b
 
-    let query_len = build_dns_query(buf, 43981, domain, 3);  // 0xABCD
+    ≔ query_len = build_dns_query(buf, 43981, domain, 3);  // 0xABCD
 
     // Header: 12 bytes
     // Question: [1]a[1]b[0] = 5 bytes + TYPE(2) + CLASS(2) = 9 bytes
     // Total: 21 bytes
-    if query_len != 21 {
+    ⎇ query_len != 21 {
         free_mem(buf, 512);
-        return 1;
+        ⤺ 1;
     }
 
     // Check transaction ID
-    if read_u16_be(buf, 0) != 43981 {  // 0xABCD
+    ⎇ read_u16_be(buf, 0) != 43981 {  // 0xABCD
         free_mem(buf, 512);
-        return 2;
+        ⤺ 2;
     }
 
     // Check flags (RD bit set)
-    if read_u16_be(buf, 2) != 256 {  // 0x0100
+    ⎇ read_u16_be(buf, 2) != 256 {  // 0x0100
         free_mem(buf, 512);
-        return 3;
+        ⤺ 3;
     }
 
     // Check QDCOUNT = 1
-    if read_u16_be(buf, 4) != 1 {
+    ⎇ read_u16_be(buf, 4) != 1 {
         free_mem(buf, 512);
-        return 4;
+        ⤺ 4;
     }
 
     free_mem(buf, 512);
@@ -658,14 +658,14 @@ fn test_build_query() -> i64 {
 }
 
 // Test 3: DNS resolve (requires network - 8.8.8.8)
-fn test_dns_resolve_google() -> i64 {
+λ test_dns_resolve_google() -> i64 {
     // DNS server: 8.8.8.8 = 134744072 (0x08080808)
-    let dns_server: i64 = 134744072;
+    ≔ dns_server: i64 = 134744072;
 
     // Domain: "google.com"
-    let buf = alloc_mem(64);
-    if buf < 0 {
-        return 99;  // mmap failed
+    ≔ buf = alloc_mem(64);
+    ⎇ buf < 0 {
+        ⤺ 99;  // mmap failed
     }
 
     // Write "google.com"
@@ -680,27 +680,27 @@ fn test_dns_resolve_google() -> i64 {
     write_byte(buf, 8, 111);   // o
     write_byte(buf, 9, 109);   // m
 
-    let result = dns_resolve(dns_server, buf, 10);
+    ≔ result = dns_resolve(dns_server, buf, 10);
 
     free_mem(buf, 64);
 
     // Result should be positive (a valid IP address)
-    if result > 0 {
+    ⎇ result > 0 {
         0  // Pass
-    } else {
+    } ⎉ {
         result  // Return error code
     }
 }
 
 // Test 4: DNS resolve localhost (should work with local resolver)
-fn test_dns_resolve_localhost() -> i64 {
+λ test_dns_resolve_localhost() -> i64 {
     // Try with localhost DNS (127.0.0.1)
     // Most systems have a local resolver
-    let dns_server: i64 = 2130706433;  // 127.0.0.1 = 0x7F000001
+    ≔ dns_server: i64 = 2130706433;  // 127.0.0.1 = 0x7F000001
 
-    let buf = alloc_mem(64);
-    if buf < 0 {
-        return 99;  // mmap failed
+    ≔ buf = alloc_mem(64);
+    ⎇ buf < 0 {
+        ⤺ 99;  // mmap failed
     }
 
     // Write "localhost"
@@ -714,16 +714,16 @@ fn test_dns_resolve_localhost() -> i64 {
     write_byte(buf, 7, 115);   // s
     write_byte(buf, 8, 116);   // t
 
-    let result = dns_resolve(dns_server, buf, 9);
+    ≔ result = dns_resolve(dns_server, buf, 9);
 
     free_mem(buf, 64);
 
     // localhost should resolve to 127.0.0.1 (0x7F000001)
     // But many local resolvers may not respond or may not have localhost
     // So we just check it doesn't crash
-    if result > 0 || result == DNS_ERR_NOTFOUND || result == DNS_ERR_RECV {
+    ⎇ result > 0 || result == DNS_ERR_NOTFOUND || result == DNS_ERR_RECV {
         0  // Pass (expected behaviors)
-    } else {
+    } ⎉ {
         result
     }
 }
@@ -733,59 +733,59 @@ fn test_dns_resolve_localhost() -> i64 {
 // ============================================================================
 
 // Helper to print a character
-fn print_char(c: i64) -> i64 {
-    let buf = alloc_mem(16);
-    if buf < 0 {
-        return -1;
+λ print_char(c: i64) -> i64 {
+    ≔ buf = alloc_mem(16);
+    ⎇ buf < 0 {
+        ⤺ -1;
     }
     write_byte(buf, 0, c);
-    let ret = syscall3(SYS_WRITE, 1, buf, 1);
+    ≔ ret = syscall3(SYS_WRITE, 1, buf, 1);
     free_mem(buf, 16);
     ret
 }
 
-// Print result for a test
-fn print_test_result(test_num: i64, result: i64) -> i64 {
+// Print result ∀ a test
+λ print_test_result(test_num: i64, result: i64) -> i64 {
     print_char(84);  // T
     print_char(48 + test_num);  // test number as char
     print_char(58);  // :
-    if result == 0 {
+    ⎇ result == 0 {
         print_char(80);  // P (pass)
-    } else {
+    } ⎉ {
         print_char(70);  // F (fail)
     }
     print_char(10);  // newline
     result
 }
 
-fn main() -> i64 {
-    let failed: i64 = 0;
+λ main() -> i64 {
+    ≔ failed: i64 = 0;
 
     // Test 1: Domain encoding (offline)
-    let r1 = test_encode_domain();
+    ≔ r1 = test_encode_domain();
     print_test_result(1, r1);
-    if r1 != 0 {
+    ⎇ r1 != 0 {
         failed = failed + 1;
     }
 
     // Test 2: Query building (offline)
-    let r2 = test_build_query();
+    ≔ r2 = test_build_query();
     print_test_result(2, r2);
-    if r2 != 0 {
+    ⎇ r2 != 0 {
         failed = failed + 1;
     }
 
     // Test 3: DNS resolve (network test)
-    let r3 = test_dns_resolve_google();
+    ≔ r3 = test_dns_resolve_google();
     print_test_result(3, r3);
-    if r3 != 0 {
+    ⎇ r3 != 0 {
         failed = failed + 1;
     }
 
     // Test 4: DNS resolve localhost
-    let r4 = test_dns_resolve_localhost();
+    ≔ r4 = test_dns_resolve_localhost();
     print_test_result(4, r4);
-    if r4 != 0 {
+    ⎇ r4 != 0 {
         failed = failed + 1;
     }
 

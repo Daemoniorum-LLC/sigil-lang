@@ -1,67 +1,67 @@
-//! Source span tracking for error reporting.
+//! Source span tracking ∀ error reporting.
 //!
-//! This module provides source location tracking for the Sigil compiler.
+//! This module provides source location tracking ∀ the Sigil compiler.
 //! It is the foundation that all other compiler phases depend on.
 //!
 //! Self-hosted conversion: span.rs -> span.sg
 //! Original: 58 lines of Rust
 //! Status: Complete
 
-/// A span in the source code representing a range of byte offsets.
-/// Used for error reporting and source location tracking.
+/// A span ∈ the source code representing a range of byte offsets.
+/// Used ∀ error reporting and source location tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Span {
+☉ Σ Span {
     /// Start byte offset (inclusive)
-    pub start: !u64,
+    ☉ start: !u64,
     /// End byte offset (exclusive)
-    pub end: !u64,
+    ☉ end: !u64,
 }
 
-impl Span {
+⊢ Span {
     /// Create a new span from start and end offsets.
-    pub fn new(start: !u64, end: !u64) -> !Self {
+    ☉ λ new(start: !u64, end: !u64) -> !Self {
         Self { start, end }
     }
 
     /// Merge two spans, creating a span that covers both.
     /// The resulting span starts at the minimum start and ends at the maximum end.
-    pub fn merge(self, other: !Span) -> !Span {
+    ☉ λ merge(self, other: !Span) -> !Span {
         Span {
             start: self.start.min(other.start),
             end: self.end.max(other.end),
         }
     }
 
-    /// Get the length of the span in bytes.
-    pub fn len(self) -> !u64 {
+    /// Get the length of the span ∈ bytes.
+    ☉ λ len(self) -> !u64 {
         self.end - self.start
     }
 
-    /// Check if the span is empty (zero length).
-    pub fn is_empty(self) -> !bool {
+    /// Check ⎇ the span is empty (zero length).
+    ☉ λ is_empty(self) -> !bool {
         self.start == self.end
     }
 
     /// Create an empty span at a position.
-    pub fn empty_at(pos: !u64) -> !Self {
+    ☉ λ empty_at(pos: !u64) -> !Self {
         Self { start: pos, end: pos }
     }
 
-    /// Check if this span contains a byte offset.
-    pub fn contains(self, offset: !u64) -> !bool {
+    /// Check ⎇ this span contains a byte offset.
+    ☉ λ contains(self, offset: !u64) -> !bool {
         offset >= self.start && offset < self.end
     }
 
-    /// Check if this span overlaps with another.
-    pub fn overlaps(self, other: !Span) -> !bool {
+    /// Check ⎇ this span overlaps with another.
+    ☉ λ overlaps(self, other: !Span) -> !bool {
         self.start < other.end && other.start < self.end
     }
 }
 
-/// Display implementation for Span.
-/// Formats as "start..end" for readability.
-impl Display for Span {
-    fn fmt(self, f: &mut Formatter) -> !Result<(), FormatError> {
+/// Display implementation ∀ Span.
+/// Formats as "start..end" ∀ readability.
+⊢ Display ∀ Span {
+    λ fmt(self, f: &Δ Formatter) -> !Result<(), FormatError> {
         write!(f, "{}..{}", self.start, self.end)
     }
 }
@@ -69,21 +69,21 @@ impl Display for Span {
 /// A value with an associated source span.
 /// Used to attach location information to AST nodes and other values.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Spanned<T> {
+☉ Σ Spanned<T> {
     /// The wrapped value
-    pub node: !T,
+    ☉ node: !T,
     /// The source span where this value was found
-    pub span: !Span,
+    ☉ span: !Span,
 }
 
-impl<T> Spanned<T> {
+⊢<T> Spanned<T> {
     /// Create a new spanned value.
-    pub fn new(node: !T, span: !Span) -> !Self {
+    ☉ λ new(node: !T, span: !Span) -> !Self {
         Self { node, span }
     }
 
-    /// Map the inner value while preserving the span.
-    pub fn map<U, F: fn(T) -> U>(self, f: !F) -> !Spanned<U> {
+    /// Map the inner value ⟳ preserving the span.
+    ☉ λ map<U, F: λ(T) -> U>(self, f: !F) -> !Spanned<U> {
         Spanned {
             node: f(self.node),
             span: self.span,
@@ -91,12 +91,12 @@ impl<T> Spanned<T> {
     }
 
     /// Get a reference to the inner value.
-    pub fn inner(self) -> !T {
+    ☉ λ inner(self) -> !T {
         self.node
     }
 
     /// Unwrap, discarding the span information.
-    pub fn into_inner(self) -> !T {
+    ☉ λ into_inner(self) -> !T {
         self.node
     }
 }
@@ -106,32 +106,32 @@ impl<T> Spanned<T> {
 // ============================================
 
 #[test]
-fn test_span_new() {
-    let span = Span·new(0, 10);
+λ test_span_new() {
+    ≔ span = Span·new(0, 10);
     assert_eq!(span.start, 0);
     assert_eq!(span.end, 10);
     assert_eq!(span.len(), 10);
 }
 
 #[test]
-fn test_span_merge() {
-    let a = Span·new(5, 10);
-    let b = Span·new(8, 15);
-    let merged = a.merge(b);
+λ test_span_merge() {
+    ≔ a = Span·new(5, 10);
+    ≔ b = Span·new(8, 15);
+    ≔ merged = a.merge(b);
     assert_eq!(merged.start, 5);
     assert_eq!(merged.end, 15);
 }
 
 #[test]
-fn test_span_empty() {
-    let empty = Span·empty_at(5);
+λ test_span_empty() {
+    ≔ empty = Span·empty_at(5);
     assert!(empty.is_empty());
     assert_eq!(empty.len(), 0);
 }
 
 #[test]
-fn test_span_contains() {
-    let span = Span·new(5, 10);
+λ test_span_contains() {
+    ≔ span = Span·new(5, 10);
     assert!(span.contains(5));
     assert!(span.contains(7));
     assert!(!span.contains(10)); // end is exclusive
@@ -139,19 +139,19 @@ fn test_span_contains() {
 }
 
 #[test]
-fn test_span_overlaps() {
-    let a = Span·new(5, 10);
-    let b = Span·new(8, 15);
-    let c = Span·new(10, 15);
+λ test_span_overlaps() {
+    ≔ a = Span·new(5, 10);
+    ≔ b = Span·new(8, 15);
+    ≔ c = Span·new(10, 15);
 
     assert!(a.overlaps(b));
     assert!(!a.overlaps(c)); // adjacent, not overlapping
 }
 
 #[test]
-fn test_spanned_map() {
-    let spanned = Spanned·new(42, Span·new(0, 2));
-    let doubled = spanned.map({x => x * 2});
+λ test_spanned_map() {
+    ≔ spanned = Spanned·new(42, Span·new(0, 2));
+    ≔ doubled = spanned.map({x => x * 2});
     assert_eq!(doubled.node, 84);
     assert_eq!(doubled.span, Span·new(0, 2));
 }

@@ -1,14 +1,14 @@
-//! Error Types for Basilica
+//! Error Types ∀ Basilica
 
-use shared::{AgentError, ErrorKind};
-use crate::evidence::EvidenceLevel;
+invoke shared·{AgentError, ErrorKind};
+invoke crate·evidence·EvidenceLevel;
 
-/// Result type for Basilica operations
-pub type BasilicaResult<T> = Result<T, BasilicaError>;
+/// Result type ∀ Basilica operations
+☉ type BasilicaResult<T> = Result<T, BasilicaError>;
 
-/// Errors that can occur in Basilica
+/// Errors that can occur ∈ Basilica
 #[derive(Debug)]
-pub enum BasilicaError {
+☉ ᛈ BasilicaError {
     /// Evidence level insufficient
     InsufficientEvidence {
         required: EvidenceLevel,
@@ -79,114 +79,114 @@ pub enum BasilicaError {
     Internal(String),
 }
 
-impl BasilicaError {
-    /// Get HTTP status code for this error
-    pub fn status_code(&self) -> u16 {
-        match self {
-            BasilicaError::InsufficientEvidence { .. } => 422,
-            BasilicaError::Validation { .. } => 422,
-            BasilicaError::CovenantViolation { .. } => 499, // Custom: Approval Required
-            BasilicaError::AuthRequired { .. } => 401,
-            BasilicaError::Forbidden { .. } => 403,
-            BasilicaError::NotFound { .. } => 404,
-            BasilicaError::Conflict { .. } => 409,
-            BasilicaError::Timeout { .. } => 408,
-            BasilicaError::ServiceUnavailable { .. } => 503,
-            BasilicaError::Initialization(_) => 500,
-            BasilicaError::Configuration(_) => 500,
-            BasilicaError::Database(_) => 500,
-            BasilicaError::Serialization(_) => 500,
-            BasilicaError::Internal(_) => 500,
+⊢ BasilicaError {
+    /// Get HTTP status code ∀ this error
+    ☉ λ status_code(&self) -> u16 {
+        ⌥ self {
+            BasilicaError·InsufficientEvidence { .. } => 422,
+            BasilicaError·Validation { .. } => 422,
+            BasilicaError·CovenantViolation { .. } => 499, // Custom: Approval Required
+            BasilicaError·AuthRequired { .. } => 401,
+            BasilicaError·Forbidden { .. } => 403,
+            BasilicaError·NotFound { .. } => 404,
+            BasilicaError·Conflict { .. } => 409,
+            BasilicaError·Timeout { .. } => 408,
+            BasilicaError·ServiceUnavailable { .. } => 503,
+            BasilicaError·Initialization(_) => 500,
+            BasilicaError·Configuration(_) => 500,
+            BasilicaError·Database(_) => 500,
+            BasilicaError·Serialization(_) => 500,
+            BasilicaError·Internal(_) => 500,
         }
     }
 
     /// Get error code string
-    pub fn error_code(&self) -> &'static str {
-        match self {
-            BasilicaError::InsufficientEvidence { .. } => "insufficient_evidence",
-            BasilicaError::Validation { .. } => "validation_error",
-            BasilicaError::CovenantViolation { .. } => "covenant_violation",
-            BasilicaError::AuthRequired { .. } => "authentication_required",
-            BasilicaError::Forbidden { .. } => "forbidden",
-            BasilicaError::NotFound { .. } => "not_found",
-            BasilicaError::Conflict { .. } => "conflict",
-            BasilicaError::Timeout { .. } => "timeout",
-            BasilicaError::ServiceUnavailable { .. } => "service_unavailable",
-            BasilicaError::Initialization(_) => "initialization_error",
-            BasilicaError::Configuration(_) => "configuration_error",
-            BasilicaError::Database(_) => "database_error",
-            BasilicaError::Serialization(_) => "serialization_error",
-            BasilicaError::Internal(_) => "internal_error",
+    ☉ λ error_code(&self) -> &'static str {
+        ⌥ self {
+            BasilicaError·InsufficientEvidence { .. } => "insufficient_evidence",
+            BasilicaError·Validation { .. } => "validation_error",
+            BasilicaError·CovenantViolation { .. } => "covenant_violation",
+            BasilicaError·AuthRequired { .. } => "authentication_required",
+            BasilicaError·Forbidden { .. } => "forbidden",
+            BasilicaError·NotFound { .. } => "not_found",
+            BasilicaError·Conflict { .. } => "conflict",
+            BasilicaError·Timeout { .. } => "timeout",
+            BasilicaError·ServiceUnavailable { .. } => "service_unavailable",
+            BasilicaError·Initialization(_) => "initialization_error",
+            BasilicaError·Configuration(_) => "configuration_error",
+            BasilicaError·Database(_) => "database_error",
+            BasilicaError·Serialization(_) => "serialization_error",
+            BasilicaError·Internal(_) => "internal_error",
         }
     }
 
     /// Get human-readable message
-    pub fn message(&self) -> String {
-        match self {
-            BasilicaError::InsufficientEvidence { required, actual, context } => {
+    ☉ λ message(&self) -> String {
+        ⌥ self {
+            BasilicaError·InsufficientEvidence { required, actual, context } => {
                 format!(
                     "Evidence level {} is insufficient; {} required ({})",
                     actual.symbol(), required.symbol(), context
                 )
             }
-            BasilicaError::Validation { field, message, .. } => {
-                format!("Validation failed for '{}': {}", field, message)
+            BasilicaError·Validation { field, message, .. } => {
+                format!("Validation failed ∀ '{}': {}", field, message)
             }
-            BasilicaError::CovenantViolation { action, reason } => {
+            BasilicaError·CovenantViolation { action, reason } => {
                 format!("Action '{}' requires approval: {}", action, reason)
             }
-            BasilicaError::AuthRequired { message } => message.clone(),
-            BasilicaError::Forbidden { action, reason } => {
-                format!("Access denied for '{}': {}", action, reason)
+            BasilicaError·AuthRequired { message } => message.clone(),
+            BasilicaError·Forbidden { action, reason } => {
+                format!("Access denied ∀ '{}': {}", action, reason)
             }
-            BasilicaError::NotFound { resource, id } => {
+            BasilicaError·NotFound { resource, id } => {
                 format!("{} with id '{}' not found", resource, id)
             }
-            BasilicaError::Conflict { message } => message.clone(),
-            BasilicaError::Timeout { operation, duration_ms } => {
+            BasilicaError·Conflict { message } => message.clone(),
+            BasilicaError·Timeout { operation, duration_ms } => {
                 format!("Operation '{}' timed out after {}ms", operation, duration_ms)
             }
-            BasilicaError::ServiceUnavailable { service, reason } => {
+            BasilicaError·ServiceUnavailable { service, reason } => {
                 format!("Service '{}' unavailable: {}", service, reason)
             }
-            BasilicaError::Initialization(msg) => format!("Initialization failed: {}", msg),
-            BasilicaError::Configuration(msg) => format!("Configuration error: {}", msg),
-            BasilicaError::Database(msg) => format!("Database error: {}", msg),
-            BasilicaError::Serialization(msg) => format!("Serialization error: {}", msg),
-            BasilicaError::Internal(msg) => format!("Internal error: {}", msg),
+            BasilicaError·Initialization(msg) => format!("Initialization failed: {}", msg),
+            BasilicaError·Configuration(msg) => format!("Configuration error: {}", msg),
+            BasilicaError·Database(msg) => format!("Database error: {}", msg),
+            BasilicaError·Serialization(msg) => format!("Serialization error: {}", msg),
+            BasilicaError·Internal(msg) => format!("Internal error: {}", msg),
         }
     }
 }
 
-impl From<AgentError> for BasilicaError {
-    fn from(err: AgentError) -> Self {
-        match err.kind {
-            ErrorKind::InvalidInput => BasilicaError::Validation {
+⊢ From<AgentError> ∀ BasilicaError {
+    λ from(err: AgentError) -> Self {
+        ⌥ err.kind {
+            ErrorKind·InvalidInput => BasilicaError·Validation {
                 field: "unknown".to_string(),
                 message: err.message,
                 errors: vec![],
             },
-            ErrorKind::NotPermitted => BasilicaError::Forbidden {
+            ErrorKind·NotPermitted => BasilicaError·Forbidden {
                 action: "unknown".to_string(),
                 reason: err.message,
             },
-            ErrorKind::NotFound => BasilicaError::NotFound {
+            ErrorKind·NotFound => BasilicaError·NotFound {
                 resource: "unknown".to_string(),
                 id: err.message,
             },
-            ErrorKind::Timeout => BasilicaError::Timeout {
+            ErrorKind·Timeout => BasilicaError·Timeout {
                 operation: "unknown".to_string(),
                 duration_ms: 0,
             },
-            ErrorKind::TrustViolation => BasilicaError::CovenantViolation {
+            ErrorKind·TrustViolation => BasilicaError·CovenantViolation {
                 action: "unknown".to_string(),
                 reason: err.message,
             },
-            ErrorKind::BoundaryViolation => BasilicaError::CovenantViolation {
+            ErrorKind·BoundaryViolation => BasilicaError·CovenantViolation {
                 action: "unknown".to_string(),
                 reason: err.message,
             },
-            _ => BasilicaError::Internal(err.message),
+            _ => BasilicaError·Internal(err.message),
         }
     }
 }

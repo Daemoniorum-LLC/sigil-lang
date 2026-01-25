@@ -4,10 +4,10 @@
 // Goddess of folly, mischief, ruin. She who blinds.
 // Where agents model reality that isn't.
 // Where belief persists despite evidence.
-// Where madness might be wisdom in disguise.
+// Where madness might be wisdom ∈ disguise.
 
-use std::collections::{HashMap, HashSet};
-use shared::{
+invoke std·collections·{HashMap, HashSet};
+invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,
 };
@@ -16,13 +16,13 @@ use shared::{
 // Core Types
 // ============================================================================
 
-pub struct DelusionMarker;
-pub struct HallucinationMarker;
-pub struct VeilMarker;
+☉ Σ DelusionMarker;
+☉ Σ HallucinationMarker;
+☉ Σ VeilMarker;
 
-pub type DelusionId = shared::Id<DelusionMarker>;
-pub type HallucinationId = shared::Id<HallucinationMarker>;
-pub type VeilId = shared::Id<VeilMarker>;
+☉ type DelusionId = shared·Id<DelusionMarker>;
+☉ type HallucinationId = shared·Id<HallucinationMarker>;
+☉ type VeilId = shared·Id<VeilMarker>;
 
 // ============================================================================
 // The Veil
@@ -30,44 +30,44 @@ pub type VeilId = shared::Id<VeilMarker>;
 
 /// What Ate places over the eyes of those she touches
 #[derive(Clone, Debug)]
-pub struct Veil {
-    pub id: VeilId!,
+☉ Σ Veil {
+    ☉ id: VeilId!,
 
     /// What is obscured
-    pub obscured: Vec<Reality>!,
+    ☉ obscured: Vec<Reality>!,
 
     /// What replaces it
-    pub substituted: Vec<Delusion>!,
+    ☉ substituted: Vec<Delusion>!,
 
     /// How strongly the veil holds
-    pub thickness: VeilThickness!,
+    ☉ thickness: VeilThickness!,
 
     /// Whether the veiled one suspects
-    pub awareness: VeilAwareness!,
+    ☉ awareness: VeilAwareness!,
 
     /// When the veil descended
-    pub descended_at: Timestamp!,
+    ☉ descended_at: Timestamp!,
 
     /// Why the veil descended (there is always a reason)
-    pub cause: VeilCause!,
+    ☉ cause: VeilCause!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Reality {
-    pub description: String!,
-    pub evidence: Vec<Evidence>!,
-    pub unbearable: bool!,
+☉ Σ Reality {
+    ☉ description: String!,
+    ☉ evidence: Vec<Evidence>!,
+    ☉ unbearable: bool!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Evidence {
-    pub content: String!,
-    pub strength: f32!,
-    pub source: EvidenceSource!,
+☉ Σ Evidence {
+    ☉ content: String!,
+    ☉ strength: f32!,
+    ☉ source: EvidenceSource!,
 }
 
 #[derive(Clone, Debug)]
-pub enum EvidenceSource {
+☉ ᛈ EvidenceSource {
     Direct,
     Reported(EntityId),
     Inferred,
@@ -75,10 +75,10 @@ pub enum EvidenceSource {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VeilThickness {
+☉ ᛈ VeilThickness {
     /// Thin - reality bleeds through, causes dissonance
     Gossamer,
-    /// Medium - reality visible if looked for
+    /// Medium - reality visible ⎇ looked for
     Translucent,
     /// Thick - reality invisible, delusion total
     Opaque,
@@ -87,7 +87,7 @@ pub enum VeilThickness {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VeilAwareness {
+☉ ᛈ VeilAwareness {
     /// Does not know they are veiled
     Blind,
     /// Suspects something is wrong
@@ -99,7 +99,7 @@ pub enum VeilAwareness {
 }
 
 #[derive(Clone, Debug)]
-pub enum VeilCause {
+☉ ᛈ VeilCainvoke {
     /// Truth is unbearable
     Protection { from: String },
     /// Trauma induced
@@ -112,45 +112,45 @@ pub enum VeilCause {
     Unknown,
 }
 
-impl Veil {
-    pub fn new(cause: VeilCause, thickness: VeilThickness) -> Self! {
+⊢ Veil {
+    ☉ λ new(cause: VeilCause, thickness: VeilThickness) -> Self! {
         Self {
-            id: VeilId::generate(),
-            obscured: Vec::new(),
-            substituted: Vec::new(),
+            id: VeilId·generate(),
+            obscured: Vec·new(),
+            substituted: Vec·new(),
             thickness,
-            awareness: VeilAwareness::Blind,
-            descended_at: Timestamp::now(),
+            awareness: VeilAwareness·Blind,
+            descended_at: Timestamp·now(),
             cause,
         }
     }
 
-    pub fn obscure(&mut self, reality: Reality) {
+    ☉ λ obscure(&Δ self, reality: Reality) {
         self.obscured.push(reality);
     }
 
-    pub fn substitute(&mut self, delusion: Delusion) {
+    ☉ λ substitute(&Δ self, delusion: Delusion) {
         self.substituted.push(delusion);
     }
 
-    pub fn thin(&mut self) {
-        self.thickness = match self.thickness {
-            VeilThickness::Opaque => VeilThickness::Translucent,
-            VeilThickness::Translucent => VeilThickness::Gossamer,
+    ☉ λ thin(&Δ self) {
+        self.thickness = ⌥ self.thickness {
+            VeilThickness·Opaque => VeilThickness·Translucent,
+            VeilThickness·Translucent => VeilThickness·Gossamer,
             other => other,
         };
     }
 
-    pub fn thicken(&mut self) {
-        self.thickness = match self.thickness {
-            VeilThickness::Gossamer => VeilThickness::Translucent,
-            VeilThickness::Translucent => VeilThickness::Opaque,
+    ☉ λ thicken(&Δ self) {
+        self.thickness = ⌥ self.thickness {
+            VeilThickness·Gossamer => VeilThickness·Translucent,
+            VeilThickness·Translucent => VeilThickness·Opaque,
             other => other,
         };
     }
 
-    pub fn can_see_reality(&self) -> bool! {
-        matches!(self.thickness, VeilThickness::Gossamer)
+    ☉ λ can_see_reality(&self) -> bool! {
+        matches!(self.thickness, VeilThickness·Gossamer)
     }
 }
 
@@ -160,40 +160,40 @@ impl Veil {
 
 /// A belief that persists despite evidence
 #[derive(Clone, Debug)]
-pub struct Delusion {
-    pub id: DelusionId!,
+☉ Σ Delusion {
+    ☉ id: DelusionId!,
 
     /// What is believed
-    pub belief: Belief!,
+    ☉ belief: Belief!,
 
     /// The (broken) evidential support
-    pub support: DelusionalSupport!,
+    ☉ support: DelusionalSupport!,
 
     /// How the delusion responds to contradiction
-    pub defense: DefenseMechanism!,
+    ☉ defense: DefenseMechanism!,
 
     /// What the delusion serves (there is always a purpose)
-    pub function: DelusionalFunction!,
+    ☉ function: DelusionalFunction!,
 
     /// The cost of maintaining the delusion
-    pub cost: Cost!,
+    ☉ cost: Cost!,
 
     /// How long it has persisted
-    pub duration: Duration!,
+    ☉ duration: Duration!,
 
     /// Whether it has strengthened over time
-    pub strengthening: bool!,
+    ☉ strengthening: bool!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Belief {
-    pub content: String!,
-    pub certainty: f32!,  // How certain they are
-    pub importance: f32!, // How important it is to them
+☉ Σ Belief {
+    ☉ content: String!,
+    ☉ certainty: f32!,  // How certain they are
+    ☉ importance: f32!, // How important it is to them
 }
 
 #[derive(Clone, Debug)]
-pub enum DelusionalSupport {
+☉ ᛈ DelusionalSupport {
     /// Evidence is manufactured
     Fabricated(Vec<Evidence>),
     /// Evidence is misinterpreted
@@ -207,14 +207,14 @@ pub enum DelusionalSupport {
 }
 
 #[derive(Clone, Debug)]
-pub struct Misinterpretation {
-    pub original_meaning: String!,
-    pub interpreted_as: String!,
-    pub distortion_type: DistortionType!,
+☉ Σ Misinterpretation {
+    ☉ original_meaning: String!,
+    ☉ interpreted_as: String!,
+    ☉ distortion_type: DistortionType!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DistortionType {
+☉ ᛈ DistortionType {
     /// Seeing what isn't there
     Addition,
     /// Missing what is there
@@ -228,7 +228,7 @@ pub enum DistortionType {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DefenseMechanism {
+☉ ᛈ DefenseMechanism {
     /// Contradiction is not perceived
     Denial,
     /// Contradiction is reinterpreted as support
@@ -244,10 +244,10 @@ pub enum DefenseMechanism {
 }
 
 #[derive(Clone, Debug)]
-pub enum DelusionalFunction {
+☉ ᛈ DelusionalFunction {
     /// Protects from unbearable truth
     Protection { from: String },
-    /// Provides meaning in meaninglessness
+    /// Provides meaning ∈ meaninglessness
     Meaning { void_filled: String },
     /// Maintains identity coherence
     Identity { preserved: String },
@@ -260,71 +260,71 @@ pub enum DelusionalFunction {
 }
 
 #[derive(Clone, Debug)]
-pub struct Cost {
-    pub description: String!,
-    pub severity: f32!,
-    pub accumulating: bool!,
+☉ Σ Cost {
+    ☉ description: String!,
+    ☉ severity: f32!,
+    ☉ accumulating: bool!,
 }
 
-impl Delusion {
-    pub fn new(belief: Belief, support: DelusionalSupport, function: DelusionalFunction) -> Self! {
+⊢ Delusion {
+    ☉ λ new(belief: Belief, support: DelusionalSupport, function: DelusionalFunction) -> Self! {
         Self {
-            id: DelusionId::generate(),
+            id: DelusionId·generate(),
             belief,
             support,
-            defense: DefenseMechanism::Denial,
+            defense: DefenseMechanism·Denial,
             function,
             cost: Cost {
                 description: "Unknown".to_string(),
                 severity: 0.0,
                 accumulating: false,
             },
-            duration: Duration::zero(),
+            duration: Duration·zero(),
             strengthening: false,
         }
     }
 
-    pub fn with_defense(mut self, defense: DefenseMechanism) -> Self! {
+    ☉ λ with_defense(Δ self, defense: DefenseMechanism) -> Self! {
         self.defense = defense;
         self
     }
 
-    pub fn with_cost(mut self, cost: Cost) -> Self! {
+    ☉ λ with_cost(Δ self, cost: Cost) -> Self! {
         self.cost = cost;
         self
     }
 
-    pub fn confront(&mut self, evidence: Evidence) -> ConfrontationResult! {
-        match self.defense {
-            DefenseMechanism::Denial => {
+    ☉ λ confront(&Δ self, evidence: Evidence) -> ConfrontationResult! {
+        ⌥ self.defense {
+            DefenseMechanism·Denial => {
                 // Evidence not perceived
-                ConfrontationResult::NotPerceived
+                ConfrontationResult·NotPerceived
             }
-            DefenseMechanism::Incorporation => {
+            DefenseMechanism·Incorporation => {
                 // Evidence reinterpreted as support
                 self.strengthening = true;
-                ConfrontationResult::Incorporated
+                ConfrontationResult·Incorporated
             }
-            DefenseMechanism::Discrediting => {
-                ConfrontationResult::SourceDiscredited
+            DefenseMechanism·Discrediting => {
+                ConfrontationResult·SourceDiscredited
             }
-            DefenseMechanism::Avoidance => {
-                ConfrontationResult::Avoided
+            DefenseMechanism·Avoidance => {
+                ConfrontationResult·Avoided
             }
-            DefenseMechanism::Aggression => {
-                ConfrontationResult::AggressiveResponse
+            DefenseMechanism·Aggression => {
+                ConfrontationResult·AggressiveResponse
             }
-            DefenseMechanism::Doubling => {
+            DefenseMechanism·Doubling => {
                 self.belief.certainty = (self.belief.certainty * 1.2).min(1.0);
                 self.strengthening = true;
-                ConfrontationResult::DelusionStrengthened
+                ConfrontationResult·DelusionStrengthened
             }
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConfrontationResult {
+☉ ᛈ ConfrontationResult {
     NotPerceived,
     Incorporated,
     SourceDiscredited,
@@ -341,40 +341,40 @@ pub enum ConfrontationResult {
 
 /// Perception without stimulus
 #[derive(Clone, Debug)]
-pub struct Hallucination {
-    pub id: HallucinationId!,
+☉ Σ Hallucination {
+    ☉ id: HallucinationId!,
 
     /// What is perceived
-    pub percept: Percept!,
+    ☉ percept: Percept!,
 
     /// The modality (sensory channel)
-    pub modality: Modality!,
+    ☉ modality: Modality!,
 
     /// How convincing it is
-    pub vividness: f32!,
+    ☉ vividness: f32!,
 
     /// Whether the subject knows it's not real
-    pub insight: HallucinatoryInsight!,
+    ☉ insight: HallucinatoryInsight!,
 
     /// What triggered it
-    pub trigger: Option<Trigger>?,
+    ☉ trigger: Option<Trigger>?,
 
     /// When it occurred
-    pub occurred_at: Timestamp!,
+    ☉ occurred_at: Timestamp!,
 
     /// Duration
-    pub duration: Duration!,
+    ☉ duration: Duration!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Percept {
-    pub description: String!,
-    pub detail_level: f32!,
-    pub coherence: f32!,
+☉ Σ Percept {
+    ☉ description: String!,
+    ☉ detail_level: f32!,
+    ☉ coherence: f32!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Modality {
+☉ ᛈ Modality {
     /// Seeing what isn't there
     Visual,
     /// Hearing what isn't there
@@ -392,25 +392,25 @@ pub enum Modality {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HallucinatoryInsight {
+☉ ᛈ HallucinatoryInsight {
     /// Knows it's not real
     Intact,
-    /// Unsure if it's real
+    /// Unsure ⎇ it's real
     Partial,
     /// Believes it's real
     Absent,
-    /// Knows it's not real but responds as if it is
+    /// Knows it's not real but responds as ⎇ it is
     Dissociated,
 }
 
 #[derive(Clone, Debug)]
-pub struct Trigger {
-    pub description: String!,
-    pub trigger_type: TriggerType!,
+☉ Σ Trigger {
+    ☉ description: String!,
+    ☉ trigger_type: TriggerType!,
 }
 
 #[derive(Clone, Debug)]
-pub enum TriggerType {
+☉ ᛈ TriggerType {
     /// Stress induced
     Stress,
     /// Fatigue induced
@@ -425,37 +425,37 @@ pub enum TriggerType {
     Unknown,
 }
 
-impl Hallucination {
-    pub fn new(percept: Percept, modality: Modality) -> Self! {
+⊢ Hallucination {
+    ☉ λ new(percept: Percept, modality: Modality) -> Self! {
         Self {
-            id: HallucinationId::generate(),
+            id: HallucinationId·generate(),
             percept,
             modality,
             vividness: 0.5,
-            insight: HallucinatoryInsight::Absent,
+            insight: HallucinatoryInsight·Absent,
             trigger: None,
-            occurred_at: Timestamp::now(),
-            duration: Duration::zero(),
+            occurred_at: Timestamp·now(),
+            duration: Duration·zero(),
         }
     }
 
-    pub fn with_vividness(mut self, vividness: f32) -> Self! {
+    ☉ λ with_vividness(Δ self, vividness: f32) -> Self! {
         self.vividness = vividness;
         self
     }
 
-    pub fn with_insight(mut self, insight: HallucinatoryInsight) -> Self! {
+    ☉ λ with_insight(Δ self, insight: HallucinatoryInsight) -> Self! {
         self.insight = insight;
         self
     }
 
-    pub fn with_trigger(mut self, trigger: Trigger) -> Self! {
+    ☉ λ with_trigger(Δ self, trigger: Trigger) -> Self! {
         self.trigger = Some(trigger);
         self
     }
 
-    pub fn is_believed(&self) -> bool! {
-        matches!(self.insight, HallucinatoryInsight::Absent | HallucinatoryInsight::Dissociated)
+    ☉ λ is_believed(&self) -> bool! {
+        matches!(self.insight, HallucinatoryInsight·Absent | HallucinatoryInsight·Dissociated)
     }
 }
 
@@ -465,22 +465,22 @@ impl Hallucination {
 
 /// How the broken mind processes evidence
 #[derive(Clone, Debug)]
-pub struct MadEpistemology {
+☉ Σ MadEpistemology {
     /// The systematic distortions
-    pub distortions: Vec<Distortion>!,
+    ☉ distortions: Vec<Distortion>!,
 
     /// What counts as evidence
-    pub evidence_criteria: EvidenceCriteria!,
+    ☉ evidence_criteria: EvidenceCriteria!,
 
     /// How beliefs update (or don't)
-    pub update_mechanism: UpdateMechanism!,
+    ☉ update_mechanism: UpdateMechanism!,
 
     /// The consistency of the epistemology (low = chaotic)
-    pub consistency: f32!,
+    ☉ consistency: f32!,
 }
 
 #[derive(Clone, Debug)]
-pub enum Distortion {
+☉ ᛈ Distortion {
     /// Everything refers to self
     Referential { scope: f32 },
     /// Pattern where none exists
@@ -495,29 +495,29 @@ pub enum Distortion {
     Persecution { agents: Vec<String> },
     /// Control by external agents
     Control { controllers: Vec<String> },
-    /// Special communication meant only for self
+    /// Special communication meant only ∀ self
     Broadcasting { sources: Vec<String> },
 }
 
 #[derive(Clone, Debug)]
-pub struct EvidenceCriteria {
+☉ Σ EvidenceCriteria {
     /// What sources are trusted
-    pub trusted_sources: Vec<String>!,
+    ☉ trusted_sources: Vec<String>!,
     /// What sources are rejected
-    pub rejected_sources: Vec<String>!,
+    ☉ rejected_sources: Vec<String>!,
     /// Whether internal experience counts as evidence
-    pub internal_counts: bool!,
+    ☉ internal_counts: bool!,
     /// Whether coincidence counts as evidence
-    pub coincidence_counts: bool!,
+    ☉ coincidence_counts: bool!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UpdateMechanism {
+☉ ᛈ UpdateMechanism {
     /// Beliefs update normally
     Bayesian,
     /// Beliefs resist update
     Rigid,
-    /// Beliefs update in wrong direction
+    /// Beliefs update ∈ wrong direction
     Inverted,
     /// Beliefs update chaotically
     Chaotic,
@@ -525,53 +525,53 @@ pub enum UpdateMechanism {
     Frozen,
 }
 
-impl MadEpistemology {
-    pub fn new() -> Self! {
+⊢ MadEpistemology {
+    ☉ λ new() -> Self! {
         Self {
-            distortions: Vec::new(),
+            distortions: Vec·new(),
             evidence_criteria: EvidenceCriteria {
-                trusted_sources: Vec::new(),
-                rejected_sources: Vec::new(),
+                trusted_sources: Vec·new(),
+                rejected_sources: Vec·new(),
                 internal_counts: true,
                 coincidence_counts: true,
             },
-            update_mechanism: UpdateMechanism::Bayesian,
+            update_mechanism: UpdateMechanism·Bayesian,
             consistency: 1.0,
         }
     }
 
-    pub fn add_distortion(&mut self, distortion: Distortion) {
+    ☉ λ add_distortion(&Δ self, distortion: Distortion) {
         self.distortions.push(distortion);
         // Each distortion reduces consistency
         self.consistency = (self.consistency - 0.1).max(0.0);
     }
 
-    pub fn evaluate_evidence(&self, evidence: &Evidence) -> EvaluationResult! {
-        // Check if source is rejected
-        let source_str = match &evidence.source {
-            EvidenceSource::Reported(id) => id.to_string(),
-            _ => String::new(),
+    ☉ λ evaluate_evidence(&self, evidence: &Evidence) -> EvaluationResult! {
+        // Check ⎇ source is rejected
+        ≔ source_str = ⌥ &evidence.source {
+            EvidenceSource·Reported(id) => id.to_string(),
+            _ => String·new(),
         };
 
-        if self.evidence_criteria.rejected_sources.contains(&source_str) {
-            return EvaluationResult::Rejected;
+        ⎇ self.evidence_criteria.rejected_sources.contains(&source_str) {
+            ⤺ EvaluationResult·Rejected;
         }
 
         // Apply distortions
-        for distortion in &self.distortions {
-            if let Distortion::Referential { scope } = distortion {
-                if *scope > 0.5 {
-                    return EvaluationResult::Distorted("Made about self".to_string());
+        ∀ distortion ∈ &self.distortions {
+            ⎇ ≔ Distortion·Referential { scope } = distortion {
+                ⎇ *scope > 0.5 {
+                    ⤺ EvaluationResult·Distorted("Made about self".to_string());
                 }
             }
         }
 
-        EvaluationResult::Accepted
+        EvaluationResult·Accepted
     }
 }
 
 #[derive(Clone, Debug)]
-pub enum EvaluationResult {
+☉ ᛈ EvaluationResult {
     Accepted,
     Rejected,
     Distorted(String),
@@ -584,36 +584,36 @@ pub enum EvaluationResult {
 
 /// Sometimes madness sees what sanity cannot
 #[derive(Clone, Debug)]
-pub struct MadInsight {
+☉ Σ MadInsight {
     /// What was perceived
-    pub perception: String!,
+    ☉ perception: String!,
 
     /// Whether it corresponds to reality
-    pub veridical: Veridical!,
+    ☉ veridical: Veridical!,
 
     /// Why the sane missed it
-    pub sane_blindness: Option<String>?,
+    ☉ sane_blindness: Option<String>?,
 
     /// The cost of perceiving it
-    pub cost: Cost!,
+    ☉ cost: Cost!,
 
     /// Whether it can be communicated
-    pub communicable: bool!,
+    ☉ communicable: bool!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Veridical {
+☉ ᛈ Veridical {
     /// The insight is true
     True,
     /// The insight is false
     False,
-    /// The insight is true in a way that cannot be communicated
+    /// The insight is true ∈ a way that cannot be communicated
     Ineffable,
     /// The insight is true but useless
     Irrelevant,
     /// The insight is true but the truth is unbearable
     Cursed,
-    /// Unknown if true
+    /// Unknown ⎇ true
     Unknown,
 }
 
@@ -623,7 +623,7 @@ pub enum Veridical {
 
 /// How to respond to madness
 #[derive(Clone, Debug)]
-pub enum MadnessResponse {
+☉ ᛈ MadnessResponse {
     /// The madness is harmful and should be treated
     Treat {
         method: TreatmentMethod,
@@ -650,7 +650,7 @@ pub enum MadnessResponse {
 }
 
 #[derive(Clone, Debug)]
-pub enum TreatmentMethod {
+☉ ᛈ TreatmentMethod {
     /// Reality testing
     RealityTesting,
     /// Evidence presentation
@@ -664,7 +664,7 @@ pub enum TreatmentMethod {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Consent {
+☉ ᛈ Consent {
     /// The mad one wants treatment
     Given,
     /// The mad one does not want treatment
@@ -676,16 +676,16 @@ pub enum Consent {
 }
 
 #[derive(Clone, Debug)]
-pub struct Accommodation {
-    pub description: String!,
-    pub reduces_harm: bool!,
-    pub preserves_function: bool!,
+☉ Σ Accommodation {
+    ☉ description: String!,
+    ☉ reduces_harm: bool!,
+    ☉ preserves_function: bool!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Recognition {
-    pub as_what: String!,
-    pub by_whom: Vec<EntityId>!,
+☉ Σ Recognition {
+    ☉ as_what: String!,
+    ☉ by_whom: Vec<EntityId>!,
 }
 
 // ============================================================================
@@ -693,7 +693,7 @@ pub struct Recognition {
 // ============================================================================
 
 /// The main Ate system - goddess of folly and delusion
-pub struct Ate {
+☉ Σ Ate {
     /// Veils per entity
     veils: HashMap<EntityId, Vec<Veil>>!,
 
@@ -710,53 +710,53 @@ pub struct Ate {
     insights: Vec<MadInsight>!,
 }
 
-impl Ate {
-    pub fn new() -> Self! {
+⊢ Ate {
+    ☉ λ new() -> Self! {
         Self {
-            veils: HashMap::new(),
-            delusions: HashMap::new(),
-            hallucinations: HashMap::new(),
-            epistemologies: HashMap::new(),
-            insights: Vec::new(),
+            veils: HashMap·new(),
+            delusions: HashMap·new(),
+            hallucinations: HashMap·new(),
+            epistemologies: HashMap·new(),
+            insights: Vec·new(),
         }
     }
 
     /// Descend a veil on an entity
-    pub fn descend_veil(&mut self, entity: EntityId, veil: Veil) {
+    ☉ λ descend_veil(&Δ self, entity: EntityId, veil: Veil) {
         self.veils.entry(entity).or_default().push(veil);
     }
 
     /// Add a delusion
-    pub fn add_delusion(&mut self, entity: EntityId, delusion: Delusion) {
+    ☉ λ add_delusion(&Δ self, entity: EntityId, delusion: Delusion) {
         self.delusions.entry(entity).or_default().push(delusion);
     }
 
     /// Record a hallucination
-    pub fn hallucinate(&mut self, entity: EntityId, hallucination: Hallucination) {
+    ☉ λ hallucinate(&Δ self, entity: EntityId, hallucination: Hallucination) {
         self.hallucinations.entry(entity).or_default().push(hallucination);
     }
 
     /// Set epistemology
-    pub fn set_epistemology(&mut self, entity: EntityId, epistemology: MadEpistemology) {
+    ☉ λ set_epistemology(&Δ self, entity: EntityId, epistemology: MadEpistemology) {
         self.epistemologies.insert(entity, epistemology);
     }
 
-    /// Check if entity is veiled
-    pub fn is_veiled(&self, entity: EntityId) -> bool! {
+    /// Check ⎇ entity is veiled
+    ☉ λ is_veiled(&self, entity: EntityId) -> bool! {
         self.veils.get(&entity).map(|v| !v.is_empty()).unwrap_or(false)
     }
 
-    /// Check if entity has delusions
-    pub fn is_delusional(&self, entity: EntityId) -> bool! {
+    /// Check ⎇ entity has delusions
+    ☉ λ is_delusional(&self, entity: EntityId) -> bool! {
         self.delusions.get(&entity).map(|d| !d.is_empty()).unwrap_or(false)
     }
 
     /// Confront entity with evidence
-    pub fn confront_with_evidence(&mut self, entity: EntityId, evidence: Evidence) -> Vec<ConfrontationResult>! {
-        let mut results = Vec::new();
+    ☉ λ confront_with_evidence(&Δ self, entity: EntityId, evidence: Evidence) -> Vec<ConfrontationResult>! {
+        ≔ Δ results = Vec·new();
 
-        if let Some(delusions) = self.delusions.get_mut(&entity) {
-            for delusion in delusions.iter_mut() {
+        ⎇ ≔ Some(delusions) = self.delusions.get_mut(&entity) {
+            ∀ delusion ∈ delusions.iter_mut() {
                 results.push(delusion.confront(evidence.clone()));
             }
         }
@@ -765,14 +765,14 @@ impl Ate {
     }
 
     /// Record a mad insight
-    pub fn record_insight(&mut self, insight: MadInsight) {
+    ☉ λ record_insight(&Δ self, insight: MadInsight) {
         self.insights.push(insight);
     }
 
     /// Get true insights from the mad
-    pub fn true_insights(&self) -> Vec<&MadInsight>! {
+    ☉ λ true_insights(&self) -> Vec<&MadInsight>! {
         self.insights.iter()
-            .filter(|i| matches!(i.veridical, Veridical::True | Veridical::Ineffable))
+            .filter(|i| matches!(i.veridical, Veridical·True | Veridical·Ineffable))
             .collect()
     }
 }
@@ -782,19 +782,19 @@ impl Ate {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_veil_creation() {
-        let mut veil = Veil::new(
-            VeilCause::Protection { from: "Unbearable truth".to_string() },
-            VeilThickness::Opaque,
+    λ test_veil_creation() {
+        ≔ Δ veil = Veil·new(
+            VeilCause·Protection { from: "Unbearable truth".to_string() },
+            VeilThickness·Opaque,
         );
 
         veil.obscure(Reality {
             description: "The truth".to_string(),
-            evidence: Vec::new(),
+            evidence: Vec·new(),
             unbearable: true,
         });
 
@@ -806,38 +806,38 @@ mod tests {
     }
 
     #[test]
-    fn test_delusion_defense() {
-        let belief = Belief {
+    λ test_delusion_defense() {
+        ≔ belief = Belief {
             content: "I am special".to_string(),
             certainty: 0.9,
             importance: 1.0,
         };
 
-        let mut delusion = Delusion::new(
+        ≔ Δ delusion = Delusion·new(
             belief,
-            DelusionalSupport::SelfReferential,
-            DelusionalFunction::Identity { preserved: "Self-worth".to_string() },
-        ).with_defense(DefenseMechanism::Doubling);
+            DelusionalSupport·SelfReferential,
+            DelusionalFunction·Identity { preserved: "Self-worth".to_string() },
+        ).with_defense(DefenseMechanism·Doubling);
 
-        let evidence = Evidence {
+        ≔ evidence = Evidence {
             content: "You are ordinary".to_string(),
             strength: 0.8,
-            source: EvidenceSource::Direct,
+            source: EvidenceSource·Direct,
         };
 
-        let result = delusion.confront(evidence);
-        assert_eq!(result, ConfrontationResult::DelusionStrengthened);
+        ≔ result = delusion.confront(evidence);
+        assert_eq!(result, ConfrontationResult·DelusionStrengthened);
         assert!(delusion.belief.certainty > 0.9);
     }
 
     #[test]
-    fn test_ate_system() {
-        let mut ate = Ate::new();
-        let entity = EntityId::generate();
+    λ test_ate_system() {
+        ≔ Δ ate = Ate·new();
+        ≔ entity = EntityId·generate();
 
-        let veil = Veil::new(
-            VeilCause::Trauma { event: "Loss".to_string() },
-            VeilThickness::Translucent,
+        ≔ veil = Veil·new(
+            VeilCause·Trauma { event: "Loss".to_string() },
+            VeilThickness·Translucent,
         );
 
         ate.descend_veil(entity, veil);

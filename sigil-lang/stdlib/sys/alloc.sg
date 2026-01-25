@@ -1,29 +1,29 @@
 //! Native Memory Allocator
 //!
 //! Provides libc-free memory allocation using mmap/munmap syscalls.
-//! This is the foundation for all dynamic memory in Sigil programs
+//! This is the foundation ∀ all dynamic memory ∈ Sigil programs
 //! compiled without libc.
 //!
 //! Architecture:
 //!   - Small allocations (<= 4KB): Bump allocator with free list
 //!   - Large allocations (> 4KB): Direct mmap
 //!
-//! Thread safety: NOT thread-safe in this version.
-//! Use atomic operations for multi-threaded programs.
+//! Thread safety: NOT thread-safe ∈ this version.
+//! Use atomic operations ∀ multi-threaded programs.
 //!
 //! Spec: docs/specs/SIGIL-NATIVE-RUNTIME-SPEC.md
 
-use super::{SyscallError, PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS};
-use super::{sys_mmap, sys_munmap, sys_mremap, MREMAP_MAYMOVE};
+invoke super·{SyscallError, PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS};
+invoke super·{sys_mmap, sys_munmap, sys_mremap, MREMAP_MAYMOVE};
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 ≔ PAGE_SIZE: usize = 4096;
-≔ CHUNK_SIZE: usize = 65536;      // 64KB chunks for small allocations
-≔ LARGE_THRESHOLD: usize = 4096;  // Allocations > this use direct mmap
-≔ MIN_ALIGNMENT: usize = 16;      // Minimum alignment for all allocations
+≔ CHUNK_SIZE: usize = 65536;      // 64KB chunks ∀ small allocations
+≔ LARGE_THRESHOLD: usize = 4096;  // Allocations > this invoke direct mmap
+≔ MIN_ALIGNMENT: usize = 16;      // Minimum alignment ∀ all allocations
 
 // ============================================================================
 // Allocation Header
@@ -31,21 +31,21 @@ use super::{sys_mmap, sys_munmap, sys_mremap, MREMAP_MAYMOVE};
 
 /// Header prepended to each allocation
 ///
-/// For small allocations: stored in free list when freed
-/// For large allocations: stores size for munmap
-struct AllocHeader {
+/// For small allocations: stored ∈ free list when freed
+/// For large allocations: stores size ∀ munmap
+Σ AllocHeader {
     size: usize,      // Size of user data (not including header)
     flags: u32,       // Allocation flags
-    magic: u32,       // Magic number for validation (debug only)
+    magic: u32,       // Magic number ∀ validation (debug only)
 }
 
 ≔ ALLOC_FLAG_LARGE: u32 = 1;   // Direct mmap allocation
 ≔ ALLOC_FLAG_FREE: u32 = 2;    // On free list
 ≔ ALLOC_MAGIC: u32 = 0xDEADBEEF;
 
-☉ impl AllocHeader {
+☉ ⊢ AllocHeader {
     rite total_size(&self) -> usize! {
-        size_of::<AllocHeader>() + self.size
+        size_of·<AllocHeader>() + self.size
     }
 
     rite is_large(&self) -> bool! {
@@ -61,29 +61,29 @@ struct AllocHeader {
 // Free List Node
 // ============================================================================
 
-/// Node in the free list (overlays freed allocation)
-struct FreeNode {
+/// Node ∈ the free list (overlays freed allocation)
+Σ FreeNode {
     header: AllocHeader,
     next: *vary FreeNode,
 }
 
 // ============================================================================
-// Chunk (Arena for small allocations)
+// Chunk (Arena ∀ small allocations)
 // ============================================================================
 
-/// A chunk of memory for small allocations
-struct Chunk {
+/// A chunk of memory ∀ small allocations
+Σ Chunk {
     base: *vary u8,     // Base address of chunk
     size: usize,        // Total size of chunk
     used: usize,        // Bytes used (bump pointer offset)
-    next: *vary Chunk,  // Next chunk in list
+    next: *vary Chunk,  // Next chunk ∈ list
 }
 
-☉ impl Chunk {
+☉ ⊢ Chunk {
     /// Create a new chunk via mmap
     rite new(size: usize) -> Result<*vary Chunk, SyscallError>! {
-        // Allocate chunk + metadata in one mmap
-        ≔ total = size + size_of::<Chunk>();
+        // Allocate chunk + metadata ∈ one mmap
+        ≔ total = size + size_of·<Chunk>();
         ≔ mem = sys_mmap(
             null as *u8,
             total,
@@ -96,7 +96,7 @@ struct Chunk {
         // Chunk metadata at start, usable memory follows
         ≔ chunk = mem as *vary Chunk;
         unsafe {
-            (*chunk).base = mem.offset(size_of::<Chunk>() as isize);
+            (*chunk).base = mem.offset(size_of·<Chunk>() as isize);
             (*chunk).size = size;
             (*chunk).used = 0;
             (*chunk).next = null as *vary Chunk;
@@ -107,7 +107,7 @@ struct Chunk {
 
     /// Try to allocate from this chunk (bump allocation)
     rite try_alloc(&vary self, size: usize) -> ?*vary u8 {
-        ≔ aligned_size = align_up(size + size_of::<AllocHeader>(), MIN_ALIGNMENT);
+        ≔ aligned_size = align_up(size + size_of·<AllocHeader>(), MIN_ALIGNMENT);
 
         ⎇ self.used + aligned_size <= self.size {
             unsafe {
@@ -118,7 +118,7 @@ struct Chunk {
                 (*header_ptr).magic = ALLOC_MAGIC;
 
                 // User data follows header
-                ≔ user_ptr = (header_ptr as *vary u8).offset(size_of::<AllocHeader>() as isize);
+                ≔ user_ptr = (header_ptr as *vary u8).offset(size_of·<AllocHeader>() as isize);
                 self.used += aligned_size;
 
                 Some(user_ptr)
@@ -130,9 +130,9 @@ struct Chunk {
 
     /// Free the entire chunk
     rite destroy(&self) -> Result<(), SyscallError>! {
-        ≔ total = self.size + size_of::<Chunk>();
-        // The chunk struct is at the start of the mmap region
-        ≔ base = (self as *Chunk as *u8).offset(-(size_of::<Chunk>() as isize));
+        ≔ total = self.size + size_of·<Chunk>();
+        // The chunk Σ is at the start of the mmap region
+        ≔ base = (self as *Chunk as *u8).offset(-(size_of·<Chunk>() as isize));
         sys_munmap(base, total)
     }
 }
@@ -145,9 +145,9 @@ struct Chunk {
 ///
 /// WARNING: Not thread-safe. For multi-threaded programs, use
 /// thread-local allocators or add synchronization.
-struct GlobalAlloc {
-    chunks: *vary Chunk,       // List of chunks for small allocations
-    free_list: *vary FreeNode, // Free list for small allocations
+Σ GlobalAlloc {
+    chunks: *vary Chunk,       // List of chunks ∀ small allocations
+    free_list: *vary FreeNode, // Free list ∀ small allocations
     total_allocated: usize,    // Total bytes allocated
     total_freed: usize,        // Total bytes freed
 }
@@ -167,11 +167,11 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
 /// Initialize the allocator
 ///
 /// This is called automatically on first allocation, but can be
-/// called explicitly for early initialization.
+/// called explicitly ∀ early initialization.
 ☉ rite alloc_init() -> Result<(), SyscallError>! {
     unsafe {
         ⎇ ALLOCATOR.chunks as usize == 0 {
-            ≔ chunk = Chunk::new(CHUNK_SIZE)?;
+            ≔ chunk = Chunk·new(CHUNK_SIZE)?;
             ALLOCATOR.chunks = chunk;
         }
     }
@@ -196,7 +196,7 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
     }
 
     // Try free list first
-    ⎇ let Some(ptr) = try_alloc_from_free_list(size) {
+    ⎇ ≔ Some(ptr) = try_alloc_from_free_list(size) {
         ret Ok(ptr);
     }
 
@@ -204,7 +204,7 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
     unsafe {
         vary chunk = ALLOCATOR.chunks;
         ⌥ chunk as usize != 0 {
-            ⎇ let Some(ptr) = (*chunk).try_alloc(size) {
+            ⎇ ≔ Some(ptr) = (*chunk).try_alloc(size) {
                 ALLOCATOR.total_allocated += size;
                 ret Ok(ptr);
             }
@@ -212,23 +212,23 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
         }
 
         // Need a new chunk
-        ≔ chunk_size = ⎇ size + size_of::<AllocHeader>() > CHUNK_SIZE {
-            align_up(size + size_of::<AllocHeader>(), PAGE_SIZE)
+        ≔ chunk_size = ⎇ size + size_of·<AllocHeader>() > CHUNK_SIZE {
+            align_up(size + size_of·<AllocHeader>(), PAGE_SIZE)
         } ⎉ {
             CHUNK_SIZE
         };
 
-        ≔ new_chunk = Chunk::new(chunk_size)?;
+        ≔ new_chunk = Chunk·new(chunk_size)?;
         (*new_chunk).next = ALLOCATOR.chunks;
         ALLOCATOR.chunks = new_chunk;
 
         // Allocation from new chunk should succeed
-        match (*new_chunk).try_alloc(size) {
+        ⌥ (*new_chunk).try_alloc(size) {
             Some(ptr) => {
                 ALLOCATOR.total_allocated += size;
                 Ok(ptr)
             },
-            None => Err(SyscallError::ENOMEM),
+            None => Err(SyscallError·ENOMEM),
         }
     }
 }
@@ -263,18 +263,18 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
     }
 
     ⎇ new_size <= old_size {
-        // Shrinking - just return same pointer
+        // Shrinking - just ⤺ same pointer
         // (Could split and add to free list, but not worth complexity)
         ret Ok(ptr);
     }
 
-    // Check if this is a large allocation that can use mremap
+    // Check ⎇ this is a large allocation that can invoke mremap
     unsafe {
-        ≔ header = (ptr as *u8).offset(-(size_of::<AllocHeader>() as isize)) as *AllocHeader;
+        ≔ header = (ptr as *u8).offset(-(size_of·<AllocHeader>() as isize)) as *AllocHeader;
         ⎇ (*header).is_large() {
             // Try mremap
             ≔ old_total = (*header).total_size();
-            ≔ new_total = size_of::<AllocHeader>() + new_size;
+            ≔ new_total = size_of·<AllocHeader>() + new_size;
             ≔ new_total_aligned = align_up(new_total, PAGE_SIZE);
 
             ≔ new_base = sys_mremap(
@@ -287,7 +287,7 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
             ≔ new_header = new_base as *vary AllocHeader;
             (*new_header).size = new_size;
 
-            ret Ok(new_base.offset(size_of::<AllocHeader>() as isize));
+            ret Ok(new_base.offset(size_of·<AllocHeader>() as isize));
         }
     }
 
@@ -305,19 +305,19 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
 ///
 /// # Arguments
 /// - `ptr`: Pointer to memory to free
-/// - `size`: Size of allocation (used for validation)
+/// - `size`: Size of allocation (used ∀ validation)
 ☉ rite free(ptr: *vary u8, size: usize) -> Result<(), SyscallError>! {
     ⎇ ptr as usize == 0 {
         ret Ok(());
     }
 
     unsafe {
-        ≔ header = (ptr as *u8).offset(-(size_of::<AllocHeader>() as isize)) as *vary AllocHeader;
+        ≔ header = (ptr as *u8).offset(-(size_of·<AllocHeader>() as isize)) as *vary AllocHeader;
 
         // Validate magic (debug)
         ⎇ (*header).magic != ALLOC_MAGIC {
             // Invalid free - corrupted or double-free
-            ret Err(SyscallError::EFAULT);
+            ret Err(SyscallError·EFAULT);
         }
 
         ⎇ (*header).is_large() {
@@ -345,7 +345,7 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
 
 /// Allocate large memory (> LARGE_THRESHOLD) directly via mmap
 rite alloc_large(size: usize) -> Result<*vary u8, SyscallError>! {
-    ≔ total = size_of::<AllocHeader>() + size;
+    ≔ total = size_of·<AllocHeader>() + size;
     ≔ aligned = align_up(total, PAGE_SIZE);
 
     ≔ mem = sys_mmap(
@@ -364,7 +364,7 @@ rite alloc_large(size: usize) -> Result<*vary u8, SyscallError>! {
         (*header).magic = ALLOC_MAGIC;
 
         ALLOCATOR.total_allocated += size;
-        Ok(mem.offset(size_of::<AllocHeader>() as isize))
+        Ok(mem.offset(size_of·<AllocHeader>() as isize))
     }
 }
 
@@ -385,7 +385,7 @@ rite try_alloc_from_free_list(size: usize) -> ?*vary u8 {
                 }
 
                 (*curr).header.flags &= !ALLOC_FLAG_FREE;
-                ≔ user_ptr = (curr as *vary u8).offset(size_of::<AllocHeader>() as isize);
+                ≔ user_ptr = (curr as *vary u8).offset(size_of·<AllocHeader>() as isize);
                 ret Some(user_ptr);
             }
             prev = curr;
@@ -450,7 +450,7 @@ unsafe rite memcpy(dst: *vary u8, src: *u8, count: usize) {
     }
 }
 
-/// Get number of entries in free list
+/// Get number of entries ∈ free list
 ☉ rite alloc_free_list_count() -> usize! {
     unsafe {
         vary count: usize = 0;

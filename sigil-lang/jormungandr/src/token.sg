@@ -1,4 +1,4 @@
-//! Token definitions for the Sigil lexer.
+//! Token definitions ∀ the Sigil lexer.
 //!
 //! This module defines all token types produced by the lexer.
 //! Includes polysynthetic morphemes, evidentiality markers, and Unicode symbols.
@@ -9,10 +9,10 @@
 
 invoke tome·span·Span;
 
-/// Token types for the Sigil programming language.
+/// Token types ∀ the Sigil programming language.
 /// Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
+☉ ᛈ Token {
     // ========================================
     // Comments
     // ========================================
@@ -106,7 +106,7 @@ pub enum Token {
     Mu,         // μ, Μ - Middle/median
     Chi,        // χ, Χ - Random/choice
     Nu,         // ν, Ν - Nth element
-    Xi,         // ξ, Ξ - Next in sequence
+    Xi,         // ξ, Ξ - Next ∈ sequence
     Hourglass,  // ⌛ - Await symbol
 
     // ========================================
@@ -116,7 +116,7 @@ pub enum Token {
     Gpu,        // ⊛, gpu - GPU compute shader
 
     // ========================================
-    // Quantifiers (for AI-native set operations)
+    // Quantifiers (∀ AI-native set operations)
     // ========================================
     ForAll,         // ∀ - Universal quantification
     Exists,         // ∃ - Existential quantification
@@ -272,7 +272,7 @@ pub enum Token {
     DotDot,         // ..
     DotDotEq,       // ..=
     PlusPlus,       // ++ - Concatenation
-    ColonColon,     // ::
+    ColonColon,     // ·
     Colon,          // :
     Semi,           // ;
     Comma,          // ,
@@ -384,10 +384,10 @@ pub enum Token {
     // ========================================
     // Attribute keywords
     // ========================================
-    Repr,           // repr (for #[repr(...)])
-    Align,          // align (for #[align(...)])
-    Test,           // test (for #[test])
-    Default,        // default (for default implementations)
+    Repr,           // repr (∀ #[repr(...)])
+    Align,          // align (∀ #[align(...)])
+    Test,           // test (∀ #[test])
+    Default,        // default (∀ default implementations)
 
     // ========================================
     // Special
@@ -396,10 +396,10 @@ pub enum Token {
     Eof,
 }
 
-impl Token {
-    /// Check if this token is a keyword.
-    pub fn is_keyword(self) -> !bool {
-        match self {
+⊢ Token {
+    /// Check ⎇ this token is a keyword.
+    ☉ λ is_keyword(self) -> !bool {
+        ⌥ self {
             Token·Fn | Token·Async | Token·Let | Token·Mut |
             Token·Const | Token·Type | Token·Struct | Token·Enum |
             Token·Trait | Token·Impl | Token·Mod | Token·Use |
@@ -412,9 +412,9 @@ impl Token {
         }
     }
 
-    /// Check if this token is a morpheme (Greek letter operator).
-    pub fn is_morpheme(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a morpheme (Greek letter operator).
+    ☉ λ is_morpheme(self) -> !bool {
+        ⌥ self {
             Token·Tau | Token·Phi | Token·Sigma | Token·Rho |
             Token·Lambda | Token·Pi | Token·Hourglass |
             Token·Delta | Token·Epsilon | Token·Omega |
@@ -426,44 +426,44 @@ impl Token {
         }
     }
 
-    /// Check if this token is a verb aspect marker.
-    pub fn is_aspect(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a verb aspect marker.
+    ☉ λ is_aspect(self) -> !bool {
+        ⌥ self {
             Token·AspectProgressive | Token·AspectPerfective |
             Token·AspectPotential | Token·AspectResultative => true,
             _ => false,
         }
     }
 
-    /// Check if this token is a data operation.
-    pub fn is_data_op(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a data operation.
+    ☉ λ is_data_op(self) -> !bool {
+        ⌥ self {
             Token·Bowtie | Token·ElementSmallVerticalBar |
             Token·SquareCup | Token·SquareCap => true,
             _ => false,
         }
     }
 
-    /// Check if this token is a bitwise symbol.
-    pub fn is_bitwise_symbol(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a bitwise symbol.
+    ☉ λ is_bitwise_symbol(self) -> !bool {
+        ⌥ self {
             Token·BitwiseAndSymbol | Token·BitwiseOrSymbol => true,
             _ => false,
         }
     }
 
-    /// Check if this token is a quantifier.
-    pub fn is_quantifier(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a quantifier.
+    ☉ λ is_quantifier(self) -> !bool {
+        ⌥ self {
             Token·ForAll | Token·Exists |
             Token·ElementOf | Token·NotElementOf => true,
             _ => false,
         }
     }
 
-    /// Check if this token is a set operation.
-    pub fn is_set_op(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a set operation.
+    ☉ λ is_set_op(self) -> !bool {
+        ⌥ self {
             Token·Union | Token·Intersection | Token·SetMinus |
             Token·Subset | Token·SubsetEq |
             Token·Superset | Token·SupersetEq => true,
@@ -471,27 +471,27 @@ impl Token {
         }
     }
 
-    /// Check if this token is a logic operator.
-    pub fn is_logic_op(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a logic operator.
+    ☉ λ is_logic_op(self) -> !bool {
+        ⌥ self {
             Token·LogicAnd | Token·LogicOr | Token·LogicNot |
             Token·LogicXor | Token·Top | Token·Bottom => true,
             _ => false,
         }
     }
 
-    /// Check if this token is an evidentiality marker.
-    pub fn is_evidentiality(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is an evidentiality marker.
+    ☉ λ is_evidentiality(self) -> !bool {
+        ⌥ self {
             Token·Bang | Token·Question |
             Token·Tilde | Token·Interrobang | Token·Lozenge => true,
             _ => false,
         }
     }
 
-    /// Check if this token is an affective marker.
-    pub fn is_affective(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is an affective marker.
+    ☉ λ is_affective(self) -> !bool {
+        ⌥ self {
             Token·DirectSum | Token·AffectNegative | Token·AffectNeutral |
             Token·IronyMark | Token·IntensityUp | Token·IntensityDown |
             Token·IntensityMax | Token·FormalRegister | Token·InformalRegister |
@@ -502,34 +502,34 @@ impl Token {
         }
     }
 
-    /// Check if this token is a sentiment marker.
-    pub fn is_sentiment(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a sentiment marker.
+    ☉ λ is_sentiment(self) -> !bool {
+        ⌥ self {
             Token·DirectSum | Token·AffectNegative | Token·AffectNeutral => true,
             _ => false,
         }
     }
 
-    /// Check if this token is an emotion marker.
-    pub fn is_emotion(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is an emotion marker.
+    ☉ λ is_emotion(self) -> !bool {
+        ⌥ self {
             Token·EmotionJoy | Token·EmotionSadness | Token·EmotionAnger |
             Token·EmotionFear | Token·EmotionSurprise | Token·EmotionLove => true,
             _ => false,
         }
     }
 
-    /// Check if this token is an intensity marker.
-    pub fn is_intensity(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is an intensity marker.
+    ☉ λ is_intensity(self) -> !bool {
+        ⌥ self {
             Token·IntensityUp | Token·IntensityDown | Token·IntensityMax => true,
             _ => false,
         }
     }
 
-    /// Check if this token is a literal.
-    pub fn is_literal(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a literal.
+    ☉ λ is_literal(self) -> !bool {
+        ⌥ self {
             Token·BinaryLit(_) | Token·OctalLit(_) | Token·HexLit(_) |
             Token·VigesimalLit(_) | Token·SexagesimalLit(_) | Token·DuodecimalLit(_) |
             Token·FloatLit(_) | Token·IntLit(_) | Token·StringLit(_) |
@@ -542,9 +542,9 @@ impl Token {
         }
     }
 
-    /// Check if this token is a delimiter.
-    pub fn is_delimiter(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a delimiter.
+    ☉ λ is_delimiter(self) -> !bool {
+        ⌥ self {
             Token·LParen | Token·RParen |
             Token·LBrace | Token·RBrace |
             Token·LBracket | Token·RBracket => true,
@@ -552,9 +552,9 @@ impl Token {
         }
     }
 
-    /// Check if this token is a protocol keyword.
-    pub fn is_protocol(self) -> !bool {
-        match self {
+    /// Check ⎇ this token is a protocol keyword.
+    ☉ λ is_protocol(self) -> !bool {
+        ⌥ self {
             Token·Send | Token·Recv | Token·Stream |
             Token·Connect | Token·Close | Token·Timeout |
             Token·Retry | Token·Header | Token·Body |
@@ -568,14 +568,14 @@ impl Token {
 }
 
 /// A token with its source span.
-pub type SpannedToken = (Token, Span);
+☉ type SpannedToken = (Token, Span);
 
 // ============================================
 // Tests
 // ============================================
 
 #[test]
-fn test_token_is_keyword() {
+λ test_token_is_keyword() {
     assert!(Token·Fn.is_keyword());
     assert!(Token·Let.is_keyword());
     assert!(Token·If.is_keyword());
@@ -584,7 +584,7 @@ fn test_token_is_keyword() {
 }
 
 #[test]
-fn test_token_is_morpheme() {
+λ test_token_is_morpheme() {
     assert!(Token·Tau.is_morpheme());
     assert!(Token·Phi.is_morpheme());
     assert!(Token·Sigma.is_morpheme());
@@ -593,7 +593,7 @@ fn test_token_is_morpheme() {
 }
 
 #[test]
-fn test_token_is_evidentiality() {
+λ test_token_is_evidentiality() {
     assert!(Token·Bang.is_evidentiality());
     assert!(Token·Question.is_evidentiality());
     assert!(Token·Tilde.is_evidentiality());
@@ -602,7 +602,7 @@ fn test_token_is_evidentiality() {
 }
 
 #[test]
-fn test_token_is_literal() {
+λ test_token_is_literal() {
     assert!(Token·IntLit("42".to_string()).is_literal());
     assert!(Token·StringLit("hello".to_string()).is_literal());
     assert!(Token·True.is_literal());

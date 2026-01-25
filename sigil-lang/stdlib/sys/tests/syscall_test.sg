@@ -1,10 +1,10 @@
 //! Syscall Layer Tests - Tests getpid, mmap, munmap
 
-fn main() -> i64 {
-    let mut failures: i64 = 0;
+λ main() -> i64 {
+    ≔ Δ failures: i64 = 0;
 
-    // Test 1: getpid syscall (should return positive PID)
-    let mut pid: i64 = 0;
+    // Test 1: getpid syscall (should ⤺ positive PID)
+    ≔ Δ pid: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") 39_i64 => pid,
@@ -12,14 +12,14 @@ fn main() -> i64 {
             out("r11") _,
             options(nostack));
     }
-    if pid <= 0 {
+    ⎇ pid <= 0 {
         failures = failures + 1;
     }
 
     // Test 2: mmap anonymous memory
     // SYS_MMAP=9, PROT_READ|PROT_WRITE=3, MAP_PRIVATE|MAP_ANONYMOUS=34
-    let mut ptr: i64 = 0;
-    let neg_one: i64 = -1;
+    ≔ Δ ptr: i64 = 0;
+    ≔ neg_one: i64 = -1;
     unsafe {
         asm!("syscall",
             inout("rax") 9_i64 => ptr,
@@ -34,13 +34,13 @@ fn main() -> i64 {
             options(nostack));
     }
 
-    if ptr <= 0 {
+    ⎇ ptr <= 0 {
         // mmap failed
         failures = failures + 1;
     }
 
     // Test 3: munmap
-    let mut unmap_result: i64 = 0;
+    ≔ Δ unmap_result: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") 11_i64 => unmap_result,
@@ -51,7 +51,7 @@ fn main() -> i64 {
             options(nostack));
     }
 
-    if unmap_result != 0 {
+    ⎇ unmap_result != 0 {
         failures = failures + 1;
     }
 

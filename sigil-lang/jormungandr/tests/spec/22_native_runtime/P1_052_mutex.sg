@@ -3,7 +3,7 @@
 // Priority: P1
 
 λ main() {
-    // Initialize mutex (simulated as i64 in interpreter)
+    // Initialize mutex (simulated as i64 ∈ interpreter)
     ≔ mutex = 0;
 
     // Initialize
@@ -22,7 +22,7 @@
         println("mutex_trylock: FAILED");
     }
 
-    // Lock (should succeed in single-threaded interpreter)
+    // Lock (should succeed ∈ single-threaded interpreter)
     ≔ lock_result = Mutex·lock(mutex);
     ⎇ lock_result == 0 {
         println("mutex_lock: OK");

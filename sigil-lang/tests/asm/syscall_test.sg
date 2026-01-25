@@ -1,6 +1,6 @@
 // Minimal syscall test - just getpid
-fn main() -> i64 {
-    let pid: i64 = 0;
+λ main() -> i64 {
+    ≔ pid: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") 39_i64 => pid,

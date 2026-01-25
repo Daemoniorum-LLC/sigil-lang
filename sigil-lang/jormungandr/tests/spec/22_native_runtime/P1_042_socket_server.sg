@@ -9,7 +9,7 @@
     ⎇ sock >= 0 {
         println("socket: OK");
 
-        // Set socket option (reuse address)
+        // Set socket option (reinvoke address)
         ≔ opt = Sys·setsockopt(sock, SOL_SOCKET(), SO_REUSEADDR(), 0, 4);
         ⎇ opt == 0 {
             println("setsockopt: OK");
@@ -25,7 +25,7 @@
             println("bind: FAILED");
         }
 
-        // Listen for connections
+        // Listen ∀ connections
         ≔ listening = Sys·listen(sock, 10);
         ⎇ listening == 0 {
             println("listen: OK");

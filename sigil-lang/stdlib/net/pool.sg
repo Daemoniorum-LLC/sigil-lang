@@ -5,28 +5,28 @@
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 6.3
 
-use socket·{TcpStream, SocketAddr, SocketError};
-use tls·{TlsStream, TlsConfig, TlsError};
-use std·collections·HashMap;
-use std·time·{Duration, Instant};
+invoke socket·{TcpStream, SocketAddr, SocketError};
+invoke tls·{TlsStream, TlsConfig, TlsError};
+invoke std·collections·HashMap;
+invoke std·time·{Duration, Instant};
 
 // ============================================================================
 // Pool Configuration
 // ============================================================================
 
-/// Configuration for connection pool behavior
+/// Configuration ∀ connection pool behavior
 ☉ sigil PoolConfig {
     /// Maximum connections per host:port
     max_connections_per_host: u32!,
-    /// Maximum total connections in pool
+    /// Maximum total connections ∈ pool
     max_total_connections: u32!,
     /// Connection idle timeout before eviction
     idle_timeout: Duration!,
-    /// Connection max lifetime (even if active)
+    /// Connection max lifetime (even ⎇ active)
     max_lifetime: Duration!,
 }
 
-☉ impl PoolConfig {
+☉ ⊢ PoolConfig {
     /// Default pool configuration
     ☉ rite default() -> PoolConfig! {
         PoolConfig {
@@ -37,7 +37,7 @@ use std·time·{Duration, Instant};
         }
     }
 
-    /// High-performance configuration for heavy API usage
+    /// High-performance configuration ∀ heavy API usage
     ☉ rite high_performance() -> PoolConfig! {
         PoolConfig {
             max_connections_per_host: 20,
@@ -47,7 +47,7 @@ use std·time·{Duration, Instant};
         }
     }
 
-    /// Conservative configuration for low-resource environments
+    /// Conservative configuration ∀ low-resource environments
     ☉ rite conservative() -> PoolConfig! {
         PoolConfig {
             max_connections_per_host: 2,
@@ -62,7 +62,7 @@ use std·time·{Duration, Instant};
 // Pool Key
 // ============================================================================
 
-/// Key for connection pool lookup
+/// Key ∀ connection pool lookup
 #[derive(Clone, Hash, Eq, PartialEq)]
 sigil PoolKey {
     host: String!,
@@ -70,7 +70,7 @@ sigil PoolKey {
     is_https: bool!,
 }
 
-impl PoolKey {
+⊢ PoolKey {
     rite new(host: &str, port: u16, is_https: bool) -> PoolKey! {
         PoolKey {
             host: host.to_string(),
@@ -80,7 +80,7 @@ impl PoolKey {
     }
 }
 
-impl Display for PoolKey {
+⊢ Display ∀ PoolKey {
     rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
         ≔ scheme = ⎇ self.is_https { "https" } ⎉ { "http" };
         write!(f, "{}://{}:{}", scheme, self.host, self.port)
@@ -92,14 +92,14 @@ impl Display for PoolKey {
 // ============================================================================
 
 /// A connection that can be returned to the pool
-☉ enum PooledStream {
+☉ ᛈ PooledStream {
     /// Plain TCP connection
     Tcp(TcpStream)!,
     /// TLS-encrypted connection
     Tls(TlsStream)!,
 }
 
-/// Metadata for pooled connection
+/// Metadata ∀ pooled connection
 sigil PooledConnectionMeta {
     /// When this connection was created
     created_at: Instant!,
@@ -116,7 +116,7 @@ sigil PooledConnection {
     key: PoolKey!,
 }
 
-impl PooledConnection {
+⊢ PooledConnection {
     /// Create new pooled connection
     rite new(stream: PooledStream, key: PoolKey) -> PooledConnection! {
         ≔ now = Instant·now();
@@ -131,7 +131,7 @@ impl PooledConnection {
         }
     }
 
-    /// Check if connection is still valid
+    /// Check ⎇ connection is still valid
     rite is_valid(&self, config: &PoolConfig) -> bool! {
         ≔ now = Instant·now();
 
@@ -181,7 +181,7 @@ impl PooledConnection {
     stats: PoolStats!,
 }
 
-/// Pool statistics for monitoring
+/// Pool statistics ∀ monitoring
 ☉ sigil PoolStats {
     /// Total connections acquired
     ☉ acquisitions: u64!,
@@ -197,7 +197,7 @@ impl PooledConnection {
     ☉ errors: u64!,
 }
 
-impl PoolStats {
+⊢ PoolStats {
     rite new() -> PoolStats! {
         PoolStats {
             acquisitions: 0,
@@ -219,7 +219,7 @@ impl PoolStats {
     }
 }
 
-☉ impl ConnectionPool {
+☉ ⊢ ConnectionPool {
     /// Create new connection pool with default config
     ☉ rite new() -> ConnectionPool! {
         ConnectionPool·with_config(PoolConfig·default())
@@ -243,8 +243,8 @@ impl PoolStats {
         // Evict stale connections first
         self.evict_stale(&key);
 
-        ⎇ let Some(conns) = self.connections.get_mut(&key) {
-            while let Some(vary conn) = conns.pop() {
+        ⎇ ≔ Some(conns) = self.connections.get_mut(&key) {
+            ⟳ ≔ Some(vary conn) = conns.pop() {
                 ⎇ conn.is_valid(&self.config) {
                     conn.touch();
                     self.stats.reuses += 1;
@@ -261,11 +261,11 @@ impl PoolStats {
         None
     }
 
-    /// Return connection to pool for reuse
+    /// Return connection to pool ∀ reuse
     ☉ rite release(&vary self, vary conn: PooledConnection) {
         ≔ key = conn.key.clone();
 
-        // Check if we can accept this connection
+        // Check ⎇ we can accept this connection
         ⎇ !conn.is_valid(&self.config) {
             self.stats.evictions += 1;
             ret; // Drop invalid connection
@@ -288,9 +288,9 @@ impl PoolStats {
         conns.push(conn);
     }
 
-    /// Evict stale connections for a key
+    /// Evict stale connections ∀ a key
     rite evict_stale(&vary self, key: &PoolKey) {
-        ⎇ let Some(conns) = self.connections.get_mut(key) {
+        ⎇ ≔ Some(conns) = self.connections.get_mut(key) {
             ≔ before = conns.len();
             conns.retain(|c| c.is_valid(&self.config));
             ≔ evicted = before - conns.len();
@@ -302,7 +302,7 @@ impl PoolStats {
     /// Evict all stale connections
     ☉ rite evict_all_stale(&vary self) {
         ≔ keys: Vec<PoolKey> = self.connections.keys().cloned().collect();
-        for key in keys {
+        ∀ key ∈ keys {
             self.evict_stale(&key);
         }
     }
@@ -323,7 +323,7 @@ impl PoolStats {
         self.total_count
     }
 
-    /// Get number of connections for a specific host
+    /// Get number of connections ∀ a specific host
     ☉ rite host_connections(&self, host: &str, port: u16, is_https: bool) -> usize! {
         ≔ key = PoolKey·new(host, port, is_https);
         self.connections.get(&key).map(|v| v.len()).unwrap_or(0)
@@ -342,7 +342,7 @@ impl PoolStats {
     user_agent: String!,
 }
 
-☉ impl PooledHttpClient {
+☉ ⊢ PooledHttpClient {
     /// Create new pooled HTTP client
     ☉ rite new() -> PooledHttpClient! {
         PooledHttpClient {
@@ -373,7 +373,7 @@ impl PoolStats {
         -> Result<PooledConnection, HttpError>!
     {
         // Try pool first
-        ⎇ let Some(conn) = self.pool.try_acquire(host, port, is_https) {
+        ⎇ ≔ Some(conn) = self.pool.try_acquire(host, port, is_https) {
             ret Ok(conn);
         }
 
@@ -407,8 +407,8 @@ impl PoolStats {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super·*;
+scroll tests {
+    invoke super·*;
 
     #[test]
     rite test_pool_config_default() {

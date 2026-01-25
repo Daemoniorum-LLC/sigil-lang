@@ -19,7 +19,7 @@
 
 // Test 3: Optional ⤺ with null
 #[test]
-λ test_optional_return() {
+λ test_optional_⤺() {
     λ maybe(cond: bool) -> i32? {
         ⎇ cond {
             42

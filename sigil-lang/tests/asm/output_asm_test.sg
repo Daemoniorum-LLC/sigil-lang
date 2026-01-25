@@ -1,6 +1,6 @@
 // Test output register
-fn main() -> i64 {
-    let result: i64 = 0;
+λ main() -> i64 {
+    ≔ result: i64 = 0;
     unsafe {
         asm!("mov rax, 42",
             out("rax") result,

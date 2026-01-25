@@ -1,7 +1,7 @@
 // Test multiple outputs
-fn main() -> i64 {
-    let a: i64 = 0;
-    let b: i64 = 0;
+λ main() -> i64 {
+    ≔ a: i64 = 0;
+    ≔ b: i64 = 0;
     unsafe {
         // rdx:rax = quotient:remainder from dividing 100 by 7
         // But let's do something simpler - just set two registers

@@ -1,44 +1,44 @@
 //! HTTP/1.1 Layer Tests
 //!
-//! TDD Red Phase: Tests for URL parsing, HTTP request/response, client
+//! TDD Red Phase: Tests ∀ URL parsing, HTTP request/response, client
 //!
 //! Test IDs: HTTP-001 through HTTP-039
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 6
 
-use stdlib::net::http::*;
+invoke stdlib·net·http·*;
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-fn test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
-    if actual != expected {
+λ test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
+    ⎇ actual != expected {
         panic(format!("[{}] FAIL: {} - expected {}, got {}", test_id, msg, expected, actual));
     }
 }
 
-fn test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
-    match result {
-        Result::Ok(v) => v,
-        Result::Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
+λ test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
+    ⌥ result {
+        Result·Ok(v) => v,
+        Result·Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
     }
 }
 
-fn test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
-    match result {
-        Result::Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
-        Result::Err(e) => e,
+λ test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
+    ⌥ result {
+        Result·Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
+        Result·Err(e) => e,
     }
 }
 
-fn test_assert_true(cond: bool, test_id: &str, msg: &str) {
-    if !cond {
+λ test_assert_true(cond: bool, test_id: &str, msg: &str) {
+    ⎇ !cond {
         panic(format!("[{}] FAIL: {}", test_id, msg));
     }
 }
 
-fn test_assert_false(cond: bool, test_id: &str, msg: &str) {
-    if cond {
+λ test_assert_false(cond: bool, test_id: &str, msg: &str) {
+    ⎇ cond {
         panic(format!("[{}] FAIL: {}", test_id, msg));
     }
 }
@@ -47,10 +47,10 @@ fn test_assert_false(cond: bool, test_id: &str, msg: &str) {
 // URL Parsing Tests (HTTP-001 through HTTP-008)
 // ============================================================================
 
-fn test_url_parse_http() -> bool {
+λ test_url_parse_http() -> bool {
     print("  [HTTP-001] URL parse http... ");
 
-    let url = test_assert_ok(Url::parse("http://example.com/path"), "HTTP-001", "parse");
+    ≔ url = test_assert_ok(Url·parse("http://example.com/path"), "HTTP-001", "parse");
 
     test_assert_eq(url.scheme, "http", "HTTP-001", "scheme");
     test_assert_eq(url.host, "example.com", "HTTP-001", "host");
@@ -62,10 +62,10 @@ fn test_url_parse_http() -> bool {
     true
 }
 
-fn test_url_parse_https() -> bool {
+λ test_url_parse_https() -> bool {
     print("  [HTTP-002] URL parse https... ");
 
-    let url = test_assert_ok(Url::parse("https://example.com/secure"), "HTTP-002", "parse");
+    ≔ url = test_assert_ok(Url·parse("https://example.com/secure"), "HTTP-002", "parse");
 
     test_assert_eq(url.scheme, "https", "HTTP-002", "scheme");
     test_assert_eq(url.host, "example.com", "HTTP-002", "host");
@@ -76,10 +76,10 @@ fn test_url_parse_https() -> bool {
     true
 }
 
-fn test_url_parse_port() -> bool {
+λ test_url_parse_port() -> bool {
     print("  [HTTP-003] URL parse with port... ");
 
-    let url = test_assert_ok(Url::parse("http://example.com:8080/api"), "HTTP-003", "parse");
+    ≔ url = test_assert_ok(Url·parse("http://example.com:8080/api"), "HTTP-003", "parse");
 
     test_assert_eq(url.port, 8080, "HTTP-003", "port");
     test_assert_eq(url.host, "example.com", "HTTP-003", "host");
@@ -88,26 +88,26 @@ fn test_url_parse_port() -> bool {
     true
 }
 
-fn test_url_parse_default_port() -> bool {
+λ test_url_parse_default_port() -> bool {
     print("  [HTTP-004] URL default port... ");
 
-    let http_url = test_assert_ok(Url::parse("http://example.com/"), "HTTP-004", "parse http");
+    ≔ http_url = test_assert_ok(Url·parse("http://example.com/"), "HTTP-004", "parse http");
     test_assert_eq(http_url.port, 80, "HTTP-004", "http default port");
 
-    let https_url = test_assert_ok(Url::parse("https://example.com/"), "HTTP-004", "parse https");
+    ≔ https_url = test_assert_ok(Url·parse("https://example.com/"), "HTTP-004", "parse https");
     test_assert_eq(https_url.port, 443, "HTTP-004", "https default port");
 
     println("PASS");
     true
 }
 
-fn test_url_parse_query() -> bool {
+λ test_url_parse_query() -> bool {
     print("  [HTTP-005] URL parse query... ");
 
-    let url = test_assert_ok(Url::parse("http://example.com/search?q=test&page=1"), "HTTP-005", "parse");
+    ≔ url = test_assert_ok(Url·parse("http://example.com/search?q=test&page=1"), "HTTP-005", "parse");
 
     test_assert_eq(url.path, "/search", "HTTP-005", "path");
-    match &url.query {
+    ⌥ &url.query {
         Some(q) => test_assert_eq(q.as_str(), "q=test&page=1", "HTTP-005", "query"),
         None => panic("[HTTP-005] FAIL: query should be present"),
     }
@@ -118,13 +118,13 @@ fn test_url_parse_query() -> bool {
     true
 }
 
-fn test_url_parse_fragment() -> bool {
+λ test_url_parse_fragment() -> bool {
     print("  [HTTP-006] URL parse fragment... ");
 
-    let url = test_assert_ok(Url::parse("http://example.com/page#section"), "HTTP-006", "parse");
+    ≔ url = test_assert_ok(Url·parse("http://example.com/page#section"), "HTTP-006", "parse");
 
     test_assert_eq(url.path, "/page", "HTTP-006", "path");
-    match &url.fragment {
+    ⌥ &url.fragment {
         Some(f) => test_assert_eq(f.as_str(), "section", "HTTP-006", "fragment"),
         None => panic("[HTTP-006] FAIL: fragment should be present"),
     }
@@ -133,17 +133,17 @@ fn test_url_parse_fragment() -> bool {
     true
 }
 
-fn test_url_parse_auth() -> bool {
+λ test_url_parse_auth() -> bool {
     print("  [HTTP-007] URL parse auth... ");
 
-    let url = test_assert_ok(Url::parse("http://user:pass@example.com/"), "HTTP-007", "parse");
+    ≔ url = test_assert_ok(Url·parse("http://user:pass@example.com/"), "HTTP-007", "parse");
 
-    match &url.username {
+    ⌥ &url.username {
         Some(u) => test_assert_eq(u.as_str(), "user", "HTTP-007", "username"),
         None => panic("[HTTP-007] FAIL: username should be present"),
     }
 
-    match &url.password {
+    ⌥ &url.password {
         Some(p) => test_assert_eq(p.as_str(), "pass", "HTTP-007", "password"),
         None => panic("[HTTP-007] FAIL: password should be present"),
     }
@@ -152,13 +152,13 @@ fn test_url_parse_auth() -> bool {
     true
 }
 
-fn test_url_parse_invalid() -> bool {
+λ test_url_parse_invalid() -> bool {
     print("  [HTTP-008] URL parse invalid... ");
 
-    let result = Url::parse("not a url");
+    ≔ result = Url·parse("not a url");
     test_assert_err(result, "HTTP-008", "should fail");
 
-    let result2 = Url::parse("ftp://example.com");
+    ≔ result2 = Url·parse("ftp://example.com");
     // FTP is valid URL but we might reject it based on scheme
     // For now, it parses
 
@@ -170,21 +170,21 @@ fn test_url_parse_invalid() -> bool {
 // HTTP Request Tests (HTTP-009 through HTTP-014)
 // ============================================================================
 
-fn test_request_format_get() -> bool {
+λ test_request_format_get() -> bool {
     print("  [HTTP-009] Request format GET... ");
 
-    let client = HttpClient::new();
-    let url = test_assert_ok(Url::parse("http://example.com/api/data"), "HTTP-009", "parse url");
+    ≔ client = HttpClient·new();
+    ≔ url = test_assert_ok(Url·parse("http://example.com/api/data"), "HTTP-009", "parse url");
 
-    let request = HttpRequest {
-        method: HttpMethod::GET,
+    ≔ request = HttpRequest {
+        method: HttpMethod·GET,
         url: url,
-        headers: Vec::new(),
+        headers: Vec·new(),
         body: None,
     };
 
-    let bytes = client.build_request(&request);
-    let request_str = String::from_utf8_lossy(&bytes);
+    ≔ bytes = client.build_request(&request);
+    ≔ request_str = String·from_utf8_lossy(&bytes);
 
     test_assert_true(request_str.starts_with("GET /api/data HTTP/1.1\r\n"), "HTTP-009", "request line");
     test_assert_true(request_str.contains("Host: example.com\r\n"), "HTTP-009", "host header");
@@ -193,22 +193,22 @@ fn test_request_format_get() -> bool {
     true
 }
 
-fn test_request_format_post() -> bool {
+λ test_request_format_post() -> bool {
     print("  [HTTP-010] Request format POST... ");
 
-    let client = HttpClient::new();
-    let url = test_assert_ok(Url::parse("http://example.com/api/submit"), "HTTP-010", "parse url");
+    ≔ client = HttpClient·new();
+    ≔ url = test_assert_ok(Url·parse("http://example.com/api/submit"), "HTTP-010", "parse url");
 
-    let body = b"name=test&value=123";
-    let request = HttpRequest {
-        method: HttpMethod::POST,
+    ≔ body = b"name=test&value=123";
+    ≔ request = HttpRequest {
+        method: HttpMethod·POST,
         url: url,
-        headers: Vec::new(),
+        headers: Vec·new(),
         body: Some(body.to_vec()),
     };
 
-    let bytes = client.build_request(&request);
-    let request_str = String::from_utf8_lossy(&bytes);
+    ≔ bytes = client.build_request(&request);
+    ≔ request_str = String·from_utf8_lossy(&bytes);
 
     test_assert_true(request_str.starts_with("POST /api/submit HTTP/1.1\r\n"), "HTTP-010", "request line");
     test_assert_true(request_str.contains("Content-Length: 19\r\n"), "HTTP-010", "content-length");
@@ -217,38 +217,38 @@ fn test_request_format_post() -> bool {
     true
 }
 
-fn test_request_host_header() -> bool {
+λ test_request_host_header() -> bool {
     print("  [HTTP-011] Request Host header... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    // Default port - no port in Host
-    let url1 = test_assert_ok(Url::parse("http://example.com/"), "HTTP-011", "parse url1");
+    // Default port - no port ∈ Host
+    ≔ url1 = test_assert_ok(Url·parse("http://example.com/"), "HTTP-011", "parse url1");
     test_assert_eq(url1.host_header(), "example.com", "HTTP-011", "default port host");
 
     // Custom port - include port
-    let url2 = test_assert_ok(Url::parse("http://example.com:8080/"), "HTTP-011", "parse url2");
+    ≔ url2 = test_assert_ok(Url·parse("http://example.com:8080/"), "HTTP-011", "parse url2");
     test_assert_eq(url2.host_header(), "example.com:8080", "HTTP-011", "custom port host");
 
     println("PASS");
     true
 }
 
-fn test_request_user_agent() -> bool {
+λ test_request_user_agent() -> bool {
     print("  [HTTP-012] Request User-Agent... ");
 
-    let client = HttpClient::new();
-    let url = test_assert_ok(Url::parse("http://example.com/"), "HTTP-012", "parse url");
+    ≔ client = HttpClient·new();
+    ≔ url = test_assert_ok(Url·parse("http://example.com/"), "HTTP-012", "parse url");
 
-    let request = HttpRequest {
-        method: HttpMethod::GET,
+    ≔ request = HttpRequest {
+        method: HttpMethod·GET,
         url: url,
-        headers: Vec::new(),
+        headers: Vec·new(),
         body: None,
     };
 
-    let bytes = client.build_request(&request);
-    let request_str = String::from_utf8_lossy(&bytes);
+    ≔ bytes = client.build_request(&request);
+    ≔ request_str = String·from_utf8_lossy(&bytes);
 
     test_assert_true(request_str.contains("User-Agent: Sigil/"), "HTTP-012", "user-agent");
 
@@ -256,25 +256,25 @@ fn test_request_user_agent() -> bool {
     true
 }
 
-fn test_request_custom_headers() -> bool {
+λ test_request_custom_headers() -> bool {
     print("  [HTTP-013] Request custom headers... ");
 
-    let client = HttpClient::new();
-    let url = test_assert_ok(Url::parse("http://example.com/"), "HTTP-013", "parse url");
+    ≔ client = HttpClient·new();
+    ≔ url = test_assert_ok(Url·parse("http://example.com/"), "HTTP-013", "parse url");
 
-    let mut headers = Vec::new();
+    ≔ Δ headers = Vec·new();
     headers.push(("Authorization".to_string(), "Bearer token123".to_string()));
     headers.push(("X-Custom".to_string(), "value".to_string()));
 
-    let request = HttpRequest {
-        method: HttpMethod::GET,
+    ≔ request = HttpRequest {
+        method: HttpMethod·GET,
         url: url,
         headers: headers,
         body: None,
     };
 
-    let bytes = client.build_request(&request);
-    let request_str = String::from_utf8_lossy(&bytes);
+    ≔ bytes = client.build_request(&request);
+    ≔ request_str = String·from_utf8_lossy(&bytes);
 
     test_assert_true(request_str.contains("Authorization: Bearer token123\r\n"), "HTTP-013", "auth header");
     test_assert_true(request_str.contains("X-Custom: value\r\n"), "HTTP-013", "custom header");
@@ -283,24 +283,24 @@ fn test_request_custom_headers() -> bool {
     true
 }
 
-fn test_request_content_type() -> bool {
+λ test_request_content_type() -> bool {
     print("  [HTTP-014] Request Content-Type... ");
 
-    let client = HttpClient::new();
-    let url = test_assert_ok(Url::parse("http://example.com/api"), "HTTP-014", "parse url");
+    ≔ client = HttpClient·new();
+    ≔ url = test_assert_ok(Url·parse("http://example.com/api"), "HTTP-014", "parse url");
 
-    let mut headers = Vec::new();
+    ≔ Δ headers = Vec·new();
     headers.push(("Content-Type".to_string(), "application/json".to_string()));
 
-    let request = HttpRequest {
-        method: HttpMethod::POST,
+    ≔ request = HttpRequest {
+        method: HttpMethod·POST,
         url: url,
         headers: headers,
         body: Some(b"{\"key\":\"value\"}".to_vec()),
     };
 
-    let bytes = client.build_request(&request);
-    let request_str = String::from_utf8_lossy(&bytes);
+    ≔ bytes = client.build_request(&request);
+    ≔ request_str = String·from_utf8_lossy(&bytes);
 
     test_assert_true(request_str.contains("Content-Type: application/json\r\n"), "HTTP-014", "content-type");
 
@@ -312,13 +312,13 @@ fn test_request_content_type() -> bool {
 // HTTP Response Parsing Tests (HTTP-015 through HTTP-022)
 // ============================================================================
 
-fn test_response_parse_status() -> bool {
+λ test_response_parse_status() -> bool {
     print("  [HTTP-015] Response parse status... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    let response_data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHello";
-    let response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-015", "parse");
+    ≔ response_data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHello";
+    ≔ response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-015", "parse");
 
     test_assert_eq(response.status, 200, "HTTP-015", "status code");
     test_assert_eq(response.status_text, "OK", "HTTP-015", "status text");
@@ -328,13 +328,13 @@ fn test_response_parse_status() -> bool {
     true
 }
 
-fn test_response_parse_headers() -> bool {
+λ test_response_parse_headers() -> bool {
     print("  [HTTP-016] Response parse headers... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    let response_data = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nX-Custom: test\r\n\r\nBody";
-    let response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-016", "parse");
+    ≔ response_data = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nX-Custom: test\r\n\r\nBody";
+    ≔ response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-016", "parse");
 
     test_assert_eq(response.headers.len(), 2, "HTTP-016", "header count");
 
@@ -342,21 +342,21 @@ fn test_response_parse_headers() -> bool {
     true
 }
 
-fn test_response_header_case() -> bool {
+λ test_response_header_case() -> bool {
     print("  [HTTP-017] Response header case insensitive... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    let response_data = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBody";
-    let response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-017", "parse");
+    ≔ response_data = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBody";
+    ≔ response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-017", "parse");
 
     // Case-insensitive lookup
-    match response.header("content-type") {
+    ⌥ response.header("content-type") {
         Some(v) => test_assert_eq(v, "text/plain", "HTTP-017", "header value"),
         None => panic("[HTTP-017] FAIL: header not found"),
     }
 
-    match response.header("CONTENT-TYPE") {
+    ⌥ response.header("CONTENT-TYPE") {
         Some(v) => test_assert_eq(v, "text/plain", "HTTP-017", "upper case lookup"),
         None => panic("[HTTP-017] FAIL: upper case lookup failed"),
     }
@@ -365,23 +365,23 @@ fn test_response_header_case() -> bool {
     true
 }
 
-fn test_response_content_length() -> bool {
+λ test_response_content_length() -> bool {
     print("  [HTTP-018] Response Content-Length body... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    let response_data = b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nHello, World!";
-    let response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-018", "parse");
+    ≔ response_data = b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nHello, World!";
+    ≔ response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-018", "parse");
 
     test_assert_eq(response.body.len(), 13, "HTTP-018", "body length");
-    let text = test_assert_ok(response.text(), "HTTP-018", "body text");
+    ≔ text = test_assert_ok(response.text(), "HTTP-018", "body text");
     test_assert_eq(text, "Hello, World!", "HTTP-018", "body content");
 
     println("PASS");
     true
 }
 
-fn test_response_chunked() -> bool {
+λ test_response_chunked() -> bool {
     print("  [HTTP-019] Response chunked encoding... ");
 
     // Chunked encoding parsing is complex
@@ -390,22 +390,22 @@ fn test_response_chunked() -> bool {
     true
 }
 
-fn test_response_chunked_trailer() -> bool {
+λ test_response_chunked_trailer() -> bool {
     print("  [HTTP-020] Response chunked with trailers... ");
 
     println("SKIP (chunked trailers not implemented)");
     true
 }
 
-fn test_response_connection_close() -> bool {
+λ test_response_connection_close() -> bool {
     print("  [HTTP-021] Response connection close... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    let response_data = b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nBody content here";
-    let response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-021", "parse");
+    ≔ response_data = b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nBody content here";
+    ≔ response = test_assert_ok(client.parse_response_simple(response_data), "HTTP-021", "parse");
 
-    match response.header("Connection") {
+    ⌥ response.header("Connection") {
         Some(v) => test_assert_eq(v, "close", "HTTP-021", "connection header"),
         None => panic("[HTTP-021] FAIL: Connection header not found"),
     }
@@ -414,17 +414,17 @@ fn test_response_connection_close() -> bool {
     true
 }
 
-fn test_response_malformed() -> bool {
+λ test_response_malformed() -> bool {
     print("  [HTTP-022] Response malformed... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
     // Missing status line
-    let result = client.parse_response_simple(b"Not a valid response");
+    ≔ result = client.parse_response_simple(b"Not a valid response");
     test_assert_err(result, "HTTP-022", "should fail");
 
     // Missing header boundary
-    let result2 = client.parse_response_simple(b"HTTP/1.1 200 OK\r\nNo body separator");
+    ≔ result2 = client.parse_response_simple(b"HTTP/1.1 200 OK\r\nNo body separator");
     test_assert_err(result2, "HTTP-022", "should fail without boundary");
 
     println("PASS");
@@ -435,23 +435,23 @@ fn test_response_malformed() -> bool {
 // HTTP Client Integration Tests (HTTP-023 through HTTP-030)
 // ============================================================================
 
-fn test_http_get_httpbin() -> bool {
+λ test_http_get_httpbin() -> bool {
     print("  [HTTP-023] HTTP GET httpbin.org... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    match HttpClient::get(&client, "http://httpbin.org/get") {
-        Result::Ok(response) => {
+    ⌥ HttpClient·get(&client, "http://httpbin.org/get") {
+        Result·Ok(response) => {
             test_assert_eq(response.status, 200, "HTTP-023", "status");
             println("PASS");
         }
-        Result::Err(HttpError::DnsResolutionFailed { .. }) => {
+        Result·Err(HttpError·DnsResolutionFailed { .. }) => {
             println("SKIP (DNS failed)");
         }
-        Result::Err(HttpError::ConnectionFailed { .. }) => {
+        Result·Err(HttpError·ConnectionFailed { .. }) => {
             println("SKIP (connection failed)");
         }
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("SKIP ({})", e);
         }
     }
@@ -459,17 +459,17 @@ fn test_http_get_httpbin() -> bool {
     true
 }
 
-fn test_http_post_httpbin() -> bool {
+λ test_http_post_httpbin() -> bool {
     print("  [HTTP-024] HTTP POST httpbin.org... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    match HttpClient::post(&client, "http://httpbin.org/post", b"test=data") {
-        Result::Ok(response) => {
+    ⌥ HttpClient·post(&client, "http://httpbin.org/post", b"test=data") {
+        Result·Ok(response) => {
             test_assert_eq(response.status, 200, "HTTP-024", "status");
             println("PASS");
         }
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("SKIP ({})", e);
         }
     }
@@ -477,18 +477,18 @@ fn test_http_post_httpbin() -> bool {
     true
 }
 
-fn test_https_get_google() -> bool {
+λ test_https_get_google() -> bool {
     print("  [HTTP-025] HTTPS GET google.com... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    match HttpClient::get(&client, "https://www.google.com/") {
-        Result::Ok(response) => {
+    ⌥ HttpClient·get(&client, "https://www.google.com/") {
+        Result·Ok(response) => {
             test_assert_true(response.status == 200 || response.status == 301 || response.status == 302,
                        "HTTP-025", "status should be 2xx or redirect");
             println("PASS (status={})", response.status);
         }
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("SKIP ({})", e);
         }
     }
@@ -496,18 +496,18 @@ fn test_https_get_google() -> bool {
     true
 }
 
-fn test_http_redirect_follow() -> bool {
+λ test_http_redirect_follow() -> bool {
     print("  [HTTP-026] HTTP redirect follow... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
     // httpbin.org/redirect/2 redirects twice then returns 200
-    match HttpClient::get(&client, "http://httpbin.org/redirect/2") {
-        Result::Ok(response) => {
+    ⌥ HttpClient·get(&client, "http://httpbin.org/redirect/2") {
+        Result·Ok(response) => {
             test_assert_eq(response.status, 200, "HTTP-026", "final status after redirects");
             println("PASS");
         }
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("SKIP ({})", e);
         }
     }
@@ -515,22 +515,22 @@ fn test_http_redirect_follow() -> bool {
     true
 }
 
-fn test_http_redirect_limit() -> bool {
+λ test_http_redirect_limit() -> bool {
     print("  [HTTP-027] HTTP redirect limit... ");
 
-    let mut client = HttpClient::new();
+    ≔ Δ client = HttpClient·new();
     client.max_redirects = 2;
 
     // Try to redirect more than limit
-    match HttpClient::get(&client, "http://httpbin.org/redirect/5") {
-        Result::Ok(_) => {
+    ⌥ HttpClient·get(&client, "http://httpbin.org/redirect/5") {
+        Result·Ok(_) => {
             println("FAIL: should have hit redirect limit");
-            return false;
+            ⤺ false;
         }
-        Result::Err(HttpError::TooManyRedirects) => {
+        Result·Err(HttpError·TooManyRedirects) => {
             println("PASS");
         }
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("SKIP ({})", e);
         }
     }
@@ -538,22 +538,22 @@ fn test_http_redirect_limit() -> bool {
     true
 }
 
-fn test_http_timeout() -> bool {
+λ test_http_timeout() -> bool {
     print("  [HTTP-028] HTTP timeout... ");
 
-    let mut client = HttpClient::new();
+    ≔ Δ client = HttpClient·new();
     client.timeout_ms = 100;  // Very short timeout
 
     // Try a slow endpoint
-    match HttpClient::get(&client, "http://httpbin.org/delay/10") {
-        Result::Ok(_) => {
+    ⌥ HttpClient·get(&client, "http://httpbin.org/delay/10") {
+        Result·Ok(_) => {
             println("FAIL: should have timed out");
-            return false;
+            ⤺ false;
         }
-        Result::Err(HttpError::RequestTimedOut) => {
+        Result·Err(HttpError·RequestTimedOut) => {
             println("PASS");
         }
-        Result::Err(e) => {
+        Result·Err(e) => {
             // Other errors acceptable (connection issues, etc.)
             println("PASS ({})", e);
         }
@@ -562,18 +562,18 @@ fn test_http_timeout() -> bool {
     true
 }
 
-fn test_http_404() -> bool {
+λ test_http_404() -> bool {
     print("  [HTTP-029] HTTP 404... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
-    match HttpClient::get(&client, "http://httpbin.org/status/404") {
-        Result::Ok(response) => {
+    ⌥ HttpClient·get(&client, "http://httpbin.org/status/404") {
+        Result·Ok(response) => {
             test_assert_eq(response.status, 404, "HTTP-029", "status");
             test_assert_false(response.is_success(), "HTTP-029", "should not be success");
             println("PASS");
         }
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("SKIP ({})", e);
         }
     }
@@ -581,21 +581,21 @@ fn test_http_404() -> bool {
     true
 }
 
-fn test_http_connection_refused() -> bool {
+λ test_http_connection_refused() -> bool {
     print("  [HTTP-030] HTTP connection refused... ");
 
-    let client = HttpClient::new();
+    ≔ client = HttpClient·new();
 
     // Connect to localhost on a closed port
-    match HttpClient::get(&client, "http://127.0.0.1:1/") {
-        Result::Ok(_) => {
+    ⌥ HttpClient·get(&client, "http://127.0.0.1:1/") {
+        Result·Ok(_) => {
             println("FAIL: should have failed");
-            return false;
+            ⤺ false;
         }
-        Result::Err(HttpError::ConnectionFailed { .. }) => {
+        Result·Err(HttpError·ConnectionFailed { .. }) => {
             println("PASS");
         }
-        Result::Err(e) => {
+        Result·Err(e) => {
             println("PASS ({})", e);
         }
     }
@@ -607,7 +607,7 @@ fn test_http_connection_refused() -> bool {
 // Keep-Alive Tests (HTTP-031 through HTTP-035)
 // ============================================================================
 
-fn test_keepalive_reuses_connection() -> bool {
+λ test_keepalive_reuses_connection() -> bool {
     print("  [HTTP-031] Keep-alive reuses connection... ");
 
     // Connection pooling not fully implemented
@@ -615,28 +615,28 @@ fn test_keepalive_reuses_connection() -> bool {
     true
 }
 
-fn test_keepalive_max_per_host() -> bool {
+λ test_keepalive_max_per_host() -> bool {
     print("  [HTTP-032] Keep-alive max per host... ");
 
     println("SKIP (connection pooling not implemented)");
     true
 }
 
-fn test_keepalive_idle_timeout() -> bool {
+λ test_keepalive_idle_timeout() -> bool {
     print("  [HTTP-033] Keep-alive idle timeout... ");
 
     println("SKIP (connection pooling not implemented)");
     true
 }
 
-fn test_keepalive_different_hosts() -> bool {
+λ test_keepalive_different_hosts() -> bool {
     print("  [HTTP-034] Keep-alive different hosts... ");
 
     println("SKIP (connection pooling not implemented)");
     true
 }
 
-fn test_keepalive_connection_close() -> bool {
+λ test_keepalive_connection_close() -> bool {
     print("  [HTTP-035] Keep-alive connection close... ");
 
     println("SKIP (connection pooling not implemented)");
@@ -647,28 +647,28 @@ fn test_keepalive_connection_close() -> bool {
 // Proxy Tests (HTTP-036 through HTTP-039)
 // ============================================================================
 
-fn test_http_proxy_direct() -> bool {
+λ test_http_proxy_direct() -> bool {
     print("  [HTTP-036] HTTP through proxy... ");
 
     println("SKIP (proxy not implemented)");
     true
 }
 
-fn test_https_proxy_connect() -> bool {
+λ test_https_proxy_connect() -> bool {
     print("  [HTTP-037] HTTPS through proxy (CONNECT)... ");
 
     println("SKIP (proxy not implemented)");
     true
 }
 
-fn test_proxy_auth_basic() -> bool {
+λ test_proxy_auth_basic() -> bool {
     print("  [HTTP-038] Proxy basic auth... ");
 
     println("SKIP (proxy not implemented)");
     true
 }
 
-fn test_no_proxy_bypass() -> bool {
+λ test_no_proxy_bypass() -> bool {
     print("  [HTTP-039] no_proxy bypass... ");
 
     println("SKIP (proxy not implemented)");
@@ -679,84 +679,84 @@ fn test_no_proxy_bypass() -> bool {
 // Main Test Runner
 // ============================================================================
 
-pub fn main() -> !i32 {
+☉ λ main() -> !i32 {
     println("===========================================");
     println("HTTP/1.1 Layer Tests");
     println("TDD Red Phase - Tests should FAIL");
     println("===========================================");
     println("");
 
-    let mut passed: i32 = 0;
-    let mut failed: i32 = 0;
+    ≔ Δ passed: i32 = 0;
+    ≔ Δ failed: i32 = 0;
 
     println("--- URL Parsing Tests ---");
-    if test_url_parse_http() { passed += 1; } else { failed += 1; }
-    if test_url_parse_https() { passed += 1; } else { failed += 1; }
-    if test_url_parse_port() { passed += 1; } else { failed += 1; }
-    if test_url_parse_default_port() { passed += 1; } else { failed += 1; }
-    if test_url_parse_query() { passed += 1; } else { failed += 1; }
-    if test_url_parse_fragment() { passed += 1; } else { failed += 1; }
-    if test_url_parse_auth() { passed += 1; } else { failed += 1; }
-    if test_url_parse_invalid() { passed += 1; } else { failed += 1; }
+    ⎇ test_url_parse_http() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_url_parse_https() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_url_parse_port() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_url_parse_default_port() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_url_parse_query() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_url_parse_fragment() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_url_parse_auth() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_url_parse_invalid() { passed += 1; } ⎉ { failed += 1; }
 
     println("");
     println("--- HTTP Request Tests ---");
-    if test_request_format_get() { passed += 1; } else { failed += 1; }
-    if test_request_format_post() { passed += 1; } else { failed += 1; }
-    if test_request_host_header() { passed += 1; } else { failed += 1; }
-    if test_request_user_agent() { passed += 1; } else { failed += 1; }
-    if test_request_custom_headers() { passed += 1; } else { failed += 1; }
-    if test_request_content_type() { passed += 1; } else { failed += 1; }
+    ⎇ test_request_format_get() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_request_format_post() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_request_host_header() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_request_user_agent() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_request_custom_headers() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_request_content_type() { passed += 1; } ⎉ { failed += 1; }
 
     println("");
     println("--- HTTP Response Tests ---");
-    if test_response_parse_status() { passed += 1; } else { failed += 1; }
-    if test_response_parse_headers() { passed += 1; } else { failed += 1; }
-    if test_response_header_case() { passed += 1; } else { failed += 1; }
-    if test_response_content_length() { passed += 1; } else { failed += 1; }
-    if test_response_chunked() { passed += 1; } else { failed += 1; }
-    if test_response_chunked_trailer() { passed += 1; } else { failed += 1; }
-    if test_response_connection_close() { passed += 1; } else { failed += 1; }
-    if test_response_malformed() { passed += 1; } else { failed += 1; }
+    ⎇ test_response_parse_status() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_response_parse_headers() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_response_header_case() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_response_content_length() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_response_chunked() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_response_chunked_trailer() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_response_connection_close() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_response_malformed() { passed += 1; } ⎉ { failed += 1; }
 
     println("");
     println("--- HTTP Client Tests ---");
-    if test_http_get_httpbin() { passed += 1; } else { failed += 1; }
-    if test_http_post_httpbin() { passed += 1; } else { failed += 1; }
-    if test_https_get_google() { passed += 1; } else { failed += 1; }
-    if test_http_redirect_follow() { passed += 1; } else { failed += 1; }
-    if test_http_redirect_limit() { passed += 1; } else { failed += 1; }
-    if test_http_timeout() { passed += 1; } else { failed += 1; }
-    if test_http_404() { passed += 1; } else { failed += 1; }
-    if test_http_connection_refused() { passed += 1; } else { failed += 1; }
+    ⎇ test_http_get_httpbin() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_http_post_httpbin() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_https_get_google() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_http_redirect_follow() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_http_redirect_limit() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_http_timeout() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_http_404() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_http_connection_refused() { passed += 1; } ⎉ { failed += 1; }
 
     println("");
     println("--- Keep-Alive Tests ---");
-    if test_keepalive_reuses_connection() { passed += 1; } else { failed += 1; }
-    if test_keepalive_max_per_host() { passed += 1; } else { failed += 1; }
-    if test_keepalive_idle_timeout() { passed += 1; } else { failed += 1; }
-    if test_keepalive_different_hosts() { passed += 1; } else { failed += 1; }
-    if test_keepalive_connection_close() { passed += 1; } else { failed += 1; }
+    ⎇ test_keepalive_reuses_connection() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_keepalive_max_per_host() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_keepalive_idle_timeout() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_keepalive_different_hosts() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_keepalive_connection_close() { passed += 1; } ⎉ { failed += 1; }
 
     println("");
     println("--- Proxy Tests ---");
-    if test_http_proxy_direct() { passed += 1; } else { failed += 1; }
-    if test_https_proxy_connect() { passed += 1; } else { failed += 1; }
-    if test_proxy_auth_basic() { passed += 1; } else { failed += 1; }
-    if test_no_proxy_bypass() { passed += 1; } else { failed += 1; }
+    ⎇ test_http_proxy_direct() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_https_proxy_connect() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_proxy_auth_basic() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_no_proxy_bypass() { passed += 1; } ⎉ { failed += 1; }
 
     println("");
     println("===========================================");
     println("Results: {}/{} tests passed", passed, passed + failed);
     println("===========================================");
 
-    if failed > 0 {
+    ⎇ failed > 0 {
         println("");
         println("RED PHASE: {} tests failing (expected)", failed);
-        return 1;
+        ⤺ 1;
     }
 
     println("");
     println("All tests passed!");
-    return 0;
+    ⤺ 0;
 }

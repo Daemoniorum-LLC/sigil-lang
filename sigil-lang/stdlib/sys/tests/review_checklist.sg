@@ -1,4 +1,4 @@
-//! Automated Code Review Checklist for stdlib/sys/
+//! Automated Code Review Checklist ∀ stdlib/sys/
 //!
 //! This test file verifies code quality, completeness, and spec compliance.
 //! Run after each implementation phase.
@@ -9,8 +9,8 @@
 // Test Infrastructure
 // ============================================================================
 
-fn syscall1(nr: i64, a1: i64) -> isize {
-    let mut result: isize = 0;
+λ syscall1(nr: i64, a1: i64) -> isize {
+    ≔ Δ result: isize = 0;
     unsafe {
         asm!("syscall",
             inout("rax") nr => result,
@@ -22,8 +22,8 @@ fn syscall1(nr: i64, a1: i64) -> isize {
     result
 }
 
-fn syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize {
-    let mut result: isize = 0;
+λ syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize {
+    ≔ Δ result: isize = 0;
     unsafe {
         asm!("syscall",
             inout("rax") nr => result,
@@ -37,8 +37,8 @@ fn syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize {
     result
 }
 
-fn syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize {
-    let mut result: isize = 0;
+λ syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize {
+    ≔ Δ result: isize = 0;
     unsafe {
         asm!("syscall",
             inout("rax") nr => result,
@@ -70,16 +70,16 @@ const SYS_EXIT_GROUP: i64 = 231;
 // Review Tests
 // ============================================================================
 
-fn main() -> i64 {
-    let mut passed: i64 = 0;
-    let mut failed: i64 = 0;
+λ main() -> i64 {
+    ≔ Δ passed: i64 = 0;
+    ≔ Δ failed: i64 = 0;
 
     // ========================================
     // SPEC COMPLIANCE: Syscall Numbers
     // ========================================
 
     // Test: SYS_GETPID = 39 (verify against kernel)
-    let mut pid: i64 = 0;
+    ≔ Δ pid: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") 39_i64 => pid,
@@ -87,9 +87,9 @@ fn main() -> i64 {
             out("r11") _,
             options(nostack));
     }
-    if pid > 0 {
+    ⎇ pid > 0 {
         passed = passed + 1;  // SC-001: getpid syscall number correct
-    } else {
+    } ⎉ {
         failed = failed + 1;
     }
 
@@ -98,8 +98,8 @@ fn main() -> i64 {
     // ========================================
 
     // Test: mmap anonymous mapping works
-    let neg_one: i64 = -1;
-    let mut ptr: i64 = 0;
+    ≔ neg_one: i64 = -1;
+    ≔ Δ ptr: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") 9_i64 => ptr,
@@ -113,15 +113,15 @@ fn main() -> i64 {
             out("r11") _,
             options(nostack));
     }
-    if ptr > 0 {
+    ⎇ ptr > 0 {
         passed = passed + 1;  // SC-002: mmap syscall works
-    } else {
+    } ⎉ {
         failed = failed + 1;
     }
 
     // Test: munmap works
-    if ptr > 0 {
-        let mut unmap_result: i64 = 0;
+    ⎇ ptr > 0 {
+        ≔ Δ unmap_result: i64 = 0;
         unsafe {
             asm!("syscall",
                 inout("rax") 11_i64 => unmap_result,
@@ -131,9 +131,9 @@ fn main() -> i64 {
                 out("r11") _,
                 options(nostack));
         }
-        if unmap_result == 0 {
+        ⎇ unmap_result == 0 {
             passed = passed + 1;  // SC-003: munmap syscall works
-        } else {
+        } ⎉ {
             failed = failed + 1;
         }
     }
@@ -143,28 +143,28 @@ fn main() -> i64 {
     // ========================================
 
     // Test: clock_gettime works (syscall 228)
-    let mut tv_sec: i64 = 0;
-    let mut tv_nsec: i64 = 0;
-    let mut time_result: i64 = 0;
+    ≔ Δ tv_sec: i64 = 0;
+    ≔ Δ tv_nsec: i64 = 0;
+    ≔ Δ time_result: i64 = 0;
 
-    // Note: This requires passing a pointer to a struct on stack
+    // Note: This requires passing a pointer to a Σ on stack
     // For now, test that the syscall number is correct by checking return
-    // A proper test would need struct support
+    // A proper test would need Σ support
 
     // ========================================
     // CODE QUALITY: Inline Asm Syntax
     // ========================================
 
     // Test: Verified asm syntax pattern works
-    let mut test_val: i64 = 100;
+    ≔ Δ test_val: i64 = 100;
     unsafe {
         asm!("inc rax",
             inout("rax") test_val => test_val,
             options(nostack));
     }
-    if test_val == 101 {
+    ⎇ test_val == 101 {
         passed = passed + 1;  // CQ-001: inout asm syntax works
-    } else {
+    } ⎉ {
         failed = failed + 1;
     }
 

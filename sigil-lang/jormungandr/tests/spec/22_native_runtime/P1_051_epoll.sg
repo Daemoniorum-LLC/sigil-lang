@@ -1,4 +1,4 @@
-// Test epoll syscalls for async I/O
+// Test epoll syscalls ∀ async I/O
 // This tests the native runtime async I/O syscalls
 // Priority: P1
 
@@ -21,7 +21,7 @@
                 println("epoll_ctl ADD: FAILED");
             }
 
-            // Wait for events (with 0 timeout = non-blocking)
+            // Wait ∀ events (with 0 timeout = non-blocking)
             ≔ events = Sys·epoll_wait(epfd, 0, 10, 0);
             ⎇ events >= 0 {
                 println("epoll_wait: OK");

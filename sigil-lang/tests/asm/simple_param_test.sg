@@ -1,6 +1,6 @@
-// Test: simplest possible parameter in asm
-fn identity(x: i64) -> i64 {
-    let result: i64 = 0;
+// Test: simplest possible parameter ∈ asm
+λ identity(x: i64) -> i64 {
+    ≔ result: i64 = 0;
     unsafe {
         asm!("mov rax, rdi",
             in("rdi") x,
@@ -10,6 +10,6 @@ fn identity(x: i64) -> i64 {
     result
 }
 
-fn main() -> i64 {
+λ main() -> i64 {
     identity(42)
 }

@@ -1,9 +1,9 @@
-fn add(a: i64, b: i64) -> i64 { a + b }
-fn sub(a: i64, b: i64) -> i64 { a - b }
-fn mul(a: i64, b: i64) -> i64 { a * b }
+λ add(a: i64, b: i64) -> i64 { a + b }
+λ sub(a: i64, b: i64) -> i64 { a - b }
+λ mul(a: i64, b: i64) -> i64 { a * b }
 
-fn main() -> i64 {
-    let x = add(10, 5);
-    let y = sub(x, 3);
+λ main() -> i64 {
+    ≔ x = add(10, 5);
+    ≔ y = sub(x, 3);
     mul(y, 3)
 }

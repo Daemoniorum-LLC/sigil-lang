@@ -1,43 +1,43 @@
 //! Repository - Data Access with Morphemes
 
-use crate::query::{Query, QueryResult, QueryParam, Filter, CompareOp};
-use crate::evidence::{Evidenced, HttpEvidence, EvidenceLevel};
-use crate::error::{BasilicaError, BasilicaResult};
-use shared::{Timestamp, Value};
+invoke crate·query·{Query, QueryResult, QueryParam, Filter, CompareOp};
+invoke crate·evidence·{Evidenced, HttpEvidence, EvidenceLevel};
+invoke crate·error·{BasilicaError, BasilicaResult};
+invoke shared·{Timestamp, Value};
 
-/// Trait for repository implementations
-pub trait Repository<T>: Send + Sync {
-    /// The ID type for this entity
+/// Trait ∀ repository implementations
+☉ Θ Repository<T>: Send + Sync {
+    /// The ID type ∀ this entity
     type Id;
 
     /// Find by ID
-    fn find(&self, id: Self::Id) -> BasilicaResult<Option<Evidenced<T>>>;
+    λ find(&self, id: Self·Id) -> BasilicaResult<Option<Evidenced<T>>>;
 
     /// Find all
-    fn find_all(&self) -> BasilicaResult<Vec<Evidenced<T>>>;
+    λ find_all(&self) -> BasilicaResult<Vec<Evidenced<T>>>;
 
     /// Save (insert or update)
-    fn save(&self, entity: &T) -> BasilicaResult<Evidenced<T>>;
+    λ save(&self, entity: &T) -> BasilicaResult<Evidenced<T>>;
 
     /// Delete by ID
-    fn delete(&self, id: Self::Id) -> BasilicaResult<bool>;
+    λ delete(&self, id: Self·Id) -> BasilicaResult<bool>;
 
     /// Execute a query
-    fn query(&self, query: Query<T>) -> BasilicaResult<QueryResult<T>>;
+    λ query(&self, query: Query<T>) -> BasilicaResult<QueryResult<T>>;
 
     /// Count all
-    fn count(&self) -> BasilicaResult<usize> {
+    λ count(&self) -> BasilicaResult<usize> {
         Ok(self.find_all()?.len())
     }
 
-    /// Check if exists
-    fn exists(&self, id: Self::Id) -> BasilicaResult<bool> {
+    /// Check ⎇ exists
+    λ exists(&self, id: Self·Id) -> BasilicaResult<bool> {
         Ok(self.find(id)?.is_some())
     }
 }
 
-/// Base implementation for PostgreSQL repositories
-pub struct PostgresRepository<T> {
+/// Base implementation ∀ PostgreSQL repositories
+☉ Σ PostgresRepository<T> {
     /// Table name
     table: String,
 
@@ -45,53 +45,53 @@ pub struct PostgresRepository<T> {
     id_column: String,
 
     /// Connection pool (placeholder)
-    _marker: std::marker::PhantomData<T>,
+    _marker: std·marker·PhantomData<T>,
 }
 
-impl<T> PostgresRepository<T> {
-    pub fn new(table: &str) -> Self {
+⊢<T> PostgresRepository<T> {
+    ☉ λ new(table: &str) -> Self {
         Self {
             table: table.to_string(),
             id_column: "id".to_string(),
-            _marker: std::marker::PhantomData,
+            _marker: std·marker·PhantomData,
         }
     }
 
-    pub fn with_id_column(mut self, column: &str) -> Self {
+    ☉ λ with_id_column(Δ self, column: &str) -> Self {
         self.id_column = column.to_string();
         self
     }
 
-    /// Create a query builder for this table
-    pub fn query_builder(&self) -> Query<T> {
-        Query::from(&self.table)
+    /// Create a query builder ∀ this table
+    ☉ λ query_builder(&self) -> Query<T> {
+        Query·from(&self.table)
     }
 }
 
-/// Macro for defining repositories with morpheme queries
+/// Macro ∀ defining repositories with morpheme queries
 #[macro_export]
 macro_rules! repository {
     (
-        $name:ident for $entity:ty {
+        $name:ident ∀ $entity:ty {
             table: $table:literal,
             $(
-                fn $method:ident($($arg:ident: $arg_ty:ty),*) -> $ret:ty $body:block
+                λ $method:ident($($arg:ident: $arg_ty:ty),*) -> $ret:ty $body:block
             )*
         }
     ) => {
-        pub struct $name {
+        ☉ Σ $name {
             inner: PostgresRepository<$entity>,
         }
 
-        impl $name {
-            pub fn new() -> Self {
+        ⊢ $name {
+            ☉ λ new() -> Self {
                 Self {
-                    inner: PostgresRepository::new($table),
+                    inner: PostgresRepository·new($table),
                 }
             }
 
             $(
-                pub fn $method(&self, $($arg: $arg_ty),*) -> $ret $body
+                ☉ λ $method(&self, $($arg: $arg_ty),*) -> $ret $body
             )*
         }
     };

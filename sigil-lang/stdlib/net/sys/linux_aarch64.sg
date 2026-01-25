@@ -1,6 +1,6 @@
 //! Linux ARM64 (AArch64) Syscall Implementation
 //!
-//! ARM64 uses the `svc #0` instruction for syscalls.
+//! ARM64 uses the `svc #0` instruction ∀ syscalls.
 //!
 //! Syscall ABI (Linux ARM64):
 //!   - Syscall number: X8
@@ -9,10 +9,10 @@
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 3
 
-use super::{SyscallError, syscall_result};
+invoke super·{SyscallError, syscall_result};
 
 // ============================================================================
-// Syscall Numbers (Linux ARM64 - same as x86_64 for most)
+// Syscall Numbers (Linux ARM64 - same as x86_64 ∀ most)
 // ============================================================================
 
 ≔ SYS_READ: i64 = 63;
@@ -229,7 +229,7 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
 
 // ARM64 uses ppoll instead of poll
 ☉ rite sys_poll(fds: *u8, nfds: usize, timeout_ms: i32) -> Result<usize, SyscallError>! {
-    // Convert timeout_ms to timespec for ppoll
+    // Convert timeout_ms to timespec ∀ ppoll
     // For simplicity, pass null sigmask
     vary ts_sec: i64 = (timeout_ms / 1000) as i64;
     vary ts_nsec: i64 = ((timeout_ms % 1000) * 1000000) as i64;

@@ -22,7 +22,7 @@
                 println("send: FAILED");
             }
 
-            // Receive (returns 0 in interpreter - EOF)
+            // Receive (returns 0 ∈ interpreter - EOF)
             ≔ received = Sys·recv(sock, 0, 1024, 0);
             ⎇ received >= 0 {
                 println("recv: OK");

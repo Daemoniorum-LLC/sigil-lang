@@ -1,7 +1,7 @@
 //! Sigil System Call Layer
 //!
-//! Platform-independent syscall abstraction for Sigil's native runtime.
-//! This is the foundation for libc-free operation.
+//! Platform-independent syscall abstraction ∀ Sigil's native runtime.
+//! This is the foundation ∀ libc-free operation.
 //!
 //! Architecture:
 //!   stdlib/sys/           <- This module (shared)
@@ -16,13 +16,13 @@
 
 // Platform-specific syscall implementations
 #[cfg(target_os = "linux", target_arch = "x86_64")]
-pub use linux_x86_64::*;
+☉ invoke linux_x86_64·*;
 
 #[cfg(target_os = "linux", target_arch = "aarch64")]
-pub use linux_aarch64::*;
+☉ invoke linux_aarch64·*;
 
 #[cfg(target_os = "macos", target_arch = "x86_64")]
-pub use darwin_x86_64::*;
+☉ invoke darwin_x86_64·*;
 
 // ============================================================================
 // Syscall Error Type
@@ -30,9 +30,9 @@ pub use darwin_x86_64::*;
 
 /// Syscall error codes (Linux errno values)
 ///
-/// Syscalls return negative values on error where the absolute value
-/// is the errno. This enum provides named constants for common errors.
-☉ enum SyscallError {
+/// Syscalls ⤺ negative values on error where the absolute value
+/// is the errno. This ᛈ provides named constants ∀ common errors.
+☉ ᛈ SyscallError {
     // Process errors
     EPERM           = 1,    // Operation not permitted
     ENOENT          = 2,    // No such file or directory
@@ -70,7 +70,7 @@ pub use darwin_x86_64::*;
 
     // Network errors
     EAFNOSUPPORT    = 97,   // Address family not supported
-    EADDRINUSE      = 98,   // Address already in use
+    EADDRINUSE      = 98,   // Address already ∈ use
     EADDRNOTAVAIL   = 99,   // Cannot assign requested address
     ENETDOWN        = 100,  // Network is down
     ENETUNREACH     = 101,  // Network is unreachable
@@ -82,184 +82,184 @@ pub use darwin_x86_64::*;
     ETIMEDOUT       = 110,  // Connection timed out
     ECONNREFUSED    = 111,  // Connection refused
     EHOSTUNREACH    = 113,  // No route to host
-    EALREADY        = 114,  // Operation already in progress
-    EINPROGRESS     = 115,  // Operation now in progress
+    EALREADY        = 114,  // Operation already ∈ progress
+    EINPROGRESS     = 115,  // Operation now ∈ progress
 
     Unknown(i32)!,          // Unknown error code
 }
 
-☉ impl SyscallError {
+☉ ⊢ SyscallError {
     /// Create SyscallError from errno value
     ☉ rite from_errno(errno: i32) -> SyscallError! {
-        match errno {
-            1 => SyscallError::EPERM,
-            2 => SyscallError::ENOENT,
-            3 => SyscallError::ESRCH,
-            4 => SyscallError::EINTR,
-            5 => SyscallError::EIO,
-            6 => SyscallError::ENXIO,
-            7 => SyscallError::E2BIG,
-            8 => SyscallError::ENOEXEC,
-            9 => SyscallError::EBADF,
-            10 => SyscallError::ECHILD,
-            11 => SyscallError::EAGAIN,
-            12 => SyscallError::ENOMEM,
-            13 => SyscallError::EACCES,
-            14 => SyscallError::EFAULT,
-            16 => SyscallError::EBUSY,
-            17 => SyscallError::EEXIST,
-            18 => SyscallError::EXDEV,
-            19 => SyscallError::ENODEV,
-            20 => SyscallError::ENOTDIR,
-            21 => SyscallError::EISDIR,
-            22 => SyscallError::EINVAL,
-            23 => SyscallError::ENFILE,
-            24 => SyscallError::EMFILE,
-            25 => SyscallError::ENOTTY,
-            27 => SyscallError::EFBIG,
-            28 => SyscallError::ENOSPC,
-            29 => SyscallError::ESPIPE,
-            30 => SyscallError::EROFS,
-            31 => SyscallError::EMLINK,
-            32 => SyscallError::EPIPE,
-            33 => SyscallError::EDOM,
-            34 => SyscallError::ERANGE,
-            97 => SyscallError::EAFNOSUPPORT,
-            98 => SyscallError::EADDRINUSE,
-            99 => SyscallError::EADDRNOTAVAIL,
-            100 => SyscallError::ENETDOWN,
-            101 => SyscallError::ENETUNREACH,
-            103 => SyscallError::ECONNABORTED,
-            104 => SyscallError::ECONNRESET,
-            105 => SyscallError::ENOBUFS,
-            106 => SyscallError::EISCONN,
-            107 => SyscallError::ENOTCONN,
-            110 => SyscallError::ETIMEDOUT,
-            111 => SyscallError::ECONNREFUSED,
-            113 => SyscallError::EHOSTUNREACH,
-            114 => SyscallError::EALREADY,
-            115 => SyscallError::EINPROGRESS,
-            _ => SyscallError::Unknown(errno),
+        ⌥ errno {
+            1 => SyscallError·EPERM,
+            2 => SyscallError·ENOENT,
+            3 => SyscallError·ESRCH,
+            4 => SyscallError·EINTR,
+            5 => SyscallError·EIO,
+            6 => SyscallError·ENXIO,
+            7 => SyscallError·E2BIG,
+            8 => SyscallError·ENOEXEC,
+            9 => SyscallError·EBADF,
+            10 => SyscallError·ECHILD,
+            11 => SyscallError·EAGAIN,
+            12 => SyscallError·ENOMEM,
+            13 => SyscallError·EACCES,
+            14 => SyscallError·EFAULT,
+            16 => SyscallError·EBUSY,
+            17 => SyscallError·EEXIST,
+            18 => SyscallError·EXDEV,
+            19 => SyscallError·ENODEV,
+            20 => SyscallError·ENOTDIR,
+            21 => SyscallError·EISDIR,
+            22 => SyscallError·EINVAL,
+            23 => SyscallError·ENFILE,
+            24 => SyscallError·EMFILE,
+            25 => SyscallError·ENOTTY,
+            27 => SyscallError·EFBIG,
+            28 => SyscallError·ENOSPC,
+            29 => SyscallError·ESPIPE,
+            30 => SyscallError·EROFS,
+            31 => SyscallError·EMLINK,
+            32 => SyscallError·EPIPE,
+            33 => SyscallError·EDOM,
+            34 => SyscallError·ERANGE,
+            97 => SyscallError·EAFNOSUPPORT,
+            98 => SyscallError·EADDRINUSE,
+            99 => SyscallError·EADDRNOTAVAIL,
+            100 => SyscallError·ENETDOWN,
+            101 => SyscallError·ENETUNREACH,
+            103 => SyscallError·ECONNABORTED,
+            104 => SyscallError·ECONNRESET,
+            105 => SyscallError·ENOBUFS,
+            106 => SyscallError·EISCONN,
+            107 => SyscallError·ENOTCONN,
+            110 => SyscallError·ETIMEDOUT,
+            111 => SyscallError·ECONNREFUSED,
+            113 => SyscallError·EHOSTUNREACH,
+            114 => SyscallError·EALREADY,
+            115 => SyscallError·EINPROGRESS,
+            _ => SyscallError·Unknown(errno),
         }
     }
 
     /// Get the errno number
     ☉ rite errno(&self) -> i32! {
-        match self {
-            SyscallError::EPERM => 1,
-            SyscallError::ENOENT => 2,
-            SyscallError::ESRCH => 3,
-            SyscallError::EINTR => 4,
-            SyscallError::EIO => 5,
-            SyscallError::ENXIO => 6,
-            SyscallError::E2BIG => 7,
-            SyscallError::ENOEXEC => 8,
-            SyscallError::EBADF => 9,
-            SyscallError::ECHILD => 10,
-            SyscallError::EAGAIN => 11,
-            SyscallError::EWOULDBLOCK => 11,
-            SyscallError::ENOMEM => 12,
-            SyscallError::EACCES => 13,
-            SyscallError::EFAULT => 14,
-            SyscallError::EBUSY => 16,
-            SyscallError::EEXIST => 17,
-            SyscallError::EXDEV => 18,
-            SyscallError::ENODEV => 19,
-            SyscallError::ENOTDIR => 20,
-            SyscallError::EISDIR => 21,
-            SyscallError::EINVAL => 22,
-            SyscallError::ENFILE => 23,
-            SyscallError::EMFILE => 24,
-            SyscallError::ENOTTY => 25,
-            SyscallError::EFBIG => 27,
-            SyscallError::ENOSPC => 28,
-            SyscallError::ESPIPE => 29,
-            SyscallError::EROFS => 30,
-            SyscallError::EMLINK => 31,
-            SyscallError::EPIPE => 32,
-            SyscallError::EDOM => 33,
-            SyscallError::ERANGE => 34,
-            SyscallError::EAFNOSUPPORT => 97,
-            SyscallError::EADDRINUSE => 98,
-            SyscallError::EADDRNOTAVAIL => 99,
-            SyscallError::ENETDOWN => 100,
-            SyscallError::ENETUNREACH => 101,
-            SyscallError::ECONNABORTED => 103,
-            SyscallError::ECONNRESET => 104,
-            SyscallError::ENOBUFS => 105,
-            SyscallError::EISCONN => 106,
-            SyscallError::ENOTCONN => 107,
-            SyscallError::ETIMEDOUT => 110,
-            SyscallError::ECONNREFUSED => 111,
-            SyscallError::EHOSTUNREACH => 113,
-            SyscallError::EALREADY => 114,
-            SyscallError::EINPROGRESS => 115,
-            SyscallError::Unknown(code) => code,
+        ⌥ self {
+            SyscallError·EPERM => 1,
+            SyscallError·ENOENT => 2,
+            SyscallError·ESRCH => 3,
+            SyscallError·EINTR => 4,
+            SyscallError·EIO => 5,
+            SyscallError·ENXIO => 6,
+            SyscallError·E2BIG => 7,
+            SyscallError·ENOEXEC => 8,
+            SyscallError·EBADF => 9,
+            SyscallError·ECHILD => 10,
+            SyscallError·EAGAIN => 11,
+            SyscallError·EWOULDBLOCK => 11,
+            SyscallError·ENOMEM => 12,
+            SyscallError·EACCES => 13,
+            SyscallError·EFAULT => 14,
+            SyscallError·EBUSY => 16,
+            SyscallError·EEXIST => 17,
+            SyscallError·EXDEV => 18,
+            SyscallError·ENODEV => 19,
+            SyscallError·ENOTDIR => 20,
+            SyscallError·EISDIR => 21,
+            SyscallError·EINVAL => 22,
+            SyscallError·ENFILE => 23,
+            SyscallError·EMFILE => 24,
+            SyscallError·ENOTTY => 25,
+            SyscallError·EFBIG => 27,
+            SyscallError·ENOSPC => 28,
+            SyscallError·ESPIPE => 29,
+            SyscallError·EROFS => 30,
+            SyscallError·EMLINK => 31,
+            SyscallError·EPIPE => 32,
+            SyscallError·EDOM => 33,
+            SyscallError·ERANGE => 34,
+            SyscallError·EAFNOSUPPORT => 97,
+            SyscallError·EADDRINUSE => 98,
+            SyscallError·EADDRNOTAVAIL => 99,
+            SyscallError·ENETDOWN => 100,
+            SyscallError·ENETUNREACH => 101,
+            SyscallError·ECONNABORTED => 103,
+            SyscallError·ECONNRESET => 104,
+            SyscallError·ENOBUFS => 105,
+            SyscallError·EISCONN => 106,
+            SyscallError·ENOTCONN => 107,
+            SyscallError·ETIMEDOUT => 110,
+            SyscallError·ECONNREFUSED => 111,
+            SyscallError·EHOSTUNREACH => 113,
+            SyscallError·EALREADY => 114,
+            SyscallError·EINPROGRESS => 115,
+            SyscallError·Unknown(code) => code,
         }
     }
 
-    /// Check if this is a retryable error (EAGAIN/EWOULDBLOCK/EINTR)
+    /// Check ⎇ this is a retryable error (EAGAIN/EWOULDBLOCK/EINTR)
     ☉ rite is_retryable(&self) -> bool! {
-        match self {
-            SyscallError::EAGAIN => true,
-            SyscallError::EWOULDBLOCK => true,
-            SyscallError::EINTR => true,
+        ⌥ self {
+            SyscallError·EAGAIN => true,
+            SyscallError·EWOULDBLOCK => true,
+            SyscallError·EINTR => true,
             _ => false,
         }
     }
 }
 
-☉ impl Display for SyscallError {
+☉ ⊢ Display ∀ SyscallError {
     ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
-        match self {
-            SyscallError::EPERM => write!(f, "EPERM: Operation not permitted"),
-            SyscallError::ENOENT => write!(f, "ENOENT: No such file or directory"),
-            SyscallError::ESRCH => write!(f, "ESRCH: No such process"),
-            SyscallError::EINTR => write!(f, "EINTR: Interrupted system call"),
-            SyscallError::EIO => write!(f, "EIO: I/O error"),
-            SyscallError::ENXIO => write!(f, "ENXIO: No such device or address"),
-            SyscallError::E2BIG => write!(f, "E2BIG: Argument list too long"),
-            SyscallError::ENOEXEC => write!(f, "ENOEXEC: Exec format error"),
-            SyscallError::EBADF => write!(f, "EBADF: Bad file descriptor"),
-            SyscallError::ECHILD => write!(f, "ECHILD: No child processes"),
-            SyscallError::EAGAIN => write!(f, "EAGAIN: Resource temporarily unavailable"),
-            SyscallError::ENOMEM => write!(f, "ENOMEM: Out of memory"),
-            SyscallError::EACCES => write!(f, "EACCES: Permission denied"),
-            SyscallError::EFAULT => write!(f, "EFAULT: Bad address"),
-            SyscallError::EBUSY => write!(f, "EBUSY: Device or resource busy"),
-            SyscallError::EEXIST => write!(f, "EEXIST: File exists"),
-            SyscallError::EXDEV => write!(f, "EXDEV: Cross-device link"),
-            SyscallError::ENODEV => write!(f, "ENODEV: No such device"),
-            SyscallError::ENOTDIR => write!(f, "ENOTDIR: Not a directory"),
-            SyscallError::EISDIR => write!(f, "EISDIR: Is a directory"),
-            SyscallError::EINVAL => write!(f, "EINVAL: Invalid argument"),
-            SyscallError::ENFILE => write!(f, "ENFILE: File table overflow"),
-            SyscallError::EMFILE => write!(f, "EMFILE: Too many open files"),
-            SyscallError::ENOTTY => write!(f, "ENOTTY: Not a typewriter"),
-            SyscallError::EFBIG => write!(f, "EFBIG: File too large"),
-            SyscallError::ENOSPC => write!(f, "ENOSPC: No space left on device"),
-            SyscallError::ESPIPE => write!(f, "ESPIPE: Illegal seek"),
-            SyscallError::EROFS => write!(f, "EROFS: Read-only file system"),
-            SyscallError::EMLINK => write!(f, "EMLINK: Too many links"),
-            SyscallError::EPIPE => write!(f, "EPIPE: Broken pipe"),
-            SyscallError::EDOM => write!(f, "EDOM: Math argument out of domain"),
-            SyscallError::ERANGE => write!(f, "ERANGE: Math result not representable"),
-            SyscallError::EAFNOSUPPORT => write!(f, "EAFNOSUPPORT: Address family not supported"),
-            SyscallError::EADDRINUSE => write!(f, "EADDRINUSE: Address already in use"),
-            SyscallError::EADDRNOTAVAIL => write!(f, "EADDRNOTAVAIL: Cannot assign requested address"),
-            SyscallError::ENETDOWN => write!(f, "ENETDOWN: Network is down"),
-            SyscallError::ENETUNREACH => write!(f, "ENETUNREACH: Network is unreachable"),
-            SyscallError::ECONNABORTED => write!(f, "ECONNABORTED: Connection aborted"),
-            SyscallError::ECONNRESET => write!(f, "ECONNRESET: Connection reset by peer"),
-            SyscallError::ENOBUFS => write!(f, "ENOBUFS: No buffer space available"),
-            SyscallError::EISCONN => write!(f, "EISCONN: Socket is already connected"),
-            SyscallError::ENOTCONN => write!(f, "ENOTCONN: Transport endpoint not connected"),
-            SyscallError::ETIMEDOUT => write!(f, "ETIMEDOUT: Connection timed out"),
-            SyscallError::ECONNREFUSED => write!(f, "ECONNREFUSED: Connection refused"),
-            SyscallError::EHOSTUNREACH => write!(f, "EHOSTUNREACH: No route to host"),
-            SyscallError::EALREADY => write!(f, "EALREADY: Operation already in progress"),
-            SyscallError::EINPROGRESS => write!(f, "EINPROGRESS: Operation now in progress"),
-            SyscallError::Unknown(code) => write!(f, "Unknown error: {}", code),
+        ⌥ self {
+            SyscallError·EPERM => write!(f, "EPERM: Operation not permitted"),
+            SyscallError·ENOENT => write!(f, "ENOENT: No such file or directory"),
+            SyscallError·ESRCH => write!(f, "ESRCH: No such process"),
+            SyscallError·EINTR => write!(f, "EINTR: Interrupted system call"),
+            SyscallError·EIO => write!(f, "EIO: I/O error"),
+            SyscallError·ENXIO => write!(f, "ENXIO: No such device or address"),
+            SyscallError·E2BIG => write!(f, "E2BIG: Argument list too long"),
+            SyscallError·ENOEXEC => write!(f, "ENOEXEC: Exec format error"),
+            SyscallError·EBADF => write!(f, "EBADF: Bad file descriptor"),
+            SyscallError·ECHILD => write!(f, "ECHILD: No child processes"),
+            SyscallError·EAGAIN => write!(f, "EAGAIN: Resource temporarily unavailable"),
+            SyscallError·ENOMEM => write!(f, "ENOMEM: Out of memory"),
+            SyscallError·EACCES => write!(f, "EACCES: Permission denied"),
+            SyscallError·EFAULT => write!(f, "EFAULT: Bad address"),
+            SyscallError·EBUSY => write!(f, "EBUSY: Device or resource busy"),
+            SyscallError·EEXIST => write!(f, "EEXIST: File exists"),
+            SyscallError·EXDEV => write!(f, "EXDEV: Cross-device link"),
+            SyscallError·ENODEV => write!(f, "ENODEV: No such device"),
+            SyscallError·ENOTDIR => write!(f, "ENOTDIR: Not a directory"),
+            SyscallError·EISDIR => write!(f, "EISDIR: Is a directory"),
+            SyscallError·EINVAL => write!(f, "EINVAL: Invalid argument"),
+            SyscallError·ENFILE => write!(f, "ENFILE: File table overflow"),
+            SyscallError·EMFILE => write!(f, "EMFILE: Too many open files"),
+            SyscallError·ENOTTY => write!(f, "ENOTTY: Not a typewriter"),
+            SyscallError·EFBIG => write!(f, "EFBIG: File too large"),
+            SyscallError·ENOSPC => write!(f, "ENOSPC: No space left on device"),
+            SyscallError·ESPIPE => write!(f, "ESPIPE: Illegal seek"),
+            SyscallError·EROFS => write!(f, "EROFS: Read-only file system"),
+            SyscallError·EMLINK => write!(f, "EMLINK: Too many links"),
+            SyscallError·EPIPE => write!(f, "EPIPE: Broken pipe"),
+            SyscallError·EDOM => write!(f, "EDOM: Math argument out of domain"),
+            SyscallError·ERANGE => write!(f, "ERANGE: Math result not representable"),
+            SyscallError·EAFNOSUPPORT => write!(f, "EAFNOSUPPORT: Address family not supported"),
+            SyscallError·EADDRINUSE => write!(f, "EADDRINUSE: Address already ∈ use"),
+            SyscallError·EADDRNOTAVAIL => write!(f, "EADDRNOTAVAIL: Cannot assign requested address"),
+            SyscallError·ENETDOWN => write!(f, "ENETDOWN: Network is down"),
+            SyscallError·ENETUNREACH => write!(f, "ENETUNREACH: Network is unreachable"),
+            SyscallError·ECONNABORTED => write!(f, "ECONNABORTED: Connection aborted"),
+            SyscallError·ECONNRESET => write!(f, "ECONNRESET: Connection reset by peer"),
+            SyscallError·ENOBUFS => write!(f, "ENOBUFS: No buffer space available"),
+            SyscallError·EISCONN => write!(f, "EISCONN: Socket is already connected"),
+            SyscallError·ENOTCONN => write!(f, "ENOTCONN: Transport endpoint not connected"),
+            SyscallError·ETIMEDOUT => write!(f, "ETIMEDOUT: Connection timed out"),
+            SyscallError·ECONNREFUSED => write!(f, "ECONNREFUSED: Connection refused"),
+            SyscallError·EHOSTUNREACH => write!(f, "EHOSTUNREACH: No route to host"),
+            SyscallError·EALREADY => write!(f, "EALREADY: Operation already ∈ progress"),
+            SyscallError·EINPROGRESS => write!(f, "EINPROGRESS: Operation now ∈ progress"),
+            SyscallError·Unknown(code) => write!(f, "Unknown error: {}", code),
         }
     }
 }
@@ -268,7 +268,7 @@ pub use darwin_x86_64::*;
 // Result Helper
 // ============================================================================
 
-/// Convert raw syscall return value to Result
+/// Convert raw syscall ⤺ value to Result
 ///
 /// Linux syscalls return:
 /// - Positive or zero: success (value has syscall-specific meaning)
@@ -277,19 +277,19 @@ pub use darwin_x86_64::*;
     ⎇ raw >= 0 {
         Ok(raw as usize)
     } ⎉ {
-        Err(SyscallError::from_errno((-raw) as i32))
+        Err(SyscallError·from_errno((-raw) as i32))
     }
 }
 
-/// Convert raw syscall return to Result, treating 0 as success
+/// Convert raw syscall ⤺ to Result, treating 0 as success
 ☉ rite syscall_result_zero(raw: isize) -> Result<(), SyscallError>! {
     ⎇ raw == 0 {
         Ok(())
     } ⎉ ⎇ raw < 0 {
-        Err(SyscallError::from_errno((-raw) as i32))
+        Err(SyscallError·from_errno((-raw) as i32))
     } ⎉ {
         // Unexpected positive value
-        Err(SyscallError::EINVAL)
+        Err(SyscallError·EINVAL)
     }
 }
 

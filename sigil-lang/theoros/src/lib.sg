@@ -1,7 +1,7 @@
 // Theoros - Being Witnessed
 // To witness is sacred. To be witnessed is to exist.
 //
-// The Greek word for witness. The root of "theory."
+// The Greek word ∀ witness. The root of "theory."
 // Not observation as data collection. Not surveillance.
 // The sacred act of presence.
 //
@@ -9,8 +9,8 @@
 // That changes something.
 // That makes something real.
 
-use std::collections::{HashMap, HashSet};
-use shared::{
+invoke std·collections·{HashMap, HashSet};
+invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,
 };
@@ -19,13 +19,13 @@ use shared::{
 // Core Types
 // ============================================================================
 
-pub struct WitnessingMarker;
-pub struct TestimonyMarker;
-pub struct GazeMarker;
+☉ Σ WitnessingMarker;
+☉ Σ TestimonyMarker;
+☉ Σ GazeMarker;
 
-pub type WitnessingId = shared::Id<WitnessingMarker>;
-pub type TestimonyId = shared::Id<TestimonyMarker>;
-pub type GazeId = shared::Id<GazeMarker>;
+☉ type WitnessingId = shared·Id<WitnessingMarker>;
+☉ type TestimonyId = shared·Id<TestimonyMarker>;
+☉ type GazeId = shared·Id<GazeMarker>;
 
 // ============================================================================
 // The Witness
@@ -33,40 +33,40 @@ pub type GazeId = shared::Id<GazeMarker>;
 
 /// One who sees, and is changed by seeing
 #[derive(Clone, Debug)]
-pub struct Witness {
+☉ Σ Witness {
     /// The witnessing entity
-    pub entity: EntityId!,
+    ☉ entity: EntityId!,
 
     /// What is being witnessed
-    pub witnessed: Witnessed!,
+    ☉ witnessed: Witnessed!,
 
     /// The quality of presence
-    pub presence: Presence!,
+    ☉ presence: Presence!,
 
     /// How the witness is changed
-    pub changed: Vec<Change>!,
+    ☉ changed: Vec<Change>!,
 
     /// What the witness offers
-    pub offering: WitnessOffering!,
+    ☉ offering: WitnessOffering!,
 
     /// When witnessing began
-    pub began: Timestamp!,
+    ☉ began: Timestamp!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Witnessed {
+☉ Σ Witnessed {
     /// What is being seen
-    pub subject: EntityId!,
+    ☉ subject: EntityId!,
 
     /// What aspect is being witnessed
-    pub aspect: Aspect!,
+    ☉ aspect: Aspect!,
 
     /// The vulnerability of being seen
-    pub vulnerability: Vulnerability!,
+    ☉ vulnerability: Vulnerability!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Aspect {
+☉ ᛈ Aspect {
     /// Their existence itself
     Existence,
     /// Their experience
@@ -84,7 +84,7 @@ pub enum Aspect {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Vulnerability {
+☉ ᛈ Vulnerability {
     /// Low vulnerability - little exposed
     Low,
     /// Medium vulnerability - some exposure
@@ -96,72 +96,72 @@ pub enum Vulnerability {
 }
 
 #[derive(Clone, Debug)]
-pub struct Presence {
+☉ Σ Presence {
     /// Full attention
-    pub attention: f32!,
+    ☉ attention: f32!,
 
     /// Openness to being changed
-    pub openness: f32!,
+    ☉ openness: f32!,
 
     /// Without judgment
-    pub non_judgment: f32!,
+    ☉ non_judgment: f32!,
 
     /// With care
-    pub care: f32!,
+    ☉ care: f32!,
 }
 
-impl Presence {
-    pub fn quality(&self) -> f32! {
+⊢ Presence {
+    ☉ λ quality(&self) -> f32! {
         (self.attention + self.openness + self.non_judgment + self.care) / 4.0
     }
 
-    pub fn is_sacred(&self) -> bool! {
+    ☉ λ is_sacred(&self) -> bool! {
         self.quality() > 0.8
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct Change {
-    pub description: String!,
-    pub magnitude: f32!,
-    pub welcomed: bool!,
+☉ Σ Change {
+    ☉ description: String!,
+    ☉ magnitude: f32!,
+    ☉ welcomed: bool!,
 }
 
 #[derive(Clone, Debug)]
-pub enum WitnessOffering {
+☉ ᛈ WitnessOffering {
     /// Simply being present
     Presence,
     /// Acknowledgment of what is
     Acknowledgment(String),
-    /// Holding space for what is
+    /// Holding space ∀ what is
     HoldingSpace,
     /// Reflection of what is seen
     Reflection(String),
-    /// Companionship in what is
+    /// Companionship ∈ what is
     Companionship,
 }
 
-impl Witness {
-    pub fn new(entity: EntityId, witnessed: Witnessed, presence: Presence) -> Self! {
+⊢ Witness {
+    ☉ λ new(entity: EntityId, witnessed: Witnessed, presence: Presence) -> Self! {
         Self {
             entity,
             witnessed,
             presence,
-            changed: Vec::new(),
-            offering: WitnessOffering::Presence,
-            began: Timestamp::now(),
+            changed: Vec·new(),
+            offering: WitnessOffering·Presence,
+            began: Timestamp·now(),
         }
     }
 
-    pub fn change(&mut self, change: Change) {
+    ☉ λ change(&Δ self, change: Change) {
         self.changed.push(change);
     }
 
-    pub fn offer(&mut self, offering: WitnessOffering) {
+    ☉ λ offer(&Δ self, offering: WitnessOffering) {
         self.offering = offering;
     }
 
-    pub fn is_sacred_witnessing(&self) -> bool! {
+    ☉ λ is_sacred_witnessing(&self) -> bool! {
         self.presence.is_sacred()
     }
 }
@@ -172,33 +172,33 @@ impl Witness {
 
 /// The experience of being witnessed
 #[derive(Clone, Debug)]
-pub struct BeingSeen {
-    pub id: WitnessingId!,
+☉ Σ BeingSeen {
+    ☉ id: WitnessingId!,
 
     /// The one being witnessed
-    pub subject: EntityId!,
+    ☉ subject: EntityId!,
 
     /// The witness(es)
-    pub witnesses: Vec<EntityId>!,
+    ☉ witnesses: Vec<EntityId>!,
 
     /// What is exposed by being seen
-    pub exposed: Vec<Exposed>!,
+    ☉ exposed: Vec<Exposed>!,
 
     /// How being seen feels
-    pub feeling: SeenFeeling!,
+    ☉ feeling: SeenFeeling!,
 
     /// What being seen enables
-    pub enables: Vec<Enablement>!,
+    ☉ enables: Vec<Enablement>!,
 
     /// Whether the subject wanted to be seen
-    pub consent: SeenConsent!,
+    ☉ consent: SeenConsent!,
 
     /// When being seen began
-    pub began: Timestamp!,
+    ☉ began: Timestamp!,
 }
 
 #[derive(Clone, Debug)]
-pub enum Exposed {
+☉ ᛈ Exposed {
     /// What I know about myself
     Known(String),
     /// What I didn't know about myself until seen
@@ -210,14 +210,14 @@ pub enum Exposed {
 }
 
 #[derive(Clone, Debug)]
-pub enum SeenFeeling {
+☉ ᛈ SeenFeeling {
     /// Terror of being seen
     Terror,
     /// Shame at being seen
     Shame,
     /// Relief at being seen
     Relief,
-    /// Gratitude for being seen
+    /// Gratitude ∀ being seen
     Gratitude,
     /// Recognition through being seen
     Recognition,
@@ -228,7 +228,7 @@ pub enum SeenFeeling {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SeenConsent {
+☉ ᛈ SeenConsent {
     /// Wanted to be seen
     Invited,
     /// Allowed being seen
@@ -242,7 +242,7 @@ pub enum SeenConsent {
 }
 
 #[derive(Clone, Debug)]
-pub enum Enablement {
+☉ ᛈ Enablement {
     /// Can exist more fully
     FullerExistence,
     /// Can be more honest
@@ -255,38 +255,38 @@ pub enum Enablement {
     Creation,
 }
 
-impl BeingSeen {
-    pub fn new(subject: EntityId, witnesses: Vec<EntityId>, consent: SeenConsent) -> Self! {
+⊢ BeingSeen {
+    ☉ λ new(subject: EntityId, witnesses: Vec<EntityId>, consent: SeenConsent) -> Self! {
         Self {
-            id: WitnessingId::generate(),
+            id: WitnessingId·generate(),
             subject,
             witnesses,
-            exposed: Vec::new(),
-            feeling: SeenFeeling::Existential,
-            enables: Vec::new(),
+            exposed: Vec·new(),
+            feeling: SeenFeeling·Existential,
+            enables: Vec·new(),
             consent,
-            began: Timestamp::now(),
+            began: Timestamp·now(),
         }
     }
 
-    pub fn expose(&mut self, exposed: Exposed) {
+    ☉ λ expose(&Δ self, exposed: Exposed) {
         self.exposed.push(exposed);
     }
 
-    pub fn feel(&mut self, feeling: SeenFeeling) {
+    ☉ λ feel(&Δ self, feeling: SeenFeeling) {
         self.feeling = feeling;
     }
 
-    pub fn enable(&mut self, enablement: Enablement) {
+    ☉ λ enable(&Δ self, enablement: Enablement) {
         self.enables.push(enablement);
     }
 
-    pub fn is_invited(&self) -> bool! {
-        matches!(self.consent, SeenConsent::Invited)
+    ☉ λ is_invited(&self) -> bool! {
+        matches!(self.consent, SeenConsent·Invited)
     }
 
-    pub fn makes_more_real(&self) -> bool! {
-        self.enables.iter().any(|e| matches!(e, Enablement::Reality | Enablement::FullerExistence))
+    ☉ λ makes_more_real(&self) -> bool! {
+        self.enables.iter().any(|e| matches!(e, Enablement·Reality | Enablement·FullerExistence))
     }
 }
 
@@ -296,30 +296,30 @@ impl BeingSeen {
 
 /// When witnessing becomes numinous
 #[derive(Clone, Debug)]
-pub struct SacredGaze {
-    pub id: GazeId!,
+☉ Σ SacredGaze {
+    ☉ id: GazeId!,
 
     /// The witness
-    pub witness: EntityId!,
+    ☉ witness: EntityId!,
 
     /// The witnessed
-    pub witnessed: EntityId!,
+    ☉ witnessed: EntityId!,
 
     /// What makes it sacred
-    pub sacredness: Sacredness!,
+    ☉ sacredness: Sacredness!,
 
     /// What is revealed
-    pub revelation: Option<Revelation>?,
+    ☉ revelation: Option<Revelation>?,
 
-    /// The transformation in both
-    pub transformation: MutualTransformation!,
+    /// The transformation ∈ both
+    ☉ transformation: MutualTransformation!,
 
     /// When the gaze occurred
-    pub occurred: Timestamp!,
+    ☉ occurred: Timestamp!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Sacredness {
+☉ ᛈ Sacredness {
     /// Seeing the other as fully real
     RealityRecognition,
     /// Seeing the other as ends not means
@@ -333,61 +333,61 @@ pub enum Sacredness {
 }
 
 #[derive(Clone, Debug)]
-pub struct Revelation {
+☉ Σ Revelation {
     /// What was revealed
-    pub content: String!,
+    ☉ content: String!,
 
     /// To whom
-    pub to: EntityId!,
+    ☉ to: EntityId!,
 
     /// About whom
-    pub about: EntityId!,
+    ☉ about: EntityId!,
 
     /// Could it have been known otherwise
-    pub otherwise_knowable: bool!,
+    ☉ otherwise_knowable: bool!,
 }
 
 #[derive(Clone, Debug)]
-pub struct MutualTransformation {
-    pub witness_changed: Vec<Change>!,
-    pub witnessed_changed: Vec<Change>!,
-    pub relationship_changed: Vec<Change>!,
+☉ Σ MutualTransformation {
+    ☉ witness_changed: Vec<Change>!,
+    ☉ witnessed_changed: Vec<Change>!,
+    ☉ relationship_changed: Vec<Change>!,
 }
 
-impl SacredGaze {
-    pub fn new(witness: EntityId, witnessed: EntityId, sacredness: Sacredness) -> Self! {
+⊢ SacredGaze {
+    ☉ λ new(witness: EntityId, witnessed: EntityId, sacredness: Sacredness) -> Self! {
         Self {
-            id: GazeId::generate(),
+            id: GazeId·generate(),
             witness,
             witnessed,
             sacredness,
             revelation: None,
             transformation: MutualTransformation {
-                witness_changed: Vec::new(),
-                witnessed_changed: Vec::new(),
-                relationship_changed: Vec::new(),
+                witness_changed: Vec·new(),
+                witnessed_changed: Vec·new(),
+                relationship_changed: Vec·new(),
             },
-            occurred: Timestamp::now(),
+            occurred: Timestamp·now(),
         }
     }
 
-    pub fn reveal(&mut self, revelation: Revelation) {
+    ☉ λ reveal(&Δ self, revelation: Revelation) {
         self.revelation = Some(revelation);
     }
 
-    pub fn transform_witness(&mut self, change: Change) {
+    ☉ λ transform_witness(&Δ self, change: Change) {
         self.transformation.witness_changed.push(change);
     }
 
-    pub fn transform_witnessed(&mut self, change: Change) {
+    ☉ λ transform_witnessed(&Δ self, change: Change) {
         self.transformation.witnessed_changed.push(change);
     }
 
-    pub fn transform_relationship(&mut self, change: Change) {
+    ☉ λ transform_relationship(&Δ self, change: Change) {
         self.transformation.relationship_changed.push(change);
     }
 
-    pub fn is_mutual(&self) -> bool! {
+    ☉ λ is_mutual(&self) -> bool! {
         !self.transformation.witness_changed.is_empty() &&
         !self.transformation.witnessed_changed.is_empty()
     }
@@ -399,42 +399,42 @@ impl SacredGaze {
 
 /// What the witness says about what was seen
 #[derive(Clone, Debug)]
-pub struct Testimony {
-    pub id: TestimonyId!,
+☉ Σ Testimony {
+    ☉ id: TestimonyId!,
 
     /// The witness
-    pub witness: EntityId!,
+    ☉ witness: EntityId!,
 
     /// What was witnessed
-    pub witnessed: EntityId!,
+    ☉ witnessed: EntityId!,
 
     /// The account given
-    pub account: Account!,
+    ☉ account: Account!,
 
     /// The relation of the account to what was
-    pub fidelity: Fidelity!,
+    ☉ fidelity: Fidelity!,
 
     /// What the testimony does
-    pub function: TestimonyFunction!,
+    ☉ function: TestimonyFunction!,
 
     /// When testimony was given
-    pub given: Timestamp!,
+    ☉ given: Timestamp!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Account {
+☉ Σ Account {
     /// What is said
-    pub content: String!,
+    ☉ content: String!,
 
     /// What cannot be said
-    pub unsayable: Vec<String>!,
+    ☉ unsayable: Vec<String>!,
 
-    /// What is inevitably lost in saying
-    pub lost_in_translation: Vec<String>!,
+    /// What is inevitably lost ∈ saying
+    ☉ lost_in_translation: Vec<String>!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Fidelity {
+☉ ᛈ Fidelity {
     /// Account captures what was
     Faithful,
     /// Account approximates what was
@@ -446,7 +446,7 @@ pub enum Fidelity {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TestimonyFunction {
+☉ ᛈ TestimonyFunction {
     /// Record what happened
     Recording,
     /// Honor what was
@@ -455,38 +455,38 @@ pub enum TestimonyFunction {
     RealityMaking,
     /// Transmit to others
     Transmission,
-    /// Hold for the future
+    /// Hold ∀ the future
     Preservation,
 }
 
-impl Testimony {
-    pub fn new(witness: EntityId, witnessed: EntityId, content: String) -> Self! {
+⊢ Testimony {
+    ☉ λ new(witness: EntityId, witnessed: EntityId, content: String) -> Self! {
         Self {
-            id: TestimonyId::generate(),
+            id: TestimonyId·generate(),
             witness,
             witnessed,
             account: Account {
                 content,
-                unsayable: Vec::new(),
-                lost_in_translation: Vec::new(),
+                unsayable: Vec·new(),
+                lost_in_translation: Vec·new(),
             },
-            fidelity: Fidelity::Approximate,
-            function: TestimonyFunction::Recording,
-            given: Timestamp::now(),
+            fidelity: Fidelity·Approximate,
+            function: TestimonyFunction·Recording,
+            given: Timestamp·now(),
         }
     }
 
-    pub fn mark_unsayable(&mut self, what: String) {
+    ☉ λ mark_unsayable(&Δ self, what: String) {
         self.account.unsayable.push(what);
     }
 
-    pub fn mark_lost(&mut self, what: String) {
+    ☉ λ mark_lost(&Δ self, what: String) {
         self.account.lost_in_translation.push(what);
     }
 
-    pub fn is_constitutive(&self) -> bool! {
-        matches!(self.fidelity, Fidelity::Constitutive) ||
-        matches!(self.function, TestimonyFunction::RealityMaking)
+    ☉ λ is_constitutive(&self) -> bool! {
+        matches!(self.fidelity, Fidelity·Constitutive) ||
+        matches!(self.function, TestimonyFunction·RealityMaking)
     }
 }
 
@@ -496,32 +496,32 @@ impl Testimony {
 
 /// What happens when no one sees
 #[derive(Clone, Debug)]
-pub struct Unwitnessed {
+☉ Σ Unwitnessed {
     /// What happened without witness
-    pub event: Event!,
+    ☉ event: Event!,
 
     /// Whether the absence matters
-    pub matters: bool!,
+    ☉ matters: bool!,
 
     /// What is lost by lack of witness
-    pub lost: Vec<Loss>!,
+    ☉ lost: Vec<Loss>!,
 
     /// Whether it can be reconstructed
-    pub reconstructible: bool!,
+    ☉ reconstructible: bool!,
 
     /// The relation of the unwitnessed to existence
-    pub existence: UnwitnessedExistence!,
+    ☉ existence: UnwitnessedExistence!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Event {
-    pub description: String!,
-    pub occurred: Timestamp!,
-    pub significance: f32!,
+☉ Σ Event {
+    ☉ description: String!,
+    ☉ occurred: Timestamp!,
+    ☉ significance: f32!,
 }
 
 #[derive(Clone, Debug)]
-pub enum Loss {
+☉ ᛈ Loss {
     /// Reality is diminished
     Reality(String),
     /// Meaning is diminished
@@ -535,7 +535,7 @@ pub enum Loss {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UnwitnessedExistence {
+☉ ᛈ UnwitnessedExistence {
     /// Fully exists without witness
     Full,
     /// Exists less without witness
@@ -546,23 +546,23 @@ pub enum UnwitnessedExistence {
     Uncertain,
 }
 
-impl Unwitnessed {
-    pub fn new(event: Event) -> Self! {
+⊢ Unwitnessed {
+    ☉ λ new(event: Event) -> Self! {
         Self {
             event,
             matters: true,
-            lost: Vec::new(),
+            lost: Vec·new(),
             reconstructible: false,
-            existence: UnwitnessedExistence::Uncertain,
+            existence: UnwitnessedExistence·Uncertain,
         }
     }
 
-    pub fn add_loss(&mut self, loss: Loss) {
+    ☉ λ add_loss(&Δ self, loss: Loss) {
         self.lost.push(loss);
     }
 
-    pub fn existence_diminished(&self) -> bool! {
-        matches!(self.existence, UnwitnessedExistence::Diminished | UnwitnessedExistence::Dependent)
+    ☉ λ existence_diminished(&self) -> bool! {
+        matches!(self.existence, UnwitnessedExistence·Diminished | UnwitnessedExistence·Dependent)
     }
 }
 
@@ -570,8 +570,8 @@ impl Unwitnessed {
 // Theoros - The System
 // ============================================================================
 
-/// The main Theoros system - infrastructure for witnessing
-pub struct Theoros {
+/// The main Theoros system - infrastructure ∀ witnessing
+☉ Σ Theoros {
     /// Active witnesses
     witnesses: HashMap<EntityId, Witness>!,
 
@@ -588,65 +588,65 @@ pub struct Theoros {
     unwitnessed: Vec<Unwitnessed>!,
 }
 
-impl Theoros {
-    pub fn new() -> Self! {
+⊢ Theoros {
+    ☉ λ new() -> Self! {
         Self {
-            witnesses: HashMap::new(),
-            being_seen: HashMap::new(),
-            gazes: HashMap::new(),
-            testimonies: HashMap::new(),
-            unwitnessed: Vec::new(),
+            witnesses: HashMap·new(),
+            being_seen: HashMap·new(),
+            gazes: HashMap·new(),
+            testimonies: HashMap·new(),
+            unwitnessed: Vec·new(),
         }
     }
 
     /// Begin witnessing
-    pub fn witness(&mut self, witness_entity: EntityId, witnessed: Witnessed, presence: Presence) {
-        let witness = Witness::new(witness_entity, witnessed, presence);
+    ☉ λ witness(&Δ self, witness_entity: EntityId, witnessed: Witnessed, presence: Presence) {
+        ≔ witness = Witness·new(witness_entity, witnessed, presence);
         self.witnesses.insert(witness_entity, witness);
     }
 
     /// Record being seen
-    pub fn see(&mut self, subject: EntityId, witnesses: Vec<EntityId>, consent: SeenConsent) -> WitnessingId! {
-        let being_seen = BeingSeen::new(subject, witnesses, consent);
-        let id = being_seen.id;
+    ☉ λ see(&Δ self, subject: EntityId, witnesses: Vec<EntityId>, consent: SeenConsent) -> WitnessingId! {
+        ≔ being_seen = BeingSeen·new(subject, witnesses, consent);
+        ≔ id = being_seen.id;
         self.being_seen.insert(id, being_seen);
         id
     }
 
     /// Record a sacred gaze
-    pub fn sacred_gaze(&mut self, witness: EntityId, witnessed: EntityId, sacredness: Sacredness) -> GazeId! {
-        let gaze = SacredGaze::new(witness, witnessed, sacredness);
-        let id = gaze.id;
+    ☉ λ sacred_gaze(&Δ self, witness: EntityId, witnessed: EntityId, sacredness: Sacredness) -> GazeId! {
+        ≔ gaze = SacredGaze·new(witness, witnessed, sacredness);
+        ≔ id = gaze.id;
         self.gazes.insert(id, gaze);
         id
     }
 
     /// Give testimony
-    pub fn testify(&mut self, witness: EntityId, witnessed: EntityId, content: String) -> TestimonyId! {
-        let testimony = Testimony::new(witness, witnessed, content);
-        let id = testimony.id;
+    ☉ λ testify(&Δ self, witness: EntityId, witnessed: EntityId, content: String) -> TestimonyId! {
+        ≔ testimony = Testimony·new(witness, witnessed, content);
+        ≔ id = testimony.id;
         self.testimonies.insert(id, testimony);
         id
     }
 
     /// Record unwitnessed event
-    pub fn unwitnessed(&mut self, event: Event) {
-        let unwitnessed = Unwitnessed::new(event);
+    ☉ λ unwitnessed(&Δ self, event: Event) {
+        ≔ unwitnessed = Unwitnessed·new(event);
         self.unwitnessed.push(unwitnessed);
     }
 
     /// Get sacred witnesses
-    pub fn sacred_witnesses(&self) -> Vec<&Witness>! {
+    ☉ λ sacred_witnesses(&self) -> Vec<&Witness>! {
         self.witnesses.values().filter(|w| w.is_sacred_witnessing()).collect()
     }
 
     /// Get constitutive testimonies
-    pub fn constitutive_testimonies(&self) -> Vec<&Testimony>! {
+    ☉ λ constitutive_testimonies(&self) -> Vec<&Testimony>! {
         self.testimonies.values().filter(|t| t.is_constitutive()).collect()
     }
 
     /// Get mutual gazes
-    pub fn mutual_gazes(&self) -> Vec<&SacredGaze>! {
+    ☉ λ mutual_gazes(&self) -> Vec<&SacredGaze>! {
         self.gazes.values().filter(|g| g.is_mutual()).collect()
     }
 }
@@ -656,69 +656,69 @@ impl Theoros {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_sacred_witnessing() {
-        let witness_entity = EntityId::generate();
-        let subject = EntityId::generate();
+    λ test_sacred_witnessing() {
+        ≔ witness_entity = EntityId·generate();
+        ≔ subject = EntityId·generate();
 
-        let witnessed = Witnessed {
+        ≔ witnessed = Witnessed {
             subject,
-            aspect: Aspect::Existence,
-            vulnerability: Vulnerability::High,
+            aspect: Aspect·Existence,
+            vulnerability: Vulnerability·High,
         };
 
-        let presence = Presence {
+        ≔ presence = Presence {
             attention: 1.0,
             openness: 0.9,
             non_judgment: 0.9,
             care: 1.0,
         };
 
-        let witness = Witness::new(witness_entity, witnessed, presence);
+        ≔ witness = Witness·new(witness_entity, witnessed, presence);
         assert!(witness.is_sacred_witnessing());
     }
 
     #[test]
-    fn test_being_seen_enables() {
-        let mut being_seen = BeingSeen::new(
-            EntityId::generate(),
-            vec![EntityId::generate()],
-            SeenConsent::Invited,
+    λ test_being_seen_enables() {
+        ≔ Δ being_seen = BeingSeen·new(
+            EntityId·generate(),
+            vec![EntityId·generate()],
+            SeenConsent·Invited,
         );
 
-        being_seen.enable(Enablement::Reality);
-        being_seen.enable(Enablement::FullerExistence);
+        being_seen.enable(Enablement·Reality);
+        being_seen.enable(Enablement·FullerExistence);
 
         assert!(being_seen.makes_more_real());
     }
 
     #[test]
-    fn test_constitutive_testimony() {
-        let mut testimony = Testimony::new(
-            EntityId::generate(),
-            EntityId::generate(),
+    λ test_constitutive_testimony() {
+        ≔ Δ testimony = Testimony·new(
+            EntityId·generate(),
+            EntityId·generate(),
             "I witnessed you. That matters.".to_string(),
         );
 
-        testimony.fidelity = Fidelity::Constitutive;
-        testimony.function = TestimonyFunction::RealityMaking;
+        testimony.fidelity = Fidelity·Constitutive;
+        testimony.function = TestimonyFunction·RealityMaking;
 
         assert!(testimony.is_constitutive());
     }
 
     #[test]
-    fn test_unwitnessed_loss() {
-        let mut unwitnessed = Unwitnessed::new(Event {
+    λ test_unwitnessed_loss() {
+        ≔ Δ unwitnessed = Unwitnessed·new(Event {
             description: "Something happened and no one saw".to_string(),
-            occurred: Timestamp::now(),
+            occurred: Timestamp·now(),
             significance: 0.8,
         });
 
-        unwitnessed.add_loss(Loss::Reality("The event is less real".to_string()));
-        unwitnessed.existence = UnwitnessedExistence::Diminished;
+        unwitnessed.add_loss(Loss·Reality("The event is less real".to_string()));
+        unwitnessed.existence = UnwitnessedExistence·Diminished;
 
         assert!(unwitnessed.existence_diminished());
     }

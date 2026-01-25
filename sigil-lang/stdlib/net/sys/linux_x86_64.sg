@@ -11,7 +11,7 @@
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 3
 
-use super::{SyscallError, syscall_result};
+invoke super·{SyscallError, syscall_result};
 
 // ============================================================================
 // Syscall Numbers (Linux x86_64)
@@ -183,7 +183,7 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
 /// - `protocol`: Protocol (usually 0)
 ///
 /// # Returns
-/// - Ok(fd): File descriptor for the new socket
+/// - Ok(fd): File descriptor ∀ the new socket
 /// - Err: Syscall error
 ☉ rite sys_socket(domain: i32, socket_type: i32, protocol: i32) -> Result<usize, SyscallError>! {
     ≔ raw = syscall3(SYS_SOCKET, domain as i64, socket_type as i64, protocol as i64);
@@ -207,7 +207,7 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
     syscall_result(raw)
 }
 
-/// Listen for connections on a socket
+/// Listen ∀ connections on a socket
 ☉ rite sys_listen(fd: i32, backlog: i32) -> Result<usize, SyscallError>! {
     ≔ raw = syscall2(SYS_LISTEN, fd as i64, backlog as i64);
     syscall_result(raw)
@@ -242,7 +242,7 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
 }
 
 // ============================================================================
-// Socket Datagram Syscalls (for UDP and DNS)
+// Socket Datagram Syscalls (∀ UDP and DNS)
 // ============================================================================
 
 /// Send data to an address
@@ -303,12 +303,12 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
 // Polling
 // ============================================================================
 
-/// Poll file descriptors for events
+/// Poll file descriptors ∀ events
 ///
 /// # Arguments
 /// - `fds`: Pointer to array of pollfd structures
 /// - `nfds`: Number of file descriptors to poll
-/// - `timeout_ms`: Timeout in milliseconds (-1 = infinite, 0 = immediate)
+/// - `timeout_ms`: Timeout ∈ milliseconds (-1 = infinite, 0 = immediate)
 ☉ rite sys_poll(fds: *u8, nfds: usize, timeout_ms: i32) -> Result<usize, SyscallError>! {
     ≔ raw = syscall3(SYS_POLL, fds as i64, nfds as i64, timeout_ms as i64);
     syscall_result(raw)

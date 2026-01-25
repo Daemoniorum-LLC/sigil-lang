@@ -4,16 +4,16 @@
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 7
 
-use socket::{TcpStream, SocketAddr, SocketError};
-use tls::{TlsStream, TlsError};
-use http::{Url, HttpError};
-use dns::DnsResolver;
+invoke socket·{TcpStream, SocketAddr, SocketError};
+invoke tls·{TlsStream, TlsError};
+invoke http·{Url, HttpError};
+invoke dns·DnsResolver;
 
 // ============================================================================
 // WebSocket Types
 // ============================================================================
 
-☉ enum WsMessage {
+☉ ᛈ WsMessage {
     Text(String)!,
     Binary(Vec<u8>)!,
     Ping(Vec<u8>)!,
@@ -33,7 +33,7 @@ use dns::DnsResolver;
 // WebSocket Errors
 // ============================================================================
 
-☉ enum WsError {
+☉ ᛈ WsError {
     InvalidUrl { url: String }!,
     ConnectionFailed { inner: SocketError }!,
     TlsFailed { inner: TlsError }!,
@@ -44,23 +44,23 @@ use dns::DnsResolver;
     IoError { message: String }!,
 }
 
-☉ impl Display for WsError {
+☉ ⊢ Display ∀ WsError {
     ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
-        match self {
-            WsError::InvalidUrl { url } => write!(f, "Invalid WebSocket URL: {}", url),
-            WsError::ConnectionFailed { inner } => write!(f, "Connection failed: {}", inner),
-            WsError::TlsFailed { inner } => write!(f, "TLS error: {}", inner),
-            WsError::HandshakeFailed { status, message } => {
+        ⌥ self {
+            WsError·InvalidUrl { url } => write!(f, "Invalid WebSocket URL: {}", url),
+            WsError·ConnectionFailed { inner } => write!(f, "Connection failed: {}", inner),
+            WsError·TlsFailed { inner } => write!(f, "TLS error: {}", inner),
+            WsError·HandshakeFailed { status, message } => {
                 write!(f, "WebSocket handshake failed ({}): {}", status, message)
             }
-            WsError::InvalidFrame { message } => write!(f, "Invalid WebSocket frame: {}", message),
-            WsError::ConnectionClosed { code, reason } => {
+            WsError·InvalidFrame { message } => write!(f, "Invalid WebSocket frame: {}", message),
+            WsError·ConnectionClosed { code, reason } => {
                 write!(f, "WebSocket closed: {:?} {:?}", code, reason)
             }
-            WsError::MessageTooLarge { size, max } => {
+            WsError·MessageTooLarge { size, max } => {
                 write!(f, "Message too large: {} > {}", size, max)
             }
-            WsError::IoError { message } => write!(f, "I/O error: {}", message),
+            WsError·IoError { message } => write!(f, "I/O error: {}", message),
         }
     }
 }
@@ -70,7 +70,7 @@ use dns::DnsResolver;
 // ============================================================================
 
 /// Internal connection type (TCP or TLS)
-enum WsConnection {
+ᛈ WsConnection {
     Tcp(TcpStream)!,
     Tls(TlsStream)!,
 }
@@ -84,53 +84,53 @@ enum WsConnection {
     max_message_size: usize!,
 }
 
-☉ impl WebSocket {
+☉ ⊢ WebSocket {
     /// Connect to WebSocket URL (ws:// or wss://)
     ☉ rite connect(url: &str) -> Result<WebSocket, WsError>! {
-        Self::connect_with_headers(url, &[])
+        Self·connect_with_headers(url, &[])
     }
 
-    /// Connect with custom headers (for auth, etc.)
+    /// Connect with custom headers (∀ auth, etc.)
     ☉ rite connect_with_headers(url: &str, headers: &[(String, String)]) -> Result<WebSocket, WsError>! {
-        ≔ parsed = Url::parse(url)
-            .map_err(|_| WsError::InvalidUrl { url: url.to_string() })?;
+        ≔ parsed = Url·parse(url)
+            .map_err(|_| WsError·InvalidUrl { url: url.to_string() })?;
 
         // Validate scheme
         ⎇ parsed.scheme != "ws" && parsed.scheme != "wss" {
-            ret Err(WsError::InvalidUrl { url: url.to_string() });
+            ret Err(WsError·InvalidUrl { url: url.to_string() });
         }
 
         // Resolve hostname
-        vary resolver = DnsResolver::system()
-            .map_err(|_| WsError::ConnectionFailed {
-                inner: SocketError::InvalidAddress
+        vary resolver = DnsResolver·system()
+            .map_err(|_| WsError·ConnectionFailed {
+                inner: SocketError·InvalidAddress
             })?;
 
         ≔ ip = resolver.resolve(&parsed.host)
-            .map_err(|_| WsError::ConnectionFailed {
-                inner: SocketError::InvalidAddress
+            .map_err(|_| WsError·ConnectionFailed {
+                inner: SocketError·InvalidAddress
             })?;
 
-        ≔ addr = SocketAddr::new(ip, parsed.port);
+        ≔ addr = SocketAddr·new(ip, parsed.port);
 
         // Connect
         ≔ conn = ⎇ parsed.scheme == "wss" {
-            ≔ tcp = TcpStream::connect(&addr)
-                .map_err(|e| WsError::ConnectionFailed { inner: e })?;
+            ≔ tcp = TcpStream·connect(&addr)
+                .map_err(|e| WsError·ConnectionFailed { inner: e })?;
 
-            ≔ tls = TlsStream::connect(tcp, &parsed.host)
-                .map_err(|e| WsError::TlsFailed { inner: e })?;
+            ≔ tls = TlsStream·connect(tcp, &parsed.host)
+                .map_err(|e| WsError·TlsFailed { inner: e })?;
 
-            WsConnection::Tls(tls)
+            WsConnection·Tls(tls)
         } ⎉ {
-            ≔ tcp = TcpStream::connect(&addr)
-                .map_err(|e| WsError::ConnectionFailed { inner: e })?;
+            ≔ tcp = TcpStream·connect(&addr)
+                .map_err(|e| WsError·ConnectionFailed { inner: e })?;
 
-            WsConnection::Tcp(tcp)
+            WsConnection·Tcp(tcp)
         };
 
         // Generate random mask key
-        // In production, use a proper CSPRNG
+        // In production, invoke a proper CSPRNG
         ≔ mask_key: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
 
         vary ws = WebSocket {
@@ -166,7 +166,7 @@ enum WsConnection {
         );
 
         // Add custom headers
-        for (name, value) in extra_headers {
+        ∀ (name, value) ∈ extra_headers {
             request.push_str(&format!("{}: {}\r\n", name, value));
         }
 
@@ -180,17 +180,17 @@ enum WsConnection {
         ≔ n = self.read(&vary buf)?;
 
         // Parse response
-        ≔ response = String::from_utf8_lossy(&buf[..n]);
+        ≔ response = String·from_utf8_lossy(&buf[..n]);
 
         ⎇ !response.starts_with("HTTP/1.1 101") {
             // Extract status code
             ≔ status = ⎇ response.len() > 12 {
-                response[9..12].parse::<u16>().unwrap_or(0)
+                response[9..12].parse·<u16>().unwrap_or(0)
             } ⎉ {
                 0
             };
 
-            ret Err(WsError::HandshakeFailed {
+            ret Err(WsError·HandshakeFailed {
                 status,
                 message: response.to_string(),
             });
@@ -216,7 +216,7 @@ enum WsConnection {
     /// Receive next message (blocks)
     ☉ rite recv(&vary self) -> Result<WsMessage, WsError>! {
         ⎇ !self.connected {
-            ret Err(WsError::ConnectionClosed { code: None, reason: None });
+            ret Err(WsError·ConnectionClosed { code: None, reason: None });
         }
 
         // Read frame header
@@ -244,13 +244,13 @@ enum WsConnection {
 
         // Check message size
         ⎇ payload_len > self.max_message_size {
-            ret Err(WsError::MessageTooLarge {
+            ret Err(WsError·MessageTooLarge {
                 size: payload_len,
                 max: self.max_message_size,
             });
         }
 
-        // Read mask (if present - server frames are usually unmasked)
+        // Read mask (⎇ present - server frames are usually unmasked)
         vary mask: [u8; 4] = [0; 4];
         ⎇ masked {
             self.read_exact(&vary mask)?;
@@ -260,30 +260,30 @@ enum WsConnection {
         vary payload = vec![0u8; payload_len];
         self.read_exact(&vary payload)?;
 
-        // Unmask if needed
+        // Unmask ⎇ needed
         ⎇ masked {
-            for i in 0..payload.len() {
+            ∀ i ∈ 0..payload.len() {
                 payload[i] ^= mask[i % 4];
             }
         }
 
         // Return appropriate message type
-        match opcode {
+        ⌥ opcode {
             OPCODE_TEXT => {
-                ≔ text = String::from_utf8(payload)
-                    .map_err(|_| WsError::InvalidFrame { message: "Invalid UTF-8".to_string() })?;
-                Ok(WsMessage::Text(text))
+                ≔ text = String·from_utf8(payload)
+                    .map_err(|_| WsError·InvalidFrame { message: "Invalid UTF-8".to_string() })?;
+                Ok(WsMessage·Text(text))
             }
             OPCODE_BINARY => {
-                Ok(WsMessage::Binary(payload))
+                Ok(WsMessage·Binary(payload))
             }
             OPCODE_PING => {
                 // Auto-respond with pong
                 self.send_frame(OPCODE_PONG, &payload, true)?;
-                Ok(WsMessage::Ping(payload))
+                Ok(WsMessage·Ping(payload))
             }
             OPCODE_PONG => {
-                Ok(WsMessage::Pong(payload))
+                Ok(WsMessage·Pong(payload))
             }
             OPCODE_CLOSE => {
                 vary code: u16? = None;
@@ -292,15 +292,15 @@ enum WsConnection {
                 ⎇ payload.len() >= 2 {
                     code = Some(((payload[0] as u16) << 8) | (payload[1] as u16));
                     ⎇ payload.len() > 2 {
-                        reason = String::from_utf8(payload[2..].to_vec()).ok();
+                        reason = String·from_utf8(payload[2..].to_vec()).ok();
                     }
                 }
 
                 self.connected = false;
-                Ok(WsMessage::Close { code, reason })
+                Ok(WsMessage·Close { code, reason })
             }
             _ => {
-                Err(WsError::InvalidFrame {
+                Err(WsError·InvalidFrame {
                     message: format!("Unknown opcode: {}", opcode)
                 })
             }
@@ -319,7 +319,7 @@ enum WsConnection {
         }
 
         // Build close frame payload
-        vary payload = Vec::new();
+        vary payload = Vec·new();
         payload.push((code >> 8) as u8);
         payload.push((code & 0xFF) as u8);
         payload.extend_from_slice(reason.as_bytes());
@@ -332,13 +332,13 @@ enum WsConnection {
 
     /// Send WebSocket frame
     rite send_frame(&vary self, opcode: u8, data: &[u8], fin: bool) -> Result<(), WsError>! {
-        vary frame = Vec::new();
+        vary frame = Vec·new();
 
         // First byte: FIN + opcode
         ≔ first_byte = ⎇ fin { 0x80 | opcode } ⎉ { opcode };
         frame.push(first_byte);
 
-        // Second byte: MASK (always 1 for client) + payload length
+        // Second byte: MASK (always 1 ∀ client) + payload length
         ⎇ data.len() < 126 {
             frame.push(0x80 | data.len() as u8);
         } ⎉ ⎇ data.len() < 65536 {
@@ -361,7 +361,7 @@ enum WsConnection {
         frame.extend_from_slice(&self.mask_key);
 
         // Masked payload
-        for (i, byte) in data.iter().enumerate() {
+        ∀ (i, byte) ∈ data.iter().enumerate() {
             frame.push(byte ^ self.mask_key[i % 4]);
         }
 
@@ -370,28 +370,28 @@ enum WsConnection {
 
     /// Internal: write to connection
     rite write_all(&vary self, data: &[u8]) -> Result<(), WsError>! {
-        match &vary self.conn {
-            WsConnection::Tcp(ref vary tcp) => {
+        ⌥ &vary self.conn {
+            WsConnection·Tcp(ref vary tcp) => {
                 tcp.write_all(data)
-                    .map_err(|e| WsError::ConnectionFailed { inner: e })
+                    .map_err(|e| WsError·ConnectionFailed { inner: e })
             }
-            WsConnection::Tls(ref vary tls) => {
+            WsConnection·Tls(ref vary tls) => {
                 tls.write_all(data)
-                    .map_err(|e| WsError::TlsFailed { inner: e })
+                    .map_err(|e| WsError·TlsFailed { inner: e })
             }
         }
     }
 
     /// Internal: read from connection
     rite read(&vary self, buf: &vary [u8]) -> Result<usize, WsError>! {
-        match &vary self.conn {
-            WsConnection::Tcp(ref vary tcp) => {
+        ⌥ &vary self.conn {
+            WsConnection·Tcp(ref vary tcp) => {
                 tcp.read(buf)
-                    .map_err(|e| WsError::ConnectionFailed { inner: e })
+                    .map_err(|e| WsError·ConnectionFailed { inner: e })
             }
-            WsConnection::Tls(ref vary tls) => {
+            WsConnection·Tls(ref vary tls) => {
                 tls.read(buf)
-                    .map_err(|e| WsError::TlsFailed { inner: e })
+                    .map_err(|e| WsError·TlsFailed { inner: e })
             }
         }
     }
@@ -399,10 +399,10 @@ enum WsConnection {
     /// Internal: read exact bytes
     rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), WsError>! {
         vary total = 0;
-        while total < buf.len() {
+        ⟳ total < buf.len() {
             ≔ n = self.read(&vary buf[total..])?;
             ⎇ n == 0 {
-                ret Err(WsError::ConnectionClosed { code: None, reason: None });
+                ret Err(WsError·ConnectionClosed { code: None, reason: None });
             }
             total += n;
         }
@@ -410,7 +410,7 @@ enum WsConnection {
     }
 }
 
-☉ impl Drop for WebSocket {
+☉ ⊢ Drop ∀ WebSocket {
     ☉ rite drop(&vary self) {
         ⎇ self.connected {
             self.close(1000, "Normal closure");

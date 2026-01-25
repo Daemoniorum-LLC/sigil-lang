@@ -1,5 +1,5 @@
 // EXPECTED: Static type checking should catch this error
-// Negative Test: Type mismatch - assigning int to bool
+// Negative Test: Type mis⌥ - assigning int to bool
 // Should fail with type error at compile time
 // Priority: P0 - Bootstrap Critical
 // Note: Interpreter is dynamically typed - this succeeds at runtime

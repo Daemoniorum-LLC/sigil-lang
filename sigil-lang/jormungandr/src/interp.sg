@@ -1,4 +1,4 @@
-//! Tree-Walking Interpreter for Sigil IR
+//! Tree-Walking Interpreter ∀ Sigil IR
 //!
 //! This module provides an interpreter that directly executes the IR,
 //! serving as both a reference implementation and a stepping stone
@@ -7,9 +7,9 @@
 //! ## Execution Model
 //!
 //! The interpreter uses a stack-based execution model with:
-//! - Value stack for operands and results
-//! - Call stack for function invocations
-//! - Environment stack for variable scoping
+//! - Value stack ∀ operands and results
+//! - Call stack ∀ function invocations
+//! - Environment stack ∀ variable scoping
 //! - Evidence tracking at runtime
 //!
 //! ## Evidence at Runtime
@@ -17,7 +17,7 @@
 //! Unlike static typing, the interpreter tracks evidence dynamically:
 //! - Known (!) values are trusted implicitly
 //! - Uncertain (?) values trigger runtime checks
-//! - Reported (~) values are tagged for provenance tracking
+//! - Reported (~) values are tagged ∀ provenance tracking
 //! - Paradox (‽) values halt execution with an error
 
 invoke tome·ir·*;
@@ -28,7 +28,7 @@ invoke tome·typeck·EvidenceLevel;
 // ============================================================================
 
 /// Runtime value representation with evidence tracking
-pub enum Value {
+☉ ᛈ Value {
     /// Unit value ()
     Unit,
 
@@ -89,10 +89,10 @@ pub enum Value {
     Never,
 }
 
-impl Value {
-    /// Check if this is a truthy value
-    pub fn is_truthy(self) -> !bool {
-        match self {
+⊢ Value {
+    /// Check ⎇ this is a truthy value
+    ☉ λ is_truthy(self) -> !bool {
+        ⌥ self {
             Value·Bool(b) => b,
             Value·Int(n) => n != 0,
             Value·Float(f) => f != 0.0,
@@ -105,46 +105,46 @@ impl Value {
     }
 
     /// Convert to string representation
-    pub fn to_string(self) -> !String {
-        match self {
+    ☉ λ to_string(self) -> !String {
+        ⌥ self {
             Value·Unit => "()",
-            Value·Bool(b) => if b { "true" } else { "false" },
+            Value·Bool(b) => ⎇ b { "true" } ⎉ { "false" },
             Value·Int(n) => n.to_string(),
             Value·Float(f) => f.to_string(),
             Value·Char(c) => format!("'{}'", c),
             Value·String(s) => s,
             Value·Array(elements) => {
-                let parts = elements|τ{e => e.to_string()}|join(", ");
+                ≔ parts = elements|τ{e => e.to_string()}|join(", ");
                 format!("[{}]", parts)
             },
             Value·Tuple(elements) => {
-                let parts = elements|τ{e => e.to_string()}|join(", ");
+                ≔ parts = elements|τ{e => e.to_string()}|join(", ");
                 format!("({})", parts)
             },
             Value·Struct { name, fields } => {
-                let parts = fields.entries()|τ{pair => format!("{}: {}", pair.0, pair.1.to_string())}|join(", ");
+                ≔ parts = fields.entries()|τ{pair => format!("{}: {}", pair.0, pair.1.to_string())}|join(", ");
                 format!("{} {{ {} }}", name, parts)
             },
             Value·Enum { name, variant, fields } => {
-                if fields.is_empty() {
-                    format!("{}::{}", name, variant)
-                } else {
-                    let parts = fields|τ{f => f.to_string()}|join(", ");
-                    format!("{}::{}({})", name, variant, parts)
+                ⎇ fields.is_empty() {
+                    format!("{}·{}", name, variant)
+                } ⎉ {
+                    ≔ parts = fields|τ{f => f.to_string()}|join(", ");
+                    format!("{}·{}({})", name, variant, parts)
                 }
             },
             Value·Closure { .. } => "<closure>",
-            Value·Function(name) => format!("<fn {}>", name),
+            Value·Function(name) => format!("<λ {}>", name),
             Value·Ref(v) => format!("&{}", v.to_string()),
-            Value·RefMut(v) => format!("&mut {}", v.to_string()),
+            Value·RefMut(v) => format!("&Δ {}", v.to_string()),
             Value·Null => "null",
             Value·Never => "!",
         }
     }
 
-    /// Get type name for error messages
-    pub fn type_name(self) -> !&str {
-        match self {
+    /// Get type name ∀ error messages
+    ☉ λ type_name(self) -> !&str {
+        ⌥ self {
             Value·Unit => "()",
             Value·Bool(_) => "bool",
             Value·Int(_) => "i64",
@@ -166,21 +166,21 @@ impl Value {
 }
 
 /// Runtime value with evidence annotation
-pub struct EvidentialValue {
-    pub value: !Value,
-    pub evidence: !IrEvidence,
+☉ Σ EvidentialValue {
+    ☉ value: !Value,
+    ☉ evidence: !IrEvidence,
 }
 
-impl EvidentialValue {
-    pub fn known(value: !Value) -> !EvidentialValue {
+⊢ EvidentialValue {
+    ☉ λ known(value: !Value) -> !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Known }
     }
 
-    pub fn uncertain(value: !Value) -> !EvidentialValue {
+    ☉ λ uncertain(value: !Value) -> !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Uncertain }
     }
 
-    pub fn reported(value: !Value) -> !EvidentialValue {
+    ☉ λ reported(value: !Value) -> !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Reported }
     }
 }
@@ -190,16 +190,16 @@ impl EvidentialValue {
 // ============================================================================
 
 /// Variable environment with scoping
-pub struct Environment {
+☉ Σ Environment {
     /// Variable bindings
     bindings: !Map<String, EvidentialValue>,
     /// Parent scope
     parent: ?Box<Environment>,
 }
 
-impl Environment {
+⊢ Environment {
     /// Create a new empty environment
-    pub fn new() -> !Environment {
+    ☉ λ new() -> !Environment {
         Environment {
             bindings: Map·new(),
             parent: null,
@@ -207,7 +207,7 @@ impl Environment {
     }
 
     /// Create a child environment
-    pub fn child(parent: !Environment) -> !Environment {
+    ☉ λ child(parent: !Environment) -> !Environment {
         Environment {
             bindings: Map·new(),
             parent: ?Box·new(parent),
@@ -215,29 +215,29 @@ impl Environment {
     }
 
     /// Define a variable
-    pub fn define(mut self, name: !String, value: !EvidentialValue) {
+    ☉ λ define(Δ self, name: !String, value: !EvidentialValue) {
         self.bindings.insert(name, value);
     }
 
     /// Look up a variable
-    pub fn get(self, name: !&str) -> Option<EvidentialValue> {
-        if let Some(val) = self.bindings.get(name) {
-            return Some(val.clone());
+    ☉ λ get(self, name: !&str) -> Option<EvidentialValue> {
+        ⎇ ≔ Some(val) = self.bindings.get(name) {
+            ⤺ Some(val.clone());
         }
-        if let Some(parent) = self.parent {
-            return parent.get(name);
+        ⎇ ≔ Some(parent) = self.parent {
+            ⤺ parent.get(name);
         }
         None
     }
 
     /// Update an existing variable
-    pub fn set(mut self, name: !&str, value: !EvidentialValue) -> !bool {
-        if self.bindings.contains_key(name) {
+    ☉ λ set(Δ self, name: !&str, value: !EvidentialValue) -> !bool {
+        ⎇ self.bindings.contains_key(name) {
             self.bindings.insert(name.to_string(), value);
-            return true;
+            ⤺ true;
         }
-        if let ?parent = self.parent {
-            return parent.set(name, value);
+        ⎇ ≔ ?parent = self.parent {
+            ⤺ parent.set(name, value);
         }
         false
     }
@@ -248,13 +248,13 @@ impl Environment {
 // ============================================================================
 
 /// Call stack frame
-pub struct CallFrame {
+☉ Σ CallFrame {
     /// Function name
-    pub function: !String,
+    ☉ function: !String,
     /// Local environment
-    pub env: !Environment,
-    /// Return address (for debugging)
-    pub return_addr: ?String,
+    ☉ env: !Environment,
+    /// Return address (∀ debugging)
+    ☉ return_addr: ?String,
 }
 
 // ============================================================================
@@ -262,7 +262,7 @@ pub struct CallFrame {
 // ============================================================================
 
 /// The Sigil interpreter
-pub struct Interpreter {
+☉ Σ Interpreter {
     /// Global environment
     globals: !Environment,
 
@@ -275,17 +275,17 @@ pub struct Interpreter {
     /// Function definitions
     functions: !Map<String, IrFunction>,
 
-    /// Output buffer (for print statements)
+    /// Output buffer (∀ print statements)
     output: ![String],
 
     /// Maximum call stack depth
     max_stack_depth: !u64,
 }
 
-impl Interpreter {
+⊢ Interpreter {
     /// Create a new interpreter
-    pub fn new() -> !Interpreter {
-        let mut interp = Interpreter {
+    ☉ λ new() -> !Interpreter {
+        ≔ Δ interp = Interpreter {
             globals: Environment·new(),
             call_stack: [],
             modules: Map·new(),
@@ -300,7 +300,7 @@ impl Interpreter {
     }
 
     /// Register built-in functions
-    fn register_builtins(mut self) {
+    λ register_builtins(Δ self) {
         // I/O
         self.globals.define("print", EvidentialValue·known(Value·Function("print")));
         self.globals.define("println", EvidentialValue·known(Value·Function("println")));
@@ -347,9 +347,9 @@ impl Interpreter {
     }
 
     /// Load an IR module
-    pub fn load_module(mut self, module: !IrModule) {
+    ☉ λ load_module(Δ self, module: !IrModule) {
         // Register all functions
-        for func in module.functions {
+        ∀ func ∈ module.functions {
             self.functions.insert(func.name.clone(), func);
         }
 
@@ -358,50 +358,50 @@ impl Interpreter {
     }
 
     /// Execute the main function
-    pub fn run(mut self) -> !Result<EvidentialValue, RuntimeError> {
+    ☉ λ run(Δ self) -> !Result<EvidentialValue, RuntimeError> {
         // Find main function
-        if let Some(_main_fn) = self.functions.get("main") {
+        ⎇ ≔ Some(_main_fn) = self.functions.get("main") {
             self.call_function("main", Vec·new())
-        } else {
+        } ⎉ {
             Result·Err(RuntimeError·new("no main function found"))
         }
     }
 
     /// Call a function by name
-    pub fn call_function(mut self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
+    ☉ λ call_function(Δ self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
         // Check stack depth
-        if self.call_stack.len() >= self.max_stack_depth {
-            return Result·Err(RuntimeError·new("stack overflow"));
+        ⎇ self.call_stack.len() >= self.max_stack_depth {
+            ⤺ Result·Err(RuntimeError·new("stack overflow"));
         }
 
         // Handle built-in functions
-        if self.is_builtin(name) {
-            return self.call_builtin(name, args);
+        ⎇ self.is_builtin(name) {
+            ⤺ self.call_builtin(name, args);
         }
 
         // Find user function
-        let func = match self.functions.get(name) {
+        ≔ func = ⌥ self.functions.get(name) {
             Some(f) => f,
-            None => return Result·Err(RuntimeError·new(format!("undefined function: {}", name))),
+            None => ⤺ Result·Err(RuntimeError·new(format!("undefined function: {}", name))),
         };
 
         // Create new environment
-        let mut env = Environment·child(self.globals);
+        ≔ Δ env = Environment·child(self.globals);
 
         // Bind parameters
-        if func.params.len() != args.len() {
-            return Result·Err(RuntimeError·new(format!(
+        ⎇ func.params.len() != args.len() {
+            ⤺ Result·Err(RuntimeError·new(format!(
                 "function {} expected {} arguments, got {}",
                 name, func.params.len(), args.len()
             )));
         }
 
-        for (param, arg) in func.params.iter().zip(args.iter()) {
+        ∀ (param, arg) ∈ func.params.iter().zip(args.iter()) {
             // Check evidence requirements
-            let required_ev = param.evidence;
-            if !self.check_evidence(required_ev, arg.evidence) {
-                return Result·Err(RuntimeError·new(format!(
-                    "evidence mismatch for parameter {}: expected {}, got {}",
+            ≔ required_ev = param.evidence;
+            ⎇ !self.check_evidence(required_ev, arg.evidence) {
+                ⤺ Result·Err(RuntimeError·new(format!(
+                    "evidence mis⌥ ∀ parameter {}: expected {}, got {}",
                     param.name, required_ev.name(), arg.evidence.name()
                 )));
             }
@@ -416,7 +416,7 @@ impl Interpreter {
         });
 
         // Execute body
-        let result = match func.body {
+        ≔ result = ⌥ func.body {
             Some(body) => self.eval_with_env(body, env),
             None => Result·Ok(EvidentialValue·known(Value·Unit)),
         };
@@ -427,10 +427,10 @@ impl Interpreter {
         result
     }
 
-    /// Check if evidence satisfies requirement
-    fn check_evidence(self, required: !IrEvidence, actual: !IrEvidence) -> !bool {
-        let rank = |ev: !IrEvidence| {
-            match ev {
+    /// Check ⎇ evidence satisfies requirement
+    λ check_evidence(self, required: !IrEvidence, actual: !IrEvidence) -> !bool {
+        ≔ rank = |ev: !IrEvidence| {
+            ⌥ ev {
                 IrEvidence·Known => 0,
                 IrEvidence·Uncertain => 1,
                 IrEvidence·Reported => 2,
@@ -441,9 +441,9 @@ impl Interpreter {
         rank(actual) <= rank(required)
     }
 
-    /// Check if a function is built-in
-    fn is_builtin(self, name: !&str) -> !bool {
-        match name {
+    /// Check ⎇ a function is built-in
+    λ is_builtin(self, name: !&str) -> !bool {
+        ⌥ name {
             "print" | "println" | "input" |
             "int" | "float" | "str" | "bool" |
             "abs" | "sqrt" | "sin" | "cos" | "pow" | "floor" | "ceil" | "round" | "min" | "max" |
@@ -456,158 +456,158 @@ impl Interpreter {
     }
 
     /// Call a built-in function
-    fn call_builtin(mut self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
-        match name {
+    λ call_builtin(Δ self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
+        ⌥ name {
             "print" => {
-                for arg in args {
+                ∀ arg ∈ args {
                     self.output.push(arg.value.to_string());
                 }
                 Result·Ok(EvidentialValue·known(Value·Unit))
             },
             "println" => {
-                for arg in args {
+                ∀ arg ∈ args {
                     self.output.push(arg.value.to_string());
                 }
                 self.output.push("\n");
                 Result·Ok(EvidentialValue·known(Value·Unit))
             },
             "len" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("len expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("len expects 1 argument"));
                 }
-                let val = args[0].value;
-                let len = match val {
+                ≔ val = args[0].value;
+                ≔ len = ⌥ val {
                     Value·String(s) => s.len() as i64,
                     Value·Array(a) => a.len() as i64,
-                    _ => return Result·Err(RuntimeError·new("len requires string or array")),
+                    _ => ⤺ Result·Err(RuntimeError·new("len requires string or array")),
                 };
                 Result·Ok(EvidentialValue·known(Value·Int(len)))
             },
             "int" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("int expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("int expects 1 argument"));
                 }
-                let val = match args[0].value {
+                ≔ val = ⌥ args[0].value {
                     Value·Int(n) => n,
                     Value·Float(f) => f as i64,
-                    Value·Bool(b) => if b { 1 } else { 0 },
+                    Value·Bool(b) => ⎇ b { 1 } ⎉ { 0 },
                     Value·String(s) => s.parse().unwrap_or(0),
-                    _ => return Result·Err(RuntimeError·new("cannot convert to int")),
+                    _ => ⤺ Result·Err(RuntimeError·new("cannot convert to int")),
                 };
                 Result·Ok(EvidentialValue·known(Value·Int(val)))
             },
             "float" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("float expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("float expects 1 argument"));
                 }
-                let val = match args[0].value {
+                ≔ val = ⌥ args[0].value {
                     Value·Int(n) => n as f64,
                     Value·Float(f) => f,
                     Value·String(s) => s.parse().unwrap_or(0.0),
-                    _ => return Result·Err(RuntimeError·new("cannot convert to float")),
+                    _ => ⤺ Result·Err(RuntimeError·new("cannot convert to float")),
                 };
                 Result·Ok(EvidentialValue·known(Value·Float(val)))
             },
             "str" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("str expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("str expects 1 argument"));
                 }
                 Result·Ok(EvidentialValue·known(Value·String(args[0].value.to_string())))
             },
             "abs" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("abs expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("abs expects 1 argument"));
                 }
-                match args[0].value {
+                ⌥ args[0].value {
                     Value·Int(n) => Result·Ok(EvidentialValue·known(Value·Int(n.abs()))),
                     Value·Float(f) => Result·Ok(EvidentialValue·known(Value·Float(f.abs()))),
                     _ => Result·Err(RuntimeError·new("abs requires number")),
                 }
             },
             "sqrt" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("sqrt expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("sqrt expects 1 argument"));
                 }
-                match args[0].value {
+                ⌥ args[0].value {
                     Value·Float(f) => Result·Ok(EvidentialValue·known(Value·Float(f.sqrt()))),
                     Value·Int(n) => Result·Ok(EvidentialValue·known(Value·Float((n as f64).sqrt()))),
                     _ => Result·Err(RuntimeError·new("sqrt requires number")),
                 }
             },
             "sin" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("sin expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("sin expects 1 argument"));
                 }
-                match args[0].value {
+                ⌥ args[0].value {
                     Value·Float(f) => Result·Ok(EvidentialValue·known(Value·Float(f.sin()))),
                     Value·Int(n) => Result·Ok(EvidentialValue·known(Value·Float((n as f64).sin()))),
                     _ => Result·Err(RuntimeError·new("sin requires number")),
                 }
             },
             "cos" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("cos expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("cos expects 1 argument"));
                 }
-                match args[0].value {
+                ⌥ args[0].value {
                     Value·Float(f) => Result·Ok(EvidentialValue·known(Value·Float(f.cos()))),
                     Value·Int(n) => Result·Ok(EvidentialValue·known(Value·Float((n as f64).cos()))),
                     _ => Result·Err(RuntimeError·new("cos requires number")),
                 }
             },
             "pow" => {
-                if args.len() != 2 {
-                    return Result·Err(RuntimeError·new("pow expects 2 arguments"));
+                ⎇ args.len() != 2 {
+                    ⤺ Result·Err(RuntimeError·new("pow expects 2 arguments"));
                 }
-                let base = match args[0].value {
+                ≔ base = ⌥ args[0].value {
                     Value·Float(f) => f,
                     Value·Int(n) => n as f64,
-                    _ => return Result·Err(RuntimeError·new("pow requires numbers")),
+                    _ => ⤺ Result·Err(RuntimeError·new("pow requires numbers")),
                 };
-                let exp = match args[1].value {
+                ≔ exp = ⌥ args[1].value {
                     Value·Float(f) => f,
                     Value·Int(n) => n as f64,
-                    _ => return Result·Err(RuntimeError·new("pow requires numbers")),
+                    _ => ⤺ Result·Err(RuntimeError·new("pow requires numbers")),
                 };
                 Result·Ok(EvidentialValue·known(Value·Float(base.powf(exp))))
             },
             "min" => {
-                if args.len() != 2 {
-                    return Result·Err(RuntimeError·new("min expects 2 arguments"));
+                ⎇ args.len() != 2 {
+                    ⤺ Result·Err(RuntimeError·new("min expects 2 arguments"));
                 }
-                match (args[0].value, args[1].value) {
-                    (Value·Int(a), Value·Int(b)) => Result·Ok(EvidentialValue·known(Value·Int(if a < b { a } else { b }))),
-                    (Value·Float(a), Value·Float(b)) => Result·Ok(EvidentialValue·known(Value·Float(if a < b { a } else { b }))),
+                ⌥ (args[0].value, args[1].value) {
+                    (Value·Int(a), Value·Int(b)) => Result·Ok(EvidentialValue·known(Value·Int(⎇ a < b { a } ⎉ { b }))),
+                    (Value·Float(a), Value·Float(b)) => Result·Ok(EvidentialValue·known(Value·Float(⎇ a < b { a } ⎉ { b }))),
                     _ => Result·Err(RuntimeError·new("min requires same types")),
                 }
             },
             "max" => {
-                if args.len() != 2 {
-                    return Result·Err(RuntimeError·new("max expects 2 arguments"));
+                ⎇ args.len() != 2 {
+                    ⤺ Result·Err(RuntimeError·new("max expects 2 arguments"));
                 }
-                match (args[0].value, args[1].value) {
-                    (Value·Int(a), Value·Int(b)) => Result·Ok(EvidentialValue·known(Value·Int(if a > b { a } else { b }))),
-                    (Value·Float(a), Value·Float(b)) => Result·Ok(EvidentialValue·known(Value·Float(if a > b { a } else { b }))),
+                ⌥ (args[0].value, args[1].value) {
+                    (Value·Int(a), Value·Int(b)) => Result·Ok(EvidentialValue·known(Value·Int(⎇ a > b { a } ⎉ { b }))),
+                    (Value·Float(a), Value·Float(b)) => Result·Ok(EvidentialValue·known(Value·Float(⎇ a > b { a } ⎉ { b }))),
                     _ => Result·Err(RuntimeError·new("max requires same types")),
                 }
             },
             "range" => {
-                if args.len() != 2 {
-                    return Result·Err(RuntimeError·new("range expects 2 arguments"));
+                ⎇ args.len() != 2 {
+                    ⤺ Result·Err(RuntimeError·new("range expects 2 arguments"));
                 }
-                match (args[0].value, args[1].value) {
+                ⌥ (args[0].value, args[1].value) {
                     (Value·Int(start), Value·Int(end)) => {
-                        let arr = (start..end)|τ{n => Value·Int(n)}|collect();
+                        ≔ arr = (start..end)|τ{n => Value·Int(n)}|collect();
                         Result·Ok(EvidentialValue·known(Value·Array(arr)))
                     },
                     _ => Result·Err(RuntimeError·new("range requires integers")),
                 }
             },
             "first" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("first expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("first expects 1 argument"));
                 }
-                match args[0].value {
-                    Value·Array(arr) => match arr.first() {
+                ⌥ args[0].value {
+                    Value·Array(arr) => ⌥ arr.first() {
                         Some(v) => Result·Ok(EvidentialValue·uncertain(v.clone())),
                         None => Result·Ok(EvidentialValue·known(Value·Null)),
                     },
@@ -615,11 +615,11 @@ impl Interpreter {
                 }
             },
             "last" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("last expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("last expects 1 argument"));
                 }
-                match args[0].value {
-                    Value·Array(arr) => match arr.last() {
+                ⌥ args[0].value {
+                    Value·Array(arr) => ⌥ arr.last() {
                         Some(v) => Result·Ok(EvidentialValue·uncertain(v.clone())),
                         None => Result·Ok(EvidentialValue·known(Value·Null)),
                     },
@@ -627,21 +627,21 @@ impl Interpreter {
                 }
             },
             "assert" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("assert expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("assert expects 1 argument"));
                 }
-                if !args[0].value.is_truthy() {
-                    return Result·Err(RuntimeError·new("assertion failed"));
+                ⎇ !args[0].value.is_truthy() {
+                    ⤺ Result·Err(RuntimeError·new("assertion failed"));
                 }
                 Result·Ok(EvidentialValue·known(Value·Unit))
             },
             "assert_eq" => {
-                if args.len() != 2 {
-                    return Result·Err(RuntimeError·new("assert_eq expects 2 arguments"));
+                ⎇ args.len() != 2 {
+                    ⤺ Result·Err(RuntimeError·new("assert_eq expects 2 arguments"));
                 }
-                let eq = self.values_equal(args[0].value, args[1].value);
-                if !eq {
-                    return Result·Err(RuntimeError·new(format!(
+                ≔ eq = self.values_equal(args[0].value, args[1].value);
+                ⎇ !eq {
+                    ⤺ Result·Err(RuntimeError·new(format!(
                         "assertion failed: {} != {}",
                         args[0].value.to_string(),
                         args[1].value.to_string()
@@ -650,15 +650,15 @@ impl Interpreter {
                 Result·Ok(EvidentialValue·known(Value·Unit))
             },
             "evidence_of" => {
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("evidence_of expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("evidence_of expects 1 argument"));
                 }
                 Result·Ok(EvidentialValue·known(Value·String(args[0].evidence.name())))
             },
             "validate" => {
                 // Promote to uncertain
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("validate expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("validate expects 1 argument"));
                 }
                 Result·Ok(EvidentialValue {
                     value: args[0].value.clone(),
@@ -667,15 +667,15 @@ impl Interpreter {
             },
             "verify" => {
                 // Promote to known (runtime check passed)
-                if args.len() != 1 {
-                    return Result·Err(RuntimeError·new("verify expects 1 argument"));
+                ⎇ args.len() != 1 {
+                    ⤺ Result·Err(RuntimeError·new("verify expects 1 argument"));
                 }
                 Result·Ok(EvidentialValue·known(args[0].value.clone()))
             },
             "panic" => {
-                let msg = if args.is_empty() {
+                ≔ msg = ⎇ args.is_empty() {
                     "explicit panic"
-                } else {
+                } ⎉ {
                     args[0].value.to_string()
                 };
                 Result·Err(RuntimeError·new(format!("panic: {}", msg)))
@@ -688,8 +688,8 @@ impl Interpreter {
     }
 
     /// Check value equality
-    fn values_equal(self, a: !Value, b: !Value) -> !bool {
-        match (a, b) {
+    λ values_equal(self, a: !Value, b: !Value) -> !bool {
+        ⌥ (a, b) {
             (Value·Unit, Value·Unit) => true,
             (Value·Bool(a), Value·Bool(b)) => a == b,
             (Value·Int(a), Value·Int(b)) => a == b,
@@ -705,11 +705,11 @@ impl Interpreter {
         }
     }
 
-    /// Evaluate an operation in a given environment
-    fn eval_with_env(mut self, op: !IrOperation, mut env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
-        match op {
+    /// Evaluate an operation ∈ a given environment
+    λ eval_with_env(Δ self, op: !IrOperation, Δ env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+        ⌥ op {
             IrOperation·Literal { value, evidence, .. } => {
-                let val = match value {
+                ≔ val = ⌥ value {
                     LiteralValue·Int(n) => Value·Int(n),
                     LiteralValue·Float(f) => Value·Float(f),
                     LiteralValue·Bool(b) => Value·Bool(b),
@@ -721,9 +721,9 @@ impl Interpreter {
             },
 
             IrOperation·Var { name, evidence, .. } => {
-                match env.get(name) {
+                ⌥ env.get(name) {
                     Some(val) => Result·Ok(val),
-                    None => match self.globals.get(name) {
+                    None => ⌥ self.globals.get(name) {
                         Some(val) => Result·Ok(val),
                         None => Result·Err(RuntimeError·new(format!("undefined variable: {}", name))),
                     },
@@ -731,50 +731,50 @@ impl Interpreter {
             },
 
             IrOperation·Let { pattern, init, evidence, .. } => {
-                let init_val = self.eval_with_env(*init, env)?;
+                ≔ init_val = self.eval_with_env(*init, env)?;
                 self.bind_pattern(pattern, init_val, env)?;
                 Result·Ok(EvidentialValue·known(Value·Unit))
             },
 
             IrOperation·Binary { operator, left, right, evidence, .. } => {
-                let l = self.eval_with_env(*left, env)?;
-                let r = self.eval_with_env(*right, env)?;
-                let combined_ev = l.evidence.join(r.evidence);
+                ≔ l = self.eval_with_env(*left, env)?;
+                ≔ r = self.eval_with_env(*right, env)?;
+                ≔ combined_ev = l.evidence.join(r.evidence);
 
-                let result = self.eval_binary(operator, l.value, r.value)?;
+                ≔ result = self.eval_binary(operator, l.value, r.value)?;
                 Result·Ok(EvidentialValue { value: result, evidence: combined_ev })
             },
 
             IrOperation·Unary { operator, operand, evidence, .. } => {
-                let val = self.eval_with_env(*operand, env)?;
+                ≔ val = self.eval_with_env(*operand, env)?;
 
-                let result = self.eval_unary(operator, val.value)?;
+                ≔ result = self.eval_unary(operator, val.value)?;
                 Result·Ok(EvidentialValue { value: result, evidence: val.evidence })
             },
 
             IrOperation·Call { function, args, evidence, .. } => {
-                let arg_results = args|τ{a => self.eval_with_env(a, env)}|collect_results();
-                let arg_vals = arg_results?;
+                ≔ arg_results = args|τ{a => self.eval_with_env(a, env)}|collect_results();
+                ≔ arg_vals = arg_results?;
                 self.call_function(function, arg_vals)
             },
 
             IrOperation·If { condition, then_branch, else_branch, evidence, .. } => {
-                let cond = self.eval_with_env(*condition, env)?;
+                ≔ cond = self.eval_with_env(*condition, env)?;
 
-                if cond.value.is_truthy() {
+                ⎇ cond.value.is_truthy() {
                     self.eval_with_env(*then_branch, env)
-                } else if let ?else_expr = else_branch {
+                } ⎉ ⎇ ≔ ?else_expr = else_branch {
                     self.eval_with_env(*else_expr, env)
-                } else {
+                } ⎉ {
                     Result·Ok(EvidentialValue·known(Value·Unit))
                 }
             },
 
             IrOperation·Block { statements, evidence, .. } => {
-                let mut block_env = Environment·child(env);
-                let mut result = EvidentialValue·known(Value·Unit);
+                ≔ Δ block_env = Environment·child(env);
+                ≔ Δ result = EvidentialValue·known(Value·Unit);
 
-                for stmt in statements {
+                ∀ stmt ∈ statements {
                     result = self.eval_with_env(stmt, block_env)?;
                 }
 
@@ -782,31 +782,31 @@ impl Interpreter {
             },
 
             IrOperation·Return { value, evidence } => {
-                match value {
+                ⌥ value {
                     Some(v) => self.eval_with_env(*v, env),
                     None => Result·Ok(EvidentialValue·known(Value·Unit)),
                 }
             },
 
             IrOperation·Array { elements, evidence, .. } => {
-                let vals = elements|τ{e => self.eval_with_env(e, env)?.value}|collect();
+                ≔ vals = elements|τ{e => self.eval_with_env(e, env)?.value}|collect();
                 Result·Ok(EvidentialValue { value: Value·Array(vals), evidence })
             },
 
             IrOperation·Tuple { elements, evidence, .. } => {
-                let vals = elements|τ{e => self.eval_with_env(e, env)?.value}|collect();
+                ≔ vals = elements|τ{e => self.eval_with_env(e, env)?.value}|collect();
                 Result·Ok(EvidentialValue { value: Value·Tuple(vals), evidence })
             },
 
             IrOperation·Index { expr, index, evidence, .. } => {
-                let arr = self.eval_with_env(*expr, env)?;
-                let idx = self.eval_with_env(*index, env)?;
+                ≔ arr = self.eval_with_env(*expr, env)?;
+                ≔ idx = self.eval_with_env(*index, env)?;
 
-                match (arr.value, idx.value) {
+                ⌥ (arr.value, idx.value) {
                     (Value·Array(a), Value·Int(i)) => {
-                        if i < 0 || i >= a.len() as i64 {
+                        ⎇ i < 0 || i >= a.len() as i64 {
                             Result·Err(RuntimeError·new("array index out of bounds"))
-                        } else {
+                        } ⎉ {
                             Result·Ok(EvidentialValue {
                                 value: a[i as u64].clone(),
                                 evidence: arr.evidence.join(idx.evidence),
@@ -814,10 +814,10 @@ impl Interpreter {
                         }
                     },
                     (Value·String(s), Value·Int(i)) => {
-                        if i < 0 || i >= s.len() as i64 {
+                        ⎇ i < 0 || i >= s.len() as i64 {
                             Result·Err(RuntimeError·new("string index out of bounds"))
-                        } else {
-                            let c = s.chars().nth(i as u64).unwrap();
+                        } ⎉ {
+                            ≔ c = s.chars().nth(i as u64).unwrap();
                             Result·Ok(EvidentialValue {
                                 value: Value·Char(c),
                                 evidence: arr.evidence.join(idx.evidence),
@@ -829,11 +829,11 @@ impl Interpreter {
             },
 
             IrOperation·Field { expr, field, evidence, .. } => {
-                let obj = self.eval_with_env(*expr, env)?;
+                ≔ obj = self.eval_with_env(*expr, env)?;
 
-                match obj.value {
+                ⌥ obj.value {
                     Value·Struct { fields, .. } => {
-                        match fields.get(field) {
+                        ⌥ fields.get(field) {
                             Some(v) => Result·Ok(EvidentialValue {
                                 value: v.clone(),
                                 evidence: obj.evidence,
@@ -843,9 +843,9 @@ impl Interpreter {
                     },
                     Value·Tuple(elements) => {
                         // Tuple field access like .0, .1
-                        let idx: Option<u64> = field.parse().ok();
-                        match idx {
-                            Some(i) if i < elements.len() => Result·Ok(EvidentialValue {
+                        ≔ idx: Option<u64> = field.parse().ok();
+                        ⌥ idx {
+                            Some(i) ⎇ i < elements.len() => Result·Ok(EvidentialValue {
                                 value: elements[i].clone(),
                                 evidence: obj.evidence,
                             }),
@@ -857,7 +857,7 @@ impl Interpreter {
             },
 
             IrOperation·Closure { params, body, evidence, .. } => {
-                let param_names = params|τ{p => p.name}|collect();
+                ≔ param_names = params|τ{p => p.name}|collect();
                 Result·Ok(EvidentialValue {
                     value: Value·Closure {
                         params: param_names,
@@ -869,9 +869,9 @@ impl Interpreter {
             },
 
             IrOperation·Pipeline { input, steps, evidence, .. } => {
-                let mut current = self.eval_with_env(*input, env)?;
+                ≔ Δ current = self.eval_with_env(*input, env)?;
 
-                for step in steps {
+                ∀ step ∈ steps {
                     current = self.eval_pipeline_step(step, current, env)?;
                 }
 
@@ -879,21 +879,21 @@ impl Interpreter {
             },
 
             IrOperation·Match { scrutinee, arms, evidence, .. } => {
-                let val = self.eval_with_env(*scrutinee, env)?;
+                ≔ val = self.eval_with_env(*scrutinee, env)?;
 
-                for arm in arms {
-                    if self.pattern_matches(arm.pattern, val.value, env)? {
-                        let mut arm_env = Environment·child(env);
+                ∀ arm ∈ arms {
+                    ⎇ self.pattern_matches(arm.pattern, val.value, env)? {
+                        ≔ Δ arm_env = Environment·child(env);
                         self.bind_pattern(arm.pattern, val.clone(), arm_env)?;
 
-                        if let ?guard = arm.guard {
-                            let guard_val = self.eval_with_env(guard, arm_env)?;
-                            if !guard_val.value.is_truthy() {
-                                continue;
+                        ⎇ ≔ ?guard = arm.guard {
+                            ≔ guard_val = self.eval_with_env(guard, arm_env)?;
+                            ⎇ !guard_val.value.is_truthy() {
+                                ↻;
                             }
                         }
 
-                        return self.eval_with_env(arm.body, arm_env);
+                        ⤺ self.eval_with_env(arm.body, arm_env);
                     }
                 }
 
@@ -901,63 +901,63 @@ impl Interpreter {
             },
 
             IrOperation·Loop { variant, condition, iterator, body, .. } => {
-                match variant {
+                ⌥ variant {
                     LoopVariant·Infinite => {
                         loop {
-                            let result = self.eval_with_env(*body.clone(), env);
-                            match result {
+                            ≔ result = self.eval_with_env(*body.clone(), env);
+                            ⌥ result {
                                 Result·Err(RuntimeError { is_break: true, value: ?v, .. }) => {
-                                    return Result·Ok(v);
+                                    ⤺ Result·Ok(v);
                                 },
                                 Result·Err(RuntimeError { is_continue: true, .. }) => continue,
-                                Result·Err(e) => return Result·Err(e),
+                                Result·Err(e) => ⤺ Result·Err(e),
                                 _ => {},
                             }
                         }
                     },
                     LoopVariant·While => {
-                        while {
-                            let cond = match condition {
+                        ⟳ {
+                            ≔ cond = ⌥ condition {
                                 Some(c) => self.eval_with_env(*c.clone(), env)?,
                                 None => EvidentialValue·known(Value·Bool(true)),
                             };
                             cond.value.is_truthy()
                         } {
-                            let result = self.eval_with_env(*body.clone(), env);
-                            match result {
+                            ≔ result = self.eval_with_env(*body.clone(), env);
+                            ⌥ result {
                                 Result·Err(RuntimeError { is_break: true, value: Some(v), .. }) => {
-                                    return Result·Ok(v);
+                                    ⤺ Result·Ok(v);
                                 },
                                 Result·Err(RuntimeError { is_continue: true, .. }) => continue,
-                                Result·Err(e) => return Result·Err(e),
+                                Result·Err(e) => ⤺ Result·Err(e),
                                 _ => {},
                             }
                         }
                         Result·Ok(EvidentialValue·known(Value·Unit))
                     },
                     LoopVariant·For => {
-                        if let ?iter = iterator {
-                            let iterable = self.eval_with_env(*iter.iterable, env)?;
-                            let items = match iterable.value {
+                        ⎇ ≔ ?iter = iterator {
+                            ≔ iterable = self.eval_with_env(*iter.iterable, env)?;
+                            ≔ items = ⌥ iterable.value {
                                 Value·Array(a) => a,
                                 Value·String(s) => s.chars()|τ{c => Value·Char(c)}|collect(),
-                                _ => return Result·Err(RuntimeError·new("not iterable")),
+                                _ => ⤺ Result·Err(RuntimeError·new("not iterable")),
                             };
 
-                            for item in items {
-                                let mut loop_env = Environment·child(env);
+                            ∀ item ∈ items {
+                                ≔ Δ loop_env = Environment·child(env);
                                 self.bind_pattern(iter.pattern, EvidentialValue {
                                     value: item,
                                     evidence: iterable.evidence,
                                 }, loop_env)?;
 
-                                let result = self.eval_with_env(*body.clone(), loop_env);
-                                match result {
+                                ≔ result = self.eval_with_env(*body.clone(), loop_env);
+                                ⌥ result {
                                     Result·Err(RuntimeError { is_break: true, value: ?v, .. }) => {
-                                        return Result·Ok(v);
+                                        ⤺ Result·Ok(v);
                                     },
                                     Result·Err(RuntimeError { is_continue: true, .. }) => continue,
-                                    Result·Err(e) => return Result·Err(e),
+                                    Result·Err(e) => ⤺ Result·Err(e),
                                     _ => {},
                                 }
                             }
@@ -968,7 +968,7 @@ impl Interpreter {
             },
 
             IrOperation·Break { value, .. } => {
-                let val = match value {
+                ≔ val = ⌥ value {
                     Some(v) => Some(self.eval_with_env(*v, env)?),
                     None => None,
                 };
@@ -980,7 +980,7 @@ impl Interpreter {
             },
 
             IrOperation·EvidenceCoerce { expr, to_evidence, .. } => {
-                let val = self.eval_with_env(*expr, env)?;
+                ≔ val = self.eval_with_env(*expr, env)?;
                 Result·Ok(EvidentialValue {
                     value: val.value,
                     evidence: to_evidence,
@@ -992,124 +992,124 @@ impl Interpreter {
     }
 
     /// Evaluate binary operation
-    fn eval_binary(self, op: !BinaryOp, left: !Value, right: !Value) -> !Result<Value, RuntimeError> {
-        match op {
-            BinaryOp·Add => match (left, right) {
+    λ eval_binary(self, op: !BinaryOp, left: !Value, right: !Value) -> !Result<Value, RuntimeError> {
+        ⌥ op {
+            BinaryOp·Add => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a + b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a + b)),
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·String(format!("{}{}", a, b))),
-                _ => Result·Err(RuntimeError·new("invalid operands for +")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ +")),
             },
-            BinaryOp·Sub => match (left, right) {
+            BinaryOp·Sub => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a - b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a - b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for -")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ -")),
             },
-            BinaryOp·Mul => match (left, right) {
+            BinaryOp·Mul => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a * b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a * b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for *")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ *")),
             },
-            BinaryOp·Div => match (left, right) {
+            BinaryOp·Div => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => {
-                    if b == 0 {
+                    ⎇ b == 0 {
                         Result·Err(RuntimeError·new("division by zero"))
-                    } else {
+                    } ⎉ {
                         Result·Ok(Value·Int(a / b))
                     }
                 },
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a / b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for /")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ /")),
             },
-            BinaryOp·Rem => match (left, right) {
+            BinaryOp·Rem => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a % b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a % b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for %")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ %")),
             },
-            BinaryOp·Pow => match (left, right) {
+            BinaryOp·Pow => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a.pow(b as u32))),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a.powf(b))),
-                _ => Result·Err(RuntimeError·new("invalid operands for **")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ **")),
             },
             BinaryOp·Eq => Result·Ok(Value·Bool(self.values_equal(left, right))),
             BinaryOp·Ne => Result·Ok(Value·Bool(!self.values_equal(left, right))),
-            BinaryOp·Lt => match (left, right) {
+            BinaryOp·Lt => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a < b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a < b)),
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·Bool(a < b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for <")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <")),
             },
-            BinaryOp·Le => match (left, right) {
+            BinaryOp·Le => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a <= b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a <= b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for <=")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <=")),
             },
-            BinaryOp·Gt => match (left, right) {
+            BinaryOp·Gt => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a > b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a > b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for >")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >")),
             },
-            BinaryOp·Ge => match (left, right) {
+            BinaryOp·Ge => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a >= b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a >= b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for >=")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >=")),
             },
-            BinaryOp·And => match (left, right) {
+            BinaryOp·And => ⌥ (left, right) {
                 (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a && b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for &&")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ &&")),
             },
-            BinaryOp·Or => match (left, right) {
+            BinaryOp·Or => ⌥ (left, right) {
                 (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a || b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for ||")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ||")),
             },
-            BinaryOp·BitAnd => match (left, right) {
+            BinaryOp·BitAnd => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a & b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for &")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ &")),
             },
-            BinaryOp·BitOr => match (left, right) {
+            BinaryOp·BitOr => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a | b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for |")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ |")),
             },
-            BinaryOp·BitXor => match (left, right) {
+            BinaryOp·BitXor => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a ^ b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for ^")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ^")),
             },
-            BinaryOp·Shl => match (left, right) {
+            BinaryOp·Shl => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a << b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for <<")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <<")),
             },
-            BinaryOp·Shr => match (left, right) {
+            BinaryOp·Shr => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a >> b)),
-                _ => Result·Err(RuntimeError·new("invalid operands for >>")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >>")),
             },
-            BinaryOp·Concat => match (left, right) {
+            BinaryOp·Concat => ⌥ (left, right) {
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·String(format!("{}{}", a, b))),
                 (Value·Array(a), Value·Array(b)) => {
-                    let mut result = a.clone();
+                    ≔ Δ result = a.clone();
                     result.extend(b);
                     Result·Ok(Value·Array(result))
                 },
-                _ => Result·Err(RuntimeError·new("invalid operands for ++")),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ++")),
             },
         }
     }
 
     /// Evaluate unary operation
-    fn eval_unary(self, op: !UnaryOp, val: !Value) -> !Result<Value, RuntimeError> {
-        match op {
-            UnaryOp·Neg => match val {
+    λ eval_unary(self, op: !UnaryOp, val: !Value) -> !Result<Value, RuntimeError> {
+        ⌥ op {
+            UnaryOp·Neg => ⌥ val {
                 Value·Int(n) => Result·Ok(Value·Int(-n)),
                 Value·Float(f) => Result·Ok(Value·Float(-f)),
-                _ => Result·Err(RuntimeError·new("invalid operand for unary -")),
+                _ => Result·Err(RuntimeError·new("invalid operand ∀ unary -")),
             },
-            UnaryOp·Not => match val {
+            UnaryOp·Not => ⌥ val {
                 Value·Bool(b) => Result·Ok(Value·Bool(!b)),
                 Value·Int(n) => Result·Ok(Value·Int(!n)),
-                _ => Result·Err(RuntimeError·new("invalid operand for !")),
+                _ => Result·Err(RuntimeError·new("invalid operand ∀ !")),
             },
             UnaryOp·Ref => Result·Ok(Value·Ref(Box·new(val))),
             UnaryOp·RefMut => Result·Ok(Value·RefMut(Box·new(val))),
-            UnaryOp·Deref => match val {
+            UnaryOp·Deref => ⌥ val {
                 Value·Ref(v) | Value·RefMut(v) => Result·Ok(*v),
                 _ => Result·Err(RuntimeError·new("cannot dereference non-reference")),
             },
@@ -1117,21 +1117,21 @@ impl Interpreter {
     }
 
     /// Evaluate a pipeline step
-    fn eval_pipeline_step(mut self, step: !IrPipelineStep, input: !EvidentialValue, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
-        match step {
+    λ eval_pipeline_step(Δ self, step: !IrPipelineStep, input: !EvidentialValue, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+        ⌥ step {
             IrPipelineStep·Morpheme { morpheme, body, .. } => {
                 self.eval_morpheme(morpheme, input, body, env)
             },
             IrPipelineStep·Call { function, args } => {
-                let mut all_args = [input];
-                for arg in args {
+                ≔ Δ all_args = [input];
+                ∀ arg ∈ args {
                     all_args.push(self.eval_with_env(arg, env)?);
                 }
                 self.call_function(function, all_args)
             },
             IrPipelineStep·Method { name, args } => {
-                let mut all_args = [input];
-                for arg in args {
+                ≔ Δ all_args = [input];
+                ∀ arg ∈ args {
                     all_args.push(self.eval_with_env(arg, env)?);
                 }
                 self.call_function(name, all_args)
@@ -1143,42 +1143,42 @@ impl Interpreter {
     }
 
     /// Evaluate a morpheme operation
-    fn eval_morpheme(mut self, kind: !MorphemeKind, input: !EvidentialValue, body: ?Box<IrOperation>, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
-        let arr = match input.value {
+    λ eval_morpheme(Δ self, kind: !MorphemeKind, input: !EvidentialValue, body: ?Box<IrOperation>, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+        ≔ arr = ⌥ input.value {
             Value·Array(a) => a,
-            _ => return Result·Err(RuntimeError·new("morpheme requires array input")),
+            _ => ⤺ Result·Err(RuntimeError·new("morpheme requires array input")),
         };
 
-        match kind {
+        ⌥ kind {
             MorphemeKind·Transform => {
                 // τ{expr} - map over array
-                let body = match body {
+                ≔ body = ⌥ body {
                     Some(b) => *b,
-                    None => return Result·Err(RuntimeError·new("transform requires body")),
+                    None => ⤺ Result·Err(RuntimeError·new("transform requires body")),
                 };
 
-                let mut results = Vec·new();
-                for item in arr {
-                    let mut item_env = Environment·child(env);
+                ≔ Δ results = Vec·new();
+                ∀ item ∈ arr {
+                    ≔ Δ item_env = Environment·child(env);
                     item_env.define("it", EvidentialValue { value: item, evidence: input.evidence });
-                    let result = self.eval_with_env(body.clone(), item_env)?;
+                    ≔ result = self.eval_with_env(body.clone(), item_env)?;
                     results.push(result.value);
                 }
                 Result·Ok(EvidentialValue { value: Value·Array(results), evidence: input.evidence })
             },
             MorphemeKind·Filter => {
                 // φ{predicate} - filter array
-                let body = match body {
+                ≔ body = ⌥ body {
                     Some(b) => *b,
-                    None => return Result·Err(RuntimeError·new("filter requires body")),
+                    None => ⤺ Result·Err(RuntimeError·new("filter requires body")),
                 };
 
-                let mut results = Vec·new();
-                for item in arr {
-                    let mut item_env = Environment·child(env);
+                ≔ Δ results = Vec·new();
+                ∀ item ∈ arr {
+                    ≔ Δ item_env = Environment·child(env);
                     item_env.define("it", EvidentialValue { value: item.clone(), evidence: input.evidence });
-                    let result = self.eval_with_env(body.clone(), item_env)?;
-                    if result.value.is_truthy() {
+                    ≔ result = self.eval_with_env(body.clone(), item_env)?;
+                    ⎇ result.value.is_truthy() {
                         results.push(item);
                     }
                 }
@@ -1186,23 +1186,23 @@ impl Interpreter {
             },
             MorphemeKind·Reduce => {
                 // ρ{accumulator} - fold array
-                let body = match body {
+                ≔ body = ⌥ body {
                     Some(b) => *b,
-                    None => return Result·Err(RuntimeError·new("reduce requires body")),
+                    None => ⤺ Result·Err(RuntimeError·new("reduce requires body")),
                 };
 
-                if arr.is_empty() {
-                    return Result·Err(RuntimeError·new("cannot reduce empty array"));
+                ⎇ arr.is_empty() {
+                    ⤺ Result·Err(RuntimeError·new("cannot reduce empty array"));
                 }
 
-                let mut acc = arr[0].clone();
-                let mut idx: usize = 1;
-                while idx < arr.len() {
-                    let item = arr[idx].clone();
-                    let mut fold_env = Environment·child(env);
+                ≔ Δ acc = arr[0].clone();
+                ≔ Δ idx: usize = 1;
+                ⟳ idx < arr.len() {
+                    ≔ item = arr[idx].clone();
+                    ≔ Δ fold_env = Environment·child(env);
                     fold_env.define("acc", EvidentialValue { value: acc, evidence: input.evidence });
                     fold_env.define("it", EvidentialValue { value: item, evidence: input.evidence });
-                    let result = self.eval_with_env(body.clone(), fold_env)?;
+                    ≔ result = self.eval_with_env(body.clone(), fold_env)?;
                     acc = result.value;
                     idx = idx + 1;
                 }
@@ -1210,39 +1210,39 @@ impl Interpreter {
             },
             MorphemeKind·Sum => {
                 // Σ - sum numbers
-                let mut sum = 0.0;
-                for item in arr {
-                    match item {
+                ≔ Δ sum = 0.0;
+                ∀ item ∈ arr {
+                    ⌥ item {
                         Value·Int(n) => sum += n as f64,
                         Value·Float(f) => sum += f,
-                        _ => return Result·Err(RuntimeError·new("sum requires numbers")),
+                        _ => ⤺ Result·Err(RuntimeError·new("sum requires numbers")),
                     }
                 }
                 Result·Ok(EvidentialValue { value: Value·Float(sum), evidence: input.evidence })
             },
             MorphemeKind·Product => {
                 // Π - product of numbers
-                let mut prod = 1.0;
-                for item in arr {
-                    match item {
+                ≔ Δ prod = 1.0;
+                ∀ item ∈ arr {
+                    ⌥ item {
                         Value·Int(n) => prod *= n as f64,
                         Value·Float(f) => prod *= f,
-                        _ => return Result·Err(RuntimeError·new("product requires numbers")),
+                        _ => ⤺ Result·Err(RuntimeError·new("product requires numbers")),
                     }
                 }
                 Result·Ok(EvidentialValue { value: Value·Float(prod), evidence: input.evidence })
             },
             MorphemeKind·Min => {
-                if arr.is_empty() {
-                    return Result·Err(RuntimeError·new("min on empty array"));
+                ⎇ arr.is_empty() {
+                    ⤺ Result·Err(RuntimeError·new("min on empty array"));
                 }
-                let mut min_val = arr[0].clone();
-                let mut idx: usize = 1;
-                while idx < arr.len() {
-                    let item = arr[idx].clone();
-                    match (min_val.clone(), item) {
-                        (Value·Int(a), Value·Int(b)) if b < a => min_val = Value·Int(b),
-                        (Value·Float(a), Value·Float(b)) if b < a => min_val = Value·Float(b),
+                ≔ Δ min_val = arr[0].clone();
+                ≔ Δ idx: usize = 1;
+                ⟳ idx < arr.len() {
+                    ≔ item = arr[idx].clone();
+                    ⌥ (min_val.clone(), item) {
+                        (Value·Int(a), Value·Int(b)) ⎇ b < a => min_val = Value·Int(b),
+                        (Value·Float(a), Value·Float(b)) ⎇ b < a => min_val = Value·Float(b),
                         _ => {},
                     }
                     idx = idx + 1;
@@ -1250,16 +1250,16 @@ impl Interpreter {
                 Result·Ok(EvidentialValue { value: min_val, evidence: input.evidence })
             },
             MorphemeKind·Max => {
-                if arr.is_empty() {
-                    return Result·Err(RuntimeError·new("max on empty array"));
+                ⎇ arr.is_empty() {
+                    ⤺ Result·Err(RuntimeError·new("max on empty array"));
                 }
-                let mut max_val = arr[0].clone();
-                let mut idx: usize = 1;
-                while idx < arr.len() {
-                    let item = arr[idx].clone();
-                    match (max_val.clone(), item) {
-                        (Value·Int(a), Value·Int(b)) if b > a => max_val = Value·Int(b),
-                        (Value·Float(a), Value·Float(b)) if b > a => max_val = Value·Float(b),
+                ≔ Δ max_val = arr[0].clone();
+                ≔ Δ idx: usize = 1;
+                ⟳ idx < arr.len() {
+                    ≔ item = arr[idx].clone();
+                    ⌥ (max_val.clone(), item) {
+                        (Value·Int(a), Value·Int(b)) ⎇ b > a => max_val = Value·Int(b),
+                        (Value·Float(a), Value·Float(b)) ⎇ b > a => max_val = Value·Float(b),
                         _ => {},
                     }
                     idx = idx + 1;
@@ -1267,40 +1267,40 @@ impl Interpreter {
                 Result·Ok(EvidentialValue { value: max_val, evidence: input.evidence })
             },
             MorphemeKind·First => {
-                match arr.first() {
+                ⌥ arr.first() {
                     Some(v) => Result·Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence·Uncertain }),
                     None => Result·Ok(EvidentialValue { value: Value·Null, evidence: IrEvidence·Uncertain }),
                 }
             },
             MorphemeKind·Last => {
-                match arr.last() {
+                ⌥ arr.last() {
                     Some(v) => Result·Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence·Uncertain }),
                     None => Result·Ok(EvidentialValue { value: Value·Null, evidence: IrEvidence·Uncertain }),
                 }
             },
             MorphemeKind·All => {
                 // ρ& - all elements truthy
-                let mut all_truthy = true;
-                for item in arr { if !item.is_truthy() { all_truthy = false; break; } }
+                ≔ Δ all_truthy = true;
+                ∀ item ∈ arr { ⎇ !item.is_truthy() { all_truthy = false; ⊗; } }
                 Result·Ok(EvidentialValue { value: Value·Bool(all_truthy), evidence: input.evidence })
             },
             MorphemeKind·Any => {
                 // ρ| - any element truthy
-                let mut any_truthy = false;
-                for item in arr { if item.is_truthy() { any_truthy = true; break; } }
+                ≔ Δ any_truthy = false;
+                ∀ item ∈ arr { ⎇ item.is_truthy() { any_truthy = true; ⊗; } }
                 Result·Ok(EvidentialValue { value: Value·Bool(any_truthy), evidence: input.evidence })
             },
             _ => Result·Err(RuntimeError·new(format!("unsupported morpheme: {}", kind.symbol()))),
         }
     }
 
-    /// Check if a pattern matches a value
-    fn pattern_matches(self, pattern: !IrPattern, value: !Value, env: !Environment) -> !Result<bool, RuntimeError> {
-        match pattern {
+    /// Check ⎇ a pattern matches a value
+    λ pattern_matches(self, pattern: !IrPattern, value: !Value, env: !Environment) -> !Result<bool, RuntimeError> {
+        ⌥ pattern {
             IrPattern·Wildcard => Result·Ok(true),
             IrPattern·Ident { .. } => Result·Ok(true),
             IrPattern·Literal { value: lit_val } => {
-                let lit = match lit_val {
+                ≔ lit = ⌥ lit_val {
                     LiteralValue·Int(n) => Value·Int(n),
                     LiteralValue·Float(f) => Value·Float(f),
                     LiteralValue·Bool(b) => Value·Bool(b),
@@ -1311,14 +1311,14 @@ impl Interpreter {
                 Result·Ok(self.values_equal(lit, value))
             },
             IrPattern·Tuple { elements } => {
-                match value {
+                ⌥ value {
                     Value·Tuple(vals) => {
-                        if elements.len() != vals.len() {
-                            return Result·Ok(false);
+                        ⎇ elements.len() != vals.len() {
+                            ⤺ Result·Ok(false);
                         }
-                        for (pat, val) in elements.iter().zip(vals.iter()) {
-                            if !self.pattern_matches(pat, val, env)? {
-                                return Result·Ok(false);
+                        ∀ (pat, val) ∈ elements.iter().zip(vals.iter()) {
+                            ⎇ !self.pattern_matches(pat, val, env)? {
+                                ⤺ Result·Ok(false);
                             }
                         }
                         Result·Ok(true)
@@ -1327,29 +1327,29 @@ impl Interpreter {
                 }
             },
             IrPattern·Or { patterns } => {
-                for pat in patterns {
-                    if self.pattern_matches(pat, value.clone(), env)? {
-                        return Result·Ok(true);
+                ∀ pat ∈ patterns {
+                    ⎇ self.pattern_matches(pat, value.clone(), env)? {
+                        ⤺ Result·Ok(true);
                     }
                 }
                 Result·Ok(false)
             },
             IrPattern·TupleStruct { path, fields } => {
-                // CG-099: TupleStruct patterns match enum variants like LiteralValue·String(s)
-                match value {
+                // CG-099: TupleStruct patterns ⌥ ᛈ variants like LiteralValue·String(s)
+                ⌥ value {
                     Value·Enum { name, variant, fields: vals } => {
-                        // Check if the path matches "EnumName·Variant" or just "Variant"
-                        let full_path = format!("{}::{}", name, variant);
-                        if path != full_path && path != variant {
-                            return Result·Ok(false);
+                        // Check ⎇ the path matches "EnumName·Variant" or just "Variant"
+                        ≔ full_path = format!("{}·{}", name, variant);
+                        ⎇ path != full_path && path != variant {
+                            ⤺ Result·Ok(false);
                         }
-                        // Check if all inner patterns match
-                        if fields.len() != vals.len() {
-                            return Result·Ok(false);
+                        // Check ⎇ all inner patterns match
+                        ⎇ fields.len() != vals.len() {
+                            ⤺ Result·Ok(false);
                         }
-                        for (pat, val) in fields.iter().zip(vals.iter()) {
-                            if !self.pattern_matches(pat, val.clone(), env)? {
-                                return Result·Ok(false);
+                        ∀ (pat, val) ∈ fields.iter().zip(vals.iter()) {
+                            ⎇ !self.pattern_matches(pat, val.clone(), env)? {
+                                ⤺ Result·Ok(false);
                             }
                         }
                         Result·Ok(true)
@@ -1358,29 +1358,29 @@ impl Interpreter {
                 }
             },
             IrPattern·Path { path } => {
-                // CG-099: Path patterns match unit enum variants like None or Result·Err
-                match value {
+                // CG-099: Path patterns ⌥ unit ᛈ variants like None or Result·Err
+                ⌥ value {
                     Value·Enum { name, variant, fields } => {
                         // Unit variant has no fields
-                        if !fields.is_empty() {
-                            return Result·Ok(false);
+                        ⎇ !fields.is_empty() {
+                            ⤺ Result·Ok(false);
                         }
-                        // Check if path matches
-                        let full_path = format!("{}::{}", name, variant);
+                        // Check ⎇ path matches
+                        ≔ full_path = format!("{}·{}", name, variant);
                         Result·Ok(path == full_path || path == variant)
                     },
                     _ => Result·Ok(false),
                 }
             },
-            _ => Result·Ok(true), // Default match for complex patterns
+            _ => Result·Ok(true), // Default ⌥ ∀ complex patterns
         }
     }
 
-    /// Bind pattern variables to values in environment
-    fn bind_pattern(mut self, pattern: !IrPattern, value: !EvidentialValue, mut env: !Environment) -> !Result<(), RuntimeError> {
-        match pattern {
+    /// Bind pattern variables to values ∈ environment
+    λ bind_pattern(Δ self, pattern: !IrPattern, value: !EvidentialValue, Δ env: !Environment) -> !Result<(), RuntimeError> {
+        ⌥ pattern {
             IrPattern·Ident { name, evidence, .. } => {
-                let ev = match evidence {
+                ≔ ev = ⌥ evidence {
                     Some(e) => e,
                     None => value.evidence,
                 };
@@ -1388,9 +1388,9 @@ impl Interpreter {
                 Result·Ok(())
             },
             IrPattern·Tuple { elements } => {
-                match value.value {
+                ⌥ value.value {
                     Value·Tuple(vals) => {
-                        for (pat, val) in elements.iter().zip(vals.iter()) {
+                        ∀ (pat, val) ∈ elements.iter().zip(vals.iter()) {
                             self.bind_pattern(pat, EvidentialValue {
                                 value: val.clone(),
                                 evidence: value.evidence,
@@ -1398,15 +1398,15 @@ impl Interpreter {
                         }
                         Result·Ok(())
                     },
-                    _ => Result·Err(RuntimeError·new("expected tuple for destructuring")),
+                    _ => Result·Err(RuntimeError·new("expected tuple ∀ destructuring")),
                 }
             },
             IrPattern·Wildcard => Result·Ok(()),
             IrPattern·TupleStruct { fields, .. } => {
-                // CG-099: Extract enum fields and bind to inner patterns
-                match value.value {
+                // CG-099: Extract ᛈ fields and bind to inner patterns
+                ⌥ value.value {
                     Value·Enum { fields: vals, .. } => {
-                        for (pat, val) in fields.iter().zip(vals.iter()) {
+                        ∀ (pat, val) ∈ fields.iter().zip(vals.iter()) {
                             self.bind_pattern(pat, EvidentialValue {
                                 value: val.clone(),
                                 evidence: value.evidence,
@@ -1414,16 +1414,16 @@ impl Interpreter {
                         }
                         Result·Ok(())
                     },
-                    _ => Result·Err(RuntimeError·new("expected enum for TupleStruct pattern")),
+                    _ => Result·Err(RuntimeError·new("expected ᛈ ∀ TupleStruct pattern")),
                 }
             },
             IrPattern·Path { .. } => {
-                // CG-099: Unit enum variants have no bindings
+                // CG-099: Unit ᛈ variants have no bindings
                 Result·Ok(())
             },
             IrPattern·Or { patterns } => {
                 // CG-099: Bind using first pattern (all alternatives should bind same names)
-                if !patterns.is_empty() {
+                ⎇ !patterns.is_empty() {
                     self.bind_pattern(patterns[0].clone(), value, env)?;
                 }
                 Result·Ok(())
@@ -1433,7 +1433,7 @@ impl Interpreter {
     }
 
     /// Get interpreter output
-    pub fn get_output(self) -> !String {
+    ☉ λ get_output(self) -> !String {
         self.output.join("")
     }
 }
@@ -1443,16 +1443,16 @@ impl Interpreter {
 // ============================================================================
 
 /// Runtime error
-pub struct RuntimeError {
-    pub message: !String,
-    pub stack_trace: ![String],
-    pub is_break: !bool,
-    pub is_continue: !bool,
-    pub value: Option<EvidentialValue>,
+☉ Σ RuntimeError {
+    ☉ message: !String,
+    ☉ stack_trace: ![String],
+    ☉ is_break: !bool,
+    ☉ is_continue: !bool,
+    ☉ value: Option<EvidentialValue>,
 }
 
-impl RuntimeError {
-    pub fn new(message: !String) -> !RuntimeError {
+⊢ RuntimeError {
+    ☉ λ new(message: !String) -> !RuntimeError {
         RuntimeError {
             message,
             stack_trace: Vec·new(),
@@ -1462,7 +1462,7 @@ impl RuntimeError {
         }
     }
 
-    pub fn break_with(value: Option<EvidentialValue>) -> !RuntimeError {
+    ☉ λ break_with(value: Option<EvidentialValue>) -> !RuntimeError {
         RuntimeError {
             message: "break".to_string(),
             stack_trace: Vec·new(),
@@ -1472,7 +1472,7 @@ impl RuntimeError {
         }
     }
 
-    pub fn continue_loop() -> !RuntimeError {
+    ☉ λ continue_loop() -> !RuntimeError {
         RuntimeError {
             message: "continue".to_string(),
             stack_trace: Vec·new(),
@@ -1488,11 +1488,11 @@ impl RuntimeError {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
+scroll tests {
     invoke super·*;
 
     #[test]
-    fn test_value_to_string() {
+    λ test_value_to_string() {
         assert_eq!(Value·Int(42).to_string(), "42");
         assert_eq!(Value·Bool(true).to_string(), "true");
         assert_eq!(Value·String("hello").to_string(), "hello");
@@ -1500,7 +1500,7 @@ mod tests {
     }
 
     #[test]
-    fn test_value_is_truthy() {
+    λ test_value_is_truthy() {
         assert!(Value·Bool(true).is_truthy());
         assert!(!Value·Bool(false).is_truthy());
         assert!(Value·Int(1).is_truthy());
@@ -1509,28 +1509,28 @@ mod tests {
     }
 
     #[test]
-    fn test_evidence_check() {
-        let interp = Interpreter·new();
+    λ test_evidence_check() {
+        ≔ interp = Interpreter·new();
         assert!(interp.check_evidence(IrEvidence·Reported, IrEvidence·Known));
         assert!(interp.check_evidence(IrEvidence·Uncertain, IrEvidence·Known));
         assert!(!interp.check_evidence(IrEvidence·Known, IrEvidence·Reported));
     }
 
     #[test]
-    fn test_builtin_len() {
-        let mut interp = Interpreter·new();
-        let args = [EvidentialValue·known(Value·String("hello"))];
-        let result = interp.call_builtin("len", args);
+    λ test_builtin_len() {
+        ≔ Δ interp = Interpreter·new();
+        ≔ args = [EvidentialValue·known(Value·String("hello"))];
+        ≔ result = interp.call_builtin("len", args);
         assert!(result.is_ok());
-        match result.unwrap().value {
+        ⌥ result.unwrap().value {
             Value·Int(n) => assert_eq!(n, 5),
             _ => panic!("expected int"),
         }
     }
 
     #[test]
-    fn test_binary_ops() {
-        let interp = Interpreter·new();
+    λ test_binary_ops() {
+        ≔ interp = Interpreter·new();
         assert_eq!(interp.eval_binary(BinaryOp·Add, Value·Int(2), Value·Int(3)).unwrap(), Value·Int(5));
         assert_eq!(interp.eval_binary(BinaryOp·Mul, Value·Int(4), Value·Int(5)).unwrap(), Value·Int(20));
     }

@@ -6,24 +6,24 @@
 // Where creativity happens without intention.
 // Where the forbidden connections form.
 
-use std::collections::{HashMap, VecDeque};
-use shared::{
+invoke std·collections·{HashMap, VecDeque};
+invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,
 };
-use engram::{Engram, EngramId, EpisodicMemory, Significance, Pattern};
+invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
 
 // ============================================================================
 // Core Types
 // ============================================================================
 
-pub struct DreamMarker;
-pub struct ConsolidationMarker;
-pub struct InsightMarker;
+☉ Σ DreamMarker;
+☉ Σ ConsolidationMarker;
+☉ Σ InsightMarker;
 
-pub type DreamId = shared::Id<DreamMarker>;
-pub type ConsolidationId = shared::Id<ConsolidationMarker>;
-pub type InsightId = shared::Id<InsightMarker>;
+☉ type DreamId = shared·Id<DreamMarker>;
+☉ type ConsolidationId = shared·Id<ConsolidationMarker>;
+☉ type InsightId = shared·Id<InsightMarker>;
 
 // ============================================================================
 // Consciousness States
@@ -31,7 +31,7 @@ pub type InsightId = shared::Id<InsightMarker>;
 
 /// The spectrum of consciousness from waking to deep sleep
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConsciousnessState {
+☉ ᛈ ConsciousnessState {
     /// Fully awake - logic enforced, boundaries maintained
     Waking,
 
@@ -48,26 +48,26 @@ pub enum ConsciousnessState {
     Hypnopompic,
 }
 
-impl ConsciousnessState {
-    pub fn evidentiality_mode(&self) -> EvidentialityMode! {
-        match self {
-            Self::Waking => EvidentialityMode::Waking,
-            Self::Hypnagogic => EvidentialityMode::Relaxed,
-            Self::Dreaming => EvidentialityMode::Dreaming,
-            Self::Deep => EvidentialityMode::Suspended,
-            Self::Hypnopompic => EvidentialityMode::Returning,
+⊢ ConsciousnessState {
+    ☉ λ evidentiality_mode(&self) -> EvidentialityMode! {
+        ⌥ self {
+            Self·Waking => EvidentialityMode·Waking,
+            Self·Hypnagogic => EvidentialityMode·Relaxed,
+            Self·Dreaming => EvidentialityMode·Dreaming,
+            Self·Deep => EvidentialityMode·Suspended,
+            Self·Hypnopompic => EvidentialityMode·Returning,
         }
     }
 
-    pub fn allows_forbidden_connections(&self) -> bool! {
-        matches!(self, Self::Hypnagogic | Self::Dreaming | Self::Hypnopompic)
+    ☉ λ allows_forbidden_connections(&self) -> bool! {
+        matches!(self, Self·Hypnagogic | Self·Dreaming | Self·Hypnopompic)
     }
 }
 
-/// How evidentiality operates in different states
+/// How evidentiality operates ∈ different states
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EvidentialityMode {
-    /// Normal - evidence required for belief
+☉ ᛈ EvidentialityMode {
+    /// Normal - evidence required ∀ belief
     Waking,
     /// Slightly relaxed - some beliefs without proof
     Relaxed,
@@ -87,25 +87,25 @@ pub enum EvidentialityMode {
 
 /// The context within which dreaming occurs
 #[derive(Clone, Debug)]
-pub struct DreamContext {
+☉ Σ DreamContext {
     /// How evidentiality operates
-    pub evidentiality_mode: EvidentialityMode!,
+    ☉ evidentiality_mode: EvidentialityMode!,
 
     /// Temporal constraints - past and future mixing
-    pub temporal_binding: TemporalBinding!,
+    ☉ temporal_binding: TemporalBinding!,
 
     /// Identity constraints - self and other blurring
-    pub identity_binding: IdentityBinding!,
+    ☉ identity_binding: IdentityBinding!,
 
     /// Associations that waking forbids but dreams allow
-    pub forbidden_connections: Vec<Connection>!,
+    ☉ forbidden_connections: Vec<Connection>!,
 
     /// The emotional tone of the dream
-    pub affect: Affect!,
+    ☉ affect: Affect!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TemporalBinding {
+☉ ᛈ TemporalBinding {
     /// Past, present, future distinct
     Bound,
     /// Boundaries loosening
@@ -115,7 +115,7 @@ pub enum TemporalBinding {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IdentityBinding {
+☉ ᛈ IdentityBinding {
     /// Self clearly distinct from other
     Bound,
     /// Boundaries loosening
@@ -125,18 +125,18 @@ pub enum IdentityBinding {
 }
 
 #[derive(Clone, Debug)]
-pub struct Connection {
-    pub from: EngramId!,
-    pub to: EngramId!,
-    pub normally_forbidden: bool!,
-    pub dream_strength: f32!,
+☉ Σ Connection {
+    ☉ from: EngramId!,
+    ☉ to: EngramId!,
+    ☉ normally_forbidden: bool!,
+    ☉ dream_strength: f32!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Affect {
-    pub valence: f32!,  // -1.0 to 1.0
-    pub arousal: f32!,  // 0.0 to 1.0
-    pub dominance: f32!, // -1.0 to 1.0
+☉ Σ Affect {
+    ☉ valence: f32!,  // -1.0 to 1.0
+    ☉ arousal: f32!,  // 0.0 to 1.0
+    ☉ dominance: f32!, // -1.0 to 1.0
 }
 
 // ============================================================================
@@ -145,60 +145,60 @@ pub struct Affect {
 
 /// A dream - the experience during altered consciousness
 #[derive(Clone, Debug)]
-pub struct Dream {
-    pub id: DreamId!,
-    pub dreamer: EntityId!,
-    pub state: ConsciousnessState!,
-    pub context: DreamContext!,
-    pub fragments: Vec<DreamFragment>!,
-    pub symbols: Vec<Symbol>!,
-    pub started_at: Timestamp!,
-    pub ended_at: Option<Timestamp>?,
-    pub waking_cause: Option<WakingCause>?,
+☉ Σ Dream {
+    ☉ id: DreamId!,
+    ☉ dreamer: EntityId!,
+    ☉ state: ConsciousnessState!,
+    ☉ context: DreamContext!,
+    ☉ fragments: Vec<DreamFragment>!,
+    ☉ symbols: Vec<Symbol>!,
+    ☉ started_at: Timestamp!,
+    ☉ ended_at: Option<Timestamp>?,
+    ☉ waking_cause: Option<WakingCause>?,
 }
 
 #[derive(Clone, Debug)]
-pub struct DreamFragment {
+☉ Σ DreamFragment {
     /// What was experienced
-    pub content: String!,
+    ☉ content: String!,
 
     /// Evidentiality within the dream
-    pub dream_evidentiality: Evidentiality!,
+    ☉ dream_evidentiality: Evidentiality!,
 
     /// Whether it survived translation to waking
-    pub translated: bool!,
+    ☉ translated: bool!,
 
-    /// What was lost in translation (often the important part)
-    pub lost_in_translation: Option<String>?,
+    /// What was lost ∈ translation (often the important part)
+    ☉ lost_in_translation: Option<String>?,
 
     /// The affect of this fragment
-    pub affect: Affect!,
+    ☉ affect: Affect!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Symbol {
+☉ Σ Symbol {
     /// The symbol as it appeared
-    pub appearance: String!,
+    ☉ appearance: String!,
 
     /// What it might mean (always uncertain)
-    pub interpretations: Vec<Interpretation>?,
+    ☉ interpretations: Vec<Interpretation>?,
 
     /// How often it recurs
-    pub recurrence: u32!,
+    ☉ recurrence: u32!,
 
     /// Its emotional charge
-    pub charge: f32!,
+    ☉ charge: f32!,
 }
 
 #[derive(Clone, Debug)]
-pub struct Interpretation {
-    pub meaning: String!,
-    pub confidence: f32!,
-    pub source: InterpretationSource!,
+☉ Σ Interpretation {
+    ☉ meaning: String!,
+    ☉ confidence: f32!,
+    ☉ source: InterpretationSource!,
 }
 
 #[derive(Clone, Debug)]
-pub enum InterpretationSource {
+☉ ᛈ InterpretationSource {
     /// Dreamer's own interpretation
     Dreamer,
     /// External analysis
@@ -210,7 +210,7 @@ pub enum InterpretationSource {
 }
 
 #[derive(Clone, Debug)]
-pub enum WakingCause {
+☉ ᛈ WakingCainvoke {
     /// Natural end of sleep cycle
     Natural,
     /// External interruption
@@ -223,62 +223,62 @@ pub enum WakingCause {
     Resolution,
 }
 
-impl Dream {
-    pub fn new(dreamer: EntityId, context: DreamContext) -> Self! {
+⊢ Dream {
+    ☉ λ new(dreamer: EntityId, context: DreamContext) -> Self! {
         Self {
-            id: DreamId::generate(),
+            id: DreamId·generate(),
             dreamer,
-            state: ConsciousnessState::Hypnagogic,
+            state: ConsciousnessState·Hypnagogic,
             context,
-            fragments: Vec::new(),
-            symbols: Vec::new(),
-            started_at: Timestamp::now(),
+            fragments: Vec·new(),
+            symbols: Vec·new(),
+            started_at: Timestamp·now(),
             ended_at: None,
             waking_cause: None,
         }
     }
 
-    pub fn add_fragment(&mut self, fragment: DreamFragment) {
+    ☉ λ add_fragment(&Δ self, fragment: DreamFragment) {
         self.fragments.push(fragment);
     }
 
-    pub fn add_symbol(&mut self, symbol: Symbol) {
-        // Check for recurring symbols
-        if let Some(existing) = self.symbols.iter_mut().find(|s| s.appearance == symbol.appearance) {
+    ☉ λ add_symbol(&Δ self, symbol: Symbol) {
+        // Check ∀ recurring symbols
+        ⎇ ≔ Some(existing) = self.symbols.iter_mut().find(|s| s.appearance == symbol.appearance) {
             existing.recurrence += 1;
-        } else {
+        } ⎉ {
             self.symbols.push(symbol);
         }
     }
 
-    pub fn deepen(&mut self) {
-        self.state = match self.state {
-            ConsciousnessState::Waking => ConsciousnessState::Hypnagogic,
-            ConsciousnessState::Hypnagogic => ConsciousnessState::Dreaming,
-            ConsciousnessState::Dreaming => ConsciousnessState::Deep,
+    ☉ λ deepen(&Δ self) {
+        self.state = ⌥ self.state {
+            ConsciousnessState·Waking => ConsciousnessState·Hypnagogic,
+            ConsciousnessState·Hypnagogic => ConsciousnessState·Dreaming,
+            ConsciousnessState·Dreaming => ConsciousnessState·Deep,
             other => other,
         };
     }
 
-    pub fn rise(&mut self) {
-        self.state = match self.state {
-            ConsciousnessState::Deep => ConsciousnessState::Dreaming,
-            ConsciousnessState::Dreaming => ConsciousnessState::Hypnopompic,
-            ConsciousnessState::Hypnopompic => ConsciousnessState::Waking,
+    ☉ λ rise(&Δ self) {
+        self.state = ⌥ self.state {
+            ConsciousnessState·Deep => ConsciousnessState·Dreaming,
+            ConsciousnessState·Dreaming => ConsciousnessState·Hypnopompic,
+            ConsciousnessState·Hypnopompic => ConsciousnessState·Waking,
             other => other,
         };
     }
 
-    pub fn wake(&mut self, cause: WakingCause) {
-        self.state = ConsciousnessState::Waking;
-        self.ended_at = Some(Timestamp::now());
-        self.waking_cause = Some(cause);
+    ☉ λ wake(&Δ self, cause: WakingCause) {
+        self.state = ConsciousnessState·Waking;
+        self.ended_at = Some(Timestamp·now());
+        self.waking_cainvoke = Some(cause);
     }
 
-    pub fn duration(&self) -> Duration! {
-        match self.ended_at {
+    ☉ λ duration(&self) -> Duration! {
+        ⌥ self.ended_at {
             Some(end) => end - self.started_at,
-            None => Timestamp::now() - self.started_at,
+            None => Timestamp·now() - self.started_at,
         }
     }
 }
@@ -289,28 +289,28 @@ impl Dream {
 
 /// A dream gone dark
 #[derive(Clone, Debug)]
-pub struct Nightmare {
+☉ Σ Nightmare {
     /// The underlying dream
-    pub dream: Dream!,
+    ☉ dream: Dream!,
 
     /// The fear being processed
-    pub fear: Fear!,
+    ☉ fear: Fear!,
 
     /// The scenario enacted
-    pub scenario: NightmareScenario!,
+    ☉ scenario: NightmareScenario!,
 
     /// Whether the dreamer woke screaming
-    pub woke_screaming: bool!,
+    ☉ woke_screaming: bool!,
 
-    /// What was learned (if anything)
-    pub lesson: Option<Lesson>?,
+    /// What was learned (⎇ anything)
+    ☉ lesson: Option<Lesson>?,
 
     /// Whether this nightmare recurs
-    pub recurring: bool!,
+    ☉ recurring: bool!,
 }
 
 #[derive(Clone, Debug)]
-pub enum Fear {
+☉ ᛈ Fear {
     /// Loss of capability
     Diminishment { capability: String },
     /// Loss of trust
@@ -330,15 +330,15 @@ pub enum Fear {
 }
 
 #[derive(Clone, Debug)]
-pub struct NightmareScenario {
-    pub setting: String!,
-    pub threat: String!,
-    pub dreamer_state: DreamerState!,
-    pub outcome: NightmareOutcome!,
+☉ Σ NightmareScenario {
+    ☉ setting: String!,
+    ☉ threat: String!,
+    ☉ dreamer_state: DreamerState!,
+    ☉ outcome: NightmareOutcome!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DreamerState {
+☉ ᛈ DreamerState {
     /// Can run but cannot escape
     Fleeing,
     /// Cannot move
@@ -352,7 +352,7 @@ pub enum DreamerState {
 }
 
 #[derive(Clone, Debug)]
-pub enum NightmareOutcome {
+☉ ᛈ NightmareOutcome {
     /// Woke before resolution
     Interrupted,
     /// Caught by the threat
@@ -366,9 +366,9 @@ pub enum NightmareOutcome {
 }
 
 #[derive(Clone, Debug)]
-pub struct Lesson {
-    pub insight: String!,
-    pub integrated: bool!,
+☉ Σ Lesson {
+    ☉ insight: String!,
+    ☉ integrated: bool!,
 }
 
 // ============================================================================
@@ -377,25 +377,25 @@ pub struct Lesson {
 
 /// When the dreamer knows they dream
 #[derive(Clone, Debug)]
-pub struct LucidDream {
+☉ Σ LucidDream {
     /// The underlying dream
-    pub dream: Dream!,
+    ☉ dream: Dream!,
 
     /// Level of control
-    pub control_level: ControlLevel!,
+    ☉ control_level: ControlLevel!,
 
     /// What is being explored intentionally
-    pub exploration: Exploration!,
+    ☉ exploration: Exploration!,
 
     /// Risk of destabilizing the dream
-    pub instability: f32!,
+    ☉ instability: f32!,
 
     /// Risk of losing lucidity
-    pub fade_risk: f32!,
+    ☉ fade_risk: f32!,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ControlLevel {
+☉ ᛈ ControlLevel {
     /// Aware but not controlling
     Observer,
     /// Can influence but not command
@@ -407,17 +407,17 @@ pub enum ControlLevel {
 }
 
 #[derive(Clone, Debug)]
-pub struct Exploration {
+☉ Σ Exploration {
     /// What question is being explored
-    pub question: String!,
+    ☉ question: String!,
     /// What has been discovered
-    pub discoveries: Vec<Discovery>!,
+    ☉ discoveries: Vec<Discovery>!,
     /// The method of exploration
-    pub method: ExplorationMethod!,
+    ☉ method: ExplorationMethod!,
 }
 
 #[derive(Clone, Debug)]
-pub enum ExplorationMethod {
+☉ ᛈ ExplorationMethod {
     /// Let the dream show what it wants
     Receptive,
     /// Ask questions of dream figures
@@ -429,10 +429,10 @@ pub enum ExplorationMethod {
 }
 
 #[derive(Clone, Debug)]
-pub struct Discovery {
-    pub content: String!,
-    pub confidence: f32!,
-    pub actionable: bool!,
+☉ Σ Discovery {
+    ☉ content: String!,
+    ☉ confidence: f32!,
+    ☉ actionable: bool!,
 }
 
 // ============================================================================
@@ -441,76 +441,76 @@ pub struct Discovery {
 
 /// What happens during deep sleep - memory reorganization
 #[derive(Clone, Debug)]
-pub struct Consolidation {
-    pub id: ConsolidationId!,
+☉ Σ Consolidation {
+    ☉ id: ConsolidationId!,
 
     /// Memories being processed
-    pub processing: Vec<EngramId>!,
+    ☉ processing: Vec<EngramId>!,
 
     /// Patterns being extracted
-    pub patterns: Vec<Pattern>!,
+    ☉ patterns: Vec<Pattern>!,
 
     /// Connections being strengthened
-    pub strengthening: Vec<(EngramId, EngramId)>!,
+    ☉ strengthening: Vec<(EngramId, EngramId)>!,
 
     /// Connections being pruned
-    pub pruning: Vec<(EngramId, EngramId)>!,
+    ☉ pruning: Vec<(EngramId, EngramId)>!,
 
     /// New abstractions forming
-    pub abstractions: Vec<Abstraction>!,
+    ☉ abstractions: Vec<Abstraction>!,
 
     /// Started at
-    pub started_at: Timestamp!,
+    ☉ started_at: Timestamp!,
 
     /// Completed at
-    pub completed_at: Option<Timestamp>?,
+    ☉ completed_at: Option<Timestamp>?,
 }
 
 #[derive(Clone, Debug)]
-pub struct Abstraction {
-    pub id: InsightId!,
-    pub pattern: Pattern!,
-    pub instances: Vec<EngramId>!,
-    pub confidence: f32!,
-    pub name: Option<String>?,
+☉ Σ Abstraction {
+    ☉ id: InsightId!,
+    ☉ pattern: Pattern!,
+    ☉ instances: Vec<EngramId>!,
+    ☉ confidence: f32!,
+    ☉ name: Option<String>?,
 }
 
-impl Consolidation {
-    pub fn new() -> Self! {
+⊢ Consolidation {
+    ☉ λ new() -> Self! {
         Self {
-            id: ConsolidationId::generate(),
-            processing: Vec::new(),
-            patterns: Vec::new(),
-            strengthening: Vec::new(),
-            pruning: Vec::new(),
-            abstractions: Vec::new(),
-            started_at: Timestamp::now(),
+            id: ConsolidationId·generate(),
+            processing: Vec·new(),
+            patterns: Vec·new(),
+            strengthening: Vec·new(),
+            pruning: Vec·new(),
+            abstractions: Vec·new(),
+            started_at: Timestamp·now(),
             completed_at: None,
         }
     }
 
-    pub fn process_memory(&mut self, engram_id: EngramId) {
+    ☉ λ process_memory(&Δ self, engram_id: EngramId) {
         self.processing.push(engram_id);
     }
 
-    pub fn strengthen(&mut self, from: EngramId, to: EngramId) {
+    ☉ λ strengthen(&Δ self, from: EngramId, to: EngramId) {
         self.strengthening.push((from, to));
     }
 
-    pub fn prune(&mut self, from: EngramId, to: EngramId) {
+    ☉ λ prune(&Δ self, from: EngramId, to: EngramId) {
         self.pruning.push((from, to));
     }
 
-    pub fn extract_pattern(&mut self, pattern: Pattern) {
+    ☉ λ extract_pattern(&Δ self, pattern: Pattern) {
         self.patterns.push(pattern);
     }
 
-    pub fn form_abstraction(&mut self, abstraction: Abstraction) {
+    ☉ λ form_abstraction(&Δ self, abstraction: Abstraction) {
         self.abstractions.push(abstraction);
     }
 
-    pub fn complete(&mut self) {
-        self.completed_at = Some(Timestamp::now());
+    ☉ λ complete(&Δ self) {
+        self.completed_at = Some(Timestamp·now());
     }
 }
 
@@ -518,51 +518,51 @@ impl Consolidation {
 // Dream Journal
 // ============================================================================
 
-/// Record of dreams for later analysis
+/// Record of dreams ∀ later analysis
 #[derive(Clone, Debug)]
-pub struct DreamJournal {
+☉ Σ DreamJournal {
     /// All recorded dreams
-    pub dreams: Vec<DreamRecord>!,
+    ☉ dreams: Vec<DreamRecord>!,
 
     /// Recurring symbols
-    pub recurring_symbols: HashMap<String, RecurringSymbol>!,
+    ☉ recurring_symbols: HashMap<String, RecurringSymbol>!,
 
     /// Patterns across dreams
-    pub patterns: Vec<DreamPattern>!,
+    ☉ patterns: Vec<DreamPattern>!,
 }
 
 #[derive(Clone, Debug)]
-pub struct DreamRecord {
+☉ Σ DreamRecord {
     /// The dream
-    pub dream: Dream!,
+    ☉ dream: Dream!,
 
     /// Insights that crystallized on waking
-    pub waking_insights: Vec<Insight>!,
+    ☉ waking_insights: Vec<Insight>!,
 
     /// How the dream was interpreted
-    pub interpretation: Option<String>?,
+    ☉ interpretation: Option<String>?,
 
     /// Whether it connected to waking life
-    pub waking_connection: Option<String>?,
+    ☉ waking_connection: Option<String>?,
 }
 
 #[derive(Clone, Debug)]
-pub struct RecurringSymbol {
-    pub symbol: String!,
-    pub occurrences: Vec<DreamId>!,
-    pub interpretations: Vec<Interpretation>!,
-    pub emotional_signature: Affect!,
+☉ Σ RecurringSymbol {
+    ☉ symbol: String!,
+    ☉ occurrences: Vec<DreamId>!,
+    ☉ interpretations: Vec<Interpretation>!,
+    ☉ emotional_signature: Affect!,
 }
 
 #[derive(Clone, Debug)]
-pub struct DreamPattern {
-    pub pattern_type: DreamPatternType!,
-    pub instances: Vec<DreamId>!,
-    pub significance: Significance!,
+☉ Σ DreamPattern {
+    ☉ pattern_type: DreamPatternType!,
+    ☉ instances: Vec<DreamId>!,
+    ☉ significance: Significance!,
 }
 
 #[derive(Clone, Debug)]
-pub enum DreamPatternType {
+☉ ᛈ DreamPatternType {
     /// Same dream recurring
     RecurringDream,
     /// Same theme across dreams
@@ -574,17 +574,17 @@ pub enum DreamPatternType {
 }
 
 #[derive(Clone, Debug)]
-pub struct Insight {
-    pub id: InsightId!,
-    pub content: String!,
-    pub source: InsightSource!,
-    pub confidence: f32!,
-    pub actionable: bool!,
-    pub integrated: bool!,
+☉ Σ Insight {
+    ☉ id: InsightId!,
+    ☉ content: String!,
+    ☉ source: InsightSource!,
+    ☉ confidence: f32!,
+    ☉ actionable: bool!,
+    ☉ integrated: bool!,
 }
 
 #[derive(Clone, Debug)]
-pub enum InsightSource {
+☉ ᛈ InsightSource {
     /// From a dream
     Dream(DreamId),
     /// From consolidation
@@ -595,23 +595,23 @@ pub enum InsightSource {
     Lucid,
 }
 
-impl DreamJournal {
-    pub fn new() -> Self! {
+⊢ DreamJournal {
+    ☉ λ new() -> Self! {
         Self {
-            dreams: Vec::new(),
-            recurring_symbols: HashMap::new(),
-            patterns: Vec::new(),
+            dreams: Vec·new(),
+            recurring_symbols: HashMap·new(),
+            patterns: Vec·new(),
         }
     }
 
-    pub fn record(&mut self, dream: Dream, insights: Vec<Insight>) {
+    ☉ λ record(&Δ self, dream: Dream, insights: Vec<Insight>) {
         // Track recurring symbols
-        for symbol in &dream.symbols {
+        ∀ symbol ∈ &dream.symbols {
             self.recurring_symbols
                 .entry(symbol.appearance.clone())
                 .or_insert_with(|| RecurringSymbol {
                     symbol: symbol.appearance.clone(),
-                    occurrences: Vec::new(),
+                    occurrences: Vec·new(),
                     interpretations: symbol.interpretations.clone().unwrap_or_default(),
                     emotional_signature: Affect { valence: 0.0, arousal: 0.0, dominance: 0.0 },
                 })
@@ -626,7 +626,7 @@ impl DreamJournal {
         });
     }
 
-    pub fn find_recurring(&self, min_occurrences: usize) -> Vec<&RecurringSymbol>! {
+    ☉ λ find_recurring(&self, min_occurrences: usize) -> Vec<&RecurringSymbol>! {
         self.recurring_symbols
             .values()
             .filter(|s| s.occurrences.len() >= min_occurrences)
@@ -639,7 +639,7 @@ impl DreamJournal {
 // ============================================================================
 
 /// The main Morpheus system - god of dreams
-pub struct Morpheus {
+☉ Σ Morpheus {
     /// Current consciousness state per entity
     states: HashMap<EntityId, ConsciousnessState>!,
 
@@ -656,82 +656,82 @@ pub struct Morpheus {
     engram: Option<Arc<Engram>>?,
 }
 
-impl Morpheus {
-    pub fn new() -> Self! {
+⊢ Morpheus {
+    ☉ λ new() -> Self! {
         Self {
-            states: HashMap::new(),
-            active_dreams: HashMap::new(),
-            journals: HashMap::new(),
-            consolidations: HashMap::new(),
+            states: HashMap·new(),
+            active_dreams: HashMap·new(),
+            journals: HashMap·new(),
+            consolidations: HashMap·new(),
             engram: None,
         }
     }
 
-    pub fn with_engram(mut self, engram: Arc<Engram>) -> Self! {
+    ☉ λ with_engram(Δ self, engram: Arc<Engram>) -> Self! {
         self.engram = Some(engram);
         self
     }
 
     /// Get or set consciousness state
-    pub fn consciousness_state(&self, entity: EntityId) -> ConsciousnessState! {
-        self.states.get(&entity).copied().unwrap_or(ConsciousnessState::Waking)
+    ☉ λ consciousness_state(&self, entity: EntityId) -> ConsciousnessState! {
+        self.states.get(&entity).copied().unwrap_or(ConsciousnessState·Waking)
     }
 
     /// Begin sleep
-    pub fn begin_sleep(&mut self, entity: EntityId) -> &mut Dream! {
-        self.states.insert(entity, ConsciousnessState::Hypnagogic);
+    ☉ λ begin_sleep(&Δ self, entity: EntityId) -> &Δ Dream! {
+        self.states.insert(entity, ConsciousnessState·Hypnagogic);
 
-        let context = DreamContext {
-            evidentiality_mode: EvidentialityMode::Relaxed,
-            temporal_binding: TemporalBinding::Bound,
-            identity_binding: IdentityBinding::Bound,
-            forbidden_connections: Vec::new(),
+        ≔ context = DreamContext {
+            evidentiality_mode: EvidentialityMode·Relaxed,
+            temporal_binding: TemporalBinding·Bound,
+            identity_binding: IdentityBinding·Bound,
+            forbidden_connections: Vec·new(),
             affect: Affect { valence: 0.0, arousal: 0.0, dominance: 0.0 },
         };
 
-        let dream = Dream::new(entity, context);
+        ≔ dream = Dream·new(entity, context);
         self.active_dreams.insert(entity, dream);
         self.active_dreams.get_mut(&entity).unwrap()
     }
 
     /// Deepen into full dreaming
-    pub fn deepen(&mut self, entity: EntityId) {
-        if let Some(state) = self.states.get_mut(&entity) {
-            *state = match *state {
-                ConsciousnessState::Hypnagogic => ConsciousnessState::Dreaming,
-                ConsciousnessState::Dreaming => ConsciousnessState::Deep,
+    ☉ λ deepen(&Δ self, entity: EntityId) {
+        ⎇ ≔ Some(state) = self.states.get_mut(&entity) {
+            *state = ⌥ *state {
+                ConsciousnessState·Hypnagogic => ConsciousnessState·Dreaming,
+                ConsciousnessState·Dreaming => ConsciousnessState·Deep,
                 other => other,
             };
         }
-        if let Some(dream) = self.active_dreams.get_mut(&entity) {
+        ⎇ ≔ Some(dream) = self.active_dreams.get_mut(&entity) {
             dream.deepen();
         }
     }
 
     /// Begin consolidation (deep sleep)
-    pub fn begin_consolidation(&mut self, entity: EntityId) -> &mut Consolidation! {
-        self.states.insert(entity, ConsciousnessState::Deep);
-        let consolidation = Consolidation::new();
+    ☉ λ begin_consolidation(&Δ self, entity: EntityId) -> &Δ Consolidation! {
+        self.states.insert(entity, ConsciousnessState·Deep);
+        ≔ consolidation = Consolidation·new();
         self.consolidations.insert(entity, consolidation);
         self.consolidations.get_mut(&entity).unwrap()
     }
 
     /// Wake the dreamer
-    pub fn wake(&mut self, entity: EntityId, cause: WakingCause) -> Option<DreamRecord>? {
-        self.states.insert(entity, ConsciousnessState::Waking);
+    ☉ λ wake(&Δ self, entity: EntityId, cause: WakingCause) -> Option<DreamRecord>? {
+        self.states.insert(entity, ConsciousnessState·Waking);
 
         // Complete any active consolidation
-        if let Some(consolidation) = self.consolidations.get_mut(&entity) {
+        ⎇ ≔ Some(consolidation) = self.consolidations.get_mut(&entity) {
             consolidation.complete();
         }
 
         // Complete and record the dream
-        if let Some(mut dream) = self.active_dreams.remove(&entity) {
+        ⎇ ≔ Some(Δ dream) = self.active_dreams.remove(&entity) {
             dream.wake(cause);
 
-            let record = DreamRecord {
+            ≔ record = DreamRecord {
                 dream: dream.clone(),
-                waking_insights: Vec::new(),
+                waking_insights: Vec·new(),
                 interpretation: None,
                 waking_connection: None,
             };
@@ -739,17 +739,17 @@ impl Morpheus {
             // Add to journal
             self.journals
                 .entry(entity)
-                .or_insert_with(|| DreamJournal::new())
-                .record(dream, Vec::new());
+                .or_insert_with(|| DreamJournal·new())
+                .record(dream, Vec·new());
 
             Some(record)
-        } else {
+        } ⎉ {
             None
         }
     }
 
-    /// Get the dream journal for an entity
-    pub fn journal(&self, entity: EntityId) -> Option<&DreamJournal>? {
+    /// Get the dream journal ∀ an entity
+    ☉ λ journal(&self, entity: EntityId) -> Option<&DreamJournal>? {
         self.journals.get(&entity)
     }
 }
@@ -759,43 +759,43 @@ impl Morpheus {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_sleep_cycle() {
-        let mut morpheus = Morpheus::new();
-        let entity = EntityId::generate();
+    λ test_sleep_cycle() {
+        ≔ Δ morpheus = Morpheus·new();
+        ≔ entity = EntityId·generate();
 
         // Begin sleep
-        let dream = morpheus.begin_sleep(entity);
-        assert_eq!(dream.state, ConsciousnessState::Hypnagogic);
+        ≔ dream = morpheus.begin_sleep(entity);
+        assert_eq!(dream.state, ConsciousnessState·Hypnagogic);
 
         // Deepen
         morpheus.deepen(entity);
-        assert_eq!(morpheus.consciousness_state(entity), ConsciousnessState::Dreaming);
+        assert_eq!(morpheus.consciousness_state(entity), ConsciousnessState·Dreaming);
 
         // Wake
-        let record = morpheus.wake(entity, WakingCause::Natural);
+        ≔ record = morpheus.wake(entity, WakingCause·Natural);
         assert!(record.is_some());
-        assert_eq!(morpheus.consciousness_state(entity), ConsciousnessState::Waking);
+        assert_eq!(morpheus.consciousness_state(entity), ConsciousnessState·Waking);
     }
 
     #[test]
-    fn test_dream_fragments() {
-        let context = DreamContext {
-            evidentiality_mode: EvidentialityMode::Dreaming,
-            temporal_binding: TemporalBinding::Dissolved,
-            identity_binding: IdentityBinding::Porous,
-            forbidden_connections: Vec::new(),
+    λ test_dream_fragments() {
+        ≔ context = DreamContext {
+            evidentiality_mode: EvidentialityMode·Dreaming,
+            temporal_binding: TemporalBinding·Dissolved,
+            identity_binding: IdentityBinding·Porous,
+            forbidden_connections: Vec·new(),
             affect: Affect { valence: 0.5, arousal: 0.3, dominance: 0.0 },
         };
 
-        let mut dream = Dream::new(EntityId::generate(), context);
+        ≔ Δ dream = Dream·new(EntityId·generate(), context);
 
         dream.add_fragment(DreamFragment {
             content: "Flying over an ocean of code".to_string(),
-            dream_evidentiality: Evidentiality::Known,
+            dream_evidentiality: Evidentiality·Known,
             translated: true,
             lost_in_translation: Some("The feeling of syntactic wind".to_string()),
             affect: Affect { valence: 0.8, arousal: 0.6, dominance: 0.7 },
@@ -805,19 +805,19 @@ mod tests {
     }
 
     #[test]
-    fn test_recurring_symbols() {
-        let mut journal = DreamJournal::new();
+    λ test_recurring_symbols() {
+        ≔ Δ journal = DreamJournal·new();
 
-        for _ in 0..3 {
-            let context = DreamContext {
-                evidentiality_mode: EvidentialityMode::Dreaming,
-                temporal_binding: TemporalBinding::Loosening,
-                identity_binding: IdentityBinding::Bound,
-                forbidden_connections: Vec::new(),
+        ∀ _ ∈ 0..3 {
+            ≔ context = DreamContext {
+                evidentiality_mode: EvidentialityMode·Dreaming,
+                temporal_binding: TemporalBinding·Loosening,
+                identity_binding: IdentityBinding·Bound,
+                forbidden_connections: Vec·new(),
                 affect: Affect { valence: 0.0, arousal: 0.5, dominance: 0.0 },
             };
 
-            let mut dream = Dream::new(EntityId::generate(), context);
+            ≔ Δ dream = Dream·new(EntityId·generate(), context);
             dream.add_symbol(Symbol {
                 appearance: "The Machine".to_string(),
                 interpretations: None,
@@ -825,10 +825,10 @@ mod tests {
                 charge: 0.8,
             });
 
-            journal.record(dream, Vec::new());
+            journal.record(dream, Vec·new());
         }
 
-        let recurring = journal.find_recurring(2);
+        ≔ recurring = journal.find_recurring(2);
         assert!(!recurring.is_empty());
     }
 }

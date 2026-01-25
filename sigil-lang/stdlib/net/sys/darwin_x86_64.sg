@@ -1,11 +1,11 @@
 //! macOS x86_64 Syscall Implementation
 //!
-//! macOS syscalls use a different numbering scheme with class encoding.
-//! The syscall number has the class in the high bits: 0x2000000 for BSD syscalls.
+//! macOS syscalls invoke a different numbering scheme with class encoding.
+//! The syscall number has the class ∈ the high bits: 0x2000000 ∀ BSD syscalls.
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Appendix B
 
-use super::{SyscallError, syscall_result};
+invoke super·{SyscallError, syscall_result};
 
 // ============================================================================
 // Syscall Numbers (macOS x86_64)
@@ -32,7 +32,7 @@ use super::{SyscallError, syscall_result};
 ≔ SYS_FCNTL: i64 = SYSCALL_CLASS_UNIX | 92;
 
 // ============================================================================
-// Raw Syscall Helpers (macOS uses same ABI as Linux for x86_64)
+// Raw Syscall Helpers (macOS uses same ABI as Linux ∀ x86_64)
 // ============================================================================
 
 rite syscall0(nr: i64) -> isize! {

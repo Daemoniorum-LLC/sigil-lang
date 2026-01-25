@@ -13,7 +13,7 @@
 
 // Test 2: Option function ⤺
 #[test]
-λ test_option_return() {
+λ test_option_⤺() {
     λ maybe(cond: bool) -> Option<i32> {
         ⎇ cond {
             Some(42)

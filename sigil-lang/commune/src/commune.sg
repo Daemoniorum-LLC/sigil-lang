@@ -1,16 +1,16 @@
 // Commune Core Implementation
 // Multi-agent communication infrastructure
 
-use crate::types::*;
-use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Timestamp};
+invoke crate·types·*;
+invoke std·collections·{HashMap, HashSet};
+invoke std·time·{Duration, Timestamp};
 
 // ============================================================================
 // Commune - The Communication Network
 // ============================================================================
 
 /// The main commune - a network of communicating agents
-pub struct Commune {
+☉ Σ Commune {
     /// Configuration
     config: CommuneConfig,
 
@@ -39,24 +39,24 @@ pub struct Commune {
     queue: MessageQueue,
 }
 
-impl Commune {
-    pub fn new(config: CommuneConfig) -> Self {
+⊢ Commune {
+    ☉ λ new(config: CommuneConfig) -> Self {
         Self {
             config: config.clone(),
-            agents: HashMap::new(),
-            channels: HashMap::new(),
-            trust: TrustManager::new(config.trust_model.clone()),
-            router: ChannelRouter::new(),
-            collective: CollectiveMemory::new(),
-            swarms: SwarmCoordinator::new(),
-            consensus: ConsensusEngine::new(ConsensusConfig::default()),
-            queue: MessageQueue::new(),
+            agents: HashMap·new(),
+            channels: HashMap·new(),
+            trust: TrustManager·new(config.trust_model.clone()),
+            router: ChannelRouter·new(),
+            collective: CollectiveMemory·new(),
+            swarms: SwarmCoordinator·new(),
+            consensus: ConsensusEngine·new(ConsensusConfig·default()),
+            queue: MessageQueue·new(),
         }
     }
 
     /// Create a local commune (in-process)
-    pub fn local() -> Self {
-        Self::new(CommuneConfig::default())
+    ☉ λ local() -> Self {
+        Self·new(CommuneConfig·default())
     }
 
     // ========================================================================
@@ -64,17 +64,17 @@ impl Commune {
     // ========================================================================
 
     /// Register an agent with the commune
-    pub fn register(&mut self, agent_id: AgentId, info: AgentInfo) {
+    ☉ λ register(&Δ self, agent_id: AgentId, info: AgentInfo) {
         self.agents.insert(agent_id.clone(), info);
         self.trust.add_agent(agent_id);
     }
 
     /// Unregister an agent
-    pub fn unregister(&mut self, agent_id: &AgentId) {
+    ☉ λ unregister(&Δ self, agent_id: &AgentId) {
         self.agents.remove(agent_id);
 
         // Remove from all channels
-        for channel in self.channels.values_mut() {
+        ∀ channel ∈ self.channels.values_mut() {
             channel.subscribers.remove(agent_id);
         }
 
@@ -82,8 +82,8 @@ impl Commune {
         self.swarms.remove_from_all(agent_id);
     }
 
-    /// Check if agent is registered
-    pub fn is_registered(&self, agent_id: &AgentId) -> bool {
+    /// Check ⎇ agent is registered
+    ☉ λ is_registered(&self, agent_id: &AgentId) -> bool {
         self.agents.contains_key(agent_id)
     }
 
@@ -92,23 +92,23 @@ impl Commune {
     // ========================================================================
 
     /// Send a message
-    pub fn send(&mut self, message: Message) -> Result<MessageId, CommuneError> {
+    ☉ λ send(&Δ self, message: Message) -> Result<MessageId, CommuneError> {
         // Validate sender
-        if !self.is_registered(&message.header.from) {
-            return Err(CommuneError::SenderNotRegistered);
+        ⎇ !self.is_registered(&message.header.from) {
+            ⤺ Err(CommuneError·SenderNotRegistered);
         }
 
         // Check trust
-        let sender_trust = self.trust.trust_score(&message.header.from, None);
-        if sender_trust < self.config.trust_model.min_trust {
-            return Err(CommuneError::InsufficientTrust);
+        ≔ sender_trust = self.trust.trust_score(&message.header.from, None);
+        ⎇ sender_trust < self.config.trust_model.min_trust {
+            ⤺ Err(CommuneError·InsufficientTrust);
         }
 
         // Route to recipients
-        let recipients = self.router.route(&message);
+        ≔ recipients = self.router.route(&message);
 
         // Deliver to each recipient
-        for recipient in recipients {
+        ∀ recipient ∈ recipients {
             self.deliver(&message, &recipient)?;
         }
 
@@ -116,35 +116,35 @@ impl Commune {
     }
 
     /// Express an intent (higher-level API)
-    pub fn express(&mut self, from: AgentId, to: Recipient, intent: Intent) -> IntentBuilder {
+    ☉ λ express(&Δ self, from: AgentId, to: Recipient, intent: Intent) -> IntentBuilder {
         IntentBuilder {
             commune: self,
             from,
             to,
             intent,
-            epistemic: Epistemic::Observed,
+            epistemic: Epistemic·Observed,
             confidence: 1.0,
             timeout: intent.default_timeout(),
         }
     }
 
-    fn deliver(&mut self, message: &Message, recipient: &AgentId) -> Result<(), CommuneError> {
+    λ deliver(&Δ self, message: &Message, recipient: &AgentId) -> Result<(), CommuneError> {
         // Apply epistemic adjustment
-        let (new_epistemic, new_confidence) = self.trust.adjust_epistemic(message);
+        ≔ (new_epistemic, new_confidence) = self.trust.adjust_epistemic(message);
 
-        // Create adjusted message for recipient
-        let mut adjusted = message.clone();
+        // Create adjusted message ∀ recipient
+        ≔ Δ adjusted = message.clone();
         adjusted.header.epistemic = new_epistemic;
         adjusted.header.confidence = new_confidence;
 
-        // Queue for delivery
+        // Queue ∀ delivery
         self.queue.enqueue(recipient.clone(), adjusted);
 
         Ok(())
     }
 
-    /// Receive messages for an agent
-    pub fn receive(&mut self, agent_id: &AgentId) -> Vec<Message> {
+    /// Receive messages ∀ an agent
+    ☉ λ receive(&Δ self, agent_id: &AgentId) -> Vec<Message> {
         self.queue.dequeue(agent_id)
     }
 
@@ -153,39 +153,39 @@ impl Commune {
     // ========================================================================
 
     /// Create a channel
-    pub fn create_channel(&mut self, name: &str) -> ChannelId {
-        let channel = Channel::new(name);
-        let id = channel.id.clone();
+    ☉ λ create_channel(&Δ self, name: &str) -> ChannelId {
+        ≔ channel = Channel·new(name);
+        ≔ id = channel.id.clone();
         self.channels.insert(id.clone(), channel);
         self.router.add_channel(id.clone());
         id
     }
 
     /// Get a channel
-    pub fn channel(&self, name: &str) -> Option<&Channel> {
-        let id = ChannelId::new(name);
+    ☉ λ channel(&self, name: &str) -> Option<&Channel> {
+        ≔ id = ChannelId·new(name);
         self.channels.get(&id)
     }
 
     /// Subscribe to a channel
-    pub fn subscribe(&mut self, agent_id: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
+    ☉ λ subscribe(&Δ self, agent_id: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
         self.router.subscribe(agent_id, channel_id)
     }
 
     /// Unsubscribe from a channel
-    pub fn unsubscribe(&mut self, agent_id: &AgentId, channel_id: &ChannelId) {
+    ☉ λ unsubscribe(&Δ self, agent_id: &AgentId, channel_id: &ChannelId) {
         self.router.unsubscribe(agent_id, channel_id);
     }
 
     /// Broadcast to a channel
-    pub fn broadcast(&mut self, channel_id: &ChannelId, from: AgentId, content: Value) -> Result<(), CommuneError> {
-        let message = Message::new(
+    ☉ λ broadcast(&Δ self, channel_id: &ChannelId, from: AgentId, content: Value) -> Result<(), CommuneError> {
+        ≔ message = Message·new(
             from,
-            Recipient::Channel(channel_id.clone()),
-            Intent::Announce {
+            Recipient·Channel(channel_id.clone()),
+            Intent·Announce {
                 topic: channel_id.name.clone(),
                 content,
-                importance: Importance::Normal,
+                importance: Importance·Normal,
             },
         );
 
@@ -197,23 +197,23 @@ impl Commune {
     // Trust
     // ========================================================================
 
-    /// Get trust score for an agent
-    pub fn trust_score(&self, agent_id: &AgentId) -> f32 {
+    /// Get trust score ∀ an agent
+    ☉ λ trust_score(&self, agent_id: &AgentId) -> f32 {
         self.trust.trust_score(agent_id, None)
     }
 
-    /// Get trust score in a domain
-    pub fn trust_score_domain(&self, agent_id: &AgentId, domain: &str) -> f32 {
+    /// Get trust score ∈ a domain
+    ☉ λ trust_score_domain(&self, agent_id: &AgentId, domain: &str) -> f32 {
         self.trust.trust_score(agent_id, Some(domain))
     }
 
-    /// Record accuracy for an agent
-    pub fn record_accuracy(&mut self, agent_id: &AgentId, accurate: bool) {
+    /// Record accuracy ∀ an agent
+    ☉ λ record_accuracy(&Δ self, agent_id: &AgentId, accurate: bool) {
         self.trust.record_accuracy(agent_id, accurate, None);
     }
 
-    /// Vouch for another agent
-    pub fn vouch(&mut self, voucher: AgentId, vouchee: AgentId, strength: f32) {
+    /// Vouch ∀ another agent
+    ☉ λ vouch(&Δ self, voucher: AgentId, vouchee: AgentId, strength: f32) {
         self.trust.vouch(voucher, vouchee, None, strength);
     }
 
@@ -222,12 +222,12 @@ impl Commune {
     // ========================================================================
 
     /// Contribute knowledge to collective
-    pub fn contribute(&mut self, agent: AgentId, knowledge: Knowledge) -> FactId {
+    ☉ λ contribute(&Δ self, agent: AgentId, knowledge: Knowledge) -> FactId {
         self.collective.contribute(agent, knowledge)
     }
 
     /// Query collective knowledge
-    pub fn collective_recall(&self, query: &str) -> Vec<Fact> {
+    ☉ λ collective_recall(&self, query: &str) -> Vec<Fact> {
         self.collective.recall(query)
     }
 
@@ -236,22 +236,22 @@ impl Commune {
     // ========================================================================
 
     /// Create a swarm
-    pub fn create_swarm(&mut self, name: &str) -> SwarmId {
+    ☉ λ create_swarm(&Δ self, name: &str) -> SwarmId {
         self.swarms.create_swarm(name)
     }
 
     /// Join a swarm
-    pub fn join_swarm(&mut self, agent_id: AgentId, swarm_id: SwarmId) {
+    ☉ λ join_swarm(&Δ self, agent_id: AgentId, swarm_id: SwarmId) {
         self.swarms.add_member(swarm_id, agent_id);
     }
 
     /// Add behavior to swarm
-    pub fn add_swarm_behavior(&mut self, swarm_id: SwarmId, behavior: Behavior) {
+    ☉ λ add_swarm_behavior(&Δ self, swarm_id: SwarmId, behavior: Behavior) {
         self.swarms.add_behavior(swarm_id, behavior);
     }
 
     /// Step swarm simulation
-    pub fn step_swarm(&mut self, swarm_id: &SwarmId) {
+    ☉ λ step_swarm(&Δ self, swarm_id: &SwarmId) {
         self.swarms.step(swarm_id);
     }
 
@@ -260,18 +260,18 @@ impl Commune {
     // ========================================================================
 
     /// Create a proposal
-    pub fn propose(&mut self, proposer: AgentId, proposal: Proposal) -> ProposalId {
+    ☉ λ propose(&Δ self, proposer: AgentId, proposal: Proposal) -> ProposalId {
         self.consensus.propose(proposer, proposal.content, proposal.description)
     }
 
     /// Vote on a proposal
-    pub fn vote(&mut self, proposal_id: ProposalId, voter: AgentId, vote: VoteValue, rationale: Option<String>) -> Result<(), CommuneError> {
+    ☉ λ vote(&Δ self, proposal_id: ProposalId, voter: AgentId, vote: VoteValue, rationale: Option<String>) -> Result<(), CommuneError> {
         self.consensus.vote(proposal_id, voter, vote, rationale)
-            .map_err(|e| CommuneError::ConsensusError(format!("{:?}", e)))
+            .map_err(|e| CommuneError·ConsensusError(format!("{:?}", e)))
     }
 
     /// Get consensus result
-    pub fn consensus_result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
+    ☉ λ consensus_result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
         self.consensus.result(proposal_id)
     }
 
@@ -280,14 +280,14 @@ impl Commune {
     // ========================================================================
 
     /// Query agents with capability
-    pub fn query_agents(&self, capability: &str) -> Vec<&AgentInfo> {
+    ☉ λ query_agents(&self, capability: &str) -> Vec<&AgentInfo> {
         self.agents.values()
             .filter(|a| a.capabilities.contains(&capability.to_string()))
             .collect()
     }
 
     /// Query channel members
-    pub fn channel_members(&self, channel_id: &ChannelId) -> Vec<AgentId> {
+    ☉ λ channel_members(&self, channel_id: &ChannelId) -> Vec<AgentId> {
         self.channels.get(channel_id)
             .map(|c| c.subscribers.iter().cloned().collect())
             .unwrap_or_default()
@@ -298,14 +298,14 @@ impl Commune {
 // Agent Info
 // ============================================================================
 
-pub struct AgentInfo {
-    pub id: AgentId,
-    pub name: String,
-    pub capabilities: Vec<String>,
-    pub status: AgentStatus,
+☉ Σ AgentInfo {
+    ☉ id: AgentId,
+    ☉ name: String,
+    ☉ capabilities: Vec<String>,
+    ☉ status: AgentStatus,
 }
 
-pub enum AgentStatus {
+☉ ᛈ AgentStatus {
     Online,
     Busy,
     Away,
@@ -316,8 +316,8 @@ pub enum AgentStatus {
 // Intent Builder
 // ============================================================================
 
-pub struct IntentBuilder<'a> {
-    commune: &'a mut Commune,
+☉ Σ IntentBuilder<'a> {
+    commune: &'a Δ Commune,
     from: AgentId,
     to: Recipient,
     intent: Intent,
@@ -326,20 +326,20 @@ pub struct IntentBuilder<'a> {
     timeout: Duration,
 }
 
-impl<'a> IntentBuilder<'a> {
-    pub fn with_epistemic(mut self, epistemic: Epistemic, confidence: f32) -> Self {
+⊢<'a> IntentBuilder<'a> {
+    ☉ λ with_epistemic(Δ self, epistemic: Epistemic, confidence: f32) -> Self {
         self.epistemic = epistemic;
         self.confidence = confidence;
         self
     }
 
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+    ☉ λ with_timeout(Δ self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
-    pub fn execute(self) -> Result<MessageId, CommuneError> {
-        let message = Message::new(self.from, self.to, self.intent)
+    ☉ λ execute(self) -> Result<MessageId, CommuneError> {
+        ≔ message = Message·new(self.from, self.to, self.intent)
             .with_epistemic(self.epistemic, self.confidence);
 
         self.commune.send(message)
@@ -350,115 +350,115 @@ impl<'a> IntentBuilder<'a> {
 // Trust Manager
 // ============================================================================
 
-pub struct TrustManager {
+☉ Σ TrustManager {
     profiles: HashMap<AgentId, TrustProfile>,
     config: TrustModelConfig,
 }
 
-impl TrustManager {
-    pub fn new(config: TrustModelConfig) -> Self {
+⊢ TrustManager {
+    ☉ λ new(config: TrustModelConfig) -> Self {
         Self {
-            profiles: HashMap::new(),
+            profiles: HashMap·new(),
             config,
         }
     }
 
-    pub fn add_agent(&mut self, agent: AgentId) {
+    ☉ λ add_agent(&Δ self, agent: AgentId) {
         self.profiles.insert(
             agent.clone(),
-            TrustProfile::new(agent, self.config.default_trust),
+            TrustProfile·new(agent, self.config.default_trust),
         );
     }
 
-    pub fn trust_score(&self, agent: &AgentId, domain: Option<&str>) -> f32 {
-        let profile = match self.profiles.get(agent) {
+    ☉ λ trust_score(&self, agent: &AgentId, domain: Option<&str>) -> f32 {
+        ≔ profile = ⌥ self.profiles.get(agent) {
             Some(p) => p,
-            None => return self.config.default_trust,
+            None => ⤺ self.config.default_trust,
         };
 
-        let mut score = profile.base_trust;
+        ≔ Δ score = profile.base_trust;
 
         // Apply domain-specific trust
-        if let Some(d) = domain {
-            if let Some(dt) = profile.domain_trust.get(d) {
+        ⎇ ≔ Some(d) = domain {
+            ⎇ ≔ Some(dt) = profile.domain_trust.get(d) {
                 score = *dt;
             }
         }
 
-        // Factor in accuracy
+        // Factor ∈ accuracy
         score *= profile.accuracy.score;
 
-        // Factor in vouches
-        let vouch_bonus = profile.vouch_score();
+        // Factor ∈ vouches
+        ≔ vouch_bonus = profile.vouch_score();
         score = (score + vouch_bonus).min(1.0);
 
         // Apply decay
-        let decay = self.calculate_decay(profile.last_seen);
+        ≔ decay = self.calculate_decay(profile.last_seen);
         score *= decay;
 
         score.clamp(0.0, 1.0)
     }
 
-    pub fn record_accuracy(&mut self, agent: &AgentId, accurate: bool, domain: Option<String>) {
-        if let Some(profile) = self.profiles.get_mut(agent) {
+    ☉ λ record_accuracy(&Δ self, agent: &AgentId, accurate: bool, domain: Option<String>) {
+        ⎇ ≔ Some(profile) = self.profiles.get_mut(agent) {
             profile.accuracy.record(accurate, domain);
 
             // Update base trust
             profile.base_trust = profile.base_trust * 0.95 +
-                (if accurate { 1.0 } else { 0.0 }) * 0.05;
+                (⎇ accurate { 1.0 } ⎉ { 0.0 }) * 0.05;
         }
     }
 
-    pub fn vouch(&mut self, voucher: AgentId, vouchee: AgentId, domain: Option<String>, strength: f32) {
-        let voucher_trust = self.trust_score(&voucher, domain.as_deref());
-        if voucher_trust < self.config.min_trust_to_vouch {
-            return;
+    ☉ λ vouch(&Δ self, voucher: AgentId, vouchee: AgentId, domain: Option<String>, strength: f32) {
+        ≔ voucher_trust = self.trust_score(&voucher, domain.as_deref());
+        ⎇ voucher_trust < self.config.min_trust_to_vouch {
+            ⤺;
         }
 
-        if let Some(profile) = self.profiles.get_mut(&vouchee) {
+        ⎇ ≔ Some(profile) = self.profiles.get_mut(&vouchee) {
             profile.vouches.push(Vouch {
                 voucher,
                 domain,
                 strength: strength * voucher_trust,
-                timestamp: Timestamp::now(),
+                timestamp: Timestamp·now(),
             });
         }
     }
 
-    pub fn adjust_epistemic(&self, msg: &Message) -> (Epistemic, f32) {
-        let sender_trust = self.trust_score(&msg.header.from, None);
+    ☉ λ adjust_epistemic(&self, msg: &Message) -> (Epistemic, f32) {
+        ≔ sender_trust = self.trust_score(&msg.header.from, None);
 
-        let new_epistemic = match msg.header.epistemic {
-            Epistemic::Axiomatic => Epistemic::Reported,
-            Epistemic::Observed => Epistemic::Reported,
-            Epistemic::Reported => Epistemic::Reported,
-            Epistemic::Inferred => Epistemic::Reported,
+        ≔ new_epistemic = ⌥ msg.header.epistemic {
+            Epistemic·Axiomatic => Epistemic·Reported,
+            Epistemic·Observed => Epistemic·Reported,
+            Epistemic·Reported => Epistemic·Reported,
+            Epistemic·Inferred => Epistemic·Reported,
             e => e,
         };
 
-        let transmission_factor = match msg.header.epistemic {
-            Epistemic::Axiomatic => 0.95,
-            Epistemic::Observed => 0.9,
-            Epistemic::Reported => 0.8,
-            Epistemic::Inferred => 0.5,
+        ≔ transmission_factor = ⌥ msg.header.epistemic {
+            Epistemic·Axiomatic => 0.95,
+            Epistemic·Observed => 0.9,
+            Epistemic·Reported => 0.8,
+            Epistemic·Inferred => 0.5,
             _ => 0.3,
         };
 
-        let new_confidence = msg.header.confidence * sender_trust * transmission_factor;
+        ≔ new_confidence = msg.header.confidence * sender_trust * transmission_factor;
 
         (new_epistemic, new_confidence)
     }
 
-    fn calculate_decay(&self, last_seen: Timestamp) -> f32 {
+    λ calculate_decay(&self, last_seen: Timestamp) -> f32 {
         // Exponential decay based on time since last interaction
-        let elapsed = Timestamp::now().nanos.saturating_sub(last_seen.nanos);
-        let halflife_nanos = self.config.decay_halflife.as_nanos();
+        ≔ elapsed = Timestamp·now().nanos.saturating_sub(last_seen.nanos);
+        ≔ halflife_nanos = self.config.decay_halflife.as_nanos();
 
-        if halflife_nanos == 0 {
-            return 1.0;
+        ⎇ halflife_nanos == 0 {
+            ⤺ 1.0;
         }
 
-        let decay = (-0.693 * elapsed as f64 / halflife_nanos as f64).exp();
+        ≔ decay = (-0.693 * elapsed as f64 / halflife_nanos as f64).exp();
         decay as f32
     }
 }
@@ -467,40 +467,40 @@ impl TrustManager {
 // Channel Router
 // ============================================================================
 
-pub struct ChannelRouter {
+☉ Σ ChannelRouter {
     channels: HashMap<ChannelId, HashSet<AgentId>>,
     subscriptions: HashMap<AgentId, HashSet<ChannelId>>,
 }
 
-impl ChannelRouter {
-    pub fn new() -> Self {
+⊢ ChannelRouter {
+    ☉ λ new() -> Self {
         Self {
-            channels: HashMap::new(),
-            subscriptions: HashMap::new(),
+            channels: HashMap·new(),
+            subscriptions: HashMap·new(),
         }
     }
 
-    pub fn add_channel(&mut self, channel_id: ChannelId) {
-        self.channels.insert(channel_id, HashSet::new());
+    ☉ λ add_channel(&Δ self, channel_id: ChannelId) {
+        self.channels.insert(channel_id, HashSet·new());
     }
 
-    pub fn route(&self, msg: &Message) -> Vec<AgentId> {
-        match &msg.header.to {
-            Recipient::Agent(id) => vec![id.clone()],
-            Recipient::Agents(ids) => ids.clone(),
-            Recipient::Channel(channel_id) => {
+    ☉ λ route(&self, msg: &Message) -> Vec<AgentId> {
+        ⌥ &msg.header.to {
+            Recipient·Agent(id) => vec![id.clone()],
+            Recipient·Agents(ids) => ids.clone(),
+            Recipient·Channel(channel_id) => {
                 self.channels.get(channel_id)
                     .map(|s| s.iter().cloned().collect())
                     .unwrap_or_default()
             }
-            Recipient::Broadcast => {
+            Recipient·Broadcast => {
                 self.subscriptions.keys().cloned().collect()
             }
-            Recipient::Swarm(_) => vec![],  // Handled by swarm coordinator
+            Recipient·Swarm(_) => vec![],  // Handled by swarm coordinator
         }
     }
 
-    pub fn subscribe(&mut self, agent: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
+    ☉ λ subscribe(&Δ self, agent: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
         self.channels.entry(channel_id.clone())
             .or_default()
             .insert(agent.clone());
@@ -512,12 +512,12 @@ impl ChannelRouter {
         Ok(())
     }
 
-    pub fn unsubscribe(&mut self, agent: &AgentId, channel_id: &ChannelId) {
-        if let Some(subscribers) = self.channels.get_mut(channel_id) {
+    ☉ λ unsubscribe(&Δ self, agent: &AgentId, channel_id: &ChannelId) {
+        ⎇ ≔ Some(subscribers) = self.channels.get_mut(channel_id) {
             subscribers.remove(agent);
         }
 
-        if let Some(subs) = self.subscriptions.get_mut(agent) {
+        ⎇ ≔ Some(subs) = self.subscriptions.get_mut(agent) {
             subs.remove(channel_id);
         }
     }
@@ -527,42 +527,42 @@ impl ChannelRouter {
 // Collective Memory
 // ============================================================================
 
-pub struct FactId {
+☉ Σ FactId {
     bytes: [u8; 16],
 }
 
-impl FactId {
-    pub fn new() -> Self {
+⊢ FactId {
+    ☉ λ new() -> Self {
         Self { bytes: uuid_v7() }
     }
 }
 
-pub struct Fact {
-    pub id: FactId,
-    pub content: Value,
-    pub topic: String,
-    pub epistemic: Epistemic,
-    pub confidence: f32,
-    pub contributors: Vec<AgentId>,
+☉ Σ Fact {
+    ☉ id: FactId,
+    ☉ content: Value,
+    ☉ topic: String,
+    ☉ epistemic: Epistemic,
+    ☉ confidence: f32,
+    ☉ contributors: Vec<AgentId>,
 }
 
-pub struct CollectiveMemory {
+☉ Σ CollectiveMemory {
     facts: HashMap<FactId, Fact>,
     topic_index: HashMap<String, Vec<FactId>>,
 }
 
-impl CollectiveMemory {
-    pub fn new() -> Self {
+⊢ CollectiveMemory {
+    ☉ λ new() -> Self {
         Self {
-            facts: HashMap::new(),
-            topic_index: HashMap::new(),
+            facts: HashMap·new(),
+            topic_index: HashMap·new(),
         }
     }
 
-    pub fn contribute(&mut self, agent: AgentId, knowledge: Knowledge) -> FactId {
-        let id = FactId::new();
+    ☉ λ contribute(&Δ self, agent: AgentId, knowledge: Knowledge) -> FactId {
+        ≔ id = FactId·new();
 
-        let fact = Fact {
+        ≔ fact = Fact {
             id: id.clone(),
             content: knowledge.content,
             topic: knowledge.topic.clone(),
@@ -579,7 +579,7 @@ impl CollectiveMemory {
         id
     }
 
-    pub fn recall(&self, query: &str) -> Vec<Fact> {
+    ☉ λ recall(&self, query: &str) -> Vec<Fact> {
         // Simple topic-based recall
         self.topic_index.get(query)
             .map(|ids| ids.iter()
@@ -590,8 +590,8 @@ impl CollectiveMemory {
     }
 }
 
-impl Clone for Fact {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ Fact {
+    λ clone(&self) -> Self {
         Self {
             id: FactId { bytes: self.id.bytes },
             content: Value { inner: self.content.inner.clone() },
@@ -607,68 +607,68 @@ impl Clone for Fact {
 // Swarm Coordinator
 // ============================================================================
 
-pub struct SwarmCoordinator {
+☉ Σ SwarmCoordinator {
     swarms: HashMap<SwarmId, Swarm>,
     behaviors: HashMap<SwarmId, Vec<Behavior>>,
 }
 
-impl SwarmCoordinator {
-    pub fn new() -> Self {
+⊢ SwarmCoordinator {
+    ☉ λ new() -> Self {
         Self {
-            swarms: HashMap::new(),
-            behaviors: HashMap::new(),
+            swarms: HashMap·new(),
+            behaviors: HashMap·new(),
         }
     }
 
-    pub fn create_swarm(&mut self, name: &str) -> SwarmId {
-        let swarm = Swarm::new(name);
-        let id = swarm.id.clone();
+    ☉ λ create_swarm(&Δ self, name: &str) -> SwarmId {
+        ≔ swarm = Swarm·new(name);
+        ≔ id = swarm.id.clone();
         self.swarms.insert(id.clone(), swarm);
-        self.behaviors.insert(id.clone(), Vec::new());
+        self.behaviors.insert(id.clone(), Vec·new());
         id
     }
 
-    pub fn add_member(&mut self, swarm_id: SwarmId, agent: AgentId) {
-        if let Some(swarm) = self.swarms.get_mut(&swarm_id) {
+    ☉ λ add_member(&Δ self, swarm_id: SwarmId, agent: AgentId) {
+        ⎇ ≔ Some(swarm) = self.swarms.get_mut(&swarm_id) {
             swarm.add_member(agent);
         }
     }
 
-    pub fn remove_from_all(&mut self, agent: &AgentId) {
-        for swarm in self.swarms.values_mut() {
+    ☉ λ remove_from_all(&Δ self, agent: &AgentId) {
+        ∀ swarm ∈ self.swarms.values_mut() {
             swarm.remove_member(agent);
         }
     }
 
-    pub fn add_behavior(&mut self, swarm_id: SwarmId, behavior: Behavior) {
+    ☉ λ add_behavior(&Δ self, swarm_id: SwarmId, behavior: Behavior) {
         self.behaviors.entry(swarm_id)
             .or_default()
             .push(behavior);
     }
 
-    pub fn step(&mut self, swarm_id: &SwarmId) {
-        let behaviors = self.behaviors.get(swarm_id)
+    ☉ λ step(&Δ self, swarm_id: &SwarmId) {
+        ≔ behaviors = self.behaviors.get(swarm_id)
             .map(|b| b.clone())
             .unwrap_or_default();
 
-        if let Some(swarm) = self.swarms.get_mut(swarm_id) {
-            // Compute forces for each member
-            let forces: HashMap<AgentId, Vector> = swarm.members.iter()
+        ⎇ ≔ Some(swarm) = self.swarms.get_mut(swarm_id) {
+            // Compute forces ∀ each member
+            ≔ forces: HashMap<AgentId, Vector> = swarm.members.iter()
                 .map(|agent| {
-                    let force = behaviors.iter()
+                    ≔ force = behaviors.iter()
                         .map(|b| self.compute_force(b, agent, &swarm.state))
-                        .fold(Vector::zero(), |acc, f| acc + f);
+                        .fold(Vector·zero(), |acc, f| acc + f);
                     (agent.clone(), force)
                 })
                 .collect();
 
             // Update velocities and positions
-            for (agent, force) in forces {
-                if let Some(vel) = swarm.state.velocities.get_mut(&agent) {
+            ∀ (agent, force) ∈ forces {
+                ⎇ ≔ Some(vel) = swarm.state.velocities.get_mut(&agent) {
                     *vel = (*vel + force).clamp_magnitude(swarm.config.max_velocity);
                 }
-                if let Some(pos) = swarm.state.positions.get_mut(&agent) {
-                    if let Some(vel) = swarm.state.velocities.get(&agent) {
+                ⎇ ≔ Some(pos) = swarm.state.positions.get_mut(&agent) {
+                    ⎇ ≔ Some(vel) = swarm.state.velocities.get(&agent) {
                         *pos = *pos + *vel;
                     }
                 }
@@ -676,64 +676,64 @@ impl SwarmCoordinator {
         }
     }
 
-    fn compute_force(&self, behavior: &Behavior, agent: &AgentId, state: &SwarmState) -> Vector {
-        let pos = state.positions.get(agent).cloned().unwrap_or(Vector::zero());
+    λ compute_force(&self, behavior: &Behavior, agent: &AgentId, state: &SwarmState) -> Vector {
+        ≔ pos = state.positions.get(agent).cloned().unwrap_or(Vector·zero());
 
-        match behavior {
-            Behavior::Separation { distance, weight } => {
-                let mut force = Vector::zero();
-                for (other, other_pos) in &state.positions {
-                    if other != agent {
-                        let diff = pos - *other_pos;
-                        let dist = diff.magnitude();
-                        if dist < *distance && dist > 0.0 {
+        ⌥ behavior {
+            Behavior·Separation { distance, weight } => {
+                ≔ Δ force = Vector·zero();
+                ∀ (other, other_pos) ∈ &state.positions {
+                    ⎇ other != agent {
+                        ≔ diff = pos - *other_pos;
+                        ≔ dist = diff.magnitude();
+                        ⎇ dist < *distance && dist > 0.0 {
                             force = force + diff.normalize() * (1.0 / dist);
                         }
                     }
                 }
                 force * *weight
             }
-            Behavior::Alignment { weight } => {
-                if state.velocities.is_empty() {
-                    return Vector::zero();
+            Behavior·Alignment { weight } => {
+                ⎇ state.velocities.is_empty() {
+                    ⤺ Vector·zero();
                 }
-                let avg_vel = state.velocities.values()
-                    .fold(Vector::zero(), |acc, v| acc + *v)
+                ≔ avg_vel = state.velocities.values()
+                    .fold(Vector·zero(), |acc, v| acc + *v)
                     * (1.0 / state.velocities.len() as f32);
                 avg_vel * *weight
             }
-            Behavior::Cohesion { weight } => {
-                if state.positions.is_empty() {
-                    return Vector::zero();
+            Behavior·Cohesion { weight } => {
+                ⎇ state.positions.is_empty() {
+                    ⤺ Vector·zero();
                 }
-                let center = state.positions.values()
-                    .fold(Vector::zero(), |acc, p| acc + *p)
+                ≔ center = state.positions.values()
+                    .fold(Vector·zero(), |acc, p| acc + *p)
                     * (1.0 / state.positions.len() as f32);
                 (center - pos) * *weight
             }
-            Behavior::GoalSeeking { goal, weight } => {
+            Behavior·GoalSeeking { goal, weight } => {
                 (*goal - pos).normalize() * *weight
             }
-            _ => Vector::zero(),
+            _ => Vector·zero(),
         }
     }
 }
 
-impl Clone for Behavior {
-    fn clone(&self) -> Self {
-        match self {
-            Behavior::Separation { distance, weight } => Behavior::Separation { distance: *distance, weight: *weight },
-            Behavior::Alignment { weight } => Behavior::Alignment { weight: *weight },
-            Behavior::Cohesion { weight } => Behavior::Cohesion { weight: *weight },
-            Behavior::GoalSeeking { goal, weight } => Behavior::GoalSeeking { goal: goal.clone(), weight: *weight },
-            Behavior::Avoidance { obstacles, weight } => Behavior::Avoidance { obstacles: obstacles.clone(), weight: *weight },
-            Behavior::Gradient { weight } => Behavior::Gradient { weight: *weight },
+⊢ Clone ∀ Behavior {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            Behavior·Separation { distance, weight } => Behavior·Separation { distance: *distance, weight: *weight },
+            Behavior·Alignment { weight } => Behavior·Alignment { weight: *weight },
+            Behavior·Cohesion { weight } => Behavior·Cohesion { weight: *weight },
+            Behavior·GoalSeeking { goal, weight } => Behavior·GoalSeeking { goal: goal.clone(), weight: *weight },
+            Behavior·Avoidance { obstacles, weight } => Behavior·Avoidance { obstacles: obstacles.clone(), weight: *weight },
+            Behavior·Gradient { weight } => Behavior·Gradient { weight: *weight },
         }
     }
 }
 
-impl Clone for Obstacle {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ Obstacle {
+    λ clone(&self) -> Self {
         Self { position: self.position.clone(), radius: self.radius }
     }
 }
@@ -742,76 +742,76 @@ impl Clone for Obstacle {
 // Consensus Engine
 // ============================================================================
 
-pub struct ConsensusConfig {
-    pub quorum: f32,
-    pub threshold: f32,
-    pub allow_blocks: bool,
-    pub default_deadline: Duration,
+☉ Σ ConsensusConfig {
+    ☉ quorum: f32,
+    ☉ threshold: f32,
+    ☉ allow_blocks: bool,
+    ☉ default_deadline: Duration,
 }
 
-impl Default for ConsensusConfig {
-    fn default() -> Self {
+⊢ Default ∀ ConsensusConfig {
+    λ default() -> Self {
         Self {
             quorum: 0.5,
             threshold: 0.67,
             allow_blocks: true,
-            default_deadline: Duration::hours(24),
+            default_deadline: Duration·hours(24),
         }
     }
 }
 
-pub struct ConsensusEngine {
+☉ Σ ConsensusEngine {
     proposals: HashMap<ProposalId, ProposalState>,
     config: ConsensusConfig,
 }
 
-impl ConsensusEngine {
-    pub fn new(config: ConsensusConfig) -> Self {
+⊢ ConsensusEngine {
+    ☉ λ new(config: ConsensusConfig) -> Self {
         Self {
-            proposals: HashMap::new(),
+            proposals: HashMap·new(),
             config,
         }
     }
 
-    pub fn propose(&mut self, proposer: AgentId, content: Value, description: String) -> ProposalId {
-        let id = ProposalId::new();
+    ☉ λ propose(&Δ self, proposer: AgentId, content: Value, description: String) -> ProposalId {
+        ≔ id = ProposalId·new();
 
-        let proposal = Proposal {
+        ≔ proposal = Proposal {
             id: id.clone(),
             proposer,
             content,
             description,
-            deadline: Timestamp::now() + self.config.default_deadline,
+            deadline: Timestamp·now() + self.config.default_deadline,
         };
 
         self.proposals.insert(id.clone(), ProposalState {
             proposal,
-            votes: HashMap::new(),
-            status: ProposalStatus::Open,
+            votes: HashMap·new(),
+            status: ProposalStatus·Open,
         });
 
         id
     }
 
-    pub fn vote(
-        &mut self,
+    ☉ λ vote(
+        &Δ self,
         proposal_id: ProposalId,
         voter: AgentId,
         value: VoteValue,
         rationale: Option<String>,
     ) -> Result<(), ConsensusError> {
-        let state = self.proposals.get_mut(&proposal_id)
-            .ok_or(ConsensusError::ProposalNotFound)?;
+        ≔ state = self.proposals.get_mut(&proposal_id)
+            .ok_or(ConsensusError·ProposalNotFound)?;
 
-        if !matches!(state.status, ProposalStatus::Open) {
-            return Err(ConsensusError::ProposalClosed);
+        ⎇ !matches!(state.status, ProposalStatus·Open) {
+            ⤺ Err(ConsensusError·ProposalClosed);
         }
 
-        if matches!(value, VoteValue::Block) {
-            if !self.config.allow_blocks {
-                return Err(ConsensusError::BlocksNotAllowed);
+        ⎇ matches!(value, VoteValue·Block) {
+            ⎇ !self.config.allow_blocks {
+                ⤺ Err(ConsensusError·BlocksNotAllowed);
             }
-            state.status = ProposalStatus::Blocked {
+            state.status = ProposalStatus·Blocked {
                 by: voter.clone(),
                 reason: rationale.clone().unwrap_or_default(),
             };
@@ -821,7 +821,7 @@ impl ConsensusEngine {
             voter,
             value,
             rationale,
-            timestamp: Timestamp::now(),
+            timestamp: Timestamp·now(),
         });
 
         self.check_consensus(&proposal_id);
@@ -829,56 +829,56 @@ impl ConsensusEngine {
         Ok(())
     }
 
-    fn check_consensus(&mut self, proposal_id: &ProposalId) {
-        let state = match self.proposals.get_mut(proposal_id) {
+    λ check_consensus(&Δ self, proposal_id: &ProposalId) {
+        ≔ state = ⌥ self.proposals.get_mut(proposal_id) {
             Some(s) => s,
             None => return,
         };
 
-        if !matches!(state.status, ProposalStatus::Open) {
-            return;
+        ⎇ !matches!(state.status, ProposalStatus·Open) {
+            ⤺;
         }
 
-        let total = state.votes.len() as f32;
-        if total == 0.0 {
-            return;
+        ≔ total = state.votes.len() as f32;
+        ⎇ total == 0.0 {
+            ⤺;
         }
 
-        let approvals = state.votes.values()
-            .filter(|v| matches!(v.value, VoteValue::Approve))
+        ≔ approvals = state.votes.values()
+            .filter(|v| matches!(v.value, VoteValue·Approve))
             .count() as f32;
-        let rejections = state.votes.values()
-            .filter(|v| matches!(v.value, VoteValue::Reject))
+        ≔ rejections = state.votes.values()
+            .filter(|v| matches!(v.value, VoteValue·Reject))
             .count() as f32;
 
-        let approval_rate = approvals / total;
-        let rejection_rate = rejections / total;
+        ≔ approval_rate = approvals / total;
+        ≔ rejection_rate = rejections / total;
 
-        if approval_rate >= self.config.threshold {
-            state.status = ProposalStatus::Achieved;
-        } else if rejection_rate > (1.0 - self.config.threshold) {
-            state.status = ProposalStatus::Rejected;
+        ⎇ approval_rate >= self.config.threshold {
+            state.status = ProposalStatus·Achieved;
+        } ⎉ ⎇ rejection_rate > (1.0 - self.config.threshold) {
+            state.status = ProposalStatus·Rejected;
         }
     }
 
-    pub fn result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
+    ☉ λ result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
         self.proposals.get(proposal_id).map(|state| {
-            let total = state.votes.len() as f32;
-            let approvals = state.votes.values()
-                .filter(|v| matches!(v.value, VoteValue::Approve))
+            ≔ total = state.votes.len() as f32;
+            ≔ approvals = state.votes.values()
+                .filter(|v| matches!(v.value, VoteValue·Approve))
                 .count() as f32;
 
             ConsensusResult {
                 proposal: state.proposal.clone(),
                 status: state.status.clone(),
                 votes: state.votes.clone(),
-                approval_rate: if total > 0.0 { approvals / total } else { 0.0 },
+                approval_rate: ⎇ total > 0.0 { approvals / total } ⎉ { 0.0 },
             }
         })
     }
 }
 
-pub enum ConsensusError {
+☉ ᛈ ConsensusError {
     ProposalNotFound,
     ProposalClosed,
     BlocksNotAllowed,
@@ -888,24 +888,24 @@ pub enum ConsensusError {
 // Message Queue
 // ============================================================================
 
-pub struct MessageQueue {
+☉ Σ MessageQueue {
     queues: HashMap<AgentId, VecDeque<Message>>,
 }
 
-impl MessageQueue {
-    pub fn new() -> Self {
+⊢ MessageQueue {
+    ☉ λ new() -> Self {
         Self {
-            queues: HashMap::new(),
+            queues: HashMap·new(),
         }
     }
 
-    pub fn enqueue(&mut self, recipient: AgentId, message: Message) {
+    ☉ λ enqueue(&Δ self, recipient: AgentId, message: Message) {
         self.queues.entry(recipient)
             .or_default()
             .push_back(message);
     }
 
-    pub fn dequeue(&mut self, agent: &AgentId) -> Vec<Message> {
+    ☉ λ dequeue(&Δ self, agent: &AgentId) -> Vec<Message> {
         self.queues.get_mut(agent)
             .map(|q| q.drain(..).collect())
             .unwrap_or_default()
@@ -916,7 +916,7 @@ impl MessageQueue {
 // Errors
 // ============================================================================
 
-pub enum CommuneError {
+☉ ᛈ CommuneError {
     SenderNotRegistered,
     RecipientNotFound,
     ChannelNotFound,
@@ -928,8 +928,8 @@ pub enum CommuneError {
 }
 
 // Clone implementations
-impl Clone for Message {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ Message {
+    λ clone(&self) -> Self {
         Self {
             id: MessageId { bytes: self.id.bytes },
             header: self.header.clone(),
@@ -939,8 +939,8 @@ impl Clone for Message {
     }
 }
 
-impl Clone for MessageHeader {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ MessageHeader {
+    λ clone(&self) -> Self {
         Self {
             from: AgentId { bytes: self.from.bytes },
             to: self.to.clone(),
@@ -957,50 +957,50 @@ impl Clone for MessageHeader {
     }
 }
 
-impl Clone for Recipient {
-    fn clone(&self) -> Self {
-        match self {
-            Recipient::Agent(id) => Recipient::Agent(AgentId { bytes: id.bytes }),
-            Recipient::Agents(ids) => Recipient::Agents(ids.iter().map(|id| AgentId { bytes: id.bytes }).collect()),
-            Recipient::Channel(id) => Recipient::Channel(ChannelId { name: id.name.clone() }),
-            Recipient::Broadcast => Recipient::Broadcast,
-            Recipient::Swarm(id) => Recipient::Swarm(SwarmId { bytes: id.bytes }),
+⊢ Clone ∀ Recipient {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            Recipient·Agent(id) => Recipient·Agent(AgentId { bytes: id.bytes }),
+            Recipient·Agents(ids) => Recipient·Agents(ids.iter().map(|id| AgentId { bytes: id.bytes }).collect()),
+            Recipient·Channel(id) => Recipient·Channel(ChannelId { name: id.name.clone() }),
+            Recipient·Broadcast => Recipient·Broadcast,
+            Recipient·Swarm(id) => Recipient·Swarm(SwarmId { bytes: id.bytes }),
         }
     }
 }
 
-impl Clone for Intent {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ Intent {
+    λ clone(&self) -> Self {
         // Would implement full clone
-        Intent::Ping
+        Intent·Ping
     }
 }
 
-impl Clone for Payload {
-    fn clone(&self) -> Self {
-        match self {
-            Payload::Data(v) => Payload::Data(Value { inner: v.inner.clone() }),
-            Payload::Binary(b) => Payload::Binary(b.clone()),
-            Payload::Reference(r) => Payload::Reference(r.clone()),
-            Payload::Stream(s) => Payload::Stream(StreamId { bytes: s.bytes }),
-            Payload::Empty => Payload::Empty,
+⊢ Clone ∀ Payload {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            Payload·Data(v) => Payload·Data(Value { inner: v.inner.clone() }),
+            Payload·Binary(b) => Payload·Binary(b.clone()),
+            Payload·Reference(r) => Payload·Reference(r.clone()),
+            Payload·Stream(s) => Payload·Stream(StreamId { bytes: s.bytes }),
+            Payload·Empty => Payload·Empty,
         }
     }
 }
 
-impl Clone for Priority {
-    fn clone(&self) -> Self {
-        match self {
-            Priority::Critical => Priority::Critical,
-            Priority::High => Priority::High,
-            Priority::Normal => Priority::Normal,
-            Priority::Low => Priority::Low,
+⊢ Clone ∀ Priority {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            Priority·Critical => Priority·Critical,
+            Priority·High => Priority·High,
+            Priority·Normal => Priority·Normal,
+            Priority·Low => Priority·Low,
         }
     }
 }
 
-impl Clone for TraceContext {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ TraceContext {
+    λ clone(&self) -> Self {
         Self {
             trace_id: self.trace_id,
             span_id: self.span_id,
@@ -1009,20 +1009,20 @@ impl Clone for TraceContext {
     }
 }
 
-impl Clone for MessageId {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ MessageId {
+    λ clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
-impl Clone for AgentId {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ AgentId {
+    λ clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
-impl Clone for Proposal {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ Proposal {
+    λ clone(&self) -> Self {
         Self {
             id: ProposalId { bytes: self.id.bytes },
             proposer: AgentId { bytes: self.proposer.bytes },
@@ -1033,23 +1033,23 @@ impl Clone for Proposal {
     }
 }
 
-impl Clone for ProposalStatus {
-    fn clone(&self) -> Self {
-        match self {
-            ProposalStatus::Open => ProposalStatus::Open,
-            ProposalStatus::Achieved => ProposalStatus::Achieved,
-            ProposalStatus::Rejected => ProposalStatus::Rejected,
-            ProposalStatus::Blocked { by, reason } => ProposalStatus::Blocked {
+⊢ Clone ∀ ProposalStatus {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            ProposalStatus·Open => ProposalStatus·Open,
+            ProposalStatus·Achieved => ProposalStatus·Achieved,
+            ProposalStatus·Rejected => ProposalStatus·Rejected,
+            ProposalStatus·Blocked { by, reason } => ProposalStatus·Blocked {
                 by: AgentId { bytes: by.bytes },
                 reason: reason.clone(),
             },
-            ProposalStatus::Expired => ProposalStatus::Expired,
+            ProposalStatus·Expired => ProposalStatus·Expired,
         }
     }
 }
 
-impl Clone for Vote {
-    fn clone(&self) -> Self {
+⊢ Clone ∀ Vote {
+    λ clone(&self) -> Self {
         Self {
             voter: AgentId { bytes: self.voter.bytes },
             value: self.value.clone(),
@@ -1059,15 +1059,15 @@ impl Clone for Vote {
     }
 }
 
-impl Clone for VoteValue {
-    fn clone(&self) -> Self {
-        match self {
-            VoteValue::Approve => VoteValue::Approve,
-            VoteValue::Reject => VoteValue::Reject,
-            VoteValue::Abstain => VoteValue::Abstain,
-            VoteValue::Block => VoteValue::Block,
+⊢ Clone ∀ VoteValue {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            VoteValue·Approve => VoteValue·Approve,
+            VoteValue·Reject => VoteValue·Reject,
+            VoteValue·Abstain => VoteValue·Abstain,
+            VoteValue·Block => VoteValue·Block,
         }
     }
 }
 
-fn uuid_v7() -> [u8; 16] { [0u8; 16] }
+λ uuid_v7() -> [u8; 16] { [0u8; 16] }

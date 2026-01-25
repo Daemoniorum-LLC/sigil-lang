@@ -1,4 +1,4 @@
-// WebSocket Client Library for Sigil
+// WebSocket Client Library ∀ Sigil
 // Pure Sigil implementation using socket, TLS, and HTTP layers
 // Implements RFC 6455 WebSocket protocol
 
@@ -37,8 +37,8 @@ const WS_OPCODE_PONG: i64 = 10;
 // Syscall Wrappers
 // ============================================================================
 
-fn syscall1(num: i64, arg1: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall1(num: i64, arg1: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -50,8 +50,8 @@ fn syscall1(num: i64, arg1: i64) -> i64 {
     ret
 }
 
-fn syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -64,8 +64,8 @@ fn syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     ret
 }
 
-fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -79,8 +79,8 @@ fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ret
 }
 
-fn syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
@@ -101,11 +101,11 @@ fn syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg
 // Memory Allocation
 // ============================================================================
 
-fn alloc_mem(size: i64) -> i64 {
+λ alloc_mem(size: i64) -> i64 {
     syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
 }
 
-fn free_mem(ptr: i64, size: i64) {
+λ free_mem(ptr: i64, size: i64) {
     syscall2(SYS_MUNMAP, ptr, size);
 }
 
@@ -113,10 +113,10 @@ fn free_mem(ptr: i64, size: i64) {
 // String/Memory Utilities
 // ============================================================================
 
-fn mem_copy(dst: i64, src: i64, len: i64) {
-    let i: i64 = 0;
-    while i < len {
-        let byte: i64 = 0;
+λ mem_copy(dst: i64, src: i64, len: i64) {
+    ≔ i: i64 = 0;
+    ⟳ i < len {
+        ≔ byte: i64 = 0;
         unsafe {
             asm!("movzx rax, byte ptr [rdi]", in("rdi") src + i, out("rax") byte, options(nostack, readonly));
             asm!("mov byte ptr [rdi], al", in("rdi") dst + i, in("al") byte as i8, options(nostack));
@@ -125,9 +125,9 @@ fn mem_copy(dst: i64, src: i64, len: i64) {
     }
 }
 
-fn mem_set(dst: i64, val: i8, len: i64) {
-    let i: i64 = 0;
-    while i < len {
+λ mem_set(dst: i64, val: i8, len: i64) {
+    ≔ i: i64 = 0;
+    ⟳ i < len {
         unsafe {
             asm!("mov byte ptr [rdi], al", in("rdi") dst + i, in("al") val, options(nostack));
         }
@@ -135,21 +135,21 @@ fn mem_set(dst: i64, val: i8, len: i64) {
     }
 }
 
-fn str_len(s: i64) -> i64 {
-    let len: i64 = 0;
-    let byte: i64 = 1;
-    while byte != 0 {
+λ str_len(s: i64) -> i64 {
+    ≔ len: i64 = 0;
+    ≔ byte: i64 = 1;
+    ⟳ byte != 0 {
         unsafe {
             asm!("movzx rax, byte ptr [rdi]", in("rdi") s + len, out("rax") byte, options(nostack, readonly));
         }
-        if byte != 0 {
+        ⎇ byte != 0 {
             len = len + 1;
         }
     }
     len
 }
 
-fn get_random_bytes(buf: i64, len: i64) -> i64 {
+λ get_random_bytes(buf: i64, len: i64) -> i64 {
     syscall3(SYS_GETRANDOM, buf, len, 0)
 }
 
@@ -157,42 +157,42 @@ fn get_random_bytes(buf: i64, len: i64) -> i64 {
 // Output Utilities
 // ============================================================================
 
-fn write_stdout(s: i64, len: i64) {
+λ write_stdout(s: i64, len: i64) {
     syscall3(SYS_WRITE, 1, s, len);
 }
 
-fn write_cstr(s: i64) {
+λ write_cstr(s: i64) {
     write_stdout(s, str_len(s));
 }
 
-fn write_newline() {
-    let nl = alloc_mem(8);
+λ write_newline() {
+    ≔ nl = alloc_mem(8);
     unsafe { asm!("mov byte ptr [rdi], 10", in("rdi") nl, options(nostack)); }
     write_stdout(nl, 1);
     free_mem(nl, 8);
 }
 
-fn write_int(n: i64) {
-    let buf = alloc_mem(32);
-    let num = n;
-    let neg = 0;
-    if num < 0 {
+λ write_int(n: i64) {
+    ≔ buf = alloc_mem(32);
+    ≔ num = n;
+    ≔ neg = 0;
+    ⎇ num < 0 {
         neg = 1;
         num = 0 - num;
     }
-    let idx: i64 = 30;
-    if num == 0 {
+    ≔ idx: i64 = 30;
+    ⎇ num == 0 {
         unsafe { asm!("mov byte ptr [rdi], 0x30", in("rdi") buf + idx, options(nostack)); }
         idx = idx - 1;
-    } else {
-        while num > 0 {
-            let digit = (num % 10) + 48;
+    } ⎉ {
+        ⟳ num > 0 {
+            ≔ digit = (num % 10) + 48;
             unsafe { asm!("mov byte ptr [rdi], al", in("rdi") buf + idx, in("al") digit as i8, options(nostack)); }
             idx = idx - 1;
             num = num / 10;
         }
     }
-    if neg == 1 {
+    ⎇ neg == 1 {
         unsafe { asm!("mov byte ptr [rdi], 0x2d", in("rdi") buf + idx, options(nostack)); }
         idx = idx - 1;
     }
@@ -204,61 +204,61 @@ fn write_int(n: i64) {
 // Socket Operations
 // ============================================================================
 
-fn socket_tcp_create() -> i64 {
+λ socket_tcp_create() -> i64 {
     syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0)
 }
 
-fn socket_close(fd: i64) {
+λ socket_close(fd: i64) {
     syscall1(SYS_CLOSE, fd);
 }
 
-fn socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
-    let pollfd = alloc_mem(16);
-    if pollfd < 0 { return -1; }
+λ socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
+    ≔ pollfd = alloc_mem(16);
+    ⎇ pollfd < 0 { ⤺ -1; }
     unsafe {
         asm!("mov dword ptr [rdi], esi", in("rdi") pollfd, in("esi") fd as i32, options(nostack));
         asm!("mov word ptr [rdi], 1", in("rdi") pollfd + 4, options(nostack));
         asm!("mov word ptr [rdi], 0", in("rdi") pollfd + 6, options(nostack));
     }
-    let result = syscall3(SYS_POLL, pollfd, 1, timeout_ms);
+    ≔ result = syscall3(SYS_POLL, pollfd, 1, timeout_ms);
     free_mem(pollfd, 16);
     result
 }
 
-fn socket_connect_ipv4(fd: i64, ip_packed: i64, port: i64) -> i64 {
-    let addr_buf = alloc_mem(32);
-    if addr_buf < 0 { return -1; }
+λ socket_connect_ipv4(fd: i64, ip_packed: i64, port: i64) -> i64 {
+    ≔ addr_buf = alloc_mem(32);
+    ⎇ addr_buf < 0 { ⤺ -1; }
     mem_set(addr_buf, 0, 16);
     unsafe {
         asm!("mov word ptr [rdi], 2", in("rdi") addr_buf, options(nostack));
     }
-    let port_hi = (port >> 8) & 255;
-    let port_lo = port & 255;
+    ≔ port_hi = (port >> 8) & 255;
+    ≔ port_lo = port & 255;
     unsafe {
         asm!("mov byte ptr [rdi], al", in("rdi") addr_buf + 2, in("al") port_hi as i8, options(nostack));
         asm!("mov byte ptr [rdi], al", in("rdi") addr_buf + 3, in("al") port_lo as i8, options(nostack));
         asm!("mov dword ptr [rdi], eax", in("rdi") addr_buf + 4, in("eax") ip_packed as i32, options(nostack));
     }
-    let result = syscall3(SYS_CONNECT, fd, addr_buf, 16);
+    ≔ result = syscall3(SYS_CONNECT, fd, addr_buf, 16);
     free_mem(addr_buf, 32);
     result
 }
 
 // ============================================================================
-// Base64 Encoding (for WebSocket key)
+// Base64 Encoding (∀ WebSocket key)
 // ============================================================================
 
-// Simplified base64 - just use a fixed key for WebSocket handshake
-// In production, would use proper random key, but for test we use fixed
-fn generate_fixed_ws_key(key_buf: i64) -> i64 {
+// Simplified base64 - just invoke a fixed key ∀ WebSocket handshake
+// In production, would invoke proper random key, but ∀ test we invoke fixed
+λ generate_fixed_ws_key(key_buf: i64) -> i64 {
     // Fixed 24-char base64 key: "dGhlIHNhbXBsZSBub25jZQ=="
     // This is base64("the sample nonce")
-    let key: [i8; 24] = [
+    ≔ key: [i8; 24] = [
         100, 71, 104, 108, 73, 72, 78, 104, 98, 88, 66, 115,  // dGhlIHNhbXBs
         90, 83, 66, 117, 98, 50, 53, 106, 90, 81, 61, 61       // ZSBub25jZQ==
     ];
-    let i: i64 = 0;
-    while i < 24 {
+    ≔ i: i64 = 0;
+    ⟳ i < 24 {
         unsafe {
             asm!("mov byte ptr [rdi], al", in("rdi") key_buf + i, in("al") key[i as usize], options(nostack));
         }
@@ -271,13 +271,13 @@ fn generate_fixed_ws_key(key_buf: i64) -> i64 {
 // WebSocket Handshake
 // ============================================================================
 
-fn generate_ws_key(key_buf: i64) -> i64 {
-    // Use fixed WebSocket key for testing
-    // In production, would use random key + base64 encoding
+λ generate_ws_key(key_buf: i64) -> i64 {
+    // Use fixed WebSocket key ∀ testing
+    // In production, would invoke random key + base64 encoding
     generate_fixed_ws_key(key_buf)
 }
 
-fn build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i64, key_len: i64) -> i64 {
+λ build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i64, key_len: i64) -> i64 {
     // Build WebSocket upgrade request
     // GET /path HTTP/1.1\r\n
     // Host: host\r\n
@@ -287,11 +287,11 @@ fn build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i
     // Sec-WebSocket-Version: 13\r\n
     // \r\n
 
-    let total_len: i64 = 200 + host_len + path_len + key_len;
-    let req = alloc_mem(total_len);
-    if req < 0 { return 0; }
+    ≔ total_len: i64 = 200 + host_len + path_len + key_len;
+    ≔ req = alloc_mem(total_len);
+    ⎇ req < 0 { ⤺ 0; }
 
-    let pos: i64 = 0;
+    ≔ pos: i64 = 0;
 
     // "GET "
     unsafe {
@@ -307,18 +307,18 @@ fn build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i
     pos = pos + path_len;
 
     // " HTTP/1.1\r\n"
-    let http_ver: [i8; 11] = [32, 72, 84, 84, 80, 47, 49, 46, 49, 13, 10];
-    let i: i64 = 0;
-    while i < 11 {
+    ≔ http_ver: [i8; 11] = [32, 72, 84, 84, 80, 47, 49, 46, 49, 13, 10];
+    ≔ i: i64 = 0;
+    ⟳ i < 11 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") http_ver[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 11;
 
     // "Host: "
-    let host_hdr: [i8; 6] = [72, 111, 115, 116, 58, 32];
+    ≔ host_hdr: [i8; 6] = [72, 111, 115, 116, 58, 32];
     i = 0;
-    while i < 6 {
+    ⟳ i < 6 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") host_hdr[i as usize], options(nostack)); }
         i = i + 1;
     }
@@ -332,27 +332,27 @@ fn build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i
     pos = pos + 2;
 
     // "Upgrade: websocket\r\n"
-    let upgrade: [i8; 20] = [85, 112, 103, 114, 97, 100, 101, 58, 32, 119, 101, 98, 115, 111, 99, 107, 101, 116, 13, 10];
+    ≔ upgrade: [i8; 20] = [85, 112, 103, 114, 97, 100, 101, 58, 32, 119, 101, 98, 115, 111, 99, 107, 101, 116, 13, 10];
     i = 0;
-    while i < 20 {
+    ⟳ i < 20 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") upgrade[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 20;
 
     // "Connection: Upgrade\r\n"
-    let conn: [i8; 21] = [67, 111, 110, 110, 101, 99, 116, 105, 111, 110, 58, 32, 85, 112, 103, 114, 97, 100, 101, 13, 10];
+    ≔ conn: [i8; 21] = [67, 111, 110, 110, 101, 99, 116, 105, 111, 110, 58, 32, 85, 112, 103, 114, 97, 100, 101, 13, 10];
     i = 0;
-    while i < 21 {
+    ⟳ i < 21 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") conn[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 21;
 
     // "Sec-WebSocket-Key: "
-    let ws_key_hdr: [i8; 19] = [83, 101, 99, 45, 87, 101, 98, 83, 111, 99, 107, 101, 116, 45, 75, 101, 121, 58, 32];
+    ≔ ws_key_hdr: [i8; 19] = [83, 101, 99, 45, 87, 101, 98, 83, 111, 99, 107, 101, 116, 45, 75, 101, 121, 58, 32];
     i = 0;
-    while i < 19 {
+    ⟳ i < 19 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") ws_key_hdr[i as usize], options(nostack)); }
         i = i + 1;
     }
@@ -366,9 +366,9 @@ fn build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i
     pos = pos + 2;
 
     // "Sec-WebSocket-Version: 13\r\n"
-    let ws_ver: [i8; 27] = [83, 101, 99, 45, 87, 101, 98, 83, 111, 99, 107, 101, 116, 45, 86, 101, 114, 115, 105, 111, 110, 58, 32, 49, 51, 13, 10];
+    ≔ ws_ver: [i8; 27] = [83, 101, 99, 45, 87, 101, 98, 83, 111, 99, 107, 101, 116, 45, 86, 101, 114, 115, 105, 111, 110, 58, 32, 49, 51, 13, 10];
     i = 0;
-    while i < 27 {
+    ⟳ i < 27 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") ws_ver[i as usize], options(nostack)); }
         i = i + 1;
     }
@@ -385,14 +385,14 @@ fn build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i
     req
 }
 
-fn check_ws_response(data: i64, data_len: i64) -> i64 {
-    // Check for "HTTP/1.1 101 " (switching protocols)
-    if data_len < 12 { return 0; }
+λ check_ws_response(data: i64, data_len: i64) -> i64 {
+    // Check ∀ "HTTP/1.1 101 " (switching protocols)
+    ⎇ data_len < 12 { ⤺ 0; }
 
-    let b0: i64 = 0;
-    let b9: i64 = 0;
-    let b10: i64 = 0;
-    let b11: i64 = 0;
+    ≔ b0: i64 = 0;
+    ≔ b9: i64 = 0;
+    ≔ b10: i64 = 0;
+    ≔ b11: i64 = 0;
     unsafe {
         asm!("movzx rax, byte ptr [rdi]", in("rdi") data, out("rax") b0, options(nostack, readonly));
         asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 9, out("rax") b9, options(nostack, readonly));
@@ -401,8 +401,8 @@ fn check_ws_response(data: i64, data_len: i64) -> i64 {
     }
 
     // Check "HTTP" start and "101" status
-    if b0 == 72 && b9 == 49 && b10 == 48 && b11 == 49 {
-        return 1;
+    ⎇ b0 == 72 && b9 == 49 && b10 == 48 && b11 == 49 {
+        ⤺ 1;
     }
     0
 }
@@ -411,14 +411,14 @@ fn check_ws_response(data: i64, data_len: i64) -> i64 {
 // WebSocket Framing
 // ============================================================================
 
-fn ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
+λ ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     // Create a masked text frame
     // Byte 0: FIN=1, opcode=1 (text) = 0x81
     // Byte 1: MASK=1, length
     // Bytes 2-5: masking key
     // Bytes 6+: masked payload
 
-    let pos: i64 = 0;
+    ≔ pos: i64 = 0;
 
     // FIN + opcode
     unsafe {
@@ -427,20 +427,20 @@ fn ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     pos = pos + 1;
 
     // Length (with MASK bit set)
-    if payload_len < 126 {
-        let len_byte = (payload_len | 128) as i8;  // Set MASK bit
+    ⎇ payload_len < 126 {
+        ≔ len_byte = (payload_len | 128) as i8;  // Set MASK bit
         unsafe {
             asm!("mov byte ptr [rdi], al", in("rdi") output + pos, in("al") len_byte, options(nostack));
         }
         pos = pos + 1;
-    } else {
+    } ⎉ {
         // Extended length (16-bit)
         unsafe {
             asm!("mov byte ptr [rdi], 0xfe", in("rdi") output + pos, options(nostack));  // 126 | 128
         }
         pos = pos + 1;
-        let len_hi = ((payload_len >> 8) & 255) as i8;
-        let len_lo = (payload_len & 255) as i8;
+        ≔ len_hi = ((payload_len >> 8) & 255) as i8;
+        ≔ len_lo = (payload_len & 255) as i8;
         unsafe {
             asm!("mov byte ptr [rdi], al", in("rdi") output + pos, in("al") len_hi, options(nostack));
             asm!("mov byte ptr [rdi], al", in("rdi") output + pos + 1, in("al") len_lo, options(nostack));
@@ -449,14 +449,14 @@ fn ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     }
 
     // Generate masking key
-    let mask = alloc_mem(4);
+    ≔ mask = alloc_mem(4);
     get_random_bytes(mask, 4);
 
     // Copy masking key to output
-    let m0: i64 = 0;
-    let m1: i64 = 0;
-    let m2: i64 = 0;
-    let m3: i64 = 0;
+    ≔ m0: i64 = 0;
+    ≔ m1: i64 = 0;
+    ≔ m2: i64 = 0;
+    ≔ m3: i64 = 0;
     unsafe {
         asm!("movzx rax, byte ptr [rdi]", in("rdi") mask, out("rax") m0, options(nostack, readonly));
         asm!("movzx rax, byte ptr [rdi]", in("rdi") mask + 1, out("rax") m1, options(nostack, readonly));
@@ -470,18 +470,18 @@ fn ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     pos = pos + 4;
 
     // Mask and copy payload
-    let i: i64 = 0;
-    while i < payload_len {
-        let byte: i64 = 0;
+    ≔ i: i64 = 0;
+    ⟳ i < payload_len {
+        ≔ byte: i64 = 0;
         unsafe {
             asm!("movzx rax, byte ptr [rdi]", in("rdi") payload + i, out("rax") byte, options(nostack, readonly));
         }
-        let mask_idx = i % 4;
-        let mask_byte = m0;
-        if mask_idx == 1 { mask_byte = m1; }
-        else if mask_idx == 2 { mask_byte = m2; }
-        else if mask_idx == 3 { mask_byte = m3; }
-        let masked = byte ^ mask_byte;
+        ≔ mask_idx = i % 4;
+        ≔ mask_byte = m0;
+        ⎇ mask_idx == 1 { mask_byte = m1; }
+        ⎉ ⎇ mask_idx == 2 { mask_byte = m2; }
+        ⎉ ⎇ mask_idx == 3 { mask_byte = m3; }
+        ≔ masked = byte ^ mask_byte;
         unsafe {
             asm!("mov byte ptr [rdi], al", in("rdi") output + pos + i, in("al") masked as i8, options(nostack));
         }
@@ -492,30 +492,30 @@ fn ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     pos + payload_len
 }
 
-fn ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out: i64) -> i64 {
+λ ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out: i64) -> i64 {
     // Parse incoming WebSocket frame
     // Returns opcode, writes payload pointer and length
 
-    if data_len < 2 { return -1; }
+    ⎇ data_len < 2 { ⤺ -1; }
 
-    let b0: i64 = 0;
-    let b1: i64 = 0;
+    ≔ b0: i64 = 0;
+    ≔ b1: i64 = 0;
     unsafe {
         asm!("movzx rax, byte ptr [rdi]", in("rdi") data, out("rax") b0, options(nostack, readonly));
         asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 1, out("rax") b1, options(nostack, readonly));
     }
 
-    let opcode = b0 & 15;
-    let masked = (b1 >> 7) & 1;
-    let payload_len = b1 & 127;
+    ≔ opcode = b0 & 15;
+    ≔ masked = (b1 >> 7) & 1;
+    ≔ payload_len = b1 & 127;
 
-    let header_len: i64 = 2;
-    let actual_len = payload_len;
+    ≔ header_len: i64 = 2;
+    ≔ actual_len = payload_len;
 
-    if payload_len == 126 {
-        if data_len < 4 { return -1; }
-        let hi: i64 = 0;
-        let lo: i64 = 0;
+    ⎇ payload_len == 126 {
+        ⎇ data_len < 4 { ⤺ -1; }
+        ≔ hi: i64 = 0;
+        ≔ lo: i64 = 0;
         unsafe {
             asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 2, out("rax") hi, options(nostack, readonly));
             asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 3, out("rax") lo, options(nostack, readonly));
@@ -525,7 +525,7 @@ fn ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out: i
     }
 
     // If masked, skip mask key (server to client usually not masked)
-    if masked == 1 {
+    ⎇ masked == 1 {
         header_len = header_len + 4;
     }
 
@@ -542,12 +542,12 @@ fn ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out: i
 // Tests
 // ============================================================================
 
-fn test_fixed_ws_key() -> i64 {
+λ test_fixed_ws_key() -> i64 {
     // "Test 1: Fixed WS key... "
-    let msg = alloc_mem(32);
-    let chars: [i8; 23] = [84, 101, 115, 116, 32, 49, 58, 32, 70, 105, 120, 101, 100, 32, 87, 83, 32, 107, 101, 121, 46, 46, 46];
-    let i: i64 = 0;
-    while i < 23 {
+    ≔ msg = alloc_mem(32);
+    ≔ chars: [i8; 23] = [84, 101, 115, 116, 32, 49, 58, 32, 70, 105, 120, 101, 100, 32, 87, 83, 32, 107, 101, 121, 46, 46, 46];
+    ≔ i: i64 = 0;
+    ⟳ i < 23 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
         i = i + 1;
     }
@@ -557,27 +557,27 @@ fn test_fixed_ws_key() -> i64 {
     free_mem(msg, 32);
 
     // Test generate_fixed_ws_key produces 24 char base64 key
-    let key = alloc_mem(32);
-    let key_len = generate_fixed_ws_key(key);
+    ≔ key = alloc_mem(32);
+    ≔ key_len = generate_fixed_ws_key(key);
 
     // Expected: 24 chars, starts with 'd' (100), ends with '=' (61)
-    let success: i64 = 0;
-    if key_len == 24 {
-        let c0: i64 = 0;
-        let c23: i64 = 0;
+    ≔ success: i64 = 0;
+    ⎇ key_len == 24 {
+        ≔ c0: i64 = 0;
+        ≔ c23: i64 = 0;
         unsafe {
             asm!("movzx rax, byte ptr [rdi]", in("rdi") key, out("rax") c0, options(nostack, readonly));
             asm!("movzx rax, byte ptr [rdi]", in("rdi") key + 23, out("rax") c23, options(nostack, readonly));
         }
-        if c0 == 100 && c23 == 61 {  // d and =
+        ⎇ c0 == 100 && c23 == 61 {  // d and =
             success = 1;
         }
     }
 
     free_mem(key, 32);
 
-    if success == 1 {
-        let pass_msg = alloc_mem(8);
+    ⎇ success == 1 {
+        ≔ pass_msg = alloc_mem(8);
         unsafe {
             asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
             asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
@@ -587,9 +587,9 @@ fn test_fixed_ws_key() -> i64 {
         }
         write_stdout(pass_msg, 5);
         free_mem(pass_msg, 8);
-        return 1;
-    } else {
-        let fail_msg = alloc_mem(8);
+        ⤺ 1;
+    } ⎉ {
+        ≔ fail_msg = alloc_mem(8);
         unsafe {
             asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
             asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
@@ -599,16 +599,16 @@ fn test_fixed_ws_key() -> i64 {
         }
         write_stdout(fail_msg, 5);
         free_mem(fail_msg, 8);
-        return 0;
+        ⤺ 0;
     }
 }
 
-fn test_ws_key_generation() -> i64 {
+λ test_ws_key_generation() -> i64 {
     // "Test 2: WS key generation... "
-    let msg = alloc_mem(32);
-    let chars: [i8; 29] = [84, 101, 115, 116, 32, 50, 58, 32, 87, 83, 32, 107, 101, 121, 32, 103, 101, 110, 101, 114, 97, 116, 105, 111, 110, 46, 46, 46, 32];
-    let i: i64 = 0;
-    while i < 29 {
+    ≔ msg = alloc_mem(32);
+    ≔ chars: [i8; 29] = [84, 101, 115, 116, 32, 50, 58, 32, 87, 83, 32, 107, 101, 121, 32, 103, 101, 110, 101, 114, 97, 116, 105, 111, 110, 46, 46, 46, 32];
+    ≔ i: i64 = 0;
+    ⟳ i < 29 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
         i = i + 1;
     }
@@ -616,19 +616,19 @@ fn test_ws_key_generation() -> i64 {
     write_cstr(msg);
     free_mem(msg, 32);
 
-    let key = alloc_mem(32);
-    let key_len = generate_ws_key(key);
+    ≔ key = alloc_mem(32);
+    ≔ key_len = generate_ws_key(key);
 
     // Key should be 24 chars (16 bytes base64 encoded)
-    let success: i64 = 0;
-    if key_len == 24 {
+    ≔ success: i64 = 0;
+    ⎇ key_len == 24 {
         success = 1;
     }
 
     free_mem(key, 32);
 
-    if success == 1 {
-        let pass_msg = alloc_mem(8);
+    ⎇ success == 1 {
+        ≔ pass_msg = alloc_mem(8);
         unsafe {
             asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
             asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
@@ -638,9 +638,9 @@ fn test_ws_key_generation() -> i64 {
         }
         write_stdout(pass_msg, 5);
         free_mem(pass_msg, 8);
-        return 1;
-    } else {
-        let fail_msg = alloc_mem(8);
+        ⤺ 1;
+    } ⎉ {
+        ≔ fail_msg = alloc_mem(8);
         unsafe {
             asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
             asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
@@ -650,16 +650,16 @@ fn test_ws_key_generation() -> i64 {
         }
         write_stdout(fail_msg, 5);
         free_mem(fail_msg, 8);
-        return 0;
+        ⤺ 0;
     }
 }
 
-fn test_ws_framing() -> i64 {
+λ test_ws_framing() -> i64 {
     // "Test 3: WS framing... "
-    let msg = alloc_mem(32);
-    let chars: [i8; 21] = [84, 101, 115, 116, 32, 51, 58, 32, 87, 83, 32, 102, 114, 97, 109, 105, 110, 103, 46, 46, 46];
-    let i: i64 = 0;
-    while i < 21 {
+    ≔ msg = alloc_mem(32);
+    ≔ chars: [i8; 21] = [84, 101, 115, 116, 32, 51, 58, 32, 87, 83, 32, 102, 114, 97, 109, 105, 110, 103, 46, 46, 46];
+    ≔ i: i64 = 0;
+    ⟳ i < 21 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
         i = i + 1;
     }
@@ -669,32 +669,32 @@ fn test_ws_framing() -> i64 {
     free_mem(msg, 32);
 
     // Create a text frame with "Hi"
-    let payload = alloc_mem(8);
+    ≔ payload = alloc_mem(8);
     unsafe {
         asm!("mov byte ptr [rdi], 72", in("rdi") payload, options(nostack));     // H
         asm!("mov byte ptr [rdi], 105", in("rdi") payload + 1, options(nostack)); // i
     }
 
-    let frame = alloc_mem(64);
-    let frame_len = ws_frame_text(payload, 2, frame);
+    ≔ frame = alloc_mem(64);
+    ≔ frame_len = ws_frame_text(payload, 2, frame);
     free_mem(payload, 8);
 
     // Frame should be: 1 (opcode) + 1 (len) + 4 (mask) + 2 (payload) = 8 bytes
-    let success: i64 = 0;
-    if frame_len == 8 {
-        let b0: i64 = 0;
+    ≔ success: i64 = 0;
+    ⎇ frame_len == 8 {
+        ≔ b0: i64 = 0;
         unsafe {
             asm!("movzx rax, byte ptr [rdi]", in("rdi") frame, out("rax") b0, options(nostack, readonly));
         }
-        if b0 == 129 {  // 0x81 = FIN + text opcode
+        ⎇ b0 == 129 {  // 0x81 = FIN + text opcode
             success = 1;
         }
     }
 
     free_mem(frame, 64);
 
-    if success == 1 {
-        let pass_msg = alloc_mem(8);
+    ⎇ success == 1 {
+        ≔ pass_msg = alloc_mem(8);
         unsafe {
             asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
             asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
@@ -704,9 +704,9 @@ fn test_ws_framing() -> i64 {
         }
         write_stdout(pass_msg, 5);
         free_mem(pass_msg, 8);
-        return 1;
-    } else {
-        let fail_msg = alloc_mem(8);
+        ⤺ 1;
+    } ⎉ {
+        ≔ fail_msg = alloc_mem(8);
         unsafe {
             asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
             asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
@@ -716,16 +716,16 @@ fn test_ws_framing() -> i64 {
         }
         write_stdout(fail_msg, 5);
         free_mem(fail_msg, 8);
-        return 0;
+        ⤺ 0;
     }
 }
 
-fn test_ws_handshake_build() -> i64 {
+λ test_ws_handshake_build() -> i64 {
     // "Test 4: WS handshake... "
-    let msg = alloc_mem(32);
-    let chars: [i8; 23] = [84, 101, 115, 116, 32, 52, 58, 32, 87, 83, 32, 104, 97, 110, 100, 115, 104, 97, 107, 101, 46, 46, 46];
-    let i: i64 = 0;
-    while i < 23 {
+    ≔ msg = alloc_mem(32);
+    ≔ chars: [i8; 23] = [84, 101, 115, 116, 32, 52, 58, 32, 87, 83, 32, 104, 97, 110, 100, 115, 104, 97, 107, 101, 46, 46, 46];
+    ≔ i: i64 = 0;
+    ⟳ i < 23 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
         i = i + 1;
     }
@@ -735,7 +735,7 @@ fn test_ws_handshake_build() -> i64 {
     free_mem(msg, 32);
 
     // Host and path
-    let host = alloc_mem(16);
+    ≔ host = alloc_mem(16);
     // "example.com"
     unsafe {
         asm!("mov byte ptr [rdi], 101", in("rdi") host, options(nostack));      // e
@@ -751,7 +751,7 @@ fn test_ws_handshake_build() -> i64 {
         asm!("mov byte ptr [rdi], 109", in("rdi") host + 10, options(nostack)); // m
     }
 
-    let path = alloc_mem(8);
+    ≔ path = alloc_mem(8);
     // "/ws"
     unsafe {
         asm!("mov byte ptr [rdi], 47", in("rdi") path, options(nostack));      // /
@@ -759,33 +759,33 @@ fn test_ws_handshake_build() -> i64 {
         asm!("mov byte ptr [rdi], 115", in("rdi") path + 2, options(nostack)); // s
     }
 
-    let key = alloc_mem(32);
-    let key_len = generate_ws_key(key);
+    ≔ key = alloc_mem(32);
+    ≔ key_len = generate_ws_key(key);
 
-    let req = build_ws_handshake(host, 11, path, 3, key, key_len);
+    ≔ req = build_ws_handshake(host, 11, path, 3, key, key_len);
     free_mem(key, 32);
     free_mem(path, 8);
     free_mem(host, 16);
 
     // Check request starts with "GET "
-    let success: i64 = 0;
-    if req != 0 {
-        let b0: i64 = 0;
-        let b1: i64 = 0;
-        let b2: i64 = 0;
+    ≔ success: i64 = 0;
+    ⎇ req != 0 {
+        ≔ b0: i64 = 0;
+        ≔ b1: i64 = 0;
+        ≔ b2: i64 = 0;
         unsafe {
             asm!("movzx rax, byte ptr [rdi]", in("rdi") req, out("rax") b0, options(nostack, readonly));
             asm!("movzx rax, byte ptr [rdi]", in("rdi") req + 1, out("rax") b1, options(nostack, readonly));
             asm!("movzx rax, byte ptr [rdi]", in("rdi") req + 2, out("rax") b2, options(nostack, readonly));
         }
-        if b0 == 71 && b1 == 69 && b2 == 84 {  // GET
+        ⎇ b0 == 71 && b1 == 69 && b2 == 84 {  // GET
             success = 1;
         }
         free_mem(req, 300);
     }
 
-    if success == 1 {
-        let pass_msg = alloc_mem(8);
+    ⎇ success == 1 {
+        ≔ pass_msg = alloc_mem(8);
         unsafe {
             asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
             asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
@@ -795,9 +795,9 @@ fn test_ws_handshake_build() -> i64 {
         }
         write_stdout(pass_msg, 5);
         free_mem(pass_msg, 8);
-        return 1;
-    } else {
-        let fail_msg = alloc_mem(8);
+        ⤺ 1;
+    } ⎉ {
+        ≔ fail_msg = alloc_mem(8);
         unsafe {
             asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
             asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
@@ -807,7 +807,7 @@ fn test_ws_handshake_build() -> i64 {
         }
         write_stdout(fail_msg, 5);
         free_mem(fail_msg, 8);
-        return 0;
+        ⤺ 0;
     }
 }
 
@@ -815,21 +815,21 @@ fn test_ws_handshake_build() -> i64 {
 // Main
 // ============================================================================
 
-fn main() -> i64 {
+λ main() -> i64 {
     // Print header
-    let header = alloc_mem(32);
+    ≔ header = alloc_mem(32);
     // "=== WebSocket Tests ===\n"
-    let h_chars: [i8; 24] = [61, 61, 61, 32, 87, 101, 98, 83, 111, 99, 107, 101, 116, 32, 84, 101, 115, 116, 115, 32, 61, 61, 61, 10];
-    let i: i64 = 0;
-    while i < 24 {
+    ≔ h_chars: [i8; 24] = [61, 61, 61, 32, 87, 101, 98, 83, 111, 99, 107, 101, 116, 32, 84, 101, 115, 116, 115, 32, 61, 61, 61, 10];
+    ≔ i: i64 = 0;
+    ⟳ i < 24 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") h_chars[i as usize], options(nostack)); }
         i = i + 1;
     }
     write_stdout(header, 24);
     free_mem(header, 32);
 
-    let passed: i64 = 0;
-    let total: i64 = 4;
+    ≔ passed: i64 = 0;
+    ≔ total: i64 = 4;
 
     passed = passed + test_fixed_ws_key();
     passed = passed + test_ws_key_generation();
@@ -838,7 +838,7 @@ fn main() -> i64 {
 
     // Print results
     write_newline();
-    let result_msg = alloc_mem(16);
+    ≔ result_msg = alloc_mem(16);
     // "Results: "
     unsafe {
         asm!("mov byte ptr [rdi], 82", in("rdi") result_msg, options(nostack));      // R
@@ -858,14 +858,14 @@ fn main() -> i64 {
     write_stdout(result_msg, 1);
     write_int(total);
     // " passed\n"
-    let p_chars: [i8; 8] = [32, 112, 97, 115, 115, 101, 100, 10];
+    ≔ p_chars: [i8; 8] = [32, 112, 97, 115, 115, 101, 100, 10];
     i = 0;
-    while i < 8 {
+    ⟳ i < 8 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") result_msg + i, in("al") p_chars[i as usize], options(nostack)); }
         i = i + 1;
     }
     write_stdout(result_msg, 8);
     free_mem(result_msg, 16);
 
-    if passed == total { 0 } else { 1 }
+    ⎇ passed == total { 0 } ⎉ { 1 }
 }

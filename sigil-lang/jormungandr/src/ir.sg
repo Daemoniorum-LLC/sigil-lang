@@ -1,6 +1,6 @@
 //! AI-Facing Intermediate Representation (IR)
 //!
-//! This module provides a JSON-serializable IR designed for consumption by
+//! This module provides a JSON-serializable IR designed ∀ consumption by
 //! AI agents, language servers, and external tooling. The IR captures:
 //!
 //! - Function definitions with typed parameters and bodies
@@ -12,7 +12,7 @@
 //!
 //! ## Design Principles
 //!
-//! 1. **AI-Consumable**: JSON-serializable for easy parsing by any agent
+//! 1. **AI-Consumable**: JSON-serializable ∀ easy parsing by any agent
 //! 2. **Evidence-Aware**: Every operation carries its evidence level
 //! 3. **Pipeline-Native**: First-class representation of morpheme chains
 //! 4. **Protocol-Aware**: Network operations are explicit with trust boundaries
@@ -25,38 +25,38 @@ invoke tome·typeck·EvidenceLevel;
 // ============================================================================
 
 /// The version of the IR schema
-pub const IR_VERSION: !&str = "1.0.0";
+☉ const IR_VERSION: !&str = "1.0.0";
 
 // ============================================================================
 // Top-Level Module
 // ============================================================================
 
 /// Top-level IR module representing a complete Sigil program
-pub struct IrModule {
+☉ Σ IrModule {
     /// Schema version
-    pub version: !String,
+    ☉ version: !String,
     /// Source file path
-    pub source: !String,
+    ☉ source: !String,
     /// All function definitions
-    pub functions: ![IrFunction],
+    ☉ functions: ![IrFunction],
     /// Type definitions (structs, enums)
-    pub types: ![IrTypeDef],
+    ☉ types: ![IrTypeDef],
     /// Trait definitions
-    pub traits: ![IrTraitDef],
+    ☉ traits: ![IrTraitDef],
     /// Impl blocks
-    pub impls: ![IrImplBlock],
+    ☉ impls: ![IrImplBlock],
     /// Constants
-    pub constants: ![IrConstant],
+    ☉ constants: ![IrConstant],
     /// The evidentiality lattice structure
-    pub evidentiality_lattice: !EvidentialityLattice,
-    /// CG-015: Method signatures for call-site lookup
-    /// Maps qualified method name (e.g., "Lexer·advance") to whether it has mut self
-    pub method_signatures: !Map<String, bool>,
+    ☉ evidentiality_lattice: !EvidentialityLattice,
+    /// CG-015: Method signatures ∀ call-site lookup
+    /// Maps qualified method name (e.g., "Lexer·advance") to whether it has Δ self
+    ☉ method_signatures: !Map<String, bool>,
 }
 
-impl IrModule {
+⊢ IrModule {
     /// Create a new empty IR module
-    pub fn new(source: !String) -> !IrModule {
+    ☉ λ new(source: !String) -> !IrModule {
         IrModule {
             version: IR_VERSION,
             source,
@@ -71,51 +71,51 @@ impl IrModule {
     }
 
     /// Serialize to JSON string
-    pub fn to_json(self, pretty: !bool) -> !String {
-        // JSON serialization - placeholder for actual implementation
-        if pretty {
+    ☉ λ to_json(self, pretty: !bool) -> !String {
+        // JSON serialization - placeholder ∀ actual implementation
+        ⎇ pretty {
             self.to_json_pretty()
-        } else {
+        } ⎉ {
             self.to_json_compact()
         }
     }
 
-    fn to_json_pretty(self) -> !String {
-        // IR-JSON-FIX: Use display() to output full struct - simpler than manual JSON
+    λ to_json_pretty(self) -> !String {
+        // IR-JSON-FIX: Use display() to output full Σ - simpler than manual JSON
         // This will give us Rust debug output format which includes all fields
         display(self)
     }
 
-    fn to_json_compact(self) -> !String {
-        // IR-JSON-FIX: Use display() for compact output too
+    λ to_json_compact(self) -> !String {
+        // IR-JSON-FIX: Use display() ∀ compact output too
         display(self)
     }
 
     /// Merge another module into this one
     /// Combines all functions, types, traits, impls, constants, and method_signatures
-    pub fn merge(mut self, other: !IrModule) -> !IrModule {
+    ☉ λ merge(Δ self, other: !IrModule) -> !IrModule {
         // Merge functions
-        for func in other.functions {
+        ∀ func ∈ other.functions {
             self.functions.push(func);
         }
         // Merge types
-        for ty in other.types {
+        ∀ ty ∈ other.types {
             self.types.push(ty);
         }
         // Merge traits
-        for tr in other.traits {
+        ∀ tr ∈ other.traits {
             self.traits.push(tr);
         }
         // Merge impls
-        for imp in other.impls {
+        ∀ imp ∈ other.impls {
             self.impls.push(imp);
         }
         // Merge constants
-        for c in other.constants {
+        ∀ c ∈ other.constants {
             self.constants.push(c);
         }
         // Note: method_signatures are built per-file during typechecking
-        // so we don't need to merge them here (they're already in the shared checker)
+        // so we don't need to merge them here (they're already ∈ the shared checker)
         self
     }
 }
@@ -125,18 +125,18 @@ impl IrModule {
 // ============================================================================
 
 /// The evidentiality lattice with explicit join/meet rules
-pub struct EvidentialityLattice {
-    /// The four evidence levels in order
-    pub levels: ![LatticeLevel],
+☉ Σ EvidentialityLattice {
+    /// The four evidence levels ∈ order
+    ☉ levels: ![LatticeLevel],
     /// Join rules (pessimistic combination)
-    pub join_rules: ![LatticeRule],
+    ☉ join_rules: ![LatticeRule],
     /// Meet rules (optimistic combination)
-    pub meet_rules: ![LatticeRule],
+    ☉ meet_rules: ![LatticeRule],
 }
 
-impl EvidentialityLattice {
+⊢ EvidentialityLattice {
     /// Create the default evidentiality lattice
-    pub fn default() -> !EvidentialityLattice {
+    ☉ λ default() -> !EvidentialityLattice {
         EvidentialityLattice {
             levels: [
                 LatticeLevel {
@@ -184,23 +184,23 @@ impl EvidentialityLattice {
     }
 }
 
-/// An evidence level in the lattice
-pub struct LatticeLevel {
-    pub name: !String,
-    pub symbol: !String,
-    pub order: !u8,
-    pub description: !String,
+/// An evidence level ∈ the lattice
+☉ Σ LatticeLevel {
+    ☉ name: !String,
+    ☉ symbol: !String,
+    ☉ order: !u8,
+    ☉ description: !String,
 }
 
-/// A join/meet rule in the lattice
-pub struct LatticeRule {
-    pub left: !String,
-    pub right: !String,
-    pub result: !String,
+/// A join/meet rule ∈ the lattice
+☉ Σ LatticeRule {
+    ☉ left: !String,
+    ☉ right: !String,
+    ☉ result: !String,
 }
 
-impl LatticeRule {
-    pub fn new(left: !&str, right: !&str, result: !&str) -> !LatticeRule {
+⊢ LatticeRule {
+    ☉ λ new(left: !&str, right: !&str, result: !&str) -> !LatticeRule {
         LatticeRule {
             left: left.to_string(),
             right: right.to_string(),
@@ -210,21 +210,21 @@ impl LatticeRule {
 }
 
 // ============================================================================
-// Evidence in IR
+// Evidence ∈ IR
 // ============================================================================
 
-/// Evidence marker enum for IR
-pub enum IrEvidence {
+/// Evidence marker ᛈ ∀ IR
+☉ ᛈ IrEvidence {
     Known,
     Uncertain,
     Reported,
     Paradox,
 }
 
-impl IrEvidence {
+⊢ IrEvidence {
     /// Convert from type checker evidence level
-    pub fn from_typeck(ev: !EvidenceLevel) -> !IrEvidence {
-        match ev {
+    ☉ λ from_typeck(ev: !EvidenceLevel) -> !IrEvidence {
+        ⌥ ev {
             EvidenceLevel·Known => IrEvidence·Known,
             EvidenceLevel·Uncertain => IrEvidence·Uncertain,
             EvidenceLevel·Reported => IrEvidence·Reported,
@@ -233,8 +233,8 @@ impl IrEvidence {
     }
 
     /// Join two evidence levels (pessimistic)
-    pub fn join(self, other: !IrEvidence) -> !IrEvidence {
-        match (self, other) {
+    ☉ λ join(self, other: !IrEvidence) -> !IrEvidence {
+        ⌥ (self, other) {
             (IrEvidence·Paradox, _) | (_, IrEvidence·Paradox) => IrEvidence·Paradox,
             (IrEvidence·Reported, _) | (_, IrEvidence·Reported) => IrEvidence·Reported,
             (IrEvidence·Uncertain, _) | (_, IrEvidence·Uncertain) => IrEvidence·Uncertain,
@@ -243,8 +243,8 @@ impl IrEvidence {
     }
 
     /// Meet two evidence levels (optimistic)
-    pub fn meet(self, other: !IrEvidence) -> !IrEvidence {
-        match (self, other) {
+    ☉ λ meet(self, other: !IrEvidence) -> !IrEvidence {
+        ⌥ (self, other) {
             (IrEvidence·Known, _) | (_, IrEvidence·Known) => IrEvidence·Known,
             (IrEvidence·Uncertain, _) | (_, IrEvidence·Uncertain) => IrEvidence·Uncertain,
             (IrEvidence·Reported, _) | (_, IrEvidence·Reported) => IrEvidence·Reported,
@@ -252,9 +252,9 @@ impl IrEvidence {
         }
     }
 
-    /// Get the symbol for this evidence level
-    pub fn symbol(self) -> !&str {
-        match self {
+    /// Get the symbol ∀ this evidence level
+    ☉ λ symbol(self) -> !&str {
+        ⌥ self {
             IrEvidence·Known => "!",
             IrEvidence·Uncertain => "?",
             IrEvidence·Reported => "~",
@@ -262,9 +262,9 @@ impl IrEvidence {
         }
     }
 
-    /// Get the name for this evidence level
-    pub fn name(self) -> !&str {
-        match self {
+    /// Get the name ∀ this evidence level
+    ☉ λ name(self) -> !&str {
+        ⌥ self {
             IrEvidence·Known => "known",
             IrEvidence·Uncertain => "uncertain",
             IrEvidence·Reported => "reported",
@@ -277,20 +277,20 @@ impl IrEvidence {
 // Source Spans
 // ============================================================================
 
-/// Source location span in IR
-pub struct IrSpan {
-    pub start: !IrPosition,
-    pub end: !IrPosition,
+/// Source location span ∈ IR
+☉ Σ IrSpan {
+    ☉ start: !IrPosition,
+    ☉ end: !IrPosition,
 }
 
-pub struct IrPosition {
-    pub line: !u64,
-    pub column: !u64,
+☉ Σ IrPosition {
+    ☉ line: !u64,
+    ☉ column: !u64,
 }
 
-impl IrSpan {
-    pub fn from_span(span: !Span) -> !IrSpan {
-        // Span uses byte offsets, so we use those as placeholders
+⊢ IrSpan {
+    ☉ λ from_span(span: !Span) -> !IrSpan {
+        // Span uses byte offsets, so we invoke those as placeholders
         // A proper implementation would track line/column during parsing
         IrSpan {
             start: IrPosition { line: span.start, column: 0 },
@@ -304,14 +304,14 @@ impl IrSpan {
 // ============================================================================
 
 /// Function/item visibility
-pub enum IrVisibility {
+☉ ᛈ IrVisibility {
     Public,
     Private,
     Crate,
 }
 
-impl IrVisibility {
-    pub fn default() -> !IrVisibility {
+⊢ IrVisibility {
+    ☉ λ default() -> !IrVisibility {
         IrVisibility·Private
     }
 }
@@ -320,51 +320,51 @@ impl IrVisibility {
 // Functions
 // ============================================================================
 
-/// A function definition in IR
-pub struct IrFunction {
+/// A function definition ∈ IR
+☉ Σ IrFunction {
     /// Function name
-    pub name: !String,
+    ☉ name: !String,
     /// Unique identifier
-    pub id: !String,
+    ☉ id: !String,
     /// Visibility
-    pub visibility: !IrVisibility,
+    ☉ visibility: !IrVisibility,
     /// Generic type parameters
-    pub generics: ![IrGenericParam],
+    ☉ generics: ![IrGenericParam],
     /// Parameters
-    pub params: ![IrParam],
+    ☉ params: ![IrParam],
     /// Return type
-    pub return_type: !IrType,
+    ☉ return_type: !IrType,
     /// Function body
-    pub body: ?IrOperation,
+    ☉ body: ?IrOperation,
     /// Attributes
-    pub attributes: ![String],
+    ☉ attributes: ![String],
     /// Whether async
-    pub is_async: !bool,
+    ☉ is_async: !bool,
     /// Source span
-    pub span: ?IrSpan,
+    ☉ span: ?IrSpan,
 }
 
 /// A generic type parameter
-pub struct IrGenericParam {
-    pub name: !String,
-    pub bounds: ![String],
+☉ Σ IrGenericParam {
+    ☉ name: !String,
+    ☉ bounds: ![String],
 }
 
 /// A function parameter
-pub struct IrParam {
-    pub name: !String,
-    pub ty: !IrType,
-    pub evidence: !IrEvidence,
-    /// CG-015: Whether parameter is mutable (for `mut self`)
-    pub mutable: !bool,
+☉ Σ IrParam {
+    ☉ name: !String,
+    ☉ ty: !IrType,
+    ☉ evidence: !IrEvidence,
+    /// CG-015: Whether parameter is mutable (∀ `Δ self`)
+    ☉ mutable: !bool,
 }
 
 // ============================================================================
 // Types
 // ============================================================================
 
-/// Type representation in IR
-pub enum IrType {
+/// Type representation ∈ IR
+☉ ᛈ IrType {
     /// Primitive types (i32, f64, bool, str, etc.)
     Primitive { name: !String },
 
@@ -386,25 +386,25 @@ pub enum IrType {
     /// Tuple type (A, B, C)
     Tuple { elements: ![IrType] },
 
-    /// Named struct/enum type
+    /// Named struct/ᛈ type
     Named {
         name: !String,
         generics: ![IrType],
     },
 
-    /// Reference &T or &mut T
+    /// Reference &T or &Δ T
     Reference {
         mutable: !bool,
         inner: !Box<IrType>,
     },
 
-    /// Pointer *const T or *mut T
+    /// Pointer *const T or *Δ T
     Pointer {
         mutable: !bool,
         inner: !Box<IrType>,
     },
 
-    /// Function type fn(A, B) -> C
+    /// Function type λ(A, B) -> C
     Function {
         params: ![IrType],
         return_type: !Box<IrType>,
@@ -429,7 +429,7 @@ pub enum IrType {
     /// Atomic type
     Atomic { inner: !Box<IrType> },
 
-    /// Type variable (for inference)
+    /// Type variable (∀ inference)
     Var { id: !String },
 
     /// Infer placeholder _
@@ -438,32 +438,32 @@ pub enum IrType {
     /// Error recovery type
     Error,
 
-    /// Any type (opaque/existential - for impl Trait)
+    /// Any type (opaque/existential - ∀ ⊢ Trait)
     Any,
 }
 
-impl IrType {
-    pub fn unit() -> !IrType {
+⊢ IrType {
+    ☉ λ unit() -> !IrType {
         IrType·Unit
     }
 
-    pub fn never() -> !IrType {
+    ☉ λ never() -> !IrType {
         IrType·Never
     }
 
-    pub fn bool_type() -> !IrType {
+    ☉ λ bool_type() -> !IrType {
         IrType·Primitive { name: "bool" }
     }
 
-    pub fn i64_type() -> !IrType {
+    ☉ λ i64_type() -> !IrType {
         IrType·Primitive { name: "i64" }
     }
 
-    pub fn f64_type() -> !IrType {
+    ☉ λ f64_type() -> !IrType {
         IrType·Primitive { name: "f64" }
     }
 
-    pub fn str_type() -> !IrType {
+    ☉ λ str_type() -> !IrType {
         IrType·Primitive { name: "str" }
     }
 }
@@ -473,7 +473,7 @@ impl IrType {
 // ============================================================================
 
 /// Type definition (struct, enum, type alias)
-pub enum IrTypeDef {
+☉ ᛈ IrTypeDef {
     Struct {
         name: !String,
         generics: ![IrGenericParam],
@@ -494,10 +494,10 @@ pub enum IrTypeDef {
     },
 }
 
-impl IrTypeDef {
+⊢ IrTypeDef {
     /// Get the name of this type definition
-    pub fn get_name(self) -> !String {
-        match self {
+    ☉ λ get_name(self) -> !String {
+        ⌥ self {
             IrTypeDef·Struct { name, .. } => name,
             IrTypeDef·Enum { name, .. } => name,
             IrTypeDef·TypeAlias { name, .. } => name,
@@ -506,53 +506,53 @@ impl IrTypeDef {
 }
 
 /// Free function to get type name (avoids method dispatch issues)
-pub fn ir_typedef_name(tdef: !IrTypeDef) -> !String {
-    match tdef {
+☉ λ ir_typedef_name(tdef: !IrTypeDef) -> !String {
+    ⌥ tdef {
         IrTypeDef·Struct { name, .. } => name,
         IrTypeDef·Enum { name, .. } => name,
         IrTypeDef·TypeAlias { name, .. } => name,
     }
 }
 
-/// A struct field
-pub struct IrField {
-    pub name: !String,
-    pub ty: !IrType,
-    pub visibility: !IrVisibility,
+/// A Σ field
+☉ Σ IrField {
+    ☉ name: !String,
+    ☉ ty: !IrType,
+    ☉ visibility: !IrVisibility,
 }
 
-/// An enum variant
-pub struct IrVariant {
-    pub name: !String,
-    pub fields: ?[IrField],
-    pub discriminant: ?i64,
+/// An ᛈ variant
+☉ Σ IrVariant {
+    ☉ name: !String,
+    ☉ fields: ?[IrField],
+    ☉ discriminant: ?i64,
 }
 
 /// Trait definition
-pub struct IrTraitDef {
-    pub name: !String,
-    pub generics: ![IrGenericParam],
-    pub super_traits: ![String],
-    pub methods: ![IrFunction],
-    pub span: ?IrSpan,
+☉ Σ IrTraitDef {
+    ☉ name: !String,
+    ☉ generics: ![IrGenericParam],
+    ☉ super_traits: ![String],
+    ☉ methods: ![IrFunction],
+    ☉ span: ?IrSpan,
 }
 
 /// Impl block
-pub struct IrImplBlock {
-    pub trait_name: ?String,
-    pub target_type: !IrType,
-    pub generics: ![IrGenericParam],
-    pub methods: ![IrFunction],
-    pub span: ?IrSpan,
+☉ Σ IrImplBlock {
+    ☉ trait_name: ?String,
+    ☉ target_type: !IrType,
+    ☉ generics: ![IrGenericParam],
+    ☉ methods: ![IrFunction],
+    ☉ span: ?IrSpan,
 }
 
 /// Constant definition
-pub struct IrConstant {
-    pub name: !String,
-    pub ty: !IrType,
-    pub value: !IrOperation,
-    pub visibility: !IrVisibility,
-    pub span: ?IrSpan,
+☉ Σ IrConstant {
+    ☉ name: !String,
+    ☉ ty: !IrType,
+    ☉ value: !IrOperation,
+    ☉ visibility: !IrVisibility,
+    ☉ span: ?IrSpan,
 }
 
 // ============================================================================
@@ -560,7 +560,7 @@ pub struct IrConstant {
 // ============================================================================
 
 /// Core operation node - the heart of the IR
-pub enum IrOperation {
+☉ ᛈ IrOperation {
     // === Literals ===
     Literal {
         variant: !LiteralVariant,
@@ -585,7 +585,7 @@ pub enum IrOperation {
         evidence: !IrEvidence,
     },
 
-    /// Let-else binding: let pattern = init else { else_branch }
+    /// Let-⎉ binding: ≔ pattern = init ⎉ { else_branch }
     LetElse {
         pattern: !IrPattern,
         type_annotation: ?IrType,
@@ -655,7 +655,7 @@ pub enum IrOperation {
         evidence: !IrEvidence,
     },
 
-    /// Pattern match used as a boolean condition in if-let/while-let expressions.
+    /// Pattern ⌥ used as a boolean condition ∈ if-let/while-≔ expressions.
     LetMatch {
         pattern: !IrPattern,
         value: !Box<IrOperation>,
@@ -872,7 +872,7 @@ pub enum IrOperation {
 // ============================================================================
 
 /// Literal variants
-pub enum LiteralVariant {
+☉ ᛈ LiteralVariant {
     Int,
     Float,
     Bool,
@@ -882,7 +882,7 @@ pub enum LiteralVariant {
 }
 
 /// Literal values
-pub enum LiteralValue {
+☉ ᛈ LiteralValue {
     Int(!i64),
     Float(!f64),
     Bool(!bool),
@@ -896,7 +896,7 @@ pub enum LiteralValue {
 // ============================================================================
 
 /// Binary operators
-pub enum BinaryOp {
+☉ ᛈ BinaryOp {
     Add,
     Sub,
     Mul,
@@ -920,7 +920,7 @@ pub enum BinaryOp {
 }
 
 /// Unary operators
-pub enum UnaryOp {
+☉ ᛈ UnaryOp {
     Neg,
     Not,
     Deref,
@@ -933,31 +933,31 @@ pub enum UnaryOp {
 // ============================================================================
 
 /// Loop variants
-pub enum LoopVariant {
+☉ ᛈ LoopVariant {
     Infinite,
     While,
     For,
 }
 
 /// For loop iterator
-pub struct IrForIterator {
-    pub pattern: !IrPattern,
-    pub iterable: !Box<IrOperation>,
+☉ Σ IrForIterator {
+    ☉ pattern: !IrPattern,
+    ☉ iterable: !Box<IrOperation>,
 }
 
 /// Match arm
-pub struct IrMatchArm {
-    pub pattern: !IrPattern,
-    pub guard: ?IrOperation,
-    pub body: !IrOperation,
+☉ Σ IrMatchArm {
+    ☉ pattern: !IrPattern,
+    ☉ guard: ?IrOperation,
+    ☉ body: !IrOperation,
 }
 
 // ============================================================================
 // Patterns
 // ============================================================================
 
-/// Pattern in IR
-pub enum IrPattern {
+/// Pattern ∈ IR
+☉ ᛈ IrPattern {
     Ident {
         name: !String,
         mutable: !bool,
@@ -992,7 +992,7 @@ pub enum IrPattern {
 
     Wildcard,
 
-    /// Path pattern for unit variants (e.g., None, MyEnum·Variant)
+    /// Path pattern ∀ unit variants (e.g., None, MyEnum·Variant)
     Path { path: !String },
 
     /// Rest pattern (..)
@@ -1004,7 +1004,7 @@ pub enum IrPattern {
 // ============================================================================
 
 /// Pipeline step
-pub enum IrPipelineStep {
+☉ ᛈ IrPipelineStep {
     Call {
         function: !String,
         args: ![IrOperation],
@@ -1034,7 +1034,7 @@ pub enum IrPipelineStep {
 }
 
 /// Morpheme kinds
-pub enum MorphemeKind {
+☉ ᛈ MorphemeKind {
     Transform,  // τ
     Filter,     // φ
     Sort,       // σ
@@ -1055,9 +1055,9 @@ pub enum MorphemeKind {
     Next,       // ξ
 }
 
-impl MorphemeKind {
-    pub fn symbol(self) -> !&str {
-        match self {
+⊢ MorphemeKind {
+    ☉ λ symbol(self) -> !&str {
+        ⌥ self {
             MorphemeKind·Transform => "τ",
             MorphemeKind·Filter => "φ",
             MorphemeKind·Sort => "σ",
@@ -1080,8 +1080,8 @@ impl MorphemeKind {
     }
 }
 
-/// Join strategy for fork operations
-pub enum JoinStrategy {
+/// Join strategy ∀ fork operations
+☉ ᛈ JoinStrategy {
     Tuple,
     First,
     All,
@@ -1089,14 +1089,14 @@ pub enum JoinStrategy {
 }
 
 /// Evidence operations
-pub enum EvidenceOp {
+☉ ᛈ EvidenceOp {
     Trust,
     Verify,
     Mark,
 }
 
 /// Incorporation segment (noun-verb)
-pub enum IncorporationSegment {
+☉ ᛈ IncorporationSegment {
     Noun { name: !String },
     Verb { name: !String },
 }
@@ -1106,7 +1106,7 @@ pub enum IncorporationSegment {
 // ============================================================================
 
 /// HTTP methods
-pub enum HttpMethod {
+☉ ᛈ HttpMethod {
     Get,
     Post,
     Put,
@@ -1119,15 +1119,15 @@ pub enum HttpMethod {
 }
 
 /// WebSocket operations
-pub enum WebSocketOp {
+☉ ᛈ WebSocketOp {
     Connect,
     Send,
     Receive,
     Close,
 }
 
-/// Protocol operations for pipeline
-pub enum ProtocolOp {
+/// Protocol operations ∀ pipeline
+☉ ᛈ ProtocolOp {
     Send,
     Recv,
     Stream,
@@ -1141,20 +1141,20 @@ pub enum ProtocolOp {
 // Dump Options
 // ============================================================================
 
-/// Configuration options for IR dump
-pub struct IrDumpOptions {
+/// Configuration options ∀ IR dump
+☉ Σ IrDumpOptions {
     /// Pretty-print JSON output
-    pub pretty: !bool,
+    ☉ pretty: !bool,
     /// Include full type information on every node
-    pub full_types: !bool,
+    ☉ full_types: !bool,
     /// Include source spans
-    pub include_spans: !bool,
+    ☉ include_spans: !bool,
     /// Optimization level to apply before dumping
-    pub opt_level: ?u8,
+    ☉ opt_level: ?u8,
 }
 
-impl IrDumpOptions {
-    pub fn default() -> !IrDumpOptions {
+⊢ IrDumpOptions {
+    ☉ λ default() -> !IrDumpOptions {
         IrDumpOptions {
             pretty: false,
             full_types: false,
@@ -1169,11 +1169,11 @@ impl IrDumpOptions {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
+scroll tests {
     invoke super·*;
 
     #[test]
-    fn test_evidence_join() {
+    λ test_evidence_join() {
         assert_eq!(IrEvidence·Known.join(IrEvidence·Known), IrEvidence·Known);
         assert_eq!(IrEvidence·Known.join(IrEvidence·Uncertain), IrEvidence·Uncertain);
         assert_eq!(IrEvidence·Known.join(IrEvidence·Reported), IrEvidence·Reported);
@@ -1182,7 +1182,7 @@ mod tests {
     }
 
     #[test]
-    fn test_evidence_meet() {
+    λ test_evidence_meet() {
         assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Paradox), IrEvidence·Paradox);
         assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Reported), IrEvidence·Reported);
         assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Uncertain), IrEvidence·Uncertain);
@@ -1190,14 +1190,14 @@ mod tests {
     }
 
     #[test]
-    fn test_ir_module_creation() {
-        let module = IrModule·new("test.sigil");
+    λ test_ir_module_creation() {
+        ≔ module = IrModule·new("test.sigil");
         assert_eq!(module.version, IR_VERSION);
         assert_eq!(module.source, "test.sigil");
     }
 
     #[test]
-    fn test_morpheme_symbols() {
+    λ test_morpheme_symbols() {
         assert_eq!(MorphemeKind·Transform.symbol(), "τ");
         assert_eq!(MorphemeKind·Filter.symbol(), "φ");
         assert_eq!(MorphemeKind·Reduce.symbol(), "ρ");
@@ -1206,8 +1206,8 @@ mod tests {
     }
 
     #[test]
-    fn test_lattice_default() {
-        let lattice = EvidentialityLattice·default();
+    λ test_lattice_default() {
+        ≔ lattice = EvidentialityLattice·default();
         assert_eq!(lattice.levels.len(), 4);
         assert_eq!(lattice.levels[0].name, "known");
         assert_eq!(lattice.levels[3].name, "paradox");

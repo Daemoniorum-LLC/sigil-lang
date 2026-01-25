@@ -16,8 +16,8 @@ const PROT_WRITE: i64 = 2;
 const MAP_PRIVATE: i64 = 2;
 const MAP_ANONYMOUS: i64 = 32;
 
-fn syscall1(num: i64, arg1: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall1(num: i64, arg1: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall", inout("rax") num => ret, in("rdi") arg1,
             out("rcx") _, out("r11") _, options(nostack));
@@ -25,8 +25,8 @@ fn syscall1(num: i64, arg1: i64) -> i64 {
     ret
 }
 
-fn syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall", inout("rax") num => ret, in("rdi") arg1, in("rsi") arg2,
             out("rcx") _, out("r11") _, options(nostack));
@@ -34,8 +34,8 @@ fn syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     ret
 }
 
-fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall", inout("rax") num => ret, in("rdi") arg1, in("rsi") arg2, in("rdx") arg3,
             out("rcx") _, out("r11") _, options(nostack));
@@ -43,8 +43,8 @@ fn syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ret
 }
 
-fn syscall6(num: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
-    let ret: i64 = 0;
+λ syscall6(num: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
+    ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall", inout("rax") num => ret, in("rdi") a1, in("rsi") a2, in("rdx") a3,
             in("r10") a4, in("r8") a5, in("r9") a6, out("rcx") _, out("r11") _, options(nostack));
@@ -52,25 +52,25 @@ fn syscall6(num: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i
     ret
 }
 
-fn alloc_mem(size: i64) -> i64 {
+λ alloc_mem(size: i64) -> i64 {
     syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
 }
 
-fn free_mem(ptr: i64, size: i64) { syscall2(SYS_MUNMAP, ptr, size); }
+λ free_mem(ptr: i64, size: i64) { syscall2(SYS_MUNMAP, ptr, size); }
 
-fn mem_set(dst: i64, val: i8, len: i64) {
-    let i: i64 = 0;
-    while i < len {
+λ mem_set(dst: i64, val: i8, len: i64) {
+    ≔ i: i64 = 0;
+    ⟳ i < len {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") dst + i, in("al") val, options(nostack)); }
         i = i + 1;
     }
 }
 
-fn get_time_ns() -> i64 {
-    let ts = alloc_mem(16);
+λ get_time_ns() -> i64 {
+    ≔ ts = alloc_mem(16);
     syscall2(SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, ts);
-    let secs: i64 = 0;
-    let nsecs: i64 = 0;
+    ≔ secs: i64 = 0;
+    ≔ nsecs: i64 = 0;
     unsafe {
         asm!("mov rax, [rdi]", in("rdi") ts, out("rax") secs, options(nostack, readonly));
         asm!("mov rax, [rdi]", in("rdi") ts + 8, out("rax") nsecs, options(nostack, readonly));
@@ -79,18 +79,18 @@ fn get_time_ns() -> i64 {
     secs * 1000000000 + nsecs
 }
 
-fn write_stdout(s: i64, len: i64) { syscall3(SYS_WRITE, 1, s, len); }
+λ write_stdout(s: i64, len: i64) { syscall3(SYS_WRITE, 1, s, len); }
 
-fn print_int(n: i64) {
-    let buf = alloc_mem(32);
-    let num = n;
-    let idx: i64 = 30;
-    if num == 0 {
+λ print_int(n: i64) {
+    ≔ buf = alloc_mem(32);
+    ≔ num = n;
+    ≔ idx: i64 = 30;
+    ⎇ num == 0 {
         unsafe { asm!("mov byte ptr [rdi], 0x30", in("rdi") buf + idx, options(nostack)); }
         idx = idx - 1;
-    } else {
-        while num > 0 {
-            let digit = (num % 10) + 48;
+    } ⎉ {
+        ⟳ num > 0 {
+            ≔ digit = (num % 10) + 48;
             unsafe { asm!("mov byte ptr [rdi], al", in("rdi") buf + idx, in("al") digit as i8, options(nostack)); }
             idx = idx - 1;
             num = num / 10;
@@ -100,78 +100,78 @@ fn print_int(n: i64) {
     free_mem(buf, 32);
 }
 
-fn print_newline() {
-    let nl = alloc_mem(8);
+λ print_newline() {
+    ≔ nl = alloc_mem(8);
     unsafe { asm!("mov byte ptr [rdi], 10", in("rdi") nl, options(nostack)); }
     write_stdout(nl, 1);
     free_mem(nl, 8);
 }
 
-fn socket_create() -> i64 { syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0) }
-fn socket_close(fd: i64) { syscall1(SYS_CLOSE, fd); }
+λ socket_create() -> i64 { syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0) }
+λ socket_close(fd: i64) { syscall1(SYS_CLOSE, fd); }
 
-fn socket_connect(fd: i64, ip_packed: i64, port: i64) -> i64 {
-    let addr_buf = alloc_mem(32);
+λ socket_connect(fd: i64, ip_packed: i64, port: i64) -> i64 {
+    ≔ addr_buf = alloc_mem(32);
     mem_set(addr_buf, 0, 16);
     unsafe { asm!("mov word ptr [rdi], 2", in("rdi") addr_buf, options(nostack)); }
-    let port_hi = (port >> 8) & 255;
-    let port_lo = port & 255;
+    ≔ port_hi = (port >> 8) & 255;
+    ≔ port_lo = port & 255;
     unsafe {
         asm!("mov byte ptr [rdi], al", in("rdi") addr_buf + 2, in("al") port_hi as i8, options(nostack));
         asm!("mov byte ptr [rdi], al", in("rdi") addr_buf + 3, in("al") port_lo as i8, options(nostack));
         asm!("mov dword ptr [rdi], eax", in("rdi") addr_buf + 4, in("eax") ip_packed as i32, options(nostack));
     }
-    let result = syscall3(SYS_CONNECT, fd, addr_buf, 16);
+    ≔ result = syscall3(SYS_CONNECT, fd, addr_buf, 16);
     free_mem(addr_buf, 32);
     result
 }
 
-fn main() -> i64 {
+λ main() -> i64 {
     // "Simple Benchmark\n"
-    let header = alloc_mem(32);
-    let h: [i8; 17] = [83, 105, 109, 112, 108, 101, 32, 66, 101, 110, 99, 104, 109, 97, 114, 107, 10];
-    let i: i64 = 0;
-    while i < 17 {
+    ≔ header = alloc_mem(32);
+    ≔ h: [i8; 17] = [83, 105, 109, 112, 108, 101, 32, 66, 101, 110, 99, 104, 109, 97, 114, 107, 10];
+    ≔ i: i64 = 0;
+    ⟳ i < 17 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") h[i as usize], options(nostack)); }
         i = i + 1;
     }
     write_stdout(header, 17);
 
     // example.com IP: 104.18.27.120
-    let ip = 104 | (18 << 8) | (27 << 16) | (120 << 24);
+    ≔ ip = 104 | (18 << 8) | (27 << 16) | (120 << 24);
 
     // TCP connect benchmark
     // "TCP: "
-    let tcp: [i8; 5] = [84, 67, 80, 58, 32];
+    ≔ tcp: [i8; 5] = [84, 67, 80, 58, 32];
     i = 0;
-    while i < 5 {
+    ⟳ i < 5 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") tcp[i as usize], options(nostack)); }
         i = i + 1;
     }
     write_stdout(header, 5);
 
-    let start = get_time_ns();
-    let fd = socket_create();
-    let result = socket_connect(fd, ip, 80);
-    let end = get_time_ns();
+    ≔ start = get_time_ns();
+    ≔ fd = socket_create();
+    ≔ result = socket_connect(fd, ip, 80);
+    ≔ end = get_time_ns();
     socket_close(fd);
 
-    if result >= 0 {
-        let elapsed_us = (end - start) / 1000;
+    ⎇ result >= 0 {
+        ≔ elapsed_us = (end - start) / 1000;
         print_int(elapsed_us);
         // " us\n"
-        let us: [i8; 4] = [32, 117, 115, 10];
+        ≔ us: [i8; 4] = [32, 117, 115, 10];
         i = 0;
-        while i < 4 {
+        ⟳ i < 4 {
             unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") us[i as usize], options(nostack)); }
             i = i + 1;
         }
         write_stdout(header, 4);
-    } else {
+    } ⎉ {
         // "FAIL\n"
-        let f: [i8; 5] = [70, 65, 73, 76, 10];
+        ≔ f: [i8; 5] = [70, 65, 73, 76, 10];
         i = 0;
-        while i < 5 {
+        ⟳ i < 5 {
             unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") f[i as usize], options(nostack)); }
             i = i + 1;
         }
@@ -180,9 +180,9 @@ fn main() -> i64 {
 
     // TLS benchmark (full HTTPS)
     // "TLS+HTTP: "
-    let tls: [i8; 10] = [84, 76, 83, 43, 72, 84, 84, 80, 58, 32];
+    ≔ tls: [i8; 10] = [84, 76, 83, 43, 72, 84, 84, 80, 58, 32];
     i = 0;
-    while i < 10 {
+    ⟳ i < 10 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") tls[i as usize], options(nostack)); }
         i = i + 1;
     }
@@ -190,27 +190,27 @@ fn main() -> i64 {
 
     sigil_tls_init();
 
-    let hostname = alloc_mem(16);
-    let hn: [i8; 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    ≔ hostname = alloc_mem(16);
+    ≔ hn: [i8; 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
     i = 0;
-    while i < 11 {
+    ⟳ i < 11 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") hostname + i, in("al") hn[i as usize], options(nostack)); }
         i = i + 1;
     }
     unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") hostname + 11, options(nostack)); }
 
-    let start2 = get_time_ns();
+    ≔ start2 = get_time_ns();
 
-    let fd2 = socket_create();
+    ≔ fd2 = socket_create();
     socket_connect(fd2, ip, 443);
 
-    let ctx = sigil_tls_ctx_new();
-    let ssl = sigil_tls_new(ctx);
+    ≔ ctx = sigil_tls_ctx_new();
+    ≔ ssl = sigil_tls_new(ctx);
     sigil_tls_set_fd(ssl, fd2);
     sigil_tls_set_hostname(ssl, hostname as *i8);
-    let tls_result = sigil_tls_connect(ssl);
+    ≔ tls_result = sigil_tls_connect(ssl);
 
-    let end2 = get_time_ns();
+    ≔ end2 = get_time_ns();
 
     sigil_tls_shutdown(ssl);
     sigil_tls_free(ssl);
@@ -218,20 +218,20 @@ fn main() -> i64 {
     socket_close(fd2);
     free_mem(hostname, 16);
 
-    if tls_result == 1 {
-        let elapsed_us = (end2 - start2) / 1000;
+    ⎇ tls_result == 1 {
+        ≔ elapsed_us = (end2 - start2) / 1000;
         print_int(elapsed_us);
-        let us: [i8; 4] = [32, 117, 115, 10];
+        ≔ us: [i8; 4] = [32, 117, 115, 10];
         i = 0;
-        while i < 4 {
+        ⟳ i < 4 {
             unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") us[i as usize], options(nostack)); }
             i = i + 1;
         }
         write_stdout(header, 4);
-    } else {
-        let f: [i8; 5] = [70, 65, 73, 76, 10];
+    } ⎉ {
+        ≔ f: [i8; 5] = [70, 65, 73, 76, 10];
         i = 0;
-        while i < 5 {
+        ⟳ i < 5 {
             unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") f[i as usize], options(nostack)); }
             i = i + 1;
         }
@@ -241,10 +241,10 @@ fn main() -> i64 {
     free_mem(header, 32);
 
     // "Done!\n"
-    let done = alloc_mem(8);
-    let d: [i8; 6] = [68, 111, 110, 101, 33, 10];
+    ≔ done = alloc_mem(8);
+    ≔ d: [i8; 6] = [68, 111, 110, 101, 33, 10];
     i = 0;
-    while i < 6 {
+    ⟳ i < 6 {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") done + i, in("al") d[i as usize], options(nostack)); }
         i = i + 1;
     }

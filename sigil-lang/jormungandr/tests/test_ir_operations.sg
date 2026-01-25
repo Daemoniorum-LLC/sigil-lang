@@ -199,7 +199,7 @@ invoke crate·ir·*;
     };
 
     // Let-⎉ binding
-    ≔ let_else = IrOperation·LetElse {
+    ≔ let_⎉ = IrOperation·LetElse {
         pattern: IrPattern·Variant {
             enum_name: "Option".to_string(),
             variant: "Some".to_string(),
@@ -325,7 +325,7 @@ invoke crate·ir·*;
     };
 
     // Mutable reference
-    ≔ _ref_mut = IrOperation·Unary {
+    ≔ _ref_Δ = IrOperation·Unary {
         operator: UnaryOp·RefMut,
         operand: int_operand.clone(),
         ty: IrType·Ref { mutable: true, inner: Box·new(i32_type()) },

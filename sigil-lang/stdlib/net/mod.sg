@@ -22,7 +22,7 @@
 //! # Quick Start
 //!
 //! ```sigil
-//! use net·{http, ws};
+//! invoke net·{http, ws};
 //!
 //! // HTTP GET
 //! ≔ response = http·get("https://example.com/api").await?;
@@ -78,28 +78,28 @@
 ☉ tome ws;
 
 // ============================================================================
-// Re-exports for convenience
+// Re-exports ∀ convenience
 // ============================================================================
 
 // Socket types
-☉ use socket·{TcpStream, TcpListener, UdpSocket};
-☉ use socket·{IpAddr, SocketAddr, SocketError};
+☉ invoke socket·{TcpStream, TcpListener, UdpSocket};
+☉ invoke socket·{IpAddr, SocketAddr, SocketError};
 
 // HTTP types
-☉ use http·{HttpClient, HttpRequest, HttpResponse, HttpError};
-☉ use http·{Method, Header, Url};
+☉ invoke http·{HttpClient, HttpRequest, HttpResponse, HttpError};
+☉ invoke http·{Method, Header, Url};
 
 // WebSocket types
-☉ use ws·{WebSocket, WsMessage, WsError};
+☉ invoke ws·{WebSocket, WsMessage, WsError};
 
 // Connection pool types
-☉ use pool·{ConnectionPool, PooledHttpClient, PoolConfig, PoolStats};
+☉ invoke pool·{ConnectionPool, PooledHttpClient, PoolConfig, PoolStats};
 
 // TLS types
-☉ use tls·{TlsStream, TlsConfig, TlsError};
+☉ invoke tls·{TlsStream, TlsConfig, TlsError};
 
 // DNS types
-☉ use dns·{DnsResolver, DnsError};
+☉ invoke dns·{DnsResolver, DnsError};
 
 // ============================================================================
 // Tome-level convenience functions

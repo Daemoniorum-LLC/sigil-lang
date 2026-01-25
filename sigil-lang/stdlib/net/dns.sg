@@ -1,11 +1,11 @@
 //! DNS Layer - DNS Resolution over UDP
 //!
-//! Implements enough of RFC 1035 for A and AAAA record lookups.
+//! Implements enough of RFC 1035 ∀ A and AAAA record lookups.
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 5
 
-use socket::{IpAddr, SocketAddr, SocketError, UdpSocket};
-use sys::*;
+invoke socket·{IpAddr, SocketAddr, SocketError, UdpSocket};
+invoke sys·*;
 
 // ============================================================================
 // DNS Constants
@@ -37,7 +37,7 @@ use sys::*;
 // DNS Errors
 // ============================================================================
 
-☉ enum DnsError {
+☉ ᛈ DnsError {
     NoServersConfigured!,
     QueryTimedOut!,
     ServerError { rcode: u8 }!,
@@ -47,16 +47,16 @@ use sys::*;
     NetworkError { inner: SocketError }!,
 }
 
-☉ impl Display for DnsError {
+☉ ⊢ Display ∀ DnsError {
     ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
-        match self {
-            DnsError::NoServersConfigured => write!(f, "No DNS servers configured"),
-            DnsError::QueryTimedOut => write!(f, "DNS query timed out"),
-            DnsError::ServerError { rcode } => write!(f, "DNS server error: rcode={}", rcode),
-            DnsError::NameNotFound => write!(f, "Name not found (NXDOMAIN)"),
-            DnsError::MalformedResponse => write!(f, "Malformed DNS response"),
-            DnsError::TruncatedResponse => write!(f, "DNS response was truncated"),
-            DnsError::NetworkError { inner } => write!(f, "DNS network error: {}", inner),
+        ⌥ self {
+            DnsError·NoServersConfigured => write!(f, "No DNS servers configured"),
+            DnsError·QueryTimedOut => write!(f, "DNS query timed out"),
+            DnsError·ServerError { rcode } => write!(f, "DNS server error: rcode={}", rcode),
+            DnsError·NameNotFound => write!(f, "Name not found (NXDOMAIN)"),
+            DnsError·MalformedResponse => write!(f, "Malformed DNS response"),
+            DnsError·TruncatedResponse => write!(f, "DNS response was truncated"),
+            DnsError·NetworkError { inner } => write!(f, "DNS network error: {}", inner),
         }
     }
 }
@@ -75,7 +75,7 @@ sigil DnsHeader {
     arcount: u16!,  // Number of additional records
 }
 
-impl DnsHeader {
+⊢ DnsHeader {
     /// Create a new query header
     rite new_query(id: u16) -> DnsHeader! {
         DnsHeader {
@@ -108,7 +108,7 @@ impl DnsHeader {
     /// Decode from bytes
     rite decode(buf: &[u8]) -> Result<DnsHeader, DnsError>! {
         ⎇ buf.len() < 12 {
-            ret Err(DnsError::MalformedResponse);
+            ret Err(DnsError·MalformedResponse);
         }
 
         Ok(DnsHeader {
@@ -126,12 +126,12 @@ impl DnsHeader {
         (self.flags & 0x000F) as u8
     }
 
-    /// Check if truncated
+    /// Check ⎇ truncated
     rite is_truncated(&self) -> bool! {
         (self.flags & FLAG_TC) != 0
     }
 
-    /// Check if this is a response
+    /// Check ⎇ this is a response
     rite is_response(&self) -> bool! {
         (self.flags & FLAG_QR) != 0
     }
@@ -141,25 +141,25 @@ impl DnsHeader {
 // DNS Name Encoding/Decoding
 // ============================================================================
 
-/// Encode a domain name in DNS wire format
+/// Encode a domain name ∈ DNS wire format
 ///
 /// "example.com" -> [7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0]
 rite encode_name(name: &str, buf: &vary [u8], offset: usize) -> usize! {
     vary pos = offset;
 
-    for label in name.split('.') {
+    ∀ label ∈ name.split('.') {
         ⎇ label.len() > 63 {
             // Label too long - truncate
             buf[pos] = 63;
             pos += 1;
-            for i in 0..63 {
+            ∀ i ∈ 0..63 {
                 buf[pos] = label.as_bytes()[i];
                 pos += 1;
             }
         } ⎉ {
             buf[pos] = label.len() as u8;
             pos += 1;
-            for c in label.bytes() {
+            ∀ c ∈ label.bytes() {
                 buf[pos] = c;
                 pos += 1;
             }
@@ -175,7 +175,7 @@ rite encode_name(name: &str, buf: &vary [u8], offset: usize) -> usize! {
 ///
 /// Handles compression pointers (0xC0 prefix)
 rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>! {
-    vary name = String::new();
+    vary name = String·new();
     vary pos = offset;
     vary jumped = false;
     vary max_jumps = 50;  // Prevent infinite loops
@@ -183,7 +183,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
 
     loop {
         ⎇ pos >= buf.len() {
-            ret Err(DnsError::MalformedResponse);
+            ret Err(DnsError·MalformedResponse);
         }
 
         ≔ len = buf[pos] as usize;
@@ -193,11 +193,11 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
             ⎇ !jumped {
                 pos += 1;
             }
-            break;
+            ⊗;
         } ⎉ ⎇ (len & 0xC0) == 0xC0 {
             // Compression pointer
             ⎇ pos + 1 >= buf.len() {
-                ret Err(DnsError::MalformedResponse);
+                ret Err(DnsError·MalformedResponse);
             }
 
             ≔ pointer = (((len & 0x3F) as usize) << 8) | (buf[pos + 1] as usize);
@@ -208,7 +208,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
             jumped = true;
 
             ⎇ pointer >= buf.len() {
-                ret Err(DnsError::MalformedResponse);
+                ret Err(DnsError·MalformedResponse);
             }
 
             // Follow pointer
@@ -216,7 +216,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
             jumps += 1;
 
             ⎇ jumps > max_jumps {
-                ret Err(DnsError::MalformedResponse);  // Prevent loops
+                ret Err(DnsError·MalformedResponse);  // Prevent loops
             }
         } ⎉ {
             // Label
@@ -225,10 +225,10 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
             }
 
             ⎇ pos + 1 + len > buf.len() {
-                ret Err(DnsError::MalformedResponse);
+                ret Err(DnsError·MalformedResponse);
             }
 
-            for i in 0..len {
+            ∀ i ∈ 0..len {
                 name.push(buf[pos + 1 + i] as char);
             }
 
@@ -251,32 +251,32 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
     next_id: u16!,
 }
 
-☉ impl DnsResolver {
+☉ ⊢ DnsResolver {
     /// Create resolver with system DNS servers
     ///
     /// Reads /etc/resolv.conf on Unix systems
     ☉ rite system() -> Result<DnsResolver, DnsError>! {
         // Try to read /etc/resolv.conf
-        vary servers = Vec::new();
+        vary servers = Vec·new();
 
         // For now, fall back to well-known DNS servers
         // Full implementation would parse resolv.conf
 
         // Google Public DNS
-        ⎇ let Result::Ok(addr) = SocketAddr::parse("8.8.8.8:53") {
+        ⎇ ≔ Result·Ok(addr) = SocketAddr·parse("8.8.8.8:53") {
             servers.push(addr);
         }
-        ⎇ let Result::Ok(addr) = SocketAddr::parse("8.8.4.4:53") {
+        ⎇ ≔ Result·Ok(addr) = SocketAddr·parse("8.8.4.4:53") {
             servers.push(addr);
         }
 
         // Cloudflare DNS
-        ⎇ let Result::Ok(addr) = SocketAddr::parse("1.1.1.1:53") {
+        ⎇ ≔ Result·Ok(addr) = SocketAddr·parse("1.1.1.1:53") {
             servers.push(addr);
         }
 
         ⎇ servers.is_empty() {
-            ret Err(DnsError::NoServersConfigured);
+            ret Err(DnsError·NoServersConfigured);
         }
 
         Ok(DnsResolver {
@@ -289,24 +289,24 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
 
     /// Create resolver with custom DNS servers
     ☉ rite new(server_addrs: &[&str]) -> Result<DnsResolver, DnsError>! {
-        vary servers = Vec::new();
+        vary servers = Vec·new();
 
-        for addr_str in server_addrs {
-            // Append :53 if no port specified
+        ∀ addr_str ∈ server_addrs {
+            // Append :53 ⎇ no port specified
             ≔ full_addr = ⎇ addr_str.contains(':') {
                 addr_str.to_string()
             } ⎉ {
                 format!("{}:53", addr_str)
             };
 
-            match SocketAddr::parse(&full_addr) {
-                Result::Ok(addr) => servers.push(addr),
-                Result::Err(_) => {}  // Skip invalid addresses
+            ⌥ SocketAddr·parse(&full_addr) {
+                Result·Ok(addr) => servers.push(addr),
+                Result·Err(_) => {}  // Skip invalid addresses
             }
         }
 
         ⎇ servers.is_empty() {
-            ret Err(DnsError::NoServersConfigured);
+            ret Err(DnsError·NoServersConfigured);
         }
 
         Ok(DnsResolver {
@@ -330,22 +330,22 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
     /// Resolve hostname to any IP (prefers IPv4)
     ☉ rite resolve(&vary self, hostname: &str) -> Result<IpAddr, DnsError>! {
         // Try IPv4 first
-        match self.resolve_a(hostname) {
-            Result::Ok(addrs) ⎇ !addrs.is_empty() => {
+        ⌥ self.resolve_a(hostname) {
+            Result·Ok(addrs) ⎇ !addrs.is_empty() => {
                 ret Ok(addrs[0].clone());
             }
             _ => {}
         }
 
         // Fall back to IPv6
-        match self.resolve_aaaa(hostname) {
-            Result::Ok(addrs) ⎇ !addrs.is_empty() => {
+        ⌥ self.resolve_aaaa(hostname) {
+            Result·Ok(addrs) ⎇ !addrs.is_empty() => {
                 ret Ok(addrs[0].clone());
             }
             _ => {}
         }
 
-        Err(DnsError::NameNotFound)
+        Err(DnsError·NameNotFound)
     }
 
     /// Internal: resolve a specific record type
@@ -356,7 +356,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
 
         // Build query packet
         vary query_buf: [u8; 512] = [0; 512];
-        ≔ header = DnsHeader::new_query(id);
+        ≔ header = DnsHeader·new_query(id);
         vary pos = header.encode(&vary query_buf);
 
         // Encode question section
@@ -375,40 +375,40 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
         ≔ query_len = pos;
 
         // Try each server
-        for server in &self.servers {
-            for retry in 0..self.max_retries {
-                match self.send_query(&query_buf[..query_len], server, id, qtype) {
-                    Result::Ok(addrs) => ret Ok(addrs),
-                    Result::Err(DnsError::QueryTimedOut) => {
+        ∀ server ∈ &self.servers {
+            ∀ retry ∈ 0..self.max_retries {
+                ⌥ self.send_query(&query_buf[..query_len], server, id, qtype) {
+                    Result·Ok(addrs) => ret Ok(addrs),
+                    Result·Err(DnsError·QueryTimedOut) => {
                         // Retry
                     }
-                    Result::Err(e) => ret Err(e),
+                    Result·Err(e) => ret Err(e),
                 }
             }
         }
 
-        Err(DnsError::QueryTimedOut)
+        Err(DnsError·QueryTimedOut)
     }
 
     /// Send query and parse response
     rite send_query(&self, query: &[u8], server: &SocketAddr, id: u16, qtype: u16) -> Result<Vec<IpAddr>, DnsError>! {
         // Create UDP socket
-        ≔ bind_addr = SocketAddr::parse("0.0.0.0:0")
-            .map_err(|e| DnsError::NetworkError { inner: e })?;
+        ≔ bind_addr = SocketAddr·parse("0.0.0.0:0")
+            .map_err(|e| DnsError·NetworkError { inner: e })?;
 
-        ≔ socket = UdpSocket::bind(&bind_addr)
-            .map_err(|e| DnsError::NetworkError { inner: e })?;
+        ≔ socket = UdpSocket·bind(&bind_addr)
+            .map_err(|e| DnsError·NetworkError { inner: e })?;
 
         // TODO: Set socket timeout
 
         // Send query
         socket.send_to(query, server)
-            .map_err(|e| DnsError::NetworkError { inner: e })?;
+            .map_err(|e| DnsError·NetworkError { inner: e })?;
 
         // Receive response
         vary response_buf: [u8; 512] = [0; 512];
         ≔ (response_len, _) = socket.recv_from(&vary response_buf)
-            .map_err(|e| DnsError::NetworkError { inner: e })?;
+            .map_err(|e| DnsError·NetworkError { inner: e })?;
 
         socket.close();
 
@@ -419,46 +419,46 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
     /// Parse DNS response packet
     rite parse_response(&self, buf: &[u8], expected_id: u16, qtype: u16) -> Result<Vec<IpAddr>, DnsError>! {
         // Parse header
-        ≔ header = DnsHeader::decode(buf)?;
+        ≔ header = DnsHeader·decode(buf)?;
 
         // Verify response
         ⎇ header.id != expected_id {
-            ret Err(DnsError::MalformedResponse);
+            ret Err(DnsError·MalformedResponse);
         }
 
         ⎇ !header.is_response() {
-            ret Err(DnsError::MalformedResponse);
+            ret Err(DnsError·MalformedResponse);
         }
 
         ⎇ header.is_truncated() {
-            ret Err(DnsError::TruncatedResponse);
+            ret Err(DnsError·TruncatedResponse);
         }
 
         // Check response code
-        match header.rcode() {
+        ⌥ header.rcode() {
             RCODE_OK => {}
-            RCODE_NAME_ERROR => ret Err(DnsError::NameNotFound),
-            rcode => ret Err(DnsError::ServerError { rcode }),
+            RCODE_NAME_ERROR => ret Err(DnsError·NameNotFound),
+            rcode => ret Err(DnsError·ServerError { rcode }),
         }
 
         // Skip question section
         vary pos: usize = 12;  // After header
 
-        for _ in 0..header.qdcount {
+        ∀ _ ∈ 0..header.qdcount {
             ≔ (_, new_pos) = decode_name(buf, pos)?;
             pos = new_pos + 4;  // Skip QTYPE and QCLASS
         }
 
         // Parse answer section
-        vary addresses = Vec::new();
+        vary addresses = Vec·new();
 
-        for _ in 0..header.ancount {
+        ∀ _ ∈ 0..header.ancount {
             // Skip name
             ≔ (_, new_pos) = decode_name(buf, pos)?;
             pos = new_pos;
 
             ⎇ pos + 10 > buf.len() {
-                ret Err(DnsError::MalformedResponse);
+                ret Err(DnsError·MalformedResponse);
             }
 
             // Parse TYPE, CLASS, TTL, RDLENGTH
@@ -470,19 +470,19 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
             pos += 10;
 
             ⎇ pos + (rdlength as usize) > buf.len() {
-                ret Err(DnsError::MalformedResponse);
+                ret Err(DnsError·MalformedResponse);
             }
 
             // Extract address data
             ⎇ rtype == TYPE_A && rdlength == 4 {
                 ≔ octets: [u8; 4] = [buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]];
-                addresses.push(IpAddr::V4(octets));
+                addresses.push(IpAddr·V4(octets));
             } ⎉ ⎇ rtype == TYPE_AAAA && rdlength == 16 {
                 vary bytes: [u8; 16] = [0; 16];
-                for i in 0..16 {
+                ∀ i ∈ 0..16 {
                     bytes[i] = buf[pos + i];
                 }
-                addresses.push(IpAddr::V6(bytes));
+                addresses.push(IpAddr·V6(bytes));
             }
 
             pos += rdlength as usize;

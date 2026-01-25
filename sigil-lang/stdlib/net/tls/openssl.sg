@@ -1,10 +1,10 @@
 //! OpenSSL FFI Implementation
 //!
-//! FFI bindings to OpenSSL for TLS on Linux.
+//! FFI bindings to OpenSSL ∀ TLS on Linux.
 //!
 //! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 8.4
 
-use super::TlsError;
+invoke super·TlsError;
 
 // ============================================================================
 // OpenSSL FFI Declarations
@@ -88,7 +88,7 @@ static vary TLS_INITIALIZED: bool = false;
         );
 
         ⎇ result == 0 {
-            ret Err(TlsError::LibraryError {
+            ret Err(TlsError·LibraryError {
                 code: result,
                 message: "OPENSSL_init_ssl failed".to_string(),
             });
@@ -100,12 +100,12 @@ static vary TLS_INITIALIZED: bool = false;
     Ok(())
 }
 
-/// Create SSL context for TLS client
+/// Create SSL context ∀ TLS client
 ☉ rite ssl_ctx_new() -> Result<*void, TlsError>! {
     unsafe {
         ≔ method = TLS_client_method();
         ⎇ method as usize == 0 {
-            ret Err(TlsError::LibraryError {
+            ret Err(TlsError·LibraryError {
                 code: -1,
                 message: "TLS_client_method() failed".to_string(),
             });
@@ -113,7 +113,7 @@ static vary TLS_INITIALIZED: bool = false;
 
         ≔ ctx = SSL_CTX_new(method);
         ⎇ ctx as usize == 0 {
-            ret Err(TlsError::LibraryError {
+            ret Err(TlsError·LibraryError {
                 code: -1,
                 message: get_openssl_error(),
             });
@@ -145,7 +145,7 @@ static vary TLS_INITIALIZED: bool = false;
     unsafe {
         ≔ ssl = SSL_new(ctx);
         ⎇ ssl as usize == 0 {
-            ret Err(TlsError::LibraryError {
+            ret Err(TlsError·LibraryError {
                 code: -1,
                 message: get_openssl_error(),
             });
@@ -163,12 +163,12 @@ static vary TLS_INITIALIZED: bool = false;
     }
 }
 
-/// Set file descriptor for SSL connection
+/// Set file descriptor ∀ SSL connection
 ☉ rite ssl_set_fd(ssl: *void, fd: i32) -> Result<(), TlsError>! {
     unsafe {
         ≔ result = SSL_set_fd(ssl, fd);
         ⎇ result != 1 {
-            ret Err(TlsError::LibraryError {
+            ret Err(TlsError·LibraryError {
                 code: result,
                 message: "SSL_set_fd failed".to_string(),
             });
@@ -182,16 +182,16 @@ static vary TLS_INITIALIZED: bool = false;
     unsafe {
         // Need null-terminated string
         vary buf: [u8; 256] = [0; 256];
-        for (i, c) in hostname.bytes().enumerate() {
+        ∀ (i, c) ∈ hostname.bytes().enumerate() {
             ⎇ i >= 255 {
-                break;
+                ⊗;
             }
             buf[i] = c;
         }
 
         ≔ result = SSL_set_tlsext_host_name(ssl, &buf as *u8);
         ⎇ result != 1 {
-            ret Err(TlsError::LibraryError {
+            ret Err(TlsError·LibraryError {
                 code: result,
                 message: "SSL_set_tlsext_host_name failed".to_string(),
             });
@@ -213,17 +213,17 @@ static vary TLS_INITIALIZED: bool = false;
             ≔ err = SSL_get_error(ssl, result);
             ≔ msg = get_openssl_error();
 
-            match err {
+            ⌥ err {
                 SSL_ERROR_SSL => {
-                    Err(TlsError::HandshakeFailed { message: msg })
+                    Err(TlsError·HandshakeFailed { message: msg })
                 }
                 SSL_ERROR_SYSCALL => {
-                    Err(TlsError::IoError {
-                        inner: SocketError::BrokenPipe
+                    Err(TlsError·IoError {
+                        inner: SocketError·BrokenPipe
                     })
                 }
                 _ => {
-                    Err(TlsError::HandshakeFailed {
+                    Err(TlsError·HandshakeFailed {
                         message: format!("SSL_connect error {}: {}", err, msg)
                     })
                 }
@@ -246,16 +246,16 @@ static vary TLS_INITIALIZED: bool = false;
         } ⎉ {
             ≔ err = SSL_get_error(ssl, result);
 
-            match err {
+            ⌥ err {
                 SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => {
-                    // Would block - return 0 for now
+                    // Would block - ⤺ 0 ∀ now
                     Ok(0)
                 }
                 SSL_ERROR_ZERO_RETURN => {
                     Ok(0)  // Clean shutdown
                 }
                 _ => {
-                    Err(TlsError::ProtocolError {
+                    Err(TlsError·ProtocolError {
                         message: get_openssl_error()
                     })
                 }
@@ -276,12 +276,12 @@ static vary TLS_INITIALIZED: bool = false;
         } ⎉ {
             ≔ err = SSL_get_error(ssl, result);
 
-            match err {
+            ⌥ err {
                 SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => {
                     Ok(0)
                 }
                 _ => {
-                    Err(TlsError::ProtocolError {
+                    Err(TlsError·ProtocolError {
                         message: get_openssl_error()
                     })
                 }
@@ -293,7 +293,7 @@ static vary TLS_INITIALIZED: bool = false;
 /// Shutdown TLS connection
 ☉ rite ssl_shutdown(ssl: *void) -> Result<(), TlsError>! {
     unsafe {
-        // May need to call twice for bidirectional shutdown
+        // May need to call twice ∀ bidirectional shutdown
         ≔ result = SSL_shutdown(ssl);
 
         ⎇ result < 0 {
@@ -314,21 +314,21 @@ static vary TLS_INITIALIZED: bool = false;
     unsafe {
         ≔ version_ptr = SSL_get_version(ssl);
         ⎇ version_ptr as usize == 0 {
-            ret Err(TlsError::NotConnected);
+            ret Err(TlsError·NotConnected);
         }
 
         // Convert C string to Sigil string
-        vary version = String::new();
+        vary version = String·new();
         vary i: usize = 0;
         loop {
             ≔ c = *(version_ptr.offset(i as isize));
             ⎇ c == 0 {
-                break;
+                ⊗;
             }
             version.push(c as char);
             i += 1;
             ⎇ i > 32 {
-                break;
+                ⊗;
             }
         }
 
@@ -348,10 +348,10 @@ rite get_openssl_error() -> String! {
         ERR_error_string(err, &buf as *u8);
 
         // Convert to string
-        vary msg = String::new();
-        for c in buf {
+        vary msg = String·new();
+        ∀ c ∈ buf {
             ⎇ c == 0 {
-                break;
+                ⊗;
             }
             msg.push(c as char);
         }

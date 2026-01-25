@@ -2,17 +2,17 @@
 //!
 //! The Context provides access to shared infrastructure during request handling.
 
-use shared::{Timestamp, AgentId, HumanId};
-use crate::evidence::EvidenceContext;
-use crate::service::{ServiceRegistry, Engram, Covenant, Oracle};
+invoke shared·{Timestamp, AgentId, HumanId};
+invoke crate·evidence·EvidenceContext;
+invoke crate·service·{ServiceRegistry, Engram, Covenant, Oracle};
 
 /// Request context providing access to shared infrastructure
-pub struct Context<'a> {
+☉ Σ Context<'a> {
     /// Request ID
-    pub request_id: [u8; 16],
+    ☉ request_id: [u8; 16],
 
     /// Request start time
-    pub started_at: Timestamp,
+    ☉ started_at: Timestamp,
 
     /// Shared memory
     memory: Option<&'a Engram>,
@@ -30,9 +30,9 @@ pub struct Context<'a> {
     evidence: EvidenceContext,
 }
 
-impl<'a> Context<'a> {
+⊢<'a> Context<'a> {
     /// Create a new context
-    pub fn new(
+    ☉ λ new(
         request_id: [u8; 16],
         memory: Option<&'a Engram>,
         covenant: Option<&'a Covenant>,
@@ -41,48 +41,48 @@ impl<'a> Context<'a> {
     ) -> Self {
         Self {
             request_id,
-            started_at: Timestamp::now(),
+            started_at: Timestamp·now(),
             memory,
             covenant,
             oracle,
             services,
-            evidence: EvidenceContext::new(),
+            evidence: EvidenceContext·new(),
         }
     }
 
     /// Get shared memory
-    pub fn memory(&self) -> Option<&Engram> {
+    ☉ λ memory(&self) -> Option<&Engram> {
         self.memory
     }
 
     /// Get shared covenant
-    pub fn covenant(&self) -> Option<&Covenant> {
+    ☉ λ covenant(&self) -> Option<&Covenant> {
         self.covenant
     }
 
     /// Get shared oracle
-    pub fn oracle(&self) -> Option<&Oracle> {
+    ☉ λ oracle(&self) -> Option<&Oracle> {
         self.oracle
     }
 
     /// Get a service by type
-    pub fn service<S: crate::service::Service + 'static>(&self) -> Option<&S> {
-        let name = std::any::type_name::<S>();
+    ☉ λ service<S: crate·service·Service + 'static>(&self) -> Option<&S> {
+        ≔ name = std·any·type_name·<S>();
         self.services.get(name)
     }
 
     /// Get evidence context
-    pub fn evidence(&self) -> &EvidenceContext {
+    ☉ λ evidence(&self) -> &EvidenceContext {
         &self.evidence
     }
 
     /// Get mutable evidence context
-    pub fn evidence_mut(&mut self) -> &mut EvidenceContext {
-        &mut self.evidence
+    ☉ λ evidence_mut(&Δ self) -> &Δ EvidenceContext {
+        &Δ self.evidence
     }
 
     /// Get request duration so far
-    pub fn elapsed(&self) -> shared::Duration {
+    ☉ λ elapsed(&self) -> shared·Duration {
         self.started_at.elapsed()
     }
 }

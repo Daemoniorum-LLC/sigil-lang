@@ -400,7 +400,7 @@ invoke crate·typeck·TypeChecker;
         Θ Third: Second { λ third(self); }
     ", "transitive_supertraits");
 
-    // Missing supertrait ⊢ should fail
+    // Missing superΘ ⊢ should fail
     assert_fails("
         Θ Base { λ base(self); }
         Θ Derived: Base { λ derived(self); }

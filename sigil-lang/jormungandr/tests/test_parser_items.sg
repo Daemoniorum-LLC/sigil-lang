@@ -416,7 +416,7 @@ invoke crate·parser·Parser;
     assert_item("#[cfg(feature = \"extra\")] scroll extra {}", "attr_cfg_feature");
 
     // Doc
-    assert_item("/// Documentation\nfn documented() {}", "attr_doc_line");
+    assert_item("/// Documentation\nλ documented() {}", "attr_doc_line");
     assert_item("#[doc = \"Documentation\"] λ also_documented() {}", "attr_doc_attr");
 
     // Custom attributes

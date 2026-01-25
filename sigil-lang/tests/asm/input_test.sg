@@ -1,6 +1,6 @@
 // Test input operands with function parameters
-fn add_one(x: i64) -> i64 {
-    let result: i64 = 0;
+λ add_one(x: i64) -> i64 {
+    ≔ result: i64 = 0;
     unsafe {
         asm!("inc rax",
             inout("rax") x => result,
@@ -9,6 +9,6 @@ fn add_one(x: i64) -> i64 {
     result
 }
 
-fn main() -> i64 {
-    add_one(41)  // Should return 42
+λ main() -> i64 {
+    add_one(41)  // Should ⤺ 42
 }
