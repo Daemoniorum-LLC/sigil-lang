@@ -1,0 +1,31 @@
+// Test new parser features
+
+pub fn main() {
+    // Test closure parameter syntax in morphemes
+    let numbers = [1, 2, 3, 4, 5];
+
+    // Old syntax still works
+    let doubled = numbers|τ{it * 2};
+    print(doubled|α);
+
+    // New closure syntax with named parameter
+    let tripled = numbers|τ{n => n * 3};
+    print(tripled|α);
+
+    // Named parameter in filter
+    let positive = [-1, 2, -3, 4]|φ{x => x > 0};
+    print(positive|α);
+
+    // Test reduce shorthand
+    let sum = numbers|ρ+;
+    print(sum);
+
+    let product = numbers|ρ*;
+    print(product);
+
+    // Module path syntax
+    let sig = signal::create(42);
+    print(sig);
+
+    print(999);
+}

@@ -1,0 +1,12 @@
+// Test: Export IR as JSON
+// Spec: 16-AI-IR.md § Top-Level Structure
+// Priority: P0 - Bootstrap Critical
+
+λ add(a: !i32, b: !i32) -> !i32 {
+    a + b
+}
+
+λ main() {
+    ≔ ir = __export_ir();  // Compiler intrinsic
+    println(ir.functions.len());
+}

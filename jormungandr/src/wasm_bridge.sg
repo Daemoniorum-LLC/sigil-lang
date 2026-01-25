@@ -1,0 +1,439 @@
+//! WASM Bridge Module for Jormungandr
+//!
+//! This module provides the entry points for calling the Sigil compiler
+//! from WebAssembly. It bridges JavaScript to the Jormungandr interpreter.
+//!
+//! ## Exported Functions
+//!
+//! - `wasm_compile_and_run(src_ptr, src_len)` - Compile and execute Sigil source
+//! - `wasm_check_syntax(src_ptr, src_len)` - Check syntax without executing
+//! - `wasm_alloc(size)` - Allocate memory for JS→WASM transfers
+//! - `wasm_free(ptr, size)` - Free allocated memory
+//!
+//! ## Protocol
+//!
+//! Results are returned as length-prefixed JSON strings:
+//! - First 4 bytes: i32 length (little-endian)
+//! - Remaining bytes: UTF-8 JSON
+//!
+//! Success: `{ "ok": true, "output": "...", "exit_code": 0, "duration_ms": N }`
+//! Error: `{ "ok": false, "error": "...", "phase": "parse|typecheck|runtime" }`
+
+use crate::lexer::Lexer;
+use crate::parser::{Parser, ParseError};
+use crate::typeck::{TypeChecker, TypeError};
+use crate::lower::{lower_file, LowerError};
+use crate::interp::{Interpreter, RuntimeError, Value, EvidentialValue};
+use crate::span::Span;
+use crate::ast::SourceFile;
+
+// ============================================================================
+// Memory Management
+// ============================================================================
+
+/// Linear memory arena for WASM allocations
+///
+/// We use a simple bump allocator since WASM has a single linear memory.
+/// More sophisticated allocation would use a free list.
+static mut HEAP_PTR: u32 = 0;
+static mut HEAP_BASE: u32 = 0;
+static mut HEAP_END: u32 = 0;
+static mut INITIALIZED: bool = false;
+
+/// Initialize the heap
+///
+/// Called once at module startup. Sets up the heap region.
+#[no_mangle]
+pub extern "C" fn wasm_init(heap_start: u32, heap_size: u32) {
+    unsafe {
+        HEAP_BASE = heap_start;
+        HEAP_PTR = heap_start;
+        HEAP_END = heap_start + heap_size;
+        INITIALIZED = true;
+    }
+}
+
+/// Allocate memory from the heap
+///
+/// Returns a pointer to the allocated region, or 0 on failure.
+/// Memory is 8-byte aligned for safety.
+#[no_mangle]
+pub extern "C" fn wasm_alloc(size: u32) -> u32 {
+    unsafe {
+        // Ensure 8-byte alignment
+        let aligned_ptr = (HEAP_PTR + 7) & !7;
+        let new_ptr = aligned_ptr + size;
+
+        if new_ptr > HEAP_END {
+            // Out of memory
+            return 0;
+        }
+
+        HEAP_PTR = new_ptr;
+        aligned_ptr
+    }
+}
+
+/// Free memory (no-op for bump allocator)
+///
+/// In a real implementation, this would return memory to a free list.
+/// For simplicity, we use a bump allocator that doesn't reclaim memory.
+#[no_mangle]
+pub extern "C" fn wasm_free(ptr: u32, size: u32) {
+    // Bump allocator doesn't free individual allocations
+    // Memory is reclaimed when the module is reset
+}
+
+/// Reset the heap
+///
+/// Frees all allocations and resets to initial state.
+#[no_mangle]
+pub extern "C" fn wasm_reset() {
+    unsafe {
+        HEAP_PTR = HEAP_BASE;
+    }
+}
+
+
+// ============================================================================
+// WASM Imports (provided by JavaScript)
+// ============================================================================
+
+/// External imports from JavaScript runtime
+extern "wasm" {
+    /// Get current time in milliseconds
+    fn performance_now() -> f64;
+
+    /// Log string to console (for debugging)
+    fn console_log_str(ptr: u32, len: u32);
+
+    /// Log integer to console (for debugging)
+    fn console_log_i64(value: i64);
+}
+
+// ============================================================================
+// Result Encoding
+// ============================================================================
+
+/// Result structure for WASM calls
+struct WasmResult {
+    ok: !bool,
+    output: ?String,
+    error: ?String,
+    phase: ?String,
+    exit_code: !i32,
+    duration_ms: !f64,
+}
+
+impl WasmResult {
+    fn success(output: !String, duration_ms: !f64) -> !WasmResult {
+        WasmResult {
+            ok: true,
+            output: ?output,
+            error: null,
+            phase: null,
+            exit_code: 0,
+            duration_ms,
+        }
+    }
+
+    fn failure(error: !String, phase: !String) -> !WasmResult {
+        WasmResult {
+            ok: false,
+            output: null,
+            error: ?error,
+            phase: ?phase,
+            exit_code: 1,
+            duration_ms: 0.0,
+        }
+    }
+
+    /// Convert to JSON string
+    fn to_json(self) -> !String {
+        let mut json = String::from("{");
+
+        // ok field
+        json.push_str("\"ok\":");
+        json.push_str(if self.ok { "true" } else { "false" });
+
+        // output field
+        if let ?out = self.output {
+            json.push_str(",\"output\":\"");
+            json.push_str(escape_json(out));
+            json.push('"');
+        }
+
+        // error field
+        if let ?err = self.error {
+            json.push_str(",\"error\":\"");
+            json.push_str(escape_json(err));
+            json.push('"');
+        }
+
+        // phase field
+        if let ?p = self.phase {
+            json.push_str(",\"phase\":\"");
+            json.push_str(p);
+            json.push('"');
+        }
+
+        // exit_code field
+        json.push_str(",\"exit_code\":");
+        json.push_str(self.exit_code.to_string());
+
+        // duration_ms field
+        json.push_str(",\"duration_ms\":");
+        json.push_str(self.duration_ms.to_string());
+
+        json.push('}');
+        json
+    }
+}
+
+/// Escape special characters for JSON strings
+fn escape_json(s: !String) -> !String {
+    let mut result = String::new();
+    for c in s.chars() {
+        match c {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
+/// Write length-prefixed result to memory
+///
+/// Returns pointer to the result (first 4 bytes are length).
+fn write_result(result: !WasmResult) -> u32 {
+    let json = result.to_json();
+    let bytes = json.as_bytes();
+    let len = bytes.len() as u32;
+
+    // Allocate space for length (4 bytes) + JSON
+    let ptr = wasm_alloc(4 + len);
+    if ptr == 0 {
+        return 0;
+    }
+
+    // Write length (little-endian i32)
+    unsafe {
+        let mem = ptr as *mut u8;
+        *mem = (len & 0xFF) as u8;
+        *mem.add(1) = ((len >> 8) & 0xFF) as u8;
+        *mem.add(2) = ((len >> 16) & 0xFF) as u8;
+        *mem.add(3) = ((len >> 24) & 0xFF) as u8;
+
+        // Write JSON bytes
+        let data = mem.add(4);
+        for i in 0..bytes.len() {
+            *data.add(i) = bytes[i];
+        }
+    }
+
+    ptr
+}
+
+// ============================================================================
+// Main Entry Points
+// ============================================================================
+
+/// Compile and run Sigil source code
+///
+/// Takes a pointer to source code and its length.
+/// Returns a pointer to a length-prefixed JSON result.
+///
+/// ## Arguments
+/// - `src_ptr`: Pointer to UTF-8 source code in WASM memory
+/// - `src_len`: Length of source code in bytes
+///
+/// ## Returns
+/// Pointer to result (4-byte length prefix + JSON)
+#[no_mangle]
+pub extern "C" fn wasm_compile_and_run(src_ptr: u32, src_len: u32) -> u32 {
+    // Read source from memory
+    let source = unsafe {
+        let ptr = src_ptr as *const u8;
+        let mut bytes: ![u8] = [];
+        for i in 0..src_len {
+            bytes.push(*ptr.add(i as usize));
+        }
+        String::from_utf8(bytes).unwrap_or_else(|_| String::new())
+    };
+
+    if source.is_empty() {
+        return write_result(WasmResult::failure(
+            "Invalid UTF-8 source".to_string(),
+            "init".to_string()
+        ));
+    }
+
+    // Start timing
+    let start_time = unsafe { performance_now() };
+
+    // Phase 1: Parse
+    let lexer = Lexer::new(source.clone(), "<wasm>".to_string());
+    let mut parser = Parser::new(lexer);
+
+    let ast = match parser.parse_file() {
+        Result::Ok(a) => a,
+        Result::Err(err) => {
+            return write_result(WasmResult::failure(
+                format!("Parse error: {}", err.message),
+                "parse".to_string()
+            ));
+        },
+    };
+
+    // Phase 2: Type check
+    let mut checker = TypeChecker::new();
+
+    // Collect type definitions
+    for item in ast.items.iter() {
+        checker.collect_type_def(item.node.clone());
+    }
+
+    // Collect function signatures
+    for item in ast.items.iter() {
+        checker.collect_fn_sig(item.node.clone());
+    }
+
+    // Type check all items
+    for item in ast.items.iter() {
+        if let Result::Err(err) = checker.check_item(item.node.clone()) {
+            return write_result(WasmResult::failure(
+                format!("Type error: {}", err.message),
+                "typecheck".to_string()
+            ));
+        }
+    }
+
+    // Phase 3: Lower to IR
+    let ir = match lower_file(ast, checker.clone(), "<wasm>".to_string()) {
+        Result::Ok(ir) => ir,
+        Result::Err(errs) => {
+            let msg = errs.iter()
+                .map(|e| e.message.clone())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return write_result(WasmResult::failure(
+                format!("Lowering error: {}", msg),
+                "lower".to_string()
+            ));
+        },
+    };
+
+    // Phase 4: Interpret
+    let mut interpreter = Interpreter::new();
+    interpreter.load_module(ir);
+
+    let result = match interpreter.run() {
+        Result::Ok(val) => {
+            let end_time = unsafe { performance_now() };
+            let duration_ms = end_time - start_time;
+
+            // Get output from interpreter's built-in capture
+            let output = interpreter.get_output();
+
+            WasmResult::success(output, duration_ms)
+        },
+        Result::Err(err) => {
+            WasmResult::failure(
+                format!("Runtime error: {}", err.message),
+                "runtime".to_string()
+            )
+        },
+    };
+
+    write_result(result)
+}
+
+/// Check syntax without executing
+///
+/// Performs parsing and type checking, but does not run the code.
+/// Useful for real-time syntax checking in the editor.
+///
+/// ## Arguments
+/// - `src_ptr`: Pointer to UTF-8 source code in WASM memory
+/// - `src_len`: Length of source code in bytes
+///
+/// ## Returns
+/// Pointer to result (4-byte length prefix + JSON)
+#[no_mangle]
+pub extern "C" fn wasm_check_syntax(src_ptr: u32, src_len: u32) -> u32 {
+    // Read source from memory
+    let source = unsafe {
+        let ptr = src_ptr as *const u8;
+        let mut bytes: ![u8] = [];
+        for i in 0..src_len {
+            bytes.push(*ptr.add(i as usize));
+        }
+        String::from_utf8(bytes).unwrap_or_else(|_| String::new())
+    };
+
+    if source.is_empty() {
+        return write_result(WasmResult::failure(
+            "Invalid UTF-8 source".to_string(),
+            "init".to_string()
+        ));
+    }
+
+    let start_time = unsafe { performance_now() };
+
+    // Phase 1: Parse
+    let lexer = Lexer::new(source.clone(), "<wasm>".to_string());
+    let mut parser = Parser::new(lexer);
+
+    let ast = match parser.parse_file() {
+        Result::Ok(a) => a,
+        Result::Err(err) => {
+            return write_result(WasmResult::failure(
+                format!("Parse error: {}", err.message),
+                "parse".to_string()
+            ));
+        },
+    };
+
+    // Phase 2: Type check
+    let mut checker = TypeChecker::new();
+
+    for item in ast.items.iter() {
+        checker.collect_type_def(item.node.clone());
+    }
+
+    for item in ast.items.iter() {
+        checker.collect_fn_sig(item.node.clone());
+    }
+
+    for item in ast.items.iter() {
+        if let Result::Err(err) = checker.check_item(item.node.clone()) {
+            return write_result(WasmResult::failure(
+                format!("Type error: {}", err.message),
+                "typecheck".to_string()
+            ));
+        }
+    }
+
+    let end_time = unsafe { performance_now() };
+    let duration_ms = end_time - start_time;
+
+    write_result(WasmResult::success("Syntax OK".to_string(), duration_ms))
+}
+
+// ============================================================================
+// Module Initialization
+// ============================================================================
+
+/// Module start function
+///
+/// Called automatically when the WASM module is instantiated.
+#[no_mangle]
+pub extern "C" fn _start() {
+    // Initialize heap with default size (1MB)
+    // In production, JavaScript would call wasm_init() with actual memory info
+    wasm_init(0x10000, 0x100000);
+}

@@ -1,0 +1,8 @@
+// Test: Empty string
+// Spec: Edge Cases - String Boundaries
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    ≔ s: String = "";
+    println(s.len());
+}

@@ -1,0 +1,1130 @@
+{
+  "version": "1.0.0",
+  "source": "../examples/ir_demo.sigil",
+  "functions": [
+    {
+      "name": "double_all",
+      "id": "fn_001",
+      "visibility": "private",
+      "generics": [],
+      "params": [
+        {
+          "name": "nums",
+          "type": {
+            "kind": "slice",
+            "element": {
+              "kind": "primitive",
+              "name": "i64"
+            }
+          },
+          "evidence": "known"
+        }
+      ],
+      "return_type": {
+        "kind": "slice",
+        "element": {
+          "kind": "primitive",
+          "name": "i64"
+        }
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "pipeline",
+            "input": {
+              "kind": "var",
+              "name": "nums",
+              "id": "var_001",
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "steps": [
+              {
+                "op": "morpheme",
+                "morpheme": "transform",
+                "symbol": "τ",
+                "body": {
+                  "kind": "binary",
+                  "operator": "mul",
+                  "left": {
+                    "kind": "var",
+                    "name": "_",
+                    "id": "_",
+                    "type": {
+                      "kind": "infer"
+                    },
+                    "evidence": "known"
+                  },
+                  "right": {
+                    "kind": "literal",
+                    "variant": "int",
+                    "value": {
+                      "base": "Decimal",
+                      "suffix": null,
+                      "value": "2"
+                    },
+                    "type": {
+                      "kind": "primitive",
+                      "name": "i64"
+                    },
+                    "evidence": "known"
+                  },
+                  "type": {
+                    "kind": "infer"
+                  },
+                  "evidence": "known"
+                }
+              }
+            ],
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    },
+    {
+      "name": "process_positive",
+      "id": "fn_002",
+      "visibility": "private",
+      "generics": [],
+      "params": [
+        {
+          "name": "nums",
+          "type": {
+            "kind": "slice",
+            "element": {
+              "kind": "primitive",
+              "name": "i64"
+            }
+          },
+          "evidence": "known"
+        }
+      ],
+      "return_type": {
+        "kind": "slice",
+        "element": {
+          "kind": "primitive",
+          "name": "i64"
+        }
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "pipeline",
+            "input": {
+              "kind": "var",
+              "name": "nums",
+              "id": "var_002",
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "steps": [
+              {
+                "op": "morpheme",
+                "morpheme": "filter",
+                "symbol": "φ",
+                "body": {
+                  "kind": "binary",
+                  "operator": "gt",
+                  "left": {
+                    "kind": "var",
+                    "name": "_",
+                    "id": "_",
+                    "type": {
+                      "kind": "infer"
+                    },
+                    "evidence": "known"
+                  },
+                  "right": {
+                    "kind": "literal",
+                    "variant": "int",
+                    "value": {
+                      "base": "Decimal",
+                      "suffix": null,
+                      "value": "0"
+                    },
+                    "type": {
+                      "kind": "primitive",
+                      "name": "i64"
+                    },
+                    "evidence": "known"
+                  },
+                  "type": {
+                    "kind": "infer"
+                  },
+                  "evidence": "known"
+                }
+              },
+              {
+                "op": "morpheme",
+                "morpheme": "sort",
+                "symbol": "σ"
+              },
+              {
+                "op": "morpheme",
+                "morpheme": "transform",
+                "symbol": "τ",
+                "body": {
+                  "kind": "binary",
+                  "operator": "add",
+                  "left": {
+                    "kind": "var",
+                    "name": "_",
+                    "id": "_",
+                    "type": {
+                      "kind": "infer"
+                    },
+                    "evidence": "known"
+                  },
+                  "right": {
+                    "kind": "literal",
+                    "variant": "int",
+                    "value": {
+                      "base": "Decimal",
+                      "suffix": null,
+                      "value": "1"
+                    },
+                    "type": {
+                      "kind": "primitive",
+                      "name": "i64"
+                    },
+                    "evidence": "known"
+                  },
+                  "type": {
+                    "kind": "infer"
+                  },
+                  "evidence": "known"
+                }
+              }
+            ],
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    },
+    {
+      "name": "sum_all",
+      "id": "fn_003",
+      "visibility": "private",
+      "generics": [],
+      "params": [
+        {
+          "name": "nums",
+          "type": {
+            "kind": "slice",
+            "element": {
+              "kind": "primitive",
+              "name": "i64"
+            }
+          },
+          "evidence": "known"
+        }
+      ],
+      "return_type": {
+        "kind": "primitive",
+        "name": "i64"
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "pipeline",
+            "input": {
+              "kind": "var",
+              "name": "nums",
+              "id": "var_003",
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "steps": [
+              {
+                "op": "morpheme",
+                "morpheme": "reduce",
+                "symbol": "ρ",
+                "body": {
+                  "kind": "binary",
+                  "operator": "add",
+                  "left": {
+                    "kind": "var",
+                    "name": "a",
+                    "id": "a",
+                    "type": {
+                      "kind": "infer"
+                    },
+                    "evidence": "known"
+                  },
+                  "right": {
+                    "kind": "var",
+                    "name": "_",
+                    "id": "_",
+                    "type": {
+                      "kind": "infer"
+                    },
+                    "evidence": "known"
+                  },
+                  "type": {
+                    "kind": "infer"
+                  },
+                  "evidence": "known"
+                }
+              }
+            ],
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    },
+    {
+      "name": "get_first",
+      "id": "fn_004",
+      "visibility": "private",
+      "generics": [],
+      "params": [
+        {
+          "name": "nums",
+          "type": {
+            "kind": "slice",
+            "element": {
+              "kind": "primitive",
+              "name": "i64"
+            }
+          },
+          "evidence": "known"
+        }
+      ],
+      "return_type": {
+        "kind": "primitive",
+        "name": "i64"
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "pipeline",
+            "input": {
+              "kind": "var",
+              "name": "nums",
+              "id": "var_004",
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "steps": [
+              {
+                "op": "morpheme",
+                "morpheme": "first",
+                "symbol": "α"
+              }
+            ],
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    },
+    {
+      "name": "get_last",
+      "id": "fn_005",
+      "visibility": "private",
+      "generics": [],
+      "params": [
+        {
+          "name": "nums",
+          "type": {
+            "kind": "slice",
+            "element": {
+              "kind": "primitive",
+              "name": "i64"
+            }
+          },
+          "evidence": "known"
+        }
+      ],
+      "return_type": {
+        "kind": "primitive",
+        "name": "i64"
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "pipeline",
+            "input": {
+              "kind": "var",
+              "name": "nums",
+              "id": "var_005",
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "steps": [
+              {
+                "op": "morpheme",
+                "morpheme": "last",
+                "symbol": "ω"
+              }
+            ],
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    },
+    {
+      "name": "compute_known",
+      "id": "fn_006",
+      "visibility": "private",
+      "generics": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "kind": "primitive",
+            "name": "i64"
+          },
+          "evidence": "known"
+        }
+      ],
+      "return_type": {
+        "kind": "primitive",
+        "name": "i64"
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "binary",
+            "operator": "add",
+            "left": {
+              "kind": "binary",
+              "operator": "mul",
+              "left": {
+                "kind": "var",
+                "name": "x",
+                "id": "var_006",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "right": {
+                "kind": "literal",
+                "variant": "int",
+                "value": {
+                  "base": "Decimal",
+                  "suffix": null,
+                  "value": "2"
+                },
+                "type": {
+                  "kind": "primitive",
+                  "name": "i64"
+                },
+                "evidence": "known"
+              },
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "right": {
+              "kind": "literal",
+              "variant": "int",
+              "value": {
+                "base": "Decimal",
+                "suffix": null,
+                "value": "1"
+              },
+              "type": {
+                "kind": "primitive",
+                "name": "i64"
+              },
+              "evidence": "known"
+            },
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    },
+    {
+      "name": "abs_value",
+      "id": "fn_007",
+      "visibility": "private",
+      "generics": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "kind": "primitive",
+            "name": "i64"
+          },
+          "evidence": "known"
+        }
+      ],
+      "return_type": {
+        "kind": "primitive",
+        "name": "i64"
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "if",
+            "condition": {
+              "kind": "binary",
+              "operator": "lt",
+              "left": {
+                "kind": "var",
+                "name": "x",
+                "id": "var_007",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "right": {
+                "kind": "literal",
+                "variant": "int",
+                "value": {
+                  "base": "Decimal",
+                  "suffix": null,
+                  "value": "0"
+                },
+                "type": {
+                  "kind": "primitive",
+                  "name": "i64"
+                },
+                "evidence": "known"
+              },
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "then_branch": {
+              "kind": "block",
+              "statements": [
+                {
+                  "kind": "unary",
+                  "operator": "neg",
+                  "operand": {
+                    "kind": "var",
+                    "name": "x",
+                    "id": "var_007",
+                    "type": {
+                      "kind": "infer"
+                    },
+                    "evidence": "known"
+                  },
+                  "type": {
+                    "kind": "infer"
+                  },
+                  "evidence": "known"
+                }
+              ],
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "else_branch": {
+              "kind": "block",
+              "statements": [
+                {
+                  "kind": "var",
+                  "name": "x",
+                  "id": "var_007",
+                  "type": {
+                    "kind": "infer"
+                  },
+                  "evidence": "known"
+                }
+              ],
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    },
+    {
+      "name": "math_ops",
+      "id": "fn_008",
+      "visibility": "private",
+      "generics": [],
+      "params": [
+        {
+          "name": "a",
+          "type": {
+            "kind": "primitive",
+            "name": "i64"
+          },
+          "evidence": "known"
+        },
+        {
+          "name": "b",
+          "type": {
+            "kind": "primitive",
+            "name": "i64"
+          },
+          "evidence": "known"
+        }
+      ],
+      "return_type": {
+        "kind": "primitive",
+        "name": "i64"
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "let",
+            "pattern": {
+              "kind": "ident",
+              "name": "sum",
+              "mutable": false
+            },
+            "init": {
+              "kind": "binary",
+              "operator": "add",
+              "left": {
+                "kind": "var",
+                "name": "a",
+                "id": "var_008",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "right": {
+                "kind": "var",
+                "name": "b",
+                "id": "var_009",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "evidence": "known"
+          },
+          {
+            "kind": "let",
+            "pattern": {
+              "kind": "ident",
+              "name": "diff",
+              "mutable": false
+            },
+            "init": {
+              "kind": "binary",
+              "operator": "sub",
+              "left": {
+                "kind": "var",
+                "name": "a",
+                "id": "var_008",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "right": {
+                "kind": "var",
+                "name": "b",
+                "id": "var_009",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "evidence": "known"
+          },
+          {
+            "kind": "let",
+            "pattern": {
+              "kind": "ident",
+              "name": "prod",
+              "mutable": false
+            },
+            "init": {
+              "kind": "binary",
+              "operator": "mul",
+              "left": {
+                "kind": "var",
+                "name": "a",
+                "id": "var_008",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "right": {
+                "kind": "var",
+                "name": "b",
+                "id": "var_009",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "evidence": "known"
+          },
+          {
+            "kind": "binary",
+            "operator": "add",
+            "left": {
+              "kind": "binary",
+              "operator": "add",
+              "left": {
+                "kind": "var",
+                "name": "sum",
+                "id": "var_010",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "right": {
+                "kind": "var",
+                "name": "diff",
+                "id": "var_011",
+                "type": {
+                  "kind": "infer"
+                },
+                "evidence": "known"
+              },
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "right": {
+              "kind": "var",
+              "name": "prod",
+              "id": "var_012",
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    },
+    {
+      "name": "main",
+      "id": "fn_009",
+      "visibility": "private",
+      "generics": [],
+      "params": [],
+      "return_type": {
+        "kind": "primitive",
+        "name": "i64"
+      },
+      "body": {
+        "kind": "block",
+        "statements": [
+          {
+            "kind": "let",
+            "pattern": {
+              "kind": "ident",
+              "name": "nums",
+              "mutable": false
+            },
+            "init": {
+              "kind": "array",
+              "elements": [
+                {
+                  "kind": "literal",
+                  "variant": "int",
+                  "value": {
+                    "base": "Decimal",
+                    "suffix": null,
+                    "value": "1"
+                  },
+                  "type": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "evidence": "known"
+                },
+                {
+                  "kind": "literal",
+                  "variant": "int",
+                  "value": {
+                    "base": "Decimal",
+                    "suffix": null,
+                    "value": "2"
+                  },
+                  "type": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "evidence": "known"
+                },
+                {
+                  "kind": "literal",
+                  "variant": "int",
+                  "value": {
+                    "base": "Decimal",
+                    "suffix": null,
+                    "value": "3"
+                  },
+                  "type": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "evidence": "known"
+                },
+                {
+                  "kind": "literal",
+                  "variant": "int",
+                  "value": {
+                    "base": "Decimal",
+                    "suffix": null,
+                    "value": "4"
+                  },
+                  "type": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "evidence": "known"
+                },
+                {
+                  "kind": "literal",
+                  "variant": "int",
+                  "value": {
+                    "base": "Decimal",
+                    "suffix": null,
+                    "value": "5"
+                  },
+                  "type": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "evidence": "known"
+                }
+              ],
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "evidence": "known"
+          },
+          {
+            "kind": "let",
+            "pattern": {
+              "kind": "ident",
+              "name": "doubled",
+              "mutable": false
+            },
+            "init": {
+              "kind": "call",
+              "function": "double_all",
+              "function_id": "fn_double_all",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "nums",
+                  "id": "var_013",
+                  "type": {
+                    "kind": "infer"
+                  },
+                  "evidence": "known"
+                }
+              ],
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "evidence": "known"
+          },
+          {
+            "kind": "let",
+            "pattern": {
+              "kind": "ident",
+              "name": "summed",
+              "mutable": false
+            },
+            "init": {
+              "kind": "call",
+              "function": "sum_all",
+              "function_id": "fn_sum_all",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "doubled",
+                  "id": "var_014",
+                  "type": {
+                    "kind": "infer"
+                  },
+                  "evidence": "known"
+                }
+              ],
+              "type": {
+                "kind": "infer"
+              },
+              "evidence": "known"
+            },
+            "evidence": "known"
+          },
+          {
+            "kind": "var",
+            "name": "summed",
+            "id": "var_015",
+            "type": {
+              "kind": "infer"
+            },
+            "evidence": "known"
+          }
+        ],
+        "type": {
+          "kind": "infer"
+        },
+        "evidence": "known"
+      },
+      "attributes": [],
+      "is_async": false
+    }
+  ],
+  "types": [
+    {
+      "kind": "struct_def",
+      "name": "Point",
+      "generics": [],
+      "fields": [
+        {
+          "name": "x",
+          "type": {
+            "kind": "primitive",
+            "name": "f64"
+          },
+          "visibility": "private"
+        },
+        {
+          "name": "y",
+          "type": {
+            "kind": "primitive",
+            "name": "f64"
+          },
+          "visibility": "private"
+        }
+      ]
+    },
+    {
+      "kind": "struct_def",
+      "name": "Result",
+      "generics": [],
+      "fields": [
+        {
+          "name": "value",
+          "type": {
+            "kind": "primitive",
+            "name": "i64"
+          },
+          "visibility": "private"
+        },
+        {
+          "name": "success",
+          "type": {
+            "kind": "primitive",
+            "name": "bool"
+          },
+          "visibility": "private"
+        }
+      ]
+    }
+  ],
+  "traits": [],
+  "impls": [],
+  "constants": [],
+  "evidentiality_lattice": {
+    "levels": [
+      {
+        "name": "known",
+        "symbol": "!",
+        "order": 0,
+        "description": "Direct computation, verified"
+      },
+      {
+        "name": "uncertain",
+        "symbol": "?",
+        "order": 1,
+        "description": "Inferred, possibly absent"
+      },
+      {
+        "name": "reported",
+        "symbol": "~",
+        "order": 2,
+        "description": "External source, untrusted"
+      },
+      {
+        "name": "paradox",
+        "symbol": "‽",
+        "order": 3,
+        "description": "Contradictory, trust boundary"
+      }
+    ],
+    "join_rules": [
+      {
+        "left": "known",
+        "right": "uncertain",
+        "result": "uncertain"
+      },
+      {
+        "left": "known",
+        "right": "reported",
+        "result": "reported"
+      },
+      {
+        "left": "known",
+        "right": "paradox",
+        "result": "paradox"
+      },
+      {
+        "left": "uncertain",
+        "right": "reported",
+        "result": "reported"
+      },
+      {
+        "left": "uncertain",
+        "right": "paradox",
+        "result": "paradox"
+      },
+      {
+        "left": "reported",
+        "right": "paradox",
+        "result": "paradox"
+      }
+    ],
+    "meet_rules": [
+      {
+        "left": "known",
+        "right": "uncertain",
+        "result": "known"
+      },
+      {
+        "left": "known",
+        "right": "reported",
+        "result": "known"
+      },
+      {
+        "left": "known",
+        "right": "paradox",
+        "result": "known"
+      },
+      {
+        "left": "uncertain",
+        "right": "reported",
+        "result": "uncertain"
+      },
+      {
+        "left": "uncertain",
+        "right": "paradox",
+        "result": "uncertain"
+      },
+      {
+        "left": "reported",
+        "right": "paradox",
+        "result": "reported"
+      }
+    ]
+  }
+}

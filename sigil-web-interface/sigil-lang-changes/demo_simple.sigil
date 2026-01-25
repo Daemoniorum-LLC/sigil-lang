@@ -1,0 +1,117 @@
+// demo_simple.sigil - Minimal WASM demo focusing on working features
+// This demo tests signal reactivity and morpheme operations
+
+// =========================================================================
+// Part 1: Signal Reactivity Demo
+// =========================================================================
+
+pub fn demo_signals() {
+    // Create signals with initial values
+    let count = signal::create(0);
+    let multiplier = signal::create(10);
+
+    // Print initial values
+    print(count);
+    print(multiplier);
+
+    // Modify signals
+    signal::set(count, 5);
+    signal::set(multiplier, 20);
+
+    // Get updated values
+    let count_val = signal::get(count);
+    let mult_val = signal::get(multiplier);
+
+    // Compute something
+    let result = count_val * mult_val;
+    print(result);
+}
+
+// =========================================================================
+// Part 2: Morpheme Operations Demo
+// =========================================================================
+
+pub fn demo_morphemes() {
+    // Create array with morpheme
+    let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+    // Filter - keep only even numbers
+    let evens = data|φ{x => x % 2 == 0};
+    print(evens);
+
+    // Map - double each number
+    let doubled = evens|τ{n => n * 2};
+    print(doubled);
+
+    // Sort
+    let sorted = doubled|σ;
+    print(sorted);
+
+    // Print count
+    print(5);
+
+    // Get first and last
+    let first = sorted|α;
+    let last = sorted|ω;
+    print(first);
+    print(last);
+}
+
+// =========================================================================
+// Part 3: Control Flow Demo
+// =========================================================================
+
+pub fn demo_control_flow() {
+    // Basic if-else
+    let x = 10;
+    let result = if x > 5 { x * 2 } else { x };
+    print(result);
+
+    // While loop
+    let mut counter = 0;
+    while counter < 5 {
+        counter = counter + 1;
+    }
+    print(counter);
+
+    // For loop with array
+    let nums = [1, 2, 3, 4, 5];
+    let mut total = 0;
+    for n in nums {
+        total = total + n;
+    }
+    print(total);
+}
+
+// =========================================================================
+// Part 4: Arithmetic Demo
+// =========================================================================
+
+pub fn demo_arithmetic() {
+    let a = 100;
+    let b = 7;
+
+    // Basic operations
+    print(a + b);
+    print(a - b);
+    print(a * b);
+    print(a / b);
+    print(a % b);
+
+    // Comparison results
+    let is_greater = a > b;
+    let is_equal = a == b;
+    print(is_greater);
+    print(is_equal);
+}
+
+// =========================================================================
+// Main entry
+// =========================================================================
+
+pub fn main() {
+    demo_arithmetic();
+    demo_control_flow();
+    demo_signals();
+    demo_morphemes();
+}

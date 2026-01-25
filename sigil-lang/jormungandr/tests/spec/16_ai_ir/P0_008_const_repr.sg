@@ -1,0 +1,11 @@
+// Test: Constant representation ∈ IR
+// Spec: 16-AI-IR.md § Top-Level Structure
+// Priority: P0 - Bootstrap Critical
+
+const MAX_SIZE: i32 = 100;
+const PI: f64 = 3.14159;
+
+λ main() {
+    ≔ ir = __export_ir();
+    println(ir.constants.len());
+}

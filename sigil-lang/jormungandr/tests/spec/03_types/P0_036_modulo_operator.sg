@@ -1,0 +1,14 @@
+// Test: Modulo operator
+// Spec: 03-TYPES.md § 3.4 Arithmetic Operations
+// Priority: P0
+//
+// Purpose:
+// Validates that modulo operation works correctly.
+//
+// Expected behavior:
+// Should compile and print 2
+
+λ main() {
+    ≔ x: !i32 = 42 % 10;
+    println(x);
+}

@@ -1,0 +1,11 @@
+// Test output register
+λ main() -> i64 {
+    ≔ result: i64 = 0;
+    unsafe {
+        asm!("mov rax, 42",
+            out("rax") result,
+            options(nostack));
+    }
+    // Return the result directly - should be 42
+    result
+}

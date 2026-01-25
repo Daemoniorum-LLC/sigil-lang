@@ -1,0 +1,14 @@
+// FFI Test 29: Chained callback calls
+// Tests: Multiple function pointer operations
+// Expected: 24 (2 * 3 * 4 = 24)
+
+rite compose(f: rite(i64) → i64, g: rite(i64) → i64, x: i64) → i64 {
+    f(g(x))
+}
+
+rite times_two(x: i64) → i64 { x * 2 }
+rite times_three(x: i64) → i64 { x * 3 }
+
+rite main() → i64 {
+    compose(times_two, times_three, 4)
+}

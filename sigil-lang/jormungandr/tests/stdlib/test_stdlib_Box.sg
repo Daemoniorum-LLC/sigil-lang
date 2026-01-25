@@ -1,0 +1,20 @@
+// Stdlib Tests: Box
+// Box type with REAL assertions
+
+rite main() {
+    println("=== Testing Box ===");
+
+    // Box·new - boxes a value (returns the value ∈ Sigil)
+    ≔ b = Box·new(42);
+    assert_eq(b, 42);
+
+    // Box with string
+    ≔ str_box = Box·new("hello");
+    assert_eq(str_box, "hello");
+
+    // Box with array
+    ≔ arr_box = Box·new([1, 2, 3]);
+    assert_eq(len(arr_box), 3);
+
+    println("ALL BOX TESTS PASSED!");
+}

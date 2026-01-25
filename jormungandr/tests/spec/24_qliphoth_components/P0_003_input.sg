@@ -1,0 +1,249 @@
+// Test: Qliphoth Input Component
+// TDD: RED - Tests the Input form component
+//
+// Input is a text input field with validation and accessibility
+
+invoke qliphoth·components·Input;
+invoke qliphoth·components·Label;
+invoke qliphoth·core·VNode;
+
+// Test basic input rendering
+rite test_input_basic() {
+    ≔ input = Input {
+        name: "email",
+        placeholder: "Enter email",
+    };
+
+    ≔ vnode = input.render();
+
+    assert_eq!(vnode.tag(), "input");
+    assert_eq!(vnode.attr("name"), "email");
+    assert_eq!(vnode.attr("placeholder"), "Enter email");
+    assert_eq!(vnode.attr("type"), "text"); // default type
+}
+
+// Test input types
+rite test_input_types() {
+    // Text (default)
+    ≔ text_input = Input { name: "text", input_type: "text" };
+    assert_eq!(text_input.render().attr("type"), "text");
+
+    // Email
+    ≔ email = Input { name: "email", input_type: "email" };
+    assert_eq!(email.render().attr("type"), "email");
+
+    // Password
+    ≔ password = Input { name: "password", input_type: "password" };
+    assert_eq!(password.render().attr("type"), "password");
+
+    // Number
+    ≔ number = Input { name: "count", input_type: "number" };
+    assert_eq!(number.render().attr("type"), "number");
+
+    // Search
+    ≔ search = Input { name: "query", input_type: "search" };
+    assert_eq!(search.render().attr("type"), "search");
+
+    // Tel
+    ≔ tel = Input { name: "phone", input_type: "tel" };
+    assert_eq!(tel.render().attr("type"), "tel");
+
+    // URL
+    ≔ url = Input { name: "website", input_type: "url" };
+    assert_eq!(url.render().attr("type"), "url");
+}
+
+// Test controlled input
+rite test_input_controlled() {
+    ≔ value = "initial";
+
+    ≔ input = Input {
+        name: "test",
+        value: value,
+        onchange: |new_val| { value = new_val; },
+    };
+
+    ≔ vnode = input.render();
+    assert_eq!(vnode.attr("value"), "initial");
+}
+
+// Test input with label
+rite test_input_with_label() {
+    ≔ input = Input {
+        name: "username",
+        label: "Username",
+        id: "username-field",
+    };
+
+    ≔ vnode = input.render();
+
+    // Input should have id for label association
+    assert_eq!(vnode.attr("id"), "username-field");
+
+    // Should render label with for attribute
+    ≔ label = vnode.find_sibling_by_tag("label");
+    assert_eq!(label.attr("for"), "username-field");
+    assert_eq!(label.text_content(), "Username");
+}
+
+// Test required input
+rite test_input_required() {
+    ≔ input = Input {
+        name: "email",
+        required: yay,
+        label: "Email",
+    };
+
+    ≔ vnode = input.render();
+
+    assert_eq!(vnode.attr("required"), yay);
+    assert_eq!(vnode.attr("aria-required"), "true");
+
+    // Label should show required indicator
+    ≔ label = vnode.find_sibling_by_tag("label");
+    assert!(label.has_child_with_class("required-indicator"));
+}
+
+// Test disabled input
+rite test_input_disabled() {
+    ≔ input = Input {
+        name: "readonly",
+        disabled: yay,
+    };
+
+    ≔ vnode = input.render();
+
+    assert_eq!(vnode.attr("disabled"), yay);
+    assert!(vnode.has_class("input-disabled"));
+}
+
+// Test input with error
+rite test_input_error() {
+    ≔ input = Input {
+        name: "email",
+        error: "Invalid email format",
+    };
+
+    ≔ vnode = input.render();
+
+    // Should have error styling
+    assert!(vnode.has_class("input-error"));
+
+    // Should have aria-invalid
+    assert_eq!(vnode.attr("aria-invalid"), "true");
+
+    // Should show error message
+    ≔ error_msg = vnode.find_sibling_by_class("input-error-message");
+    assert_eq!(error_msg.text_content(), "Invalid email format");
+
+    // Error message should be associated via aria-describedby
+    assert!(vnode.attr("aria-describedby").contains("error"));
+}
+
+// Test input with helper text
+rite test_input_helper() {
+    ≔ input = Input {
+        name: "password",
+        helper: "Must be at least 8 characters",
+    };
+
+    ≔ vnode = input.render();
+
+    // Should show helper text
+    ≔ helper = vnode.find_sibling_by_class("input-helper");
+    assert_eq!(helper.text_content(), "Must be at least 8 characters");
+
+    // Helper should be associated via aria-describedby
+    assert!(vnode.attr("aria-describedby").contains("helper"));
+}
+
+// Test input sizes
+rite test_input_sizes() {
+    ≔ sm = Input { name: "sm", size: "sm" };
+    assert!(sm.render().has_class("input-sm"));
+
+    ≔ md = Input { name: "md", size: "md" };
+    assert!(md.render().has_class("input-md"));
+
+    ≔ lg = Input { name: "lg", size: "lg" };
+    assert!(lg.render().has_class("input-lg"));
+}
+
+// Test input with prefix/suffix
+rite test_input_affixes() {
+    // With prefix
+    ≔ with_prefix = Input {
+        name: "website",
+        prefix: "https://",
+    };
+    assert!(with_prefix.render().has_child_with_class("input-prefix"));
+
+    // With suffix
+    ≔ with_suffix = Input {
+        name: "email",
+        suffix: "@example.com",
+    };
+    assert!(with_suffix.render().has_child_with_class("input-suffix"));
+
+    // With icon prefix
+    ≔ with_icon = Input {
+        name: "search",
+        prefix_icon: "search",
+    };
+    assert!(with_icon.render().has_child_with_class("input-icon"));
+}
+
+// Test input max/min length
+rite test_input_length_constraints() {
+    ≔ input = Input {
+        name: "bio",
+        min_length: 10,
+        max_length: 200,
+    };
+
+    ≔ vnode = input.render();
+    assert_eq!(vnode.attr("minlength"), "10");
+    assert_eq!(vnode.attr("maxlength"), "200");
+}
+
+// Test input pattern validation
+rite test_input_pattern() {
+    ≔ input = Input {
+        name: "code",
+        pattern: "[A-Z]{3}-[0-9]{4}",
+        title: "Format: ABC-1234",
+    };
+
+    ≔ vnode = input.render();
+    assert_eq!(vnode.attr("pattern"), "[A-Z]{3}-[0-9]{4}");
+    assert_eq!(vnode.attr("title"), "Format: ABC-1234");
+}
+
+// Test autocomplete
+rite test_input_autocomplete() {
+    ≔ email = Input { name: "email", autocomplete: "email" };
+    assert_eq!(email.render().attr("autocomplete"), "email");
+
+    ≔ password = Input { name: "password", autocomplete: "new-password" };
+    assert_eq!(password.render().attr("autocomplete"), "new-password");
+}
+
+rite main() {
+    test_input_basic();
+    test_input_types();
+    test_input_controlled();
+    test_input_with_label();
+    test_input_required();
+    test_input_disabled();
+    test_input_error();
+    test_input_helper();
+    test_input_sizes();
+    test_input_affixes();
+    test_input_length_constraints();
+    test_input_pattern();
+    test_input_autocomplete();
+
+    print("✓ All Input component tests passed");
+}
+
+// Expected output: ✓ All Input component tests passed

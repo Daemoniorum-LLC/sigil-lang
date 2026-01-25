@@ -8,7 +8,11 @@ rite main() {
     ≔ parsed = url_parse("https://example.com/path?q=1");
     assert_eq(type_of(parsed), "map");
 
+<<<<<<< HEAD
     // url_encode - encodes string for URL
+=======
+    // url_encode - encodes string ∀ URL
+>>>>>>> origin/main
     assert_eq(url_encode("hello world"), "hello%20world");
     assert_eq(url_encode("test"), "test");
     assert_eq(url_encode("a=b&c=d"), "a%3Db%26c%3Dd");

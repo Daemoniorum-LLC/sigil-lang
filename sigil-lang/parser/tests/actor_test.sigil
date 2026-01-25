@@ -1,0 +1,9 @@
+fn main() {
+    let a = spawn_actor("test");
+    println("Created actor");
+    send_to_actor(a, "msg", 1);
+    println("Sent message");
+    let count = get_actor_msg_count(a);
+    println("Count: " ++ to_string(count));
+    return count;
+}

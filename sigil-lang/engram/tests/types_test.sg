@@ -1,0 +1,867 @@
+//! Tests ∀ Engram Types Module
+//!
+//! Tests core type definitions: Epistemic knowledge, vectors, outcomes, scopes.
+
+// ============================================================================
+// Epistemic Types - How We Know Things
+// ============================================================================
+
+☉ ᛈ InferenceType {
+    Deductive,
+    Inductive,
+    Abductive,
+    Analogical,
+}
+
+☉ ᛈ HypothesisStatus {
+    Proposed,
+    UnderTest,
+    Supported,
+    Refuted,
+}
+
+☉ Σ Source {
+    kind: String,
+    name: String,
+}
+
+⊢ Source {
+    ☉ λ agent(name: &str) -> Self {
+        Self { kind: "agent".to_string(), name: name.to_string() }
+    }
+
+    ☉ λ user(name: &str) -> Self {
+        Self { kind: "user".to_string(), name: name.to_string() }
+    }
+
+    ☉ λ api(endpoint: &str) -> Self {
+        Self { kind: "api".to_string(), name: endpoint.to_string() }
+    }
+
+    ☉ λ document(path: &str) -> Self {
+        Self { kind: "document".to_string(), name: path.to_string() }
+    }
+
+    ☉ λ unknown() -> Self {
+        Self { kind: "unknown".to_string(), name: "".to_string() }
+    }
+}
+
+/// Epistemic status - tracking how we know what we know
+☉ Σ Epistemic {
+    kind: String,
+    trust_level: f64,
+    confidence: f64,
+    chain_length: usize,
+    agreement_level: f64,
+}
+
+⊢ Epistemic {
+    ☉ λ axiomatic() -> Self {
+        Self { kind: "axiomatic".to_string(), trust_level: 1.0, confidence: 1.0, chain_length: 0, agreement_level: 1.0 }
+    }
+
+    ☉ λ observed() -> Self {
+        Self { kind: "observed".to_string(), trust_level: 0.95, confidence: 0.95, chain_length: 0, agreement_level: 1.0 }
+    }
+
+    ☉ λ computed() -> Self {
+        Self { kind: "computed".to_string(), trust_level: 0.9, confidence: 0.9, chain_length: 0, agreement_level: 1.0 }
+    }
+
+    ☉ λ reported(trust: f64) -> Self {
+        Self { kind: "reported".to_string(), trust_level: trust, confidence: 0.0, chain_length: 0, agreement_level: 0.0 }
+    }
+
+    ☉ λ inferred(conf: f64) -> Self {
+        Self { kind: "inferred".to_string(), trust_level: 0.0, confidence: conf, chain_length: 0, agreement_level: 0.0 }
+    }
+
+    ☉ λ consensus(agreement: f64) -> Self {
+        Self { kind: "consensus".to_string(), trust_level: 0.0, confidence: 0.0, chain_length: 0, agreement_level: agreement }
+    }
+
+    ☉ λ hypothetical() -> Self {
+        Self { kind: "hypothetical".to_string(), trust_level: 0.2, confidence: 0.2, chain_length: 0, agreement_level: 0.0 }
+    }
+
+    ☉ λ hearsay(chain_len: usize) -> Self {
+        Self { kind: "hearsay".to_string(), trust_level: 0.0, confidence: 0.0, chain_length: chain_len, agreement_level: 0.0 }
+    }
+
+    ☉ λ contested() -> Self {
+        Self { kind: "contested".to_string(), trust_level: 0.3, confidence: 0.3, chain_length: 0, agreement_level: 0.0 }
+    }
+
+    ☉ λ unknown() -> Self {
+        Self { kind: "unknown".to_string(), trust_level: 0.0, confidence: 0.0, chain_length: 0, agreement_level: 0.0 }
+    }
+
+    ☉ λ retracted() -> Self {
+        Self { kind: "retracted".to_string(), trust_level: 0.0, confidence: 0.0, chain_length: 0, agreement_level: 0.0 }
+    }
+
+    /// Compute epistemic strength (0.0 - 1.0)
+    ☉ λ strength(&self) -> f64 {
+        ⎇ self.kind == "axiomatic" {
+            1.0
+        } ⎉ ⎇ self.kind == "observed" {
+            0.95
+        } ⎉ ⎇ self.kind == "computed" {
+            0.9
+        } ⎉ ⎇ self.kind == "consensus" {
+            0.7 + self.agreement_level * 0.2
+        } ⎉ ⎇ self.kind == "reported" {
+            0.4 + self.trust_level * 0.3
+        } ⎉ ⎇ self.kind == "inferred" {
+            0.3 + self.confidence * 0.4
+        } ⎉ ⎇ self.kind == "hypothetical" {
+            0.2
+        } ⎉ ⎇ self.kind == "hearsay" {
+            ⎇ self.chain_length == 0 {
+                0.1
+            } ⎉ {
+                0.1 / (self.chain_length as f64)
+            }
+        } ⎉ ⎇ self.kind == "contested" {
+            0.3
+        } ⎉ ⎇ self.kind == "unknown" {
+            0.0
+        } ⎉ ⎇ self.kind == "retracted" {
+            0.0
+        } ⎉ {
+            0.0
+        }
+    }
+
+    ☉ λ is_observed(&self) -> bool {
+        self.kind == "observed"
+    }
+
+    ☉ λ is_reported(&self) -> bool {
+        self.kind == "reported" || self.kind == "hearsay"
+    }
+
+    ☉ λ is_inferred(&self) -> bool {
+        self.kind == "inferred" || self.kind == "computed"
+    }
+
+    ☉ λ is_contested(&self) -> bool {
+        self.kind == "contested"
+    }
+
+    ☉ λ is_certain(&self) -> bool {
+        self.strength() > 0.9
+    }
+
+    ☉ λ is_uncertain(&self) -> bool {
+        self.strength() < 0.5
+    }
+}
+
+// ============================================================================
+// Scope Types
+// ============================================================================
+
+☉ Σ Scope {
+    kind: String,
+    instance_id: String,
+    agent_id: String,
+}
+
+⊢ Scope {
+    ☉ λ instance(id: &str) -> Self {
+        Self { kind: "instance".to_string(), instance_id: id.to_string(), agent_id: "".to_string() }
+    }
+
+    ☉ λ agent(id: &str) -> Self {
+        Self { kind: "agent".to_string(), instance_id: "".to_string(), agent_id: id.to_string() }
+    }
+
+    ☉ λ collective() -> Self {
+        Self { kind: "collective".to_string(), instance_id: "".to_string(), agent_id: "".to_string() }
+    }
+
+    ☉ λ universal() -> Self {
+        Self { kind: "universal".to_string(), instance_id: "".to_string(), agent_id: "".to_string() }
+    }
+
+    ☉ λ is_local(&self) -> bool {
+        self.kind == "instance"
+    }
+
+    ☉ λ is_shared(&self) -> bool {
+        self.kind != "instance"
+    }
+}
+
+// ============================================================================
+// Outcome Types
+// ============================================================================
+
+☉ Σ Outcome {
+    kind: String,
+    goal_alignment: f64,
+    progress: f64,
+    completed_count: usize,
+    total_count: usize,
+    recoverable: bool,
+}
+
+⊢ Outcome {
+    ☉ λ success(alignment: f64) -> Self {
+        Self {
+            kind: "success".to_string(),
+            goal_alignment: alignment,
+            progress: 1.0,
+            completed_count: 0,
+            total_count: 0,
+            recoverable: false,
+        }
+    }
+
+    ☉ λ failure(recoverable: bool) -> Self {
+        Self {
+            kind: "failure".to_string(),
+            goal_alignment: 0.0,
+            progress: 0.0,
+            completed_count: 0,
+            total_count: 0,
+            recoverable: recoverable,
+        }
+    }
+
+    ☉ λ partial(completed: usize, total: usize) -> Self {
+        Self {
+            kind: "partial".to_string(),
+            goal_alignment: 0.0,
+            progress: 0.0,
+            completed_count: completed,
+            total_count: total,
+            recoverable: false,
+        }
+    }
+
+    ☉ λ abandoned(progress: f64) -> Self {
+        Self {
+            kind: "abandoned".to_string(),
+            goal_alignment: 0.0,
+            progress: progress,
+            completed_count: 0,
+            total_count: 0,
+            recoverable: false,
+        }
+    }
+
+    ☉ λ ongoing() -> Self {
+        Self {
+            kind: "ongoing".to_string(),
+            goal_alignment: 0.0,
+            progress: 0.5,
+            completed_count: 0,
+            total_count: 0,
+            recoverable: false,
+        }
+    }
+
+    ☉ λ is_success(&self) -> bool {
+        self.kind == "success"
+    }
+
+    ☉ λ is_failure(&self) -> bool {
+        self.kind == "failure"
+    }
+
+    ☉ λ is_partial(&self) -> bool {
+        self.kind == "partial"
+    }
+
+    ☉ λ is_ongoing(&self) -> bool {
+        self.kind == "ongoing"
+    }
+
+    ☉ λ confidence(&self) -> f64 {
+        ⎇ self.kind == "success" {
+            self.goal_alignment
+        } ⎉ ⎇ self.kind == "failure" {
+            ⎇ self.recoverable { 0.2 } ⎉ { 0.0 }
+        } ⎉ ⎇ self.kind == "partial" {
+            ⎇ self.total_count == 0 {
+                0.0
+            } ⎉ {
+                (self.completed_count as f64) / (self.total_count as f64)
+            }
+        } ⎉ ⎇ self.kind == "abandoned" {
+            self.progress * 0.3
+        } ⎉ ⎇ self.kind == "ongoing" {
+            0.5
+        } ⎉ {
+            0.0
+        }
+    }
+}
+
+// ============================================================================
+// Vector Types
+// ============================================================================
+
+☉ Σ Vector {
+    data: Vec<f32>,
+}
+
+⊢ Vector {
+    ☉ λ new(data: Vec<f32>) -> Self {
+        Self { data }
+    }
+
+    ☉ λ zeros(dimensions: usize) -> Self {
+        Self { data: vec![0.0; dimensions] }
+    }
+
+    ☉ λ dimensions(&self) -> usize {
+        self.data.len()
+    }
+
+    ☉ λ at(&self, idx: usize) -> f32 {
+        self.data[idx]
+    }
+
+    ☉ λ cosine_similarity(&self, other: &Vector) -> f64 {
+        ⎇ self.dimensions() != other.dimensions() {
+            ⤺ 0.0;
+        }
+
+        ≔ Δ dot = 0.0;
+        ≔ Δ norm_a = 0.0;
+        ≔ Δ norm_b = 0.0;
+
+        ∀ i ∈ 0..self.dimensions() {
+            ≔ a = self.data[i] as f64;
+            ≔ b = other.data[i] as f64;
+            dot = dot + a * b;
+            norm_a = norm_a + a * a;
+            norm_b = norm_b + b * b;
+        }
+
+        ≔ denom = approx_sqrt(norm_a) * approx_sqrt(norm_b);
+        ⎇ denom > 0.0 {
+            dot / denom
+        } ⎉ {
+            0.0
+        }
+    }
+
+    ☉ λ euclidean_distance(&self, other: &Vector) -> f64 {
+        ⎇ self.dimensions() != other.dimensions() {
+            ⤺ 0.0;
+        }
+
+        ≔ Δ sum_sq = 0.0;
+        ∀ i ∈ 0..self.dimensions() {
+            ≔ diff = (self.data[i] - other.data[i]) as f64;
+            sum_sq = sum_sq + diff * diff;
+        }
+
+        approx_sqrt(sum_sq)
+    }
+
+    ☉ λ normalize(&self) -> Vector {
+        ≔ Δ sum_sq = 0.0;
+        ∀ i ∈ 0..self.dimensions() {
+            ≔ v = self.data[i] as f64;
+            sum_sq = sum_sq + v * v;
+        }
+        ≔ norm = approx_sqrt(sum_sq);
+
+        ≔ Δ normalized = Vec·new();
+        ∀ i ∈ 0..self.dimensions() {
+            ⎇ norm > 0.0 {
+                normalized.push((self.data[i] as f64 / norm) as f32);
+            } ⎉ {
+                normalized.push(0.0);
+            }
+        }
+
+        Vector { data: normalized }
+    }
+}
+
+λ approx_sqrt(x: f64) -> f64 {
+    ⎇ x <= 0.0 { ⤺ 0.0; }
+    ≔ Δ guess = x / 2.0;
+    ∀ _ ∈ 0..15 {
+        guess = (guess + x / guess) / 2.0;
+    }
+    guess
+}
+
+// ============================================================================
+// Token Types
+// ============================================================================
+
+☉ Σ TokenCount {
+    count: usize,
+}
+
+⊢ TokenCount {
+    ☉ λ new(n: usize) -> Self {
+        Self { count: n }
+    }
+
+    ☉ λ zero() -> Self {
+        Self { count: 0 }
+    }
+
+    ☉ λ from_text(text: &str) -> Self {
+        // Approximate: ~4 characters per token
+        Self { count: text.len() / 4 + 1 }
+    }
+
+    ☉ λ value(&self) -> usize {
+        self.count
+    }
+
+    ☉ λ add(&self, other: &TokenCount) -> TokenCount {
+        TokenCount { count: self.count + other.count }
+    }
+
+    ☉ λ sub(&self, other: &TokenCount) -> TokenCount {
+        ⎇ self.count > other.count {
+            TokenCount { count: self.count - other.count }
+        } ⎉ {
+            TokenCount { count: 0 }
+        }
+    }
+}
+
+// ============================================================================
+// Memory Source Types
+// ============================================================================
+
+☉ ᛈ MemorySource {
+    Instant,
+    Episodic,
+    Semantic,
+    Procedural,
+}
+
+⊢ MemorySource {
+    ☉ λ name(&self) -> &str {
+        ⌥ self {
+            MemorySource·Instant => "instant",
+            MemorySource·Episodic => "episodic",
+            MemorySource·Semantic => "semantic",
+            MemorySource·Procedural => "procedural",
+        }
+    }
+}
+
+// ============================================================================
+// Relation Types
+// ============================================================================
+
+☉ Σ Relation {
+    kind: String,
+}
+
+⊢ Relation {
+    ☉ λ is_a() -> Self { Self { kind: "IsA".to_string() } }
+    ☉ λ has_part() -> Self { Self { kind: "HasPart".to_string() } }
+    ☉ λ related_to() -> Self { Self { kind: "RelatedTo".to_string() } }
+    ☉ λ causes() -> Self { Self { kind: "Causes".to_string() } }
+    ☉ λ before() -> Self { Self { kind: "Before".to_string() } }
+    ☉ λ located_in() -> Self { Self { kind: "LocatedIn".to_string() } }
+    ☉ λ created_by() -> Self { Self { kind: "CreatedBy".to_string() } }
+    ☉ λ custom(name: &str) -> Self { Self { kind: name.to_string() } }
+
+    ☉ λ name(&self) -> &str {
+        &self.kind
+    }
+
+    ☉ λ is_taxonomic(&self) -> bool {
+        self.kind == "IsA" || self.kind == "InstanceOf" || self.kind == "SubclassOf"
+    }
+
+    ☉ λ is_causal(&self) -> bool {
+        self.kind == "Causes" || self.kind == "Enables" || self.kind == "Prevents"
+    }
+
+    ☉ λ is_temporal(&self) -> bool {
+        self.kind == "Before" || self.kind == "After" || self.kind == "During"
+    }
+}
+
+// ============================================================================
+// Node Types
+// ============================================================================
+
+☉ Σ NodeType {
+    kind: String,
+}
+
+⊢ NodeType {
+    ☉ λ person() -> Self { Self { kind: "Person".to_string() } }
+    ☉ λ organization() -> Self { Self { kind: "Organization".to_string() } }
+    ☉ λ concept() -> Self { Self { kind: "Concept".to_string() } }
+    ☉ λ event() -> Self { Self { kind: "Event".to_string() } }
+    ☉ λ document() -> Self { Self { kind: "Document".to_string() } }
+    ☉ λ tool() -> Self { Self { kind: "Tool".to_string() } }
+    ☉ λ skill() -> Self { Self { kind: "Skill".to_string() } }
+    ☉ λ goal() -> Self { Self { kind: "Goal".to_string() } }
+    ☉ λ task() -> Self { Self { kind: "Task".to_string() } }
+    ☉ λ custom(name: &str) -> Self { Self { kind: name.to_string() } }
+
+    ☉ λ name(&self) -> &str {
+        &self.kind
+    }
+
+    ☉ λ is_entity(&self) -> bool {
+        self.kind == "Person" || self.kind == "Organization" ||
+        self.kind == "Place" || self.kind == "Event"
+    }
+
+    ☉ λ is_abstract(&self) -> bool {
+        self.kind == "Concept" || self.kind == "Category" ||
+        self.kind == "Skill" || self.kind == "Goal"
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+λ test_epistemic_axiomatic_strength() {
+    ≔ e = Epistemic·axiomatic();
+    ≔ strength = e.strength();
+    ≔ diff = strength - 1.0;
+    ≔ is_one = diff < 0.001 && diff > -0.001;
+    assert(is_one);
+}
+
+#[test]
+λ test_epistemic_observed_strength() {
+    ≔ e = Epistemic·observed();
+    ≔ strength = e.strength();
+    assert(strength > 0.9);
+    assert(e.is_observed());
+    assert(e.is_certain());
+}
+
+#[test]
+λ test_epistemic_computed_strength() {
+    ≔ e = Epistemic·computed();
+    ≔ strength = e.strength();
+    ≔ diff = strength - 0.9;
+    ≔ is_correct = diff < 0.001 && diff > -0.001;
+    assert(is_correct);
+    assert(e.is_inferred());
+}
+
+#[test]
+λ test_epistemic_reported_strength() {
+    // High trust
+    ≔ high = Epistemic·reported(1.0);
+    ≔ high_strength = high.strength();
+    assert(high_strength > 0.6);
+    assert(high.is_reported());
+
+    // Low trust
+    ≔ low = Epistemic·reported(0.0);
+    ≔ low_strength = low.strength();
+    assert(low_strength < 0.5);
+}
+
+#[test]
+λ test_epistemic_inferred_strength() {
+    // High confidence
+    ≔ high = Epistemic·inferred(1.0);
+    ≔ high_strength = high.strength();
+    ≔ diff = high_strength - 0.7;
+    ≔ is_correct = diff < 0.001 && diff > -0.001;
+    assert(is_correct);
+
+    // Low confidence
+    ≔ low = Epistemic·inferred(0.0);
+    ≔ low_strength = low.strength();
+    assert(low_strength < 0.5);
+    assert(low.is_inferred());
+}
+
+#[test]
+λ test_epistemic_consensus_strength() {
+    ≔ e = Epistemic·consensus(0.8);
+    ≔ strength = e.strength();
+    // 0.7 + 0.8 * 0.2 = 0.86
+    ≔ diff = strength - 0.86;
+    ≔ is_correct = diff < 0.01 && diff > -0.01;
+    assert(is_correct);
+}
+
+#[test]
+λ test_epistemic_hearsay_degrades() {
+    ≔ short_chain = Epistemic·hearsay(1);
+    ≔ long_chain = Epistemic·hearsay(5);
+
+    ≔ short_strength = short_chain.strength();
+    ≔ long_strength = long_chain.strength();
+
+    // Longer chains have lower strength
+    assert(short_strength > long_strength);
+    assert(long_chain.is_reported());
+}
+
+#[test]
+λ test_epistemic_unknown_zero() {
+    ≔ e = Epistemic·unknown();
+    ≔ strength = e.strength();
+    assert(strength < 0.001);
+    assert(e.is_uncertain());
+}
+
+#[test]
+λ test_epistemic_retracted_zero() {
+    ≔ e = Epistemic·retracted();
+    ≔ strength = e.strength();
+    assert(strength < 0.001);
+}
+
+#[test]
+λ test_epistemic_contested() {
+    ≔ e = Epistemic·contested();
+    assert(e.is_contested());
+    ≔ strength = e.strength();
+    ≔ diff = strength - 0.3;
+    ≔ is_correct = diff < 0.01 && diff > -0.01;
+    assert(is_correct);
+}
+
+#[test]
+λ test_scope_instance_is_local() {
+    ≔ s = Scope·instance("session_123");
+    assert(s.is_local());
+    ≔ not_shared = s.is_shared() == false;
+    assert(not_shared);
+}
+
+#[test]
+λ test_scope_agent_is_shared() {
+    ≔ s = Scope·agent("agent_001");
+    assert(s.is_shared());
+    ≔ not_local = s.is_local() == false;
+    assert(not_local);
+}
+
+#[test]
+λ test_scope_collective_is_shared() {
+    ≔ s = Scope·collective();
+    assert(s.is_shared());
+}
+
+#[test]
+λ test_scope_universal_is_shared() {
+    ≔ s = Scope·universal();
+    assert(s.is_shared());
+}
+
+#[test]
+λ test_outcome_success_confidence() {
+    ≔ o = Outcome·success(0.8);
+    assert(o.is_success());
+    ≔ conf = o.confidence();
+    ≔ diff = conf - 0.8;
+    ≔ is_correct = diff < 0.001 && diff > -0.001;
+    assert(is_correct);
+}
+
+#[test]
+λ test_outcome_failure_recoverable() {
+    ≔ recoverable = Outcome·failure(true);
+    ≔ non_recoverable = Outcome·failure(false);
+
+    assert(recoverable.is_failure());
+    assert(non_recoverable.is_failure());
+
+    ≔ rec_conf = recoverable.confidence();
+    ≔ non_conf = non_recoverable.confidence();
+
+    // Recoverable has some confidence (0.2)
+    assert(rec_conf > 0.1);
+    // Non-recoverable has zero confidence
+    assert(non_conf < 0.001);
+}
+
+#[test]
+λ test_outcome_partial_confidence() {
+    ≔ o = Outcome·partial(2, 3);  // 2 of 3 complete
+    assert(o.is_partial());
+    ≔ conf = o.confidence();
+    // 2/3 = 0.666...
+    ≔ diff = conf - 0.666;
+    ≔ is_correct = diff < 0.01 && diff > -0.01;
+    assert(is_correct);
+}
+
+#[test]
+λ test_outcome_abandoned_confidence() {
+    ≔ o = Outcome·abandoned(0.5);  // 50% progress
+    ≔ conf = o.confidence();
+    // 0.5 * 0.3 = 0.15
+    ≔ diff = conf - 0.15;
+    ≔ is_correct = diff < 0.01 && diff > -0.01;
+    assert(is_correct);
+}
+
+#[test]
+λ test_outcome_ongoing_confidence() {
+    ≔ o = Outcome·ongoing();
+    assert(o.is_ongoing());
+    ≔ conf = o.confidence();
+    ≔ diff = conf - 0.5;
+    ≔ is_correct = diff < 0.01 && diff > -0.01;
+    assert(is_correct);
+}
+
+#[test]
+λ test_vector_dimensions() {
+    ≔ v = Vector·new(vec![1.0, 2.0, 3.0]);
+    assert_eq(v.dimensions(), 3);
+
+    ≔ z = Vector·zeros(5);
+    assert_eq(z.dimensions(), 5);
+}
+
+#[test]
+λ test_vector_cosine_identical() {
+    ≔ v1 = Vector·new(vec![1.0, 2.0, 3.0]);
+    ≔ v2 = Vector·new(vec![1.0, 2.0, 3.0]);
+
+    ≔ sim = v1.cosine_similarity(&v2);
+    ≔ diff = sim - 1.0;
+    ≔ is_one = diff < 0.001 && diff > -0.001;
+    assert(is_one);
+}
+
+#[test]
+λ test_vector_cosine_orthogonal() {
+    ≔ v1 = Vector·new(vec![1.0, 0.0, 0.0]);
+    ≔ v2 = Vector·new(vec![0.0, 1.0, 0.0]);
+
+    ≔ sim = v1.cosine_similarity(&v2);
+    ≔ is_zero = sim < 0.001 && sim > -0.001;
+    assert(is_zero);
+}
+
+#[test]
+λ test_vector_cosine_opposite() {
+    ≔ v1 = Vector·new(vec![1.0, 0.0]);
+    ≔ v2 = Vector·new(vec![-1.0, 0.0]);
+
+    ≔ sim = v1.cosine_similarity(&v2);
+    ≔ diff = sim + 1.0;  // Should be -1
+    ≔ is_neg_one = diff < 0.001 && diff > -0.001;
+    assert(is_neg_one);
+}
+
+#[test]
+λ test_vector_euclidean_distance() {
+    ≔ v1 = Vector·new(vec![0.0, 0.0]);
+    ≔ v2 = Vector·new(vec![3.0, 4.0]);
+
+    ≔ dist = v1.euclidean_distance(&v2);
+    // 3-4-5 triangle
+    ≔ diff = dist - 5.0;
+    ≔ is_five = diff < 0.01 && diff > -0.01;
+    assert(is_five);
+}
+
+#[test]
+λ test_vector_normalize() {
+    ≔ v = Vector·new(vec![3.0, 4.0]);  // 3-4-5 triangle
+    ≔ normalized = v.normalize();
+
+    // Check unit length
+    ≔ x = normalized.at(0) as f64;
+    ≔ y = normalized.at(1) as f64;
+    ≔ length = approx_sqrt(x * x + y * y);
+    ≔ diff = length - 1.0;
+    ≔ is_unit = diff < 0.01 && diff > -0.01;
+    assert(is_unit);
+}
+
+#[test]
+λ test_vector_zeros() {
+    ≔ v = Vector·zeros(3);
+    ≔ a = v.at(0);
+    ≔ b = v.at(1);
+    ≔ c = v.at(2);
+    assert(a < 0.001);
+    assert(b < 0.001);
+    assert(c < 0.001);
+}
+
+#[test]
+λ test_token_count_from_text() {
+    ≔ tc = TokenCount·from_text("Hello world");  // 11 chars
+    // 11 / 4 + 1 = 3
+    assert_eq(tc.value(), 3);
+}
+
+#[test]
+λ test_token_count_arithmetic() {
+    ≔ a = TokenCount·new(10);
+    ≔ b = TokenCount·new(5);
+
+    ≔ sum = a.add(&b);
+    assert_eq(sum.value(), 15);
+
+    ≔ diff = a.sub(&b);
+    assert_eq(diff.value(), 5);
+
+    // Saturating subtraction
+    ≔ underflow = b.sub(&a);
+    assert_eq(underflow.value(), 0);
+}
+
+#[test]
+λ test_memory_source_names() {
+    ≔ instant = MemorySource·Instant;
+    ≔ episodic = MemorySource·Episodic;
+    ≔ semantic = MemorySource·Semantic;
+    ≔ procedural = MemorySource·Procedural;
+
+    assert_eq(instant.name(), "instant");
+    assert_eq(episodic.name(), "episodic");
+    assert_eq(semantic.name(), "semantic");
+    assert_eq(procedural.name(), "procedural");
+}
+
+#[test]
+λ test_relation_types() {
+    ≔ is_a = Relation·is_a();
+    ≔ causes = Relation·causes();
+    ≔ before = Relation·before();
+
+    assert(is_a.is_taxonomic());
+    assert(causes.is_causal());
+    assert(before.is_temporal());
+
+    ≔ custom = Relation·custom("CustomRelation");
+    assert_eq(custom.name(), "CustomRelation");
+}
+
+#[test]
+λ test_node_types() {
+    ≔ person = NodeType·person();
+    ≔ concept = NodeType·concept();
+
+    assert(person.is_entity());
+    assert(concept.is_abstract());
+
+    ≔ custom = NodeType·custom("CustomType");
+    assert_eq(custom.name(), "CustomType");
+}
+
+λ main() {
+    print("Engram types tests");
+}

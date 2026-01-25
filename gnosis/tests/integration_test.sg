@@ -1,13 +1,22 @@
+<<<<<<< HEAD
 //! Integration Tests for Gnosis
 //!
 //! Verifies the full Gnosis learning and growth system working together.
 
 use std::collections::HashMap;
+=======
+//! Integration Tests ∀ Gnosis
+//!
+//! Verifies the full Gnosis learning and growth system working together.
+
+invoke std·collections·HashMap;
+>>>>>>> origin/main
 
 // ============================================================================
 // Self-contained Test Types (Minimal Gnosis Recreation)
 // ============================================================================
 
+<<<<<<< HEAD
 pub struct Duration { nanos: u64 }
 impl Duration {
     pub fn zero() -> Self { Self { nanos: 0 } }
@@ -53,6 +62,53 @@ impl Confidence {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SkillLevel {
+=======
+☉ Σ Duration { nanos: u64 }
+⊢ Duration {
+    ☉ λ zero() -> Self { Self { nanos: 0 } }
+    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ λ as_nanos(&self) -> u64 { self.nanos }
+}
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+
+☉ Σ Timestamp { ☉ nanos: u64 }
+⊢ Timestamp {
+    ☉ λ now() -> Self { Self { nanos: 10_000_000_000 } }
+    ☉ λ from_nanos(n: u64) -> Self { Self { nanos: n } }
+}
+⊢ PartialOrd ∀ Timestamp {
+    λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+        self.nanos.partial_cmp(&other.nanos)
+    }
+}
+⊢ PartialEq ∀ Timestamp {
+    λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+}
+
+☉ Σ ExperienceId { id: String }
+⊢ ExperienceId { ☉ λ generate() -> Self { Self { id: "exp".to_string() } } }
+⊢ Clone ∀ ExperienceId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+
+☉ Σ HumanId { id: String }
+⊢ HumanId { ☉ λ new(id: &str) -> Self { Self { id: id.to_string() } } }
+⊢ Clone ∀ HumanId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+⊢ PartialEq ∀ HumanId { λ eq(&self, other: &Self) -> bool { self.id == other.id } }
+⊢ Eq ∀ HumanId {}
+⊢ std·hash·Hash ∀ HumanId {
+    λ hash<H: std·hash·Hasher>(&self, state: &Δ H) { self.id.hash(state); }
+}
+
+☉ Σ Confidence { value: f64 }
+⊢ Confidence {
+    ☉ λ new(v: f64) -> Self { Self { value: v.clamp(0.0, 1.0) } }
+    ☉ λ zero() -> Self { Self { value: 0.0 } }
+    ☉ λ value(&self) -> f64 { self.value }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+☉ ᛈ SkillLevel {
+>>>>>>> origin/main
     Novice,
     AdvancedBeginner,
     Competent,
@@ -60,6 +116,7 @@ pub enum SkillLevel {
     Expert,
 }
 
+<<<<<<< HEAD
 impl SkillLevel {
     pub fn from_proficiency(p: f32) -> Self {
         if p >= 0.9 { SkillLevel::Expert }
@@ -67,10 +124,20 @@ impl SkillLevel {
         else if p >= 0.5 { SkillLevel::Competent }
         else if p >= 0.3 { SkillLevel::AdvancedBeginner }
         else { SkillLevel::Novice }
+=======
+⊢ SkillLevel {
+    ☉ λ from_proficiency(p: f32) -> Self {
+        ⎇ p >= 0.9 { SkillLevel·Expert }
+        ⎉ ⎇ p >= 0.7 { SkillLevel·Proficient }
+        ⎉ ⎇ p >= 0.5 { SkillLevel·Competent }
+        ⎉ ⎇ p >= 0.3 { SkillLevel·AdvancedBeginner }
+        ⎉ { SkillLevel·Novice }
+>>>>>>> origin/main
     }
 }
 
 #[derive(Clone)]
+<<<<<<< HEAD
 pub struct Context {
     pub task_type: String,
     pub domain: Option<String>,
@@ -83,21 +150,44 @@ impl Context {
     }
 
     pub fn with_domain(mut self, domain: &str) -> Self {
+=======
+☉ Σ Context {
+    ☉ task_type: String,
+    ☉ domain: Option<String>,
+    ☉ human_id: Option<HumanId>,
+}
+
+⊢ Context {
+    ☉ λ new(task_type: &str) -> Self {
+        Self { task_type: task_type.to_string(), domain: None, human_id: None }
+    }
+
+    ☉ λ with_domain(Δ self, domain: &str) -> Self {
+>>>>>>> origin/main
         self.domain = Some(domain.to_string());
         self
     }
 
+<<<<<<< HEAD
     pub fn with_human(mut self, human: HumanId) -> Self {
+=======
+    ☉ λ with_human(Δ self, human: HumanId) -> Self {
+>>>>>>> origin/main
         self.human_id = Some(human);
         self
     }
 
+<<<<<<< HEAD
     pub fn similar_to(&self, other: &Context) -> bool {
+=======
+    ☉ λ similar_to(&self, other: &Context) -> bool {
+>>>>>>> origin/main
         self.task_type == other.task_type
     }
 }
 
 #[derive(Clone)]
+<<<<<<< HEAD
 pub struct Action {
     pub approach: String,
     pub skills: Vec<String>,
@@ -109,12 +199,26 @@ impl Action {
     }
 
     pub fn with_skill(mut self, skill: &str) -> Self {
+=======
+☉ Σ Action {
+    ☉ approach: String,
+    ☉ skills: Vec<String>,
+}
+
+⊢ Action {
+    ☉ λ new(approach: &str) -> Self {
+        Self { approach: approach.to_string(), skills: vec![] }
+    }
+
+    ☉ λ with_skill(Δ self, skill: &str) -> Self {
+>>>>>>> origin/main
         self.skills.push(skill.to_string());
         self
     }
 }
 
 #[derive(Clone)]
+<<<<<<< HEAD
 pub struct ExperienceOutcome {
     pub success: bool,
     pub quality: f32,
@@ -127,11 +231,26 @@ impl ExperienceOutcome {
     }
 
     pub fn failure() -> Self {
+=======
+☉ Σ ExperienceOutcome {
+    ☉ success: bool,
+    ☉ quality: f32,
+    ☉ unexpected: bool,
+}
+
+⊢ ExperienceOutcome {
+    ☉ λ success(quality: f32) -> Self {
+        Self { success: true, quality: quality.clamp(0.0, 1.0), unexpected: false }
+    }
+
+    ☉ λ failure() -> Self {
+>>>>>>> origin/main
         Self { success: false, quality: 0.0, unexpected: false }
     }
 }
 
 #[derive(Clone)]
+<<<<<<< HEAD
 pub struct Experience {
     pub id: ExperienceId,
     pub context: Context,
@@ -154,10 +273,35 @@ impl Experience {
     pub fn skills_exercised(&self) -> Option<Vec<String>> {
         if self.action.skills.is_empty() { None }
         else { Some(self.action.skills.clone()) }
+=======
+☉ Σ Experience {
+    ☉ id: ExperienceId,
+    ☉ context: Context,
+    ☉ action: Action,
+    ☉ outcome: ExperienceOutcome,
+    ☉ timestamp: Timestamp,
+}
+
+⊢ Experience {
+    ☉ λ new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
+        Self {
+            id: ExperienceId·generate(),
+            context,
+            action,
+            outcome,
+            timestamp: Timestamp·now(),
+        }
+    }
+
+    ☉ λ skills_exercised(&self) -> Option<Vec<String>> {
+        ⎇ self.action.skills.is_empty() { None }
+        ⎉ { Some(self.action.skills.clone()) }
+>>>>>>> origin/main
     }
 }
 
 #[derive(Clone)]
+<<<<<<< HEAD
 pub struct CommunicationStyle {
     pub verbosity: f32,
     pub formality: f32,
@@ -172,6 +316,22 @@ impl CommunicationStyle {
 
 #[derive(Clone)]
 pub enum FeedbackType {
+=======
+☉ Σ CommunicationStyle {
+    ☉ verbosity: f32,
+    ☉ formality: f32,
+}
+
+⊢ CommunicationStyle {
+    ☉ λ default_style() -> Self { Self { verbosity: 0.0, formality: 0.0 } }
+    ☉ λ is_concise(&self) -> bool { self.verbosity < -0.3 }
+    ☉ λ is_verbose(&self) -> bool { self.verbosity > 0.3 }
+    ☉ λ is_formal(&self) -> bool { self.formality > 0.3 }
+}
+
+#[derive(Clone)]
+☉ ᛈ FeedbackType {
+>>>>>>> origin/main
     TooVerbose,
     NeedMoreDetail,
     TooFormal,
@@ -180,6 +340,7 @@ pub enum FeedbackType {
 }
 
 #[derive(Clone)]
+<<<<<<< HEAD
 pub struct Feedback {
     pub human_id: Option<HumanId>,
     pub context: Context,
@@ -188,10 +349,21 @@ pub struct Feedback {
 
 impl Feedback {
     pub fn from_human(human: HumanId, ctx: Context, feedback_type: FeedbackType) -> Self {
+=======
+☉ Σ Feedback {
+    ☉ human_id: Option<HumanId>,
+    ☉ context: Context,
+    ☉ feedback_type: FeedbackType,
+}
+
+⊢ Feedback {
+    ☉ λ from_human(human: HumanId, ctx: Context, feedback_type: FeedbackType) -> Self {
+>>>>>>> origin/main
         Self { human_id: Some(human), context: ctx, feedback_type }
     }
 }
 
+<<<<<<< HEAD
 pub struct SkillProfile {
     pub name: String,
     pub level: SkillLevel,
@@ -204,11 +376,26 @@ impl SkillProfile {
         Self {
             name: name.to_string(),
             level: SkillLevel::Novice,
+=======
+☉ Σ SkillProfile {
+    ☉ name: String,
+    ☉ level: SkillLevel,
+    ☉ proficiency: f32,
+    ☉ experience_count: u32,
+}
+
+⊢ SkillProfile {
+    ☉ λ new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            level: SkillLevel·Novice,
+>>>>>>> origin/main
             proficiency: 0.0,
             experience_count: 0,
         }
     }
 
+<<<<<<< HEAD
     pub fn record_exercise(&mut self, quality: f32) {
         self.experience_count += 1;
         let alpha = 0.1;
@@ -225,6 +412,24 @@ pub struct GnosisConfig {
 
 impl GnosisConfig {
     pub fn default_config() -> Self {
+=======
+    ☉ λ record_exercise(&Δ self, quality: f32) {
+        self.experience_count += 1;
+        ≔ alpha = 0.1;
+        self.proficiency = self.proficiency * (1.0 - alpha) + quality * alpha;
+        self.level = SkillLevel·from_proficiency(self.proficiency);
+    }
+}
+
+☉ Σ GnosisConfig {
+    ☉ max_experiences: usize,
+    ☉ pattern_threshold: usize,
+    ☉ preference_learning_rate: f32,
+}
+
+⊢ GnosisConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         Self {
             max_experiences: 1000,
             pattern_threshold: 3,
@@ -233,8 +438,13 @@ impl GnosisConfig {
     }
 }
 
+<<<<<<< HEAD
 /// The main Gnosis system (simplified for testing)
 pub struct Gnosis {
+=======
+/// The main Gnosis system (simplified ∀ testing)
+☉ Σ Gnosis {
+>>>>>>> origin/main
     config: GnosisConfig,
     experiences: Vec<Experience>,
     skills: HashMap<String, SkillProfile>,
@@ -242,6 +452,7 @@ pub struct Gnosis {
     patterns: Vec<(Context, String, f32)>,  // (context, approach, success_rate)
 }
 
+<<<<<<< HEAD
 impl Gnosis {
     pub fn new() -> Self {
         Self {
@@ -249,31 +460,59 @@ impl Gnosis {
             experiences: vec![],
             skills: HashMap::new(),
             human_styles: HashMap::new(),
+=======
+⊢ Gnosis {
+    ☉ λ new() -> Self {
+        Self {
+            config: GnosisConfig·default_config(),
+            experiences: vec![],
+            skills: HashMap·new(),
+            human_styles: HashMap·new(),
+>>>>>>> origin/main
             patterns: vec![],
         }
     }
 
+<<<<<<< HEAD
     pub fn with_config(config: GnosisConfig) -> Self {
         Self {
             config,
             experiences: vec![],
             skills: HashMap::new(),
             human_styles: HashMap::new(),
+=======
+    ☉ λ with_config(config: GnosisConfig) -> Self {
+        Self {
+            config,
+            experiences: vec![],
+            skills: HashMap·new(),
+            human_styles: HashMap·new(),
+>>>>>>> origin/main
             patterns: vec![],
         }
     }
 
     // Experience recording
+<<<<<<< HEAD
     pub fn experience(&mut self, exp: Experience) {
         // Update skills
         if let Some(skills) = exp.skills_exercised() {
             for skill_name in skills {
                 let skill = self.skills.entry(skill_name.clone())
                     .or_insert_with(|| SkillProfile::new(&skill_name));
+=======
+    ☉ λ experience(&Δ self, exp: Experience) {
+        // Update skills
+        ⎇ ≔ Some(skills) = exp.skills_exercised() {
+            ∀ skill_name ∈ skills {
+                ≔ skill = self.skills.entry(skill_name.clone())
+                    .or_insert_with(|| SkillProfile·new(&skill_name));
+>>>>>>> origin/main
                 skill.record_exercise(exp.outcome.quality);
             }
         }
 
+<<<<<<< HEAD
         // Check for patterns
         let similar: Vec<_> = self.experiences.iter()
             .filter(|e| e.context.similar_to(&exp.context) && e.action.approach == exp.action.approach)
@@ -284,18 +523,36 @@ impl Gnosis {
             let successes = similar.iter().filter(|e| e.outcome.success).count()
                 + if exp.outcome.success { 1 } else { 0 };
             let success_rate = successes as f32 / total as f32;
+=======
+        // Check ∀ patterns
+        ≔ similar: Vec<_> = self.experiences.iter()
+            .filter(|e| e.context.similar_to(&exp.context) && e.action.approach == exp.action.approach)
+            .collect();
+
+        ⎇ similar.len() >= self.config.pattern_threshold - 1 {
+            ≔ total = similar.len() + 1;
+            ≔ successes = similar.iter().filter(|e| e.outcome.success).count()
+                + ⎇ exp.outcome.success { 1 } ⎉ { 0 };
+            ≔ success_rate = successes as f32 / total as f32;
+>>>>>>> origin/main
             self.patterns.push((exp.context.clone(), exp.action.approach.clone(), success_rate));
         }
 
         self.experiences.push(exp);
 
+<<<<<<< HEAD
         // Trim if over capacity
         while self.experiences.len() > self.config.max_experiences {
+=======
+        // Trim ⎇ over capacity
+        ⟳ self.experiences.len() > self.config.max_experiences {
+>>>>>>> origin/main
             self.experiences.remove(0);
         }
     }
 
     // Feedback processing
+<<<<<<< HEAD
     pub fn learn_from_feedback(&mut self, feedback: Feedback) {
         if let Some(human_id) = feedback.human_id {
             let style = self.human_styles.entry(human_id)
@@ -307,6 +564,19 @@ impl Gnosis {
                 FeedbackType::TooFormal => style.formality -= 0.1,
                 FeedbackType::TooInformal => style.formality += 0.1,
                 FeedbackType::GoodApproach => {
+=======
+    ☉ λ learn_from_feedback(&Δ self, feedback: Feedback) {
+        ⎇ ≔ Some(human_id) = feedback.human_id {
+            ≔ style = self.human_styles.entry(human_id)
+                .or_insert_with(CommunicationStyle·default_style);
+
+            ⌥ feedback.feedback_type {
+                FeedbackType·TooVerbose => style.verbosity -= 0.1,
+                FeedbackType·NeedMoreDetail => style.verbosity += 0.1,
+                FeedbackType·TooFormal => style.formality -= 0.1,
+                FeedbackType·TooInformal => style.formality += 0.1,
+                FeedbackType·GoodApproach => {
+>>>>>>> origin/main
                     style.verbosity *= 1.05;
                     style.formality *= 1.05;
                 }
@@ -317,6 +587,7 @@ impl Gnosis {
     }
 
     // Skill queries
+<<<<<<< HEAD
     pub fn skill(&self, name: &str) -> Option<&SkillProfile> {
         self.skills.get(name)
     }
@@ -327,10 +598,23 @@ impl Gnosis {
     }
 
     pub fn skill_count(&self) -> usize {
+=======
+    ☉ λ skill(&self, name: &str) -> Option<&SkillProfile> {
+        self.skills.get(name)
+    }
+
+    ☉ λ define_skill(&Δ self, name: &str) {
+        self.skills.entry(name.to_string())
+            .or_insert_with(|| SkillProfile·new(name));
+    }
+
+    ☉ λ skill_count(&self) -> usize {
+>>>>>>> origin/main
         self.skills.len()
     }
 
     // Adaptation queries
+<<<<<<< HEAD
     pub fn adapted_style(&self, human_id: &HumanId) -> CommunicationStyle {
         self.human_styles.get(human_id)
             .cloned()
@@ -339,12 +623,23 @@ impl Gnosis {
 
     // Pattern queries
     pub fn suggest_approach(&self, context: &Context) -> Option<(String, f32)> {
+=======
+    ☉ λ adapted_style(&self, human_id: &HumanId) -> CommunicationStyle {
+        self.human_styles.get(human_id)
+            .cloned()
+            .unwrap_or_else(CommunicationStyle·default_style)
+    }
+
+    // Pattern queries
+    ☉ λ suggest_approach(&self, context: &Context) -> Option<(String, f32)> {
+>>>>>>> origin/main
         self.patterns.iter()
             .filter(|(ctx, _, _)| ctx.similar_to(context))
             .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap())
             .map(|(_, approach, rate)| (approach.clone(), *rate))
     }
 
+<<<<<<< HEAD
     pub fn experience_count(&self) -> usize {
         self.experiences.len()
     }
@@ -354,6 +649,17 @@ impl Gnosis {
     }
 
     pub fn human_profile_count(&self) -> usize {
+=======
+    ☉ λ experience_count(&self) -> usize {
+        self.experiences.len()
+    }
+
+    ☉ λ pattern_count(&self) -> usize {
+        self.patterns.len()
+    }
+
+    ☉ λ human_profile_count(&self) -> usize {
+>>>>>>> origin/main
         self.human_styles.len()
     }
 }
@@ -363,17 +669,27 @@ impl Gnosis {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_record_experience() {
     let mut gnosis = Gnosis::new();
     gnosis.experience(Experience::new(
         Context::new("coding"),
         Action::new("tdd"),
         ExperienceOutcome::success(0.9)
+=======
+λ test_gnosis_record_experience() {
+    ≔ Δ gnosis = Gnosis·new();
+    gnosis.experience(Experience·new(
+        Context·new("coding"),
+        Action·new("tdd"),
+        ExperienceOutcome·success(0.9)
+>>>>>>> origin/main
     ));
     assert_eq(gnosis.experience_count(), 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_skill_from_experience() {
     let mut gnosis = Gnosis::new();
     gnosis.experience(Experience::new(
@@ -382,11 +698,22 @@ fn test_gnosis_skill_from_experience() {
         ExperienceOutcome::success(0.9)
     ));
     let skill = gnosis.skill("testing");
+=======
+λ test_gnosis_skill_from_experience() {
+    ≔ Δ gnosis = Gnosis·new();
+    gnosis.experience(Experience·new(
+        Context·new("coding"),
+        Action·new("write_tests").with_skill("testing"),
+        ExperienceOutcome·success(0.9)
+    ));
+    ≔ skill = gnosis.skill("testing");
+>>>>>>> origin/main
     assert(skill.is_some());
     assert_eq(skill.unwrap().experience_count, 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_multiple_skills() {
     let mut gnosis = Gnosis::new();
     gnosis.experience(Experience::new(
@@ -395,11 +722,22 @@ fn test_gnosis_multiple_skills() {
             .with_skill("rust")
             .with_skill("design_patterns"),
         ExperienceOutcome::success(0.8)
+=======
+λ test_gnosis_multiple_skills() {
+    ≔ Δ gnosis = Gnosis·new();
+    gnosis.experience(Experience·new(
+        Context·new("refactoring"),
+        Action·new("improve")
+            .with_skill("rust")
+            .with_skill("design_patterns"),
+        ExperienceOutcome·success(0.8)
+>>>>>>> origin/main
     ));
     assert_eq(gnosis.skill_count(), 2);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_skill_progression() {
     let mut gnosis = Gnosis::new();
     gnosis.define_skill("python");
@@ -415,6 +753,23 @@ fn test_gnosis_skill_progression() {
 
     let skill = gnosis.skill("python").unwrap();
     assert(skill.level >= SkillLevel::Proficient);
+=======
+λ test_gnosis_skill_progression() {
+    ≔ Δ gnosis = Gnosis·new();
+    gnosis.define_skill("python");
+
+    // Many high-quality exercises
+    ∀ _ ∈ 0..50 {
+        gnosis.experience(Experience·new(
+            Context·new("coding"),
+            Action·new("write").with_skill("python"),
+            ExperienceOutcome·success(0.95)
+        ));
+    }
+
+    ≔ skill = gnosis.skill("python").unwrap();
+    assert(skill.level >= SkillLevel·Proficient);
+>>>>>>> origin/main
 }
 
 // ============================================================================
@@ -422,6 +777,7 @@ fn test_gnosis_skill_progression() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_learn_from_feedback_verbosity() {
     let mut gnosis = Gnosis::new();
     let human = HumanId::new("alice");
@@ -433,10 +789,24 @@ fn test_gnosis_learn_from_feedback_verbosity() {
     ));
 
     let style = gnosis.adapted_style(&human);
+=======
+λ test_gnosis_learn_from_feedback_verbosity() {
+    ≔ Δ gnosis = Gnosis·new();
+    ≔ human = HumanId·new("alice");
+
+    gnosis.learn_from_feedback(Feedback·from_human(
+        human.clone(),
+        Context·new("chat"),
+        FeedbackType·TooVerbose
+    ));
+
+    ≔ style = gnosis.adapted_style(&human);
+>>>>>>> origin/main
     assert(style.is_concise() || style.verbosity < 0.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_learn_from_feedback_detail() {
     let mut gnosis = Gnosis::new();
     let human = HumanId::new("bob");
@@ -448,10 +818,24 @@ fn test_gnosis_learn_from_feedback_detail() {
     ));
 
     let style = gnosis.adapted_style(&human);
+=======
+λ test_gnosis_learn_from_feedback_detail() {
+    ≔ Δ gnosis = Gnosis·new();
+    ≔ human = HumanId·new("bob");
+
+    gnosis.learn_from_feedback(Feedback·from_human(
+        human.clone(),
+        Context·new("explanation"),
+        FeedbackType·NeedMoreDetail
+    ));
+
+    ≔ style = gnosis.adapted_style(&human);
+>>>>>>> origin/main
     assert(style.verbosity > 0.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_learn_from_feedback_formality() {
     let mut gnosis = Gnosis::new();
     let human = HumanId::new("charlie");
@@ -463,10 +847,24 @@ fn test_gnosis_learn_from_feedback_formality() {
     ));
 
     let style = gnosis.adapted_style(&human);
+=======
+λ test_gnosis_learn_from_feedback_formality() {
+    ≔ Δ gnosis = Gnosis·new();
+    ≔ human = HumanId·new("charlie");
+
+    gnosis.learn_from_feedback(Feedback·from_human(
+        human.clone(),
+        Context·new("email"),
+        FeedbackType·TooInformal
+    ));
+
+    ≔ style = gnosis.adapted_style(&human);
+>>>>>>> origin/main
     assert(style.formality > 0.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_accumulated_feedback() {
     let mut gnosis = Gnosis::new();
     let human = HumanId::new("dave");
@@ -480,6 +878,21 @@ fn test_gnosis_accumulated_feedback() {
     }
 
     let style = gnosis.adapted_style(&human);
+=======
+λ test_gnosis_accumulated_feedback() {
+    ≔ Δ gnosis = Gnosis·new();
+    ≔ human = HumanId·new("dave");
+
+    ∀ _ ∈ 0..5 {
+        gnosis.learn_from_feedback(Feedback·from_human(
+            human.clone(),
+            Context·new("chat"),
+            FeedbackType·TooVerbose
+        ));
+    }
+
+    ≔ style = gnosis.adapted_style(&human);
+>>>>>>> origin/main
     assert(style.verbosity < -0.3);
 }
 
@@ -488,13 +901,19 @@ fn test_gnosis_accumulated_feedback() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_pattern_detection() {
     let mut gnosis = Gnosis::with_config(GnosisConfig {
+=======
+λ test_gnosis_pattern_detection() {
+    ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
+>>>>>>> origin/main
         max_experiences: 100,
         pattern_threshold: 2,
         preference_learning_rate: 0.1,
     });
 
+<<<<<<< HEAD
     gnosis.experience(Experience::new(
         Context::new("debugging"),
         Action::new("print_logs"),
@@ -504,19 +923,36 @@ fn test_gnosis_pattern_detection() {
         Context::new("debugging"),
         Action::new("print_logs"),
         ExperienceOutcome::success(0.8)
+=======
+    gnosis.experience(Experience·new(
+        Context·new("debugging"),
+        Action·new("print_logs"),
+        ExperienceOutcome·success(0.7)
+    ));
+    gnosis.experience(Experience·new(
+        Context·new("debugging"),
+        Action·new("print_logs"),
+        ExperienceOutcome·success(0.8)
+>>>>>>> origin/main
     ));
 
     assert(gnosis.pattern_count() > 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_suggest_approach() {
     let mut gnosis = Gnosis::with_config(GnosisConfig {
+=======
+λ test_gnosis_suggest_approach() {
+    ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
+>>>>>>> origin/main
         max_experiences: 100,
         pattern_threshold: 2,
         preference_learning_rate: 0.1,
     });
 
+<<<<<<< HEAD
     gnosis.experience(Experience::new(
         Context::new("testing"),
         Action::new("unit_tests"),
@@ -531,11 +967,28 @@ fn test_gnosis_suggest_approach() {
     let suggestion = gnosis.suggest_approach(&Context::new("testing"));
     assert(suggestion.is_some());
     let (approach, rate) = suggestion.unwrap();
+=======
+    gnosis.experience(Experience·new(
+        Context·new("testing"),
+        Action·new("unit_tests"),
+        ExperienceOutcome·success(0.9)
+    ));
+    gnosis.experience(Experience·new(
+        Context·new("testing"),
+        Action·new("unit_tests"),
+        ExperienceOutcome·success(0.85)
+    ));
+
+    ≔ suggestion = gnosis.suggest_approach(&Context·new("testing"));
+    assert(suggestion.is_some());
+    ≔ (approach, rate) = suggestion.unwrap();
+>>>>>>> origin/main
     assert_eq(approach, "unit_tests");
     assert(rate > 0.8);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_no_pattern_insufficient_data() {
     let mut gnosis = Gnosis::new();  // default threshold is 3
 
@@ -546,6 +999,18 @@ fn test_gnosis_no_pattern_insufficient_data() {
     ));
 
     let suggestion = gnosis.suggest_approach(&Context::new("rare_task"));
+=======
+λ test_gnosis_no_pattern_insufficient_data() {
+    ≔ Δ gnosis = Gnosis·new();  // default threshold is 3
+
+    gnosis.experience(Experience·new(
+        Context·new("rare_task"),
+        Action·new("approach"),
+        ExperienceOutcome·success(0.9)
+    ));
+
+    ≔ suggestion = gnosis.suggest_approach(&Context·new("rare_task"));
+>>>>>>> origin/main
     assert(suggestion.is_none());
 }
 
@@ -554,18 +1019,31 @@ fn test_gnosis_no_pattern_insufficient_data() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_experience_capacity() {
     let mut gnosis = Gnosis::with_config(GnosisConfig {
+=======
+λ test_gnosis_experience_capacity() {
+    ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
+>>>>>>> origin/main
         max_experiences: 5,
         pattern_threshold: 3,
         preference_learning_rate: 0.1,
     });
 
+<<<<<<< HEAD
     for i in 0..10 {
         gnosis.experience(Experience::new(
             Context::new(&format!("task_{}", i)),
             Action::new("approach"),
             ExperienceOutcome::success(0.8)
+=======
+    ∀ i ∈ 0..10 {
+        gnosis.experience(Experience·new(
+            Context·new(&format!("task_{}", i)),
+            Action·new("approach"),
+            ExperienceOutcome·success(0.8)
+>>>>>>> origin/main
         ));
     }
 
@@ -577,13 +1055,19 @@ fn test_gnosis_experience_capacity() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_complete_workflow() {
     let mut gnosis = Gnosis::with_config(GnosisConfig {
+=======
+λ test_gnosis_complete_workflow() {
+    ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
+>>>>>>> origin/main
         max_experiences: 1000,
         pattern_threshold: 2,
         preference_learning_rate: 0.1,
     });
 
+<<<<<<< HEAD
     let human = HumanId::new("eve");
 
     // 1. Record experiences with skills
@@ -604,6 +1088,28 @@ fn test_gnosis_complete_workflow() {
         human.clone(),
         Context::new("coding"),
         FeedbackType::GoodApproach
+=======
+    ≔ human = HumanId·new("eve");
+
+    // 1. Record experiences with skills
+    gnosis.experience(Experience·new(
+        Context·new("coding").with_human(human.clone()),
+        Action·new("tdd").with_skill("testing").with_skill("rust"),
+        ExperienceOutcome·success(0.9)
+    ));
+
+    gnosis.experience(Experience·new(
+        Context·new("coding").with_human(human.clone()),
+        Action·new("tdd").with_skill("testing"),
+        ExperienceOutcome·success(0.85)
+    ));
+
+    // 2. Process feedback
+    gnosis.learn_from_feedback(Feedback·from_human(
+        human.clone(),
+        Context·new("coding"),
+        FeedbackType·GoodApproach
+>>>>>>> origin/main
     ));
 
     // 3. Verify state
@@ -613,6 +1119,7 @@ fn test_gnosis_complete_workflow() {
     assert_eq(gnosis.human_profile_count(), 1);
 
     // 4. Query suggestions
+<<<<<<< HEAD
     let suggestion = gnosis.suggest_approach(&Context::new("coding"));
     assert(suggestion.is_some());
 
@@ -622,10 +1129,22 @@ fn test_gnosis_complete_workflow() {
 
     // 6. Query skill
     let testing_skill = gnosis.skill("testing").unwrap();
+=======
+    ≔ suggestion = gnosis.suggest_approach(&Context·new("coding"));
+    assert(suggestion.is_some());
+
+    // 5. Query adapted style
+    ≔ style = gnosis.adapted_style(&human);
+    assert(style.verbosity != 0.0 || style.formality != 0.0);  // Was modified
+
+    // 6. Query skill
+    ≔ testing_skill = gnosis.skill("testing").unwrap();
+>>>>>>> origin/main
     assert_eq(testing_skill.experience_count, 2);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_multi_human_adaptation() {
     let mut gnosis = Gnosis::new();
 
@@ -648,11 +1167,36 @@ fn test_gnosis_multi_human_adaptation() {
 
     let alice_style = gnosis.adapted_style(&alice);
     let bob_style = gnosis.adapted_style(&bob);
+=======
+λ test_gnosis_multi_human_adaptation() {
+    ≔ Δ gnosis = Gnosis·new();
+
+    ≔ alice = HumanId·new("alice");
+    ≔ bob = HumanId·new("bob");
+
+    // Alice prefers concise
+    gnosis.learn_from_feedback(Feedback·from_human(
+        alice.clone(),
+        Context·new("chat"),
+        FeedbackType·TooVerbose
+    ));
+
+    // Bob prefers detailed
+    gnosis.learn_from_feedback(Feedback·from_human(
+        bob.clone(),
+        Context·new("chat"),
+        FeedbackType·NeedMoreDetail
+    ));
+
+    ≔ alice_style = gnosis.adapted_style(&alice);
+    ≔ bob_style = gnosis.adapted_style(&bob);
+>>>>>>> origin/main
 
     assert(alice_style.verbosity < bob_style.verbosity);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_gnosis_skill_transfer() {
     let mut gnosis = Gnosis::new();
 
@@ -662,10 +1206,22 @@ fn test_gnosis_skill_transfer() {
             Context::new("coding"),
             Action::new("write").with_skill("rust"),
             ExperienceOutcome::success(0.9)
+=======
+λ test_gnosis_skill_transfer() {
+    ≔ Δ gnosis = Gnosis·new();
+
+    // Practice rust a lot
+    ∀ _ ∈ 0..30 {
+        gnosis.experience(Experience·new(
+            Context·new("coding"),
+            Action·new("write").with_skill("rust"),
+            ExperienceOutcome·success(0.9)
+>>>>>>> origin/main
         ));
     }
 
     // Rust skill should be high
+<<<<<<< HEAD
     let rust = gnosis.skill("rust").unwrap();
     assert(rust.level >= SkillLevel::Competent);
 }
@@ -673,12 +1229,22 @@ fn test_gnosis_skill_transfer() {
 #[test]
 fn test_gnosis_failure_learning() {
     let mut gnosis = Gnosis::with_config(GnosisConfig {
+=======
+    ≔ rust = gnosis.skill("rust").unwrap();
+    assert(rust.level >= SkillLevel·Competent);
+}
+
+#[test]
+λ test_gnosis_failure_learning() {
+    ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
+>>>>>>> origin/main
         max_experiences: 100,
         pattern_threshold: 2,
         preference_learning_rate: 0.1,
     });
 
     // Record failures
+<<<<<<< HEAD
     gnosis.experience(Experience::new(
         Context::new("risky_task"),
         Action::new("bad_approach"),
@@ -692,10 +1258,29 @@ fn test_gnosis_failure_learning() {
 
     let suggestion = gnosis.suggest_approach(&Context::new("risky_task"));
     if let Some((_, rate)) = suggestion {
+=======
+    gnosis.experience(Experience·new(
+        Context·new("risky_task"),
+        Action·new("bad_approach"),
+        ExperienceOutcome·failure()
+    ));
+    gnosis.experience(Experience·new(
+        Context·new("risky_task"),
+        Action·new("bad_approach"),
+        ExperienceOutcome·failure()
+    ));
+
+    ≔ suggestion = gnosis.suggest_approach(&Context·new("risky_task"));
+    ⎇ ≔ Some((_, rate)) = suggestion {
+>>>>>>> origin/main
         assert_eq(rate, 0.0);  // Success rate should be 0
     }
 }
 
+<<<<<<< HEAD
 fn main() {
+=======
+λ main() {
+>>>>>>> origin/main
     print("Gnosis integration tests");
 }

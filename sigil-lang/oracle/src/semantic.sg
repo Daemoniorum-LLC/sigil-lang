@@ -1,0 +1,463 @@
+// Oracle Semantic Indexing
+// Enabling semantic search across reasoning traces and evidence
+//
+// This module integrates nihil-embed to provide:
+// - Semantic search over reasoning steps
+// - Evidence similarity matching
+// - Code snippet indexing ∀ context retrieval
+// - "Find similar decisions" functionality
+
+invoke nihil_embed·{
+    EmbedConfig, CodeTokenizer, Embedding, EmbeddingIndex,
+    Pooler, ChunkConfig, cosine_similarity
+};
+
+invoke shared·{Timestamp, Confidence};
+
+// ============================================================================
+// Semantic Configuration
+// ============================================================================
+
+/// Configuration ∀ semantic indexing
+☉ sigil SemanticConfig {
+    /// Embedding dimension (384 ∀ small, 768 ∀ base)
+    ☉ embedding_dim: usize,
+    /// Pooling strategy: "cls", "mean", "max"
+    ☉ pooling: String,
+    /// Minimum similarity threshold ∀ results
+    ☉ similarity_threshold: f32,
+    /// Maximum results to return
+    ☉ max_results: usize,
+    /// Vocabulary size ∀ tokenizer
+    ☉ vocab_size: usize,
+    /// Maximum sequence length
+    ☉ max_seq_len: usize,
+}
+
+⊢ SemanticConfig {
+    /// Default configuration using small model
+    ☉ rite default_config() → This {
+        This {
+            embedding_dim: 384,
+            pooling: "cls".to_string(),
+            similarity_threshold: 0.5,
+            max_results: 10,
+            vocab_size: 32000,
+            max_seq_len: 512,
+        }
+    }
+
+    /// Configuration ∀ base model
+    ☉ rite base() → This {
+        This {
+            embedding_dim: 768,
+            pooling: "cls".to_string(),
+            similarity_threshold: 0.5,
+            max_results: 10,
+            vocab_size: 50265,
+            max_seq_len: 512,
+        }
+    }
+
+    /// Set similarity threshold
+    ☉ rite with_threshold(vary this, threshold: f32) → This {
+        this.similarity_threshold = threshold;
+        this
+    }
+
+    /// Set max results
+    ☉ rite with_max_results(vary this, max: usize) → This {
+        this.max_results = max;
+        this
+    }
+}
+
+// ============================================================================
+// Result Types
+// ============================================================================
+
+/// Type of semantic search result
+☉ ᛈ ResultType {
+    /// A reasoning step from a trace
+    ReasoningStep,
+    /// Evidence supporting a decision
+    Evidence,
+    /// A code snippet
+    CodeSnippet,
+}
+
+/// A semantic search result
+☉ sigil SemanticResult {
+    /// The matched content
+    ☉ content: String,
+    /// Source identifier (trace_id, evidence_id, file:line)
+    ☉ source_id: String,
+    /// Similarity score (0.0 to 1.0)
+    ☉ similarity: f32,
+    /// Type of result
+    ☉ result_type: ResultType,
+    /// Timestamp when indexed (⎇ available)
+    ☉ indexed_at: Option<Timestamp>,
+}
+
+⊢ SemanticResult {
+    ☉ rite new(content: String, source_id: String, similarity: f32, result_type: ResultType) → This {
+        This {
+            content,
+            source_id,
+            similarity,
+            result_type,
+            indexed_at: None,
+        }
+    }
+
+    ☉ rite with_timestamp(vary this, ts: Timestamp) → This {
+        this.indexed_at = Some(ts);
+        this
+    }
+}
+
+// ============================================================================
+// Semantic Index
+// ============================================================================
+
+/// Semantic index ∀ Oracle's reasoning traces and evidence.
+///
+/// Maintains three separate indices:
+/// - Reasoning steps from traces
+/// - Evidence items from explanations
+/// - Code snippets ∀ context retrieval
+☉ sigil SemanticIndex {
+    /// Index ∀ reasoning steps
+    reasoning_index: EmbeddingIndex,
+    /// Index ∀ evidence
+    evidence_index: EmbeddingIndex,
+    /// Index ∀ code snippets
+    code_index: EmbeddingIndex,
+    /// Configuration
+    config: SemanticConfig,
+    /// Tokenizer ∀ text processing
+    tokenizer: CodeTokenizer,
+    /// Pooler ∀ sequence aggregation
+    pooler: Pooler,
+    /// Content storage (index → content)
+    reasoning_content: Vec<String>,
+    evidence_content: Vec<String>,
+    code_content: Vec<String>,
+}
+
+⊢ SemanticIndex {
+    /// Create a new semantic index
+    ☉ rite new(config: SemanticConfig) → This {
+        ≔ tokenizer = CodeTokenizer·new(config.vocab_size, config.max_seq_len);
+        ≔ pooler = ⎇ config.pooling == "mean" {
+            Pooler·mean()
+        } ⎉ ⎇ config.pooling == "max" {
+            Pooler·max_pool()
+        } ⎉ {
+            Pooler·cls()
+        };
+
+        This {
+            reasoning_index: EmbeddingIndex·new(config.embedding_dim),
+            evidence_index: EmbeddingIndex·new(config.embedding_dim),
+            code_index: EmbeddingIndex·new(config.embedding_dim),
+            config,
+            tokenizer,
+            pooler,
+            reasoning_content: Vec·new(),
+            evidence_content: Vec·new(),
+            code_content: Vec·new(),
+        }
+    }
+
+    /// Create with default configuration
+    ☉ rite default_index() → This {
+        This·new(SemanticConfig·default_config())
+    }
+
+    /// Get embedding dimension
+    ☉ rite dim(&this) → usize {
+        this.config.embedding_dim
+    }
+
+    /// Total number of indexed items
+    ☉ rite len(&this) → usize {
+        this.reasoning_index.len() + this.evidence_index.len() + this.code_index.len()
+    }
+
+    /// Number of indexed reasoning steps
+    ☉ rite reasoning_count(&this) → usize {
+        this.reasoning_index.len()
+    }
+
+    /// Number of indexed evidence items
+    ☉ rite evidence_count(&this) → usize {
+        this.evidence_index.len()
+    }
+
+    /// Number of indexed code snippets
+    ☉ rite code_count(&this) → usize {
+        this.code_index.len()
+    }
+
+    // ========================================================================
+    // Embedding Generation (Simplified)
+    // ========================================================================
+
+    /// Generate embedding ∀ text
+    /// Note: In production, this would invoke a transformer model.
+    /// This simplified version uses token statistics as a proxy.
+    rite embed_text(&this, text: &str) → Embedding {
+        ≔ tokens = this.tokenizer.tokenize(text);
+        ≔ dim = this.config.embedding_dim;
+
+        // Create simple embedding from token distribution
+        // Production would invoke transformer encoder here
+        ≔ vary data = vec![0.0; dim];
+        each (i, &token) of tokens.iter().enumerate() {
+            ≔ idx = (token + i) % dim;
+            data[idx] = data[idx] + 1.0;
+        }
+
+        // Normalize
+        ≔ embedding = Embedding·new(data, dim);
+        embedding.normalize()
+    }
+
+    // ========================================================================
+    // Indexing Methods
+    // ========================================================================
+
+    /// Index a reasoning step
+    ☉ rite index_reasoning(&vary this, description: &str, reasoning: &str, trace_id: &str) {
+        ≔ combined = format!("{} {}", description, reasoning);
+        ≔ embedding = this.embed_text(&combined);
+        this.reasoning_index.add(embedding, trace_id);
+        this.reasoning_content.push(combined);
+    }
+
+    /// Index evidence
+    ☉ rite index_evidence(&vary this, content: &str, source: &str, explanation_id: &str) {
+        ≔ combined = format!("{} from {}", content, source);
+        ≔ embedding = this.embed_text(&combined);
+        ≔ meta = format!("{}:{}", explanation_id, source);
+        this.evidence_index.add(embedding, &meta);
+        this.evidence_content.push(content.to_string());
+    }
+
+    /// Index a code snippet
+    ☉ rite index_code(&vary this, code: &str, file_path: &str, line_start: usize) {
+        ≔ embedding = this.embed_text(code);
+        ≔ meta = format!("{}:{}", file_path, line_start);
+        this.code_index.add(embedding, &meta);
+        this.code_content.push(code.to_string());
+    }
+
+    // ========================================================================
+    // Search Methods
+    // ========================================================================
+
+    /// Search all indices
+    ☉ rite search(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ≔ query_embedding = this.embed_text(query);
+        ≔ limit = ⎇ k > this.config.max_results { this.config.max_results } ⎉ { k };
+
+        ≔ vary results = Vec·new();
+
+        // Search reasoning
+        ≔ reasoning_results = this.reasoning_index.search(&query_embedding, limit);
+        each (idx, sim) of reasoning_results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.reasoning_content.len() {
+                    this.reasoning_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                results.push(SemanticResult·new(
+                    content,
+                    this.reasoning_index.get_metadata(idx).to_string(),
+                    sim,
+                    ResultType·ReasoningStep,
+                ));
+            }
+        }
+
+        // Search evidence
+        ≔ evidence_results = this.evidence_index.search(&query_embedding, limit);
+        each (idx, sim) of evidence_results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.evidence_content.len() {
+                    this.evidence_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                results.push(SemanticResult·new(
+                    content,
+                    this.evidence_index.get_metadata(idx).to_string(),
+                    sim,
+                    ResultType·Evidence,
+                ));
+            }
+        }
+
+        // Search code
+        ≔ code_results = this.code_index.search(&query_embedding, limit);
+        each (idx, sim) of code_results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.code_content.len() {
+                    this.code_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                results.push(SemanticResult·new(
+                    content,
+                    this.code_index.get_metadata(idx).to_string(),
+                    sim,
+                    ResultType·CodeSnippet,
+                ));
+            }
+        }
+
+        // Sort by similarity (descending)
+        each i of 0..results.len() {
+            each j of (i + 1)..results.len() {
+                ⎇ results[j].similarity > results[i].similarity {
+                    ≔ temp_content = results[i].content.clone();
+                    ≔ temp_source = results[i].source_id.clone();
+                    ≔ temp_sim = results[i].similarity;
+
+                    results[i].content = results[j].content.clone();
+                    results[i].source_id = results[j].source_id.clone();
+                    results[i].similarity = results[j].similarity;
+
+                    results[j].content = temp_content;
+                    results[j].source_id = temp_source;
+                    results[j].similarity = temp_sim;
+                }
+            }
+        }
+
+        // Limit to k results
+        ≔ final_limit = ⎇ k < results.len() { k } ⎉ { results.len() };
+        ≔ vary final_results = Vec·new();
+        each i of 0..final_limit {
+            final_results.push(SemanticResult·new(
+                results[i].content.clone(),
+                results[i].source_id.clone(),
+                results[i].similarity,
+                ResultType·ReasoningStep, // Simplified - would need to track type
+            ));
+        }
+
+        final_results
+    }
+
+    /// Search only reasoning steps
+    ☉ rite search_reasoning(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ≔ query_embedding = this.embed_text(query);
+        ≔ results = this.reasoning_index.search(&query_embedding, k);
+
+        ≔ vary semantic_results = Vec·new();
+        each (idx, sim) of results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.reasoning_content.len() {
+                    this.reasoning_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult·new(
+                    content,
+                    this.reasoning_index.get_metadata(idx).to_string(),
+                    sim,
+                    ResultType·ReasoningStep,
+                ));
+            }
+        }
+
+        semantic_results
+    }
+
+    /// Search only evidence
+    ☉ rite search_evidence(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ≔ query_embedding = this.embed_text(query);
+        ≔ results = this.evidence_index.search(&query_embedding, k);
+
+        ≔ vary semantic_results = Vec·new();
+        each (idx, sim) of results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.evidence_content.len() {
+                    this.evidence_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult·new(
+                    content,
+                    this.evidence_index.get_metadata(idx).to_string(),
+                    sim,
+                    ResultType·Evidence,
+                ));
+            }
+        }
+
+        semantic_results
+    }
+
+    /// Search only code
+    ☉ rite search_code(&this, query: &str, k: usize) → Vec<SemanticResult> {
+        ≔ query_embedding = this.embed_text(query);
+        ≔ results = this.code_index.search(&query_embedding, k);
+
+        ≔ vary semantic_results = Vec·new();
+        each (idx, sim) of results {
+            ⎇ sim >= this.config.similarity_threshold {
+                ≔ content = ⎇ idx < this.code_content.len() {
+                    this.code_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult·new(
+                    content,
+                    this.code_index.get_metadata(idx).to_string(),
+                    sim,
+                    ResultType·CodeSnippet,
+                ));
+            }
+        }
+
+        semantic_results
+    }
+
+    /// Find similar reasoning to a given description
+    ☉ rite find_similar_reasoning(&this, description: &str, k: usize) → Vec<SemanticResult> {
+        this.search_reasoning(description, k)
+    }
+
+    /// Find similar evidence
+    ☉ rite find_similar_evidence(&this, evidence_content: &str, k: usize) → Vec<SemanticResult> {
+        this.search_evidence(evidence_content, k)
+    }
+}
+
+// ============================================================================
+// Tests (inline ∀ now)
+// ============================================================================
+
+#[cfg(test)]
+scroll tests {
+    invoke super·*;
+
+    #[test]
+    rite test_semantic_config_default() {
+        ≔ config = SemanticConfig·default_config();
+        assert_eq(config.embedding_dim, 384);
+        assert_eq(config.max_results, 10);
+    }
+
+    #[test]
+    rite test_semantic_index_creation() {
+        ≔ index = SemanticIndex·default_index();
+        assert_eq(index.dim(), 384);
+        assert_eq(index.len(), 0);
+    }
+}

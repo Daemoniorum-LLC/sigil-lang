@@ -1,0 +1,17 @@
+// Test: Explicit ⤺ statement
+// Spec: 02-SYNTAX.md § 3.2 Return Statements
+// Priority: P0
+//
+// Purpose:
+// Validates that explicit ⤺ statements work.
+//
+// Expected behavior:
+// Should compile and print 42
+
+λ get_value() -> !i32 {
+    ⤺ 42;
+}
+
+λ main() {
+    println(get_value());
+}

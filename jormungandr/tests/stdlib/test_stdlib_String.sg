@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 // Stdlib Tests: String (struct type)
 // String struct type with REAL assertions
+=======
+// Stdlib Tests: String (Σ type)
+// String Σ type with REAL assertions
+>>>>>>> origin/main
 
 rite main() {
     println("=== Testing String ===");

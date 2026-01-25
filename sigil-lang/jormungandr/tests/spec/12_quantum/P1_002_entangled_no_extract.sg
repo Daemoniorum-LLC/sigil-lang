@@ -1,0 +1,18 @@
+// Test: Cannot extract single qubit from entangled pair
+// Spec: 12-QUANTUM.md § 4.3 Entanglement Constraints
+// Priority: P1 - Core Feature
+// Expected: Compile error - cannot destructure Entangled
+
+λ main() {
+    ≔ q0: linear Qubit = Qubit·zero();
+    ≔ q1: linear Qubit = Qubit·zero();
+
+    ≔ q0h: linear Qubit = q0|H;
+    ≔ (qc, qt): (Qubit, Qubit) = CNOT(q0h, q1);
+
+    ≔ pair: Entangled<Qubit, Qubit> = Entangled·new(qc, qt);
+
+    // ERROR: Cannot extract one qubit from entangled pair
+    ≔ single = pair.0;
+    println(single|measure);
+}

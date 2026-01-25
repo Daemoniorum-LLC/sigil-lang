@@ -1,0 +1,290 @@
+//! DAEMONIORUM - Reality Layer System
+//!
+//! Defines how entities and environments transform between
+//! Grounded, Fractured, and Shattered reality layers.
+
+use daemoniorum::perception::{RealityLayer, EntityRepresentation};
+use daemoniorum::core::{Entity, Environment};
+
+// ============================================================================
+// REALITY ENTITIES
+// ============================================================================
+
+/// The Church - Central location that transforms across layers
+reality entity Church {
+    layer Grounded {
+        name: "St. Augustine's Church",
+        description: "A weathered stone church, abandoned but peaceful",
+        visual: "church_grounded",
+        ambient: "wind_through_broken_windows",
+        lighting: 0.6,
+
+        entities: [
+            Entity::Statue { name: "Mary", expression: "serene" },
+            Entity::Altar { state: "dusty", candles: 0 },
+            Entity::Pews { count: 24, condition: "worn" },
+        ],
+
+        interactables: [
+            Interactable::Door { to: "Crypt", locked: true },
+            Interactable::ConfessionBooth { usable: true },
+            Interactable::HolyWater { amount: 0.5 },
+        ],
+    }
+
+    layer Fractured {
+        name: "The Bleeding Chapel",
+        description: "Walls weep crimson. Shadows move wrong.",
+        visual: "church_fractured",
+        ambient: "distant_choir_distorted",
+        lighting: 0.3,
+        color_shift: (-15.0, 0.6, 0.8), // Desaturated, cold
+
+        entities: [
+            Entity::Statue { name: "Weeping Mary", expression: "anguished", bleeds: true },
+            Entity::Altar { state: "bloodstained", candles: 7, flames: "black" },
+            Entity::Pews { count: 24, condition: "twisted", whisper: true },
+            Entity::Manifestation { id: "guilt_shade", visible: true },
+        ],
+
+        interactables: [
+            Interactable::Door { to: "Crypt", locked: false, warning: "TURN BACK" },
+            Interactable::ConfessionBooth { usable: true, occupant: "shadow_priest" },
+            Interactable::HolyWater { amount: 0.5, substance: "tears" },
+        ],
+
+        overlays: [
+            Overlay::Blood { pattern: "dripping", opacity: 0.3 },
+            Overlay::Graffiti { text: "FORGIVE ME", font: "scratched" },
+        ],
+    }
+
+    layer Shattered {
+        name: "Cathedral of Wounds",
+        description: "Geometry breaks. Time loops. Pain made architecture.",
+        visual: "church_shattered",
+        ambient: "screaming_silence",
+        lighting: 0.1,
+        color_shift: (30.0, 0.2, 0.5),
+        geometry_distortion: 0.8,
+
+        entities: [
+            Entity::Statue {
+                name: "The Accusation",
+                form: "shifting",
+                speaks: true,
+                message: trauma.core_belief(),
+            },
+            Entity::Altar {
+                state: "becomes_table",
+                memory: trauma.source_memory(),
+            },
+            Entity::Manifestation {
+                id: "the_abuser",
+                visible: true,
+                solid: true,
+                power: 0.9,
+            },
+        ],
+
+        hazards: [
+            Hazard::FlashbackZone { trigger_chance: 0.7 },
+            Hazard::RealityLoop { escape_difficulty: 0.8 },
+            Hazard::DissociationWell { pull_strength: 0.5 },
+        ],
+    }
+
+    // Reality transitions
+    transform Grounded -> Fractured: on perception > 0.3 || trigger.active,
+    transform Fractured -> Shattered: on perception > 0.7 || trauma.exposed,
+    transform Shattered -> Fractured: on grounding.success && stability > 0.4,
+    transform Fractured -> Grounded: on grounding.success && stability > 0.7,
+}
+
+/// An NPC that appears differently in each layer
+reality entity Father_Marcus {
+    layer Grounded {
+        name: "Father Marcus",
+        description: "An elderly priest, kind eyes, weathered hands",
+        visual: "npc_marcus_grounded",
+        dialogue_style: "warm",
+
+        stats: {
+            trust: 0.5,
+            helpfulness: 0.8,
+            knowledge: ["church_history", "local_legends"],
+        },
+    }
+
+    layer Fractured {
+        name: "The Confessor",
+        description: "His smile is wrong. His eyes know too much.",
+        visual: "npc_marcus_fractured",
+        dialogue_style: "probing",
+        color_tint: (0.8, 0.8, 0.9, 1.0),
+
+        stats: {
+            trust: 0.3,
+            threat_level: 0.4,
+            hidden_knowledge: ["player_sins", "system_secrets"],
+        },
+
+        behaviors: [
+            Behavior::AskPersonalQuestions,
+            Behavior::MentionForgottenMemories,
+            Behavior::StareWhenUnwatched,
+        ],
+    }
+
+    layer Shattered {
+        name: "Absolution",
+        description: "A towering figure of judgment. All faces. No face.",
+        visual: "npc_marcus_shattered",
+        form: "abstract",
+        scale: 3.0,
+
+        stats: {
+            threat_level: 0.9,
+            damage_type: DamageType::Emotional,
+            attack: "speaks_truth",
+        },
+
+        is_boss: true,
+        weak_to: ["acceptance", "self_forgiveness"],
+    }
+
+    transform Grounded -> Fractured: on player.guilt > 0.5,
+    transform Fractured -> Shattered: on player.confessed || trauma.exposed,
+}
+
+// ============================================================================
+// PERCEPTION TRIGGERS
+// ============================================================================
+
+/// Reality distortion events
+reality event PerceptionShift {
+    /// Gradual descent into Fractured
+    fn creeping_dread(intensity: f32) -> PerceptionChange {
+        let current = perception.current_layer;
+
+        if current == RealityLayer::Grounded && intensity > 0.3 {
+            perception.begin_transition(
+                target: RealityLayer::Fractured,
+                rate: intensity * 0.1,
+                effects: [
+                    TransitionEffect::Distortion { intensity: 0.3 },
+                    TransitionEffect::ColorShift { hue: -10.0 },
+                    TransitionEffect::Vignette { radius: 0.3 },
+                ],
+            );
+        }
+
+        PerceptionChange::Transitioning
+    }
+
+    /// Sudden snap to Shattered (trauma trigger)
+    fn trauma_flash(trigger: Trigger!) -> PerceptionChange! {
+        perception.force_layer(RealityLayer::Shattered);
+
+        // Brief flash of trauma memory
+        let memory = trigger.associated_memory();
+        perception.overlay(
+            Overlay::Memory {
+                memory_id: memory.id,
+                opacity: 0.8,
+                duration: Duration::seconds(3),
+            }
+        );
+
+        // Force alter response
+        system.process_trigger(trigger);
+
+        PerceptionChange::Forced
+    }
+
+    /// Grounding attempt
+    fn grounding_exercise(technique: GroundingTechnique) -> PerceptionChange@? {
+        let success_chance = match technique {
+            GroundingTechnique::FiveSenses => 0.7,
+            GroundingTechnique::DeepBreathing => 0.5,
+            GroundingTechnique::PhysicalAnchor => 0.6,
+            GroundingTechnique::SafeWord => 0.8,
+        };
+
+        if random() < success_chance {
+            let target = match perception.current_layer {
+                RealityLayer::Shattered => RealityLayer::Fractured,
+                RealityLayer::Fractured => RealityLayer::Grounded,
+                RealityLayer::Grounded => RealityLayer::Grounded,
+            };
+
+            perception.begin_transition(
+                target: target,
+                rate: 0.2,
+                effects: [
+                    TransitionEffect::Blur { radius: 2.0 },
+                    TransitionEffect::ColorShift { hue: 0.0, saturation: 1.0 },
+                ],
+            );
+
+            system.stability += 0.1;
+            PerceptionChange::Grounding
+        } else {
+            // Failed grounding can make things worse
+            system.dissociation += 0.05;
+            PerceptionChange::Failed
+        }
+    }
+}
+
+// ============================================================================
+// ENVIRONMENTAL OVERLAYS
+// ============================================================================
+
+/// Blood overlay that spreads in Fractured/Shattered
+overlay Blood {
+    applies_to: [RealityLayer::Fractured, RealityLayer::Shattered],
+
+    fn spread(origin: Point, intensity: f32) -> BloodOverlay {
+        BloodOverlay {
+            pattern: "organic_spread",
+            color: (0.4, 0.0, 0.0),
+            opacity: intensity * 0.5,
+            animation: "slow_drip",
+            triggers_on_contact: Trigger::blood_memory(),
+        }
+    }
+}
+
+/// Memory fragments visible in Shattered
+overlay MemoryFragment {
+    applies_to: [RealityLayer::Shattered],
+
+    fn materialize(memory: Memory) -> MemoryOverlay {
+        MemoryOverlay {
+            content: memory.visual_snapshot(),
+            opacity: memory.clarity,
+            interactive: memory.processed,
+            danger_level: memory.trauma_level,
+        }
+    }
+}
+
+/// Text/writing on walls
+overlay WallWriting {
+    applies_to: [RealityLayer::Fractured, RealityLayer::Shattered],
+
+    fn scrawl(message: String, style: WritingStyle) -> TextOverlay {
+        TextOverlay {
+            text: message,
+            font: match style {
+                WritingStyle::Warning => "scratched",
+                WritingStyle::Memory => "childish",
+                WritingStyle::Accusation => "bleeding",
+                WritingStyle::Clue => "faded",
+            },
+            color: style.color(),
+            animation: if style.urgent { "flicker" } else { "static" },
+        }
+    }
+}

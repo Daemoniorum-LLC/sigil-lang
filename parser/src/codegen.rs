@@ -391,6 +391,13 @@ pub mod jit {
                             stat.name.name
                         );
                     }
+                    ExternItem::Type(ty) => {
+                        // TODO: Implement extern type aliases
+                        eprintln!(
+                            "Warning: extern type '{}' not yet implemented",
+                            ty.name.name
+                        );
+                    }
                 }
             }
 

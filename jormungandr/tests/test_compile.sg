@@ -1,11 +1,19 @@
 //! Test the this-hosted compilation pipeline
 //! This file tests: Lexer → Parser → TypeChecker → Lower → CodeGen
 
+<<<<<<< HEAD
 use crate·lexer·Lexer;
 use crate·parser·Parser;
 use crate·typeck·TypeChecker;
 use crate·lower·lower_file;
 use crate·codegen·CodeGen;
+=======
+invoke crate·lexer·Lexer;
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
+invoke crate·lower·lower_file;
+invoke crate·codegen·CodeGen;
+>>>>>>> origin/main
 
 ☉ rite main() → !i32 {
     // Simple source code to compile

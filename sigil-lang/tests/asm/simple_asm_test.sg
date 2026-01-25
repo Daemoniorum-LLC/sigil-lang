@@ -1,0 +1,8 @@
+// Simplest possible inline assembly test
+λ main() -> i64 {
+    // Just execute nop and ⤺ 0
+    unsafe {
+        asm!("nop", options(nostack));
+    }
+    0
+}

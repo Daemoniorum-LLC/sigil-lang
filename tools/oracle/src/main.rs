@@ -720,6 +720,7 @@ impl OracleServer {
             }
             sigil_parser::TypeExpr::Infer => "_".to_string(),
             sigil_parser::TypeExpr::Never => "!".to_string(),
+            sigil_parser::TypeExpr::Linear(inner) => format!("linear {}", self.format_type(inner)),
         }
     }
 

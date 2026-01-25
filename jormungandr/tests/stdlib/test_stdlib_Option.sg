@@ -6,6 +6,7 @@ rite main() {
 
     // Option·Some - creates Some variant
     ≔ some = Option·Some(42);
+<<<<<<< HEAD
     assert_eq(type_of(some), "Option::Some");
 
     // Option·None - creates None variant (no parens)
@@ -18,6 +19,20 @@ rite main() {
 
     ≔ arr_opt = Option·Some([1, 2, 3]);
     assert_eq(type_of(arr_opt), "Option::Some");
+=======
+    assert_eq(type_of(some), "Option·Some");
+
+    // Option·None - creates None variant (no parens)
+    ≔ none = Option·None;
+    assert_eq(type_of(none), "Option·None");
+
+    // Different value types
+    ≔ str_opt = Option·Some("hello");
+    assert_eq(type_of(str_opt), "Option·Some");
+
+    ≔ arr_opt = Option·Some([1, 2, 3]);
+    assert_eq(type_of(arr_opt), "Option·Some");
+>>>>>>> origin/main
 
     println("ALL OPTION TESTS PASSED!");
 }

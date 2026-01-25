@@ -1,0 +1,66 @@
+// Native Platform Test 09: Callback with User Data
+// Tests: Pass user data pointer to signal callback
+// Expected: 0 (callback with data works)
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    type GtkButton;
+
+    // Callback type with user data parameter
+    type GCallbackWithData = rite(*void, *void);
+
+    rite gtk_init();
+    rite gtk_button_new_with_label(label: *c_char) → *GtkButton;
+
+    // Signal connection with data
+    rite g_signal_connect_data(
+        instance: *void,
+        detailed_signal: *c_char,
+        c_handler: GCallbackWithData,
+        data: *void,
+        destroy_data: *void,
+        connect_flags: c_int
+    ) → c_ulong;
+}
+
+// Simple counter struct to pass as user data
+sigil Counter {
+    value: i64,
+}
+
+// C-callable callback that receives widget and user data
+#[no_mangle]
+extern "C" rite on_increment_clicked(widget: *void, data: *void) {
+    // In a real app, we'd cast data back to Counter* and increment
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+
+    // Create button
+    ≔ button = gtk_button_new_with_label("Increment\0".as_ptr());
+
+    // Create counter as user data
+    ≔ counter = Counter { value: 0 };
+
+    // Connect signal with user data pointer
+    ≔ handler_id = g_signal_connect_data(
+        button as *void,
+        "clicked\0".as_ptr(),
+        on_increment_clicked,
+        &counter as *void,
+        0 as *void,
+        0
+    );
+
+    0  // Success
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

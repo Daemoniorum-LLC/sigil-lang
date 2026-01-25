@@ -1,0 +1,125 @@
+//! Timer API bindings
+
+use crate::closure::Closure;
+
+/// Set a timeout
+pub fn set_timeout[F: FnOnce() + 'static](callback: F!, delay_ms: u32!) -> i32! {
+    let closure! = Closure::once(callback);
+    let id! = set_timeout_with_closure(&closure, delay_ms);
+    closure·forget(); // Prevent drop
+    id
+}
+
+/// Clear a timeout
+pub fn clear_timeout(id: i32!) {
+    clear_timeout_internal(id);
+}
+
+/// Set an interval
+pub fn set_interval[F: Fn() + 'static](callback: F!, interval_ms: u32!) -> i32! {
+    let closure! = Closure::new(callback);
+    let id! = set_interval_with_closure(&closure, interval_ms);
+    closure·forget();
+    id
+}
+
+/// Clear an interval
+pub fn clear_interval(id: i32!) {
+    clear_interval_internal(id);
+}
+
+/// Request animation frame
+pub fn request_animation_frame[F: FnOnce(f64) + 'static](callback: F!) -> i32! {
+    let closure! = Closure::once(callback);
+    let id! = request_animation_frame_with_closure(&closure);
+    closure·forget();
+    id
+}
+
+/// Cancel animation frame
+pub fn cancel_animation_frame(id: i32!) {
+    cancel_animation_frame_internal(id);
+}
+
+/// Request idle callback
+pub fn request_idle_callback[F: FnOnce(IdleDeadline) + 'static](callback: F!) -> u32! {
+    let closure! = Closure::once(callback);
+    let id! = request_idle_callback_with_closure(&closure);
+    closure·forget();
+    id
+}
+
+/// Cancel idle callback
+pub fn cancel_idle_callback(id: u32!) {
+    cancel_idle_callback_internal(id);
+}
+
+// Internal bindings
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(js_name = "setTimeout")]
+    fn set_timeout_with_closure(callback: &Closure!, delay: u32!) -> i32!;
+
+    #[wasm_bindgen(js_name = "clearTimeout")]
+    fn clear_timeout_internal(id: i32!);
+
+    #[wasm_bindgen(js_name = "setInterval")]
+    fn set_interval_with_closure(callback: &Closure!, interval: u32!) -> i32!;
+
+    #[wasm_bindgen(js_name = "clearInterval")]
+    fn clear_interval_internal(id: i32!);
+
+    #[wasm_bindgen(js_name = "requestAnimationFrame")]
+    fn request_animation_frame_with_closure(callback: &Closure!) -> i32!;
+
+    #[wasm_bindgen(js_name = "cancelAnimationFrame")]
+    fn cancel_animation_frame_internal(id: i32!);
+
+    #[wasm_bindgen(js_name = "requestIdleCallback")]
+    fn request_idle_callback_with_closure(callback: &Closure!) -> u32!;
+
+    #[wasm_bindgen(js_name = "cancelIdleCallback")]
+    fn cancel_idle_callback_internal(id: u32!);
+}
+
+/// IdleDeadline for idle callbacks
+#[wasm_bindgen]
+extern "js" {
+    pub type IdleDeadline;
+
+    #[wasm_bindgen(method, getter, js_name = "didTimeout")]
+    pub fn did_timeout(this: &IdleDeadline!) -> bool!;
+
+    #[wasm_bindgen(method, js_name = "timeRemaining")]
+    pub fn time_remaining(this: &IdleDeadline!) -> f64!;
+}
+
+/// Sleep for given duration (async)
+pub async fn sleep(duration_ms: u32!) {
+    let (tx!, rx!) = futures::channel::oneshot::channel();
+
+    set_timeout(move || {
+        let _ = tx·send(());
+    }, duration_ms);
+
+    rx·await·ok();
+}
+
+/// Animation frame stream
+pub fn animation_frames() -> impl futures::Stream[Item = f64]! {
+    futures::stream::unfold((), |_| async {
+        let timestamp! = next_animation_frame()·await;
+        Some((timestamp, ()))
+    })
+}
+
+/// Wait for next animation frame
+pub async fn next_animation_frame() -> f64! {
+    let (tx!, rx!) = futures::channel::oneshot::channel();
+
+    request_animation_frame(move |timestamp| {
+        let _ = tx·send(timestamp);
+    });
+
+    rx·await·unwrap_or(0.0)
+}

@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 2.2 Channel Operations
 // Priority: P1 - Standard Feature
 //
-// Note: In single-threaded interpreter, we use try_recv
+// Note: In single-threaded interpreter, we invoke try_recv
 // after send since blocking recv would deadlock.
 
 rite main() {

@@ -1,0 +1,930 @@
+// Components Module
+// Reusable UI components for the documentation platform
+
+use sigil_web::prelude::*
+use crate::main::{use_theme, Theme}
+use crate::layouts::{SidebarItem, TocItem, PageLink}
+
+// ============================================================================
+// Navigation Components
+// ============================================================================
+
+/// Site header with navigation
+pub fn Header(props: HeaderProps) -> VNode! {
+    let theme! = use_theme()
+    let (search_open, set_search_open) = use_state(false)
+
+    header()
+        ·class("site-header")
+        ·children(vec![
+            // Logo
+            Link(LinkProps {
+                to: "/".to_string(),
+                replace: false,
+                class: Some("site-logo".to_string()),
+                active_class: None
+            }, vec![
+                img()·attr("src", "/logo.svg")·attr("alt", "Daemoniorum")·build(),
+                span()·text("Daemoniorum")·build()
+            ]),
+
+            // Main navigation
+            nav()
+                ·class("site-nav")
+                ·children(vec![
+                    NavLink(NavLinkProps {
+                        to: "/docs".to_string(),
+                        class: Some("nav-link".to_string()),
+                        active_class: Some("nav-link--active".to_string())
+                    }, vec![text("Documentation")]),
+
+                    NavLink(NavLinkProps {
+                        to: "/api".to_string(),
+                        class: Some("nav-link".to_string()),
+                        active_class: Some("nav-link--active".to_string())
+                    }, vec![text("API Reference")]),
+
+                    NavLink(NavLinkProps {
+                        to: "/guides".to_string(),
+                        class: Some("nav-link".to_string()),
+                        active_class: Some("nav-link--active".to_string())
+                    }, vec![text("Guides")]),
+
+                    NavLink(NavLinkProps {
+                        to: "/examples".to_string(),
+                        class: Some("nav-link".to_string()),
+                        active_class: Some("nav-link--active".to_string())
+                    }, vec![text("Examples")]),
+
+                    NavLink(NavLinkProps {
+                        to: "/playground".to_string(),
+                        class: Some("nav-link".to_string()),
+                        active_class: Some("nav-link--active".to_string())
+                    }, vec![text("Playground")])
+                ])
+                ·build(),
+
+            // Right side actions
+            div()
+                ·class("header-actions")
+                ·children(vec![
+                    // Search button
+                    button()
+                        ·class("search-trigger")
+                        ·onclick(|| set_search_open(true))
+                        ·children(vec![
+                            Icon { name: "search" },
+                            span()·class("search-shortcut")·text("⌘K")·build()
+                        ])
+                        ·build(),
+
+                    // Theme toggle
+                    button()
+                        ·class("theme-toggle")
+                        ·onclick(props.on_theme_toggle)
+                        ·child(Icon {
+                            name: match theme {
+                                Theme::Light => "moon",
+                                Theme::Dark => "sun",
+                                Theme::System => "monitor"
+                            }
+                        })
+                        ·build(),
+
+                    // GitHub link
+                    a()
+                        ·attr("href", "https://github.com/daemoniorum")
+                        ·attr("target", "_blank")
+                        ·class("github-link")
+                        ·child(Icon { name: "github" })
+                        ·build(),
+
+                    // Mobile menu toggle
+                    button()
+                        ·class("mobile-menu-toggle")
+                        ·onclick(props.on_menu_toggle)
+                        ·child(Icon { name: "menu" })
+                        ·build()
+                ])
+                ·build(),
+
+            // Search modal
+            when(search_open, || {
+                SearchModal {
+                    on_close: || set_search_open(false)
+                }
+            })
+        ])
+        ·build()
+}
+
+pub struct HeaderProps {
+    pub on_menu_toggle: fn()
+    pub on_theme_toggle: fn()
+}
+
+/// Sidebar navigation
+pub fn Sidebar(props: SidebarProps) -> VNode! {
+    aside()
+        ·class("docs-sidebar")
+        ·children(vec![
+            nav()
+                ·class("sidebar-nav")
+                ·children(
+                    props.items·iter()
+                        ·map(|item| SidebarNavItem {
+                            item: item·clone(),
+                            current_path: props.current_path·clone(),
+                            on_navigate: props.on_navigate
+                        })
+                        ·collect()
+                )
+                ·build()
+        ])
+        ·build()
+}
+
+pub struct SidebarProps {
+    pub items: Vec<SidebarItem>!
+    pub current_path: String!
+    pub on_navigate: fn()
+}
+
+fn SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigate: fn() }) -> VNode! {
+    let (expanded, set_expanded) = use_state(
+        props.current_path·starts_with(&props.item.path)
+    )
+    let has_children! = !props.item.children·is_empty()
+    let is_active! = props.current_path == props.item.path
+
+    div()
+        ·class(classes()
+            ·add("sidebar-item")
+            ·add_if(is_active, "sidebar-item--active")
+            ·add_if(expanded, "sidebar-item--expanded")
+            ·to_string())
+        ·children(vec![
+            // Item link or button
+            if has_children {
+                button()
+                    ·class("sidebar-item-toggle")
+                    ·onclick(|| set_expanded(!expanded))
+                    ·children(vec![
+                        when(props.item.icon·is_some(), || {
+                            Icon { name: &props.item.icon·clone()·unwrap() }
+                        }),
+                        span()·class("sidebar-item-title")·text(&props.item.title)·build(),
+                        Icon { name: if expanded { "chevron-down" } else { "chevron-right" } }
+                    ])
+                    ·build()
+            } else {
+                Link(LinkProps {
+                    to: props.item.path·clone(),
+                    replace: false,
+                    class: Some("sidebar-item-link".to_string()),
+                    active_class: Some("sidebar-item-link--active".to_string())
+                }, vec![
+                    when(props.item.icon·is_some(), || {
+                        Icon { name: &props.item.icon·clone()·unwrap() }
+                    }),
+                    span()·class("sidebar-item-title")·text(&props.item.title)·build(),
+                    when(props.item.badge·is_some(), || {
+                        Badge { text: &props.item.badge·clone()·unwrap() }
+                    })
+                ])
+            },
+
+            // Children
+            when(has_children && expanded, || {
+                div()
+                    ·class("sidebar-children")
+                    ·children(
+                        props.item.children·iter()
+                            ·map(|child| SidebarNavItem {
+                                item: child·clone(),
+                                current_path: props.current_path·clone(),
+                                on_navigate: props.on_navigate
+                            })
+                            ·collect()
+                    )
+                    ·build()
+            })
+        ])
+        ·build()
+}
+
+/// Breadcrumb navigation
+pub fn Breadcrumbs(props: { path: String }) -> VNode! {
+    let segments! = props.path·split('/')
+        ·filter(|s| !s·is_empty())
+        ·collect::<Vec<_>>()
+
+    nav()
+        ·class("breadcrumbs")
+        ·attr("aria-label", "Breadcrumb")
+        ·children(vec![
+            ol()
+                ·class("breadcrumb-list")
+                ·children({
+                    let mut items! = vec![
+                        li()
+                            ·class("breadcrumb-item")
+                            ·child(Link(LinkProps {
+                                to: "/".to_string(),
+                                replace: false,
+                                class: Some("breadcrumb-link".to_string()),
+                                active_class: None
+                            }, vec![text("Home")]))
+                            ·build()
+                    ]
+
+                    let mut path_acc! = String::new()
+                    for (i, segment) in segments·iter()·enumerate() {
+                        path_acc·push('/')
+                        path_acc·push_str(segment)
+
+                        let is_last! = i == segments·len() - 1
+                        let title! = segment·replace('-', " ")·to_title_case()
+
+                        items·push(
+                            li()
+                                ·class("breadcrumb-item")
+                                ·children(vec![
+                                    span()·class("breadcrumb-separator")·text("/")·build(),
+                                    if is_last {
+                                        span()·class("breadcrumb-current")·text(&title)·build()
+                                    } else {
+                                        Link(LinkProps {
+                                            to: path_acc·clone(),
+                                            replace: false,
+                                            class: Some("breadcrumb-link".to_string()),
+                                            active_class: None
+                                        }, vec![text(&title)])
+                                    }
+                                ])
+                                ·build()
+                        )
+                    }
+
+                    items
+                })
+                ·build()
+        ])
+        ·build()
+}
+
+/// Table of contents
+pub fn TableOfContents(props: { headings: Vec<TocItem> }) -> VNode! {
+    let (active_id, set_active_id) = use_state("")
+
+    // Track scroll position to highlight current section
+    use_effect(|| {
+        let observer! = IntersectionObserver::new(|entries| {
+            for entry in entries {
+                if entry·is_intersecting() {
+                    set_active_id(entry·target_id())
+                }
+            }
+        }, IntersectionOptions {
+            root_margin: "-100px 0px -66%".to_string(),
+            ..IntersectionOptions::default()
+        })
+
+        // Observe all headings
+        None
+    }, [])
+
+    nav()
+        ·class("toc")
+        ·attr("aria-label", "On this page")
+        ·children(vec![
+            h4()·class("toc-title")·text("On this page")·build(),
+            ul()
+                ·class("toc-list")
+                ·children(
+                    props.headings·iter()
+                        ·map(|item| TocLink {
+                            item: item·clone(),
+                            active_id: active_id·clone()
+                        })
+                        ·collect()
+                )
+                ·build()
+        ])
+        ·build()
+}
+
+fn TocLink(props: { item: TocItem, active_id: String }) -> VNode! {
+    let is_active! = props.active_id == props.item.anchor
+
+    li()
+        ·class(classes()
+            ·add("toc-item")
+            ·add(&format!("toc-item--level-{}", props.item.level))
+            ·add_if(is_active, "toc-item--active")
+            ·to_string())
+        ·children(vec![
+            a()
+                ·attr("href", &format!("#{}", props.item.anchor))
+                ·class("toc-link")
+                ·text(&props.item.title)
+                ·build(),
+            when(!props.item.children·is_empty(), || {
+                ul()
+                    ·class("toc-sublist")
+                    ·children(
+                        props.item.children·iter()
+                            ·map(|child| TocLink {
+                                item: child·clone(),
+                                active_id: props.active_id·clone()
+                            })
+                            ·collect()
+                    )
+                    ·build()
+            })
+        ])
+        ·build()
+}
+
+/// Previous/Next page navigation
+pub fn PageNavigation(props: { prev: Option<PageLink>?, next: Option<PageLink>? }) -> VNode! {
+    nav()
+        ·class("page-nav")
+        ·children(vec![
+            when(props.prev·is_some(), || {
+                let prev! = props.prev·clone()·unwrap()
+                Link(LinkProps {
+                    to: prev.path,
+                    replace: false,
+                    class: Some("page-nav-link page-nav-prev".to_string()),
+                    active_class: None
+                }, vec![
+                    Icon { name: "arrow-left" },
+                    div()
+                        ·class("page-nav-content")
+                        ·children(vec![
+                            span()·class("page-nav-label")·text("Previous")·build(),
+                            span()·class("page-nav-title")·text(&prev.title)·build()
+                        ])
+                        ·build()
+                ])
+            }),
+
+            when(props.next·is_some(), || {
+                let next! = props.next·clone()·unwrap()
+                Link(LinkProps {
+                    to: next.path,
+                    replace: false,
+                    class: Some("page-nav-link page-nav-next".to_string()),
+                    active_class: None
+                }, vec![
+                    div()
+                        ·class("page-nav-content")
+                        ·children(vec![
+                            span()·class("page-nav-label")·text("Next")·build(),
+                            span()·class("page-nav-title")·text(&next.title)·build()
+                        ])
+                        ·build(),
+                    Icon { name: "arrow-right" }
+                ])
+            })
+        ])
+        ·build()
+}
+
+/// Site footer
+pub fn Footer() -> VNode! {
+    footer()
+        ·class("site-footer")
+        ·children(vec![
+            div()
+                ·class("footer-content")
+                ·children(vec![
+                    // Footer columns
+                    div()
+                        ·class("footer-grid")
+                        ·children(vec![
+                            FooterColumn {
+                                title: "Products",
+                                links: vec![
+                                    ("Sigil", "/docs/sigil"),
+                                    ("Leviathan", "/docs/leviathan"),
+                                    ("Aether", "/docs/aether"),
+                                    ("Nyx", "/docs/nyx"),
+                                    ("Bael", "/docs/bael")
+                                ]
+                            },
+                            FooterColumn {
+                                title: "Resources",
+                                links: vec![
+                                    ("Documentation", "/docs"),
+                                    ("API Reference", "/api"),
+                                    ("Guides", "/guides"),
+                                    ("Examples", "/examples"),
+                                    ("Changelog", "/changelog")
+                                ]
+                            },
+                            FooterColumn {
+                                title: "Community",
+                                links: vec![
+                                    ("GitHub", "https://github.com/daemoniorum"),
+                                    ("Discord", "https://discord.gg/daemoniorum"),
+                                    ("Twitter", "https://twitter.com/daemoniorum"),
+                                    ("Blog", "/blog")
+                                ]
+                            },
+                            FooterColumn {
+                                title: "Company",
+                                links: vec![
+                                    ("About", "/about"),
+                                    ("Careers", "/careers"),
+                                    ("Contact", "/contact"),
+                                    ("Privacy", "/privacy"),
+                                    ("Terms", "/terms")
+                                ]
+                            }
+                        ])
+                        ·build(),
+
+                    // Footer bottom
+                    div()
+                        ·class("footer-bottom")
+                        ·children(vec![
+                            p()·text("© 2025 Daemoniorum, LLC. All rights reserved.")·build(),
+                            div()
+                                ·class("footer-social")
+                                ·children(vec![
+                                    SocialLink { icon: "github", url: "https://github.com/daemoniorum" },
+                                    SocialLink { icon: "twitter", url: "https://twitter.com/daemoniorum" },
+                                    SocialLink { icon: "discord", url: "https://discord.gg/daemoniorum" }
+                                ])
+                                ·build()
+                        ])
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+fn FooterColumn(props: { title: &str, links: Vec<(&str, &str)> }) -> VNode! {
+    div()
+        ·class("footer-column")
+        ·children(vec![
+            h4()·class("footer-column-title")·text(props.title)·build(),
+            ul()
+                ·class("footer-links")
+                ·children(
+                    props.links·iter()
+                        ·map(|(label, url)| {
+                            li()
+                                ·child(
+                                    if url·starts_with("http") {
+                                        a()·attr("href", url)·attr("target", "_blank")·text(label)·build()
+                                    } else {
+                                        Link(LinkProps {
+                                            to: url.to_string(),
+                                            replace: false,
+                                            class: None,
+                                            active_class: None
+                                        }, vec![text(label)])
+                                    }
+                                )
+                                ·build()
+                        })
+                        ·collect()
+                )
+                ·build()
+        ])
+        ·build()
+}
+
+fn SocialLink(props: { icon: &str, url: &str }) -> VNode! {
+    a()
+        ·attr("href", props.url)
+        ·attr("target", "_blank")
+        ·attr("rel", "noopener noreferrer")
+        ·class("social-link")
+        ·child(Icon { name: props.icon })
+        ·build()
+}
+
+// ============================================================================
+// Content Components
+// ============================================================================
+
+/// Code block with syntax highlighting
+pub fn CodeBlock(props: CodeBlockProps) -> VNode! {
+    let (copied, set_copied) = use_state(false)
+
+    let copy_code! = || {
+        // Copy to clipboard
+        clipboard·write_text(&props.code)
+        set_copied(true)
+        set_timeout(2000, || set_copied(false))
+    }
+
+    div()
+        ·class(classes()
+            ·add("code-block")
+            ·add_if(props.filename·is_some(), "code-block--with-filename")
+            ·to_string())
+        ·children(vec![
+            // Header
+            when(props.filename·is_some() || props.language·is_some(), || {
+                div()
+                    ·class("code-block-header")
+                    ·children(vec![
+                        when(props.filename·is_some(), || {
+                            span()·class("code-block-filename")·text(&props.filename·clone()·unwrap())·build()
+                        }),
+                        when(props.language·is_some(), || {
+                            span()·class("code-block-lang")·text(&props.language·clone()·unwrap())·build()
+                        }),
+                        button()
+                            ·class("code-block-copy")
+                            ·onclick(copy_code)
+                            ·child(
+                                if copied {
+                                    Icon { name: "check" }
+                                } else {
+                                    Icon { name: "copy" }
+                                }
+                            )
+                            ·build()
+                    ])
+                    ·build()
+            }),
+
+            // Code content
+            pre()
+                ·class(&format!("language-{}", props.language·clone()·unwrap_or("text".to_string())))
+                ·child(
+                    code()·text(&props.code)·build()
+                )
+                ·build()
+        ])
+        ·build()
+}
+
+pub struct CodeBlockProps {
+    pub code: String!
+    pub language: Option<String>? = None
+    pub filename: Option<String>? = None
+    pub highlight_lines: Vec<u32>! = Vec::new()
+    pub show_line_numbers: bool! = true
+}
+
+/// Callout/admonition component
+pub fn Callout(props: CalloutProps) -> VNode! {
+    let icon! = match props.variant {
+        CalloutVariant::Note => "info",
+        CalloutVariant::Tip => "lightbulb",
+        CalloutVariant::Warning => "alert-triangle",
+        CalloutVariant::Danger => "alert-circle",
+        CalloutVariant::Info => "info"
+    }
+
+    div()
+        ·class(&format!("callout callout--{}", props.variant·to_string()))
+        ·children(vec![
+            div()
+                ·class("callout-icon")
+                ·child(Icon { name: icon })
+                ·build(),
+            div()
+                ·class("callout-content")
+                ·children(vec![
+                    when(props.title·is_some(), || {
+                        h5()·class("callout-title")·text(&props.title·clone()·unwrap())·build()
+                    }),
+                    div()
+                        ·class("callout-body")
+                        ·children(props.children·clone())
+                        ·build()
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+pub struct CalloutProps {
+    pub variant: CalloutVariant! = CalloutVariant::Note
+    pub title: Option<String>? = None
+    pub children: Vec<VNode>!
+}
+
+pub enum CalloutVariant {
+    Note,
+    Tip,
+    Warning,
+    Danger,
+    Info
+}
+
+impl CalloutVariant {
+    fn to_string(&self) -> &'static str! {
+        match self {
+            CalloutVariant::Note => "note",
+            CalloutVariant::Tip => "tip",
+            CalloutVariant::Warning => "warning",
+            CalloutVariant::Danger => "danger",
+            CalloutVariant::Info => "info"
+        }
+    }
+}
+
+/// Card component
+pub fn Card(props: CardProps) -> VNode! {
+    let wrapper! = if props.href·is_some() {
+        Link(LinkProps {
+            to: props.href·clone()·unwrap(),
+            replace: false,
+            class: Some("card card--clickable".to_string()),
+            active_class: None
+        }, vec![])
+    } else {
+        div()·class("card")·build()
+    }
+
+    // Add children to wrapper
+    div()
+        ·class(classes()
+            ·add("card")
+            ·add_if(props.href·is_some(), "card--clickable")
+            ·to_string())
+        ·children(vec![
+            when(props.icon·is_some(), || {
+                div()·class("card-icon")·child(Icon { name: &props.icon·clone()·unwrap() })·build()
+            }),
+            div()
+                ·class("card-content")
+                ·children(vec![
+                    h3()·class("card-title")·text(&props.title)·build(),
+                    when(props.description·is_some(), || {
+                        p()·class("card-description")·text(&props.description·clone()·unwrap())·build()
+                    })
+                ])
+                ·build()
+        ])
+        ·build()
+}
+
+pub struct CardProps {
+    pub title: String!
+    pub description: Option<String>? = None
+    pub icon: Option<String>? = None
+    pub href: Option<String>? = None
+}
+
+/// Tabs component
+component Tabs {
+    state active_tab: usize! = 0
+    props tabs: Vec<TabItem>!
+
+    fn render(self) -> VNode {
+        div()
+            ·class("tabs")
+            ·children(vec![
+                // Tab buttons
+                div()
+                    ·class("tabs-list")
+                    ·attr("role", "tablist")
+                    ·children(
+                        self.tabs·iter()·enumerate()
+                            ·map(|(i, tab)| {
+                                button()
+                                    ·class(classes()
+                                        ·add("tab-button")
+                                        ·add_if(i == self.active_tab, "tab-button--active")
+                                        ·to_string())
+                                    ·attr("role", "tab")
+                                    ·attr("aria-selected", if i == self.active_tab { "true" } else { "false" })
+                                    ·onclick(|| self.active_tab = i)
+                                    ·text(&tab.label)
+                                    ·build()
+                            })
+                            ·collect()
+                    )
+                    ·build(),
+
+                // Tab panels
+                div()
+                    ·class("tabs-panels")
+                    ·children(
+                        self.tabs·iter()·enumerate()
+                            ·map(|(i, tab)| {
+                                div()
+                                    ·class(classes()
+                                        ·add("tab-panel")
+                                        ·add_if(i != self.active_tab, "tab-panel--hidden")
+                                        ·to_string())
+                                    ·attr("role", "tabpanel")
+                                    ·children(tab.content·clone())
+                                    ·build()
+                            })
+                            ·collect()
+                    )
+                    ·build()
+            ])
+            ·build()
+    }
+}
+
+pub struct TabItem {
+    pub label: String!
+    pub content: Vec<VNode>!
+}
+
+// ============================================================================
+// Search Components
+// ============================================================================
+
+/// Search input
+pub fn SearchInput(props: SearchInputProps) -> VNode! {
+    input()
+        ·attr("type", "search")
+        ·attr("placeholder", &props.placeholder)
+        ·attr("value", &props.value)
+        ·class("search-input")
+        ·oninput(props.on_change)
+        ·build()
+}
+
+pub struct SearchInputProps {
+    pub value: String!
+    pub on_change: fn(String)
+    pub placeholder: String! = "Search..."
+}
+
+/// Search modal (⌘K)
+pub fn SearchModal(props: { on_close: fn() }) -> VNode! {
+    let (query, set_query) = use_state("")
+    let results~ = use_fetch::<Vec<SearchResult>>(&format!("/api/search?q={}", query))
+
+    // Close on escape
+    use_effect(|| {
+        let handler! = |e: KeyboardEventData| {
+            if e·is_escape() {
+                (props.on_close)()
+            }
+        }
+        window·add_event_listener("keydown", handler)
+        Some(|| window·remove_event_listener("keydown", handler))
+    }, [])
+
+    Portal("#search-portal", vec![
+        div()
+            ·class("search-modal-backdrop")
+            ·onclick(props.on_close)
+            ·child(
+                div()
+                    ·class("search-modal")
+                    ·onclick(|e| e·stop_propagation())
+                    ·children(vec![
+                        // Search input
+                        div()
+                            ·class("search-modal-input")
+                            ·children(vec![
+                                Icon { name: "search" },
+                                input()
+                                    ·attr("type", "search")
+                                    ·attr("placeholder", "Search documentation...")
+                                    ·attr("value", &query)
+                                    ·attr("autofocus", true)
+                                    ·oninput(set_query)
+                                    ·build(),
+                                button()
+                                    ·class("search-modal-close")
+                                    ·onclick(props.on_close)
+                                    ·text("ESC")
+                                    ·build()
+                            ])
+                            ·build(),
+
+                        // Results
+                        div()
+                            ·class("search-modal-results")
+                            ·child(match results~ {
+                                AsyncState::Loading => div()·class("search-loading")·child(Spinner {})·build(),
+                                AsyncState::Error(e~) => div()·class("search-error")·text(&e~)·build(),
+                                AsyncState::Success(items~) => {
+                                    if items~·is_empty() && !query·is_empty() {
+                                        div()·class("search-empty")·text("No results found")·build()
+                                    } else {
+                                        ul()
+                                            ·class("search-results-list")
+                                            ·children(
+                                                items~·iter()
+                                                    ·map(|item| SearchResultItem {
+                                                        result: item·clone(),
+                                                        on_select: props.on_close
+                                                    })
+                                                    ·collect()
+                                            )
+                                            ·build()
+                                    }
+                                }
+                                _ => fragment(vec![])
+                            })
+                            ·build()
+                    ])
+                    ·build()
+            )
+            ·build()
+    ])
+}
+
+pub struct SearchResult {
+    pub title: String!
+    pub path: String!
+    pub excerpt: String!
+    pub section: String!
+    pub score: f64!
+}
+
+fn SearchResultItem(props: { result: SearchResult, on_select: fn() }) -> VNode! {
+    let navigate! = use_navigate()
+
+    li()
+        ·class("search-result-item")
+        ·onclick(|| {
+            navigate·push(&props.result.path)
+            (props.on_select)()
+        })
+        ·children(vec![
+            span()·class("search-result-section")·text(&props.result.section)·build(),
+            span()·class("search-result-title")·text(&props.result.title)·build(),
+            p()·class("search-result-excerpt")·text(&props.result.excerpt)·build()
+        ])
+        ·build()
+}
+
+// ============================================================================
+// Utility Components
+// ============================================================================
+
+/// Icon component (using Lucide icons)
+pub fn Icon(props: { name: &str }) -> VNode! {
+    svg()
+        ·class(&format!("icon icon-{}", props.name))
+        ·attr("aria-hidden", "true")
+        ·build()
+}
+
+/// Badge component
+pub fn Badge(props: { text: &str }) -> VNode! {
+    span()·class("badge")·text(props.text)·build()
+}
+
+/// Loading spinner
+pub fn Spinner() -> VNode! {
+    div()
+        ·class("spinner")
+        ·attr("role", "status")
+        ·attr("aria-label", "Loading")
+        ·build()
+}
+
+/// Version badge with link
+pub fn VersionBadge(props: { version: &str, href: Option<&str>? }) -> VNode! {
+    let content! = span()·class("version-badge")·text(props.version)·build()
+
+    if let Some(href) = props.href {
+        a()·attr("href", href)·child(content)·build()
+    } else {
+        content
+    }
+}
+
+// Platform bindings
+mod clipboard {
+    pub fn write_text(text: &str) {}
+}
+
+mod window {
+    pub fn add_event_listener(event: &str, handler: fn(crate::core::events::KeyboardEventData)) {}
+    pub fn remove_event_listener(event: &str, handler: fn(crate::core::events::KeyboardEventData)) {}
+}
+
+fn set_timeout(ms: u64, callback: fn()) {}
+
+// String extension
+trait StringExt {
+    fn to_title_case(&self) -> String!;
+}
+
+impl StringExt for str {
+    fn to_title_case(&self) -> String! {
+        self·split_whitespace()
+            ·map(|word| {
+                let mut chars! = word·chars()
+                match chars·next() {
+                    None => String::new(),
+                    Some(c) => c·to_uppercase()·chain(chars)·collect()
+                }
+            })
+            ·collect::<Vec<_>>()
+            ·join(" ")
+    }
+}

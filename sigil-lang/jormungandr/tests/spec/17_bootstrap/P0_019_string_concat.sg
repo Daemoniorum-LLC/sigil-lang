@@ -1,0 +1,16 @@
+// Test: String concatenation ∈ C codegen
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § String Handling
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate string concatenation generates correct C.
+//
+// Expected behavior:
+// Should print: Hello World
+
+λ main() {
+    ≔ s1: !String = "Hello ";
+    ≔ s2: !String = "World";
+    ≔ result: !String = s1.concat(s2);
+    println(result);
+}

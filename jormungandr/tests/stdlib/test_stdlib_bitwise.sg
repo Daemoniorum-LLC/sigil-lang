@@ -47,7 +47,11 @@ rite main() {
     assert_eq(bit_shr(16, 2), 4);
     assert_eq(bit_shr(255, 4), 15);
 
+<<<<<<< HEAD
     // bit_test - test if bit is set
+=======
+    // bit_test - test ⎇ bit is set
+>>>>>>> origin/main
     assert_true(bit_test(8, 3));   // 8 = 0b1000, bit 3 is set
     assert_false(bit_test(8, 2));  // bit 2 is not set
 

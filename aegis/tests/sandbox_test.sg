@@ -1,33 +1,54 @@
 //! Aegis Sandbox Tests - 20 tests
 
+<<<<<<< HEAD
 enum IsolationLevel {
+=======
+ᛈ IsolationLevel {
+>>>>>>> origin/main
     None,
     Process,
     Container,
     VM,
 }
 
+<<<<<<< HEAD
 enum NetworkPolicy {
+=======
+ᛈ NetworkPolicy {
+>>>>>>> origin/main
     Deny,
     Allow,
     AllowList,
 }
 
+<<<<<<< HEAD
 enum FilesystemPolicy {
+=======
+ᛈ FilesystemPolicy {
+>>>>>>> origin/main
     Deny,
     Allow,
     ReadOnly,
 }
 
+<<<<<<< HEAD
 struct ResourceLimits {
+=======
+Σ ResourceLimits {
+>>>>>>> origin/main
     max_memory: !u64,
     max_cpu_percent: !u32,
     max_files: !u32,
     max_processes: !u32,
 }
 
+<<<<<<< HEAD
 impl ResourceLimits {
     pub fn default_limits() -> Self {
+=======
+⊢ ResourceLimits {
+    ☉ λ default_limits() -> Self {
+>>>>>>> origin/main
         ResourceLimits {
             max_memory: 1024 * 1024 * 512,  // 512 MB
             max_cpu_percent: 50,
@@ -36,7 +57,11 @@ impl ResourceLimits {
         }
     }
 
+<<<<<<< HEAD
     pub fn restrictive() -> Self {
+=======
+    ☉ λ restrictive() -> Self {
+>>>>>>> origin/main
         ResourceLimits {
             max_memory: 1024 * 1024 * 64,   // 64 MB
             max_cpu_percent: 10,
@@ -45,7 +70,11 @@ impl ResourceLimits {
         }
     }
 
+<<<<<<< HEAD
     pub fn permissive() -> Self {
+=======
+    ☉ λ permissive() -> Self {
+>>>>>>> origin/main
         ResourceLimits {
             max_memory: 1024 * 1024 * 1024 * 4,  // 4 GB
             max_cpu_percent: 100,
@@ -55,7 +84,11 @@ impl ResourceLimits {
     }
 }
 
+<<<<<<< HEAD
 struct SandboxConfig {
+=======
+Σ SandboxConfig {
+>>>>>>> origin/main
     isolation: IsolationLevel,
     network: NetworkPolicy,
     filesystem: FilesystemPolicy,
@@ -63,6 +96,7 @@ struct SandboxConfig {
     timeout_secs: !u64,
 }
 
+<<<<<<< HEAD
 impl SandboxConfig {
     pub fn default_config() -> Self {
         SandboxConfig {
@@ -70,41 +104,77 @@ impl SandboxConfig {
             network: NetworkPolicy::Deny,
             filesystem: FilesystemPolicy::ReadOnly,
             limits: ResourceLimits::default_limits(),
+=======
+⊢ SandboxConfig {
+    ☉ λ default_config() -> Self {
+        SandboxConfig {
+            isolation: IsolationLevel·Process,
+            network: NetworkPolicy·Deny,
+            filesystem: FilesystemPolicy·ReadOnly,
+            limits: ResourceLimits·default_limits(),
+>>>>>>> origin/main
             timeout_secs: 300,
         }
     }
 
+<<<<<<< HEAD
     pub fn restrictive() -> Self {
         SandboxConfig {
             isolation: IsolationLevel::Container,
             network: NetworkPolicy::Deny,
             filesystem: FilesystemPolicy::Deny,
             limits: ResourceLimits::restrictive(),
+=======
+    ☉ λ restrictive() -> Self {
+        SandboxConfig {
+            isolation: IsolationLevel·Container,
+            network: NetworkPolicy·Deny,
+            filesystem: FilesystemPolicy·Deny,
+            limits: ResourceLimits·restrictive(),
+>>>>>>> origin/main
             timeout_secs: 30,
         }
     }
 
+<<<<<<< HEAD
     pub fn permissive() -> Self {
         SandboxConfig {
             isolation: IsolationLevel::Process,
             network: NetworkPolicy::Allow,
             filesystem: FilesystemPolicy::Allow,
             limits: ResourceLimits::permissive(),
+=======
+    ☉ λ permissive() -> Self {
+        SandboxConfig {
+            isolation: IsolationLevel·Process,
+            network: NetworkPolicy·Allow,
+            filesystem: FilesystemPolicy·Allow,
+            limits: ResourceLimits·permissive(),
+>>>>>>> origin/main
             timeout_secs: 1800,
         }
     }
 }
 
+<<<<<<< HEAD
 struct SyscallFilter {
+=======
+Σ SyscallFilter {
+>>>>>>> origin/main
     mode: FilterMode,
     count: !usize,
 }
 
+<<<<<<< HEAD
 enum FilterMode {
+=======
+ᛈ FilterMode {
+>>>>>>> origin/main
     AllowList,
     DenyList,
 }
 
+<<<<<<< HEAD
 impl SyscallFilter {
     pub fn restrictive() -> Self {
         SyscallFilter { mode: FilterMode::AllowList, count: 12 }
@@ -125,22 +195,57 @@ impl SyscallFilter {
         match self.mode {
             FilterMode::AllowList => false,
             FilterMode::DenyList => true,
+=======
+⊢ SyscallFilter {
+    ☉ λ restrictive() -> Self {
+        SyscallFilter { mode: FilterMode·AllowList, count: 12 }
+    }
+
+    ☉ λ permissive() -> Self {
+        SyscallFilter { mode: FilterMode·DenyList, count: 5 }
+    }
+
+    ☉ λ is_allow_list(&self) -> !bool {
+        ⌥ self.mode {
+            FilterMode·AllowList => true,
+            FilterMode·DenyList => false,
+        }
+    }
+
+    ☉ λ is_deny_list(&self) -> !bool {
+        ⌥ self.mode {
+            FilterMode·AllowList => false,
+            FilterMode·DenyList => true,
+>>>>>>> origin/main
         }
     }
 }
 
+<<<<<<< HEAD
 struct ResourceUsage {
+=======
+Σ ResourceUsage {
+>>>>>>> origin/main
     memory_bytes: !u64,
     cpu_time_ms: !u64,
     open_files: !u32,
 }
 
+<<<<<<< HEAD
 impl ResourceUsage {
     pub fn zero() -> Self {
         ResourceUsage { memory_bytes: 0, cpu_time_ms: 0, open_files: 0 }
     }
 
     pub fn exceeds(&self, limits: &ResourceLimits) -> !bool {
+=======
+⊢ ResourceUsage {
+    ☉ λ zero() -> Self {
+        ResourceUsage { memory_bytes: 0, cpu_time_ms: 0, open_files: 0 }
+    }
+
+    ☉ λ exceeds(&self, limits: &ResourceLimits) -> !bool {
+>>>>>>> origin/main
         self.memory_bytes > limits.max_memory ||
         self.open_files > limits.max_files
     }
@@ -151,8 +256,13 @@ impl ResourceUsage {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_limits_default() {
     let limits = ResourceLimits::default_limits();
+=======
+λ test_resource_limits_default() {
+    ≔ limits = ResourceLimits·default_limits();
+>>>>>>> origin/main
     assert(limits.max_memory == 1024 * 1024 * 512);
     assert(limits.max_cpu_percent == 50);
     assert(limits.max_files == 100);
@@ -160,8 +270,13 @@ fn test_resource_limits_default() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_limits_restrictive() {
     let limits = ResourceLimits::restrictive();
+=======
+λ test_resource_limits_restrictive() {
+    ≔ limits = ResourceLimits·restrictive();
+>>>>>>> origin/main
     assert(limits.max_memory == 1024 * 1024 * 64);
     assert(limits.max_cpu_percent == 10);
     assert(limits.max_files == 10);
@@ -169,8 +284,13 @@ fn test_resource_limits_restrictive() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_limits_permissive() {
     let limits = ResourceLimits::permissive();
+=======
+λ test_resource_limits_permissive() {
+    ≔ limits = ResourceLimits·permissive();
+>>>>>>> origin/main
     assert(limits.max_cpu_percent == 100);
     assert(limits.max_files == 10000);
     assert(limits.max_processes == 100);
@@ -181,45 +301,82 @@ fn test_resource_limits_permissive() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_sandbox_config_default() {
     let config = SandboxConfig::default_config();
+=======
+λ test_sandbox_config_default() {
+    ≔ config = SandboxConfig·default_config();
+>>>>>>> origin/main
     assert(config.timeout_secs == 300);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_sandbox_config_restrictive() {
     let config = SandboxConfig::restrictive();
+=======
+λ test_sandbox_config_restrictive() {
+    ≔ config = SandboxConfig·restrictive();
+>>>>>>> origin/main
     assert(config.timeout_secs == 30);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_sandbox_config_permissive() {
     let config = SandboxConfig::permissive();
+=======
+λ test_sandbox_config_permissive() {
+    ≔ config = SandboxConfig·permissive();
+>>>>>>> origin/main
     assert(config.timeout_secs == 1800);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_sandbox_isolation_levels() {
     let none = IsolationLevel::None;
     let process = IsolationLevel::Process;
     let container = IsolationLevel::Container;
     let vm = IsolationLevel::VM;
+=======
+λ test_sandbox_isolation_levels() {
+    ≔ none = IsolationLevel·None;
+    ≔ process = IsolationLevel·Process;
+    ≔ container = IsolationLevel·Container;
+    ≔ vm = IsolationLevel·VM;
+>>>>>>> origin/main
     assert(true); // Enum variants exist
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_sandbox_network_policies() {
     let deny = NetworkPolicy::Deny;
     let allow = NetworkPolicy::Allow;
     let allowlist = NetworkPolicy::AllowList;
+=======
+λ test_sandbox_network_policies() {
+    ≔ deny = NetworkPolicy·Deny;
+    ≔ allow = NetworkPolicy·Allow;
+    ≔ allowlist = NetworkPolicy·AllowList;
+>>>>>>> origin/main
     assert(true); // Enum variants exist
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_sandbox_filesystem_policies() {
     let deny = FilesystemPolicy::Deny;
     let allow = FilesystemPolicy::Allow;
     let readonly = FilesystemPolicy::ReadOnly;
+=======
+λ test_sandbox_filesystem_policies() {
+    ≔ deny = FilesystemPolicy·Deny;
+    ≔ allow = FilesystemPolicy·Allow;
+    ≔ readonly = FilesystemPolicy·ReadOnly;
+>>>>>>> origin/main
     assert(true); // Enum variants exist
 }
 
@@ -228,16 +385,26 @@ fn test_sandbox_filesystem_policies() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_syscall_filter_restrictive() {
     let filter = SyscallFilter::restrictive();
+=======
+λ test_syscall_filter_restrictive() {
+    ≔ filter = SyscallFilter·restrictive();
+>>>>>>> origin/main
     assert(filter.is_allow_list());
     assert(!filter.is_deny_list());
     assert(filter.count == 12);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_syscall_filter_permissive() {
     let filter = SyscallFilter::permissive();
+=======
+λ test_syscall_filter_permissive() {
+    ≔ filter = SyscallFilter·permissive();
+>>>>>>> origin/main
     assert(!filter.is_allow_list());
     assert(filter.is_deny_list());
     assert(filter.count == 5);
@@ -248,17 +415,28 @@ fn test_syscall_filter_permissive() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_usage_zero() {
     let usage = ResourceUsage::zero();
+=======
+λ test_resource_usage_zero() {
+    ≔ usage = ResourceUsage·zero();
+>>>>>>> origin/main
     assert(usage.memory_bytes == 0);
     assert(usage.cpu_time_ms == 0);
     assert(usage.open_files == 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_usage_exceeds_memory() {
     let limits = ResourceLimits::restrictive();
     let usage = ResourceUsage {
+=======
+λ test_resource_usage_exceeds_memory() {
+    ≔ limits = ResourceLimits·restrictive();
+    ≔ usage = ResourceUsage {
+>>>>>>> origin/main
         memory_bytes: 1024 * 1024 * 100, // 100 MB > 64 MB limit
         cpu_time_ms: 0,
         open_files: 0,
@@ -267,9 +445,15 @@ fn test_resource_usage_exceeds_memory() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_usage_exceeds_files() {
     let limits = ResourceLimits::restrictive();
     let usage = ResourceUsage {
+=======
+λ test_resource_usage_exceeds_files() {
+    ≔ limits = ResourceLimits·restrictive();
+    ≔ usage = ResourceUsage {
+>>>>>>> origin/main
         memory_bytes: 0,
         cpu_time_ms: 0,
         open_files: 20, // > 10 limit
@@ -278,9 +462,15 @@ fn test_resource_usage_exceeds_files() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_usage_within_limits() {
     let limits = ResourceLimits::default_limits();
     let usage = ResourceUsage {
+=======
+λ test_resource_usage_within_limits() {
+    ≔ limits = ResourceLimits·default_limits();
+    ≔ usage = ResourceUsage {
+>>>>>>> origin/main
         memory_bytes: 1024 * 1024 * 100, // 100 MB < 512 MB limit
         cpu_time_ms: 1000,
         open_files: 50, // < 100 limit
@@ -289,14 +479,23 @@ fn test_resource_usage_within_limits() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_usage_at_exact_limits() {
     let limits = ResourceLimits {
+=======
+λ test_resource_usage_at_exact_limits() {
+    ≔ limits = ResourceLimits {
+>>>>>>> origin/main
         max_memory: 1000,
         max_cpu_percent: 50,
         max_files: 10,
         max_processes: 5,
     };
+<<<<<<< HEAD
     let usage = ResourceUsage {
+=======
+    ≔ usage = ResourceUsage {
+>>>>>>> origin/main
         memory_bytes: 1000, // exactly at limit
         cpu_time_ms: 0,
         open_files: 10, // exactly at limit
@@ -304,6 +503,10 @@ fn test_resource_usage_at_exact_limits() {
     assert(!usage.exceeds(&limits)); // at limit is not exceeding
 }
 
+<<<<<<< HEAD
 fn main() {
+=======
+λ main() {
+>>>>>>> origin/main
     println("Aegis sandbox tests - 17 tests");
 }

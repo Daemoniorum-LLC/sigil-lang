@@ -1,12 +1,17 @@
 //! Commune Channel Tests - 16 tests
 
+<<<<<<< HEAD
 enum ChannelType {
+=======
+ᛈ ChannelType {
+>>>>>>> origin/main
     PubSub,
     RequestResponse,
     Stream,
     Broadcast,
 }
 
+<<<<<<< HEAD
 impl ChannelType {
     pub fn supports_history(&self) -> !bool {
         match self {
@@ -20,43 +25,85 @@ impl ChannelType {
     pub fn requires_ack(&self) -> !bool {
         match self {
             ChannelType::RequestResponse => true,
+=======
+⊢ ChannelType {
+    ☉ λ supports_history(&self) -> !bool {
+        ⌥ self {
+            ChannelType·PubSub => true,
+            ChannelType·RequestResponse => false,
+            ChannelType·Stream => true,
+            ChannelType·Broadcast => false,
+        }
+    }
+
+    ☉ λ requires_ack(&self) -> !bool {
+        ⌥ self {
+            ChannelType·RequestResponse => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 }
 
+<<<<<<< HEAD
 enum Permission {
+=======
+ᛈ Permission {
+>>>>>>> origin/main
     Open,
     Restricted,
     TrustThreshold { min_trust: !f32 },
     Blocked,
 }
 
+<<<<<<< HEAD
 impl Permission {
     pub fn allows_default(&self) -> !bool {
         match self {
             Permission::Open => true,
             Permission::TrustThreshold { min_trust } => *min_trust <= 0.5,
+=======
+⊢ Permission {
+    ☉ λ allows_default(&self) -> !bool {
+        ⌥ self {
+            Permission·Open => true,
+            Permission·TrustThreshold { min_trust } => *min_trust <= 0.5,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn is_restrictive(&self) -> !bool {
         match self {
             Permission::Open => false,
+=======
+    ☉ λ is_restrictive(&self) -> !bool {
+        ⌥ self {
+            Permission·Open => false,
+>>>>>>> origin/main
             _ => true,
         }
     }
 }
 
+<<<<<<< HEAD
 struct AccessControl {
+=======
+Σ AccessControl {
+>>>>>>> origin/main
     can_publish: !bool,
     can_subscribe: !bool,
     is_admin: !bool,
 }
 
+<<<<<<< HEAD
 impl AccessControl {
     pub fn open() -> Self {
+=======
+⊢ AccessControl {
+    ☉ λ open() -> Self {
+>>>>>>> origin/main
         AccessControl {
             can_publish: true,
             can_subscribe: true,
@@ -64,7 +111,11 @@ impl AccessControl {
         }
     }
 
+<<<<<<< HEAD
     pub fn read_only() -> Self {
+=======
+    ☉ λ read_only() -> Self {
+>>>>>>> origin/main
         AccessControl {
             can_publish: false,
             can_subscribe: true,
@@ -72,7 +123,11 @@ impl AccessControl {
         }
     }
 
+<<<<<<< HEAD
     pub fn admin() -> Self {
+=======
+    ☉ λ admin() -> Self {
+>>>>>>> origin/main
         AccessControl {
             can_publish: true,
             can_subscribe: true,
@@ -80,7 +135,11 @@ impl AccessControl {
         }
     }
 
+<<<<<<< HEAD
     pub fn blocked() -> Self {
+=======
+    ☉ λ blocked() -> Self {
+>>>>>>> origin/main
         AccessControl {
             can_publish: false,
             can_subscribe: false,
@@ -89,14 +148,23 @@ impl AccessControl {
     }
 }
 
+<<<<<<< HEAD
 struct ChannelConfig {
+=======
+Σ ChannelConfig {
+>>>>>>> origin/main
     max_message_size: !usize,
     retention_days: !u32,
     rate_limit_per_sec: !u32,
 }
 
+<<<<<<< HEAD
 impl ChannelConfig {
     pub fn default_config() -> Self {
+=======
+⊢ ChannelConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         ChannelConfig {
             max_message_size: 1024 * 1024,
             retention_days: 7,
@@ -104,7 +172,11 @@ impl ChannelConfig {
         }
     }
 
+<<<<<<< HEAD
     pub fn high_throughput() -> Self {
+=======
+    ☉ λ high_throughput() -> Self {
+>>>>>>> origin/main
         ChannelConfig {
             max_message_size: 64 * 1024,
             retention_days: 1,
@@ -112,7 +184,11 @@ impl ChannelConfig {
         }
     }
 
+<<<<<<< HEAD
     pub fn archival() -> Self {
+=======
+    ☉ λ archival() -> Self {
+>>>>>>> origin/main
         ChannelConfig {
             max_message_size: 10 * 1024 * 1024,
             retention_days: 365,
@@ -121,14 +197,23 @@ impl ChannelConfig {
     }
 }
 
+<<<<<<< HEAD
 struct ChannelStats {
+=======
+Σ ChannelStats {
+>>>>>>> origin/main
     subscriber_count: !usize,
     message_count: !u64,
     bytes_transferred: !u64,
 }
 
+<<<<<<< HEAD
 impl ChannelStats {
     pub fn new() -> Self {
+=======
+⊢ ChannelStats {
+    ☉ λ new() -> Self {
+>>>>>>> origin/main
         ChannelStats {
             subscriber_count: 0,
             message_count: 0,
@@ -136,25 +221,45 @@ impl ChannelStats {
         }
     }
 
+<<<<<<< HEAD
     pub fn record_message(&mut self, bytes: !u64) {
+=======
+    ☉ λ record_message(&Δ self, bytes: !u64) {
+>>>>>>> origin/main
         self.message_count = self.message_count + 1;
         self.bytes_transferred = self.bytes_transferred + bytes;
     }
 
+<<<<<<< HEAD
     pub fn add_subscriber(&mut self) {
         self.subscriber_count = self.subscriber_count + 1;
     }
 
     pub fn remove_subscriber(&mut self) {
         if self.subscriber_count > 0 {
+=======
+    ☉ λ add_subscriber(&Δ self) {
+        self.subscriber_count = self.subscriber_count + 1;
+    }
+
+    ☉ λ remove_subscriber(&Δ self) {
+        ⎇ self.subscriber_count > 0 {
+>>>>>>> origin/main
             self.subscriber_count = self.subscriber_count - 1;
         }
     }
 
+<<<<<<< HEAD
     pub fn avg_message_size(&self) -> !u64 {
         if self.message_count == 0 {
             0
         } else {
+=======
+    ☉ λ avg_message_size(&self) -> !u64 {
+        ⎇ self.message_count == 0 {
+            0
+        } ⎉ {
+>>>>>>> origin/main
             self.bytes_transferred / self.message_count
         }
     }
@@ -165,98 +270,169 @@ impl ChannelStats {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_type_pubsub() {
     let t = ChannelType::PubSub;
+=======
+λ test_channel_type_pubsub() {
+    ≔ t = ChannelType·PubSub;
+>>>>>>> origin/main
     assert(t.supports_history());
     assert(!t.requires_ack());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_type_request_response() {
     let t = ChannelType::RequestResponse;
+=======
+λ test_channel_type_request_response() {
+    ≔ t = ChannelType·RequestResponse;
+>>>>>>> origin/main
     assert(!t.supports_history());
     assert(t.requires_ack());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_type_stream() {
     let t = ChannelType::Stream;
+=======
+λ test_channel_type_stream() {
+    ≔ t = ChannelType·Stream;
+>>>>>>> origin/main
     assert(t.supports_history());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_permission_open() {
     let p = Permission::Open;
+=======
+λ test_permission_open() {
+    ≔ p = Permission·Open;
+>>>>>>> origin/main
     assert(p.allows_default());
     assert(!p.is_restrictive());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_permission_restricted() {
     let p = Permission::Restricted;
+=======
+λ test_permission_restricted() {
+    ≔ p = Permission·Restricted;
+>>>>>>> origin/main
     assert(!p.allows_default());
     assert(p.is_restrictive());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_permission_trust_threshold() {
     let low = Permission::TrustThreshold { min_trust: 0.3 };
     let high = Permission::TrustThreshold { min_trust: 0.8 };
+=======
+λ test_permission_trust_threshold() {
+    ≔ low = Permission·TrustThreshold { min_trust: 0.3 };
+    ≔ high = Permission·TrustThreshold { min_trust: 0.8 };
+>>>>>>> origin/main
     assert(low.allows_default());
     assert(!high.allows_default());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_access_control_open() {
     let ac = AccessControl::open();
+=======
+λ test_access_control_open() {
+    ≔ ac = AccessControl·open();
+>>>>>>> origin/main
     assert(ac.can_publish);
     assert(ac.can_subscribe);
     assert(!ac.is_admin);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_access_control_read_only() {
     let ac = AccessControl::read_only();
+=======
+λ test_access_control_read_only() {
+    ≔ ac = AccessControl·read_only();
+>>>>>>> origin/main
     assert(!ac.can_publish);
     assert(ac.can_subscribe);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_access_control_admin() {
     let ac = AccessControl::admin();
+=======
+λ test_access_control_admin() {
+    ≔ ac = AccessControl·admin();
+>>>>>>> origin/main
     assert(ac.is_admin);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_access_control_blocked() {
     let ac = AccessControl::blocked();
+=======
+λ test_access_control_blocked() {
+    ≔ ac = AccessControl·blocked();
+>>>>>>> origin/main
     assert(!ac.can_publish);
     assert(!ac.can_subscribe);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_config_default() {
     let cfg = ChannelConfig::default_config();
+=======
+λ test_channel_config_default() {
+    ≔ cfg = ChannelConfig·default_config();
+>>>>>>> origin/main
     assert(cfg.max_message_size == 1024 * 1024);
     assert(cfg.retention_days == 7);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_config_high_throughput() {
     let cfg = ChannelConfig::high_throughput();
+=======
+λ test_channel_config_high_throughput() {
+    ≔ cfg = ChannelConfig·high_throughput();
+>>>>>>> origin/main
     assert(cfg.rate_limit_per_sec == 1000);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_stats_new() {
     let stats = ChannelStats::new();
+=======
+λ test_channel_stats_new() {
+    ≔ stats = ChannelStats·new();
+>>>>>>> origin/main
     assert(stats.subscriber_count == 0);
     assert(stats.message_count == 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_stats_record() {
     let mut stats = ChannelStats::new();
+=======
+λ test_channel_stats_record() {
+    ≔ Δ stats = ChannelStats·new();
+>>>>>>> origin/main
     stats.record_message(1024);
     stats.record_message(2048);
     assert(stats.message_count == 2);
@@ -264,22 +440,36 @@ fn test_channel_stats_record() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_stats_avg_size() {
     let mut stats = ChannelStats::new();
+=======
+λ test_channel_stats_avg_size() {
+    ≔ Δ stats = ChannelStats·new();
+>>>>>>> origin/main
     stats.record_message(1000);
     stats.record_message(2000);
     assert(stats.avg_message_size() == 1500);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_channel_stats_subscribers() {
     let mut stats = ChannelStats::new();
+=======
+λ test_channel_stats_subscribers() {
+    ≔ Δ stats = ChannelStats·new();
+>>>>>>> origin/main
     stats.add_subscriber();
     stats.add_subscriber();
     stats.remove_subscriber();
     assert(stats.subscriber_count == 1);
 }
 
+<<<<<<< HEAD
 fn main() {
+=======
+λ main() {
+>>>>>>> origin/main
     println("Commune channel tests - 16 tests");
 }

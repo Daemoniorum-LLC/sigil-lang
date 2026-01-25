@@ -1,0 +1,17 @@
+// P0_011: ∀ (∀ all) should parse as ∀ keyword
+// Priority: P0
+// Category: Native Symbols
+// Tests: ∀ ∀ ∀, ∈ ∀ in
+// Expected: Program compiles and runs, printing sum of 1+2+3+4+5 = 15
+
+λ main() {
+    ≔ Δ sum = 0;
+    ≔ numbers = [1, 2, 3, 4, 5];
+
+    // Use ∀ ∀ "∀" and ∈ ∀ "in"
+    ∀ n ∈ numbers {
+        sum = sum + n;
+    }
+
+    println!("sum = {}", sum);
+}

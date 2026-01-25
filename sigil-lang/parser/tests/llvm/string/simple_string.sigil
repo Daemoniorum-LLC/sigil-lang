@@ -1,0 +1,9 @@
+// Test: Basic heap-allocated String operations
+// Expected output: "Hello World" printed
+// Expected exit: 11 (length of "Hello World")
+
+fn main() -> i64 {
+    let s = String_from("Hello World");
+    string_print(s);
+    string_len(s)
+}

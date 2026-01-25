@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sigil WASM Demo - Minimal</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #00d4ff; }
+        h2 { color: #8888ff; }
+        .output {
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: monospace;
+            white-space: pre-wrap;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-line { color: #00ff88; }
+        .error-line { color: #ff4444; }
+        button {
+            background: #00d4ff;
+            color: #000;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        button:hover { background: #00a8cc; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        .status {
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        .status.loading { background: #333; }
+        .status.success { background: #1e4620; }
+        .status.error { background: #4a1515; }
+    </style>
+</head>
+<body>
+    <h1>Sigil WASM Demo - Minimal</h1>
+    <p>Testing core Sigil WASM functionality: arithmetic, control flow, and signals.</p>
+
+    <div id="status" class="status loading">Loading WASM module...</div>
+
+    <h2>Controls</h2>
+    <div>
+        <button id="run-main" disabled>Run main()</button>
+        <button id="run-arithmetic" disabled>Run demo_arithmetic()</button>
+        <button id="run-control" disabled>Run demo_control_flow()</button>
+        <button id="run-signals" disabled>Run demo_signals()</button>
+        <button id="clear-output">Clear Output</button>
+    </div>
+
+    <h2>Console Output</h2>
+    <div id="output" class="output"></div>
+
+    <script>
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+
+        function log(message, type = 'log') {
+            const line = document.createElement('div');
+            line.className = type === 'error' ? 'error-line' : 'log-line';
+            line.textContent = message;
+            output.appendChild(line);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            output.innerHTML = '';
+        }
+
+        // Signal storage (simple ID-based)
+        const signals = new Map();
+        let signalIdCounter = 0;
+
+        // Create the import object for the WASM module
+        const imports = {
+            console: {
+                print: (value) => {
+                    log(`print: ${value}`);
+                },
+                log: (value) => {
+                    log(`log: ${value}`);
+                }
+            },
+            signal: {
+                create: (initial) => {
+                    const id = signalIdCounter++;
+                    signals.set(id, BigInt(initial));
+                    log(`signal::create(${initial}) -> id=${id}`);
+                    return id;
+                },
+                get: (id) => {
+                    const value = signals.get(id) ?? 0n;
+                    log(`signal::get(${id}) -> ${value}`);
+                    return value;
+                },
+                set: (id, value) => {
+                    signals.set(id, BigInt(value));
+                    log(`signal::set(${id}, ${value})`);
+                }
+            },
+            heap: {
+                alloc: (size) => {
+                    log(`heap::alloc(${size}) [stub]`);
+                    return 0;
+                }
+            },
+            math: {
+                pow: (base, exp) => {
+                    const result = BigInt(base) ** BigInt(exp);
+                    return result;
+                }
+            },
+            string: {
+                alloc: (len) => 0,
+                from_i64: (ref) => 0
+            },
+            morpheme: {
+                array_sort: (arr) => arr,
+                array_first: (arr) => 0n,
+                array_last: (arr) => 0n,
+                array_sum: (arr) => 0n,
+                array_product: (arr) => 1n,
+                array_min: (arr) => 0n,
+                array_max: (arr) => 0n,
+                array_all: (arr) => 1,
+                array_any: (arr) => 0
+            }
+        };
+
+        let wasmInstance = null;
+
+        async function loadWasm() {
+            try {
+                const response = await fetch('demo_minimal.wasm');
+                const bytes = await response.arrayBuffer();
+                const { instance } = await WebAssembly.instantiate(bytes, imports);
+                wasmInstance = instance;
+
+                // Enable buttons
+                document.getElementById('run-main').disabled = false;
+                document.getElementById('run-arithmetic').disabled = false;
+                document.getElementById('run-control').disabled = false;
+                document.getElementById('run-signals').disabled = false;
+
+                status.className = 'status success';
+                status.textContent = 'WASM module loaded successfully!';
+                log('WASM module loaded and ready.');
+                log(`Exports: ${Object.keys(instance.exports).join(', ')}`);
+            } catch (e) {
+                status.className = 'status error';
+                status.textContent = `Error loading WASM: ${e.message}`;
+                log(e.message, 'error');
+            }
+        }
+
+        function runExport(name) {
+            if (!wasmInstance) return;
+            try {
+                log(`--- Calling ${name}() ---`);
+                wasmInstance.exports[name]();
+                log(`--- ${name}() complete ---`);
+            } catch (e) {
+                log(`Error in ${name}(): ${e.message}`, 'error');
+            }
+        }
+
+        // Event listeners
+        document.getElementById('run-main').addEventListener('click', () => runExport('main'));
+        document.getElementById('run-arithmetic').addEventListener('click', () => runExport('demo_arithmetic'));
+        document.getElementById('run-control').addEventListener('click', () => runExport('demo_control_flow'));
+        document.getElementById('run-signals').addEventListener('click', () => runExport('demo_signals'));
+        document.getElementById('clear-output').addEventListener('click', clearOutput);
+
+        // Load WASM on page load
+        loadWasm();
+    </script>
+</body>
+</html>

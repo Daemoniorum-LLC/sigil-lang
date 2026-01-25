@@ -1,0 +1,18 @@
+// Test: Semicolon optional ∀ last expression
+// Spec: 02-SYNTAX.md § 3.6 Expression vs Statement
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate last expression without semicolon is returned.
+//
+// Expected behavior:
+// Should print 42
+
+λ get_value() -> !i32 {
+    ≔ x: !i32 = 42;
+    x
+}
+
+λ main() {
+    println(get_value());
+}

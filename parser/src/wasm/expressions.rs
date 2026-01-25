@@ -203,9 +203,13 @@ impl WasmCompiler {
             Expr::LegionBroadcast { .. } => Err(WasmError::unsupported("Legion broadcast")),
             Expr::LegionConsensus { .. } => Err(WasmError::unsupported("Legion consensus")),
             Expr::LegionDecay { .. } => Err(WasmError::unsupported("Legion decay")),
+<<<<<<< HEAD
 
             // Named arguments are handled at call sites, not as standalone expressions
             Expr::NamedArg { value, .. } => self.compile_expr(value),
+=======
+            Expr::NamedArg { .. } => Err(WasmError::unsupported("named arguments")),
+>>>>>>> origin/main
         }
     }
 

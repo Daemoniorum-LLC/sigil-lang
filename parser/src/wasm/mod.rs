@@ -41,6 +41,7 @@ pub mod operators;
 pub mod sourcemap;
 pub mod statements;
 pub mod types;
+pub mod wasi;
 
 // Re-export main types
 pub use constants::{evidence, memory, type_tag};
@@ -48,6 +49,7 @@ pub use error::{WasmError, WasmErrorKind, WasmResult};
 pub use imports::ImportRegistry;
 pub use sourcemap::{SourceLocation, SourceMap, SourceMapBuilder};
 pub use types::*;
+pub use wasi::WasmTarget;
 
 use std::collections::HashMap;
 use wasm_encoder::ValType;
@@ -128,13 +130,30 @@ pub struct WasmCompiler {
 
     /// Source file name for source maps
     pub(crate) source_file: String,
+
+    /// Compilation target (browser or WASI)
+    pub(crate) target: WasmTarget,
 }
 
 impl WasmCompiler {
-    /// Create a new WASM compiler.
+    /// Create a new WASM compiler for browser target.
     pub fn new() -> Self {
+        Self::with_target(WasmTarget::Browser)
+    }
+
+    /// Create a new WASM compiler with a specific target.
+    pub fn with_target(target: WasmTarget) -> Self {
+        let imports = match target {
+            WasmTarget::Browser => ImportRegistry::new(),
+            WasmTarget::Wasi => {
+                let mut registry = ImportRegistry::empty();
+                wasi::register_wasi_imports(&mut registry);
+                registry
+            }
+        };
+
         let mut compiler = Self {
-            imports: ImportRegistry::new(),
+            imports,
             functions: Vec::new(),
             func_map: HashMap::new(),
             globals: Vec::new(),
@@ -157,6 +176,7 @@ impl WasmCompiler {
             debug_info: false,
             source_map: None,
             source_file: String::new(),
+            target,
         };
 
         // Add heap pointer global
@@ -165,7 +185,17 @@ impl WasmCompiler {
             .push((ValType::I32, true, memory::HEAP_START as i64));
         compiler.global_map.insert("__heap_ptr".to_string(), 0);
 
+        // For WASI target, add _start wrapper and WASI stdlib
+        if target.is_wasi() {
+            compiler.setup_wasi_stdlib();
+        }
+
         compiler
+    }
+
+    /// Create compiler for WASI target.
+    pub fn for_wasi() -> Self {
+        Self::with_target(WasmTarget::Wasi)
     }
 
     /// Create compiler with optimization level.
@@ -298,6 +328,146 @@ impl WasmCompiler {
                 .map(|f| f.results.is_empty())
                 .unwrap_or(false)
         }
+    }
+
+    /// Get the compilation target.
+    pub fn target(&self) -> WasmTarget {
+        self.target
+    }
+
+    /// Set up WASI stdlib functions.
+    ///
+    /// This creates wrapper functions for common operations:
+    /// - `print` / `println` using fd_write to stdout
+    /// - `_start` entry point that calls `main`
+    fn setup_wasi_stdlib(&mut self) {
+        use wasm_encoder::Instruction;
+
+        // Register print function type: (i64) -> ()
+        let print_type = self.get_or_create_type(vec![ValType::I64], vec![]);
+
+        // Create __wasi_print function that writes i64 to stdout
+        // This will be called by `print` and `println`
+        let print_fn_idx = self.imports.import_count() + self.functions.len() as u32;
+        let mut print_fn = CompiledFunction::new(
+            "__wasi_print_i64".to_string(),
+            print_type,
+            print_fn_idx,
+            vec![("value".to_string(), ValType::I64)],
+            vec![],
+            false, // not exported directly
+        );
+
+        // Implementation: Convert i64 to string and write to stdout
+        // For now, this is a stub - full implementation requires string formatting
+        // We'll store the value at a scratch memory location and write it
+
+        // Allocate scratch space for iovec (8 bytes) + buffer (32 bytes)
+        let iovec_addr = memory::HEAP_START + 1024; // Use a fixed scratch area
+        let buf_addr = iovec_addr + 8;
+
+        // Store buffer address in iovec
+        print_fn.push(Instruction::I32Const(iovec_addr as i32));
+        print_fn.push(Instruction::I32Const(buf_addr as i32));
+        print_fn.push(Instruction::I32Store(wasm_encoder::MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: 0,
+        }));
+
+        // For now, just write a placeholder newline (proper number formatting is complex)
+        // Store newline at buffer
+        print_fn.push(Instruction::I32Const(buf_addr as i32));
+        print_fn.push(Instruction::I32Const(10)); // newline
+        print_fn.push(Instruction::I32Store8(wasm_encoder::MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: 0,
+        }));
+
+        // Store buffer length (1) in iovec
+        print_fn.push(Instruction::I32Const(iovec_addr as i32));
+        print_fn.push(Instruction::I32Const(1)); // length = 1
+        print_fn.push(Instruction::I32Store(wasm_encoder::MemArg {
+            offset: 4,
+            align: 2,
+            memory_index: 0,
+        }));
+
+        // Allocate space for nwritten result
+        let nwritten_addr = buf_addr + 32;
+
+        // Get fd_write function index - only push args if we have the function
+        if let Some(fd_write_idx) = self.imports.get_func("wasi_snapshot_preview1.fd_write") {
+            // Call fd_write(stdout=1, iovs, iovs_len=1, nwritten)
+            print_fn.push(Instruction::I32Const(1)); // fd = stdout
+            print_fn.push(Instruction::I32Const(iovec_addr as i32)); // iovs
+            print_fn.push(Instruction::I32Const(1)); // iovs_len
+            print_fn.push(Instruction::I32Const(nwritten_addr as i32)); // nwritten
+            print_fn.push(Instruction::Call(fd_write_idx));
+            print_fn.push(Instruction::Drop); // Ignore return value
+        }
+
+        print_fn.push(Instruction::End);
+        self.functions.push(print_fn);
+        self.func_map
+            .insert("__wasi_print_i64".to_string(), print_fn_idx);
+        self.func_map.insert("print".to_string(), print_fn_idx);
+        self.func_map.insert("println".to_string(), print_fn_idx);
+    }
+
+    /// Add WASI _start function that wraps main.
+    /// Called after compilation to wrap the user's main function.
+    pub fn finalize_wasi(&mut self) {
+        use wasm_encoder::Instruction;
+
+        if !self.target.is_wasi() {
+            return;
+        }
+
+        // Look for user's main function
+        let main_idx = match self.func_map.get("main") {
+            Some(&idx) => idx,
+            None => return, // No main function, nothing to wrap
+        };
+
+        // Create _start function type: () -> ()
+        let start_type = self.get_or_create_type(vec![], vec![]);
+        let start_fn_idx = self.imports.import_count() + self.functions.len() as u32;
+
+        let mut start_fn = CompiledFunction::new(
+            "_start".to_string(),
+            start_type,
+            start_fn_idx,
+            vec![],
+            vec![],
+            true, // exported
+        );
+
+        // Call main()
+        start_fn.push(Instruction::Call(main_idx));
+
+        // If main returns a value, use it as exit code; otherwise exit with 0
+        let main_returns = !self.func_returns_void(main_idx);
+        if main_returns {
+            // Convert return value to i32 for proc_exit
+            start_fn.push(Instruction::I32WrapI64);
+        } else {
+            // Push 0 as exit code
+            start_fn.push(Instruction::I32Const(0));
+        }
+
+        // Call proc_exit to properly terminate
+        if let Some(proc_exit_idx) = self.imports.get_func("wasi_snapshot_preview1.proc_exit") {
+            start_fn.push(Instruction::Call(proc_exit_idx));
+        } else {
+            // If proc_exit isn't available, just drop the exit code
+            start_fn.push(Instruction::Drop);
+        }
+
+        start_fn.push(Instruction::End);
+        self.functions.push(start_fn);
+        self.func_map.insert("_start".to_string(), start_fn_idx);
     }
 
     // compile_file is implemented in statements.rs

@@ -1,0 +1,15 @@
+// Test: Atomic load and store
+// Spec: 06-CONCURRENCY.md § 5.3 Atomics
+// Priority: P2 - Enhancement
+
+λ main() {
+    ≔ a1 = AtomicU64·new(100);
+    ≔ a2 = AtomicU64·new(200);
+
+    // Compare values
+    ⎇ a1.load() < a2.load() {
+        println(1);
+    } ⎉ {
+        println(0);
+    }
+}

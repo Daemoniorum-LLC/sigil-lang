@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 //! Tests for Engram Procedural Memory (Skills)
+=======
+//! Tests ∀ Engram Procedural Memory (Skills)
+>>>>>>> origin/main
 //!
 //! Verifies skill learning, pattern matching, and feedback tracking.
 
@@ -6,6 +10,7 @@
 // Self-contained Test Types (matching procedural.sg API)
 // ============================================================================
 
+<<<<<<< HEAD
 pub struct SkillId(usize);
 
 impl SkillId {
@@ -14,10 +19,21 @@ impl SkillId {
 
 impl PartialEq for SkillId {
     fn eq(&self, other: &Self) -> bool {
+=======
+☉ Σ SkillId(usize);
+
+⊢ SkillId {
+    λ new(id: usize) -> Self { Self(id) }
+}
+
+⊢ PartialEq ∀ SkillId {
+    λ eq(&self, other: &Self) -> bool {
+>>>>>>> origin/main
         self.0 == other.0
     }
 }
 
+<<<<<<< HEAD
 impl Clone for SkillId {
     fn clone(&self) -> Self { SkillId(self.0) }
 }
@@ -35,6 +51,25 @@ pub struct TriggerPattern {
 impl TriggerPattern {
     pub fn new(keywords: Vec<&str>, threshold: f64) -> Self {
         let len = keywords.len();
+=======
+⊢ Clone ∀ SkillId {
+    λ clone(&self) -> Self { SkillId(self.0) }
+}
+
+⊢ Hash ∀ SkillId {
+    λ hash(&self) -> usize { self.0 }
+}
+
+☉ Σ TriggerPattern {
+    ☉ keywords: Vec<String>,
+    ☉ weights: Vec<f64>,
+    ☉ threshold: f64,
+}
+
+⊢ TriggerPattern {
+    ☉ λ new(keywords: Vec<&str>, threshold: f64) -> Self {
+        ≔ len = keywords.len();
+>>>>>>> origin/main
         Self {
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
             weights: vec![1.0 / len as f64; len],
@@ -42,7 +77,11 @@ impl TriggerPattern {
         }
     }
 
+<<<<<<< HEAD
     pub fn with_weights(keywords: Vec<&str>, weights: Vec<f64>, threshold: f64) -> Self {
+=======
+    ☉ λ with_weights(keywords: Vec<&str>, weights: Vec<f64>, threshold: f64) -> Self {
+>>>>>>> origin/main
         Self {
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
             weights,
@@ -51,8 +90,13 @@ impl TriggerPattern {
     }
 }
 
+<<<<<<< HEAD
 impl Clone for TriggerPattern {
     fn clone(&self) -> Self {
+=======
+⊢ Clone ∀ TriggerPattern {
+    λ clone(&self) -> Self {
+>>>>>>> origin/main
         TriggerPattern {
             keywords: self.keywords.clone(),
             weights: self.weights.clone(),
@@ -61,13 +105,18 @@ impl Clone for TriggerPattern {
     }
 }
 
+<<<<<<< HEAD
 pub enum Action {
+=======
+☉ ᛈ Action {
+>>>>>>> origin/main
     CallTool { tool: String, args: String },
     AskUser { question: String },
     Respond { template: String },
     Custom { name: String },
 }
 
+<<<<<<< HEAD
 impl Clone for Action {
     fn clone(&self) -> Self {
         match self {
@@ -77,10 +126,22 @@ impl Clone for Action {
             Action::AskUser { question } => Action::AskUser { question: question.clone() },
             Action::Respond { template } => Action::Respond { template: template.clone() },
             Action::Custom { name } => Action::Custom { name: name.clone() },
+=======
+⊢ Clone ∀ Action {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            Action·CallTool { tool, args } => Action·CallTool {
+                tool: tool.clone(), args: args.clone()
+            },
+            Action·AskUser { question } => Action·AskUser { question: question.clone() },
+            Action·Respond { template } => Action·Respond { template: template.clone() },
+            Action·Custom { name } => Action·Custom { name: name.clone() },
+>>>>>>> origin/main
         }
     }
 }
 
+<<<<<<< HEAD
 pub struct ProcedureStep {
     pub description: String,
     pub action: Action,
@@ -91,12 +152,25 @@ impl ProcedureStep {
         Self {
             description: format!("Call {}", tool),
             action: Action::CallTool {
+=======
+☉ Σ ProcedureStep {
+    ☉ description: String,
+    ☉ action: Action,
+}
+
+⊢ ProcedureStep {
+    ☉ λ tool_call(tool: &str, args: &str) -> Self {
+        Self {
+            description: format!("Call {}", tool),
+            action: Action·CallTool {
+>>>>>>> origin/main
                 tool: tool.to_string(),
                 args: args.to_string(),
             },
         }
     }
 
+<<<<<<< HEAD
     pub fn respond(template: &str) -> Self {
         Self {
             description: "Respond to user".to_string(),
@@ -108,12 +182,30 @@ impl ProcedureStep {
         Self {
             description: "Ask user".to_string(),
             action: Action::AskUser { question: question.to_string() },
+=======
+    ☉ λ respond(template: &str) -> Self {
+        Self {
+            description: "Respond to user".to_string(),
+            action: Action·Respond { template: template.to_string() },
+        }
+    }
+
+    ☉ λ ask(question: &str) -> Self {
+        Self {
+            description: "Ask user".to_string(),
+            action: Action·AskUser { question: question.to_string() },
+>>>>>>> origin/main
         }
     }
 }
 
+<<<<<<< HEAD
 impl Clone for ProcedureStep {
     fn clone(&self) -> Self {
+=======
+⊢ Clone ∀ ProcedureStep {
+    λ clone(&self) -> Self {
+>>>>>>> origin/main
         ProcedureStep {
             description: self.description.clone(),
             action: self.action.clone(),
@@ -121,6 +213,7 @@ impl Clone for ProcedureStep {
     }
 }
 
+<<<<<<< HEAD
 pub struct Procedure {
     pub steps: Vec<ProcedureStep>,
     pub estimated_duration_secs: Option<u64>,
@@ -130,23 +223,47 @@ impl Procedure {
     pub fn new() -> Self {
         Self {
             steps: Vec::new(),
+=======
+☉ Σ Procedure {
+    ☉ steps: Vec<ProcedureStep>,
+    ☉ estimated_duration_secs: Option<u64>,
+}
+
+⊢ Procedure {
+    ☉ λ new() -> Self {
+        Self {
+            steps: Vec·new(),
+>>>>>>> origin/main
             estimated_duration_secs: None,
         }
     }
 
+<<<<<<< HEAD
     pub fn step(mut self, step: ProcedureStep) -> Self {
+=======
+    ☉ λ step(Δ self, step: ProcedureStep) -> Self {
+>>>>>>> origin/main
         self.steps.push(step);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_duration(mut self, secs: u64) -> Self {
+=======
+    ☉ λ with_duration(Δ self, secs: u64) -> Self {
+>>>>>>> origin/main
         self.estimated_duration_secs = Some(secs);
         self
     }
 }
 
+<<<<<<< HEAD
 impl Clone for Procedure {
     fn clone(&self) -> Self {
+=======
+⊢ Clone ∀ Procedure {
+    λ clone(&self) -> Self {
+>>>>>>> origin/main
         Procedure {
             steps: self.steps.clone(),
             estimated_duration_secs: self.estimated_duration_secs,
@@ -154,6 +271,7 @@ impl Clone for Procedure {
     }
 }
 
+<<<<<<< HEAD
 pub struct SkillStats {
     pub execution_count: u32,
     pub success_count: u32,
@@ -164,6 +282,18 @@ pub struct SkillStats {
 
 impl SkillStats {
     pub fn new() -> Self {
+=======
+☉ Σ SkillStats {
+    ☉ execution_count: u32,
+    ☉ success_count: u32,
+    ☉ failure_count: u32,
+    ☉ success_rate: f64,
+    ☉ avg_duration_secs: f64,
+}
+
+⊢ SkillStats {
+    ☉ λ new() -> Self {
+>>>>>>> origin/main
         Self {
             execution_count: 0,
             success_count: 0,
@@ -173,9 +303,15 @@ impl SkillStats {
         }
     }
 
+<<<<<<< HEAD
     pub fn from_counts(successes: u32, failures: u32) -> Self {
         let total = successes + failures;
         let rate = if total == 0 { 0.0 } else { successes as f64 / total as f64 };
+=======
+    ☉ λ from_counts(successes: u32, failures: u32) -> Self {
+        ≔ total = successes + failures;
+        ≔ rate = ⎇ total == 0 { 0.0 } ⎉ { successes as f64 / total as f64 };
+>>>>>>> origin/main
         Self {
             execution_count: total,
             success_count: successes,
@@ -186,8 +322,13 @@ impl SkillStats {
     }
 }
 
+<<<<<<< HEAD
 impl Clone for SkillStats {
     fn clone(&self) -> Self {
+=======
+⊢ Clone ∀ SkillStats {
+    λ clone(&self) -> Self {
+>>>>>>> origin/main
         SkillStats {
             execution_count: self.execution_count,
             success_count: self.success_count,
@@ -198,6 +339,7 @@ impl Clone for SkillStats {
     }
 }
 
+<<<<<<< HEAD
 pub struct FailureMode {
     pub trigger_context: String,
     pub failure_type: String,
@@ -207,6 +349,17 @@ pub struct FailureMode {
 
 impl FailureMode {
     pub fn new(context: &str, failure_type: &str) -> Self {
+=======
+☉ Σ FailureMode {
+    ☉ trigger_context: String,
+    ☉ failure_type: String,
+    ☉ recovery: Option<String>,
+    ☉ occurrences: u32,
+}
+
+⊢ FailureMode {
+    ☉ λ new(context: &str, failure_type: &str) -> Self {
+>>>>>>> origin/main
         Self {
             trigger_context: context.to_string(),
             failure_type: failure_type.to_string(),
@@ -216,6 +369,7 @@ impl FailureMode {
     }
 }
 
+<<<<<<< HEAD
 pub struct Skill {
     pub id: SkillId,
     pub name: String,
@@ -237,33 +391,77 @@ impl Skill {
             procedure: Procedure::new(),
             stats: SkillStats::new(),
             failure_modes: Vec::new(),
+=======
+☉ Σ Skill {
+    ☉ id: SkillId,
+    ☉ name: String,
+    ☉ description: String,
+    ☉ trigger: TriggerPattern,
+    ☉ procedure: Procedure,
+    ☉ stats: SkillStats,
+    ☉ failure_modes: Vec<FailureMode>,
+    ☉ enabled: bool,
+}
+
+⊢ Skill {
+    ☉ λ new(id: usize, name: &str) -> Self {
+        Self {
+            id: SkillId·new(id),
+            name: name.to_string(),
+            description: String·new(),
+            trigger: TriggerPattern·new(vec![], 0.5),
+            procedure: Procedure·new(),
+            stats: SkillStats·new(),
+            failure_modes: Vec·new(),
+>>>>>>> origin/main
             enabled: true,
         }
     }
 
+<<<<<<< HEAD
     pub fn with_description(mut self, desc: &str) -> Self {
+=======
+    ☉ λ with_description(Δ self, desc: &str) -> Self {
+>>>>>>> origin/main
         self.description = desc.to_string();
         self
     }
 
+<<<<<<< HEAD
     pub fn with_trigger(mut self, trigger: TriggerPattern) -> Self {
+=======
+    ☉ λ with_trigger(Δ self, trigger: TriggerPattern) -> Self {
+>>>>>>> origin/main
         self.trigger = trigger;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_procedure(mut self, procedure: Procedure) -> Self {
+=======
+    ☉ λ with_procedure(Δ self, procedure: Procedure) -> Self {
+>>>>>>> origin/main
         self.procedure = procedure;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_stats(mut self, stats: SkillStats) -> Self {
+=======
+    ☉ λ with_stats(Δ self, stats: SkillStats) -> Self {
+>>>>>>> origin/main
         self.stats = stats;
         self
     }
 }
 
+<<<<<<< HEAD
 impl Clone for Skill {
     fn clone(&self) -> Self {
+=======
+⊢ Clone ∀ Skill {
+    λ clone(&self) -> Self {
+>>>>>>> origin/main
         Skill {
             id: self.id.clone(),
             name: self.name.clone(),
@@ -271,12 +469,17 @@ impl Clone for Skill {
             trigger: self.trigger.clone(),
             procedure: self.procedure.clone(),
             stats: self.stats.clone(),
+<<<<<<< HEAD
             failure_modes: Vec::new(),
+=======
+            failure_modes: Vec·new(),
+>>>>>>> origin/main
             enabled: self.enabled,
         }
     }
 }
 
+<<<<<<< HEAD
 pub struct SkillMatch {
     pub skill: Skill,
     pub match_score: f64,
@@ -293,10 +496,29 @@ impl Context {
     }
 
     pub fn to_string(&self) -> String {
+=======
+☉ Σ SkillMatch {
+    ☉ skill: Skill,
+    ☉ match_score: f64,
+    ☉ preconditions_met: bool,
+}
+
+☉ Σ Context {
+    ☉ text: String,
+}
+
+⊢ Context {
+    ☉ λ new(text: &str) -> Self {
+        Self { text: text.to_string() }
+    }
+
+    ☉ λ to_string(&self) -> String {
+>>>>>>> origin/main
         self.text.clone()
     }
 }
 
+<<<<<<< HEAD
 pub struct ProceduralConfig {
     pub min_episodes_for_skill: usize,
     pub pattern_match_threshold: f64,
@@ -305,6 +527,16 @@ pub struct ProceduralConfig {
 
 impl ProceduralConfig {
     pub fn default_config() -> Self {
+=======
+☉ Σ ProceduralConfig {
+    ☉ min_episodes_for_skill: usize,
+    ☉ pattern_match_threshold: f64,
+    ☉ max_skills: Option<usize>,
+}
+
+⊢ ProceduralConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         Self {
             min_episodes_for_skill: 3,
             pattern_match_threshold: 0.5,
@@ -312,27 +544,43 @@ impl ProceduralConfig {
         }
     }
 
+<<<<<<< HEAD
     pub fn with_match_threshold(mut self, threshold: f64) -> Self {
+=======
+    ☉ λ with_match_threshold(Δ self, threshold: f64) -> Self {
+>>>>>>> origin/main
         self.pattern_match_threshold = threshold;
         self
     }
 }
 
+<<<<<<< HEAD
 pub struct ProceduralMemory {
+=======
+☉ Σ ProceduralMemory {
+>>>>>>> origin/main
     skills: Vec<Skill>,
     config: ProceduralConfig,
     next_id: usize,
 }
 
+<<<<<<< HEAD
 impl ProceduralMemory {
     pub fn new(config: ProceduralConfig) -> Self {
         Self {
             skills: Vec::new(),
+=======
+⊢ ProceduralMemory {
+    ☉ λ new(config: ProceduralConfig) -> Self {
+        Self {
+            skills: Vec·new(),
+>>>>>>> origin/main
             config,
             next_id: 0,
         }
     }
 
+<<<<<<< HEAD
     pub fn default_memory() -> Self {
         Self::new(ProceduralConfig::default_config())
     }
@@ -343,10 +591,23 @@ impl ProceduralMemory {
 
     pub fn register(&mut self, skill: Skill) -> SkillId {
         let id = skill.id.clone();
+=======
+    ☉ λ default_memory() -> Self {
+        Self·new(ProceduralConfig·default_config())
+    }
+
+    ☉ λ skill_count(&self) -> usize {
+        self.skills.len()
+    }
+
+    ☉ λ register(&Δ self, skill: Skill) -> SkillId {
+        ≔ id = skill.id.clone();
+>>>>>>> origin/main
         self.skills.push(skill);
         id
     }
 
+<<<<<<< HEAD
     pub fn get(&self, id: &SkillId) -> Option<&Skill> {
         self.skills.iter().find(|s| s.id == *id)
     }
@@ -371,6 +632,32 @@ impl ProceduralMemory {
 
             let score = self.match_pattern(&skill.trigger, &context_text);
             if score >= self.config.pattern_match_threshold {
+=======
+    ☉ λ get(&self, id: &SkillId) -> Option<&Skill> {
+        self.skills.iter().find(|s| s.id == *id)
+    }
+
+    ☉ λ get_mut(&Δ self, id: &SkillId) -> Option<&Δ Skill> {
+        self.skills.iter_mut().find(|s| s.id == *id)
+    }
+
+    ☉ λ get_by_name(&self, name: &str) -> Option<&Skill> {
+        self.skills.iter().find(|s| s.name == name)
+    }
+
+    ☉ λ match_situation(&self, context: &Context) -> Vec<SkillMatch> {
+        ≔ context_text = context.to_string().to_lowercase();
+
+        ≔ Δ matches: Vec<SkillMatch> = Vec·new();
+
+        ∀ skill ∈ &self.skills {
+            ⎇ !skill.enabled {
+                ↻;
+            }
+
+            ≔ score = self.match_pattern(&skill.trigger, &context_text);
+            ⎇ score >= self.config.pattern_match_threshold {
+>>>>>>> origin/main
                 matches.push(SkillMatch {
                     skill: skill.clone(),
                     match_score: score,
@@ -380,12 +667,21 @@ impl ProceduralMemory {
         }
 
         // Sort by score * success_rate (bubble sort)
+<<<<<<< HEAD
         for i in 0..matches.len() {
             for j in (i + 1)..matches.len() {
                 let score_i = matches[i].match_score * matches[i].skill.stats.success_rate.max(0.1);
                 let score_j = matches[j].match_score * matches[j].skill.stats.success_rate.max(0.1);
                 if score_j > score_i {
                     let temp = SkillMatch {
+=======
+        ∀ i ∈ 0..matches.len() {
+            ∀ j ∈ (i + 1)..matches.len() {
+                ≔ score_i = matches[i].match_score * matches[i].skill.stats.success_rate.max(0.1);
+                ≔ score_j = matches[j].match_score * matches[j].skill.stats.success_rate.max(0.1);
+                ⎇ score_j > score_i {
+                    ≔ temp = SkillMatch {
+>>>>>>> origin/main
                         skill: matches[i].skill.clone(),
                         match_score: matches[i].match_score,
                         preconditions_met: matches[i].preconditions_met,
@@ -403,6 +699,7 @@ impl ProceduralMemory {
         matches
     }
 
+<<<<<<< HEAD
     pub fn record_success(&mut self, id: &SkillId, duration_secs: f64) {
         if let Some(skill) = self.get_mut(id) {
             skill.stats.execution_count = skill.stats.execution_count + 1;
@@ -413,19 +710,37 @@ impl ProceduralMemory {
             if skill.stats.avg_duration_secs == 0.0 {
                 skill.stats.avg_duration_secs = duration_secs;
             } else {
+=======
+    ☉ λ record_success(&Δ self, id: &SkillId, duration_secs: f64) {
+        ⎇ ≔ Some(skill) = self.get_mut(id) {
+            skill.stats.execution_count = skill.stats.execution_count + 1;
+            skill.stats.success_count = skill.stats.success_count + 1;
+            // EMA ∀ success rate
+            skill.stats.success_rate = skill.stats.success_rate * 0.9 + 0.1;
+            // EMA ∀ duration
+            ⎇ skill.stats.avg_duration_secs == 0.0 {
+                skill.stats.avg_duration_secs = duration_secs;
+            } ⎉ {
+>>>>>>> origin/main
                 skill.stats.avg_duration_secs = skill.stats.avg_duration_secs * 0.9 + duration_secs * 0.1;
             }
         }
     }
 
+<<<<<<< HEAD
     pub fn record_failure(&mut self, id: &SkillId, context: &str, failure_type: &str) {
         if let Some(skill) = self.get_mut(id) {
+=======
+    ☉ λ record_failure(&Δ self, id: &SkillId, context: &str, failure_type: &str) {
+        ⎇ ≔ Some(skill) = self.get_mut(id) {
+>>>>>>> origin/main
             skill.stats.execution_count = skill.stats.execution_count + 1;
             skill.stats.failure_count = skill.stats.failure_count + 1;
             // EMA decay on failure
             skill.stats.success_rate = skill.stats.success_rate * 0.9;
 
             // Record failure mode
+<<<<<<< HEAD
             skill.failure_modes.push(FailureMode::new(context, failure_type));
         }
     }
@@ -435,19 +750,39 @@ impl ProceduralMemory {
             skill.enabled = false;
             true
         } else {
+=======
+            skill.failure_modes.push(FailureMode·new(context, failure_type));
+        }
+    }
+
+    ☉ λ disable(&Δ self, id: &SkillId) -> bool {
+        ⎇ ≔ Some(skill) = self.get_mut(id) {
+            skill.enabled = false;
+            true
+        } ⎉ {
+>>>>>>> origin/main
             false
         }
     }
 
+<<<<<<< HEAD
     pub fn enable(&mut self, id: &SkillId) -> bool {
         if let Some(skill) = self.get_mut(id) {
             skill.enabled = true;
             true
         } else {
+=======
+    ☉ λ enable(&Δ self, id: &SkillId) -> bool {
+        ⎇ ≔ Some(skill) = self.get_mut(id) {
+            skill.enabled = true;
+            true
+        } ⎉ {
+>>>>>>> origin/main
             false
         }
     }
 
+<<<<<<< HEAD
     fn match_pattern(&self, pattern: &TriggerPattern, context: &str) -> f64 {
         let mut total_weight = 0.0;
         let mut matched_weight = 0.0;
@@ -458,11 +793,27 @@ impl ProceduralMemory {
 
             total_weight = total_weight + weight;
             if context.contains(keyword) {
+=======
+    λ match_pattern(&self, pattern: &TriggerPattern, context: &str) -> f64 {
+        ≔ Δ total_weight = 0.0;
+        ≔ Δ matched_weight = 0.0;
+
+        ∀ i ∈ 0..pattern.keywords.len() {
+            ≔ keyword = &pattern.keywords[i];
+            ≔ weight = ⎇ i < pattern.weights.len() { pattern.weights[i] } ⎉ { 1.0 };
+
+            total_weight = total_weight + weight;
+            ⎇ context.contains(keyword) {
+>>>>>>> origin/main
                 matched_weight = matched_weight + weight;
             }
         }
 
+<<<<<<< HEAD
         if total_weight == 0.0 { 0.0 } else { matched_weight / total_weight }
+=======
+        ⎇ total_weight == 0.0 { 0.0 } ⎉ { matched_weight / total_weight }
+>>>>>>> origin/main
     }
 }
 
@@ -471,44 +822,78 @@ impl ProceduralMemory {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_skill_creation() {
     let skill = Skill::new(1, "test_skill");
+=======
+λ test_skill_creation() {
+    ≔ skill = Skill·new(1, "test_skill");
+>>>>>>> origin/main
     assert_eq(skill.name, "test_skill");
     assert(skill.enabled);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_skill_with_description() {
     let skill = Skill::new(1, "test")
+=======
+λ test_skill_with_description() {
+    ≔ skill = Skill·new(1, "test")
+>>>>>>> origin/main
         .with_description("A test skill");
     assert_eq(skill.description, "A test skill");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_skill_with_trigger() {
     let trigger = TriggerPattern::new(vec!["search", "find", "lookup"], 0.5);
     let skill = Skill::new(1, "search_skill").with_trigger(trigger);
+=======
+λ test_skill_with_trigger() {
+    ≔ trigger = TriggerPattern·new(vec!["search", "find", "lookup"], 0.5);
+    ≔ skill = Skill·new(1, "search_skill").with_trigger(trigger);
+>>>>>>> origin/main
 
     assert_eq(skill.trigger.keywords.len(), 3);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_skill_with_procedure() {
     let procedure = Procedure::new()
         .step(ProcedureStep::tool_call("search", "query"))
         .step(ProcedureStep::respond("Here are the results"));
 
     let skill = Skill::new(1, "search_skill").with_procedure(procedure);
+=======
+λ test_skill_with_procedure() {
+    ≔ procedure = Procedure·new()
+        .step(ProcedureStep·tool_call("search", "query"))
+        .step(ProcedureStep·respond("Here are the results"));
+
+    ≔ skill = Skill·new(1, "search_skill").with_procedure(procedure);
+>>>>>>> origin/main
     assert_eq(skill.procedure.steps.len(), 2);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_skill_with_stats() {
     let stats = SkillStats::from_counts(8, 2);
     let skill = Skill::new(1, "test").with_stats(stats);
 
     assert_eq(skill.stats.execution_count, 10);
     let diff = (skill.stats.success_rate - 0.8).abs();
+=======
+λ test_skill_with_stats() {
+    ≔ stats = SkillStats·from_counts(8, 2);
+    ≔ skill = Skill·new(1, "test").with_stats(stats);
+
+    assert_eq(skill.stats.execution_count, 10);
+    ≔ diff = (skill.stats.success_rate - 0.8).abs();
+>>>>>>> origin/main
     assert(diff < 0.001);
 }
 
@@ -517,21 +902,35 @@ fn test_skill_with_stats() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_trigger_pattern_simple() {
     let pattern = TriggerPattern::new(vec!["hello", "world"], 0.5);
+=======
+λ test_trigger_pattern_simple() {
+    ≔ pattern = TriggerPattern·new(vec!["hello", "world"], 0.5);
+>>>>>>> origin/main
     assert_eq(pattern.keywords.len(), 2);
     assert_eq(pattern.threshold, 0.5);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_trigger_pattern_with_weights() {
     let pattern = TriggerPattern::with_weights(
+=======
+λ test_trigger_pattern_with_weights() {
+    ≔ pattern = TriggerPattern·with_weights(
+>>>>>>> origin/main
         vec!["important", "less_important"],
         vec![0.8, 0.2],
         0.5
     );
 
+<<<<<<< HEAD
     let diff = (pattern.weights[0] - 0.8).abs();
+=======
+    ≔ diff = (pattern.weights[0] - 0.8).abs();
+>>>>>>> origin/main
     assert(diff < 0.001);
 }
 
@@ -540,31 +939,55 @@ fn test_trigger_pattern_with_weights() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_procedure_empty() {
     let proc = Procedure::new();
+=======
+λ test_procedure_empty() {
+    ≔ proc = Procedure·new();
+>>>>>>> origin/main
     assert_eq(proc.steps.len(), 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_procedure_with_steps() {
     let proc = Procedure::new()
         .step(ProcedureStep::tool_call("read_file", "path.txt"))
         .step(ProcedureStep::respond("File contents: ..."));
+=======
+λ test_procedure_with_steps() {
+    ≔ proc = Procedure·new()
+        .step(ProcedureStep·tool_call("read_file", "path.txt"))
+        .step(ProcedureStep·respond("File contents: ..."));
+>>>>>>> origin/main
 
     assert_eq(proc.steps.len(), 2);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_procedure_with_duration() {
     let proc = Procedure::new().with_duration(30);
+=======
+λ test_procedure_with_duration() {
+    ≔ proc = Procedure·new().with_duration(30);
+>>>>>>> origin/main
     assert_eq(proc.estimated_duration_secs.unwrap(), 30);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_procedure_step_types() {
     let tool_step = ProcedureStep::tool_call("search", "query");
     let respond_step = ProcedureStep::respond("Hello!");
     let ask_step = ProcedureStep::ask("What do you need?");
+=======
+λ test_procedure_step_types() {
+    ≔ tool_step = ProcedureStep·tool_call("search", "query");
+    ≔ respond_step = ProcedureStep·respond("Hello!");
+    ≔ ask_step = ProcedureStep·ask("What do you need?");
+>>>>>>> origin/main
 
     assert(tool_step.description.contains("search"));
     assert_eq(respond_step.description, "Respond to user");
@@ -576,28 +999,47 @@ fn test_procedure_step_types() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_skill_stats_new() {
     let stats = SkillStats::new();
+=======
+λ test_skill_stats_new() {
+    ≔ stats = SkillStats·new();
+>>>>>>> origin/main
     assert_eq(stats.execution_count, 0);
     assert_eq(stats.success_count, 0);
     assert_eq(stats.failure_count, 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_skill_stats_from_counts() {
     let stats = SkillStats::from_counts(7, 3);
+=======
+λ test_skill_stats_from_counts() {
+    ≔ stats = SkillStats·from_counts(7, 3);
+>>>>>>> origin/main
 
     assert_eq(stats.execution_count, 10);
     assert_eq(stats.success_count, 7);
     assert_eq(stats.failure_count, 3);
 
+<<<<<<< HEAD
     let diff = (stats.success_rate - 0.7).abs();
+=======
+    ≔ diff = (stats.success_rate - 0.7).abs();
+>>>>>>> origin/main
     assert(diff < 0.001);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_skill_stats_zero_executions() {
     let stats = SkillStats::from_counts(0, 0);
+=======
+λ test_skill_stats_zero_executions() {
+    ≔ stats = SkillStats·from_counts(0, 0);
+>>>>>>> origin/main
     assert_eq(stats.success_rate, 0.0);
 }
 
@@ -606,12 +1048,18 @@ fn test_skill_stats_zero_executions() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_procedural_memory_creation() {
     let memory = ProceduralMemory::default_memory();
+=======
+λ test_procedural_memory_creation() {
+    ≔ memory = ProceduralMemory·default_memory();
+>>>>>>> origin/main
     assert_eq(memory.skill_count(), 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_register_skill() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -619,10 +1067,20 @@ fn test_register_skill() {
         .with_trigger(TriggerPattern::new(vec!["search", "find"], 0.5));
 
     let id = memory.register(skill);
+=======
+λ test_register_skill() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search", "find"], 0.5));
+
+    ≔ id = memory.register(skill);
+>>>>>>> origin/main
     assert_eq(memory.skill_count(), 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_get_skill_by_id() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -630,25 +1088,50 @@ fn test_get_skill_by_id() {
     let id = memory.register(skill);
 
     let retrieved = memory.get(&id);
+=======
+λ test_get_skill_by_id() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(42, "test_skill");
+    ≔ id = memory.register(skill);
+
+    ≔ retrieved = memory.get(&id);
+>>>>>>> origin/main
     assert(retrieved.is_some());
     assert_eq(retrieved.unwrap().name, "test_skill");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_get_skill_by_name() {
     let mut memory = ProceduralMemory::default_memory();
 
     memory.register(Skill::new(1, "unique_skill"));
 
     let skill = memory.get_by_name("unique_skill");
+=======
+λ test_get_skill_by_name() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    memory.register(Skill·new(1, "unique_skill"));
+
+    ≔ skill = memory.get_by_name("unique_skill");
+>>>>>>> origin/main
     assert(skill.is_some());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_get_nonexistent_skill() {
     let memory = ProceduralMemory::default_memory();
     let fake_id = SkillId::new(999);
     let skill = memory.get(&fake_id);
+=======
+λ test_get_nonexistent_skill() {
+    ≔ memory = ProceduralMemory·default_memory();
+    ≔ fake_id = SkillId·new(999);
+    ≔ skill = memory.get(&fake_id);
+>>>>>>> origin/main
     assert(skill.is_none());
 }
 
@@ -657,6 +1140,7 @@ fn test_get_nonexistent_skill() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_match_situation_exact_keywords() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -668,11 +1152,25 @@ fn test_match_situation_exact_keywords() {
 
     let context = Context::new("Can you search for information?");
     let matches = memory.match_situation(&context);
+=======
+λ test_match_situation_exact_keywords() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search", "find"], 0.5))
+        .with_stats(SkillStats·from_counts(9, 1));
+
+    memory.register(skill);
+
+    ≔ context = Context·new("Can you search ∀ information?");
+    ≔ matches = memory.match_situation(&context);
+>>>>>>> origin/main
 
     assert(matches.len() > 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_match_situation_partial_match() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -685,12 +1183,27 @@ fn test_match_situation_partial_match() {
     // Only matches one keyword - should still match if above threshold
     let context = Context::new("Please search for this");
     let matches = memory.match_situation(&context);
+=======
+λ test_match_situation_partial_match() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search", "find", "lookup", "query"], 0.5))
+        .with_stats(SkillStats·from_counts(9, 1));
+
+    memory.register(skill);
+
+    // Only matches one keyword - should still ⌥ ⎇ above threshold
+    ≔ context = Context·new("Please search ∀ this");
+    ≔ matches = memory.match_situation(&context);
+>>>>>>> origin/main
 
     // With default threshold 0.5, matching 1/4 keywords (0.25) won't pass
     // Let's adjust or test different scenario
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_match_situation_no_match() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -701,27 +1214,53 @@ fn test_match_situation_no_match() {
 
     let context = Context::new("Hello, how are you?");
     let matches = memory.match_situation(&context);
+=======
+λ test_match_situation_no_match() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search", "find"], 0.5));
+
+    memory.register(skill);
+
+    ≔ context = Context·new("Hello, how are you?");
+    ≔ matches = memory.match_situation(&context);
+>>>>>>> origin/main
 
     assert_eq(matches.len(), 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_match_situation_disabled_skills() {
     let mut memory = ProceduralMemory::default_memory();
 
     let mut skill = Skill::new(1, "search_skill")
         .with_trigger(TriggerPattern::new(vec!["search"], 0.5));
+=======
+λ test_match_situation_disabled_skills() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ Δ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search"], 0.5));
+>>>>>>> origin/main
     skill.enabled = false;
 
     memory.register(skill);
 
+<<<<<<< HEAD
     let context = Context::new("Please search for this");
     let matches = memory.match_situation(&context);
+=======
+    ≔ context = Context·new("Please search ∀ this");
+    ≔ matches = memory.match_situation(&context);
+>>>>>>> origin/main
 
     assert_eq(matches.len(), 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_match_situation_ranked_by_success_rate() {
     let mut memory = ProceduralMemory::new(
         ProceduralConfig::default_config().with_match_threshold(0.3)
@@ -736,12 +1275,33 @@ fn test_match_situation_ranked_by_success_rate() {
     let skill2 = Skill::new(2, "unreliable_skill")
         .with_trigger(TriggerPattern::new(vec!["help"], 0.5))
         .with_stats(SkillStats::from_counts(3, 7));
+=======
+λ test_match_situation_ranked_by_success_rate() {
+    ≔ Δ memory = ProceduralMemory·new(
+        ProceduralConfig·default_config().with_match_threshold(0.3)
+    );
+
+    // High success rate skill
+    ≔ skill1 = Skill·new(1, "reliable_skill")
+        .with_trigger(TriggerPattern·new(vec!["help"], 0.5))
+        .with_stats(SkillStats·from_counts(9, 1));
+
+    // Low success rate skill
+    ≔ skill2 = Skill·new(2, "unreliable_skill")
+        .with_trigger(TriggerPattern·new(vec!["help"], 0.5))
+        .with_stats(SkillStats·from_counts(3, 7));
+>>>>>>> origin/main
 
     memory.register(skill1);
     memory.register(skill2);
 
+<<<<<<< HEAD
     let context = Context::new("I need help");
     let matches = memory.match_situation(&context);
+=======
+    ≔ context = Context·new("I need help");
+    ≔ matches = memory.match_situation(&context);
+>>>>>>> origin/main
 
     // Both should match, but reliable skill should rank higher
     assert_eq(matches.len(), 2);
@@ -753,6 +1313,7 @@ fn test_match_situation_ranked_by_success_rate() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_record_success() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -763,11 +1324,24 @@ fn test_record_success() {
     memory.record_success(&id, 2.5);
 
     let skill = memory.get(&id).unwrap();
+=======
+λ test_record_success() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill")
+        .with_stats(SkillStats·from_counts(5, 0));
+    ≔ id = memory.register(skill);
+
+    memory.record_success(&id, 2.5);
+
+    ≔ skill = memory.get(&id).unwrap();
+>>>>>>> origin/main
     assert_eq(skill.stats.execution_count, 6);
     assert_eq(skill.stats.success_count, 6);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_record_success_updates_duration() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -778,10 +1352,23 @@ fn test_record_success_updates_duration() {
 
     let skill = memory.get(&id).unwrap();
     let diff = (skill.stats.avg_duration_secs - 5.0).abs();
+=======
+λ test_record_success_updates_duration() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill");
+    ≔ id = memory.register(skill);
+
+    memory.record_success(&id, 5.0);
+
+    ≔ skill = memory.get(&id).unwrap();
+    ≔ diff = (skill.stats.avg_duration_secs - 5.0).abs();
+>>>>>>> origin/main
     assert(diff < 0.001);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_record_failure() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -792,11 +1379,24 @@ fn test_record_failure() {
     memory.record_failure(&id, "search context", "TimeoutError");
 
     let skill = memory.get(&id).unwrap();
+=======
+λ test_record_failure() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill")
+        .with_stats(SkillStats·from_counts(5, 0));
+    ≔ id = memory.register(skill);
+
+    memory.record_failure(&id, "search context", "TimeoutError");
+
+    ≔ skill = memory.get(&id).unwrap();
+>>>>>>> origin/main
     assert_eq(skill.stats.failure_count, 1);
     assert_eq(skill.failure_modes.len(), 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_record_failure_tracks_failure_mode() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -806,40 +1406,81 @@ fn test_record_failure_tracks_failure_mode() {
     memory.record_failure(&id, "API call context", "RateLimitError");
 
     let skill = memory.get(&id).unwrap();
+=======
+λ test_record_failure_tracks_failure_mode() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill");
+    ≔ id = memory.register(skill);
+
+    memory.record_failure(&id, "API call context", "RateLimitError");
+
+    ≔ skill = memory.get(&id).unwrap();
+>>>>>>> origin/main
     assert_eq(skill.failure_modes[0].failure_type, "RateLimitError");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_success_rate_ema_on_success() {
     let mut memory = ProceduralMemory::default_memory();
 
     let mut skill = Skill::new(1, "test_skill");
     skill.stats.success_rate = 0.5;
     let id = memory.register(skill);
+=======
+λ test_success_rate_ema_on_success() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ Δ skill = Skill·new(1, "test_skill");
+    skill.stats.success_rate = 0.5;
+    ≔ id = memory.register(skill);
+>>>>>>> origin/main
 
     // EMA: 0.5 * 0.9 + 0.1 = 0.55
     memory.record_success(&id, 1.0);
 
+<<<<<<< HEAD
     let skill = memory.get(&id).unwrap();
     let expected = 0.55;
     let diff = (skill.stats.success_rate - expected).abs();
+=======
+    ≔ skill = memory.get(&id).unwrap();
+    ≔ expected = 0.55;
+    ≔ diff = (skill.stats.success_rate - expected).abs();
+>>>>>>> origin/main
     assert(diff < 0.01);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_success_rate_ema_on_failure() {
     let mut memory = ProceduralMemory::default_memory();
 
     let mut skill = Skill::new(1, "test_skill");
     skill.stats.success_rate = 0.8;
     let id = memory.register(skill);
+=======
+λ test_success_rate_ema_on_failure() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ Δ skill = Skill·new(1, "test_skill");
+    skill.stats.success_rate = 0.8;
+    ≔ id = memory.register(skill);
+>>>>>>> origin/main
 
     // EMA: 0.8 * 0.9 = 0.72
     memory.record_failure(&id, "ctx", "error");
 
+<<<<<<< HEAD
     let skill = memory.get(&id).unwrap();
     let expected = 0.72;
     let diff = (skill.stats.success_rate - expected).abs();
+=======
+    ≔ skill = memory.get(&id).unwrap();
+    ≔ expected = 0.72;
+    ≔ diff = (skill.stats.success_rate - expected).abs();
+>>>>>>> origin/main
     assert(diff < 0.01);
 }
 
@@ -848,6 +1489,7 @@ fn test_success_rate_ema_on_failure() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_disable_skill() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -857,11 +1499,23 @@ fn test_disable_skill() {
     assert(memory.get(&id).unwrap().enabled);
 
     let result = memory.disable(&id);
+=======
+λ test_disable_skill() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill");
+    ≔ id = memory.register(skill);
+
+    assert(memory.get(&id).unwrap().enabled);
+
+    ≔ result = memory.disable(&id);
+>>>>>>> origin/main
     assert(result);
     assert(!memory.get(&id).unwrap().enabled);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_enable_skill() {
     let mut memory = ProceduralMemory::default_memory();
 
@@ -870,15 +1524,32 @@ fn test_enable_skill() {
     let id = memory.register(skill);
 
     let result = memory.enable(&id);
+=======
+λ test_enable_skill() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ Δ skill = Skill·new(1, "test_skill");
+    skill.enabled = false;
+    ≔ id = memory.register(skill);
+
+    ≔ result = memory.enable(&id);
+>>>>>>> origin/main
     assert(result);
     assert(memory.get(&id).unwrap().enabled);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_disable_nonexistent_skill() {
     let mut memory = ProceduralMemory::default_memory();
     let fake_id = SkillId::new(999);
     let result = memory.disable(&fake_id);
+=======
+λ test_disable_nonexistent_skill() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+    ≔ fake_id = SkillId·new(999);
+    ≔ result = memory.disable(&fake_id);
+>>>>>>> origin/main
     assert(!result);
 }
 
@@ -887,20 +1558,31 @@ fn test_disable_nonexistent_skill() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_action_call_tool() {
     let action = Action::CallTool {
+=======
+λ test_action_call_tool() {
+    ≔ action = Action·CallTool {
+>>>>>>> origin/main
         tool: "search".to_string(),
         args: "query=test".to_string(),
     };
 
+<<<<<<< HEAD
     let is_tool = match action {
         Action::CallTool { .. } => true,
+=======
+    ≔ is_tool = ⌥ action {
+        Action·CallTool { .. } => true,
+>>>>>>> origin/main
         _ => false,
     };
     assert(is_tool);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_action_ask_user() {
     let action = Action::AskUser {
         question: "What would you like?".to_string(),
@@ -908,12 +1590,22 @@ fn test_action_ask_user() {
 
     let is_ask = match action {
         Action::AskUser { .. } => true,
+=======
+λ test_action_ask_user() {
+    ≔ action = Action·AskUser {
+        question: "What would you like?".to_string(),
+    };
+
+    ≔ is_ask = ⌥ action {
+        Action·AskUser { .. } => true,
+>>>>>>> origin/main
         _ => false,
     };
     assert(is_ask);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_action_respond() {
     let action = Action::Respond {
         template: "Here are the results: {results}".to_string(),
@@ -921,11 +1613,24 @@ fn test_action_respond() {
 
     let is_respond = match action {
         Action::Respond { .. } => true,
+=======
+λ test_action_respond() {
+    ≔ action = Action·Respond {
+        template: "Here are the results: {results}".to_string(),
+    };
+
+    ≔ is_respond = ⌥ action {
+        Action·Respond { .. } => true,
+>>>>>>> origin/main
         _ => false,
     };
     assert(is_respond);
 }
 
+<<<<<<< HEAD
 fn main() {
+=======
+λ main() {
+>>>>>>> origin/main
     print("Engram procedural memory tests");
 }

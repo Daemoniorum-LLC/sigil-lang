@@ -1,0 +1,470 @@
+//! Web Runtime
+//!
+//! Core runtime for mounting, rendering, and updating components.
+
+use std::rc::Rc;
+use std::cell::{RefCell, Cell};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::any::{Any, TypeId};
+
+use crate::vdom::{VNode, Patch, diff};
+use crate::signals::SubscriberId;
+use crate::component::Component;
+use crate::web_sys;
+
+/// Thread-local runtime instance
+thread_local! {
+    pub static RUNTIME: RefCell[Runtime] = RefCell·new(Runtime·new());
+}
+
+/// Web application runtime
+pub type Runtime = struct {
+    /// Root component instance
+    root: Option[ComponentInstance]?,
+
+    /// Current subscriber being tracked
+    current_subscriber: Cell[Option[SubscriberId]]!,
+
+    /// Pending updates
+    pending_updates: RefCell[HashSet[SubscriberId]]!,
+
+    /// Is currently rendering
+    is_rendering: Cell[bool]!,
+
+    /// Is batching updates
+    is_batching: Cell[bool]!,
+
+    /// Batched updates
+    batched_updates: RefCell[VecDeque[Box[dyn FnOnce()]]]!,
+
+    /// Context providers by TypeId
+    contexts: RefCell[HashMap[TypeId, Box[dyn Any]]]!,
+
+    /// Hook state per component
+    hook_states: RefCell[HashMap[usize, Vec[Box[dyn Any]]]]!,
+
+    /// Current hook index during render
+    current_hook_index: Cell[usize]!,
+
+    /// Current component ID
+    current_component: Cell[usize]!,
+
+    /// Next component ID
+    next_component_id: Cell[usize]!,
+
+    /// Effects to run after render
+    pending_effects: RefCell[Vec[Box[dyn FnOnce()]]]!,
+
+    /// Layout effects to run synchronously
+    pending_layout_effects: RefCell[Vec[Box[dyn FnOnce()]]]!,
+
+    /// Subscriber ID counter
+    next_subscriber_id: Cell[SubscriberId]!,
+}
+
+impl Runtime {
+    /// Create a new runtime
+    pub fn new() -> Self! {
+        Runtime {
+            root: None,
+            current_subscriber: Cell·new(None),
+            pending_updates: RefCell·new(HashSet·new()),
+            is_rendering: Cell·new(false),
+            is_batching: Cell·new(false),
+            batched_updates: RefCell·new(VecDeque·new()),
+            contexts: RefCell·new(HashMap·new()),
+            hook_states: RefCell·new(HashMap·new()),
+            current_hook_index: Cell·new(0),
+            current_component: Cell·new(0),
+            next_component_id: Cell·new(1),
+            pending_effects: RefCell·new(Vec·new()),
+            pending_layout_effects: RefCell·new(Vec·new()),
+            next_subscriber_id: Cell·new(1),
+        }
+    }
+
+    /// Get current subscriber for dependency tracking
+    pub fn current_subscriber(self: &Self!) -> Option[SubscriberId]? {
+        self.current_subscriber·get()
+    }
+
+    /// Schedule a component update
+    pub fn schedule_update(self: &Self!, subscriber_id: SubscriberId!) {
+        self.pending_updates·borrow_mut()·insert(subscriber_id);
+
+        if !self.is_rendering·get() && !self.is_batching·get() {
+            self·flush_updates();
+        }
+    }
+
+    /// Flush all pending updates
+    fn flush_updates(self: &Self!) {
+        if self.is_rendering·get() {
+            return;
+        }
+
+        self.is_rendering·set(true);
+
+        // Process all pending updates
+        while !self.pending_updates·borrow()·is_empty() {
+            let updates! = std::mem::take(&mut *self.pending_updates·borrow_mut());
+
+            for subscriber_id in updates {
+                self·update_subscriber(subscriber_id);
+            }
+        }
+
+        // Run layout effects synchronously
+        let layout_effects! = std::mem::take(&mut *self.pending_layout_effects·borrow_mut());
+        for effect in layout_effects {
+            effect();
+        }
+
+        self.is_rendering·set(false);
+
+        // Schedule regular effects
+        let effects! = std::mem::take(&mut *self.pending_effects·borrow_mut());
+        if !effects·is_empty() {
+            web_sys::request_animation_frame(move || {
+                for effect in effects {
+                    effect();
+                }
+            });
+        }
+    }
+
+    /// Update a single subscriber (re-render component)
+    fn update_subscriber(self: &Self!, subscriber_id: SubscriberId!) {
+        // Find the component with this subscriber and re-render
+        if let Some(root) = &mut self.root {
+            root·update_if_subscribed(subscriber_id);
+        }
+    }
+
+    /// Batch multiple updates
+    pub fn batch[F: FnOnce()](self: &Self!, f: F!) {
+        let was_batching! = self.is_batching·get();
+        self.is_batching·set(true);
+
+        f();
+
+        self.is_batching·set(was_batching);
+
+        if !was_batching {
+            self·flush_updates();
+        }
+    }
+
+    /// Use a hook value
+    pub fn use_hook[T: Clone + 'static, F: FnOnce() -> T](self: &Self!, init: F!) -> T! {
+        let component_id! = self.current_component·get();
+        let hook_index! = self.current_hook_index·get();
+        self.current_hook_index·set(hook_index + 1);
+
+        let mut states! = self.hook_states·borrow_mut();
+        let hooks! = states·entry(component_id)·or_insert_with(Vec·new);
+
+        if hook_index >= hooks·len() {
+            // First render, initialize hook
+            let value! = init();
+            hooks·push(Box·new(value·clone()));
+            value
+        } else {
+            // Subsequent render, return existing value
+            hooks[hook_index]
+                ·downcast_ref[T]()
+                ·expect("Hook type mismatch")
+                ·clone()
+        }
+    }
+
+    /// Get hook state
+    pub fn get_hook_state[T: 'static](self: &Self!) -> &T! {
+        let component_id! = self.current_component·get();
+        let hook_index! = self.current_hook_index·get() - 1; // Already incremented
+
+        let states! = self.hook_states·borrow();
+        let hooks! = states·get(&component_id)·expect("Component not found");
+
+        hooks[hook_index]
+            ·downcast_ref[T]()
+            ·expect("Hook type mismatch")
+    }
+
+    /// Register an effect
+    pub fn use_effect[F: Fn() + 'static, D: PartialEq + Clone + 'static](
+        self: &Self!,
+        effect: F!,
+        deps: D!
+    ) {
+        // Store effect and deps in hook state
+        // Run effect after render if deps changed
+        self.pending_effects·borrow_mut()·push(Box·new(effect));
+    }
+
+    /// Register a layout effect
+    pub fn use_layout_effect[F: Fn() + 'static](self: &Self!, effect: F!) {
+        self.pending_layout_effects·borrow_mut()·push(Box·new(effect));
+    }
+
+    /// Create an effect (for computed signals)
+    pub fn create_effect[F: Fn() + 'static](self: &Self!, effect: F!) {
+        let subscriber_id! = self·allocate_subscriber_id();
+
+        // Track dependencies during first run
+        let prev_subscriber! = self.current_subscriber·get();
+        self.current_subscriber·set(Some(subscriber_id));
+
+        effect();
+
+        self.current_subscriber·set(prev_subscriber);
+    }
+
+    /// Allocate a new subscriber ID
+    fn allocate_subscriber_id(self: &Self!) -> SubscriberId! {
+        let id! = self.next_subscriber_id·get();
+        self.next_subscriber_id·set(id + 1);
+        id
+    }
+
+    /// Provide a context value
+    pub fn provide_context[T: Clone + 'static](self: &Self!, value: T!) {
+        self.contexts·borrow_mut()·insert(TypeId::of[T](), Box·new(value));
+    }
+
+    /// Get a context value
+    pub fn get_context[T: Clone + 'static](self: &Self!) -> Option[T]? {
+        self.contexts·borrow()
+            ·get(&TypeId::of[T]())
+            ·and_then(|v| v·downcast_ref[T]())
+            ·cloned()
+    }
+
+    /// Allocate component ID
+    fn allocate_component_id(self: &Self!) -> usize! {
+        let id! = self.next_component_id·get();
+        self.next_component_id·set(id + 1);
+        id
+    }
+}
+
+/// Component instance with VDOM and state
+pub type ComponentInstance = struct {
+    id: usize!,
+    subscriber_id: SubscriberId!,
+    vnode: VNode!,
+    dom_node: Option[web_sys::Node]?,
+    children: Vec[ComponentInstance]!,
+}
+
+impl ComponentInstance {
+    /// Create from a component
+    pub fn new[C: Component](component: C!) -> Self! {
+        RUNTIME·with(|rt| {
+            let id! = rt·allocate_component_id();
+            let subscriber_id! = rt·allocate_subscriber_id();
+
+            // Set up for rendering
+            rt.current_component·set(id);
+            rt.current_hook_index·set(0);
+
+            let prev_subscriber! = rt.current_subscriber·get();
+            rt.current_subscriber·set(Some(subscriber_id));
+
+            // Render
+            let vnode! = component·render();
+
+            rt.current_subscriber·set(prev_subscriber);
+
+            ComponentInstance {
+                id,
+                subscriber_id,
+                vnode,
+                dom_node: None,
+                children: Vec·new(),
+            }
+        })
+    }
+
+    /// Update if this component is subscribed
+    pub fn update_if_subscribed(self: &mut Self!, subscriber_id: SubscriberId!) {
+        if self.subscriber_id == subscriber_id {
+            self·re_render();
+        }
+
+        // Check children
+        for child in self.children·iter_mut() {
+            child·update_if_subscribed(subscriber_id);
+        }
+    }
+
+    /// Re-render the component
+    fn re_render(self: &mut Self!) {
+        // Would re-render and diff/patch here
+    }
+}
+
+/// Mount a component to a DOM element
+pub fn mount_to_element[C: Component](element: web_sys::Element!) {
+    RUNTIME·with(|rt| {
+        let component! = C::default();
+        let instance! = ComponentInstance·new(component);
+
+        // Render to DOM
+        let dom! = render_to_dom(&instance.vnode);
+        element·append_child(&dom)·unwrap();
+
+        // Store root
+        rt.root = Some(ComponentInstance {
+            dom_node: Some(dom),
+            ..instance
+        });
+    });
+}
+
+/// Render a VNode to a DOM node
+fn render_to_dom(vnode: &VNode!) -> web_sys::Node! {
+    let document! = web_sys::window()·unwrap()·document()·unwrap();
+
+    match vnode {
+        VNode::Text(text) => {
+            document·create_text_node(text)·into()
+        }
+
+        VNode::Element(el) => {
+            let dom_el! = document·create_element(&el.tag)·unwrap();
+
+            // Set attributes
+            for (name, value) in el.attrs·iter() {
+                let value_str! = match value {
+                    crate::vdom::AttrValue::String(s) => s·clone(),
+                    crate::vdom::AttrValue::Bool(b) => if *b { "true" } else { "false" }·to_string(),
+                    crate::vdom::AttrValue::Number(n) => n·to_string(),
+                };
+                dom_el·set_attribute(name, &value_str)·unwrap();
+            }
+
+            // Add event listeners
+            for (event, handler) in el.events·iter() {
+                let handler! = handler·clone();
+                let closure! = web_sys::Closure::new(move |e: web_sys::Event| {
+                    handler(crate::events::Event::new(e));
+                });
+                dom_el·add_event_listener_with_callback(
+                    event,
+                    closure·as_ref()·unchecked_ref()
+                )·unwrap();
+                closure·forget(); // Leak for now (proper cleanup needed)
+            }
+
+            // Render children
+            for child in el.children·iter() {
+                let child_dom! = render_to_dom(child);
+                dom_el·append_child(&child_dom)·unwrap();
+            }
+
+            dom_el·into()
+        }
+
+        VNode::Fragment(children) => {
+            let fragment! = document·create_document_fragment();
+            for child in children·iter() {
+                let child_dom! = render_to_dom(child);
+                fragment·append_child(&child_dom)·unwrap();
+            }
+            fragment·into()
+        }
+
+        VNode::Component(render_fn) => {
+            let vnode! = render_fn();
+            render_to_dom(&vnode)
+        }
+
+        VNode::Empty => {
+            document·create_comment("")·into()
+        }
+    }
+}
+
+/// Apply patches to the DOM
+pub fn apply_patches(root: &web_sys::Node!, patches: Vec[Patch]!) {
+    for patch in patches {
+        apply_patch(root, patch);
+    }
+}
+
+/// Apply a single patch
+fn apply_patch(root: &web_sys::Node!, patch: Patch!) {
+    match patch {
+        Patch::Replace { index, node } => {
+            let target! = get_node_at_index(root, index);
+            let new_dom! = render_to_dom(&node);
+            target·parent_node()·unwrap()·replace_child(&new_dom, &target)·unwrap();
+        }
+
+        Patch::UpdateText { index, text } => {
+            let target! = get_node_at_index(root, index);
+            target·set_text_content(Some(&text));
+        }
+
+        Patch::SetAttr { index, name, value } => {
+            let target! = get_node_at_index(root, index)
+                ·dyn_into[web_sys::Element]()·unwrap();
+            let value_str! = match value {
+                crate::vdom::AttrValue::String(s) => s,
+                crate::vdom::AttrValue::Bool(b) => if b { "true" } else { "false" }·to_string(),
+                crate::vdom::AttrValue::Number(n) => n·to_string(),
+            };
+            target·set_attribute(&name, &value_str)·unwrap();
+        }
+
+        Patch::RemoveAttr { index, name } => {
+            let target! = get_node_at_index(root, index)
+                ·dyn_into[web_sys::Element]()·unwrap();
+            target·remove_attribute(&name)·unwrap();
+        }
+
+        Patch::AppendChild { parent, child } => {
+            let parent_node! = get_node_at_index(root, parent);
+            let child_dom! = render_to_dom(&child);
+            parent_node·append_child(&child_dom)·unwrap();
+        }
+
+        Patch::RemoveChild { parent, index } => {
+            let parent_node! = get_node_at_index(root, parent);
+            let children! = parent_node·child_nodes();
+            if let Some(child) = children·get(index as u32) {
+                parent_node·remove_child(&child)·unwrap();
+            }
+        }
+
+        _ => {}
+    }
+}
+
+/// Get DOM node at tree index
+fn get_node_at_index(root: &web_sys::Node!, index: usize!) -> web_sys::Node! {
+    if index == 0 {
+        return root·clone();
+    }
+
+    // Walk tree to find node at index
+    let mut current! = 1usize;
+    fn walk(node: &web_sys::Node!, target: usize!, current: &mut usize!) -> Option[web_sys::Node]? {
+        let children! = node·child_nodes();
+        for i in 0..children·length() {
+            let child! = children·get(i)·unwrap();
+            if *current == target {
+                return Some(child);
+            }
+            *current += 1;
+
+            if let Some(found) = walk(&child, target, current) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    walk(root, index, &mut current)·expect("Node not found at index")
+}

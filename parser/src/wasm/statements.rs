@@ -44,9 +44,92 @@ impl WasmCompiler {
 
     /// Collect function signature from an item.
     fn collect_function_sig(&mut self, item: &Item) -> WasmResult<()> {
-        if let Item::Function(func) = item {
-            self.register_function_sig(func)?;
+        match item {
+            Item::Function(func) => {
+                self.register_function_sig(func)?;
+            }
+            Item::Impl(impl_block) => {
+                // Extract type name from self_ty for method name mangling
+                let type_name = self.extract_type_name(&impl_block.self_ty);
+
+                // Register each method with mangled name: TypeName_methodName
+                for impl_item in &impl_block.items {
+                    if let ImplItem::Function(func) = impl_item {
+                        self.register_impl_method_sig(func, &type_name)?;
+                    }
+                }
+            }
+            _ => {}
         }
+        Ok(())
+    }
+
+    /// Extract the simple type name from a TypeExpr.
+    fn extract_type_name(&self, ty: &crate::ast::TypeExpr) -> String {
+        match ty {
+            crate::ast::TypeExpr::Path(path) => {
+                // Get the first segment's name (e.g., "Counter" from "Counter<T>")
+                path.segments
+                    .first()
+                    .map(|s| s.ident.name.clone())
+                    .unwrap_or_else(|| "Unknown".to_string())
+            }
+            _ => "Unknown".to_string(),
+        }
+    }
+
+    /// Register an impl method signature with mangled name.
+    fn register_impl_method_sig(&mut self, func: &Function, type_name: &str) -> WasmResult<()> {
+        // Mangle name: TypeName_methodName
+        let mangled_name = format!("{}_{}", type_name, func.name.name);
+
+        // Skip if already registered
+        if self.func_map.contains_key(&mangled_name) {
+            return Ok(());
+        }
+
+        // Build parameter types - include self parameter if present
+        let param_types: Vec<ValType> = func.params.iter().map(|_| ValType::I64).collect();
+
+        // Result type
+        let result_types = if func.return_type.is_some() {
+            vec![ValType::I64]
+        } else {
+            vec![] // Unit return
+        };
+
+        let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
+        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+
+        // Record function index with mangled name
+        self.func_map.insert(mangled_name.clone(), func_idx);
+
+        // Also register with simple name for method calls (receiver.method())
+        // This allows both Counter·new() and counter.increment() to work
+        if !self.func_map.contains_key(&func.name.name) {
+            self.func_map.insert(func.name.name.clone(), func_idx);
+        }
+
+        // Create function
+        let params_with_names: Vec<(String, ValType)> = func
+            .params
+            .iter()
+            .map(|p| (p.pattern_name().unwrap_or_default(), ValType::I64))
+            .collect();
+
+        let is_exported = matches!(func.visibility, Visibility::Public);
+
+        let compiled_func = CompiledFunction::new(
+            mangled_name,
+            type_idx,
+            func_idx,
+            params_with_names,
+            result_types,
+            is_exported,
+        );
+
+        self.functions.push(compiled_func);
+
         Ok(())
     }
 
@@ -60,9 +143,10 @@ impl WasmCompiler {
             Item::Struct(_) | Item::Enum(_) => Ok(()),
             Item::Trait(_) => Ok(()), // Traits are compile-time only
             Item::Impl(impl_block) => {
+                let type_name = self.extract_type_name(&impl_block.self_ty);
                 for item in &impl_block.items {
                     if let ImplItem::Function(func) = item {
-                        self.compile_function(func)?;
+                        self.compile_impl_method(func, &type_name)?;
                     }
                 }
                 Ok(())
@@ -75,6 +159,9 @@ impl WasmCompiler {
             Item::Macro(_) => Ok(()),       // Macro definitions are compile-time only
             Item::MacroInvocation(_) => Err(WasmError::unsupported("macro invocations")),
             Item::Plurality(_) => Err(WasmError::unsupported("plurality items")),
+            Item::Form(_) => Err(WasmError::unsupported("form definitions")),
+            Item::Translations(_) => Err(WasmError::unsupported("translation definitions")),
+            Item::LocaleEnum(_) => Err(WasmError::unsupported("locale enum definitions")),
         }
     }
 
@@ -185,10 +272,21 @@ impl WasmCompiler {
 
     /// Compile a function.
     fn compile_function(&mut self, func: &Function) -> WasmResult<()> {
+        self.compile_function_with_name(func, &func.name.name)
+    }
+
+    /// Compile an impl method using its mangled name.
+    fn compile_impl_method(&mut self, func: &Function, type_name: &str) -> WasmResult<()> {
+        let mangled_name = format!("{}_{}", type_name, func.name.name);
+        self.compile_function_with_name(func, &mangled_name)
+    }
+
+    /// Compile a function with a specific lookup name.
+    fn compile_function_with_name(&mut self, func: &Function, lookup_name: &str) -> WasmResult<()> {
         // Find the function index
         let func_idx = self
             .func_map
-            .get(&func.name.name)
+            .get(lookup_name)
             .copied()
             .ok_or_else(|| WasmError::internal("function not registered"))?;
 
@@ -409,11 +507,20 @@ trait ParamExt {
 
 impl ParamExt for Param {
     fn pattern_name(&self) -> Option<String> {
-        use crate::ast::Pattern;
-        match &self.pattern {
-            Pattern::Ident { name, .. } => Some(name.name.clone()),
-            _ => None,
-        }
+        extract_pattern_name(&self.pattern)
+    }
+}
+
+/// Extract name from a pattern, handling nested patterns like &this or &vary this.
+fn extract_pattern_name(pattern: &crate::ast::Pattern) -> Option<String> {
+    use crate::ast::Pattern;
+    match pattern {
+        Pattern::Ident { name, .. } => Some(name.name.clone()),
+        // Handle &this and &vary this - extract inner pattern name
+        Pattern::Ref { pattern: inner, .. } => extract_pattern_name(inner),
+        // Handle ref binding
+        Pattern::RefBinding { name, .. } => Some(name.name.clone()),
+        _ => None,
     }
 }
 
@@ -447,7 +554,10 @@ mod tests {
         Function {
             visibility: Visibility::Public,
             is_async: false,
+            is_const: false,
+            is_unsafe: false,
             attrs: Default::default(),
+            outer_attrs: Vec::new(),
             name: make_ident(name),
             aspect: None,
             generics: None,
@@ -883,7 +993,10 @@ mod tests {
         let func = Function {
             visibility: Visibility::Private,
             is_async: false,
+            is_const: false,
+            is_unsafe: false,
             attrs: Default::default(),
+            outer_attrs: Vec::new(),
             name: make_ident("helper"),
             aspect: None,
             generics: None,

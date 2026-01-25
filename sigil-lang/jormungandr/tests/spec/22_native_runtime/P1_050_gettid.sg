@@ -1,0 +1,14 @@
+// Test gettid syscall
+// This tests the native runtime threading syscalls
+// Priority: P1
+
+λ main() {
+    // Get thread ID
+    ≔ tid = Sys·gettid();
+
+    ⎇ tid > 0 {
+        println("gettid: OK");
+    } ⎉ {
+        println("gettid: FAILED");
+    }
+}

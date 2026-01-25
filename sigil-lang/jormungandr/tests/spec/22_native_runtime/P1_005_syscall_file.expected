@@ -1,0 +1,12 @@
+open_create_ok
+write_ok
+close_ok
+open_read_ok
+read_ok
+content_match
+open_append_ok
+append_ok
+final_read_ok
+unlink_ok
+file_deleted
+done

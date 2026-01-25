@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 // Test: Where clause of generics
+=======
+// Test: Where clainvoke of generics
+>>>>>>> origin/main
 // Spec: 03-TYPES.md § 6.2 Where Clauses
 // Priority: P2 - Enhancement
 
@@ -10,7 +14,11 @@ sigil Wrapper<T> {
     value: T,
 }
 
+<<<<<<< HEAD
 impl<T> Wrapper<T> where T: Display {
+=======
+⊢<T> Wrapper<T> where T: Display {
+>>>>>>> origin/main
     rite display(&this) {
         this.value.show();
     }

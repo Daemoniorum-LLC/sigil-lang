@@ -1,0 +1,180 @@
+// data_pipeline.sigil
+// Advanced data processing using Sigil's morpheme operators
+//
+// This example demonstrates:
+// - Morpheme array operations
+// - Statistical aggregations
+// - Functional programming patterns
+
+/// Array creation and population
+pub fn demo_array_basics() {
+    let arr = morpheme::array_new();
+
+    // Push values
+    morpheme::array_push(arr, 10);
+    morpheme::array_push(arr, 20);
+    morpheme::array_push(arr, 30);
+    morpheme::array_push(arr, 40);
+    morpheme::array_push(arr, 50);
+
+    // Get array length
+    let len = morpheme::array_len(arr);
+    print(len);  // 5
+
+    // Access elements
+    let first = morpheme::array_first(arr);
+    let last = morpheme::array_last(arr);
+    print(first);  // 10
+    print(last);   // 50
+}
+
+/// Statistical aggregations
+pub fn demo_statistics() {
+    let scores = morpheme::array_new();
+    morpheme::array_push(scores, 85);
+    morpheme::array_push(scores, 92);
+    morpheme::array_push(scores, 78);
+    morpheme::array_push(scores, 95);
+    morpheme::array_push(scores, 88);
+
+    let total = morpheme::array_sum(scores);
+    let count = morpheme::array_len(scores);
+    let min_score = morpheme::array_min(scores);
+    let max_score = morpheme::array_max(scores);
+
+    // Calculate average (integer division)
+    let average = total / count;
+    let range = max_score - min_score;
+
+    print(total);      // 438
+    print(count);      // 5
+    print(average);    // 87
+    print(min_score);  // 78
+    print(max_score);  // 95
+    print(range);      // 17
+}
+
+/// Product calculation
+pub fn demo_product() {
+    let factors = morpheme::array_new();
+    morpheme::array_push(factors, 2);
+    morpheme::array_push(factors, 3);
+    morpheme::array_push(factors, 4);
+    morpheme::array_push(factors, 5);
+
+    let product = morpheme::array_product(factors);
+    print(product);  // 120 (2*3*4*5)
+}
+
+/// Boolean aggregations
+pub fn demo_boolean_ops() {
+    let values = morpheme::array_new();
+    morpheme::array_push(values, 1);
+    morpheme::array_push(values, 2);
+    morpheme::array_push(values, 3);
+    morpheme::array_push(values, 0);  // falsy value
+    morpheme::array_push(values, 5);
+
+    let all_truthy = morpheme::array_all(values);
+    let any_truthy = morpheme::array_any(values);
+
+    print(all_truthy);  // 0 (false - has 0)
+    print(any_truthy);  // 1 (true - has non-zero values)
+}
+
+/// Indexed access with nth
+pub fn demo_indexed_access() {
+    let data = morpheme::array_new();
+    morpheme::array_push(data, 100);
+    morpheme::array_push(data, 200);
+    morpheme::array_push(data, 300);
+    morpheme::array_push(data, 400);
+    morpheme::array_push(data, 500);
+
+    // Access by index
+    let elem0 = morpheme::array_nth(data, 0);
+    let elem2 = morpheme::array_nth(data, 2);
+    let elem4 = morpheme::array_nth(data, 4);
+
+    print(elem0);  // 100
+    print(elem2);  // 300
+    print(elem4);  // 500
+}
+
+/// Sorting demonstration
+pub fn demo_sorting() {
+    let unsorted = morpheme::array_new();
+    morpheme::array_push(unsorted, 50);
+    morpheme::array_push(unsorted, 20);
+    morpheme::array_push(unsorted, 80);
+    morpheme::array_push(unsorted, 10);
+    morpheme::array_push(unsorted, 40);
+
+    // Sort in place
+    let sorted = morpheme::array_sort(unsorted);
+
+    // Get first and last after sort
+    let min = morpheme::array_first(sorted);
+    let max = morpheme::array_last(sorted);
+
+    print(min);  // 10
+    print(max);  // 80
+}
+
+/// Random element selection
+pub fn demo_random() {
+    let options = morpheme::array_new();
+    morpheme::array_push(options, 1);
+    morpheme::array_push(options, 2);
+    morpheme::array_push(options, 3);
+    morpheme::array_push(options, 4);
+    morpheme::array_push(options, 5);
+
+    // Get random element
+    let random_elem = morpheme::array_random_element(options);
+    print(random_elem);  // Random 1-5
+}
+
+/// Squares sum example
+pub fn demo_squares_sum() {
+    let squares = morpheme::array_new();
+
+    // Build array of squares
+    let i = 1;
+    while i <= 5 {
+        morpheme::array_push(squares, i * i);
+        i = i + 1;
+    }
+
+    // Sum of squares: 1 + 4 + 9 + 16 + 25 = 55
+    let sum = morpheme::array_sum(squares);
+    print(sum);  // 55
+}
+
+pub fn main() {
+    print(100);  // Pipeline demo start
+
+    demo_array_basics();
+    print(101);
+
+    demo_statistics();
+    print(102);
+
+    demo_product();
+    print(103);
+
+    demo_boolean_ops();
+    print(104);
+
+    demo_indexed_access();
+    print(105);
+
+    demo_sorting();
+    print(106);
+
+    demo_random();
+    print(107);
+
+    demo_squares_sum();
+    print(999);  // End marker
+}

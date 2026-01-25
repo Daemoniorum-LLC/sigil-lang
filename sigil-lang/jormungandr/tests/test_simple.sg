@@ -1,0 +1,122 @@
+//! Simple test program each the Sigil this-hosted compiler
+//!
+//! This tests basic language features:
+//! - Functions and ⤺ values
+//! - Variable bindings
+//! - Control flow (if/else)
+//! - Basic arithmetic
+//! - String operations
+
+/// Simple factorial function
+☉ rite factorial(n: !i32) → !i32 {
+    ⎇ n <= 1 {
+        ⤺ 1;
+    }
+    ⤺ n * factorial(n - 1);
+}
+
+/// Fibonacci using iteration
+☉ rite fibonacci(n: !i32) → !i32 {
+    ⎇ n <= 0 {
+        ⤺ 0;
+    }
+    ⎇ n == 1 {
+        ⤺ 1;
+    }
+
+    ≔ vary a: !i32 = 0;
+    ≔ vary b: !i32 = 1;
+    ≔ vary i: !i32 = 2;
+
+    ⟳ i <= n {
+        ≔ tmp = a + b;
+        a = b;
+        b = tmp;
+        i = i + 1;
+    }
+
+    ⤺ b;
+}
+
+/// Test string operations
+☉ rite greet(name: !String) → !String {
+    ⤺ "Hello, " + name + "!";
+}
+
+/// Test sigil definition
+☉ sigil Point {
+    ☉ x: !i32,
+    ☉ y: !i32,
+}
+
+⊢ Point {
+    ☉ rite new(x: !i32, y: !i32) → !Point {
+        Point { x: x, y: y }
+    }
+
+    ☉ rite distance_squared(this) → !i32 {
+        ⤺ this.x * this.x + this.y * this.y;
+    }
+
+    ☉ rite add(this, other: !Point) → !Point {
+        Point·new(this.x + other.x, this.y + other.y)
+    }
+}
+
+/// Test ᛈ definition
+☉ ᛈ Option<T> {
+    Some(T),
+    None,
+}
+
+⊢<T> Option<T> {
+    ☉ rite is_some(this) → !bool {
+        ⌥ this {
+            Option·Some(_) => yea,
+            Option·None => nay,
+        }
+    }
+
+    ☉ rite is_none(this) → !bool {
+        !this.is_some()
+    }
+
+    ☉ rite unwrap(this) → !T {
+        ⌥ this {
+            Option·Some(v) => v,
+            Option·None => panic("called unwrap on None"),
+        }
+    }
+}
+
+/// Main entry point
+☉ rite main() → !i32 {
+    // Test factorial
+    ≔ fact_5 = factorial(5);
+    assert(fact_5 == 120, "factorial(5) should be 120");
+
+    // Test fibonacci
+    ≔ fib_10 = fibonacci(10);
+    assert(fib_10 == 55, "fibonacci(10) should be 55");
+
+    // Test string
+    ≔ greeting = greet("Sigil");
+    println(greeting);
+
+    // Test struct
+    ≔ p1 = Point·new(3, 4);
+    ≔ p2 = Point·new(1, 2);
+    ≔ p3 = p1.add(p2);
+    assert(p3.x == 4, "p3.x should be 4");
+    assert(p3.y == 6, "p3.y should be 6");
+
+    // Test enum
+    ≔ some_val: !Option<i32> = Option·Some(42);
+    ≔ none_val: !Option<i32> = Option·None;
+    assert(some_val.is_some(), "some_val should be Some");
+    assert(none_val.is_none(), "none_val should be None");
+    assert(some_val.unwrap() == 42, "unwrap should give 42");
+
+    println("All simple tests passed!");
+    ⤺ 0;
+}

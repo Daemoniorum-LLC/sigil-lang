@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minimal VDOM Test</title>
+    <style>
+        body { font-family: sans-serif; background: #0a0a0f; color: #e8e8ec; padding: 2rem; }
+        #status { padding: 1rem; background: #1a1a1a; margin-bottom: 1rem; }
+        #app { padding: 2rem; border: 1px solid #333; min-height: 100px; }
+    </style>
+</head>
+<body>
+    <h1>Minimal VDOM Test</h1>
+    <div id="status">Loading...</div>
+    <div id="app"></div>
+    <script type="module">
+        import { SigilRuntime } from './sigil_runtime.js';
+        const status = document.getElementById('status');
+        try {
+            const runtime = new SigilRuntime();
+            const response = await fetch('./minimal.wasm');
+            const bytes = await response.arrayBuffer();
+            const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
+            runtime.init(instance);
+            if (instance.exports.main) {
+                instance.exports.main();
+                status.textContent = 'Success!';
+                status.style.color = '#14A088';
+            }
+        } catch (e) {
+            status.textContent = 'Error: ' + e.message;
+            status.style.color = '#D47171';
+            console.error(e);
+        }
+    </script>
+</body>
+</html>

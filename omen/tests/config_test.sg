@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 //! Tests for Omen Configuration System
+=======
+//! Tests ∀ Omen Configuration System
+>>>>>>> origin/main
 //!
 //! Verifies OmenConfig and related configuration types.
 
@@ -6,6 +10,7 @@
 // Self-contained Test Types
 // ============================================================================
 
+<<<<<<< HEAD
 pub struct Duration { nanos: u64 }
 
 impl Duration {
@@ -50,106 +55,221 @@ pub struct OmenConfig {
 
 impl OmenConfig {
     pub fn default_config() -> Self {
+=======
+☉ Σ Duration { nanos: u64 }
+
+⊢ Duration {
+    ☉ λ zero() -> Self { Self { nanos: 0 } }
+    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ λ as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
+}
+
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration {
+    λ clone(&self) -> Self { *self }
+}
+
+/// Main configuration ∀ Omen planner
+☉ Σ OmenConfig {
+    /// Planning horizon (max steps to look ahead)
+    ☉ horizon: usize,
+
+    /// Uncertainty tolerance (0.0-1.0, lower = more conservative)
+    ☉ uncertainty_tolerance: f32,
+
+    /// Belief revision threshold (min evidence strength to revise)
+    ☉ revision_threshold: f32,
+
+    /// Maximum planning depth
+    ☉ max_depth: usize,
+
+    /// Planning timeout
+    ☉ timeout: Duration,
+
+    /// Enable causal reasoning
+    ☉ enable_causal: bool,
+
+    /// Enable plan learning
+    ☉ enable_learning: bool,
+
+    /// Risk tolerance (0.0-1.0)
+    ☉ risk_tolerance: f32,
+}
+
+⊢ OmenConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         Self {
             horizon: 10,
             uncertainty_tolerance: 0.3,
             revision_threshold: 0.2,
             max_depth: 20,
+<<<<<<< HEAD
             timeout: Duration::seconds(30),
+=======
+            timeout: Duration·seconds(30),
+>>>>>>> origin/main
             enable_causal: true,
             enable_learning: true,
             risk_tolerance: 0.5,
         }
     }
 
+<<<<<<< HEAD
     pub fn conservative() -> Self {
+=======
+    ☉ λ conservative() -> Self {
+>>>>>>> origin/main
         Self {
             horizon: 5,
             uncertainty_tolerance: 0.1,
             revision_threshold: 0.3,
             max_depth: 10,
+<<<<<<< HEAD
             timeout: Duration::seconds(60),
+=======
+            timeout: Duration·seconds(60),
+>>>>>>> origin/main
             enable_causal: true,
             enable_learning: true,
             risk_tolerance: 0.2,
         }
     }
 
+<<<<<<< HEAD
     pub fn aggressive() -> Self {
+=======
+    ☉ λ aggressive() -> Self {
+>>>>>>> origin/main
         Self {
             horizon: 20,
             uncertainty_tolerance: 0.5,
             revision_threshold: 0.1,
             max_depth: 50,
+<<<<<<< HEAD
             timeout: Duration::seconds(10),
+=======
+            timeout: Duration·seconds(10),
+>>>>>>> origin/main
             enable_causal: true,
             enable_learning: true,
             risk_tolerance: 0.8,
         }
     }
 
+<<<<<<< HEAD
     pub fn minimal() -> Self {
+=======
+    ☉ λ minimal() -> Self {
+>>>>>>> origin/main
         Self {
             horizon: 3,
             uncertainty_tolerance: 0.2,
             revision_threshold: 0.5,
             max_depth: 5,
+<<<<<<< HEAD
             timeout: Duration::seconds(5),
+=======
+            timeout: Duration·seconds(5),
+>>>>>>> origin/main
             enable_causal: false,
             enable_learning: false,
             risk_tolerance: 0.3,
         }
     }
 
+<<<<<<< HEAD
     pub fn with_horizon(mut self, horizon: usize) -> Self {
+=======
+    ☉ λ with_horizon(Δ self, horizon: usize) -> Self {
+>>>>>>> origin/main
         self.horizon = horizon;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_uncertainty_tolerance(mut self, tolerance: f32) -> Self {
+=======
+    ☉ λ with_uncertainty_tolerance(Δ self, tolerance: f32) -> Self {
+>>>>>>> origin/main
         self.uncertainty_tolerance = tolerance.clamp(0.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_revision_threshold(mut self, threshold: f32) -> Self {
+=======
+    ☉ λ with_revision_threshold(Δ self, threshold: f32) -> Self {
+>>>>>>> origin/main
         self.revision_threshold = threshold.clamp(0.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_max_depth(mut self, depth: usize) -> Self {
+=======
+    ☉ λ with_max_depth(Δ self, depth: usize) -> Self {
+>>>>>>> origin/main
         self.max_depth = depth;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
+=======
+    ☉ λ with_timeout(Δ self, timeout: Duration) -> Self {
+>>>>>>> origin/main
         self.timeout = timeout;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_risk_tolerance(mut self, tolerance: f32) -> Self {
+=======
+    ☉ λ with_risk_tolerance(Δ self, tolerance: f32) -> Self {
+>>>>>>> origin/main
         self.risk_tolerance = tolerance.clamp(0.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn disable_causal(mut self) -> Self {
+=======
+    ☉ λ disable_causal(Δ self) -> Self {
+>>>>>>> origin/main
         self.enable_causal = false;
         self
     }
 
+<<<<<<< HEAD
     pub fn disable_learning(mut self) -> Self {
+=======
+    ☉ λ disable_learning(Δ self) -> Self {
+>>>>>>> origin/main
         self.enable_learning = false;
         self
     }
 
+<<<<<<< HEAD
     pub fn is_conservative(&self) -> bool {
         self.uncertainty_tolerance < 0.2 && self.risk_tolerance < 0.3
     }
 
     pub fn is_aggressive(&self) -> bool {
+=======
+    ☉ λ is_conservative(&self) -> bool {
+        self.uncertainty_tolerance < 0.2 && self.risk_tolerance < 0.3
+    }
+
+    ☉ λ is_aggressive(&self) -> bool {
+>>>>>>> origin/main
         self.uncertainty_tolerance > 0.4 && self.risk_tolerance > 0.6
     }
 }
 
+<<<<<<< HEAD
 impl Default for OmenConfig {
     fn default() -> Self {
         Self::default_config()
@@ -173,6 +293,31 @@ pub struct BeliefConfig {
 
 impl BeliefConfig {
     pub fn default_config() -> Self {
+=======
+⊢ Default ∀ OmenConfig {
+    λ default() -> Self {
+        Self·default_config()
+    }
+}
+
+/// Configuration ∀ belief management
+☉ Σ BeliefConfig {
+    /// Max beliefs to track
+    ☉ max_beliefs: usize,
+
+    /// Confidence decay rate per hour
+    ☉ decay_rate: f32,
+
+    /// Minimum confidence to keep belief
+    ☉ min_confidence: f32,
+
+    /// Enable contradiction detection
+    ☉ detect_contradictions: bool,
+}
+
+⊢ BeliefConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         Self {
             max_beliefs: 10000,
             decay_rate: 0.01,
@@ -181,22 +326,35 @@ impl BeliefConfig {
         }
     }
 
+<<<<<<< HEAD
     pub fn with_max_beliefs(mut self, max: usize) -> Self {
+=======
+    ☉ λ with_max_beliefs(Δ self, max: usize) -> Self {
+>>>>>>> origin/main
         self.max_beliefs = max;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_decay_rate(mut self, rate: f32) -> Self {
+=======
+    ☉ λ with_decay_rate(Δ self, rate: f32) -> Self {
+>>>>>>> origin/main
         self.decay_rate = rate.clamp(0.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_min_confidence(mut self, min: f32) -> Self {
+=======
+    ☉ λ with_min_confidence(Δ self, min: f32) -> Self {
+>>>>>>> origin/main
         self.min_confidence = min.clamp(0.0, 1.0);
         self
     }
 }
 
+<<<<<<< HEAD
 impl Default for BeliefConfig {
     fn default() -> Self {
         Self::default_config()
@@ -220,6 +378,31 @@ pub struct GoalConfig {
 
 impl GoalConfig {
     pub fn default_config() -> Self {
+=======
+⊢ Default ∀ BeliefConfig {
+    λ default() -> Self {
+        Self·default_config()
+    }
+}
+
+/// Configuration ∀ goal management
+☉ Σ GoalConfig {
+    /// Max concurrent goals
+    ☉ max_goals: usize,
+
+    /// Default goal priority
+    ☉ default_priority: f32,
+
+    /// Auto-abandon stale goals after this many hours
+    ☉ stale_threshold_hours: f32,
+
+    /// Enable goal decomposition
+    ☉ enable_decomposition: bool,
+}
+
+⊢ GoalConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         Self {
             max_goals: 100,
             default_priority: 0.5,
@@ -228,22 +411,35 @@ impl GoalConfig {
         }
     }
 
+<<<<<<< HEAD
     pub fn with_max_goals(mut self, max: usize) -> Self {
+=======
+    ☉ λ with_max_goals(Δ self, max: usize) -> Self {
+>>>>>>> origin/main
         self.max_goals = max;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_default_priority(mut self, priority: f32) -> Self {
+=======
+    ☉ λ with_default_priority(Δ self, priority: f32) -> Self {
+>>>>>>> origin/main
         self.default_priority = priority.clamp(0.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_stale_threshold(mut self, hours: f32) -> Self {
+=======
+    ☉ λ with_stale_threshold(Δ self, hours: f32) -> Self {
+>>>>>>> origin/main
         self.stale_threshold_hours = hours.max(0.0);
         self
     }
 }
 
+<<<<<<< HEAD
 impl Default for GoalConfig {
     fn default() -> Self {
         Self::default_config()
@@ -270,6 +466,34 @@ pub struct PlanningConfig {
 
 impl PlanningConfig {
     pub fn default_config() -> Self {
+=======
+⊢ Default ∀ GoalConfig {
+    λ default() -> Self {
+        Self·default_config()
+    }
+}
+
+/// Configuration ∀ planning
+☉ Σ PlanningConfig {
+    /// Max steps per plan
+    ☉ max_steps: usize,
+
+    /// Max alternatives to consider
+    ☉ max_alternatives: usize,
+
+    /// Minimum success probability to accept plan
+    ☉ min_success_probability: f32,
+
+    /// Enable contingency planning
+    ☉ enable_contingencies: bool,
+
+    /// Enable risk assessment
+    ☉ enable_risk_assessment: bool,
+}
+
+⊢ PlanningConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         Self {
             max_steps: 50,
             max_alternatives: 3,
@@ -279,32 +503,53 @@ impl PlanningConfig {
         }
     }
 
+<<<<<<< HEAD
     pub fn with_max_steps(mut self, max: usize) -> Self {
+=======
+    ☉ λ with_max_steps(Δ self, max: usize) -> Self {
+>>>>>>> origin/main
         self.max_steps = max;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_max_alternatives(mut self, max: usize) -> Self {
+=======
+    ☉ λ with_max_alternatives(Δ self, max: usize) -> Self {
+>>>>>>> origin/main
         self.max_alternatives = max;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_min_success_probability(mut self, min: f32) -> Self {
+=======
+    ☉ λ with_min_success_probability(Δ self, min: f32) -> Self {
+>>>>>>> origin/main
         self.min_success_probability = min.clamp(0.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn disable_contingencies(mut self) -> Self {
+=======
+    ☉ λ disable_contingencies(Δ self) -> Self {
+>>>>>>> origin/main
         self.enable_contingencies = false;
         self
     }
 
+<<<<<<< HEAD
     pub fn disable_risk_assessment(mut self) -> Self {
+=======
+    ☉ λ disable_risk_assessment(Δ self) -> Self {
+>>>>>>> origin/main
         self.enable_risk_assessment = false;
         self
     }
 }
 
+<<<<<<< HEAD
 impl Default for PlanningConfig {
     fn default() -> Self {
         Self::default_config()
@@ -325,6 +570,28 @@ pub struct LearningConfig {
 
 impl LearningConfig {
     pub fn default_config() -> Self {
+=======
+⊢ Default ∀ PlanningConfig {
+    λ default() -> Self {
+        Self·default_config()
+    }
+}
+
+/// Configuration ∀ learning from execution
+☉ Σ LearningConfig {
+    /// Max history entries
+    ☉ max_history: usize,
+
+    /// Learning rate ∀ success rate updates
+    ☉ learning_rate: f32,
+
+    /// Enable pattern recognition
+    ☉ enable_patterns: bool,
+}
+
+⊢ LearningConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         Self {
             max_history: 1000,
             learning_rate: 0.1,
@@ -332,20 +599,34 @@ impl LearningConfig {
         }
     }
 
+<<<<<<< HEAD
     pub fn with_max_history(mut self, max: usize) -> Self {
+=======
+    ☉ λ with_max_history(Δ self, max: usize) -> Self {
+>>>>>>> origin/main
         self.max_history = max;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_learning_rate(mut self, rate: f32) -> Self {
+=======
+    ☉ λ with_learning_rate(Δ self, rate: f32) -> Self {
+>>>>>>> origin/main
         self.learning_rate = rate.clamp(0.0, 1.0);
         self
     }
 }
 
+<<<<<<< HEAD
 impl Default for LearningConfig {
     fn default() -> Self {
         Self::default_config()
+=======
+⊢ Default ∀ LearningConfig {
+    λ default() -> Self {
+        Self·default_config()
+>>>>>>> origin/main
     }
 }
 
@@ -354,8 +635,13 @@ impl Default for LearningConfig {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_default() {
     let c = OmenConfig::default_config();
+=======
+λ test_omen_config_default() {
+    ≔ c = OmenConfig·default_config();
+>>>>>>> origin/main
     assert_eq(c.horizon, 10);
     assert_eq(c.max_depth, 20);
     assert(c.enable_causal);
@@ -363,8 +649,13 @@ fn test_omen_config_default() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_conservative() {
     let c = OmenConfig::conservative();
+=======
+λ test_omen_config_conservative() {
+    ≔ c = OmenConfig·conservative();
+>>>>>>> origin/main
     assert_eq(c.horizon, 5);
     assert_eq(c.uncertainty_tolerance, 0.1);
     assert_eq(c.risk_tolerance, 0.2);
@@ -372,8 +663,13 @@ fn test_omen_config_conservative() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_aggressive() {
     let c = OmenConfig::aggressive();
+=======
+λ test_omen_config_aggressive() {
+    ≔ c = OmenConfig·aggressive();
+>>>>>>> origin/main
     assert_eq(c.horizon, 20);
     assert_eq(c.uncertainty_tolerance, 0.5);
     assert_eq(c.risk_tolerance, 0.8);
@@ -381,78 +677,138 @@ fn test_omen_config_aggressive() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_minimal() {
     let c = OmenConfig::minimal();
+=======
+λ test_omen_config_minimal() {
+    ≔ c = OmenConfig·minimal();
+>>>>>>> origin/main
     assert_eq(c.horizon, 3);
     assert(!c.enable_causal);
     assert(!c.enable_learning);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_with_horizon() {
     let c = OmenConfig::default_config().with_horizon(15);
+=======
+λ test_omen_config_with_horizon() {
+    ≔ c = OmenConfig·default_config().with_horizon(15);
+>>>>>>> origin/main
     assert_eq(c.horizon, 15);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_with_uncertainty_tolerance() {
     let c = OmenConfig::default_config().with_uncertainty_tolerance(0.4);
+=======
+λ test_omen_config_with_uncertainty_tolerance() {
+    ≔ c = OmenConfig·default_config().with_uncertainty_tolerance(0.4);
+>>>>>>> origin/main
     assert_eq(c.uncertainty_tolerance, 0.4);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_uncertainty_clamped() {
     let c = OmenConfig::default_config().with_uncertainty_tolerance(1.5);
+=======
+λ test_omen_config_uncertainty_clamped() {
+    ≔ c = OmenConfig·default_config().with_uncertainty_tolerance(1.5);
+>>>>>>> origin/main
     assert_eq(c.uncertainty_tolerance, 1.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_with_revision_threshold() {
     let c = OmenConfig::default_config().with_revision_threshold(0.5);
+=======
+λ test_omen_config_with_revision_threshold() {
+    ≔ c = OmenConfig·default_config().with_revision_threshold(0.5);
+>>>>>>> origin/main
     assert_eq(c.revision_threshold, 0.5);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_with_max_depth() {
     let c = OmenConfig::default_config().with_max_depth(100);
+=======
+λ test_omen_config_with_max_depth() {
+    ≔ c = OmenConfig·default_config().with_max_depth(100);
+>>>>>>> origin/main
     assert_eq(c.max_depth, 100);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_with_timeout() {
     let c = OmenConfig::default_config().with_timeout(Duration::minutes(2));
+=======
+λ test_omen_config_with_timeout() {
+    ≔ c = OmenConfig·default_config().with_timeout(Duration·minutes(2));
+>>>>>>> origin/main
     assert_eq(c.timeout.as_secs(), 120);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_with_risk_tolerance() {
     let c = OmenConfig::default_config().with_risk_tolerance(0.7);
+=======
+λ test_omen_config_with_risk_tolerance() {
+    ≔ c = OmenConfig·default_config().with_risk_tolerance(0.7);
+>>>>>>> origin/main
     assert_eq(c.risk_tolerance, 0.7);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_disable_causal() {
     let c = OmenConfig::default_config().disable_causal();
+=======
+λ test_omen_config_disable_causal() {
+    ≔ c = OmenConfig·default_config().disable_causal();
+>>>>>>> origin/main
     assert(!c.enable_causal);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_disable_learning() {
     let c = OmenConfig::default_config().disable_learning();
+=======
+λ test_omen_config_disable_learning() {
+    ≔ c = OmenConfig·default_config().disable_learning();
+>>>>>>> origin/main
     assert(!c.enable_learning);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_is_conservative() {
     let conservative = OmenConfig::default_config()
+=======
+λ test_omen_config_is_conservative() {
+    ≔ conservative = OmenConfig·default_config()
+>>>>>>> origin/main
         .with_uncertainty_tolerance(0.1)
         .with_risk_tolerance(0.2);
     assert(conservative.is_conservative());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_omen_config_is_aggressive() {
     let aggressive = OmenConfig::default_config()
+=======
+λ test_omen_config_is_aggressive() {
+    ≔ aggressive = OmenConfig·default_config()
+>>>>>>> origin/main
         .with_uncertainty_tolerance(0.6)
         .with_risk_tolerance(0.8);
     assert(aggressive.is_aggressive());
@@ -463,27 +819,47 @@ fn test_omen_config_is_aggressive() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_belief_config_default() {
     let c = BeliefConfig::default_config();
+=======
+λ test_belief_config_default() {
+    ≔ c = BeliefConfig·default_config();
+>>>>>>> origin/main
     assert_eq(c.max_beliefs, 10000);
     assert(c.detect_contradictions);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_belief_config_with_max_beliefs() {
     let c = BeliefConfig::default_config().with_max_beliefs(5000);
+=======
+λ test_belief_config_with_max_beliefs() {
+    ≔ c = BeliefConfig·default_config().with_max_beliefs(5000);
+>>>>>>> origin/main
     assert_eq(c.max_beliefs, 5000);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_belief_config_with_decay_rate() {
     let c = BeliefConfig::default_config().with_decay_rate(0.05);
+=======
+λ test_belief_config_with_decay_rate() {
+    ≔ c = BeliefConfig·default_config().with_decay_rate(0.05);
+>>>>>>> origin/main
     assert_eq(c.decay_rate, 0.05);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_belief_config_with_min_confidence() {
     let c = BeliefConfig::default_config().with_min_confidence(0.2);
+=======
+λ test_belief_config_with_min_confidence() {
+    ≔ c = BeliefConfig·default_config().with_min_confidence(0.2);
+>>>>>>> origin/main
     assert_eq(c.min_confidence, 0.2);
 }
 
@@ -492,28 +868,48 @@ fn test_belief_config_with_min_confidence() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_config_default() {
     let c = GoalConfig::default_config();
+=======
+λ test_goal_config_default() {
+    ≔ c = GoalConfig·default_config();
+>>>>>>> origin/main
     assert_eq(c.max_goals, 100);
     assert_eq(c.default_priority, 0.5);
     assert(c.enable_decomposition);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_config_with_max_goals() {
     let c = GoalConfig::default_config().with_max_goals(50);
+=======
+λ test_goal_config_with_max_goals() {
+    ≔ c = GoalConfig·default_config().with_max_goals(50);
+>>>>>>> origin/main
     assert_eq(c.max_goals, 50);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_config_with_default_priority() {
     let c = GoalConfig::default_config().with_default_priority(0.7);
+=======
+λ test_goal_config_with_default_priority() {
+    ≔ c = GoalConfig·default_config().with_default_priority(0.7);
+>>>>>>> origin/main
     assert_eq(c.default_priority, 0.7);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_config_with_stale_threshold() {
     let c = GoalConfig::default_config().with_stale_threshold(48.0);
+=======
+λ test_goal_config_with_stale_threshold() {
+    ≔ c = GoalConfig·default_config().with_stale_threshold(48.0);
+>>>>>>> origin/main
     assert_eq(c.stale_threshold_hours, 48.0);
 }
 
@@ -522,8 +918,13 @@ fn test_goal_config_with_stale_threshold() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_planning_config_default() {
     let c = PlanningConfig::default_config();
+=======
+λ test_planning_config_default() {
+    ≔ c = PlanningConfig·default_config();
+>>>>>>> origin/main
     assert_eq(c.max_steps, 50);
     assert_eq(c.max_alternatives, 3);
     assert(c.enable_contingencies);
@@ -531,32 +932,57 @@ fn test_planning_config_default() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_planning_config_with_max_steps() {
     let c = PlanningConfig::default_config().with_max_steps(100);
+=======
+λ test_planning_config_with_max_steps() {
+    ≔ c = PlanningConfig·default_config().with_max_steps(100);
+>>>>>>> origin/main
     assert_eq(c.max_steps, 100);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_planning_config_with_max_alternatives() {
     let c = PlanningConfig::default_config().with_max_alternatives(5);
+=======
+λ test_planning_config_with_max_alternatives() {
+    ≔ c = PlanningConfig·default_config().with_max_alternatives(5);
+>>>>>>> origin/main
     assert_eq(c.max_alternatives, 5);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_planning_config_with_min_success_probability() {
     let c = PlanningConfig::default_config().with_min_success_probability(0.7);
+=======
+λ test_planning_config_with_min_success_probability() {
+    ≔ c = PlanningConfig·default_config().with_min_success_probability(0.7);
+>>>>>>> origin/main
     assert_eq(c.min_success_probability, 0.7);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_planning_config_disable_contingencies() {
     let c = PlanningConfig::default_config().disable_contingencies();
+=======
+λ test_planning_config_disable_contingencies() {
+    ≔ c = PlanningConfig·default_config().disable_contingencies();
+>>>>>>> origin/main
     assert(!c.enable_contingencies);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_planning_config_disable_risk_assessment() {
     let c = PlanningConfig::default_config().disable_risk_assessment();
+=======
+λ test_planning_config_disable_risk_assessment() {
+    ≔ c = PlanningConfig·default_config().disable_risk_assessment();
+>>>>>>> origin/main
     assert(!c.enable_risk_assessment);
 }
 
@@ -565,25 +991,44 @@ fn test_planning_config_disable_risk_assessment() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_learning_config_default() {
     let c = LearningConfig::default_config();
+=======
+λ test_learning_config_default() {
+    ≔ c = LearningConfig·default_config();
+>>>>>>> origin/main
     assert_eq(c.max_history, 1000);
     assert_eq(c.learning_rate, 0.1);
     assert(c.enable_patterns);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_learning_config_with_max_history() {
     let c = LearningConfig::default_config().with_max_history(500);
+=======
+λ test_learning_config_with_max_history() {
+    ≔ c = LearningConfig·default_config().with_max_history(500);
+>>>>>>> origin/main
     assert_eq(c.max_history, 500);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_learning_config_with_learning_rate() {
     let c = LearningConfig::default_config().with_learning_rate(0.2);
     assert_eq(c.learning_rate, 0.2);
 }
 
 fn main() {
+=======
+λ test_learning_config_with_learning_rate() {
+    ≔ c = LearningConfig·default_config().with_learning_rate(0.2);
+    assert_eq(c.learning_rate, 0.2);
+}
+
+λ main() {
+>>>>>>> origin/main
     print("Omen configuration tests");
 }

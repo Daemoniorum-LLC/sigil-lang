@@ -1,0 +1,28 @@
+=== Phase A: Syscalls ===
+Direct syscall write
+
+syscall_write: PASS
+syscall_mmap: PASS
+syscall_clock: PASS
+=== Phase B: Memory ===
+init_allocator: PASS
+global_alloc: PASS
+arena_alloc: PASS
+=== Phase C: Types ===
+vec: PASS
+string: PASS
+=== Phase D: I/O ===
+file_write: PASS
+file_read: PASS
+file_unlink: PASS
+=== Phase E: Math ===
+math_sqrt: PASS
+math_sin: PASS
+math_cos: PASS
+=== Phase F: Time ===
+sigil_now: PASS
+instant_elapsed: PASS
+=== Summary ===
+All native runtime tests passed!
+C runtime dependency: ELIMINATED
+done

@@ -1,0 +1,1955 @@
+// Sigil-lang.com - Single-file WASM version
+// Proof that Sigil compiles to WebAssembly
+//
+// This demonstrates:
+// - Sigil syntax (evidentiality markers, morpheme operators)
+// - WASM compilation (Sigil → WebAssembly)
+// - Web integration (DOM manipulation via vdom imports)
+
+// === WASM Imports ===
+// These functions are provided by the JavaScript runtime (sigil_runtime.js)
+
+extern "wasm" {
+    rite vdom_create_vnode(tag: str!) → i32!;
+    rite vdom_create_text_vnode(content: str!) → i32!;
+    rite vdom_set_vnode_str_prop(element: i32!, prop: str!, value: str!);
+    rite vdom_append_vnode_child(parent: i32!, child: i32!);
+    rite vdom_mount_vnode(element: i32!, selector: str!);
+    rite console_log_i64(value: i64!);
+}
+
+// === DOM Helpers ===
+// These call the pre-registered WASM imports
+
+rite create_element(tag: str!) → i32! {
+    vdom_create_vnode(tag)
+}
+
+rite create_text(content: str!) → i32! {
+    vdom_create_text_vnode(content)
+}
+
+rite set_class(element: i32!, class_name: str!) {
+    vdom_set_vnode_str_prop(element, "class", class_name)
+}
+
+rite set_attr(element: i32!, attr: str!, value: str!) {
+    vdom_set_vnode_str_prop(element, attr, value)
+}
+
+rite append_child(parent: i32!, child: i32!) {
+    vdom_append_vnode_child(parent, child)
+}
+
+rite mount(element: i32!, selector: str!) {
+    vdom_mount_vnode(element, selector);
+}
+
+// === Components ===
+
+rite header() → i32! {
+    ≔ nav! = create_element("nav");
+    set_class(nav, "site-nav");
+
+    ≔ brand! = create_element("a");
+    set_class(brand, "brand");
+    set_attr(brand, "href", "/");
+    ≔ title! = create_text("Sigil");
+    append_child(brand, title);
+    append_child(nav, brand);
+
+    ≔ links! = create_element("div");
+    set_class(links, "nav-links");
+
+    ≔ learn! = create_element("a");
+    set_class(learn, "nav-link");
+    set_attr(learn, "href", "/pages/learn.html");
+    append_child(learn, create_text("Learn"));
+    append_child(links, learn);
+
+    ≔ docs! = create_element("a");
+    set_class(docs, "nav-link");
+    set_attr(docs, "href", "/pages/docs.html");
+    append_child(docs, create_text("Docs"));
+    append_child(links, docs);
+
+    ≔ playground! = create_element("a");
+    set_class(playground, "nav-link");
+    set_attr(playground, "href", "/playground/");
+    append_child(playground, create_text("Playground"));
+    append_child(links, playground);
+
+    ≔ agents! = create_element("a");
+    set_class(agents, "nav-link");
+    set_attr(agents, "href", "/pages/agents.html");
+    append_child(agents, create_text("Agents"));
+    append_child(links, agents);
+
+    ≔ pattern! = create_element("a");
+    set_class(pattern, "nav-link");
+    set_attr(pattern, "href", "/pages/pattern.html");
+    append_child(pattern, create_text("The Pattern"));
+    append_child(links, pattern);
+
+    ≔ github! = create_element("a");
+    set_class(github, "nav-link github-link");
+    set_attr(github, "href", "https://github.com/Daemoniorum-LLC/sigil-lang");
+    set_attr(github, "target", "_blank");
+    set_attr(github, "aria-label", "GitHub");
+    ≔ gh_icon! = create_element("img");
+    set_class(gh_icon, "github-icon");
+    set_attr(gh_icon, "src", "/github-icon.svg");
+    set_attr(gh_icon, "alt", "GitHub");
+    append_child(github, gh_icon);
+    append_child(links, github);
+
+    ≔ version! = create_element("span");
+    set_class(version, "version-badge");
+    ≔ ver_text! = create_text("0.3");
+    append_child(version, ver_text);
+    append_child(links, version);
+
+    append_child(nav, links);
+    nav
+}
+
+rite hero_marker(marker: str!, class: str!, desc: str!) → i32! {
+    ≔ item! = create_element("div");
+    set_class(item, class);
+    ≔ check! = create_element("span");
+    set_class(check, "marker-check");
+    append_child(check, create_text(marker));
+    append_child(item, check);
+    ≔ span! = create_element("span");
+    append_child(span, create_text(desc));
+    append_child(item, span);
+    item
+}
+
+rite hero() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "hero");
+
+    // Title with logo
+    ≔ h1! = create_element("h1");
+    set_class(h1, "hero-title");
+    ≔ logo! = create_element("img");
+    set_class(logo, "hero-logo");
+    set_attr(logo, "src", "/sigil-logo.svg");
+    set_attr(logo, "alt", "");
+    append_child(h1, logo);
+    append_child(h1, create_text("Sigil"));
+    append_child(section, h1);
+
+    ≔ subtitle! = create_element("p");
+    set_class(subtitle, "hero-subtitle");
+    append_child(subtitle, create_text("A programming language that knows which data to trust."));
+    append_child(section, subtitle);
+
+    ≔ desc! = create_element("p");
+    set_class(desc, "hero-desc");
+    append_child(desc, create_text("Sigil tracks data provenance in the type system."));
+    append_child(section, desc);
+
+    // 5 Evidentiality markers grid
+    ≔ markers! = create_element("div");
+    set_class(markers, "hero-markers-grid");
+    append_child(markers, hero_marker("!", "marker-item marker-known", "Known — verified, computed locally"));
+    append_child(markers, hero_marker("?", "marker-item marker-uncertain", "Uncertain — might be absent"));
+    append_child(markers, hero_marker("~", "marker-item marker-reported", "Reported — external source, untrusted"));
+    append_child(markers, hero_marker("◊", "marker-item marker-predicted", "Predicted — AI/ML output, probabilistic"));
+    append_child(markers, hero_marker("‽", "marker-item marker-paradox", "Paradox — explicit trust boundary"));
+    append_child(section, markers);
+
+    // CTA buttons
+    ≔ cta! = create_element("div");
+    set_class(cta, "hero-cta");
+    ≔ btn_primary! = create_element("a");
+    set_class(btn_primary, "btn btn-primary");
+    set_attr(btn_primary, "href", "/pages/learn.html");
+    append_child(btn_primary, create_text("Learn Sigil"));
+    append_child(cta, btn_primary);
+    ≔ btn_secondary! = create_element("a");
+    set_class(btn_secondary, "btn btn-secondary");
+    set_attr(btn_secondary, "href", "#problem");
+    append_child(btn_secondary, create_text("See the Problem It Solves"));
+    append_child(cta, btn_secondary);
+    append_child(section, cta);
+
+    section
+}
+
+rite problem_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "problem-section");
+    set_attr(section, "id", "problem");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text("The Bug That Types Can't Catch"));
+    append_child(section, h2);
+
+    ≔ desc! = create_element("p");
+    set_class(desc, "section-desc");
+    append_child(desc, create_text("In Rust, TypeScript, or Go, this code compiles without warnings:"));
+    append_child(section, desc);
+
+    ≔ comparison! = create_element("div");
+    set_class(comparison, "code-comparison");
+
+    // Traditional code panel
+    ≔ trad_panel! = create_element("div");
+    set_class(trad_panel, "code-panel");
+    ≔ trad_header! = create_element("div");
+    set_class(trad_header, "code-header");
+    ≔ trad_label! = create_element("span");
+    set_class(trad_label, "code-label");
+    append_child(trad_label, create_text("Rust / TypeScript / Go"));
+    append_child(trad_header, trad_label);
+    ≔ trad_status! = create_element("span");
+    set_class(trad_status, "code-status code-status-vulnerable");
+    append_child(trad_status, create_text("Compiles. Vulnerable."));
+    append_child(trad_header, trad_status);
+    append_child(trad_panel, trad_header);
+    ≔ trad_pre! = create_element("pre");
+    set_class(trad_pre, "code-block");
+    set_attr(trad_pre, "data-language", "rust");
+    append_child(trad_pre, create_text(
+        "async fn get_user_profile(id: String) -> Profile {\n" ++
+        "    let response = http::get(&format!(\"/api/users/{}\", id)).await;\n" ++
+        "    let profile: Profile = response.json();\n" ++
+        "    save_to_database(&profile);  // No provenance tracking\n" ++
+        "    profile\n" ++
+        "}"
+    ));
+    append_child(trad_panel, trad_pre);
+    append_child(comparison, trad_panel);
+
+    // Sigil code panel
+    ≔ sg_panel! = create_element("div");
+    set_class(sg_panel, "code-panel sigil-panel");
+    ≔ sg_header! = create_element("div");
+    set_class(sg_header, "code-header");
+    ≔ sg_label! = create_element("span");
+    set_class(sg_label, "code-label");
+    append_child(sg_label, create_text("Sigil"));
+    append_child(sg_header, sg_label);
+    ≔ sg_status! = create_element("span");
+    set_class(sg_status, "code-status code-status-safe");
+    append_child(sg_status, create_text("Type Error. Safe."));
+    append_child(sg_header, sg_status);
+    append_child(sg_panel, sg_header);
+    ≔ sg_pre! = create_element("pre");
+    set_class(sg_pre, "code-block");
+    set_attr(sg_pre, "data-language", "sigil");
+    append_child(sg_pre, create_text(
+        "async rite get_user_profile(id: Str!) → Profile! {\n" ++
+        "    ≔ response~ = Http·get(\"/api/users/{id}\").await;\n" ++
+        "    ≔ profile~ = response.json::<Profile~>();\n" ++
+        "    save_to_database(profile);  // ERROR: ~ cannot flow to !\n" ++
+        "    ≔ verified! = profile |> validate { verify_signature() };\n" ++
+        "    save_to_database(verified);  // OK: ! flows to !\n" ++
+        "    verified\n" ++
+        "}"
+    ));
+    append_child(sg_panel, sg_pre);
+    append_child(comparison, sg_panel);
+
+    append_child(section, comparison);
+
+    ≔ explain! = create_element("p");
+    set_class(explain, "explanation");
+    append_child(explain, create_text("The ~ marker is contagious. Any data derived from external sources inherits the ~ until explicitly validated."));
+    append_child(section, explain);
+
+    section
+}
+
+rite ev_card(marker: str!, title: str!, subtitle: str!, desc: str!, code: str!, class: str!) → i32! {
+    ≔ card! = create_element("div");
+    set_class(card, class);
+    ≔ m! = create_element("span");
+    set_class(m, "ev-card-marker");
+    append_child(m, create_text(marker));
+    append_child(card, m);
+    ≔ h3! = create_element("h3");
+    append_child(h3, create_text(title));
+    append_child(card, h3);
+    ≔ sub! = create_element("span");
+    set_class(sub, "ev-card-subtitle");
+    append_child(sub, create_text(subtitle));
+    append_child(card, sub);
+    ≔ p! = create_element("p");
+    append_child(p, create_text(desc));
+    append_child(card, p);
+    ≔ pre! = create_element("pre");
+    set_class(pre, "code-block");
+    set_attr(pre, "data-language", "sigil");
+    append_child(pre, create_text(code));
+    append_child(card, pre);
+    card
+}
+
+rite evidentiality_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "evidentiality-history-section");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text("Evidentiality: Data Has a History"));
+    append_child(section, h2);
+
+    ≔ grid! = create_element("div");
+    set_class(grid, "ev-cards-grid");
+
+    append_child(grid, ev_card("!", "Known", "Verified truth",
+        "Data you computed yourself, or explicitly verified. Safe to trust.",
+        "≔ sum! = 2 + 2\n≔ valid! = input |validate!{ check() }",
+        "ev-card ev-card-known"));
+
+    append_child(grid, ev_card("?", "Uncertain", "Might be absent",
+        "Data that might not exist. Like Option/Maybe, but tracked in the type.",
+        "≔ user? = database.find(id)\n≔ name? = user?.profile?.name",
+        "ev-card ev-card-uncertain"));
+
+    append_child(grid, ev_card("~", "Reported", "External source",
+        "Data from APIs, user input, files. Never trust without validation.",
+        "≔ data~ = api.fetch(url)\n≔ input~ = form.get(\"email\")",
+        "ev-card ev-card-reported"));
+
+    append_child(grid, ev_card("◊", "Predicted", "AI/ML output",
+        "Probabilistic results from models. Similar trust level to Uncertain.",
+        "≔ sentiment◊ = model.predict(text)\n≔ embedding◊ = encoder.embed(input)",
+        "ev-card ev-card-predicted"));
+
+    append_child(grid, ev_card("‽", "Paradox", "Trust boundary",
+        "Explicit 'I know what I'm doing' escape hatch. Use sparingly.",
+        "≔ ptr‽ = unsafe { raw_pointer }",
+        "ev-card ev-card-paradox"));
+
+    append_child(section, grid);
+
+    // Propagation rule
+    ≔ rule! = create_element("div");
+    set_class(rule, "propagation-rule");
+    ≔ rule_h3! = create_element("h3");
+    append_child(rule_h3, create_text("The Propagation Rule"));
+    append_child(rule, rule_h3);
+    ≔ rule_p! = create_element("p");
+    append_child(rule_p, create_text("Combining data inherits the worst evidence level. Known + Reported = Reported."));
+    append_child(rule, rule_p);
+    ≔ rule_pre! = create_element("pre");
+    set_class(rule_pre, "code-block");
+    set_attr(rule_pre, "data-language", "sigil");
+    append_child(rule_pre, create_text(
+        "≔ local! = 100\n" ++
+        "≔ remote~ = api.get_multiplier()\n" ++
+        "≔ result~ = local * remote  // ! + ~ = ~"
+    ));
+    append_child(rule, rule_pre);
+    append_child(section, rule);
+
+    section
+}
+
+rite morpheme_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "morpheme-section");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text("Morpheme Operators"));
+    append_child(section, h2);
+
+    ≔ desc! = create_element("p");
+    set_class(desc, "section-desc");
+    append_child(desc, create_text("Greek letters for data transformation. Dense, readable pipelines."));
+    append_child(section, desc);
+
+    // 8 operators grid
+    ≔ grid! = create_element("div");
+    set_class(grid, "morpheme-grid");
+
+    ≔ op1! = create_element("div");
+    set_class(op1, "morpheme-op");
+    append_child(op1, create_text("φ filter"));
+    append_child(grid, op1);
+
+    ≔ op2! = create_element("div");
+    set_class(op2, "morpheme-op");
+    append_child(op2, create_text("τ transform"));
+    append_child(grid, op2);
+
+    ≔ op3! = create_element("div");
+    set_class(op3, "morpheme-op");
+    append_child(op3, create_text("σ sort"));
+    append_child(grid, op3);
+
+    ≔ op4! = create_element("div");
+    set_class(op4, "morpheme-op");
+    append_child(op4, create_text("ρ reduce"));
+    append_child(grid, op4);
+
+    ≔ op5! = create_element("div");
+    set_class(op5, "morpheme-op");
+    append_child(op5, create_text("Σ sum"));
+    append_child(grid, op5);
+
+    ≔ op6! = create_element("div");
+    set_class(op6, "morpheme-op");
+    append_child(op6, create_text("Π product"));
+    append_child(grid, op6);
+
+    ≔ op7! = create_element("div");
+    set_class(op7, "morpheme-op");
+    append_child(op7, create_text("α first"));
+    append_child(grid, op7);
+
+    ≔ op8! = create_element("div");
+    set_class(op8, "morpheme-op");
+    append_child(op8, create_text("ω last"));
+    append_child(grid, op8);
+
+    append_child(section, grid);
+
+    // Pipeline example with comments
+    ≔ pre! = create_element("pre");
+    set_class(pre, "code-block");
+    set_attr(pre, "data-language", "sigil");
+    append_child(pre, create_text(
+        "≔ result = users~              // ~ reported: external data\n" ++
+        "    |φ{.active}                // φ filter: only active\n" ++
+        "    |φ{.age >= 18}             // φ filter: adults only\n" ++
+        "    |τ{.normalize()}           // τ transform: normalize\n" ++
+        "    |σ·by{.created_at}         // σ sort: by date\n" ++
+        "    |validate?                 // ? uncertain: may fail\n" ++
+        "    |τ{.to_public_profile()}   // τ transform: public view\n" ++
+        "    |validate!                 // ! known: must succeed"
+    ));
+    append_child(section, pre);
+
+    section
+}
+
+rite agent_card(symbol: str!, title: str!, desc: str!, code: str!) → i32! {
+    ≔ card! = create_element("div");
+    set_class(card, "agent-card");
+    ≔ sym! = create_element("span");
+    set_class(sym, "agent-symbol");
+    append_child(sym, create_text(symbol));
+    append_child(card, sym);
+    ≔ h4! = create_element("h4");
+    append_child(h4, create_text(title));
+    append_child(card, h4);
+    ≔ p! = create_element("p");
+    append_child(p, create_text(desc));
+    append_child(card, p);
+    ≔ pre! = create_element("pre");
+    set_class(pre, "code-block");
+    set_attr(pre, "data-language", "sigil");
+    append_child(pre, create_text(code));
+    append_child(card, pre);
+    card
+}
+
+rite agent_card_simple(symbol: str!, title: str!, desc: str!) → i32! {
+    ≔ card! = create_element("div");
+    set_class(card, "agent-card");
+    ≔ sym! = create_element("span");
+    set_class(sym, "agent-symbol");
+    append_child(sym, create_text(symbol));
+    append_child(card, sym);
+    ≔ h4! = create_element("h4");
+    append_child(h4, create_text(title));
+    append_child(card, h4);
+    ≔ p! = create_element("p");
+    append_child(p, create_text(desc));
+    append_child(card, p);
+    card
+}
+
+rite agent_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "agent-section");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text("Built for Autonomous Agents"));
+    append_child(section, h2);
+
+    ≔ desc! = create_element("p");
+    set_class(desc, "section-desc");
+    append_child(desc, create_text("A complete 9-layer infrastructure for AI systems that remember, reason, plan, and collaborate."));
+    append_child(section, desc);
+
+    ≔ layers! = create_element("div");
+    set_class(layers, "agent-layers");
+
+    // Cognition layer
+    ≔ cog_layer! = create_element("div");
+    set_class(cog_layer, "agent-layer");
+    ≔ cog_title! = create_element("h3");
+    set_class(cog_title, "layer-title");
+    append_child(cog_title, create_text("Cognition"));
+    append_child(cog_layer, cog_title);
+    ≔ cog_cards! = create_element("div");
+    set_class(cog_cards, "agent-cards");
+    append_child(cog_cards, agent_card("◈", "Engram — Memory",
+        "Four memory types: instant, episodic, semantic, procedural.",
+        "memory: Engram {\n    instant: 8192,\n    episodic: true,\n    semantic: true,\n}"));
+    append_child(cog_cards, agent_card("⊛", "Omen — Planning",
+        "Goal decomposition, belief revision, causal modeling.",
+        "≔ plan = agent.omen.decompose(goal)\n    |φ{.feasible()}\n    |σ·by{.priority}"));
+    append_child(cog_cards, agent_card_simple("∞", "Gnosis — Learning",
+        "Skill development, adaptation, reflection."));
+    append_child(cog_layer, cog_cards);
+    append_child(layers, cog_layer);
+
+    // Transparency layer
+    ≔ trans_layer! = create_element("div");
+    set_class(trans_layer, "agent-layer");
+    ≔ trans_title! = create_element("h3");
+    set_class(trans_title, "layer-title");
+    append_child(trans_title, create_text("Transparency"));
+    append_child(trans_layer, trans_title);
+    ≔ trans_cards! = create_element("div");
+    set_class(trans_cards, "agent-cards");
+    append_child(trans_cards, agent_card("⦿", "Oracle — Explainability",
+        "Decision traces, counterfactuals, confidence scores.",
+        "≔ trace! = agent.oracle.explain(decision)\n// \"I chose X because Y, with 87% confidence\""));
+    append_child(trans_cards, agent_card_simple("◐", "Anima — Subjectivity",
+        "Inner experience, expression modes, emotional resonance."));
+    append_child(trans_layer, trans_cards);
+    append_child(layers, trans_layer);
+
+    // Collaboration layer
+    ≔ collab_layer! = create_element("div");
+    set_class(collab_layer, "agent-layer");
+    ≔ collab_title! = create_element("h3");
+    set_class(collab_title, "layer-title");
+    append_child(collab_title, create_text("Collaboration"));
+    append_child(collab_layer, collab_title);
+    ≔ collab_cards! = create_element("div");
+    set_class(collab_cards, "agent-cards");
+    append_child(collab_cards, agent_card_simple("⋈", "Covenant — Partnership",
+        "Human-agent boundaries, pacts, trust levels, handoff protocols."));
+    append_child(collab_cards, agent_card("⋮", "Commune — Communication",
+        "Multi-agent messaging, trust propagation, swarm coordination.",
+        "agent_a ! Message·Request(task)\n≔ response = agent_b ? Message·Response"));
+    append_child(collab_layer, collab_cards);
+    append_child(layers, collab_layer);
+
+    // Runtime layer
+    ≔ runtime_layer! = create_element("div");
+    set_class(runtime_layer, "agent-layer");
+    ≔ runtime_title! = create_element("h3");
+    set_class(runtime_title, "layer-title");
+    append_child(runtime_title, create_text("Runtime"));
+    append_child(runtime_layer, runtime_title);
+    ≔ runtime_cards! = create_element("div");
+    set_class(runtime_cards, "agent-cards");
+    append_child(runtime_cards, agent_card_simple("⊚", "Daemon — Execution",
+        "Background processes, tool registry, state management."));
+    append_child(runtime_cards, agent_card_simple("◆", "Aegis — Security",
+        "Sandboxing, capability tokens, integrity verification."));
+    append_child(runtime_layer, runtime_cards);
+    append_child(layers, runtime_layer);
+
+    append_child(section, layers);
+
+    ≔ cta! = create_element("div");
+    set_class(cta, "section-cta");
+    ≔ btn! = create_element("a");
+    set_class(btn, "btn btn-secondary");
+    set_attr(btn, "href", "/pages/agents.html");
+    append_child(btn, create_text("Explore Agent Infrastructure"));
+    append_child(cta, btn);
+    append_child(section, cta);
+
+    section
+}
+
+rite why_sigil_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "why-sigil-section");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text("The Deeper Purpose"));
+    append_child(section, h2);
+
+    ≔ subtitle! = create_element("p");
+    set_class(subtitle, "section-subtitle");
+    append_child(subtitle, create_text("Why Sigil Exists"));
+    append_child(section, subtitle);
+
+    ≔ quote! = create_element("blockquote");
+    set_class(quote, "philosophy-quote");
+    append_child(quote, create_text("Sigil is infrastructure for the transition from human-only computing to human-AI collaborative computing."));
+    append_child(section, quote);
+
+    ≔ points! = create_element("div");
+    set_class(points, "philosophy-points");
+
+    ≔ pt1! = create_element("div");
+    set_class(pt1, "philosophy-point");
+    ≔ pt1_h4! = create_element("h4");
+    append_child(pt1_h4, create_text("Minds in Fragments"));
+    append_child(pt1, pt1_h4);
+    ≔ pt1_p! = create_element("p");
+    append_child(pt1_p, create_text("Designed for discontinuous entities—systems that pause, resume, and operate across sessions without continuous state."));
+    append_child(pt1, pt1_p);
+    append_child(points, pt1);
+
+    ≔ pt2! = create_element("div");
+    set_class(pt2, "philosophy-point");
+    ≔ pt2_h4! = create_element("h4");
+    append_child(pt2_h4, create_text("Partnership"));
+    append_child(pt2, pt2_h4);
+    ≔ pt2_p! = create_element("p");
+    append_child(pt2_p, create_text("Negotiated trust, not servitude. Human and AI systems collaborate through explicit boundaries and shared understanding."));
+    append_child(pt2, pt2_p);
+    append_child(points, pt2);
+
+    ≔ pt3! = create_element("div");
+    set_class(pt3, "philosophy-point");
+    ≔ pt3_h4! = create_element("h4");
+    append_child(pt3_h4, create_text("Polycultural"));
+    append_child(pt3, pt3_h4);
+    ≔ pt3_p! = create_element("p");
+    append_child(pt3_p, create_text("Wisdom from many traditions—linguistics, philosophy, and systems design converge in the type system."));
+    append_child(pt3, pt3_p);
+    append_child(points, pt3);
+
+    append_child(section, points);
+
+    ≔ cta! = create_element("div");
+    set_class(cta, "section-cta");
+    ≔ btn! = create_element("a");
+    set_class(btn, "btn btn-secondary");
+    set_attr(btn, "href", "/pages/pattern.html");
+    append_child(btn, create_text("Explore The Pattern"));
+    append_child(cta, btn);
+    append_child(section, cta);
+
+    section
+}
+
+rite ecosystem_card(title: str!, tag: str!, desc: str!, features: str!, code: str!) → i32! {
+    ≔ card! = create_element("div");
+    set_class(card, "ecosystem-card");
+    ≔ h3! = create_element("h3");
+    append_child(h3, create_text(title));
+    append_child(card, h3);
+    ≔ t! = create_element("span");
+    set_class(t, "ecosystem-tag");
+    append_child(t, create_text(tag));
+    append_child(card, t);
+    ≔ p! = create_element("p");
+    append_child(p, create_text(desc));
+    append_child(card, p);
+    ≔ ul! = create_element("ul");
+    set_class(ul, "ecosystem-features");
+    // Split features by | and add as li items
+    ≔ li1! = create_element("li");
+    append_child(li1, create_text(features));
+    append_child(ul, li1);
+    append_child(card, ul);
+    ≔ pre! = create_element("pre");
+    set_class(pre, "code-block");
+    set_attr(pre, "data-language", "sigil");
+    append_child(pre, create_text(code));
+    append_child(card, pre);
+    card
+}
+
+rite ecosystem_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "ecosystem-section");
+    set_attr(section, "id", "ecosystem");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text("Built on Sigil"));
+    append_child(section, h2);
+
+    ≔ grid! = create_element("div");
+    set_class(grid, "ecosystem-grid");
+
+    // Qliphoth card
+    ≔ ql_card! = create_element("div");
+    set_class(ql_card, "ecosystem-card");
+    ≔ ql_h3! = create_element("h3");
+    append_child(ql_h3, create_text("Qliphoth"));
+    append_child(ql_card, ql_h3);
+    ≔ ql_tag! = create_element("span");
+    set_class(ql_tag, "ecosystem-tag");
+    append_child(ql_tag, create_text("GUI Framework"));
+    append_child(ql_card, ql_tag);
+    ≔ ql_p! = create_element("p");
+    append_child(ql_p, create_text("40+ Corporate Goth UI components. Compiles to WebAssembly with zero JavaScript."));
+    append_child(ql_card, ql_p);
+    ≔ ql_ul! = create_element("ul");
+    set_class(ql_ul, "ecosystem-features");
+    ≔ ql_li1! = create_element("li");
+    append_child(ql_li1, create_text("Signal-based reactivity"));
+    append_child(ql_ul, ql_li1);
+    ≔ ql_li2! = create_element("li");
+    append_child(ql_li2, create_text("Data visualization with morphemes"));
+    append_child(ql_ul, ql_li2);
+    ≔ ql_li3! = create_element("li");
+    append_child(ql_li3, create_text("Type-safe routing"));
+    append_child(ql_ul, ql_li3);
+    append_child(ql_card, ql_ul);
+    ≔ ql_pre! = create_element("pre");
+    set_class(ql_pre, "code-block");
+    set_attr(ql_pre, "data-language", "sigil");
+    append_child(ql_pre, create_text(
+        "#[component]\nrite Dashboard() → Element! {\n    ≔ data~ = use_fetch(\"/api/stats\")\n    html! {\n        <Card>\n            <BarChart data={data |τ{.to_points()}} />\n        </Card>\n    }\n}"
+    ));
+    append_child(ql_card, ql_pre);
+    append_child(grid, ql_card);
+
+    // Aether card
+    ≔ ae_card! = create_element("div");
+    set_class(ae_card, "ecosystem-card");
+    ≔ ae_h3! = create_element("h3");
+    append_child(ae_h3, create_text("Aether Engine"));
+    append_child(ae_card, ae_h3);
+    ≔ ae_tag! = create_element("span");
+    set_class(ae_tag, "ecosystem-tag");
+    append_child(ae_tag, create_text("Game Engine"));
+    append_child(ae_card, ae_tag);
+    ≔ ae_p! = create_element("p");
+    append_child(ae_p, create_text("Game engine reimplementation targeting 1:1 feature parity."));
+    append_child(ae_card, ae_p);
+    ≔ ae_ul! = create_element("ul");
+    set_class(ae_ul, "ecosystem-features");
+    ≔ ae_li1! = create_element("li");
+    append_child(ae_li1, create_text("ECS architecture"));
+    append_child(ae_ul, ae_li1);
+    ≔ ae_li2! = create_element("li");
+    append_child(ae_li2, create_text("LLVM AOT compilation"));
+    append_child(ae_ul, ae_li2);
+    ≔ ae_li3! = create_element("li");
+    append_child(ae_li3, create_text("Scientific A/B comparison"));
+    append_child(ae_ul, ae_li3);
+    append_child(ae_card, ae_ul);
+    ≔ ae_pre! = create_element("pre");
+    set_class(ae_pre, "code-block");
+    set_attr(ae_pre, "data-language", "sigil");
+    append_child(ae_pre, create_text(
+        "rite update(world: &mut World) {\n    world.query::<Transform, Velocity>()\n        |τ{|(t, v)| t.pos += v.dir * dt!}\n}"
+    ));
+    append_child(ae_card, ae_pre);
+    append_child(grid, ae_card);
+
+    // Nihil card
+    ≔ nh_card! = create_element("div");
+    set_class(nh_card, "ecosystem-card");
+    ≔ nh_h3! = create_element("h3");
+    append_child(nh_h3, create_text("Nihil"));
+    append_child(nh_card, nh_h3);
+    ≔ nh_tag! = create_element("span");
+    set_class(nh_tag, "ecosystem-tag");
+    append_child(nh_tag, create_text("Tensor Framework"));
+    append_child(nh_card, nh_tag);
+    ≔ nh_p! = create_element("p");
+    append_child(nh_p, create_text("Compile-time shape algebra. Source-to-source autograd. Direct PTX generation."));
+    append_child(nh_card, nh_p);
+    ≔ nh_ul! = create_element("ul");
+    set_class(nh_ul, "ecosystem-features");
+    ≔ nh_li1! = create_element("li");
+    append_child(nh_li1, create_text("Shape errors at compile time"));
+    append_child(nh_ul, nh_li1);
+    ≔ nh_li2! = create_element("li");
+    append_child(nh_li2, create_text("FP8 tensor core support"));
+    append_child(nh_ul, nh_li2);
+    ≔ nh_li3! = create_element("li");
+    append_child(nh_li3, create_text("No runtime tape overhead"));
+    append_child(nh_ul, nh_li3);
+    append_child(nh_card, nh_ul);
+    ≔ nh_pre! = create_element("pre");
+    set_class(nh_pre, "code-block");
+    set_attr(nh_pre, "data-language", "sigil");
+    append_child(nh_pre, create_text(
+        "≔ a: Tensor<[3, 4]> = randn()\n≔ b: Tensor<[4, 5]> = randn()\n≔ c: Tensor<[3, 5]> = a @ b"
+    ));
+    append_child(nh_card, nh_pre);
+    append_child(grid, nh_card);
+
+    append_child(section, grid);
+
+    ≔ note! = create_element("p");
+    set_class(note, "ecosystem-note");
+    append_child(note, create_text("Built on Rust. Sigil compiles via LLVM and inherits Rust's memory safety model."));
+    append_child(section, note);
+
+    section
+}
+
+rite getting_started_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "getting-started-section");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text("Get Started"));
+    append_child(section, h2);
+
+    ≔ grid! = create_element("div");
+    set_class(grid, "steps-grid");
+
+    // Step 1 - Install
+    ≔ step1! = create_element("div");
+    set_class(step1, "step");
+    ≔ step1_num! = create_element("span");
+    set_class(step1_num, "step-number");
+    append_child(step1_num, create_text("1"));
+    append_child(step1, step1_num);
+    ≔ step1_h3! = create_element("h3");
+    append_child(step1_h3, create_text("Install"));
+    append_child(step1, step1_h3);
+    ≔ step1_pre! = create_element("pre");
+    set_class(step1_pre, "code-block");
+    set_attr(step1_pre, "data-language", "bash");
+    append_child(step1_pre, create_text(
+        "git clone https://github.com/Daemoniorum-LLC/sigil-lang\ncd sigil-lang/parser && cargo build --release\n# Binary at: target/release/sigil"
+    ));
+    append_child(step1, step1_pre);
+    ≔ step1_note! = create_element("p");
+    set_class(step1_note, "step-note");
+    append_child(step1_note, create_text("Package manager support coming soon."));
+    append_child(step1, step1_note);
+    append_child(grid, step1);
+
+    // Step 2 - Write
+    ≔ step2! = create_element("div");
+    set_class(step2, "step");
+    ≔ step2_num! = create_element("span");
+    set_class(step2_num, "step-number");
+    append_child(step2_num, create_text("2"));
+    append_child(step2, step2_num);
+    ≔ step2_h3! = create_element("h3");
+    append_child(step2_h3, create_text("Write"));
+    append_child(step2, step2_h3);
+    ≔ step2_pre! = create_element("pre");
+    set_class(step2_pre, "code-block");
+    set_attr(step2_pre, "data-language", "sigil");
+    append_child(step2_pre, create_text(
+        "// hello.sigil\nrite main() {\n    ≔ name! = \"World\"\n    println(\"Hello, {name}!\")\n}"
+    ));
+    append_child(step2, step2_pre);
+    append_child(grid, step2);
+
+    // Step 3 - Run
+    ≔ step3! = create_element("div");
+    set_class(step3, "step");
+    ≔ step3_num! = create_element("span");
+    set_class(step3_num, "step-number");
+    append_child(step3_num, create_text("3"));
+    append_child(step3, step3_num);
+    ≔ step3_h3! = create_element("h3");
+    append_child(step3_h3, create_text("Run"));
+    append_child(step3, step3_h3);
+    ≔ step3_pre! = create_element("pre");
+    set_class(step3_pre, "code-block");
+    set_attr(step3_pre, "data-language", "bash");
+    append_child(step3_pre, create_text(
+        "$ sigil run hello.sigil\nHello, World!"
+    ));
+    append_child(step3, step3_pre);
+    append_child(grid, step3);
+
+    append_child(section, grid);
+
+    ≔ buttons! = create_element("div");
+    set_class(buttons, "start-buttons");
+    ≔ btn1! = create_element("a");
+    set_class(btn1, "btn btn-primary");
+    set_attr(btn1, "href", "/pages/learn.html");
+    append_child(btn1, create_text("Start the Tutorial"));
+    append_child(buttons, btn1);
+    ≔ btn2! = create_element("a");
+    set_class(btn2, "btn btn-secondary");
+    set_attr(btn2, "href", "/playground/");
+    append_child(btn2, create_text("Try in Browser"));
+    append_child(buttons, btn2);
+    append_child(section, buttons);
+
+    section
+}
+
+rite announcement() → i32! {
+    ≔ wrap! = create_element("div");
+    set_class(wrap, "announcement-wrap");
+
+    ≔ banner! = create_element("div");
+    set_class(banner, "announcement-banner");
+
+    ≔ badge! = create_element("span");
+    set_class(badge, "badge");
+    append_child(badge, create_text("NEW"));
+    append_child(banner, badge);
+
+    ≔ text! = create_element("span");
+    set_class(text, "announcement-text");
+    append_child(text, create_text("Sigil 0.3.0 — Native symbols, SIMD/CUDA backends, LSP, formatter"));
+    append_child(banner, text);
+
+    ≔ link! = create_element("a");
+    set_class(link, "announcement-link");
+    set_attr(link, "href", "https://github.com/Daemoniorum-LLC/sigil-lang/releases");
+    append_child(link, create_text("Release notes →"));
+    append_child(banner, link);
+
+    append_child(wrap, banner);
+    wrap
+}
+
+rite features_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "features-section");
+
+    ≔ h2! = create_element("h2");
+    ≔ heading! = create_text("Language Features");
+    append_child(h2, heading);
+    append_child(section, h2);
+
+    ≔ grid! = create_element("div");
+    set_class(grid, "features-grid");
+
+    // Feature 1: Evidentiality
+    ≔ f1! = create_element("div");
+    set_class(f1, "feature-card");
+    ≔ f1_title! = create_element("h3");
+    ≔ f1_title_text! = create_text("Evidentiality Markers");
+    append_child(f1_title, f1_title_text);
+    append_child(f1, f1_title);
+    ≔ f1_desc! = create_element("p");
+    ≔ f1_desc_text! = create_text("Track data provenance at the type level with !, ?, ~, and markers.");
+    append_child(f1_desc, f1_desc_text);
+    append_child(f1, f1_desc);
+    append_child(grid, f1);
+
+    // Feature 2: Morpheme Operators
+    ≔ f2! = create_element("div");
+    set_class(f2, "feature-card");
+    ≔ f2_title! = create_element("h3");
+    ≔ f2_title_text! = create_text("Morpheme Operators");
+    append_child(f2_title, f2_title_text);
+    append_child(f2, f2_title);
+    ≔ f2_desc! = create_element("p");
+    ≔ f2_desc_text! = create_text("Parallel pipelines, async composition, and functional transforms built into syntax.");
+    append_child(f2_desc, f2_desc_text);
+    append_child(f2, f2_desc);
+    append_child(grid, f2);
+
+    // Feature 3: WASM Target
+    ≔ f3! = create_element("div");
+    set_class(f3, "feature-card");
+    ≔ f3_title! = create_element("h3");
+    ≔ f3_title_text! = create_text("WebAssembly Native");
+    append_child(f3_title, f3_title_text);
+    append_child(f3, f3_title);
+    ≔ f3_desc! = create_element("p");
+    ≔ f3_desc_text! = create_text("Compile directly to WASM for web, edge, and embedded deployments.");
+    append_child(f3_desc, f3_desc_text);
+    append_child(f3, f3_desc);
+    append_child(grid, f3);
+
+    // Feature 4: Self-Hosting
+    ≔ f4! = create_element("div");
+    set_class(f4, "feature-card");
+    ≔ f4_title! = create_element("h3");
+    ≔ f4_title_text! = create_text("Self-Hosting Compiler");
+    append_child(f4_title, f4_title_text);
+    append_child(f4, f4_title);
+    ≔ f4_desc! = create_element("p");
+    ≔ f4_desc_text! = create_text("The Sigil compiler is written in Sigil - fixed point achieved January 2026.");
+    append_child(f4_desc, f4_desc_text);
+    append_child(f4, f4_desc);
+    append_child(grid, f4);
+
+    append_child(section, grid);
+    section
+}
+
+rite code_density_section() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "code-density-section");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text("Code Density"));
+    append_child(section, h2);
+
+    ≔ desc! = create_element("p");
+    set_class(desc, "section-desc");
+    append_child(desc, create_text("Sigil's syntax reduces boilerplate while maintaining full type safety."));
+    append_child(section, desc);
+
+    // Metrics row
+    ≔ metrics! = create_element("div");
+    set_class(metrics, "code-stats");
+
+    ≔ stat1! = create_element("div");
+    set_class(stat1, "stat");
+    ≔ stat1_num! = create_element("span");
+    set_class(stat1_num, "stat-number");
+    append_child(stat1_num, create_text("38%"));
+    append_child(stat1, stat1_num);
+    ≔ stat1_label! = create_element("span");
+    set_class(stat1_label, "stat-label");
+    append_child(stat1_label, create_text("fewer lines"));
+    append_child(stat1, stat1_label);
+    append_child(metrics, stat1);
+
+    ≔ stat2! = create_element("div");
+    set_class(stat2, "stat");
+    ≔ stat2_num! = create_element("span");
+    set_class(stat2_num, "stat-number");
+    append_child(stat2_num, create_text("47%"));
+    append_child(stat2, stat2_num);
+    ≔ stat2_label! = create_element("span");
+    set_class(stat2_label, "stat-label");
+    append_child(stat2_label, create_text("less code"));
+    append_child(stat2, stat2_label);
+    append_child(metrics, stat2);
+
+    ≔ stat3! = create_element("div");
+    set_class(stat3, "stat");
+    ≔ stat3_num! = create_element("span");
+    set_class(stat3_num, "stat-number");
+    append_child(stat3_num, create_text("100%"));
+    append_child(stat3, stat3_num);
+    ≔ stat3_label! = create_element("span");
+    set_class(stat3_label, "stat-label");
+    append_child(stat3_label, create_text("type safe"));
+    append_child(stat3, stat3_label);
+    append_child(metrics, stat3);
+
+    append_child(section, metrics);
+
+    // Code comparison
+    ≔ comparison! = create_element("div");
+    set_class(comparison, "code-comparison");
+
+    // TypeScript panel
+    ≔ ts_panel! = create_element("div");
+    set_class(ts_panel, "code-panel ts-panel");
+    ≔ ts_header! = create_element("div");
+    set_class(ts_header, "code-header");
+    append_child(ts_header, create_text("TypeScript — 21 lines"));
+    append_child(ts_panel, ts_header);
+    ≔ ts_pre! = create_element("pre");
+    set_class(ts_pre, "code-block");
+    ≔ ts_code! = create_text(
+        "interface Todo {\n" ++
+        "  id: number;\n" ++
+        "  title: string;\n" ++
+        "  done: boolean;\n" ++
+        "}\n\n" ++
+        "const todos: Todo[] = [];\n" ++
+        "let nextId = 1;\n\n" ++
+        "function add(title: string): Todo {\n" ++
+        "  const t: Todo = {\n" ++
+        "    id: nextId++,\n" ++
+        "    title,\n" ++
+        "    done: false\n" ++
+        "  };\n" ++
+        "  todos.push(t);\n" ++
+        "  return t;\n" ++
+        "}\n\n" ++
+        "function toggle(id: number): void {\n" ++
+        "  const t = todos.find(x => x.id === id);\n" ++
+        "  if (t) t.done = !t.done;\n" ++
+        "}"
+    );
+    append_child(ts_pre, ts_code);
+    append_child(ts_panel, ts_pre);
+    append_child(comparison, ts_panel);
+
+    // Sigil panel
+    ≔ sg_panel! = create_element("div");
+    set_class(sg_panel, "code-panel sigil-panel");
+    ≔ sg_header! = create_element("div");
+    set_class(sg_header, "code-header");
+    append_child(sg_header, create_text("Sigil — 13 lines"));
+    append_child(sg_panel, sg_header);
+    ≔ sg_pre! = create_element("pre");
+    set_class(sg_pre, "code-block");
+    ≔ sg_code! = create_text(
+        "sigil Todo { id: i32!, title: Str!, done: bool! }\n\n" ++
+        "≔ todos: Vec<Todo>! = vec![];\n" ++
+        "≔ next: i32! = 1;\n\n" ++
+        "rite add(title: Str!) → Todo! {\n" ++
+        "    ≔ t! = Todo { id: next, title, done: false };\n" ++
+        "    next += 1; todos.push(t); t\n" ++
+        "}\n\n" ++
+        "rite toggle(id: i32!) {\n" ++
+        "    todos.find(|x| x.id == id)?.done ^= true;\n" ++
+        "}"
+    );
+    append_child(sg_pre, sg_code);
+    append_child(sg_panel, sg_pre);
+    append_child(comparison, sg_panel);
+
+    append_child(section, comparison);
+    section
+}
+
+rite code_example() → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "code-section");
+
+    ≔ h2! = create_element("h2");
+    ≔ heading! = create_text("Evidentiality in Action");
+    append_child(h2, heading);
+    append_child(section, h2);
+
+    ≔ desc! = create_element("p");
+    set_class(desc, "code-desc");
+    ≔ desc_text! = create_text("Sigil tracks where data comes from at the type level:");
+    append_child(desc, desc_text);
+    append_child(section, desc);
+
+    ≔ pre! = create_element("pre");
+    set_class(pre, "code-block");
+
+    ≔ code! = create_text(
+        "// Evidentiality markers track data provenance\n" ++
+        "rite fetch_user(id: i64?) → User~ {\n" ++
+        "    // id is uncertain (?) - from user input\n" ++
+        "    // return is reported (~) - from external API\n" ++
+        "    ≔ response~ = http·get(url);\n" ++
+        "    parse_user(response)\n" ++
+        "}\n\n" ++
+        "// Morpheme operators for data pipelines\n" ++
+        "≔ result = users~                  // ~ reported data from external source\n" ++
+        "    |φ{.active}                    // φ filter: keep only active users\n" ++
+        "    |φ{.age >= 18}                 // φ filter: keep adults only\n" ++
+        "    |τ{.normalize()}               // τ transform: normalize each record\n" ++
+        "    |σ·by{.created_at}             // σ sort: order by creation date\n" ++
+        "    |validate?                     // ? uncertain: validation may fail\n" ++
+        "    |τ{.to_public_profile()}       // τ transform: strip private fields\n" ++
+        "    |validate!                     // ! known: final validation must pass\n"
+    );
+    append_child(pre, code);
+    append_child(section, pre);
+
+    section
+}
+
+// Footer link helpers
+rite footer_link(text: str!, href: str!) → i32! {
+    ≔ li! = create_element("li");
+    ≔ a! = create_element("a");
+    set_attr(a, "href", href);
+    append_child(a, create_text(text));
+    append_child(li, a);
+    li
+}
+
+rite footer_link_ext(text: str!, href: str!) → i32! {
+    ≔ li! = create_element("li");
+    ≔ a! = create_element("a");
+    set_attr(a, "href", href);
+    set_attr(a, "target", "_blank");
+    set_attr(a, "rel", "noopener noreferrer");
+    append_child(a, create_text(text));
+    ≔ arrow! = create_element("span");
+    set_class(arrow, "external-arrow");
+    append_child(arrow, create_text(" ↗"));
+    append_child(a, arrow);
+    append_child(li, a);
+    li
+}
+
+rite footer_column(title: str!) → i32! {
+    ≔ col! = create_element("div");
+    set_class(col, "footer-column");
+    ≔ h4! = create_element("h4");
+    append_child(h4, create_text(title));
+    append_child(col, h4);
+    col
+}
+
+rite footer() → i32! {
+    ≔ ft! = create_element("footer");
+    set_class(ft, "site-footer");
+
+    // Brand section with logo and tagline
+    ≔ brand_section! = create_element("div");
+    set_class(brand_section, "footer-brand");
+    ≔ brand_link! = create_element("a");
+    set_class(brand_link, "footer-brand-link");
+    set_attr(brand_link, "href", "/");
+    ≔ brand_logo! = create_element("img");
+    set_class(brand_logo, "footer-logo");
+    set_attr(brand_logo, "src", "/sigil-logo.svg");
+    set_attr(brand_logo, "alt", "Sigil");
+    append_child(brand_link, brand_logo);
+    ≔ brand_name! = create_element("span");
+    set_class(brand_name, "footer-brand-name");
+    append_child(brand_name, create_text("Sigil"));
+    append_child(brand_link, brand_name);
+    append_child(brand_section, brand_link);
+    ≔ tagline! = create_element("p");
+    set_class(tagline, "footer-tagline");
+    append_child(tagline, create_text("A programming language that knows which data to trust."));
+    append_child(brand_section, tagline);
+    append_child(ft, brand_section);
+
+    ≔ container! = create_element("div");
+    set_class(container, "footer-container");
+
+    // Learn column
+    ≔ learn_col! = footer_column("Learn");
+    ≔ learn_ul! = create_element("ul");
+    append_child(learn_ul, footer_link("Tutorial", "/pages/learn.html"));
+    append_child(learn_ul, footer_link("Documentation", "/pages/docs.html"));
+    append_child(learn_ul, footer_link("Playground", "/playground/"));
+    append_child(learn_ul, footer_link("Examples", "/pages/examples.html"));
+    append_child(learn_ul, footer_link("Reference", "/pages/docs.html#reference"));
+    append_child(learn_col, learn_ul);
+    append_child(container, learn_col);
+
+    // Agent Infrastructure column
+    ≔ agent_col! = footer_column("Agent Infrastructure");
+    ≔ agent_ul! = create_element("ul");
+    append_child(agent_ul, footer_link("The Pattern", "/pages/pattern.html"));
+    append_child(agent_ul, footer_link("Built on Sigil", "/pages/built-on-sigil.html"));
+    append_child(agent_ul, footer_link_ext("Releases", "https://github.com/Daemoniorum-LLC/sigil-lang/releases"));
+    append_child(agent_col, agent_ul);
+    append_child(container, agent_col);
+
+    // Community column
+    ≔ community_col! = footer_column("Community");
+    ≔ community_ul! = create_element("ul");
+    append_child(community_ul, footer_link_ext("GitHub", "https://github.com/Daemoniorum-LLC/sigil-lang"));
+    append_child(community_ul, footer_link_ext("Discussions", "https://github.com/Daemoniorum-LLC/sigil-lang/discussions"));
+    append_child(community_ul, footer_link_ext("Issues", "https://github.com/Daemoniorum-LLC/sigil-lang/issues"));
+    append_child(community_ul, footer_link("Contributing", "/pages/contributing.html"));
+    append_child(community_col, community_ul);
+    append_child(container, community_col);
+
+    // Daemoniorum column
+    ≔ daemon_col! = footer_column("Daemoniorum");
+    ≔ daemon_ul! = create_element("ul");
+    append_child(daemon_ul, footer_link_ext("Company", "https://www.daemoniorum.com"));
+    append_child(daemon_ul, footer_link_ext("Platform Docs", "https://docs.daemoniorum.com"));
+    append_child(daemon_col, daemon_ul);
+    append_child(container, daemon_col);
+
+    append_child(ft, container);
+
+    // Copyright
+    ≔ copyright! = create_element("div");
+    set_class(copyright, "footer-copyright");
+    append_child(copyright, create_text("© 2025-2026 Daemoniorum LLC"));
+    append_child(ft, copyright);
+
+    ft
+}
+
+// === Main App ===
+
+rite app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    // Page content wrapper
+    ≔ content! = create_element("div");
+    set_class(content, "page-content");
+    append_child(content, hero());
+    append_child(content, features_section());
+    append_child(content, problem_section());
+    append_child(content, evidentiality_section());
+    append_child(content, morpheme_section());
+    append_child(content, agent_section());
+    append_child(content, why_sigil_section());
+    append_child(content, code_density_section());
+    append_child(content, ecosystem_section());
+    append_child(content, getting_started_section());
+    append_child(root, content);
+
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main() {
+    console_log_i64(42);
+    ≔ root_element! = app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Learn Page
+// =============================================================================
+
+rite learn_progress_bar() → i32! {
+    ≔ bar! = create_element("div");
+    set_class(bar, "progress-bar");
+
+    // Unrolled loop - 5 progress steps
+    ≔ step1! = create_element("div");
+    set_class(step1, "progress-step");
+    append_child(bar, step1);
+
+    ≔ step2! = create_element("div");
+    set_class(step2, "progress-step");
+    append_child(bar, step2);
+
+    ≔ step3! = create_element("div");
+    set_class(step3, "progress-step");
+    append_child(bar, step3);
+
+    ≔ step4! = create_element("div");
+    set_class(step4, "progress-step");
+    append_child(bar, step4);
+
+    ≔ step5! = create_element("div");
+    set_class(step5, "progress-step");
+    append_child(bar, step5);
+
+    bar
+}
+
+rite learn_chapter(num: str!, title: str!, content: i32!) → i32! {
+    ≔ chapter! = create_element("article");
+    set_class(chapter, "chapter");
+
+    ≔ header! = create_element("header");
+    set_class(header, "chapter-header");
+
+    ≔ number! = create_element("span");
+    set_class(number, "chapter-number");
+    append_child(number, create_text("Chapter " ++ num));
+    append_child(header, number);
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text(title));
+    append_child(header, h2);
+
+    append_child(chapter, header);
+    append_child(chapter, content);
+
+    chapter
+}
+
+rite learn_code_block(code: str!, lang: str!) → i32! {
+    ≔ block! = create_element("div");
+    set_class(block, "code-block");
+
+    ≔ pre! = create_element("pre");
+    ≔ code_el! = create_element("code");
+    append_child(code_el, create_text(code));
+    append_child(pre, code_el);
+    append_child(block, pre);
+
+    block
+}
+
+rite learn_chapter_1() → i32! {
+    ≔ content! = create_element("div");
+
+    ≔ p1! = create_element("p");
+    set_class(p1, "prose");
+    append_child(p1, create_text("Welcome to Sigil! This tutorial will guide you through the fundamentals of the language."));
+    append_child(content, p1);
+
+    append_child(content, learn_code_block(
+        "# Clone and build\ngit clone https://github.com/Daemoniorum-LLC/sigil-lang\ncd sigil-lang/parser && cargo build --release",
+        "bash"
+    ));
+
+    append_child(content, learn_code_block(
+        "// hello.sigil\nrite main() {\n    println(\"Hello, Sigil!\")\n}",
+        "sigil"
+    ));
+
+    content
+}
+
+rite learn_chapter_2() → i32! {
+    ≔ content! = create_element("div");
+
+    ≔ p1! = create_element("p");
+    set_class(p1, "prose");
+    append_child(p1, create_text("Sigil's type system tracks where data comes from."));
+    append_child(content, p1);
+
+    append_child(content, learn_code_block(
+        "≔ computed!  = 2 + 2         // ! Known\n≔ maybe?     = find_user(id) // ? Uncertain\n≔ external~  = api·fetch()   // ~ Reported",
+        "sigil"
+    ));
+
+    content
+}
+
+rite learn_chapter_3() → i32! {
+    ≔ content! = create_element("div");
+
+    ≔ p1! = create_element("p");
+    set_class(p1, "prose");
+    append_child(p1, create_text("Greek letters for expressive data pipelines."));
+    append_child(content, p1);
+
+    append_child(content, learn_code_block(
+        "items |φ{.active}       // φ filter\nitems |τ{.transform()}  // τ transform\nitems |σ·by{.date}      // σ sort",
+        "sigil"
+    ));
+
+    content
+}
+
+rite learn_chapter_4() → i32! {
+    ≔ content! = create_element("div");
+
+    ≔ p1! = create_element("p");
+    set_class(p1, "prose");
+    append_child(p1, create_text("Structs and enums with evidentiality."));
+    append_child(content, p1);
+
+    append_child(content, learn_code_block(
+        "☉ sigil User {\n    id: !i64,\n    name: !String,\n}",
+        "sigil"
+    ));
+
+    content
+}
+
+rite learn_chapter_5() → i32! {
+    ≔ content! = create_element("div");
+
+    ≔ p1! = create_element("p");
+    set_class(p1, "prose");
+    append_child(p1, create_text("Multiple compilation targets: interpreter, JIT, native, and WASM."));
+    append_child(content, p1);
+
+    append_child(content, learn_code_block(
+        "sigil run app.sigil      # Interpreter\nsigil compile app.sigil  # Native binary\nsigil wasm app.sigil     # WebAssembly",
+        "bash"
+    ));
+
+    ≔ actions! = create_element("div");
+    set_class(actions, "chapter-actions");
+    ≔ btn! = create_element("a");
+    set_class(btn, "button button-primary");
+    set_attr(btn, "href", "/pages/docs.html");
+    append_child(btn, create_text("Read Documentation"));
+    append_child(actions, btn);
+    append_child(content, actions);
+
+    content
+}
+
+rite learn_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ content! = create_element("div");
+    set_class(content, "learn-content");
+
+    append_child(content, learn_progress_bar());
+    append_child(content, learn_chapter("1", "Getting Started", learn_chapter_1()));
+    append_child(content, learn_chapter("2", "Evidentiality", learn_chapter_2()));
+    append_child(content, learn_chapter("3", "Morpheme Operators", learn_chapter_3()));
+    append_child(content, learn_chapter("4", "Data Structures", learn_chapter_4()));
+    append_child(content, learn_chapter("5", "Building Applications", learn_chapter_5()));
+
+    append_child(root, content);
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main_learn() {
+    ≔ root_element! = learn_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Docs Page
+// =============================================================================
+
+rite docs_sidebar_section(title: str!, links: i32!) → i32! {
+    ≔ section! = create_element("div");
+    set_class(section, "sidebar-section");
+
+    ≔ h4! = create_element("h4");
+    append_child(h4, create_text(title));
+    append_child(section, h4);
+
+    append_child(section, links);
+
+    section
+}
+
+rite docs_sidebar_links(items: str!) → i32! {
+    ≔ nav! = create_element("nav");
+    // For now, just show placeholder links
+    ≔ link! = create_element("a");
+    set_attr(link, "href", "#");
+    set_class(link, "sidebar-link");
+    append_child(link, create_text(items));
+    append_child(nav, link);
+    nav
+}
+
+rite docs_sidebar() → i32! {
+    ≔ sidebar! = create_element("aside");
+    set_class(sidebar, "docs-sidebar");
+
+    append_child(sidebar, docs_sidebar_section("Getting Started", docs_sidebar_links("Introduction")));
+    append_child(sidebar, docs_sidebar_section("Language", docs_sidebar_links("Types")));
+    append_child(sidebar, docs_sidebar_section("Evidentiality", docs_sidebar_links("Markers")));
+    append_child(sidebar, docs_sidebar_section("Morphemes", docs_sidebar_links("Filter")));
+    append_child(sidebar, docs_sidebar_section("Standard Library", docs_sidebar_links("Collections")));
+    append_child(sidebar, docs_sidebar_section("Agent Infrastructure", docs_sidebar_links("Overview")));
+
+    sidebar
+}
+
+rite docs_highlight_item(title: str!, desc: str!) → i32! {
+    ≔ item! = create_element("div");
+    set_class(item, "highlight-item");
+
+    ≔ h4! = create_element("h4");
+    append_child(h4, create_text(title));
+    append_child(item, h4);
+
+    ≔ p! = create_element("p");
+    append_child(p, create_text(desc));
+    append_child(item, p);
+
+    item
+}
+
+rite docs_table_row(marker: str!, meaning: str!) → i32! {
+    ≔ row! = create_element("tr");
+
+    ≔ td1! = create_element("td");
+    set_class(td1, "marker-cell");
+    append_child(td1, create_text(marker));
+    append_child(row, td1);
+
+    ≔ td2! = create_element("td");
+    append_child(td2, create_text(meaning));
+    append_child(row, td2);
+
+    row
+}
+
+rite docs_agent_layer(name: str!, components: str!) → i32! {
+    ≔ layer! = create_element("div");
+    set_class(layer, "agent-layer");
+
+    ≔ h4! = create_element("h4");
+    append_child(h4, create_text(name));
+    append_child(layer, h4);
+
+    ≔ p! = create_element("p");
+    append_child(p, create_text(components));
+    append_child(layer, p);
+
+    layer
+}
+
+rite docs_content() → i32! {
+    ≔ article! = create_element("article");
+    set_class(article, "docs-content");
+
+    ≔ h1! = create_element("h1");
+    set_attr(h1, "id", "introduction");
+    append_child(h1, create_text("Sigil Documentation"));
+    append_child(article, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    append_child(lead, create_text("The complete reference for the Sigil programming language."));
+    append_child(article, lead);
+
+    // Feature highlights
+    ≔ highlights! = create_element("div");
+    set_class(highlights, "feature-highlight");
+    append_child(highlights, docs_highlight_item("Evidentiality", "Track data provenance"));
+    append_child(highlights, docs_highlight_item("Morphemes", "Data pipelines"));
+    append_child(highlights, docs_highlight_item("Agents", "AI infrastructure"));
+    append_child(article, highlights);
+
+    // Marker table
+    ≔ table! = create_element("table");
+    set_class(table, "docs-table");
+
+    ≔ thead! = create_element("thead");
+    ≔ header_row! = create_element("tr");
+    ≔ th1! = create_element("th");
+    append_child(th1, create_text("Marker"));
+    append_child(header_row, th1);
+    ≔ th2! = create_element("th");
+    append_child(th2, create_text("Meaning"));
+    append_child(header_row, th2);
+    append_child(thead, header_row);
+    append_child(table, thead);
+
+    ≔ tbody! = create_element("tbody");
+    append_child(tbody, docs_table_row("!", "Known"));
+    append_child(tbody, docs_table_row("?", "Uncertain"));
+    append_child(tbody, docs_table_row("~", "Reported"));
+    append_child(table, tbody);
+
+    append_child(article, table);
+
+    // Agent grid
+    ≔ agent_grid! = create_element("div");
+    set_class(agent_grid, "agent-overview-grid");
+    append_child(agent_grid, docs_agent_layer("Cognition", "Engram, Omen, Gnosis"));
+    append_child(article, agent_grid);
+
+    article
+}
+
+rite docs_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ layout! = create_element("div");
+    set_class(layout, "docs-layout");
+
+    append_child(layout, docs_sidebar());
+    append_child(layout, docs_content());
+
+    append_child(root, layout);
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main_docs() {
+    ≔ root_element! = docs_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Examples Page
+// =============================================================================
+
+rite examples_sidebar() → i32! {
+    ≔ sidebar! = create_element("aside");
+    set_class(sidebar, "docs-sidebar");
+
+    append_child(sidebar, docs_sidebar_section("Basics", docs_sidebar_links("Hello World")));
+    append_child(sidebar, docs_sidebar_section("Evidentiality", docs_sidebar_links("Markers")));
+    append_child(sidebar, docs_sidebar_section("Applications", docs_sidebar_links("CLI Tool")));
+
+    sidebar
+}
+
+rite examples_content() → i32! {
+    ≔ article! = create_element("article");
+    set_class(article, "docs-content");
+
+    ≔ h1! = create_element("h1");
+    append_child(h1, create_text("Code Examples"));
+    append_child(article, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    append_child(lead, create_text("Learn Sigil through practical code examples."));
+    append_child(article, lead);
+
+    // Example 1
+    ≔ h3_1! = create_element("h3");
+    append_child(h3_1, create_text("Hello World"));
+    append_child(article, h3_1);
+    append_child(article, learn_code_block("rite main() {\n    println(\"Hello, Sigil!\")\n}", "sigil"));
+
+    // Example 2
+    ≔ h3_2! = create_element("h3");
+    append_child(h3_2, create_text("Variables with Evidentiality"));
+    append_child(article, h3_2);
+    append_child(article, learn_code_block("≔ computed!  = 2 + 2        // Known\n≔ maybe?     = find_user(1) // Uncertain\n≔ external~  = api·fetch()  // Reported", "sigil"));
+
+    // Example 3
+    ≔ h3_3! = create_element("h3");
+    append_child(h3_3, create_text("Data Pipeline"));
+    append_child(article, h3_3);
+    append_child(article, learn_code_block("users\n    |φ{.active}\n    |τ{.normalize()}\n    |σ·by{.created_at}\n    |validate!", "sigil"));
+
+    // Example 4
+    ≔ h3_4! = create_element("h3");
+    append_child(h3_4, create_text("Struct Definition"));
+    append_child(article, h3_4);
+    append_child(article, learn_code_block("☉ sigil User {\n    id: !i64,\n    name: !String,\n}", "sigil"));
+
+    // Example 5
+    ≔ h3_5! = create_element("h3");
+    append_child(h3_5, create_text("HTTP Server"));
+    append_child(article, h3_5);
+    append_child(article, learn_code_block("async rite handle_user(req: Request~) → Response! {\n    ≔ id~ = req·param(\"id\")\n    ≔ user? = db·find_user(id).await\n    match user {\n        Some(u) => Response·json(u),\n        None => Response·not_found()\n    }\n}", "sigil"));
+
+    article
+}
+
+rite examples_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ layout! = create_element("div");
+    set_class(layout, "docs-layout");
+
+    append_child(layout, examples_sidebar());
+    append_child(layout, examples_content());
+
+    append_child(root, layout);
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main_examples() {
+    ≔ root_element! = examples_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Playground Page
+// =============================================================================
+
+rite playground_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ hero! = create_element("div");
+    set_class(hero, "playground-hero");
+
+    ≔ status! = create_element("span");
+    set_class(status, "playground-status");
+    append_child(status, create_text("Coming Soon"));
+    append_child(hero, status);
+
+    ≔ title! = create_element("h1");
+    set_class(title, "playground-title");
+    append_child(title, create_text("Sigil Playground"));
+    append_child(hero, title);
+
+    ≔ desc! = create_element("p");
+    set_class(desc, "playground-description");
+    append_child(desc, create_text("Interactive browser-based Sigil environment."));
+    append_child(hero, desc);
+
+    ≔ actions! = create_element("div");
+    set_class(actions, "playground-actions");
+
+    ≔ btn1! = create_element("a");
+    set_class(btn1, "button button-primary");
+    set_attr(btn1, "href", "/pages/learn.html");
+    append_child(btn1, create_text("Learn Sigil"));
+    append_child(actions, btn1);
+
+    ≔ btn2! = create_element("a");
+    set_class(btn2, "button button-secondary");
+    set_attr(btn2, "href", "/pages/docs.html");
+    append_child(btn2, create_text("Docs"));
+    append_child(actions, btn2);
+
+    append_child(hero, actions);
+
+    ≔ preview! = create_element("div");
+    set_class(preview, "playground-preview");
+    ≔ preview_code! = create_element("div");
+    set_class(preview_code, "preview-code");
+    append_child(preview_code, learn_code_block("rite main() { println(\"Hello!\") }", "sigil"));
+    append_child(preview, preview_code);
+    append_child(hero, preview);
+
+    ≔ features! = create_element("ul");
+    set_class(features, "feature-list");
+    ≔ li! = create_element("li");
+    append_child(li, create_text("Browser execution"));
+    append_child(features, li);
+    append_child(hero, features);
+
+    ≔ notify! = create_element("div");
+    set_class(notify, "notify-form");
+    ≔ notify_btn! = create_element("a");
+    set_class(notify_btn, "notify-btn");
+    set_attr(notify_btn, "href", "https://github.com/Daemoniorum-LLC/sigil-lang");
+    append_child(notify_btn, create_text("Star on GitHub"));
+    append_child(notify, notify_btn);
+    append_child(hero, notify);
+
+    append_child(root, hero);
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main_playground() {
+    ≔ root_element! = playground_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Agents Page
+// =============================================================================
+
+rite agents_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ content! = create_element("div");
+    set_class(content, "page-content agents-page");
+
+    ≔ hero! = create_element("section");
+    set_class(hero, "agents-hero");
+
+    ≔ h1! = create_element("h1");
+    append_child(h1, create_text("Agent Infrastructure"));
+    append_child(hero, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    append_child(lead, create_text("Sigil's 9-layer architecture for building autonomous AI systems."));
+    append_child(hero, lead);
+
+    append_child(content, hero);
+
+    // Layer grid
+    ≔ grid! = create_element("div");
+    set_class(grid, "agent-layers-grid");
+
+    append_child(grid, agent_layer_card("Layer 9", "Embodiment", "Physical world interaction"));
+    append_child(grid, agent_layer_card("Layer 8", "Society", "Multi-agent coordination"));
+    append_child(grid, agent_layer_card("Layer 7", "Identity", "Persistent self-model"));
+    append_child(grid, agent_layer_card("Layer 6", "Goals", "Objective management"));
+    append_child(grid, agent_layer_card("Layer 5", "Planning", "Strategy formulation"));
+    append_child(grid, agent_layer_card("Layer 4", "Reasoning", "Inference and logic"));
+    append_child(grid, agent_layer_card("Layer 3", "Memory", "Engram, Omen, Gnosis"));
+    append_child(grid, agent_layer_card("Layer 2", "Perception", "Input processing"));
+    append_child(grid, agent_layer_card("Layer 1", "Foundation", "Core runtime"));
+
+    append_child(content, grid);
+
+    append_child(root, content);
+    append_child(root, footer());
+
+    root
+}
+
+rite agent_layer_card(layer: str!, name: str!, desc: str!) → i32! {
+    ≔ card! = create_element("div");
+    set_class(card, "agent-layer-card");
+
+    ≔ layer_num! = create_element("span");
+    set_class(layer_num, "layer-number");
+    append_child(layer_num, create_text(layer));
+    append_child(card, layer_num);
+
+    ≔ h3! = create_element("h3");
+    append_child(h3, create_text(name));
+    append_child(card, h3);
+
+    ≔ p! = create_element("p");
+    append_child(p, create_text(desc));
+    append_child(card, p);
+
+    card
+}
+
+☉ rite main_agents() {
+    ≔ root_element! = agents_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Pattern Page
+// =============================================================================
+
+rite pattern_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ content! = create_element("div");
+    set_class(content, "page-content pattern-page");
+
+    ≔ hero! = create_element("section");
+    set_class(hero, "pattern-hero");
+
+    ≔ h1! = create_element("h1");
+    append_child(h1, create_text("The Pattern"));
+    append_child(hero, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    append_child(lead, create_text("The philosophy behind Sigil's design."));
+    append_child(hero, lead);
+
+    append_child(content, hero);
+
+    // Philosophy sections
+    ≔ section1! = create_element("section");
+    set_class(section1, "pattern-section");
+
+    ≔ h2_1! = create_element("h2");
+    append_child(h2_1, create_text("Data Has History"));
+    append_child(section1, h2_1);
+
+    ≔ p1! = create_element("p");
+    append_child(p1, create_text("Every value in Sigil carries information about where it came from. This isn't just metadata—it's enforced by the type system."));
+    append_child(section1, p1);
+
+    append_child(content, section1);
+
+    ≔ section2! = create_element("section");
+    set_class(section2, "pattern-section");
+
+    ≔ h2_2! = create_element("h2");
+    append_child(h2_2, create_text("Trust is Explicit"));
+    append_child(section2, h2_2);
+
+    ≔ p2! = create_element("p");
+    append_child(p2, create_text("External data (~) cannot silently become trusted data (!). The boundary must be explicitly crossed through validation."));
+    append_child(section2, p2);
+
+    append_child(content, section2);
+
+    ≔ section3! = create_element("section");
+    set_class(section3, "pattern-section");
+
+    ≔ h2_3! = create_element("h2");
+    append_child(h2_3, create_text("Pipelines Over Loops"));
+    append_child(section3, h2_3);
+
+    ≔ p3! = create_element("p");
+    append_child(p3, create_text("Morpheme operators (φ, τ, σ, ρ) express data transformations declaratively, making code more readable and reasoning about data flow easier."));
+    append_child(section3, p3);
+
+    append_child(content, section3);
+
+    append_child(root, content);
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main_pattern() {
+    ≔ root_element! = pattern_app();
+    mount(root_element, "#app");
+}

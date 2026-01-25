@@ -1,0 +1,274 @@
+//! DAEMONIORUM - Inner World (Headspace)
+//!
+//! The protagonist's internal mental landscape where alters
+//! exist, interact, and process trauma.
+
+use daemoniorum::core::{Location, Stream, Hazard};
+use daemoniorum::anima::AnimaState;
+
+// ============================================================================
+// THE INNER WORLD
+// ============================================================================
+
+/// The complete internal headspace
+pub headspace InnerWorld {
+
+    // ========================================================================
+    // SANCTUARY LOCATIONS
+    // ========================================================================
+
+    /// The Citadel - Central safe space where Council meets
+    location Citadel: Sanctuary {
+        description: "A towering obsidian fortress at the heart of the headspace",
+        safety_level: 1.0,
+        capacity: 8,
+
+        connections: [
+            stream!(Library, bidirectional: true, locked: false),
+            stream!(Gardens, bidirectional: true, locked: false),
+            stream!(Armory, bidirectional: true, locked: true),
+            stream!(Depths, bidirectional: false, locked: true),
+        ],
+
+        /// Council chamber within the Citadel
+        fn council_chamber() -> Room@! {
+            Room::new("Council Chamber")
+                .with_seats(8)
+                .with_protections(Protection::Full)
+        }
+
+        /// Emergency lockdown procedure
+        fn lockdown() -> LockdownResult! {
+            self.connections.iter_mut().for_each(|c| c.lock());
+            self.raise_shields();
+            LockdownResult::Secure
+        }
+    }
+
+    /// The Library - Stolas's domain, knowledge storage
+    location Library: Sanctuary {
+        description: "Infinite shelves of memories and learned knowledge",
+        safety_level: 0.9,
+        capacity: 4,
+
+        connections: [
+            stream!(Citadel, bidirectional: true),
+            stream!(MemoryVault, bidirectional: true, locked: true),
+            stream!(Archives, bidirectional: true),
+        ],
+
+        hazards: [
+            Hazard::forbidden_knowledge(trigger: "curiosity", damage: 0.1),
+        ],
+
+        /// Search the library for specific knowledge
+        fn search(query: Query) -> SearchResult@? {
+            let shelves = self.relevant_shelves(query);
+            shelves.iter()
+                .filter_map(|s| s.search(query))
+                .collect()
+        }
+    }
+
+    /// The Gardens - Meditation and recovery space
+    location Gardens: Sanctuary {
+        description: "Peaceful gardens with healing waters",
+        safety_level: 0.95,
+        capacity: 12,
+
+        connections: [
+            stream!(Citadel, bidirectional: true),
+            stream!(HealingPool, bidirectional: true),
+        ],
+
+        /// Meditate to recover stability
+        fn meditate(alter: Alter, duration: Duration) -> RecoveryResult@! {
+            let base_recovery = duration.as_minutes() * 0.01;
+            let bonus = if alter.preferred_reality == RealityLayer::Grounded {
+                0.1
+            } else {
+                0.0
+            };
+            alter.stability += base_recovery + bonus;
+            RecoveryResult::Success(alter.stability)
+        }
+    }
+
+    /// The Armory - Abaddon's domain, combat preparation
+    location Armory: Sanctuary {
+        description: "Walls lined with weapons and armor, forged from will",
+        safety_level: 0.8,
+        capacity: 4,
+        requires_alter: Abaddon,
+
+        connections: [
+            stream!(Citadel, bidirectional: true, locked: true),
+            stream!(TrainingGrounds, bidirectional: true),
+        ],
+
+        /// Prepare for combat
+        fn arm(alter: Alter) -> CombatReadiness@! {
+            requires alter.category == AlterCategory::Council;
+
+            let weapons = self.select_weapons(alter);
+            let armor = self.forge_armor(alter.anima);
+
+            CombatReadiness::new(weapons, armor)
+        }
+    }
+
+    // ========================================================================
+    // DANGEROUS LOCATIONS
+    // ========================================================================
+
+    /// The Depths - Where trauma is stored
+    location Depths: TraumaZone {
+        description: "Dark waters holding fragmented memories",
+        safety_level: 0.2,
+        capacity: 2,
+        danger_level: 0.8,
+
+        connections: [
+            stream!(Citadel, bidirectional: false, content: "emergency_exit"),
+            stream!(AbyssEdge, bidirectional: true, locked: true),
+        ],
+
+        hazards: [
+            Hazard::trauma_flashback(intensity: 0.6),
+            Hazard::dissociation_risk(threshold: 0.7),
+            Hazard::memory_fragment(volatile: true),
+        ],
+
+        /// Attempt to retrieve a buried memory
+        fn retrieve_memory(id: MemoryId) -> Memory@? {
+            requires system.stability > 0.5;
+
+            let fragment = self.locate_fragment(id)?;
+
+            // Processing trauma is risky
+            if fragment.trauma_level > 0.7 {
+                system.dissociation += 0.2;
+            }
+
+            fragment.reconstruct()
+        }
+    }
+
+    /// The Abyss Edge - Boundary of the unknown
+    location AbyssEdge: TraumaZone {
+        description: "Where the headspace ends and the void begins",
+        safety_level: 0.0,
+        capacity: 1,
+        danger_level: 1.0,
+
+        connections: [
+            stream!(Depths, bidirectional: true, locked: true),
+        ],
+
+        hazards: [
+            Hazard::void_exposure(damage: 0.3),
+            Hazard::fragmentation_risk(threshold: 0.3),
+            Hazard::identity_dissolution(rate: 0.1),
+        ],
+
+        /// Only trauma holders should venture here
+        fn descend(alter: Alter) -> DescentResult@‽ {
+            requires alter.category == AlterCategory::TraumaHolder;
+
+            let tether = system.create_tether(alter);
+            let depth = self.measure_depth();
+
+            if depth > alter.capacity {
+                return DescentResult::TooDeep;
+            }
+
+            DescentResult::Descended(tether)
+        }
+    }
+
+    // ========================================================================
+    // NAVIGATION
+    // ========================================================================
+
+    /// Navigate between locations
+    fn navigate(from: Location, to: Location) -> NavigationResult@? {
+        // Check if path exists
+        let path = self.find_path(from, to)?;
+
+        // Check if all streams are unlocked
+        for stream in path.streams() {
+            if stream.locked {
+                return NavigationResult::Blocked(stream);
+            }
+        }
+
+        // Check safety requirements
+        let min_safety = path.minimum_safety();
+        if min_safety < 0.3 && system.stability < 0.5 {
+            return NavigationResult::TooRisky;
+        }
+
+        // Perform navigation
+        for location in path.locations() {
+            self.enter(location);
+            location.on_enter(system.current_fronter())?;
+        }
+
+        NavigationResult::Arrived(to)
+    }
+
+    /// Emergency evacuation to Citadel
+    fn emergency_evacuate() -> EvacuationResult! {
+        let current = self.current_location;
+
+        // Find fastest path to safety
+        let escape_path = self.find_emergency_exit(current, Citadel)?;
+
+        // Force navigation, ignoring some hazards
+        for location in escape_path {
+            self.force_transit(location);
+        }
+
+        Citadel.lockdown();
+        EvacuationResult::Safe
+    }
+}
+
+// ============================================================================
+// MEMORY VAULT
+// ============================================================================
+
+/// Special location for important memories
+location MemoryVault: Sanctuary {
+    description: "Crystallized memories preserved for safety",
+    safety_level: 1.0,
+    capacity: 2,
+    requires_permission: council.majority(),
+
+    connections: [
+        stream!(Library, bidirectional: true, locked: true),
+    ],
+
+    /// Store a memory safely
+    fn store(memory: Memory, protection: Protection) -> StorageResult@! {
+        requires memory.processed;
+
+        let crystal = self.crystallize(memory);
+        let location = self.find_slot(crystal.size);
+
+        location.place(crystal, protection);
+        StorageResult::Stored(crystal.id)
+    }
+
+    /// Retrieve a stored memory
+    fn retrieve(id: CrystalId) -> Memory@! {
+        let crystal = self.find_crystal(id)?;
+        let permission = council.vote_retrieval(crystal)?;
+
+        if permission.approved {
+            crystal.thaw()
+        } else {
+            Memory::Denied(permission.reason)
+        }
+    }
+}

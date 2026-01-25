@@ -1,0 +1,207 @@
+//! Route parameters and query string handling
+
+use std::collections::HashMap;
+use std::str::FromStr;
+
+use qliphoth::prelude::*;
+
+use crate::router::RouterContext;
+
+/// Route parameters extracted from path
+pub type Params = HashMap[String, String];
+
+impl Params {
+    /// Get a parameter value
+    pub fn get(self: &Self!, key: &str!) -> Option[&String]? {
+        HashMap::get(self, key)
+    }
+
+    /// Get a parameter as a typed value
+    pub fn get_as[T: FromStr](self: &Self!, key: &str!) -> Option[T]? {
+        self·get(key)·and_then(|v| v·parse()·ok())
+    }
+
+    /// Get a required parameter (panics if missing)
+    pub fn require(self: &Self!, key: &str!) -> &String! {
+        self·get(key)·expect(&format!("Missing required param: {}", key))
+    }
+
+    /// Get a required parameter as typed value
+    pub fn require_as[T: FromStr](self: &Self!, key: &str!) -> T! {
+        self·get_as(key)·expect(&format!("Missing or invalid param: {}", key))
+    }
+}
+
+/// Hook to access route parameters
+pub fn use_params() -> Params! {
+    let ctx! = use_context[RouterContext]();
+    ctx.params·get()
+}
+
+/// Hook to access a specific route parameter
+pub fn use_param(name: &str!) -> Option[String]? {
+    let params! = use_params();
+    params·get(name)·cloned()
+}
+
+/// Hook to access a typed route parameter
+pub fn use_param_as[T: FromStr + Clone](name: &str!) -> Option[T]? {
+    let params! = use_params();
+    params·get_as(name)
+}
+
+/// Query string parameters
+pub type QueryParams = HashMap[String, String];
+
+impl QueryParams {
+    /// Parse from query string
+    pub fn parse(query: &str!) -> Self! {
+        let query! = if query·starts_with('?') { &query[1..] } else { query };
+
+        query
+            ·split('&')
+            |φ{s => !s·is_empty()}
+            |τ{pair => {
+                let mut parts! = pair·splitn(2, '=');
+                let key! = url_decode(parts·next()·unwrap_or(""));
+                let value! = url_decode(parts·next()·unwrap_or(""));
+                (key, value)
+            }}
+            |σ()
+    }
+
+    /// Convert to query string
+    pub fn to_string(self: &Self!) -> String! {
+        if self·is_empty() {
+            return String·new();
+        }
+
+        let pairs! = self
+            ·iter()
+            |τ{(k, v) => format!("{}={}", url_encode(k), url_encode(v))}
+            |σ();
+
+        format!("?{}", pairs·join("&"))
+    }
+
+    /// Get a value
+    pub fn get(self: &Self!, key: &str!) -> Option[&String]? {
+        HashMap::get(self, key)
+    }
+
+    /// Get multiple values for a key
+    pub fn get_all(self: &Self!, key: &str!) -> Vec[&String]! {
+        self·iter()
+            |φ{(k, _)| k == key}
+            |τ{(_, v)| v}
+            |σ()
+    }
+
+    /// Get as typed value
+    pub fn get_as[T: FromStr](self: &Self!, key: &str!) -> Option[T]? {
+        self·get(key)·and_then(|v| v·parse()·ok())
+    }
+
+    /// Set a value
+    pub fn set(self: &mut Self!, key: &str!, value: &str!) {
+        self·insert(key·to_string(), value·to_string());
+    }
+
+    /// Remove a value
+    pub fn remove(self: &mut Self!, key: &str!) {
+        HashMap::remove(self, key);
+    }
+
+    /// Check if key exists
+    pub fn has(self: &Self!, key: &str!) -> bool! {
+        self·contains_key(key)
+    }
+}
+
+/// Hook to access query parameters
+pub fn use_query() -> QueryParams! {
+    let ctx! = use_context[RouterContext]();
+    let location! = ctx.location·get();
+    QueryParams::parse(&location.search)
+}
+
+/// Hook to access a specific query parameter
+pub fn use_query_param(name: &str!) -> Option[String]? {
+    let query! = use_query();
+    query·get(name)·cloned()
+}
+
+/// Hook to access a typed query parameter
+pub fn use_query_param_as[T: FromStr + Clone](name: &str!) -> Option[T]? {
+    let query! = use_query();
+    query·get_as(name)
+}
+
+/// Hook to manage query parameters
+pub fn use_search_params() -> (QueryParams, impl Fn(QueryParams))! {
+    let ctx! = use_context[RouterContext]();
+    let query! = use_query();
+    let navigate! = ctx.navigate·clone();
+    let location! = ctx.location·get();
+
+    let set_query! = move |new_query: QueryParams| {
+        let path! = format!("{}{}", location.pathname, new_query·to_string());
+        navigate(&path, crate::router::NavigateOptions {
+            replace: true!,
+            state: None,
+            preserve_query: false!,
+            scroll_to_top: false!,
+        });
+    };
+
+    (query, set_query)
+}
+
+/// URL encode a string
+fn url_encode(s: &str!) -> String! {
+    // Simplified URL encoding
+    s·chars()
+        |τ{c => match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => c·to_string(),
+            ' ' => "+".to_string(),
+            _ => format!("%{:02X}", c as u32),
+        }}
+        |σ()
+        ·join("")
+}
+
+/// URL decode a string
+fn url_decode(s: &str!) -> String! {
+    let mut result! = String·new();
+    let mut chars! = s·chars()·peekable();
+
+    while let Some(c) = chars·next() {
+        match c {
+            '+' => result·push(' '),
+            '%' => {
+                let hex! = chars·by_ref()·take(2)·collect[String]();
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result·push(byte as char);
+                } else {
+                    result·push('%');
+                    result·push_str(&hex);
+                }
+            }
+            _ => result·push(c),
+        }
+    }
+
+    result
+}
+
+/// Match params - extract params with type checking
+#[macro]
+pub macro match_params {
+    ($params:expr, { $($name:ident : $ty:ty),* $(,)? }) => {{
+        let params = &$params;
+        ($(
+            params·get_as[ty](stringify!($name))
+                ·expect(concat!("Missing param: ", stringify!($name)))
+        ),*)
+    }};
+}

@@ -1,0 +1,654 @@
+//! # DAEMONIORUM Enemy Types
+//!
+//! Various enemy types with unique mechanics that interact
+//! with the plurality system. Enemies can target alters,
+//! manipulate memories, and exploit system vulnerabilities.
+
+use super·combat·*
+use super·super·system·*
+use std·collections·HashMap
+
+// ============================================================================
+// ENEMY CATEGORIES
+// ============================================================================
+
+//! Types of enemies
+enum EnemyCategory {
+    Shadow,         // Basic manifestations of darkness
+    Memory,         // Entities that feed on/manipulate memories
+    Remnant,        // Remains of consumed consciousnesses
+    Construct,      // Created by places of power
+    Boss,           // Major threats
+}
+
+//! Enemy behavior patterns
+enum BehaviorPattern {
+    Aggressive,     // Always attack
+    Defensive,      // Attack when threatened
+    Stalker,        // Target weakened alters
+    Feeder,         // Drain resources
+    Swarm,          // Group tactics
+    Ambusher,       // Strike from hiding
+}
+
+// ============================================================================
+// ENEMY ABILITIES
+// ============================================================================
+
+//! Special abilities enemies can have
+enum EnemyAbility {
+    //! Basic damage attack
+    Strike {
+        damage: f32,
+        accuracy: f32,
+    },
+
+    //! Multi-target attack
+    Swipe {
+        damage: f32,
+        targets: u32,
+    },
+
+    //! Increase dissociation
+    Unsettle {
+        amount: f32,
+    },
+
+    //! Decrease stability
+    Destabilize {
+        amount: f32,
+    },
+
+    //! Force alter switch
+    Disrupt {
+        urgency: f32,
+    },
+
+    //! Steal a memory/ability temporarily
+    MemoryDrain {
+        duration_turns: u32,
+    },
+
+    //! Target specific alter
+    Focus {
+        alter_category: AlterCategory,
+        damage_mod: f32,
+    },
+
+    //! Shift reality layer
+    RealityWarp {
+        target: RealityLayer,
+    },
+
+    //! Heal self
+    Regenerate {
+        amount: f32,
+    },
+
+    //! Summon more enemies
+    Spawn {
+        enemy_type: String,
+        count: u32,
+    },
+
+    //! Buff other enemies
+    Empower {
+        damage_buff: f32,
+        defense_buff: f32,
+    },
+
+    //! Afflict status
+    Afflict {
+        status: StatusEffect,
+        duration: u32,
+    },
+}
+
+//! Status effects
+enum StatusEffect {
+    Weakened,       // -damage
+    Vulnerable,     // +damage taken
+    Confused,       // Random actions
+    Silenced,       // Can't use abilities
+    Drained,        // -resource regen
+    Terrified,      // Can't attack
+    Dissociating,   // Random switches
+}
+
+// ============================================================================
+// ENEMY DEFINITION
+// ============================================================================
+
+//! Complete enemy definition
+struct EnemyDefinition {
+    id: String!,
+    name: LayeredName!,
+    category: EnemyCategory!,
+    behavior: BehaviorPattern!,
+
+    // Stats
+    base_hp: f32!,
+    base_damage: f32!,
+    base_defense: f32!,
+    speed: u32!,
+
+    // Abilities
+    abilities: Vec<EnemyAbility>!,
+    ability_weights: HashMap<String, f32>~,  // AI preference weights
+
+    // Alter interactions
+    vulnerable_to: Vec<AlterCategory>!,     // Takes extra damage from
+    resistant_to: Vec<AlterCategory>!,       // Takes less damage from
+    targets_preferentially: Option<AlterCategory>?,  // AI targeting
+
+    // Visual
+    description: LayeredDescription~,
+    spawn_sound: String!,
+    attack_sound: String!,
+    death_sound: String!,
+
+    // Rewards
+    insight_reward: f32!,
+    drops: Vec<String>!,
+}
+
+//! Layered name for different realities
+struct LayeredName {
+    grounded: String!,
+    fractured: String~,
+    shattered: String‽,
+}
+
+//! Layered description for different realities
+struct LayeredDescription {
+    grounded: String!,
+    fractured: String~,
+    shattered: String‽,
+}
+
+// ============================================================================
+// SHADOW CRAWLERS - Basic Enemies
+// ============================================================================
+
+//! Create a basic Shadow Crawler
+fn enemy_shadow_crawler() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "shadow_crawler"·to_string(),
+        name: LayeredName {
+            grounded: "Shadow Crawler"·to_string(),
+            fractured: "Crawling Dark"·to_string()~,
+            shattered: "P̸I̵E̷C̵E̶ ̷O̷F̵ ̸U̸S̴"·to_string()‽,
+        },
+        category: EnemyCategory·Shadow,
+        behavior: BehaviorPattern·Swarm,
+        base_hp: 30.0,
+        base_damage: 8.0,
+        base_defense: 2.0,
+        speed: 3,
+        abilities: [
+            EnemyAbility·Strike { damage: 8.0, accuracy: 0.85 },
+            EnemyAbility·Unsettle { amount: 0.05 },
+        ],
+        ability_weights: {
+            "Strike" => 0.7,
+            "Unsettle" => 0.3,
+        }~,
+        vulnerable_to: [AlterCategory·Council],  // Council members deal +damage
+        resistant_to: [],
+        targets_preferentially: None,
+        description: LayeredDescription {
+            grounded: "A mass of writhing shadows that skitters along the floor. It has no features, only hunger."·to_string(),
+            fractured: "It was human once. You can see the shape of a face trying to form in the darkness. It's screaming."·to_string()~,
+            shattered: "ONE OF THE DEVOURED. A consciousness stripped of form, reduced to instinct. It remembers nothing but pain."·to_string()‽,
+        }~,
+        spawn_sound: "shadow_emerge"·to_string(),
+        attack_sound: "claw_swipe"·to_string(),
+        death_sound: "shadow_disperse"·to_string(),
+        insight_reward: 5.0,
+        drops: [],
+    }
+}
+
+//! Create a Shadow Stalker - ambush variant
+fn enemy_shadow_stalker() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "shadow_stalker"·to_string(),
+        name: LayeredName {
+            grounded: "Shadow Stalker"·to_string(),
+            fractured: "The Watcher"·to_string()~,
+            shattered: "H̵U̴N̸G̶E̸R̶ ̵W̵I̷T̵H̴ ̴E̷Y̴E̸S̴"·to_string()‽,
+        },
+        category: EnemyCategory·Shadow,
+        behavior: BehaviorPattern·Stalker,
+        base_hp: 45.0,
+        base_damage: 15.0,
+        base_defense: 3.0,
+        speed: 5,  // Fast
+        abilities: [
+            EnemyAbility·Strike { damage: 15.0, accuracy: 0.9 },
+            EnemyAbility·Focus {
+                alter_category: AlterCategory·Core,  // Targets Vessel
+                damage_mod: 1.5,
+            },
+            EnemyAbility·Destabilize { amount: 0.1 },
+        ],
+        ability_weights: {
+            "Strike" => 0.5,
+            "Focus" => 0.3,
+            "Destabilize" => 0.2,
+        }~,
+        vulnerable_to: [AlterCategory·Council],
+        resistant_to: [],
+        targets_preferentially: Some(AlterCategory·Core)?,  // Hunts the Vessel
+        description: LayeredDescription {
+            grounded: "A larger shadow that moves with predatory grace. Its eyes - if they are eyes - gleam with malevolent intelligence."·to_string(),
+            fractured: "It's been watching you. Learning your patterns. It knows which alter is weakest right now."·to_string()~,
+            shattered: "A PREDATOR OF SELVES. It hunts the core, the host, the one they think holds everything together. KILL THE CENTER AND THE REST WILL FALL."·to_string()‽,
+        }~,
+        spawn_sound: "stalker_emerge"·to_string(),
+        attack_sound: "predator_strike"·to_string(),
+        death_sound: "stalker_howl"·to_string(),
+        insight_reward: 12.0,
+        drops: ["shadow_essence"·to_string()],
+    }
+}
+
+// ============================================================================
+// MEMORY DEVOURERS - Special Enemies
+// ============================================================================
+
+//! Memory Devourer - can steal abilities temporarily
+fn enemy_memory_devourer() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "memory_devourer"·to_string(),
+        name: LayeredName {
+            grounded: "Memory Devourer"·to_string(),
+            fractured: "The Forgetting"·to_string()~,
+            shattered: "W̷H̶A̵T̸ ̶Y̵O̵U̶ ̶W̷E̶R̴E̶"·to_string()‽,
+        },
+        category: EnemyCategory·Memory,
+        behavior: BehaviorPattern·Feeder,
+        base_hp: 60.0,
+        base_damage: 10.0,
+        base_defense: 5.0,
+        speed: 2,  // Slow
+        abilities: [
+            EnemyAbility·Strike { damage: 10.0, accuracy: 0.8 },
+            EnemyAbility·MemoryDrain { duration_turns: 3 },
+            EnemyAbility·Unsettle { amount: 0.1 },
+            EnemyAbility·Afflict {
+                status: StatusEffect·Confused,
+                duration: 2,
+            },
+        ],
+        ability_weights: {
+            "MemoryDrain" => 0.4,  // Primary ability
+            "Strike" => 0.3,
+            "Unsettle" => 0.2,
+            "Afflict" => 0.1,
+        }~,
+        vulnerable_to: [],
+        resistant_to: [AlterCategory·Introject],  // Resists alters formed from memories
+        targets_preferentially: None,
+        description: LayeredDescription {
+            grounded: "A translucent figure that phases in and out of visibility. When solid, it appears to be made of flowing, liquid thought."·to_string(),
+            fractured: "It's made of stolen memories. You see flashes in its form - a child's birthday, a first kiss, a mother's face. All devoured. All digested."·to_string()~,
+            shattered: "IT WANTS WHAT MAKES YOU YOU. Every memory that defines an alter, every experience that shaped them - it will eat until there's nothing left but an empty shell."·to_string()‽,
+        }~,
+        spawn_sound: "memory_whisper"·to_string(),
+        attack_sound: "mind_tear"·to_string(),
+        death_sound: "memories_release"·to_string(),
+        insight_reward: 20.0,
+        drops: ["memory_fragment"·to_string()],
+    }
+}
+
+//! Memory Leech - weaker, swarm variant
+fn enemy_memory_leech() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "memory_leech"·to_string(),
+        name: LayeredName {
+            grounded: "Memory Leech"·to_string(),
+            fractured: "Small Forgetting"·to_string()~,
+            shattered: "NIBBLER"·to_string()‽,
+        },
+        category: EnemyCategory·Memory,
+        behavior: BehaviorPattern·Swarm,
+        base_hp: 15.0,
+        base_damage: 5.0,
+        base_defense: 1.0,
+        speed: 4,
+        abilities: [
+            EnemyAbility·Strike { damage: 5.0, accuracy: 0.75 },
+            EnemyAbility·Afflict {
+                status: StatusEffect·Drained,
+                duration: 1,
+            },
+        ],
+        ability_weights: {
+            "Strike" => 0.6,
+            "Afflict" => 0.4,
+        }~,
+        vulnerable_to: [AlterCategory·Council],
+        resistant_to: [],
+        targets_preferentially: None,
+        description: LayeredDescription {
+            grounded: "A small, worm-like creature of pale light. It writhes toward you with unsettling purpose."·to_string(),
+            fractured: "It's a piece of a Memory Devourer, broken off. Still hungry. Still feeding."·to_string()~,
+            shattered: "A MAGGOT IN THE MIND. It eats the small things - the feeling of sunlight, the taste of your favorite food, the sound of a loved one's voice."·to_string()‽,
+        }~,
+        spawn_sound: "leech_squirm"·to_string(),
+        attack_sound: "leech_bite"·to_string(),
+        death_sound: "leech_pop"·to_string(),
+        insight_reward: 3.0,
+        drops: [],
+    }
+}
+
+// ============================================================================
+// REMNANTS - Consumed Consciousnesses
+// ============================================================================
+
+//! Patient Remnant - souls trapped in the asylum
+fn enemy_patient_remnant() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "patient_remnant"·to_string(),
+        name: LayeredName {
+            grounded: "Patient Remnant"·to_string(),
+            fractured: "The Unintegrated"·to_string()~,
+            shattered: "T̷H̵E̷Y̶ ̵D̵I̸D̸N̷'̷T̵ ̸S̵A̵V̵E̶ ̸U̷S̷"·to_string()‽,
+        },
+        category: EnemyCategory·Remnant,
+        behavior: BehaviorPattern·Defensive,
+        base_hp: 40.0,
+        base_damage: 12.0,
+        base_defense: 4.0,
+        speed: 2,
+        abilities: [
+            EnemyAbility·Strike { damage: 12.0, accuracy: 0.8 },
+            EnemyAbility·Destabilize { amount: 0.08 },
+            EnemyAbility·Disrupt { urgency: 0.4 },  // Can force switches
+        ],
+        ability_weights: {
+            "Strike" => 0.5,
+            "Destabilize" => 0.3,
+            "Disrupt" => 0.2,
+        }~,
+        vulnerable_to: [AlterCategory·Council],
+        resistant_to: [],
+        targets_preferentially: None,
+        description: LayeredDescription {
+            grounded: "A figure in a hospital gown, features blurred and indistinct. It reaches toward you with desperation, not malice."·to_string(),
+            fractured: "You see what it was - a person, a system, someone like you. Vance's 'integration therapy' didn't heal them. It broke them into this."·to_string()~,
+            shattered: "WE WERE LIKE YOU. We had names. We had selves. We had families inside us. THEY TOOK EVERYTHING. And now we're just... noise."·to_string()‽,
+        }~,
+        spawn_sound: "patient_moan"·to_string(),
+        attack_sound: "desperate_grab"·to_string(),
+        death_sound: "patient_release"·to_string(),
+        insight_reward: 15.0,
+        drops: ["patient_memory"·to_string()],
+    }
+}
+
+//! Integrated - what Vance's "cures" become
+fn enemy_integrated() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "integrated"·to_string(),
+        name: LayeredName {
+            grounded: "The Integrated"·to_string(),
+            fractured: "Hollow Victory"·to_string()~,
+            shattered: "O̷N̵E̵ ̸W̴H̵O̶ ̶C̵O̸N̴S̸U̵M̶E̶D̷"·to_string()‽,
+        },
+        category: EnemyCategory·Remnant,
+        behavior: BehaviorPattern·Aggressive,
+        base_hp: 80.0,
+        base_damage: 18.0,
+        base_defense: 6.0,
+        speed: 3,
+        abilities: [
+            EnemyAbility·Strike { damage: 18.0, accuracy: 0.85 },
+            EnemyAbility·Swipe { damage: 12.0, targets: 2 },  // Hits multiple alters
+            EnemyAbility·Destabilize { amount: 0.12 },
+            EnemyAbility·Disrupt { urgency: 0.6 },
+            EnemyAbility·Afflict {
+                status: StatusEffect·Terrified,
+                duration: 1,
+            },
+        ],
+        ability_weights: {
+            "Strike" => 0.35,
+            "Swipe" => 0.25,
+            "Destabilize" => 0.2,
+            "Disrupt" => 0.1,
+            "Afflict" => 0.1,
+        }~,
+        vulnerable_to: [],
+        resistant_to: [AlterCategory·Council],  // Hard to hurt
+        targets_preferentially: None,
+        description: LayeredDescription {
+            grounded: "A person who moves wrong. Their movements are too fluid, too unified. No internal hesitation. No consultation with selves that no longer exist."·to_string(),
+            fractured: "One consciousness where there should be many. It won Vance's game. It ate its system. And now it serves her, a hollow vessel for her will."·to_string()~,
+            shattered: "I ATE MY FAMILY. I ate my protector, my little, my gatekeeper. I ATE EVERYONE WHO LOVED ME. And I'm still hungry. YOUR TURN."·to_string()‽,
+        }~,
+        spawn_sound: "integrated_laugh"·to_string(),
+        attack_sound: "hollow_strike"·to_string(),
+        death_sound: "integrated_scream"·to_string(),
+        insight_reward: 25.0,
+        drops: ["consumed_essence"·to_string()],
+    }
+}
+
+// ============================================================================
+// CONSTRUCTS - Place-Spawned Enemies
+// ============================================================================
+
+//! Church Guardian - spawned by the corrupted church
+fn enemy_church_guardian() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "church_guardian"·to_string(),
+        name: LayeredName {
+            grounded: "Stone Guardian"·to_string(),
+            fractured: "Corrupted Seraph"·to_string()~,
+            shattered: "M̵A̴R̷C̶U̴S̷'̶S̴ ̴S̸E̷R̷V̶A̵N̸T̶"·to_string()‽,
+        },
+        category: EnemyCategory·Construct,
+        behavior: BehaviorPattern·Defensive,
+        base_hp: 100.0,
+        base_damage: 20.0,
+        base_defense: 10.0,  // Very tanky
+        speed: 1,  // Slow
+        abilities: [
+            EnemyAbility·Strike { damage: 20.0, accuracy: 0.7 },  // Heavy but slow
+            EnemyAbility·RealityWarp { target: RealityLayer·Fractured },
+            EnemyAbility·Regenerate { amount: 10.0 },
+            EnemyAbility·Empower { damage_buff: 0.2, defense_buff: 0.0 },
+        ],
+        ability_weights: {
+            "Strike" => 0.4,
+            "Regenerate" => 0.25,
+            "RealityWarp" => 0.2,
+            "Empower" => 0.15,
+        }~,
+        vulnerable_to: [],
+        resistant_to: [],
+        targets_preferentially: None,
+        description: LayeredDescription {
+            grounded: "A statue of an angel has come to life. Its stone features are serene, but its movements are predatory."·to_string(),
+            fractured: "Not an angel. Never was. The thing the church became animated its decorations with fragments of consumed souls."·to_string()~,
+            shattered: "A MOUTHPIECE OF THE BUILDING. The church itself attacking through carved stone. Every statue, every gargoyle - they're all its fingers."·to_string()‽,
+        }~,
+        spawn_sound: "stone_crumble"·to_string(),
+        attack_sound: "stone_impact"·to_string(),
+        death_sound: "stone_shatter"·to_string(),
+        insight_reward: 30.0,
+        drops: ["sacred_stone"·to_string()],
+    }
+}
+
+// ============================================================================
+// BOSS: THE INTEGRATION (Dr. Vance's True Form)
+// ============================================================================
+
+fn enemy_the_integration() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "the_integration"·to_string(),
+        name: LayeredName {
+            grounded: "Dr. Helena Vance"·to_string(),
+            fractured: "The Integration"·to_string()~,
+            shattered: "L̸E̵G̴I̸O̴N̴"·to_string()‽,
+        },
+        category: EnemyCategory·Boss,
+        behavior: BehaviorPattern·Aggressive,
+        base_hp: 500.0,
+        base_damage: 25.0,
+        base_defense: 8.0,
+        speed: 4,
+        abilities: [
+            EnemyAbility·Strike { damage: 25.0, accuracy: 0.9 },
+            EnemyAbility·Swipe { damage: 18.0, targets: 3 },
+            EnemyAbility·MemoryDrain { duration_turns: 2 },
+            EnemyAbility·Destabilize { amount: 0.15 },
+            EnemyAbility·Disrupt { urgency: 0.8 },
+            EnemyAbility·RealityWarp { target: RealityLayer·Shattered },
+            EnemyAbility·Spawn { enemy_type: "patient_remnant"·to_string(), count: 2 },
+            EnemyAbility·Regenerate { amount: 25.0 },
+            EnemyAbility·Afflict {
+                status: StatusEffect·Dissociating,
+                duration: 2,
+            },
+        ],
+        ability_weights: {
+            "Strike" => 0.2,
+            "Swipe" => 0.15,
+            "MemoryDrain" => 0.15,
+            "Destabilize" => 0.1,
+            "Disrupt" => 0.1,
+            "RealityWarp" => 0.1,
+            "Spawn" => 0.1,
+            "Regenerate" => 0.05,
+            "Afflict" => 0.05,
+        }~,
+        vulnerable_to: [],  // No easy weaknesses
+        resistant_to: [],
+        targets_preferentially: Some(AlterCategory·Core)?,  // Wants the Vessel
+        description: LayeredDescription {
+            grounded: "Dr. Vance's form has become unstable. Faces push outward from beneath her skin - all the consciousnesses she has consumed over decades."·to_string(),
+            fractured: "She's not one person wearing many faces. She's many people being worn by one will. Hundreds of screaming souls bound together by hunger and madness."·to_string()~,
+            shattered: "W̷E̶ ̴A̴R̷E̴ ̵V̶A̷N̷C̶E̵.̷ We are her patients. We are her victims. We are her success and her failure. WE ARE WHAT INTEGRATION TRULY MEANS. And we will add you to us."·to_string()‽,
+        }~,
+        spawn_sound: "legion_manifest"·to_string(),
+        attack_sound: "many_voices_strike"·to_string(),
+        death_sound: "legion_unravel"·to_string(),
+        insight_reward: 100.0,
+        drops: ["integration_core"·to_string(), "vance_journal"·to_string()],
+    }
+}
+
+// ============================================================================
+// BOSS: MARCUS TRUE FORM
+// ============================================================================
+
+fn enemy_marcus_true() -> EnemyDefinition! {
+    EnemyDefinition {
+        id: "marcus_true"·to_string(),
+        name: LayeredName {
+            grounded: "Father Marcus"·to_string(),
+            fractured: "The False Shepherd"·to_string()~,
+            shattered: "T̴H̸E̵ ̵D̶E̸V̸O̸U̵R̵E̷R̶"·to_string()‽,
+        },
+        category: EnemyCategory·Boss,
+        behavior: BehaviorPattern·Aggressive,
+        base_hp: 400.0,
+        base_damage: 22.0,
+        base_defense: 6.0,
+        speed: 5,
+        abilities: [
+            EnemyAbility·Strike { damage: 22.0, accuracy: 0.85 },
+            EnemyAbility·Swipe { damage: 15.0, targets: 2 },
+            EnemyAbility·Destabilize { amount: 0.12 },
+            EnemyAbility·RealityWarp { target: RealityLayer·Shattered },
+            EnemyAbility·Regenerate { amount: 20.0 },
+            EnemyAbility·Afflict {
+                status: StatusEffect·Terrified,
+                duration: 2,
+            },
+            EnemyAbility·Spawn { enemy_type: "shadow_crawler"·to_string(), count: 3 },
+        ],
+        ability_weights: {
+            "Strike" => 0.25,
+            "Swipe" => 0.2,
+            "Destabilize" => 0.15,
+            "RealityWarp" => 0.1,
+            "Regenerate" => 0.1,
+            "Afflict" => 0.1,
+            "Spawn" => 0.1,
+        }~,
+        vulnerable_to: [],
+        resistant_to: [],
+        targets_preferentially: None,
+        description: LayeredDescription {
+            grounded: "Father Marcus's human form tears away. Beneath is something ancient, something that was never human at all."·to_string(),
+            fractured: "The priest was always a mask. The church was always a lure. The thing that has worn Marcus's face for centuries unfolds in dimensions that hurt to perceive."·to_string()~,
+            shattered: "I̷ ̵A̴M̷ ̸T̵H̶E̸ ̶C̸H̴U̸R̶C̵H̷.̶ I am the ground it stands on. I am the faith it pretends to serve. I have been here since before your species had names for fear. AND I AM SO VERY HUNGRY."·to_string()‽,
+        }~,
+        spawn_sound: "reality_tear"·to_string(),
+        attack_sound: "ancient_hunger"·to_string(),
+        death_sound: "church_collapse"·to_string(),
+        insight_reward: 80.0,
+        drops: ["heart_of_church"·to_string(), "marcus_true_nature"·to_string()],
+    }
+}
+
+// ============================================================================
+// ENCOUNTER GENERATION
+// ============================================================================
+
+//! Generate an encounter for a scene
+fn generate_encounter(scene_id: &str, reality: RealityLayer) -> Vec<EnemyDefinition>! {
+    match (scene_id, reality) {
+        // Church encounters
+        ("church_exterior", RealityLayer·Grounded) => [],
+        ("church_exterior", RealityLayer·Fractured) => [enemy_shadow_crawler(), enemy_shadow_crawler()],
+        ("church_exterior", RealityLayer·Shattered) => [enemy_shadow_stalker(), enemy_shadow_crawler(), enemy_shadow_crawler()],
+
+        ("church_nave", _) => [enemy_shadow_crawler()],  // Always at least one
+        ("church_crypt", RealityLayer·Shattered) => [enemy_marcus_true()],  // Boss
+
+        // Asylum encounters
+        ("asylum_exterior", RealityLayer·Fractured) => [enemy_patient_remnant()],
+        ("asylum_lobby", _) => [enemy_shadow_crawler(), enemy_memory_leech()],
+        ("asylum_east_wing", _) => [enemy_patient_remnant(), enemy_patient_remnant()],
+        ("asylum_west_wing", _) => [enemy_integrated(), enemy_memory_devourer()],
+
+        // Default
+        _ => [],
+    }
+}
+
+// ============================================================================
+// ENEMY REGISTRATION
+// ============================================================================
+
+//! Get all enemy definitions
+fn get_all_enemies() -> Vec<EnemyDefinition>! {
+    [
+        // Shadows
+        enemy_shadow_crawler(),
+        enemy_shadow_stalker(),
+
+        // Memory
+        enemy_memory_devourer(),
+        enemy_memory_leech(),
+
+        // Remnants
+        enemy_patient_remnant(),
+        enemy_integrated(),
+
+        // Constructs
+        enemy_church_guardian(),
+
+        // Bosses
+        enemy_the_integration(),
+        enemy_marcus_true(),
+    ]
+}

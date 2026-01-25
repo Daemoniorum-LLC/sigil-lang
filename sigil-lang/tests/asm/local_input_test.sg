@@ -1,0 +1,11 @@
+// Test input operands with local variable
+λ main() -> i64 {
+    ≔ x: i64 = 41;
+    ≔ result: i64 = 0;
+    unsafe {
+        asm!("inc rax",
+            inout("rax") x => result,
+            options(nostack));
+    }
+    result  // Should be 42
+}

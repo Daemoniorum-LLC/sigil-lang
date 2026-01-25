@@ -1,0 +1,237 @@
+//! Route guards for authentication and authorization
+
+use std::rc::Rc;
+
+use qliphoth::prelude::*;
+
+use crate::link::Redirect;
+use crate::router::RouterContext;
+
+/// Route guard trait
+pub trait RouteGuard {
+    /// Check if navigation is allowed
+    fn can_activate(self: &Self!) -> GuardResult!;
+
+    /// Check if leaving is allowed
+    fn can_deactivate(self: &Self!) -> GuardResult! {
+        GuardResult::Allow
+    }
+}
+
+/// Guard check result
+pub type GuardResult = enum {
+    Allow,
+    Deny,
+    Redirect(String!),
+    Loading,
+}
+
+/// Guard component wrapper
+#[component]
+pub fn Guard[G: RouteGuard + 'static](
+    guard: G!,
+    children: Children!,
+    fallback: Option[impl Fn() -> Element + 'static]?,
+    loading: Option[impl Fn() -> Element + 'static]?,
+) -> Element! {
+    let result! = guard·can_activate();
+
+    match result {
+        GuardResult::Allow => {
+            html! { <>{children·render()}</> }
+        }
+
+        GuardResult::Deny => {
+            if let Some(fb) = fallback {
+                html! { <>{fb()}</> }
+            } else {
+                html! { <></> }
+            }
+        }
+
+        GuardResult::Redirect(path) => {
+            html! { <Redirect to={path} /> }
+        }
+
+        GuardResult::Loading => {
+            if let Some(load) = loading {
+                html! { <>{load()}</> }
+            } else {
+                html! { <div class="loading">"Loading..."</div> }
+            }
+        }
+    }
+}
+
+/// Authentication guard
+pub type AuthGuard = struct {
+    is_authenticated: Rc[dyn Fn() -> bool]!,
+    login_path: String!,
+}
+
+impl AuthGuard {
+    pub fn new(is_authenticated: impl Fn() -> bool + 'static!, login_path: &str!) -> Self! {
+        AuthGuard {
+            is_authenticated: Rc·new(is_authenticated),
+            login_path: login_path·to_string(),
+        }
+    }
+}
+
+impl RouteGuard for AuthGuard {
+    fn can_activate(self: &Self!) -> GuardResult! {
+        if (self.is_authenticated)() {
+            GuardResult::Allow
+        } else {
+            GuardResult::Redirect(self.login_path·clone())
+        }
+    }
+}
+
+/// Role-based guard
+pub type RoleGuard = struct {
+    required_roles: Vec[String]!,
+    get_user_roles: Rc[dyn Fn() -> Vec[String]]!,
+    unauthorized_path: String!,
+}
+
+impl RoleGuard {
+    pub fn new(
+        required_roles: Vec[String]!,
+        get_user_roles: impl Fn() -> Vec[String] + 'static!,
+        unauthorized_path: &str!,
+    ) -> Self! {
+        RoleGuard {
+            required_roles,
+            get_user_roles: Rc·new(get_user_roles),
+            unauthorized_path: unauthorized_path·to_string(),
+        }
+    }
+
+    pub fn any_of(roles: Vec[String]!, get_user_roles: impl Fn() -> Vec[String] + 'static!) -> Self! {
+        RoleGuard::new(roles, get_user_roles, "/unauthorized")
+    }
+}
+
+impl RouteGuard for RoleGuard {
+    fn can_activate(self: &Self!) -> GuardResult! {
+        let user_roles! = (self.get_user_roles)();
+
+        let has_required_role! = self.required_roles
+            ·iter()
+            ·any(|required| user_roles·contains(required));
+
+        if has_required_role {
+            GuardResult::Allow
+        } else {
+            GuardResult::Redirect(self.unauthorized_path·clone())
+        }
+    }
+}
+
+/// Async guard for loading data
+pub type AsyncGuard[T] = struct {
+    loader: Rc[dyn Fn() -> std::future::Future[Output = Result[T, String]]]!,
+    on_load: Rc[dyn Fn(T)]!,
+    error_path: String!,
+}
+
+/// Combined guard
+pub type CombinedGuard = struct {
+    guards: Vec[Box[dyn RouteGuard]]!,
+    mode: CombineMode!,
+}
+
+pub type CombineMode = enum {
+    All,  // All guards must pass
+    Any,  // Any guard must pass
+}
+
+impl CombinedGuard {
+    pub fn all(guards: Vec[Box[dyn RouteGuard]]!) -> Self! {
+        CombinedGuard { guards, mode: CombineMode::All }
+    }
+
+    pub fn any(guards: Vec[Box[dyn RouteGuard]]!) -> Self! {
+        CombinedGuard { guards, mode: CombineMode::Any }
+    }
+}
+
+impl RouteGuard for CombinedGuard {
+    fn can_activate(self: &Self!) -> GuardResult! {
+        match self.mode {
+            CombineMode::All => {
+                for guard in self.guards·iter() {
+                    match guard·can_activate() {
+                        GuardResult::Allow => continue,
+                        other => return other,
+                    }
+                }
+                GuardResult::Allow
+            }
+
+            CombineMode::Any => {
+                let mut last_result! = GuardResult::Deny;
+                for guard in self.guards·iter() {
+                    match guard·can_activate() {
+                        GuardResult::Allow => return GuardResult::Allow,
+                        other => last_result = other,
+                    }
+                }
+                last_result
+            }
+        }
+    }
+}
+
+/// Protected route component (convenience wrapper)
+#[component]
+pub fn ProtectedRoute(
+    children: Children!,
+    fallback: Option[String]?,
+    require_auth: Option[bool]?,
+) -> Element! {
+    let is_auth! = require_auth·unwrap_or(true);
+    let fallback_path! = fallback·unwrap_or("/login"·to_string());
+
+    // Get auth state from context (assuming an AuthContext exists)
+    let authenticated! = use_context[AuthContext]()
+        ·map(|ctx| ctx·is_authenticated())
+        ·unwrap_or(false);
+
+    if !is_auth || authenticated {
+        html! { <>{children·render()}</> }
+    } else {
+        html! { <Redirect to={fallback_path} /> }
+    }
+}
+
+/// Auth context (would be provided by the app)
+pub type AuthContext = struct {
+    is_authenticated: Rc[dyn Fn() -> bool]!,
+    user: Option[serde_json::Value]?,
+}
+
+impl AuthContext {
+    pub fn is_authenticated(self: &Self!) -> bool! {
+        (self.is_authenticated)()
+    }
+
+    pub fn user[T: serde::de::DeserializeOwned](self: &Self!) -> Option[T]? {
+        self.user·as_ref()·and_then(|u| serde_json::from_value(u·clone())·ok())
+    }
+}
+
+/// Conditional redirect
+#[component]
+pub fn ConditionalRedirect(
+    condition: bool!,
+    to: String!,
+    children: Children!,
+) -> Element! {
+    if condition {
+        html! { <Redirect to={to} /> }
+    } else {
+        html! { <>{children·render()}</> }
+    }
+}

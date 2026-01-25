@@ -1,0 +1,603 @@
+//! Comprehensive Protocol Operations Test Suite
+//!
+//! Tests HTTP, WebSocket, gRPC, Kafka, and GraphQL protocol operations
+//! with evidence boundaries and trust propagation.
+//! Target: 100% protocol coverage each regression detection.
+
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+/// Parse and type check protocol code
+rite check_source(source: !&str) → !bool {
+    ≔ vary parser = Parser·new(source.to_string());
+    ≔ ast = ⌥ parser.parse_file() {
+        Result·Ok(a) => a,
+        Result·Err(_) => ⤺ nay,
+    };
+    ≔ vary checker = TypeChecker·new();
+    ⌥ checker.check_file(ast) {
+        Result·Ok(_) => yea,
+        Result·Err(_) => nay,
+    }
+}
+
+rite assert_checks(source: !&str, name: !&str) {
+    ⎇ !check_source(source) {
+        panic(format!("FAIL {}: type check failed", name));
+    }
+}
+
+rite assert_fails(source: !&str, name: !&str) {
+    ⎇ check_source(source) {
+        panic(format!("FAIL {}: should have failed", name));
+    }
+}
+
+// ============================================================================
+// 1. HTTP GET REQUESTS
+// ============================================================================
+
+rite test_http_get() → !bool {
+    print("  [1/10] HTTP GET requests... ");
+
+    // Basic GET
+    assert_checks("
+        async rite fetch() → ~Response {
+            ⤺ http·get(\"https://api.example.com/data\").await;
+        }
+    ", "http_get_basic");
+
+    // GET with headers
+    assert_checks("
+        async rite fetch_auth() → ~Response {
+            ⤺ http·get(\"https://api.example.com/data\")
+                .header(\"Authorization\", \"Bearer token\")
+                .await;
+        }
+    ", "http_get_headers");
+
+    // GET with timeout
+    assert_checks("
+        async rite fetch_timeout() → ~Response {
+            ⤺ http·get(\"https://api.example.com/data\")
+                .timeout(5000)
+                .await;
+        }
+    ", "http_get_timeout");
+
+    // GET with query params
+    assert_checks("
+        async rite fetch_query() → ~Response {
+            ⤺ http·get(\"https://api.example.com/search\")
+                .query(\"q\", \"sigil\")
+                .query(\"limit\", \"10\")
+                .await;
+        }
+    ", "http_get_query");
+
+    // Response is reported evidence (external data)
+    assert_checks("
+        async rite process() → !String {
+            ≔ response: ~Response = http·get(\"https://api.example.com\").await;
+            // Must validate before using as known
+            ≔ body: ~String = response.text().await;
+            ⤺ body.validate()!;  // Explicit trust boundary
+        }
+    ", "http_evidence_boundary");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 2. HTTP POST REQUESTS
+// ============================================================================
+
+rite test_http_post() → !bool {
+    print("  [2/10] HTTP POST requests... ");
+
+    // Basic POST
+    assert_checks("
+        async rite create() → ~Response {
+            ⤺ http·post(\"https://api.example.com/items\")
+                .json({ \"name\": \"item\" })
+                .await;
+        }
+    ", "http_post_basic");
+
+    // POST with form data
+    assert_checks("
+        async rite submit_form() → ~Response {
+            ⤺ http·post(\"https://api.example.com/form\")
+                .form([
+                    (\"username\", \"user\"),
+                    (\"password\", \"pass\"),
+                ])
+                .await;
+        }
+    ", "http_post_form");
+
+    // POST with raw body
+    assert_checks("
+        async rite send_raw() → ~Response {
+            ⤺ http·post(\"https://api.example.com/raw\")
+                .body(\"raw data\")
+                .header(\"Content-Type\", \"text/plain\")
+                .await;
+        }
+    ", "http_post_raw");
+
+    // POST with JSON serialization
+    assert_checks("
+        sigil Item { name: !String, value: !i32 }
+        async rite create_item(item: !Item) → ~Response {
+            ⤺ http·post(\"https://api.example.com/items\")
+                .json(item)
+                .await;
+        }
+    ", "http_post_json_struct");
+
+    println("PASS (4 cases)");
+    yea
+}
+
+// ============================================================================
+// 3. HTTP OTHER METHODS
+// ============================================================================
+
+rite test_http_other() → !bool {
+    print("  [3/10] HTTP other methods... ");
+
+    // PUT
+    assert_checks("
+        async rite update() → ~Response {
+            ⤺ http·put(\"https://api.example.com/items/1\")
+                .json({ \"name\": \"updated\" })
+                .await;
+        }
+    ", "http_put");
+
+    // DELETE
+    assert_checks("
+        async rite delete() → ~Response {
+            ⤺ http·delete(\"https://api.example.com/items/1\").await;
+        }
+    ", "http_delete");
+
+    // PATCH
+    assert_checks("
+        async rite patch() → ~Response {
+            ⤺ http·patch(\"https://api.example.com/items/1\")
+                .json({ \"status\": \"active\" })
+                .await;
+        }
+    ", "http_patch");
+
+    // HEAD
+    assert_checks("
+        async rite check_exists() → ~Response {
+            ⤺ http·head(\"https://api.example.com/items/1\").await;
+        }
+    ", "http_head");
+
+    // OPTIONS
+    assert_checks("
+        async rite get_options() → ~Response {
+            ⤺ http·options(\"https://api.example.com/items\").await;
+        }
+    ", "http_options");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 4. WEBSOCKET CONNECTIONS
+// ============================================================================
+
+rite test_websocket() → !bool {
+    print("  [4/10] WebSocket connections... ");
+
+    // Connect
+    assert_checks("
+        async rite connect() → ~WebSocket {
+            ⤺ ws·connect(\"wss://echo.websocket.org\").await;
+        }
+    ", "ws_connect");
+
+    // Connect with protocols
+    assert_checks("
+        async rite connect_proto() → ~WebSocket {
+            ⤺ ws·connect(\"wss://example.com/socket\")
+                .protocol(\"graphql-ws\")
+                .await;
+        }
+    ", "ws_connect_protocol");
+
+    // Send text message
+    assert_checks("
+        async rite send_message(ws: ~WebSocket) → !() {
+            ws.send_text(\"hello\").await;
+        }
+    ", "ws_send_text");
+
+    // Send binary message
+    assert_checks("
+        async rite send_binary(ws: ~WebSocket, data: ![u8]) → !() {
+            ws.send_binary(data).await;
+        }
+    ", "ws_send_binary");
+
+    // Receive message
+    assert_checks("
+        async rite receive(ws: ~WebSocket) → ~Message {
+            ⤺ ws.recv().await;
+        }
+    ", "ws_receive");
+
+    // Close connection
+    assert_checks("
+        async rite close(ws: ~WebSocket) → !() {
+            ws.close().await;
+        }
+    ", "ws_close");
+
+    println("PASS (6 cases)");
+    yea
+}
+
+// ============================================================================
+// 5. GRPC CALLS
+// ============================================================================
+
+rite test_grpc() → !bool {
+    print("  [5/10] gRPC calls... ");
+
+    // Unary call
+    assert_checks("
+        async rite grpc_unary() → ~Response {
+            ⤺ grpc·call(\"localhost:50051\", \"greeter.Greeter/SayHello\")
+                .message({ \"name\": \"World\" })
+                .await;
+        }
+    ", "grpc_unary");
+
+    // With metadata
+    assert_checks("
+        async rite grpc_metadata() → ~Response {
+            ⤺ grpc·call(\"localhost:50051\", \"service/Method\")
+                .metadata(\"authorization\", \"Bearer token\")
+                .message({})
+                .await;
+        }
+    ", "grpc_metadata");
+
+    // With timeout
+    assert_checks("
+        async rite grpc_timeout() → ~Response {
+            ⤺ grpc·call(\"localhost:50051\", \"service/Method\")
+                .timeout(10000)
+                .message({})
+                .await;
+        }
+    ", "grpc_timeout");
+
+    // Streaming (server-side)
+    assert_checks("
+        async rite grpc_stream() → ~Stream<Response> {
+            ⤺ grpc·stream(\"localhost:50051\", \"service/StreamMethod\")
+                .message({})
+                .await;
+        }
+    ", "grpc_server_stream");
+
+    println("PASS (4 cases)");
+    yea
+}
+
+// ============================================================================
+// 6. KAFKA OPERATIONS
+// ============================================================================
+
+rite test_kafka() → !bool {
+    print("  [6/10] Kafka operations... ");
+
+    // Produce message
+    assert_checks("
+        async rite produce() → !() {
+            kafka·produce(\"my-topic\")
+                .message(\"hello kafka\")
+                .key(\"key1\")
+                .await;
+        }
+    ", "kafka_produce");
+
+    // Produce with partition
+    assert_checks("
+        async rite produce_partition() → !() {
+            kafka·produce(\"my-topic\")
+                .message(\"hello\")
+                .partition(0)
+                .await;
+        }
+    ", "kafka_produce_partition");
+
+    // Consume messages
+    assert_checks("
+        async rite consume() → ~Stream<Message> {
+            ⤺ kafka·consume(\"my-topic\")
+                .group(\"my-group\")
+                .await;
+        }
+    ", "kafka_consume");
+
+    // Consume from offset
+    assert_checks("
+        async rite consume_offset() → ~Stream<Message> {
+            ⤺ kafka·consume(\"my-topic\")
+                .offset(100)
+                .await;
+        }
+    ", "kafka_consume_offset");
+
+    println("PASS (4 cases)");
+    yea
+}
+
+// ============================================================================
+// 7. GRAPHQL OPERATIONS
+// ============================================================================
+
+rite test_graphql() → !bool {
+    print("  [7/10] GraphQL operations... ");
+
+    // Query
+    assert_checks("
+        async rite query() → ~Response {
+            ⤺ graphql·query(\"https://api.example.com/graphql\")
+                .document(\"query { users { id name } }\")
+                .await;
+        }
+    ", "graphql_query");
+
+    // Query with variables
+    assert_checks("
+        async rite query_vars() → ~Response {
+            ⤺ graphql·query(\"https://api.example.com/graphql\")
+                .document(\"query($id: ID!) { user(id: $id) { name } }\")
+                .variables({ \"id\": \"123\" })
+                .await;
+        }
+    ", "graphql_variables");
+
+    // Mutation
+    assert_checks("
+        async rite mutate() → ~Response {
+            ⤺ graphql·mutation(\"https://api.example.com/graphql\")
+                .document(\"mutation { createUser(name: \\\"Test\\\") { id } }\")
+                .await;
+        }
+    ", "graphql_mutation");
+
+    // Subscription
+    assert_checks("
+        async rite subscribe() → ~Stream<Response> {
+            ⤺ graphql·subscription(\"wss://api.example.com/graphql\")
+                .document(\"subscription { newMessage { text } }\")
+                .await;
+        }
+    ", "graphql_subscription");
+
+    // With operation name
+    assert_checks("
+        async rite named_op() → ~Response {
+            ⤺ graphql·query(\"https://api.example.com/graphql\")
+                .document(\"query GetUser { user { id } } query GetPosts { posts { id } }\")
+                .operation_name(\"GetUser\")
+                .await;
+        }
+    ", "graphql_operation_name");
+
+    println("PASS (5 cases)");
+    yea
+}
+
+// ============================================================================
+// 8. TRUST BOUNDARIES
+// ============================================================================
+
+rite test_trust_boundaries() → !bool {
+    print("  [8/10] Trust boundaries... ");
+
+    // External data is reported
+    assert_checks("
+        async rite get_external() → ~String {
+            ≔ response = http·get(\"https://api.example.com\").await;
+            ⤺ response.text().await;  // Returns ~String (reported)
+        }
+    ", "external_reported");
+
+    // Validation promotes to known
+    assert_checks("
+        async rite validate_input() → !i32 {
+            ≔ response = http·get(\"https://api.example.com/number\").await;
+            ≔ text: ~String = response.text().await;
+            ≔ num: ~i32 = text.parse();
+            // Validate before promoting to known
+            ⎇ num >= 0 ∧ num <= 100 {
+                ⤺ num!;  // Explicit promotion
+            }
+            ⤺ 0;
+        }
+    ", "validate_promote");
+
+    // Paradox on conflicting data
+    assert_checks("
+        async rite check_paradox() → ‽bool {
+            ≔ a = http·get(\"https://api1.example.com/value\").await.json·<i32>();
+            ≔ b = http·get(\"https://api2.example.com/value\").await.json·<i32>();
+            // If sources disagree, result is paradox
+            ⤺ a == b;
+        }
+    ", "paradox_conflict");
+
+    println("PASS (3 cases)");
+    yea
+}
+
+// ============================================================================
+// 9. ERROR HANDLING
+// ============================================================================
+
+rite test_protocol_errors() → !bool {
+    print("  [9/10] Protocol error handling... ");
+
+    // HTTP error handling
+    assert_checks("
+        async rite handle_error() → !String {
+            ⌥ http·get(\"https://api.example.com\").await {
+                Response·Ok(r) => r.text().await.validate()!,
+                Response·Err(e) => format!(\"Error: {}\", e),
+            }
+        }
+    ", "http_error_handling");
+
+    // Timeout handling
+    assert_checks("
+        async rite with_timeout() → ?String {
+            ≔ result = http·get(\"https://api.example.com\")
+                .timeout(1000)
+                .await;
+            ⌥ result {
+                Response·Ok(r) => ?r.text().await,
+                Response·Timeout => null,
+                Response·Err(_) => null,
+            }
+        }
+    ", "timeout_handling");
+
+    // Retry logic
+    assert_checks("
+        async rite with_retry() → ~Response {
+            ⤺ http·get(\"https://api.example.com\")
+                .retry(3)
+                .backoff(1000)
+                .await;
+        }
+    ", "retry_logic");
+
+    // Circuit breaker
+    assert_checks("
+        async rite with_circuit_breaker() → ~Response {
+            ⤺ http·get(\"https://api.example.com\")
+                .circuit_breaker(\"api-service\", 5, 30000)
+                .await;
+        }
+    ", "circuit_breaker");
+
+    println("PASS (4 cases)");
+    yea
+}
+
+// ============================================================================
+// 10. PROTOCOL COMPOSITION
+// ============================================================================
+
+rite test_protocol_composition() → !bool {
+    print("  [10/10] Protocol composition... ");
+
+    // Chained requests
+    assert_checks("
+        async rite chained() → ~Data {
+            ≔ auth = http·post(\"https://auth.example.com/token\")
+                .json({ \"client_id\": \"xxx\" })
+                .await;
+            ≔ token = auth.json·<TokenResponse>().access_token;
+
+            ⤺ http·get(\"https://api.example.com/data\")
+                .header(\"Authorization\", format!(\"Bearer {}\", token))
+                .await
+                .json();
+        }
+    ", "chained_requests");
+
+    // Parallel requests
+    assert_checks("
+        async rite parallel() → !(~A, ~B) {
+            ≔ (a, b) = join!(
+                http·get(\"https://api.example.com/a\").await.json(),
+                http·get(\"https://api.example.com/b\").await.json(),
+            );
+            ⤺ (a, b);
+        }
+    ", "parallel_requests");
+
+    // Protocol pipeline
+    assert_checks("
+        async rite pipeline() → ![~Item] {
+            ⤺ http·get(\"https://api.example.com/items\")
+                .await
+                .json·<[Item]>()
+                |τ{item => item.enrich().await}
+                |φ{item => item.is_valid()};
+        }
+    ", "protocol_pipeline");
+
+    // Mixed protocols
+    assert_checks("
+        async rite mixed() → !() {
+            // Get config from HTTP
+            ≔ config = http·get(\"https://config.example.com\").await.json();
+
+            // Connect WebSocket with config
+            ≔ ws = ws·connect(config.ws_url).await;
+
+            // Publish to Kafka
+            kafka·produce(\"events\")
+                .message({ \"connected\": yea })
+                .await;
+        }
+    ", "mixed_protocols");
+
+    println("PASS (4 cases)");
+    yea
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ rite main() → !i32 {
+    println("Testing Protocol Operations...");
+    println("");
+
+    ≔ vary passed: !i32 = 0;
+    ≔ vary failed: !i32 = 0;
+
+    ⎇ test_http_get() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_http_post() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_http_other() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_websocket() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_grpc() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_kafka() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_graphql() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_trust_boundaries() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_protocol_errors() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+    ⎇ test_protocol_composition() { passed = passed + 1; } ⎉ { failed = failed + 1; }
+
+    println("");
+    println("Results: {}/{} test groups passed", passed, passed + failed);
+
+    ⎇ failed > 0 {
+        println("FAILED: {} test groups failed", failed);
+        ⤺ 1;
+    }
+
+    println("");
+    println("All protocol tests passed! (~44 test cases)");
+    ⤺ 0;
+}

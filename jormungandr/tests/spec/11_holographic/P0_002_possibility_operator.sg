@@ -4,7 +4,11 @@
 //
 // The ◊ operator extracts approximate answers from sketches
 
+<<<<<<< HEAD
 use sketch·HyperLogLog;
+=======
+invoke sketch·HyperLogLog;
+>>>>>>> origin/main
 
 rite main() {
     ≔ hll = HyperLogLog·<14>·new();

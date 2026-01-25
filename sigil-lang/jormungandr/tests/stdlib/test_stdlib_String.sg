@@ -1,0 +1,22 @@
+// Stdlib Tests: String (Σ type)
+// String Σ type with REAL assertions
+
+rite main() {
+    println("=== Testing String ===");
+
+    // String·new - creates empty string
+    ≔ s = String·new();
+    assert_eq(type_of(s), "string");
+    assert_eq(len(s), 0);
+
+    // String·from - creates string from value
+    ≔ s2 = String·from("hello");
+    assert_eq(s2, "hello");
+    assert_eq(len(s2), 5);
+
+    // String·from with different input
+    ≔ s3 = String·from("test string");
+    assert_eq(s3, "test string");
+
+    println("ALL STRING TESTS PASSED!");
+}

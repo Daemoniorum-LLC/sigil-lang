@@ -1,0 +1,574 @@
+// rt/sys/linux_x64.sg - Linux x86_64 Syscall Implementation
+//
+// Direct syscall interface for Linux on x86_64.
+// Uses the syscall instruction with the System V AMD64 ABI.
+//
+// Syscall ABI:
+//   rax = syscall number
+//   rdi = arg1, rsi = arg2, rdx = arg3
+//   r10 = arg4, r8 = arg5, r9 = arg6
+//   Return value in rax (-errno on error)
+
+use super·errno·Errno;
+use super·Timespec;
+
+// ============================================================================
+// Syscall Numbers (Linux x86_64)
+// ============================================================================
+
+const SYS_READ: u64 = 0;
+const SYS_WRITE: u64 = 1;
+const SYS_OPEN: u64 = 2;
+const SYS_CLOSE: u64 = 3;
+const SYS_STAT: u64 = 4;
+const SYS_FSTAT: u64 = 5;
+const SYS_LSTAT: u64 = 6;
+const SYS_POLL: u64 = 7;
+const SYS_LSEEK: u64 = 8;
+const SYS_MMAP: u64 = 9;
+const SYS_MPROTECT: u64 = 10;
+const SYS_MUNMAP: u64 = 11;
+const SYS_BRK: u64 = 12;
+const SYS_IOCTL: u64 = 16;
+const SYS_ACCESS: u64 = 21;
+const SYS_PIPE: u64 = 22;
+const SYS_DUP: u64 = 32;
+const SYS_DUP2: u64 = 33;
+const SYS_NANOSLEEP: u64 = 35;
+const SYS_GETPID: u64 = 39;
+const SYS_FORK: u64 = 57;
+const SYS_EXECVE: u64 = 59;
+const SYS_EXIT: u64 = 60;
+const SYS_WAIT4: u64 = 61;
+const SYS_KILL: u64 = 62;
+const SYS_UNAME: u64 = 63;
+const SYS_FCNTL: u64 = 72;
+const SYS_FTRUNCATE: u64 = 77;
+const SYS_GETCWD: u64 = 79;
+const SYS_CHDIR: u64 = 80;
+const SYS_RENAME: u64 = 82;
+const SYS_MKDIR: u64 = 83;
+const SYS_RMDIR: u64 = 84;
+const SYS_UNLINK: u64 = 87;
+const SYS_READLINK: u64 = 89;
+const SYS_CHMOD: u64 = 90;
+const SYS_GETUID: u64 = 102;
+const SYS_GETGID: u64 = 104;
+const SYS_GETEUID: u64 = 107;
+const SYS_GETEGID: u64 = 108;
+const SYS_GETPPID: u64 = 110;
+const SYS_SETSID: u64 = 112;
+const SYS_GETPGID: u64 = 121;
+const SYS_GETSID: u64 = 124;
+const SYS_CLOCK_GETTIME: u64 = 228;
+const SYS_EXIT_GROUP: u64 = 231;
+const SYS_OPENAT: u64 = 257;
+const SYS_MKDIRAT: u64 = 258;
+const SYS_UNLINKAT: u64 = 263;
+const SYS_RENAMEAT: u64 = 264;
+const SYS_FACCESSAT: u64 = 269;
+
+// Clock IDs
+const CLOCK_REALTIME: i32 = 0;
+const CLOCK_MONOTONIC: i32 = 1;
+const CLOCK_PROCESS_CPUTIME_ID: i32 = 2;
+const CLOCK_THREAD_CPUTIME_ID: i32 = 3;
+
+// Open flags
+pub const O_RDONLY: i32 = 0;
+pub const O_WRONLY: i32 = 1;
+pub const O_RDWR: i32 = 2;
+pub const O_CREAT: i32 = 64;
+pub const O_EXCL: i32 = 128;
+pub const O_TRUNC: i32 = 512;
+pub const O_APPEND: i32 = 1024;
+pub const O_NONBLOCK: i32 = 2048;
+pub const O_CLOEXEC: i32 = 524288;
+
+// mmap protection flags
+pub const PROT_NONE: i32 = 0;
+pub const PROT_READ: i32 = 1;
+pub const PROT_WRITE: i32 = 2;
+pub const PROT_EXEC: i32 = 4;
+
+// mmap flags
+pub const MAP_SHARED: i32 = 1;
+pub const MAP_PRIVATE: i32 = 2;
+pub const MAP_FIXED: i32 = 16;
+pub const MAP_ANONYMOUS: i32 = 32;
+
+// ============================================================================
+// Raw Syscall Wrappers
+// ============================================================================
+
+/// Raw syscall with 0 arguments
+#[inline(always)]
+unsafe fn syscall0(num: u64) -> i64~ {
+    let mut ret: i64;
+    asm!(
+        "syscall",
+        inout("rax") num => ret,
+        out("rcx") _,
+        out("r11") _,
+        options(nostack)
+    );
+    ret
+}
+
+/// Raw syscall with 1 argument
+#[inline(always)]
+unsafe fn syscall1(num: u64, a1: u64) -> i64~ {
+    let mut ret: i64;
+    asm!(
+        "syscall",
+        inout("rax") num => ret,
+        in("rdi") a1,
+        out("rcx") _,
+        out("r11") _,
+        options(nostack)
+    );
+    ret
+}
+
+/// Raw syscall with 2 arguments
+#[inline(always)]
+unsafe fn syscall2(num: u64, a1: u64, a2: u64) -> i64~ {
+    let mut ret: i64;
+    asm!(
+        "syscall",
+        inout("rax") num => ret,
+        in("rdi") a1,
+        in("rsi") a2,
+        out("rcx") _,
+        out("r11") _,
+        options(nostack)
+    );
+    ret
+}
+
+/// Raw syscall with 3 arguments
+#[inline(always)]
+unsafe fn syscall3(num: u64, a1: u64, a2: u64, a3: u64) -> i64~ {
+    let mut ret: i64;
+    asm!(
+        "syscall",
+        inout("rax") num => ret,
+        in("rdi") a1,
+        in("rsi") a2,
+        in("rdx") a3,
+        out("rcx") _,
+        out("r11") _,
+        options(nostack)
+    );
+    ret
+}
+
+/// Raw syscall with 4 arguments
+#[inline(always)]
+unsafe fn syscall4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64~ {
+    let mut ret: i64;
+    asm!(
+        "syscall",
+        inout("rax") num => ret,
+        in("rdi") a1,
+        in("rsi") a2,
+        in("rdx") a3,
+        in("r10") a4,
+        out("rcx") _,
+        out("r11") _,
+        options(nostack)
+    );
+    ret
+}
+
+/// Raw syscall with 5 arguments
+#[inline(always)]
+unsafe fn syscall5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64~ {
+    let mut ret: i64;
+    asm!(
+        "syscall",
+        inout("rax") num => ret,
+        in("rdi") a1,
+        in("rsi") a2,
+        in("rdx") a3,
+        in("r10") a4,
+        in("r8") a5,
+        out("rcx") _,
+        out("r11") _,
+        options(nostack)
+    );
+    ret
+}
+
+/// Raw syscall with 6 arguments
+#[inline(always)]
+unsafe fn syscall6(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, a6: u64) -> i64~ {
+    let mut ret: i64;
+    asm!(
+        "syscall",
+        inout("rax") num => ret,
+        in("rdi") a1,
+        in("rsi") a2,
+        in("rdx") a3,
+        in("r10") a4,
+        in("r8") a5,
+        in("r9") a6,
+        out("rcx") _,
+        out("r11") _,
+        options(nostack)
+    );
+    ret
+}
+
+// ============================================================================
+// Helper to convert syscall return to Result
+// ============================================================================
+
+#[inline]
+fn to_result(ret: i64) -> Result<u64, Errno>~ {
+    if ret < 0 {
+        Err(Errno·from((-ret) as i32))
+    } else {
+        Ok(ret as u64)
+    }
+}
+
+#[inline]
+fn to_result_i32(ret: i64) -> Result<i32, Errno>~ {
+    if ret < 0 {
+        Err(Errno·from((-ret) as i32))
+    } else {
+        Ok(ret as i32)
+    }
+}
+
+// ============================================================================
+// File Operations
+// ============================================================================
+
+/// Write to file descriptor
+pub fn write(fd: i32, buf: &[u8]) -> Result<u64, Errno>~ {
+    unsafe {
+        let ret = syscall3(SYS_WRITE, fd as u64, buf.as_ptr() as u64, buf.len() as u64);
+        to_result(ret)
+    }
+}
+
+/// Read from file descriptor
+pub fn read(fd: i32, buf: &mut [u8]) -> Result<u64, Errno>~ {
+    unsafe {
+        let ret = syscall3(SYS_READ, fd as u64, buf.as_mut_ptr() as u64, buf.len() as u64);
+        to_result(ret)
+    }
+}
+
+/// Open file
+pub fn open(path: *const u8, flags: i32, mode: i32) -> Result<i32, Errno>~ {
+    unsafe {
+        let ret = syscall3(SYS_OPEN, path as u64, flags as u64, mode as u64);
+        to_result_i32(ret)
+    }
+}
+
+/// Close file descriptor
+pub fn close(fd: i32) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall1(SYS_CLOSE, fd as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Unlink (delete) file
+pub fn unlink(path: *const u8) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall1(SYS_UNLINK, path as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Seek in file
+pub fn lseek(fd: i32, offset: i64, whence: i32) -> Result<u64, Errno>~ {
+    unsafe {
+        let ret = syscall3(SYS_LSEEK, fd as u64, offset as u64, whence as u64);
+        to_result(ret)
+    }
+}
+
+// ============================================================================
+// Memory Operations
+// ============================================================================
+
+/// Memory map (anonymous)
+pub fn mmap_anon(size: u64) -> Result<*mut u8, Errno>~ {
+    let prot = PROT_READ | PROT_WRITE;
+    let flags = MAP_PRIVATE | MAP_ANONYMOUS;
+
+    unsafe {
+        let ret = syscall6(
+            SYS_MMAP,
+            0,                  // addr (let kernel choose)
+            size,               // length
+            prot as u64,        // prot
+            flags as u64,       // flags
+            (-1i64) as u64,     // fd (-1 for anonymous)
+            0                   // offset
+        );
+
+        if ret < 0 || ret == (-1i64) as i64 {
+            Err(Errno·ENOMEM)
+        } else {
+            Ok(ret as *mut u8)
+        }
+    }
+}
+
+/// Memory map with custom flags
+pub fn mmap(addr: *mut u8, size: u64, prot: i32, flags: i32, fd: i32, offset: i64) -> Result<*mut u8, Errno>~ {
+    unsafe {
+        let ret = syscall6(
+            SYS_MMAP,
+            addr as u64,
+            size,
+            prot as u64,
+            flags as u64,
+            fd as u64,
+            offset as u64
+        );
+
+        if ret < 0 || ret == (-1i64) as i64 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(ret as *mut u8)
+        }
+    }
+}
+
+/// Unmap memory
+pub fn munmap(addr: *mut u8, size: u64) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall2(SYS_MUNMAP, addr as u64, size);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Change memory protection
+pub fn mprotect(addr: *mut u8, size: u64, prot: i32) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall3(SYS_MPROTECT, addr as u64, size, prot as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+// ============================================================================
+// Time Operations
+// ============================================================================
+
+/// Get realtime clock (wall clock)
+pub fn clock_gettime_realtime() -> Result<Timespec, Errno>~ {
+    let mut ts = Timespec·new();
+    unsafe {
+        let ret = syscall2(SYS_CLOCK_GETTIME, CLOCK_REALTIME as u64, &mut ts as *mut Timespec as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(ts)
+        }
+    }
+}
+
+/// Get monotonic clock (for measuring intervals)
+pub fn clock_gettime_monotonic() -> Result<Timespec, Errno>~ {
+    let mut ts = Timespec·new();
+    unsafe {
+        let ret = syscall2(SYS_CLOCK_GETTIME, CLOCK_MONOTONIC as u64, &mut ts as *mut Timespec as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(ts)
+        }
+    }
+}
+
+/// Sleep for specified duration
+pub fn nanosleep(duration: &Timespec) -> Result<(), Errno>~ {
+    let mut remaining = Timespec·new();
+    unsafe {
+        let ret = syscall2(SYS_NANOSLEEP, duration as *const Timespec as u64, &mut remaining as *mut Timespec as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+// ============================================================================
+// Process Operations
+// ============================================================================
+
+/// Exit process
+pub fn exit(code: i32) -> ! {
+    unsafe {
+        syscall1(SYS_EXIT_GROUP, code as u64);
+    }
+    // Unreachable, but compiler needs this
+    loop {}
+}
+
+/// Get process ID
+pub fn getpid() -> !i32 {
+    unsafe {
+        syscall0(SYS_GETPID) as i32
+    }
+}
+
+/// Get parent process ID
+pub fn getppid() -> !i32 {
+    unsafe {
+        syscall0(SYS_GETPPID) as i32
+    }
+}
+
+/// Get user ID
+pub fn getuid() -> !u32 {
+    unsafe {
+        syscall0(SYS_GETUID) as u32
+    }
+}
+
+/// Get effective user ID
+pub fn geteuid() -> !u32 {
+    unsafe {
+        syscall0(SYS_GETEUID) as u32
+    }
+}
+
+/// Get group ID
+pub fn getgid() -> !u32 {
+    unsafe {
+        syscall0(SYS_GETGID) as u32
+    }
+}
+
+/// Get effective group ID
+pub fn getegid() -> !u32 {
+    unsafe {
+        syscall0(SYS_GETEGID) as u32
+    }
+}
+
+// ============================================================================
+// Directory Operations
+// ============================================================================
+
+/// Create directory
+pub fn mkdir(path: *const u8, mode: i32) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall2(SYS_MKDIR, path as u64, mode as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Remove directory
+pub fn rmdir(path: *const u8) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall1(SYS_RMDIR, path as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Change directory
+pub fn chdir(path: *const u8) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall1(SYS_CHDIR, path as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Get current working directory
+pub fn getcwd(buf: &mut [u8]) -> Result<u64, Errno>~ {
+    unsafe {
+        let ret = syscall2(SYS_GETCWD, buf.as_mut_ptr() as u64, buf.len() as u64);
+        to_result(ret)
+    }
+}
+
+// ============================================================================
+// File Attribute Operations
+// ============================================================================
+
+/// Rename file
+pub fn rename(oldpath: *const u8, newpath: *const u8) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall2(SYS_RENAME, oldpath as u64, newpath as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Change file mode
+pub fn chmod(path: *const u8, mode: i32) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall2(SYS_CHMOD, path as u64, mode as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Truncate file
+pub fn ftruncate(fd: i32, length: i64) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall2(SYS_FTRUNCATE, fd as u64, length as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Check file access
+pub fn access(path: *const u8, mode: i32) -> Result<(), Errno>~ {
+    unsafe {
+        let ret = syscall2(SYS_ACCESS, path as u64, mode as u64);
+        if ret < 0 {
+            Err(Errno·from((-ret) as i32))
+        } else {
+            Ok(())
+        }
+    }
+}

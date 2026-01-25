@@ -1,0 +1,24 @@
+// Test: Module aspect each neural layers
+// Spec: 14-NEURAL.md § 1.1 Core Types
+// Priority: P0 - Bootstrap Critical
+
+sigil Linear<◆ IN: usize, ◆ OUT: usize> {
+    weight: Tensor<[OUT, IN]>,
+    bias: Tensor<[OUT]>
+}
+
+⊢<◆ IN: usize, ◆ OUT: usize> Module each Linear<IN, OUT> {
+    type Input = Tensor<[IN]>;
+    type Output = Tensor<[OUT]>;
+
+    rite forward(&this, x: This·Input) → This·Output {
+        this.weight @ x + this.bias
+    }
+}
+
+rite main() {
+    ≔ layer: Linear<3, 2> = Linear·new();
+    ≔ input: Tensor<[3]> = ones();
+    ≔ output = layer.forward(input);
+    println(output.shape[0]);
+}

@@ -1,0 +1,36 @@
+build/multi_test.c
+build/sigil_debug*
+build/sigil_test
+build/sigil_bootstrap
+build/test_*.c
+build/driver_test.c
+build/native_compiler
+build/native_compiler3
+build/sigil2_new.c
+build/sigil_native
+build/*.bak
+build/*.o
+build/sigil_combined
+build/sigil_combined_asan
+sigil_combined
+sigil_combined_asan
+sigil_native
+test_format.sg
+test_format_out.c
+sigil_bs_fixed
+
+# Fixed-point bootstrap artifacts
+build/stage2
+build/stage2_debug
+build/stage2*.c
+!build/stage2_complete.c
+!build/sigil_runtime.c
+build/stage3*.c
+build/complete_runtime.c
+build/filtered_runtime*.c
+build/runtime_*.c
+
+# Temporary fix scripts
+fix_vec_push_*.py
+remove_debug_*.py
+sigil_bootstrap

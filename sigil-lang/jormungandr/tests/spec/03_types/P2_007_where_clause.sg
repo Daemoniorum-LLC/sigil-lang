@@ -1,0 +1,22 @@
+// Test: Where clainvoke of generics
+// Spec: 03-TYPES.md § 6.2 Where Clauses
+// Priority: P2 - Enhancement
+
+aspect Display {
+    rite show(&this);
+}
+
+sigil Wrapper<T> {
+    value: T,
+}
+
+⊢<T> Wrapper<T> where T: Display {
+    rite display(&this) {
+        this.value.show();
+    }
+}
+
+rite main() {
+    // Just verify it parses
+    println(1);
+}

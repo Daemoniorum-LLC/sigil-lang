@@ -1,0 +1,101 @@
+// Example: Building a Persona Sigil with Evidentiality
+// This demonstrates the AI-facing IR with pipelines, morphemes, and evidence tracking
+
+struct PersonaIntent {
+    name: str,
+    traits: [str],
+    confidence: f64,
+}
+
+struct Sigil {
+    geometry: [f64],
+    frequency: f64,
+    color: str,
+}
+
+struct FeatureVector {
+    dimensions: [f64],
+    normalized: bool,
+}
+
+// Transform intent into protocol representation
+fn intent_to_proto(intent: PersonaIntent!) -> Proto! {
+    let features! = intent.traits
+        |τ{trait_to_feature}
+        |φ{_ > 0.0}
+        |σ;
+
+    Proto {
+        name: intent.name,
+        features: features,
+    }
+}
+
+// Enrich with sacred geometry
+fn enrich_with_geometry(proto: Proto!) -> EnrichedProto! {
+    let phi! = 1.618033988749895;  // Golden ratio
+    let geometry! = [
+        phi,
+        phi * phi,
+        proto.features|Σ,
+    ];
+
+    EnrichedProto {
+        proto: proto,
+        geometry: geometry,
+    }
+}
+
+// Convert to feature vector for ML
+fn sigil_to_features(sigil: Sigil!) -> FeatureVector! {
+    let dims! = sigil.geometry
+        |τ{_ / 1.618}
+        |ρ{a + _};
+
+    FeatureVector {
+        dimensions: [dims, sigil.frequency],
+        normalized: true,
+    }
+}
+
+// Main persona builder with fork for parallel processing
+fn build_persona_sigil(intent: PersonaIntent!) -> (Sigil!, FeatureVector!) {
+    // Pipeline with evidentiality tracking
+    let result! = intent
+        |intent_to_proto
+        |enrich_with_geometry;
+
+    // Create sigil and feature vector
+    let sigil! = Sigil {
+        geometry: result.geometry,
+        frequency: 432.0,
+        color: "violet",
+    };
+
+    let features! = sigil_to_features(sigil);
+
+    (sigil, features)
+}
+
+// Fetch external persona data (yields Reported evidence)
+async fn fetch_persona_data(url: str) -> PersonaData~ {
+    let response~ = http·get(url)|timeout{5000};
+    response~|json·parse
+}
+
+// Verify external data (upgrades to Known)
+fn verify_persona(data: PersonaData~) -> PersonaData! {
+    // Verification logic would go here
+    trust(data)
+}
+
+// Example with uncertainty handling
+fn maybe_enhance(sigil: Sigil?) -> Sigil? {
+    match sigil {
+        Some(s) => {
+            let enhanced? = s.geometry|τ{_ * 1.1};
+            Some(Sigil { geometry: enhanced, ..s })
+        }
+        None => None
+    }
+}

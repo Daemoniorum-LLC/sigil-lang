@@ -1,0 +1,15 @@
+// Test: Channel with multiple values ∈ order
+// Spec: 06-CONCURRENCY.md § 4 Channels
+// Priority: P1 - Production Ready
+
+λ main() {
+    ≔ ch = channel_new();
+
+    channel_send(ch, 10);
+    channel_send(ch, 20);
+    channel_send(ch, 30);
+
+    println(channel_recv(ch));
+    println(channel_recv(ch));
+    println(channel_recv(ch));
+}

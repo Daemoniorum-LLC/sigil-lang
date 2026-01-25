@@ -1,0 +1,14 @@
+// Test: Array indexing
+// Spec: 03-TYPES.md § 4.5 Array Indexing
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate array indexing works correctly.
+//
+// Expected behavior:
+// Should print 99 (second element)
+
+λ main() {
+    ≔ arr: ![i32; 3] = [42, 99, 13];
+    println(arr[1]);
+}

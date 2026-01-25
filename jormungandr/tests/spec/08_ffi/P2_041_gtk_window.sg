@@ -1,0 +1,21 @@
+// Test: GTK Window creation pattern
+// Spec: 08-FFI.md § 5.2 GTK Window
+// Priority: P2 - Extended Feature
+// TDD: Tests opaque type pattern for GTK
+
+// Opaque types for GTK widgets
+type GtkWidget = *vary u8;
+type GtkWindow = *vary u8;
+
+#[link("gtk-4")]
+extern "C" {
+    rite gtk_init();
+    rite gtk_window_new() → GtkWindow;
+    rite gtk_window_set_title(window: GtkWindow, title: *◆ u8);
+    rite gtk_widget_set_visible(widget: GtkWidget, visible: i32);
+}
+
+rite main() → i64 {
+    println("gtk window decl ok");
+    0
+}

@@ -1,0 +1,67 @@
+//! Console API bindings
+
+#[wasm_bindgen]
+extern "js" {
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn log(message: &str!);
+
+    #[wasm_bindgen(js_namespace = console, js_name = "log")]
+    pub fn log_many(messages: &[&str]!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn warn(message: &str!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn error(message: &str!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn info(message: &str!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn debug(message: &str!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn trace(message: &str!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn assert(condition: bool!, message: &str!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn clear();
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn count(label: &str!);
+
+    #[wasm_bindgen(js_namespace = console, js_name = "countReset")]
+    pub fn count_reset(label: &str!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn dir(object: &JsValue!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn dirxml(object: &JsValue!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn group(label: &str!);
+
+    #[wasm_bindgen(js_namespace = console, js_name = "groupCollapsed")]
+    pub fn group_collapsed(label: &str!);
+
+    #[wasm_bindgen(js_namespace = console, js_name = "groupEnd")]
+    pub fn group_end();
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn table(data: &JsValue!);
+
+    #[wasm_bindgen(js_namespace = console)]
+    pub fn time(label: &str!);
+
+    #[wasm_bindgen(js_namespace = console, js_name = "timeEnd")]
+    pub fn time_end(label: &str!);
+
+    #[wasm_bindgen(js_namespace = console, js_name = "timeLog")]
+    pub fn time_log(label: &str!);
+
+    #[wasm_bindgen(js_namespace = console, js_name = "timeStamp")]
+    pub fn time_stamp(label: &str!);
+}

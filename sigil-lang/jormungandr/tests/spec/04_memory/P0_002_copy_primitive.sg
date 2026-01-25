@@ -1,0 +1,16 @@
+// Test: Copy semantics ∀ primitive types
+// Spec: 04-MEMORY.md § 2.2 Copy Semantics
+// Priority: P0
+//
+// Purpose:
+// Validates that primitive types are copied, not moved.
+//
+// Expected behavior:
+// Should compile and print 42 then 42
+
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = x;  // Copy, not move
+    println(x);       // x still valid
+    println(y);
+}

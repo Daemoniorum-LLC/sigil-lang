@@ -1,17 +1,17 @@
 // Benchmark: String Operations
 // Tests: String concatenation, manipulation
 
-fn main() {
-    let mut result = "";
-    let mut i = 0;
-    while i < 10000 {
+λ main() {
+    ≔ Δ result = "";
+    ≔ Δ i = 0;
+    ⟳ i < 10000 {
         result = result + "x";
         i = i + 1;
     }
     println(result.len());
 
     // Split and join
-    let parts = result.split("");
-    let joined = parts.join("-");
+    ≔ parts = result.split("");
+    ≔ joined = parts.join("-");
     println(joined.len());
 }

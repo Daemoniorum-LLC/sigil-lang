@@ -1,0 +1,251 @@
+//! Window API bindings
+
+use crate::document::Document;
+use crate::storage::Storage;
+use crate::location::Location;
+use crate::history::History;
+use crate::navigator::Navigator;
+
+/// The window object - global scope in browsers
+#[wasm_bindgen]
+extern "js" {
+    pub type Window;
+
+    #[wasm_bindgen(js_name = "window")]
+    static WINDOW: Option[Window]?;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn document(this: &Window!) -> Option[Document]?;
+
+    #[wasm_bindgen(method, getter, js_name = "localStorage")]
+    pub fn local_storage(this: &Window!) -> Result[Option[Storage], JsValue]?;
+
+    #[wasm_bindgen(method, getter, js_name = "sessionStorage")]
+    pub fn session_storage(this: &Window!) -> Result[Option[Storage], JsValue]?;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn location(this: &Window!) -> Location!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn history(this: &Window!) -> History!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn navigator(this: &Window!) -> Navigator!;
+
+    #[wasm_bindgen(method, getter, js_name = "innerWidth")]
+    pub fn inner_width(this: &Window!) -> Result[JsValue, JsValue]?;
+
+    #[wasm_bindgen(method, getter, js_name = "innerHeight")]
+    pub fn inner_height(this: &Window!) -> Result[JsValue, JsValue]?;
+
+    #[wasm_bindgen(method, getter, js_name = "outerWidth")]
+    pub fn outer_width(this: &Window!) -> Result[JsValue, JsValue]?;
+
+    #[wasm_bindgen(method, getter, js_name = "outerHeight")]
+    pub fn outer_height(this: &Window!) -> Result[JsValue, JsValue]?;
+
+    #[wasm_bindgen(method, getter, js_name = "scrollX")]
+    pub fn scroll_x(this: &Window!) -> f64!;
+
+    #[wasm_bindgen(method, getter, js_name = "scrollY")]
+    pub fn scroll_y(this: &Window!) -> f64!;
+
+    #[wasm_bindgen(method, getter, js_name = "devicePixelRatio")]
+    pub fn device_pixel_ratio(this: &Window!) -> f64!;
+
+    #[wasm_bindgen(method)]
+    pub fn alert(this: &Window!, message: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn confirm(this: &Window!, message: &str!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn prompt(this: &Window!, message: &str!, default: Option[&str]?) -> Option[String]?;
+
+    #[wasm_bindgen(method)]
+    pub fn open(this: &Window!, url: &str!, target: &str!, features: &str!) -> Option[Window]?;
+
+    #[wasm_bindgen(method)]
+    pub fn close(this: &Window!);
+
+    #[wasm_bindgen(method, js_name = "scrollTo")]
+    pub fn scroll_to(this: &Window!, x: f64!, y: f64!);
+
+    #[wasm_bindgen(method, js_name = "scrollBy")]
+    pub fn scroll_by(this: &Window!, x: f64!, y: f64!);
+
+    #[wasm_bindgen(method)]
+    pub fn focus(this: &Window!);
+
+    #[wasm_bindgen(method)]
+    pub fn blur(this: &Window!);
+
+    #[wasm_bindgen(method)]
+    pub fn print(this: &Window!);
+
+    #[wasm_bindgen(method, js_name = "getComputedStyle")]
+    pub fn get_computed_style(this: &Window!, element: &Element!) -> CSSStyleDeclaration!;
+
+    #[wasm_bindgen(method, js_name = "matchMedia")]
+    pub fn match_media(this: &Window!, query: &str!) -> Result[Option[MediaQueryList], JsValue]?;
+
+    #[wasm_bindgen(method, js_name = "requestAnimationFrame")]
+    pub fn request_animation_frame(this: &Window!, callback: &Closure!) -> i32!;
+
+    #[wasm_bindgen(method, js_name = "cancelAnimationFrame")]
+    pub fn cancel_animation_frame(this: &Window!, handle: i32!);
+
+    #[wasm_bindgen(method, js_name = "addEventListener")]
+    pub fn add_event_listener(this: &Window!, event_type: &str!, callback: &Closure!);
+
+    #[wasm_bindgen(method, js_name = "removeEventListener")]
+    pub fn remove_event_listener(this: &Window!, event_type: &str!, callback: &Closure!);
+
+    #[wasm_bindgen(method, js_name = "dispatchEvent")]
+    pub fn dispatch_event(this: &Window!, event: &Event!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn fetch(this: &Window!, input: &str!) -> Promise!;
+
+    #[wasm_bindgen(method, js_name = "fetch")]
+    pub fn fetch_with_request(this: &Window!, request: &Request!) -> Promise!;
+
+    #[wasm_bindgen(method, getter, js_name = "crypto")]
+    pub fn crypto(this: &Window!) -> Crypto!;
+
+    #[wasm_bindgen(method, getter, js_name = "performance")]
+    pub fn performance(this: &Window!) -> Performance!;
+}
+
+impl Window {
+    /// Get the global window object
+    pub fn get() -> Option[Self]? {
+        WINDOW·clone()
+    }
+}
+
+/// MediaQueryList for responsive design
+#[wasm_bindgen]
+extern "js" {
+    pub type MediaQueryList;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn matches(this: &MediaQueryList!) -> bool!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn media(this: &MediaQueryList!) -> String!;
+
+    #[wasm_bindgen(method, js_name = "addListener")]
+    pub fn add_listener(this: &MediaQueryList!, callback: &Closure!);
+
+    #[wasm_bindgen(method, js_name = "removeListener")]
+    pub fn remove_listener(this: &MediaQueryList!, callback: &Closure!);
+}
+
+/// MediaQueryListEvent
+#[wasm_bindgen]
+extern "js" {
+    pub type MediaQueryListEvent;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn matches(this: &MediaQueryListEvent!) -> bool!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn media(this: &MediaQueryListEvent!) -> String!;
+}
+
+/// CSS computed style
+#[wasm_bindgen]
+extern "js" {
+    pub type CSSStyleDeclaration;
+
+    #[wasm_bindgen(method, js_name = "getPropertyValue")]
+    pub fn get_property_value(this: &CSSStyleDeclaration!, property: &str!) -> String!;
+
+    #[wasm_bindgen(method, js_name = "setProperty")]
+    pub fn set_property(this: &CSSStyleDeclaration!, property: &str!, value: &str!);
+
+    #[wasm_bindgen(method, js_name = "removeProperty")]
+    pub fn remove_property(this: &CSSStyleDeclaration!, property: &str!) -> String!;
+}
+
+/// Performance API
+#[wasm_bindgen]
+extern "js" {
+    pub type Performance;
+
+    #[wasm_bindgen(method)]
+    pub fn now(this: &Performance!) -> f64!;
+
+    #[wasm_bindgen(method, js_name = "getEntries")]
+    pub fn get_entries(this: &Performance!) -> Vec[PerformanceEntry]!;
+
+    #[wasm_bindgen(method)]
+    pub fn mark(this: &Performance!, name: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn measure(this: &Performance!, name: &str!, start_mark: &str!, end_mark: &str!);
+
+    #[wasm_bindgen(method, js_name = "clearMarks")]
+    pub fn clear_marks(this: &Performance!);
+
+    #[wasm_bindgen(method, js_name = "clearMeasures")]
+    pub fn clear_measures(this: &Performance!);
+}
+
+/// Performance entry
+#[wasm_bindgen]
+extern "js" {
+    pub type PerformanceEntry;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn name(this: &PerformanceEntry!) -> String!;
+
+    #[wasm_bindgen(method, getter, js_name = "entryType")]
+    pub fn entry_type(this: &PerformanceEntry!) -> String!;
+
+    #[wasm_bindgen(method, getter, js_name = "startTime")]
+    pub fn start_time(this: &PerformanceEntry!) -> f64!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn duration(this: &PerformanceEntry!) -> f64!;
+}
+
+/// Crypto API
+#[wasm_bindgen]
+extern "js" {
+    pub type Crypto;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn subtle(this: &Crypto!) -> SubtleCrypto!;
+
+    #[wasm_bindgen(method, js_name = "getRandomValues")]
+    pub fn get_random_values(this: &Crypto!, array: &mut [u8]!) -> &[u8]!;
+
+    #[wasm_bindgen(method, js_name = "randomUUID")]
+    pub fn random_uuid(this: &Crypto!) -> String!;
+}
+
+/// SubtleCrypto for cryptographic operations
+#[wasm_bindgen]
+extern "js" {
+    pub type SubtleCrypto;
+
+    #[wasm_bindgen(method)]
+    pub fn encrypt(this: &SubtleCrypto!, algorithm: JsValue!, key: &CryptoKey!, data: &[u8]!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn decrypt(this: &SubtleCrypto!, algorithm: JsValue!, key: &CryptoKey!, data: &[u8]!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn digest(this: &SubtleCrypto!, algorithm: &str!, data: &[u8]!) -> Promise!;
+
+    #[wasm_bindgen(method, js_name = "generateKey")]
+    pub fn generate_key(this: &SubtleCrypto!, algorithm: JsValue!, extractable: bool!, key_usages: &[&str]!) -> Promise!;
+}
+
+/// CryptoKey
+#[wasm_bindgen]
+extern "js" {
+    pub type CryptoKey;
+}

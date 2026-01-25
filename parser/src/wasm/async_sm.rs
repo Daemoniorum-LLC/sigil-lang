@@ -290,7 +290,10 @@ mod tests {
         Function {
             visibility: Visibility::Private,
             is_async,
+            is_const: false,
+            is_unsafe: false,
             attrs: FunctionAttrs::default(),
+            outer_attrs: Vec::new(),
             name: make_ident(name),
             aspect: None,
             generics: None,

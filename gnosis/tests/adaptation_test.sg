@@ -1,13 +1,22 @@
+<<<<<<< HEAD
 //! Tests for Gnosis Adaptation System
 //!
 //! Verifies AdaptationSystem, CommunicationStyle, HumanProfile, DomainAdaptation.
 
 use std::collections::HashMap;
+=======
+//! Tests ∀ Gnosis Adaptation System
+//!
+//! Verifies AdaptationSystem, CommunicationStyle, HumanProfile, DomainAdaptation.
+
+invoke std·collections·HashMap;
+>>>>>>> origin/main
 
 // ============================================================================
 // Self-contained Test Types
 // ============================================================================
 
+<<<<<<< HEAD
 pub struct Timestamp { nanos: u64 }
 impl Timestamp { pub fn now() -> Self { Self { nanos: 1000 } } }
 
@@ -36,6 +45,36 @@ pub struct CommunicationStyle {
 
 impl CommunicationStyle {
     pub fn default_style() -> Self {
+=======
+☉ Σ Timestamp { nanos: u64 }
+⊢ Timestamp { ☉ λ now() -> Self { Self { nanos: 1000 } } }
+
+☉ Σ HumanId { id: String }
+⊢ HumanId { ☉ λ new(id: &str) -> Self { Self { id: id.to_string() } } }
+⊢ Clone ∀ HumanId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+⊢ PartialEq ∀ HumanId { λ eq(&self, other: &Self) -> bool { self.id == other.id } }
+⊢ Eq ∀ HumanId {}
+⊢ std·hash·Hash ∀ HumanId {
+    λ hash<H: std·hash·Hasher>(&self, state: &Δ H) { self.id.hash(state); }
+}
+
+#[derive(Clone)]
+☉ Σ CommunicationStyle {
+    /// Verbosity (-1 = minimal, 1 = verbose)
+    ☉ verbosity: f32,
+    /// Formality (-1 = casual, 1 = formal)
+    ☉ formality: f32,
+    /// Proactivity (-1 = reactive, 1 = proactive)
+    ☉ proactivity: f32,
+    /// Detail level (-1 = high-level, 1 = detailed)
+    ☉ detail_level: f32,
+    /// Check-in frequency (-1 = rare, 1 = frequent)
+    ☉ check_in_frequency: f32,
+}
+
+⊢ CommunicationStyle {
+    ☉ λ default_style() -> Self {
+>>>>>>> origin/main
         Self {
             verbosity: 0.0,
             formality: 0.0,
@@ -45,6 +84,7 @@ impl CommunicationStyle {
         }
     }
 
+<<<<<<< HEAD
     pub fn concise() -> Self {
         Self { verbosity: -0.8, ..Self::default_style() }
     }
@@ -76,21 +116,63 @@ impl CommunicationStyle {
     pub fn is_proactive(&self) -> bool { self.proactivity > 0.3 }
 
     pub fn with_verbosity(mut self, v: f32) -> Self {
+=======
+    ☉ λ concise() -> Self {
+        Self { verbosity: -0.8, ..Self·default_style() }
+    }
+
+    ☉ λ verbose() -> Self {
+        Self { verbosity: 0.8, ..Self·default_style() }
+    }
+
+    ☉ λ formal() -> Self {
+        Self { formality: 0.8, ..Self·default_style() }
+    }
+
+    ☉ λ casual() -> Self {
+        Self { formality: -0.8, ..Self·default_style() }
+    }
+
+    ☉ λ proactive() -> Self {
+        Self { proactivity: 0.8, ..Self·default_style() }
+    }
+
+    ☉ λ reactive() -> Self {
+        Self { proactivity: -0.8, ..Self·default_style() }
+    }
+
+    ☉ λ is_concise(&self) -> bool { self.verbosity < -0.3 }
+    ☉ λ is_verbose(&self) -> bool { self.verbosity > 0.3 }
+    ☉ λ is_formal(&self) -> bool { self.formality > 0.3 }
+    ☉ λ is_casual(&self) -> bool { self.formality < -0.3 }
+    ☉ λ is_proactive(&self) -> bool { self.proactivity > 0.3 }
+
+    ☉ λ with_verbosity(Δ self, v: f32) -> Self {
+>>>>>>> origin/main
         self.verbosity = v.clamp(-1.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_formality(mut self, f: f32) -> Self {
+=======
+    ☉ λ with_formality(Δ self, f: f32) -> Self {
+>>>>>>> origin/main
         self.formality = f.clamp(-1.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_proactivity(mut self, p: f32) -> Self {
+=======
+    ☉ λ with_proactivity(Δ self, p: f32) -> Self {
+>>>>>>> origin/main
         self.proactivity = p.clamp(-1.0, 1.0);
         self
     }
 }
 
+<<<<<<< HEAD
 pub struct HumanProfile {
     pub human_id: HumanId,
     pub preferred_style: CommunicationStyle,
@@ -109,21 +191,53 @@ impl HumanProfile {
     }
 
     pub fn adjust_verbosity(&mut self, delta: f32) {
+=======
+☉ Σ HumanProfile {
+    ☉ human_id: HumanId,
+    ☉ preferred_style: CommunicationStyle,
+    ☉ interaction_count: usize,
+    ☉ last_interaction: Timestamp,
+}
+
+⊢ HumanProfile {
+    ☉ λ new(human_id: HumanId) -> Self {
+        Self {
+            human_id,
+            preferred_style: CommunicationStyle·default_style(),
+            interaction_count: 0,
+            last_interaction: Timestamp·now(),
+        }
+    }
+
+    ☉ λ adjust_verbosity(&Δ self, delta: f32) {
+>>>>>>> origin/main
         self.preferred_style.verbosity = (self.preferred_style.verbosity + delta).clamp(-1.0, 1.0);
         self.interaction_count += 1;
     }
 
+<<<<<<< HEAD
     pub fn adjust_formality(&mut self, delta: f32) {
+=======
+    ☉ λ adjust_formality(&Δ self, delta: f32) {
+>>>>>>> origin/main
         self.preferred_style.formality = (self.preferred_style.formality + delta).clamp(-1.0, 1.0);
         self.interaction_count += 1;
     }
 
+<<<<<<< HEAD
     pub fn adjust_proactivity(&mut self, delta: f32) {
+=======
+    ☉ λ adjust_proactivity(&Δ self, delta: f32) {
+>>>>>>> origin/main
         self.preferred_style.proactivity = (self.preferred_style.proactivity + delta).clamp(-1.0, 1.0);
         self.interaction_count += 1;
     }
 
+<<<<<<< HEAD
     pub fn reinforce_current(&mut self) {
+=======
+    ☉ λ reinforce_current(&Δ self) {
+>>>>>>> origin/main
         // Move slightly toward extremes
         self.preferred_style.verbosity *= 1.05;
         self.preferred_style.formality *= 1.05;
@@ -133,7 +247,11 @@ impl HumanProfile {
 }
 
 #[derive(Clone)]
+<<<<<<< HEAD
 pub enum FeedbackType {
+=======
+☉ ᛈ FeedbackType {
+>>>>>>> origin/main
     Positive,
     Negative,
     TooVerbose,
@@ -144,26 +262,43 @@ pub enum FeedbackType {
     WrongApproach,
 }
 
+<<<<<<< HEAD
 impl FeedbackType {
     pub fn is_positive(&self) -> bool {
         match self {
             FeedbackType::Positive | FeedbackType::GoodApproach => true,
+=======
+⊢ FeedbackType {
+    ☉ λ is_positive(&self) -> bool {
+        ⌥ self {
+            FeedbackType·Positive | FeedbackType·GoodApproach => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn is_style_feedback(&self) -> bool {
         match self {
             FeedbackType::TooVerbose |
             FeedbackType::NeedMoreDetail |
             FeedbackType::TooFormal |
             FeedbackType::TooInformal => true,
+=======
+    ☉ λ is_style_feedback(&self) -> bool {
+        ⌥ self {
+            FeedbackType·TooVerbose |
+            FeedbackType·NeedMoreDetail |
+            FeedbackType·TooFormal |
+            FeedbackType·TooInformal => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 }
 
 #[derive(Clone)]
+<<<<<<< HEAD
 pub struct Feedback {
     pub human_id: Option<HumanId>,
     pub feedback_type: FeedbackType,
@@ -172,6 +307,16 @@ pub struct Feedback {
 
 impl Feedback {
     pub fn new(feedback_type: FeedbackType) -> Self {
+=======
+☉ Σ Feedback {
+    ☉ human_id: Option<HumanId>,
+    ☉ feedback_type: FeedbackType,
+    ☉ message: Option<String>,
+}
+
+⊢ Feedback {
+    ☉ λ new(feedback_type: FeedbackType) -> Self {
+>>>>>>> origin/main
         Self {
             human_id: None,
             feedback_type,
@@ -179,7 +324,11 @@ impl Feedback {
         }
     }
 
+<<<<<<< HEAD
     pub fn from_human(human_id: HumanId, feedback_type: FeedbackType) -> Self {
+=======
+    ☉ λ from_human(human_id: HumanId, feedback_type: FeedbackType) -> Self {
+>>>>>>> origin/main
         Self {
             human_id: Some(human_id),
             feedback_type,
@@ -187,22 +336,36 @@ impl Feedback {
         }
     }
 
+<<<<<<< HEAD
     pub fn with_message(mut self, message: &str) -> Self {
+=======
+    ☉ λ with_message(Δ self, message: &str) -> Self {
+>>>>>>> origin/main
         self.message = Some(message.to_string());
         self
     }
 
+<<<<<<< HEAD
     pub fn positivity(&self) -> f32 {
         match self.feedback_type {
             FeedbackType::Positive => 1.0,
             FeedbackType::Negative => 0.0,
             FeedbackType::GoodApproach => 0.9,
             FeedbackType::WrongApproach => 0.1,
+=======
+    ☉ λ positivity(&self) -> f32 {
+        ⌥ self.feedback_type {
+            FeedbackType·Positive => 1.0,
+            FeedbackType·Negative => 0.0,
+            FeedbackType·GoodApproach => 0.9,
+            FeedbackType·WrongApproach => 0.1,
+>>>>>>> origin/main
             _ => 0.3,
         }
     }
 }
 
+<<<<<<< HEAD
 pub struct DomainKnowledge {
     pub terminology: HashMap<String, String>,
     pub conventions: Vec<String>,
@@ -213,26 +376,51 @@ impl DomainKnowledge {
     pub fn new() -> Self {
         Self {
             terminology: HashMap::new(),
+=======
+☉ Σ DomainKnowledge {
+    ☉ terminology: HashMap<String, String>,
+    ☉ conventions: Vec<String>,
+    ☉ constraints: Vec<String>,
+}
+
+⊢ DomainKnowledge {
+    ☉ λ new() -> Self {
+        Self {
+            terminology: HashMap·new(),
+>>>>>>> origin/main
             conventions: vec![],
             constraints: vec![],
         }
     }
 
+<<<<<<< HEAD
     pub fn with_term(mut self, term: &str, definition: &str) -> Self {
+=======
+    ☉ λ with_term(Δ self, term: &str, definition: &str) -> Self {
+>>>>>>> origin/main
         self.terminology.insert(term.to_string(), definition.to_string());
         self
     }
 
+<<<<<<< HEAD
     pub fn with_convention(mut self, convention: &str) -> Self {
+=======
+    ☉ λ with_convention(Δ self, convention: &str) -> Self {
+>>>>>>> origin/main
         self.conventions.push(convention.to_string());
         self
     }
 
+<<<<<<< HEAD
     pub fn with_constraint(mut self, constraint: &str) -> Self {
+=======
+    ☉ λ with_constraint(Δ self, constraint: &str) -> Self {
+>>>>>>> origin/main
         self.constraints.push(constraint.to_string());
         self
     }
 
+<<<<<<< HEAD
     pub fn term_count(&self) -> usize { self.terminology.len() }
     pub fn convention_count(&self) -> usize { self.conventions.len() }
     pub fn constraint_count(&self) -> usize { self.constraints.len() }
@@ -247,6 +435,22 @@ pub struct DomainAdaptation {
 
 impl DomainAdaptation {
     pub fn from_knowledge(domain: &str, knowledge: DomainKnowledge) -> Self {
+=======
+    ☉ λ term_count(&self) -> usize { self.terminology.len() }
+    ☉ λ convention_count(&self) -> usize { self.conventions.len() }
+    ☉ λ constraint_count(&self) -> usize { self.constraints.len() }
+}
+
+☉ Σ DomainAdaptation {
+    ☉ domain: String,
+    ☉ terminology: HashMap<String, String>,
+    ☉ conventions: Vec<String>,
+    ☉ constraints: Vec<String>,
+}
+
+⊢ DomainAdaptation {
+    ☉ λ from_knowledge(domain: &str, knowledge: DomainKnowledge) -> Self {
+>>>>>>> origin/main
         Self {
             domain: domain.to_string(),
             terminology: knowledge.terminology,
@@ -255,6 +459,7 @@ impl DomainAdaptation {
         }
     }
 
+<<<<<<< HEAD
     pub fn get_term(&self, term: &str) -> Option<&String> {
         self.terminology.get(term)
     }
@@ -264,10 +469,22 @@ impl DomainAdaptation {
     }
 
     pub fn has_convention(&self, convention: &str) -> bool {
+=======
+    ☉ λ get_term(&self, term: &str) -> Option<&String> {
+        self.terminology.get(term)
+    }
+
+    ☉ λ has_term(&self, term: &str) -> bool {
+        self.terminology.contains_key(term)
+    }
+
+    ☉ λ has_convention(&self, convention: &str) -> bool {
+>>>>>>> origin/main
         self.conventions.contains(&convention.to_string())
     }
 }
 
+<<<<<<< HEAD
 pub struct AdaptationConfig {
     pub preference_learning_rate: f32,
     pub preference_decay_rate: f32,
@@ -275,6 +492,15 @@ pub struct AdaptationConfig {
 
 impl AdaptationConfig {
     pub fn default_config() -> Self {
+=======
+☉ Σ AdaptationConfig {
+    ☉ preference_learning_rate: f32,
+    ☉ preference_decay_rate: f32,
+}
+
+⊢ AdaptationConfig {
+    ☉ λ default_config() -> Self {
+>>>>>>> origin/main
         Self {
             preference_learning_rate: 0.1,
             preference_decay_rate: 0.01,
@@ -282,13 +508,18 @@ impl AdaptationConfig {
     }
 }
 
+<<<<<<< HEAD
 pub struct AdaptationSystem {
+=======
+☉ Σ AdaptationSystem {
+>>>>>>> origin/main
     profiles: HashMap<HumanId, HumanProfile>,
     domains: HashMap<String, DomainAdaptation>,
     default_style: CommunicationStyle,
     config: AdaptationConfig,
 }
 
+<<<<<<< HEAD
 impl AdaptationSystem {
     pub fn new() -> Self {
         Self {
@@ -300,16 +531,34 @@ impl AdaptationSystem {
     }
 
     pub fn with_default_style(mut self, style: CommunicationStyle) -> Self {
+=======
+⊢ AdaptationSystem {
+    ☉ λ new() -> Self {
+        Self {
+            profiles: HashMap·new(),
+            domains: HashMap·new(),
+            default_style: CommunicationStyle·default_style(),
+            config: AdaptationConfig·default_config(),
+        }
+    }
+
+    ☉ λ with_default_style(Δ self, style: CommunicationStyle) -> Self {
+>>>>>>> origin/main
         self.default_style = style;
         self
     }
 
+<<<<<<< HEAD
     pub fn style_for(&self, human_id: &HumanId) -> CommunicationStyle {
+=======
+    ☉ λ style_for(&self, human_id: &HumanId) -> CommunicationStyle {
+>>>>>>> origin/main
         self.profiles.get(human_id)
             .map(|p| p.preferred_style.clone())
             .unwrap_or_else(|| self.default_style.clone())
     }
 
+<<<<<<< HEAD
     pub fn update_profile(&mut self, human_id: &HumanId, feedback: &Feedback) {
         let profile = self.profiles
             .entry(human_id.clone())
@@ -321,10 +570,24 @@ impl AdaptationSystem {
             FeedbackType::TooFormal => profile.adjust_formality(-0.1),
             FeedbackType::TooInformal => profile.adjust_formality(0.1),
             FeedbackType::GoodApproach => profile.reinforce_current(),
+=======
+    ☉ λ update_profile(&Δ self, human_id: &HumanId, feedback: &Feedback) {
+        ≔ profile = self.profiles
+            .entry(human_id.clone())
+            .or_insert_with(|| HumanProfile·new(human_id.clone()));
+
+        ⌥ feedback.feedback_type {
+            FeedbackType·TooVerbose => profile.adjust_verbosity(-0.1),
+            FeedbackType·NeedMoreDetail => profile.adjust_verbosity(0.1),
+            FeedbackType·TooFormal => profile.adjust_formality(-0.1),
+            FeedbackType·TooInformal => profile.adjust_formality(0.1),
+            FeedbackType·GoodApproach => profile.reinforce_current(),
+>>>>>>> origin/main
             _ => {}
         }
     }
 
+<<<<<<< HEAD
     pub fn adapt_to_domain(&mut self, domain: &str, knowledge: DomainKnowledge) {
         self.domains.insert(
             domain.to_string(),
@@ -353,6 +616,36 @@ impl AdaptationSystem {
     }
 
     pub fn get_profile(&self, human_id: &HumanId) -> Option<&HumanProfile> {
+=======
+    ☉ λ adapt_to_domain(&Δ self, domain: &str, knowledge: DomainKnowledge) {
+        self.domains.insert(
+            domain.to_string(),
+            DomainAdaptation·from_knowledge(domain, knowledge)
+        );
+    }
+
+    ☉ λ domain_adaptation(&self, domain: &str) -> Option<&DomainAdaptation> {
+        self.domains.get(domain)
+    }
+
+    ☉ λ profile_count(&self) -> usize {
+        self.profiles.len()
+    }
+
+    ☉ λ domain_count(&self) -> usize {
+        self.domains.len()
+    }
+
+    ☉ λ has_profile(&self, human_id: &HumanId) -> bool {
+        self.profiles.contains_key(human_id)
+    }
+
+    ☉ λ has_domain(&self, domain: &str) -> bool {
+        self.domains.contains_key(domain)
+    }
+
+    ☉ λ get_profile(&self, human_id: &HumanId) -> Option<&HumanProfile> {
+>>>>>>> origin/main
         self.profiles.get(human_id)
     }
 }
@@ -362,56 +655,96 @@ impl AdaptationSystem {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_communication_style_default() {
     let style = CommunicationStyle::default_style();
+=======
+λ test_communication_style_default() {
+    ≔ style = CommunicationStyle·default_style();
+>>>>>>> origin/main
     assert_eq(style.verbosity, 0.0);
     assert_eq(style.formality, 0.0);
     assert_eq(style.proactivity, 0.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_communication_style_concise() {
     let style = CommunicationStyle::concise();
+=======
+λ test_communication_style_concise() {
+    ≔ style = CommunicationStyle·concise();
+>>>>>>> origin/main
     assert(style.is_concise());
     assert(!style.is_verbose());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_communication_style_verbose() {
     let style = CommunicationStyle::verbose();
+=======
+λ test_communication_style_verbose() {
+    ≔ style = CommunicationStyle·verbose();
+>>>>>>> origin/main
     assert(style.is_verbose());
     assert(!style.is_concise());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_communication_style_formal() {
     let style = CommunicationStyle::formal();
+=======
+λ test_communication_style_formal() {
+    ≔ style = CommunicationStyle·formal();
+>>>>>>> origin/main
     assert(style.is_formal());
     assert(!style.is_casual());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_communication_style_casual() {
     let style = CommunicationStyle::casual();
+=======
+λ test_communication_style_casual() {
+    ≔ style = CommunicationStyle·casual();
+>>>>>>> origin/main
     assert(style.is_casual());
     assert(!style.is_formal());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_communication_style_proactive() {
     let style = CommunicationStyle::proactive();
+=======
+λ test_communication_style_proactive() {
+    ≔ style = CommunicationStyle·proactive();
+>>>>>>> origin/main
     assert(style.is_proactive());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_communication_style_with_verbosity() {
     let style = CommunicationStyle::default_style().with_verbosity(0.5);
+=======
+λ test_communication_style_with_verbosity() {
+    ≔ style = CommunicationStyle·default_style().with_verbosity(0.5);
+>>>>>>> origin/main
     assert_eq(style.verbosity, 0.5);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_communication_style_clamped() {
     let style = CommunicationStyle::default_style().with_verbosity(2.0);
+=======
+λ test_communication_style_clamped() {
+    ≔ style = CommunicationStyle·default_style().with_verbosity(2.0);
+>>>>>>> origin/main
     assert_eq(style.verbosity, 1.0);
 }
 
@@ -420,44 +753,74 @@ fn test_communication_style_clamped() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_human_profile_new() {
     let profile = HumanProfile::new(HumanId::new("alice"));
+=======
+λ test_human_profile_new() {
+    ≔ profile = HumanProfile·new(HumanId·new("alice"));
+>>>>>>> origin/main
     assert_eq(profile.human_id.id, "alice");
     assert_eq(profile.interaction_count, 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_human_profile_adjust_verbosity() {
     let mut profile = HumanProfile::new(HumanId::new("bob"));
+=======
+λ test_human_profile_adjust_verbosity() {
+    ≔ Δ profile = HumanProfile·new(HumanId·new("bob"));
+>>>>>>> origin/main
     profile.adjust_verbosity(0.2);
     assert_eq(profile.preferred_style.verbosity, 0.2);
     assert_eq(profile.interaction_count, 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_human_profile_adjust_verbosity_clamped() {
     let mut profile = HumanProfile::new(HumanId::new("test"));
+=======
+λ test_human_profile_adjust_verbosity_clamped() {
+    ≔ Δ profile = HumanProfile·new(HumanId·new("test"));
+>>>>>>> origin/main
     profile.adjust_verbosity(2.0);
     assert_eq(profile.preferred_style.verbosity, 1.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_human_profile_adjust_formality() {
     let mut profile = HumanProfile::new(HumanId::new("charlie"));
+=======
+λ test_human_profile_adjust_formality() {
+    ≔ Δ profile = HumanProfile·new(HumanId·new("charlie"));
+>>>>>>> origin/main
     profile.adjust_formality(-0.3);
     assert_eq(profile.preferred_style.formality, -0.3);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_human_profile_adjust_proactivity() {
     let mut profile = HumanProfile::new(HumanId::new("dave"));
+=======
+λ test_human_profile_adjust_proactivity() {
+    ≔ Δ profile = HumanProfile·new(HumanId·new("dave"));
+>>>>>>> origin/main
     profile.adjust_proactivity(0.5);
     assert_eq(profile.preferred_style.proactivity, 0.5);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_human_profile_reinforce_current() {
     let mut profile = HumanProfile::new(HumanId::new("eve"));
+=======
+λ test_human_profile_reinforce_current() {
+    ≔ Δ profile = HumanProfile·new(HumanId·new("eve"));
+>>>>>>> origin/main
     profile.preferred_style.verbosity = 0.5;
     profile.reinforce_current();
     assert(profile.preferred_style.verbosity > 0.5);
@@ -468,6 +831,7 @@ fn test_human_profile_reinforce_current() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_feedback_type_is_positive() {
     assert(FeedbackType::Positive.is_positive());
     assert(FeedbackType::GoodApproach.is_positive());
@@ -481,6 +845,21 @@ fn test_feedback_type_is_style_feedback() {
     assert(FeedbackType::TooFormal.is_style_feedback());
     assert(FeedbackType::TooInformal.is_style_feedback());
     assert(!FeedbackType::Positive.is_style_feedback());
+=======
+λ test_feedback_type_is_positive() {
+    assert(FeedbackType·Positive.is_positive());
+    assert(FeedbackType·GoodApproach.is_positive());
+    assert(!FeedbackType·Negative.is_positive());
+}
+
+#[test]
+λ test_feedback_type_is_style_feedback() {
+    assert(FeedbackType·TooVerbose.is_style_feedback());
+    assert(FeedbackType·NeedMoreDetail.is_style_feedback());
+    assert(FeedbackType·TooFormal.is_style_feedback());
+    assert(FeedbackType·TooInformal.is_style_feedback());
+    assert(!FeedbackType·Positive.is_style_feedback());
+>>>>>>> origin/main
 }
 
 // ============================================================================
@@ -488,29 +867,51 @@ fn test_feedback_type_is_style_feedback() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_feedback_new() {
     let fb = Feedback::new(FeedbackType::Positive);
+=======
+λ test_feedback_new() {
+    ≔ fb = Feedback·new(FeedbackType·Positive);
+>>>>>>> origin/main
     assert(fb.human_id.is_none());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_feedback_from_human() {
     let fb = Feedback::from_human(HumanId::new("user"), FeedbackType::TooVerbose);
+=======
+λ test_feedback_from_human() {
+    ≔ fb = Feedback·from_human(HumanId·new("user"), FeedbackType·TooVerbose);
+>>>>>>> origin/main
     assert(fb.human_id.is_some());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_feedback_with_message() {
     let fb = Feedback::new(FeedbackType::Negative)
+=======
+λ test_feedback_with_message() {
+    ≔ fb = Feedback·new(FeedbackType·Negative)
+>>>>>>> origin/main
         .with_message("Please be more concise");
     assert(fb.message.is_some());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_feedback_positivity() {
     assert_eq(Feedback::new(FeedbackType::Positive).positivity(), 1.0);
     assert_eq(Feedback::new(FeedbackType::Negative).positivity(), 0.0);
     assert_eq(Feedback::new(FeedbackType::GoodApproach).positivity(), 0.9);
+=======
+λ test_feedback_positivity() {
+    assert_eq(Feedback·new(FeedbackType·Positive).positivity(), 1.0);
+    assert_eq(Feedback·new(FeedbackType·Negative).positivity(), 0.0);
+    assert_eq(Feedback·new(FeedbackType·GoodApproach).positivity(), 0.9);
+>>>>>>> origin/main
 }
 
 // ============================================================================
@@ -518,29 +919,50 @@ fn test_feedback_positivity() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_domain_knowledge_new() {
     let dk = DomainKnowledge::new();
+=======
+λ test_domain_knowledge_new() {
+    ≔ dk = DomainKnowledge·new();
+>>>>>>> origin/main
     assert_eq(dk.term_count(), 0);
     assert_eq(dk.convention_count(), 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_domain_knowledge_with_term() {
     let dk = DomainKnowledge::new()
+=======
+λ test_domain_knowledge_with_term() {
+    ≔ dk = DomainKnowledge·new()
+>>>>>>> origin/main
         .with_term("API", "Application Programming Interface");
     assert_eq(dk.term_count(), 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_domain_knowledge_with_convention() {
     let dk = DomainKnowledge::new()
         .with_convention("Use snake_case for variables");
+=======
+λ test_domain_knowledge_with_convention() {
+    ≔ dk = DomainKnowledge·new()
+        .with_convention("Use snake_case ∀ variables");
+>>>>>>> origin/main
     assert_eq(dk.convention_count(), 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_domain_knowledge_with_constraint() {
     let dk = DomainKnowledge::new()
+=======
+λ test_domain_knowledge_with_constraint() {
+    ≔ dk = DomainKnowledge·new()
+>>>>>>> origin/main
         .with_constraint("No global state");
     assert_eq(dk.constraint_count(), 1);
 }
@@ -550,29 +972,51 @@ fn test_domain_knowledge_with_constraint() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_domain_adaptation_from_knowledge() {
     let dk = DomainKnowledge::new()
         .with_term("PR", "Pull Request");
     let da = DomainAdaptation::from_knowledge("git", dk);
+=======
+λ test_domain_adaptation_from_knowledge() {
+    ≔ dk = DomainKnowledge·new()
+        .with_term("PR", "Pull Request");
+    ≔ da = DomainAdaptation·from_knowledge("git", dk);
+>>>>>>> origin/main
     assert_eq(da.domain, "git");
     assert(da.has_term("PR"));
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_domain_adaptation_get_term() {
     let dk = DomainKnowledge::new()
         .with_term("OOP", "Object-Oriented Programming");
     let da = DomainAdaptation::from_knowledge("programming", dk);
     let term = da.get_term("OOP");
+=======
+λ test_domain_adaptation_get_term() {
+    ≔ dk = DomainKnowledge·new()
+        .with_term("OOP", "Object-Oriented Programming");
+    ≔ da = DomainAdaptation·from_knowledge("programming", dk);
+    ≔ term = da.get_term("OOP");
+>>>>>>> origin/main
     assert(term.is_some());
     assert_eq(*term.unwrap(), "Object-Oriented Programming");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_domain_adaptation_has_convention() {
     let dk = DomainKnowledge::new()
         .with_convention("Test before commit");
     let da = DomainAdaptation::from_knowledge("dev", dk);
+=======
+λ test_domain_adaptation_has_convention() {
+    ≔ dk = DomainKnowledge·new()
+        .with_convention("Test before commit");
+    ≔ da = DomainAdaptation·from_knowledge("dev", dk);
+>>>>>>> origin/main
     assert(da.has_convention("Test before commit"));
 }
 
@@ -581,28 +1025,47 @@ fn test_domain_adaptation_has_convention() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_new() {
     let system = AdaptationSystem::new();
+=======
+λ test_adaptation_system_new() {
+    ≔ system = AdaptationSystem·new();
+>>>>>>> origin/main
     assert_eq(system.profile_count(), 0);
     assert_eq(system.domain_count(), 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_with_default_style() {
     let system = AdaptationSystem::new()
         .with_default_style(CommunicationStyle::formal());
     let style = system.style_for(&HumanId::new("unknown"));
+=======
+λ test_adaptation_system_with_default_style() {
+    ≔ system = AdaptationSystem·new()
+        .with_default_style(CommunicationStyle·formal());
+    ≔ style = system.style_for(&HumanId·new("unknown"));
+>>>>>>> origin/main
     assert(style.is_formal());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_style_for_unknown() {
     let system = AdaptationSystem::new();
     let style = system.style_for(&HumanId::new("nobody"));
+=======
+λ test_adaptation_system_style_for_unknown() {
+    ≔ system = AdaptationSystem·new();
+    ≔ style = system.style_for(&HumanId·new("nobody"));
+>>>>>>> origin/main
     assert_eq(style.verbosity, 0.0);  // default
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_update_profile_too_verbose() {
     let mut system = AdaptationSystem::new();
     let human = HumanId::new("alice");
@@ -610,10 +1073,20 @@ fn test_adaptation_system_update_profile_too_verbose() {
     system.update_profile(&human, &feedback);
 
     let style = system.style_for(&human);
+=======
+λ test_adaptation_system_update_profile_too_verbose() {
+    ≔ Δ system = AdaptationSystem·new();
+    ≔ human = HumanId·new("alice");
+    ≔ feedback = Feedback·from_human(human.clone(), FeedbackType·TooVerbose);
+    system.update_profile(&human, &feedback);
+
+    ≔ style = system.style_for(&human);
+>>>>>>> origin/main
     assert(style.verbosity < 0.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_update_profile_need_detail() {
     let mut system = AdaptationSystem::new();
     let human = HumanId::new("bob");
@@ -621,10 +1094,20 @@ fn test_adaptation_system_update_profile_need_detail() {
     system.update_profile(&human, &feedback);
 
     let style = system.style_for(&human);
+=======
+λ test_adaptation_system_update_profile_need_detail() {
+    ≔ Δ system = AdaptationSystem·new();
+    ≔ human = HumanId·new("bob");
+    ≔ feedback = Feedback·from_human(human.clone(), FeedbackType·NeedMoreDetail);
+    system.update_profile(&human, &feedback);
+
+    ≔ style = system.style_for(&human);
+>>>>>>> origin/main
     assert(style.verbosity > 0.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_update_profile_too_formal() {
     let mut system = AdaptationSystem::new();
     let human = HumanId::new("charlie");
@@ -632,42 +1115,78 @@ fn test_adaptation_system_update_profile_too_formal() {
     system.update_profile(&human, &feedback);
 
     let style = system.style_for(&human);
+=======
+λ test_adaptation_system_update_profile_too_formal() {
+    ≔ Δ system = AdaptationSystem·new();
+    ≔ human = HumanId·new("charlie");
+    ≔ feedback = Feedback·from_human(human.clone(), FeedbackType·TooFormal);
+    system.update_profile(&human, &feedback);
+
+    ≔ style = system.style_for(&human);
+>>>>>>> origin/main
     assert(style.formality < 0.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_adapt_to_domain() {
     let mut system = AdaptationSystem::new();
     let knowledge = DomainKnowledge::new()
+=======
+λ test_adaptation_system_adapt_to_domain() {
+    ≔ Δ system = AdaptationSystem·new();
+    ≔ knowledge = DomainKnowledge·new()
+>>>>>>> origin/main
         .with_term("CI", "Continuous Integration");
     system.adapt_to_domain("devops", knowledge);
 
     assert(system.has_domain("devops"));
+<<<<<<< HEAD
     let da = system.domain_adaptation("devops");
+=======
+    ≔ da = system.domain_adaptation("devops");
+>>>>>>> origin/main
     assert(da.is_some());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_has_profile() {
     let mut system = AdaptationSystem::new();
     let human = HumanId::new("test");
     let feedback = Feedback::from_human(human.clone(), FeedbackType::Positive);
+=======
+λ test_adaptation_system_has_profile() {
+    ≔ Δ system = AdaptationSystem·new();
+    ≔ human = HumanId·new("test");
+    ≔ feedback = Feedback·from_human(human.clone(), FeedbackType·Positive);
+>>>>>>> origin/main
     system.update_profile(&human, &feedback);
     assert(system.has_profile(&human));
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_get_profile() {
     let mut system = AdaptationSystem::new();
     let human = HumanId::new("dave");
     system.update_profile(&human, &Feedback::from_human(human.clone(), FeedbackType::TooVerbose));
 
     let profile = system.get_profile(&human);
+=======
+λ test_adaptation_system_get_profile() {
+    ≔ Δ system = AdaptationSystem·new();
+    ≔ human = HumanId·new("dave");
+    system.update_profile(&human, &Feedback·from_human(human.clone(), FeedbackType·TooVerbose));
+
+    ≔ profile = system.get_profile(&human);
+>>>>>>> origin/main
     assert(profile.is_some());
     assert_eq(profile.unwrap().interaction_count, 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_adaptation_system_multiple_updates() {
     let mut system = AdaptationSystem::new();
     let human = HumanId::new("eve");
@@ -682,5 +1201,21 @@ fn test_adaptation_system_multiple_updates() {
 }
 
 fn main() {
+=======
+λ test_adaptation_system_multiple_updates() {
+    ≔ Δ system = AdaptationSystem·new();
+    ≔ human = HumanId·new("eve");
+
+    // Multiple feedback updates
+    system.update_profile(&human, &Feedback·from_human(human.clone(), FeedbackType·TooVerbose));
+    system.update_profile(&human, &Feedback·from_human(human.clone(), FeedbackType·TooVerbose));
+    system.update_profile(&human, &Feedback·from_human(human.clone(), FeedbackType·TooVerbose));
+
+    ≔ style = system.style_for(&human);
+    assert(style.verbosity < -0.2);  // Should have accumulated
+}
+
+λ main() {
+>>>>>>> origin/main
     print("Gnosis adaptation tests");
 }

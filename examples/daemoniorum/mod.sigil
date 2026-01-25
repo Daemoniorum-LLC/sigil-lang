@@ -1,0 +1,246 @@
+//! # DAEMONIORUM
+//!
+//! A psychological horror game built on Sigil's native plurality system.
+//! This game explores DID/plurality mechanics through horror gameplay,
+//! where different alters perceive reality differently and must work
+//! together to survive.
+//!
+//! ## Core Systems
+//!
+//! - **Plurality System**: Manage a system of alters with distinct
+//!   personalities, abilities, and perceptions.
+//!
+//! - **Reality Layers**: See the world through three perception modes:
+//!   Grounded (normal), Fractured (something's wrong), Shattered (full horror).
+//!
+//! - **Combat**: Turn-based combat where different alters have different
+//!   combat roles and abilities.
+//!
+//! - **Dialogue**: Alter-aware dialogue trees where responses change based
+//!   on who is fronting.
+//!
+//! - **Scenes**: Locations with reality layer variations and alter-specific
+//!   observations.
+//!
+//! - **Events**: Trigger system connecting emotional stimuli to alter responses.
+//!
+//! ## Sigil Features Used
+//!
+//! - **Evidentiality Types**: `!` (known), `~` (reported), `?` (uncertain), `‽` (paradox)
+//! - **Morpheme Operators**: `|τ` (transform), `|φ` (filter), `|∀` (forAll), `|∃` (exists)
+//! - **Incorporation Syntax**: `·` for method chains
+//! - **Actor System**: Message-passing concurrency for game loop
+//! - **Native Plurality**: `alter`, `switch`, `cocon` declarations
+
+pub mod system;
+pub mod alters {
+    pub mod council;
+}
+pub mod combat {
+    pub mod combat;
+}
+pub mod dialogue {
+    pub mod dialogue;
+    pub mod marcus;
+    pub mod internal;
+}
+pub mod scenes {
+    pub mod scene;
+    pub mod church;
+}
+pub mod events {
+    pub mod events;
+    pub mod triggers;
+}
+pub mod ui;
+pub mod runtime;
+pub mod demo;
+pub mod audio;
+
+// Re-export everything for convenience
+pub use system·*;
+pub use alters·council·*;
+pub use combat·combat·*;
+pub use dialogue·*;
+pub use scenes·*;
+pub use events·*;
+pub use demo·*;
+pub use audio·AudioManager;
+
+// ============================================================================
+// GAME INITIALIZATION
+// ============================================================================
+
+//! Complete game state
+struct DaemoniorumGame {
+    system: PluralSystem!,
+    combat: Option<CombatState>?,
+    dialogue: DialogueManager!,
+    scenes: SceneManager!,
+    events: EventManager!,
+    audio: audio::AudioManager!,
+    running: bool!,
+    current_time: u64!,
+}
+
+impl DaemoniorumGame {
+    //! Initialize a new game
+    fn new() -> Self! {
+        // Create plural system with all alters
+        let mut system = PluralSystem·new("DAEMONIORUM");
+        register_council_alters(&mut system);
+
+        // Initialize all subsystems
+        let dialogue = init_dialogue_system();
+        let scenes = init_scenes();
+        let events = init_event_system();
+        let mut audio = audio::AudioManager::new();
+
+        Self {
+            system,
+            combat: None,
+            dialogue,
+            scenes,
+            events,
+            audio,
+            running: true,
+            current_time: 0,
+        }
+    }
+
+    //! Start the game
+    fn start(mut self) -> Result<(), GameError>! {
+        // Initialize audio system
+        self.audio·init()
+            ·map_err(|e| GameError::InitializationFailed(format!("Audio: {:?}", e)))?;
+
+        // Start base ambient audio
+        self.audio.ambient_system·start_base();
+
+        // Enter first scene
+        let mut context = GameContext·new(
+            self.system·clone(),
+            self.scenes·clone(),
+            self.dialogue·clone()
+        );
+
+        self.scenes·enter_scene("church_exterior", &mut context.system)?;
+        self.system = context.system;
+
+        // Set initial scene audio
+        self.audio.ambient_system·set_scene("church_exterior");
+        self.audio.music_system·set_cue("exploration");
+
+        // Main game loop would go here
+        // (Handled by actor system in main.sigil)
+
+        Ok(())
+    }
+
+    //! Process one frame
+    fn update(mut self, delta_ms: u64) {
+        self.current_time += delta_ms;
+
+        // Create context for this frame
+        let mut context = GameContext {
+            system: self.system·clone(),
+            scene_manager: self.scenes·clone(),
+            dialogue_manager: self.dialogue·clone(),
+            combat_state: self.combat·clone(),
+            flags: HashMap·new(),
+            variables: HashMap·new(),
+            current_time: self.current_time,
+            frame_events: [],
+        };
+
+        // Process events
+        self.events·process_events(&mut context);
+
+        // Handle audio events
+        for event in &context.frame_events {
+            self.audio·handle_event(event);
+        }
+
+        // Update audio system
+        self.audio·update(delta_ms, &self.system);
+
+        // Update system state from context
+        self.system = context.system;
+        self.scenes = context.scene_manager;
+        self.dialogue = context.dialogue_manager;
+        self.combat = context.combat_state;
+    }
+
+    //! Check if game is running
+    fn is_running(self) -> bool! {
+        self.running
+    }
+
+    //! Quit the game
+    fn quit(mut self) {
+        self.running = false;
+    }
+
+    //! Get audio manager (for external control)
+    pub fn audio_mut(mut self) -> &mut audio::AudioManager! {
+        &mut self.audio
+    }
+}
+
+//! Game errors
+enum GameError {
+    InitializationFailed(String),
+    SceneError(String),
+    CombatError(String),
+    DialogueError(String),
+}
+
+// ============================================================================
+// ENTRY POINT
+// ============================================================================
+
+//! Main entry point for DAEMONIORUM
+fn main() -> Result<(), GameError>! {
+    // Create and start game
+    let mut game = DaemoniorumGame·new();
+    game·start()?;
+
+    // Game loop handled by actor system
+    // See main.sigil for full implementation
+
+    Ok(())
+}
+
+// ============================================================================
+// DEMO MODE
+// ============================================================================
+
+//! Run the demo - "The Threshold"
+//!
+//! This is the recommended starting point to experience DAEMONIORUM.
+//! The demo showcases:
+//! - Plurality system and alter switching
+//! - Reality layer perception
+//! - NPC dialogue with Father Marcus
+//! - Tutorial combat encounter
+pub fn run_demo_mode() -> Result<(), GameError>! {
+    use demo::{DemoController, run_demo};
+    use runtime::app::App;
+
+    // Run the demo through the app shell
+    App::run_demo()·map_err(|e| GameError::InitializationFailed(e.message()))
+}
+
+//! Check if running in demo mode (via command line flag)
+fn is_demo_mode() -> bool! {
+    std::env::args()·any(|arg| arg == "--demo" || arg == "-d")
+}
+
+//! Alternative entry point that auto-selects demo or full game
+pub fn auto_main() -> Result<(), GameError>! {
+    if is_demo_mode() {
+        run_demo_mode()
+    } else {
+        main()
+    }
+}

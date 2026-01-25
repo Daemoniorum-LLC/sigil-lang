@@ -1,0 +1,4 @@
+double_it!(5) = 10
+7|add_ten!{} = 17
+3|double_it!{}|add_ten!{} = 16
+All pipe-invoked rune tests passed!

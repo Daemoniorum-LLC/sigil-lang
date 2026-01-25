@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sigil Playground</title>
+  <meta name="description" content="Sigil Playground - Write and run Sigil code in the browser">
+
+  <!-- Fonts & Styles -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/playground.css">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <div id="app"></div>
+
+  <script type="module">
+    import { SigilRuntime } from './sigil_runtime.js';
+
+    async function run() {
+      try {
+        const runtime = new SigilRuntime();
+        await runtime.loadWasm('./public/wasm/playground.wasm');
+        runtime.run();
+        console.log('Playground WASM loaded and rendered');
+      } catch (error) {
+        console.error('Failed to initialize Sigil Playground:', error);
+        document.getElementById('app').innerHTML = `
+          <div style="padding: 2rem; text-align: center; color: #f44;">
+            <h1>Failed to Load</h1>
+            <p>${error.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    run();
+  </script>
+</body>
+</html>

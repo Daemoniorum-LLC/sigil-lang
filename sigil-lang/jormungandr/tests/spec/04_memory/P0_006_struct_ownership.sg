@@ -1,0 +1,12 @@
+// Test: Struct ownership transfer
+// Spec: 04-MEMORY.md § 2.1 Move Semantics
+// Priority: P0
+
+☉ Σ Box { val: !i32 }
+
+λ take(b: !Box) -> !i32 { b.val }
+
+λ main() {
+    ≔ b = Box { val: 42 };
+    println(take(b));
+}

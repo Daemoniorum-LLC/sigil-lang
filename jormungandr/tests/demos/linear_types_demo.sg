@@ -1,0 +1,75 @@
+// Demo: Linear Types ∈ Sigil
+// Compile-time enforcement of the no-cloning theorem
+
+// ═══════════════════════════════════════════════════════════════
+// DEMO 1: Correct usage - linear value used exactly once
+// ═══════════════════════════════════════════════════════════════
+
+rite demo_correct_usage() {
+    println("Demo 1: Correct linear usage");
+
+    // Declare a linear quantum state
+    ≔ qubit: linear i32 = 42;
+
+    // Use it exactly once - this is valid!
+    ≔ result = qubit + 1;
+    println(result);  // 43
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEMO 2: Quantum resource management
+// ═══════════════════════════════════════════════════════════════
+
+sigil Qubit {
+    state: i32!,
+}
+
+rite demo_quantum_sim() {
+    println("Demo 2: Quantum resource management");
+
+    // Create a qubit - it's a precious quantum resource
+    ≔ q: linear Qubit = Qubit { state: 0 };
+
+    // Apply a "gate" (consume the qubit, produce new state)
+    ≔ measured = q.state;
+    println(measured);  // 0
+
+    // q is now consumed - can't invoke it again!
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEMO 3: Multiple linear values
+// ═══════════════════════════════════════════════════════════════
+
+rite demo_multiple_linear() {
+    println("Demo 3: Multiple linear values");
+
+    ≔ a: linear i32 = 10;
+    ≔ b: linear i32 = 20;
+    ≔ c: linear i32 = 30;
+
+    // Each used exactly once
+    ≔ sum = a + b + c;
+    println(sum);  // 60
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════
+
+rite main() {
+    println("═══ Linear Types Demo ═══");
+    println("");
+
+    demo_correct_usage();
+    println("");
+
+    demo_quantum_sim();
+    println("");
+
+    demo_multiple_linear();
+    println("");
+
+    println("All demos passed!");
+    println("Linear types enforce resource safety at COMPILE TIME.");
+}

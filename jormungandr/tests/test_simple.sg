@@ -69,7 +69,11 @@
     None,
 }
 
+<<<<<<< HEAD
 impl<T> Option<T> {
+=======
+⊢<T> Option<T> {
+>>>>>>> origin/main
     ☉ rite is_some(this) → !bool {
         ⌥ this {
             Option·Some(_) => yea,

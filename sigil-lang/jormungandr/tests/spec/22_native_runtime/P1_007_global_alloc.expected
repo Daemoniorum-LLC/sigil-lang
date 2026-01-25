@@ -1,0 +1,13 @@
+init_ok
+alloc_ok
+pattern_ok
+free_ok
+multi_alloc_ok
+realloc_preserved_ok
+realloc_extend_ok
+realloc_shrink_ok
+zero_alloc_ok
+large_alloc_ok
+large_write_ok
+large_free_ok
+done

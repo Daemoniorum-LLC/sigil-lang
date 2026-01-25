@@ -1,0 +1,18 @@
+// Test: Nested generic types
+// Spec: 03-TYPES.md § 5.4 Nested Generics
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate nested generic types work correctly.
+//
+// Expected behavior:
+// Should print 42
+
+☉ Σ Box<T> {
+    value: T
+}
+
+λ main() {
+    ≔ b: !Box<!Box<!i32>> = Box { value: Box { value: 42 } };
+    println(b.value.value);
+}

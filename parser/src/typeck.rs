@@ -7,7 +7,7 @@
 use crate::ast::*;
 use crate::span::Span;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
@@ -375,6 +375,10 @@ pub struct TypeEnv {
     bindings: HashMap<String, (Type, EvidenceLevel)>,
     /// Parent scope
     parent: Option<Rc<RefCell<TypeEnv>>>,
+    /// Linear variables declared in this scope (per spec 11-HOLOGRAPHIC.md § 7)
+    linear_vars: HashSet<String>,
+    /// Linear variables that have been consumed (used once)
+    linear_used: HashSet<String>,
 }
 
 impl TypeEnv {
@@ -382,6 +386,8 @@ impl TypeEnv {
         Self {
             bindings: HashMap::new(),
             parent: None,
+            linear_vars: HashSet::new(),
+            linear_used: HashSet::new(),
         }
     }
 
@@ -389,11 +395,18 @@ impl TypeEnv {
         Self {
             bindings: HashMap::new(),
             parent: Some(parent),
+            linear_vars: HashSet::new(),
+            linear_used: HashSet::new(),
         }
     }
 
     /// Define a new binding
     pub fn define(&mut self, name: String, ty: Type, evidence: EvidenceLevel) {
+        // Track linear variables for compile-time enforcement
+        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types must be used exactly once
+        if matches!(ty, Type::Linear(_)) {
+            self.linear_vars.insert(name.clone());
+        }
         self.bindings.insert(name, (ty, evidence));
     }
 
@@ -406,6 +419,48 @@ impl TypeEnv {
         } else {
             None
         }
+    }
+
+    /// Check if a variable is linear
+    pub fn is_linear(&self, name: &str) -> bool {
+        if self.linear_vars.contains(name) {
+            true
+        } else if let Some(ref parent) = self.parent {
+            parent.borrow().is_linear(name)
+        } else {
+            false
+        }
+    }
+
+    /// Check if a linear variable has been consumed
+    pub fn is_linear_consumed(&self, name: &str) -> bool {
+        if self.linear_used.contains(name) {
+            true
+        } else if let Some(ref parent) = self.parent {
+            parent.borrow().is_linear_consumed(name)
+        } else {
+            false
+        }
+    }
+
+    /// Mark a linear variable as consumed (returns false if already consumed)
+    pub fn consume_linear(&mut self, name: &str) -> bool {
+        // Check if already consumed in this or parent scope
+        if self.is_linear_consumed(name) {
+            return false; // Already consumed - error
+        }
+        // Mark as consumed in this scope
+        self.linear_used.insert(name.to_string());
+        true
+    }
+
+    /// Get linear variables that were declared but not used (must-be-used check)
+    pub fn unused_linear_vars(&self) -> Vec<String> {
+        self.linear_vars
+            .iter()
+            .filter(|name| !self.linear_used.contains(*name))
+            .cloned()
+            .collect()
     }
 }
 
@@ -988,6 +1043,16 @@ impl TypeChecker {
 
     /// Pop current scope
     fn pop_scope(&mut self) {
+        // Check for unused linear variables before leaving scope (must-be-used check)
+        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types must be used exactly once
+        let unused = self.env.borrow().unused_linear_vars();
+        for var_name in unused {
+            self.error(TypeError::new(format!(
+                "linear variable '{}' was declared but never used (linear types must be consumed exactly once)",
+                var_name
+            )));
+        }
+
         let parent = self.env.borrow().parent.clone();
         if let Some(p) = parent {
             self.env = p;
@@ -1581,7 +1646,22 @@ impl TypeChecker {
             Expr::Path(path) => {
                 if path.segments.len() == 1 {
                     let name = &path.segments[0].ident.name;
-                    if let Some((ty, _)) = self.env.borrow().lookup(name) {
+                    // First, check if variable exists and get its type
+                    let lookup_result = self.env.borrow().lookup(name);
+                    if let Some((ty, _)) = lookup_result {
+                        // Check for linear type consumption (compile-time enforcement)
+                        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types can only be used once
+                        let is_linear = self.env.borrow().is_linear(name);
+                        if is_linear {
+                            let consumed_ok = self.env.borrow_mut().consume_linear(name);
+                            if !consumed_ok {
+                                // Already consumed - double use error
+                                self.error(TypeError::new(format!(
+                                    "linear variable '{}' used more than once (linear types can only be consumed once)",
+                                    name
+                                )));
+                            }
+                        }
                         return ty;
                     }
                     if let Some(ty) = self.functions.get(name).cloned() {

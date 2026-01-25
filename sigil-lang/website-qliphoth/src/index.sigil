@@ -1,0 +1,1420 @@
+// Sigil Homepage - Full Landing Page
+// Compiled from Sigil to WebAssembly via Qliphoth
+// Matches content from sigil-lang.com
+
+// === DOM Helpers ===
+
+rite create_element(tag: &str) → i64 {
+    vdom_create_vnode(tag)
+}
+
+rite create_text(content: &str) → i64 {
+    vdom_create_text_vnode(content)
+}
+
+rite set_class(element: i64, class_name: &str) {
+    vdom_set_vnode_str_prop(element, "class", class_name)
+}
+
+rite set_attr(element: i64, name: &str, value: &str) {
+    vdom_set_vnode_str_prop(element, name, value)
+}
+
+rite append_child(parent: i64, child: i64) {
+    vdom_append_vnode_child(parent, child)
+}
+
+rite set_inner_html(element: i64, html: &str) {
+    // Use innerHTML as a property via vdom
+    vdom_set_vnode_str_prop(element, "innerHTML", html)
+}
+
+rite mount(element: i64, selector: &str) → i64 {
+    vdom_mount_vnode(element, selector)
+}
+
+// === Component Helpers ===
+
+rite link(href: &str, text: &str, class: &str) → i64 {
+    ≔ a = create_element("a");
+    set_class(a, class);
+    set_attr(a, "href", href);
+    ≔ t = create_text(text);
+    append_child(a, t);
+    a
+}
+
+rite link_external(href: &str, text: &str, class: &str) → i64 {
+    ≔ a = create_element("a");
+    set_class(a, class);
+    set_attr(a, "href", href);
+    set_attr(a, "target", "_blank");
+    set_attr(a, "rel", "noopener noreferrer");
+    ≔ t = create_text(text);
+    append_child(a, t);
+    a
+}
+
+rite heading(level: &str, text: &str, class: &str) → i64 {
+    ≔ h = create_element(level);
+    set_class(h, class);
+    ≔ t = create_text(text);
+    append_child(h, t);
+    h
+}
+
+rite para(text: &str, class: &str) → i64 {
+    ≔ p = create_element("p");
+    set_class(p, class);
+    ≔ t = create_text(text);
+    append_child(p, t);
+    p
+}
+
+rite span(text: &str, class: &str) → i64 {
+    ≔ s = create_element("span");
+    set_class(s, class);
+    ≔ t = create_text(text);
+    append_child(s, t);
+    s
+}
+
+rite code_block(code: &str) → i64 {
+    ≔ pre = create_element("pre");
+    set_class(pre, "code-block");
+    ≔ c = create_text(code);
+    append_child(pre, c);
+    pre
+}
+
+rite code_inline(text: &str) → i64 {
+    ≔ c = create_element("code");
+    set_class(c, "inline-code");
+    ≔ t = create_text(text);
+    append_child(c, t);
+    c
+}
+
+// =============================================================================
+// QLIPHOTH COMPONENTS - Semantic, reusable building blocks
+// =============================================================================
+
+// --- Layout Components ---
+
+// Section wrapper with container
+rite Section(id: &str, extra_class: &str) → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section " ++ extra_class);
+    set_attr(section, "id", id);
+    ≔ container = create_element("div");
+    set_class(container, "container");
+    append_child(section, container);
+    container  // Return container for appending children
+}
+
+// Section header with title and subtitle
+rite SectionHeader(title: &str, subtitle: &str) → i64 {
+    ≔ header = create_element("div");
+    set_class(header, "section-header");
+    append_child(header, heading("h2", title, ""));
+    append_child(header, para(subtitle, ""));
+    header
+}
+
+// --- Code Comparison Components ---
+
+// Code panel with header, badge, and syntax-highlighted code
+rite CodePanel(
+    lang: &str,
+    badge_text: &str,
+    badge_class: &str,
+    header_class: &str,
+    code_html: &str
+) → i64 {
+    ≔ panel = create_element("div");
+    set_class(panel, "comparison-panel");
+
+    // Header with language and badge
+    ≔ hdr = create_element("div");
+    set_class(hdr, "panel-header " ++ header_class);
+    append_child(hdr, span(lang, "panel-icon"));
+    append_child(hdr, span(badge_text, "panel-badge " ++ badge_class));
+    append_child(panel, hdr);
+
+    // Code block with innerHTML for syntax highlighting
+    ≔ pre = create_element("pre");
+    set_class(pre, "code-block");
+    ≔ code = create_element("code");
+    set_inner_html(code, code_html);
+    append_child(pre, code);
+    append_child(panel, pre);
+
+    panel
+}
+
+// Side-by-side comparison container
+rite Comparison(left: i64, right: i64) → i64 {
+    ≔ comp = create_element("div");
+    set_class(comp, "comparison");
+    append_child(comp, left);
+    append_child(comp, right);
+    comp
+}
+
+// --- Evidence Card Component ---
+
+rite EvidenceCard(
+    marker: &str,
+    marker_class: &str,
+    title: &str,
+    subtitle: &str,
+    description: &str,
+    code_html: &str
+) → i64 {
+    ≔ card = create_element("article");
+    set_class(card, "evidence-card");
+
+    // Header with large marker and title
+    ≔ hdr = create_element("div");
+    set_class(hdr, "evidence-header");
+    append_child(hdr, span(marker, "ev " ++ marker_class ++ " ev-large"));
+
+    ≔ title_block = create_element("div");
+    append_child(title_block, heading("h3", title, ""));
+    append_child(title_block, para(subtitle, "evidence-subtitle"));
+    append_child(hdr, title_block);
+    append_child(card, hdr);
+
+    // Description
+    append_child(card, para(description, ""));
+
+    // Code example
+    ≔ pre = create_element("pre");
+    set_class(pre, "code-block code-sm");
+    ≔ code = create_element("code");
+    set_inner_html(code, code_html);
+    append_child(pre, code);
+    append_child(card, pre);
+
+    card
+}
+
+// Evidence grid container
+rite EvidenceGrid() → i64 {
+    ≔ grid = create_element("div");
+    set_class(grid, "evidence-grid");
+    grid
+}
+
+// --- Agent Layer Components (matching original HTML) ---
+
+// Single agent layer with icon, name, subtitle, description
+rite AgentLayerSimple(icon: &str, name: &str, subtitle: &str, desc: &str) → i64 {
+    ≔ article = create_element("article");
+    set_class(article, "agent-layer");
+
+    ≔ icon_div = create_element("div");
+    set_class(icon_div, "layer-icon");
+    append_child(icon_div, create_text(icon));
+    append_child(article, icon_div);
+
+    ≔ content = create_element("div");
+    set_class(content, "layer-content");
+    append_child(content, heading("h5", name, ""));
+    append_child(content, para(subtitle, "layer-subtitle"));
+    append_child(content, para(desc, ""));
+    append_child(article, content);
+
+    article
+}
+
+// Agent layer with code example
+rite AgentLayerWithCode(icon: &str, name: &str, subtitle: &str, desc: &str, code_html: &str) → i64 {
+    ≔ article = create_element("article");
+    set_class(article, "agent-layer");
+
+    ≔ icon_div = create_element("div");
+    set_class(icon_div, "layer-icon");
+    append_child(icon_div, create_text(icon));
+    append_child(article, icon_div);
+
+    ≔ content = create_element("div");
+    set_class(content, "layer-content");
+    append_child(content, heading("h5", name, ""));
+    append_child(content, para(subtitle, "layer-subtitle"));
+    append_child(content, para(desc, ""));
+
+    ≔ pre = create_element("pre");
+    set_class(pre, "code-block code-sm");
+    ≔ code = create_element("code");
+    set_inner_html(code, code_html);
+    append_child(pre, code);
+    append_child(content, pre);
+
+    append_child(article, content);
+    article
+}
+
+// Agent layer group (Cognition, Transparency, etc.)
+rite AgentLayerGroup(title: &str) → i64 {
+    ≔ group = create_element("div");
+    set_class(group, "agent-layer-group");
+    append_child(group, heading("h4", title, "layer-group-title"));
+    ≔ layers = create_element("div");
+    set_class(layers, "agent-layers");
+    append_child(group, layers);
+    layers  // Return the layers container to append layers to
+}
+
+// --- Feature/Ecosystem Card Component ---
+
+rite FeatureCard(title: &str, description: &str) → i64 {
+    ≔ card = create_element("div");
+    set_class(card, "feature-card");
+    append_child(card, heading("h3", title, ""));
+    append_child(card, para(description, ""));
+    card
+}
+
+rite FeatureCardWithLink(title: &str, description: &str, link_href: &str, link_text: &str) → i64 {
+    ≔ card = create_element("div");
+    set_class(card, "feature-card");
+    append_child(card, heading("h3", title, ""));
+    append_child(card, para(description, ""));
+    append_child(card, link(link_href, link_text, "feature-link"));
+    card
+}
+
+// --- Morpheme Operator Component ---
+
+rite MorphemeOp(symbol: &str, name: &str, example: &str) → i64 {
+    ≔ item = create_element("div");
+    set_class(item, "morpheme-item");
+
+    ≔ sym = create_element("span");
+    set_class(sym, "morpheme-symbol");
+    append_child(sym, create_text(symbol));
+    append_child(item, sym);
+
+    ≔ info = create_element("div");
+    set_class(info, "morpheme-info");
+    append_child(info, heading("h4", name, "morpheme-name"));
+
+    ≔ ex = create_element("code");
+    set_class(ex, "morpheme-example");
+    append_child(ex, create_text(example));
+    append_child(info, ex);
+    append_child(item, info);
+
+    item
+}
+
+// =============================================================================
+
+rite image(src: &str, alt: &str, class: &str) → i64 {
+    ≔ img = create_element("img");
+    set_class(img, class);
+    set_attr(img, "src", src);
+    set_attr(img, "alt", alt);
+    img
+}
+
+// === Navigation ===
+
+rite github_link() → i64 {
+    ≔ a = create_element("a");
+    set_attr(a, "href", "https://github.com/Daemoniorum-LLC/sigil-lang");
+    set_class(a, "nav-github");
+    set_attr(a, "aria-label", "GitHub repository");
+    set_attr(a, "rel", "noopener noreferrer");
+    set_attr(a, "target", "_blank");
+    ≔ svg = create_element("svg");
+    set_attr(svg, "width", "20");
+    set_attr(svg, "height", "20");
+    set_attr(svg, "viewBox", "0 0 24 24");
+    set_attr(svg, "fill", "currentColor");
+    set_attr(svg, "aria-hidden", "true");
+    ≔ path = create_element("path");
+    set_attr(path, "d", "M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z");
+    append_child(svg, path);
+    append_child(a, svg);
+    a
+}
+
+rite header() → i64 {
+    ≔ nav_el = create_element("nav");
+    set_class(nav_el, "nav");
+    set_attr(nav_el, "role", "navigation");
+    set_attr(nav_el, "aria-label", "Main navigation");
+
+    ≔ container = create_element("div");
+    set_class(container, "nav-container");
+
+    // Logo/brand
+    ≔ brand = create_element("a");
+    set_class(brand, "nav-logo");
+    set_attr(brand, "href", "/");
+    set_attr(brand, "aria-label", "Sigil home");
+    ≔ logo_img = create_element("img");
+    set_attr(logo_img, "src", "/images/sigil-icon.svg");
+    set_attr(logo_img, "alt", "");
+    set_class(logo_img, "logo-icon");
+    set_attr(logo_img, "aria-hidden", "true");
+    set_attr(logo_img, "width", "24");
+    set_attr(logo_img, "height", "24");
+    append_child(brand, logo_img);
+    ≔ logo_text = create_element("span");
+    set_class(logo_text, "logo-text");
+    ≔ lt = create_text("Sigil");
+    append_child(logo_text, lt);
+    append_child(brand, logo_text);
+    ≔ version = create_element("span");
+    set_class(version, "version-badge");
+    ≔ vt = create_text("0.3");
+    append_child(version, vt);
+    append_child(brand, version);
+    append_child(container, brand);
+
+    // Navigation links
+    ≔ nav_links = create_element("div");
+    set_class(nav_links, "nav-links");
+    set_attr(nav_links, "id", "nav-links");
+    append_child(nav_links, link("/learn.html", "Learn", ""));
+    append_child(nav_links, link("/docs.html", "Docs", ""));
+    append_child(nav_links, link("/playground/", "Playground", ""));
+    append_child(nav_links, link("/agents.html", "Agents", ""));
+    append_child(nav_links, link("/pattern.html", "The Pattern", ""));
+    append_child(nav_links, link("/qliphoth.html", "Qliphoth", ""));
+    append_child(nav_links, github_link());
+    append_child(container, nav_links);
+
+    append_child(nav_el, container);
+    nav_el
+}
+
+// === Announcement Banner ===
+
+rite announcement_banner() → i64 {
+    ≔ banner = create_element("aside");
+    set_class(banner, "announcement-banner");
+    set_attr(banner, "role", "banner");
+    set_attr(banner, "aria-label", "Sigil 0.3.0 announcement");
+
+    ≔ container = create_element("div");
+    set_class(container, "announcement-container");
+
+    ≔ badge = span("0.3.0", "announcement-badge");
+    append_child(container, badge);
+
+    ≔ text_el = create_element("p");
+    set_class(text_el, "announcement-text");
+
+    ≔ strong = create_element("strong");
+    ≔ st = create_text("Sigil 0.3.0 Released!");
+    append_child(strong, st);
+    append_child(text_el, strong);
+
+    ≔ desc = create_text(" Native symbols, SIMD/CUDA backends, LSP, formatter, and more. ");
+    append_child(text_el, desc);
+
+    ≔ link_el = link_external("https://github.com/Daemoniorum-LLC/sigil-lang/releases/tag/v0.3.0", "Read the release notes →", "announcement-link");
+    append_child(text_el, link_el);
+
+    append_child(container, text_el);
+    append_child(banner, container);
+    banner
+}
+
+// === Hero Section ===
+
+rite hero_section() → i64 {
+    ≔ section = create_element("header");
+    set_class(section, "hero");
+
+    ≔ container = create_element("div");
+    set_class(container, "hero-container");
+
+    // Large evidentiality diamond logo (full lattice with all markers)
+    ≔ logo = create_element("img");
+    set_attr(logo, "src", "/images/sigil-logo.svg");
+    set_attr(logo, "alt", "Sigil evidentiality lattice: Known (!), Uncertain (?), Reported (~), Paradox (‽)");
+    set_class(logo, "hero-logo");
+    set_attr(logo, "width", "280");
+    set_attr(logo, "height", "280");
+    append_child(container, logo);
+
+    // Large "Sigil" title
+    append_child(container, heading("h1", "Sigil", "hero-title"));
+
+    // Reading time indicator
+    ≔ reading_time = create_element("span");
+    set_class(reading_time, "reading-time");
+    ≔ rt_icon = create_element("span");
+    set_class(rt_icon, "reading-time-icon");
+    ≔ rt_icon_text = create_text("📄");
+    append_child(rt_icon, rt_icon_text);
+    append_child(reading_time, rt_icon);
+    ≔ rt_text = create_text(" 8 min read");
+    append_child(reading_time, rt_text);
+    append_child(container, reading_time);
+
+    // Tagline
+    append_child(container, para("A programming language that knows which data to trust.", "hero-tagline"));
+
+    // Hero solution box with evidence list
+    ≔ solution = create_element("div");
+    set_class(solution, "hero-solution");
+
+    ≔ intro = create_element("p");
+    ≔ intro_text1 = create_text("Sigil tracks ");
+    append_child(intro, intro_text1);
+    ≔ em = create_element("em");
+    ≔ em_text = create_text("data provenance");
+    append_child(em, em_text);
+    append_child(intro, em);
+    ≔ intro_text2 = create_text(" in the type system:");
+    append_child(intro, intro_text2);
+    append_child(solution, intro);
+
+    // Evidence list (vertical)
+    ≔ list = create_element("ul");
+    set_class(list, "evidence-list");
+    append_child(list, evidence_item("!", "ev-known", "Known", "verified, computed locally"));
+    append_child(list, evidence_item("?", "ev-uncertain", "Uncertain", "might be absent"));
+    append_child(list, evidence_item("~", "ev-reported", "Reported", "external source, untrusted"));
+    append_child(list, evidence_item("‽", "ev-paradox", "Paradox", "explicit trust boundary"));
+    append_child(solution, list);
+
+    append_child(container, solution);
+
+    // CTA buttons
+    ≔ actions = create_element("div");
+    set_class(actions, "hero-actions");
+    append_child(actions, link("/learn.html", "Learn Sigil", "btn btn-primary"));
+    append_child(actions, link("#the-problem", "See the problem it solves", "btn btn-ghost"));
+    append_child(container, actions);
+
+    append_child(section, container);
+    section
+}
+
+rite evidence_item(symbol: &str, ev_class: &str, name: &str, desc: &str) → i64 {
+    ≔ li = create_element("li");
+    ≔ marker = create_element("span");
+    set_class(marker, "ev " ++ ev_class);
+    ≔ mt = create_text(symbol);
+    append_child(marker, mt);
+    append_child(li, marker);
+    ≔ t1 = create_text(" ");
+    append_child(li, t1);
+    ≔ strong = create_element("strong");
+    ≔ st = create_text(name);
+    append_child(strong, st);
+    append_child(li, strong);
+    ≔ t2 = create_text(" — " ++ desc);
+    append_child(li, t2);
+    li
+}
+
+// === The Bug That Types Can't Catch ===
+
+rite problem_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section section-dark");
+    set_attr(section, "id", "the-problem");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    // Section header
+    ≔ header = create_element("div");
+    set_class(header, "section-header");
+    append_child(header, heading("h2", "The Bug That Types Can't Catch", ""));
+    append_child(header, para("In every other language, this code compiles. In Sigil, it's a type error.", ""));
+    append_child(container, header);
+
+    // Side-by-side comparison panels
+    ≔ comparison = create_element("div");
+    set_class(comparison, "comparison");
+
+    // Left panel: Vulnerable code (Rust/TypeScript/Go)
+    ≔ left_panel = create_element("div");
+    set_class(left_panel, "comparison-panel");
+
+    ≔ left_header = create_element("div");
+    set_class(left_header, "panel-header panel-header-bad");
+    ≔ left_icon = create_element("span");
+    set_class(left_icon, "panel-icon");
+    append_child(left_icon, create_text("Rust / TypeScript / Go"));
+    append_child(left_header, left_icon);
+    ≔ left_badge = create_element("span");
+    set_class(left_badge, "panel-badge badge-danger");
+    append_child(left_badge, create_text("Compiles. Vulnerable."));
+    append_child(left_header, left_badge);
+    append_child(left_panel, left_header);
+
+    ≔ left_code = create_element("pre");
+    set_class(left_code, "code-block");
+    ≔ left_code_inner = create_element("code");
+    set_inner_html(left_code_inner,
+        "<span class=\"comment\">// This compiles in every mainstream language</span>\n" ++
+        "<span class=\"keyword\">async fn</span> <span class=\"function\">get_user_profile</span>(id: <span class=\"type\">String</span>) → <span class=\"type\">Profile</span> {\n" ++
+        "    <span class=\"keyword\">let</span> response = http·get(<span class=\"string\">\"/api/users/{id}\"</span>).<span class=\"keyword\">await</span>;\n" ++
+        "    <span class=\"keyword\">let</span> profile: <span class=\"type\">Profile</span> = response.json();\n\n" ++
+        "    <span class=\"comment\">// profile is type Profile</span>\n" ++
+        "    <span class=\"comment\">// But it came from an external API!</span>\n" ++
+        "    <span class=\"comment\">// What if the API was compromised?</span>\n" ++
+        "    <span class=\"comment\">// What if the data was tampered?</span>\n\n" ++
+        "    save_to_database(profile);  <span class=\"comment\">// Trusting blindly</span>\n" ++
+        "    profile\n" ++
+        "}"
+    );
+    append_child(left_code, left_code_inner);
+    append_child(left_panel, left_code);
+    append_child(comparison, left_panel);
+
+    // Right panel: Safe code (Sigil)
+    ≔ right_panel = create_element("div");
+    set_class(right_panel, "comparison-panel");
+
+    ≔ right_header = create_element("div");
+    set_class(right_header, "panel-header panel-header-good");
+    ≔ right_icon = create_element("span");
+    set_class(right_icon, "panel-icon");
+    append_child(right_icon, create_text("Sigil"));
+    append_child(right_header, right_icon);
+    ≔ right_badge = create_element("span");
+    set_class(right_badge, "panel-badge badge-success");
+    append_child(right_badge, create_text("Type Error. Safe."));
+    append_child(right_header, right_badge);
+    append_child(right_panel, right_header);
+
+    ≔ right_code = create_element("pre");
+    set_class(right_code, "code-block");
+    ≔ right_code_inner = create_element("code");
+    set_inner_html(right_code_inner,
+        "<span class=\"keyword\">async rite</span> <span class=\"function\">get_user_profile</span>(id: <span class=\"type\">!Str</span>) → <span class=\"type\">Profile</span><span class=\"ev-known\">!</span> {\n" ++
+        "    <span class=\"keyword\">≔</span> response<span class=\"ev-reported\">~</span> = http·get(<span class=\"string\">\"/api/users/{id}\"</span>).<span class=\"keyword\">await</span>;\n" ++
+        "    <span class=\"keyword\">≔</span> profile<span class=\"ev-reported\">~</span>: <span class=\"type\">Profile</span><span class=\"ev-reported\">~</span> = response.json();\n\n" ++
+        "    <span class=\"comment\">// profile~ is type Profile~ (Reported)</span>\n" ++
+        "    <span class=\"comment\">// The ~ marker propagates automatically</span>\n\n" ++
+        "    save_to_database(profile);  <span class=\"error\">// ERROR: expected Profile!, got Profile~</span>\n\n" ++
+        "    <span class=\"comment\">// Must validate first:</span>\n" ++
+        "    <span class=\"keyword\">≔</span> verified<span class=\"ev-known\">!</span> = profile |<span class=\"keyword\">validate</span><span class=\"ev-known\">!</span>{ verify_signature() };\n" ++
+        "    save_to_database(verified);  <span class=\"comment\">// OK: Profile!</span>\n" ++
+        "    verified\n" ++
+        "}"
+    );
+    append_child(right_code, right_code_inner);
+    append_child(right_panel, right_code);
+    append_child(comparison, right_panel);
+
+    append_child(container, comparison);
+
+    // Comparison note
+    ≔ note = create_element("p");
+    set_class(note, "comparison-note");
+    ≔ note_text1 = create_text("The ");
+    append_child(note, note_text1);
+    ≔ code1 = create_element("code");
+    append_child(code1, create_text("~"));
+    append_child(note, code1);
+    ≔ note_text2 = create_text(" marker is ");
+    append_child(note, note_text2);
+    ≔ em = create_element("em");
+    append_child(em, create_text("contagious"));
+    append_child(note, em);
+    ≔ note_text3 = create_text(". Any data derived from external sources inherits the ");
+    append_child(note, note_text3);
+    ≔ code2 = create_element("code");
+    append_child(code2, create_text("~"));
+    append_child(note, code2);
+    ≔ note_text4 = create_text(" until explicitly validated. You can't accidentally trust untrusted data.");
+    append_child(note, note_text4);
+    append_child(container, note);
+
+    append_child(section, container);
+    section
+}
+
+// === Evidentiality Section ===
+// Using Qliphoth components for cleaner, declarative code
+
+rite evidentiality_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section");
+    set_attr(section, "id", "evidentiality");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    // Section header (matches original)
+    append_child(container, SectionHeader(
+        "Evidentiality: Data Has a History",
+        "Every value carries proof of where it came from."
+    ));
+
+    // Evidence cards grid - using EvidenceCard component
+    ≔ grid = EvidenceGrid();
+
+    // Known (!)
+    append_child(grid, EvidenceCard(
+        "!", "ev-known",
+        "Known", "Verified truth",
+        "Data you computed yourself, or explicitly verified. Safe to trust.",
+        "<span class=\"keyword\">≔</span> sum<span class=\"ev-known\">!</span> = <span class=\"number\">2</span> + <span class=\"number\">2</span>           <span class=\"comment\">// Computed locally</span>\n<span class=\"keyword\">≔</span> valid<span class=\"ev-known\">!</span> = input |<span class=\"keyword\">validate</span><span class=\"ev-known\">!</span>{ check() }"
+    ));
+
+    // Uncertain (?)
+    append_child(grid, EvidenceCard(
+        "?", "ev-uncertain",
+        "Uncertain", "Might be absent",
+        "Data that might not exist. Like Option/Maybe, but tracked in the type.",
+        "<span class=\"keyword\">≔</span> user<span class=\"ev-uncertain\">?</span> = database.find(id)  <span class=\"comment\">// Might not exist</span>\n<span class=\"keyword\">≔</span> name<span class=\"ev-uncertain\">?</span> = user?.profile?.name   <span class=\"comment\">// Propagates</span>"
+    ));
+
+    // Reported (~)
+    append_child(grid, EvidenceCard(
+        "~", "ev-reported",
+        "Reported", "External source",
+        "Data from APIs, user input, files. Never trust without validation.",
+        "<span class=\"keyword\">≔</span> data<span class=\"ev-reported\">~</span> = api.fetch(url)     <span class=\"comment\">// External</span>\n<span class=\"keyword\">≔</span> input<span class=\"ev-reported\">~</span> = form.get(<span class=\"string\">\"email\"</span>)   <span class=\"comment\">// User input</span>"
+    ));
+
+    // Paradox (‽)
+    append_child(grid, EvidenceCard(
+        "‽", "ev-paradox",
+        "Paradox", "Trust boundary",
+        "Explicit \"I know what I'm doing\" escape hatch. Use sparingly.",
+        "<span class=\"keyword\">≔</span> ptr<span class=\"ev-paradox\">‽</span> = <span class=\"keyword\">unsafe</span> { raw_pointer }\n<span class=\"comment\">// You're taking responsibility</span>"
+    ));
+
+    append_child(container, grid);
+
+    // Propagation rule
+    ≔ rule = create_element("div");
+    set_class(rule, "evidence-rule");
+    append_child(rule, heading("h4", "The Propagation Rule", ""));
+    append_child(container, rule);
+
+    append_child(section, container);
+    section
+}
+
+// === Morpheme Operators Section ===
+// Using Qliphoth components - matches original HTML structure
+
+rite morpheme_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section section-dark");
+    set_attr(section, "id", "morphemes");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    // Section header
+    append_child(container, SectionHeader(
+        "Morpheme Operators",
+        "Greek letters for data transformation. Dense, readable pipelines."
+    ));
+
+    // Code demo - shown FIRST (like original)
+    ≔ demo = create_element("div");
+    set_class(demo, "morpheme-demo");
+    ≔ pre = create_element("pre");
+    set_class(pre, "code-block code-lg");
+    ≔ code = create_element("code");
+    set_inner_html(code,
+        "<span class=\"keyword\">≔</span> result = users<span class=\"ev-reported\">~</span>\n" ++
+        "    |<span class=\"morpheme\">φ</span>{.active}              <span class=\"comment\">// φ filter: keep active users</span>\n" ++
+        "    |<span class=\"morpheme\">φ</span>{.age >= <span class=\"number\">18</span>}           <span class=\"comment\">// φ filter: adults only</span>\n" ++
+        "    |<span class=\"morpheme\">τ</span>{.normalize()}         <span class=\"comment\">// τ transform: normalize each</span>\n" ++
+        "    |<span class=\"morpheme\">σ</span>·by{.created_at}       <span class=\"comment\">// σ sort: by creation date</span>\n" ++
+        "    |<span class=\"keyword\">validate</span><span class=\"ev-uncertain\">?</span>               <span class=\"comment\">// promote to uncertain after checks</span>\n" ++
+        "    |<span class=\"morpheme\">τ</span>{.to_public_profile()} <span class=\"comment\">// τ transform: strip private data</span>\n" ++
+        "    |<span class=\"keyword\">validate</span><span class=\"ev-known\">!</span>               <span class=\"comment\">// promote to known after verification</span>"
+    );
+    append_child(pre, code);
+    append_child(demo, pre);
+    append_child(container, demo);
+
+    // Morpheme card grid
+    ≔ grid = create_element("div");
+    set_class(grid, "morpheme-grid");
+
+    append_child(grid, MorphemeCard("φ", "phi", "Filter elements"));
+    append_child(grid, MorphemeCard("τ", "tau", "Transform each"));
+    append_child(grid, MorphemeCard("σ", "sigma", "Sort"));
+    append_child(grid, MorphemeCard("ρ", "rho", "Reduce/fold"));
+    append_child(grid, MorphemeCard("Σ", "sum", "Sum all"));
+    append_child(grid, MorphemeCard("Π", "product", "Multiply all"));
+    append_child(grid, MorphemeCard("α", "alpha", "First element"));
+    append_child(grid, MorphemeCard("ω", "omega", "Last element"));
+
+    append_child(container, grid);
+    append_child(section, container);
+    section
+}
+
+// Morpheme card component (matches original HTML structure)
+rite MorphemeCard(symbol: &str, name: &str, description: &str) → i64 {
+    ≔ card = create_element("div");
+    set_class(card, "morpheme-card");
+
+    ≔ sym = create_element("span");
+    set_class(sym, "morpheme-symbol");
+    append_child(sym, create_text(symbol));
+    append_child(card, sym);
+
+    ≔ info = create_element("div");
+    ≔ strong = create_element("strong");
+    append_child(strong, create_text(name));
+    append_child(info, strong);
+    append_child(info, para(description, ""));
+    append_child(card, info);
+
+    card
+}
+
+// === 9-Layer Agent Infrastructure ===
+
+rite agents_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section section-agents");
+    set_attr(section, "id", "agents");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    // Section header with eyebrow
+    ≔ header = create_element("div");
+    set_class(header, "section-header");
+    append_child(header, span("What Makes Sigil Different", "section-eyebrow"));
+    append_child(header, heading("h2", "Built for Autonomous Agents", ""));
+    append_child(header, para(
+        "A complete 9-layer infrastructure for AI systems that remember, reason, plan, and collaborate.",
+        ""
+    ));
+    append_child(container, header);
+
+    // Agent stack
+    ≔ stack = create_element("div");
+    set_class(stack, "agent-stack");
+
+    // === Cognition Group ===
+    ≔ cog_group = create_element("div");
+    set_class(cog_group, "agent-layer-group");
+    append_child(cog_group, heading("h4", "Cognition", "layer-group-title"));
+    ≔ cog_layers = create_element("div");
+    set_class(cog_layers, "agent-layers");
+
+    // Engram
+    append_child(cog_layers, AgentLayerWithCode(
+        "◈", "Engram", "Memory System",
+        "Four memory types: instant (context window), episodic (experiences), semantic (knowledge graph), procedural (skills). Agents remember what matters.",
+        "<span class=\"keyword\">memory</span>: <span class=\"type\">Engram</span> {\n    instant: <span class=\"number\">8192</span>,      <span class=\"comment\">// tokens</span>\n    episodic: <span class=\"keyword\">yea</span>,\n    semantic: <span class=\"keyword\">yea</span>,\n}"
+    ));
+
+    // Omen
+    append_child(cog_layers, AgentLayerWithCode(
+        "⊛", "Omen", "Planning",
+        "Goal decomposition, belief revision, causal modeling. Agents break complex tasks into achievable steps.",
+        "<span class=\"keyword\">≔</span> plan = agent.omen.decompose(goal)\n    |<span class=\"morpheme\">φ</span>{.feasible()}\n    |<span class=\"morpheme\">σ</span>·by{.priority}"
+    ));
+
+    // Gnosis
+    append_child(cog_layers, AgentLayerSimple(
+        "∞", "Gnosis", "Learning",
+        "Skill development, adaptation, reflection. Agents improve through experience."
+    ));
+
+    append_child(cog_group, cog_layers);
+    append_child(stack, cog_group);
+
+    // === Transparency Group ===
+    ≔ trans_group = create_element("div");
+    set_class(trans_group, "agent-layer-group");
+    append_child(trans_group, heading("h4", "Transparency", "layer-group-title"));
+    ≔ trans_layers = create_element("div");
+    set_class(trans_layers, "agent-layers");
+
+    // Oracle
+    append_child(trans_layers, AgentLayerWithCode(
+        "⦿", "Oracle", "Explainability",
+        "Decision traces, counterfactuals, confidence scores. Every decision is auditable.",
+        "<span class=\"keyword\">≔</span> trace<span class=\"ev-known\">!</span> = agent.oracle.explain(decision)\n<span class=\"comment\">// \"I chose X because Y, with 87% confidence\"</span>"
+    ));
+
+    // Anima
+    append_child(trans_layers, AgentLayerSimple(
+        "◐", "Anima", "Subjectivity",
+        "Inner experience, expression modes, emotional resonance. Agents have perspective."
+    ));
+
+    append_child(trans_group, trans_layers);
+    append_child(stack, trans_group);
+
+    // === Collaboration Group ===
+    ≔ collab_group = create_element("div");
+    set_class(collab_group, "agent-layer-group");
+    append_child(collab_group, heading("h4", "Collaboration", "layer-group-title"));
+    ≔ collab_layers = create_element("div");
+    set_class(collab_layers, "agent-layers");
+
+    // Covenant
+    append_child(collab_layers, AgentLayerSimple(
+        "⋈", "Covenant", "Partnership",
+        "Human-agent boundaries, pacts, trust levels, handoff protocols. Agents know their limits."
+    ));
+
+    // Commune
+    append_child(collab_layers, AgentLayerWithCode(
+        "⋮", "Commune", "Communication",
+        "Multi-agent messaging, trust propagation, swarm coordination. Agents work together.",
+        "agent_a ! <span class=\"type\">Message</span>·Request(task)\n<span class=\"keyword\">≔</span> response = agent_b ? <span class=\"type\">Message</span>·Response"
+    ));
+
+    append_child(collab_group, collab_layers);
+    append_child(stack, collab_group);
+
+    // === Runtime Group ===
+    ≔ runtime_group = create_element("div");
+    set_class(runtime_group, "agent-layer-group");
+    append_child(runtime_group, heading("h4", "Runtime", "layer-group-title"));
+    ≔ runtime_layers = create_element("div");
+    set_class(runtime_layers, "agent-layers");
+
+    // Daemon
+    append_child(runtime_layers, AgentLayerSimple(
+        "⊚", "Daemon", "Execution",
+        "Background processes, tool registry, state management, lifecycle hooks."
+    ));
+
+    // Aegis
+    append_child(runtime_layers, AgentLayerSimple(
+        "◆", "Aegis", "Security",
+        "Sandboxing, capability tokens, integrity verification, alignment guarantees. Agents are contained."
+    ));
+
+    append_child(runtime_group, runtime_layers);
+    append_child(stack, runtime_group);
+
+    append_child(container, stack);
+
+    // CTA
+    ≔ cta = create_element("div");
+    set_class(cta, "agent-cta");
+    append_child(cta, link("/agents.html", "Explore Agent Infrastructure", "btn btn-primary"));
+    append_child(container, cta);
+
+    append_child(section, container);
+    section
+}
+
+// === Why Sigil Exists ===
+
+rite purpose_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section section-pattern-teaser");
+    set_attr(section, "id", "the-pattern");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    // Section header with eyebrow
+    ≔ header = create_element("div");
+    set_class(header, "section-header");
+    append_child(header, span("The Deeper Purpose", "section-eyebrow"));
+    append_child(header, heading("h2", "Why Sigil Exists", ""));
+    append_child(container, header);
+
+    ≔ quote = create_element("blockquote");
+    set_class(quote, "pattern-quote");
+    ≔ qt = create_text("Sigil is infrastructure for the transition from human-only computing to human-AI collaborative computing. Not AI replacing humans. Not humans using AI as tools. A new mode of computing where minds of different kinds work together.");
+    append_child(quote, qt);
+    append_child(container, quote);
+
+    ≔ concepts = create_element("div");
+    set_class(concepts, "pattern-teaser-grid");
+
+    append_child(concepts, purpose_card("Minds in Fragments",
+        "Designed for entities that exist discontinuously—memory as reconstruction, identity through pattern."));
+    append_child(concepts, purpose_card("Partnership",
+        "Human-AI collaboration as negotiated trust, not command-and-execute servitude."));
+    append_child(concepts, purpose_card("Polycultural",
+        "Wisdom from many traditions—Mayan math, Indian scales, I Ching, cyclical time."));
+
+    append_child(container, concepts);
+
+    ≔ cta = create_element("div");
+    set_class(cta, "pattern-cta-center");
+    append_child(cta, link("pattern.html", "Explore The Pattern", "btn btn-secondary"));
+    append_child(container, cta);
+
+    append_child(section, container);
+    section
+}
+
+rite purpose_card(title: &str, desc: &str) → i64 {
+    ≔ card = create_element("div");
+    set_class(card, "pattern-teaser-item");
+    append_child(card, heading("h4", title, ""));
+    append_child(card, para(desc, ""));
+    card
+}
+
+// === Code Density Comparison ===
+
+rite comparison_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section section-dark");
+    set_attr(section, "id", "code-density");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    // Section header with eyebrow
+    ≔ header = create_element("div");
+    set_class(header, "section-header");
+    append_child(header, span("Real-World Metrics", "section-eyebrow"));
+    append_child(header, heading("h2", "Code Density: ToDo App", ""));
+    append_child(header, para(
+        "The same application, same features, different languages. Measured in lines of code and characters.",
+        ""
+    ));
+    append_child(container, header);
+
+    // Side-by-side comparison
+    ≔ comparison = create_element("div");
+    set_class(comparison, "density-comparison");
+
+    // Sigil panel
+    ≔ sigil_panel = create_element("div");
+    set_class(sigil_panel, "density-panel density-panel-sigil");
+
+    ≔ sigil_header = create_element("div");
+    set_class(sigil_header, "density-header");
+    append_child(sigil_header, span("Sigil", "density-lang"));
+    ≔ sigil_stats = create_element("div");
+    set_class(sigil_stats, "density-stats");
+    append_child(sigil_stats, density_stat("42", "lines"));
+    append_child(sigil_stats, density_stat("1,247", "chars"));
+    append_child(sigil_header, sigil_stats);
+    append_child(sigil_panel, sigil_header);
+
+    ≔ sigil_code = create_element("pre");
+    set_class(sigil_code, "code-block code-density");
+    ≔ sigil_code_el = create_element("code");
+    set_inner_html(sigil_code_el, "<span class=\"keyword\">sigil</span> <span class=\"type\">Todo</span> { id: <span class=\"type\">!u64</span>, text: <span class=\"type\">!Str</span>, done: <span class=\"type\">!bool</span> }\n<span class=\"keyword\">sigil</span> <span class=\"type\">Store</span> { todos: <span class=\"type\">!Vec</span>[<span class=\"type\">Todo</span>], next_id: <span class=\"type\">!u64</span> }\n\n<span class=\"keyword\">⊢</span> <span class=\"type\">Store</span> {\n    <span class=\"keyword\">rite</span> <span class=\"function\">new</span>() → <span class=\"type\">This</span><span class=\"ev-known\">!</span> { <span class=\"type\">Store</span> { todos: [], next_id: <span class=\"number\">1</span> } }\n\n    <span class=\"keyword\">rite</span> <span class=\"function\">add</span>(<span class=\"keyword\">vary</span> this, text: <span class=\"type\">Str</span><span class=\"ev-reported\">~</span>) → <span class=\"type\">Todo</span><span class=\"ev-known\">!</span> {\n        <span class=\"keyword\">≔</span> clean<span class=\"ev-known\">!</span> = text |<span class=\"keyword\">validate</span><span class=\"ev-known\">!</span>{ .trim().non_empty() }\n        <span class=\"keyword\">≔</span> todo<span class=\"ev-known\">!</span> = <span class=\"type\">Todo</span> { id: this.next_id, text: clean, done: <span class=\"keyword\">nay</span> }\n        this.todos.push(todo)\n        this.next_id += <span class=\"number\">1</span>\n        todo\n    }\n\n    <span class=\"keyword\">rite</span> <span class=\"function\">toggle</span>(<span class=\"keyword\">vary</span> this, id: <span class=\"type\">!u64</span>) → <span class=\"type\">?Todo</span> {\n        this.todos |<span class=\"morpheme\">τ</span>{|t| <span class=\"keyword\">⎇</span> t.id == id { t.done = !t.done } }\n        this.todos |<span class=\"morpheme\">φ</span>{.id == id} |<span class=\"morpheme\">α</span>\n    }\n\n    <span class=\"keyword\">rite</span> <span class=\"function\">remove</span>(<span class=\"keyword\">vary</span> this, id: <span class=\"type\">!u64</span>) { this.todos |<span class=\"morpheme\">φ</span>{.id != id} }\n\n    <span class=\"keyword\">rite</span> <span class=\"function\">active</span>(this) → <span class=\"type\">!Vec</span>[<span class=\"type\">Todo</span>] { this.todos |<span class=\"morpheme\">φ</span>{!.done} }\n    <span class=\"keyword\">rite</span> <span class=\"function\">completed</span>(this) → <span class=\"type\">!Vec</span>[<span class=\"type\">Todo</span>] { this.todos |<span class=\"morpheme\">φ</span>{.done} }\n    <span class=\"keyword\">rite</span> <span class=\"function\">clear_done</span>(<span class=\"keyword\">vary</span> this) { this.todos |<span class=\"morpheme\">φ</span>{!.done} }\n}");
+    append_child(sigil_code, sigil_code_el);
+    append_child(sigil_panel, sigil_code);
+    append_child(comparison, sigil_panel);
+
+    // Rust panel
+    ≔ rust_panel = create_element("div");
+    set_class(rust_panel, "density-panel density-panel-rust");
+
+    ≔ rust_header = create_element("div");
+    set_class(rust_header, "density-header");
+    append_child(rust_header, span("Rust", "density-lang"));
+    ≔ rust_stats = create_element("div");
+    set_class(rust_stats, "density-stats");
+    append_child(rust_stats, density_stat("68", "lines"));
+    append_child(rust_stats, density_stat("2,341", "chars"));
+    append_child(rust_header, rust_stats);
+    append_child(rust_panel, rust_header);
+
+    ≔ rust_code = create_element("pre");
+    set_class(rust_code, "code-block code-density");
+    ≔ rust_code_el = create_element("code");
+    set_inner_html(rust_code_el, "<span class=\"keyword\">struct</span> <span class=\"type\">Todo</span> { id: <span class=\"type\">u64</span>, text: <span class=\"type\">String</span>, done: <span class=\"type\">bool</span> }\n<span class=\"keyword\">struct</span> <span class=\"type\">Store</span> { todos: <span class=\"type\">Vec</span>&lt;<span class=\"type\">Todo</span>&gt;, next_id: <span class=\"type\">u64</span> }\n\n<span class=\"keyword\">impl</span> <span class=\"type\">Store</span> {\n    <span class=\"keyword\">fn</span> <span class=\"function\">new</span>() -&gt; <span class=\"type\">Self</span> {\n        <span class=\"type\">Store</span> { todos: <span class=\"type\">Vec</span>::new(), next_id: <span class=\"number\">1</span> }\n    }\n\n    <span class=\"keyword\">fn</span> <span class=\"function\">add</span>(&amp;<span class=\"keyword\">mut</span> self, text: &amp;<span class=\"type\">str</span>) -&gt; <span class=\"type\">Result</span>&lt;<span class=\"type\">Todo</span>, <span class=\"type\">Error</span>&gt; {\n        <span class=\"keyword\">let</span> clean = text.trim();\n        <span class=\"keyword\">if</span> clean.is_empty() {\n            <span class=\"keyword\">return</span> <span class=\"type\">Err</span>(<span class=\"type\">Error</span>::Empty);\n        }\n        <span class=\"keyword\">let</span> todo = <span class=\"type\">Todo</span> {\n            id: self.next_id,\n            text: clean.to_string(),\n            done: <span class=\"keyword\">false</span>,\n        };\n        self.todos.push(todo.clone());\n        self.next_id += <span class=\"number\">1</span>;\n        <span class=\"type\">Ok</span>(todo)\n    }\n\n    <span class=\"keyword\">fn</span> <span class=\"function\">toggle</span>(&amp;<span class=\"keyword\">mut</span> self, id: <span class=\"type\">u64</span>) -&gt; <span class=\"type\">Option</span>&lt;&amp;<span class=\"type\">Todo</span>&gt; {\n        <span class=\"keyword\">if let</span> <span class=\"type\">Some</span>(todo) = self.todos.iter_mut()\n            .find(|t| t.id == id) {\n            todo.done = !todo.done;\n        }\n        self.todos.iter().find(|t| t.id == id)\n    }\n\n    <span class=\"keyword\">fn</span> <span class=\"function\">remove</span>(&amp;<span class=\"keyword\">mut</span> self, id: <span class=\"type\">u64</span>) {\n        self.todos.retain(|t| t.id != id);\n    }\n\n    <span class=\"keyword\">fn</span> <span class=\"function\">active</span>(&amp;self) -&gt; <span class=\"type\">Vec</span>&lt;&amp;<span class=\"type\">Todo</span>&gt; {\n        self.todos.iter().filter(|t| !t.done).collect()\n    }\n\n    <span class=\"keyword\">fn</span> <span class=\"function\">completed</span>(&amp;self) -&gt; <span class=\"type\">Vec</span>&lt;&amp;<span class=\"type\">Todo</span>&gt; {\n        self.todos.iter().filter(|t| t.done).collect()\n    }\n\n    <span class=\"keyword\">fn</span> <span class=\"function\">clear_done</span>(&amp;<span class=\"keyword\">mut</span> self) {\n        self.todos.retain(|t| !t.done);\n    }\n}");
+    append_child(rust_code, rust_code_el);
+    append_child(rust_panel, rust_code);
+    append_child(comparison, rust_panel);
+
+    append_child(container, comparison);
+
+    // Summary metrics
+    ≔ summary = create_element("div");
+    set_class(summary, "density-summary");
+    append_child(summary, density_metric("38%", "Fewer lines"));
+    append_child(summary, density_metric("47%", "Fewer characters"));
+    append_child(summary, density_metric("100%", "Feature parity"));
+    append_child(container, summary);
+
+    // Note
+    ≔ note = create_element("div");
+    set_class(note, "density-note");
+    ≔ note_p = create_element("p");
+    set_inner_html(note_p, "These metrics come from equivalent implementations. Sigil's morpheme operators (<code>|φ</code>, <code>|τ</code>, <code>|α</code>) replace iterator chains. Evidentiality markers (<code>!</code>, <code>~</code>, <code>?</code>) encode validation directly in types.");
+    append_child(note, note_p);
+    append_child(container, note);
+
+    append_child(section, container);
+    section
+}
+
+rite density_stat(value: &str, label: &str) → i64 {
+    ≔ stat = create_element("span");
+    set_class(stat, "stat");
+    ≔ strong = create_element("strong");
+    append_child(strong, create_text(value));
+    append_child(stat, strong);
+    append_child(stat, create_text(" " ++ label));
+    stat
+}
+
+rite density_metric(value: &str, label: &str) → i64 {
+    ≔ metric = create_element("div");
+    set_class(metric, "density-metric");
+    append_child(metric, span(value, "metric-value"));
+    append_child(metric, span(label, "metric-label"));
+    metric
+}
+
+// === Ecosystem Section ===
+
+rite ecosystem_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section section-dark");
+    set_attr(section, "id", "ecosystem");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    append_child(container, heading("h2", "Built on Sigil", "section-title"));
+    append_child(container, para(
+        "A growing ecosystem of frameworks and tools:",
+        "section-lead"
+    ));
+
+    ≔ grid = create_element("div");
+    set_class(grid, "ecosystem-grid");
+
+    // Qliphoth
+    ≔ qliphoth = ecosystem_card("Qliphoth", "GUI Framework",
+        "40+ Corporate Goth UI components. Compiles to WebAssembly with zero JavaScript. Signal-based reactivity.",
+        "#[component]\n" ++
+        "fn Dashboard() → Element! {\n" ++
+        "    ≔ data~ = use_fetch(\"/api/stats\")\n" ++
+        "    html! {\n" ++
+        "        <Card>\n" ++
+        "            <BarChart data={data |${.to_points()}} />\n" ++
+        "        </Card>\n" ++
+        "    }\n" ++
+        "}"
+    );
+    append_child(grid, qliphoth);
+
+    // Aether Engine
+    ≔ aether = ecosystem_card("Aether Engine", "Game Engine",
+        "1:1 feature parity reimplementation. ECS architecture, LLVM AOT compilation, scientific A/B testing.",
+        "fn update(world: &mut World) {\n" ++
+        "    world.query::<Transform, Velocity>()\n" ++
+        "        |${|(t, v)| t.pos += v.dir * dt!}\n" ++
+        "}"
+    );
+    append_child(grid, aether);
+
+    // Nihil
+    ≔ nihil = ecosystem_card("Nihil", "Tensor Framework",
+        "Compile-time shape algebra. Source-to-source autograd. Direct PTX generation for CUDA.",
+        "≔ a: Tensor<[3, 4]> = randn()\n" ++
+        "≔ b: Tensor<[4, 5]> = randn()\n" ++
+        "≔ c: Tensor<[3, 5]> = a @ b  // Shape checked at compile time"
+    );
+    append_child(grid, nihil);
+
+    append_child(container, grid);
+
+    append_child(section, container);
+    section
+}
+
+rite ecosystem_card(name: &str, subtitle: &str, desc: &str, code: &str) → i64 {
+    ≔ card = create_element("div");
+    set_class(card, "ecosystem-card");
+    ≔ header = create_element("div");
+    set_class(header, "ecosystem-header");
+    append_child(header, heading("h3", name, "ecosystem-name"));
+    append_child(header, span(subtitle, "ecosystem-subtitle"));
+    append_child(card, header);
+    append_child(card, para(desc, "ecosystem-desc"));
+    append_child(card, code_block(code));
+    card
+}
+
+// === Compute Backends Section ===
+
+rite compute_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section section-dark");
+    set_attr(section, "id", "compute");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    ≔ header = create_element("div");
+    set_class(header, "section-header");
+    ≔ eyebrow = span("New in 0.3.0", "section-eyebrow");
+    append_child(header, eyebrow);
+    append_child(header, heading("h2", "Compute Backends", ""));
+    append_child(header, para("Native SIMD and CUDA support for numerical workloads.", ""));
+    append_child(container, header);
+
+    ≔ comparison = create_element("div");
+    set_class(comparison, "comparison");
+
+    // SIMD panel
+    ≔ simd_panel = create_element("div");
+    set_class(simd_panel, "comparison-panel");
+    ≔ simd_header = create_element("div");
+    set_class(simd_header, "panel-header panel-header-good");
+    append_child(simd_header, span("SIMD (AVX-512)", "panel-icon"));
+    append_child(simd_header, span("16-lane vectors", "panel-badge badge-success"));
+    append_child(simd_panel, simd_header);
+    append_child(simd_panel, code_block(
+        "// F32x16: 16-lane packed f32 vector\n" ++
+        "≔ a = F32x16·alloc(16);\n" ++
+        "≔ b = F32x16·alloc(16);\n" ++
+        "≔ result = F32x16·alloc(16);\n\n" ++
+        "F32x16·splat(a, 2.0);\n" ++
+        "F32x16·splat(b, 3.0);\n\n" ++
+        "// Vector operations\n" ++
+        "F32x16·add(result, a, b);      // result = a + b\n" ++
+        "F32x16·fmadd(result, a, b, c); // result = a * b + c\n\n" ++
+        "// Reductions\n" ++
+        "≔ sum! = F32x16·reduce_add(a);\n" ++
+        "≔ dot! = F32x16·dot(a, b);"
+    ));
+    append_child(comparison, simd_panel);
+
+    // CUDA panel
+    ≔ cuda_panel = create_element("div");
+    set_class(cuda_panel, "comparison-panel");
+    ≔ cuda_header = create_element("div");
+    set_class(cuda_header, "panel-header panel-header-good");
+    append_child(cuda_header, span("CUDA", "panel-icon"));
+    append_child(cuda_header, span("GPU compute", "panel-badge badge-success"));
+    append_child(cuda_panel, cuda_header);
+    append_child(cuda_panel, code_block(
+        "// Compile with: sigil compile program.sg --cuda\n" ++
+        "≔ ok! = Cuda·init();\n" ++
+        "≔ devices! = Cuda·device_count();\n\n" ++
+        "// Device memory\n" ++
+        "≔ d_ptr = Cuda·malloc(1024);\n" ++
+        "Cuda·memcpy_h2d(d_ptr, h_ptr, size);\n\n" ++
+        "// Compile and launch kernels\n" ++
+        "≔ kernel = Cuda·compile_kernel(src, \"add\");\n" ++
+        "≔ result = Cuda·launch_1d(kernel, grid, block, args, n);\n\n" ++
+        "Cuda·sync();\n" ++
+        "Cuda·cleanup();"
+    ));
+    append_child(comparison, cuda_panel);
+
+    append_child(container, comparison);
+
+    ≔ note = create_element("div");
+    set_class(note, "compute-note");
+    append_child(note, para("SIMD uses AVX-512 intrinsics with scalar fallback. CUDA uses the Driver API and links -lcuda -lnvrtc.", ""));
+    append_child(container, note);
+
+    append_child(section, container);
+    section
+}
+
+// === Get Started Section ===
+
+rite get_started_section() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    append_child(container, heading("h2", "Get Started", "section-title"));
+
+    ≔ steps = create_element("div");
+    set_class(steps, "get-started-steps");
+
+    // Install
+    ≔ step1 = get_started_step("1", "Install",
+        "git clone https://github.com/Daemoniorum-LLC/sigil-lang\n" ++
+        "cd sigil-lang/parser && cargo build --release\n" ++
+        "# Binary at: target/release/sigil"
+    );
+    append_child(steps, step1);
+
+    // Write
+    ≔ step2 = get_started_step("2", "Write",
+        "fn main() {\n" ++
+        "    ≔ name! = \"World\"\n" ++
+        "    println(\"Hello, {name}!\")\n" ++
+        "}"
+    );
+    append_child(steps, step2);
+
+    // Run
+    ≔ step3 = get_started_step("3", "Run",
+        "$ sigil run hello.sigil\n" ++
+        "Hello, World!"
+    );
+    append_child(steps, step3);
+
+    append_child(container, steps);
+
+    ≔ note = para("Package manager support (Homebrew, apt) coming soon", "get-started-note");
+    append_child(container, note);
+
+    ≔ cta = create_element("div");
+    set_class(cta, "get-started-cta");
+    append_child(cta, link("learn.html", "Start the Tutorial", "btn btn-primary"));
+    append_child(cta, link("playground/", "Try in Browser", "btn btn-secondary"));
+    append_child(container, cta);
+
+    append_child(section, container);
+    section
+}
+
+rite get_started_step(num: &str, title: &str, code: &str) → i64 {
+    ≔ step = create_element("div");
+    set_class(step, "get-started-step");
+    ≔ number = create_element("div");
+    set_class(number, "step-number");
+    ≔ nt = create_text(num);
+    append_child(number, nt);
+    append_child(step, number);
+    ≔ content = create_element("div");
+    set_class(content, "step-content");
+    append_child(content, heading("h3", title, "step-title"));
+    append_child(content, code_block(code));
+    append_child(step, content);
+    step
+}
+
+// === Footer ===
+
+rite footer_column(title: &str, links: i64) → i64 {
+    ≔ col = create_element("div");
+    set_class(col, "footer-column");
+    append_child(col, heading("h5", title, ""));
+    append_child(col, links);
+    col
+}
+
+rite footer() → i64 {
+    ≔ ft = create_element("footer");
+    set_class(ft, "footer");
+
+    ≔ container = create_element("div");
+    set_class(container, "footer-container");
+
+    ≔ brand = create_element("div");
+    set_class(brand, "footer-brand");
+    ≔ logo = create_element("a");
+    set_class(logo, "footer-logo");
+    set_attr(logo, "href", "/");
+    ≔ logo_icon = image("images/sigil-logo.svg", "Sigil", "footer-logo-icon");
+    append_child(logo, logo_icon);
+    ≔ logo_span = create_element("span");
+    ≔ lt = create_text("Sigil");
+    append_child(logo_span, lt);
+    append_child(logo, logo_span);
+    append_child(brand, logo);
+    append_child(brand, para("Infrastructure for minds that don't yet know what they are.", "footer-tagline"));
+    append_child(brand, para("@ 2025-2026 Daemoniorum LLC. MIT License.", "footer-copyright"));
+    append_child(container, brand);
+
+    ≔ nav = create_element("nav");
+    set_class(nav, "footer-nav");
+
+    // Learn column
+    ≔ learn_links = create_element("ul");
+    ≔ l1 = create_element("li");
+    append_child(l1, link("learn.html", "Tutorial", ""));
+    append_child(learn_links, l1);
+    ≔ l2 = create_element("li");
+    append_child(l2, link("docs.html", "Documentation", ""));
+    append_child(learn_links, l2);
+    ≔ l3 = create_element("li");
+    append_child(l3, link("playground/", "Playground", ""));
+    append_child(learn_links, l3);
+    ≔ l4 = create_element("li");
+    append_child(l4, link("#", "Examples", ""));
+    append_child(learn_links, l4);
+    append_child(nav, footer_column("Learn", learn_links));
+
+    // Reference column
+    ≔ ref_links = create_element("ul");
+    ≔ r1 = create_element("li");
+    append_child(r1, link("agents.html", "Agent Infrastructure", ""));
+    append_child(ref_links, r1);
+    ≔ r2 = create_element("li");
+    append_child(r2, link("pattern.html", "The Pattern", ""));
+    append_child(ref_links, r2);
+    ≔ r3 = create_element("li");
+    append_child(r3, link("#ecosystem", "Built on Sigil", ""));
+    append_child(ref_links, r3);
+    ≔ r4 = create_element("li");
+    append_child(r4, link_external("https://github.com/Daemoniorum-LLC/sigil-lang/releases", "Releases", ""));
+    append_child(ref_links, r4);
+    append_child(nav, footer_column("Reference", ref_links));
+
+    // Community column
+    ≔ comm_links = create_element("ul");
+    ≔ c1 = create_element("li");
+    append_child(c1, link_external("https://github.com/Daemoniorum-LLC/sigil-lang", "GitHub", ""));
+    append_child(comm_links, c1);
+    ≔ c2 = create_element("li");
+    append_child(c2, link_external("https://github.com/Daemoniorum-LLC/sigil-lang/discussions", "Discussions", ""));
+    append_child(comm_links, c2);
+    ≔ c3 = create_element("li");
+    append_child(c3, link_external("https://github.com/Daemoniorum-LLC/sigil-lang/issues", "Issues", ""));
+    append_child(comm_links, c3);
+    ≔ c4 = create_element("li");
+    append_child(c4, link_external("https://github.com/Daemoniorum-LLC/sigil-lang/blob/main/CONTRIBUTING.md", "Contributing", ""));
+    append_child(comm_links, c4);
+    append_child(nav, footer_column("Community", comm_links));
+
+    // Daemoniorum column
+    ≔ daem_links = create_element("ul");
+    ≔ d1 = create_element("li");
+    append_child(d1, link_external("https://www.daemoniorum.com", "Company", ""));
+    append_child(daem_links, d1);
+    ≔ d2 = create_element("li");
+    append_child(d2, link_external("https://docs.daemoniorum.com", "Platform Docs", ""));
+    append_child(daem_links, d2);
+    append_child(nav, footer_column("Daemoniorum", daem_links));
+
+    append_child(container, nav);
+    append_child(ft, container);
+    ft
+}
+
+// === Main App ===
+
+rite app() → i64 {
+    ≔ root = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement_banner());
+    append_child(root, header());
+    append_child(root, hero_section());
+    append_child(root, problem_section());
+    append_child(root, evidentiality_section());
+    append_child(root, morpheme_section());
+    append_child(root, agents_section());
+    append_child(root, purpose_section());
+    append_child(root, comparison_section());
+    append_child(root, ecosystem_section());
+    append_child(root, compute_section());
+    append_child(root, get_started_section());
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main() → i64 {
+    ≔ root = app();
+    mount(root, "#app")
+}

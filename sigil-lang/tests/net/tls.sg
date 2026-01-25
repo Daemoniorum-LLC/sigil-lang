@@ -1,0 +1,805 @@
+// TLS/OpenSSL FFI Tests ∀ Sigil - Low Level
+// Tests the sigil_tls_* runtime functions directly
+// Uses inline assembly ∀ socket operations like socket.sg
+
+// ============================================================================
+// Linux x86_64 Syscall Numbers
+// ============================================================================
+
+const SYS_SOCKET: i64 = 41;
+const SYS_CONNECT: i64 = 42;
+const SYS_CLOSE: i64 = 3;
+const SYS_MMAP: i64 = 9;
+const SYS_MUNMAP: i64 = 11;
+const SYS_WRITE: i64 = 1;
+const SYS_SETSOCKOPT: i64 = 54;
+const SYS_POLL: i64 = 7;
+
+// Socket constants
+const AF_INET: i64 = 2;
+const SOCK_STREAM: i64 = 1;
+const SOL_SOCKET: i64 = 1;
+const SO_RCVTIMEO: i64 = 20;
+const SO_SNDTIMEO: i64 = 21;
+
+// mmap flags
+const PROT_READ: i64 = 1;
+const PROT_WRITE: i64 = 2;
+const MAP_PRIVATE: i64 = 2;
+const MAP_ANONYMOUS: i64 = 32;
+
+// ============================================================================
+// Syscall Wrappers (from socket.sg)
+// ============================================================================
+
+λ syscall1(num: i64, arg1: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            in("r9") arg6,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+// ============================================================================
+// Memory Allocation (mmap-based)
+// ============================================================================
+
+λ alloc_mem(size: i64) -> i64 {
+    syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
+}
+
+λ free_mem(ptr: i64, size: i64) {
+    syscall2(SYS_MUNMAP, ptr, size);
+}
+
+λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+// ============================================================================
+// Socket Operations
+// ============================================================================
+
+λ socket_create() -> i64 {
+    syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0)
+}
+
+λ socket_close(fd: i64) -> i64 {
+    syscall1(SYS_CLOSE, fd)
+}
+
+// Poll socket ∀ readability (timeout ∈ milliseconds)
+// Returns: 1 ⎇ readable, 0 ⎇ timeout, -1 on error
+λ socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
+    // Σ pollfd { int fd; short events; short revents; }
+    // On x86_64: 4 bytes fd + 2 bytes events + 2 bytes revents = 8 bytes
+    ≔ pollfd = alloc_mem(16);
+    ⎇ pollfd < 0 {
+        ⤺ -1;
+    }
+
+    // Set fd (32-bit)
+    unsafe {
+        asm!("mov dword ptr [rdi], esi", in("rdi") pollfd, in("esi") fd as i32, options(nostack));
+    }
+    // Set events = POLLIN (0x0001)
+    unsafe {
+        asm!("mov word ptr [rdi], 1", in("rdi") pollfd + 4, options(nostack));
+    }
+    // Set revents = 0
+    unsafe {
+        asm!("mov word ptr [rdi], 0", in("rdi") pollfd + 6, options(nostack));
+    }
+
+    // poll(pollfd, 1, timeout_ms)
+    ≔ result = syscall3(SYS_POLL, pollfd, 1, timeout_ms);
+
+    free_mem(pollfd, 16);
+    result
+}
+
+// Set socket timeout (in seconds)
+λ socket_set_timeout(fd: i64, secs: i64) -> i64 {
+    // timeval struct: 8 bytes ∀ tv_sec, 8 bytes ∀ tv_usec
+    ≔ tv = alloc_mem(16);
+    ⎇ tv < 0 {
+        ⤺ -1;
+    }
+
+    // Set tv_sec
+    unsafe {
+        asm!("mov qword ptr [rdi], rsi", in("rdi") tv, in("rsi") secs, options(nostack));
+        asm!("mov qword ptr [rdi], 0", in("rdi") tv + 8, options(nostack)); // tv_usec = 0
+    }
+
+    // Set both receive and send timeouts
+    ≔ r1 = syscall5(SYS_SETSOCKOPT, fd, SOL_SOCKET, SO_RCVTIMEO, tv, 16);
+    ≔ r2 = syscall5(SYS_SETSOCKOPT, fd, SOL_SOCKET, SO_SNDTIMEO, tv, 16);
+
+    free_mem(tv, 16);
+
+    ⎇ r1 < 0 {
+        ⤺ r1;
+    }
+    r2
+}
+
+// Create sockaddr_in and connect
+λ socket_connect_ipv4(fd: i64, ip_packed: i64, port: i64) -> i64 {
+    // Allocate sockaddr_in on heap via mmap
+    ≔ addr_buf = alloc_mem(32);
+    ⎇ addr_buf < 0 {
+        ⤺ -1;
+    }
+
+    // Clear buffer
+    ≔ i: i64 = 0;
+    ⟳ i < 16 {
+        unsafe {
+            ≔ ptr = addr_buf + i;
+            asm!("mov byte ptr [rdi], 0", in("rdi") ptr, options(nostack));
+        }
+        i = i + 1;
+    }
+
+    // sin_family = AF_INET (2) - little endian
+    unsafe {
+        asm!("mov word ptr [rdi], 2", in("rdi") addr_buf, options(nostack));
+    }
+
+    // sin_port (big endian)
+    ≔ port_hi = (port >> 8) & 255;
+    ≔ port_lo = port & 255;
+    unsafe {
+        ≔ ptr2 = addr_buf + 2;
+        ≔ ptr3 = addr_buf + 3;
+        asm!("mov byte ptr [rdi], al", in("rdi") ptr2, in("al") port_hi as i8, options(nostack));
+        asm!("mov byte ptr [rdi], al", in("rdi") ptr3, in("al") port_lo as i8, options(nostack));
+    }
+
+    // sin_addr (already ∈ network byte order)
+    unsafe {
+        ≔ ptr4 = addr_buf + 4;
+        asm!("mov dword ptr [rdi], eax", in("rdi") ptr4, in("eax") ip_packed as i32, options(nostack));
+    }
+
+    // Connect
+    ≔ result = syscall3(SYS_CONNECT, fd, addr_buf, 16);
+
+    // Free addr buffer
+    free_mem(addr_buf, 32);
+
+    result
+}
+
+// ============================================================================
+// Output helpers using syscall write to stdout
+// ============================================================================
+
+λ write_str(s: i64, len: i64) {
+    syscall3(SYS_WRITE, 1, s, len);
+}
+
+λ write_cstr(s: i64) {
+    // Find length
+    ≔ len: i64 = 0;
+    ≔ byte: i64 = 1;
+    ⟳ byte != 0 {
+        unsafe {
+            ≔ ptr = s + len;
+            asm!("movzx rax, byte ptr [rdi]",
+                in("rdi") ptr,
+                out("rax") byte,
+                options(nostack, readonly));
+        }
+        ⎇ byte != 0 {
+            len = len + 1;
+        }
+    }
+    write_str(s, len);
+}
+
+λ write_newline() {
+    ≔ nl = alloc_mem(8);
+    unsafe {
+        asm!("mov byte ptr [rdi], 10", in("rdi") nl, options(nostack));
+    }
+    write_str(nl, 1);
+    free_mem(nl, 8);
+}
+
+λ write_int(n: i64) {
+    ≔ buf = alloc_mem(32);
+    ≔ num = n;
+    ≔ neg = 0;
+
+    ⎇ num < 0 {
+        neg = 1;
+        num = 0 - num;
+    }
+
+    // Convert to string (reverse)
+    ≔ idx: i64 = 30;
+    ⎇ num == 0 {
+        unsafe {
+            ≔ ptr = buf + idx;
+            asm!("mov byte ptr [rdi], 0x30", in("rdi") ptr, options(nostack));
+        }
+        idx = idx - 1;
+    } ⎉ {
+        ⟳ num > 0 {
+            ≔ digit = (num % 10) + 48;
+            unsafe {
+                ≔ ptr = buf + idx;
+                asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") digit as i8, options(nostack));
+            }
+            idx = idx - 1;
+            num = num / 10;
+        }
+    }
+
+    ⎇ neg == 1 {
+        unsafe {
+            ≔ ptr = buf + idx;
+            asm!("mov byte ptr [rdi], 0x2d", in("rdi") ptr, options(nostack)); // '-'
+        }
+        idx = idx - 1;
+    }
+
+    write_str(buf + idx + 1, 30 - idx);
+    free_mem(buf, 32);
+}
+
+// ============================================================================
+// Test 1: TLS Library Initialization
+// ============================================================================
+λ test_tls_init() -> i64 {
+    // "Test 1: TLS initialization... "
+    ≔ msg = alloc_mem(64);
+    ≔ i: i64 = 0;
+    // T=84 e=101 s=115 t=116 space=32 1=49 :=58 space=32 T=84 L=76 S=83
+    ≔ chars: [i8; 32] = [84, 101, 115, 116, 32, 49, 58, 32, 84, 76, 83, 32, 105, 110, 105, 116, 105, 97, 108, 105, 122, 97, 116, 105, 111, 110, 46, 46, 46, 32, 0, 0];
+    ⟳ i < 30 {
+        unsafe {
+            ≔ ptr = msg + i;
+            ≔ c = chars[i as usize];
+            asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+        }
+        i = i + 1;
+    }
+    write_cstr(msg);
+
+    ≔ result = sigil_tls_init();
+
+    ⎇ result == 1 {
+        // "PASS\n"
+        ≔ pass = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 80", in("rdi") pass, options(nostack));     // P
+            asm!("mov byte ptr [rdi], 65", in("rdi") pass + 1, options(nostack)); // A
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass + 2, options(nostack)); // S
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass + 3, options(nostack)); // S
+            asm!("mov byte ptr [rdi], 10", in("rdi") pass + 4, options(nostack)); // \n
+        }
+        write_str(pass, 5);
+        free_mem(pass, 8);
+        free_mem(msg, 64);
+        ⤺ 1;
+    } ⎉ {
+        // "FAIL\n"
+        ≔ fail = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 70", in("rdi") fail, options(nostack));     // F
+            asm!("mov byte ptr [rdi], 65", in("rdi") fail + 1, options(nostack)); // A
+            asm!("mov byte ptr [rdi], 73", in("rdi") fail + 2, options(nostack)); // I
+            asm!("mov byte ptr [rdi], 76", in("rdi") fail + 3, options(nostack)); // L
+            asm!("mov byte ptr [rdi], 10", in("rdi") fail + 4, options(nostack)); // \n
+        }
+        write_str(fail, 5);
+        free_mem(fail, 8);
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+}
+
+// ============================================================================
+// Test 2: SSL Context Creation
+// ============================================================================
+λ test_tls_ctx_creation() -> i64 {
+    ≔ msg = alloc_mem(64);
+    // "Test 2: SSL context creation... "
+    ≔ chars: [i8; 34] = [84, 101, 115, 116, 32, 50, 58, 32, 83, 83, 76, 32, 99, 111, 110, 116, 101, 120, 116, 32, 99, 114, 101, 97, 116, 105, 111, 110, 46, 46, 46, 32, 0, 0];
+    ≔ i: i64 = 0;
+    ⟳ i < 32 {
+        unsafe {
+            ≔ ptr = msg + i;
+            ≔ c = chars[i as usize];
+            asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+        }
+        i = i + 1;
+    }
+    write_cstr(msg);
+
+    sigil_tls_init();
+    ≔ ctx = sigil_tls_ctx_new();
+
+    ⎇ ctx as i64 != 0 {
+        sigil_tls_ctx_free(ctx);
+        ≔ pass = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 80", in("rdi") pass, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") pass + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") pass + 4, options(nostack));
+        }
+        write_str(pass, 5);
+        free_mem(pass, 8);
+        free_mem(msg, 64);
+        ⤺ 1;
+    } ⎉ {
+        ≔ fail = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 70", in("rdi") fail, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") fail + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", in("rdi") fail + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", in("rdi") fail + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") fail + 4, options(nostack));
+        }
+        write_str(fail, 5);
+        free_mem(fail, 8);
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+}
+
+// ============================================================================
+// Test 3: SSL Object Creation
+// ============================================================================
+λ test_ssl_object_creation() -> i64 {
+    ≔ msg = alloc_mem(64);
+    // "Test 3: SSL object creation... "
+    ≔ chars: [i8; 32] = [84, 101, 115, 116, 32, 51, 58, 32, 83, 83, 76, 32, 111, 98, 106, 101, 99, 116, 32, 99, 114, 101, 97, 116, 105, 111, 110, 46, 46, 46, 32, 0];
+    ≔ i: i64 = 0;
+    ⟳ i < 31 {
+        unsafe {
+            ≔ ptr = msg + i;
+            ≔ c = chars[i as usize];
+            asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+        }
+        i = i + 1;
+    }
+    write_cstr(msg);
+
+    sigil_tls_init();
+    ≔ ctx = sigil_tls_ctx_new();
+    ⎇ ctx as i64 == 0 {
+        ≔ fail = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 70", in("rdi") fail, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") fail + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", in("rdi") fail + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", in("rdi") fail + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") fail + 4, options(nostack));
+        }
+        write_str(fail, 5);
+        free_mem(fail, 8);
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    ≔ ssl = sigil_tls_new(ctx);
+    ⎇ ssl as i64 != 0 {
+        sigil_tls_free(ssl);
+        sigil_tls_ctx_free(ctx);
+        ≔ pass = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 80", in("rdi") pass, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") pass + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") pass + 4, options(nostack));
+        }
+        write_str(pass, 5);
+        free_mem(pass, 8);
+        free_mem(msg, 64);
+        ⤺ 1;
+    } ⎉ {
+        sigil_tls_ctx_free(ctx);
+        ≔ fail = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 70", in("rdi") fail, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") fail + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", in("rdi") fail + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", in("rdi") fail + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") fail + 4, options(nostack));
+        }
+        write_str(fail, 5);
+        free_mem(fail, 8);
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+}
+
+// ============================================================================
+// Test 4: HTTPS Connection to Google
+// ============================================================================
+λ test_https_connection() -> i64 {
+    ≔ msg = alloc_mem(64);
+    // "Test 4: HTTPS example.com... "
+    // T=84 e=101 s=115 t=116 space=32 4=52 :=58 space=32 H=72 T=84 T=84 P=80 S=83 space=32
+    // e=101 x=120 a=97 m=109 p=112 l=108 e=101 .=46 c=99 o=111 m=109 .=46 .=46 .=46 space=32
+    ≔ chars: [i8; 30] = [84, 101, 115, 116, 32, 52, 58, 32, 72, 84, 84, 80, 83, 32, 101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109, 46, 46, 46, 32, 0];
+    ≔ i: i64 = 0;
+    ⟳ i < 30 {
+        unsafe {
+            ≔ ptr = msg + i;
+            ≔ c = chars[i as usize];
+            asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+        }
+        i = i + 1;
+    }
+    write_cstr(msg);
+
+    // Initialize TLS
+    sigil_tls_init();
+
+    // Create SSL context
+    ≔ ctx = sigil_tls_ctx_new();
+    ⎇ ctx as i64 == 0 {
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    // Create TCP socket
+    ≔ sockfd = socket_create();
+    ⎇ sockfd < 0 {
+        sigil_tls_ctx_free(ctx);
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    // Set 10 second timeout ∀ TLS handshake
+    socket_set_timeout(sockfd, 10);
+
+    // Connect to example.com:443 (104.18.27.120)
+    // IP: 104.18.27.120 = 104 | (18 << 8) | (27 << 16) | (120 << 24)
+    ≔ ip_packed: i64 = 104 | (18 << 8) | (27 << 16) | (120 << 24);
+    ≔ result = socket_connect_ipv4(sockfd, ip_packed, 443);
+    ⎇ result < 0 {
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    // Create SSL object
+    ≔ ssl = sigil_tls_new(ctx);
+    ⎇ ssl as i64 == 0 {
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    // Set file descriptor
+    result = sigil_tls_set_fd(ssl, sockfd);
+    ⎇ result != 1 {
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    // Set SNI hostname
+    ≔ hostname = alloc_mem(16);
+    // "example.com\0"
+    unsafe {
+        asm!("mov byte ptr [rdi], 101", in("rdi") hostname, options(nostack));      // e
+        asm!("mov byte ptr [rdi], 120", in("rdi") hostname + 1, options(nostack));  // x
+        asm!("mov byte ptr [rdi], 97", in("rdi") hostname + 2, options(nostack));   // a
+        asm!("mov byte ptr [rdi], 109", in("rdi") hostname + 3, options(nostack));  // m
+        asm!("mov byte ptr [rdi], 112", in("rdi") hostname + 4, options(nostack));  // p
+        asm!("mov byte ptr [rdi], 108", in("rdi") hostname + 5, options(nostack));  // l
+        asm!("mov byte ptr [rdi], 101", in("rdi") hostname + 6, options(nostack));  // e
+        asm!("mov byte ptr [rdi], 46",  in("rdi") hostname + 7, options(nostack));  // .
+        asm!("mov byte ptr [rdi], 99",  in("rdi") hostname + 8, options(nostack));  // c
+        asm!("mov byte ptr [rdi], 111", in("rdi") hostname + 9, options(nostack));  // o
+        asm!("mov byte ptr [rdi], 109", in("rdi") hostname + 10, options(nostack)); // m
+        asm!("mov byte ptr [rdi], 0",   in("rdi") hostname + 11, options(nostack)); // \0
+    }
+
+    result = sigil_tls_set_hostname(ssl, hostname as *i8);
+    free_mem(hostname, 16);
+
+    ⎇ result != 1 {
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    // TLS handshake
+    result = sigil_tls_connect(ssl);
+    ⎇ result != 1 {
+        // Debug: print error
+        ≔ dbg = alloc_mem(32);
+        // "TLS connect fail: "
+        ≔ d_chars: [i8; 18] = [84, 76, 83, 32, 99, 111, 110, 110, 101, 99, 116, 32, 102, 97, 105, 108, 58, 32];
+        ≔ j: i64 = 0;
+        ⟳ j < 18 {
+            unsafe {
+                ≔ ptr = dbg + j;
+                ≔ c = d_chars[j as usize];
+                asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+            }
+            j = j + 1;
+        }
+        unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") dbg + 18, options(nostack)); }
+        write_cstr(dbg);
+        write_int(result);
+        write_newline();
+        free_mem(dbg, 32);
+
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    // Send HTTP request
+    ≔ request = alloc_mem(128);
+    // "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n" = 56 bytes
+    ≔ req_chars: [i8; 56] = [
+        71, 69, 84, 32, 47, 32, 72, 84, 84, 80, 47, 49, 46, 49, 13, 10,  // GET / HTTP/1.1\r\n
+        72, 111, 115, 116, 58, 32, 101, 120, 97, 109, 112, 108, 101, 46, 99, 111,  // Host: example.co
+        109, 13, 10, 67, 111, 110, 110, 101, 99, 116, 105, 111, 110, 58, 32, 99,   // m\r\nConnection: c
+        108, 111, 115, 101, 13, 10, 13, 10  // lose\r\n\r\n
+    ];
+    i = 0;
+    ⟳ i < 56 {
+        unsafe {
+            ≔ ptr = request + i;
+            ≔ c = req_chars[i as usize];
+            asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+        }
+        i = i + 1;
+    }
+
+    ≔ bytes_written = sigil_tls_write(ssl, request as *i8, 56);
+    free_mem(request, 128);
+
+    ⎇ bytes_written < 0 {
+        sigil_tls_shutdown(ssl);
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+
+    // Wait ∀ socket to be readable (10 second timeout)
+    ≔ poll_result = socket_poll_read(sockfd, 10000);
+
+    // Read response
+    ≔ buffer = alloc_mem(4096);
+    ≔ bytes_read: i64 = 0;
+
+    ⎇ poll_result > 0 {
+        bytes_read = sigil_tls_read(ssl, buffer as *i8, 4095);
+    } ⎉ {
+        bytes_read = -99; // Timeout or error
+    }
+
+    ≔ success: i64 = 0;
+    ⎇ bytes_read > 12 {
+        // Check ∀ "HTTP/1." prefix (72, 84, 84, 80, 47, 49, 46)
+        ≔ h: i64 = 0;
+        ≔ t1: i64 = 0;
+        ≔ t2: i64 = 0;
+        ≔ p: i64 = 0;
+        unsafe {
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") buffer, out("rax") h, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") buffer + 1, out("rax") t1, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") buffer + 2, out("rax") t2, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") buffer + 3, out("rax") p, options(nostack, readonly));
+        }
+
+        ⎇ h == 72 && t1 == 84 && t2 == 84 && p == 80 {
+            success = 1;
+        }
+    }
+
+    // Cleanup
+    free_mem(buffer, 4096);
+    sigil_tls_shutdown(ssl);
+    sigil_tls_free(ssl);
+    socket_close(sockfd);
+    sigil_tls_ctx_free(ctx);
+
+    ⎇ success == 1 {
+        write_pass();
+        free_mem(msg, 64);
+        ⤺ 1;
+    } ⎉ {
+        write_fail();
+        free_mem(msg, 64);
+        ⤺ 0;
+    }
+}
+
+// Helper functions
+λ write_pass() {
+    ≔ pass = alloc_mem(8);
+    unsafe {
+        asm!("mov byte ptr [rdi], 80", in("rdi") pass, options(nostack));
+        asm!("mov byte ptr [rdi], 65", in("rdi") pass + 1, options(nostack));
+        asm!("mov byte ptr [rdi], 83", in("rdi") pass + 2, options(nostack));
+        asm!("mov byte ptr [rdi], 83", in("rdi") pass + 3, options(nostack));
+        asm!("mov byte ptr [rdi], 10", in("rdi") pass + 4, options(nostack));
+    }
+    write_str(pass, 5);
+    free_mem(pass, 8);
+}
+
+λ write_fail() {
+    ≔ fail = alloc_mem(8);
+    unsafe {
+        asm!("mov byte ptr [rdi], 70", in("rdi") fail, options(nostack));
+        asm!("mov byte ptr [rdi], 65", in("rdi") fail + 1, options(nostack));
+        asm!("mov byte ptr [rdi], 73", in("rdi") fail + 2, options(nostack));
+        asm!("mov byte ptr [rdi], 76", in("rdi") fail + 3, options(nostack));
+        asm!("mov byte ptr [rdi], 10", in("rdi") fail + 4, options(nostack));
+    }
+    write_str(fail, 5);
+    free_mem(fail, 8);
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+λ main() -> i64 {
+    // Print header
+    ≔ header = alloc_mem(64);
+    // "=== TLS FFI Tests ===\n"
+    ≔ h_chars: [i8; 22] = [61, 61, 61, 32, 84, 76, 83, 32, 70, 70, 73, 32, 84, 101, 115, 116, 115, 32, 61, 61, 61, 10];
+    ≔ i: i64 = 0;
+    ⟳ i < 22 {
+        unsafe {
+            ≔ ptr = header + i;
+            ≔ c = h_chars[i as usize];
+            asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+        }
+        i = i + 1;
+    }
+    write_str(header, 22);
+    free_mem(header, 64);
+
+    ≔ passed: i64 = 0;
+    ≔ total: i64 = 4;
+
+    passed = passed + test_tls_init();
+    passed = passed + test_tls_ctx_creation();
+    passed = passed + test_ssl_object_creation();
+    passed = passed + test_https_connection();
+
+    // Print results
+    write_newline();
+    ≔ result_msg = alloc_mem(32);
+    // "Results: "
+    ≔ r_chars: [i8; 9] = [82, 101, 115, 117, 108, 116, 115, 58, 32];
+    i = 0;
+    ⟳ i < 9 {
+        unsafe {
+            ≔ ptr = result_msg + i;
+            ≔ c = r_chars[i as usize];
+            asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+        }
+        i = i + 1;
+    }
+    write_str(result_msg, 9);
+    write_int(passed);
+
+    // "/"
+    unsafe {
+        asm!("mov byte ptr [rdi], 47", in("rdi") result_msg, options(nostack));
+    }
+    write_str(result_msg, 1);
+    write_int(total);
+
+    // " passed\n"
+    ≔ p_chars: [i8; 8] = [32, 112, 97, 115, 115, 101, 100, 10];
+    i = 0;
+    ⟳ i < 8 {
+        unsafe {
+            ≔ ptr = result_msg + i;
+            ≔ c = p_chars[i as usize];
+            asm!("mov byte ptr [rdi], al", in("rdi") ptr, in("al") c, options(nostack));
+        }
+        i = i + 1;
+    }
+    write_str(result_msg, 8);
+    free_mem(result_msg, 32);
+
+    ⎇ passed == total {
+        0
+    } ⎉ {
+        1
+    }
+}

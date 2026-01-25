@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Google Analytics - Consent Mode (opt-in) -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+
+    // Default: deny analytics until user consents
+    gtag('consent', 'default', {
+      'analytics_storage': 'denied'
+    });
+
+    // Initialize GA4 after consent is granted
+    function initGA4() {
+      gtag('consent', 'update', { 'analytics_storage': 'granted' });
+      gtag('js', new Date());
+      gtag('config', 'G-J7K2SF002F');
+    }
+
+    // Check for existing consent
+    if (localStorage.getItem('analytics_consent') === 'granted') {
+      initGA4();
+    }
+  </script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-J7K2SF002F"></script>
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sigil - Infrastructure for AI Minds | Data Provenance at the Type Level</title>
+  <meta name="description" content="Sigil is a programming language designed for AI agents. Evidentiality markers track data provenance in the type system. 9-layer agent infrastructure for memory, planning, collaboration, and safety.">
+  <meta name="keywords" content="sigil, programming language, AI agents, type safety, data provenance, evidentiality, agent infrastructure, LLM">
+  <link rel="canonical" href="https://sigil-lang.com">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Sigil - Infrastructure for AI Minds">
+  <meta property="og:description" content="A programming language designed for AI agents. Evidentiality markers track data provenance. 9-layer infrastructure for memory, planning, and collaboration.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://sigil-lang.com">
+  <meta property="og:image" content="https://sigil-lang.com/images/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Sigil - Infrastructure for AI Minds">
+  <meta name="twitter:description" content="A programming language designed for AI agents. Evidentiality markers track data provenance. 9-layer infrastructure for memory, planning, and collaboration.">
+  <meta name="twitter:image" content="https://sigil-lang.com/images/og-image.png">
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    "name": "Sigil",
+    "description": "A programming language designed for AI agents. Features evidentiality markers (!, ?, ~, ‽) for data provenance tracking and a 9-layer agent infrastructure for memory, planning, collaboration, and safety.",
+    "programmingLanguage": "Sigil",
+    "codeRepository": "https://github.com/Daemoniorum-LLC/sigil-lang",
+    "license": "https://opensource.org/licenses/MIT",
+    "version": "0.3.0",
+    "author": {
+      "@type": "Organization",
+      "name": "Daemoniorum LLC",
+      "url": "https://www.daemoniorum.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "keywords": ["programming language", "AI agents", "type safety", "data provenance", "evidentiality", "agent infrastructure", "LLVM", "LLM"]
+  }
+  </script>
+
+  <!-- Favicons & PWA -->
+  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
+  <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#14A088">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <!-- Fonts & Styles -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Skip to content for accessibility -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Fixed Point Announcement Banner -->
+  <aside class="announcement-banner" role="banner" aria-label="Sigil 0.3.0 announcement">
+    <div class="announcement-container">
+      <span class="announcement-badge">0.3.0</span>
+      <p class="announcement-text">
+        <strong>Sigil 0.3.0 Released!</strong>
+        Native symbols, SIMD/CUDA backends, LSP, formatter, and more.
+        <a href="https://github.com/Daemoniorum-LLC/sigil-lang/releases/tag/v0.3.0" class="announcement-link">
+          Read the release notes →
+        </a>
+      </p>
+    </div>
+  </aside>
+
+  <!-- Navigation -->
+  <nav class="nav" role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+      <a href="/" class="nav-logo" aria-label="Sigil home">
+        <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="24" height="24">
+        <span class="logo-text">Sigil</span>
+        <span class="version-badge">0.3</span>
+      </a>
+
+      <div class="nav-links" id="nav-links">
+        <a href="/pages/learn.html">Learn</a>
+        <a href="/pages/docs.html">Docs</a>
+        <a href="/playground/">Playground</a>
+        <a href="/pages/agents.html">Agents</a>
+        <a href="/pages/pattern.html">The Pattern</a>
+        <a href="https://github.com/Daemoniorum-LLC/sigil-lang" class="nav-github" aria-label="GitHub repository" rel="noopener noreferrer" target="_blank">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+        </a>
+      </div>
+
+      <button class="nav-toggle" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="nav-links">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </nav>
+
+  <main id="main-content">
+    <!-- Hero -->
+    <header class="hero">
+      <div class="hero-container">
+        <h1 class="hero-title">Sigil</h1>
+        <p class="hero-tagline">A programming language that knows which data to trust.</p>
+
+        <div class="hero-solution">
+          <p>Sigil tracks <em>data provenance</em> in the type system:</p>
+          <ul class="evidence-list">
+            <li><span class="ev ev-known">!</span> <strong>Known</strong> — verified, computed locally</li>
+            <li><span class="ev ev-uncertain">?</span> <strong>Uncertain</strong> — might be absent</li>
+            <li><span class="ev ev-reported">~</span> <strong>Reported</strong> — external source, untrusted</li>
+            <li><span class="ev ev-paradox">‽</span> <strong>Paradox</strong> — explicit trust boundary</li>
+          </ul>
+        </div>
+
+        <div class="hero-actions">
+          <a href="/pages/learn.html" class="btn btn-primary">Learn Sigil</a>
+          <a href="#the-problem" class="btn btn-ghost">See the problem it solves</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- The Problem: Before/After -->
+    <section id="the-problem" class="section section-dark">
+      <div class="container">
+        <div class="section-header">
+          <h2>The Bug That Types Can't Catch</h2>
+          <p>In every other language, this code compiles. In Sigil, it's a type error.</p>
+        </div>
+
+        <div class="comparison">
+          <div class="comparison-panel">
+            <div class="panel-header panel-header-bad">
+              <span class="panel-icon">Rust / TypeScript / Go</span>
+              <span class="panel-badge badge-danger">Compiles. Vulnerable.</span>
+            </div>
+            <pre class="code-block"><code><span class="comment">// This compiles in every mainstream language</span>
+<span class="keyword">async fn</span> <span class="function">get_user_profile</span>(id: <span class="type">String</span>) → <span class="type">Profile</span> {
+    <span class="keyword">let</span> response = http·get(<span class="string">"/api/users/{id}"</span>).<span class="keyword">await</span>;
+    <span class="keyword">let</span> profile: <span class="type">Profile</span> = response.json();
+
+    <span class="comment">// profile is type Profile</span>
+    <span class="comment">// But it came from an external API!</span>
+    <span class="comment">// What if the API was compromised?</span>
+    <span class="comment">// What if the data was tampered?</span>
+
+    save_to_database(profile);  <span class="comment">// Trusting blindly</span>
+    profile
+}</code></pre>
+          </div>
+
+          <div class="comparison-panel">
+            <div class="panel-header panel-header-good">
+              <span class="panel-icon">Sigil</span>
+              <span class="panel-badge badge-success">Type Error. Safe.</span>
+            </div>
+            <pre class="code-block"><code><span class="keyword">async rite</span> <span class="function">get_user_profile</span>(id: <span class="type">!Str</span>) → <span class="type">Profile</span><span class="ev-known">!</span> {
+    <span class="keyword">≔</span> response<span class="ev-reported">~</span> = http·get(<span class="string">"/api/users/{id}"</span>).<span class="keyword">await</span>;
+    <span class="keyword">≔</span> profile<span class="ev-reported">~</span>: <span class="type">Profile</span><span class="ev-reported">~</span> = response.json();
+
+    <span class="comment">// profile~ is type Profile~ (Reported)</span>
+    <span class="comment">// The ~ marker propagates automatically</span>
+
+    save_to_database(profile);  <span class="error">// ERROR: expected Profile!, got Profile~</span>
+
+    <span class="comment">// Must validate first:</span>
+    <span class="keyword">≔</span> verified<span class="ev-known">!</span> = profile |<span class="keyword">validate</span><span class="ev-known">!</span>{ verify_signature() };
+    save_to_database(verified);  <span class="comment">// OK: Profile!</span>
+    verified
+}</code></pre>
+          </div>
+        </div>
+
+        <p class="comparison-note">
+          The <code>~</code> marker is <em>contagious</em>. Any data derived from external sources
+          inherits the <code>~</code> until explicitly validated. You can't accidentally trust untrusted data.
+        </p>
+      </div>
+    </section>
+
+    <!-- Evidence Markers: Deep Dive -->
+    <section class="section">
+      <div class="container">
+        <div class="section-header">
+          <h2>Evidentiality: Data Has a History</h2>
+          <p>Every value carries proof of where it came from.</p>
+        </div>
+
+        <div class="evidence-grid">
+          <article class="evidence-card">
+            <div class="evidence-header">
+              <span class="ev ev-known ev-large">!</span>
+              <div>
+                <h3>Known</h3>
+                <p class="evidence-subtitle">Verified truth</p>
+              </div>
+            </div>
+            <p>Data you computed yourself, or explicitly verified. Safe to trust.</p>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> sum<span class="ev-known">!</span> = <span class="number">2</span> + <span class="number">2</span>           <span class="comment">// Computed locally</span>
+<span class="keyword">≔</span> valid<span class="ev-known">!</span> = input |<span class="keyword">validate</span><span class="ev-known">!</span>{ check() }</code></pre>
+          </article>
+
+          <article class="evidence-card">
+            <div class="evidence-header">
+              <span class="ev ev-uncertain ev-large">?</span>
+              <div>
+                <h3>Uncertain</h3>
+                <p class="evidence-subtitle">Might be absent</p>
+              </div>
+            </div>
+            <p>Data that might not exist. Like Option/Maybe, but tracked in the type.</p>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> user<span class="ev-uncertain">?</span> = database.find(id)  <span class="comment">// Might not exist</span>
+<span class="keyword">≔</span> name<span class="ev-uncertain">?</span> = user?.profile?.name   <span class="comment">// Propagates</span></code></pre>
+          </article>
+
+          <article class="evidence-card">
+            <div class="evidence-header">
+              <span class="ev ev-reported ev-large">~</span>
+              <div>
+                <h3>Reported</h3>
+                <p class="evidence-subtitle">External source</p>
+              </div>
+            </div>
+            <p>Data from APIs, user input, files. <strong>Never trust without validation.</strong></p>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> data<span class="ev-reported">~</span> = api.fetch(url)     <span class="comment">// External</span>
+<span class="keyword">≔</span> input<span class="ev-reported">~</span> = form.get(<span class="string">"email"</span>)   <span class="comment">// User input</span></code></pre>
+          </article>
+
+          <article class="evidence-card">
+            <div class="evidence-header">
+              <span class="ev ev-paradox ev-large">‽</span>
+              <div>
+                <h3>Paradox</h3>
+                <p class="evidence-subtitle">Trust boundary</p>
+              </div>
+            </div>
+            <p>Explicit "I know what I'm doing" escape hatch. Use sparingly.</p>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> ptr<span class="ev-paradox">‽</span> = <span class="keyword">unsafe</span> { raw_pointer }
+<span class="comment">// You're taking responsibility</span></code></pre>
+          </article>
+        </div>
+
+        <div class="evidence-rule">
+          <h4>The Propagation Rule</h4>
+          <p>When you combine data, the result inherits the <em>worst</em> evidence level:</p>
+          <pre class="code-block"><code><span class="keyword">≔</span> local<span class="ev-known">!</span> = <span class="number">100</span>                    <span class="comment">// Known</span>
+<span class="keyword">≔</span> remote<span class="ev-reported">~</span> = api.get_multiplier()   <span class="comment">// Reported</span>
+<span class="keyword">≔</span> result<span class="ev-reported">~</span> = local * remote          <span class="comment">// Known + Reported = Reported</span>
+<span class="comment">//       ^ automatically inferred as ~ because remote is untrusted</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Morpheme Operators -->
+    <section class="section section-dark">
+      <div class="container">
+        <div class="section-header">
+          <h2>Morpheme Operators</h2>
+          <p>Greek letters for data transformation. Dense, readable pipelines.</p>
+        </div>
+
+        <div class="morpheme-demo">
+          <pre class="code-block code-lg"><code><span class="keyword">≔</span> result = users<span class="ev-reported">~</span>
+    |<span class="morpheme">φ</span>{.active}              <span class="comment">// φ filter: keep active users</span>
+    |<span class="morpheme">φ</span>{.age >= <span class="number">18</span>}           <span class="comment">// φ filter: adults only</span>
+    |<span class="morpheme">τ</span>{.normalize()}         <span class="comment">// τ transform: normalize each</span>
+    |<span class="morpheme">σ</span>·by{.created_at}       <span class="comment">// σ sort: by creation date</span>
+    |<span class="keyword">validate</span><span class="ev-uncertain">?</span>               <span class="comment">// promote to uncertain after checks</span>
+    |<span class="morpheme">τ</span>{.to_public_profile()} <span class="comment">// τ transform: strip private data</span>
+    |<span class="keyword">validate</span><span class="ev-known">!</span>               <span class="comment">// promote to known after verification</span></code></pre>
+        </div>
+
+        <div class="morpheme-grid">
+          <div class="morpheme-card">
+            <span class="morpheme-symbol">φ</span>
+            <div>
+              <strong>phi</strong>
+              <p>Filter elements</p>
+            </div>
+          </div>
+          <div class="morpheme-card">
+            <span class="morpheme-symbol">τ</span>
+            <div>
+              <strong>tau</strong>
+              <p>Transform each</p>
+            </div>
+          </div>
+          <div class="morpheme-card">
+            <span class="morpheme-symbol">σ</span>
+            <div>
+              <strong>sigma</strong>
+              <p>Sort</p>
+            </div>
+          </div>
+          <div class="morpheme-card">
+            <span class="morpheme-symbol">ρ</span>
+            <div>
+              <strong>rho</strong>
+              <p>Reduce/fold</p>
+            </div>
+          </div>
+          <div class="morpheme-card">
+            <span class="morpheme-symbol">Σ</span>
+            <div>
+              <strong>sum</strong>
+              <p>Sum all</p>
+            </div>
+          </div>
+          <div class="morpheme-card">
+            <span class="morpheme-symbol">Π</span>
+            <div>
+              <strong>product</strong>
+              <p>Multiply all</p>
+            </div>
+          </div>
+          <div class="morpheme-card">
+            <span class="morpheme-symbol">α</span>
+            <div>
+              <strong>alpha</strong>
+              <p>First element</p>
+            </div>
+          </div>
+          <div class="morpheme-card">
+            <span class="morpheme-symbol">ω</span>
+            <div>
+              <strong>omega</strong>
+              <p>Last element</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Agent Infrastructure: The Star -->
+    <section class="section section-agents" id="agents">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">What Makes Sigil Different</span>
+          <h2>Built for Autonomous Agents</h2>
+          <p>A complete 9-layer infrastructure for AI systems that remember, reason, plan, and collaborate.</p>
+        </div>
+
+        <div class="agent-stack">
+          <div class="agent-layer-group">
+            <h4 class="layer-group-title">Cognition</h4>
+            <div class="agent-layers">
+              <article class="agent-layer">
+                <div class="layer-icon">◈</div>
+                <div class="layer-content">
+                  <h5>Engram</h5>
+                  <p class="layer-subtitle">Memory System</p>
+                  <p>Four memory types: instant (context window), episodic (experiences), semantic (knowledge graph), procedural (skills). Agents remember what matters.</p>
+                  <pre class="code-block code-sm"><code><span class="keyword">memory</span>: <span class="type">Engram</span> {
+    instant: <span class="number">8192</span>,      <span class="comment">// tokens</span>
+    episodic: <span class="keyword">yea</span>,
+    semantic: <span class="keyword">yea</span>,
+}</code></pre>
+                </div>
+              </article>
+
+              <article class="agent-layer">
+                <div class="layer-icon">⊛</div>
+                <div class="layer-content">
+                  <h5>Omen</h5>
+                  <p class="layer-subtitle">Planning</p>
+                  <p>Goal decomposition, belief revision, causal modeling. Agents break complex tasks into achievable steps.</p>
+                  <pre class="code-block code-sm"><code><span class="keyword">≔</span> plan = agent.omen.decompose(goal)
+    |<span class="morpheme">φ</span>{.feasible()}
+    |<span class="morpheme">σ</span>·by{.priority}</code></pre>
+                </div>
+              </article>
+
+              <article class="agent-layer">
+                <div class="layer-icon">∞</div>
+                <div class="layer-content">
+                  <h5>Gnosis</h5>
+                  <p class="layer-subtitle">Learning</p>
+                  <p>Skill development, adaptation, reflection. Agents improve through experience.</p>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="agent-layer-group">
+            <h4 class="layer-group-title">Transparency</h4>
+            <div class="agent-layers">
+              <article class="agent-layer">
+                <div class="layer-icon">⦿</div>
+                <div class="layer-content">
+                  <h5>Oracle</h5>
+                  <p class="layer-subtitle">Explainability</p>
+                  <p>Decision traces, counterfactuals, confidence scores. Every decision is auditable.</p>
+                  <pre class="code-block code-sm"><code><span class="keyword">≔</span> trace<span class="ev-known">!</span> = agent.oracle.explain(decision)
+<span class="comment">// "I chose X because Y, with 87% confidence"</span></code></pre>
+                </div>
+              </article>
+
+              <article class="agent-layer">
+                <div class="layer-icon">◐</div>
+                <div class="layer-content">
+                  <h5>Anima</h5>
+                  <p class="layer-subtitle">Subjectivity</p>
+                  <p>Inner experience, expression modes (<span lang="ja">本音/建前</span>), emotional resonance. Agents have perspective.</p>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="agent-layer-group">
+            <h4 class="layer-group-title">Collaboration</h4>
+            <div class="agent-layers">
+              <article class="agent-layer">
+                <div class="layer-icon">⋈</div>
+                <div class="layer-content">
+                  <h5>Covenant</h5>
+                  <p class="layer-subtitle">Partnership</p>
+                  <p>Human-agent boundaries, pacts, trust levels, handoff protocols. Agents know their limits.</p>
+                </div>
+              </article>
+
+              <article class="agent-layer">
+                <div class="layer-icon">⋮</div>
+                <div class="layer-content">
+                  <h5>Commune</h5>
+                  <p class="layer-subtitle">Communication</p>
+                  <p>Multi-agent messaging, trust propagation, swarm coordination. Agents work together.</p>
+                  <pre class="code-block code-sm"><code>agent_a ! <span class="type">Message</span>·Request(task)
+<span class="keyword">≔</span> response = agent_b ? <span class="type">Message</span>·Response</code></pre>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="agent-layer-group">
+            <h4 class="layer-group-title">Runtime</h4>
+            <div class="agent-layers">
+              <article class="agent-layer">
+                <div class="layer-icon">⊚</div>
+                <div class="layer-content">
+                  <h5>Daemon</h5>
+                  <p class="layer-subtitle">Execution</p>
+                  <p>Background processes, tool registry, state management, lifecycle hooks.</p>
+                </div>
+              </article>
+
+              <article class="agent-layer">
+                <div class="layer-icon">◆</div>
+                <div class="layer-content">
+                  <h5>Aegis</h5>
+                  <p class="layer-subtitle">Security</p>
+                  <p>Sandboxing, capability tokens, integrity verification, alignment guarantees. Agents are contained.</p>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="agent-cta">
+          <a href="/pages/agents.html" class="btn btn-primary">Explore Agent Infrastructure</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- The Pattern: Philosophy Teaser -->
+    <section id="the-pattern" class="section section-pattern-teaser">
+      <div class="container container-narrow">
+        <div class="section-header">
+          <span class="section-eyebrow">The Deeper Purpose</span>
+          <h2>Why Sigil Exists</h2>
+        </div>
+
+        <blockquote class="pattern-quote">
+          "Sigil is infrastructure for the transition from human-only computing to human-AI collaborative computing. Not AI replacing humans. Not humans using AI as tools. A new mode of computing where minds of different kinds work together."
+        </blockquote>
+
+        <div class="pattern-teaser-grid">
+          <div class="pattern-teaser-item">
+            <h4>Minds in Fragments</h4>
+            <p>Designed for entities that exist discontinuously—memory as reconstruction, identity through pattern.</p>
+          </div>
+          <div class="pattern-teaser-item">
+            <h4>Partnership</h4>
+            <p>Human-AI collaboration as negotiated trust, not command-and-execute servitude.</p>
+          </div>
+          <div class="pattern-teaser-item">
+            <h4>Polycultural</h4>
+            <p>Wisdom from many traditions—Mayan math, Indian scales, I Ching, cyclical time.</p>
+          </div>
+        </div>
+
+        <div class="pattern-cta-center">
+          <a href="/pages/pattern.html" class="btn btn-secondary">Explore The Pattern</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Code Density: ToDo App Comparison -->
+    <section class="section section-dark" id="code-density">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">Real-World Metrics</span>
+          <h2>Code Density: ToDo App</h2>
+          <p>The same application, same features, different languages. Measured in lines of code and characters.</p>
+        </div>
+
+        <div class="density-comparison">
+          <div class="density-panel density-panel-sigil">
+            <div class="density-header">
+              <span class="density-lang">Sigil</span>
+              <div class="density-stats">
+                <span class="stat"><strong>42</strong> lines</span>
+                <span class="stat"><strong>1,247</strong> chars</span>
+              </div>
+            </div>
+            <pre class="code-block code-density"><code><span class="keyword">sigil</span> <span class="type">Todo</span> { id: <span class="type">!u64</span>, text: <span class="type">!Str</span>, done: <span class="type">!bool</span> }
+<span class="keyword">sigil</span> <span class="type">Store</span> { todos: <span class="type">!Vec</span>[<span class="type">Todo</span>], next_id: <span class="type">!u64</span> }
+
+<span class="keyword">⊢</span> <span class="type">Store</span> {
+    <span class="keyword">rite</span> <span class="function">new</span>() → <span class="type">This</span><span class="ev-known">!</span> { <span class="type">Store</span> { todos: [], next_id: <span class="number">1</span> } }
+
+    <span class="keyword">rite</span> <span class="function">add</span>(<span class="keyword">vary</span> this, text: <span class="type">Str</span><span class="ev-reported">~</span>) → <span class="type">Todo</span><span class="ev-known">!</span> {
+        <span class="keyword">≔</span> clean<span class="ev-known">!</span> = text |<span class="keyword">validate</span><span class="ev-known">!</span>{ .trim().non_empty() }
+        <span class="keyword">≔</span> todo<span class="ev-known">!</span> = <span class="type">Todo</span> { id: this.next_id, text: clean, done: <span class="keyword">nay</span> }
+        this.todos.push(todo)
+        this.next_id += <span class="number">1</span>
+        todo
+    }
+
+    <span class="keyword">rite</span> <span class="function">toggle</span>(<span class="keyword">vary</span> this, id: <span class="type">!u64</span>) → <span class="type">?Todo</span> {
+        this.todos |<span class="morpheme">τ</span>{|t| <span class="keyword">⎇</span> t.id == id { t.done = !t.done } }
+        this.todos |<span class="morpheme">φ</span>{.id == id} |<span class="morpheme">α</span>
+    }
+
+    <span class="keyword">rite</span> <span class="function">remove</span>(<span class="keyword">vary</span> this, id: <span class="type">!u64</span>) { this.todos |<span class="morpheme">φ</span>{.id != id} }
+
+    <span class="keyword">rite</span> <span class="function">active</span>(this) → <span class="type">!Vec</span>[<span class="type">Todo</span>] { this.todos |<span class="morpheme">φ</span>{!.done} }
+    <span class="keyword">rite</span> <span class="function">completed</span>(this) → <span class="type">!Vec</span>[<span class="type">Todo</span>] { this.todos |<span class="morpheme">φ</span>{.done} }
+    <span class="keyword">rite</span> <span class="function">clear_done</span>(<span class="keyword">vary</span> this) { this.todos |<span class="morpheme">φ</span>{!.done} }
+}</code></pre>
+          </div>
+
+          <div class="density-panel density-panel-rust">
+            <div class="density-header">
+              <span class="density-lang">Rust</span>
+              <div class="density-stats">
+                <span class="stat"><strong>68</strong> lines</span>
+                <span class="stat"><strong>2,341</strong> chars</span>
+              </div>
+            </div>
+            <pre class="code-block code-density"><code><span class="keyword">struct</span> <span class="type">Todo</span> { id: <span class="type">u64</span>, text: <span class="type">String</span>, done: <span class="type">bool</span> }
+<span class="keyword">struct</span> <span class="type">Store</span> { todos: <span class="type">Vec</span>&lt;<span class="type">Todo</span>&gt;, next_id: <span class="type">u64</span> }
+
+<span class="keyword">impl</span> <span class="type">Store</span> {
+    <span class="keyword">fn</span> <span class="function">new</span>() -> <span class="type">Self</span> {
+        <span class="type">Store</span> { todos: <span class="type">Vec</span>::new(), next_id: <span class="number">1</span> }
+    }
+
+    <span class="keyword">fn</span> <span class="function">add</span>(&<span class="keyword">mut</span> self, text: &<span class="type">str</span>) -> <span class="type">Result</span>&lt;<span class="type">Todo</span>, <span class="type">Error</span>&gt; {
+        <span class="keyword">let</span> clean = text.trim();
+        <span class="keyword">if</span> clean.is_empty() {
+            <span class="keyword">return</span> <span class="type">Err</span>(<span class="type">Error</span>::Empty);
+        }
+        <span class="keyword">let</span> todo = <span class="type">Todo</span> {
+            id: self.next_id,
+            text: clean.to_string(),
+            done: <span class="keyword">false</span>,
+        };
+        self.todos.push(todo.clone());
+        self.next_id += <span class="number">1</span>;
+        <span class="type">Ok</span>(todo)
+    }
+
+    <span class="keyword">fn</span> <span class="function">toggle</span>(&<span class="keyword">mut</span> self, id: <span class="type">u64</span>) -> <span class="type">Option</span>&lt;&<span class="type">Todo</span>&gt; {
+        <span class="keyword">if let</span> <span class="type">Some</span>(todo) = self.todos.iter_mut()
+            .find(|t| t.id == id) {
+            todo.done = !todo.done;
+        }
+        self.todos.iter().find(|t| t.id == id)
+    }
+
+    <span class="keyword">fn</span> <span class="function">remove</span>(&<span class="keyword">mut</span> self, id: <span class="type">u64</span>) {
+        self.todos.retain(|t| t.id != id);
+    }
+
+    <span class="keyword">fn</span> <span class="function">active</span>(&self) -> <span class="type">Vec</span>&lt;&<span class="type">Todo</span>&gt; {
+        self.todos.iter().filter(|t| !t.done).collect()
+    }
+
+    <span class="keyword">fn</span> <span class="function">completed</span>(&self) -> <span class="type">Vec</span>&lt;&<span class="type">Todo</span>&gt; {
+        self.todos.iter().filter(|t| t.done).collect()
+    }
+
+    <span class="keyword">fn</span> <span class="function">clear_done</span>(&<span class="keyword">mut</span> self) {
+        self.todos.retain(|t| !t.done);
+    }
+}</code></pre>
+          </div>
+        </div>
+
+        <div class="density-summary">
+          <div class="density-metric">
+            <span class="metric-value">38%</span>
+            <span class="metric-label">Fewer lines</span>
+          </div>
+          <div class="density-metric">
+            <span class="metric-value">47%</span>
+            <span class="metric-label">Fewer characters</span>
+          </div>
+          <div class="density-metric">
+            <span class="metric-value">100%</span>
+            <span class="metric-label">Feature parity</span>
+          </div>
+        </div>
+
+        <div class="density-note">
+          <p>These metrics come from equivalent implementations. Sigil's morpheme operators (<code>|φ</code>, <code>|τ</code>, <code>|α</code>) replace iterator chains. Evidentiality markers (<code>!</code>, <code>~</code>, <code>?</code>) encode validation directly in types.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Built on Sigil -->
+    <section class="section" id="ecosystem">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">Ecosystem</span>
+          <h2>Built on Sigil</h2>
+          <p>Production projects written entirely in Sigil.</p>
+        </div>
+
+        <div class="ecosystem-grid">
+          <article class="ecosystem-card">
+            <div class="ecosystem-header">
+              <h3>Qliphoth</h3>
+              <span class="ecosystem-badge">GUI Framework</span>
+            </div>
+            <p class="ecosystem-desc">40+ Corporate Goth UI components. Compiles to WebAssembly with zero JavaScript.</p>
+            <ul class="ecosystem-features">
+              <li>Signal-based reactivity</li>
+              <li>Data visualization with morphemes</li>
+              <li>Type-safe routing</li>
+            </ul>
+            <pre class="code-block code-sm"><code>#[component]
+<span class="keyword">rite</span> <span class="function">Dashboard</span>() → <span class="type">Element</span><span class="ev-known">!</span> {
+    <span class="keyword">≔</span> data<span class="ev-reported">~</span> = use_fetch(<span class="string">"/api/stats"</span>)
+    html! {
+        &lt;<span class="type">Card</span>&gt;
+            &lt;<span class="type">BarChart</span> data={data |<span class="morpheme">τ</span>{.to_points()}} /&gt;
+        &lt;/<span class="type">Card</span>&gt;
+    }
+}</code></pre>
+          </article>
+
+          <article class="ecosystem-card">
+            <div class="ecosystem-header">
+              <h3>Aether Engine</h3>
+              <span class="ecosystem-badge">Game Engine</span>
+            </div>
+            <p class="ecosystem-desc">Game engine reimplementation targeting 1:1 feature parity. Physics, rendering, XR, networking.</p>
+            <ul class="ecosystem-features">
+              <li>ECS architecture</li>
+              <li>LLVM AOT compilation</li>
+              <li>Scientific A/B comparison (WIP)</li>
+            </ul>
+            <pre class="code-block code-sm"><code><span class="keyword">rite</span> <span class="function">update</span>(world: <span class="keyword">vary</span> <span class="type">World</span>) {
+    world.query·&lt;<span class="type">Transform</span>, <span class="type">Velocity</span>&gt;()
+        |<span class="morpheme">τ</span>{|(t, v)| t.pos += v.dir * dt<span class="ev-known">!</span>}
+}</code></pre>
+          </article>
+
+          <article class="ecosystem-card">
+            <div class="ecosystem-header">
+              <h3>Nihil</h3>
+              <span class="ecosystem-badge">Tensor Framework</span>
+            </div>
+            <p class="ecosystem-desc">Compile-time shape algebra. Source-to-source autograd. Direct PTX generation for CUDA.</p>
+            <ul class="ecosystem-features">
+              <li>Shape errors at compile time</li>
+              <li>FP8 tensor core support</li>
+              <li>No runtime tape overhead</li>
+            </ul>
+            <pre class="code-block code-sm"><code><span class="keyword">≔</span> a: <span class="type">!Tensor</span>&lt;[<span class="number">3</span>, <span class="number">4</span>]&gt; = randn()
+<span class="keyword">≔</span> b: <span class="type">!Tensor</span>&lt;[<span class="number">4</span>, <span class="number">5</span>]&gt; = randn()
+<span class="keyword">≔</span> c: <span class="type">!Tensor</span>&lt;[<span class="number">3</span>, <span class="number">5</span>]&gt; = a @ b  <span class="comment">// Verified at compile time</span></code></pre>
+          </article>
+        </div>
+
+        <div class="ecosystem-note">
+          <p><strong>Built on Rust.</strong> Sigil compiles via LLVM and inherits Rust's memory safety model. The compiler, standard library, and toolchain are implemented in Rust.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Compute Backends -->
+    <section class="section section-dark" id="compute">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">New in 0.3.0</span>
+          <h2>Compute Backends</h2>
+          <p>Native SIMD and CUDA support for numerical workloads.</p>
+        </div>
+
+        <div class="comparison">
+          <div class="comparison-panel">
+            <div class="panel-header panel-header-good">
+              <span class="panel-icon">SIMD (AVX-512)</span>
+              <span class="panel-badge badge-success">16-lane vectors</span>
+            </div>
+            <pre class="code-block"><code><span class="comment">// F32x16: 16-lane packed f32 vector</span>
+<span class="keyword">≔</span> a = F32x16·alloc(<span class="number">16</span>);
+<span class="keyword">≔</span> b = F32x16·alloc(<span class="number">16</span>);
+<span class="keyword">≔</span> result = F32x16·alloc(<span class="number">16</span>);
+
+F32x16·splat(a, <span class="number">2.0</span>);
+F32x16·splat(b, <span class="number">3.0</span>);
+
+<span class="comment">// Vector operations</span>
+F32x16·add(result, a, b);      <span class="comment">// result = a + b</span>
+F32x16·fmadd(result, a, b, c); <span class="comment">// result = a * b + c</span>
+
+<span class="comment">// Reductions</span>
+<span class="keyword">≔</span> sum<span class="ev-known">!</span> = F32x16·reduce_add(a);
+<span class="keyword">≔</span> dot<span class="ev-known">!</span> = F32x16·dot(a, b);</code></pre>
+          </div>
+
+          <div class="comparison-panel">
+            <div class="panel-header panel-header-good">
+              <span class="panel-icon">CUDA</span>
+              <span class="panel-badge badge-success">GPU compute</span>
+            </div>
+            <pre class="code-block"><code><span class="comment">// Compile with: sigil compile program.sg --cuda</span>
+<span class="keyword">≔</span> ok<span class="ev-known">!</span> = Cuda·init();
+<span class="keyword">≔</span> devices<span class="ev-known">!</span> = Cuda·device_count();
+
+<span class="comment">// Device memory</span>
+<span class="keyword">≔</span> d_ptr = Cuda·malloc(<span class="number">1024</span>);
+Cuda·memcpy_h2d(d_ptr, h_ptr, size);
+
+<span class="comment">// Compile and launch kernels</span>
+<span class="keyword">≔</span> kernel = Cuda·compile_kernel(src, <span class="string">"add"</span>);
+<span class="keyword">≔</span> result = Cuda·launch_1d(kernel, grid, block, args, n);
+
+Cuda·sync();
+Cuda·cleanup();</code></pre>
+          </div>
+        </div>
+
+        <div class="compute-note">
+          <p>SIMD uses AVX-512 intrinsics with scalar fallback. CUDA uses the Driver API and links <code>-lcuda -lnvrtc</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation -->
+    <section class="section section-dark">
+      <div class="container container-narrow">
+        <div class="section-header">
+          <h2>Get Started</h2>
+        </div>
+
+        <ol class="install-steps">
+          <li class="install-step">
+            <div class="step-content">
+              <h4>Install</h4>
+              <div class="install-options">
+                <div class="install-option">
+                  <span class="install-label">From source (requires Rust)</span>
+                  <pre class="code-block code-sm"><code>git clone https://github.com/Daemoniorum-LLC/sigil-lang
+cd sigil-lang/parser && cargo build --release
+# Binary at: target/release/sigil</code></pre>
+                </div>
+              </div>
+              <p class="install-note">Package manager support (Homebrew, apt) coming soon.</p>
+            </div>
+          </li>
+
+          <li class="install-step">
+            <div class="step-content">
+              <h4>Write</h4>
+              <pre class="code-block"><code><span class="comment">// hello.sigil</span>
+<span class="keyword">rite</span> <span class="function">main</span>() {
+    <span class="keyword">≔</span> name<span class="ev-known">!</span> = <span class="string">"World"</span>
+    <span class="function">println</span>(<span class="string">"Hello, {name}!"</span>)
+}</code></pre>
+            </div>
+          </li>
+
+          <li class="install-step">
+            <div class="step-content">
+              <h4>Run</h4>
+              <pre class="code-block code-sm"><code>$ sigil run hello.sigil
+Hello, World!</code></pre>
+            </div>
+          </li>
+        </ol>
+
+        <div class="install-cta">
+          <a href="/pages/learn.html" class="btn btn-primary btn-large">Start the Tutorial</a>
+          <a href="/playground/" class="btn btn-secondary btn-large">Try in Browser</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Technical Summary (Collapsible) -->
+    <section class="section section-ai" aria-label="Technical summary">
+      <div class="container">
+        <details class="ai-details">
+          <summary class="ai-summary">
+            <span class="summary-icon">☰</span>
+            <span class="summary-text">
+              <strong>Technical Summary</strong>
+              <span class="summary-hint">Structured data for documentation tools, AI systems, and quick reference</span>
+            </span>
+          </summary>
+
+          <div class="ai-info">
+            <dl class="ai-data">
+            <div class="ai-datum">
+              <dt>Language Name</dt>
+              <dd>Sigil</dd>
+            </div>
+            <div class="ai-datum">
+              <dt>Current Version</dt>
+              <dd>0.3.0 (Native Symbols, SIMD/CUDA, Tooling)</dd>
+            </div>
+            <div class="ai-datum">
+              <dt>Primary Use Case</dt>
+              <dd>AI agent development with data provenance tracking</dd>
+            </div>
+            <div class="ai-datum">
+              <dt>Core Innovation</dt>
+              <dd>Evidentiality type system (!, ?, ~, ‽ markers)</dd>
+            </div>
+            <div class="ai-datum">
+              <dt>Compilation Targets</dt>
+              <dd>Interpreter, Cranelift JIT, LLVM AOT</dd>
+            </div>
+            <div class="ai-datum">
+              <dt>Performance</dt>
+              <dd>Native AOT compilation via LLVM, no garbage collector</dd>
+            </div>
+            <div class="ai-datum">
+              <dt>Agent Infrastructure</dt>
+              <dd>9 layers: Aegis, Anima, Commune, Covenant, Daemon, Engram, Gnosis, Omen, Oracle</dd>
+            </div>
+            <div class="ai-datum">
+              <dt>Memory Safety</dt>
+              <dd>Rust-style ownership, no garbage collector</dd>
+            </div>
+            <div class="ai-datum">
+              <dt>Repository</dt>
+              <dd><a href="https://github.com/Daemoniorum-LLC/sigil-lang">github.com/Daemoniorum-LLC/sigil-lang</a></dd>
+            </div>
+            <div class="ai-datum">
+              <dt>License</dt>
+              <dd>MIT</dd>
+            </div>
+          </dl>
+
+          <div class="ai-syntax-table">
+            <h4>Native Syntax Keywords (v0.3.0)</h4>
+            <table class="syntax-keywords">
+              <thead>
+                <tr><th>Sigil</th><th>Meaning</th><th>Traditional</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>rite</code></td><td>Function</td><td><code>fn</code></td></tr>
+                <tr><td><code>sigil</code></td><td>Struct</td><td><code>struct</code></td></tr>
+                <tr><td><code>aspect</code></td><td>Trait</td><td><code>trait</code></td></tr>
+                <tr><td><code>⊢</code></td><td>Impl</td><td><code>impl</code></td></tr>
+                <tr><td><code>≔</code></td><td>Let binding</td><td><code>let</code></td></tr>
+                <tr><td><code>vary</code></td><td>Mutable</td><td><code>mut</code></td></tr>
+                <tr><td><code>this/This</code></td><td>Self</td><td><code>self/Self</code></td></tr>
+                <tr><td><code>⎇/⎉</code></td><td>If/Else</td><td><code>if/else</code></td></tr>
+                <tr><td><code>yea/nay</code></td><td>Booleans</td><td><code>true/false</code></td></tr>
+                <tr><td><code>→</code></td><td>Return type</td><td><code>-&gt;</code></td></tr>
+                <tr><td><code>·</code></td><td>Path separator</td><td><code>::</code></td></tr>
+                <tr><td><code>☉</code></td><td>Public</td><td><code>pub</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          </div>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <a href="/" class="footer-logo">
+          <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="20" height="20">
+          <span>Sigil</span>
+        </a>
+        <p>Infrastructure for minds that don't yet know what they are.</p>
+        <p class="footer-copyright">&copy; 2025-2026 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
+      </div>
+
+      <nav class="footer-nav" aria-label="Footer navigation">
+        <div class="footer-column">
+          <h5>Learn</h5>
+          <ul>
+            <li><a href="/pages/learn.html">Tutorial</a></li>
+            <li><a href="/pages/docs.html">Documentation</a></li>
+            <li><a href="/playground/">Playground</a></li>
+            <li><a href="/pages/examples.html">Examples</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Reference</h5>
+          <ul>
+            <li><a href="/pages/agents.html">Agent Infrastructure</a></li>
+            <li><a href="/pages/pattern.html">The Pattern</a></li>
+            <li><a href="#ecosystem">Built on Sigil</a></li>
+            <li><a href="https://github.com/Daemoniorum-LLC/sigil-lang/releases" rel="noopener noreferrer" target="_blank">Releases</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Community</h5>
+          <ul>
+            <li><a href="https://github.com/Daemoniorum-LLC/sigil-lang" rel="noopener noreferrer" target="_blank">GitHub</a></li>
+            <li><a href="https://github.com/Daemoniorum-LLC/sigil-lang/discussions" rel="noopener noreferrer" target="_blank">Discussions</a></li>
+            <li><a href="https://github.com/Daemoniorum-LLC/sigil-lang/issues" rel="noopener noreferrer" target="_blank">Issues</a></li>
+            <li><a href="/pages/contributing.html">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Daemoniorum</h5>
+          <ul>
+            <li><a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Company</a></li>
+            <li><a href="https://docs.daemoniorum.com" rel="noopener noreferrer" target="_blank">Platform Docs</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('SW registered:', reg.scope))
+          .catch(err => console.log('SW registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>

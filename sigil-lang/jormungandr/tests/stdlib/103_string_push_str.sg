@@ -1,0 +1,8 @@
+// Test: String push_str method
+λ main() {
+    ≔ Δ s: !String = "Hello";
+    s.push_str(", ");
+    s.push_str("World");
+    s.push_str("!");
+    println(s);
+}

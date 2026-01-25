@@ -1,0 +1,14 @@
+// FFI Test 08: Void return type
+// Tests: Function with no return value
+
+extern "C" {
+    rite srand(seed: c_uint);
+    rite abs(x: c_int) → c_int;
+}
+
+rite main() → i64 {
+    // srand has void return - just call it
+    srand(42);
+    // Verify abs still works after calling void function
+    abs(-7) as i64  // Expected: 7
+}

@@ -1,0 +1,15 @@
+// Test it < 0 syntax
+pub fn main() {
+    let mixed = [-5, 3, -2, 7, -1, 4];
+
+    // Using it implicit variable
+    let negative = mixed|φ{it < 0};
+    let neg_first = negative|α;
+    print(neg_first);
+
+    let positive = mixed|φ{it > 0};
+    let pos_first = positive|α;
+    print(pos_first);
+
+    print(999);
+}

@@ -1,0 +1,465 @@
+//! Expression evaluation ∀ the Sigil interpreter.
+
+invoke tome·ir·*;
+invoke tome·interp_value·{Value, EvidentialValue};
+invoke tome·interp_error·RuntimeError;
+invoke tome·interp_env·Environment;
+invoke tome·interp·Interpreter;
+
+⊢ Interpreter {
+    rite values_equal(this, a: !Value, b: !Value) → !bool {
+        ⌥ (a, b) {
+            (Value·Unit, Value·Unit) => yea,
+            (Value·Bool(a), Value·Bool(b)) => a == b,
+            (Value·Int(a), Value·Int(b)) => a == b,
+            (Value·Float(a), Value·Float(b)) => a == b,
+            (Value·Char(a), Value·Char(b)) => a == b,
+            (Value·String(a), Value·String(b)) => a == b,
+            (Value·Null, Value·Null) => yea,
+            (Value·Array(a), Value·Array(b)) => {
+                a.len() == b.len() ∧
+                a.iter().zip(b.iter())|all{pair => this.values_equal(pair.0, pair.1)}
+            },
+            _ => nay,
+        }
+    }
+
+    /// Evaluate an operation ∈ a given environment
+    rite eval_with_env(vary this, op: !IrOperation, vary env: !Environment) → !Result<EvidentialValue, RuntimeError> {
+        ⌥ op {
+            IrOperation·Literal { value, evidence, .. } => {
+                ≔ val = ⌥ value {
+                    LiteralValue·Int(n) => Value·Int(n),
+                    LiteralValue·Float(f) => Value·Float(f),
+                    LiteralValue·Bool(b) => Value·Bool(b),
+                    LiteralValue·Char(c) => Value·Char(c),
+                    LiteralValue·String(s) => Value·String(s),
+                    LiteralValue·Null => Value·Null,
+                };
+                Result·Ok(EvidentialValue { value: val, evidence })
+            },
+
+            IrOperation·Var { name, evidence, .. } => {
+                ⌥ env.get(name) {
+                    ?val => Result·Ok(val),
+                    null | Option·None => ⌥ this.globals.get(name) {
+                        ?val => Result·Ok(val),
+                        null | Option·None => Result·Err(RuntimeError·new(format!("undefined variable: {}", name))),
+                    },
+                }
+            },
+
+            IrOperation·Let { pattern, init, evidence, .. } => {
+                ≔ init_val = this.eval_with_env(*init, env)?;
+                this.bind_pattern(pattern, init_val, env)?;
+                Result·Ok(EvidentialValue·known(Value·Unit))
+            },
+
+            IrOperation·Binary { operator, left, right, evidence, .. } => {
+                ≔ l = this.eval_with_env(*left, env)?;
+                ≔ r = this.eval_with_env(*right, env)?;
+                ≔ combined_ev = l.evidence.join(r.evidence);
+
+                ≔ result = this.eval_binary(operator, l.value, r.value)?;
+                Result·Ok(EvidentialValue { value: result, evidence: combined_ev })
+            },
+
+            IrOperation·Unary { operator, operand, evidence, .. } => {
+                ≔ val = this.eval_with_env(*operand, env)?;
+
+                ≔ result = this.eval_unary(operator, val.value)?;
+                Result·Ok(EvidentialValue { value: result, evidence: val.evidence })
+            },
+
+            IrOperation·Call { function, args, evidence, .. } => {
+                ≔ arg_results = args|τ{a => this.eval_with_env(a, env)}|collect_results();
+                ≔ arg_vals = arg_results?;
+                this.call_function(function, arg_vals)
+            },
+
+            IrOperation·If { condition, then_branch, else_branch, evidence, .. } => {
+                ≔ cond = this.eval_with_env(*condition, env)?;
+
+                ⎇ cond.value.is_truthy() {
+                    this.eval_with_env(*then_branch, env)
+                } ⎉ ⎇ ≔ ?else_expr = else_branch {
+                    this.eval_with_env(*else_expr, env)
+                } ⎉ {
+                    Result·Ok(EvidentialValue·known(Value·Unit))
+                }
+            },
+
+            IrOperation·Block { statements, evidence, .. } => {
+                ≔ vary block_env = Environment·child(env);
+                ≔ vary result = EvidentialValue·known(Value·Unit);
+
+                each stmt ∈ statements {
+                    result = this.eval_with_env(stmt, block_env)?;
+                }
+
+                Result·Ok(result)
+            },
+
+            IrOperation·Return { value, evidence } => {
+                ⌥ value {
+                    ?v => this.eval_with_env(*v, env),
+                    null | Option·None => Result·Ok(EvidentialValue·known(Value·Unit)),
+                }
+            },
+
+            IrOperation·Array { elements, evidence, .. } => {
+                ≔ vals = elements|τ{e => this.eval_with_env(e, env)?.value}|collect();
+                Result·Ok(EvidentialValue { value: Value·Array(vals), evidence })
+            },
+
+            IrOperation·Tuple { elements, evidence, .. } => {
+                ≔ vals = elements|τ{e => this.eval_with_env(e, env)?.value}|collect();
+                Result·Ok(EvidentialValue { value: Value·Tuple(vals), evidence })
+            },
+
+            IrOperation·Index { expr, index, evidence, .. } => {
+                ≔ arr = this.eval_with_env(*expr, env)?;
+                ≔ idx = this.eval_with_env(*index, env)?;
+
+                ⌥ (arr.value, idx.value) {
+                    (Value·Array(a), Value·Int(i)) => {
+                        ⎇ i < 0 ∨ i >= a.len() as i64 {
+                            Result·Err(RuntimeError·new("array index out of bounds"))
+                        } ⎉ {
+                            Result·Ok(EvidentialValue {
+                                value: a[i as u64].clone(),
+                                evidence: arr.evidence.join(idx.evidence),
+                            })
+                        }
+                    },
+                    (Value·String(s), Value·Int(i)) => {
+                        ⎇ i < 0 ∨ i >= s.len() as i64 {
+                            Result·Err(RuntimeError·new("string index out of bounds"))
+                        } ⎉ {
+                            ≔ c = s.chars().nth(i as u64).unwrap();
+                            Result·Ok(EvidentialValue {
+                                value: Value·Char(c),
+                                evidence: arr.evidence.join(idx.evidence),
+                            })
+                        }
+                    },
+                    _ => Result·Err(RuntimeError·new("invalid index operation")),
+                }
+            },
+
+            IrOperation·Field { expr, field, evidence, .. } => {
+                ≔ obj = this.eval_with_env(*expr, env)?;
+
+                ⌥ obj.value {
+                    Value·Struct { fields, .. } => {
+                        ⌥ fields.get(field) {
+                            ?v => Result·Ok(EvidentialValue {
+                                value: v.clone(),
+                                evidence: obj.evidence,
+                            }),
+                            null | Option·None => Result·Err(RuntimeError·new(format!("no field: {}", field))),
+                        }
+                    },
+                    Value·Tuple(elements) => {
+                        // Tuple field access like .0, .1
+                        ≔ idx: ?u64 = field.parse().ok();
+                        ⌥ idx {
+                            ?i ⎇ i < elements.len() => Result·Ok(EvidentialValue {
+                                value: elements[i].clone(),
+                                evidence: obj.evidence,
+                            }),
+                            _ => Result·Err(RuntimeError·new(format!("no tuple field: {}", field))),
+                        }
+                    },
+                    _ => Result·Err(RuntimeError·new("field access on non-struct")),
+                }
+            },
+
+            IrOperation·Closure { params, body, evidence, .. } => {
+                ≔ param_names = params|τ{p => p.name}|collect();
+                Result·Ok(EvidentialValue {
+                    value: Value·Closure {
+                        params: param_names,
+                        body: Box·new(*body),
+                        env: env.clone(),
+                    },
+                    evidence,
+                })
+            },
+
+            IrOperation·Pipeline { input, steps, evidence, .. } => {
+                ≔ vary current = this.eval_with_env(*input, env)?;
+
+                each step ∈ steps {
+                    current = this.eval_pipeline_step(step, current, env)?;
+                }
+
+                Result·Ok(current)
+            },
+
+            IrOperation·Match { scrutinee, arms, evidence, .. } => {
+                ≔ val = this.eval_with_env(*scrutinee, env)?;
+
+                each arm ∈ arms {
+                    ⎇ this.pattern_matches(arm.pattern, val.value, env)? {
+                        ≔ vary arm_env = Environment·child(env);
+                        this.bind_pattern(arm.pattern, val.clone(), arm_env)?;
+
+                        ⎇ ≔ ?guard = arm.guard {
+                            ≔ guard_val = this.eval_with_env(guard, arm_env)?;
+                            ⎇ !guard_val.value.is_truthy() {
+                                ⊳;
+                            }
+                        }
+
+                        ⤺ this.eval_with_env(arm.body, arm_env);
+                    }
+                }
+
+                Result·Err(RuntimeError·new("non-exhaustive match"))
+            },
+
+            IrOperation·Loop { variant, condition, iterator, body, .. } => {
+                ⌥ variant {
+                    LoopVariant·Infinite => {
+                        forever {
+                            ≔ result = this.eval_with_env(*body.clone(), env);
+                            ⌥ result {
+                                Result·Err(RuntimeError { is_break: yea, value: ?v, .. }) => {
+                                    ⤺ Result·Ok(v);
+                                },
+                                Result·Err(RuntimeError { is_continue: yea, .. }) => continue,
+                                Result·Err(e) => ⤺ Result·Err(e),
+                                _ => {},
+                            }
+                        }
+                    },
+                    LoopVariant·While => {
+                        ⟳ {
+                            ≔ cond = ⌥ condition {
+                                ?c => this.eval_with_env(*c.clone(), env)?,
+                                null | Option·None => EvidentialValue·known(Value·Bool(yea)),
+                            };
+                            cond.value.is_truthy()
+                        } {
+                            ≔ result = this.eval_with_env(*body.clone(), env);
+                            ⌥ result {
+                                Result·Err(RuntimeError { is_break: yea, value: ?v, .. }) => {
+                                    ⤺ Result·Ok(v);
+                                },
+                                Result·Err(RuntimeError { is_continue: yea, .. }) => continue,
+                                Result·Err(e) => ⤺ Result·Err(e),
+                                _ => {},
+                            }
+                        }
+                        Result·Ok(EvidentialValue·known(Value·Unit))
+                    },
+                    LoopVariant·For => {
+                        ⎇ ≔ ?iter = iterator {
+                            ≔ iterable = this.eval_with_env(*iter.iterable, env)?;
+                            ≔ items = ⌥ iterable.value {
+                                Value·Array(a) => a,
+                                Value·String(s) => s.chars()|τ{c => Value·Char(c)}|collect(),
+                                _ => ⤺ Result·Err(RuntimeError·new("not iterable")),
+                            };
+
+                            each item ∈ items {
+                                ≔ vary loop_env = Environment·child(env);
+                                this.bind_pattern(iter.pattern, EvidentialValue {
+                                    value: item,
+                                    evidence: iterable.evidence,
+                                }, loop_env)?;
+
+                                ≔ result = this.eval_with_env(*body.clone(), loop_env);
+                                ⌥ result {
+                                    Result·Err(RuntimeError { is_break: yea, value: ?v, .. }) => {
+                                        ⤺ Result·Ok(v);
+                                    },
+                                    Result·Err(RuntimeError { is_continue: yea, .. }) => continue,
+                                    Result·Err(e) => ⤺ Result·Err(e),
+                                    _ => {},
+                                }
+                            }
+                        }
+                        Result·Ok(EvidentialValue·known(Value·Unit))
+                    },
+                }
+            },
+
+            IrOperation·Break { value, .. } => {
+                ≔ val = ⌥ value {
+                    ?v => ?this.eval_with_env(*v, env)?,
+                    null | Option·None => null,
+                };
+                Result·Err(RuntimeError·break_with(val))
+            },
+
+            IrOperation·Continue { .. } => {
+                Result·Err(RuntimeError·continue_loop())
+            },
+
+            IrOperation·EvidenceCoerce { expr, to_evidence, .. } => {
+                ≔ val = this.eval_with_env(*expr, env)?;
+                Result·Ok(EvidentialValue {
+                    value: val.value,
+                    evidence: to_evidence,
+                })
+            },
+
+            _ => Result·Err(RuntimeError·new("unsupported operation")),
+        }
+    }
+
+    /// Evaluate binary operation
+    rite eval_binary(this, op: !BinaryOp, left: !Value, right: !Value) → !Result<Value, RuntimeError> {
+        ⌥ op {
+            BinaryOp·Add => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a + b)),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a + b)),
+                (Value·String(a), Value·String(b)) => Result·Ok(Value·String(format!("{}{}", a, b))),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ +")),
+            },
+            BinaryOp·Sub => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a - b)),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a - b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ -")),
+            },
+            BinaryOp·Mul => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a * b)),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a * b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ *")),
+            },
+            BinaryOp·Div => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => {
+                    ⎇ b == 0 {
+                        Result·Err(RuntimeError·new("division by zero"))
+                    } ⎉ {
+                        Result·Ok(Value·Int(a / b))
+                    }
+                },
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a / b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ /")),
+            },
+            BinaryOp·Rem => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a % b)),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a % b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ %")),
+            },
+            BinaryOp·Pow => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a.pow(b as u32))),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a.powf(b))),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ **")),
+            },
+            BinaryOp·Eq => Result·Ok(Value·Bool(this.values_equal(left, right))),
+            BinaryOp·Ne => Result·Ok(Value·Bool(!this.values_equal(left, right))),
+            BinaryOp·Lt => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a < b)),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a < b)),
+                (Value·String(a), Value·String(b)) => Result·Ok(Value·Bool(a < b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <")),
+            },
+            BinaryOp·Le => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a <= b)),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a <= b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <=")),
+            },
+            BinaryOp·Gt => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a > b)),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a > b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >")),
+            },
+            BinaryOp·Ge => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a >= b)),
+                (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a >= b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >=")),
+            },
+            BinaryOp·And => ⌥ (left, right) {
+                (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a ∧ b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ∧")),
+            },
+            BinaryOp·Or => ⌥ (left, right) {
+                (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a ∨ b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ∨")),
+            },
+            BinaryOp·BitAnd => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a & b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ &")),
+            },
+            BinaryOp·BitOr => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a | b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ |")),
+            },
+            BinaryOp·BitXor => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a ^ b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ^")),
+            },
+            BinaryOp·Shl => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a << b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ <<")),
+            },
+            BinaryOp·Shr => ⌥ (left, right) {
+                (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a >> b)),
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ >>")),
+            },
+            BinaryOp·Concat => ⌥ (left, right) {
+                (Value·String(a), Value·String(b)) => Result·Ok(Value·String(format!("{}{}", a, b))),
+                (Value·Array(a), Value·Array(b)) => {
+                    ≔ vary result = a.clone();
+                    result.extend(b);
+                    Result·Ok(Value·Array(result))
+                },
+                _ => Result·Err(RuntimeError·new("invalid operands ∀ ++")),
+            },
+        }
+    }
+
+    /// Evaluate unary operation
+    rite eval_unary(this, op: !UnaryOp, val: !Value) → !Result<Value, RuntimeError> {
+        ⌥ op {
+            UnaryOp·Neg => ⌥ val {
+                Value·Int(n) => Result·Ok(Value·Int(-n)),
+                Value·Float(f) => Result·Ok(Value·Float(-f)),
+                _ => Result·Err(RuntimeError·new("invalid operand ∀ unary -")),
+            },
+            UnaryOp·Not => ⌥ val {
+                Value·Bool(b) => Result·Ok(Value·Bool(!b)),
+                Value·Int(n) => Result·Ok(Value·Int(!n)),
+                _ => Result·Err(RuntimeError·new("invalid operand ∀ !")),
+            },
+            UnaryOp·Ref => Result·Ok(Value·Ref(Box·new(val))),
+            UnaryOp·RefMut => Result·Ok(Value·RefMut(Box·new(val))),
+            UnaryOp·Deref => ⌥ val {
+                Value·Ref(v) | Value·RefMut(v) => Result·Ok(*v),
+                _ => Result·Err(RuntimeError·new("cannot dereference non-reference")),
+            },
+        }
+    }
+
+    /// Evaluate a pipeline step
+    rite eval_pipeline_step(vary this, step: !IrPipelineStep, input: !EvidentialValue, env: !Environment) → !Result<EvidentialValue, RuntimeError> {
+        ⌥ step {
+            IrPipelineStep·Morpheme { morpheme, body, .. } => {
+                this.eval_morpheme(morpheme, input, body, env)
+            },
+            IrPipelineStep·Call { function, args } => {
+                ≔ vary all_args = [input];
+                each arg ∈ args {
+                    all_args.push(this.eval_with_env(arg, env)?);
+                }
+                this.call_function(function, all_args)
+            },
+            IrPipelineStep·Method { name, args } => {
+                ≔ vary all_args = [input];
+                each arg ∈ args {
+                    all_args.push(this.eval_with_env(arg, env)?);
+                }
+                this.call_function(name, all_args)
+            },
+            IrPipelineStep·Identity => Result·Ok(input),
+            IrPipelineStep·Await => Result·Ok(input), // Sync interpreter, await is no-op
+            _ => Result·Err(RuntimeError·new("unsupported pipeline step")),
+        }
+    }
+
+    /// Evaluate a morpheme operation
+}

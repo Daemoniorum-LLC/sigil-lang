@@ -1,0 +1,16 @@
+// Test: Clone method ∀ deep copying
+// Spec: 04-MEMORY.md § 2.3 Clone Semantics
+// Priority: P0
+//
+// Purpose:
+// Validates that clone() creates independent copies.
+//
+// Expected behavior:
+// Should compile and print Hello then Hello
+
+λ main() {
+    ≔ s1: !String = "Hello";
+    ≔ s2: !String = s1.clone();
+    println(s1);
+    println(s2);
+}

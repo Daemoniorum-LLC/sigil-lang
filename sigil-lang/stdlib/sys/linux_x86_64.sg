@@ -1,0 +1,572 @@
+//! Linux x86_64 Syscall Implementation
+//!
+//! This module provides direct syscall access via inline assembly.
+//! Zero libc dependency - uses raw `syscall` instruction.
+//!
+//! Syscall ABI (Linux x86_64):
+//!   - Syscall number: RAX
+//!   - Arguments: RDI, RSI, RDX, R10, R8, R9
+//!   - Return: RAX (negative = -errno)
+//!   - Clobbered: RCX, R11
+//!
+//! Spec: docs/specs/SIGIL-NATIVE-RUNTIME-SPEC.md
+
+invoke super·{SyscallError, syscall_result, syscall_result_zero};
+
+// ============================================================================
+// Syscall Numbers (Linux x86_64)
+// ============================================================================
+
+// I/O
+≔ SYS_READ: i64 = 0;
+≔ SYS_WRITE: i64 = 1;
+≔ SYS_OPEN: i64 = 2;
+≔ SYS_CLOSE: i64 = 3;
+≔ SYS_FSTAT: i64 = 5;
+≔ SYS_LSEEK: i64 = 8;
+
+// Memory
+≔ SYS_MMAP: i64 = 9;
+≔ SYS_MPROTECT: i64 = 10;
+≔ SYS_MUNMAP: i64 = 11;
+≔ SYS_BRK: i64 = 12;
+≔ SYS_MREMAP: i64 = 25;
+
+// Process
+≔ SYS_GETPID: i64 = 39;
+≔ SYS_EXIT: i64 = 60;
+≔ SYS_KILL: i64 = 62;
+≔ SYS_GETPPID: i64 = 110;
+≔ SYS_EXIT_GROUP: i64 = 231;
+
+// Time
+≔ SYS_NANOSLEEP: i64 = 35;
+≔ SYS_CLOCK_GETTIME: i64 = 228;
+
+// File operations
+≔ SYS_IOCTL: i64 = 16;
+≔ SYS_FCNTL: i64 = 72;
+≔ SYS_FSYNC: i64 = 74;
+≔ SYS_FTRUNCATE: i64 = 77;
+≔ SYS_GETCWD: i64 = 79;
+≔ SYS_CHDIR: i64 = 80;
+≔ SYS_RENAME: i64 = 82;
+≔ SYS_MKDIR: i64 = 83;
+≔ SYS_RMDIR: i64 = 84;
+≔ SYS_UNLINK: i64 = 87;
+≔ SYS_READLINK: i64 = 89;
+≔ SYS_STAT: i64 = 4;
+≔ SYS_LSTAT: i64 = 6;
+
+// Directory
+≔ SYS_GETDENTS64: i64 = 217;
+
+// Random
+≔ SYS_GETRANDOM: i64 = 318;
+
+// Polling
+≔ SYS_POLL: i64 = 7;
+≔ SYS_EPOLL_CREATE1: i64 = 291;
+≔ SYS_EPOLL_CTL: i64 = 233;
+≔ SYS_EPOLL_WAIT: i64 = 232;
+
+// Socket (∀ networking, also exported by net/sys/)
+≔ SYS_SOCKET: i64 = 41;
+≔ SYS_CONNECT: i64 = 42;
+≔ SYS_ACCEPT: i64 = 43;
+≔ SYS_SENDTO: i64 = 44;
+≔ SYS_RECVFROM: i64 = 45;
+≔ SYS_BIND: i64 = 49;
+≔ SYS_LISTEN: i64 = 50;
+≔ SYS_GETSOCKNAME: i64 = 51;
+≔ SYS_GETPEERNAME: i64 = 52;
+≔ SYS_SETSOCKOPT: i64 = 54;
+≔ SYS_GETSOCKOPT: i64 = 55;
+
+// ============================================================================
+// Raw Syscall Helpers
+// ============================================================================
+
+/// Execute syscall with 0 arguments
+☉ rite syscall0(nr: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 1 argument
+☉ rite syscall1(nr: i64, a1: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 2 arguments
+☉ rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 3 arguments
+☉ rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 4 arguments
+☉ rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            in("r10") a4,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 5 arguments
+☉ rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            in("r10") a4,
+            in("r8") a5,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+/// Execute syscall with 6 arguments
+☉ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize! {
+    vary result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") nr,
+            in("rdi") a1,
+            in("rsi") a2,
+            in("rdx") a3,
+            in("r10") a4,
+            in("r8") a5,
+            in("r9") a6,
+            lateout("rax") result,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    result
+}
+
+// ============================================================================
+// I/O Syscalls
+// ============================================================================
+
+/// Read from a file descriptor
+///
+/// # Arguments
+/// - `fd`: File descriptor
+/// - `buf`: Buffer to read into
+/// - `count`: Maximum bytes to read
+///
+/// # Returns
+/// Number of bytes read, or error
+☉ rite sys_read(fd: i32, buf: *vary u8, count: usize) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_READ, fd as i64, buf as i64, count as i64);
+    syscall_result(raw)
+}
+
+/// Write to a file descriptor
+///
+/// # Arguments
+/// - `fd`: File descriptor
+/// - `buf`: Buffer to write from
+/// - `count`: Number of bytes to write
+///
+/// # Returns
+/// Number of bytes written, or error
+☉ rite sys_write(fd: i32, buf: *u8, count: usize) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_WRITE, fd as i64, buf as i64, count as i64);
+    syscall_result(raw)
+}
+
+/// Close a file descriptor
+☉ rite sys_close(fd: i32) -> Result<(), SyscallError>! {
+    ≔ raw = syscall1(SYS_CLOSE, fd as i64);
+    syscall_result_zero(raw)
+}
+
+/// Open a file
+///
+/// # Arguments
+/// - `path`: Path to the file (null-terminated)
+/// - `flags`: Open flags (O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, etc.)
+/// - `mode`: File mode (permissions) ∀ created files
+///
+/// # Returns
+/// File descriptor, or error
+☉ rite sys_open(path: *u8, flags: i32, mode: u32) -> Result<i32, SyscallError>! {
+    ≔ raw = syscall3(SYS_OPEN, path as i64, flags as i64, mode as i64);
+    ⌥ syscall_result(raw) {
+        Ok(fd) => Ok(fd as i32),
+        Err(e) => Err(e),
+    }
+}
+
+/// Seek ∈ a file
+///
+/// # Arguments
+/// - `fd`: File descriptor
+/// - `offset`: Offset to seek to
+/// - `whence`: SEEK_SET (0), SEEK_CUR (1), or SEEK_END (2)
+///
+/// # Returns
+/// New file position, or error
+☉ rite sys_lseek(fd: i32, offset: i64, whence: i32) -> Result<i64, SyscallError>! {
+    ≔ raw = syscall3(SYS_LSEEK, fd as i64, offset, whence as i64);
+    ⎇ raw >= 0 {
+        Ok(raw as i64)
+    } ⎉ {
+        Err(SyscallError·from_errno((-raw) as i32))
+    }
+}
+
+// File open flags
+☉ ≔ O_RDONLY: i32 = 0;
+☉ ≔ O_WRONLY: i32 = 1;
+☉ ≔ O_RDWR: i32 = 2;
+☉ ≔ O_CREAT: i32 = 64;
+☉ ≔ O_EXCL: i32 = 128;
+☉ ≔ O_TRUNC: i32 = 512;
+☉ ≔ O_APPEND: i32 = 1024;
+☉ ≔ O_NONBLOCK: i32 = 2048;
+☉ ≔ O_CLOEXEC: i32 = 524288;
+
+// Seek whence
+☉ ≔ SEEK_SET: i32 = 0;
+☉ ≔ SEEK_CUR: i32 = 1;
+☉ ≔ SEEK_END: i32 = 2;
+
+// ============================================================================
+// Memory Syscalls (CRITICAL FOR LIBC-FREE OPERATION)
+// ============================================================================
+
+/// Memory map a region
+///
+/// This is the foundation ∀ libc-free memory allocation.
+///
+/// # Arguments
+/// - `addr`: Suggested address (usually null ∀ kernel to choose)
+/// - `length`: Size of mapping
+/// - `prot`: Protection flags (PROT_READ, PROT_WRITE, PROT_EXEC)
+/// - `flags`: Mapping flags (MAP_PRIVATE, MAP_ANONYMOUS, etc.)
+/// - `fd`: File descriptor (-1 ∀ anonymous mapping)
+/// - `offset`: Offset ∈ file
+///
+/// # Returns
+/// Address of mapped region, or error
+☉ rite sys_mmap(addr: *u8, length: usize, prot: i32, flags: i32, fd: i32, offset: i64) -> Result<*vary u8, SyscallError>! {
+    ≔ raw = syscall6(SYS_MMAP, addr as i64, length as i64, prot as i64, flags as i64, fd as i64, offset);
+    ⎇ raw >= 0 || (raw as u64) < 0xFFFFFFFFFFFF0000 {
+        Ok(raw as *vary u8)
+    } ⎉ {
+        Err(SyscallError·from_errno((-raw) as i32))
+    }
+}
+
+/// Unmap a memory region
+///
+/// # Arguments
+/// - `addr`: Address of region to unmap
+/// - `length`: Size of region
+☉ rite sys_munmap(addr: *u8, length: usize) -> Result<(), SyscallError>! {
+    ≔ raw = syscall2(SYS_MUNMAP, addr as i64, length as i64);
+    syscall_result_zero(raw)
+}
+
+/// Change memory protection
+///
+/// # Arguments
+/// - `addr`: Address of region
+/// - `length`: Size of region
+/// - `prot`: New protection flags
+☉ rite sys_mprotect(addr: *u8, length: usize, prot: i32) -> Result<(), SyscallError>! {
+    ≔ raw = syscall3(SYS_MPROTECT, addr as i64, length as i64, prot as i64);
+    syscall_result_zero(raw)
+}
+
+/// Remap a memory region (resize or move)
+///
+/// # Arguments
+/// - `old_addr`: Current address of region
+/// - `old_size`: Current size
+/// - `new_size`: Desired new size
+/// - `flags`: MREMAP_MAYMOVE, etc.
+///
+/// # Returns
+/// New address of region
+☉ rite sys_mremap(old_addr: *u8, old_size: usize, new_size: usize, flags: i32) -> Result<*vary u8, SyscallError>! {
+    ≔ raw = syscall4(SYS_MREMAP, old_addr as i64, old_size as i64, new_size as i64, flags as i64);
+    ⎇ raw >= 0 || (raw as u64) < 0xFFFFFFFFFFFF0000 {
+        Ok(raw as *vary u8)
+    } ⎉ {
+        Err(SyscallError·from_errno((-raw) as i32))
+    }
+}
+
+// Memory protection flags
+☉ ≔ PROT_NONE: i32 = 0;
+☉ ≔ PROT_READ: i32 = 1;
+☉ ≔ PROT_WRITE: i32 = 2;
+☉ ≔ PROT_EXEC: i32 = 4;
+
+// Memory mapping flags
+☉ ≔ MAP_SHARED: i32 = 1;
+☉ ≔ MAP_PRIVATE: i32 = 2;
+☉ ≔ MAP_FIXED: i32 = 16;
+☉ ≔ MAP_ANONYMOUS: i32 = 32;
+☉ ≔ MAP_GROWSDOWN: i32 = 256;
+☉ ≔ MAP_HUGETLB: i32 = 262144;
+
+// mremap flags
+☉ ≔ MREMAP_MAYMOVE: i32 = 1;
+☉ ≔ MREMAP_FIXED: i32 = 2;
+
+// ============================================================================
+// Process Syscalls
+// ============================================================================
+
+/// Exit the current thread
+///
+/// Note: Use exit_group to exit all threads (full process exit)
+☉ rite sys_exit(code: i32) -> ! {
+    syscall1(SYS_EXIT, code as i64);
+    // This never returns, but we need to satisfy the compiler
+    loop {}
+}
+
+/// Exit all threads (terminate the process)
+///
+/// This is the proper way to terminate a program.
+☉ rite sys_exit_group(code: i32) -> ! {
+    syscall1(SYS_EXIT_GROUP, code as i64);
+    loop {}
+}
+
+/// Get current process ID
+☉ rite sys_getpid() -> i32! {
+    ≔ raw = syscall0(SYS_GETPID);
+    raw as i32
+}
+
+/// Get parent process ID
+☉ rite sys_getppid() -> i32! {
+    ≔ raw = syscall0(SYS_GETPPID);
+    raw as i32
+}
+
+// ============================================================================
+// Time Syscalls
+// ============================================================================
+
+/// Timespec structure ∀ time syscalls
+☉ Σ Timespec {
+    ☉ tv_sec: i64,    // Seconds
+    ☉ tv_nsec: i64,   // Nanoseconds
+}
+
+☉ ⊢ Timespec {
+    /// Create a timespec from milliseconds
+    ☉ rite from_millis(ms: u64) -> Timespec! {
+        Timespec {
+            tv_sec: (ms / 1000) as i64,
+            tv_nsec: ((ms % 1000) * 1_000_000) as i64,
+        }
+    }
+
+    /// Create a timespec from microseconds
+    ☉ rite from_micros(us: u64) -> Timespec! {
+        Timespec {
+            tv_sec: (us / 1_000_000) as i64,
+            tv_nsec: ((us % 1_000_000) * 1000) as i64,
+        }
+    }
+
+    /// Convert to nanoseconds
+    ☉ rite to_nanos(&self) -> u64! {
+        (self.tv_sec as u64) * 1_000_000_000 + (self.tv_nsec as u64)
+    }
+
+    /// Convert to milliseconds
+    ☉ rite to_millis(&self) -> u64! {
+        (self.tv_sec as u64) * 1000 + (self.tv_nsec as u64) / 1_000_000
+    }
+}
+
+/// Get current time
+///
+/// # Arguments
+/// - `clock_id`: Which clock to query (CLOCK_REALTIME, CLOCK_MONOTONIC, etc.)
+/// - `tp`: Output timespec
+☉ rite sys_clock_gettime(clock_id: i32, tp: *vary Timespec) -> Result<(), SyscallError>! {
+    ≔ raw = syscall2(SYS_CLOCK_GETTIME, clock_id as i64, tp as i64);
+    syscall_result_zero(raw)
+}
+
+/// Sleep ∀ a duration
+///
+/// # Arguments
+/// - `req`: Requested sleep duration
+/// - `rem`: Remaining time ⎇ interrupted (can be null)
+☉ rite sys_nanosleep(req: *Timespec, rem: *vary Timespec) -> Result<(), SyscallError>! {
+    ≔ raw = syscall2(SYS_NANOSLEEP, req as i64, rem as i64);
+    syscall_result_zero(raw)
+}
+
+// Clock IDs
+☉ ≔ CLOCK_REALTIME: i32 = 0;           // Wall clock time
+☉ ≔ CLOCK_MONOTONIC: i32 = 1;          // Monotonic, doesn't jump
+☉ ≔ CLOCK_PROCESS_CPUTIME_ID: i32 = 2; // Process CPU time
+☉ ≔ CLOCK_THREAD_CPUTIME_ID: i32 = 3;  // Thread CPU time
+☉ ≔ CLOCK_MONOTONIC_RAW: i32 = 4;      // Monotonic, raw hardware
+☉ ≔ CLOCK_REALTIME_COARSE: i32 = 5;    // Fast but coarse realtime
+☉ ≔ CLOCK_MONOTONIC_COARSE: i32 = 6;   // Fast but coarse monotonic
+
+// ============================================================================
+// Random Number Generation
+// ============================================================================
+
+/// Get random bytes from the kernel
+///
+/// # Arguments
+/// - `buf`: Buffer to fill with random bytes
+/// - `buflen`: Number of bytes to generate
+/// - `flags`: GRND_RANDOM, GRND_NONBLOCK
+///
+/// # Returns
+/// Number of bytes generated
+☉ rite sys_getrandom(buf: *vary u8, buflen: usize, flags: u32) -> Result<usize, SyscallError>! {
+    ≔ raw = syscall3(SYS_GETRANDOM, buf as i64, buflen as i64, flags as i64);
+    syscall_result(raw)
+}
+
+// getrandom flags
+☉ ≔ GRND_NONBLOCK: u32 = 1;
+☉ ≔ GRND_RANDOM: u32 = 2;
+
+// ============================================================================
+// High-Level Convenience Functions
+// ============================================================================
+
+/// Write a string to stdout
+☉ rite print(s: &str) -> Result<(), SyscallError>! {
+    sys_write(1, s.as_ptr(), s.len())?;
+    Ok(())
+}
+
+/// Write a string to stderr
+☉ rite eprint(s: &str) -> Result<(), SyscallError>! {
+    sys_write(2, s.as_ptr(), s.len())?;
+    Ok(())
+}
+
+/// Sleep ∀ milliseconds
+☉ rite sleep_ms(ms: u64) -> Result<(), SyscallError>! {
+    ≔ req = Timespec·from_millis(ms);
+    sys_nanosleep(&req, null)
+}
+
+/// Get current monotonic time ∈ nanoseconds
+☉ rite now_nanos() -> Result<u64, SyscallError>! {
+    vary ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    sys_clock_gettime(CLOCK_MONOTONIC, &vary ts)?;
+    Ok(ts.to_nanos())
+}
+
+/// Get current monotonic time ∈ milliseconds
+☉ rite now_millis() -> Result<u64, SyscallError>! {
+    vary ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    sys_clock_gettime(CLOCK_MONOTONIC, &vary ts)?;
+    Ok(ts.to_millis())
+}
+
+/// Allocate memory via mmap (anonymous, private, read-write)
+///
+/// This is the building block ∀ higher-level allocators.
+☉ rite mmap_alloc(size: usize) -> Result<*vary u8, SyscallError>! {
+    sys_mmap(
+        null as *u8,
+        size,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0
+    )
+}
+
+/// Free memory allocated with mmap_alloc
+☉ rite mmap_free(ptr: *u8, size: usize) -> Result<(), SyscallError>! {
+    sys_munmap(ptr, size)
+}

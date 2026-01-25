@@ -1,0 +1,29 @@
+{
+  "name": "sigil-lang-website",
+  "version": "0.1.0",
+  "description": "The official website for sigil-lang.com, written entirely in Sigil and compiled to WebAssembly.",
+  "main": "sigil_runtime.js",
+  "scripts": {
+    "dev": "npx serve -l 8000 .",
+    "build": "./build.sh",
+    "build:wasm": "./build.sh --wasm-only",
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --ui",
+    "test:headed": "npx playwright test --headed",
+    "preview": "npx serve -l 8000 ."
+  },
+  "keywords": [
+    "sigil",
+    "programming-language",
+    "wasm",
+    "webassembly",
+    "qliphoth"
+  ],
+  "author": "Daemoniorum, LLC",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "serve": "^14.2.0"
+  }
+}

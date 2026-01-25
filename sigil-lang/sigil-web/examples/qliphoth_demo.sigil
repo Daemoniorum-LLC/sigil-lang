@@ -1,0 +1,158 @@
+/// Qliphoth Demo - Simplified web app showcasing Sigil WASM
+///
+/// This demonstrates:
+/// - Component-like functions
+/// - State management with static mut
+/// - String interpolation (f-strings)
+/// - HTML-friendly output
+
+// === State ===
+static mut CURRENT_PAGE: i64 = 0;
+static mut COUNTER: i64 = 0;
+static mut THEME: i64 = 0;  // 0 = dark, 1 = light
+
+// Page indices
+const PAGE_HOME: i64 = 0;
+const PAGE_PRODUCTS: i64 = 1;
+const PAGE_ABOUT: i64 = 2;
+const PAGE_CONTACT: i64 = 3;
+
+// === Navigation ===
+pub fn navigate(page: i64) {
+    CURRENT_PAGE = page;
+    let page_name = get_page_name(page);
+    print(f"[NAVIGATE] {page_name}");
+    render_page();
+}
+
+fn get_page_name(page: i64) -> str {
+    if page == PAGE_HOME {
+        "Home"
+    } else if page == PAGE_PRODUCTS {
+        "Products"
+    } else if page == PAGE_ABOUT {
+        "About"
+    } else if page == PAGE_CONTACT {
+        "Contact"
+    } else {
+        "Unknown"
+    }
+}
+
+// === Theme ===
+pub fn toggle_theme() {
+    if THEME == 0 {
+        THEME = 1;
+        print("[THEME] light");
+    } else {
+        THEME = 0;
+        print("[THEME] dark");
+    }
+}
+
+pub fn get_theme() -> i64 {
+    THEME
+}
+
+// === Counter (interactive demo) ===
+pub fn increment() {
+    COUNTER = COUNTER + 1;
+    print(f"[COUNTER] {COUNTER}");
+}
+
+pub fn decrement() {
+    COUNTER = COUNTER - 1;
+    print(f"[COUNTER] {COUNTER}");
+}
+
+pub fn reset_counter() {
+    COUNTER = 0;
+    print("[COUNTER] 0");
+}
+
+pub fn get_counter() -> i64 {
+    COUNTER
+}
+
+// === Page Rendering ===
+fn render_page() {
+    if CURRENT_PAGE == PAGE_HOME {
+        render_home();
+    } else if CURRENT_PAGE == PAGE_PRODUCTS {
+        render_products();
+    } else if CURRENT_PAGE == PAGE_ABOUT {
+        render_about();
+    } else if CURRENT_PAGE == PAGE_CONTACT {
+        render_contact();
+    }
+}
+
+fn render_home() {
+    print("[PAGE:home]");
+    print("[RENDER] <section id='hero'>");
+    print("[RENDER]   <h1>Welcome to Daemoniorum</h1>");
+    print("[RENDER]   <p>The platform that builds platforms.</p>");
+    print(f"[RENDER]   <p>Counter: {COUNTER}</p>");
+    print("[RENDER] </section>");
+}
+
+fn render_products() {
+    print("[PAGE:products]");
+    print("[RENDER] <section id='products'>");
+    print("[RENDER]   <h2>Our Products</h2>");
+    print("[RENDER]   <ul>");
+    print("[RENDER]     <li>Sigil - AI-native programming language</li>");
+    print("[RENDER]     <li>Styx - AI-native git platform</li>");
+    print("[RENDER]     <li>Infernum - Local LLM inference</li>");
+    print("[RENDER]     <li>Grimoire - AI persona framework</li>");
+    print("[RENDER]   </ul>");
+    print("[RENDER] </section>");
+}
+
+fn render_about() {
+    print("[PAGE:about]");
+    print("[RENDER] <section id='about'>");
+    print("[RENDER]   <h2>About Qliphoth</h2>");
+    print("[RENDER]   <p>Qliphoth is the dark mirror of the Sephirot.</p>");
+    print("[RENDER]   <p>It represents the shells and husks of existence.</p>");
+    print("[RENDER]   <p>In our platform, it symbolizes the infrastructure layer.</p>");
+    print("[RENDER] </section>");
+}
+
+fn render_contact() {
+    print("[PAGE:contact]");
+    print("[RENDER] <section id='contact'>");
+    print("[RENDER]   <h2>Contact Us</h2>");
+    print("[RENDER]   <p>Reach out through the void.</p>");
+    print("[RENDER] </section>");
+}
+
+// === Initialization ===
+pub fn main() {
+    print("=== Qliphoth Demo ===");
+    print("");
+    print("A Sigil-powered web application");
+    print("");
+    print("Navigation:");
+    print("  navigate(0) - Home");
+    print("  navigate(1) - Products");
+    print("  navigate(2) - About");
+    print("  navigate(3) - Contact");
+    print("");
+    print("Counter:");
+    print("  increment() / decrement() / reset_counter()");
+    print("  get_counter() -> current value");
+    print("");
+    print("Theme:");
+    print("  toggle_theme() - Switch dark/light");
+    print("  get_theme() -> 0=dark, 1=light");
+    print("");
+
+    // Initial render
+    render_home();
+}
+
+// === API for external calls ===
+pub fn get_current_page() -> i64 {
+    CURRENT_PAGE
+}

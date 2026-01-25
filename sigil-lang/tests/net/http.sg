@@ -1,0 +1,922 @@
+// HTTP Client Library ∀ Sigil
+// Pure Sigil implementation using socket, DNS, and TLS layers
+// Provides high-level HTTP/HTTPS request functionality
+
+// ============================================================================
+// Linux x86_64 Syscall Numbers
+// ============================================================================
+
+const SYS_READ: i64 = 0;
+const SYS_WRITE: i64 = 1;
+const SYS_CLOSE: i64 = 3;
+const SYS_POLL: i64 = 7;
+const SYS_MMAP: i64 = 9;
+const SYS_MUNMAP: i64 = 11;
+const SYS_SOCKET: i64 = 41;
+const SYS_CONNECT: i64 = 42;
+const SYS_SENDTO: i64 = 44;
+const SYS_RECVFROM: i64 = 45;
+const SYS_SETSOCKOPT: i64 = 54;
+
+// Socket constants
+const AF_INET: i64 = 2;
+const SOCK_STREAM: i64 = 1;
+const SOCK_DGRAM: i64 = 2;
+const SOL_SOCKET: i64 = 1;
+const SO_RCVTIMEO: i64 = 20;
+const SO_SNDTIMEO: i64 = 21;
+
+// mmap flags
+const PROT_READ: i64 = 1;
+const PROT_WRITE: i64 = 2;
+const MAP_PRIVATE: i64 = 2;
+const MAP_ANONYMOUS: i64 = 32;
+
+// ============================================================================
+// Syscall Wrappers
+// ============================================================================
+
+λ syscall1(num: i64, arg1: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            in("r9") arg6,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+// ============================================================================
+// Memory Allocation
+// ============================================================================
+
+λ alloc_mem(size: i64) -> i64 {
+    syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
+}
+
+λ free_mem(ptr: i64, size: i64) {
+    syscall2(SYS_MUNMAP, ptr, size);
+}
+
+// ============================================================================
+// String Utilities
+// ============================================================================
+
+λ mem_copy(dst: i64, src: i64, len: i64) {
+    ≔ i: i64 = 0;
+    ⟳ i < len {
+        ≔ byte: i64 = 0;
+        unsafe {
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") src + i, out("rax") byte, options(nostack, readonly));
+            asm!("mov byte ptr [rdi], al", in("rdi") dst + i, in("al") byte as i8, options(nostack));
+        }
+        i = i + 1;
+    }
+}
+
+λ mem_set(dst: i64, val: i8, len: i64) {
+    ≔ i: i64 = 0;
+    ⟳ i < len {
+        unsafe {
+            asm!("mov byte ptr [rdi], al", in("rdi") dst + i, in("al") val, options(nostack));
+        }
+        i = i + 1;
+    }
+}
+
+λ str_len(s: i64) -> i64 {
+    ≔ len: i64 = 0;
+    ≔ byte: i64 = 1;
+    ⟳ byte != 0 {
+        unsafe {
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") s + len, out("rax") byte, options(nostack, readonly));
+        }
+        ⎇ byte != 0 {
+            len = len + 1;
+        }
+    }
+    len
+}
+
+// ============================================================================
+// Output Utilities
+// ============================================================================
+
+λ write_stdout(s: i64, len: i64) {
+    syscall3(SYS_WRITE, 1, s, len);
+}
+
+λ write_cstr(s: i64) {
+    write_stdout(s, str_len(s));
+}
+
+λ write_newline() {
+    ≔ nl = alloc_mem(8);
+    unsafe { asm!("mov byte ptr [rdi], 10", in("rdi") nl, options(nostack)); }
+    write_stdout(nl, 1);
+    free_mem(nl, 8);
+}
+
+λ write_int(n: i64) {
+    ≔ buf = alloc_mem(32);
+    ≔ num = n;
+    ≔ neg = 0;
+    ⎇ num < 0 {
+        neg = 1;
+        num = 0 - num;
+    }
+    ≔ idx: i64 = 30;
+    ⎇ num == 0 {
+        unsafe { asm!("mov byte ptr [rdi], 0x30", in("rdi") buf + idx, options(nostack)); }
+        idx = idx - 1;
+    } ⎉ {
+        ⟳ num > 0 {
+            ≔ digit = (num % 10) + 48;
+            unsafe { asm!("mov byte ptr [rdi], al", in("rdi") buf + idx, in("al") digit as i8, options(nostack)); }
+            idx = idx - 1;
+            num = num / 10;
+        }
+    }
+    ⎇ neg == 1 {
+        unsafe { asm!("mov byte ptr [rdi], 0x2d", in("rdi") buf + idx, options(nostack)); }
+        idx = idx - 1;
+    }
+    write_stdout(buf + idx + 1, 30 - idx);
+    free_mem(buf, 32);
+}
+
+// ============================================================================
+// Socket Operations
+// ============================================================================
+
+λ socket_tcp_create() -> i64 {
+    syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0)
+}
+
+λ socket_close(fd: i64) {
+    syscall1(SYS_CLOSE, fd);
+}
+
+λ socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
+    ≔ pollfd = alloc_mem(16);
+    ⎇ pollfd < 0 { ⤺ -1; }
+    unsafe {
+        asm!("mov dword ptr [rdi], esi", in("rdi") pollfd, in("esi") fd as i32, options(nostack));
+        asm!("mov word ptr [rdi], 1", in("rdi") pollfd + 4, options(nostack));
+        asm!("mov word ptr [rdi], 0", in("rdi") pollfd + 6, options(nostack));
+    }
+    ≔ result = syscall3(SYS_POLL, pollfd, 1, timeout_ms);
+    free_mem(pollfd, 16);
+    result
+}
+
+λ socket_connect_ipv4(fd: i64, ip_packed: i64, port: i64) -> i64 {
+    ≔ addr_buf = alloc_mem(32);
+    ⎇ addr_buf < 0 { ⤺ -1; }
+    mem_set(addr_buf, 0, 16);
+    unsafe {
+        asm!("mov word ptr [rdi], 2", in("rdi") addr_buf, options(nostack));
+    }
+    ≔ port_hi = (port >> 8) & 255;
+    ≔ port_lo = port & 255;
+    unsafe {
+        asm!("mov byte ptr [rdi], al", in("rdi") addr_buf + 2, in("al") port_hi as i8, options(nostack));
+        asm!("mov byte ptr [rdi], al", in("rdi") addr_buf + 3, in("al") port_lo as i8, options(nostack));
+        asm!("mov dword ptr [rdi], eax", in("rdi") addr_buf + 4, in("eax") ip_packed as i32, options(nostack));
+    }
+    ≔ result = syscall3(SYS_CONNECT, fd, addr_buf, 16);
+    free_mem(addr_buf, 32);
+    result
+}
+
+// ============================================================================
+// DNS Resolution (Simple hardcoded ∀ now - uses 8.8.8.8)
+// ============================================================================
+
+λ dns_resolve(hostname: i64, hostname_len: i64) -> i64 {
+    // For now, ⤺ hardcoded IPs ∀ known hosts
+    // In production, this would do actual DNS queries
+
+    // Check ∀ "example.com"
+    ⎇ hostname_len == 11 {
+        ≔ byte0: i64 = 0;
+        ≔ byte6: i64 = 0;
+        unsafe {
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") hostname, out("rax") byte0, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") hostname + 6, out("rax") byte6, options(nostack, readonly));
+        }
+        ⎇ byte0 == 101 && byte6 == 101 {  // 'e' at pos 0 and 6
+            ⤺ 104 | (18 << 8) | (27 << 16) | (120 << 24);  // 104.18.27.120
+        }
+    }
+
+    // Check ∀ "httpbin.org"
+    ⎇ hostname_len == 11 {
+        ≔ byte0: i64 = 0;
+        unsafe {
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") hostname, out("rax") byte0, options(nostack, readonly));
+        }
+        ⎇ byte0 == 104 {  // 'h'
+            ⤺ 34 | (192 << 8) | (227 << 16) | (97 << 24);  // 34.192.227.97
+        }
+    }
+
+    -1  // Unknown host
+}
+
+// ============================================================================
+// HTTP Response Structure
+// ============================================================================
+
+// HttpResponse is stored as:
+// [0..8]   status_code (i64)
+// [8..16]  body_ptr (i64)
+// [16..24] body_len (i64)
+// [24..32] headers_ptr (i64)
+// [32..40] headers_len (i64)
+
+const HTTP_RESP_SIZE: i64 = 40;
+
+λ http_response_new() -> i64 {
+    ≔ resp = alloc_mem(HTTP_RESP_SIZE);
+    mem_set(resp, 0, HTTP_RESP_SIZE);
+    resp
+}
+
+λ http_response_free(resp: i64) {
+    // Free body ⎇ allocated
+    ≔ body_ptr: i64 = 0;
+    ≔ body_len: i64 = 0;
+    unsafe {
+        asm!("mov rax, [rdi]", in("rdi") resp + 8, out("rax") body_ptr, options(nostack, readonly));
+        asm!("mov rax, [rdi]", in("rdi") resp + 16, out("rax") body_len, options(nostack, readonly));
+    }
+    ⎇ body_ptr != 0 && body_len > 0 {
+        free_mem(body_ptr, body_len);
+    }
+    free_mem(resp, HTTP_RESP_SIZE);
+}
+
+λ http_response_status(resp: i64) -> i64 {
+    ≔ status: i64 = 0;
+    unsafe {
+        asm!("mov rax, [rdi]", in("rdi") resp, out("rax") status, options(nostack, readonly));
+    }
+    status
+}
+
+λ http_response_body_ptr(resp: i64) -> i64 {
+    ≔ ptr: i64 = 0;
+    unsafe {
+        asm!("mov rax, [rdi]", in("rdi") resp + 8, out("rax") ptr, options(nostack, readonly));
+    }
+    ptr
+}
+
+λ http_response_body_len(resp: i64) -> i64 {
+    ≔ len: i64 = 0;
+    unsafe {
+        asm!("mov rax, [rdi]", in("rdi") resp + 16, out("rax") len, options(nostack, readonly));
+    }
+    len
+}
+
+// ============================================================================
+// HTTP Request Building
+// ============================================================================
+
+λ build_http_request(method: i64, method_len: i64, path: i64, path_len: i64, host: i64, host_len: i64) -> i64 {
+    // Calculate total length:
+    // METHOD PATH HTTP/1.1\r\nHost: host\r\nConnection: close\r\n\r\n
+    ≔ total_len = method_len + 1 + path_len + 9 + 8 + host_len + 2 + 19 + 4;
+    ≔ req = alloc_mem(total_len + 1);
+    ⎇ req < 0 { ⤺ 0; }
+
+    ≔ pos: i64 = 0;
+
+    // Copy method
+    mem_copy(req + pos, method, method_len);
+    pos = pos + method_len;
+
+    // Space
+    unsafe { asm!("mov byte ptr [rdi], 32", in("rdi") req + pos, options(nostack)); }
+    pos = pos + 1;
+
+    // Copy path
+    mem_copy(req + pos, path, path_len);
+    pos = pos + path_len;
+
+    // " HTTP/1.1\r\n"
+    ≔ http_ver = alloc_mem(16);
+    unsafe {
+        asm!("mov byte ptr [rdi], 32", in("rdi") http_ver, options(nostack));       // space
+        asm!("mov byte ptr [rdi], 72", in("rdi") http_ver + 1, options(nostack));   // H
+        asm!("mov byte ptr [rdi], 84", in("rdi") http_ver + 2, options(nostack));   // T
+        asm!("mov byte ptr [rdi], 84", in("rdi") http_ver + 3, options(nostack));   // T
+        asm!("mov byte ptr [rdi], 80", in("rdi") http_ver + 4, options(nostack));   // P
+        asm!("mov byte ptr [rdi], 47", in("rdi") http_ver + 5, options(nostack));   // /
+        asm!("mov byte ptr [rdi], 49", in("rdi") http_ver + 6, options(nostack));   // 1
+        asm!("mov byte ptr [rdi], 46", in("rdi") http_ver + 7, options(nostack));   // .
+        asm!("mov byte ptr [rdi], 49", in("rdi") http_ver + 8, options(nostack));   // 1
+        asm!("mov byte ptr [rdi], 13", in("rdi") http_ver + 9, options(nostack));   // \r
+        asm!("mov byte ptr [rdi], 10", in("rdi") http_ver + 10, options(nostack));  // \n
+    }
+    mem_copy(req + pos, http_ver, 11);
+    pos = pos + 11;
+    free_mem(http_ver, 16);
+
+    // "Host: "
+    ≔ host_hdr = alloc_mem(8);
+    unsafe {
+        asm!("mov byte ptr [rdi], 72", in("rdi") host_hdr, options(nostack));      // H
+        asm!("mov byte ptr [rdi], 111", in("rdi") host_hdr + 1, options(nostack)); // o
+        asm!("mov byte ptr [rdi], 115", in("rdi") host_hdr + 2, options(nostack)); // s
+        asm!("mov byte ptr [rdi], 116", in("rdi") host_hdr + 3, options(nostack)); // t
+        asm!("mov byte ptr [rdi], 58", in("rdi") host_hdr + 4, options(nostack));  // :
+        asm!("mov byte ptr [rdi], 32", in("rdi") host_hdr + 5, options(nostack));  // space
+    }
+    mem_copy(req + pos, host_hdr, 6);
+    pos = pos + 6;
+    free_mem(host_hdr, 8);
+
+    // Copy host
+    mem_copy(req + pos, host, host_len);
+    pos = pos + host_len;
+
+    // "\r\nConnection: close\r\n\r\n"
+    ≔ conn_hdr = alloc_mem(24);
+    unsafe {
+        asm!("mov byte ptr [rdi], 13", in("rdi") conn_hdr, options(nostack));       // \r
+        asm!("mov byte ptr [rdi], 10", in("rdi") conn_hdr + 1, options(nostack));   // \n
+        asm!("mov byte ptr [rdi], 67", in("rdi") conn_hdr + 2, options(nostack));   // C
+        asm!("mov byte ptr [rdi], 111", in("rdi") conn_hdr + 3, options(nostack));  // o
+        asm!("mov byte ptr [rdi], 110", in("rdi") conn_hdr + 4, options(nostack));  // n
+        asm!("mov byte ptr [rdi], 110", in("rdi") conn_hdr + 5, options(nostack));  // n
+        asm!("mov byte ptr [rdi], 101", in("rdi") conn_hdr + 6, options(nostack));  // e
+        asm!("mov byte ptr [rdi], 99", in("rdi") conn_hdr + 7, options(nostack));   // c
+        asm!("mov byte ptr [rdi], 116", in("rdi") conn_hdr + 8, options(nostack));  // t
+        asm!("mov byte ptr [rdi], 105", in("rdi") conn_hdr + 9, options(nostack));  // i
+        asm!("mov byte ptr [rdi], 111", in("rdi") conn_hdr + 10, options(nostack)); // o
+        asm!("mov byte ptr [rdi], 110", in("rdi") conn_hdr + 11, options(nostack)); // n
+        asm!("mov byte ptr [rdi], 58", in("rdi") conn_hdr + 12, options(nostack));  // :
+        asm!("mov byte ptr [rdi], 32", in("rdi") conn_hdr + 13, options(nostack));  // space
+        asm!("mov byte ptr [rdi], 99", in("rdi") conn_hdr + 14, options(nostack));  // c
+        asm!("mov byte ptr [rdi], 108", in("rdi") conn_hdr + 15, options(nostack)); // l
+        asm!("mov byte ptr [rdi], 111", in("rdi") conn_hdr + 16, options(nostack)); // o
+        asm!("mov byte ptr [rdi], 115", in("rdi") conn_hdr + 17, options(nostack)); // s
+        asm!("mov byte ptr [rdi], 101", in("rdi") conn_hdr + 18, options(nostack)); // e
+        asm!("mov byte ptr [rdi], 13", in("rdi") conn_hdr + 19, options(nostack));  // \r
+        asm!("mov byte ptr [rdi], 10", in("rdi") conn_hdr + 20, options(nostack));  // \n
+        asm!("mov byte ptr [rdi], 13", in("rdi") conn_hdr + 21, options(nostack));  // \r
+        asm!("mov byte ptr [rdi], 10", in("rdi") conn_hdr + 22, options(nostack));  // \n
+    }
+    mem_copy(req + pos, conn_hdr, 23);
+    pos = pos + 23;
+    free_mem(conn_hdr, 24);
+
+    // Null terminate
+    unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") req + pos, options(nostack)); }
+
+    req
+}
+
+// ============================================================================
+// HTTP Response Parsing
+// ============================================================================
+
+λ parse_http_status(data: i64, data_len: i64) -> i64 {
+    // Parse "HTTP/1.x NNN ..."
+    // Find first space, then read 3-digit status code
+    ⎇ data_len < 12 { ⤺ -1; }
+
+    ≔ i: i64 = 0;
+    ≔ space_pos: i64 = -1;
+
+    // Find first space after "HTTP/1.x"
+    ⟳ i < data_len && space_pos < 0 {
+        ≔ byte: i64 = 0;
+        unsafe {
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") data + i, out("rax") byte, options(nostack, readonly));
+        }
+        ⎇ byte == 32 {
+            space_pos = i;
+        }
+        i = i + 1;
+    }
+
+    ⎇ space_pos < 0 || space_pos + 4 > data_len { ⤺ -1; }
+
+    // Parse 3-digit status code
+    ≔ d1: i64 = 0;
+    ≔ d2: i64 = 0;
+    ≔ d3: i64 = 0;
+    unsafe {
+        asm!("movzx rax, byte ptr [rdi]", in("rdi") data + space_pos + 1, out("rax") d1, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", in("rdi") data + space_pos + 2, out("rax") d2, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", in("rdi") data + space_pos + 3, out("rax") d3, options(nostack, readonly));
+    }
+
+    ≔ status = (d1 - 48) * 100 + (d2 - 48) * 10 + (d3 - 48);
+    status
+}
+
+λ find_body_start(data: i64, data_len: i64) -> i64 {
+    // Find "\r\n\r\n" which marks end of headers
+    ≔ i: i64 = 0;
+    ⟳ i + 3 < data_len {
+        ≔ b0: i64 = 0;
+        ≔ b1: i64 = 0;
+        ≔ b2: i64 = 0;
+        ≔ b3: i64 = 0;
+        unsafe {
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") data + i, out("rax") b0, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") data + i + 1, out("rax") b1, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") data + i + 2, out("rax") b2, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", in("rdi") data + i + 3, out("rax") b3, options(nostack, readonly));
+        }
+        ⎇ b0 == 13 && b1 == 10 && b2 == 13 && b3 == 10 {
+            ⤺ i + 4;
+        }
+        i = i + 1;
+    }
+    -1
+}
+
+// ============================================================================
+// HTTPS GET Request
+// ============================================================================
+
+λ https_get(host: i64, host_len: i64, path: i64, path_len: i64) -> i64 {
+    ≔ resp = http_response_new();
+    ⎇ resp < 0 { ⤺ 0; }
+
+    // Resolve hostname
+    ≔ ip = dns_resolve(host, host_len);
+    ⎇ ip < 0 {
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Initialize TLS
+    sigil_tls_init();
+
+    // Create SSL context
+    ≔ ctx = sigil_tls_ctx_new();
+    ⎇ ctx as i64 == 0 {
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Create TCP socket
+    ≔ sockfd = socket_tcp_create();
+    ⎇ sockfd < 0 {
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Connect
+    ≔ result = socket_connect_ipv4(sockfd, ip, 443);
+    ⎇ result < 0 {
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Create SSL object
+    ≔ ssl = sigil_tls_new(ctx);
+    ⎇ ssl as i64 == 0 {
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Set file descriptor
+    result = sigil_tls_set_fd(ssl, sockfd);
+    ⎇ result != 1 {
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Set SNI hostname (need null-terminated)
+    ≔ host_buf = alloc_mem(host_len + 1);
+    mem_copy(host_buf, host, host_len);
+    unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") host_buf + host_len, options(nostack)); }
+
+    result = sigil_tls_set_hostname(ssl, host_buf as *i8);
+    free_mem(host_buf, host_len + 1);
+
+    ⎇ result != 1 {
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // TLS handshake
+    result = sigil_tls_connect(ssl);
+    ⎇ result != 1 {
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Build and send request
+    ≔ method = alloc_mem(4);
+    unsafe {
+        asm!("mov byte ptr [rdi], 71", in("rdi") method, options(nostack));     // G
+        asm!("mov byte ptr [rdi], 69", in("rdi") method + 1, options(nostack)); // E
+        asm!("mov byte ptr [rdi], 84", in("rdi") method + 2, options(nostack)); // T
+    }
+
+    ≔ req = build_http_request(method, 3, path, path_len, host, host_len);
+    free_mem(method, 4);
+
+    ⎇ req == 0 {
+        sigil_tls_shutdown(ssl);
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    ≔ req_len = str_len(req);
+    ≔ bytes_written = sigil_tls_write(ssl, req as *i8, req_len);
+    free_mem(req, req_len + 1);
+
+    ⎇ bytes_written < 0 {
+        sigil_tls_shutdown(ssl);
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Wait ∀ response
+    ≔ poll_result = socket_poll_read(sockfd, 10000);
+    ⎇ poll_result <= 0 {
+        sigil_tls_shutdown(ssl);
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Read response - first read gets headers, second read (⎇ needed) gets body
+    ≔ buffer = alloc_mem(16384);
+    ≔ bytes_read = sigil_tls_read(ssl, buffer as *i8, 8000);
+
+    // If we didn't get body yet, try a second read
+    ⎇ bytes_read > 0 {
+        ≔ body_check = find_body_start(buffer, bytes_read);
+        ⎇ body_check > 0 && body_check >= bytes_read {
+            // Headers only, try reading more
+            ≔ poll_r = socket_poll_read(sockfd, 2000);
+            ⎇ poll_r > 0 {
+                ≔ more = sigil_tls_read(ssl, (buffer + bytes_read) as *i8, 8000);
+                ⎇ more > 0 {
+                    bytes_read = bytes_read + more;
+                }
+            }
+        }
+    }
+
+    ⎇ bytes_read <= 0 {
+        free_mem(buffer, 16384);
+        sigil_tls_shutdown(ssl);
+        sigil_tls_free(ssl);
+        socket_close(sockfd);
+        sigil_tls_ctx_free(ctx);
+        http_response_free(resp);
+        ⤺ 0;
+    }
+
+    // Parse response
+    ≔ status = parse_http_status(buffer, bytes_read);
+    ≔ body_start = find_body_start(buffer, bytes_read);
+
+    // Store status
+    unsafe {
+        asm!("mov [rdi], rax", in("rdi") resp, in("rax") status, options(nostack));
+    }
+
+    // Copy body
+    ⎇ body_start > 0 && body_start < bytes_read {
+        ≔ body_len = bytes_read - body_start;
+        ≔ body = alloc_mem(body_len + 1);
+        mem_copy(body, buffer + body_start, body_len);
+        unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") body + body_len, options(nostack)); }
+
+        unsafe {
+            asm!("mov [rdi], rax", in("rdi") resp + 8, in("rax") body, options(nostack));
+            asm!("mov [rdi], rax", in("rdi") resp + 16, in("rax") body_len, options(nostack));
+        }
+    }
+
+    // Cleanup
+    free_mem(buffer, 16384);
+    sigil_tls_shutdown(ssl);
+    sigil_tls_free(ssl);
+    socket_close(sockfd);
+    sigil_tls_ctx_free(ctx);
+
+    resp
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+λ test_https_get_example() -> i64 {
+    // "Test 1: HTTPS GET example.com... "
+    ≔ msg = alloc_mem(64);
+    ≔ chars: [i8; 33] = [84, 101, 115, 116, 32, 49, 58, 32, 72, 84, 84, 80, 83, 32, 71, 69, 84, 32, 101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109, 46, 46, 46, 32];
+    ≔ i: i64 = 0;
+    ⟳ i < 33 {
+        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
+        i = i + 1;
+    }
+    unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") msg + 33, options(nostack)); }
+    write_cstr(msg);
+    free_mem(msg, 64);
+
+    // Host and path
+    ≔ host = alloc_mem(16);
+    // "example.com"
+    unsafe {
+        asm!("mov byte ptr [rdi], 101", in("rdi") host, options(nostack));      // e
+        asm!("mov byte ptr [rdi], 120", in("rdi") host + 1, options(nostack));  // x
+        asm!("mov byte ptr [rdi], 97", in("rdi") host + 2, options(nostack));   // a
+        asm!("mov byte ptr [rdi], 109", in("rdi") host + 3, options(nostack));  // m
+        asm!("mov byte ptr [rdi], 112", in("rdi") host + 4, options(nostack));  // p
+        asm!("mov byte ptr [rdi], 108", in("rdi") host + 5, options(nostack));  // l
+        asm!("mov byte ptr [rdi], 101", in("rdi") host + 6, options(nostack));  // e
+        asm!("mov byte ptr [rdi], 46", in("rdi") host + 7, options(nostack));   // .
+        asm!("mov byte ptr [rdi], 99", in("rdi") host + 8, options(nostack));   // c
+        asm!("mov byte ptr [rdi], 111", in("rdi") host + 9, options(nostack));  // o
+        asm!("mov byte ptr [rdi], 109", in("rdi") host + 10, options(nostack)); // m
+    }
+
+    ≔ path = alloc_mem(4);
+    unsafe {
+        asm!("mov byte ptr [rdi], 47", in("rdi") path, options(nostack));  // /
+    }
+
+    ≔ resp = https_get(host, 11, path, 1);
+    free_mem(host, 16);
+    free_mem(path, 4);
+
+    ⎇ resp == 0 {
+        ≔ fail_msg = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", in("rdi") fail_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", in("rdi") fail_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") fail_msg + 4, options(nostack));
+        }
+        write_stdout(fail_msg, 5);
+        free_mem(fail_msg, 8);
+        ⤺ 0;
+    }
+
+    ≔ status = http_response_status(resp);
+    ≔ body_len = http_response_body_len(resp);
+
+    // Check ∀ 200 OK with body content
+    ≔ success: i64 = 0;
+    ⎇ status == 200 && body_len > 0 {
+        success = 1;
+    }
+
+    http_response_free(resp);
+
+    ⎇ success == 1 {
+        ≔ pass_msg = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") pass_msg + 4, options(nostack));
+        }
+        write_stdout(pass_msg, 5);
+        free_mem(pass_msg, 8);
+        ⤺ 1;
+    } ⎉ {
+        ≔ fail_msg = alloc_mem(32);
+        unsafe {
+            asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", in("rdi") fail_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", in("rdi") fail_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 32", in("rdi") fail_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 40", in("rdi") fail_msg + 5, options(nostack)); // (
+        }
+        write_stdout(fail_msg, 6);
+        write_int(status);
+        unsafe {
+            asm!("mov byte ptr [rdi], 44", in("rdi") fail_msg, options(nostack)); // ,
+            asm!("mov byte ptr [rdi], 32", in("rdi") fail_msg + 1, options(nostack));
+        }
+        write_stdout(fail_msg, 2);
+        write_int(body_len);
+        unsafe {
+            asm!("mov byte ptr [rdi], 41", in("rdi") fail_msg, options(nostack)); // )
+            asm!("mov byte ptr [rdi], 10", in("rdi") fail_msg + 1, options(nostack));
+        }
+        write_stdout(fail_msg, 2);
+        free_mem(fail_msg, 32);
+        ⤺ 0;
+    }
+}
+
+λ test_response_parsing() -> i64 {
+    // "Test 2: Response parsing... "
+    ≔ msg = alloc_mem(32);
+    ≔ chars: [i8; 27] = [84, 101, 115, 116, 32, 50, 58, 32, 82, 101, 115, 112, 111, 110, 115, 101, 32, 112, 97, 114, 115, 105, 110, 103, 46, 46, 46];
+    ≔ i: i64 = 0;
+    ⟳ i < 27 {
+        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
+        i = i + 1;
+    }
+    unsafe { asm!("mov byte ptr [rdi], 32", in("rdi") msg + 27, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") msg + 28, options(nostack)); }
+    write_cstr(msg);
+    free_mem(msg, 32);
+
+    // Test status parsing
+    // "HTTP/1.1 200 OK\r\n\r\nBody"
+    ≔ test_resp = alloc_mem(32);
+    ≔ test_chars: [i8; 23] = [72, 84, 84, 80, 47, 49, 46, 49, 32, 50, 48, 48, 32, 79, 75, 13, 10, 13, 10, 66, 111, 100, 121];
+    i = 0;
+    ⟳ i < 23 {
+        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") test_resp + i, in("al") test_chars[i as usize], options(nostack)); }
+        i = i + 1;
+    }
+
+    ≔ status = parse_http_status(test_resp, 23);
+    ≔ body_start = find_body_start(test_resp, 23);
+    free_mem(test_resp, 32);
+
+    ⎇ status == 200 && body_start == 19 {
+        ≔ pass_msg = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") pass_msg + 4, options(nostack));
+        }
+        write_stdout(pass_msg, 5);
+        free_mem(pass_msg, 8);
+        ⤺ 1;
+    } ⎉ {
+        ≔ fail_msg = alloc_mem(8);
+        unsafe {
+            asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", in("rdi") fail_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", in("rdi") fail_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", in("rdi") fail_msg + 4, options(nostack));
+        }
+        write_stdout(fail_msg, 5);
+        free_mem(fail_msg, 8);
+        ⤺ 0;
+    }
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+λ main() -> i64 {
+    // Print header
+    ≔ header = alloc_mem(32);
+    // "=== HTTP Client Tests ===\n"
+    ≔ h_chars: [i8; 26] = [61, 61, 61, 32, 72, 84, 84, 80, 32, 67, 108, 105, 101, 110, 116, 32, 84, 101, 115, 116, 115, 32, 61, 61, 61, 10];
+    ≔ i: i64 = 0;
+    ⟳ i < 26 {
+        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") h_chars[i as usize], options(nostack)); }
+        i = i + 1;
+    }
+    write_stdout(header, 26);
+    free_mem(header, 32);
+
+    ≔ passed: i64 = 0;
+    ≔ total: i64 = 2;
+
+    passed = passed + test_response_parsing();
+    passed = passed + test_https_get_example();
+
+    // Print results
+    write_newline();
+    ≔ result_msg = alloc_mem(16);
+    // "Results: "
+    unsafe {
+        asm!("mov byte ptr [rdi], 82", in("rdi") result_msg, options(nostack));      // R
+        asm!("mov byte ptr [rdi], 101", in("rdi") result_msg + 1, options(nostack)); // e
+        asm!("mov byte ptr [rdi], 115", in("rdi") result_msg + 2, options(nostack)); // s
+        asm!("mov byte ptr [rdi], 117", in("rdi") result_msg + 3, options(nostack)); // u
+        asm!("mov byte ptr [rdi], 108", in("rdi") result_msg + 4, options(nostack)); // l
+        asm!("mov byte ptr [rdi], 116", in("rdi") result_msg + 5, options(nostack)); // t
+        asm!("mov byte ptr [rdi], 115", in("rdi") result_msg + 6, options(nostack)); // s
+        asm!("mov byte ptr [rdi], 58", in("rdi") result_msg + 7, options(nostack));  // :
+        asm!("mov byte ptr [rdi], 32", in("rdi") result_msg + 8, options(nostack));  // space
+        asm!("mov byte ptr [rdi], 0", in("rdi") result_msg + 9, options(nostack));
+    }
+    write_cstr(result_msg);
+    write_int(passed);
+    unsafe { asm!("mov byte ptr [rdi], 47", in("rdi") result_msg, options(nostack)); }
+    write_stdout(result_msg, 1);
+    write_int(total);
+    // " passed\n"
+    ≔ p_chars: [i8; 8] = [32, 112, 97, 115, 115, 101, 100, 10];
+    i = 0;
+    ⟳ i < 8 {
+        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") result_msg + i, in("al") p_chars[i as usize], options(nostack)); }
+        i = i + 1;
+    }
+    write_stdout(result_msg, 8);
+    free_mem(result_msg, 16);
+
+    ⎇ passed == total { 0 } ⎉ { 1 }
+}

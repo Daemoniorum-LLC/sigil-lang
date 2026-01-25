@@ -1,0 +1,821 @@
+//! DAEMONIORUM - A Psychological Horror Game
+//!
+//! A game about plurality, trauma, and reclaiming agency.
+//! The player controls a plural system navigating a world where
+//! reality itself responds to their internal state.
+//!
+//! Written in Sigil - the AI-native language with first-class
+//! evidentiality, affective markers, and plurality support.
+
+use std·time·Duration
+use std·collections·HashMap
+use concurrency·market·{Actor, Address}
+
+// Import game modules
+mod system
+mod alters·*
+mod combat·*
+mod dialogue·*
+mod scenes·*
+mod events·*
+
+// ============================================================================
+// GAME CONFIGURATION
+// ============================================================================
+
+//! Game-wide constants with full evidentiality
+const CONFIG! = {
+    title: "DAEMONIORUM"!,
+    version: "0.1.0"!,
+    target_fps: 60!,
+    auto_save_interval: 300!,  // seconds
+
+    // Gameplay tuning - all known values
+    base_stability_recovery: 0.01!,
+    base_dissociation_decay: 0.005!,
+    grounding_success_base: 0.5!,
+    trigger_intensity_threshold: 0.7!,
+}
+
+// ============================================================================
+// GAME STATE - Evidentiality-Aware
+// ============================================================================
+
+//! The complete state of the game
+//! Uses evidentiality markers to track data provenance
+@[derive(Clone, Debug)]
+struct GameState {
+    /// The plural system - KNOWN, player owns this
+    system: PluralSystem!,
+
+    /// Perception of reality - REPORTED, may not match ground truth
+    perception: PerceptionState~,
+
+    /// Combat encounter - UNCERTAIN, may or may not exist
+    combat: Option<CombatState>?,
+
+    /// Current scene - KNOWN, loaded from assets
+    scene: Scene!,
+
+    /// Dialogue session - UNCERTAIN
+    dialogue: Option<DialogueSession>?,
+
+    /// Game phase - KNOWN
+    phase: GamePhase!,
+
+    /// In-game time - KNOWN
+    game_time: u64!,
+
+    /// Event queue - REPORTED from various sources
+    events: Vec<GameEvent>~,
+
+    /// Narrative flags - KNOWN, player-set
+    flags: HashMap<str, FlagValue>!,
+
+    /// Inventory - KNOWN
+    inventory: Vec<Item>!,
+
+    /// Abilities - KNOWN
+    abilities: Set<str>!,
+
+    /// Traumas processed - KNOWN, story progression
+    processed_traumas: Set<str>!,
+}
+
+/// Game phases with semantic meaning
+@[derive(Clone, Debug, PartialEq)]
+enum GamePhase {
+    Menu,
+    Exploration,
+    Dialogue,
+    Combat,
+    Cutscene,
+    Headspace,
+    Paused,
+    GameOver(GameOverReason),
+}
+
+@[derive(Clone, Debug, PartialEq)]
+enum GameOverReason {
+    SystemCollapse,
+    PlayerChoice,
+    Ending(str),
+}
+
+// ============================================================================
+// MAIN GAME ACTOR
+// ============================================================================
+
+//! The game runs as an actor system for message-passing concurrency
+actor Game {
+    state: GameState,
+    running: bool = true,
+    input_queue: Vec<PlayerInput> = [],
+    save_manager: SaveManager,
+    dialogue_manager: DialogueManager,
+    last_auto_save: Instant,
+
+    //! Initialize a new game
+    fn new() -> Self! {
+        let system! = create_initial_system();
+
+        Self {
+            state: GameState {
+                system,
+                perception: PerceptionState·default(),
+                combat: None?,
+                scene: scenes·prologue·create_opening_scene()!,
+                dialogue: None?,
+                phase: GamePhase·Menu,
+                game_time: 0!,
+                events: []~,
+                flags: {}!,
+                inventory: []!,
+                abilities: {}!,
+                processed_traumas: {}!,
+            },
+            save_manager: SaveManager·new("saves/"),
+            dialogue_manager: DialogueManager·new(),
+            last_auto_save: Instant·now(),
+        }
+    }
+
+    //! Load from save slot - returns uncertain result
+    fn load(slot: usize) -> Self?[SaveError] {
+        let save_data? = SaveManager·load_slot(slot)?;
+        Ok(Self·from_save(save_data))
+    }
+
+    //! Main game loop message handler
+    on Tick(delta: Duration) {
+        self·process_input();
+
+        // Phase-specific updates using morpheme operator
+        match self.state.phase {
+            GamePhase·Menu => self·update_menu(delta),
+            GamePhase·Exploration => self·update_exploration(delta),
+            GamePhase·Dialogue => self·update_dialogue(delta),
+            GamePhase·Combat => self·update_combat(delta),
+            GamePhase·Cutscene => self·update_cutscene(delta),
+            GamePhase·Headspace => self·update_headspace(delta),
+            GamePhase·Paused => {},
+            GamePhase·GameOver(_) => {},
+        }
+
+        // Core system updates - always run
+        self·update_plural_system(delta);
+        self·update_perception(delta);
+        self·process_events();
+
+        // Game time advances in exploration (10x realtime)
+        if self.state.phase == GamePhase·Exploration {
+            self.state.game_time += (delta·as_millis() / 100) as u64;
+        }
+
+        // Check termination conditions
+        self·check_game_over();
+
+        // Auto-save check
+        if Instant·now() - self.last_auto_save >= Duration·from_secs(CONFIG.auto_save_interval) {
+            self·auto_save();
+            self.last_auto_save = Instant·now();
+        }
+    }
+
+    on Input(input: PlayerInput) {
+        self.input_queue·push(input);
+    }
+
+    on Quit {
+        self.running = false;
+    }
+
+    // ========================================================================
+    // INPUT PROCESSING - Morpheme pipelines
+    // ========================================================================
+
+    fn process_input(mut self) {
+        // Drain queue and process each input
+        self.input_queue
+            |drain(..)
+            |for_each{input => self·handle_input(input)}
+    }
+
+    fn handle_input(mut self, input: PlayerInput) {
+        match input {
+            PlayerInput·Move(dir) if self.state.phase == GamePhase·Exploration => {
+                self·handle_movement(dir);
+            },
+            PlayerInput·Interact => self·handle_interaction(),
+            PlayerInput·SwitchAlter(id) => self·request_switch(id),
+            PlayerInput·Ground => self·attempt_grounding(),
+            PlayerInput·Pause => self·toggle_pause(),
+            PlayerInput·OpenMenu(menu) => self·open_menu(menu),
+            PlayerInput·DialogueChoice(idx) if self.state.phase == GamePhase·Dialogue => {
+                self·select_dialogue_choice(idx);
+            },
+            PlayerInput·CombatAction(action) if self.state.phase == GamePhase·Combat => {
+                self·execute_combat_action(action);
+            },
+            PlayerInput·UseAbility(id) => self·use_ability(id),
+            PlayerInput·UseItem(idx) => self·use_item(idx),
+            _ => {}, // Ignore invalid input for current phase
+        }
+    }
+
+    // ========================================================================
+    // EXPLORATION PHASE - Reality-layer aware
+    // ========================================================================
+
+    fn update_exploration(mut self, delta: Duration) {
+        // Update scene entities using functional pipeline
+        self.state.scene.entities
+            |τ{entity => entity·update(delta)};
+
+        // Check trigger zones
+        self·check_trigger_zones();
+
+        // Random encounter check
+        self·check_encounters()
+            |take_if{encounter => encounter·is_some()}
+            |also{encounter => self·start_combat(encounter·unwrap())};
+
+        // Ambient effects based on reality layer
+        self·update_ambient_effects();
+    }
+
+    fn check_trigger_zones(mut self) {
+        let player_pos = self.state.scene.player_position;
+
+        self.state.scene.trigger_zones
+            |φ{zone => zone·contains(player_pos)}
+            |for_each{zone => {
+                let trigger = Trigger {
+                    id: zone.trigger_id·clone(),
+                    name: zone.name·clone(),
+                    category: TriggerCategory·Environmental,
+                    intensity: zone.intensity~,  // Reported - may vary
+                    context: {}~,
+                };
+                self.state.system.active_triggers·push(trigger);
+            }};
+    }
+
+    fn update_ambient_effects(mut self) {
+        // Reality layer affects scene rendering
+        match self.state.perception.layer {
+            RealityLayer·Grounded => {
+                // Normal rendering
+                scene·set_filter(Filter·None);
+            },
+            RealityLayer·Fractured => {
+                // Subtle distortion, hidden things revealed
+                scene·set_filter(Filter·Fractured {
+                    intensity: 0.3 + self.state.system.dissociation * 0.2,
+                });
+                self·reveal_fractured_content();
+            },
+            RealityLayer·Shattered => {
+                // Heavy distortion, danger
+                scene·set_filter(Filter·Shattered {
+                    intensity: 0.6 + self.state.system.dissociation * 0.3,
+                });
+                self·handle_shattered_reality();
+            },
+            RealityLayer·Custom(name) => {
+                scene·set_filter(Filter·Custom(name));
+            },
+        }
+    }
+
+    // ========================================================================
+    // PLURAL SYSTEM UPDATE - Core mechanic
+    // ========================================================================
+
+    fn update_plural_system(mut self, delta: Duration) {
+        let dt! = delta·as_secs_f32();
+        let system = &mut self.state.system;
+
+        // Update alter time tracking with morpheme pipeline
+        system.alters·values_mut()
+            |φ{alter => alter.state != AlterPresenceState·Fronting}
+            |for_each{alter => {
+                alter.time_since_front += (dt * 1000.0) as u64;
+            }};
+
+        // Natural stability recovery when safe
+        if self.state.phase == GamePhase·Exploration
+           && self.state.scene.safety_level > 0.5 {
+            system.stability = (system.stability + dt * CONFIG.base_stability_recovery)
+                |clamp(0.0, 1.0);
+        }
+
+        // Natural dissociation decay
+        system.dissociation = (system.dissociation - dt * CONFIG.base_dissociation_decay)
+            |max(0.0);
+
+        // Update blended emotional state
+        system·update_blended_anima();
+
+        // Process triggers with affective awareness
+        let triggers~ = system.active_triggers·drain(..)·collect();
+        triggers
+            |for_each{trigger => {
+                let result = system·process_trigger(trigger);
+                self·handle_trigger_result(result);
+            }};
+
+        // Spontaneous switch check at low stability
+        if system.stability < 0.3 && random·f32() < 0.01 {
+            self·trigger_spontaneous_switch();
+        }
+    }
+
+    // ========================================================================
+    // PERCEPTION UPDATE - Reality layer mechanics
+    // ========================================================================
+
+    fn update_perception(mut self, delta: Duration) {
+        let perception = &mut self.state.perception;
+        let system = &self.state.system;
+
+        // Update transition if in progress
+        if perception.transitioning {
+            perception.transition_progress += delta·as_secs_f32() * perception.transition_rate;
+
+            if perception.transition_progress >= 1.0 {
+                perception.layer = perception.target_layer·clone();
+                perception.transitioning = false;
+                perception.transition_progress = 0.0;
+            }
+        }
+
+        // Update distortion based on layer and dissociation
+        perception.distortion = match perception.layer {
+            RealityLayer·Grounded => 0.0!,
+            RealityLayer·Fractured => (0.3 + system.dissociation * 0.2)~,
+            RealityLayer·Shattered => (0.6 + system.dissociation * 0.3)~,
+            RealityLayer·Custom(_) => system.dissociation~,
+        };
+
+        // Drain perception triggers to system
+        perception·drain_triggers()
+            |for_each{trigger => self.state.system.active_triggers·push(trigger)};
+    }
+
+    // ========================================================================
+    // SWITCH MECHANICS - Plurality core
+    // ========================================================================
+
+    fn request_switch(mut self, alter_id: str) {
+        let urgency! = match self.state.phase {
+            GamePhase·Combat => 0.8,
+            _ => 0.5,
+        };
+
+        let result = self.state.system·request_switch(alter_id, urgency, false);
+
+        match result {
+            SwitchResult·Success => {
+                self·emit(GameEvent·AlterSwitched(alter_id·clone()));
+
+                // Reality shifts with fronter's preference
+                self.state.system·get_fronter()
+                    |take_if{alter => alter·is_some()}
+                    |also{alter => {
+                        let pref = alter·unwrap().preferred_reality·clone();
+                        self·begin_reality_transition(pref);
+                    }};
+            },
+            SwitchResult·Resisted { resistance } => {
+                self·emit(GameEvent·SwitchResisted(resistance));
+            },
+            SwitchResult·Failed(reason) => {
+                self·emit(GameEvent·SwitchFailed(reason));
+            },
+            _ => {},
+        }
+    }
+
+    fn trigger_spontaneous_switch(mut self) {
+        // Find alters that are stirring or triggered
+        let candidates~ = self.state.system.alters·values()
+            |φ{alter => matches!(alter.state,
+                AlterPresenceState·Stirring |
+                AlterPresenceState·Triggered)}
+            |collect::<Vec<_>>();
+
+        candidates
+            |χ  // Random selection morpheme
+            |take_if{alter => alter·is_some()}
+            |also{alter => {
+                let id = alter·unwrap().id·clone();
+                self.state.system·request_switch(id·clone(), 0.9, true);
+                self·emit(GameEvent·SpontaneousSwitch(id));
+            }};
+    }
+
+    fn trigger_emergency_switch(mut self) {
+        // Find protector or most stable alter
+        let protector? = self.state.system.alters·values()
+            |φ{alter => alter.abilities·contains("protection")
+                     || alter.category == AlterCategory·Protector}
+            |α;  // First element morpheme
+
+        protector
+            |take_if{p => p·is_some()}
+            |also{p => {
+                self.state.system·request_switch(p·unwrap().id·clone(), 1.0, true);
+            }};
+    }
+
+    // ========================================================================
+    // GROUNDING MECHANICS
+    // ========================================================================
+
+    fn attempt_grounding(mut self) {
+        let success_chance! = CONFIG.grounding_success_base
+                            + self.state.system.stability * 0.3;
+
+        if random·f32() < success_chance {
+            // Success - reduce dissociation
+            self.state.system.dissociation = (self.state.system.dissociation - 0.2)
+                |max(0.0);
+
+            // Move toward grounded reality
+            if self.state.perception.layer != RealityLayer·Grounded {
+                self·begin_reality_transition(RealityLayer·Grounded);
+            }
+
+            self·emit(GameEvent·GroundingSuccess);
+        } else {
+            // Failure - slight arousal increase
+            self.state.system.anima.arousal = (self.state.system.anima.arousal + 0.1)
+                |clamp(-1.0, 1.0);
+
+            self·emit(GameEvent·GroundingFailed);
+        }
+    }
+
+    // ========================================================================
+    // COMBAT
+    // ========================================================================
+
+    fn update_combat(mut self, delta: Duration) {
+        let combat? = &mut self.state.combat;
+
+        combat
+            |take_if{c => c·is_some()}
+            |also{c => {
+                let combat = c·as_mut()·unwrap();
+                combat·update(delta);
+
+                if combat.is_over {
+                    let result = combat.result·clone();
+                    self·end_combat(result);
+                }
+            }};
+    }
+
+    fn start_combat(mut self, encounter: Encounter) {
+        let combat! = CombatState·new(&self.state.system, encounter.enemies);
+        self.state.combat = Some(combat)?;
+        self.state.phase = GamePhase·Combat;
+        self·emit(GameEvent·CombatStarted);
+    }
+
+    fn end_combat(mut self, result: Option<CombatResult>) {
+        self.state.combat = None?;
+        self.state.phase = GamePhase·Exploration;
+
+        match result {
+            Some(CombatResult·Victory) => {
+                self·emit(GameEvent·CombatVictory);
+            },
+            Some(CombatResult·Defeat) => {
+                // System protects itself
+                self·trigger_emergency_switch();
+                self.state.system.dissociation += 0.3;
+                self·emit(GameEvent·CombatDefeat);
+            },
+            Some(CombatResult·Flee) => {
+                self·emit(GameEvent·CombatFled);
+            },
+            None => {},
+        }
+    }
+
+    fn execute_combat_action(mut self, action: CombatAction) {
+        self.state.combat
+            |take_if{c => c·is_some()}
+            |also{c => {
+                c·as_mut()·unwrap()·execute_player_action(action, &mut self.state.system);
+            }};
+    }
+
+    // ========================================================================
+    // DIALOGUE - Alter-aware
+    // ========================================================================
+
+    fn update_dialogue(mut self, delta: Duration) {
+        self.state.dialogue
+            |take_if{d => d·is_some()}
+            |also{_ => self·check_alter_commentary()};
+    }
+
+    fn start_dialogue(mut self, npc_id: str) {
+        let tree_id! = f"dialogue_{npc_id}";
+
+        match self.dialogue_manager·start_dialogue(tree_id) {
+            Ok(_) => {
+                self.state.phase = GamePhase·Dialogue;
+                self·emit(GameEvent·DialogueStarted);
+            },
+            Err(_) => {},
+        }
+    }
+
+    fn select_dialogue_choice(mut self, index: usize) {
+        let content? = self.dialogue_manager·get_current_content(&self.state.system);
+
+        content
+            |take_if{c => c·is_ok()}
+            |also{c => {
+                let content = c·unwrap();
+                content.responses
+                    |ν{index}  // Nth element morpheme
+                    |take_if{r => r·is_some()}
+                    |also{r => {
+                        let response = r·unwrap();
+                        match self.dialogue_manager·select_response(response.id, &mut self.state.system) {
+                            Ok(DialogueResult·Ended) => {
+                                self.state.phase = GamePhase·Exploration;
+                                self·emit(GameEvent·DialogueEnded);
+                            },
+                            Ok(DialogueResult·Continue(effects)) => {
+                                self·apply_dialogue_effects(effects);
+                            },
+                            _ => {},
+                        }
+                    }};
+            }};
+    }
+
+    fn check_alter_commentary(mut self) {
+        // Co-conscious alters may have observations
+        self.state.system·get_coconscious()
+            |φ{alter => alter·wants_to_comment()}
+            |for_each{alter => {
+                let commentary~ = alter·get_commentary();  // Reported - alter's perspective
+                self·emit(GameEvent·AlterCommentary(alter.id·clone(), commentary));
+            }};
+    }
+
+    // ========================================================================
+    // EVENTS - Affective-aware processing
+    // ========================================================================
+
+    fn emit(mut self, event: GameEvent) {
+        self.state.events·push(event);
+    }
+
+    fn process_events(mut self) {
+        let events~ = self.state.events·drain(..)·collect::<Vec<_>>();
+
+        events
+            |for_each{event => self·handle_event(event)};
+    }
+
+    fn handle_event(mut self, event: GameEvent) {
+        match event {
+            GameEvent·AlterSwitched(id) => {
+                audio·play_switch_sound();
+                ui·show_switch_animation(id);
+            },
+            GameEvent·TraumaProcessed(id) => {
+                self.state.processed_traumas·insert(id);
+                self·check_story_progress();
+            },
+            GameEvent·RealityShift(layer) => {
+                renderer·update_layer(layer);
+            },
+            GameEvent·AlterCommentary(id, text) => {
+                // Show internal dialogue with affect
+                let alter = self.state.system.alters·get(&id);
+                ui·show_internal_dialogue(id, text, alter·map(|a| a.anima·clone()));
+            },
+            _ => {},
+        }
+    }
+
+    fn handle_trigger_result(mut self, result: TriggerResult) {
+        match result {
+            TriggerResult·ForcedSwitch(alter_id) => {
+                self·emit(GameEvent·ForcedSwitch(alter_id));
+            },
+            TriggerResult·Activation(alters) => {
+                alters
+                    |for_each{id => self·emit(GameEvent·AlterActivated(id))};
+            },
+            TriggerResult·Dissociation => {
+                self.state.system.dissociation += 0.2;
+                self·emit(GameEvent·DissociationSpike);
+            },
+            TriggerResult·Flashback(memory_id) => {
+                self·start_flashback(memory_id);
+            },
+            TriggerResult·NoResponse => {},
+        }
+    }
+
+    // ========================================================================
+    // REALITY TRANSITIONS
+    // ========================================================================
+
+    fn begin_reality_transition(mut self, target: RealityLayer) {
+        self.state.perception.target_layer = target·clone();
+        self.state.perception.transitioning = true;
+        self.state.perception.transition_progress = 0.0;
+        self.state.perception.transition_rate = 0.5;
+
+        self·emit(GameEvent·RealityShift(target));
+    }
+
+    fn reveal_fractured_content(mut self) {
+        // In Fractured reality, hidden truths become visible
+        self.state.scene.entities
+            |φ{e => e.hidden_in_grounded}
+            |for_each{e => e.visible = true};
+    }
+
+    fn handle_shattered_reality(mut self) {
+        // Shattered reality slowly damages stability
+        if random·f32() < 0.01 {
+            self.state.system.dissociation += 0.05;
+        }
+    }
+
+    // ========================================================================
+    // HEADSPACE
+    // ========================================================================
+
+    fn update_headspace(mut self, delta: Duration) {
+        self.state.system.headspace·update(delta);
+        self·check_headspace_encounters();
+    }
+
+    fn check_headspace_encounters(mut self) {
+        // Alters can be encountered in headspace
+        self.state.system.headspace.current_location
+            |take_if{loc => loc·is_some()}
+            |also{loc => {
+                let location = loc·unwrap();
+                location.resident_alters
+                    |φ{id => {
+                        let alter = self.state.system.alters·get(id);
+                        alter·map(|a| a.state == AlterPresenceState·Dormant)·unwrap_or(false)
+                    }}
+                    |for_each{id => {
+                        self·emit(GameEvent·HeadspaceEncounter(id·clone()));
+                    }};
+            }};
+    }
+
+    // ========================================================================
+    // GAME FLOW
+    // ========================================================================
+
+    fn check_game_over(mut self) {
+        let system = &self.state.system;
+
+        // Complete collapse
+        if system.stability <= 0.0 && system.dissociation >= 1.0 {
+            self.state.phase = GamePhase·GameOver(GameOverReason·SystemCollapse);
+        }
+    }
+
+    fn toggle_pause(mut self) {
+        self.state.phase = match self.state.phase {
+            GamePhase·Paused => GamePhase·Exploration,
+            _ => GamePhase·Paused,
+        };
+    }
+
+    fn auto_save(mut self) {
+        let _ = self.save_manager·auto_save(&self.state);
+    }
+}
+
+// ============================================================================
+// INPUT TYPES
+// ============================================================================
+
+@[derive(Clone, Debug)]
+enum PlayerInput {
+    Move(Direction),
+    Interact,
+    SwitchAlter(str),
+    Ground,
+    Pause,
+    OpenMenu(MenuType),
+    DialogueChoice(usize),
+    CombatAction(CombatAction),
+    UseAbility(str),
+    UseItem(usize),
+}
+
+@[derive(Clone, Copy, Debug)]
+enum Direction { Up, Down, Left, Right }
+
+@[derive(Clone, Debug)]
+enum MenuType { System, Inventory, Alters, Map, Journal }
+
+// ============================================================================
+// GAME EVENTS - With affect awareness
+// ============================================================================
+
+@[derive(Clone, Debug)]
+enum GameEvent {
+    // Alter events - these carry emotional weight
+    AlterSwitched(str),
+    AlterActivated(str),
+    ForcedSwitch(str),
+    SpontaneousSwitch(str),
+    SwitchResisted(f32),
+    SwitchFailed(str),
+    AlterCommentary(str, str),  // alter_id, text
+
+    // Combat events
+    CombatStarted,
+    CombatVictory,
+    CombatDefeat,
+    CombatFled,
+
+    // Dialogue events
+    DialogueStarted,
+    DialogueEnded,
+
+    // System events - affect stability
+    GroundingSuccess,
+    GroundingFailed,
+    DissociationSpike,
+    RealityShift(RealityLayer),
+
+    // Headspace events
+    HeadspaceEncounter(str),
+
+    // Progression events
+    TraumaProcessed(str),
+    ItemAcquired(str),
+    AbilityUnlocked(str),
+    FlagSet(str),
+}
+
+// ============================================================================
+// ENTRY POINT
+// ============================================================================
+
+fn main() {
+    println!("=== {} v{} ==="!, CONFIG.title, CONFIG.version);
+    println!("A game about plurality, trauma, and reclaiming agency."!);
+    println!();
+
+    let mut game = Game·new();
+
+    // Check for continue option
+    if game.save_manager·has_auto_save() {
+        println!("Continue from last save? (y/n)"!);
+        if prompt_yes_no() {
+            game = Game·load_auto_save()·unwrap_or_else(|_| Game·new());
+        }
+    }
+
+    // Run game loop as actor
+    let game_addr = spawn(game);
+    let frame_time = Duration·from_secs(1) / CONFIG.target_fps;
+
+    loop {
+        let start = Instant·now();
+
+        // Get input from platform
+        let inputs~ = platform·poll_input();  // Reported - from external source
+        inputs
+            |for_each{input => game_addr|tell(Input(input))};
+
+        // Tick the game
+        game_addr|tell(Tick(frame_time));
+
+        // Check if game is still running
+        if !game_addr|ask(IsRunning)? {
+            break;
+        }
+
+        // Frame timing
+        let elapsed = Instant·now() - start;
+        if elapsed < frame_time {
+            sleep(frame_time - elapsed);
+        }
+    }
+
+    println!("Thank you for playing."!);
+}

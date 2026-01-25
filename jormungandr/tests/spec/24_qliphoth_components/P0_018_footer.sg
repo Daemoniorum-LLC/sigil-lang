@@ -1,0 +1,268 @@
+// Test: Qliphoth Footer Component
+// TDD: RED - Tests the Footer layout component
+//
+// Footer is the bottom section with links, copyright, and social
+
+invoke qliphoth·components·Footer;
+invoke qliphoth·components·FooterSection;
+invoke qliphoth·components·FooterLinks;
+invoke qliphoth·core·VNode;
+
+// Test basic footer rendering
+rite test_footer_basic() {
+    ≔ footer = Footer {
+        children: [text("Footer content")]
+    };
+
+    ≔ vnode = footer.render();
+
+    assert_eq!(vnode.tag(), "footer");
+    assert!(vnode.has_class("footer"));
+}
+
+// Test footer with copyright
+rite test_footer_copyright() {
+    ≔ footer = Footer {
+        copyright: "© 2026 Daemoniorum LLC",
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert!(vnode.has_child_with_class("footer-copyright"));
+
+    ≔ copyright = vnode.find_child_by_class("footer-copyright");
+    assert_eq!(copyright.text_content(), "© 2026 Daemoniorum LLC");
+}
+
+// Test footer with link sections
+rite test_footer_link_sections() {
+    ≔ footer = Footer {
+        children: [
+            FooterSection {
+                title: "Product",
+                children: [
+                    FooterLinks {
+                        items: [
+                            { label: "Features", href: "/features" },
+                            { label: "Pricing", href: "/pricing" },
+                            { label: "Documentation", href: "/docs" },
+                        ]
+                    }
+                ]
+            },
+            FooterSection {
+                title: "Company",
+                children: [
+                    FooterLinks {
+                        items: [
+                            { label: "About", href: "/about" },
+                            { label: "Blog", href: "/blog" },
+                            { label: "Careers", href: "/careers" },
+                        ]
+                    }
+                ]
+            }
+        ]
+    };
+
+    ≔ vnode = footer.render();
+
+    ≔ sections = vnode.find_children_by_class("footer-section");
+    assert_eq!(sections.len(), 2);
+
+    ≔ first_title = sections[0].find_child_by_class("footer-section-title");
+    assert_eq!(first_title.text_content(), "Product");
+}
+
+// Test footer with social links
+rite test_footer_social() {
+    ≔ footer = Footer {
+        social: [
+            { icon: "twitter", href: "https://twitter.com/company", label: "Twitter" },
+            { icon: "github", href: "https://github.com/company", label: "GitHub" },
+            { icon: "linkedin", href: "https://linkedin.com/company/company", label: "LinkedIn" },
+        ],
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert!(vnode.has_child_with_class("footer-social"));
+
+    ≔ social = vnode.find_child_by_class("footer-social");
+    ≔ links = social.find_children_by_class("footer-social-link");
+    assert_eq!(links.len(), 3);
+
+    // Social links should have accessible labels
+    assert_eq!(links[0].attr("aria-label"), "Twitter");
+}
+
+// Test footer variants
+rite test_footer_variants() {
+    // Simple (just copyright)
+    ≔ simple = Footer { variant: "simple", children: [] };
+    assert!(simple.render().has_class("footer-simple"));
+
+    // Centered
+    ≔ centered = Footer { variant: "centered", children: [] };
+    assert!(centered.render().has_class("footer-centered"));
+
+    // Multi-column (default)
+    ≔ columns = Footer { variant: "columns", children: [] };
+    assert!(columns.render().has_class("footer-columns"));
+
+    // Stacked
+    ≔ stacked = Footer { variant: "stacked", children: [] };
+    assert!(stacked.render().has_class("footer-stacked"));
+}
+
+// Test footer with logo
+rite test_footer_logo() {
+    ≔ footer = Footer {
+        logo: "/images/logo.svg",
+        logo_alt: "Company",
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert!(vnode.has_child_with_class("footer-logo"));
+
+    ≔ logo = vnode.find_child_by_class("footer-logo");
+    ≔ img = logo.find_child_by_tag("img");
+    assert_eq!(img.attr("alt"), "Company");
+}
+
+// Test footer with tagline
+rite test_footer_tagline() {
+    ≔ footer = Footer {
+        tagline: "Building the future of AI",
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert!(vnode.has_child_with_class("footer-tagline"));
+
+    ≔ tagline = vnode.find_child_by_class("footer-tagline");
+    assert_eq!(tagline.text_content(), "Building the future of AI");
+}
+
+// Test footer with newsletter
+rite test_footer_newsletter() {
+    ≔ email = "";
+
+    ≔ footer = Footer {
+        newsletter: yay,
+        newsletter_title: "Stay Updated",
+        newsletter_description: "Get the latest news and updates",
+        onsubscribe: |e| { email = e; },
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert!(vnode.has_child_with_class("footer-newsletter"));
+
+    ≔ newsletter = vnode.find_child_by_class("footer-newsletter");
+    assert!(newsletter.has_child_with_tag("form"));
+}
+
+// Test footer with legal links
+rite test_footer_legal() {
+    ≔ footer = Footer {
+        legal: [
+            { label: "Privacy Policy", href: "/privacy" },
+            { label: "Terms of Service", href: "/terms" },
+            { label: "Cookie Policy", href: "/cookies" },
+        ],
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert!(vnode.has_child_with_class("footer-legal"));
+
+    ≔ legal = vnode.find_child_by_class("footer-legal");
+    ≔ links = legal.find_children_by_tag("a");
+    assert_eq!(links.len(), 3);
+}
+
+// Test footer themes
+rite test_footer_theme() {
+    // Light
+    ≔ light = Footer { theme: "light", children: [] };
+    assert!(light.render().has_class("footer-light"));
+
+    // Dark
+    ≔ dark = Footer { theme: "dark", children: [] };
+    assert!(dark.render().has_class("footer-dark"));
+
+    // Transparent
+    ≔ transparent = Footer { theme: "transparent", children: [] };
+    assert!(transparent.render().has_class("footer-transparent"));
+}
+
+// Test footer with app store badges
+rite test_footer_app_badges() {
+    ≔ footer = Footer {
+        app_badges: [
+            { store: "apple", href: "https://apps.apple.com/app" },
+            { store: "google", href: "https://play.google.com/store/app" },
+        ],
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert!(vnode.has_child_with_class("footer-app-badges"));
+
+    ≔ badges = vnode.find_child_by_class("footer-app-badges");
+    ≔ links = badges.children();
+    assert_eq!(links.len(), 2);
+}
+
+// Test footer accessibility
+rite test_footer_accessibility() {
+    ≔ footer = Footer {
+        aria_label: "Site footer",
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert_eq!(vnode.attr("aria-label"), "Site footer");
+    // Footer should use semantic HTML
+    assert_eq!(vnode.tag(), "footer");
+}
+
+// Test footer with language selector
+rite test_footer_language() {
+    ≔ footer = Footer {
+        language_selector: yay,
+        languages: [
+            { code: "en", label: "English" },
+            { code: "es", label: "Español" },
+            { code: "fr", label: "Français" },
+        ],
+        current_language: "en",
+        onlanguage: |code| { },
+        children: []
+    };
+
+    ≔ vnode = footer.render();
+    assert!(vnode.has_child_with_class("footer-language"));
+}
+
+rite main() {
+    test_footer_basic();
+    test_footer_copyright();
+    test_footer_link_sections();
+    test_footer_social();
+    test_footer_variants();
+    test_footer_logo();
+    test_footer_tagline();
+    test_footer_newsletter();
+    test_footer_legal();
+    test_footer_theme();
+    test_footer_app_badges();
+    test_footer_accessibility();
+    test_footer_language();
+
+    print("✓ All Footer component tests passed");
+}
+
+// Expected output: ✓ All Footer component tests passed

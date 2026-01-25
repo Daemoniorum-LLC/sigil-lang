@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Documentation - Sigil Programming Language</title>
   <meta name="description" content="Comprehensive documentation for the Sigil programming language including syntax, types, and agent infrastructure.">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛤</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -19,15 +19,15 @@
   <nav class="nav" role="navigation" aria-label="Main navigation">
     <div class="nav-container">
       <a href="/" class="nav-logo" aria-label="Sigil home">
-        <span class="logo-icon" aria-hidden="true">⛤</span>
+        <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="24" height="24">
         <span class="logo-text">Sigil</span>
-        <span class="version-badge">0.1</span>
+        <span class="version-badge">0.3</span>
       </a>
 
       <div class="nav-links" id="nav-links">
         <a href="/pages/learn.html">Learn</a>
         <a href="/pages/docs.html" class="active">Docs</a>
-        <a href="/pages/playground.html" class="nav-coming-soon">Playground <span class="soon-badge">Soon</span></a>
+        <a href="/playground/">Playground</a>
         <a href="/pages/agents.html">Agents</a>
         <a href="/pages/pattern.html">The Pattern</a>
         <a href="https://github.com/Daemoniorum-LLC/sigil-lang" class="nav-github" aria-label="GitHub repository" rel="noopener noreferrer" target="_blank">
@@ -168,7 +168,7 @@ Sigil 0.2.0 (agent-infrastructure)</code></pre>
 
         <h2 id="hello-world">Hello World</h2>
         <p>Create a file named <code>hello.sigil</code>:</p>
-        <pre class="code-block"><code><span class="keyword">fn</span> <span class="function">main</span>() {
+        <pre class="code-block"><code><span class="keyword">rite</span> <span class="function">main</span>() {
     <span class="function">println</span>(<span class="string">"Hello, World!"</span>)
 }</code></pre>
 
@@ -218,19 +218,19 @@ Hello, World!</code></pre>
 
         <h3>Evidence Propagation</h3>
         <p>Evidence propagates pessimistically - the worst evidence wins:</p>
-        <pre class="code-block"><code><span class="keyword">let</span> computed<span class="evidence-known">!</span> = <span class="number">1</span> + <span class="number">1</span>              <span class="comment">// Known</span>
-<span class="keyword">let</span> external<span class="evidence-reported">~</span> = api.fetch()        <span class="comment">// Reported</span>
-<span class="keyword">let</span> result<span class="evidence-reported">~</span> = computed + external   <span class="comment">// Result is Reported (worst wins)</span></code></pre>
+        <pre class="code-block"><code><span class="keyword">≔</span> computed<span class="evidence-known">!</span> = <span class="number">1</span> + <span class="number">1</span>              <span class="comment">// Known</span>
+<span class="keyword">≔</span> external<span class="evidence-reported">~</span> = api.fetch()        <span class="comment">// Reported</span>
+<span class="keyword">≔</span> result<span class="evidence-reported">~</span> = computed + external   <span class="comment">// Result is Reported (worst wins)</span></code></pre>
 
         <h3>Evidence Promotion</h3>
         <p>Use <code>validate</code> to promote evidence levels after verification:</p>
-        <pre class="code-block"><code><span class="keyword">let</span> data<span class="evidence-reported">~</span> = api.fetch_user()
+        <pre class="code-block"><code><span class="keyword">≔</span> data<span class="evidence-reported">~</span> = api.fetch_user()
 
 <span class="comment">// Validate and promote to uncertain</span>
-<span class="keyword">let</span> checked<span class="evidence-uncertain">?</span> = data |<span class="keyword">validate</span><span class="evidence-uncertain">?</span>{ is_valid() }
+<span class="keyword">≔</span> checked<span class="evidence-uncertain">?</span> = data |<span class="keyword">validate</span><span class="evidence-uncertain">?</span>{ is_valid() }
 
 <span class="comment">// Promote to known after full verification</span>
-<span class="keyword">let</span> verified<span class="evidence-known">!</span> = checked |<span class="keyword">validate</span><span class="evidence-known">!</span>{ verify_signature() }</code></pre>
+<span class="keyword">≔</span> verified<span class="evidence-known">!</span> = checked |<span class="keyword">validate</span><span class="evidence-known">!</span>{ verify_signature() }</code></pre>
 
         <h2 id="morphemes">Morpheme Operators</h2>
         <p>Sigil uses Greek letters as morpheme operators for data transformation:</p>
@@ -352,13 +352,13 @@ Hello, World!</code></pre>
         instant: <span class="number">8192</span>,
 
         <span class="comment">// Episodic: Experiences, time-indexed</span>
-        episodic: <span class="keyword">true</span>,
+        episodic: <span class="keyword">yea</span>,
 
         <span class="comment">// Semantic: Knowledge graph + vectors</span>
-        semantic: <span class="keyword">true</span>,
+        semantic: <span class="keyword">yea</span>,
 
         <span class="comment">// Procedural: Skills, pattern-triggered</span>
-        procedural: <span class="keyword">true</span>,
+        procedural: <span class="keyword">yea</span>,
     }
 }</code></pre>
 
@@ -377,11 +377,11 @@ Hello, World!</code></pre>
     <div class="footer-container">
       <div class="footer-brand">
         <a href="/" class="footer-logo">
-          <span class="logo-icon">⛤</span>
+          <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="20" height="20">
           <span>Sigil</span>
         </a>
         <p>Infrastructure for minds that don't yet know what they are.</p>
-        <p class="footer-copyright">&copy; 2025 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
+        <p class="footer-copyright">&copy; 2025 <acopy; 2025-2026 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
       </div>
 
       <nav class="footer-nav" aria-label="Footer navigation">
@@ -390,7 +390,7 @@ Hello, World!</code></pre>
           <ul>
             <li><a href="/pages/learn.html">Tutorial</a></li>
             <li><a href="/pages/docs.html">Documentation</a></li>
-            <li><a href="/pages/playground.html">Playground</a></li>
+            <li><a href="/playground/">Playground</a></li>
             <li><a href="/pages/examples.html">Examples</a></li>
           </ul>
         </div>

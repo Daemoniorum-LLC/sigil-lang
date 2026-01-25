@@ -1,0 +1,16 @@
+// Test: Arithmetic operation - division
+// Spec: 03-TYPES.md § 3.4 Arithmetic Operations
+// Priority: P0
+//
+// Purpose:
+// Validates that integer division works correctly.
+//
+// Expected behavior:
+// Should compile and print 21 (42 / 2)
+
+λ main() {
+    ≔ x: !i32 = 42;
+    ≔ y: !i32 = 2;
+    ≔ z: !i32 = x / y;
+    println(z);
+}

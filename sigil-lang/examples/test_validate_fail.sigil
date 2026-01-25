@@ -1,0 +1,8 @@
+fn main() {
+    let data = -5;
+
+    // This should fail validation
+    let result = data|validate!{x => x > 0};
+
+    println(result);
+}

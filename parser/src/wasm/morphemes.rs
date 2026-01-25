@@ -165,8 +165,13 @@ impl WasmCompiler {
             }
             PipeOp::NecessityMethod { .. } => Err(WasmError::unsupported("necessity method call")),
 
+<<<<<<< HEAD
             // Call arbitrary expression as function on piped value
             PipeOp::Call(expr) => self.compile_apply_to_stack(expr),
+=======
+            // Function call in pipe context
+            PipeOp::Call(_) => Err(WasmError::unsupported("call in pipe context")),
+>>>>>>> origin/main
         }
     }
 
@@ -1337,6 +1342,8 @@ mod tests {
                 op: crate::ast::BinOp::Mul,
                 right: Box::new(make_int(2)),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack
@@ -1375,6 +1382,8 @@ mod tests {
                 op: crate::ast::BinOp::Gt,
                 right: Box::new(make_int(0)),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack
@@ -1423,6 +1432,8 @@ mod tests {
                 op: crate::ast::BinOp::Add,
                 right: Box::new(make_path("b")),
             }),
+            is_move: false,
+            return_type: None,
         };
 
         // Simulate array on stack

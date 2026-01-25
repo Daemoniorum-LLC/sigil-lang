@@ -1,0 +1,175 @@
+// Sigil WASM Demo - Interactive Counter and Data Processing
+// Showcases: morpheme operators, module paths, signals, closures
+
+// =========================================================================
+// Signal-based counter (reactive state)
+// =========================================================================
+
+pub fn demo_counter() {
+    // Create reactive signal
+    let count = signal::create(0);
+    print(count);
+
+    // Create VDOM for counter display
+    let container = vdom::create_vnode("div");
+    vdom::set_vnode_str_prop(container, "class", "counter-demo");
+
+    let heading = vdom::create_vnode("h2");
+    let heading_text = vdom::create_text_vnode("Counter Demo");
+    vdom::append_vnode_child(heading, heading_text);
+    vdom::append_vnode_child(container, heading);
+
+    print(container);
+}
+
+// =========================================================================
+// Data transformation pipeline demo
+// =========================================================================
+
+pub fn demo_pipeline() {
+    let data = [10, -5, 25, -3, 18, 42, -7, 33, 8, -12];
+
+    // Chain morpheme operators
+    // 1. Filter positive numbers
+    let positive = data|φ{x => x > 0};
+
+    // 2. Double each value
+    let doubled = positive|τ{n => n * 2};
+
+    // 3. Sort ascending
+    let sorted = doubled|σ;
+
+    // Get statistics
+    let min_val = sorted|α;
+    let max_val = sorted|Ω;
+    let total = data|φ{it > 0}|τ{it * 2}|ρ+;
+
+    print(min_val);   // First (min after sort)
+    print(max_val);   // Last (max after sort)
+    print(total);     // Sum of doubled positives
+}
+
+// =========================================================================
+// Fibonacci sequence with morphemes
+// =========================================================================
+
+pub fn fibonacci(n: i64) -> i64 {
+    if n <= 1 {
+        n
+    } else {
+        fibonacci(n - 1) + fibonacci(n - 2)
+    }
+}
+
+pub fn demo_fibonacci() {
+    // Generate first 10 fibonacci numbers
+    let indices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+    // Map to fibonacci values
+    let fibs = indices|τ{fibonacci(it)};
+
+    // Get first and last
+    let fib_first = fibs|α;
+    let fib_last = fibs|Ω;
+
+    print(fib_first);  // fib(0) = 0
+    print(fib_last);   // fib(9) = 34
+}
+
+// =========================================================================
+// Factorial with reduce
+// =========================================================================
+
+pub fn demo_factorial() {
+    let n = 5;
+    let nums = [1, 2, 3, 4, 5];
+
+    // factorial(5) = 1 * 2 * 3 * 4 * 5
+    let fact = nums|ρ*;
+    print(fact);  // 120
+}
+
+// =========================================================================
+// Prime number filter
+// =========================================================================
+
+pub fn is_prime(n: i64) -> i64 {
+    if n <= 1 { return 0; }
+    if n <= 3 { return 1; }
+    if n % 2 == 0 { return 0; }
+
+    let i = 3;
+    // Simplified check - would need loop in real impl
+    if n % 3 == 0 { return 0; }
+    if n % 5 == 0 && n != 5 { return 0; }
+    if n % 7 == 0 && n != 7 { return 0; }
+
+    1
+}
+
+pub fn demo_primes() {
+    let candidates = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+
+    // Filter to primes only
+    let primes = candidates|φ{is_prime(it) > 0};
+
+    let first_prime = primes|α;
+    let last_prime = primes|Ω;
+
+    print(first_prime);  // 2
+    print(last_prime);   // 13
+}
+
+// =========================================================================
+// VDOM tree construction
+// =========================================================================
+
+pub fn demo_vdom() {
+    // Create a simple component tree
+    let app = vdom::create_vnode("div");
+    vdom::set_vnode_str_prop(app, "id", "app");
+    vdom::set_vnode_str_prop(app, "class", "sigil-app");
+
+    // Header section
+    let hdr = vdom::create_vnode("header");
+    let h1 = vdom::create_vnode("h1");
+    let title = vdom::create_text_vnode("Sigil WASM Demo");
+    vdom::append_vnode_child(h1, title);
+    vdom::append_vnode_child(hdr, h1);
+    vdom::append_vnode_child(app, hdr);
+
+    // Main content
+    let main = vdom::create_vnode("main");
+    let p = vdom::create_vnode("p");
+    let text = vdom::create_text_vnode("Running in WebAssembly!");
+    vdom::append_vnode_child(p, text);
+    vdom::append_vnode_child(main, p);
+    vdom::append_vnode_child(app, main);
+
+    // Footer section
+    let ftr = vdom::create_vnode("footer");
+    let small = vdom::create_vnode("small");
+    let ftr_text = vdom::create_text_vnode("Powered by Sigil");
+    vdom::append_vnode_child(small, ftr_text);
+    vdom::append_vnode_child(ftr, small);
+    vdom::append_vnode_child(app, ftr);
+
+    print(app);
+}
+
+// =========================================================================
+// Main entry - runs all demos
+// =========================================================================
+
+pub fn main() {
+    print(1);  // Start marker
+
+    demo_pipeline();
+    demo_fibonacci();
+    demo_factorial();
+    demo_primes();
+    demo_counter();
+    demo_vdom();
+
+    print(999);  // End marker
+}

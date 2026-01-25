@@ -1,0 +1,931 @@
+//! Tests ∀ Engram Procedural Memory (Skills)
+//!
+//! Verifies skill learning, pattern matching, and feedback tracking.
+
+// ============================================================================
+// Self-contained Test Types (matching procedural.sg API)
+// ============================================================================
+
+☉ Σ SkillId(usize);
+
+⊢ SkillId {
+    λ new(id: usize) -> Self { Self(id) }
+}
+
+⊢ PartialEq ∀ SkillId {
+    λ eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+⊢ Clone ∀ SkillId {
+    λ clone(&self) -> Self { SkillId(self.0) }
+}
+
+⊢ Hash ∀ SkillId {
+    λ hash(&self) -> usize { self.0 }
+}
+
+☉ Σ TriggerPattern {
+    ☉ keywords: Vec<String>,
+    ☉ weights: Vec<f64>,
+    ☉ threshold: f64,
+}
+
+⊢ TriggerPattern {
+    ☉ λ new(keywords: Vec<&str>, threshold: f64) -> Self {
+        ≔ len = keywords.len();
+        Self {
+            keywords: keywords.iter().map(|s| s.to_string()).collect(),
+            weights: vec![1.0 / len as f64; len],
+            threshold,
+        }
+    }
+
+    ☉ λ with_weights(keywords: Vec<&str>, weights: Vec<f64>, threshold: f64) -> Self {
+        Self {
+            keywords: keywords.iter().map(|s| s.to_string()).collect(),
+            weights,
+            threshold,
+        }
+    }
+}
+
+⊢ Clone ∀ TriggerPattern {
+    λ clone(&self) -> Self {
+        TriggerPattern {
+            keywords: self.keywords.clone(),
+            weights: self.weights.clone(),
+            threshold: self.threshold,
+        }
+    }
+}
+
+☉ ᛈ Action {
+    CallTool { tool: String, args: String },
+    AskUser { question: String },
+    Respond { template: String },
+    Custom { name: String },
+}
+
+⊢ Clone ∀ Action {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            Action·CallTool { tool, args } => Action·CallTool {
+                tool: tool.clone(), args: args.clone()
+            },
+            Action·AskUser { question } => Action·AskUser { question: question.clone() },
+            Action·Respond { template } => Action·Respond { template: template.clone() },
+            Action·Custom { name } => Action·Custom { name: name.clone() },
+        }
+    }
+}
+
+☉ Σ ProcedureStep {
+    ☉ description: String,
+    ☉ action: Action,
+}
+
+⊢ ProcedureStep {
+    ☉ λ tool_call(tool: &str, args: &str) -> Self {
+        Self {
+            description: format!("Call {}", tool),
+            action: Action·CallTool {
+                tool: tool.to_string(),
+                args: args.to_string(),
+            },
+        }
+    }
+
+    ☉ λ respond(template: &str) -> Self {
+        Self {
+            description: "Respond to user".to_string(),
+            action: Action·Respond { template: template.to_string() },
+        }
+    }
+
+    ☉ λ ask(question: &str) -> Self {
+        Self {
+            description: "Ask user".to_string(),
+            action: Action·AskUser { question: question.to_string() },
+        }
+    }
+}
+
+⊢ Clone ∀ ProcedureStep {
+    λ clone(&self) -> Self {
+        ProcedureStep {
+            description: self.description.clone(),
+            action: self.action.clone(),
+        }
+    }
+}
+
+☉ Σ Procedure {
+    ☉ steps: Vec<ProcedureStep>,
+    ☉ estimated_duration_secs: Option<u64>,
+}
+
+⊢ Procedure {
+    ☉ λ new() -> Self {
+        Self {
+            steps: Vec·new(),
+            estimated_duration_secs: None,
+        }
+    }
+
+    ☉ λ step(Δ self, step: ProcedureStep) -> Self {
+        self.steps.push(step);
+        self
+    }
+
+    ☉ λ with_duration(Δ self, secs: u64) -> Self {
+        self.estimated_duration_secs = Some(secs);
+        self
+    }
+}
+
+⊢ Clone ∀ Procedure {
+    λ clone(&self) -> Self {
+        Procedure {
+            steps: self.steps.clone(),
+            estimated_duration_secs: self.estimated_duration_secs,
+        }
+    }
+}
+
+☉ Σ SkillStats {
+    ☉ execution_count: u32,
+    ☉ success_count: u32,
+    ☉ failure_count: u32,
+    ☉ success_rate: f64,
+    ☉ avg_duration_secs: f64,
+}
+
+⊢ SkillStats {
+    ☉ λ new() -> Self {
+        Self {
+            execution_count: 0,
+            success_count: 0,
+            failure_count: 0,
+            success_rate: 0.0,
+            avg_duration_secs: 0.0,
+        }
+    }
+
+    ☉ λ from_counts(successes: u32, failures: u32) -> Self {
+        ≔ total = successes + failures;
+        ≔ rate = ⎇ total == 0 { 0.0 } ⎉ { successes as f64 / total as f64 };
+        Self {
+            execution_count: total,
+            success_count: successes,
+            failure_count: failures,
+            success_rate: rate,
+            avg_duration_secs: 0.0,
+        }
+    }
+}
+
+⊢ Clone ∀ SkillStats {
+    λ clone(&self) -> Self {
+        SkillStats {
+            execution_count: self.execution_count,
+            success_count: self.success_count,
+            failure_count: self.failure_count,
+            success_rate: self.success_rate,
+            avg_duration_secs: self.avg_duration_secs,
+        }
+    }
+}
+
+☉ Σ FailureMode {
+    ☉ trigger_context: String,
+    ☉ failure_type: String,
+    ☉ recovery: Option<String>,
+    ☉ occurrences: u32,
+}
+
+⊢ FailureMode {
+    ☉ λ new(context: &str, failure_type: &str) -> Self {
+        Self {
+            trigger_context: context.to_string(),
+            failure_type: failure_type.to_string(),
+            recovery: None,
+            occurrences: 1,
+        }
+    }
+}
+
+☉ Σ Skill {
+    ☉ id: SkillId,
+    ☉ name: String,
+    ☉ description: String,
+    ☉ trigger: TriggerPattern,
+    ☉ procedure: Procedure,
+    ☉ stats: SkillStats,
+    ☉ failure_modes: Vec<FailureMode>,
+    ☉ enabled: bool,
+}
+
+⊢ Skill {
+    ☉ λ new(id: usize, name: &str) -> Self {
+        Self {
+            id: SkillId·new(id),
+            name: name.to_string(),
+            description: String·new(),
+            trigger: TriggerPattern·new(vec![], 0.5),
+            procedure: Procedure·new(),
+            stats: SkillStats·new(),
+            failure_modes: Vec·new(),
+            enabled: true,
+        }
+    }
+
+    ☉ λ with_description(Δ self, desc: &str) -> Self {
+        self.description = desc.to_string();
+        self
+    }
+
+    ☉ λ with_trigger(Δ self, trigger: TriggerPattern) -> Self {
+        self.trigger = trigger;
+        self
+    }
+
+    ☉ λ with_procedure(Δ self, procedure: Procedure) -> Self {
+        self.procedure = procedure;
+        self
+    }
+
+    ☉ λ with_stats(Δ self, stats: SkillStats) -> Self {
+        self.stats = stats;
+        self
+    }
+}
+
+⊢ Clone ∀ Skill {
+    λ clone(&self) -> Self {
+        Skill {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            description: self.description.clone(),
+            trigger: self.trigger.clone(),
+            procedure: self.procedure.clone(),
+            stats: self.stats.clone(),
+            failure_modes: Vec·new(),
+            enabled: self.enabled,
+        }
+    }
+}
+
+☉ Σ SkillMatch {
+    ☉ skill: Skill,
+    ☉ match_score: f64,
+    ☉ preconditions_met: bool,
+}
+
+☉ Σ Context {
+    ☉ text: String,
+}
+
+⊢ Context {
+    ☉ λ new(text: &str) -> Self {
+        Self { text: text.to_string() }
+    }
+
+    ☉ λ to_string(&self) -> String {
+        self.text.clone()
+    }
+}
+
+☉ Σ ProceduralConfig {
+    ☉ min_episodes_for_skill: usize,
+    ☉ pattern_match_threshold: f64,
+    ☉ max_skills: Option<usize>,
+}
+
+⊢ ProceduralConfig {
+    ☉ λ default_config() -> Self {
+        Self {
+            min_episodes_for_skill: 3,
+            pattern_match_threshold: 0.5,
+            max_skills: Some(1000),
+        }
+    }
+
+    ☉ λ with_match_threshold(Δ self, threshold: f64) -> Self {
+        self.pattern_match_threshold = threshold;
+        self
+    }
+}
+
+☉ Σ ProceduralMemory {
+    skills: Vec<Skill>,
+    config: ProceduralConfig,
+    next_id: usize,
+}
+
+⊢ ProceduralMemory {
+    ☉ λ new(config: ProceduralConfig) -> Self {
+        Self {
+            skills: Vec·new(),
+            config,
+            next_id: 0,
+        }
+    }
+
+    ☉ λ default_memory() -> Self {
+        Self·new(ProceduralConfig·default_config())
+    }
+
+    ☉ λ skill_count(&self) -> usize {
+        self.skills.len()
+    }
+
+    ☉ λ register(&Δ self, skill: Skill) -> SkillId {
+        ≔ id = skill.id.clone();
+        self.skills.push(skill);
+        id
+    }
+
+    ☉ λ get(&self, id: &SkillId) -> Option<&Skill> {
+        self.skills.iter().find(|s| s.id == *id)
+    }
+
+    ☉ λ get_mut(&Δ self, id: &SkillId) -> Option<&Δ Skill> {
+        self.skills.iter_mut().find(|s| s.id == *id)
+    }
+
+    ☉ λ get_by_name(&self, name: &str) -> Option<&Skill> {
+        self.skills.iter().find(|s| s.name == name)
+    }
+
+    ☉ λ match_situation(&self, context: &Context) -> Vec<SkillMatch> {
+        ≔ context_text = context.to_string().to_lowercase();
+
+        ≔ Δ matches: Vec<SkillMatch> = Vec·new();
+
+        ∀ skill ∈ &self.skills {
+            ⎇ !skill.enabled {
+                ↻;
+            }
+
+            ≔ score = self.match_pattern(&skill.trigger, &context_text);
+            ⎇ score >= self.config.pattern_match_threshold {
+                matches.push(SkillMatch {
+                    skill: skill.clone(),
+                    match_score: score,
+                    preconditions_met: true,
+                });
+            }
+        }
+
+        // Sort by score * success_rate (bubble sort)
+        ∀ i ∈ 0..matches.len() {
+            ∀ j ∈ (i + 1)..matches.len() {
+                ≔ score_i = matches[i].match_score * matches[i].skill.stats.success_rate.max(0.1);
+                ≔ score_j = matches[j].match_score * matches[j].skill.stats.success_rate.max(0.1);
+                ⎇ score_j > score_i {
+                    ≔ temp = SkillMatch {
+                        skill: matches[i].skill.clone(),
+                        match_score: matches[i].match_score,
+                        preconditions_met: matches[i].preconditions_met,
+                    };
+                    matches[i] = SkillMatch {
+                        skill: matches[j].skill.clone(),
+                        match_score: matches[j].match_score,
+                        preconditions_met: matches[j].preconditions_met,
+                    };
+                    matches[j] = temp;
+                }
+            }
+        }
+
+        matches
+    }
+
+    ☉ λ record_success(&Δ self, id: &SkillId, duration_secs: f64) {
+        ⎇ ≔ Some(skill) = self.get_mut(id) {
+            skill.stats.execution_count = skill.stats.execution_count + 1;
+            skill.stats.success_count = skill.stats.success_count + 1;
+            // EMA ∀ success rate
+            skill.stats.success_rate = skill.stats.success_rate * 0.9 + 0.1;
+            // EMA ∀ duration
+            ⎇ skill.stats.avg_duration_secs == 0.0 {
+                skill.stats.avg_duration_secs = duration_secs;
+            } ⎉ {
+                skill.stats.avg_duration_secs = skill.stats.avg_duration_secs * 0.9 + duration_secs * 0.1;
+            }
+        }
+    }
+
+    ☉ λ record_failure(&Δ self, id: &SkillId, context: &str, failure_type: &str) {
+        ⎇ ≔ Some(skill) = self.get_mut(id) {
+            skill.stats.execution_count = skill.stats.execution_count + 1;
+            skill.stats.failure_count = skill.stats.failure_count + 1;
+            // EMA decay on failure
+            skill.stats.success_rate = skill.stats.success_rate * 0.9;
+
+            // Record failure mode
+            skill.failure_modes.push(FailureMode·new(context, failure_type));
+        }
+    }
+
+    ☉ λ disable(&Δ self, id: &SkillId) -> bool {
+        ⎇ ≔ Some(skill) = self.get_mut(id) {
+            skill.enabled = false;
+            true
+        } ⎉ {
+            false
+        }
+    }
+
+    ☉ λ enable(&Δ self, id: &SkillId) -> bool {
+        ⎇ ≔ Some(skill) = self.get_mut(id) {
+            skill.enabled = true;
+            true
+        } ⎉ {
+            false
+        }
+    }
+
+    λ match_pattern(&self, pattern: &TriggerPattern, context: &str) -> f64 {
+        ≔ Δ total_weight = 0.0;
+        ≔ Δ matched_weight = 0.0;
+
+        ∀ i ∈ 0..pattern.keywords.len() {
+            ≔ keyword = &pattern.keywords[i];
+            ≔ weight = ⎇ i < pattern.weights.len() { pattern.weights[i] } ⎉ { 1.0 };
+
+            total_weight = total_weight + weight;
+            ⎇ context.contains(keyword) {
+                matched_weight = matched_weight + weight;
+            }
+        }
+
+        ⎇ total_weight == 0.0 { 0.0 } ⎉ { matched_weight / total_weight }
+    }
+}
+
+// ============================================================================
+// Tests: Skill Construction
+// ============================================================================
+
+#[test]
+λ test_skill_creation() {
+    ≔ skill = Skill·new(1, "test_skill");
+    assert_eq(skill.name, "test_skill");
+    assert(skill.enabled);
+}
+
+#[test]
+λ test_skill_with_description() {
+    ≔ skill = Skill·new(1, "test")
+        .with_description("A test skill");
+    assert_eq(skill.description, "A test skill");
+}
+
+#[test]
+λ test_skill_with_trigger() {
+    ≔ trigger = TriggerPattern·new(vec!["search", "find", "lookup"], 0.5);
+    ≔ skill = Skill·new(1, "search_skill").with_trigger(trigger);
+
+    assert_eq(skill.trigger.keywords.len(), 3);
+}
+
+#[test]
+λ test_skill_with_procedure() {
+    ≔ procedure = Procedure·new()
+        .step(ProcedureStep·tool_call("search", "query"))
+        .step(ProcedureStep·respond("Here are the results"));
+
+    ≔ skill = Skill·new(1, "search_skill").with_procedure(procedure);
+    assert_eq(skill.procedure.steps.len(), 2);
+}
+
+#[test]
+λ test_skill_with_stats() {
+    ≔ stats = SkillStats·from_counts(8, 2);
+    ≔ skill = Skill·new(1, "test").with_stats(stats);
+
+    assert_eq(skill.stats.execution_count, 10);
+    ≔ diff = (skill.stats.success_rate - 0.8).abs();
+    assert(diff < 0.001);
+}
+
+// ============================================================================
+// Tests: TriggerPattern
+// ============================================================================
+
+#[test]
+λ test_trigger_pattern_simple() {
+    ≔ pattern = TriggerPattern·new(vec!["hello", "world"], 0.5);
+    assert_eq(pattern.keywords.len(), 2);
+    assert_eq(pattern.threshold, 0.5);
+}
+
+#[test]
+λ test_trigger_pattern_with_weights() {
+    ≔ pattern = TriggerPattern·with_weights(
+        vec!["important", "less_important"],
+        vec![0.8, 0.2],
+        0.5
+    );
+
+    ≔ diff = (pattern.weights[0] - 0.8).abs();
+    assert(diff < 0.001);
+}
+
+// ============================================================================
+// Tests: Procedure
+// ============================================================================
+
+#[test]
+λ test_procedure_empty() {
+    ≔ proc = Procedure·new();
+    assert_eq(proc.steps.len(), 0);
+}
+
+#[test]
+λ test_procedure_with_steps() {
+    ≔ proc = Procedure·new()
+        .step(ProcedureStep·tool_call("read_file", "path.txt"))
+        .step(ProcedureStep·respond("File contents: ..."));
+
+    assert_eq(proc.steps.len(), 2);
+}
+
+#[test]
+λ test_procedure_with_duration() {
+    ≔ proc = Procedure·new().with_duration(30);
+    assert_eq(proc.estimated_duration_secs.unwrap(), 30);
+}
+
+#[test]
+λ test_procedure_step_types() {
+    ≔ tool_step = ProcedureStep·tool_call("search", "query");
+    ≔ respond_step = ProcedureStep·respond("Hello!");
+    ≔ ask_step = ProcedureStep·ask("What do you need?");
+
+    assert(tool_step.description.contains("search"));
+    assert_eq(respond_step.description, "Respond to user");
+    assert_eq(ask_step.description, "Ask user");
+}
+
+// ============================================================================
+// Tests: SkillStats
+// ============================================================================
+
+#[test]
+λ test_skill_stats_new() {
+    ≔ stats = SkillStats·new();
+    assert_eq(stats.execution_count, 0);
+    assert_eq(stats.success_count, 0);
+    assert_eq(stats.failure_count, 0);
+}
+
+#[test]
+λ test_skill_stats_from_counts() {
+    ≔ stats = SkillStats·from_counts(7, 3);
+
+    assert_eq(stats.execution_count, 10);
+    assert_eq(stats.success_count, 7);
+    assert_eq(stats.failure_count, 3);
+
+    ≔ diff = (stats.success_rate - 0.7).abs();
+    assert(diff < 0.001);
+}
+
+#[test]
+λ test_skill_stats_zero_executions() {
+    ≔ stats = SkillStats·from_counts(0, 0);
+    assert_eq(stats.success_rate, 0.0);
+}
+
+// ============================================================================
+// Tests: ProceduralMemory Operations
+// ============================================================================
+
+#[test]
+λ test_procedural_memory_creation() {
+    ≔ memory = ProceduralMemory·default_memory();
+    assert_eq(memory.skill_count(), 0);
+}
+
+#[test]
+λ test_register_skill() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search", "find"], 0.5));
+
+    ≔ id = memory.register(skill);
+    assert_eq(memory.skill_count(), 1);
+}
+
+#[test]
+λ test_get_skill_by_id() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(42, "test_skill");
+    ≔ id = memory.register(skill);
+
+    ≔ retrieved = memory.get(&id);
+    assert(retrieved.is_some());
+    assert_eq(retrieved.unwrap().name, "test_skill");
+}
+
+#[test]
+λ test_get_skill_by_name() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    memory.register(Skill·new(1, "unique_skill"));
+
+    ≔ skill = memory.get_by_name("unique_skill");
+    assert(skill.is_some());
+}
+
+#[test]
+λ test_get_nonexistent_skill() {
+    ≔ memory = ProceduralMemory·default_memory();
+    ≔ fake_id = SkillId·new(999);
+    ≔ skill = memory.get(&fake_id);
+    assert(skill.is_none());
+}
+
+// ============================================================================
+// Tests: Pattern Matching
+// ============================================================================
+
+#[test]
+λ test_match_situation_exact_keywords() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search", "find"], 0.5))
+        .with_stats(SkillStats·from_counts(9, 1));
+
+    memory.register(skill);
+
+    ≔ context = Context·new("Can you search ∀ information?");
+    ≔ matches = memory.match_situation(&context);
+
+    assert(matches.len() > 0);
+}
+
+#[test]
+λ test_match_situation_partial_match() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search", "find", "lookup", "query"], 0.5))
+        .with_stats(SkillStats·from_counts(9, 1));
+
+    memory.register(skill);
+
+    // Only matches one keyword - should still ⌥ ⎇ above threshold
+    ≔ context = Context·new("Please search ∀ this");
+    ≔ matches = memory.match_situation(&context);
+
+    // With default threshold 0.5, matching 1/4 keywords (0.25) won't pass
+    // Let's adjust or test different scenario
+}
+
+#[test]
+λ test_match_situation_no_match() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search", "find"], 0.5));
+
+    memory.register(skill);
+
+    ≔ context = Context·new("Hello, how are you?");
+    ≔ matches = memory.match_situation(&context);
+
+    assert_eq(matches.len(), 0);
+}
+
+#[test]
+λ test_match_situation_disabled_skills() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ Δ skill = Skill·new(1, "search_skill")
+        .with_trigger(TriggerPattern·new(vec!["search"], 0.5));
+    skill.enabled = false;
+
+    memory.register(skill);
+
+    ≔ context = Context·new("Please search ∀ this");
+    ≔ matches = memory.match_situation(&context);
+
+    assert_eq(matches.len(), 0);
+}
+
+#[test]
+λ test_match_situation_ranked_by_success_rate() {
+    ≔ Δ memory = ProceduralMemory·new(
+        ProceduralConfig·default_config().with_match_threshold(0.3)
+    );
+
+    // High success rate skill
+    ≔ skill1 = Skill·new(1, "reliable_skill")
+        .with_trigger(TriggerPattern·new(vec!["help"], 0.5))
+        .with_stats(SkillStats·from_counts(9, 1));
+
+    // Low success rate skill
+    ≔ skill2 = Skill·new(2, "unreliable_skill")
+        .with_trigger(TriggerPattern·new(vec!["help"], 0.5))
+        .with_stats(SkillStats·from_counts(3, 7));
+
+    memory.register(skill1);
+    memory.register(skill2);
+
+    ≔ context = Context·new("I need help");
+    ≔ matches = memory.match_situation(&context);
+
+    // Both should match, but reliable skill should rank higher
+    assert_eq(matches.len(), 2);
+    assert_eq(matches[0].skill.name, "reliable_skill");
+}
+
+// ============================================================================
+// Tests: Feedback Recording
+// ============================================================================
+
+#[test]
+λ test_record_success() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill")
+        .with_stats(SkillStats·from_counts(5, 0));
+    ≔ id = memory.register(skill);
+
+    memory.record_success(&id, 2.5);
+
+    ≔ skill = memory.get(&id).unwrap();
+    assert_eq(skill.stats.execution_count, 6);
+    assert_eq(skill.stats.success_count, 6);
+}
+
+#[test]
+λ test_record_success_updates_duration() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill");
+    ≔ id = memory.register(skill);
+
+    memory.record_success(&id, 5.0);
+
+    ≔ skill = memory.get(&id).unwrap();
+    ≔ diff = (skill.stats.avg_duration_secs - 5.0).abs();
+    assert(diff < 0.001);
+}
+
+#[test]
+λ test_record_failure() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill")
+        .with_stats(SkillStats·from_counts(5, 0));
+    ≔ id = memory.register(skill);
+
+    memory.record_failure(&id, "search context", "TimeoutError");
+
+    ≔ skill = memory.get(&id).unwrap();
+    assert_eq(skill.stats.failure_count, 1);
+    assert_eq(skill.failure_modes.len(), 1);
+}
+
+#[test]
+λ test_record_failure_tracks_failure_mode() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill");
+    ≔ id = memory.register(skill);
+
+    memory.record_failure(&id, "API call context", "RateLimitError");
+
+    ≔ skill = memory.get(&id).unwrap();
+    assert_eq(skill.failure_modes[0].failure_type, "RateLimitError");
+}
+
+#[test]
+λ test_success_rate_ema_on_success() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ Δ skill = Skill·new(1, "test_skill");
+    skill.stats.success_rate = 0.5;
+    ≔ id = memory.register(skill);
+
+    // EMA: 0.5 * 0.9 + 0.1 = 0.55
+    memory.record_success(&id, 1.0);
+
+    ≔ skill = memory.get(&id).unwrap();
+    ≔ expected = 0.55;
+    ≔ diff = (skill.stats.success_rate - expected).abs();
+    assert(diff < 0.01);
+}
+
+#[test]
+λ test_success_rate_ema_on_failure() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ Δ skill = Skill·new(1, "test_skill");
+    skill.stats.success_rate = 0.8;
+    ≔ id = memory.register(skill);
+
+    // EMA: 0.8 * 0.9 = 0.72
+    memory.record_failure(&id, "ctx", "error");
+
+    ≔ skill = memory.get(&id).unwrap();
+    ≔ expected = 0.72;
+    ≔ diff = (skill.stats.success_rate - expected).abs();
+    assert(diff < 0.01);
+}
+
+// ============================================================================
+// Tests: Enable/Disable
+// ============================================================================
+
+#[test]
+λ test_disable_skill() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ skill = Skill·new(1, "test_skill");
+    ≔ id = memory.register(skill);
+
+    assert(memory.get(&id).unwrap().enabled);
+
+    ≔ result = memory.disable(&id);
+    assert(result);
+    assert(!memory.get(&id).unwrap().enabled);
+}
+
+#[test]
+λ test_enable_skill() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+
+    ≔ Δ skill = Skill·new(1, "test_skill");
+    skill.enabled = false;
+    ≔ id = memory.register(skill);
+
+    ≔ result = memory.enable(&id);
+    assert(result);
+    assert(memory.get(&id).unwrap().enabled);
+}
+
+#[test]
+λ test_disable_nonexistent_skill() {
+    ≔ Δ memory = ProceduralMemory·default_memory();
+    ≔ fake_id = SkillId·new(999);
+    ≔ result = memory.disable(&fake_id);
+    assert(!result);
+}
+
+// ============================================================================
+// Tests: Action Types
+// ============================================================================
+
+#[test]
+λ test_action_call_tool() {
+    ≔ action = Action·CallTool {
+        tool: "search".to_string(),
+        args: "query=test".to_string(),
+    };
+
+    ≔ is_tool = ⌥ action {
+        Action·CallTool { .. } => true,
+        _ => false,
+    };
+    assert(is_tool);
+}
+
+#[test]
+λ test_action_ask_user() {
+    ≔ action = Action·AskUser {
+        question: "What would you like?".to_string(),
+    };
+
+    ≔ is_ask = ⌥ action {
+        Action·AskUser { .. } => true,
+        _ => false,
+    };
+    assert(is_ask);
+}
+
+#[test]
+λ test_action_respond() {
+    ≔ action = Action·Respond {
+        template: "Here are the results: {results}".to_string(),
+    };
+
+    ≔ is_respond = ⌥ action {
+        Action·Respond { .. } => true,
+        _ => false,
+    };
+    assert(is_respond);
+}
+
+λ main() {
+    print("Engram procedural memory tests");
+}

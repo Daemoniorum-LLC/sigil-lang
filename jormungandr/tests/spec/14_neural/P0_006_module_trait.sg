@@ -7,7 +7,11 @@ sigil Linear<◆ IN: usize, ◆ OUT: usize> {
     bias: Tensor<[OUT]>
 }
 
+<<<<<<< HEAD
 impl<◆ IN: usize, ◆ OUT: usize> Module each Linear<IN, OUT> {
+=======
+⊢<◆ IN: usize, ◆ OUT: usize> Module each Linear<IN, OUT> {
+>>>>>>> origin/main
     type Input = Tensor<[IN]>;
     type Output = Tensor<[OUT]>;
 

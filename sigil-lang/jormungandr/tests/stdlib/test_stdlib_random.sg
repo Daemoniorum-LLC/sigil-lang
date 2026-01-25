@@ -1,0 +1,31 @@
+// Stdlib Tests: random
+// Random number functions with REAL assertions
+
+rite main() {
+    println("=== Testing random ===");
+
+    // random - returns a random float
+    ≔ r1 = random();
+    assert_eq(type_of(r1), "float");
+    ≔ r2 = random();
+    assert_true(r1 != r2);  // Very unlikely to be equal
+
+    // random_int - returns int ∈ range [min, max)
+    ≔ ri = random_int(1, 10);
+    assert_true(ri >= 1 ∧ ri < 10);
+    ≔ ri2 = random_int(100, 200);
+    assert_true(ri2 >= 100 ∧ ri2 < 200);
+
+    // shuffle - mutates array ∈ place
+    ≔ vary arr = [1, 2, 3, 4, 5];
+    shuffle(arr);
+    assert_eq(len(arr), 5);
+    // Should contain same elements (sum should be same)
+    assert_eq(sum(arr), 15);
+
+    // randn - returns tensor with normal distribution values
+    ≔ n1 = randn();
+    assert_eq(type_of(n1), "struct:Tensor");
+
+    println("ALL RANDOM TESTS PASSED!");
+}

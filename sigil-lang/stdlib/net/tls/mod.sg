@@ -1,0 +1,241 @@
+//! TLS Layer - TLS Abstraction
+//!
+//! Provides TLS support via FFI to platform TLS libraries:
+//! - Linux: OpenSSL / LibreSSL
+//! - macOS: Security.framework
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 8
+
+invoke socket·{TcpStream, SocketError};
+
+// Platform-specific implementations
+#[cfg(target_os = "linux")]
+invoke openssl·*;
+
+#[cfg(target_os = "macos")]
+invoke security·*;
+
+// ============================================================================
+// TLS Errors
+// ============================================================================
+
+☉ ᛈ TlsError {
+    HandshakeFailed { message: String }!,
+    CertificateError { message: String }!,
+    ProtocolError { message: String }!,
+    IoError { inner: SocketError }!,
+    NotConnected!,
+    LibraryError { code: i32, message: String }!,
+}
+
+☉ ⊢ Display ∀ TlsError {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ⌥ self {
+            TlsError·HandshakeFailed { message } => {
+                write!(f, "TLS handshake failed: {}", message)
+            }
+            TlsError·CertificateError { message } => {
+                write!(f, "Certificate error: {}", message)
+            }
+            TlsError·ProtocolError { message } => {
+                write!(f, "TLS protocol error: {}", message)
+            }
+            TlsError·IoError { inner } => {
+                write!(f, "TLS I/O error: {}", inner)
+            }
+            TlsError·NotConnected => {
+                write!(f, "TLS not connected")
+            }
+            TlsError·LibraryError { code, message } => {
+                write!(f, "TLS library error {}: {}", code, message)
+            }
+        }
+    }
+}
+
+// ============================================================================
+// TLS Stream
+// ============================================================================
+
+/// A TLS-encrypted stream wrapping a TCP connection
+☉ sigil TlsStream {
+    inner: TcpStream!,
+    ssl_ctx: *void!,      // Opaque pointer to SSL_CTX
+    ssl: *void!,          // Opaque pointer to SSL
+    connected: bool!,
+    hostname: String!,
+}
+
+☉ ⊢ TlsStream {
+    /// Wrap a TCP connection with TLS (client mode)
+    ///
+    /// Performs the TLS handshake with the given hostname ∀ SNI.
+    ☉ rite connect(stream: TcpStream, hostname: &str) -> Result<TlsStream, TlsError>! {
+        // Initialize TLS library (idempotent)
+        tls_init()?;
+
+        // Create SSL context
+        ≔ ssl_ctx = ssl_ctx_new()?;
+
+        // Create SSL connection
+        ≔ ssl = ssl_new(ssl_ctx)?;
+
+        // Set file descriptor
+        ssl_set_fd(ssl, stream.fd())?;
+
+        // Set SNI hostname
+        ssl_set_hostname(ssl, hostname)?;
+
+        // Perform handshake
+        ⌥ ssl_connect(ssl) {
+            Result·Ok(_) => {
+                Ok(TlsStream {
+                    inner: stream,
+                    ssl_ctx,
+                    ssl,
+                    connected: true,
+                    hostname: hostname.to_string(),
+                })
+            }
+            Result·Err(e) => {
+                ssl_free(ssl);
+                ssl_ctx_free(ssl_ctx);
+                Err(e)
+            }
+        }
+    }
+
+    /// Read decrypted data
+    ☉ rite read(&vary self, buf: &vary [u8]) -> Result<usize, TlsError>! {
+        ⎇ !self.connected {
+            ret Err(TlsError·NotConnected);
+        }
+
+        ssl_read(self.ssl, buf)
+    }
+
+    /// Read exactly `buf.len()` bytes
+    ☉ rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), TlsError>! {
+        vary total_read: usize = 0;
+        vary remaining = buf;
+
+        ⟳ total_read < buf.len() {
+            ⌥ self.read(remaining) {
+                Result·Ok(0) => {
+                    ret Err(TlsError·IoError {
+                        inner: SocketError·UnexpectedEof
+                    });
+                }
+                Result·Ok(n) => {
+                    total_read += n;
+                    remaining = &vary remaining[n..];
+                }
+                Result·Err(e) => ret Err(e),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Write data (will be encrypted)
+    ☉ rite write_all(&vary self, buf: &[u8]) -> Result<(), TlsError>! {
+        ⎇ !self.connected {
+            ret Err(TlsError·NotConnected);
+        }
+
+        vary total_written: usize = 0;
+
+        ⟳ total_written < buf.len() {
+            ≔ remaining = &buf[total_written..];
+            ⌥ ssl_write(self.ssl, remaining) {
+                Result·Ok(n) => total_written += n,
+                Result·Err(e) => ret Err(e),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Graceful TLS shutdown
+    ☉ rite close(&vary self) -> Result<(), TlsError>! {
+        ⎇ self.connected {
+            ssl_shutdown(self.ssl)?;
+            ssl_free(self.ssl);
+            ssl_ctx_free(self.ssl_ctx);
+            self.inner.close().map_err(|e| TlsError·IoError { inner: e })?;
+            self.connected = false;
+        }
+        Ok(())
+    }
+
+    /// Get the negotiated protocol (e.g., "TLSv1.3")
+    ☉ rite protocol_version(&self) -> Result<String, TlsError>! {
+        ⎇ !self.connected {
+            ret Err(TlsError·NotConnected);
+        }
+
+        ssl_get_version(self.ssl)
+    }
+
+    /// Check ⎇ connection is still valid
+    ☉ rite is_connected(&self) -> bool! {
+        self.connected
+    }
+
+    /// Get the hostname used ∀ SNI
+    ☉ rite hostname(&self) -> &str! {
+        &self.hostname
+    }
+}
+
+☉ ⊢ Drop ∀ TlsStream {
+    ☉ rite drop(&vary self) {
+        ⎇ self.connected {
+            ssl_shutdown(self.ssl);
+            ssl_free(self.ssl);
+            ssl_ctx_free(self.ssl_ctx);
+        }
+    }
+}
+
+// ============================================================================
+// TLS Library Interface (platform-specific implementations below)
+// ============================================================================
+
+// These functions are implemented ∈ openssl.sg or security.sg
+
+/// Initialize TLS library (call once)
+rite tls_init() -> Result<(), TlsError>!;
+
+/// Create SSL context
+rite ssl_ctx_new() -> Result<*void, TlsError>!;
+
+/// Free SSL context
+rite ssl_ctx_free(ctx: *void)!;
+
+/// Create SSL connection
+rite ssl_new(ctx: *void) -> Result<*void, TlsError>!;
+
+/// Free SSL connection
+rite ssl_free(ssl: *void)!;
+
+/// Set file descriptor
+rite ssl_set_fd(ssl: *void, fd: i32) -> Result<(), TlsError>!;
+
+/// Set SNI hostname
+rite ssl_set_hostname(ssl: *void, hostname: &str) -> Result<(), TlsError>!;
+
+/// Perform TLS handshake
+rite ssl_connect(ssl: *void) -> Result<(), TlsError>!;
+
+/// Read from TLS connection
+rite ssl_read(ssl: *void, buf: &vary [u8]) -> Result<usize, TlsError>!;
+
+/// Write to TLS connection
+rite ssl_write(ssl: *void, buf: &[u8]) -> Result<usize, TlsError>!;
+
+/// Shutdown TLS connection
+rite ssl_shutdown(ssl: *void) -> Result<(), TlsError>!;
+
+/// Get TLS version string
+rite ssl_get_version(ssl: *void) -> Result<String, TlsError>!;

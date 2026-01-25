@@ -1,0 +1,14 @@
+// Test: Mutable field assignment
+// Expected output: 42
+
+struct MutablePoint {
+    x: i64,
+    y: i64,
+}
+
+fn main() -> i64 {
+    let mut p = MutablePoint { x: 0, y: 0 };
+    p.x = 20;
+    p.y = 22;
+    p.x + p.y
+}

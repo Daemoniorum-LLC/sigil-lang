@@ -1,0 +1,19 @@
+// Simple Fibonacci test for accumulator transformation
+fn fib(n) {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn main() {
+    let start = now();
+    let result = fib(35);
+    let elapsed = now() - start;
+
+    print("Fib(35) result:");
+    print(result);
+    print("Time (ms):");
+    print(elapsed);
+    return 0;
+}

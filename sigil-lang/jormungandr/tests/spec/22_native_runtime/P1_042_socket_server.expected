@@ -1,0 +1,6 @@
+socket: OK
+setsockopt: OK
+bind: OK
+listen: OK
+accept: OK
+close: OK

@@ -1,0 +1,14 @@
+// Test: Simple identifier
+// Spec: 01-LEXICAL.md § 2.1 Identifiers
+// Priority: P0
+//
+// Purpose:
+// Validates that simple ASCII identifiers work correctly.
+//
+// Expected behavior:
+// Should compile and print 42
+
+λ main() {
+    ≔ my_var: !i32 = 42;
+    println(my_var);
+}

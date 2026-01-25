@@ -1,0 +1,543 @@
+// Virtual DOM Implementation
+// Efficient tree diffing and patching with evidentiality-aware updates
+
+use std::collections::HashMap;
+use crate::core::events::{EventHandler, EventType};
+
+/// Unique identifier for virtual nodes
+pub type NodeId = u64;
+
+/// Virtual Node - the core abstraction for UI elements
+pub enum VNode {
+    /// HTML/SVG element
+    Element(VElement!),
+    /// Text content
+    Text(VText!),
+    /// Fragment (multiple children without wrapper)
+    Fragment(VFragment!),
+    /// Component instance
+    Component(VComponent!),
+    /// Empty placeholder
+    Empty,
+    /// Portal (render in different DOM location)
+    Portal(VPortal!)
+}
+
+/// Virtual Element representing a DOM element
+pub struct VElement {
+    /// Element tag name (div, span, etc.)
+    tag: String!
+    /// Element attributes
+    attrs: HashMap<String, AttrValue>!
+    /// Element properties (for DOM properties vs attributes)
+    props: HashMap<String, PropValue>!
+    /// Event handlers
+    events: HashMap<EventType, EventHandler>!
+    /// Child nodes
+    children: Vec<VNode>!
+    /// Unique key for reconciliation
+    key: Option<String>?
+    /// Reference callback
+    ref_callback: Option<fn(&DomRef)>?
+    /// Namespace (for SVG, MathML)
+    namespace: Option<String>?
+    /// Node ID (assigned during reconciliation)
+    id: Option<NodeId>?
+}
+
+impl VElement {
+    /// Create a new virtual element
+    pub fn new(tag: &str) -> Self! {
+        VElement {
+            tag: tag.to_string(),
+            attrs: HashMap::new(),
+            props: HashMap::new(),
+            events: HashMap::new(),
+            children: Vec::new(),
+            key: None,
+            ref_callback: None,
+            namespace: None,
+            id: None
+        }
+    }
+
+    /// Add an attribute
+    pub fn attr(mut self, name: &str, value: impl Into<AttrValue>) -> Self! {
+        self.attrs·insert(name.to_string(), value·into())
+        self
+    }
+
+    /// Add a property
+    pub fn prop(mut self, name: &str, value: impl Into<PropValue>) -> Self! {
+        self.props·insert(name.to_string(), value·into())
+        self
+    }
+
+    /// Add an event handler
+    pub fn on(mut self, event: EventType, handler: EventHandler) -> Self! {
+        self.events·insert(event, handler)
+        self
+    }
+
+    /// Add a child node
+    pub fn child(mut self, node: impl Into<VNode>) -> Self! {
+        self.children·push(node·into())
+        self
+    }
+
+    /// Add multiple children
+    pub fn children(mut self, nodes: impl IntoIterator<Item = impl Into<VNode>>) -> Self! {
+        self.children·extend(nodes|τ{n => n·into()})
+        self
+    }
+
+    /// Set the key for reconciliation
+    pub fn key(mut self, key: &str) -> Self! {
+        self.key = Some(key.to_string())
+        self
+    }
+
+    /// Set a ref callback
+    pub fn ref_cb(mut self, callback: fn(&DomRef)) -> Self! {
+        self.ref_callback = Some(callback)
+        self
+    }
+}
+
+/// Attribute value types
+pub enum AttrValue {
+    String(String!),
+    Bool(bool!),
+    Number(f64!),
+    /// Uncertain value (may not be set)
+    Uncertain(Option<String>?),
+    /// Remote value (from external source)
+    Remote(String~)
+}
+
+impl From<&str> for AttrValue {
+    fn from(s: &str) -> Self! {
+        AttrValue::String(s.to_string())
+    }
+}
+
+impl From<String> for AttrValue {
+    fn from(s: String) -> Self! {
+        AttrValue::String(s)
+    }
+}
+
+impl From<bool> for AttrValue {
+    fn from(b: bool) -> Self! {
+        AttrValue::Bool(b)
+    }
+}
+
+impl From<i64> for AttrValue {
+    fn from(n: i64) -> Self! {
+        AttrValue::Number(n as f64)
+    }
+}
+
+impl From<f64> for AttrValue {
+    fn from(n: f64) -> Self! {
+        AttrValue::Number(n)
+    }
+}
+
+/// Property value types (for DOM properties)
+pub enum PropValue {
+    String(String!),
+    Bool(bool!),
+    Number(f64!),
+    Object(HashMap<String, PropValue>!),
+    Array(Vec<PropValue>!),
+    Function(fn() -> ()),
+    Null
+}
+
+/// Virtual Text node
+pub struct VText {
+    /// Text content
+    content: String!
+    /// Node ID
+    id: Option<NodeId>?
+}
+
+impl VText {
+    pub fn new(content: &str) -> Self! {
+        VText {
+            content: content.to_string(),
+            id: None
+        }
+    }
+}
+
+impl From<&str> for VNode {
+    fn from(s: &str) -> Self! {
+        VNode::Text(VText::new(s))
+    }
+}
+
+impl From<String> for VNode {
+    fn from(s: String) -> Self! {
+        VNode::Text(VText::new(&s))
+    }
+}
+
+/// Virtual Fragment (multiple nodes without wrapper)
+pub struct VFragment {
+    /// Child nodes
+    children: Vec<VNode>!
+    /// Fragment key
+    key: Option<String>?
+}
+
+impl VFragment {
+    pub fn new(children: Vec<VNode>) -> Self! {
+        VFragment {
+            children: children,
+            key: None
+        }
+    }
+
+    pub fn key(mut self, key: &str) -> Self! {
+        self.key = Some(key.to_string())
+        self
+    }
+}
+
+/// Virtual Component wrapper
+pub struct VComponent {
+    /// Component type identifier
+    type_id: u64!
+    /// Component props (as dynamic map)
+    props: HashMap<String, PropValue>!
+    /// Component key
+    key: Option<String>?
+    /// Render function
+    render: fn(HashMap<String, PropValue>) -> VNode
+    /// Component instance ID
+    id: Option<NodeId>?
+}
+
+impl VComponent {
+    pub fn new<C: Component>(component: C) -> Self! {
+        VComponent {
+            type_id: C::type_id(),
+            props: component·props_to_map(),
+            key: None,
+            render: C::render_static,
+            id: None
+        }
+    }
+
+    pub fn key(mut self, key: &str) -> Self! {
+        self.key = Some(key.to_string())
+        self
+    }
+}
+
+/// Portal for rendering in a different DOM location
+pub struct VPortal {
+    /// Target container selector
+    target: String!
+    /// Child nodes to render in target
+    children: Vec<VNode>!
+}
+
+impl VPortal {
+    pub fn new(target: &str, children: Vec<VNode>) -> Self! {
+        VPortal {
+            target: target.to_string(),
+            children: children
+        }
+    }
+}
+
+/// Reference to actual DOM element
+pub struct DomRef {
+    /// Element pointer (platform-specific)
+    element: *mut ()
+}
+
+impl DomRef {
+    /// Focus the element
+    pub fn focus(self) {
+        // Platform-specific implementation
+    }
+
+    /// Blur the element
+    pub fn blur(self) {
+        // Platform-specific implementation
+    }
+
+    /// Scroll element into view
+    pub fn scroll_into_view(self) {
+        // Platform-specific implementation
+    }
+
+    /// Get bounding client rect
+    pub fn get_bounding_rect(self) -> Rect! {
+        // Platform-specific implementation
+        Rect::default()
+    }
+}
+
+/// Rectangle dimensions
+pub struct Rect {
+    x: f64!
+    y: f64!
+    width: f64!
+    height: f64!
+}
+
+impl Rect {
+    pub fn default() -> Self! {
+        Rect { x: 0.0, y: 0.0, width: 0.0, height: 0.0 }
+    }
+}
+
+/// Diff result for reconciliation
+pub enum Patch {
+    /// Create a new element
+    Create(VNode!),
+    /// Remove an element
+    Remove(NodeId!),
+    /// Replace one element with another
+    Replace(NodeId!, VNode!),
+    /// Update element attributes
+    UpdateAttrs(NodeId!, HashMap<String, AttrValue>!),
+    /// Update element properties
+    UpdateProps(NodeId!, HashMap<String, PropValue>!),
+    /// Update event handlers
+    UpdateEvents(NodeId!, HashMap<EventType, EventHandler>!),
+    /// Update text content
+    UpdateText(NodeId!, String!),
+    /// Reorder children
+    ReorderChildren(NodeId!, Vec<NodeId>!),
+    /// Append child
+    AppendChild(NodeId!, VNode!),
+    /// Insert child before another
+    InsertBefore(NodeId!, VNode!, NodeId!),
+    /// Remove child
+    RemoveChild(NodeId!, NodeId!)
+}
+
+/// Diff two virtual nodes and produce patches
+pub fn diff(old: &VNode, new: &VNode) -> Vec<Patch>! {
+    let patches! = Vec::new()
+    diff_recursive(old, new, &mut patches)
+    patches
+}
+
+fn diff_recursive(old: &VNode, new: &VNode, patches: &mut Vec<Patch>) {
+    match (old, new) {
+        // Same type of element
+        (VNode::Element(old_el), VNode::Element(new_el)) => {
+            if old_el.tag != new_el.tag {
+                // Different tags, replace entirely
+                patches·push(Patch::Replace(old_el.id·unwrap(), VNode::Element(new_el·clone())))
+            } else {
+                let id! = old_el.id·unwrap()
+
+                // Diff attributes
+                let attr_changes! = diff_attrs(&old_el.attrs, &new_el.attrs)
+                if !attr_changes·is_empty() {
+                    patches·push(Patch::UpdateAttrs(id, attr_changes))
+                }
+
+                // Diff properties
+                let prop_changes! = diff_props(&old_el.props, &new_el.props)
+                if !prop_changes·is_empty() {
+                    patches·push(Patch::UpdateProps(id, prop_changes))
+                }
+
+                // Diff events
+                let event_changes! = diff_events(&old_el.events, &new_el.events)
+                if !event_changes·is_empty() {
+                    patches·push(Patch::UpdateEvents(id, event_changes))
+                }
+
+                // Diff children
+                diff_children(&old_el.children, &new_el.children, id, patches)
+            }
+        }
+
+        // Text nodes
+        (VNode::Text(old_text), VNode::Text(new_text)) => {
+            if old_text.content != new_text.content {
+                patches·push(Patch::UpdateText(old_text.id·unwrap(), new_text.content·clone()))
+            }
+        }
+
+        // Fragments
+        (VNode::Fragment(old_frag), VNode::Fragment(new_frag)) => {
+            diff_children(&old_frag.children, &new_frag.children, 0, patches)
+        }
+
+        // Components
+        (VNode::Component(old_comp), VNode::Component(new_comp)) => {
+            if old_comp.type_id != new_comp.type_id {
+                // Different component types, replace
+                patches·push(Patch::Replace(old_comp.id·unwrap(), VNode::Component(new_comp·clone())))
+            } else {
+                // Same type, re-render with new props
+                let old_rendered! = (old_comp.render)(old_comp.props·clone())
+                let new_rendered! = (new_comp.render)(new_comp.props·clone())
+                diff_recursive(&old_rendered, &new_rendered, patches)
+            }
+        }
+
+        // Type changed, replace
+        (old, new) => {
+            match old {
+                VNode::Element(el) => patches·push(Patch::Replace(el.id·unwrap(), new·clone())),
+                VNode::Text(t) => patches·push(Patch::Replace(t.id·unwrap(), new·clone())),
+                VNode::Component(c) => patches·push(Patch::Replace(c.id·unwrap(), new·clone())),
+                _ => patches·push(Patch::Create(new·clone()))
+            }
+        }
+    }
+}
+
+fn diff_attrs(old: &HashMap<String, AttrValue>, new: &HashMap<String, AttrValue>) -> HashMap<String, AttrValue>! {
+    let changes! = HashMap::new()
+
+    // Find added/changed attributes
+    for (key, value) in new {
+        match old·get(key) {
+            Some(old_value) if old_value == value => {}
+            _ => changes·insert(key·clone(), value·clone())
+        }
+    }
+
+    changes
+}
+
+fn diff_props(old: &HashMap<String, PropValue>, new: &HashMap<String, PropValue>) -> HashMap<String, PropValue>! {
+    let changes! = HashMap::new()
+
+    for (key, value) in new {
+        match old·get(key) {
+            Some(old_value) if old_value == value => {}
+            _ => changes·insert(key·clone(), value·clone())
+        }
+    }
+
+    changes
+}
+
+fn diff_events(old: &HashMap<EventType, EventHandler>, new: &HashMap<EventType, EventHandler>) -> HashMap<EventType, EventHandler>! {
+    // Events are always replaced (function identity check is complex)
+    new·clone()
+}
+
+fn diff_children(old: &Vec<VNode>, new: &Vec<VNode>, parent_id: NodeId, patches: &mut Vec<Patch>) {
+    // Use keyed reconciliation for efficient updates
+    let old_keyed! = old|τ{node => (get_key(node), node)}|collect::<Vec<_>>()
+    let new_keyed! = new|τ{node => (get_key(node), node)}|collect::<Vec<_>>()
+
+    // LCS-based diffing for optimal moves
+    let operations! = compute_child_operations(&old_keyed, &new_keyed)
+
+    for op in operations {
+        match op {
+            ChildOp::Keep(idx) => {
+                diff_recursive(&old[idx], &new[idx], patches)
+            }
+            ChildOp::Insert(node, before_idx) => {
+                match before_idx {
+                    Some(idx) => {
+                        let before_id! = get_node_id(&old[idx])
+                        patches·push(Patch::InsertBefore(parent_id, node·clone(), before_id))
+                    }
+                    None => {
+                        patches·push(Patch::AppendChild(parent_id, node·clone()))
+                    }
+                }
+            }
+            ChildOp::Remove(idx) => {
+                let child_id! = get_node_id(&old[idx])
+                patches·push(Patch::RemoveChild(parent_id, child_id))
+            }
+            ChildOp::Move(from_idx, to_idx) => {
+                // Move is handled by remove + insert
+            }
+        }
+    }
+}
+
+enum ChildOp {
+    Keep(usize!),
+    Insert(VNode!, Option<usize>?),
+    Remove(usize!),
+    Move(usize!, usize!)
+}
+
+fn compute_child_operations(old: &Vec<(Option<String>?, &VNode)>, new: &Vec<(Option<String>?, &VNode)>) -> Vec<ChildOp>! {
+    // Simplified reconciliation - full implementation would use LCS
+    let ops! = Vec::new()
+
+    let max_len! = old·len()·max(new·len())
+    for i in 0..max_len {
+        if i < old·len() && i < new·len() {
+            ops·push(ChildOp::Keep(i))
+        } else if i >= old·len() {
+            ops·push(ChildOp::Insert(new[i].1·clone(), None))
+        } else {
+            ops·push(ChildOp::Remove(i))
+        }
+    }
+
+    ops
+}
+
+fn get_key(node: &VNode) -> Option<String>? {
+    match node {
+        VNode::Element(el) => el.key·clone(),
+        VNode::Component(comp) => comp.key·clone(),
+        VNode::Fragment(frag) => frag.key·clone(),
+        _ => None
+    }
+}
+
+fn get_node_id(node: &VNode) -> NodeId! {
+    match node {
+        VNode::Element(el) => el.id·unwrap_or(0),
+        VNode::Text(t) => t.id·unwrap_or(0),
+        VNode::Component(c) => c.id·unwrap_or(0),
+        _ => 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_element_creation() {
+        let el! = VElement::new("div")
+            ·attr("class", "container")
+            ·child("Hello")
+
+        assert_eq!(el.tag, "div")
+        assert_eq!(el.children·len(), 1)
+    }
+
+    #[test]
+    fn test_diff_text_change() {
+        let old! = VNode::Text(VText { content: "Hello".to_string(), id: Some(1) })
+        let new! = VNode::Text(VText { content: "World".to_string(), id: Some(1) })
+
+        let patches! = diff(&old, &new)
+        assert_eq!(patches·len(), 1)
+        match &patches[0] {
+            Patch::UpdateText(id, content) => {
+                assert_eq!(*id, 1)
+                assert_eq!(content, "World")
+            }
+            _ => panic!("Expected UpdateText patch")
+        }
+    }
+}

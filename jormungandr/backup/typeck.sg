@@ -1,0 +1,2982 @@
+//! Type checker ∀ Sigil.
+//!
+//! Implements bidirectional type inference with evidentiality tracking.
+//! The type system enforces that evidence levels propagate correctly
+//! through computations.
+//!
+//! ## Evidence Lattice
+//!
+//! Evidence levels form a lattice ∀ tracking data certainty:
+//!
+//! ```
+//!     Known (!) < Uncertain (?) < Reported (~) < Paradox (‽)
+//! ```
+//!
+//! Operations combine evidence using join (least upper bound):
+//! - `known + uncertain` → `uncertain`
+//! - `known + reported` → `reported`
+//! - Any operation with paradox → `paradox`
+
+invoke crate·ast·*;
+invoke crate·span·Span;
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+/// Internal type representation ∀ the type checker.
+☉ ᛈ Type {
+    // Primitive types
+    Unit,
+    Bool,
+    Int(!IntWidth),
+    Float(!FloatWidth),
+    Char,
+    Str,
+
+    // Compound types
+    Array {
+        element: !Box<Type>,
+        length: ?u64,
+    },
+    Slice(!Box<Type>),
+    Tuple(![Type]),
+
+    // Named type (struct, enum, type alias)
+    Named {
+        name: !String,
+        generics: ![Type],
+    },
+
+    // Function type
+    Function {
+        params: ![Type],
+        return_type: !Box<Type>,
+        is_async: !bool,
+    },
+
+    // Reference types
+    Ref {
+        mutable: !bool,
+        inner: !Box<Type>,
+    },
+    Ptr {
+        mutable: !bool,
+        inner: !Box<Type>,
+    },
+
+    // Evidential wrapper - the core of Sigil's type system
+    Evidential {
+        inner: !Box<Type>,
+        evidence: !EvidenceLevel,
+    },
+
+    // Cyclic type (modular arithmetic)
+    Cycle {
+        modulus: !u64,
+    },
+
+    // SIMD vector type
+    Simd {
+        element: !Box<Type>,
+        lanes: !u8,
+    },
+
+    // Atomic type
+    Atomic(!Box<Type>),
+
+    // Type variable ∀ inference
+    Var(!TypeVar),
+
+    // Error type (∀ error recovery)
+    Error,
+
+    // Never type (diverging)
+    Never,
+
+    // Any type (opaque/existential - ∀ ⊢ Trait)
+    Any,
+}
+
+⊢ Type {
+    /// Create a unit type
+    ☉ λ unit() -> !Type {
+        Type·Unit
+    }
+
+    /// Create a bool type
+    ☉ λ bool_type() -> !Type {
+        Type·Bool
+    }
+
+    /// Create a string type
+    ☉ λ str_type() -> !Type {
+        Type·Str
+    }
+
+    /// Create a never type
+    ☉ λ never() -> !Type {
+        Type·Never
+    }
+
+    /// Create an error type
+    ☉ λ error() -> !Type {
+        Type·Error
+    }
+
+    /// Check ⎇ this is an error type
+    ☉ λ is_error(self) -> !bool {
+        ⌥ self {
+            Type·Error => true,
+            _ => false,
+        }
+    }
+
+    /// Check ⎇ this is a never type
+    ☉ λ is_never(self) -> !bool {
+        ⌥ self {
+            Type·Never => true,
+            _ => false,
+        }
+    }
+
+    /// Display the type as a string
+    ☉ λ to_string(self) -> !String {
+        ⌥ self {
+            Type·Unit => "()",
+            Type·Bool => "bool",
+            Type·Int(size) => size.to_string(),
+            Type·Float(size) => size.to_string(),
+            Type·Char => "char",
+            Type·Str => "str",
+            Type·Array { .. } => {
+                ≔ element = self.element;
+                ≔ length = self.length;
+                ⌥ length {
+                    ?n => format!("[{}; {}]", element.to_string(), n),
+                    null => format!("[{}]", element.to_string()),
+                }
+            },
+            Type·Slice(inner) => format!("[{}]", inner.to_string()),
+            Type·Tuple(elems) => {
+                ≔ parts = elems|τ{e => e.to_string()}|join(", ");
+                format!("({})", parts)
+            },
+            Type·Named { .. } => {
+                ≔ name = self.name;
+                ≔ generics = self.generics;
+                ⎇ generics.is_empty() {
+                    name
+                } ⎉ {
+                    ≔ params = generics|τ{g => g.to_string()}|join(", ");
+                    format!("{}<{}>", name, params)
+                }
+            },
+            Type·Function { .. } => {
+                ≔ params = self.params;
+                ≔ return_type = self.return_type;
+                ≔ is_async = self.is_async;
+                ≔ prefix = ⎇ is_async { "async " } ⎉ { "" };
+                ≔ param_str = params|τ{p => p.to_string()}|join(", ");
+                format!("{}λ({}) -> {}", prefix, param_str, return_type.to_string())
+            },
+            Type·Ref { .. } => {
+                ≔ mutable = self.mutable;
+                ≔ inner = self.inner;
+                ≔ mut_str = ⎇ mutable { "Δ " } ⎉ { "" };
+                format!("&{}{}", mut_str, inner.to_string())
+            },
+            Type·Ptr { .. } => {
+                ≔ mutable = self.mutable;
+                ≔ inner = self.inner;
+                ≔ mut_str = ⎇ mutable { "Δ " } ⎉ { "const " };
+                format!("*{}{}", mut_str, inner.to_string())
+            },
+            Type·Evidential { .. } => {
+                ≔ inner = self.inner;
+                ≔ evidence = self.evidence;
+                format!("{}{}", inner.to_string(), evidence.symbol())
+            },
+            Type·Cycle { .. } => {
+                ≔ modulus = self.modulus;
+                format!("Cycle<{}>", modulus)
+            },
+            Type·Simd { .. } => {
+                ≔ element = self.element;
+                ≔ lanes = self.lanes;
+                format!("simd<{}, {}>", element.to_string(), lanes)
+            },
+            Type·Atomic(inner) => format!("atomic<{}>", inner.to_string()),
+            Type·Var(v) => format!("?{}", v.0),
+            Type·Error => "<error>",
+            Type·Never => "!",
+        }
+    }
+}
+
+/// Integer widths
+/// Note: IWord and UWord are pointer-width integers (equivalent to isize/usize)
+☉ ᛈ IntWidth {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    IWord,
+    UWord,
+}
+
+⊢ IntWidth {
+    ☉ λ to_string(self) -> !&str {
+        ⌥ self {
+            IntWidth·I8 => "i8",
+            IntWidth·I16 => "i16",
+            IntWidth·I32 => "i32",
+            IntWidth·I64 => "i64",
+            IntWidth·I128 => "i128",
+            IntWidth·U8 => "u8",
+            IntWidth·U16 => "u16",
+            IntWidth·U32 => "u32",
+            IntWidth·U64 => "u64",
+            IntWidth·U128 => "u128",
+            IntWidth·IWord => "iword",
+            IntWidth·UWord => "uword",
+        }
+    }
+}
+
+/// Float sizes
+☉ ᛈ FloatWidth {
+    F32,
+    F64,
+}
+
+⊢ FloatWidth {
+    ☉ λ to_string(self) -> !&str {
+        ⌥ self {
+            FloatWidth·F32 => "f32",
+            FloatWidth·F64 => "f64",
+        }
+    }
+}
+
+// ============================================================================
+// Evidence Levels
+// ============================================================================
+
+/// Evidence levels ∈ the type system.
+///
+/// Evidence forms a lattice:
+///   Known (!) < Uncertain (?) < Reported (~) < Paradox (‽)
+///
+/// Operations combine evidence levels using join (⊔):
+///   a + b : join(evidence(a), evidence(b))
+///
+/// This is the heart of Sigil's evidentiality system.
+☉ ᛈ EvidenceLevel {
+    /// Direct knowledge - computed locally, verified
+    Known,    // !
+
+    /// Uncertain - inferred, possible, not verified
+    Uncertain, // ?
+
+    /// Reported - from external source, hearsay
+    Reported, // ~
+
+    /// Paradox - contradictory information
+    Paradox,  // ‽
+}
+
+⊢ EvidenceLevel {
+    /// Get numeric rank ∀ comparison (lower = more certain)
+    λ rank(self) -> !i32 {
+        ⌥ self {
+            EvidenceLevel·Known => 0,
+            EvidenceLevel·Uncertain => 1,
+            EvidenceLevel·Reported => 2,
+            EvidenceLevel·Paradox => 3,
+        }
+    }
+
+    /// Join two evidence levels (least upper bound ∈ lattice).
+    /// Returns the least certain of the two.
+    ☉ λ join(self, other: !EvidenceLevel) -> !EvidenceLevel {
+        ⎇ self.rank() >= other.rank() {
+            self
+        } ⎉ {
+            other
+        }
+    }
+
+    /// Meet two evidence levels (greatest lower bound).
+    /// Returns the most certain of the two.
+    ☉ λ meet(self, other: !EvidenceLevel) -> !EvidenceLevel {
+        ⎇ self.rank() <= other.rank() {
+            self
+        } ⎉ {
+            other
+        }
+    }
+
+    /// Convert from AST representation
+    ☉ λ from_ast(e: !Evidentiality) -> !EvidenceLevel {
+        ⌥ e {
+            Evidentiality·Known => EvidenceLevel·Known,
+            Evidentiality·Uncertain => EvidenceLevel·Uncertain,
+            Evidentiality·Reported => EvidenceLevel·Reported,
+            Evidentiality·Paradox => EvidenceLevel·Paradox,
+            // Handle null or unexpected values - default to Known (most certain)
+            _ => EvidenceLevel·Known,
+        }
+    }
+
+    /// Symbol representation
+    ☉ λ symbol(self) -> !&str {
+        ⌥ self {
+            EvidenceLevel·Known => "!",
+            EvidenceLevel·Uncertain => "?",
+            EvidenceLevel·Reported => "~",
+            EvidenceLevel·Paradox => "‽",
+        }
+    }
+
+    /// Human-readable name
+    ☉ λ name(self) -> !&str {
+        ⌥ self {
+            EvidenceLevel·Known => "known",
+            EvidenceLevel·Uncertain => "uncertain",
+            EvidenceLevel·Reported => "reported",
+            EvidenceLevel·Paradox => "paradox",
+        }
+    }
+
+    /// Check ⎇ this evidence level can satisfy a required level.
+    ///
+    /// Evidence is covariant: you can pass more certain data where less certain is expected.
+    /// Known (!) can satisfy any requirement.
+    /// Reported (~) can only satisfy Reported or Paradox requirements.
+    ///
+    /// Returns true ⎇ `self` (actual) can be used where `required` is expected.
+    ☉ λ satisfies(self, required: !EvidenceLevel) -> !bool {
+        // More certain evidence (lower ∈ lattice) can satisfy less certain requirements
+        self.rank() <= required.rank()
+    }
+
+    /// Compare ∀ ordering
+    ☉ λ cmp(self, other: !EvidenceLevel) -> !Ordering {
+        ≔ a = self.rank();
+        ≔ b = other.rank();
+        ⎇ a < b { Ordering·Less }
+        ⎉ ⎇ a > b { Ordering·Greater }
+        ⎉ { Ordering·Equal }
+    }
+}
+
+/// Ordering result ∀ comparisons
+☉ ᛈ Ordering {
+    Less,
+    Equal,
+    Greater,
+}
+
+// ============================================================================
+// Type Variables
+// ============================================================================
+
+/// Type variable ∀ inference
+☉ Σ TypeVar {
+    ☉ id: !u32,
+}
+
+⊢ TypeVar {
+    ☉ λ new(id: !u32) -> !TypeVar {
+        TypeVar { id }
+    }
+}
+
+// ============================================================================
+// Type Errors
+// ============================================================================
+
+/// Type error with span and notes
+☉ Σ TypeError {
+    ☉ message: !String,
+    ☉ span: ?Span,
+    ☉ notes: ![String],
+}
+
+⊢ TypeError {
+    /// Create a new type error
+    ☉ λ new(message: !String) -> !TypeError {
+        TypeError {
+            message,
+            span: null,
+            notes: [],
+        }
+    }
+
+    /// Add a span to the error
+    ☉ λ with_span(Δ self, span: !Span) -> !TypeError {
+        self.span = ?span;
+        self
+    }
+
+    /// Add a note to the error
+    ☉ λ with_note(Δ self, note: !String) -> !TypeError {
+        self.notes.push(note);
+        self
+    }
+
+    /// Format the error as a string
+    ☉ λ to_string(self) -> !String {
+        ≔ Δ result = self.message.clone();
+
+        ⎇ ≔ ?span = self.span {
+            result = format!("{} at {}", result, span.to_string());
+        }
+
+        ∀ note ∈ self.notes {
+            result = format!("{}\n  note: {}", result, note);
+        }
+
+        result
+    }
+}
+
+// ============================================================================
+// Type Environment
+// ============================================================================
+
+/// Type environment ∀ scoped variable lookups
+☉ Σ TypeEnv {
+    /// Variable bindings: name -> (type, evidence)
+    bindings: !Map<String, (Type, EvidenceLevel)>,
+    /// Parent scope (∀ nested scopes)
+    parent: ?Box<TypeEnv>,
+}
+
+⊢ TypeEnv {
+    /// Create a new empty environment
+    ☉ λ new() -> !TypeEnv {
+        TypeEnv {
+            bindings: Map·new(),
+            parent: null,
+        }
+    }
+
+    /// Create a child environment with this as parent
+    ☉ λ with_parent(parent: !TypeEnv) -> !TypeEnv {
+        TypeEnv {
+            bindings: Map·new(),
+            parent: ?Box·new(parent),
+        }
+    }
+
+    /// Define a new binding
+    ☉ λ define(Δ self, name: !String, ty: !Type, evidence: !EvidenceLevel) {
+        self.bindings.insert(name, (ty, evidence));
+    }
+
+    /// Look up a binding (searches parent scopes)
+    ☉ λ lookup(self, name: !&str) -> ?(Type, EvidenceLevel) {
+        ⎇ ≔ ?binding = self.bindings.get(name) {
+            ⤺ ?binding;
+        }
+
+        ⎇ ≔ ?parent = self.parent {
+            ⤺ parent.lookup(name);
+        }
+
+        null
+    }
+
+    /// Clone this environment (∀ multi-file compilation)
+    ☉ λ clone(self) -> !TypeEnv {
+        TypeEnv {
+            bindings: self.bindings.clone(),
+            parent: ⌥ self.parent {
+                ?p => ?Box·new(p.clone()),
+                null => null,
+            },
+        }
+    }
+}
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+/// Type definitions ∀ user-defined types
+☉ ᛈ TypeDef {
+    Struct {
+        generics: ![String],
+        fields: ![(String, Type)],
+    },
+    Enum {
+        generics: ![String],
+        variants: ![(String, ?[Type])],
+    },
+    Alias {
+        generics: ![String],
+        target: !Type,
+    },
+}
+
+// ============================================================================
+// Type Checker
+// ============================================================================
+
+/// The type checker - implements bidirectional type inference with evidentiality
+☉ Σ TypeChecker {
+    /// Type environment stack
+    env: !TypeEnv,
+
+    /// Type definitions
+    types: !Map<String, TypeDef>,
+
+    /// Function signatures
+    functions: !Map<String, Type>,
+
+    /// Type variable counter
+    next_var: !u32,
+
+    /// Inferred type variable substitutions
+    substitutions: !Map<u32, Type>,
+
+    /// Collected errors
+    errors: ![TypeError],
+
+    /// Current Self type (set during ⊢ block checking)
+    current_self_type: ?String,
+}
+
+⊢ TypeChecker {
+    /// Create a new type checker with built-in types and functions
+    ☉ λ new() -> !TypeChecker {
+        ≔ Δ checker = TypeChecker {
+            env: TypeEnv·new(),
+            types: Map·new(),
+            functions: Map·new(),
+            next_var: 0,
+            substitutions: Map·new(),
+            errors: [],
+            current_self_type: null,
+        };
+
+        // Register built-in types and functions
+        checker.register_builtins();
+        checker
+    }
+
+    /// Clone this type checker (shallow copy ∀ multi-file compilation)
+    ☉ λ clone(self) -> !TypeChecker {
+        TypeChecker {
+            env: self.env.clone(),
+            types: self.types.clone(),
+            functions: self.functions.clone(),
+            next_var: self.next_var,
+            substitutions: self.substitutions.clone(),
+            errors: self.errors.clone(),
+            current_self_type: self.current_self_type.clone(),
+        }
+    }
+
+    /// Register built-in functions and types
+    λ register_builtins(Δ self) {
+        // Helper to create a function type (as a closure)
+        ≔ func = |params: ![Type], ret: !Type| {
+            Type·Function {
+                params,
+                return_type: Box·new(ret),
+                is_async: false,
+            }
+        };
+
+        // Type variable ∀ polymorphic functions
+        ≔ any = Type·Var(TypeVar·new(9999));
+        ≔ f64_ty = Type·Float(FloatWidth·F64);
+        ≔ i64_ty = Type·Int(IntWidth·I64);
+
+        // ===================
+        // Core I/O
+        // ===================
+        self.functions.insert("print", func([any.clone()], Type·Unit));
+        self.functions.insert("println", func([any.clone()], Type·Unit));
+        self.functions.insert("input", func([], Type·Str));
+        self.functions.insert("input_line", func([], Type·Str));
+        // write! macro support - takes formatter and variadic args, returns Result
+        self.functions.insert("write", func([any.clone(), any.clone()], Type·Unit));
+
+        // ===================
+        // Type inspection
+        // ===================
+        self.functions.insert("type_of", func([any.clone()], Type·Str));
+        self.functions.insert("len", func([any.clone()], Type·Int(IntWidth·UWord)));
+
+        // ===================
+        // String functions
+        // ===================
+        self.functions.insert("str", func([any.clone()], Type·Str));
+        self.functions.insert("upper", func([Type·Str], Type·Str));
+        self.functions.insert("lower", func([Type·Str], Type·Str));
+        self.functions.insert("trim", func([Type·Str], Type·Str));
+        self.functions.insert("split", func([Type·Str, Type·Str],
+            Type·Array { element: Box·new(Type·Str), length: null }));
+        self.functions.insert("join", func([
+            Type·Array { element: Box·new(Type·Str), length: null },
+            Type·Str
+        ], Type·Str));
+        self.functions.insert("contains", func([Type·Str, Type·Str], Type·Bool));
+        self.functions.insert("starts_with", func([Type·Str, Type·Str], Type·Bool));
+        self.functions.insert("ends_with", func([Type·Str, Type·Str], Type·Bool));
+        self.functions.insert("replace", func([Type·Str, Type·Str, Type·Str], Type·Str));
+        self.functions.insert("char_at", func([Type·Str, i64_ty.clone()], Type·Str));
+        self.functions.insert("substring", func([Type·Str, i64_ty.clone(), i64_ty.clone()], Type·Str));
+
+        // ===================
+        // Math functions
+        // ===================
+        self.functions.insert("abs", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("sqrt", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("sin", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("cos", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("tan", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("floor", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("ceil", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("round", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("pow", func([f64_ty.clone(), f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("log", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("exp", func([f64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("min", func([any.clone(), any.clone()], any.clone()));
+        self.functions.insert("max", func([any.clone(), any.clone()], any.clone()));
+
+        // ===================
+        // Array/Collection functions
+        // ===================
+        self.functions.insert("sum", func([any.clone()], f64_ty.clone()));
+        self.functions.insert("avg", func([any.clone()], f64_ty.clone()));
+        self.functions.insert("push", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("pop", func([any.clone()], any.clone()));
+        self.functions.insert("first", func([any.clone()], any.clone()));
+        self.functions.insert("last", func([any.clone()], any.clone()));
+        self.functions.insert("reverse", func([any.clone()], any.clone()));
+        self.functions.insert("sort", func([any.clone()], any.clone()));
+        self.functions.insert("range", func([i64_ty.clone(), i64_ty.clone()],
+            Type·Array { element: Box·new(i64_ty.clone()), length: null }));
+
+        // ===================
+        // Assertions
+        // ===================
+        self.functions.insert("assert", func([Type·Bool], Type·Unit));
+        self.functions.insert("assert_eq", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_ne", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_lt", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_le", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_gt", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_ge", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_true", func([Type·Bool], Type·Unit));
+        self.functions.insert("assert_false", func([Type·Bool], Type·Unit));
+        self.functions.insert("assert_null", func([any.clone()], Type·Unit));
+        self.functions.insert("assert_not_null", func([any.clone()], Type·Unit));
+        self.functions.insert("assert_contains", func([any.clone(), any.clone()], Type·Unit));
+        self.functions.insert("assert_len", func([any.clone(), i64_ty.clone()], Type·Unit));
+
+        // ===================
+        // Random
+        // ===================
+        self.functions.insert("random", func([], f64_ty.clone()));
+        self.functions.insert("random_int", func([i64_ty.clone(), i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert("shuffle", func([any.clone()], any.clone()));
+
+        // ===================
+        // Time
+        // ===================
+        self.functions.insert("now", func([], f64_ty.clone()));
+        self.functions.insert("sleep", func([f64_ty.clone()], Type·Unit));
+
+        // ===================
+        // Conversion
+        // ===================
+        self.functions.insert("int", func([any.clone()], i64_ty.clone()));
+        self.functions.insert("float", func([any.clone()], f64_ty.clone()));
+        self.functions.insert("bool", func([any.clone()], Type·Bool));
+
+        // ===================
+        // Error handling
+        // ===================
+        self.functions.insert("panic", func([Type·Str], Type·Never));
+        self.functions.insert("todo", func([], Type·Never));
+        self.functions.insert("unreachable", func([], Type·Never));
+
+        // ===================
+        // Evidentiality functions
+        // ===================
+        self.functions.insert("known", func([any.clone()],
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Known
+            }));
+        self.functions.insert("uncertain", func([any.clone()],
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Uncertain
+            }));
+        self.functions.insert("reported", func([any.clone()],
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Reported
+            }));
+        self.functions.insert("evidence_of", func([any.clone()], Type·Str));
+        self.functions.insert("validate", func([any.clone()],
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Uncertain
+            }));
+        self.functions.insert("verify", func([any.clone()],
+            Type·Evidential {
+                inner: Box·new(any.clone()),
+                evidence: EvidenceLevel·Known
+            }));
+
+        // ===================
+        // Poly-cultural math (cycles, music theory)
+        // ===================
+        self.functions.insert("freq", func([i64_ty.clone()], f64_ty.clone()));
+        self.functions.insert("octave", func([i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert("pitch_class", func([i64_ty.clone()], i64_ty.clone()));
+        self.functions.insert("mod_cycle", func([i64_ty.clone(), i64_ty.clone()], i64_ty.clone()));
+    }
+
+    /// Generate a fresh type variable
+    λ fresh_var(Δ self) -> !Type {
+        ≔ var = TypeVar·new(self.next_var);
+        self.next_var += 1;
+        Type·Var(var)
+    }
+
+    /// Freshen a type by replacing all type variables with fresh ones
+    /// This is used ∀ polymorphic built-in functions
+    λ freshen(Δ self, ty: !Type) -> !Type {
+        ≔ Δ mapping: !Map<u32, Type> = Map·new();
+        self.freshen_inner(ty, mapping)
+    }
+
+    λ freshen_inner(Δ self, ty: !Type, Δ mapping: !Map<u32, Type>) -> !Type {
+        ⌥ ty {
+            Type·Var(v) => {
+                ⎇ ≔ ?fresh = mapping.get(v.id) {
+                    fresh.clone()
+                } ⎉ {
+                    ≔ fresh = self.fresh_var();
+                    mapping.insert(v.id, fresh.clone());
+                    fresh
+                }
+            },
+            Type·Array { .. } => {
+                ≔ element = ty.element;
+                ≔ length = ty.length;
+                Type·Array {
+                    element: Box·new(self.freshen_inner(*element, mapping)),
+                    length,
+                }
+            },
+            Type·Slice(inner) => Type·Slice(Box·new(self.freshen_inner(*inner, mapping))),
+            Type·Ref { .. } => {
+                ≔ mutable = ty.mutable;
+                ≔ inner = ty.inner;
+                Type·Ref {
+                    mutable,
+                    inner: Box·new(self.freshen_inner(*inner, mapping)),
+                }
+            },
+            Type·Tuple(elems) => Type·Tuple(
+                elems|τ{e => self.freshen_inner(e, mapping)}|collect()
+            ),
+            Type·Function { .. } => {
+                ≔ params = ty.params;
+                ≔ return_type = ty.return_type;
+                ≔ is_async = ty.is_async;
+                Type·Function {
+                    params: params|τ{p => self.freshen_inner(p, mapping)}|collect(),
+                    return_type: Box·new(self.freshen_inner(*return_type, mapping)),
+                    is_async,
+                }
+            },
+            Type·Evidential { .. } => {
+                ≔ inner = ty.inner;
+                ≔ evidence = ty.evidence;
+                Type·Evidential {
+                    inner: Box·new(self.freshen_inner(*inner, mapping)),
+                    evidence,
+                }
+            },
+            Type·Named { .. } => {
+                ≔ name = ty.name;
+                ≔ generics = ty.generics;
+                Type·Named {
+                    name,
+                    generics: generics|τ{g => self.freshen_inner(g, mapping)}|collect(),
+                }
+            },
+            // Primitive types don't contain type variables
+            _ => ty,
+        }
+    }
+
+    /// Push a new scope
+    λ push_scope(Δ self) {
+        ≔ new_env = TypeEnv·with_parent(self.env);
+        self.env = new_env;
+    }
+
+    /// Pop current scope
+    λ pop_scope(Δ self) {
+        ⎇ ≔ ?parent = self.env.parent {
+            self.env = *parent;
+        }
+    }
+
+    /// Record an error
+    λ error(Δ self, err: !TypeError) {
+        self.errors.push(err);
+    }
+
+    /// Check ⎇ actual evidence can satisfy expected evidence requirement.
+    λ check_evidence(Δ self, expected: !EvidenceLevel, actual: !EvidenceLevel, context: !&str) -> !bool {
+        ⎇ actual.satisfies(expected) {
+            true
+        } ⎉ {
+            ≔ Δ err = TypeError·new(format!(
+                "evidence mis⌥ {}: expected {} ({}), found {} ({})",
+                context,
+                expected.name(),
+                expected.symbol(),
+                actual.name(),
+                actual.symbol()
+            ));
+
+            // Add helpful notes based on the specific mismatch
+            ⌥ (expected, actual) {
+                (EvidenceLevel·Known, EvidenceLevel·Reported) => {
+                    err = err.with_note("reported data (~) cannot be used where known data (!) is required");
+                    err = err.with_note("help: invoke |validate!{...} to verify and promote evidence level");
+                },
+                (EvidenceLevel·Known, EvidenceLevel·Uncertain) => {
+                    err = err.with_note("uncertain data (?) cannot be used where known data (!) is required");
+                    err = err.with_note("help: invoke pattern matching or unwrap to handle the uncertainty");
+                },
+                (EvidenceLevel·Uncertain, EvidenceLevel·Reported) => {
+                    err = err.with_note("reported data (~) cannot be used where uncertain data (?) is required");
+                    err = err.with_note("help: invoke |validate?{...} to verify external data");
+                },
+                _ => {
+                    err = err.with_note("evidence lattice: known (!) < uncertain (?) < reported (~) < paradox (‽)");
+                },
+            }
+
+            self.error(err);
+            false
+        }
+    }
+
+    /// Extract evidence level from a type, defaulting to Known
+    λ get_evidence(self, ty: !Type) -> !EvidenceLevel {
+        ⌥ ty {
+            Type·Evidential { evidence, .. } => evidence,
+            _ => EvidenceLevel·Known,
+        }
+    }
+
+    // ========================================================================
+    // File Checking (Multi-pass)
+    // ========================================================================
+
+    /// Check a source file
+    ☉ λ check_file(Δ self, file: !SourceFile) -> !Result<(), [TypeError]> {
+        // First pass: collect type definitions
+        ∀ item ∈ file.items {
+            self.collect_type_def(item.node);
+        }
+
+        // Second pass: collect function signatures
+        ∀ item ∈ file.items {
+            self.collect_fn_sig(item.node);
+        }
+
+        // Third pass: check function bodies
+        ∀ item ∈ file.items {
+            self.check_item(item.node);
+        }
+
+        // Report errors but ↻ - allows lowering and codegen to proceed
+        // even with type errors (∀ development/bootstrapping)
+        ∀ error ∈ self.errors {
+            // Use format! + function call instead of eprintln! macro
+            ≔ msg = format!("Type error: {}", error.message);
+            // eprintln is not available from this module - skip debug output ∀ bootstrap
+            // eprintln(msg);
+        }
+        Result·Ok(())
+    }
+
+    /// Collect type definitions from an item (first pass of type checking).
+    /// This is public to support multi-file compilation where we need to
+    /// collect types from all files before checking any file.
+    ☉ λ collect_type_def(Δ self, item: !Item) {
+        ⌥ item {
+            Item·Struct(s) => {
+                ≔ generics = ⌥ s.generics {
+                    ?g => g.params
+                        |φ{p => ⌥ p { GenericParam·Type { .. } => true, _ => false }}
+                        |τ{p => ⌥ p {
+                            GenericParam·Type { .. } => p.name.name,
+                            _ => "",
+                        }}
+                        |φ{n => n != ""}
+                        |collect(),
+                    null => [],
+                };
+
+                ≔ fields = ⌥ s.fields {
+                    StructFields·Named(fs) => fs|τ{f => (f.name.name, self.convert_type(f.ty))}|collect(),
+                    StructFields·Tuple(ts) => ts
+                        |enumerate()
+                        |τ{pair => (pair.0.to_string(), self.convert_type(pair.1))}
+                        |collect(),
+                    StructFields·Unit => [],
+                };
+
+                self.types.insert(s.name.name, TypeDef·Struct { generics, fields });
+            },
+            Item·Enum(e) => {
+                ≔ generics = ⌥ e.generics {
+                    ?g => g.params
+                        |φ{p => ⌥ p { GenericParam·Type { .. } => true, _ => false }}
+                        |τ{p => ⌥ p {
+                            GenericParam·Type { .. } => p.name.name,
+                            _ => "",
+                        }}
+                        |φ{n => n != ""}
+                        |collect(),
+                    null => [],
+                };
+
+                ≔ variants = e.variants|τ{v => {
+                    ≔ fields = ⌥ v.fields {
+                        StructFields·Tuple(ts) => ?ts|τ{t => self.convert_type(t)}|collect(),
+                        StructFields·Named(fs) => ?fs|τ{f => self.convert_type(f.ty)}|collect(),
+                        StructFields·Unit => null,
+                    };
+                    (v.name.name, fields)
+                }}|collect();
+
+                self.types.insert(e.name.name, TypeDef·Enum { generics, variants });
+            },
+            Item·TypeAlias(t) => {
+                ≔ generics = ⌥ t.generics {
+                    ?g => g.params
+                        |φ{p => ⌥ p { GenericParam·Type { .. } => true, _ => false }}
+                        |τ{p => ⌥ p {
+                            GenericParam·Type { .. } => p.name.name,
+                            _ => "",
+                        }}
+                        |φ{n => n != ""}
+                        |collect(),
+                    null => [],
+                };
+
+                ≔ target = self.convert_type(t.ty);
+                self.types.insert(t.name.name, TypeDef·Alias { generics, target });
+            },
+            _ => {},
+        }
+    }
+
+    /// Collect function signatures from an item (second pass of type checking).
+    /// This is public to support multi-file compilation.
+    ☉ λ collect_fn_sig(Δ self, item: !Item) {
+        ⌥ item {
+            Item·Function(f) => {
+                ≔ params = f.params|τ{p => self.convert_type(p.ty)}|collect();
+
+                ≔ return_type = ⌥ f.return_type {
+                    ?t => self.convert_type(t),
+                    null => Type·Unit,
+                };
+
+                ≔ fn_type = Type·Function {
+                    params,
+                    return_type: Box·new(return_type),
+                    is_async: f.is_async,
+                };
+
+                self.functions.insert(f.name.name, fn_type);
+            },
+            Item·Impl(impl_block) => {
+                // Extract type name from self_ty
+                ≔ type_name = ⌥ impl_block.self_ty {
+                    TypeExpr·Path(p) => {
+                        ⎇ p.segments.len() > 0 {
+                            p.segments[0].ident.name
+                        } ⎉ {
+                            "".to_string()
+                        }
+                    },
+                    _ => "".to_string(),
+                };
+
+                // Set current Self type ∀ convert_type to resolve Self
+                self.current_self_type = ?type_name;
+
+                // Register each function with qualified name Type·method
+                ∀ impl_item ∈ impl_block.items {
+                    ⎇ ≔ ImplItem·Function(f) = impl_item {
+                        ≔ params = f.params|τ{p => self.convert_type(p.ty)}|collect();
+
+                        ≔ return_type = ⌥ f.return_type {
+                            ?t => self.convert_type(t),
+                            null => Type·Unit,
+                        };
+
+                        ≔ fn_type = Type·Function {
+                            params,
+                            return_type: Box·new(return_type),
+                            is_async: f.is_async,
+                        };
+
+                        // Register with qualified name like "Span·new"
+                        ≔ qualified_name = format!("{}·{}", type_name, f.name.name);
+                        self.functions.insert(qualified_name, fn_type);
+                    }
+                }
+
+                // Clear Self type
+                self.current_self_type = null;
+            },
+            _ => {},
+        }
+    }
+
+    /// Check an item (third pass of type checking).
+    /// This is public to support multi-file compilation where all types
+    /// and functions are collected before checking item bodies.
+    ☉ λ check_item(Δ self, item: !Item) {
+        ⌥ item {
+            Item·Function(f) => self.check_function(f),
+            Item·Impl(impl_block) => {
+                // Extract type name ∀ Self resolution
+                ≔ type_name = ⌥ impl_block.self_ty {
+                    TypeExpr·Path(p) => {
+                        ⎇ p.segments.len() > 0 {
+                            ?p.segments[0].ident.name
+                        } ⎉ {
+                            null
+                        }
+                    },
+                    _ => null,
+                };
+
+                // Set current Self type
+                self.current_self_type = type_name;
+
+                // Check each function ∈ the ⊢ block
+                ∀ impl_item ∈ impl_block.items {
+                    ⎇ ≔ ImplItem·Function(f) = impl_item {
+                        self.check_function(f);
+                    }
+                }
+
+                // Clear Self type
+                self.current_self_type = null;
+            },
+            Item·Const(c) => {
+                ≔ declared = self.convert_type(c.ty);
+                ≔ inferred = self.infer_expr(c.value);
+                ⎇ !self.unify(declared, inferred) {
+                    self.error(TypeError·new(format!(
+                        "type mis⌥ ∈ const '{}': expected {}, found {}",
+                        c.name.name, declared.to_string(), inferred.to_string()
+                    )).with_span(c.name.span));
+                }
+            },
+            Item·Static(s) => {
+                ≔ declared = self.convert_type(s.ty);
+                ≔ inferred = self.infer_expr(s.value);
+                ⎇ !self.unify(declared, inferred) {
+                    self.error(TypeError·new(format!(
+                        "type mis⌥ ∈ static '{}': expected {}, found {}",
+                        s.name.name, declared.to_string(), inferred.to_string()
+                    )).with_span(s.name.span));
+                }
+            },
+            _ => {},
+        }
+    }
+
+    /// Check a function body
+    λ check_function(Δ self, func: !Function) {
+        self.push_scope();
+
+        // Bind parameters with evidence inference
+        ∀ param ∈ func.params {
+            ≔ ty = self.convert_type(param.ty);
+            ≔ type_evidence = self.get_evidence(ty);
+            ≔ evidence = ⌥ param.pattern.evidentiality() {
+                ?e => EvidenceLevel·from_ast(e),
+                null => type_evidence,
+            };
+
+            ⎇ ≔ ?name = param.pattern.binding_name() {
+                self.env.define(name, ty, evidence);
+            }
+        }
+
+        // Check body
+        ⎇ ≔ ?body = func.body {
+            ≔ body_type = self.check_block(body);
+
+            // Check ⤺ type
+            ≔ expected_⤺ = ⌥ func.return_type {
+                ?t => self.convert_type(t),
+                null => Type·Unit,
+            };
+
+            // Check structural type compatibility
+            ⎇ !self.unify(expected_return, body_type) {
+                self.error(TypeError·new(format!(
+                    "⤺ type mis⌥ ∈ '{}': expected {}, found {}",
+                    func.name.name, expected_return.to_string(), body_type.to_string()
+                )).with_span(func.name.span));
+            }
+
+            // Evidence inference ∀ ⤺ types
+            ≔ has_explicit_evidence = self.type_has_explicit_evidence(func.return_type);
+            ≔ actual_evidence = self.get_evidence(body_type);
+
+            ⎇ has_explicit_evidence {
+                ≔ expected_evidence = self.get_evidence(expected_return);
+                self.check_evidence(
+                    expected_evidence,
+                    actual_evidence,
+                    format!("in ⤺ type of '{}'", func.name.name)
+                );
+            } ⎉ {
+                // For public functions, warn about missing evidence annotation
+                ⎇ func.visibility == Visibility·Public
+                    && actual_evidence.rank() > EvidenceLevel·Known.rank() {
+                    self.error(TypeError·new(format!(
+                        "public function '{}' returns {} ({}) data but has no explicit evidence annotation",
+                        func.name.name,
+                        actual_evidence.name(),
+                        actual_evidence.symbol()
+                    ))
+                    .with_span(func.name.span)
+                    .with_note("help: add explicit evidence annotation to the ⤺ type")
+                    .with_note(format!(
+                        "example: λ {}(...) -> {}{} {{ ... }}",
+                        func.name.name,
+                        expected_return.to_string(),
+                        actual_evidence.symbol()
+                    )));
+                }
+            }
+        }
+
+        self.pop_scope();
+    }
+
+    /// Check ⎇ a type expression has an explicit evidence annotation
+    λ type_has_explicit_evidence(self, ty: ?TypeExpr) -> !bool {
+        ⌥ ty {
+            ?TypeExpr·Evidential { .. } => true,
+            ?TypeExpr·Reference { inner, .. }
+            | ?TypeExpr·Pointer { inner, .. }
+            | ?TypeExpr·Slice(inner)
+            | ?TypeExpr·Array { element: inner, .. } => {
+                self.type_has_explicit_evidence(?*inner)
+            },
+            ?TypeExpr·Tuple(elements) => {
+                elements|any{e => self.type_has_explicit_evidence(?e)}
+            },
+            _ => false,
+        }
+    }
+
+    /// Check a block and ⤺ its type
+    λ check_block(Δ self, block: !Block) -> !Type {
+        self.push_scope();
+
+        ≔ Δ diverges = false;
+        ∀ stmt ∈ block.stmts {
+            ≔ stmt_ty = self.check_stmt(stmt);
+            ⎇ stmt_ty.is_never() {
+                diverges = true;
+            }
+        }
+
+        ≔ result = ⌥ block.expr {
+            ?expr => self.infer_expr(expr),
+            null => ⎇ diverges { Type·Never } ⎉ { Type·Unit },
+        };
+
+        self.pop_scope();
+        result
+    }
+
+    /// Check a statement and ⤺ its type
+    λ check_stmt(Δ self, stmt: !Stmt) -> !Type {
+        ⌥ stmt {
+            Stmt·Let { pattern, ty, init } => {
+                ≔ declared_ty = ⌥ ty {
+                    ?t => ?self.convert_type(t),
+                    null => null,
+                };
+                ≔ init_ty = ⌥ init {
+                    ?e => ?self.infer_expr(e),
+                    null => null,
+                };
+
+                ≔ final_ty = ⌥ (declared_ty, init_ty) {
+                    (?d, ?i) => {
+                        ⎇ !self.unify(d, i) {
+                            self.error(TypeError·new(format!(
+                                "type mis⌥ ∈ ≔ binding: expected {}, found {}",
+                                d.to_string(), i.to_string()
+                            )));
+                        }
+                        d
+                    },
+                    (?d, null) => d,
+                    (null, ?i) => i,
+                    (null, null) => self.fresh_var(),
+                };
+
+                // Evidence inference
+                ≔ evidence = ⌥ pattern.evidentiality() {
+                    ?e => EvidenceLevel·from_ast(e),
+                    null => ⌥ init_ty {
+                        ?ty => self.get_evidence(ty),
+                        null => EvidenceLevel·Known,
+                    },
+                };
+
+                ⎇ ≔ ?name = pattern.binding_name() {
+                    self.env.define(name, final_ty, evidence);
+                }
+
+                Type·Unit
+            },
+            Stmt·LetElse { pattern, ty, init, else_branch } => {
+                // Let-else: ≔ Pattern = expr ⎉ { ... }
+                ≔ declared_ty = ⌥ ty {
+                    ?t => ?self.convert_type(t),
+                    null => null,
+                };
+                ≔ init_ty = ?self.infer_expr(init);
+
+                ≔ final_ty = ⌥ (declared_ty, init_ty) {
+                    (?d, ?i) => {
+                        ⎇ !self.unify(d, i) {
+                            self.error(TypeError·new(format!(
+                                "type mis⌥ ∈ let-⎉ binding: expected {}, found {}",
+                                d.to_string(), i.to_string()
+                            )));
+                        }
+                        d
+                    },
+                    (?d, null) => d,
+                    (null, ?i) => i,
+                    (null, null) => self.fresh_var(),
+                };
+
+                // Evidence inference
+                ≔ evidence = ⌥ pattern.evidentiality() {
+                    ?e => EvidenceLevel·from_ast(e),
+                    null => ⌥ init_ty {
+                        ?ty => self.get_evidence(ty),
+                        null => EvidenceLevel·Known,
+                    },
+                };
+
+                // Bind pattern variables
+                self.bind_pattern(pattern, final_ty, evidence);
+
+                // Check ⎉ branch (must diverge)
+                self.infer_expr(else_branch);
+
+                Type·Unit
+            },
+            Stmt·Expr(e) | Stmt·Semi(e) => self.infer_expr(e),
+            Stmt·Item(item) => {
+                self.check_item(item);
+                Type·Unit
+            },
+        }
+    }
+
+    // ========================================================================
+    // Expression Type Inference
+    // ========================================================================
+
+    /// Infer the type of an expression
+    ☉ λ infer_expr(Δ self, expr: !Expr) -> !Type {
+        ⌥ expr {
+            Expr·Literal(lit) => self.infer_literal(lit),
+
+            Expr·Path(path) => {
+                ⎇ path.segments.len() == 1 {
+                    // Single segment: variable or function lookup
+                    ≔ name = path.segments[0].ident.name;
+                    ⎇ ≔ ?(ty, _) = self.env.lookup(name) {
+                        ⤺ ty;
+                    }
+                    ⎇ ≔ ?ty = self.functions.get(name) {
+                        ⤺ self.freshen(ty);
+                    }
+                } ⎉ ⎇ path.segments.len() == 2 {
+                    // Two segments: Type·method lookup (associated function)
+                    ≔ type_name = path.segments[0].ident.name;
+                    ≔ method_name = path.segments[1].ident.name;
+                    ≔ qualified_name = format!("{}·{}", type_name, method_name);
+                    ⎇ ≔ ?ty = self.functions.get(qualified_name) {
+                        ⤺ self.freshen(ty);
+                    }
+                } ⎉ {
+                    // Multi-segment path: try joining with ·
+                    ≔ names: ![String] = path.segments|τ{s => s.ident.name}|collect();
+                    ≔ qualified_name = names.join("·");
+                    ⎇ ≔ ?ty = self.functions.get(qualified_name) {
+                        ⤺ self.freshen(ty);
+                    }
+                }
+                self.error(TypeError·new(format!("undefined: {}", path.to_string())));
+                Type·Error
+            },
+
+            Expr·Binary { .. } => {
+                ≔ left = expr.left;
+                ≔ op = expr.op;
+                ≔ right = expr.right;
+                ≔ lt = self.infer_expr(*left);
+                ≔ rt = self.infer_expr(*right);
+                self.infer_binary_op(op, lt, rt)
+            },
+
+            Expr·Unary { .. } => {
+                ≔ op = expr.op;
+                ≔ inner_expr = expr.expr;
+                ≔ inner = self.infer_expr(*inner_expr);
+                self.infer_unary_op(op, inner)
+            },
+
+            Expr·Call { .. } => {
+                ≔ func = expr.func;
+                ≔ args = expr.args;
+                ≔ fn_type = self.infer_expr(*func);
+                ≔ arg_types: ![Type] = args|τ{a => self.infer_expr(a)}|collect();
+                ≔ (fn_inner, _) = self.strip_evidence(fn_type);
+
+                ⌥ fn_inner {
+                    Type·Function { .. } => {
+                        ≔ params = fn_inner.params;
+                        ≔ return_type = fn_inner.return_type;
+                        // Check argument count
+                        ⎇ params.len() != arg_types.len() {
+                            self.error(TypeError·new(format!(
+                                "expected {} arguments, found {}",
+                                params.len(), arg_types.len()
+                            )));
+                        }
+
+                        // Check argument types and evidence
+                        ∀ (i, (param, arg)) ∈ params.iter().zip(arg_types.iter()).enumerate() {
+                            ⎇ !self.unify(param, arg) {
+                                self.error(TypeError·new(format!(
+                                    "argument type mismatch: expected {}, found {}",
+                                    param.to_string(), arg.to_string()
+                                )));
+                            }
+
+                            // Check evidence ∀ non-polymorphic parameters
+                            ≔ is_var = ⌥ param { Type·Var(_) => true, _ => false };
+                            ⎇ !is_var {
+                                ≔ expected_ev = self.get_evidence(param);
+                                ≔ actual_ev = self.get_evidence(arg);
+                                self.check_evidence(expected_ev, actual_ev, format!("in argument {}", i + 1));
+                            }
+                        };
+
+                        *return_type
+                    },
+                    // Type variables can be called - assume it's a function, ⤺ fresh var
+                    Type·Var(_) => self.fresh_var(),
+                    // Generic type parameters (like F where F: λ(T) -> U) can be called
+                    // Check ⎇ it looks like a single-letter type param
+                    Type·Named { .. } => {
+                        ≔ type_name = fn_inner.name;
+                        // Single letter uppercase names are typically generic type params
+                        ⎇ type_name.len() == 1 {
+                            self.fresh_var()
+                        } ⎉ {
+                            self.error(TypeError·new("cannot call non-function"));
+                            Type·Error
+                        }
+                    },
+                    // Any other type - error
+                    _ => {
+                        self.error(TypeError·new("cannot call non-function"));
+                        Type·Error
+                    },
+                }
+            },
+
+            Expr·Array(elements) => {
+                ⎇ elements.is_empty() {
+                    Type·Array {
+                        element: Box·new(self.fresh_var()),
+                        size: ?0,
+                    }
+                } ⎉ {
+                    ≔ elem_ty = self.infer_expr(elements[0]);
+                    ≔ Δ idx: usize = 1;
+                    ⟳ idx < elements.len() {
+                        ≔ t = self.infer_expr(elements[idx]);
+                        ⎇ !self.unify(elem_ty, t) {
+                            self.error(TypeError·new("array elements must have same type"));
+                        }
+                        idx = idx + 1;
+                    }
+                    Type·Array {
+                        element: Box·new(elem_ty),
+                        size: ?elements.len(),
+                    }
+                }
+            },
+
+            Expr·Repeat { value, count } => {
+                // [value; count] - array repeat syntax
+                ≔ elem_ty = self.infer_expr(*value);
+                // Count should be an integer
+                ≔ count_ty = self.infer_expr(*count);
+                // We'll assume the count is evaluated at compile time to get the size
+                // For now, ⤺ an array with unknown size
+                Type·Array {
+                    element: Box·new(elem_ty),
+                    size: null,  // Size determined at compile time
+                }
+            },
+
+            Expr·Tuple(elements) => {
+                Type·Tuple(elements|τ{e => self.infer_expr(e)}|collect())
+            },
+
+            Expr·Block(block) => self.check_block(block),
+
+            Expr·If { condition, then_branch, else_branch } => {
+                ≔ cond_ty = self.infer_expr(*condition);
+                ⎇ !self.unify(Type·Bool, cond_ty) {
+                    self.error(TypeError·new("⎇ condition must be bool"));
+                }
+
+                ≔ then_ty = self.check_block(then_branch);
+
+                ⌥ else_branch {
+                    ?else_expr => {
+                        ≔ else_ty = ⌥ *else_expr {
+                            Expr·Block(block) => self.check_block(block),
+                            other => self.infer_expr(other),
+                        };
+
+                        ⎇ !self.unify(then_ty, else_ty) {
+                            self.error(TypeError·new("⎇ branches must have same type"));
+                        }
+
+                        // Join evidence from both branches
+                        ≔ then_ev = self.get_evidence(then_ty);
+                        ≔ else_ev = self.get_evidence(else_ty);
+                        ≔ joined_ev = then_ev.join(else_ev);
+
+                        ≔ (inner_ty, _) = self.strip_evidence(then_ty);
+                        ⎇ joined_ev.rank() > EvidenceLevel·Known.rank() {
+                            Type·Evidential {
+                                inner: Box·new(inner_ty),
+                                evidence: joined_ev,
+                            }
+                        } ⎉ {
+                            inner_ty
+                        }
+                    },
+                    null => Type·Unit,
+                }
+            },
+
+            Expr·While { .. } => {
+                ≔ condition = expr.condition;
+                ≔ body = expr.body;
+                ≔ cond_ty = self.infer_expr(*condition);
+                ⎇ !self.unify(Type·Bool, cond_ty) {
+                    self.error(TypeError·new("⟳ condition must be bool"));
+                }
+                self.check_block(body);
+                Type·Unit
+            },
+
+            Expr·For { .. } => {
+                ≔ iter = expr.iter;
+                ≔ body = expr.body;
+                ≔ iter_ty = self.infer_expr(*iter);
+                // TODO: extract element type from iterator
+                self.check_block(body);
+                Type·Unit
+            },
+
+            Expr·Assign { .. } => {
+                ≔ target = expr.target;
+                ≔ value = expr.value;
+                ≔ target_ty = self.infer_expr(*target);
+                ≔ value_ty = self.infer_expr(*value);
+                ⎇ !self.unify(target_ty, value_ty) {
+                    self.error(TypeError·new(format!(
+                        "type mis⌥ ∈ assignment: expected {}, found {}",
+                        target_ty.to_string(), value_ty.to_string()
+                    )));
+                }
+                Type·Unit
+            },
+
+            Expr·Pipe { .. } => {
+                ≔ pipe_expr = expr.expr;
+                ≔ operations = expr.operations;
+                ≔ Δ current = self.infer_expr(*pipe_expr);
+                ∀ op ∈ operations {
+                    current = self.infer_pipe_op(op, current);
+                }
+                current
+            },
+
+            Expr·Index { .. } => {
+                ≔ index_expr = expr.expr;
+                ≔ index = expr.index;
+                ≔ coll_ty = self.infer_expr(*index_expr);
+                ≔ idx_ty = self.infer_expr(*index);
+
+                ⌥ coll_ty {
+                    Type·Array { .. } => {
+                        ≔ element = coll_ty.element;
+                        ≔ is_int = ⌥ idx_ty { Type·Int(_) => true, _ => false };
+                        ⎇ !is_int {
+                            self.error(TypeError·new("index must be integer"));
+                        };
+                        ≔ result = *element;
+                        result
+                    },
+                    Type·Slice(element) => {
+                        ≔ is_int = ⌥ idx_ty { Type·Int(_) => true, _ => false };
+                        ⎇ !is_int {
+                            self.error(TypeError·new("index must be integer"));
+                        };
+                        ≔ result = *element;
+                        result
+                    },
+                    _ => {
+                        self.error(TypeError·new("cannot index non-array"));
+                        Type·Error
+                    },
+                }
+            },
+
+            Expr·Return(val) => {
+                ⎇ ≔ ?e = val {
+                    self.infer_expr(*e);
+                }
+                Type·Never
+            },
+
+            Expr·Evidential { .. } => {
+                ≔ ev_expr = expr.expr;
+                ≔ evidentiality = expr.evidentiality;
+                ≔ inner = self.infer_expr(*ev_expr);
+                Type·Evidential {
+                    inner: Box·new(inner),
+                    evidence: EvidenceLevel·from_ast(evidentiality),
+                }
+            },
+
+            Expr·Match { .. } => {
+                ≔ match_expr = expr.expr;
+                ≔ arms = expr.arms;
+                ≔ scrutinee = self.infer_expr(*match_expr);
+                ≔ scrutinee_ev = self.get_evidence(scrutinee);
+
+                ⎇ arms.is_empty() {
+                    ⤺ Type·Never;
+                }
+
+                ≔ Δ arm_types: ![Type] = [];
+                ≔ Δ max_evidence = EvidenceLevel·Known;
+
+                ∀ arm ∈ arms {
+                    self.push_scope();
+
+                    // Bind pattern variables with scrutinee's evidence
+                    self.bind_pattern(arm.pattern, scrutinee, scrutinee_ev);
+
+                    // Check guard
+                    ⎇ ≔ ?guard = arm.guard {
+                        ≔ guard_ty = self.infer_expr(guard);
+                        ⎇ !self.unify(Type·Bool, guard_ty) {
+                            self.error(TypeError·new("⌥ guard must be bool"));
+                        }
+                    }
+
+                    // Infer arm body
+                    ≔ body_ty = self.infer_expr(arm.body);
+                    ≔ body_ev = self.get_evidence(body_ty);
+
+                    max_evidence = max_evidence.join(body_ev);
+                    arm_types.push(body_ty);
+
+                    self.pop_scope();
+                }
+
+                // Unify all arm types
+                ≔ first_ty = arm_types[0];
+                ∀ (i, ty) ∈ arm_types.iter().enumerate().skip(1) {
+                    ⎇ !self.unify(first_ty, ty) {
+                        self.error(TypeError·new(format!(
+                            "⌥ arm {} has incompatible type", i + 1
+                        )));
+                    }
+                }
+
+                // Result has joined evidence
+                ≔ (inner_ty, _) = self.strip_evidence(first_ty);
+                ⎇ max_evidence.rank() > EvidenceLevel·Known.rank() {
+                    Type·Evidential {
+                        inner: Box·new(inner_ty),
+                        evidence: max_evidence,
+                    }
+                } ⎉ {
+                    inner_ty
+                }
+            },
+
+            Expr·MethodCall { receiver, method, args } => {
+                ≔ recv_ty = self.infer_expr(*receiver);
+                ≔ arg_types: ![Type] = args|τ{a => self.infer_expr(a)}|collect();
+                ≔ (inner_recv_ty, _) = self.strip_evidence(recv_ty);
+
+                // Handle common methods on primitive types
+                ⌥ (inner_recv_ty, method.name) {
+                    // Integer methods
+                    (Type·Int(_), "min") | (Type·Int(_), "max") |
+                    (Type·Int(_), "abs") | (Type·Int(_), "pow") |
+                    (Type·Int(_), "saturating_add") | (Type·Int(_), "saturating_sub") |
+                    (Type·Int(_), "wrapping_add") | (Type·Int(_), "wrapping_sub") => recv_ty,
+
+                    // String methods
+                    (Type·Str, "len") => Type·Int(IntWidth·UWord),
+                    (Type·Str, "is_empty") => Type·Bool,
+                    (Type·Str, "to_string") | (Type·Str, "clone") |
+                    (Type·Str, "trim") | (Type·Str, "to_uppercase") |
+                    (Type·Str, "to_lowercase") => Type·Str,
+                    (Type·Str, "chars") => Type·Array { element: Box·new(Type·Char), length: null },
+                    (Type·Str, "starts_with") | (Type·Str, "ends_with") |
+                    (Type·Str, "contains") => Type·Bool,
+
+                    // Array methods
+                    (Type·Array { element, .. }, "len") => Type·Int(IntWidth·UWord),
+                    (Type·Array { element, .. }, "is_empty") => Type·Bool,
+                    (Type·Array { element, .. }, "first") |
+                    (Type·Array { element, .. }, "last") => *element,
+                    (Type·Array { element, .. }, "get") => *element,
+                    (Type·Array { element, .. }, "iter") => recv_ty,
+                    (Type·Array { element, .. }, "push") => Type·Unit,
+                    (Type·Array { element, .. }, "pop") => *element,
+
+                    // HashMap/Map methods
+                    (Type·Named { name, generics }, "entry") => {
+                        ⎇ (name == "HashMap" || name == "Map") && generics.len() >= 2 {
+                            // entry() returns Entry<K, V> - represent as Named type
+                            Type·Named {
+                                name: "Entry".to_string(),
+                                generics: generics.clone(),
+                            }
+                        } ⎉ {
+                            self.fresh_var()
+                        }
+                    },
+                    (Type·Named { name, generics }, "get") => {
+                        ⎇ (name == "HashMap" || name == "Map") && generics.len() >= 2 {
+                            // get() returns Option<&V>
+                            generics[1].clone()
+                        } ⎉ {
+                            self.fresh_var()
+                        }
+                    },
+                    (Type·Named { name, generics }, "insert") => {
+                        ⎇ name == "HashMap" || name == "Map" {
+                            Type·Unit
+                        } ⎉ {
+                            self.fresh_var()
+                        }
+                    },
+                    (Type·Named { name, generics }, "contains_key") => {
+                        ⎇ name == "HashMap" || name == "Map" {
+                            Type·Bool
+                        } ⎉ {
+                            self.fresh_var()
+                        }
+                    },
+
+                    // Entry methods (∀ HashMap entry API)
+                    (Type·Named { name, generics }, "or_default") => {
+                        ⎇ name == "Entry" && generics.len() >= 2 {
+                            // or_default() returns &Δ V
+                            Type·Ref {
+                                mutable: true,
+                                inner: Box·new(generics[1].clone()),
+                            }
+                        } ⎉ {
+                            self.fresh_var()
+                        }
+                    },
+                    (Type·Named { name, generics }, "or_insert") => {
+                        ⎇ name == "Entry" && generics.len() >= 2 {
+                            // or_insert(v) returns &Δ V
+                            Type·Ref {
+                                mutable: true,
+                                inner: Box·new(generics[1].clone()),
+                            }
+                        } ⎉ {
+                            self.fresh_var()
+                        }
+                    },
+                    (Type·Named { name, generics }, "or_insert_with") => {
+                        ⎇ name == "Entry" && generics.len() >= 2 {
+                            // or_insert_with(f) returns &Δ V
+                            Type·Ref {
+                                mutable: true,
+                                inner: Box·new(generics[1].clone()),
+                            }
+                        } ⎉ {
+                            self.fresh_var()
+                        }
+                    },
+
+                    // Common methods that ⤺ self type
+                    (_, "clone") => recv_ty,
+                    (_, "to_string") => Type·Str,
+                    (_, "into") => self.fresh_var(),
+
+                    // Default: ⤺ fresh var ∀ unrecognized methods
+                    _ => self.fresh_var(),
+                }
+            },
+
+            Expr·Field { .. } => {
+                ≔ field_expr = expr.expr;
+                ≔ field = expr.field;
+                ≔ recv_ty = self.infer_expr(*field_expr);
+
+                // Look up field type ∈ Σ definition
+                ⌥ recv_ty {
+                    Type·Named { .. } => {
+                        ≔ name = recv_ty.name;
+                        ⎇ ≔ ?TypeDef·Struct { .. } = self.types.get(name) {
+                            ≔ def = self.types.get(name);
+                            ⎇ ≔ ?TypeDef·Struct { .. } = def {
+                                ≔ fields = def.fields;
+                                ∀ (field_name, field_ty) ∈ fields {
+                                    ⎇ field_name == field.name {
+                                        ⤺ field_ty;
+                                    }
+                                }
+                            }
+                        }
+                        self.fresh_var()
+                    },
+                    Type·Ref { .. } => {
+                        ≔ inner = recv_ty.inner;
+                        // Deref and look up field
+                        ⌥ *inner {
+                            Type·Named { .. } => {
+                                ≔ name = inner.name;
+                                ⎇ ≔ ?TypeDef·Struct { .. } = self.types.get(name) {
+                                    ≔ def = self.types.get(name);
+                                    ⎇ ≔ ?TypeDef·Struct { .. } = def {
+                                        ≔ fields = def.fields;
+                                        ∀ (field_name, field_ty) ∈ fields {
+                                            ⎇ field_name == field.name {
+                                                ⤺ field_ty;
+                                            }
+                                        }
+                                    }
+                                }
+                                self.fresh_var()
+                            },
+                            _ => self.fresh_var(),
+                        }
+                    },
+                    _ => self.fresh_var(),
+                }
+            },
+
+            Expr·Struct { .. } => {
+                ≔ path = expr.path;
+                ≔ fields = expr.fields;
+                // Look up Σ type
+                ≔ Δ name = ⎇ path.segments.len() > 0 {
+                    path.segments[0].ident.name
+                } ⎉ {
+                    "".to_string()
+                };
+
+                // Resolve Self to current type
+                ⎇ name == "Self" {
+                    ⎇ ≔ ?self_type = self.current_self_type {
+                        name = self_type;
+                    }
+                }
+
+                // Handle Uncertain/Known/Reported prefixed type names
+                // (generated by the interpreter ∀ evidential types)
+                ≔ base_name = ⎇ name.starts_with("Uncertain") {
+                    name[9..].to_string()
+                } ⎉ ⎇ name.starts_with("Known") {
+                    name[5..].to_string()
+                } ⎉ ⎇ name.starts_with("Reported") {
+                    name[8..].to_string()
+                } ⎉ {
+                    name.clone()
+                };
+
+                // Try base name first, then original name
+                ≔ lookup_name = ⎇ self.types.contains_key(base_name) {
+                    base_name
+                } ⎉ {
+                    name
+                };
+
+                ⎇ ≔ ?TypeDef·Struct { generics, fields: def_fields } = self.types.get(lookup_name) {
+                    // Check that all fields are provided and have correct types
+                    ∀ field_init ∈ fields {
+                        ⎇ ≔ ?val = field_init.value {
+                            ≔ val_ty = self.infer_expr(val);
+                            // Find field ∈ Σ def and check type
+                            ∀ (def_name, def_ty) ∈ def_fields {
+                                ⎇ def_name == field_init.name.name {
+                                    ⎇ !self.unify(def_ty, val_ty) {
+                                        self.error(TypeError·new(format!(
+                                            "field '{}' type mismatch",
+                                            field_init.name.name
+                                        )));
+                                    }
+                                    ⊗;
+                                }
+                            }
+                        }
+                    }
+                    // Return the canonical type name (base_name), not the evidential-prefixed one
+                    Type·Named { name: lookup_name, generics: [] }
+                } ⎉ {
+                    self.error(TypeError·new(format!("undefined struct: {}", lookup_name)));
+                    Type·Error
+                }
+            },
+
+            Expr·Closure { params, body, .. } => {
+                self.push_scope();
+
+                // Create param types
+                ≔ param_types: ![Type] = params|τ{p =>
+                    ⌥ p.ty {
+                        ?t => self.convert_type(t),
+                        null => self.fresh_var(),
+                    }
+                }|collect();
+
+                // Bind params
+                ∀ (i, param) ∈ params.iter().enumerate() {
+                    ⎇ ≔ ?name = param.pattern.binding_name() {
+                        self.env.define(name, param_types[i], EvidenceLevel·Known);
+                    }
+                }
+
+                // Infer body
+                ≔ body_ty = self.infer_expr(*body);
+
+                self.pop_scope();
+
+                Type·Function {
+                    params: param_types,
+                    return_type: Box·new(body_ty),
+                    is_async: false,
+                }
+            },
+
+            Expr·Try(inner) => {
+                // Try expression unwraps Result/Option
+                ≔ inner_ty = self.infer_expr(*inner);
+                // For now, ⤺ a fresh var since we don't track Result/Option properly
+                self.fresh_var()
+            },
+
+            Expr·Range { .. } => {
+                ≔ start = expr.start;
+                ≔ end = expr.end;
+                // Range type
+                ⎇ ≔ ?s = start {
+                    self.infer_expr(*s);
+                }
+                ⎇ ≔ ?e = end {
+                    self.infer_expr(*e);
+                }
+                // Return a range type
+                Type·Named { name: "Range", generics: [] }
+            },
+
+            Expr·Reference { .. } => {
+                ≔ mutable = expr.mutable;
+                ≔ ref_expr = expr.expr;
+                ≔ inner = self.infer_expr(*ref_expr);
+                Type·Ref {
+                    mutable,
+                    inner: Box·new(inner),
+                }
+            },
+
+            Expr·Cast { .. } => {
+                ≔ cast_expr = expr.expr;
+                ≔ ty = expr.ty;
+                self.infer_expr(*cast_expr);
+                self.convert_type(ty)
+            },
+
+            Expr·Let { .. } => {
+                ≔ pattern = expr.pattern;
+                ≔ value = expr.value;
+                // Let expression ∈ if-≔ returns bool
+                ≔ init_ty = self.infer_expr(*value);
+                self.bind_pattern(pattern, init_ty, EvidenceLevel·Known);
+                Type·Bool
+            },
+
+            Expr·Break(val) => {
+                ⎇ ≔ ?v = val {
+                    self.infer_expr(*v);
+                }
+                Type·Never
+            },
+
+            Expr·Continue => Type·Never,
+
+            Expr·Macro { .. } => {
+                ≔ path = expr.path;
+                // Macro invocations - type depends on macro
+                // Get macro name from path
+                ≔ name = ⎇ path.segments.len() > 0 {
+                    path.segments[0].ident.name
+                } ⎉ {
+                    ""
+                };
+                ⌥ name {
+                    "format" | "println" | "print" => Type·Str,
+                    "vec" => Type·Array { element: Box·new(self.fresh_var()), length: null },
+                    "assert" | "assert_eq" | "debug_assert" => Type·Unit,
+                    _ => self.fresh_var(),
+                }
+            },
+
+            _ => self.fresh_var(),
+        }
+    }
+
+    /// Infer type from literal
+    λ infer_literal(self, lit: !Literal) -> !Type {
+        ⌥ lit {
+            Literal·Int { .. } => Type·Int(IntWidth·I64),
+            Literal·Float { .. } => Type·Float(FloatWidth·F64),
+            Literal·Bool(_) => Type·Bool,
+            Literal·Char(_) => Type·Char,
+            Literal·String(_) => Type·Str,
+            Literal·MultiLineString(_) => Type·Str,
+            Literal·RawString(_) => Type·Str,
+            Literal·ByteString(bytes) => Type·Array {
+                element: Box·new(Type·Int(IntWidth·U8)),
+                size: ?bytes.len(),
+            },
+            Literal·ByteChar(_) => Type·Int(IntWidth·U8),
+            Literal·InterpolatedString { .. } => Type·Str,
+            Literal·SigilStringSql(_) => Type·Str,
+            Literal·SigilStringRoute(_) => Type·Str,
+            Literal·Null => Type·Unit,
+            Literal·Empty => Type·Unit,
+            Literal·Infinity => Type·Float(FloatWidth·F64),
+            Literal·Circle => Type·Float(FloatWidth·F64),
+        }
+    }
+
+    /// Infer type of binary operation
+    λ infer_binary_op(Δ self, op: !BinOp, left: !Type, right: !Type) -> !Type {
+        ≔ (left_inner, left_ev) = self.strip_evidence(left);
+        ≔ (right_inner, right_ev) = self.strip_evidence(right);
+
+        ≔ result_ty = ⌥ op {
+            // Arithmetic
+            BinOp·Add | BinOp·Sub | BinOp·Mul | BinOp·Div | BinOp·Rem | BinOp·Pow => {
+                ⎇ !self.unify(left_inner, right_inner) {
+                    self.error(TypeError·new("arithmetic operands must have same type"));
+                }
+                left_inner
+            },
+
+            // Comparison
+            BinOp·Eq | BinOp·Ne | BinOp·Lt | BinOp·Le | BinOp·Gt | BinOp·Ge => {
+                ⎇ !self.unify(left_inner, right_inner) {
+                    self.error(TypeError·new("comparison operands must have same type"));
+                }
+                Type·Bool
+            },
+
+            // Logical
+            BinOp·And | BinOp·Or => {
+                ⎇ !self.unify(Type·Bool, left_inner) {
+                    self.error(TypeError·new("logical operand must be bool"));
+                }
+                ⎇ !self.unify(Type·Bool, right_inner) {
+                    self.error(TypeError·new("logical operand must be bool"));
+                }
+                Type·Bool
+            },
+
+            // Bitwise
+            BinOp·BitAnd | BinOp·BitOr | BinOp·BitXor | BinOp·Shl | BinOp·Shr => left_inner,
+
+            // String concatenation
+            BinOp·Concat => {
+                ⎇ !self.unify(Type·Str, left_inner) {
+                    self.error(TypeError·new("concat operand must be string"));
+                }
+                Type·Str
+            },
+
+            // Matrix multiplication - returns tensor type
+            BinOp·MatMul => {
+                // For now, accept any types and ⤺ left type
+                // Real implementation would check tensor shapes
+                left_inner
+            },
+        };
+
+        // Combine evidence levels
+        ≔ combined_ev = left_ev.join(right_ev);
+
+        ⎇ combined_ev.rank() > EvidenceLevel·Known.rank() {
+            Type·Evidential {
+                inner: Box·new(result_ty),
+                evidence: combined_ev,
+            }
+        } ⎉ {
+            result_ty
+        }
+    }
+
+    /// Infer type of unary operation
+    λ infer_unary_op(Δ self, op: !UnaryOp, inner: !Type) -> !Type {
+        ≔ (inner_ty, evidence) = self.strip_evidence(inner);
+
+        ≔ result = ⌥ op {
+            UnaryOp·Neg => inner_ty,
+            UnaryOp·Not => {
+                ⎇ !self.unify(Type·Bool, inner_ty) {
+                    self.error(TypeError·new("! operand must be bool"));
+                }
+                Type·Bool
+            },
+            UnaryOp·Ref => Type·Ref {
+                mutable: false,
+                inner: Box·new(inner_ty),
+            },
+            UnaryOp·RefMut => Type·Ref {
+                mutable: true,
+                inner: Box·new(inner_ty),
+            },
+            UnaryOp·Deref => {
+                ⌥ inner_ty {
+                    Type·Ref { inner, .. } | Type·Ptr { inner, .. } => *inner,
+                    _ => {
+                        self.error(TypeError·new("cannot dereference non-pointer"));
+                        Type·Error
+                    },
+                }
+            },
+        };
+
+        ⎇ evidence.rank() > EvidenceLevel·Known.rank() {
+            Type·Evidential {
+                inner: Box·new(result),
+                evidence,
+            }
+        } ⎉ {
+            result
+        }
+    }
+
+    /// Infer type of pipe operation
+    λ infer_pipe_op(Δ self, op: !PipeOp, input: !Type) -> !Type {
+        ≔ (inner, evidence) = self.strip_evidence(input);
+
+        ≔ result = ⌥ op {
+            // Transform: [T] -> [U]
+            PipeOp·Transform(_) => {
+                ⌥ inner {
+                    Type·Array { .. } => {
+                        ≔ element = inner.element;
+                        ≔ length = inner.length;
+                        Type·Array { element, length }
+                    },
+                    Type·Slice(element) => Type·Slice(element),
+                    _ => {
+                        self.error(TypeError·new("transform requires array or slice"));
+                        Type·Error
+                    },
+                }
+            },
+
+            // Filter: [T] -> [T]
+            PipeOp·Filter(_) => inner,
+
+            // Sort: [T] -> [T]
+            PipeOp·Sort(_) => inner,
+
+            // Reduce: [T] -> T
+            PipeOp·Reduce(_) => {
+                ⌥ inner {
+                    Type·Array { .. } => {
+                        ≔ element = inner.element;
+                        *element
+                    },
+                    Type·Slice(element) => *element,
+                    _ => {
+                        self.error(TypeError·new("reduce requires array or slice"));
+                        Type·Error
+                    },
+                }
+            },
+
+            // Numeric reductions
+            PipeOp·ReduceSum | PipeOp·ReduceProd | PipeOp·ReduceMin | PipeOp·ReduceMax => {
+                ⌥ inner {
+                    Type·Array { element, .. } | Type·Slice(element) => {
+                        ⌥ *element {
+                            Type·Int(_) | Type·Float(_) => *element,
+                            _ => {
+                                self.error(TypeError·new("numeric reduction requires numeric array"));
+                                Type·Error
+                            },
+                        }
+                    },
+                    _ => {
+                        self.error(TypeError·new("reduction requires array or slice"));
+                        Type·Error
+                    },
+                }
+            },
+
+            // Boolean reductions
+            PipeOp·ReduceAll | PipeOp·ReduceAny => {
+                ⌥ inner {
+                    Type·Array { element, .. } | Type·Slice(element) => {
+                        ⌥ *element {
+                            Type·Bool => Type·Bool,
+                            _ => {
+                                self.error(TypeError·new("boolean reduction requires array of booleans"));
+                                Type·Error
+                            },
+                        }
+                    },
+                    _ => {
+                        self.error(TypeError·new("boolean reduction requires array or slice"));
+                        Type·Error
+                    },
+                }
+            },
+
+            // Concat reduction
+            PipeOp·ReduceConcat => {
+                ⌥ inner {
+                    Type·Array { element, .. } | Type·Slice(element) => {
+                        ⌥ *element {
+                            Type·Str => Type·Str,
+                            Type·Array { .. } => *element,
+                            _ => {
+                                self.error(TypeError·new("concat reduction requires array of strings or arrays"));
+                                Type·Error
+                            },
+                        }
+                    },
+                    _ => {
+                        self.error(TypeError·new("concat reduction requires array or slice"));
+                        Type·Error
+                    },
+                }
+            },
+
+            // Match morpheme
+            PipeOp·Match(arms) => {
+                ⎇ arms.is_empty() {
+                    self.error(TypeError·new("⌥ expression has no arms"));
+                    Type·Error
+                } ⎉ {
+                    ≔ result_type = self.infer_expr(arms[0].body);
+                    ≔ Δ idx: usize = 1;
+                    ⟳ idx < arms.len() {
+                        ≔ arm_type = self.infer_expr(arms[idx].body);
+                        self.unify(result_type, arm_type);
+                        idx = idx + 1;
+                    }
+                    result_type
+                }
+            },
+
+            // Try/Error transformation
+            PipeOp·TryMap(_) => self.fresh_var(),
+
+            // Method call
+            PipeOp·Method { name, args: _ } => {
+                ⎇ ≔ ?fn_ty = self.functions.get(name.name) {
+                    ≔ fresh_ty = self.freshen(fn_ty);
+                    ⌥ fresh_ty {
+                        Type·Function { return_type, .. } => *return_type,
+                        _ => Type·Error,
+                    }
+                } ⎉ {
+                    self.fresh_var()
+                }
+            },
+
+            // Named operation
+            PipeOp·Named { prefix, body: _ } => {
+                ⎇ ≔ ?first = prefix.first() {
+                    ⌥ first.name {
+                        "sum" | "product" => {
+                            ⌥ inner {
+                                Type·Array { element, .. } | Type·Slice(element) => *element,
+                                _ => {
+                                    self.error(TypeError·new("sum/product requires array"));
+                                    Type·Error
+                                },
+                            }
+                        },
+                        _ => self.fresh_var(),
+                    }
+                } ⎉ {
+                    self.fresh_var()
+                }
+            },
+
+            // Await: unwrap future
+            PipeOp·Await => inner,
+
+            // Access morphemes: [T] -> T
+            PipeOp·First | PipeOp·Last | PipeOp·Middle | PipeOp·Choice
+            | PipeOp·Nth(_) | PipeOp·Next => {
+                ⌥ inner {
+                    Type·Array { element, .. } | Type·Slice(element) => *element,
+                    Type·Tuple(elements) => {
+                        ⌥ elements.first() {
+                            ?first => first.clone(),
+                            null => Type·Unit,
+                        }
+                    },
+                    _ => {
+                        self.error(TypeError·new("access morpheme requires array, slice, or tuple"));
+                        Type·Error
+                    },
+                }
+            },
+
+            // Parallel/GPU morphemes
+            PipeOp·Parallel(inner_op) | PipeOp·Gpu(inner_op) => {
+                self.infer_pipe_op(*inner_op, input)
+            },
+
+            // Protocol operations - all have Reported evidence
+            PipeOp·Send(_) | PipeOp·Recv => {
+                ⤺ Type·Evidential {
+                    inner: Box·new(self.fresh_var()),
+                    evidence: EvidenceLevel·Reported,
+                };
+            },
+
+            PipeOp·Stream(_) | PipeOp·Connect(_) => self.fresh_var(),
+            PipeOp·Close => Type·Unit,
+            PipeOp·Header { .. } | PipeOp·Body(_) | PipeOp·Timeout(_) | PipeOp·Retry { .. } => inner,
+
+            // Evidence promotion operations
+            PipeOp·Validate { predicate: _, target_evidence } => {
+                ≔ target_ev = EvidenceLevel·from_ast(target_evidence);
+
+                ⎇ evidence.rank() < target_ev.rank() {
+                    self.error(TypeError·new(format!(
+                        "cannot demote evidence from {} ({}) to {} ({}) using validate",
+                        evidence.name(), evidence.symbol(),
+                        target_ev.name(), target_ev.symbol()
+                    )).with_note("validate! can only promote evidence to a more certain level"));
+                }
+
+                ⤺ Type·Evidential {
+                    inner: Box·new(inner.clone()),
+                    evidence: target_ev,
+                };
+            },
+
+            PipeOp·Assume { reason: _, target_evidence } => {
+                ≔ target_ev = EvidenceLevel·from_ast(target_evidence);
+
+                ⎇ evidence.rank() < target_ev.rank() {
+                    self.error(TypeError·new(format!(
+                        "assume! cannot demote evidence from {} ({}) to {} ({})",
+                        evidence.name(), evidence.symbol(),
+                        target_ev.name(), target_ev.symbol()
+                    )).with_note("assume! is ∀ promoting evidence, not demoting"));
+                }
+
+                ⤺ Type·Evidential {
+                    inner: Box·new(inner.clone()),
+                    evidence: target_ev,
+                };
+            },
+
+            PipeOp·AssertEvidence(expected_ast) => {
+                ≔ expected = EvidenceLevel·from_ast(expected_ast);
+
+                ⎇ !evidence.satisfies(expected) {
+                    self.error(TypeError·new(format!(
+                        "evidence assertion failed: expected {} ({}) or more certain, found {} ({})",
+                        expected.name(), expected.symbol(),
+                        evidence.name(), evidence.symbol()
+                    )).with_note("invoke |validate!{...} or |assume! to promote evidence before assertion"));
+                }
+
+                ⤺ input.clone();
+            },
+
+            // Scope functions
+            PipeOp·Also(_) | PipeOp·Apply(_) => input.clone(),
+
+            PipeOp·TakeIf(_) | PipeOp·TakeUnless(_) => {
+                ⤺ Type·Named {
+                    name: "Option",
+                    generics: [input.clone()],
+                };
+            },
+
+            PipeOp·Let(func) => {
+                self.infer_expr(*func);
+                self.fresh_var()
+            },
+
+            // Mathematical operations
+            PipeOp·All(_) | PipeOp·Any(_) => Type·Bool,
+            PipeOp·Compose(f) | PipeOp·Scan(f) | PipeOp·Gradient(f) => {
+                self.infer_expr(*f);
+                self.fresh_var()
+            },
+            PipeOp·Zip(other) => {
+                self.infer_expr(*other);
+                self.fresh_var()
+            },
+            PipeOp·Diff => self.fresh_var(),
+            PipeOp·SortAsc | PipeOp·SortDesc | PipeOp·Reverse => inner.clone(),
+            PipeOp·Cycle(n) | PipeOp·Windows(n) | PipeOp·Chunks(n) => {
+                self.infer_expr(*n);
+                self.fresh_var()
+            },
+            PipeOp·Flatten | PipeOp·Unique | PipeOp·Enumerate => self.fresh_var(),
+
+            // Call expression as pipe target: |&func or |expr
+            PipeOp·Call(expr) => {
+                ≔ callee_ty = self.infer_expr(*expr);
+                ⌥ callee_ty {
+                    Type·Function { return_type, .. } => *return_type,
+                    _ => self.fresh_var(),
+                }
+            },
+
+            // Macro invocation ∈ pipe: |macro!{...}
+            PipeOp·Macro { name: _, tokens: _ } => self.fresh_var(),
+        };
+
+        // Preserve evidence through pipe
+        ⎇ evidence.rank() > EvidenceLevel·Known.rank() {
+            Type·Evidential {
+                inner: Box·new(result),
+                evidence,
+            }
+        } ⎉ {
+            result
+        }
+    }
+
+    /// Strip evidence wrapper, returning (inner_type, evidence_level)
+    λ strip_evidence(self, ty: !Type) -> !(Type, EvidenceLevel) {
+        ⌥ ty {
+            Type·Evidential { .. } => {
+                ≔ inner = ty.inner;
+                ≔ evidence = ty.evidence;
+                (*inner, evidence)
+            },
+            _ => (ty, EvidenceLevel·Known),
+        }
+    }
+
+    /// Bind pattern variables with the given type and evidence level
+    λ bind_pattern(Δ self, pattern: !Pattern, ty: !Type, evidence: !EvidenceLevel) {
+        ≔ (inner_ty, ty_ev) = self.strip_evidence(ty);
+        ≔ final_ev = evidence.join(ty_ev);
+
+        ⌥ pattern {
+            Pattern·Ident { .. } => {
+                ≔ name = pattern.name;
+                ≔ evidentiality = pattern.evidentiality;
+                ≔ ev = ⌥ evidentiality {
+                    ?e => EvidenceLevel·from_ast(e),
+                    null => final_ev,
+                };
+                self.env.define(name.name, inner_ty, ev);
+            },
+            Pattern·Tuple(patterns) => {
+                ⎇ ≔ Type·Tuple(types) = inner_ty {
+                    ∀ (pat, ty) ∈ patterns.iter().zip(types.iter()) {
+                        self.bind_pattern(pat, ty, final_ev);
+                    }
+                }
+            },
+            Pattern·Struct { fields, .. } => {
+                ∀ field ∈ fields {
+                    ≔ fresh = self.fresh_var();
+                    ⌥ field.pattern {
+                        ?pat => self.bind_pattern(pat, fresh, final_ev),
+                        null => self.env.define(field.name.name, fresh, final_ev),
+                    }
+                }
+            },
+            Pattern·TupleStruct { fields, .. } => {
+                ∀ pat ∈ fields {
+                    ≔ fresh = self.fresh_var();
+                    self.bind_pattern(pat, fresh, final_ev);
+                }
+            },
+            Pattern·Slice(patterns) => {
+                ≔ elem_ty = ⌥ inner_ty {
+                    Type·Array { element, .. } | Type·Slice(element) => *element,
+                    _ => self.fresh_var(),
+                };
+                ∀ pat ∈ patterns {
+                    self.bind_pattern(pat, elem_ty, final_ev);
+                }
+            },
+            Pattern·Or(patterns) => {
+                ⎇ ≔ ?first = patterns.first() {
+                    self.bind_pattern(first, ty, evidence);
+                }
+            },
+            Pattern·Evidential { pattern: inner, evidentiality } => {
+                // Evidential patterns like ?(x, y) - process the inner pattern
+                ≔ ev = ⌥ evidentiality {
+                    ?e => EvidenceLevel·from_ast(e),
+                    null => final_ev,
+                };
+                self.bind_pattern(*inner, ty, ev);
+            },
+            Pattern·Path(_) => {
+                // Path patterns like None don't introduce bindings
+            },
+            Pattern·Ref { pattern: inner, .. } => {
+                // Ref patterns like &x bind the inner pattern to dereferenced type
+                ≔ elem_ty = ⌥ inner_ty {
+                    Type·Ref { inner, .. } => *inner,
+                    _ => self.fresh_var(),
+                };
+                self.bind_pattern(*inner, elem_ty, final_ev);
+            },
+            Pattern·Wildcard | Pattern·Rest | Pattern·Literal(_) | Pattern·Range { .. } => {
+                // No bindings introduced
+            },
+        }
+    }
+
+    // ========================================================================
+    // Type Unification
+    // ========================================================================
+
+    /// Fully resolve a type by following substitution chains
+    /// Detects cycles and returns the last variable ∈ the chain ⎇ a cycle is found
+    λ resolve_type(self, ty: !Type) -> !Type {
+        ⌥ ty {
+            Type·Var(v) => {
+                ≔ Δ seen: ![i64] = [];
+                ≔ Δ current = Type·Var(v);
+                loop {
+                    ⌥ current {
+                        Type·Var(cv) => {
+                            // Check ∀ cycle
+                            ⎇ seen.contains(cv.id) {
+                                // Cycle detected, ⤺ the current variable
+                                ⤺ current;
+                            }
+                            seen.push(cv.id);
+                            ⌥ self.substitutions.get(cv.id) {
+                                ?resolved => {
+                                    current = resolved.clone();
+                                },
+                                null => {
+                                    // Not substituted, ⤺ as-is
+                                    ⤺ current;
+                                }
+                            }
+                        },
+                        _ => {
+                            // Resolved to a concrete type
+                            ⤺ current;
+                        }
+                    }
+                }
+            },
+            _ => ty,
+        }
+    }
+
+    /// Attempt to unify two types
+    λ unify(Δ self, a: !Type, b: !Type) -> !bool {
+        ⌥ (a, b) {
+            // Same primitive types
+            (Type·Unit, Type·Unit) => true,
+            (Type·Bool, Type·Bool) => true,
+            (Type·Char, Type·Char) => true,
+            (Type·Str, Type·Str) => true,
+            (Type·Never, Type·Never) => true,
+            (Type·Error, _) | (_, Type·Error) => true,
+            (Type·Never, _) | (_, Type·Never) => true,
+
+            // Allow integer types to unify with each other (∀ literal coercion)
+            (Type·Int(_), Type·Int(_)) => true,
+            (Type·Float(a), Type·Float(b)) => a == b,
+
+            // Arrays
+            (Type·Array { element: a, length: sa }, Type·Array { element: b, length: sb }) => {
+                ≔ size_ok = ⌥ (sa, sb) {
+                    (?na, ?nb) => na == nb,
+                    _ => true,
+                };
+                size_ok && self.unify(*a, *b)
+            },
+
+            // Slices
+            (Type·Slice(a), Type·Slice(b)) => self.unify(*a, *b),
+
+            // Tuples
+            (Type·Tuple(a), Type·Tuple(b)) => {
+                a.len() == b.len() &&
+                a.iter().zip(b.iter())|all{pair => self.unify(pair.0, pair.1)}
+            },
+
+            // References
+            (Type·Ref { mutable: ma, inner: a }, Type·Ref { mutable: mb, inner: b }) => {
+                ma == mb && self.unify(*a, *b)
+            },
+
+            // Functions
+            (Type·Function { params: pa, return_type: ra, is_async: aa },
+             Type·Function { params: pb, return_type: rb, is_async: ab }) => {
+                aa == ab && pa.len() == pb.len() &&
+                pa.iter().zip(pb.iter())|all{pair => self.unify(pair.0, pair.1)} &&
+                self.unify(*ra, *rb)
+            },
+
+            // Named types
+            (Type·Named { name: na, generics: ga }, Type·Named { name: nb, generics: gb }) => {
+                na == nb && ga.len() == gb.len() &&
+                ga.iter().zip(gb.iter())|all{pair => self.unify(pair.0, pair.1)}
+            },
+
+            // Evidential types: inner must unify, evidence can differ
+            (Type·Evidential { inner: a, .. }, Type·Evidential { inner: b, .. }) => {
+                self.unify(*a, *b)
+            },
+            (Type·Evidential { inner: a, .. }, b) => self.unify(*a, b),
+            (a, Type·Evidential { inner: b, .. }) => self.unify(a, *b),
+
+            // Type variables - invoke resolve to ⊗ cycles
+            (Type·Var(v), t) => {
+                ≔ resolved_a = self.resolve_type(Type·Var(v.clone()));
+                ⌥ resolved_a {
+                    Type·Var(rv) => {
+                        // Check ⎇ t is also a Var and ⎇ they're the same
+                        ≔ resolved_b = self.resolve_type(t.clone());
+                        ⌥ resolved_b {
+                            Type·Var(rb) => {
+                                ⎇ rv.id == rb.id {
+                                    true  // Same variable
+                                } ⎉ {
+                                    // Bind one to the other
+                                    self.substitutions.insert(rv.id, Type·Var(rb));
+                                    true
+                                }
+                            },
+                            _ => {
+                                // Bind the unresolved var to the resolved type
+                                self.substitutions.insert(rv.id, resolved_b);
+                                true
+                            }
+                        }
+                    },
+                    _ => self.unify(resolved_a, t)  // Already resolved, unify directly
+                }
+            },
+            (t, Type·Var(v)) => {
+                ≔ resolved_b = self.resolve_type(Type·Var(v.clone()));
+                ⌥ resolved_b {
+                    Type·Var(rv) => {
+                        // Check ⎇ t is also a Var and ⎇ they're the same
+                        ≔ resolved_a = self.resolve_type(t.clone());
+                        ⌥ resolved_a {
+                            Type·Var(ra) => {
+                                ⎇ ra.id == rv.id {
+                                    true  // Same variable
+                                } ⎉ {
+                                    // Bind one to the other
+                                    self.substitutions.insert(rv.id, Type·Var(ra));
+                                    true
+                                }
+                            },
+                            _ => {
+                                // Bind the unresolved var to the resolved type
+                                self.substitutions.insert(rv.id, resolved_a);
+                                true
+                            }
+                        }
+                    },
+                    _ => self.unify(t, resolved_b)  // Already resolved, unify directly
+                }
+            },
+
+            // Cycles
+            (Type·Cycle { modulus: a }, Type·Cycle { modulus: b }) => a == b,
+
+            _ => false,
+        }
+    }
+
+    /// Convert AST type to internal type
+    λ convert_type(self, ty: !TypeExpr) -> !Type {
+        ⌥ ty {
+            // Handle null TypeExpr gracefully
+            null => Type·Var(TypeVar·new(0)),
+
+            TypeExpr·Path(path) => {
+                ⎇ path.segments.len() == 1 {
+                    ≔ name = path.segments[0].ident.name;
+                    ⌥ name {
+                        // Handle Self type
+                        "Self" => {
+                            ⎇ ≔ ?self_type = self.current_self_type {
+                                ⤺ Type·Named { name: self_type, generics: [] };
+                            } ⎉ {
+                                ⤺ Type·Named { name: "Self", generics: [] };
+                            }
+                        },
+                        "bool" => ⤺ Type·Bool,
+                        "char" => ⤺ Type·Char,
+                        "str" | "String" => ⤺ Type·Str,
+                        "i8" => ⤺ Type·Int(IntWidth·I8),
+                        "i16" => ⤺ Type·Int(IntWidth·I16),
+                        "i32" => ⤺ Type·Int(IntWidth·I32),
+                        "i64" => ⤺ Type·Int(IntWidth·I64),
+                        "i128" => ⤺ Type·Int(IntWidth·I128),
+                        "isize" => ⤺ Type·Int(IntWidth·IWord),
+                        "u8" => ⤺ Type·Int(IntWidth·U8),
+                        "u16" => ⤺ Type·Int(IntWidth·U16),
+                        "u32" => ⤺ Type·Int(IntWidth·U32),
+                        "u64" => ⤺ Type·Int(IntWidth·U64),
+                        "u128" => ⤺ Type·Int(IntWidth·U128),
+                        "usize" => ⤺ Type·Int(IntWidth·UWord),
+                        "f32" => ⤺ Type·Float(FloatWidth·F32),
+                        "f64" => ⤺ Type·Float(FloatWidth·F64),
+                        _ => {},
+                    }
+                }
+
+                ≔ name = path.segments|τ{s => s.ident.name}|join("·");
+                ≔ generics = ⌥ path.segments.last() {
+                    ?seg => ⌥ seg.generics {
+                        ?gs => gs|τ{t => self.convert_type(t)}|collect(),
+                        null => [],
+                    },
+                    null => [],
+                };
+
+                Type·Named { name, generics }
+            },
+
+            TypeExpr·Reference { .. } => {
+                ≔ mutable = ty.mutable;
+                ≔ inner = ty.inner;
+                Type·Ref {
+                    mutable,
+                    inner: Box·new(self.convert_type(*inner)),
+                }
+            },
+
+            TypeExpr·Pointer { .. } => {
+                ≔ mutable = ty.mutable;
+                ≔ inner = ty.inner;
+                Type·Ptr {
+                    mutable,
+                    inner: Box·new(self.convert_type(*inner)),
+                }
+            },
+
+            TypeExpr·Array { .. } => {
+                ≔ element = ty.element;
+                Type·Array {
+                    element: Box·new(self.convert_type(*element)),
+                    size: null,
+                }
+            },
+
+            TypeExpr·Slice(inner) => Type·Slice(Box·new(self.convert_type(*inner))),
+
+            TypeExpr·Tuple(elements) => {
+                Type·Tuple(elements|τ{t => self.convert_type(t)}|collect())
+            },
+
+            TypeExpr·Function { .. } => {
+                ≔ params = ty.params;
+                ≔ return_type = ty.return_type;
+                Type·Function {
+                    params: params|τ{t => self.convert_type(t)}|collect(),
+                    return_type: Box·new(⌥ return_type {
+                        ?t => self.convert_type(*t),
+                        null => Type·Unit,
+                    }),
+                    is_async: false,
+                }
+            },
+
+            TypeExpr·Evidential { .. } => {
+                ≔ inner = ty.inner;
+                ≔ evidentiality = ty.evidentiality;
+                Type·Evidential {
+                    inner: Box·new(self.convert_type(*inner)),
+                    evidence: EvidenceLevel·from_ast(evidentiality),
+                }
+            },
+
+            TypeExpr·Cycle { modulus: _ } => Type·Cycle { modulus: 12 },
+
+            TypeExpr·Simd { .. } => {
+                ≔ element = ty.element;
+                ≔ lanes = ty.lanes;
+                Type·Simd {
+                    element: Box·new(self.convert_type(*element)),
+                    lanes,
+                }
+            },
+
+            TypeExpr·Atomic(inner) => Type·Atomic(Box·new(self.convert_type(*inner))),
+
+            TypeExpr·Never => Type·Never,
+            TypeExpr·Infer => Type·Var(TypeVar·new(0)),
+
+            // ⊢ Trait and dyn Trait - ∀ now, treat as opaque types
+            TypeExpr·ImplTrait { bounds } => {
+                // Use the first bound as the type, or Any ⎇ empty
+                ⎇ bounds.is_empty() {
+                    Type·Any
+                } ⎉ {
+                    self.convert_type(bounds[0].clone())
+                }
+            }
+            TypeExpr·DynTrait { bounds } => {
+                // Use the first bound as the type, or Any ⎇ empty
+                ⎇ bounds.is_empty() {
+                    Type·Any
+                } ⎉ {
+                    self.convert_type(bounds[0].clone())
+                }
+            }
+
+            TypeExpr·QualifiedPath { base, trait_path, item, args } => {
+                // <Type as Trait>·Item - conΣ qualified name
+                ≔ base_str = self.type_to_name(*base);
+                ≔ trait_str = trait_path.segments|τ{s => s.ident.name}|join("·");
+                ≔ name = format!("<{} as {}>·{}", base_str, trait_str, item);
+                ≔ generics = args|τ{t => self.convert_type(t)}|collect();
+                Type·Named { name, generics }
+            }
+        }
+    }
+
+    /// Convert a type expression to a name string
+    λ type_to_name(self, ty: !TypeExpr) -> !String {
+        ⌥ ty {
+            TypeExpr·Path(path) => path.segments|τ{s => s.ident.name}|join("·"),
+            _ => "_".to_string(),
+        }
+    }
+
+    /// Get collected errors
+    ☉ λ errors(self) -> ![TypeError] {
+        self.errors.clone()
+    }
+}
+
+// ============================================================================
+// Pattern Extension Trait
+// ============================================================================
+
+/// Extension methods ∀ Pattern
+⊢ Pattern {
+    /// Get the evidentiality annotation ⎇ present
+    ☉ λ evidentiality(self) -> ?Evidentiality {
+        ⌥ self {
+            Pattern·Ident { evidentiality, .. } => evidentiality,
+            _ => null,
+        }
+    }
+
+    /// Get the binding name ⎇ this is an identifier pattern
+    ☉ λ binding_name(self) -> ?String {
+        ⌥ self {
+            Pattern·Ident { name, .. } => ?name.name,
+            _ => null,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+scroll tests {
+    invoke super·*;
+    invoke crate·parser·Parser;
+
+    λ check(source: !&str) -> !Result<(), [TypeError]> {
+        ≔ Δ parser = Parser·new(source);
+        ≔ file = parser.parse_file().expect("parse failed");
+        ≔ Δ checker = TypeChecker·new();
+        checker.check_file(file)
+    }
+
+    #[test]
+    λ test_basic_types() {
+        assert!(check("λ main() { ≔ x: i64 = 42; }").is_ok());
+        assert!(check("λ main() { ≔ x: bool = true; }").is_ok());
+        assert!(check("λ main() { ≔ x: f64 = 3.14; }").is_ok());
+    }
+
+    #[test]
+    λ test_type_mis⌥() {
+        assert!(check("λ main() { ≔ x: bool = 42; }").is_err());
+    }
+
+    #[test]
+    λ test_evidence_propagation() {
+        // Evidence should propagate through operations
+        assert!(check(r#"
+            λ main() {
+                ≔ known: i64! = 42;
+                ≔ uncertain: i64? = 10;
+                ≔ result = known + uncertain;
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    λ test_evidence_lattice() {
+        // Test lattice operations
+        ≔ known = EvidenceLevel·Known;
+        ≔ uncertain = EvidenceLevel·Uncertain;
+        ≔ reported = EvidenceLevel·Reported;
+
+        // Join (least upper bound)
+        assert_eq!(known.join(uncertain), EvidenceLevel·Uncertain);
+        assert_eq!(known.join(reported), EvidenceLevel·Reported);
+        assert_eq!(uncertain.join(reported), EvidenceLevel·Reported);
+
+        // Meet (greatest lower bound)
+        assert_eq!(known.meet(uncertain), EvidenceLevel·Known);
+        assert_eq!(uncertain.meet(reported), EvidenceLevel·Uncertain);
+
+        // Satisfies
+        assert!(known.satisfies(uncertain));
+        assert!(known.satisfies(reported));
+        assert!(uncertain.satisfies(reported));
+        assert!(!reported.satisfies(known));
+    }
+
+    #[test]
+    λ test_function_⤺() {
+        assert!(check(r#"
+            λ add(a: i64, b: i64) -> i64 {
+                ⤺ a + b;
+            }
+            λ main() {
+                ≔ x = add(1, 2);
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    λ test_array_types() {
+        assert!(check(r#"
+            λ main() {
+                ≔ arr = [1, 2, 3];
+                ≔ x = arr[0];
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    λ test_evidence_inference_from_initializer() {
+        assert!(check(r#"
+            λ main() {
+                ≔ reported_val: i64~ = 42;
+                ≔ x = reported_val + 1;
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    λ test_if_else_evidence_join() {
+        assert!(check(r#"
+            λ main() {
+                ≔ known_val: i64! = 1;
+                ≔ reported_val: i64~ = 2;
+                ≔ cond: bool = true;
+                ≔ result = ⎇ cond { known_val } ⎉ { reported_val };
+            }
+        "#).is_ok());
+    }
+
+    #[test]
+    λ test_binary_op_evidence_propagation() {
+        assert!(check(r#"
+            λ main() {
+                ≔ known: i64! = 1;
+                ≔ reported: i64~ = 2;
+                ≔ result = known + reported;
+            }
+        "#).is_ok());
+    }
+}

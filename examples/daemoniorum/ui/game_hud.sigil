@@ -1,0 +1,584 @@
+//! DAEMONIORUM Game UI - Main Game HUD
+//!
+//! Main heads-up display integrating all game systems:
+//! - System status (stability, dissociation, reality)
+//! - Current alter display
+//! - Quick access to inventory and quests
+//! - Notification system
+//! - Mini-map/location indicator
+
+use crate::system::{PluralSystem, Alter, RealityLayer};
+use crate::scenes::scene::Scene;
+use crate::combat::combat::CombatState;
+use super::tokens::colors;
+use super::alter_card::{AlterCard, get_alter_color_scheme};
+use super::system_meters::{SystemStatusPanel, RealityLayerBadge};
+use super::combat_ui::CombatUI;
+use super::inventory::{InventoryState, CompactInventory, InventoryPanel};
+use super::quest_tracker::{Quest, QuestStatus, CompactQuestTracker, QuestTracker};
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/// System state for the HUD
+type SystemState = struct {
+    alters: Vec<Alter>!,
+    fronting_alter_id: String!,
+    cocon_alter_id: Option<String>?,
+    stability: f32!,
+    dissociation: f32!,
+    current_reality: RealityLayer!,
+    switch_cooldown: u32!,
+}
+
+/// Game notification type
+type NotificationType = enum {
+    Info,
+    Warning,
+    Success,
+    Danger,
+    Memory,
+    Quest,
+}
+
+/// Game notification
+type GameNotification = struct {
+    id: String!,
+    title: String!,
+    message: String!,
+    notification_type: NotificationType!,
+    duration: u64!,
+    icon: Option<String>?,
+}
+
+/// Props for the main game HUD
+type GameHUDProps = struct {
+    // Core state
+    system_state: SystemState!,
+    current_scene: Scene!,
+    inventory: InventoryState!,
+    quests: Vec<Quest>!,
+
+    // Combat (optional - only shown when in combat)
+    combat_state: Option<CombatState>?,
+
+    // Callbacks
+    on_alter_switch: Option<fn(Alter)>?,
+    on_inventory_open: Option<fn()>?,
+    on_quest_open: Option<fn()>?,
+    on_menu_open: Option<fn()>?,
+    on_combat_action: Option<fn(crate::combat::combat::CombatAction)>?,
+    on_target_select: Option<fn(String)>?,
+
+    // Notifications
+    notifications: Vec<GameNotification>?,
+    on_dismiss_notification: Option<fn(String)>?,
+}
+
+/// Props for location indicator
+type LocationIndicatorProps = struct {
+    scene: Scene!,
+    reality_layer: RealityLayer!,
+}
+
+/// Props for notification toast
+type NotificationToastProps = struct {
+    notification: GameNotification!,
+    on_dismiss: fn()!,
+}
+
+/// Props for panel overlay
+type PanelOverlayProps = struct {
+    on_close: fn()!,
+}
+
+/// Props for alter panel
+type AlterPanelProps = struct {
+    alters: Vec<Alter>!,
+    fronting_alter_id: String!,
+    cocon_alter_id: Option<String>?,
+    on_switch: fn(Alter)!,
+    switch_cooldown: u32!,
+}
+
+// ============================================================================
+// MAIN GAME HUD
+// ============================================================================
+
+#[component]
+pub fn GameHUD(props: GameHUDProps!) -> Element! {
+    let (show_alter_panel, set_show_alter_panel) = use_signal(false);
+    let (show_inventory, set_show_inventory) = use_signal(false);
+    let (show_quests, set_show_quests) = use_signal(false);
+
+    let system_state! = &props.system_state;
+
+    let current_alter = system_state.alters·iter()
+        ·find(|a| a.id == system_state.fronting_alter_id)
+        ·cloned();
+
+    let cocon_alter = system_state.cocon_alter_id·as_ref()
+        ·and_then(|id| system_state.alters·iter()·find(|a| a.id == *id))
+        ·cloned();
+
+    let active_quests = props.quests·iter()
+        ·|φ|q| q.status == QuestStatus::Active
+        ·cloned()
+        ·collect::<Vec<_>>();
+
+    let colors = current_alter·as_ref()·map(get_alter_color_scheme);
+
+    let notifications = props.notifications·clone()·unwrap_or_default();
+
+    // Register keyboard handlers
+    use_effect(|| {
+        let handle_keydown = |e: KeyboardEvent| {
+            match e.key()·as_str() {
+                "Escape" => {
+                    set_show_alter_panel(false);
+                    set_show_inventory(false);
+                    set_show_quests(false);
+                },
+                "i" if !e.meta_key() && !e.ctrl_key() => {
+                    set_show_inventory(!show_inventory());
+                },
+                "j" if !e.meta_key() && !e.ctrl_key() => {
+                    set_show_quests(!show_quests());
+                },
+                "Tab" if !e.shift_key() => {
+                    e.prevent_default();
+                    set_show_alter_panel(!show_alter_panel());
+                },
+                _ => {}
+            }
+        };
+
+        window()·add_event_listener("keydown", handle_keydown);
+
+        move || window()·remove_event_listener("keydown", handle_keydown)
+    });
+
+    // In combat mode, show combat UI
+    if let Some(ref combat_state) = props.combat_state {
+        if combat_state.in_combat {
+            if let Some(ref alter) = current_alter {
+                return html! {
+                    <div style="position: fixed; inset: 0; z-index: 50;">
+                        <CombatUI
+                            combat_state={combat_state·clone()}
+                            current_alter={alter·clone()}
+                            available_alters={system_state.alters·iter()·|φ|a| a.is_available·cloned()·collect()}
+                            inventory={props.inventory.items·clone()}
+                            on_action={props.on_combat_action·clone()·unwrap_or(|_| {})}
+                            on_target_select={props.on_target_select·clone()·unwrap_or(|_| {})}
+                        />
+                    </div>
+                };
+            }
+        }
+    }
+
+    html! {
+        <div style="position: fixed; inset: 0; pointer-events: none; z-index: 40;">
+            // Top bar
+            <div style="position: absolute; top: 0; left: 0; right: 0; padding: 1rem; \
+                        display: flex; justify-content: space-between; align-items: flex-start; \
+                        pointer-events: auto;">
+                // Left: System status
+                <div style="width: 18rem;">
+                    <SystemStatusPanel
+                        stability={system_state.stability}
+                        dissociation={system_state.dissociation}
+                        reality_layer={system_state.current_reality}
+                        compact={true}
+                    />
+                </div>
+
+                // Center: Location
+                <LocationIndicator
+                    scene={props.current_scene·clone()}
+                    reality_layer={system_state.current_reality}
+                />
+
+                // Right: Menu button
+                <button
+                    onclick={props.on_menu_open·clone()·unwrap_or(|| {})}
+                    style="padding: 0.5rem; border-radius: 0.5rem; \
+                           background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); \
+                           cursor: pointer; transition: background 0.2s;"
+                    aria-label="Menu"
+                >
+                    <span style="color: rgba(255,255,255,0.8); font-size: 1.25rem;">{"☰"}</span>
+                </button>
+            </div>
+
+            // Left side: Current alter
+            <div style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); \
+                        pointer-events: auto;">
+                {if let Some(ref alter) = current_alter {
+                    html! {
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            // Current alter card (clickable)
+                            <button
+                                onclick={move || set_show_alter_panel(!show_alter_panel())}
+                                style="display: block; background: transparent; cursor: pointer;"
+                            >
+                                <AlterCard
+                                    alter={alter·clone()}
+                                    is_active={true}
+                                    compact={true}
+                                />
+                            </button>
+
+                            // Co-con alter (if present)
+                            {if let Some(ref cocon) = cocon_alter {
+                                html! {
+                                    <div style="position: relative;">
+                                        <div style="position: absolute; top: -0.25rem; left: 50%; transform: translateX(-50%); \
+                                                    padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.75rem; \
+                                                    background: rgba(168,85,247,0.8); color: white; z-index: 10;">
+                                            {"Co-con"}
+                                        </div>
+                                        <AlterCard
+                                            alter={cocon·clone()}
+                                            is_cocon={true}
+                                            compact={true}
+                                        />
+                                    </div>
+                                }
+                            } else { html! {} }}
+
+                            <div style="font-size: 0.75rem; text-align: center; color: rgba(255,255,255,0.4);">
+                                {"Press Tab to switch"}
+                            </div>
+                        </div>
+                    }
+                } else { html! {} }}
+            </div>
+
+            // Right side: Quick access
+            <div style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); \
+                        display: flex; flex-direction: column; gap: 0.75rem; pointer-events: auto;">
+                // Inventory button
+                <div>
+                    <CompactInventory
+                        inventory={props.inventory·clone()}
+                        on_open={Some(move || set_show_inventory(true))}
+                    />
+                    <div style="font-size: 0.75rem; text-align: center; color: rgba(255,255,255,0.4); margin-top: 0.25rem;">
+                        {"[I]nventory"}
+                    </div>
+                </div>
+
+                // Quests button
+                <div>
+                    <CompactQuestTracker
+                        quests={active_quests·clone()}
+                        on_expand={Some(move || set_show_quests(true))}
+                    />
+                    <div style="font-size: 0.75rem; text-align: center; color: rgba(255,255,255,0.4); margin-top: 0.25rem;">
+                        {"[J]ournal"}
+                    </div>
+                </div>
+            </div>
+
+            // Bottom: Interaction hints
+            <div style="position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%); \
+                        pointer-events: auto;">
+                <InteractionHints scene={props.current_scene·clone()} />
+            </div>
+
+            // Notifications
+            <div style="position: absolute; top: 5rem; right: 1rem; \
+                        display: flex; flex-direction: column; gap: 0.5rem; \
+                        max-width: 24rem; pointer-events: auto;">
+                {notifications·iter()·|τ|notification| {
+                    let id = notification.id·clone();
+                    html! {
+                        <NotificationToast
+                            notification={notification·clone()}
+                            on_dismiss={move || {
+                                if let Some(ref dismiss) = props.on_dismiss_notification {
+                                    dismiss(id·clone());
+                                }
+                            }}
+                        />
+                    }
+                }·collect::<Vec<_>>()}
+            </div>
+
+            // Alter Panel Overlay
+            {if show_alter_panel() {
+                html! {
+                    <PanelOverlay on_close={move || set_show_alter_panel(false)}>
+                        <div style="width: 37.5rem; max-height: 80vh; overflow-y: auto;">
+                            <AlterPanel
+                                alters={system_state.alters·clone()}
+                                fronting_alter_id={system_state.fronting_alter_id·clone()}
+                                cocon_alter_id={system_state.cocon_alter_id·clone()}
+                                on_switch={move |alter| {
+                                    if let Some(ref on_switch) = props.on_alter_switch {
+                                        on_switch(alter);
+                                    }
+                                    set_show_alter_panel(false);
+                                }}
+                                switch_cooldown={system_state.switch_cooldown}
+                            />
+                        </div>
+                    </PanelOverlay>
+                }
+            } else { html! {} }}
+
+            // Inventory Panel Overlay
+            {if show_inventory() {
+                html! {
+                    <PanelOverlay on_close={move || set_show_inventory(false)}>
+                        <div style="width: 50rem; height: 37.5rem;">
+                            <InventoryPanel
+                                inventory={props.inventory·clone()}
+                                on_close={Some(move || set_show_inventory(false))}
+                            />
+                        </div>
+                    </PanelOverlay>
+                }
+            } else { html! {} }}
+
+            // Quest Panel Overlay
+            {if show_quests() {
+                html! {
+                    <PanelOverlay on_close={move || set_show_quests(false)}>
+                        <div style="width: 37.5rem; height: 37.5rem;">
+                            <QuestTracker
+                                quests={props.quests·clone()}
+                                on_close={Some(move || set_show_quests(false))}
+                            />
+                        </div>
+                    </PanelOverlay>
+                }
+            } else { html! {} }}
+        </div>
+    }
+}
+
+// ============================================================================
+// LOCATION INDICATOR
+// ============================================================================
+
+#[component]
+pub fn LocationIndicator(props: LocationIndicatorProps!) -> Element! {
+    html! {
+        <div style="display: flex; align-items: center; gap: 0.75rem; \
+                    padding: 0.5rem 1rem; border-radius: 0.75rem; \
+                    background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); \
+                    backdrop-filter: blur(8px);">
+            <div style="text-align: center;">
+                <div style="font-size: 1.125rem; font-weight: bold; color: white;">
+                    {&props.scene.name}
+                </div>
+                <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">
+                    {&props.scene.area}
+                </div>
+            </div>
+            <div style="width: 1px; height: 2rem; background: rgba(255,255,255,0.2);"></div>
+            <RealityLayerBadge layer={props.reality_layer} />
+        </div>
+    }
+}
+
+// ============================================================================
+// INTERACTION HINTS
+// ============================================================================
+
+type InteractionHintsProps = struct {
+    scene: Scene!,
+}
+
+#[component]
+pub fn InteractionHints(props: InteractionHintsProps!) -> Element! {
+    let interactable_elements = props.scene.elements·iter()
+        ·|φ|e| e.interactable
+        ·collect::<Vec<_>>();
+
+    if interactable_elements·is_empty() {
+        return html! {};
+    }
+
+    html! {
+        <div style="padding: 0.5rem 1rem; border-radius: 0.75rem; font-size: 0.875rem; \
+                    color: rgba(255,255,255,0.6); \
+                    background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1);">
+            <span style="color: rgba(255,255,255,0.4);">{"Nearby: "}</span>
+            {interactable_elements·iter()·take(3)·enumerate()·|τ|(i, element)| {
+                html! {
+                    <span>
+                        {if i > 0 { ", " } else { "" }}
+                        <span style="color: rgba(255,255,255,0.8);">{&element.name}</span>
+                    </span>
+                }
+            }·collect::<Vec<_>>()}
+            {if interactable_elements·len() > 3 {
+                html! {
+                    <span style="color: rgba(255,255,255,0.4);">
+                        {" +"}{interactable_elements·len() - 3}{" more"}
+                    </span>
+                }
+            } else { html! {} }}
+        </div>
+    }
+}
+
+// ============================================================================
+// NOTIFICATION TOAST
+// ============================================================================
+
+#[component]
+pub fn NotificationToast(props: NotificationToastProps!) -> Element! {
+    let notification! = &props.notification;
+
+    // Auto-dismiss after duration
+    use_effect({
+        let on_dismiss = props.on_dismiss·clone();
+        let duration = notification.duration;
+        move || {
+            let timeout = set_timeout(on_dismiss, duration);
+            move || clear_timeout(timeout)
+        }
+    });
+
+    let (bg, border, default_icon) = match notification.notification_type {
+        NotificationType::Info => ("rgba(59,130,246,0.2)", "#3b82f6", "ℹ"),
+        NotificationType::Warning => ("rgba(251,191,36,0.2)", "#fbbf24", "⚠"),
+        NotificationType::Success => ("rgba(16,185,129,0.2)", "#10b981", "✓"),
+        NotificationType::Danger => ("rgba(239,68,68,0.2)", "#ef4444", "!"),
+        NotificationType::Memory => ("rgba(139,92,246,0.2)", "#8b5cf6", "◈"),
+        NotificationType::Quest => ("rgba(251,191,36,0.2)", "#fbbf24", "📜"),
+    };
+
+    let icon = notification.icon·clone()·unwrap_or(default_icon.to_string());
+
+    html! {
+        <div style={format!(
+            "display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem; \
+             border-radius: 0.75rem; animation: slide-in-from-right 0.3s ease-out; \
+             background: {}; border: 1px solid {}40; box-shadow: 0 0 20px {}20;",
+            bg, border, border
+        )}>
+            <span style={format!("font-size: 1.125rem; color: {};", border)}>
+                {icon}
+            </span>
+            <div style="flex: 1; min-width: 0;">
+                <div style="font-weight: 500; color: white;">{&notification.title}</div>
+                <div style="font-size: 0.875rem; color: rgba(255,255,255,0.7);">{&notification.message}</div>
+            </div>
+            <button
+                onclick={props.on_dismiss}
+                style="color: rgba(255,255,255,0.4); background: transparent; cursor: pointer; \
+                       font-size: 1.25rem;"
+            >
+                {"×"}
+            </button>
+        </div>
+    }
+}
+
+// ============================================================================
+// PANEL OVERLAY
+// ============================================================================
+
+#[component]
+pub fn PanelOverlay(props: PanelOverlayProps!, children: Children!) -> Element! {
+    html! {
+        <div
+            onclick={|e| {
+                if e.target() == e.current_target() {
+                    (props.on_close)();
+                }
+            }}
+            style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; \
+                   background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); \
+                   pointer-events: auto; z-index: 50;"
+        >
+            {children}
+        </div>
+    }
+}
+
+// ============================================================================
+// ALTER PANEL
+// ============================================================================
+
+#[component]
+pub fn AlterPanel(props: AlterPanelProps!) -> Element! {
+    html! {
+        <div style="padding: 1rem; border-radius: 0.75rem; \
+                    background: linear-gradient(135deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.95) 100%); \
+                    border: 1px solid rgba(255,255,255,0.1);">
+            // Header
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                <h2 style="font-size: 1.125rem; font-weight: bold; color: white;">{"System Members"}</h2>
+                {if props.switch_cooldown > 0 {
+                    html! {
+                        <div style="padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; \
+                                    background: rgba(251,191,36,0.2); color: #fbbf24;">
+                            {"Switch in "}{props.switch_cooldown}{" turns"}
+                        </div>
+                    }
+                } else { html! {} }}
+            </div>
+
+            // Alter grid
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                {props.alters·iter()·|τ|alter| {
+                    let is_fronting = alter.id == props.fronting_alter_id;
+                    let is_cocon = props.cocon_alter_id·as_ref()·map(|id| *id == alter.id)·unwrap_or(false);
+                    let can_switch = props.switch_cooldown == 0 && !is_fronting;
+
+                    html! {
+                        <AlterCard
+                            alter={alter·clone()}
+                            is_active={is_fronting}
+                            is_cocon={is_cocon}
+                            on_select={if can_switch {
+                                Some(move || (props.on_switch)(alter·clone()))
+                            } else {
+                                None
+                            }}
+                            show_abilities={false}
+                        />
+                    }
+                }·collect::<Vec<_>>()}
+            </div>
+        </div>
+    }
+}
+
+// ============================================================================
+// CSS KEYFRAMES (for animations)
+// ============================================================================
+
+/// Generate CSS keyframes for HUD animations
+pub fn generate_hud_css() -> String! {
+    r#"
+        @keyframes slide-in-from-right {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    "#.to_string()
+}

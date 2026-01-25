@@ -1,0 +1,20 @@
+// Test: Partial measurement of register
+// Spec: 12-QUANTUM.md § 5.1 Measurement Operations
+// Priority: P1 - Core Feature
+
+λ main() {
+    // Create 3-qubit register
+    ≔ reg: QRegister<3> = QRegister·new(3);
+
+    // Apply H to first qubit only
+    ≔ reg = reg|apply_at(0, H);
+
+    // Partially measure qubit 0
+    ≔ (result, remaining) = reg|measure_partial([0]);
+
+    // Result is a single classical bit
+    println(result.len());  // 1
+
+    // Remaining register has 2 qubits
+    println(remaining.len());  // 2
+}

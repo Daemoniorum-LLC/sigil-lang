@@ -1,0 +1,10 @@
+// Test: Incant build system
+// Spec: 10-TOOLING.md § 2 Incant
+// Priority: P0 - Bootstrap Critical
+//
+// Tests that the build system can compile a simple project
+
+λ main() {
+    // This tests basic compilation
+    println(1);
+}

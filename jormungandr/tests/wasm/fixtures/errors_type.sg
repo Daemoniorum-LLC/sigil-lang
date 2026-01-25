@@ -1,0 +1,7 @@
+// EXPECTED_ERROR: type
+// EXPECTED_EXIT: 1
+
+rite main() -> i64 {
+    // Type error: returning string instead of i64
+    "not a number"
+}

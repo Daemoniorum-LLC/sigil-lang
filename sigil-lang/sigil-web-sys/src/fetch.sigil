@@ -1,0 +1,350 @@
+//! Fetch API bindings
+
+/// Fetch a URL
+pub fn fetch(url: &str!) -> Promise! {
+    window()·unwrap()·fetch(url)
+}
+
+/// Fetch with options
+pub fn fetch_with_request(request: &Request!) -> Promise! {
+    window()·unwrap()·fetch_with_request(request)
+}
+
+/// Request object
+#[wasm_bindgen]
+extern "js" {
+    pub type Request;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new(url: &str!) -> Request!;
+
+    #[wasm_bindgen(constructor, js_name = "Request")]
+    pub fn new_with_init(url: &str!, init: &JsValue!) -> Request!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn url(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn method(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn headers(this: &Request!) -> Headers!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn mode(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn credentials(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn cache(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn redirect(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn referrer(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter, js_name = "referrerPolicy")]
+    pub fn referrer_policy(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn integrity(this: &Request!) -> String!;
+
+    #[wasm_bindgen(method, getter, js_name = "bodyUsed")]
+    pub fn body_used(this: &Request!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn clone(this: &Request!) -> Request!;
+
+    #[wasm_bindgen(method, js_name = "arrayBuffer")]
+    pub fn array_buffer(this: &Request!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn blob(this: &Request!) -> Promise!;
+
+    #[wasm_bindgen(method, js_name = "formData")]
+    pub fn form_data(this: &Request!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn json(this: &Request!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn text(this: &Request!) -> Promise!;
+}
+
+/// Response object
+#[wasm_bindgen]
+extern "js" {
+    pub type Response;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Response!;
+
+    #[wasm_bindgen(constructor, js_name = "Response")]
+    pub fn new_with_body(body: Option[&JsValue]?, init: Option[&JsValue]?) -> Response!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn ok(this: &Response!) -> bool!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn status(this: &Response!) -> u16!;
+
+    #[wasm_bindgen(method, getter, js_name = "statusText")]
+    pub fn status_text(this: &Response!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn url(this: &Response!) -> String!;
+
+    #[wasm_bindgen(method, getter, js_name = "type")]
+    pub fn type_(this: &Response!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn redirected(this: &Response!) -> bool!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn headers(this: &Response!) -> Headers!;
+
+    #[wasm_bindgen(method, getter, js_name = "bodyUsed")]
+    pub fn body_used(this: &Response!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn clone(this: &Response!) -> Response!;
+
+    #[wasm_bindgen(method, js_name = "arrayBuffer")]
+    pub fn array_buffer(this: &Response!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn blob(this: &Response!) -> Promise!;
+
+    #[wasm_bindgen(method, js_name = "formData")]
+    pub fn form_data(this: &Response!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn json(this: &Response!) -> Promise!;
+
+    #[wasm_bindgen(method)]
+    pub fn text(this: &Response!) -> Promise!;
+
+    #[wasm_bindgen(static_method_of = Response)]
+    pub fn error() -> Response!;
+
+    #[wasm_bindgen(static_method_of = Response)]
+    pub fn redirect(url: &str!, status: u16!) -> Response!;
+}
+
+/// Headers object
+#[wasm_bindgen]
+extern "js" {
+    pub type Headers;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Headers!;
+
+    #[wasm_bindgen(method)]
+    pub fn append(this: &Headers!, name: &str!, value: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn delete(this: &Headers!, name: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn get(this: &Headers!, name: &str!) -> Option[String]?;
+
+    #[wasm_bindgen(method)]
+    pub fn has(this: &Headers!, name: &str!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn set(this: &Headers!, name: &str!, value: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn keys(this: &Headers!) -> JsIterator!;
+
+    #[wasm_bindgen(method)]
+    pub fn values(this: &Headers!) -> JsIterator!;
+
+    #[wasm_bindgen(method)]
+    pub fn entries(this: &Headers!) -> JsIterator!;
+}
+
+/// AbortController for cancelling requests
+#[wasm_bindgen]
+extern "js" {
+    pub type AbortController;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> AbortController!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn signal(this: &AbortController!) -> AbortSignal!;
+
+    #[wasm_bindgen(method)]
+    pub fn abort(this: &AbortController!);
+}
+
+/// AbortSignal
+#[wasm_bindgen]
+extern "js" {
+    pub type AbortSignal;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn aborted(this: &AbortSignal!) -> bool!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn reason(this: &AbortSignal!) -> JsValue!;
+
+    #[wasm_bindgen(method, js_name = "throwIfAborted")]
+    pub fn throw_if_aborted(this: &AbortSignal!);
+
+    #[wasm_bindgen(static_method_of = AbortSignal)]
+    pub fn abort() -> AbortSignal!;
+
+    #[wasm_bindgen(static_method_of = AbortSignal)]
+    pub fn timeout(milliseconds: u64!) -> AbortSignal!;
+}
+
+/// FormData for multipart forms
+#[wasm_bindgen]
+extern "js" {
+    pub type FormData;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> FormData!;
+
+    #[wasm_bindgen(constructor, js_name = "FormData")]
+    pub fn new_with_form(form: &HtmlFormElement!) -> Result[FormData, JsValue]?;
+
+    #[wasm_bindgen(method)]
+    pub fn append(this: &FormData!, name: &str!, value: &str!);
+
+    #[wasm_bindgen(method, js_name = "append")]
+    pub fn append_blob(this: &FormData!, name: &str!, value: &Blob!, filename: Option[&str]?);
+
+    #[wasm_bindgen(method)]
+    pub fn delete(this: &FormData!, name: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn get(this: &FormData!, name: &str!) -> JsValue!;
+
+    #[wasm_bindgen(method, js_name = "getAll")]
+    pub fn get_all(this: &FormData!, name: &str!) -> Vec[JsValue]!;
+
+    #[wasm_bindgen(method)]
+    pub fn has(this: &FormData!, name: &str!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn set(this: &FormData!, name: &str!, value: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn keys(this: &FormData!) -> JsIterator!;
+
+    #[wasm_bindgen(method)]
+    pub fn values(this: &FormData!) -> JsIterator!;
+
+    #[wasm_bindgen(method)]
+    pub fn entries(this: &FormData!) -> JsIterator!;
+}
+
+/// URL API
+#[wasm_bindgen]
+extern "js" {
+    pub type Url;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new(url: &str!) -> Result[Url, JsValue]?;
+
+    #[wasm_bindgen(constructor, js_name = "URL")]
+    pub fn new_with_base(url: &str!, base: &str!) -> Result[Url, JsValue]?;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn href(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_href(this: &Url!, href: &str!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn origin(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn protocol(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_protocol(this: &Url!, protocol: &str!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn host(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn hostname(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn port(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn pathname(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_pathname(this: &Url!, pathname: &str!);
+
+    #[wasm_bindgen(method, getter)]
+    pub fn search(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_search(this: &Url!, search: &str!);
+
+    #[wasm_bindgen(method, getter, js_name = "searchParams")]
+    pub fn search_params(this: &Url!) -> UrlSearchParams!;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn hash(this: &Url!) -> String!;
+
+    #[wasm_bindgen(method, setter)]
+    pub fn set_hash(this: &Url!, hash: &str!);
+
+    #[wasm_bindgen(static_method_of = Url, js_name = "createObjectURL")]
+    pub fn create_object_url(blob: &Blob!) -> Result[String, JsValue]?;
+
+    #[wasm_bindgen(static_method_of = Url, js_name = "revokeObjectURL")]
+    pub fn revoke_object_url(url: &str!);
+}
+
+/// URLSearchParams
+#[wasm_bindgen]
+extern "js" {
+    pub type UrlSearchParams;
+
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> UrlSearchParams!;
+
+    #[wasm_bindgen(constructor, js_name = "URLSearchParams")]
+    pub fn new_with_init(init: &str!) -> UrlSearchParams!;
+
+    #[wasm_bindgen(method)]
+    pub fn append(this: &UrlSearchParams!, name: &str!, value: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn delete(this: &UrlSearchParams!, name: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn get(this: &UrlSearchParams!, name: &str!) -> Option[String]?;
+
+    #[wasm_bindgen(method, js_name = "getAll")]
+    pub fn get_all(this: &UrlSearchParams!, name: &str!) -> Vec[String]!;
+
+    #[wasm_bindgen(method)]
+    pub fn has(this: &UrlSearchParams!, name: &str!) -> bool!;
+
+    #[wasm_bindgen(method)]
+    pub fn set(this: &UrlSearchParams!, name: &str!, value: &str!);
+
+    #[wasm_bindgen(method)]
+    pub fn sort(this: &UrlSearchParams!);
+
+    #[wasm_bindgen(method)]
+    pub fn keys(this: &UrlSearchParams!) -> JsIterator!;
+
+    #[wasm_bindgen(method)]
+    pub fn values(this: &UrlSearchParams!) -> JsIterator!;
+
+    #[wasm_bindgen(method)]
+    pub fn entries(this: &UrlSearchParams!) -> JsIterator!;
+}

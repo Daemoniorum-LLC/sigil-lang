@@ -1,0 +1,20 @@
+// Test: Struct field with Known (!) evidence
+// Spec: 03-TYPES.md § 2.5 Evidence ∈ Struct Fields
+// Priority: P0
+//
+// Purpose:
+// Validates that Σ fields can have Known (!) evidence markers
+// and that values are properly stored and retrieved.
+//
+// Expected behavior:
+// Should compile and print 42
+
+☉ Σ Point {
+    x: !i32,
+    y: !i32
+}
+
+λ main() {
+    ≔ p: !Point = Point { x: 42, y: 10 };
+    println(p.x);
+}

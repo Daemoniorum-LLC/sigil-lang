@@ -1,0 +1,687 @@
+// Product Catalog
+// Daemoniorum product data for the documentation platform
+
+use crate::layouts::TocItem;
+
+/// Product information
+pub struct Product {
+    pub id: String!
+    pub name: String!
+    pub tagline: String!
+    pub description: String!
+    pub version: String!
+    pub icon: String!
+    pub category: ProductCategory!
+    pub features: Vec<String>!
+    pub quick_start: String!
+    pub sections: Vec<Section>!
+    pub api_description: String!
+    pub api_modules: Vec<ApiModule>!
+    pub api_items_count: u32!
+}
+
+/// Product categories
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum ProductCategory {
+    Languages,
+    Frameworks,
+    Infrastructure,
+    Tools
+}
+
+impl ProductCategory {
+    pub fn to_string(&self) -> &'static str! {
+        match self {
+            ProductCategory::Languages => "Languages",
+            ProductCategory::Frameworks => "Frameworks",
+            ProductCategory::Infrastructure => "Infrastructure",
+            ProductCategory::Tools => "Tools"
+        }
+    }
+}
+
+/// Documentation section
+pub struct Section {
+    pub id: String!
+    pub title: String!
+    pub description: String!
+    pub content: String!
+    pub toc: Vec<TocItem>!
+}
+
+/// API module
+pub struct ApiModule {
+    pub id: String!
+    pub name: String!
+    pub description: String!
+}
+
+/// The complete product catalog
+pub static PRODUCT_CATALOG: Vec<Product> = vec![
+    // =========================================================================
+    // SIGIL - The Polysynthetic Programming Language
+    // =========================================================================
+    Product {
+        id: "sigil".to_string(),
+        name: "Sigil".to_string(),
+        tagline: "Polysynthetic systems programming with evidentiality types".to_string(),
+        description: "Sigil is a polysynthetic systems programming language designed to achieve Rust-level performance while offering superior expressiveness through morpheme composition and evidentiality tracking.".to_string(),
+        version: "0.1.0".to_string(),
+        icon: "code".to_string(),
+        category: ProductCategory::Languages,
+        features: vec![
+            "Evidentiality type system for data provenance tracking".to_string(),
+            "Polysynthetic syntax with morpheme composition".to_string(),
+            "Pipe-based data transformation pipelines".to_string(),
+            "Actor-based concurrency model".to_string(),
+            "LLVM backend for native performance".to_string(),
+            "JIT compilation for rapid development".to_string(),
+            "Memory safety without garbage collection".to_string(),
+            "Zero-cost abstractions".to_string()
+        ],
+        quick_start: r#"// Install Sigil
+// curl -fsSL https://sigil-lang.org/install | sh
+
+// Create a new project
+// sigil new my-project && cd my-project
+
+// hello.sigil
+fn main() {
+    let greeting! = "Hello, Sigil!"
+    println(greeting!)
+}
+
+// Run it
+// sigil run"#.to_string(),
+        sections: vec![
+            Section {
+                id: "getting-started".to_string(),
+                title: "Getting Started".to_string(),
+                description: "Installation and first steps with Sigil".to_string(),
+                content: "Getting started content...".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "evidentiality".to_string(),
+                title: "Evidentiality System".to_string(),
+                description: "Understanding Sigil's evidentiality type markers".to_string(),
+                content: "Evidentiality content...".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "morphemes".to_string(),
+                title: "Morpheme Composition".to_string(),
+                description: "Using Greek letter operators and pipe transformations".to_string(),
+                content: "Morphemes content...".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "concurrency".to_string(),
+                title: "Concurrency".to_string(),
+                description: "Actor-based concurrency and async programming".to_string(),
+                content: "Concurrency content...".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "memory".to_string(),
+                title: "Memory Management".to_string(),
+                description: "Ownership, borrowing, and memory safety".to_string(),
+                content: "Memory content...".to_string(),
+                toc: vec![]
+            }
+        ],
+        api_description: "Complete API reference for the Sigil standard library".to_string(),
+        api_modules: vec![
+            ApiModule { id: "std".to_string(), name: "std".to_string(), description: "Standard library core".to_string() },
+            ApiModule { id: "collections".to_string(), name: "collections".to_string(), description: "Data structures".to_string() },
+            ApiModule { id: "io".to_string(), name: "io".to_string(), description: "Input/output operations".to_string() },
+            ApiModule { id: "net".to_string(), name: "net".to_string(), description: "Networking".to_string() },
+            ApiModule { id: "async".to_string(), name: "async".to_string(), description: "Async runtime".to_string() }
+        ],
+        api_items_count: 450
+    },
+
+    // =========================================================================
+    // SIGIL WEB - React-Inspired Web Framework
+    // =========================================================================
+    Product {
+        id: "sigil-web".to_string(),
+        name: "Sigil Web".to_string(),
+        tagline: "React-inspired web framework with evidentiality-driven state".to_string(),
+        description: "Sigil Web is a modern web application framework that leverages Sigil's unique features including evidentiality types, morpheme composition, and actor-based state management.".to_string(),
+        version: "0.1.0".to_string(),
+        icon: "globe".to_string(),
+        category: ProductCategory::Frameworks,
+        features: vec![
+            "React-inspired component model".to_string(),
+            "Evidentiality-aware state management".to_string(),
+            "Virtual DOM with efficient reconciliation".to_string(),
+            "Hooks system (useState, useEffect, useMemo, etc.)".to_string(),
+            "Type-safe routing".to_string(),
+            "Server-side rendering support".to_string(),
+            "Actor-based global state (Redux-like)".to_string(),
+            "CSS-in-Sigil styling".to_string()
+        ],
+        quick_start: r#"use sigil_web::prelude::*
+
+component Counter {
+    state count: i64! = 0
+
+    fn render(self) -> VNode {
+        div {
+            h1 { "Count: {self.count}" }
+            button[onclick: || self.count += 1] { "+" }
+            button[onclick: || self.count -= 1] { "-" }
+        }
+    }
+}
+
+fn main() {
+    App::mount("#root", Counter::new())
+}"#.to_string(),
+        sections: vec![
+            Section {
+                id: "getting-started".to_string(),
+                title: "Getting Started".to_string(),
+                description: "Create your first Sigil Web application".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "components".to_string(),
+                title: "Components".to_string(),
+                description: "Building with functional and stateful components".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "hooks".to_string(),
+                title: "Hooks".to_string(),
+                description: "Using hooks for state and side effects".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "routing".to_string(),
+                title: "Routing".to_string(),
+                description: "Client-side routing with type-safe parameters".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "state-management".to_string(),
+                title: "State Management".to_string(),
+                description: "Actor-based global state".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            }
+        ],
+        api_description: "Complete API reference for Sigil Web".to_string(),
+        api_modules: vec![
+            ApiModule { id: "core".to_string(), name: "core".to_string(), description: "Core runtime".to_string() },
+            ApiModule { id: "components".to_string(), name: "components".to_string(), description: "Component system".to_string() },
+            ApiModule { id: "hooks".to_string(), name: "hooks".to_string(), description: "React-style hooks".to_string() },
+            ApiModule { id: "router".to_string(), name: "router".to_string(), description: "Routing".to_string() },
+            ApiModule { id: "state".to_string(), name: "state".to_string(), description: "State management".to_string() },
+            ApiModule { id: "dom".to_string(), name: "dom".to_string(), description: "DOM elements".to_string() }
+        ],
+        api_items_count: 280
+    },
+
+    // =========================================================================
+    // LEVIATHAN - Backend Framework
+    // =========================================================================
+    Product {
+        id: "leviathan".to_string(),
+        name: "Leviathan".to_string(),
+        tagline: "Enterprise-grade backend framework".to_string(),
+        description: "Leviathan is a comprehensive backend framework built on Spring Boot, providing GraphQL APIs, authentication, multi-tenancy, and seamless integration with the Daemoniorum ecosystem.".to_string(),
+        version: "2.4.0".to_string(),
+        icon: "server".to_string(),
+        category: ProductCategory::Frameworks,
+        features: vec![
+            "GraphQL-first API design".to_string(),
+            "Multi-tenant architecture".to_string(),
+            "Built-in authentication and authorization".to_string(),
+            "Event sourcing with Moloch integration".to_string(),
+            "Real-time subscriptions".to_string(),
+            "Automatic schema generation".to_string(),
+            "Database migrations".to_string(),
+            "OpenTelemetry observability".to_string()
+        ],
+        quick_start: r#"// build.gradle.kts
+dependencies {
+    implementation("llc.daemoniorum:leviathan-starter:2.4.0")
+}
+
+// Application.kt
+@SpringBootApplication
+@EnableLeviathan
+class Application
+
+fun main(args: Array<String>) {
+    runApplication<Application>(*args)
+}
+
+// UserResolver.kt
+@Component
+class UserResolver : GraphQLQueryResolver {
+    @Query
+    fun user(id: ID): User = userService.findById(id)
+}"#.to_string(),
+        sections: vec![
+            Section {
+                id: "getting-started".to_string(),
+                title: "Getting Started".to_string(),
+                description: "Set up a new Leviathan project".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "graphql".to_string(),
+                title: "GraphQL".to_string(),
+                description: "Building GraphQL APIs".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "authentication".to_string(),
+                title: "Authentication".to_string(),
+                description: "User authentication and JWT".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "multi-tenancy".to_string(),
+                title: "Multi-Tenancy".to_string(),
+                description: "Multi-tenant architecture".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            }
+        ],
+        api_description: "Complete API reference for Leviathan".to_string(),
+        api_modules: vec![
+            ApiModule { id: "core".to_string(), name: "core".to_string(), description: "Core framework".to_string() },
+            ApiModule { id: "graphql".to_string(), name: "graphql".to_string(), description: "GraphQL support".to_string() },
+            ApiModule { id: "auth".to_string(), name: "auth".to_string(), description: "Authentication".to_string() },
+            ApiModule { id: "data".to_string(), name: "data".to_string(), description: "Data access".to_string() }
+        ],
+        api_items_count: 320
+    },
+
+    // =========================================================================
+    // NYX - AI Agent Framework
+    // =========================================================================
+    Product {
+        id: "nyx".to_string(),
+        name: "Nyx".to_string(),
+        tagline: "Autonomous AI agent framework".to_string(),
+        description: "Nyx is an advanced AI agent framework for building autonomous systems with guardrails, memory, and multi-agent coordination capabilities.".to_string(),
+        version: "1.2.0".to_string(),
+        icon: "brain".to_string(),
+        category: ProductCategory::Frameworks,
+        features: vec![
+            "Autonomous agent execution".to_string(),
+            "Guardian policy enforcement".to_string(),
+            "Long-term memory with vector stores".to_string(),
+            "Multi-agent coordination".to_string(),
+            "Tool use and function calling".to_string(),
+            "Streaming responses".to_string(),
+            "Multiple LLM provider support".to_string(),
+            "Observability and tracing".to_string()
+        ],
+        quick_start: r#"use nyx::prelude::*
+
+#[agent]
+struct ResearchAgent {
+    #[memory]
+    context: VectorMemory,
+
+    #[tools]
+    tools: [WebSearch, FileReader, CodeExecutor]
+}
+
+impl ResearchAgent {
+    async fn research(&self, topic: &str) -> Report~ {
+        let sources~ = self.tools.web_search(topic)|await
+        let analysis! = self.analyze(sources~)|await
+        Report::from(analysis!)
+    }
+}
+
+fn main() {
+    let agent = ResearchAgent::new()
+    agent.run("quantum computing advances 2025")|await
+}"#.to_string(),
+        sections: vec![
+            Section {
+                id: "getting-started".to_string(),
+                title: "Getting Started".to_string(),
+                description: "Create your first Nyx agent".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "agents".to_string(),
+                title: "Agents".to_string(),
+                description: "Building autonomous agents".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "memory".to_string(),
+                title: "Memory".to_string(),
+                description: "Agent memory systems".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "guardian".to_string(),
+                title: "Guardian".to_string(),
+                description: "Policy enforcement and guardrails".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            }
+        ],
+        api_description: "Complete API reference for Nyx".to_string(),
+        api_modules: vec![
+            ApiModule { id: "core".to_string(), name: "core".to_string(), description: "Core framework".to_string() },
+            ApiModule { id: "agents".to_string(), name: "agents".to_string(), description: "Agent system".to_string() },
+            ApiModule { id: "memory".to_string(), name: "memory".to_string(), description: "Memory systems".to_string() },
+            ApiModule { id: "tools".to_string(), name: "tools".to_string(), description: "Built-in tools".to_string() }
+        ],
+        api_items_count: 185
+    },
+
+    // =========================================================================
+    // AETHER - Game Engine
+    // =========================================================================
+    Product {
+        id: "aether".to_string(),
+        name: "Aether".to_string(),
+        tagline: "High-performance game engine".to_string(),
+        description: "Aether is a modern game engine with ECS architecture, GPU-accelerated rendering, and comprehensive tooling for 2D and 3D game development.".to_string(),
+        version: "0.8.0".to_string(),
+        icon: "gamepad".to_string(),
+        category: ProductCategory::Frameworks,
+        features: vec![
+            "Entity Component System (ECS)".to_string(),
+            "Vulkan/Metal/DX12 rendering".to_string(),
+            "Physics with Rapier integration".to_string(),
+            "Audio system".to_string(),
+            "Asset pipeline".to_string(),
+            "Scene editor".to_string(),
+            "Hot reloading".to_string(),
+            "Cross-platform support".to_string()
+        ],
+        quick_start: r#"use aether::prelude::*
+
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .add_systems(Startup, setup)
+        .add_systems(Update, movement)
+        .run()
+}
+
+fn setup(mut commands: Commands) {
+    commands.spawn(Camera2dBundle::default())
+    commands.spawn(SpriteBundle {
+        transform: Transform::from_xyz(0.0, 0.0, 0.0),
+        ..default()
+    })
+}
+
+fn movement(mut query: Query<&mut Transform>, input: Res<Input>) {
+    for mut transform in &mut query {
+        if input.pressed(KeyCode::Right) {
+            transform.translation.x += 1.0
+        }
+    }
+}"#.to_string(),
+        sections: vec![
+            Section {
+                id: "getting-started".to_string(),
+                title: "Getting Started".to_string(),
+                description: "Create your first game".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "ecs".to_string(),
+                title: "ECS".to_string(),
+                description: "Entity Component System".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "rendering".to_string(),
+                title: "Rendering".to_string(),
+                description: "Graphics and rendering".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "physics".to_string(),
+                title: "Physics".to_string(),
+                description: "Physics simulation".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            }
+        ],
+        api_description: "Complete API reference for Aether".to_string(),
+        api_modules: vec![
+            ApiModule { id: "core".to_string(), name: "core".to_string(), description: "Core engine".to_string() },
+            ApiModule { id: "ecs".to_string(), name: "ecs".to_string(), description: "ECS system".to_string() },
+            ApiModule { id: "render".to_string(), name: "render".to_string(), description: "Rendering".to_string() },
+            ApiModule { id: "physics".to_string(), name: "physics".to_string(), description: "Physics".to_string() },
+            ApiModule { id: "audio".to_string(), name: "audio".to_string(), description: "Audio".to_string() }
+        ],
+        api_items_count: 520
+    },
+
+    // =========================================================================
+    // BAEL - Admin UI
+    // =========================================================================
+    Product {
+        id: "bael".to_string(),
+        name: "Bael".to_string(),
+        tagline: "Modern admin interface".to_string(),
+        description: "Bael is a React-based admin UI for managing Leviathan applications, featuring real-time updates, customizable dashboards, and comprehensive data management.".to_string(),
+        version: "1.5.0".to_string(),
+        icon: "layout".to_string(),
+        category: ProductCategory::Tools,
+        features: vec![
+            "Real-time data updates".to_string(),
+            "Customizable dashboards".to_string(),
+            "CRUD operations".to_string(),
+            "Role-based access control".to_string(),
+            "GraphQL integration".to_string(),
+            "Dark/light theme".to_string(),
+            "Responsive design".to_string(),
+            "Plugin system".to_string()
+        ],
+        quick_start: r#"// Install Bael
+npm create bael@latest my-admin
+
+// Configure Leviathan connection
+// bael.config.ts
+export default {
+    leviathan: {
+        endpoint: 'http://localhost:8080/graphql',
+        wsEndpoint: 'ws://localhost:8080/subscriptions'
+    }
+}
+
+// Start development server
+npm run dev"#.to_string(),
+        sections: vec![
+            Section {
+                id: "getting-started".to_string(),
+                title: "Getting Started".to_string(),
+                description: "Set up Bael admin".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "customization".to_string(),
+                title: "Customization".to_string(),
+                description: "Customize the admin interface".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            }
+        ],
+        api_description: "Complete API reference for Bael".to_string(),
+        api_modules: vec![
+            ApiModule { id: "core".to_string(), name: "core".to_string(), description: "Core components".to_string() },
+            ApiModule { id: "hooks".to_string(), name: "hooks".to_string(), description: "React hooks".to_string() }
+        ],
+        api_items_count: 95
+    },
+
+    // =========================================================================
+    // MOLOCH - Event Streaming
+    // =========================================================================
+    Product {
+        id: "moloch".to_string(),
+        name: "Moloch".to_string(),
+        tagline: "High-performance event streaming".to_string(),
+        description: "Moloch is an event streaming platform for building event-driven architectures with Kafka integration, exactly-once processing, and real-time analytics.".to_string(),
+        version: "0.6.0".to_string(),
+        icon: "activity".to_string(),
+        category: ProductCategory::Infrastructure,
+        features: vec![
+            "Kafka integration".to_string(),
+            "Exactly-once processing".to_string(),
+            "Event sourcing".to_string(),
+            "Stream processing".to_string(),
+            "Dead letter queues".to_string(),
+            "Replay capabilities".to_string(),
+            "Schema registry".to_string(),
+            "Monitoring dashboard".to_string()
+        ],
+        quick_start: r#"use moloch::prelude::*
+
+#[event]
+struct OrderPlaced {
+    order_id: String!
+    customer_id: String!
+    total: Decimal!
+}
+
+#[consumer]
+async fn handle_order(event: OrderPlaced~) {
+    // Process the order
+    println!("Order {} placed by {}", event~.order_id, event~.customer_id)
+}
+
+fn main() {
+    Moloch::new()
+        .topic("orders")
+        .consumer(handle_order)
+        .run()
+}"#.to_string(),
+        sections: vec![
+            Section {
+                id: "getting-started".to_string(),
+                title: "Getting Started".to_string(),
+                description: "Set up event streaming".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "producers".to_string(),
+                title: "Producers".to_string(),
+                description: "Publishing events".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "consumers".to_string(),
+                title: "Consumers".to_string(),
+                description: "Consuming events".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            }
+        ],
+        api_description: "Complete API reference for Moloch".to_string(),
+        api_modules: vec![
+            ApiModule { id: "core".to_string(), name: "core".to_string(), description: "Core framework".to_string() },
+            ApiModule { id: "producers".to_string(), name: "producers".to_string(), description: "Event producers".to_string() },
+            ApiModule { id: "consumers".to_string(), name: "consumers".to_string(), description: "Event consumers".to_string() }
+        ],
+        api_items_count: 145
+    },
+
+    // =========================================================================
+    // ARCANUM - Cryptography
+    // =========================================================================
+    Product {
+        id: "arcanum".to_string(),
+        name: "Arcanum".to_string(),
+        tagline: "Cryptographic primitives and protocols".to_string(),
+        description: "Arcanum provides secure cryptographic operations including encryption, hashing, key management, and secure communication protocols.".to_string(),
+        version: "0.4.0".to_string(),
+        icon: "lock".to_string(),
+        category: ProductCategory::Infrastructure,
+        features: vec![
+            "AES-256-GCM encryption".to_string(),
+            "Ed25519 signatures".to_string(),
+            "X25519 key exchange".to_string(),
+            "Argon2id password hashing".to_string(),
+            "HKDF key derivation".to_string(),
+            "Secure random generation".to_string(),
+            "HSM integration".to_string(),
+            "Audit logging".to_string()
+        ],
+        quick_start: r#"use arcanum::prelude::*
+
+fn main() {
+    // Generate a key pair
+    let keypair! = Ed25519::generate()
+
+    // Sign a message
+    let message! = b"Hello, Arcanum!"
+    let signature! = keypair·sign(message)
+
+    // Verify
+    assert!(keypair·verify(message, &signature))
+
+    // Encrypt data
+    let key! = Aes256Gcm::generate_key()
+    let encrypted! = key·encrypt(message)
+    let decrypted! = key·decrypt(&encrypted)
+}"#.to_string(),
+        sections: vec![
+            Section {
+                id: "getting-started".to_string(),
+                title: "Getting Started".to_string(),
+                description: "Cryptography basics".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "encryption".to_string(),
+                title: "Encryption".to_string(),
+                description: "Symmetric and asymmetric encryption".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            },
+            Section {
+                id: "signatures".to_string(),
+                title: "Signatures".to_string(),
+                description: "Digital signatures".to_string(),
+                content: "".to_string(),
+                toc: vec![]
+            }
+        ],
+        api_description: "Complete API reference for Arcanum".to_string(),
+        api_modules: vec![
+            ApiModule { id: "symmetric".to_string(), name: "symmetric".to_string(), description: "Symmetric encryption".to_string() },
+            ApiModule { id: "asymmetric".to_string(), name: "asymmetric".to_string(), description: "Asymmetric encryption".to_string() },
+            ApiModule { id: "hash".to_string(), name: "hash".to_string(), description: "Hashing".to_string() },
+            ApiModule { id: "kdf".to_string(), name: "kdf".to_string(), description: "Key derivation".to_string() }
+        ],
+        api_items_count: 78
+    }
+]

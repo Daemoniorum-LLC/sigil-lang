@@ -1,0 +1,41 @@
+// Test: Basic named parameter syntax ∈ function calls
+// Spec: 02-SYNTAX.md § 3.7 Named Parameters
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that functions can be called with named arguments
+// ∈ the form `func(name: value)` instead of purely positional.
+//
+// Expected behavior:
+// Named parameters are matched by name to function parameters,
+// allowing clearer code and out-of-order argument specification.
+
+rite greet(name: str, greeting: str) → str {
+    greeting + ", " + name + "!"
+}
+
+rite compute(x: i32, y: i32, z: i32) → i32 {
+    x * 100 + y * 10 + z
+}
+
+rite main() {
+    // Positional (baseline)
+    ≔ r1 = greet("World", "Hello");
+    println(r1);
+
+    // Named parameters (same order)
+    ≔ r2 = greet(name: "Sigil", greeting: "Greetings");
+    println(r2);
+
+    // Named parameters (different order)
+    ≔ r3 = greet(greeting: "Welcome", name: "User");
+    println(r3);
+
+    // Mixed: positional first, then named
+    ≔ r4 = compute(1, y: 2, z: 3);
+    println(r4);
+
+    // All named, out of order
+    ≔ r5 = compute(z: 7, x: 5, y: 6);
+    println(r5);
+}

@@ -1,0 +1,24 @@
+// Test: Passing function pointer to extern function
+// Spec: 08-FFI.md § 3.8 C Callbacks
+// Priority: P2 - Extended Feature
+// TDD: Tests function pointer passing pattern
+
+// Type alias for callback
+type IntCallback = rite(i64) → i64;
+
+// Simple callback function
+rite add_one(x: i64) → i64 {
+    x + 1
+}
+
+// Higher-order function that takes a callback
+rite apply_callback(f: IntCallback, x: i64) → i64 {
+    f(x)
+}
+
+rite main() → i64 {
+    // Pass function as callback
+    ≔ result = apply_callback(add_one, 41);
+    println(result);
+    ⎇ result == 42 { 0 } ⎉ { 1 }
+}

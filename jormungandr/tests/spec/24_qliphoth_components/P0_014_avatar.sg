@@ -1,0 +1,256 @@
+// Test: Qliphoth Avatar Component
+// TDD: RED - Tests the Avatar user image component
+//
+// Avatar displays user profile images with fallback initials
+
+invoke qliphoth·components·Avatar;
+invoke qliphoth·components·AvatarGroup;
+invoke qliphoth·core·VNode;
+
+// Test basic avatar rendering
+rite test_avatar_basic() {
+    ≔ avatar = Avatar {
+        src: "/images/user.jpg",
+        alt: "John Doe",
+    };
+
+    ≔ vnode = avatar.render();
+
+    assert!(vnode.has_class("avatar"));
+    ≔ img = vnode.find_child_by_tag("img");
+    assert_eq!(img.attr("src"), "/images/user.jpg");
+    assert_eq!(img.attr("alt"), "John Doe");
+}
+
+// Test avatar sizes
+rite test_avatar_sizes() {
+    ≔ xs = Avatar { src: "", size: "xs" };
+    assert!(xs.render().has_class("avatar-xs"));
+
+    ≔ sm = Avatar { src: "", size: "sm" };
+    assert!(sm.render().has_class("avatar-sm"));
+
+    ≔ md = Avatar { src: "", size: "md" };
+    assert!(md.render().has_class("avatar-md"));
+
+    ≔ lg = Avatar { src: "", size: "lg" };
+    assert!(lg.render().has_class("avatar-lg"));
+
+    ≔ xl = Avatar { src: "", size: "xl" };
+    assert!(xl.render().has_class("avatar-xl"));
+
+    // Custom size
+    ≔ custom = Avatar { src: "", size: 64 };
+    ≔ vnode = custom.render();
+    assert_eq!(vnode.attr("style"), "width: 64px; height: 64px;");
+}
+
+// Test avatar shapes
+rite test_avatar_shapes() {
+    // Circle (default)
+    ≔ circle = Avatar { src: "", shape: "circle" };
+    assert!(circle.render().has_class("avatar-circle"));
+
+    // Square
+    ≔ square = Avatar { src: "", shape: "square" };
+    assert!(square.render().has_class("avatar-square"));
+
+    // Rounded
+    ≔ rounded = Avatar { src: "", shape: "rounded" };
+    assert!(rounded.render().has_class("avatar-rounded"));
+}
+
+// Test avatar with initials fallback
+rite test_avatar_initials() {
+    ≔ avatar = Avatar {
+        name: "John Doe",
+        // No src provided - should show initials
+    };
+
+    ≔ vnode = avatar.render();
+    assert!(vnode.has_child_with_class("avatar-initials"));
+    assert_eq!(vnode.text_content(), "JD");
+}
+
+// Test avatar initials with single name
+rite test_avatar_initials_single() {
+    ≔ avatar = Avatar {
+        name: "Alice",
+    };
+
+    ≔ vnode = avatar.render();
+    assert_eq!(vnode.text_content(), "A");
+}
+
+// Test avatar with icon fallback
+rite test_avatar_icon() {
+    ≔ avatar = Avatar {
+        icon: "user",
+        // No src or name - show icon
+    };
+
+    ≔ vnode = avatar.render();
+    assert!(vnode.has_child_with_class("avatar-icon"));
+}
+
+// Test avatar with status indicator
+rite test_avatar_status() {
+    // Online
+    ≔ online = Avatar { src: "", status: "online" };
+    ≔ vnode1 = online.render();
+    assert!(vnode1.has_child_with_class("avatar-status"));
+    assert!(vnode1.has_child_with_class("avatar-status-online"));
+
+    // Offline
+    ≔ offline = Avatar { src: "", status: "offline" };
+    assert!(offline.render().has_child_with_class("avatar-status-offline"));
+
+    // Away
+    ≔ away = Avatar { src: "", status: "away" };
+    assert!(away.render().has_child_with_class("avatar-status-away"));
+
+    // Busy
+    ≔ busy = Avatar { src: "", status: "busy" };
+    assert!(busy.render().has_child_with_class("avatar-status-busy"));
+}
+
+// Test avatar status position
+rite test_avatar_status_position() {
+    // Bottom right (default)
+    ≔ br = Avatar { src: "", status: "online", status_position: "bottom-right" };
+    assert!(br.render().has_child_with_class("avatar-status-bottom-right"));
+
+    // Top right
+    ≔ tr = Avatar { src: "", status: "online", status_position: "top-right" };
+    assert!(tr.render().has_child_with_class("avatar-status-top-right"));
+
+    // Bottom left
+    ≔ bl = Avatar { src: "", status: "online", status_position: "bottom-left" };
+    assert!(bl.render().has_child_with_class("avatar-status-bottom-left"));
+}
+
+// Test avatar with badge
+rite test_avatar_badge() {
+    ≔ avatar = Avatar {
+        src: "",
+        badge: 5,
+    };
+
+    ≔ vnode = avatar.render();
+    assert!(vnode.has_child_with_class("avatar-badge"));
+    ≔ badge = vnode.find_child_by_class("avatar-badge");
+    assert_eq!(badge.text_content(), "5");
+}
+
+// Test avatar colors (for initials background)
+rite test_avatar_colors() {
+    // Auto (generated from name)
+    ≔ auto = Avatar { name: "John", color: "auto" };
+    // Color should be deterministic based on name
+    assert!(auto.render().has_class("avatar-color-auto"));
+
+    // Specific color
+    ≔ blue = Avatar { name: "John", color: "blue" };
+    assert!(blue.render().has_class("avatar-blue"));
+
+    ≔ green = Avatar { name: "John", color: "green" };
+    assert!(green.render().has_class("avatar-green"));
+}
+
+// Test avatar loading state
+rite test_avatar_loading() {
+    ≔ avatar = Avatar {
+        src: "/images/large.jpg",
+        loading: yay,
+    };
+
+    ≔ vnode = avatar.render();
+    assert!(vnode.has_class("avatar-loading"));
+    // Should show skeleton
+    assert!(vnode.has_child_with_class("avatar-skeleton"));
+}
+
+// Test avatar error fallback
+rite test_avatar_error() {
+    ≔ avatar = Avatar {
+        src: "/broken.jpg",
+        name: "Jane Doe", // Fallback to initials
+        onerror: || { },
+    };
+
+    // When image fails, should show initials
+    ≔ vnode = avatar.render();
+    assert_eq!(vnode.attr("data-fallback"), "initials");
+}
+
+// Test avatar group
+rite test_avatar_group() {
+    ≔ group = AvatarGroup {
+        max: 3,
+        children: [
+            Avatar { src: "/user1.jpg", name: "User 1" },
+            Avatar { src: "/user2.jpg", name: "User 2" },
+            Avatar { src: "/user3.jpg", name: "User 3" },
+            Avatar { src: "/user4.jpg", name: "User 4" },
+            Avatar { src: "/user5.jpg", name: "User 5" },
+        ]
+    };
+
+    ≔ vnode = group.render();
+    assert!(vnode.has_class("avatar-group"));
+
+    // Should show 3 avatars + overflow indicator
+    ≔ avatars = vnode.find_children_by_class("avatar");
+    assert_eq!(avatars.len(), 4); // 3 + overflow
+
+    // Overflow should show "+2"
+    ≔ overflow = avatars[3];
+    assert!(overflow.has_class("avatar-overflow"));
+    assert_eq!(overflow.text_content(), "+2");
+}
+
+// Test avatar group spacing
+rite test_avatar_group_spacing() {
+    ≔ tight = AvatarGroup { spacing: "tight", children: [] };
+    assert!(tight.render().has_class("avatar-group-tight"));
+
+    ≔ normal = AvatarGroup { spacing: "normal", children: [] };
+    assert!(normal.render().has_class("avatar-group-normal"));
+
+    ≔ loose = AvatarGroup { spacing: "loose", children: [] };
+    assert!(loose.render().has_class("avatar-group-loose"));
+}
+
+// Test avatar accessibility
+rite test_avatar_accessibility() {
+    ≔ avatar = Avatar {
+        src: "/user.jpg",
+        alt: "Profile picture of John Doe",
+    };
+
+    ≔ vnode = avatar.render();
+    ≔ img = vnode.find_child_by_tag("img");
+    assert_eq!(img.attr("alt"), "Profile picture of John Doe");
+}
+
+rite main() {
+    test_avatar_basic();
+    test_avatar_sizes();
+    test_avatar_shapes();
+    test_avatar_initials();
+    test_avatar_initials_single();
+    test_avatar_icon();
+    test_avatar_status();
+    test_avatar_status_position();
+    test_avatar_badge();
+    test_avatar_colors();
+    test_avatar_loading();
+    test_avatar_error();
+    test_avatar_group();
+    test_avatar_group_spacing();
+    test_avatar_accessibility();
+
+    print("✓ All Avatar component tests passed");
+}
+
+// Expected output: ✓ All Avatar component tests passed

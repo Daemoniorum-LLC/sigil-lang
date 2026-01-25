@@ -4,8 +4,8 @@
 //! Implements industry-standard compiler optimizations.
 
 use crate::ast::{
-    self, BinOp, Block, Expr, FunctionAttrs, Ident, Item, Literal, NumBase, Param, PathSegment,
-    Pattern, Stmt, TypeExpr, TypePath, UnaryOp, Visibility,
+    self, AttrArg, AttrArgs, Attribute, BinOp, Block, Expr, FunctionAttrs, Ident, Item, Literal,
+    NumBase, Param, PathSegment, Pattern, Stmt, TypeExpr, TypePath, UnaryOp, Visibility,
 };
 use crate::span::Span;
 use std::collections::{HashMap, HashSet};
@@ -71,11 +71,128 @@ impl Optimizer {
         &self.stats
     }
 
+    // ========================================================================
+    // Conditional compilation (#[cfg(...)] evaluation)
+    // ========================================================================
+
+    /// Evaluate a cfg condition against the current target.
+    fn evaluate_cfg(&self, attr: &Attribute) -> bool {
+        if attr.name.name != "cfg" {
+            return true;
+        }
+
+        match &attr.args {
+            Some(AttrArgs::Paren(args)) => {
+                if args.len() == 1 {
+                    self.evaluate_cfg_arg(&args[0])
+                } else {
+                    true
+                }
+            }
+            _ => true,
+        }
+    }
+
+    /// Evaluate a single cfg argument.
+    fn evaluate_cfg_arg(&self, arg: &AttrArg) -> bool {
+        match arg {
+            AttrArg::KeyValue { key, value } => {
+                if key.name == "target_os" {
+                    if let Expr::Literal(Literal::String(os)) = value.as_ref() {
+                        return self.matches_target_os(os);
+                    }
+                } else if key.name == "feature" {
+                    return false;
+                }
+                true
+            }
+            AttrArg::Nested(nested) => self.evaluate_cfg_predicate(nested),
+            AttrArg::Ident(ident) => self.evaluate_cfg_simple(&ident.name),
+            _ => true,
+        }
+    }
+
+    /// Evaluate cfg predicates like not(...), any(...), all(...).
+    fn evaluate_cfg_predicate(&self, attr: &Attribute) -> bool {
+        match attr.name.name.as_str() {
+            "not" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    if args.len() == 1 {
+                        return !self.evaluate_cfg_arg(&args[0]);
+                    }
+                }
+                true
+            }
+            "any" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    return args.iter().any(|a| self.evaluate_cfg_arg(a));
+                }
+                true
+            }
+            "all" => {
+                if let Some(AttrArgs::Paren(args)) = &attr.args {
+                    return args.iter().all(|a| self.evaluate_cfg_arg(a));
+                }
+                true
+            }
+            "target_os" => {
+                if let Some(AttrArgs::Eq(value)) = &attr.args {
+                    if let Expr::Literal(Literal::String(os)) = value.as_ref() {
+                        return self.matches_target_os(os);
+                    }
+                }
+                true
+            }
+            _ => true,
+        }
+    }
+
+    /// Evaluate simple cfg identifiers.
+    fn evaluate_cfg_simple(&self, name: &str) -> bool {
+        match name {
+            "unix" => cfg!(unix),
+            "windows" => cfg!(windows),
+            "linux" => cfg!(target_os = "linux"),
+            "macos" => cfg!(target_os = "macos"),
+            _ => false,
+        }
+    }
+
+    /// Check if the current target OS matches.
+    fn matches_target_os(&self, os: &str) -> bool {
+        match os {
+            "linux" => cfg!(target_os = "linux"),
+            "macos" => cfg!(target_os = "macos"),
+            "windows" => cfg!(target_os = "windows"),
+            "ios" => cfg!(target_os = "ios"),
+            "android" => cfg!(target_os = "android"),
+            "freebsd" => cfg!(target_os = "freebsd"),
+            "none" => false,
+            _ => false,
+        }
+    }
+
+    /// Check if a function should be included based on its cfg attributes.
+    fn should_include_function(&self, func: &ast::Function) -> bool {
+        for attr in &func.outer_attrs {
+            if attr.name.name == "cfg" {
+                if !self.evaluate_cfg(attr) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     /// Optimize a source file (returns optimized copy)
     pub fn optimize_file(&mut self, file: &ast::SourceFile) -> ast::SourceFile {
-        // First pass: collect function information
+        // First pass: collect function information (respecting cfg conditions)
         for item in &file.items {
             if let Item::Function(func) = &item.node {
+                // Skip functions that don't match cfg conditions
+                if !self.should_include_function(func) {
+                    continue;
+                }
                 self.functions.insert(func.name.name.clone(), func.clone());
                 if self.is_recursive(&func.name.name, func) {
                     self.recursive_functions.insert(func.name.name.clone());
@@ -92,6 +209,10 @@ impl Optimizer {
         if matches!(self.level, OptLevel::Standard | OptLevel::Aggressive) {
             for item in &file.items {
                 if let Item::Function(func) = &item.node {
+                    // Skip functions that don't match cfg conditions
+                    if !self.should_include_function(func) {
+                        continue;
+                    }
                     if let Some((helper_func, wrapper_func)) = self.try_accumulator_transform(func)
                     {
                         // Add helper function first
@@ -113,13 +234,17 @@ impl Optimizer {
             // TODO: Implement proper memoization with thread-local or passed-through caches
         }
 
-        // Optimization passes
+        // Optimization passes - filter out cfg-excluded functions
         let items: Vec<_> = file
             .items
             .iter()
-            .map(|item| {
+            .filter_map(|item| {
                 let node = match &item.node {
                     Item::Function(func) => {
+                        // Skip functions that don't match cfg conditions
+                        if !self.should_include_function(func) {
+                            return None;
+                        }
                         // Check if this function was transformed by accumulator
                         if let Some((_, wrapper)) = self.try_accumulator_transform(func) {
                             if matches!(self.level, OptLevel::Standard | OptLevel::Aggressive)
@@ -135,10 +260,10 @@ impl Optimizer {
                     }
                     other => other.clone(),
                 };
-                crate::span::Spanned {
+                Some(crate::span::Spanned {
                     node,
                     span: item.span.clone(),
-                }
+                })
             })
             .collect();
 
@@ -424,6 +549,7 @@ impl Optimizer {
             is_const: false,
             is_unsafe: false,
             attrs: FunctionAttrs::default(),
+            outer_attrs: Vec::new(),
             name: Ident {
                 name: name.to_string(),
                 evidentiality: None,
@@ -501,6 +627,7 @@ impl Optimizer {
             is_const: original.is_const,
             is_unsafe: original.is_unsafe,
             attrs: original.attrs.clone(),
+            outer_attrs: original.outer_attrs.clone(),
             name: Ident {
                 name: name.to_string(),
                 evidentiality: None,
@@ -562,6 +689,7 @@ impl Optimizer {
             is_const: func.is_const,
             is_unsafe: func.is_unsafe,
             attrs: func.attrs.clone(),
+            outer_attrs: func.outer_attrs.clone(),
             name: Ident {
                 name: impl_name.clone(),
                 evidentiality: None,
@@ -609,6 +737,7 @@ impl Optimizer {
             is_const: false,
             is_unsafe: false,
             attrs: FunctionAttrs::default(),
+            outer_attrs: Vec::new(),
             name: Ident {
                 name: init_name.clone(),
                 evidentiality: None,
@@ -879,6 +1008,7 @@ impl Optimizer {
             is_const: original.is_const,
             is_unsafe: original.is_unsafe,
             attrs: original.attrs.clone(),
+            outer_attrs: original.outer_attrs.clone(),
             name: original.name.clone(),
             aspect: original.aspect,
             generics: original.generics.clone(),
@@ -1015,6 +1145,7 @@ impl Optimizer {
             is_const: func.is_const,
             is_unsafe: func.is_unsafe,
             attrs: func.attrs.clone(),
+            outer_attrs: func.outer_attrs.clone(),
             name: func.name.clone(),
             aspect: func.aspect,
             generics: func.generics.clone(),

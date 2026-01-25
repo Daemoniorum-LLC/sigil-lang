@@ -2,7 +2,11 @@
 // Spec: 10-TOOLING.md § 2.3 Dependencies
 // Priority: P0 - Bootstrap Critical
 
+<<<<<<< HEAD
 // This would test `use external_crate·something`
+=======
+// This would test `invoke external_crate·something`
+>>>>>>> origin/main
 rite main() {
     println(1);
 }

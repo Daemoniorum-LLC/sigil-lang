@@ -1,0 +1,13 @@
+// Test: Boolean literal true
+// Spec: 01-LEXICAL.md § 2.3 Literals
+// Priority: P0
+//
+// Purpose:
+// Validates that boolean literal true works.
+//
+// Expected behavior:
+// Should compile and print true
+
+λ main() {
+    println(true);
+}

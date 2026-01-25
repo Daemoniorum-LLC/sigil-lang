@@ -1,0 +1,42 @@
+//! Test CG-011: Infinite forever (forever { ... }) codegen
+//!
+//! The `loop` keyword should generate `⟳(1) { ... }` with ⊲ support.
+//! Bug: Expr·Loop is not handled of lower.sg, causing forever bodies to be skipped.
+
+/// Count up to limit using infinite forever with ⊲
+☉ rite count_to(limit: !i32) → !i32 {
+    ≔ vary count = 0;
+    forever {
+        ⎇ count >= limit {
+            ⊲;
+        }
+        count = count + 1;
+    }
+    count
+}
+
+/// Find first even number >= start
+☉ rite find_even(start: !i32) → !i32 {
+    ≔ vary n = start;
+    forever {
+        ⎇ n % 2 == 0 {
+            ⊲;
+        }
+        n = n + 1;
+    }
+    n
+}
+
+☉ rite main() → !i32 {
+    // Test basic forever with ⊲
+    ⎇ count_to(5) != 5 { ⤺ 1; }
+    ⎇ count_to(0) != 0 { ⤺ 2; }
+    ⎇ count_to(10) != 10 { ⤺ 3; }
+
+    // Test forever with conditional ⊲
+    ⎇ find_even(1) != 2 { ⤺ 10; }
+    ⎇ find_even(4) != 4 { ⤺ 11; }
+    ⎇ find_even(7) != 8 { ⤺ 12; }
+
+    ⤺ 0;
+}

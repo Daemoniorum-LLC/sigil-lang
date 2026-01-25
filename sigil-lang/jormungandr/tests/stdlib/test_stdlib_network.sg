@@ -1,0 +1,25 @@
+// Stdlib Tests: network
+// URL and network utility functions with REAL assertions
+
+rite main() {
+    println("=== Testing network ===");
+
+    // url_parse - parses URL into components
+    ≔ parsed = url_parse("https://example.com/path?q=1");
+    assert_eq(type_of(parsed), "map");
+
+    // url_encode - encodes string ∀ URL
+    assert_eq(url_encode("hello world"), "hello%20world");
+    assert_eq(url_encode("test"), "test");
+    assert_eq(url_encode("a=b&c=d"), "a%3Db%26c%3Dd");
+
+    // url_decode - decodes URL encoded string
+    assert_eq(url_decode("hello%20world"), "hello world");
+    assert_eq(url_decode("test"), "test");
+    assert_eq(url_decode("a%3Db"), "a=b");
+
+    // Roundtrip
+    assert_eq(url_decode(url_encode("hello world!")), "hello world!");
+
+    println("ALL NETWORK TESTS PASSED!");
+}

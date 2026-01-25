@@ -1,7 +1,12 @@
 //! Test parsing parser.sg with the this-hosted parser
 
+<<<<<<< HEAD
 use crate·lexer·Lexer;
 use crate·parser·Parser;
+=======
+invoke crate·lexer·Lexer;
+invoke crate·parser·Parser;
+>>>>>>> origin/main
 
 ☉ rite main() → !i32 {
     // Read parser.sg content

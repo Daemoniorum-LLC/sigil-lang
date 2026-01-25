@@ -1,0 +1,132 @@
+// Stdlib Tests: array
+// Array manipulation functions with REAL assertions
+
+rite main() {
+    println("=== Testing array ===");
+
+    // len
+    assert_eq(len([1, 2, 3]), 3);
+    assert_eq(len([]), 0);
+    assert_eq(len([1]), 1);
+
+    // push - mutates array
+    ≔ vary arr = [1, 2];
+    push(arr, 3);
+    assert_eq(len(arr), 3);
+    assert_eq(arr[2], 3);
+
+    // pop - mutates array
+    ≔ vary arr2 = [1, 2, 3];
+    ≔ popped = pop(arr2);
+    assert_eq(popped, 3);
+    assert_eq(len(arr2), 2);
+
+    // first
+    assert_eq(first([1, 2, 3]), 1);
+
+    // last
+    assert_eq(last([1, 2, 3]), 3);
+
+    // reverse (array)
+    assert_eq(reverse([1, 2, 3]), [3, 2, 1]);
+    assert_eq(reverse([]), []);
+
+    // sort
+    assert_eq(sort([3, 1, 2]), [1, 2, 3]);
+    assert_eq(sort([1]), [1]);
+
+    // sort_desc
+    assert_eq(sort_desc([1, 3, 2]), [3, 2, 1]);
+
+    // unique
+    assert_eq(unique([1, 2, 2, 3, 3, 3]), [1, 2, 3]);
+
+    // flatten
+    assert_eq(flatten([[1, 2], [3, 4]]), [1, 2, 3, 4]);
+
+    // sum
+    assert_eq(sum([1, 2, 3, 4]), 10);
+    assert_eq(sum([]), 0);
+
+    // product
+    assert_eq(product([1, 2, 3, 4]), 24);
+    assert_eq(product([5]), 5);
+
+    // min_of
+    assert_eq(min_of([3, 1, 4, 1, 5]), 1);
+
+    // max_of
+    assert_eq(max_of([3, 1, 4, 1, 5]), 5);
+
+    // mean
+    assert_eq(mean([2, 4, 6]), 4.0);
+
+    // Note: contains/index_of ∀ arrays bypass type checker but work at runtime
+    // Tested separately with simpler approach
+
+    // slice
+    assert_eq(slice([1, 2, 3, 4, 5], 1, 4), [2, 3, 4]);
+
+    // take
+    assert_eq(take([1, 2, 3, 4, 5], 3), [1, 2, 3]);
+    assert_eq(take([1, 2], 5), [1, 2]);
+
+    // drop_while instead of skip (skip conflicts with test marker)
+    ≔ arr_to_drop = [1, 2, 3, 4, 5];
+    ≔ dropped = drop_while(arr_to_drop, |x| x < 3);
+    assert_eq(dropped, [3, 4, 5]);
+
+    // zip
+    assert_eq(len(zip([1, 2], ["a", "b"])), 2);
+
+    // enumerate
+    assert_eq(len(enumerate(["a", "b"])), 2);
+
+    // arange(start, end, step) - create array range
+    assert_eq(arange(0, 5, 1), [0, 1, 2, 3, 4]);
+    assert_eq(arange(0, 6, 2), [0, 2, 4]);
+
+    // repeat_val
+    assert_eq(repeat_val(0, 3), [0, 0, 0]);
+
+    // chunk
+    assert_eq(len(chunk([1, 2, 3, 4, 5], 2)), 3);
+
+    // partition
+    ≔ parts = partition([1, 2, 3, 4, 5, 6], |x| x % 2 == 0);
+    assert_eq(len(parts[0]), 3);
+    assert_eq(len(parts[1]), 3);
+
+    // all
+    assert_true(all([yea, yea, yea]));
+    assert_false(all([yea, nay, yea]));
+
+    // any
+    assert_true(any([nay, nay, yea]));
+    assert_false(any([nay, nay, nay]));
+
+    // frequencies - count occurrences (returns a map)
+    ≔ freqs = frequencies(["a", "b", "a", "a"]);
+    assert_eq(map_get(freqs, "a"), 3);
+
+    // dedupe
+    assert_eq(dedupe([1, 1, 2, 2, 2, 3]), [1, 2, 3]);
+
+    // interleave
+    assert_eq(interleave([1, 3, 5], [2, 4, 6]), [1, 2, 3, 4, 5, 6]);
+
+    // flatten nested arrays
+    ≔ nested = [[1, 2], [3, 4], [5, 6]];
+    assert_eq(len(flatten(nested)), 6);
+
+    // map_new
+    ≔ m = map_new();
+    assert_eq(map_len(m), 0);
+
+    // popcount (bit count)
+    assert_eq(popcount(255), 8);
+    assert_eq(popcount(0), 0);
+    assert_eq(popcount(1), 1);
+
+    println("ALL ARRAY TESTS PASSED!");
+}

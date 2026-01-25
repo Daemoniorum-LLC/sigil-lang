@@ -1,0 +1,55 @@
+//! Pipe Chains and Morphemes
+//! The heart of Sigil's polysynthetic design.
+
+use collections·{Vec, HashMap}
+use math·{Σ, Π}
+
+fn main() {
+    // Basic pipe chain with morphemes
+    let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    // Filter-map-reduce in one chain
+    let sum_of_squares = numbers
+        |φ{n => n % 2 == 0}     // φ = filter: keep even numbers
+        |τ{n => n ** 2}         // τ = transform: square each
+        |ρ{acc, n => acc + n}   // ρ = reduce: sum all
+
+    print!("Sum of squares of evens: {sum_of_squares}")
+
+    // Using Greek letter morphemes
+    let data = [5, 2, 8, 1, 9, 3, 7, 4, 6]
+
+    // Sort ascending (σ)
+    let sorted = data|σ
+    print!("Sorted: {sorted}")
+
+    // Sort by field
+    let users = [
+        User { name: "Alice", age: 30 },
+        User { name: "Bob", age: 25 },
+        User { name: "Charlie", age: 35 },
+    ]
+
+    let by_age = users|σ.age
+    let by_name = users|σ.name
+
+    // Sum with Σ morpheme
+    let total = [1, 2, 3, 4, 5]|Σ
+    print!("Total: {total}")
+
+    // Product with Π morpheme
+    let factorial_5 = [1, 2, 3, 4, 5]|Π
+    print!("5! = {factorial_5}")
+
+    // Named morphemes with middle dot
+    let processed = data
+        |·map{_ * 2}
+        |·filter{_ > 5}
+        |·take(3)
+        |·collect
+}
+
+struct User {
+    name: str,
+    age: u32,
+}

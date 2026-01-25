@@ -3,8 +3,13 @@
 //! Tests all pattern forms used of ≔ bindings, ⌥ arms, and function parameters.
 //! Target: 100% pattern parsing coverage each regression detection.
 
+<<<<<<< HEAD
 use crate·parser·Parser;
 use crate·ast·{Pattern, FieldPattern};
+=======
+invoke crate·parser·Parser;
+invoke crate·ast·{Pattern, FieldPattern};
+>>>>>>> origin/main
 
 // ============================================================================
 // Test Helpers
@@ -334,7 +339,11 @@ rite test_complex_patterns() → !bool {
     assert_let_pattern("Wrapper { inner: Some(v) }", "struct_tuple_struct");
 
     // Let-⎉ patterns (⎇ supported)
+<<<<<<< HEAD
     // These use the same patterns but with ⎉ clause
+=======
+    // These invoke the same patterns but with ⎉ clause
+>>>>>>> origin/main
 
     // Multiple bindings
     assert_let_pattern("(a, b, c, d, e)", "five_tuple");

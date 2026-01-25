@@ -1,0 +1,22 @@
+// Native Platform Test 01: GTK Initialization
+// Tests: gtk_init() can be called without crashing
+// Expected: 0 (success)
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    rite gtk_init();
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+    0
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

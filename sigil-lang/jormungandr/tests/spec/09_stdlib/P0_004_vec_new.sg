@@ -1,0 +1,14 @@
+// Test: Vec·new() constructor
+// Spec: 09-STDLIB.md § 2.1 Vec Type
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate Vec can be created and used.
+//
+// Expected behavior:
+// Should create empty Vec and print its length (0)
+
+λ main() {
+    ≔ v: !Vec<i32> = Vec·new();
+    println(v.len());
+}

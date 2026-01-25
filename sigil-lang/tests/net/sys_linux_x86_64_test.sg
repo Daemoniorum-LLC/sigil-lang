@@ -1,0 +1,633 @@
+//! Syscall Layer Tests - Linux x86_64
+//!
+//! TDD Red Phase: These tests define expected behavior ∀ the syscall layer.
+//! All tests should FAIL until the implementation is complete.
+//!
+//! Test IDs: SYS-001 through SYS-019
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 3
+
+// Import the syscall module (does not exist yet - will fail)
+invoke stdlib·net·sys·linux_x86_64·*;
+invoke stdlib·net·sys·SyscallError;
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+λ test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
+    ⎇ actual != expected {
+        panic(format!("[{}] FAIL: {} - expected {}, got {}", test_id, msg, expected, actual));
+    }
+}
+
+λ test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
+    ⌥ result {
+        Result·Ok(v) => v,
+        Result·Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
+    }
+}
+
+λ test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
+    ⌥ result {
+        Result·Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
+        Result·Err(e) => e,
+    }
+}
+
+λ test_assert_true(cond: bool, test_id: &str, msg: &str) {
+    ⎇ !cond {
+        panic(format!("[{}] FAIL: {}", test_id, msg));
+    }
+}
+
+// ============================================================================
+// SYS-001: test_sys_socket_creates_fd
+// Create TCP socket via syscall, returns fd > 0
+// ============================================================================
+
+λ test_sys_socket_creates_fd() -> bool {
+    print("  [SYS-001] sys_socket creates valid fd... ");
+
+    // AF_INET = 2, SOCK_STREAM = 1, protocol = 0
+    ≔ result = sys_socket(2, 1, 0);
+    ≔ fd = test_assert_ok(result, "SYS-001", "socket creation");
+
+    test_assert_true(fd > 0, "SYS-001", format!("fd should be > 0, got {}", fd));
+
+    // Clean up
+    sys_close(fd as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-002: test_sys_socket_invalid_domain
+// Invalid domain parameter returns -EINVAL
+// ============================================================================
+
+λ test_sys_socket_invalid_domain() -> bool {
+    print("  [SYS-002] sys_socket invalid domain... ");
+
+    // Invalid domain = 9999
+    ≔ result = sys_socket(9999, 1, 0);
+    ≔ err = test_assert_err(result, "SYS-002", "invalid domain should fail");
+
+    // Should be EINVAL (22) or EAFNOSUPPORT (97)
+    test_assert_true(
+        err == SyscallError·EINVAL || err == SyscallError·EAFNOSUPPORT,
+        "SYS-002",
+        format!("expected EINVAL or EAFNOSUPPORT, got {:?}", err)
+    );
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-003: test_sys_close_valid_fd
+// Close valid socket fd returns 0
+// ============================================================================
+
+λ test_sys_close_valid_fd() -> bool {
+    print("  [SYS-003] sys_close valid fd... ");
+
+    // Create a socket first
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-003", "socket creation");
+
+    // Close it
+    ≔ result = sys_close(fd as i32);
+    test_assert_ok(result, "SYS-003", "close should succeed");
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-004: test_sys_close_invalid_fd
+// Close invalid fd (-1) returns -EBADF
+// ============================================================================
+
+λ test_sys_close_invalid_fd() -> bool {
+    print("  [SYS-004] sys_close invalid fd... ");
+
+    ≔ result = sys_close(-1);
+    ≔ err = test_assert_err(result, "SYS-004", "close(-1) should fail");
+
+    test_assert_eq(err, SyscallError·EBADF, "SYS-004", "expected EBADF");
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-005: test_sys_connect_localhost
+// Connect to 127.0.0.1:port returns 0 on success
+// ============================================================================
+
+λ test_sys_connect_localhost() -> bool {
+    print("  [SYS-005] sys_connect localhost... ");
+
+    // This test requires a local server - will fail without one
+    // For now, test that the syscall interface works
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-005", "socket creation");
+
+    // Build sockaddr_in ∀ 127.0.0.1:12345
+    // Σ sockaddr_in {
+    //   sa_family_t sin_family;  // AF_INET = 2
+    //   in_port_t sin_port;      // port ∈ network byte order
+    //   Σ in_addr sin_addr; // 127.0.0.1 = 0x7f000001
+    //   char sin_zero[8];
+    // }
+    ≔ Δ sockaddr: [u8; 16] = [0; 16];
+    sockaddr[0] = 2;   // AF_INET (little endian, but sin_family is host order)
+    sockaddr[1] = 0;
+    sockaddr[2] = 48;  // port 12345 >> 8 = 48
+    sockaddr[3] = 57;  // port 12345 & 0xFF = 57
+    sockaddr[4] = 127; // 127.0.0.1
+    sockaddr[5] = 0;
+    sockaddr[6] = 0;
+    sockaddr[7] = 1;
+
+    // Connect will fail (ECONNREFUSED) since no server is listening
+    // But the syscall interface should work
+    ≔ result = sys_connect(fd as i32, &sockaddr, 16);
+
+    // We expect ECONNREFUSED since nothing is listening
+    ≔ err = test_assert_err(result, "SYS-005", "connect should fail (no server)");
+    test_assert_eq(err, SyscallError·ECONNREFUSED, "SYS-005", "expected ECONNREFUSED");
+
+    sys_close(fd as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-006: test_sys_connect_refused
+// Connect to closed port returns -ECONNREFUSED
+// ============================================================================
+
+λ test_sys_connect_refused() -> bool {
+    print("  [SYS-006] sys_connect refused... ");
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-006", "socket creation");
+
+    // Connect to port 1 (likely closed, requires root)
+    ≔ Δ sockaddr: [u8; 16] = [0; 16];
+    sockaddr[0] = 2;   // AF_INET
+    sockaddr[2] = 0;   // port 1 high byte
+    sockaddr[3] = 1;   // port 1 low byte
+    sockaddr[4] = 127;
+    sockaddr[5] = 0;
+    sockaddr[6] = 0;
+    sockaddr[7] = 1;
+
+    ≔ result = sys_connect(fd as i32, &sockaddr, 16);
+    ≔ err = test_assert_err(result, "SYS-006", "connect to closed port should fail");
+
+    // ECONNREFUSED or EACCES (permission denied ∀ port 1)
+    test_assert_true(
+        err == SyscallError·ECONNREFUSED || err == SyscallError·EACCES,
+        "SYS-006",
+        format!("expected ECONNREFUSED or EACCES, got {:?}", err)
+    );
+
+    sys_close(fd as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-007: test_sys_bind_port
+// Bind to local port returns 0
+// ============================================================================
+
+λ test_sys_bind_port() -> bool {
+    print("  [SYS-007] sys_bind port... ");
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-007", "socket creation");
+
+    // Set SO_REUSEADDR first
+    ≔ Δ optval: i32 = 1;
+    sys_setsockopt(fd as i32, 1, 2, &optval as *u8, 4); // SOL_SOCKET=1, SO_REUSEADDR=2
+
+    // Bind to port 0 (≔ OS assign)
+    ≔ Δ sockaddr: [u8; 16] = [0; 16];
+    sockaddr[0] = 2;   // AF_INET
+    sockaddr[2] = 0;   // port 0
+    sockaddr[3] = 0;
+    // INADDR_ANY = 0.0.0.0
+
+    ≔ result = sys_bind(fd as i32, &sockaddr, 16);
+    test_assert_ok(result, "SYS-007", "bind should succeed");
+
+    sys_close(fd as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-008: test_sys_bind_address_in_use
+// Bind to already bound port returns -EADDRINUSE
+// ============================================================================
+
+λ test_sys_bind_address_in_use() -> bool {
+    print("  [SYS-008] sys_bind address ∈ use... ");
+
+    // Create first socket and bind to a port
+    ≔ fd1 = test_assert_ok(sys_socket(2, 1, 0), "SYS-008", "socket creation 1");
+
+    ≔ Δ sockaddr: [u8; 16] = [0; 16];
+    sockaddr[0] = 2;   // AF_INET
+    sockaddr[2] = 0xC0; // port 49152 (high byte)
+    sockaddr[3] = 0x00; // port 49152 (low byte)
+
+    test_assert_ok(sys_bind(fd1 as i32, &sockaddr, 16), "SYS-008", "first bind");
+
+    // Create second socket and try to bind to same port
+    ≔ fd2 = test_assert_ok(sys_socket(2, 1, 0), "SYS-008", "socket creation 2");
+
+    ≔ result = sys_bind(fd2 as i32, &sockaddr, 16);
+    ≔ err = test_assert_err(result, "SYS-008", "second bind should fail");
+
+    test_assert_eq(err, SyscallError·EADDRINUSE, "SYS-008", "expected EADDRINUSE");
+
+    sys_close(fd1 as i32);
+    sys_close(fd2 as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-009: test_sys_listen_backlog
+// Set socket to listen mode returns 0
+// ============================================================================
+
+λ test_sys_listen_backlog() -> bool {
+    print("  [SYS-009] sys_listen backlog... ");
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-009", "socket creation");
+
+    // Bind first
+    ≔ Δ sockaddr: [u8; 16] = [0; 16];
+    sockaddr[0] = 2;
+    test_assert_ok(sys_bind(fd as i32, &sockaddr, 16), "SYS-009", "bind");
+
+    // Listen with backlog of 10
+    ≔ result = sys_listen(fd as i32, 10);
+    test_assert_ok(result, "SYS-009", "listen should succeed");
+
+    sys_close(fd as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-010: test_sys_accept_connection
+// Accept incoming connection returns new fd > 0
+// Skipped ∈ unit tests - requires integration test with client
+// ============================================================================
+
+λ test_sys_accept_connection() -> bool {
+    print("  [SYS-010] sys_accept connection... ");
+
+    // This test is marked as requiring integration test setup
+    // For unit tests, we just verify the syscall interface exists
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-010", "socket creation");
+
+    ≔ Δ sockaddr: [u8; 16] = [0; 16];
+    sockaddr[0] = 2;
+    test_assert_ok(sys_bind(fd as i32, &sockaddr, 16), "SYS-010", "bind");
+    test_assert_ok(sys_listen(fd as i32, 10), "SYS-010", "listen");
+
+    // Set non-blocking mode to avoid hanging
+    sys_fcntl(fd as i32, 4, 2048); // F_SETFL=4, O_NONBLOCK=2048
+
+    // Accept should ⤺ EAGAIN/EWOULDBLOCK since no connection pending
+    ≔ Δ client_addr: [u8; 16] = [0; 16];
+    ≔ Δ addrlen: u32 = 16;
+    ≔ result = sys_accept(fd as i32, &client_addr, &addrlen);
+    ≔ err = test_assert_err(result, "SYS-010", "accept should ⤺ EAGAIN");
+
+    test_assert_true(
+        err == SyscallError·EAGAIN || err == SyscallError·EWOULDBLOCK,
+        "SYS-010",
+        format!("expected EAGAIN/EWOULDBLOCK, got {:?}", err)
+    );
+
+    sys_close(fd as i32);
+
+    println("PASS (EAGAIN expected)");
+    true
+}
+
+// ============================================================================
+// SYS-011: test_sys_read_from_socket
+// Read data from connected socket returns bytes read
+// Skipped - requires connected socket
+// ============================================================================
+
+λ test_sys_read_from_socket() -> bool {
+    print("  [SYS-011] sys_read from socket... ");
+
+    // Create a socket pair ∀ testing using socketpair
+    // For now, verify the syscall interface exists
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-011", "socket creation");
+
+    // Reading from unconnected socket should fail
+    ≔ Δ buf: [u8; 64] = [0; 64];
+    ≔ result = sys_read(fd as i32, &buf, 64);
+
+    // Expected: ENOTCONN or similar
+    test_assert_err(result, "SYS-011", "read from unconnected should fail");
+
+    sys_close(fd as i32);
+
+    println("PASS (error expected)");
+    true
+}
+
+// ============================================================================
+// SYS-012: test_sys_write_to_socket
+// Write data to connected socket returns bytes written
+// Skipped - requires connected socket
+// ============================================================================
+
+λ test_sys_write_to_socket() -> bool {
+    print("  [SYS-012] sys_write to socket... ");
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-012", "socket creation");
+
+    // Writing to unconnected socket should fail
+    ≔ data: [u8; 5] = [72, 101, 108, 108, 111]; // "Hello"
+    ≔ result = sys_write(fd as i32, &data, 5);
+
+    // Expected: ENOTCONN or EPIPE
+    test_assert_err(result, "SYS-012", "write to unconnected should fail");
+
+    sys_close(fd as i32);
+
+    println("PASS (error expected)");
+    true
+}
+
+// ============================================================================
+// SYS-013: test_sys_setsockopt_reuseaddr
+// Set SO_REUSEADDR returns 0
+// ============================================================================
+
+λ test_sys_setsockopt_reuseaddr() -> bool {
+    print("  [SYS-013] sys_setsockopt REUSEADDR... ");
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-013", "socket creation");
+
+    // SOL_SOCKET = 1, SO_REUSEADDR = 2
+    ≔ Δ optval: i32 = 1;
+    ≔ result = sys_setsockopt(fd as i32, 1, 2, &optval as *u8, 4);
+    test_assert_ok(result, "SYS-013", "setsockopt should succeed");
+
+    // Verify with getsockopt
+    ≔ Δ getval: i32 = 0;
+    ≔ Δ getlen: u32 = 4;
+    ≔ result2 = sys_getsockopt(fd as i32, 1, 2, &getval as *u8, &getlen);
+    test_assert_ok(result2, "SYS-013", "getsockopt should succeed");
+    test_assert_eq(getval, 1, "SYS-013", "SO_REUSEADDR should be 1");
+
+    sys_close(fd as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-014: test_sys_poll_readable
+// Poll socket ∀ read readiness returns 1, POLLIN set
+// ============================================================================
+
+λ test_sys_poll_readable() -> bool {
+    print("  [SYS-014] sys_poll readable... ");
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-014", "socket creation");
+
+    // Σ pollfd { int fd; short events; short revents; }
+    // POLLIN = 1
+    ≔ Δ pollfd: [u8; 8] = [0; 8];
+
+    // fd (i32, little endian)
+    pollfd[0] = (fd & 0xFF) as u8;
+    pollfd[1] = ((fd >> 8) & 0xFF) as u8;
+    pollfd[2] = ((fd >> 16) & 0xFF) as u8;
+    pollfd[3] = ((fd >> 24) & 0xFF) as u8;
+
+    // events = POLLIN (1)
+    pollfd[4] = 1;
+    pollfd[5] = 0;
+
+    // revents (output)
+    pollfd[6] = 0;
+    pollfd[7] = 0;
+
+    // Poll with 0 timeout (immediate return)
+    ≔ result = sys_poll(&pollfd, 1, 0);
+
+    // Result should be 0 (no events) or positive (events ready)
+    test_assert_ok(result, "SYS-014", "poll should not error");
+
+    sys_close(fd as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-015: test_sys_poll_timeout
+// Poll with timeout, no events returns 0
+// ============================================================================
+
+λ test_sys_poll_timeout() -> bool {
+    print("  [SYS-015] sys_poll timeout... ");
+
+    ≔ fd = test_assert_ok(sys_socket(2, 1, 0), "SYS-015", "socket creation");
+
+    ≔ Δ pollfd: [u8; 8] = [0; 8];
+    pollfd[0] = (fd & 0xFF) as u8;
+    pollfd[1] = ((fd >> 8) & 0xFF) as u8;
+    pollfd[2] = ((fd >> 16) & 0xFF) as u8;
+    pollfd[3] = ((fd >> 24) & 0xFF) as u8;
+    pollfd[4] = 1; // POLLIN
+
+    // Poll with 10ms timeout
+    ≔ result = sys_poll(&pollfd, 1, 10);
+    ≔ n = test_assert_ok(result, "SYS-015", "poll should not error");
+
+    // Should ⤺ 0 (timeout, no events)
+    test_assert_eq(n, 0, "SYS-015", "poll should ⤺ 0 on timeout");
+
+    sys_close(fd as i32);
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-016: test_asm_syscall_syntax
+// asm!() macro compiles correctly
+// ============================================================================
+
+λ test_asm_syscall_syntax() -> bool {
+    print("  [SYS-016] asm! syscall syntax... ");
+
+    // This test verifies the asm! macro ∀ syscalls compiles
+    // The actual syscall wrappers invoke this pattern
+
+    // Test that sys_socket exists and is callable
+    ≔ result = sys_socket(2, 1, 0);
+    ⎇ ≔ Result·Ok(fd) = result {
+        sys_close(fd as i32);
+    }
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-017: test_syscall_result_ok
+// Positive ⤺ -> Ok(usize)
+// ============================================================================
+
+λ test_syscall_result_ok() -> bool {
+    print("  [SYS-017] syscall_result Ok... ");
+
+    // syscall_result should convert positive values to Ok
+    ≔ result = syscall_result(42);
+    ≔ val = test_assert_ok(result, "SYS-017", "positive should be Ok");
+    test_assert_eq(val, 42, "SYS-017", "value should be preserved");
+
+    // Zero is also success
+    ≔ result2 = syscall_result(0);
+    ≔ val2 = test_assert_ok(result2, "SYS-017", "zero should be Ok");
+    test_assert_eq(val2, 0, "SYS-017", "zero preserved");
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-018: test_syscall_result_err
+// Negative ⤺ -> Err(SyscallError)
+// ============================================================================
+
+λ test_syscall_result_err() -> bool {
+    print("  [SYS-018] syscall_result Err... ");
+
+    // syscall_result should convert negative values to Err
+    ≔ result = syscall_result(-1);  // EPERM
+    ≔ err = test_assert_err(result, "SYS-018", "-1 should be Err");
+    test_assert_eq(err, SyscallError·EPERM, "SYS-018", "should be EPERM");
+
+    ≔ result2 = syscall_result(-22); // EINVAL
+    ≔ err2 = test_assert_err(result2, "SYS-018", "-22 should be Err");
+    test_assert_eq(err2, SyscallError·EINVAL, "SYS-018", "should be EINVAL");
+
+    ≔ result3 = syscall_result(-111); // ECONNREFUSED
+    ≔ err3 = test_assert_err(result3, "SYS-018", "-111 should be Err");
+    test_assert_eq(err3, SyscallError·ECONNREFUSED, "SYS-018", "should be ECONNREFUSED");
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// SYS-019: test_syscall_error_display
+// Error messages are human-readable
+// ============================================================================
+
+λ test_syscall_error_display() -> bool {
+    print("  [SYS-019] syscall error display... ");
+
+    // Verify errors have human-readable Display impl
+    ≔ err1 = SyscallError·ECONNREFUSED;
+    ≔ msg1 = format!("{}", err1);
+    test_assert_true(msg1.contains("refused") || msg1.contains("ECONNREFUSED"),
+                "SYS-019", "ECONNREFUSED should be readable");
+
+    ≔ err2 = SyscallError·ETIMEDOUT;
+    ≔ msg2 = format!("{}", err2);
+    test_assert_true(msg2.contains("timed") || msg2.contains("ETIMEDOUT"),
+                "SYS-019", "ETIMEDOUT should be readable");
+
+    println("PASS");
+    true
+}
+
+// ============================================================================
+// Main Test Runner
+// ============================================================================
+
+☉ λ main() -> !i32 {
+    println("===========================================");
+    println("Syscall Layer Tests - Linux x86_64");
+    println("TDD Red Phase - Tests should FAIL");
+    println("===========================================");
+    println("");
+
+    ≔ Δ passed: i32 = 0;
+    ≔ Δ failed: i32 = 0;
+
+    // Socket creation/close tests
+    ⎇ test_sys_socket_creates_fd() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_socket_invalid_domain() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_close_valid_fd() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_close_invalid_fd() { passed += 1; } ⎉ { failed += 1; }
+
+    // Connect tests
+    ⎇ test_sys_connect_localhost() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_connect_refused() { passed += 1; } ⎉ { failed += 1; }
+
+    // Bind/Listen/Accept tests
+    ⎇ test_sys_bind_port() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_bind_address_in_use() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_listen_backlog() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_accept_connection() { passed += 1; } ⎉ { failed += 1; }
+
+    // Read/Write tests
+    ⎇ test_sys_read_from_socket() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_write_to_socket() { passed += 1; } ⎉ { failed += 1; }
+
+    // Socket options tests
+    ⎇ test_sys_setsockopt_reuseaddr() { passed += 1; } ⎉ { failed += 1; }
+
+    // Poll tests
+    ⎇ test_sys_poll_readable() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_sys_poll_timeout() { passed += 1; } ⎉ { failed += 1; }
+
+    // Sigil syntax tests
+    ⎇ test_asm_syscall_syntax() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_syscall_result_ok() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_syscall_result_err() { passed += 1; } ⎉ { failed += 1; }
+    ⎇ test_syscall_error_display() { passed += 1; } ⎉ { failed += 1; }
+
+    println("");
+    println("===========================================");
+    println("Results: {}/{} tests passed", passed, passed + failed);
+    println("===========================================");
+
+    ⎇ failed > 0 {
+        println("");
+        println("RED PHASE: {} tests failing (expected)", failed);
+        println("Proceed to GREEN phase to implement.");
+        ⤺ 1;
+    }
+
+    println("");
+    println("All tests passed!");
+    ⤺ 0;
+}

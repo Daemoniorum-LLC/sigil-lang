@@ -1,0 +1,9 @@
+// Test: String character access
+// Spec: 09-STDLIB.md § 4.2 String
+// Priority: P1 - Production Ready
+
+λ main() {
+    ≔ s: String = "hello";
+    println(s.len());
+    println(s);
+}

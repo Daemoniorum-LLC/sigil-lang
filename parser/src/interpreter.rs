@@ -879,6 +879,27 @@ fn ast_to_value_item(item: &Spanned<Item>) -> Value {
                 Value::String(Rc::new("Plurality".to_string())),
             );
         }
+<<<<<<< HEAD
+=======
+        Item::Form(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Form".to_string())),
+            );
+        }
+        Item::Translations(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Translations".to_string())),
+            );
+        }
+        Item::LocaleEnum(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("LocaleEnum".to_string())),
+            );
+        }
+>>>>>>> origin/main
     }
 
     Value::Struct {
@@ -3515,6 +3536,8 @@ impl Interpreter {
                     (v, _) => Ok(v),
                 }
             }
+            // Named argument: evaluate the value (name is used by caller for reordering)
+            Expr::NamedArg { value, .. } => self.evaluate(value),
             _ => Err(RuntimeError::new(format!(
                 "Unsupported expression: {:?}",
                 expr
@@ -4113,10 +4136,66 @@ impl Interpreter {
                     Ok(Value::Array(Rc::new(RefCell::new(result))))
                 }
                 BinOp::Convolve => {
-                    // Convolution/merge of two arrays: concatenate them (shard merging)
-                    let mut result = a.borrow().clone();
-                    result.extend(b.borrow().iter().cloned());
-                    Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    // Convolution/merge of two arrays
+                    // Per spec 11-HOLOGRAPHIC.md § 2.4:
+                    // For Shard arrays: deduplicate by index field
+                    // For other arrays: concatenate
+
+                    let arr_a = a.borrow();
+                    let arr_b = b.borrow();
+
+                    // Check if this is an array of Shard structs
+                    let is_shard_array = arr_a.first().map_or(
+                        false,
+                        |v| matches!(v, Value::Struct { name, .. } if name == "Shard"),
+                    );
+
+                    if is_shard_array {
+                        // Deduplicate by index field
+                        let mut seen_indices: std::collections::HashSet<i64> =
+                            std::collections::HashSet::new();
+                        let mut result = Vec::new();
+
+                        // Add shards from first array, tracking indices
+                        for shard in arr_a.iter() {
+                            if let Value::Struct { fields, .. } = shard {
+                                if let Some(Value::Int(idx)) = fields.borrow().get("index") {
+                                    if seen_indices.insert(*idx) {
+                                        result.push(shard.clone());
+                                    }
+                                } else {
+                                    // No index field or non-int, just add it
+                                    result.push(shard.clone());
+                                }
+                            } else {
+                                result.push(shard.clone());
+                            }
+                        }
+
+                        // Add shards from second array, skipping duplicates
+                        for shard in arr_b.iter() {
+                            if let Value::Struct { fields, .. } = shard {
+                                if let Some(Value::Int(idx)) = fields.borrow().get("index") {
+                                    if seen_indices.insert(*idx) {
+                                        result.push(shard.clone());
+                                    }
+                                    // Skip if index already seen (duplicate)
+                                } else {
+                                    // No index field, add it
+                                    result.push(shard.clone());
+                                }
+                            } else {
+                                result.push(shard.clone());
+                            }
+                        }
+
+                        Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    } else {
+                        // Non-shard arrays: simple concatenation
+                        let mut result = arr_a.clone();
+                        result.extend(arr_b.iter().cloned());
+                        Ok(Value::Array(Rc::new(RefCell::new(result))))
+                    }
                 }
                 BinOp::Eq => Ok(Value::Bool(Rc::ptr_eq(&a, &b))),
                 BinOp::Ne => Ok(Value::Bool(!Rc::ptr_eq(&a, &b))),
@@ -5224,15 +5303,24 @@ impl Interpreter {
         // This enables proper mutable reference semantics where modifications persist
         let mut mut_ref_sync: Vec<(String, Rc<RefCell<Value>>)> = Vec::new();
 
-        let mut arg_values: Vec<Value> = Vec::new();
+        // Track named arguments for reordering: (name, value) pairs
+        // Positional args have None as name
+        let mut arg_entries: Vec<(Option<String>, Value)> = Vec::new();
         for arg in args.iter() {
-            let val = self.evaluate(arg)?;
+            // Check if this is a named argument
+            let (arg_name, inner_arg) = if let Expr::NamedArg { name, value } = arg {
+                (Some(name.name.clone()), value.as_ref())
+            } else {
+                (None, arg)
+            };
+
+            let val = self.evaluate(inner_arg)?;
 
             // If this was a &mut path expression, track it for sync-back
             if let Expr::Unary {
                 op: crate::ast::UnaryOp::RefMut,
                 expr,
-            } = arg
+            } = inner_arg
             {
                 if let Expr::Path(path) = expr.as_ref() {
                     if path.segments.len() == 1 {
@@ -5244,7 +5332,7 @@ impl Interpreter {
                 }
             }
 
-            arg_values.push(val);
+            arg_entries.push((arg_name, val));
         }
 
         // Set Self type if we're calling a type-associated function
@@ -5255,8 +5343,16 @@ impl Interpreter {
         }
 
         let result = match func {
-            Value::Function(f) => self.call_function(&f, arg_values),
-            Value::BuiltIn(b) => self.call_builtin(&b, arg_values),
+            Value::Function(f) => {
+                // Reorder arguments based on named parameters
+                let arg_values = Self::reorder_named_args(&f.params, arg_entries)?;
+                self.call_function(&f, arg_values)
+            }
+            Value::BuiltIn(b) => {
+                // Built-ins don't support named params yet, just extract values
+                let arg_values: Vec<Value> = arg_entries.into_iter().map(|(_, v)| v).collect();
+                self.call_builtin(&b, arg_values)
+            }
             // Handle constructor markers for unknown external types
             Value::Struct { ref name, .. } if name.starts_with("__constructor__") => {
                 let actual_type = name.strip_prefix("__constructor__").unwrap();
@@ -5381,6 +5477,64 @@ impl Interpreter {
             }
         }
         (builtin.func)(self, args)
+    }
+
+    /// Reorder arguments based on named parameters to match function signature
+    /// Positional args (None names) fill slots in order, named args go to their designated slots
+    fn reorder_named_args(
+        params: &[String],
+        arg_entries: Vec<(Option<String>, Value)>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        // If no named args, just return values in order
+        if arg_entries.iter().all(|(name, _)| name.is_none()) {
+            return Ok(arg_entries.into_iter().map(|(_, v)| v).collect());
+        }
+
+        // Build result array with slots for each parameter
+        let mut result: Vec<Option<Value>> = vec![None; params.len()];
+        let mut positional_idx = 0;
+
+        for (arg_name, value) in arg_entries {
+            if let Some(name) = arg_name {
+                // Named arg: find the parameter position
+                if let Some(pos) = params.iter().position(|p| p == &name) {
+                    if result[pos].is_some() {
+                        return Err(RuntimeError::new(format!(
+                            "argument '{}' specified multiple times",
+                            name
+                        )));
+                    }
+                    result[pos] = Some(value);
+                } else {
+                    return Err(RuntimeError::new(format!(
+                        "unknown parameter name: '{}'",
+                        name
+                    )));
+                }
+            } else {
+                // Positional arg: fill next available slot
+                while positional_idx < result.len() && result[positional_idx].is_some() {
+                    positional_idx += 1;
+                }
+                if positional_idx >= result.len() {
+                    return Err(RuntimeError::new("too many positional arguments"));
+                }
+                result[positional_idx] = Some(value);
+                positional_idx += 1;
+            }
+        }
+
+        // Check all parameters are filled
+        for (i, slot) in result.iter().enumerate() {
+            if slot.is_none() {
+                return Err(RuntimeError::new(format!(
+                    "missing argument for parameter '{}'",
+                    params[i]
+                )));
+            }
+        }
+
+        Ok(result.into_iter().map(|v| v.unwrap()).collect())
     }
 
     /// Await a value - if it's a future, resolve it; otherwise return as-is
@@ -7169,10 +7323,19 @@ impl Interpreter {
                 crate::sigil_debug!("DEBUG method #{}: {}.{}()", count, recv_type, method.name);
             }
         }
-        let arg_values: Vec<Value> = args
-            .iter()
-            .map(|a| self.evaluate(a))
-            .collect::<Result<_, _>>()?;
+        // Track named arguments for reordering (same as eval_call)
+        let mut arg_entries: Vec<(Option<String>, Value)> = Vec::new();
+        for arg in args.iter() {
+            let (arg_name, inner_arg) = if let Expr::NamedArg { name, value } = arg {
+                (Some(name.name.clone()), value.as_ref())
+            } else {
+                (None, arg)
+            };
+            let val = self.evaluate(inner_arg)?;
+            arg_entries.push((arg_name, val));
+        }
+        // For built-in methods, just extract values (they don't support named params)
+        let arg_values: Vec<Value> = arg_entries.iter().map(|(_, v)| v.clone()).collect();
 
         // Debug: Trace cloned/clone method calls
         if method.name == "cloned" || method.name == "clone" {
@@ -8619,8 +8782,17 @@ impl Interpreter {
                             self.current_self_type = Some(name.clone());
 
                             // Pass the Ref as the receiver (for &mut self methods)
+                            // Reorder named args to match function params (skip first param which is self)
+                            let reordered = if f.params.len() > 1 {
+                                Self::reorder_named_args(
+                                    &f.params[1..].to_vec(),
+                                    arg_entries.clone(),
+                                )?
+                            } else {
+                                arg_values.clone()
+                            };
                             let mut all_args = vec![recv.clone()];
-                            all_args.extend(arg_values.clone());
+                            all_args.extend(reordered);
                             let result = self.call_function(&f, all_args);
 
                             // Restore old Self type
@@ -8662,8 +8834,17 @@ impl Interpreter {
                                             let old_self_type = self.current_self_type.take();
                                             self.current_self_type = Some(type_name.clone());
 
+                                            // Reorder named args to match function params (skip first param which is self)
+                                            let reordered = if f.params.len() > 1 {
+                                                Self::reorder_named_args(
+                                                    &f.params[1..].to_vec(),
+                                                    arg_entries.clone(),
+                                                )?
+                                            } else {
+                                                arg_values.clone()
+                                            };
                                             let mut all_args = vec![recv.clone()];
-                                            all_args.extend(arg_values.clone());
+                                            all_args.extend(reordered);
                                             let result = self.call_function(&f, all_args);
 
                                             // Restore old Self type
@@ -10812,8 +10993,14 @@ impl Interpreter {
                         self.current_self_type = Some(name.clone());
 
                         // Call with self as first argument
+                        // Reorder named args to match function params (skip first param which is self)
+                        let reordered = if f.params.len() > 1 {
+                            Self::reorder_named_args(&f.params[1..].to_vec(), arg_entries.clone())?
+                        } else {
+                            arg_values.clone()
+                        };
                         let mut all_args = vec![recv.clone()];
-                        all_args.extend(arg_values.clone());
+                        all_args.extend(reordered);
                         let result = self.call_function(&f, all_args);
 
                         // Restore old Self type
@@ -10857,8 +11044,17 @@ impl Interpreter {
                                         let old_self_type = self.current_self_type.take();
                                         self.current_self_type = Some(type_name.clone());
 
+                                        // Reorder named args to match function params (skip first param which is self)
+                                        let reordered = if f.params.len() > 1 {
+                                            Self::reorder_named_args(
+                                                &f.params[1..].to_vec(),
+                                                arg_entries.clone(),
+                                            )?
+                                        } else {
+                                            arg_values.clone()
+                                        };
                                         let mut all_args = vec![recv.clone()];
-                                        all_args.extend(arg_values.clone());
+                                        all_args.extend(reordered);
                                         let result = self.call_function(&f, all_args);
 
                                         // Restore old Self type
@@ -11404,6 +11600,57 @@ impl Interpreter {
                 .map(|a| self.evaluate(a))
                 .collect::<Result<_, _>>()?;
             self.call_function_by_name(&first.name.name, arg_values)?
+        } else if first.name.name == "Self" || first.name.name == "This" {
+            // Self/This refers to the current impl type - handle as static method call
+            if let Some(self_type) = self.current_self_type.clone() {
+                // If there's a second segment with args, it's a static method call: This·method(args)
+                if segments.len() > 1 {
+                    let method_segment = &segments[1];
+                    let arg_values: Vec<Value> = method_segment
+                        .args
+                        .as_ref()
+                        .map(|args| {
+                            args.iter()
+                                .map(|a| self.evaluate(a))
+                                .collect::<Result<Vec<_>, _>>()
+                        })
+                        .transpose()?
+                        .unwrap_or_default();
+
+                    // Call as TypeName::method(args)
+                    let full_name = format!("{}::{}", self_type, method_segment.name.name);
+                    let result = self.call_function_by_name(&full_name, arg_values)?;
+
+                    // Continue processing remaining segments (skip first two)
+                    let mut value = result;
+                    for segment in segments.iter().skip(2) {
+                        let seg_args: Vec<Value> = segment
+                            .args
+                            .as_ref()
+                            .map(|args| {
+                                args.iter()
+                                    .map(|a| self.evaluate(a))
+                                    .collect::<Result<Vec<_>, _>>()
+                            })
+                            .transpose()?
+                            .unwrap_or_default();
+                        value =
+                            self.call_incorporation_method(&value, &segment.name.name, seg_args)?;
+                    }
+                    return Ok(value);
+                } else {
+                    // Just "Self" or "This" alone - return the type as a value for type-level operations
+                    return Err(RuntimeError::new(format!(
+                        "Self/This requires a method: use {}·method() instead of just {}",
+                        self_type, first.name.name
+                    )));
+                }
+            } else {
+                return Err(RuntimeError::new(format!(
+                    "{} can only be used inside an impl block",
+                    first.name.name
+                )));
+            }
         } else {
             // First segment is a variable: var·next·...
             self.environment
@@ -12895,6 +13142,8 @@ impl Interpreter {
                         // === Quantum-Holographic pipe methods ===
 
                         // |scatter(n, k) - scatter into n shards, k needed for recovery
+                        // Implements Reed-Solomon-like encoding using polynomial evaluation
+                        // Per spec 11-HOLOGRAPHIC.md § 2.1-2.3
                         if name.name == "scatter" {
                             if arg_values.len() >= 2 {
                                 let n = match &arg_values[0] {
@@ -12905,6 +13154,7 @@ impl Interpreter {
                                     Value::Int(k) => *k as usize,
                                     _ => 4,
                                 };
+<<<<<<< HEAD
                                 // Create n shards
                                 let inner_value = match &value {
                                     Value::Struct { fields, .. } => fields
@@ -12913,14 +13163,69 @@ impl Interpreter {
                                         .cloned()
                                         .unwrap_or(value.clone()),
                                     _ => value.clone(),
+=======
+                                // Extract the integer value to encode
+                                let original_value: i64 = match &value {
+                                    Value::Int(v) => *v,
+                                    Value::Struct { fields, .. } => {
+                                        match fields.borrow().get("value") {
+                                            Some(Value::Int(v)) => *v,
+                                            _ => 0,
+                                        }
+                                    }
+                                    _ => 0,
+>>>>>>> origin/main
                                 };
+
+                                // Reed-Solomon encoding: create polynomial of degree k-1
+                                // where p(0) = original_value
+                                // Coefficients: [original_value, c1, c2, ..., c_{k-1}]
+                                // For simplicity, use deterministic coefficients based on value
+                                let mut coeffs: Vec<i64> = vec![original_value];
+                                for i in 1..k {
+                                    // Deterministic "random" coefficients for reproducibility
+                                    coeffs.push(
+                                        (original_value
+                                            .wrapping_mul(17)
+                                            .wrapping_add(i as i64 * 31))
+                                            % 997,
+                                    );
+                                }
+
+                                // Evaluate polynomial at points 1, 2, ..., n
+                                // p(x) = coeffs[0] + coeffs[1]*x + coeffs[2]*x^2 + ...
+                                fn eval_poly(coeffs: &[i64], x: i64) -> i64 {
+                                    let mut result: i64 = 0;
+                                    let mut x_power: i64 = 1;
+                                    for coeff in coeffs {
+                                        result = result.wrapping_add(coeff.wrapping_mul(x_power));
+                                        x_power = x_power.wrapping_mul(x);
+                                    }
+                                    result
+                                }
+
                                 let mut shards = Vec::new();
                                 for i in 0..n {
+                                    let x = (i + 1) as i64; // Evaluate at x = 1, 2, 3, ...
+                                    let encoded_data = eval_poly(&coeffs, x);
+
                                     let mut shard_fields = std::collections::HashMap::new();
+<<<<<<< HEAD
                                     shard_fields.insert("index".to_string(), Value::Int(i as i64));
                                     shard_fields.insert("data".to_string(), inner_value.clone());
                                     shard_fields
                                         .insert("_k_threshold".to_string(), Value::Int(k as i64));
+=======
+                                    shard_fields.insert("index".to_string(), Value::Int(x));
+                                    shard_fields
+                                        .insert("data".to_string(), Value::Int(encoded_data));
+                                    shard_fields
+                                        .insert("_k_threshold".to_string(), Value::Int(k as i64));
+                                    shard_fields.insert(
+                                        "_original".to_string(),
+                                        Value::Int(original_value),
+                                    );
+>>>>>>> origin/main
                                     shards.push(Value::Struct {
                                         name: "Shard".to_string(),
                                         fields: Rc::new(RefCell::new(shard_fields)),
@@ -14279,17 +14584,103 @@ impl Interpreter {
                             return Ok(Value::Int(0));
                         }
                         // Check if this is an array of Shard structs
-                        if let Some(Value::Struct { name, fields }) = arr.first() {
+                        // Per spec 11-HOLOGRAPHIC.md § 2.3:
+                        // ∀ reconstructs whole from available shards
+                        if let Some(Value::Struct { name, .. }) = arr.first() {
                             if name == "Shard" {
-                                // Extract data from first shard (reconstruction)
-                                if let Some(data) = fields.borrow().get("data") {
-                                    return Ok(data.clone());
+                                // Collect all shard data values
+                                let mut data_values: Vec<Value> = Vec::new();
+                                for shard in arr.iter() {
+                                    if let Value::Struct { fields, .. } = shard {
+                                        if let Some(data) = fields.borrow().get("data") {
+                                            data_values.push(data.clone());
+                                        }
+                                    }
                                 }
+
+                                if data_values.is_empty() {
+                                    return Ok(Value::Int(0));
+                                }
+
+                                // Collect (x, y) points from shards
+                                let mut points: Vec<(i64, i64)> = Vec::new();
+                                let mut has_index_zero = false;
+                                for shard in arr.iter() {
+                                    if let Value::Struct { fields, .. } = shard {
+                                        let fields_ref = fields.borrow();
+                                        let idx = fields_ref.get("index");
+                                        let data = fields_ref.get("data");
+                                        if let (Some(Value::Int(x)), Some(Value::Int(y))) =
+                                            (idx, data)
+                                        {
+                                            if *x == 0 {
+                                                has_index_zero = true;
+                                            }
+                                            points.push((*x, *y));
+                                        }
+                                    }
+                                }
+
+                                if points.is_empty() {
+                                    return Ok(Value::Int(0));
+                                }
+
+                                // Check if all data values are identical (simple scatter without RS)
+                                let first_y = points[0].1;
+                                let all_same = points.iter().all(|(_, y)| *y == first_y);
+                                if all_same {
+                                    return Ok(Value::Int(first_y));
+                                }
+
+                                // Distinguish between RS-encoded shards and manual shards:
+                                // - RS-encoded shards (from scatter) have indices 1..n (never 0)
+                                // - Manual shards may have index 0
+                                // If index 0 is present, treat as manual shards → aggregate
+                                if has_index_zero {
+                                    // Manual shards: aggregate (sum for numerics)
+                                    let mut total: i64 = 0;
+                                    for (_, y) in &points {
+                                        total += y;
+                                    }
+                                    return Ok(Value::Int(total));
+                                }
+
+                                // Reed-Solomon reconstruction via Lagrange interpolation
+                                // Per spec 11-HOLOGRAPHIC.md § 2.5:
+                                // Given k or more shards with (index, data) pairs where
+                                // data = p(index) for some polynomial p, reconstruct p(0)
+                                //
+                                // Lagrange interpolation to find p(0)
+                                // p(0) = Σᵢ yᵢ × Πⱼ≠ᵢ (xⱼ / (xⱼ - xᵢ))
+                                // Using floating point for precision, then round
+                                let mut result: f64 = 0.0;
+                                let n = points.len();
+
+                                for i in 0..n {
+                                    let (xi, yi) = points[i];
+                                    let mut basis = 1.0f64;
+
+                                    for j in 0..n {
+                                        if i != j {
+                                            let xj = points[j].0 as f64;
+                                            let xi_f = xi as f64;
+                                            // Lagrange basis: xj / (xj - xi) for evaluating at x=0
+                                            basis *= xj / (xj - xi_f);
+                                        }
+                                    }
+
+                                    result += (yi as f64) * basis;
+                                }
+
+                                // Round to nearest integer (original value was integer)
+                                return Ok(Value::Int(result.round() as i64));
                             }
                             // For Hologram structs, extract value
                             if name == "Hologram" {
-                                if let Some(value) = fields.borrow().get("value") {
-                                    return Ok(value.clone());
+                                if let Value::Struct { fields, .. } = arr.first().unwrap() {
+                                    if let Some(value) = fields.borrow().get("value") {
+                                        return Ok(value.clone());
+                                    }
                                 }
                             }
                         }
@@ -14337,15 +14728,17 @@ impl Interpreter {
 
             PipeOp::Possibility => {
                 // |◊ - possibility extraction (get approximate value)
+                // Per spec 11-HOLOGRAPHIC.md § 11.2.2:
+                // Returns approximate values with Predicted (◊) evidentiality.
                 // For arrays: returns first element (best approximation)
                 // For optionals: extracts inner value or returns default
-                match &value {
+                let extracted = match &value {
                     Value::Array(arr) => {
                         let arr = arr.borrow();
                         if arr.is_empty() {
-                            Ok(Value::Null)
+                            Value::Null
                         } else {
-                            Ok(arr[0].clone())
+                            arr[0].clone()
                         }
                     }
                     // Handle Option::Some and Option::None variants
@@ -14357,20 +14750,27 @@ impl Interpreter {
                         if variant_name == "Some" {
                             if let Some(fields) = fields {
                                 if !fields.is_empty() {
-                                    Ok(fields[0].clone())
+                                    fields[0].clone()
                                 } else {
-                                    Ok(Value::Null)
+                                    Value::Null
                                 }
                             } else {
-                                Ok(Value::Null)
+                                Value::Null
                             }
                         } else {
                             // None
-                            Ok(Value::Null)
+                            Value::Null
                         }
                     }
-                    _ => Ok(value), // Pass through non-collection types
-                }
+                    _ => value, // Pass through non-collection types
+                };
+
+                // Wrap result in Predicted evidentiality per spec
+                // This marks the result as approximate/probabilistic
+                Ok(Value::Evidential {
+                    value: Box::new(extracted),
+                    evidence: Evidence::Predicted,
+                })
             }
 
             PipeOp::Necessity => {

@@ -1,0 +1,165 @@
+/// Sigil HTTP Server
+///
+/// A simple static file server written in Sigil.
+/// Serves files from the current directory.
+
+use std::net::TcpListener;
+use std::net::TcpStream;
+use std::fs;
+
+/// MIME types for common file extensions
+fn get_mime_type(path: str) -> str {
+    if path·ends_with(".html") || path·ends_with(".htm") {
+        "text/html; charset=utf-8"
+    } else if path·ends_with(".css") {
+        "text/css; charset=utf-8"
+    } else if path·ends_with(".js") || path·ends_with(".mjs") {
+        "application/javascript; charset=utf-8"
+    } else if path·ends_with(".json") {
+        "application/json; charset=utf-8"
+    } else if path·ends_with(".wasm") {
+        "application/wasm"
+    } else if path·ends_with(".png") {
+        "image/png"
+    } else if path·ends_with(".jpg") || path·ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path·ends_with(".gif") {
+        "image/gif"
+    } else if path·ends_with(".svg") {
+        "image/svg+xml"
+    } else if path·ends_with(".ico") {
+        "image/x-icon"
+    } else if path·ends_with(".txt") {
+        "text/plain; charset=utf-8"
+    } else if path·ends_with(".sigil") || path·ends_with(".sg") {
+        "text/plain; charset=utf-8"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+/// Build an HTTP response
+fn build_response(status: i64, status_text: str, content_type: str, body: str) -> str {
+    let content_length = body·len();
+    f"HTTP/1.1 {status} {status_text}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: close\r\n\r\n{body}"
+}
+
+/// Build a 404 response
+fn not_found_response(path: str) -> str {
+    let body = f"<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1><p>The requested URL {path} was not found on this server.</p><hr><p><em>Sigil HTTP Server</em></p></body></html>";
+    build_response(404, "Not Found", "text/html; charset=utf-8", body)
+}
+
+/// Build a 500 response
+fn server_error_response(msg: str) -> str {
+    let body = f"<!DOCTYPE html><html><head><title>500 Internal Server Error</title></head><body><h1>500 Internal Server Error</h1><p>{msg}</p><hr><p><em>Sigil HTTP Server</em></p></body></html>";
+    build_response(500, "Internal Server Error", "text/html; charset=utf-8", body)
+}
+
+/// Parse an HTTP request and extract the path
+fn parse_request(request: str) -> str {
+    // HTTP request format: "GET /path HTTP/1.1\r\n..."
+    // Find the first space
+    let parts = request·split(" ");
+    if parts·len() >= 2 {
+        let path = parts[1];
+        // URL decode basic characters
+        path
+    } else {
+        "/"
+    }
+}
+
+/// Handle a single HTTP request
+fn handle_request(stream: TcpStream, root_dir: str) {
+    print("[DEBUG] Starting handle_request");
+
+    let reader = BufReader·new(&mut stream);
+    print("[DEBUG] BufReader created");
+
+    let request_line = BufReader·read_line(reader);
+    print(f"[DEBUG] request_line = {request_line}");
+
+    // Try matching the Result
+    match request_line {
+        Ok(line) => {
+            print(f"[DEBUG] Got line: {line}");
+
+            // Parse request path
+            let path = parse_request(line);
+            print(f"[HTTP] {path}");
+
+            // Build file path
+            let file_path = if path == "/" {
+                f"{root_dir}/index.html"
+            } else {
+                f"{root_dir}{path}"
+            };
+            print(f"[DEBUG] file_path = {file_path}");
+
+            // Try to read file
+            print("[DEBUG] About to read file");
+            let file_result = fs·read_to_string(file_path);
+            print(f"[DEBUG] file_result = {file_result}");
+
+            match file_result {
+                Ok(content) => {
+                    print(f"[DEBUG] Got content, len = {content·len()}");
+                    let mime = get_mime_type(file_path);
+                    let response = build_response(200, "OK", mime, content);
+                    TcpStream·write_all(stream, response);
+                }
+                Err(e) => {
+                    print(f"[DEBUG] File error: {e}");
+                    let response = not_found_response(path);
+                    TcpStream·write_all(stream, response);
+                }
+            }
+        }
+        Err(e) => {
+            print(f"[ERROR] Request read error: {e}");
+        }
+    }
+    print("[DEBUG] handle_request done");
+}
+
+/// Main entry point
+pub fn main() {
+    let port = 8080;
+    let addr = f"127.0.0.1:{port}";
+    let root_dir = ".";  // Serve from current directory
+
+    print("╔═════════════════════════════════════════╗");
+    print("║        Sigil HTTP Server v0.1           ║");
+    print("╠═════════════════════════════════════════╣");
+    print(f"║  http://{addr}                  ║");
+    print(f"║  Serving: {root_dir}                            ║");
+    print("╚═════════════════════════════════════════╝");
+    print("");
+
+    // Bind to the address
+    match TcpListener·bind(addr) {
+        Ok(listener) => {
+            print(f"[INFO] Server started on {addr}");
+            print(f"[DEBUG] Listener: {listener}");
+            print("[INFO] Press Ctrl+C to stop");
+            print("");
+
+            // Accept connections in a loop
+            loop {
+                print("[DEBUG] Calling accept...");
+                match TcpListener·accept(listener) {
+                    Ok(stream) => {
+                        handle_request(stream, root_dir);
+                    }
+                    Err(e) => {
+                        print(f"[ERROR] Accept failed: {e}");
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            print(f"[FATAL] Failed to bind to {addr}: {e}");
+        }
+    }
+}

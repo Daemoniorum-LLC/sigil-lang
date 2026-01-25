@@ -4,7 +4,11 @@
 // Lifecycle State
 // ============================================================================
 
+<<<<<<< HEAD
 enum LifecycleState {
+=======
+ᛈ LifecycleState {
+>>>>>>> origin/main
     Initializing,
     Ready,
     Running,
@@ -13,32 +17,58 @@ enum LifecycleState {
     Terminated,
 }
 
+<<<<<<< HEAD
 impl LifecycleState {
     pub fn is_operational(&self) -> !bool {
         match self {
             LifecycleState::Ready => true,
             LifecycleState::Running => true,
+=======
+⊢ LifecycleState {
+    ☉ λ is_operational(&self) -> !bool {
+        ⌥ self {
+            LifecycleState·Ready => true,
+            LifecycleState·Running => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn is_running(&self) -> !bool {
         match self {
             LifecycleState::Running => true,
+=======
+    ☉ λ is_running(&self) -> !bool {
+        ⌥ self {
+            LifecycleState·Running => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn is_terminated(&self) -> !bool {
         match self {
             LifecycleState::Terminated => true,
+=======
+    ☉ λ is_terminated(&self) -> !bool {
+        ⌥ self {
+            LifecycleState·Terminated => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn can_accept_work(&self) -> !bool {
         match self {
             LifecycleState::Running => true,
+=======
+    ☉ λ can_accept_work(&self) -> !bool {
+        ⌥ self {
+            LifecycleState·Running => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
@@ -48,7 +78,11 @@ impl LifecycleState {
 // Terminate Reason
 // ============================================================================
 
+<<<<<<< HEAD
 enum TerminateReason {
+=======
+ᛈ TerminateReason {
+>>>>>>> origin/main
     GoalsComplete,
     Shutdown,
     Fatal { error: String },
@@ -56,20 +90,36 @@ enum TerminateReason {
     Manual,
 }
 
+<<<<<<< HEAD
 impl TerminateReason {
     pub fn is_error(&self) -> !bool {
         match self {
             TerminateReason::Fatal { .. } => true,
             TerminateReason::ResourceExhaustion => true,
+=======
+⊢ TerminateReason {
+    ☉ λ is_error(&self) -> !bool {
+        ⌥ self {
+            TerminateReason·Fatal { .. } => true,
+            TerminateReason·ResourceExhaustion => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn is_graceful(&self) -> !bool {
         match self {
             TerminateReason::GoalsComplete => true,
             TerminateReason::Shutdown => true,
             TerminateReason::Manual => true,
+=======
+    ☉ λ is_graceful(&self) -> !bool {
+        ⌥ self {
+            TerminateReason·GoalsComplete => true,
+            TerminateReason·Shutdown => true,
+            TerminateReason·Manual => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
@@ -79,7 +129,11 @@ impl TerminateReason {
 // Operational Metrics
 // ============================================================================
 
+<<<<<<< HEAD
 struct OperationalMetrics {
+=======
+Σ OperationalMetrics {
+>>>>>>> origin/main
     uptime_secs: !u64,
     heartbeats: !u64,
     actions_taken: !u64,
@@ -88,8 +142,13 @@ struct OperationalMetrics {
     errors: !u64,
 }
 
+<<<<<<< HEAD
 impl OperationalMetrics {
     pub fn new() -> Self {
+=======
+⊢ OperationalMetrics {
+    ☉ λ new() -> Self {
+>>>>>>> origin/main
         OperationalMetrics {
             uptime_secs: 0,
             heartbeats: 0,
@@ -100,6 +159,7 @@ impl OperationalMetrics {
         }
     }
 
+<<<<<<< HEAD
     pub fn record_heartbeat(&mut self) {
         self.heartbeats = self.heartbeats + 1;
     }
@@ -124,13 +184,45 @@ impl OperationalMetrics {
         let total = self.goals_completed + self.goals_failed;
         if total == 0 {
             return 1.0;
+=======
+    ☉ λ record_heartbeat(&Δ self) {
+        self.heartbeats = self.heartbeats + 1;
+    }
+
+    ☉ λ record_action(&Δ self) {
+        self.actions_taken = self.actions_taken + 1;
+    }
+
+    ☉ λ record_goal_completed(&Δ self) {
+        self.goals_completed = self.goals_completed + 1;
+    }
+
+    ☉ λ record_goal_failed(&Δ self) {
+        self.goals_failed = self.goals_failed + 1;
+    }
+
+    ☉ λ record_error(&Δ self) {
+        self.errors = self.errors + 1;
+    }
+
+    ☉ λ success_rate(&self) -> !f32 {
+        ≔ total = self.goals_completed + self.goals_failed;
+        ⎇ total == 0 {
+            ⤺ 1.0;
+>>>>>>> origin/main
         }
         self.goals_completed as !f32 / total as !f32
     }
 
+<<<<<<< HEAD
     pub fn error_rate(&self) -> !f32 {
         if self.heartbeats == 0 {
             return 0.0;
+=======
+    ☉ λ error_rate(&self) -> !f32 {
+        ⎇ self.heartbeats == 0 {
+            ⤺ 0.0;
+>>>>>>> origin/main
         }
         self.errors as !f32 / self.heartbeats as !f32
     }
@@ -140,15 +232,24 @@ impl OperationalMetrics {
 // Resource Usage
 // ============================================================================
 
+<<<<<<< HEAD
 struct ResourceUsage {
+=======
+Σ ResourceUsage {
+>>>>>>> origin/main
     memory_bytes: !usize,
     cpu_time_ms: !u64,
     tokens_used: !u64,
     api_calls: !u64,
 }
 
+<<<<<<< HEAD
 impl ResourceUsage {
     pub fn new() -> Self {
+=======
+⊢ ResourceUsage {
+    ☉ λ new() -> Self {
+>>>>>>> origin/main
         ResourceUsage {
             memory_bytes: 0,
             cpu_time_ms: 0,
@@ -157,6 +258,7 @@ impl ResourceUsage {
         }
     }
 
+<<<<<<< HEAD
     pub fn record_memory(&mut self, bytes: !usize) {
         self.memory_bytes = bytes;
     }
@@ -174,6 +276,25 @@ impl ResourceUsage {
     }
 
     pub fn exceeds_tokens(&self, limit: !u64) -> !bool {
+=======
+    ☉ λ record_memory(&Δ self, bytes: !usize) {
+        self.memory_bytes = bytes;
+    }
+
+    ☉ λ record_tokens(&Δ self, tokens: !u64) {
+        self.tokens_used = self.tokens_used + tokens;
+    }
+
+    ☉ λ record_api_call(&Δ self) {
+        self.api_calls = self.api_calls + 1;
+    }
+
+    ☉ λ exceeds_memory(&self, limit: !usize) -> !bool {
+        self.memory_bytes > limit
+    }
+
+    ☉ λ exceeds_tokens(&self, limit: !u64) -> !bool {
+>>>>>>> origin/main
         self.tokens_used > limit
     }
 }
@@ -182,12 +303,17 @@ impl ResourceUsage {
 // Agent State
 // ============================================================================
 
+<<<<<<< HEAD
 struct AgentState {
+=======
+Σ AgentState {
+>>>>>>> origin/main
     lifecycle: LifecycleState,
     metrics: OperationalMetrics,
     resources: ResourceUsage,
 }
 
+<<<<<<< HEAD
 impl AgentState {
     pub fn new() -> Self {
         AgentState {
@@ -214,6 +340,34 @@ impl AgentState {
     }
 
     pub fn is_healthy(&self) -> !bool {
+=======
+⊢ AgentState {
+    ☉ λ new() -> Self {
+        AgentState {
+            lifecycle: LifecycleState·Initializing,
+            metrics: OperationalMetrics·new(),
+            resources: ResourceUsage·new(),
+        }
+    }
+
+    ☉ λ initialize(&Δ self) {
+        self.lifecycle = LifecycleState·Ready;
+    }
+
+    ☉ λ start(&Δ self) {
+        self.lifecycle = LifecycleState·Running;
+    }
+
+    ☉ λ suspend(&Δ self, reason: String) {
+        self.lifecycle = LifecycleState·Suspended { reason };
+    }
+
+    ☉ λ terminate(&Δ self, reason: String) {
+        self.lifecycle = LifecycleState·Terminating { reason };
+    }
+
+    ☉ λ is_healthy(&self) -> !bool {
+>>>>>>> origin/main
         self.lifecycle.is_operational() && self.metrics.error_rate() < 0.1
     }
 }
@@ -223,79 +377,134 @@ impl AgentState {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_lifecycle_initializing() {
     let state = LifecycleState::Initializing;
+=======
+λ test_lifecycle_initializing() {
+    ≔ state = LifecycleState·Initializing;
+>>>>>>> origin/main
     assert(!state.is_operational());
     assert(!state.can_accept_work());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_lifecycle_ready() {
     let state = LifecycleState::Ready;
+=======
+λ test_lifecycle_ready() {
+    ≔ state = LifecycleState·Ready;
+>>>>>>> origin/main
     assert(state.is_operational());
     assert(!state.is_running());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_lifecycle_running() {
     let state = LifecycleState::Running;
+=======
+λ test_lifecycle_running() {
+    ≔ state = LifecycleState·Running;
+>>>>>>> origin/main
     assert(state.is_operational());
     assert(state.is_running());
     assert(state.can_accept_work());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_lifecycle_suspended() {
     let state = LifecycleState::Suspended { reason: "Maintenance".to_string() };
+=======
+λ test_lifecycle_suspended() {
+    ≔ state = LifecycleState·Suspended { reason: "Maintenance".to_string() };
+>>>>>>> origin/main
     assert(!state.is_operational());
     assert(!state.can_accept_work());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_lifecycle_terminated() {
     let state = LifecycleState::Terminated;
+=======
+λ test_lifecycle_terminated() {
+    ≔ state = LifecycleState·Terminated;
+>>>>>>> origin/main
     assert(state.is_terminated());
     assert(!state.is_operational());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_terminate_reason_graceful() {
     let reason = TerminateReason::GoalsComplete;
+=======
+λ test_terminate_reason_graceful() {
+    ≔ reason = TerminateReason·GoalsComplete;
+>>>>>>> origin/main
     assert(reason.is_graceful());
     assert(!reason.is_error());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_terminate_reason_fatal() {
     let reason = TerminateReason::Fatal { error: "Crash".to_string() };
+=======
+λ test_terminate_reason_fatal() {
+    ≔ reason = TerminateReason·Fatal { error: "Crash".to_string() };
+>>>>>>> origin/main
     assert(reason.is_error());
     assert(!reason.is_graceful());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_terminate_reason_resource() {
     let reason = TerminateReason::ResourceExhaustion;
+=======
+λ test_terminate_reason_resource() {
+    ≔ reason = TerminateReason·ResourceExhaustion;
+>>>>>>> origin/main
     assert(reason.is_error());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_metrics_creation() {
     let metrics = OperationalMetrics::new();
+=======
+λ test_metrics_creation() {
+    ≔ metrics = OperationalMetrics·new();
+>>>>>>> origin/main
     assert(metrics.heartbeats == 0);
     assert(metrics.errors == 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_metrics_heartbeat() {
     let mut metrics = OperationalMetrics::new();
+=======
+λ test_metrics_heartbeat() {
+    ≔ Δ metrics = OperationalMetrics·new();
+>>>>>>> origin/main
     metrics.record_heartbeat();
     metrics.record_heartbeat();
     assert(metrics.heartbeats == 2);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_metrics_actions() {
     let mut metrics = OperationalMetrics::new();
+=======
+λ test_metrics_actions() {
+    ≔ Δ metrics = OperationalMetrics·new();
+>>>>>>> origin/main
     metrics.record_action();
     metrics.record_action();
     metrics.record_action();
@@ -303,24 +512,39 @@ fn test_metrics_actions() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_metrics_success_rate_perfect() {
     let mut metrics = OperationalMetrics::new();
+=======
+λ test_metrics_success_rate_perfect() {
+    ≔ Δ metrics = OperationalMetrics·new();
+>>>>>>> origin/main
     metrics.record_goal_completed();
     metrics.record_goal_completed();
     assert(metrics.success_rate() == 1.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_metrics_success_rate_mixed() {
     let mut metrics = OperationalMetrics::new();
+=======
+λ test_metrics_success_rate_mixed() {
+    ≔ Δ metrics = OperationalMetrics·new();
+>>>>>>> origin/main
     metrics.record_goal_completed();
     metrics.record_goal_failed();
     assert(metrics.success_rate() == 0.5);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_metrics_error_rate() {
     let mut metrics = OperationalMetrics::new();
+=======
+λ test_metrics_error_rate() {
+    ≔ Δ metrics = OperationalMetrics·new();
+>>>>>>> origin/main
     metrics.record_heartbeat();
     metrics.record_heartbeat();
     metrics.record_heartbeat();
@@ -330,44 +554,74 @@ fn test_metrics_error_rate() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_usage_creation() {
     let usage = ResourceUsage::new();
+=======
+λ test_resource_usage_creation() {
+    ≔ usage = ResourceUsage·new();
+>>>>>>> origin/main
     assert(usage.memory_bytes == 0);
     assert(usage.tokens_used == 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_usage_memory() {
     let mut usage = ResourceUsage::new();
+=======
+λ test_resource_usage_memory() {
+    ≔ Δ usage = ResourceUsage·new();
+>>>>>>> origin/main
     usage.record_memory(1024 * 1024);
     assert(usage.memory_bytes == 1024 * 1024);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_usage_tokens() {
     let mut usage = ResourceUsage::new();
+=======
+λ test_resource_usage_tokens() {
+    ≔ Δ usage = ResourceUsage·new();
+>>>>>>> origin/main
     usage.record_tokens(100);
     usage.record_tokens(200);
     assert(usage.tokens_used == 300);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_resource_exceeds_memory() {
     let mut usage = ResourceUsage::new();
+=======
+λ test_resource_exceeds_memory() {
+    ≔ Δ usage = ResourceUsage·new();
+>>>>>>> origin/main
     usage.record_memory(1000);
     assert(usage.exceeds_memory(500));
     assert(!usage.exceeds_memory(2000));
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_agent_state_creation() {
     let state = AgentState::new();
+=======
+λ test_agent_state_creation() {
+    ≔ state = AgentState·new();
+>>>>>>> origin/main
     assert(!state.lifecycle.is_operational());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_agent_state_lifecycle() {
     let mut state = AgentState::new();
+=======
+λ test_agent_state_lifecycle() {
+    ≔ Δ state = AgentState·new();
+>>>>>>> origin/main
     state.initialize();
     assert(state.lifecycle.is_operational());
     state.start();
@@ -375,12 +629,21 @@ fn test_agent_state_lifecycle() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_agent_state_healthy() {
     let mut state = AgentState::new();
+=======
+λ test_agent_state_healthy() {
+    ≔ Δ state = AgentState·new();
+>>>>>>> origin/main
     state.start();
     assert(state.is_healthy());
 }
 
+<<<<<<< HEAD
 fn main() {
+=======
+λ main() {
+>>>>>>> origin/main
     println("Daemon state tests - 21 tests");
 }

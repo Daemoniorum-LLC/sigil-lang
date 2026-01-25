@@ -1,0 +1,37 @@
+// Test: HTTP client pattern - Σ constructors and field access
+// Spec: 15-PROTOCOLS.md § 4 HTTP Support
+// Priority: P0 - Bootstrap Critical
+//
+// Tests language features used ∈ HTTP client patterns:
+// - Struct constructors
+// - Static method patterns
+// - Evidential value binding and access
+
+// Define HTTP types locally to test the patterns
+Σ HttpRequest {
+    method: String,
+    url: String,
+}
+
+Σ HttpResponse {
+    status: i64,
+    body: String,
+}
+
+// Constructor pattern using namespace
+λ make_get_request(url: String) -> HttpRequest {
+    HttpRequest { method: "GET", url: url }
+}
+
+λ main() {
+    // Test Σ constructor pattern
+    ≔ req = make_get_request("https://api.example.com/data");
+
+    // Verify the request was constructed correctly
+    println(req.method);
+    println(req.url);
+
+    // Test evidential binding pattern
+    ≔ response~ = HttpResponse { status: 200, body: "OK" };
+    println(response~.status);
+}

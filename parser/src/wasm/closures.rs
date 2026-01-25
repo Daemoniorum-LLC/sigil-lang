@@ -1054,6 +1054,8 @@ mod tests {
                 ty: None,
             }],
             body: Box::new(body),
+            is_move: false,
+            return_type: None,
         }
     }
 

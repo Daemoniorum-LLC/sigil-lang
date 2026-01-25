@@ -89,6 +89,28 @@ void sigil_write_str(const char* str) {
     fflush(stdout);
 }
 
+<<<<<<< HEAD
+=======
+/* Jormungandr-compatible print functions */
+void print(const char* str) {
+    printf("%s", str);
+    fflush(stdout);
+}
+
+void println(const char* str) {
+    printf("%s\n", str);
+}
+
+void eprint(const char* str) {
+    fprintf(stderr, "%s", str);
+    fflush(stderr);
+}
+
+void eprintln(const char* str) {
+    fprintf(stderr, "%s\n", str);
+}
+
+>>>>>>> origin/main
 /* Get string length */
 int64_t sigil_strlen(const char* str) {
     if (str == NULL) return 0;
@@ -1073,15 +1095,38 @@ void* sigil_getenv(const char* name) {
     return sigil_string_from(value);
 }
 
+/* ============================================================================
+ * Command Line Argument Marshalling
+ * ============================================================================ */
+
+/* Create a Vec<String> from C argc/argv */
+void* sigil_vec_from_argv(int argc, char** argv) {
+    // Create Vec with capacity for all args
+    void* vec = sigil_vec_new((int64_t)argc);
+    if (!vec) return NULL;
+
+    // Convert each C string to a Sigil String and push to Vec
+    for (int i = 0; i < argc; i++) {
+        void* sigil_str = sigil_string_from(argv[i]);
+        sigil_vec_push(vec, (int64_t)sigil_str);
+    }
+
+    return vec;
+}
+
 #ifndef SIGIL_RUNTIME_LIB_ONLY
 
-/* Entry point - calls the Sigil main function */
-extern int64_t main_sigil(void);
+/* Entry point - calls the Sigil main function with command line args */
+extern int64_t main_sigil(int64_t args);
 
 int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
-    int64_t result = main_sigil();
+    // Marshal C argc/argv to Sigil Vec<String>
+    void* args = sigil_vec_from_argv(argc, argv);
+
+    // Call Sigil main with the arguments
+    int64_t result = main_sigil((int64_t)args);
+
+    // Note: We don't free args here as the program is exiting anyway
     return (int)result;
 }
 

@@ -4,8 +4,13 @@
 //! supertraits, and method resolution.
 //! Target: 100% aspect system coverage each regression detection.
 
+<<<<<<< HEAD
 use crate·parser·Parser;
 use crate·typeck·TypeChecker;
+=======
+invoke crate·parser·Parser;
+invoke crate·typeck·TypeChecker;
+>>>>>>> origin/main
 
 // ============================================================================
 // Test Helpers
@@ -121,7 +126,11 @@ rite test_trait_impls() → !bool {
             rite default() → !This;
         }
         sigil Wrapper<T> { value: !T }
+<<<<<<< HEAD
         impl<T> Default each Wrapper<T> where T: Default {
+=======
+        ⊢<T> Default each Wrapper<T> where T: Default {
+>>>>>>> origin/main
             rite default() → !Wrapper<T> {
                 Wrapper { value: T·default() }
             }
@@ -400,7 +409,11 @@ rite test_supertraits() → !bool {
         aspect Third: Second { rite third(this); }
     ", "transitive_supertraits");
 
+<<<<<<< HEAD
     // Missing supertrait ⊢ should fail
+=======
+    // Missing superΘ ⊢ should fail
+>>>>>>> origin/main
     assert_fails("
         aspect Base { rite base(this); }
         aspect Derived: Base { rite derived(this); }
@@ -539,7 +552,11 @@ rite test_coherence() → !bool {
         aspect ToString {
             rite to_string(this) → !String;
         }
+<<<<<<< HEAD
         impl<T> ToString each T where T: Debug {
+=======
+        ⊢<T> ToString each T where T: Debug {
+>>>>>>> origin/main
             rite to_string(this) → !String { ⤺ \"\"; }
         }
     ", "blanket_impl");

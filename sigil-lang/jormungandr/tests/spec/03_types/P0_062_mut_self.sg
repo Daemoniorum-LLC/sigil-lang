@@ -1,0 +1,33 @@
+// Test: Mutable self ∈ method
+// Spec: 03-TYPES.md § 7.6 Mutable Methods
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate Δ self methods can modify fields.
+//
+// Expected behavior:
+// Should print 52 (42 + 10)
+
+☉ Σ Counter {
+    value: !i32
+}
+
+⊢ Counter {
+    ☉ λ new(value: !i32) -> Self {
+        Self { value: value }
+    }
+
+    ☉ λ increment(Δ self, amount: !i32) {
+        self.value = self.value + amount;
+    }
+
+    ☉ λ get(self) -> !i32 {
+        self.value
+    }
+}
+
+λ main() {
+    ≔ Δ c: !Counter = Counter·new(42);
+    c.increment(10);
+    println(c.get());
+}

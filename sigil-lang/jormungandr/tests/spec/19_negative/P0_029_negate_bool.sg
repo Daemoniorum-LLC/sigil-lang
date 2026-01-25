@@ -1,0 +1,9 @@
+// Negative Test: Cannot negate bool with -
+// Should fail with type error
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    ≔ x = true;
+    ≔ y = -x;  // ERROR: cannot negate bool
+    println(y);
+}

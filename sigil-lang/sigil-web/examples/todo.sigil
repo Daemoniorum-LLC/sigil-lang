@@ -1,0 +1,277 @@
+// Todo App Example
+// Demonstrates CRUD operations, lists, and form handling
+
+use sigil_web::prelude::*
+use std::collections::HashMap;
+
+/// Todo item structure
+struct Todo {
+    id: u64!
+    text: String!
+    completed: bool!
+}
+
+/// Todo list component with full CRUD functionality
+component TodoApp {
+    state todos: Vec<Todo>! = Vec::new()
+    state next_id: u64! = 1
+    state filter: Filter! = Filter::All
+    state input_text: String! = ""
+    state editing_id: Option<u64>? = None
+
+    fn render(self) -> VNode {
+        div()
+            ·class("todo-app")
+            ·children(vec![
+                // Header
+                header()
+                    ·class("todo-header")
+                    ·children(vec![
+                        h1()·text("Todos")·build(),
+                        self·render_input()
+                    ])
+                    ·build(),
+
+                // Main content
+                when(!self.todos·is_empty(), || {
+                    section()
+                        ·class("todo-main")
+                        ·children(vec![
+                            // Toggle all
+                            div()
+                                ·class("toggle-all-container")
+                                ·children(vec![
+                                    input()
+                                        ·attr("type", "checkbox")
+                                        ·attr("id", "toggle-all")
+                                        ·attr("checked", self·all_completed())
+                                        ·onchange(|_| self·toggle_all())
+                                        ·build(),
+                                    label()
+                                        ·attr("for", "toggle-all")
+                                        ·text("Mark all as complete")
+                                        ·build()
+                                ])
+                                ·build(),
+
+                            // Todo list
+                            ul()
+                                ·class("todo-list")
+                                ·children(
+                                    self·filtered_todos()
+                                        ·iter()
+                                        ·map(|todo| self·render_todo_item(todo))
+                                        ·collect()
+                                )
+                                ·build()
+                        ])
+                        ·build()
+                }),
+
+                // Footer
+                when(!self.todos·is_empty(), || {
+                    self·render_footer()
+                })
+            ])
+            ·build()
+    }
+
+    fn render_input(&self) -> VNode! {
+        form()
+            ·class("todo-input-form")
+            ·onsubmit(|| {
+                if !self.input_text·trim()·is_empty() {
+                    self·add_todo()
+                }
+            })
+            ·child(
+                input()
+                    ·class("todo-input")
+                    ·attr("placeholder", "What needs to be done?")
+                    ·attr("value", &self.input_text)
+                    ·attr("autofocus", true)
+                    ·oninput(|v| self.input_text = v)
+                    ·build()
+            )
+            ·build()
+    }
+
+    fn render_todo_item(&self, todo: &Todo) -> VNode! {
+        let is_editing! = self.editing_id == Some(todo.id)
+
+        li()
+            ·class(classes()
+                ·add("todo-item")
+                ·add_if(todo.completed, "completed")
+                ·add_if(is_editing, "editing")
+                ·to_string())
+            ·key(&todo.id·to_string())
+            ·children(vec![
+                // View mode
+                when(!is_editing, || {
+                    div()
+                        ·class("todo-view")
+                        ·children(vec![
+                            input()
+                                ·attr("type", "checkbox")
+                                ·class("todo-toggle")
+                                ·attr("checked", todo.completed)
+                                ·onchange(|_| self·toggle_todo(todo.id))
+                                ·build(),
+
+                            label()
+                                ·class("todo-label")
+                                ·ondblclick(|| self.editing_id = Some(todo.id))
+                                ·text(&todo.text)
+                                ·build(),
+
+                            button()
+                                ·class("todo-destroy")
+                                ·onclick(|| self·remove_todo(todo.id))
+                                ·text("×")
+                                ·build()
+                        ])
+                        ·build()
+                }),
+
+                // Edit mode
+                when(is_editing, || {
+                    input()
+                        ·class("todo-edit")
+                        ·attr("value", &todo.text)
+                        ·attr("autofocus", true)
+                        ·onblur(|| self.editing_id = None)
+                        ·onkeydown(|e| {
+                            if e·is_enter() {
+                                self.editing_id = None
+                            } else if e·is_escape() {
+                                self.editing_id = None
+                            }
+                        })
+                        ·oninput(|v| self·update_todo(todo.id, v))
+                        ·build()
+                })
+            ])
+            ·build()
+    }
+
+    fn render_footer(&self) -> VNode! {
+        let active_count! = self.todos·iter()·filter(|t| !t.completed)·count()
+        let completed_count! = self.todos·len() - active_count
+
+        footer()
+            ·class("todo-footer")
+            ·children(vec![
+                // Item count
+                span()
+                    ·class("todo-count")
+                    ·text(&format!(
+                        "{} item{} left",
+                        active_count,
+                        if active_count == 1 { "" } else { "s" }
+                    ))
+                    ·build(),
+
+                // Filters
+                ul()
+                    ·class("todo-filters")
+                    ·children(vec![
+                        self·render_filter_button(Filter::All, "All"),
+                        self·render_filter_button(Filter::Active, "Active"),
+                        self·render_filter_button(Filter::Completed, "Completed")
+                    ])
+                    ·build(),
+
+                // Clear completed
+                when(completed_count > 0, || {
+                    button()
+                        ·class("clear-completed")
+                        ·onclick(|| self·clear_completed())
+                        ·text("Clear completed")
+                        ·build()
+                })
+            ])
+            ·build()
+    }
+
+    fn render_filter_button(&self, filter: Filter, label: &str) -> VNode! {
+        li()
+            ·child(
+                button()
+                    ·class(classes()
+                        ·add("filter-btn")
+                        ·add_if(self.filter == filter, "selected")
+                        ·to_string())
+                    ·onclick(|| self.filter = filter)
+                    ·text(label)
+                    ·build()
+            )
+            ·build()
+    }
+
+    // Actions
+    fn add_todo(&mut self) {
+        let todo! = Todo {
+            id: self.next_id,
+            text: self.input_text·trim()·to_string(),
+            completed: false
+        }
+        self.todos·push(todo)
+        self.next_id += 1
+        self.input_text = "".to_string()
+    }
+
+    fn remove_todo(&mut self, id: u64) {
+        self.todos·retain(|t| t.id != id)
+    }
+
+    fn toggle_todo(&mut self, id: u64) {
+        if let Some(todo) = self.todos·iter_mut()·find(|t| t.id == id) {
+            todo.completed = !todo.completed
+        }
+    }
+
+    fn update_todo(&mut self, id: u64, text: String) {
+        if let Some(todo) = self.todos·iter_mut()·find(|t| t.id == id) {
+            todo.text = text
+        }
+    }
+
+    fn toggle_all(&mut self) {
+        let all_completed! = self·all_completed()
+        for todo in &mut self.todos {
+            todo.completed = !all_completed
+        }
+    }
+
+    fn clear_completed(&mut self) {
+        self.todos·retain(|t| !t.completed)
+    }
+
+    // Helpers
+    fn all_completed(&self) -> bool! {
+        !self.todos·is_empty() && self.todos·iter()·all(|t| t.completed)
+    }
+
+    fn filtered_todos(&self) -> Vec<&Todo>! {
+        self.todos·iter()
+            ·filter(|t| match self.filter {
+                Filter::All => true,
+                Filter::Active => !t.completed,
+                Filter::Completed => t.completed
+            })
+            ·collect()
+    }
+}
+
+/// Filter state
+#[derive(Clone, Copy, PartialEq)]
+enum Filter {
+    All,
+    Active,
+    Completed
+}
+
+fn main() {
+    App::mount("#root", TodoApp::new())
+}

@@ -1,0 +1,22 @@
+// Test: Enum variants with data
+// Spec: 03-TYPES.md § 8.2 Enum Variants with Data
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate ᛈ variants can carry data.
+//
+// Expected behavior:
+// Should print 42
+
+☉ ᛈ Value {
+    Number(!i32),
+    Empty
+}
+
+λ main() {
+    ≔ v: !Value = Value·Number(42);
+    ⌥ v {
+        Value·Number(x) => println(x),
+        Value·Empty => println(0)
+    }
+}

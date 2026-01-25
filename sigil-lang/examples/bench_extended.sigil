@@ -1,0 +1,138 @@
+// Extended Sigil Benchmarks
+
+fn fib(n) {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn benchmark_fib_suite() {
+    print("--- Fibonacci Suite ---");
+
+    let start = now();
+    let r20 = fib(20);
+    let t20 = now() - start;
+    print("fib(20) = 6765, time (ms):");
+    print(t20);
+
+    let start = now();
+    let r25 = fib(25);
+    let t25 = now() - start;
+    print("fib(25) = 75025, time (ms):");
+    print(t25);
+
+    let start = now();
+    let r30 = fib(30);
+    let t30 = now() - start;
+    print("fib(30) = 832040, time (ms):");
+    print(t30);
+}
+
+fn benchmark_loop_overhead() {
+    print("--- Loop Overhead ---");
+    let start = now();
+    let i = 0;
+    let sum = 0;
+    while i < 100000 {
+        sum = sum + i;
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("100k loop iterations, sum check:");
+    print(sum);
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn benchmark_array_ops() {
+    print("--- Array Operations ---");
+    let start = now();
+    let i = 0;
+    while i < 1000 {
+        let arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let len_val = len(arr);
+        let first = arr[0];
+        let last = arr[9];
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("1000 array creates + access:");
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn benchmark_polysynthetic() {
+    print("--- Polysynthetic Pipes ---");
+    let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+    let start = now();
+    let i = 0;
+    while i < 5000 {
+        // τ = transform/map, φ = filter
+        let result = data|τ{_ * 2}|φ{_ > 10}|τ{_ + 1};
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("5000 pipe chains (τ, φ, τ):");
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn benchmark_math_intensive() {
+    print("--- Math Intensive ---");
+    let start = now();
+    let i = 0;
+    let total = 0.0;
+    while i < 50000 {
+        total = total + sqrt(i * 1.0) * sin(i * 0.001) + cos(i * 0.001);
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("50k sqrt+sin+cos operations:");
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn benchmark_string_intensive() {
+    print("--- String Intensive ---");
+    let start = now();
+    let i = 0;
+    while i < 5000 {
+        let s = "the quick brown fox jumps over the lazy dog";
+        let u = upper(s);
+        let l = lower(u);
+        let r = replace(l, "o", "0");
+        let r2 = replace(r, "e", "3");
+        i = i + 1;
+    }
+    let elapsed = now() - start;
+    print("5000 string operations (upper/lower/replace):");
+    print("Time (ms):");
+    print(elapsed);
+}
+
+fn main() {
+    print("========================================");
+    print("   SIGIL EXTENDED BENCHMARK SUITE");
+    print("========================================");
+    print("");
+
+    benchmark_fib_suite();
+    print("");
+    benchmark_loop_overhead();
+    print("");
+    benchmark_array_ops();
+    print("");
+    benchmark_polysynthetic();
+    print("");
+    benchmark_math_intensive();
+    print("");
+    benchmark_string_intensive();
+    print("");
+
+    print("========================================");
+    print("   BENCHMARK COMPLETE");
+    print("========================================");
+    return 0;
+}

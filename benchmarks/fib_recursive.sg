@@ -1,15 +1,15 @@
 // Benchmark: Recursive Fibonacci
 // Tests: Function call overhead, recursion
 
-fn fib(n: i64) -> i64 {
-    if n <= 1 {
+λ fib(n: i64) -> i64 {
+    ⎇ n <= 1 {
         n
-    } else {
+    } ⎉ {
         fib(n - 1) + fib(n - 2)
     }
 }
 
-fn main() {
-    let result = fib(35);
+λ main() {
+    ≔ result = fib(35);
     println(result);
 }

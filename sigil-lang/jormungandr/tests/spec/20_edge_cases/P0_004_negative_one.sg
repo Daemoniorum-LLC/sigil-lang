@@ -1,0 +1,8 @@
+// Test: Negative one edge case
+// Spec: Edge Cases - Integer Limits
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    ≔ neg: i32 = -1;
+    println(neg);
+}

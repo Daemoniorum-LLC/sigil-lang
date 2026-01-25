@@ -1,0 +1,4 @@
+// From README - Hello World
+fn main() {
+    println("Hello, Sigil!");
+}

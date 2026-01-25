@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sigil Web Runtime Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #9d4edd; }
+        #app {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 200px;
+        }
+        .output {
+            background: #0f0f23;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Fira Code', monospace;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #9d4edd;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #7b2cbf; }
+    </style>
+</head>
+<body>
+    <h1>Sigil Web Runtime</h1>
+    <div id="controls">
+        <button onclick="loadModule()">Load WASM Module</button>
+        <button onclick="testVdom()">Test VDOM</button>
+        <button onclick="clearOutput()">Clear</button>
+    </div>
+    <div id="app">
+        <p>WASM output will appear here...</p>
+    </div>
+    <div class="output" id="console-output"></div>
+
+    <script type="module">
+        import { SigilRuntime } from './sigil_runtime.js';
+
+        window.runtime = new SigilRuntime();
+        window.instance = null;
+
+        // Override console.log to show in page
+        const originalLog = console.log;
+        const outputEl = document.getElementById('console-output');
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            outputEl.textContent += args.map(a =>
+                typeof a === 'object' ? JSON.stringify(a) : String(a)
+            ).join(' ') + '\n';
+        };
+
+        window.loadModule = async function() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.wasm';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                console.log(`Loading ${file.name}...`);
+                const buffer = await file.arrayBuffer();
+
+                try {
+                    const { instance } = await WebAssembly.instantiate(buffer, window.runtime.getImports());
+                    window.runtime.init(instance);
+                    window.instance = instance;
+
+                    console.log('Exports:', Object.keys(instance.exports));
+
+                    if (instance.exports.main) {
+                        console.log('Running main()...');
+                        instance.exports.main();
+                        console.log('Done!');
+                    }
+                } catch (err) {
+                    console.error('Error:', err.message);
+                }
+            };
+            input.click();
+        };
+
+        window.testVdom = function() {
+            const runtime = window.runtime;
+
+            // Manually test VDOM creation
+            console.log('Testing VDOM...');
+
+            // Create a div vnode
+            const divId = runtime._vdomImports().create_vnode(
+                runtime.allocString('div')
+            );
+            console.log('Created div vnode:', divId);
+
+            // Set class attribute
+            runtime._vdomImports().set_vnode_str_prop(
+                divId,
+                runtime.allocString('className'),
+                runtime.allocString('container')
+            );
+
+            // Create text child
+            const textId = runtime._vdomImports().create_text_vnode(
+                runtime.allocString('Hello from Sigil VDOM!')
+            );
+            console.log('Created text vnode:', textId);
+
+            // Append child
+            runtime._vdomImports().append_vnode_child(divId, textId);
+
+            // Mount to #app
+            const domId = runtime._vdomImports().mount_vnode(
+                divId,
+                runtime.allocString('#app')
+            );
+            console.log('Mounted to DOM, id:', domId);
+        };
+
+        window.clearOutput = function() {
+            outputEl.textContent = '';
+            document.getElementById('app').innerHTML = '<p>WASM output will appear here...</p>';
+        };
+
+        console.log('Sigil Web Runtime ready');
+        console.log('Click "Load WASM Module" to load a .wasm file');
+    </script>
+</body>
+</html>

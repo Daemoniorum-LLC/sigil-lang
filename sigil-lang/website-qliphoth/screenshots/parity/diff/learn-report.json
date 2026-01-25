@@ -1,0 +1,84 @@
+{
+  "page": "learn",
+  "production": {
+    "title": "Learn Sigil - Getting Started Guide",
+    "sectionCount": 5,
+    "headingCount": 26,
+    "linkCount": 23,
+    "buttonCount": 1,
+    "imageCount": 2,
+    "textLength": 5987,
+    "navLinks": [
+      "Sigil0.3",
+      "Learn",
+      "Docs",
+      "Playground",
+      "Agents",
+      "The Pattern",
+      "Qliphoth",
+      "GitHub"
+    ],
+    "footerLinks": [
+      "Sigil",
+      "Tutorial",
+      "Documentation",
+      "Playground",
+      "Agent Infrastructure",
+      "The Pattern",
+      "Built on Sigil",
+      "GitHub",
+      "Discussions",
+      "Issues",
+      "Company",
+      "Platform Docs"
+    ],
+    "mainSections": [
+      "chapter",
+      "chapter",
+      "chapter",
+      "chapter",
+      "chapter"
+    ]
+  },
+  "wasm": {
+    "title": "Learn Sigil - Getting Started Guide",
+    "sectionCount": 5,
+    "headingCount": 26,
+    "linkCount": 23,
+    "buttonCount": 1,
+    "imageCount": 2,
+    "textLength": 5987,
+    "navLinks": [
+      "Sigil0.3",
+      "Learn",
+      "Docs",
+      "Playground",
+      "Agents",
+      "The Pattern",
+      "Qliphoth",
+      "GitHub"
+    ],
+    "footerLinks": [
+      "Sigil",
+      "Tutorial",
+      "Documentation",
+      "Playground",
+      "Agent Infrastructure",
+      "The Pattern",
+      "Built on Sigil",
+      "GitHub",
+      "Discussions",
+      "Issues",
+      "Company",
+      "Platform Docs"
+    ],
+    "mainSections": [
+      "chapter",
+      "chapter",
+      "chapter",
+      "chapter",
+      "chapter"
+    ]
+  },
+  "differences": []
+}

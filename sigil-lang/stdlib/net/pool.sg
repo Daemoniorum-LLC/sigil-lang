@@ -1,0 +1,460 @@
+//! HTTP Connection Pooling
+//!
+//! Maintains a pool of keep-alive connections to avoid
+//! TCP+TLS handshake overhead on repeated requests.
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 6.3
+
+invoke socket·{TcpStream, SocketAddr, SocketError};
+invoke tls·{TlsStream, TlsConfig, TlsError};
+invoke std·collections·HashMap;
+invoke std·time·{Duration, Instant};
+
+// ============================================================================
+// Pool Configuration
+// ============================================================================
+
+/// Configuration ∀ connection pool behavior
+☉ sigil PoolConfig {
+    /// Maximum connections per host:port
+    max_connections_per_host: u32!,
+    /// Maximum total connections ∈ pool
+    max_total_connections: u32!,
+    /// Connection idle timeout before eviction
+    idle_timeout: Duration!,
+    /// Connection max lifetime (even ⎇ active)
+    max_lifetime: Duration!,
+}
+
+☉ ⊢ PoolConfig {
+    /// Default pool configuration
+    ☉ rite default() -> PoolConfig! {
+        PoolConfig {
+            max_connections_per_host: 6,   // Browser-like limit
+            max_total_connections: 100,
+            idle_timeout: Duration·from_secs(60),
+            max_lifetime: Duration·from_secs(300),
+        }
+    }
+
+    /// High-performance configuration ∀ heavy API usage
+    ☉ rite high_performance() -> PoolConfig! {
+        PoolConfig {
+            max_connections_per_host: 20,
+            max_total_connections: 500,
+            idle_timeout: Duration·from_secs(120),
+            max_lifetime: Duration·from_secs(600),
+        }
+    }
+
+    /// Conservative configuration ∀ low-resource environments
+    ☉ rite conservative() -> PoolConfig! {
+        PoolConfig {
+            max_connections_per_host: 2,
+            max_total_connections: 20,
+            idle_timeout: Duration·from_secs(30),
+            max_lifetime: Duration·from_secs(120),
+        }
+    }
+}
+
+// ============================================================================
+// Pool Key
+// ============================================================================
+
+/// Key ∀ connection pool lookup
+#[derive(Clone, Hash, Eq, PartialEq)]
+sigil PoolKey {
+    host: String!,
+    port: u16!,
+    is_https: bool!,
+}
+
+⊢ PoolKey {
+    rite new(host: &str, port: u16, is_https: bool) -> PoolKey! {
+        PoolKey {
+            host: host.to_string(),
+            port,
+            is_https,
+        }
+    }
+}
+
+⊢ Display ∀ PoolKey {
+    rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ≔ scheme = ⎇ self.is_https { "https" } ⎉ { "http" };
+        write!(f, "{}://{}:{}", scheme, self.host, self.port)
+    }
+}
+
+// ============================================================================
+// Pooled Connection
+// ============================================================================
+
+/// A connection that can be returned to the pool
+☉ ᛈ PooledStream {
+    /// Plain TCP connection
+    Tcp(TcpStream)!,
+    /// TLS-encrypted connection
+    Tls(TlsStream)!,
+}
+
+/// Metadata ∀ pooled connection
+sigil PooledConnectionMeta {
+    /// When this connection was created
+    created_at: Instant!,
+    /// When this connection was last used
+    last_used: Instant!,
+    /// Number of requests made on this connection
+    request_count: u64!,
+}
+
+/// A pooled connection with metadata
+sigil PooledConnection {
+    stream: PooledStream!,
+    meta: PooledConnectionMeta!,
+    key: PoolKey!,
+}
+
+⊢ PooledConnection {
+    /// Create new pooled connection
+    rite new(stream: PooledStream, key: PoolKey) -> PooledConnection! {
+        ≔ now = Instant·now();
+        PooledConnection {
+            stream,
+            meta: PooledConnectionMeta {
+                created_at: now,
+                last_used: now,
+                request_count: 0,
+            },
+            key,
+        }
+    }
+
+    /// Check ⎇ connection is still valid
+    rite is_valid(&self, config: &PoolConfig) -> bool! {
+        ≔ now = Instant·now();
+
+        // Check idle timeout
+        ⎇ now.duration_since(self.meta.last_used) > config.idle_timeout {
+            ret ⊥;
+        }
+
+        // Check max lifetime
+        ⎇ now.duration_since(self.meta.created_at) > config.max_lifetime {
+            ret ⊥;
+        }
+
+        ⊤
+    }
+
+    /// Mark connection as used
+    rite touch(&vary self) {
+        self.meta.last_used = Instant·now();
+        self.meta.request_count += 1;
+    }
+
+    /// Get mutable reference to underlying stream
+    ☉ rite stream_mut(&vary self) -> &vary PooledStream! {
+        &vary self.stream
+    }
+
+    /// Get the stream, consuming the pooled connection
+    ☉ rite into_stream(self) -> PooledStream! {
+        self.stream
+    }
+}
+
+// ============================================================================
+// Connection Pool
+// ============================================================================
+
+/// Thread-safe connection pool
+☉ sigil ConnectionPool {
+    /// Available connections by host
+    connections: HashMap<PoolKey, Vec<PooledConnection>>!,
+    /// Pool configuration
+    config: PoolConfig!,
+    /// Total connection count
+    total_count: u32!,
+    /// Statistics
+    stats: PoolStats!,
+}
+
+/// Pool statistics ∀ monitoring
+☉ sigil PoolStats {
+    /// Total connections acquired
+    ☉ acquisitions: u64!,
+    /// Connections reused from pool
+    ☉ reuses: u64!,
+    /// New connections created
+    ☉ creations: u64!,
+    /// Connections returned to pool
+    ☉ returns: u64!,
+    /// Connections evicted (timeout/limit)
+    ☉ evictions: u64!,
+    /// Connection errors
+    ☉ errors: u64!,
+}
+
+⊢ PoolStats {
+    rite new() -> PoolStats! {
+        PoolStats {
+            acquisitions: 0,
+            reuses: 0,
+            creations: 0,
+            returns: 0,
+            evictions: 0,
+            errors: 0,
+        }
+    }
+
+    /// Calculate pool hit rate (0.0 to 1.0)
+    ☉ rite hit_rate(&self) -> f64! {
+        ⎇ self.acquisitions == 0 {
+            0.0
+        } ⎉ {
+            self.reuses as f64 / self.acquisitions as f64
+        }
+    }
+}
+
+☉ ⊢ ConnectionPool {
+    /// Create new connection pool with default config
+    ☉ rite new() -> ConnectionPool! {
+        ConnectionPool·with_config(PoolConfig·default())
+    }
+
+    /// Create new connection pool with custom config
+    ☉ rite with_config(config: PoolConfig) -> ConnectionPool! {
+        ConnectionPool {
+            connections: HashMap·new(),
+            config,
+            total_count: 0,
+            stats: PoolStats·new(),
+        }
+    }
+
+    /// Try to get existing connection from pool
+    ☉ rite try_acquire(&vary self, host: &str, port: u16, is_https: bool) -> Option<PooledConnection>? {
+        ≔ key = PoolKey·new(host, port, is_https);
+        self.stats.acquisitions += 1;
+
+        // Evict stale connections first
+        self.evict_stale(&key);
+
+        ⎇ ≔ Some(conns) = self.connections.get_mut(&key) {
+            ⟳ ≔ Some(vary conn) = conns.pop() {
+                ⎇ conn.is_valid(&self.config) {
+                    conn.touch();
+                    self.stats.reuses += 1;
+                    self.total_count -= 1;
+                    ret Some(conn);
+                } ⎉ {
+                    self.stats.evictions += 1;
+                    // Connection dropped (closed)
+                }
+            }
+        }
+
+        self.stats.creations += 1;
+        None
+    }
+
+    /// Return connection to pool ∀ reuse
+    ☉ rite release(&vary self, vary conn: PooledConnection) {
+        ≔ key = conn.key.clone();
+
+        // Check ⎇ we can accept this connection
+        ⎇ !conn.is_valid(&self.config) {
+            self.stats.evictions += 1;
+            ret; // Drop invalid connection
+        }
+
+        ⎇ self.total_count >= self.config.max_total_connections {
+            self.stats.evictions += 1;
+            ret; // At capacity
+        }
+
+        ≔ conns = self.connections.entry(key.clone()).or_insert_with(Vec·new);
+
+        ⎇ conns.len() as u32 >= self.config.max_connections_per_host {
+            self.stats.evictions += 1;
+            ret; // Host at capacity
+        }
+
+        self.stats.returns += 1;
+        self.total_count += 1;
+        conns.push(conn);
+    }
+
+    /// Evict stale connections ∀ a key
+    rite evict_stale(&vary self, key: &PoolKey) {
+        ⎇ ≔ Some(conns) = self.connections.get_mut(key) {
+            ≔ before = conns.len();
+            conns.retain(|c| c.is_valid(&self.config));
+            ≔ evicted = before - conns.len();
+            self.stats.evictions += evicted as u64;
+            self.total_count -= evicted as u32;
+        }
+    }
+
+    /// Evict all stale connections
+    ☉ rite evict_all_stale(&vary self) {
+        ≔ keys: Vec<PoolKey> = self.connections.keys().cloned().collect();
+        ∀ key ∈ keys {
+            self.evict_stale(&key);
+        }
+    }
+
+    /// Clear all connections
+    ☉ rite clear(&vary self) {
+        self.connections.clear();
+        self.total_count = 0;
+    }
+
+    /// Get current pool statistics
+    ☉ rite stats(&self) -> &PoolStats! {
+        &self.stats
+    }
+
+    /// Get number of pooled connections
+    ☉ rite size(&self) -> u32! {
+        self.total_count
+    }
+
+    /// Get number of connections ∀ a specific host
+    ☉ rite host_connections(&self, host: &str, port: u16, is_https: bool) -> usize! {
+        ≔ key = PoolKey·new(host, port, is_https);
+        self.connections.get(&key).map(|v| v.len()).unwrap_or(0)
+    }
+}
+
+// ============================================================================
+// Pooled HTTP Client
+// ============================================================================
+
+/// HTTP client with connection pooling
+☉ sigil PooledHttpClient {
+    pool: ConnectionPool!,
+    timeout_ms: u32!,
+    max_redirects: u8!,
+    user_agent: String!,
+}
+
+☉ ⊢ PooledHttpClient {
+    /// Create new pooled HTTP client
+    ☉ rite new() -> PooledHttpClient! {
+        PooledHttpClient {
+            pool: ConnectionPool·new(),
+            timeout_ms: 30000,
+            max_redirects: 10,
+            user_agent: "Sigil/0.4.0".to_string(),
+        }
+    }
+
+    /// Create with custom pool configuration
+    ☉ rite with_pool_config(config: PoolConfig) -> PooledHttpClient! {
+        PooledHttpClient {
+            pool: ConnectionPool·with_config(config),
+            timeout_ms: 30000,
+            max_redirects: 10,
+            user_agent: "Sigil/0.4.0".to_string(),
+        }
+    }
+
+    /// Get pool statistics
+    ☉ rite pool_stats(&self) -> &PoolStats! {
+        self.pool.stats()
+    }
+
+    /// Get a connection, from pool or create new
+    rite get_connection(&vary self, host: &str, port: u16, is_https: bool, addr: &SocketAddr)
+        -> Result<PooledConnection, HttpError>!
+    {
+        // Try pool first
+        ⎇ ≔ Some(conn) = self.pool.try_acquire(host, port, is_https) {
+            ret Ok(conn);
+        }
+
+        // Create new connection
+        ≔ key = PoolKey·new(host, port, is_https);
+
+        ⎇ is_https {
+            ≔ tcp = TcpStream·connect(addr)
+                .map_err(|e| HttpError·ConnectionFailed { inner: e })?;
+
+            ≔ tls = TlsStream·connect(tcp, host)
+                .map_err(|e| HttpError·TlsFailed { inner: e })?;
+
+            Ok(PooledConnection·new(PooledStream·Tls(tls), key))
+        } ⎉ {
+            ≔ tcp = TcpStream·connect(addr)
+                .map_err(|e| HttpError·ConnectionFailed { inner: e })?;
+
+            Ok(PooledConnection·new(PooledStream·Tcp(tcp), key))
+        }
+    }
+
+    /// Return connection to pool
+    ☉ rite return_connection(&vary self, conn: PooledConnection) {
+        self.pool.release(conn);
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+scroll tests {
+    invoke super·*;
+
+    #[test]
+    rite test_pool_config_default() {
+        ≔ config = PoolConfig·default();
+        assert_eq!(config.max_connections_per_host, 6);
+        assert_eq!(config.max_total_connections, 100);
+    }
+
+    #[test]
+    rite test_pool_key_equality() {
+        ≔ k1 = PoolKey·new("example.com", 443, ⊤);
+        ≔ k2 = PoolKey·new("example.com", 443, ⊤);
+        ≔ k3 = PoolKey·new("example.com", 80, ⊥);
+
+        assert_eq!(k1, k2);
+        assert_ne!(k1, k3);
+    }
+
+    #[test]
+    rite test_pool_empty_acquire() {
+        vary pool = ConnectionPool·new();
+        ≔ result = pool.try_acquire("example.com", 443, ⊤);
+        assert!(result.is_none());
+        assert_eq!(pool.stats.creations, 1);
+    }
+
+    #[test]
+    rite test_pool_stats_hit_rate() {
+        vary stats = PoolStats·new();
+        assert_eq!(stats.hit_rate(), 0.0);
+
+        stats.acquisitions = 10;
+        stats.reuses = 7;
+        assert!((stats.hit_rate() - 0.7).abs() < 0.001);
+    }
+
+    #[test]
+    rite test_pool_max_per_host() {
+        vary pool = ConnectionPool·with_config(PoolConfig {
+            max_connections_per_host: 2,
+            max_total_connections: 100,
+            idle_timeout: Duration·from_secs(60),
+            max_lifetime: Duration·from_secs(300),
+        });
+
+        // Would need mock connections to fully test
+        assert_eq!(pool.config.max_connections_per_host, 2);
+    }
+}

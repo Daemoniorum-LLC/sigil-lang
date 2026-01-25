@@ -1,0 +1,20 @@
+// Test: If-⎉ chain (multiple ⎉ ⎇)
+// Spec: 02-SYNTAX.md § 4.1 Conditional Expressions
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate ⎇-⎉-⎇-⎉ chaining works correctly.
+//
+// Expected behavior:
+// Should execute the second branch and print 2.
+
+λ main() {
+    ≔ x: !i32 = 5;
+    ⎇ x < 3 {
+        println(1);
+    } ⎉ ⎇ x < 10 {
+        println(2);
+    } ⎉ {
+        println(3);
+    }
+}

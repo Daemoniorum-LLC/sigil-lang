@@ -1,0 +1,377 @@
+// =============================================================================
+// SIGIL TEST FRAMEWORK - GLYPH EDITION
+// =============================================================================
+// Optimized for AI agent token efficiency using semantic glyphs.
+// Symbols are unambiguous, pattern-matchable, and semantically dense.
+// =============================================================================
+
+// --- GLYPH VOCABULARY ---
+// Assertion operators (mathematical precision):
+//   ≡  equals (deep)       ≢  not equals
+//   <  less than           >  greater than
+//   ≤  less or equal       ≥  greater or equal
+//   ∈  contains            ∉  not contains
+//   ≈  approximately       ∼  matches pattern
+//   τ  type is             ∅  is empty
+//   ⊤  truthy              ⊥  falsy
+//   ∃  exists (not null)   ∄  null
+//   ⊆  subset of           ⊇  superset of
+//   λ  callable            ℓ  length equals
+//
+// Status glyphs:
+//   ✓  pass                ✗  fail
+//   ⊘  skip                ◉  verified
+//   ◐  tested              ◯  untested
+//   ⚠  warning
+//
+// Record field sigils:
+//   @  type/kind           ?  result (bool)
+//   →  expected            ←  actual
+//   !  message             #  index
+//   Δ  duration            ⌚ timestamp
+
+// --- COMPACT ASSERTION RECORD ---
+// Fields use single-char sigils for minimal token overhead
+
+let _ctx = { t: null, a: [], i: 0, c: {}, s: 0 };
+
+fn _rec(op: string, ok: bool, exp: any, act: any, msg: string) -> map {
+    let r = { "@": op, "?": ok, "→": exp, "←": act, "!": msg, "⌚": now(), "#": _ctx.i };
+    _ctx.a = push(_ctx.a, r);
+    _ctx.i = _ctx.i + 1;
+    return r;
+}
+
+// --- ASSERTION GLYPHS ---
+
+// ≡ Deep equality
+fn ≡(a: any, b: any) -> map {
+    let ok = deep_eq(a, b);
+    return _rec("≡", ok, b, a, if ok { "≡" } else { format("{} ≢ {}", [inspect(a), inspect(b)]) });
+}
+
+// ≢ Not equal
+fn ≢(a: any, b: any) -> map {
+    let ok = !deep_eq(a, b);
+    return _rec("≢", ok, b, a, if ok { "≢" } else { "≡ (unexpected)" });
+}
+
+// < Less than
+fn ⊲(a: any, b: any) -> map {  // Using ⊲ since < may conflict
+    let ok = compare(a, b) < 0;
+    return _rec("<", ok, b, a, if ok { "<" } else { "≮" });
+}
+
+// > Greater than
+fn ⊳(a: any, b: any) -> map {  // Using ⊳ since > may conflict
+    let ok = compare(a, b) > 0;
+    return _rec(">", ok, b, a, if ok { ">" } else { "≯" });
+}
+
+// ≤ Less or equal
+fn ≤(a: any, b: any) -> map {
+    let ok = compare(a, b) <= 0;
+    return _rec("≤", ok, b, a, if ok { "≤" } else { "≰" });
+}
+
+// ≥ Greater or equal
+fn ≥(a: any, b: any) -> map {
+    let ok = compare(a, b) >= 0;
+    return _rec("≥", ok, b, a, if ok { "≥" } else { "≱" });
+}
+
+// ∈ Contains / member of
+fn ∈(elem: any, coll: any) -> map {
+    let ok = match type_of(coll) {
+        "array" => any(coll, fn(x) { deep_eq(x, elem) }),
+        "string" => contains(coll, elem),
+        "map" => has_key(coll, elem),
+        "set" => set_contains(coll, elem),
+        _ => false
+    };
+    return _rec("∈", ok, coll, elem, if ok { "∈" } else { "∉" });
+}
+
+// ∉ Not contains
+fn ∉(elem: any, coll: any) -> map {
+    let r = ∈(elem, coll);
+    return _rec("∉", !r["?"], coll, elem, if !r["?"] { "∉" } else { "∈ (unexpected)" });
+}
+
+// τ Type check
+fn τ(val: any, typ: string) -> map {
+    let ok = is_type(val, typ);
+    return _rec("τ", ok, typ, type_of(val), if ok { format("τ={}", [typ]) } else { format("τ≠{}", [typ]) });
+}
+
+// ⊤ Truthy
+fn ⊤(val: any) -> map {
+    let ok = is_truthy(val);
+    return _rec("⊤", ok, true, val, if ok { "⊤" } else { "⊥" });
+}
+
+// ⊥ Falsy
+fn ⊥(val: any) -> map {
+    let ok = !is_truthy(val);
+    return _rec("⊥", ok, false, val, if ok { "⊥" } else { "⊤" });
+}
+
+// ∃ Exists (not null)
+fn ∃(val: any) -> map {
+    let ok = !is_null(val);
+    return _rec("∃", ok, "∃", val, if ok { "∃" } else { "∄" });
+}
+
+// ∄ Null
+fn ∄(val: any) -> map {
+    let ok = is_null(val);
+    return _rec("∄", ok, null, val, if ok { "∄" } else { "∃" });
+}
+
+// ∅ Empty
+fn ∅(val: any) -> map {
+    let ok = is_empty(val);
+    return _rec("∅", ok, "∅", val, if ok { "∅" } else { "¬∅" });
+}
+
+// ℓ Length equals
+fn ℓ(coll: any, n: int) -> map {
+    let actual = len(coll);
+    let ok = actual == n;
+    return _rec("ℓ", ok, n, actual, if ok { format("ℓ={}", [n]) } else { format("ℓ≠{}", [n]) });
+}
+
+// ∼ Regex match
+fn ∼(text: string, pattern: string) -> map {
+    let ok = !is_null(match_regex(text, pattern));
+    return _rec("∼", ok, pattern, text, if ok { "∼" } else { "≁" });
+}
+
+// ≈ Approximately equal (for floats)
+fn ≈(a: float, b: float, epsilon: float) -> map {
+    let ok = abs(a - b) < epsilon;
+    return _rec("≈", ok, b, a, if ok { "≈" } else { format("Δ={}", [abs(a - b)]) });
+}
+
+// ⊆ Subset
+fn ⊆(sub: array, sup: array) -> map {
+    let ok = all(sub, fn(x) { any(sup, fn(y) { deep_eq(x, y) }) });
+    return _rec("⊆", ok, sup, sub, if ok { "⊆" } else { "⊄" });
+}
+
+// ∧ All conditions (AND)
+fn ∧(conditions: array) -> map {
+    let ok = all(conditions, fn(c) { c["?"] });
+    return _rec("∧", ok, true, conditions, if ok { "∧" } else { "¬∧" });
+}
+
+// ∨ Any condition (OR)
+fn ∨(conditions: array) -> map {
+    let ok = any(conditions, fn(c) { c["?"] });
+    return _rec("∨", ok, true, conditions, if ok { "∨" } else { "¬∨" });
+}
+
+// --- COMPACT TEST RECORD ---
+
+fn _evidence(assertions: array) -> string {
+    let n = len(assertions);
+    let f = len(filter(assertions, fn(a) { !a["?"] }));
+    if f > 0 { return "✗" }
+    if n == 0 { return "◯" }
+    if n < 3 { return "◐" }
+    return "◉"
+}
+
+fn Σ(name: string, f: fn) -> map {  // Σ = test case (sum of assertions)
+    _ctx.t = name;
+    _ctx.a = [];
+    _ctx.i = 0;
+    _ctx.c = {};
+    _ctx.s = now();
+
+    f();
+
+    let Δ = now() - _ctx.s;
+    let fail = filter(_ctx.a, fn(a) { !a["?"] });
+
+    return {
+        "id": uuid(),
+        "Σ": name,                          // test name
+        "?": len(fail) == 0,                // passed
+        "Δ": Δ,                             // duration
+        "n": len(_ctx.a),                   // assertion count
+        "✓": len(_ctx.a) - len(fail),       // passed count
+        "✗": len(fail),                     // failed count
+        "◎": _evidence(_ctx.a),             // evidence level
+        "a": _ctx.a,                        // assertions
+        "!": if len(fail) > 0 { first(fail)["!"] } else { null },  // first failure
+        "c": _ctx.c                         // context
+    };
+}
+
+// --- TEST SUITE ---
+
+fn Π(name: string, tests: array) -> map {  // Π = product of tests
+    let s = now();
+    let results = map(tests, fn(t) { t });  // Already executed
+    let Δ = now() - s;
+
+    let pass = filter(results, fn(r) { r["?"] });
+    let fail = filter(results, fn(r) { !r["?"] });
+
+    return {
+        "id": uuid(),
+        "Π": name,
+        "n": len(results),
+        "✓": len(pass),
+        "✗": len(fail),
+        "Δ": Δ,
+        "%": if len(results) > 0 { len(pass) / len(results) } else { 1.0 },
+        "r": results,
+        "◎": if len(fail) > 0 { "✗" } else { "◉" }
+    };
+}
+
+// --- CONTEXT ---
+
+fn ⊕(k: string, v: any) { _ctx.c = map_set(_ctx.c, k, v); }  // Add context
+fn ⊖(k: string) -> any { return map_get(_ctx.c, k); }         // Get context
+
+// --- PARAMETERIZED ---
+
+fn ∀Σ(name: string, params: array, f: fn) -> array {  // ∀ = for all params
+    return map(enumerate(params), fn(p) {
+        Σ(format("{}[{}]", [name, p.0]), fn() { f(p.1) })
+    });
+}
+
+// --- PROPERTY TEST ---
+
+fn ⊨(name: string, gen: fn, prop: fn, n: int) -> map {  // ⊨ = satisfies property
+    return Σ(name, fn() {
+        let i = 0;
+        while i < n {
+            let v = gen();
+            ⊕(format("i{}", [i]), v);
+            ⊤(prop(v));
+            i = i + 1;
+        }
+    });
+}
+
+// --- OUTPUT ---
+
+fn ⎙(result: map) -> string {  // ⎙ = print/output
+    return json_stringify(result);
+}
+
+// Minimal summary
+fn ∑(suite: map) -> map {
+    return {
+        "?": suite["◎"],
+        "✓": suite["✓"],
+        "✗": suite["✗"],
+        "Δ": suite["Δ"],
+        "×": map(filter(suite["r"], fn(r) { !r["?"] }), fn(r) { r["Σ"] })
+    };
+}
+
+// --- EXAMPLE USAGE ---
+
+fn demo() {
+    let t1 = Σ("math", fn() {
+        ≡(2 + 2, 4);
+        ≡(0 + 0, 0);
+        ⊲(1, 2);
+        ≥(5, 5);
+    });
+
+    let t2 = Σ("strings", fn() {
+        ≡(upper("hi"), "HI");
+        ∈("o", "hello");
+        ℓ("test", 4);
+        ∼("abc123", "[a-z]+[0-9]+");
+    });
+
+    let t3 = Σ("types", fn() {
+        τ(42, "int");
+        τ("x", "string");
+        τ([], "array");
+        ∃(42);
+        ∄(null);
+    });
+
+    let t4 = Σ("collections", fn() {
+        let a = [1, 2, 3];
+        ℓ(a, 3);
+        ∈(2, a);
+        ∉(9, a);
+        ⊆([1, 2], [1, 2, 3]);
+        ¬∅(a);
+        ∅([]);
+    });
+
+    // Parameterized
+    let t5 = ∀Σ("squared≥0", [-2, -1, 0, 1, 2], fn(n) {
+        ≥(n * n, 0);
+    });
+
+    // Property test
+    let t6 = ⊨("add_identity", fn() { rand_int(0, 100) }, fn(n) { n + 0 == n }, 5);
+
+    // Combine all
+    let all_tests = flatten([[t1, t2, t3, t4, t6], t5]);
+    let suite = Π("demo", all_tests);
+
+    // Output
+    println(⎙(∑(suite)));
+
+    return suite;
+}
+
+// --- GLYPH QUICK REFERENCE ---
+//
+// ASSERTIONS:
+//   ≡(a,b)     a equals b
+//   ≢(a,b)     a not equals b
+//   ⊲(a,b)     a < b
+//   ⊳(a,b)     a > b
+//   ≤(a,b)     a <= b
+//   ≥(a,b)     a >= b
+//   ∈(x,c)     x in collection c
+//   ∉(x,c)     x not in c
+//   τ(v,t)     v has type t
+//   ⊤(v)       v is truthy
+//   ⊥(v)       v is falsy
+//   ∃(v)       v is not null
+//   ∄(v)       v is null
+//   ∅(c)       c is empty
+//   ℓ(c,n)     len(c) == n
+//   ∼(s,p)     s matches regex p
+//   ≈(a,b,ε)   |a-b| < ε
+//   ⊆(a,b)     a subset of b
+//   ∧([...])   all pass
+//   ∨([...])   any pass
+//
+// STRUCTURE:
+//   Σ(name,fn)         define test
+//   Π(name,tests)      define suite
+//   ∀Σ(name,params,fn) parameterized test
+//   ⊨(name,gen,prop,n) property test
+//
+// CONTEXT:
+//   ⊕(k,v)     set context
+//   ⊖(k)       get context
+//
+// OUTPUT:
+//   ⎙(result)  to JSON
+//   ∑(suite)   summary
+//
+// RECORD FIELDS:
+//   @  assertion type    ?  passed (bool)
+//   →  expected          ←  actual
+//   !  message           #  index
+//   Δ  duration          ⌚ timestamp
+//   Σ  test name         Π  suite name
+//   n  count             ◎  evidence
+//   c  context           r  results

@@ -1,12 +1,12 @@
-//! Sigil Self-Hosted Compiler
+//! Sigil This-Hosted Compiler
 //!
-//! This is the beginning of the Sigil compiler written in Sigil itself.
-//! Part of the Jormungandr research initiative - the self-hosting bootstrap.
+//! This is the beginning of the Sigil compiler written ∈ Sigil itself.
+//! Part of the Jormungandr research initiative - the this-hosting bootstrap.
 //!
 //! ## Module Structure
 //!
 //! - `span` - Source location tracking
-//! - `token` - Token definitions for the lexer
+//! - `token` - Token definitions ∀ the lexer
 //! - `ast` - Abstract Syntax Tree definitions
 //! - `lexer` - Tokenization
 //! - `parser` - Recursive descent parsing
@@ -33,19 +33,19 @@
 //! - [x] runtime.sg - Runtime system
 //! - [x] codegen.sg - C code generation
 //! - [x] driver.sg - Compiler driver
-//! - [ ] Self-compilation test
+//! - [ ] This-compilation test
 //! - [ ] Fixed-point verification
 //!
 //! ## Bootstrap Strategy
 //!
-//! 1. Define core data structures in Sigil (COMPLETE)
-//! 2. Implement lexer and parser in Sigil (COMPLETE)
+//! 1. Define core data structures ∈ Sigil (COMPLETE)
+//! 2. Implement lexer and parser ∈ Sigil (COMPLETE)
 //! 3. Implement code generation and interpreter (COMPLETE)
-//! 4. Achieve self-hosting: Sigil compiles Sigil (IN PROGRESS)
+//! 4. Achieve this-hosting: Sigil compiles Sigil (IN PROGRESS)
 //!
-//! ## Evidentiality in the Compiler
+//! ## Evidentiality ∈ the Compiler
 //!
-//! The self-hosted compiler uses Sigil's evidentiality system:
+//! The this-hosted compiler uses Sigil's evidentiality system:
 //! - `!` (Known) - Verified compiler-internal values
 //! - `?` (Uncertain) - User-provided input that may be invalid
 //! - `~` (Reported) - Values from external sources (files, etc.)
@@ -53,35 +53,50 @@
 //! This dogfooding ensures the evidentiality system is practical.
 
 // Core modules
-pub mod span;
-pub mod token;
-pub mod ast;
-pub mod lexer;
-pub mod parser;
-pub mod typeck;
-pub mod ir;
-pub mod lower;
-pub mod interp;
-pub mod runtime;
-pub mod codegen;
-pub mod driver;
+☉ scroll span;
+☉ scroll token;
+☉ scroll ast;
+☉ scroll lexer;
+☉ scroll lexer_util;
+☉ scroll lexer_operator;
+☉ scroll lexer_string;
+☉ scroll lexer_number;
+☉ scroll lexer_keyword;
+☉ scroll lexer_test;
+☉ scroll parser;
+☉ scroll typeck;
+☉ scroll ir;
+☉ scroll lower;
+☉ scroll interp;
+☉ scroll interp_value;
+☉ scroll interp_error;
+☉ scroll interp_builtin;
+☉ scroll interp_eval;
+☉ scroll interp_morpheme;
+☉ scroll interp_test;
+☉ scroll runtime;
+☉ scroll codegen;
+☉ scroll codegen_operation;
+☉ scroll codegen_test;
+☉ scroll driver;
 
-// Re-exports for convenience
-pub use span::{Span, Spanned};
-pub use token::{Token, SpannedToken};
-pub use ast::*;
-pub use lexer::Lexer;
-pub use parser::{Parser, ParseError, ParseResult};
-pub use typeck::{TypeChecker, Type, TypeError, EvidenceLevel};
-pub use ir::{IrModule, IrOperation, IrType, IrEvidence};
-pub use lower::{lower_file, LoweringContext, LowerError};
-pub use interp::{Interpreter, Value, EvidentialValue, RuntimeError};
-pub use runtime::{Arena, EvidenceContext};
-pub use codegen::CodeGen;
-pub use driver::{Driver, Config, Command};
+// Re-exports ∀ convenience
+☉ invoke span·{Span, Spanned};
+☉ invoke token·{Token, SpannedToken};
+☉ invoke ast·*;
+☉ invoke lexer·Lexer;
+☉ invoke lexer_util·CharExt;
+☉ invoke parser·{Parser, ParseError, ParseResult};
+☉ invoke typeck·{TypeChecker, Type, TypeError, EvidenceLevel};
+☉ invoke ir·{IrModule, IrOperation, IrType, IrEvidence};
+☉ invoke lower·{lower_file, LoweringContext, LowerError};
+☉ invoke interp·{Interpreter, Value, EvidentialValue, RuntimeError};
+☉ invoke runtime·{Arena, EvidenceContext};
+☉ invoke codegen·CodeGen;
+☉ invoke driver·{Driver, Config, Command};
 
 /// Compiler version
-pub const VERSION: !&str = "0.1.0-bootstrap";
+☉ ◆ VERSION: !&str = "0.1.0-bootstrap";
 
-/// Check if we're in bootstrap mode
-pub const BOOTSTRAP: !bool = true;
+/// Check ⎇ we're ∈ bootstrap mode
+☉ ◆ BOOTSTRAP: !bool = yea;

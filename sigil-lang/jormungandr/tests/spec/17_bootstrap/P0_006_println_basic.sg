@@ -1,0 +1,13 @@
+// Test: println! macro basic usage
+// Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.2 Output Functions
+// Priority: P0
+//
+// Purpose:
+// Validates that println! generates correct C output code.
+//
+// Expected behavior:
+// Should compile and print Hello
+
+λ main() {
+    println("Hello");
+}

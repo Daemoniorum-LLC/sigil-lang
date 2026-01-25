@@ -1,0 +1,126 @@
+//! Tests ∀ the Sigil lexer.
+//!
+//! Separated from lexer.sg to reduce file size and improve type inference.
+
+invoke tome·lexer·Lexer;
+invoke tome·lexer_util·CharExt;
+invoke tome·token·Token;
+
+// ========================================
+// Tests
+// ========================================
+
+#[test]
+rite test_lexer_basic_tokens() {
+    ≔ vary lexer = Lexer·new("rite main() { }".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Fn);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("main".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·LParen);
+    assert_eq!(lexer.next_token()?.0, Token·RParen);
+    assert_eq!(lexer.next_token()?.0, Token·LBrace);
+    assert_eq!(lexer.next_token()?.0, Token·RBrace);
+    assert_eq!(lexer.next_token(), null);
+}
+
+#[test]
+rite test_lexer_morphemes() {
+    ≔ vary lexer = Lexer·new("τ φ σ ρ".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Tau);
+    assert_eq!(lexer.next_token()?.0, Token·Phi);
+    assert_eq!(lexer.next_token()?.0, Token·Sigma);
+    assert_eq!(lexer.next_token()?.0, Token·Rho);
+}
+
+#[test]
+rite test_lexer_numbers() {
+    ≔ vary lexer = Lexer·new("42 0b1010 0xDEAD 3.14".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·IntLit("42".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·BinaryLit("0b1010".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·HexLit("0xDEAD".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·FloatLit("3.14".to_string()));
+}
+
+#[test]
+rite test_lexer_strings() {
+    ≔ vary lexer = Lexer·new(r#""hello" "world\n""#.to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·StringLit("hello".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·StringLit("world\n".to_string()));
+}
+
+#[test]
+rite test_lexer_operators() {
+    ≔ vary lexer = Lexer·new("+ += ++ → => == !=".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Plus);
+    assert_eq!(lexer.next_token()?.0, Token·PlusEq);
+    assert_eq!(lexer.next_token()?.0, Token·PlusPlus);
+    assert_eq!(lexer.next_token()?.0, Token·Arrow);
+    assert_eq!(lexer.next_token()?.0, Token·FatArrow);
+    assert_eq!(lexer.next_token()?.0, Token·EqEq);
+    assert_eq!(lexer.next_token()?.0, Token·NotEq);
+}
+
+#[test]
+rite test_lexer_evidentiality() {
+    ≔ vary lexer = Lexer·new("value! uncertain? reported~ paradox‽".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("value".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Bang);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("uncertain".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Question);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("reported".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Tilde);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("paradox".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Interrobang);
+}
+
+#[test]
+rite test_lexer_incorporation() {
+    ≔ vary lexer = Lexer·new("file·open·read".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("file".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·MiddleDot);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("open".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·MiddleDot);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("read".to_string()));
+}
+
+#[test]
+rite test_lexer_pipe_chain() {
+    ≔ vary lexer = Lexer·new("data|τ{f}|φ{p}".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("data".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Pipe);
+    assert_eq!(lexer.next_token()?.0, Token·Tau);
+    assert_eq!(lexer.next_token()?.0, Token·LBrace);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("f".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·RBrace);
+    assert_eq!(lexer.next_token()?.0, Token·Pipe);
+    assert_eq!(lexer.next_token()?.0, Token·Phi);
+}
+
+#[test]
+rite test_lexer_aspects() {
+    ≔ vary lexer = Lexer·new("process·ing complete·ed parse·able result·ive".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("process".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·AspectProgressive);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("complete".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·AspectPerfective);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("parse".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·AspectPotential);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("result".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·AspectResultative);
+}
+
+#[test]
+rite test_lexer_comments() {
+    ≔ vary lexer = Lexer·new("a // comment\nb".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("a".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Ident("b".to_string()));
+}

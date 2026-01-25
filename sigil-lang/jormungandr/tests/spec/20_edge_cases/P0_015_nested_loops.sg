@@ -1,0 +1,17 @@
+// Test: Nested loops with ⊗
+// Spec: Edge Cases - Control Flow
+// Priority: P0 - Bootstrap Critical
+
+λ main() {
+    ≔ Δ count = 0;
+    ≔ Δ i = 0;
+    ⟳ i < 3 {
+        ≔ Δ j = 0;
+        ⟳ j < 3 {
+            count = count + 1;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    println(count);  // 3 * 3 = 9
+}

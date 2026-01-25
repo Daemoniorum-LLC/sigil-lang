@@ -1,13 +1,22 @@
+<<<<<<< HEAD
 //! Tests for Omen Goal System
 //!
 //! Verifies Goal, GoalStatus, Predicate, Constraint, and GoalManager.
 
 use std::collections::HashMap;
+=======
+//! Tests ∀ Omen Goal System
+//!
+//! Verifies Goal, GoalStatus, Predicate, Constraint, and GoalManager.
+
+invoke std·collections·HashMap;
+>>>>>>> origin/main
 
 // ============================================================================
 // Self-contained Test Types
 // ============================================================================
 
+<<<<<<< HEAD
 pub struct GoalId { bytes: [u8; 16] }
 fn uuid_v7() -> [u8; 16] { [0u8; 16] }
 
@@ -21,10 +30,26 @@ impl Clone for GoalId {
 
 impl PartialEq for GoalId {
     fn eq(&self, other: &Self) -> bool {
+=======
+☉ Σ GoalId { bytes: [u8; 16] }
+λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+
+⊢ GoalId {
+    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+}
+
+⊢ Clone ∀ GoalId {
+    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+}
+
+⊢ PartialEq ∀ GoalId {
+    λ eq(&self, other: &Self) -> bool {
+>>>>>>> origin/main
         self.bytes == other.bytes
     }
 }
 
+<<<<<<< HEAD
 pub struct Duration { nanos: u64 }
 
 impl Duration {
@@ -49,11 +74,41 @@ impl Timestamp {
 impl std::ops::Add<Duration> for Timestamp {
     type Output = Self;
     fn add(self, d: Duration) -> Self {
+=======
+☉ Σ Duration { nanos: u64 }
+
+⊢ Duration {
+    ☉ λ zero() -> Self { Self { nanos: 0 } }
+    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ λ days(d: u64) -> Self { Self { nanos: d * 86_400_000_000_000 } }
+}
+
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration {
+    λ clone(&self) -> Self { *self }
+}
+
+☉ Σ Timestamp { nanos: u64 }
+
+⊢ Timestamp {
+    ☉ λ now() -> Self { Self { nanos: 1000 } }
+}
+
+⊢ std·ops·Add<Duration> ∀ Timestamp {
+    type Output = Self;
+    λ add(self, d: Duration) -> Self {
+>>>>>>> origin/main
         Self { nanos: self.nanos + d.nanos }
     }
 }
 
+<<<<<<< HEAD
 pub enum GoalStatus {
+=======
+☉ ᛈ GoalStatus {
+>>>>>>> origin/main
     Pending,
     Active,
     Blocked { reason: String },
@@ -62,24 +117,40 @@ pub enum GoalStatus {
     Abandoned { reason: String },
 }
 
+<<<<<<< HEAD
 impl GoalStatus {
     pub fn is_terminal(&self) -> bool {
         match self {
             GoalStatus::Achieved |
             GoalStatus::Failed { .. } |
             GoalStatus::Abandoned { .. } => true,
+=======
+⊢ GoalStatus {
+    ☉ λ is_terminal(&self) -> bool {
+        ⌥ self {
+            GoalStatus·Achieved |
+            GoalStatus·Failed { .. } |
+            GoalStatus·Abandoned { .. } => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn is_actionable(&self) -> bool {
         match self {
             GoalStatus::Pending | GoalStatus::Active => true,
+=======
+    ☉ λ is_actionable(&self) -> bool {
+        ⌥ self {
+            GoalStatus·Pending | GoalStatus·Active => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 }
 
+<<<<<<< HEAD
 pub struct Value { inner: Vec<u8> }
 
 impl Value {
@@ -98,27 +169,61 @@ impl State {
     pub fn new() -> Self { Self { variables: HashMap::new() } }
 
     pub fn with_var(mut self, name: &str, value: Value) -> Self {
+=======
+☉ Σ Value { inner: Vec<u8> }
+
+⊢ Value {
+    ☉ λ empty() -> Self { Self { inner: vec![] } }
+}
+
+⊢ Clone ∀ Value {
+    λ clone(&self) -> Self { Self { inner: self.inner.clone() } }
+}
+
+☉ Σ State {
+    ☉ variables: HashMap<String, Value>,
+}
+
+⊢ State {
+    ☉ λ new() -> Self { Self { variables: HashMap·new() } }
+
+    ☉ λ with_var(Δ self, name: &str, value: Value) -> Self {
+>>>>>>> origin/main
         self.variables.insert(name.to_string(), value);
         self
     }
 
+<<<<<<< HEAD
     pub fn has(&self, name: &str) -> bool {
+=======
+    ☉ λ has(&self, name: &str) -> bool {
+>>>>>>> origin/main
         self.variables.contains_key(name)
     }
 }
 
+<<<<<<< HEAD
 // Simplified Predicate without closures for testing
 pub struct Predicate {
     kind: PredicateKind,
 }
 
 pub enum PredicateKind {
+=======
+// Simplified Predicate without closures ∀ testing
+☉ Σ Predicate {
+    kind: PredicateKind,
+}
+
+☉ ᛈ PredicateKind {
+>>>>>>> origin/main
     AlwaysTrue,
     AlwaysFalse,
     HasVariable { name: String },
     Custom { description: String },
 }
 
+<<<<<<< HEAD
 impl Predicate {
     pub fn always_true() -> Self {
         Self { kind: PredicateKind::AlwaysTrue }
@@ -151,17 +256,60 @@ impl Predicate {
             PredicateKind::AlwaysFalse => "always_false".to_string(),
             PredicateKind::HasVariable { name } => format!("has_{}", name),
             PredicateKind::Custom { description } => description.clone(),
+=======
+⊢ Predicate {
+    ☉ λ always_true() -> Self {
+        Self { kind: PredicateKind·AlwaysTrue }
+    }
+
+    ☉ λ always_false() -> Self {
+        Self { kind: PredicateKind·AlwaysFalse }
+    }
+
+    ☉ λ has_variable(name: &str) -> Self {
+        Self { kind: PredicateKind·HasVariable { name: name.to_string() } }
+    }
+
+    ☉ λ custom(description: &str) -> Self {
+        Self { kind: PredicateKind·Custom { description: description.to_string() } }
+    }
+
+    ☉ λ evaluate(&self, state: &State) -> bool {
+        ⌥ &self.kind {
+            PredicateKind·AlwaysTrue => true,
+            PredicateKind·AlwaysFalse => false,
+            PredicateKind·HasVariable { name } => state.has(name),
+            PredicateKind·Custom { .. } => true,
+        }
+    }
+
+    ☉ λ description(&self) -> String {
+        ⌥ &self.kind {
+            PredicateKind·AlwaysTrue => "always_true".to_string(),
+            PredicateKind·AlwaysFalse => "always_false".to_string(),
+            PredicateKind·HasVariable { name } => format!("has_{}", name),
+            PredicateKind·Custom { description } => description.clone(),
+>>>>>>> origin/main
         }
     }
 }
 
 // Simplified Constraint
+<<<<<<< HEAD
 pub struct Constraint {
     pub name: String,
     pub kind: ConstraintKind,
 }
 
 pub enum ConstraintKind {
+=======
+☉ Σ Constraint {
+    ☉ name: String,
+    ☉ kind: ConstraintKind,
+}
+
+☉ ᛈ ConstraintKind {
+>>>>>>> origin/main
     Deadline { duration: Duration },
     ResourceLimit { resource: String, max: f32 },
     NoSideEffects,
@@ -169,6 +317,7 @@ pub enum ConstraintKind {
     Custom { description: String },
 }
 
+<<<<<<< HEAD
 impl Constraint {
     pub fn deadline(duration: Duration) -> Self {
         Self {
@@ -181,12 +330,27 @@ impl Constraint {
         Self {
             name: format!("resource_{}", resource),
             kind: ConstraintKind::ResourceLimit {
+=======
+⊢ Constraint {
+    ☉ λ deadline(duration: Duration) -> Self {
+        Self {
+            name: "deadline".to_string(),
+            kind: ConstraintKind·Deadline { duration },
+        }
+    }
+
+    ☉ λ resource_limit(resource: &str, max: f32) -> Self {
+        Self {
+            name: format!("resource_{}", resource),
+            kind: ConstraintKind·ResourceLimit {
+>>>>>>> origin/main
                 resource: resource.to_string(),
                 max,
             },
         }
     }
 
+<<<<<<< HEAD
     pub fn no_side_effects() -> Self {
         Self {
             name: "no_side_effects".to_string(),
@@ -198,11 +362,25 @@ impl Constraint {
         Self {
             name: format!("requires_{}", capability),
             kind: ConstraintKind::RequiresCapability {
+=======
+    ☉ λ no_side_effects() -> Self {
+        Self {
+            name: "no_side_effects".to_string(),
+            kind: ConstraintKind·NoSideEffects,
+        }
+    }
+
+    ☉ λ requires_capability(capability: &str) -> Self {
+        Self {
+            name: format!("requires_{}", capability),
+            kind: ConstraintKind·RequiresCapability {
+>>>>>>> origin/main
                 capability: capability.to_string(),
             },
         }
     }
 
+<<<<<<< HEAD
     pub fn custom(name: &str, description: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -213,11 +391,24 @@ impl Constraint {
     pub fn is_deadline(&self) -> bool {
         match self.kind {
             ConstraintKind::Deadline { .. } => true,
+=======
+    ☉ λ custom(name: &str, description: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            kind: ConstraintKind·Custom { description: description.to_string() },
+        }
+    }
+
+    ☉ λ is_deadline(&self) -> bool {
+        ⌥ self.kind {
+            ConstraintKind·Deadline { .. } => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 }
 
+<<<<<<< HEAD
 pub struct Goal {
     pub id: GoalId,
     pub description: String,
@@ -235,39 +426,84 @@ impl Goal {
             id: GoalId::new(),
             description: description.to_string(),
             success: Predicate::always_false(),
+=======
+☉ Σ Goal {
+    ☉ id: GoalId,
+    ☉ description: String,
+    ☉ success: Predicate,
+    ☉ priority: f32,
+    ☉ constraints: Vec<Constraint>,
+    ☉ deadline: Option<Timestamp>,
+    ☉ parent: Option<GoalId>,
+    ☉ status: GoalStatus,
+}
+
+⊢ Goal {
+    ☉ λ new(description: &str) -> Self {
+        Self {
+            id: GoalId·new(),
+            description: description.to_string(),
+            success: Predicate·always_false(),
+>>>>>>> origin/main
             priority: 0.5,
             constraints: vec![],
             deadline: None,
             parent: None,
+<<<<<<< HEAD
             status: GoalStatus::Pending,
         }
     }
 
     pub fn with_priority(mut self, priority: f32) -> Self {
+=======
+            status: GoalStatus·Pending,
+        }
+    }
+
+    ☉ λ with_priority(Δ self, priority: f32) -> Self {
+>>>>>>> origin/main
         self.priority = priority.clamp(0.0, 1.0);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_deadline(mut self, duration: Duration) -> Self {
         self.deadline = Some(Timestamp::now() + duration);
         self
     }
 
     pub fn with_constraint(mut self, constraint: Constraint) -> Self {
+=======
+    ☉ λ with_deadline(Δ self, duration: Duration) -> Self {
+        self.deadline = Some(Timestamp·now() + duration);
+        self
+    }
+
+    ☉ λ with_constraint(Δ self, constraint: Constraint) -> Self {
+>>>>>>> origin/main
         self.constraints.push(constraint);
         self
     }
 
+<<<<<<< HEAD
     pub fn with_success(mut self, predicate: Predicate) -> Self {
+=======
+    ☉ λ with_success(Δ self, predicate: Predicate) -> Self {
+>>>>>>> origin/main
         self.success = predicate;
         self
     }
 
+<<<<<<< HEAD
     pub fn with_parent(mut self, parent: GoalId) -> Self {
+=======
+    ☉ λ with_parent(Δ self, parent: GoalId) -> Self {
+>>>>>>> origin/main
         self.parent = Some(parent);
         self
     }
 
+<<<<<<< HEAD
     pub fn activate(&mut self) {
         self.status = GoalStatus::Active;
     }
@@ -291,46 +527,102 @@ impl Goal {
     pub fn is_achieved(&self) -> bool {
         match self.status {
             GoalStatus::Achieved => true,
+=======
+    ☉ λ activate(&Δ self) {
+        self.status = GoalStatus·Active;
+    }
+
+    ☉ λ block(&Δ self, reason: &str) {
+        self.status = GoalStatus·Blocked { reason: reason.to_string() };
+    }
+
+    ☉ λ achieve(&Δ self) {
+        self.status = GoalStatus·Achieved;
+    }
+
+    ☉ λ fail(&Δ self, reason: &str) {
+        self.status = GoalStatus·Failed { reason: reason.to_string() };
+    }
+
+    ☉ λ abandon(&Δ self, reason: &str) {
+        self.status = GoalStatus·Abandoned { reason: reason.to_string() };
+    }
+
+    ☉ λ is_achieved(&self) -> bool {
+        ⌥ self.status {
+            GoalStatus·Achieved => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn is_active(&self) -> bool {
         match self.status {
             GoalStatus::Active => true,
+=======
+    ☉ λ is_active(&self) -> bool {
+        ⌥ self.status {
+            GoalStatus·Active => true,
+>>>>>>> origin/main
             _ => false,
         }
     }
 
+<<<<<<< HEAD
     pub fn has_deadline(&self) -> bool {
         self.deadline.is_some()
     }
 
     pub fn is_subgoal(&self) -> bool {
+=======
+    ☉ λ has_deadline(&self) -> bool {
+        self.deadline.is_some()
+    }
+
+    ☉ λ is_subgoal(&self) -> bool {
+>>>>>>> origin/main
         self.parent.is_some()
     }
 }
 
+<<<<<<< HEAD
 pub struct GoalManager {
+=======
+☉ Σ GoalManager {
+>>>>>>> origin/main
     goals: HashMap<String, Goal>,
     id_counter: usize,
 }
 
+<<<<<<< HEAD
 impl GoalManager {
     pub fn new() -> Self {
         Self {
             goals: HashMap::new(),
+=======
+⊢ GoalManager {
+    ☉ λ new() -> Self {
+        Self {
+            goals: HashMap·new(),
+>>>>>>> origin/main
             id_counter: 0,
         }
     }
 
+<<<<<<< HEAD
     pub fn add(&mut self, goal: Goal) -> String {
         let key = format!("goal_{}", self.id_counter);
+=======
+    ☉ λ add(&Δ self, goal: Goal) -> String {
+        ≔ key = format!("goal_{}", self.id_counter);
+>>>>>>> origin/main
         self.id_counter += 1;
         self.goals.insert(key.clone(), goal);
         key
     }
 
+<<<<<<< HEAD
     pub fn get(&self, key: &str) -> Option<&Goal> {
         self.goals.get(key)
     }
@@ -370,6 +662,47 @@ impl GoalManager {
     }
 
     pub fn highest_priority(&self) -> Option<&Goal> {
+=======
+    ☉ λ get(&self, key: &str) -> Option<&Goal> {
+        self.goals.get(key)
+    }
+
+    ☉ λ get_mut(&Δ self, key: &str) -> Option<&Δ Goal> {
+        self.goals.get_mut(key)
+    }
+
+    ☉ λ current(&self) -> Option<&Goal> {
+        self.goals.values()
+            .filter(|g| matches!(g.status, GoalStatus·Active))
+            .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
+    }
+
+    ☉ λ pending(&self) -> Vec<&Goal> {
+        self.goals.values()
+            .filter(|g| matches!(g.status, GoalStatus·Pending))
+            .collect()
+    }
+
+    ☉ λ active(&self) -> Vec<&Goal> {
+        self.goals.values()
+            .filter(|g| matches!(g.status, GoalStatus·Active))
+            .collect()
+    }
+
+    ☉ λ count(&self) -> usize {
+        self.goals.len()
+    }
+
+    ☉ λ count_active(&self) -> usize {
+        self.active().len()
+    }
+
+    ☉ λ count_pending(&self) -> usize {
+        self.pending().len()
+    }
+
+    ☉ λ highest_priority(&self) -> Option<&Goal> {
+>>>>>>> origin/main
         self.goals.values()
             .filter(|g| g.status.is_actionable())
             .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
@@ -381,43 +714,73 @@ impl GoalManager {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_status_pending() {
     let status = GoalStatus::Pending;
+=======
+λ test_goal_status_pending() {
+    ≔ status = GoalStatus·Pending;
+>>>>>>> origin/main
     assert(!status.is_terminal());
     assert(status.is_actionable());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_status_active() {
     let status = GoalStatus::Active;
+=======
+λ test_goal_status_active() {
+    ≔ status = GoalStatus·Active;
+>>>>>>> origin/main
     assert(!status.is_terminal());
     assert(status.is_actionable());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_status_blocked() {
     let status = GoalStatus::Blocked { reason: "waiting".to_string() };
+=======
+λ test_goal_status_blocked() {
+    ≔ status = GoalStatus·Blocked { reason: "waiting".to_string() };
+>>>>>>> origin/main
     assert(!status.is_terminal());
     assert(!status.is_actionable());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_status_achieved() {
     let status = GoalStatus::Achieved;
+=======
+λ test_goal_status_achieved() {
+    ≔ status = GoalStatus·Achieved;
+>>>>>>> origin/main
     assert(status.is_terminal());
     assert(!status.is_actionable());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_status_failed() {
     let status = GoalStatus::Failed { reason: "error".to_string() };
+=======
+λ test_goal_status_failed() {
+    ≔ status = GoalStatus·Failed { reason: "error".to_string() };
+>>>>>>> origin/main
     assert(status.is_terminal());
     assert(!status.is_actionable());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_status_abandoned() {
     let status = GoalStatus::Abandoned { reason: "deprioritized".to_string() };
+=======
+λ test_goal_status_abandoned() {
+    ≔ status = GoalStatus·Abandoned { reason: "deprioritized".to_string() };
+>>>>>>> origin/main
     assert(status.is_terminal());
     assert(!status.is_actionable());
 }
@@ -427,42 +790,76 @@ fn test_goal_status_abandoned() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_predicate_always_true() {
     let p = Predicate::always_true();
     let state = State::new();
+=======
+λ test_predicate_always_true() {
+    ≔ p = Predicate·always_true();
+    ≔ state = State·new();
+>>>>>>> origin/main
     assert(p.evaluate(&state));
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_predicate_always_false() {
     let p = Predicate::always_false();
     let state = State::new();
+=======
+λ test_predicate_always_false() {
+    ≔ p = Predicate·always_false();
+    ≔ state = State·new();
+>>>>>>> origin/main
     assert(!p.evaluate(&state));
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_predicate_has_variable_present() {
     let p = Predicate::has_variable("x");
     let state = State::new().with_var("x", Value::empty());
+=======
+λ test_predicate_has_variable_present() {
+    ≔ p = Predicate·has_variable("x");
+    ≔ state = State·new().with_var("x", Value·empty());
+>>>>>>> origin/main
     assert(p.evaluate(&state));
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_predicate_has_variable_missing() {
     let p = Predicate::has_variable("x");
     let state = State::new();
+=======
+λ test_predicate_has_variable_missing() {
+    ≔ p = Predicate·has_variable("x");
+    ≔ state = State·new();
+>>>>>>> origin/main
     assert(!p.evaluate(&state));
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_predicate_custom() {
     let p = Predicate::custom("user is authenticated");
+=======
+λ test_predicate_custom() {
+    ≔ p = Predicate·custom("user is authenticated");
+>>>>>>> origin/main
     assert_eq(p.description(), "user is authenticated");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_predicate_description_always_true() {
     let p = Predicate::always_true();
+=======
+λ test_predicate_description_always_true() {
+    ≔ p = Predicate·always_true();
+>>>>>>> origin/main
     assert_eq(p.description(), "always_true");
 }
 
@@ -471,34 +868,59 @@ fn test_predicate_description_always_true() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_constraint_deadline() {
     let c = Constraint::deadline(Duration::hours(2));
+=======
+λ test_constraint_deadline() {
+    ≔ c = Constraint·deadline(Duration·hours(2));
+>>>>>>> origin/main
     assert_eq(c.name, "deadline");
     assert(c.is_deadline());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_constraint_resource_limit() {
     let c = Constraint::resource_limit("memory", 1024.0);
+=======
+λ test_constraint_resource_limit() {
+    ≔ c = Constraint·resource_limit("memory", 1024.0);
+>>>>>>> origin/main
     assert_eq(c.name, "resource_memory");
     assert(!c.is_deadline());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_constraint_no_side_effects() {
     let c = Constraint::no_side_effects();
+=======
+λ test_constraint_no_side_effects() {
+    ≔ c = Constraint·no_side_effects();
+>>>>>>> origin/main
     assert_eq(c.name, "no_side_effects");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_constraint_requires_capability() {
     let c = Constraint::requires_capability("network_access");
+=======
+λ test_constraint_requires_capability() {
+    ≔ c = Constraint·requires_capability("network_access");
+>>>>>>> origin/main
     assert_eq(c.name, "requires_network_access");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_constraint_custom() {
     let c = Constraint::custom("budget", "stay under $100");
+=======
+λ test_constraint_custom() {
+    ≔ c = Constraint·custom("budget", "stay under $100");
+>>>>>>> origin/main
     assert_eq(c.name, "budget");
 }
 
@@ -507,124 +929,222 @@ fn test_constraint_custom() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_new() {
     let g = Goal::new("complete the task");
+=======
+λ test_goal_new() {
+    ≔ g = Goal·new("complete the task");
+>>>>>>> origin/main
     assert_eq(g.description, "complete the task");
     assert_eq(g.priority, 0.5);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_with_priority() {
     let g = Goal::new("urgent").with_priority(0.9);
+=======
+λ test_goal_with_priority() {
+    ≔ g = Goal·new("urgent").with_priority(0.9);
+>>>>>>> origin/main
     assert_eq(g.priority, 0.9);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_priority_clamped_high() {
     let g = Goal::new("test").with_priority(1.5);
+=======
+λ test_goal_priority_clamped_high() {
+    ≔ g = Goal·new("test").with_priority(1.5);
+>>>>>>> origin/main
     assert_eq(g.priority, 1.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_priority_clamped_low() {
     let g = Goal::new("test").with_priority(-0.5);
+=======
+λ test_goal_priority_clamped_low() {
+    ≔ g = Goal·new("test").with_priority(-0.5);
+>>>>>>> origin/main
     assert_eq(g.priority, 0.0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_with_deadline() {
     let g = Goal::new("timed task").with_deadline(Duration::hours(1));
+=======
+λ test_goal_with_deadline() {
+    ≔ g = Goal·new("timed task").with_deadline(Duration·hours(1));
+>>>>>>> origin/main
     assert(g.has_deadline());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_without_deadline() {
     let g = Goal::new("open ended");
+=======
+λ test_goal_without_deadline() {
+    ≔ g = Goal·new("open ended");
+>>>>>>> origin/main
     assert(!g.has_deadline());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_with_constraint() {
     let g = Goal::new("constrained")
         .with_constraint(Constraint::no_side_effects());
+=======
+λ test_goal_with_constraint() {
+    ≔ g = Goal·new("constrained")
+        .with_constraint(Constraint·no_side_effects());
+>>>>>>> origin/main
     assert_eq(g.constraints.len(), 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_multiple_constraints() {
     let g = Goal::new("multi-constrained")
         .with_constraint(Constraint::deadline(Duration::hours(1)))
         .with_constraint(Constraint::resource_limit("cpu", 80.0))
         .with_constraint(Constraint::no_side_effects());
+=======
+λ test_goal_multiple_constraints() {
+    ≔ g = Goal·new("multi-constrained")
+        .with_constraint(Constraint·deadline(Duration·hours(1)))
+        .with_constraint(Constraint·resource_limit("cpu", 80.0))
+        .with_constraint(Constraint·no_side_effects());
+>>>>>>> origin/main
     assert_eq(g.constraints.len(), 3);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_with_success_predicate() {
     let g = Goal::new("checkable")
         .with_success(Predicate::has_variable("result"));
     let state = State::new().with_var("result", Value::empty());
+=======
+λ test_goal_with_success_predicate() {
+    ≔ g = Goal·new("checkable")
+        .with_success(Predicate·has_variable("result"));
+    ≔ state = State·new().with_var("result", Value·empty());
+>>>>>>> origin/main
     assert(g.success.evaluate(&state));
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_with_parent() {
     let parent = GoalId::new();
     let g = Goal::new("subgoal").with_parent(parent);
+=======
+λ test_goal_with_parent() {
+    ≔ parent = GoalId·new();
+    ≔ g = Goal·new("subgoal").with_parent(parent);
+>>>>>>> origin/main
     assert(g.is_subgoal());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_not_subgoal() {
     let g = Goal::new("top level");
+=======
+λ test_goal_not_subgoal() {
+    ≔ g = Goal·new("top level");
+>>>>>>> origin/main
     assert(!g.is_subgoal());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_activate() {
     let mut g = Goal::new("task");
+=======
+λ test_goal_activate() {
+    ≔ Δ g = Goal·new("task");
+>>>>>>> origin/main
     g.activate();
     assert(g.is_active());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_block() {
     let mut g = Goal::new("task");
     g.activate();
     g.block("waiting for input");
     let is_blocked = match g.status {
         GoalStatus::Blocked { .. } => true,
+=======
+λ test_goal_block() {
+    ≔ Δ g = Goal·new("task");
+    g.activate();
+    g.block("waiting ∀ input");
+    ≔ is_blocked = ⌥ g.status {
+        GoalStatus·Blocked { .. } => true,
+>>>>>>> origin/main
         _ => false,
     };
     assert(is_blocked);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_achieve() {
     let mut g = Goal::new("task");
+=======
+λ test_goal_achieve() {
+    ≔ Δ g = Goal·new("task");
+>>>>>>> origin/main
     g.activate();
     g.achieve();
     assert(g.is_achieved());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_fail() {
     let mut g = Goal::new("task");
     g.activate();
     g.fail("ran out of time");
     let is_failed = match g.status {
         GoalStatus::Failed { .. } => true,
+=======
+λ test_goal_fail() {
+    ≔ Δ g = Goal·new("task");
+    g.activate();
+    g.fail("ran out of time");
+    ≔ is_failed = ⌥ g.status {
+        GoalStatus·Failed { .. } => true,
+>>>>>>> origin/main
         _ => false,
     };
     assert(is_failed);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_abandon() {
     let mut g = Goal::new("task");
     g.abandon("no longer needed");
     let is_abandoned = match g.status {
         GoalStatus::Abandoned { .. } => true,
+=======
+λ test_goal_abandon() {
+    ≔ Δ g = Goal·new("task");
+    g.abandon("no longer needed");
+    ≔ is_abandoned = ⌥ g.status {
+        GoalStatus·Abandoned { .. } => true,
+>>>>>>> origin/main
         _ => false,
     };
     assert(is_abandoned);
@@ -635,54 +1155,93 @@ fn test_goal_abandon() {
 // ============================================================================
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_new() {
     let mgr = GoalManager::new();
+=======
+λ test_goal_manager_new() {
+    ≔ mgr = GoalManager·new();
+>>>>>>> origin/main
     assert_eq(mgr.count(), 0);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_add() {
     let mut mgr = GoalManager::new();
     mgr.add(Goal::new("first goal"));
+=======
+λ test_goal_manager_add() {
+    ≔ Δ mgr = GoalManager·new();
+    mgr.add(Goal·new("first goal"));
+>>>>>>> origin/main
     assert_eq(mgr.count(), 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_get() {
     let mut mgr = GoalManager::new();
     let key = mgr.add(Goal::new("retrievable"));
     let g = mgr.get(&key);
+=======
+λ test_goal_manager_get() {
+    ≔ Δ mgr = GoalManager·new();
+    ≔ key = mgr.add(Goal·new("retrievable"));
+    ≔ g = mgr.get(&key);
+>>>>>>> origin/main
     assert(g.is_some());
     assert_eq(g.unwrap().description, "retrievable");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_get_mut() {
     let mut mgr = GoalManager::new();
     let key = mgr.add(Goal::new("mutable"));
     if let Some(g) = mgr.get_mut(&key) {
+=======
+λ test_goal_manager_get_mut() {
+    ≔ Δ mgr = GoalManager·new();
+    ≔ key = mgr.add(Goal·new("mutable"));
+    ⎇ ≔ Some(g) = mgr.get_mut(&key) {
+>>>>>>> origin/main
         g.activate();
     }
     assert(mgr.get(&key).unwrap().is_active());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_current_none() {
     let mgr = GoalManager::new();
+=======
+λ test_goal_manager_current_none() {
+    ≔ mgr = GoalManager·new();
+>>>>>>> origin/main
     assert(mgr.current().is_none());
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_current_active() {
     let mut mgr = GoalManager::new();
     let key = mgr.add(Goal::new("active goal").with_priority(0.8));
     mgr.get_mut(&key).unwrap().activate();
     let current = mgr.current();
+=======
+λ test_goal_manager_current_active() {
+    ≔ Δ mgr = GoalManager·new();
+    ≔ key = mgr.add(Goal·new("active goal").with_priority(0.8));
+    mgr.get_mut(&key).unwrap().activate();
+    ≔ current = mgr.current();
+>>>>>>> origin/main
     assert(current.is_some());
     assert_eq(current.unwrap().description, "active goal");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_current_highest_priority() {
     let mut mgr = GoalManager::new();
     let k1 = mgr.add(Goal::new("low priority").with_priority(0.3));
@@ -690,61 +1249,112 @@ fn test_goal_manager_current_highest_priority() {
     mgr.get_mut(&k1).unwrap().activate();
     mgr.get_mut(&k2).unwrap().activate();
     let current = mgr.current();
+=======
+λ test_goal_manager_current_highest_priority() {
+    ≔ Δ mgr = GoalManager·new();
+    ≔ k1 = mgr.add(Goal·new("low priority").with_priority(0.3));
+    ≔ k2 = mgr.add(Goal·new("high priority").with_priority(0.9));
+    mgr.get_mut(&k1).unwrap().activate();
+    mgr.get_mut(&k2).unwrap().activate();
+    ≔ current = mgr.current();
+>>>>>>> origin/main
     assert_eq(current.unwrap().description, "high priority");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_pending() {
     let mut mgr = GoalManager::new();
     mgr.add(Goal::new("pending 1"));
     mgr.add(Goal::new("pending 2"));
     let key = mgr.add(Goal::new("active"));
+=======
+λ test_goal_manager_pending() {
+    ≔ Δ mgr = GoalManager·new();
+    mgr.add(Goal·new("pending 1"));
+    mgr.add(Goal·new("pending 2"));
+    ≔ key = mgr.add(Goal·new("active"));
+>>>>>>> origin/main
     mgr.get_mut(&key).unwrap().activate();
     assert_eq(mgr.pending().len(), 2);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_active() {
     let mut mgr = GoalManager::new();
     let k1 = mgr.add(Goal::new("active 1"));
     let k2 = mgr.add(Goal::new("active 2"));
     mgr.add(Goal::new("pending"));
+=======
+λ test_goal_manager_active() {
+    ≔ Δ mgr = GoalManager·new();
+    ≔ k1 = mgr.add(Goal·new("active 1"));
+    ≔ k2 = mgr.add(Goal·new("active 2"));
+    mgr.add(Goal·new("pending"));
+>>>>>>> origin/main
     mgr.get_mut(&k1).unwrap().activate();
     mgr.get_mut(&k2).unwrap().activate();
     assert_eq(mgr.active().len(), 2);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_count_active() {
     let mut mgr = GoalManager::new();
     let key = mgr.add(Goal::new("the one"));
     mgr.get_mut(&key).unwrap().activate();
     mgr.add(Goal::new("pending"));
+=======
+λ test_goal_manager_count_active() {
+    ≔ Δ mgr = GoalManager·new();
+    ≔ key = mgr.add(Goal·new("the one"));
+    mgr.get_mut(&key).unwrap().activate();
+    mgr.add(Goal·new("pending"));
+>>>>>>> origin/main
     assert_eq(mgr.count_active(), 1);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_count_pending() {
     let mut mgr = GoalManager::new();
     mgr.add(Goal::new("p1"));
     mgr.add(Goal::new("p2"));
     let key = mgr.add(Goal::new("active"));
+=======
+λ test_goal_manager_count_pending() {
+    ≔ Δ mgr = GoalManager·new();
+    mgr.add(Goal·new("p1"));
+    mgr.add(Goal·new("p2"));
+    ≔ key = mgr.add(Goal·new("active"));
+>>>>>>> origin/main
     mgr.get_mut(&key).unwrap().activate();
     assert_eq(mgr.count_pending(), 2);
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_highest_priority() {
     let mut mgr = GoalManager::new();
     mgr.add(Goal::new("low").with_priority(0.2));
     mgr.add(Goal::new("medium").with_priority(0.5));
     mgr.add(Goal::new("high").with_priority(0.8));
     let highest = mgr.highest_priority();
+=======
+λ test_goal_manager_highest_priority() {
+    ≔ Δ mgr = GoalManager·new();
+    mgr.add(Goal·new("low").with_priority(0.2));
+    mgr.add(Goal·new("medium").with_priority(0.5));
+    mgr.add(Goal·new("high").with_priority(0.8));
+    ≔ highest = mgr.highest_priority();
+>>>>>>> origin/main
     assert(highest.is_some());
     assert_eq(highest.unwrap().description, "high");
 }
 
 #[test]
+<<<<<<< HEAD
 fn test_goal_manager_highest_priority_excludes_terminal() {
     let mut mgr = GoalManager::new();
     let k1 = mgr.add(Goal::new("achieved").with_priority(0.9));
@@ -755,5 +1365,17 @@ fn test_goal_manager_highest_priority_excludes_terminal() {
 }
 
 fn main() {
+=======
+λ test_goal_manager_highest_priority_excludes_terminal() {
+    ≔ Δ mgr = GoalManager·new();
+    ≔ k1 = mgr.add(Goal·new("achieved").with_priority(0.9));
+    mgr.add(Goal·new("pending").with_priority(0.5));
+    mgr.get_mut(&k1).unwrap().achieve();
+    ≔ highest = mgr.highest_priority();
+    assert_eq(highest.unwrap().description, "pending");
+}
+
+λ main() {
+>>>>>>> origin/main
     print("Omen goals tests");
 }

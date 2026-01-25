@@ -1,0 +1,1326 @@
+//! Sigil Runtime System
+//!
+//! This module provides the runtime infrastructure ∀ Sigil programs:
+//!
+//! - Memory management (arena allocator, reference counting)
+//! - Standard library primitives
+//! - Evidence tracking at runtime
+//! - Protocol handlers ∀ network operations
+//! - Concurrency primitives
+//!
+//! ## Memory Model
+//!
+//! Sigil uses a hybrid memory model:
+//! - Stack allocation ∀ small, short-lived values
+//! - Arena allocation ∀ expression temporaries
+//! - Reference counting ∀ shared data
+//! - Cycle detection ∀ complex structures
+//!
+//! ## Evidence Runtime
+//!
+//! Evidence levels are tracked at runtime ∀ dynamic checks:
+//! - Known values can be used anywhere
+//! - Uncertain values trigger null checks
+//! - Reported values are tagged with provenance
+//! - Paradox values halt with detailed diagnostics
+
+invoke crate·ir·IrEvidence;
+
+// ============================================================================
+// Memory Management
+// ============================================================================
+
+/// Memory arena ∀ temporary allocations
+☉ Σ Arena {
+    /// Current chunk of memory
+    chunk: ![u8],
+    /// Current offset ∈ chunk
+    offset: !u64,
+    /// All allocated chunks
+    chunks: ![[u8]],
+    /// Default chunk capacity
+    chunk_cap: !u64,
+}
+
+⊢ Arena {
+    /// Create a new arena with default chunk capacity (64KB)
+    ☉ λ new() -> !Arena {
+        Arena·with_capacity(65536)
+    }
+
+    /// Create arena with custom chunk capacity
+    ☉ λ with_capacity(cap: !u64) -> !Arena {
+        ≔ chunk = Vec·with_capacity(cap);
+        Arena {
+            chunk,
+            offset: 0,
+            chunks: [],
+            chunk_cap: cap,
+        }
+    }
+
+    /// Allocate bytes ∈ the arena
+    ☉ λ alloc(Δ self, nbytes: !u64) -> !*Δ u8 {
+        // Ensure alignment
+        ≔ aligned_offset = (self.offset + 7) & !7;
+
+        ⎇ aligned_offset + nbytes > self.chunk.capacity() {
+            // Need new chunk
+            self.chunks.push(self.chunk);
+            self.chunk = Vec·with_capacity(max(self.chunk_cap, nbytes));
+            self.offset = 0;
+        }
+
+        ≔ ptr = self.chunk.as_mut_ptr().add(self.offset);
+        self.offset += nbytes;
+        ptr
+    }
+
+    /// Reset arena, keeping allocated memory ∀ reuse
+    ☉ λ reset(Δ self) {
+        self.offset = 0;
+        // Keep chunks ∀ reuse
+    }
+
+    /// Total bytes allocated
+    ☉ λ bytes_allocated(self) -> !u64 {
+        ≔ Δ total = self.offset;
+        ∀ chunk ∈ self.chunks {
+            total += chunk.len();
+        }
+        total
+    }
+}
+
+// ============================================================================
+// Reference Counting
+// ============================================================================
+
+/// Reference-counted pointer
+☉ Σ Rc<T> {
+    ptr: !*Δ RcInner<T>,
+}
+
+Σ RcInner<T> {
+    value: !T,
+    count: !u64,
+    evidence: !IrEvidence,
+}
+
+⊢<T> Rc<T> {
+    /// Create a new reference-counted value
+    ☉ λ new(value: !T) -> !Rc<T> {
+        ≔ inner = Box·new(RcInner {
+            value,
+            count: 1,
+            evidence: IrEvidence·Known,
+        });
+        Rc { ptr: Box·into_raw(inner) }
+    }
+
+    /// Create with evidence annotation
+    ☉ λ with_evidence(value: !T, evidence: !IrEvidence) -> !Rc<T> {
+        ≔ inner = Box·new(RcInner {
+            value,
+            count: 1,
+            evidence,
+        });
+        Rc { ptr: Box·into_raw(inner) }
+    }
+
+    /// Clone the reference (increment count)
+    ☉ λ clone(self) -> !Rc<T> {
+        unsafe {
+            (*self.ptr).count += 1;
+        }
+        Rc { ptr: self.ptr }
+    }
+
+    /// Get reference to inner value
+    ☉ λ get(self) -> !&T {
+        unsafe { &(*self.ptr).value }
+    }
+
+    /// Get mutable reference (only ⎇ unique)
+    ☉ λ get_mut(Δ self) -> ?&Δ T {
+        unsafe {
+            ⎇ (*self.ptr).count == 1 {
+                ?&Δ (*self.ptr).value
+            } ⎉ {
+                null
+            }
+        }
+    }
+
+    /// Get evidence level
+    ☉ λ evidence(self) -> !IrEvidence {
+        unsafe { (*self.ptr).evidence }
+    }
+
+    /// Reference count
+    ☉ λ count(self) -> !u64 {
+        unsafe { (*self.ptr).count }
+    }
+}
+
+⊢<T> Drop ∀ Rc<T> {
+    λ drop(Δ self) {
+        unsafe {
+            (*self.ptr).count -= 1;
+            ⎇ (*self.ptr).count == 0 {
+                drop(Box·from_raw(self.ptr));
+            }
+        }
+    }
+}
+
+// ============================================================================
+// String Interning
+// ============================================================================
+
+/// String interner ∀ deduplicating strings
+☉ Σ StringInterner {
+    /// Interned strings
+    strings: !Map<String, u32>,
+    /// Reverse lookup
+    by_id: ![String],
+}
+
+⊢ StringInterner {
+    ☉ λ new() -> !StringInterner {
+        StringInterner {
+            strings: Map·new(),
+            by_id: [],
+        }
+    }
+
+    /// Intern a string, returning its ID
+    ☉ λ intern(Δ self, s: !&str) -> !u32 {
+        ⎇ ≔ ?id = self.strings.get(s) {
+            ⤺ id;
+        }
+
+        ≔ id = self.by_id.len() as u32;
+        self.strings.insert(s.to_string(), id);
+        self.by_id.push(s.to_string());
+        id
+    }
+
+    /// Look up string by ID
+    ☉ λ get(self, id: !u32) -> ?&str {
+        ⎇ (id as u64) < self.by_id.len() {
+            ?self.by_id[id as u64].as_str()
+        } ⎉ {
+            null
+        }
+    }
+
+    /// Number of interned strings
+    ☉ λ len(self) -> !u64 {
+        self.by_id.len()
+    }
+}
+
+// ============================================================================
+// Evidence Tracking
+// ============================================================================
+
+/// Runtime evidence context
+☉ Σ EvidenceContext {
+    /// Current evidence floor (minimum level allowed)
+    floor: !IrEvidence,
+    /// Evidence violations collected
+    violations: ![EvidenceViolation],
+    /// Whether to panic on violation
+    strict: !bool,
+}
+
+/// An evidence violation
+☉ Σ EvidenceViolation {
+    ☉ expected: !IrEvidence,
+    ☉ actual: !IrEvidence,
+    ☉ location: !String,
+    ☉ context: !String,
+}
+
+⊢ EvidenceContext {
+    /// Create a new permissive context
+    ☉ λ new() -> !EvidenceContext {
+        EvidenceContext {
+            floor: IrEvidence·Paradox,
+            violations: [],
+            strict: false,
+        }
+    }
+
+    /// Create a strict context that panics on violations
+    ☉ λ strict() -> !EvidenceContext {
+        EvidenceContext {
+            floor: IrEvidence·Known,
+            violations: [],
+            strict: true,
+        }
+    }
+
+    /// Check evidence and record any violation
+    ☉ λ check(Δ self, expected: !IrEvidence, actual: !IrEvidence, location: !&str) -> !bool {
+        ⎇ !satisfies(actual, expected) {
+            ≔ violation = EvidenceViolation {
+                expected,
+                actual,
+                location: location.to_string(),
+                context: self.current_context(),
+            };
+
+            ⎇ self.strict {
+                panic!("Evidence violation at {}: expected {} ({}), got {} ({})",
+                    location, expected.name(), expected.symbol(),
+                    actual.name(), actual.symbol());
+            }
+
+            self.violations.push(violation);
+            false
+        } ⎉ {
+            true
+        }
+    }
+
+    /// Get current context description
+    λ current_context(self) -> !String {
+        "runtime check".to_string()
+    }
+
+    /// Get all violations
+    ☉ λ violations(self) -> ![EvidenceViolation] {
+        self.violations.clone()
+    }
+
+    /// Clear violations
+    ☉ λ clear(Δ self) {
+        self.violations.clear();
+    }
+}
+
+/// Check ⎇ actual evidence satisfies required evidence
+λ satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
+    ≔ rank = |ev: !IrEvidence| {
+        ⌥ ev {
+            IrEvidence·Known => 0,
+            IrEvidence·Uncertain => 1,
+            IrEvidence·Reported => 2,
+            IrEvidence·Paradox => 3,
+        }
+    };
+    rank(actual) <= rank(required)
+}
+
+// ============================================================================
+// Standard Library Primitives
+// ============================================================================
+
+/// Standard input/output
+☉ scroll io {
+    /// Print to stdout (no newline)
+    ☉ λ print(s: !&str) {
+        // Platform-specific implementation
+        extern "C" {
+            λ write(fd: i32, buf: *const u8, count: u64) -> i64;
+        }
+        unsafe {
+            write(1, s.as_ptr(), s.len());
+        }
+    }
+
+    /// Print line to stdout
+    ☉ λ println(s: !&str) {
+        print(s);
+        print("\n");
+    }
+
+    /// Read line from stdin
+    ☉ λ read_line() -> ~String {
+        // Returns Reported evidence since it's external input
+        ≔ Δ buffer = String·new();
+        extern "C" {
+            λ read(fd: i32, buf: *Δ u8, count: u64) -> i64;
+        }
+        unsafe {
+            ≔ Δ byte: [u8; 1] = [0];
+            loop {
+                ≔ n = read(0, byte.as_mut_ptr(), 1);
+                ⎇ n <= 0 || byte[0] == 10 {  // 10 = ASCII newline
+                    ⊗;
+                }
+                buffer.push(byte[0] as char);
+            }
+        }
+        buffer
+    }
+}
+
+/// Math functions
+☉ scroll math {
+    ☉ const PI: !f64 = 3.141592653589793;
+    ☉ const E: !f64 = 2.718281828459045;
+    ☉ const TAU: !f64 = 6.283185307179586;
+
+    /// Absolute value
+    ☉ λ abs(x: !f64) -> !f64 {
+        ⎇ x < 0.0 { -x } ⎉ { x }
+    }
+
+    /// Square root (using Newton-Raphson)
+    ☉ λ sqrt(x: !f64) -> !f64 {
+        ⎇ x < 0.0 {
+            ⤺ f64·NAN;
+        }
+        ⎇ x == 0.0 {
+            ⤺ 0.0;
+        }
+
+        ≔ Δ guess = x / 2.0;
+        ∀ _ ∈ 0..50 {
+            ≔ next = (guess + x / guess) / 2.0;
+            ⎇ abs(next - guess) < 0.000000000000001 {
+                ⊗;
+            }
+            guess = next;
+        }
+        guess
+    }
+
+    /// Power function
+    ☉ λ pow(base: !f64, exp: !f64) -> !f64 {
+        // For integer exponents, invoke repeated multiplication
+        ⎇ exp == exp.floor() && exp >= 0.0 {
+            ≔ n = exp as i64;
+            ≔ Δ result = 1.0;
+            ≔ Δ b = base;
+            ≔ Δ e = n;
+            ⟳ e > 0 {
+                ⎇ e & 1 == 1 {
+                    result *= b;
+                }
+                b *= b;
+                e = e >> 1;
+            }
+            result
+        } ⎉ {
+            // Use exp(exp * ln(base)) ∀ non-integer exponents
+            exp_impl(exp * ln(base))
+        }
+    }
+
+    /// Natural logarithm
+    ☉ λ ln(x: !f64) -> !f64 {
+        ⎇ x <= 0.0 {
+            ⤺ f64·NAN;
+        }
+
+        // Use series expansion around 1
+        ≔ Δ y = (x - 1.0) / (x + 1.0);
+        ≔ y2 = y * y;
+        ≔ Δ result = 0.0;
+        ≔ Δ term = y;
+        ∀ i ∈ 0..100 {
+            result += term / (2 * i + 1) as f64;
+            term *= y2;
+            ⎇ abs(term) < 0.000000000000001 {
+                ⊗;
+            }
+        }
+        2.0 * result
+    }
+
+    /// Exponential function
+    λ exp_impl(x: !f64) -> !f64 {
+        // Taylor series: e^x = sum(x^n / n!)
+        ≔ Δ result = 1.0;
+        ≔ Δ term = 1.0;
+        ∀ n ∈ 1..100 {
+            term *= x / n as f64;
+            result += term;
+            ⎇ abs(term) < 0.000000000000001 {
+                ⊗;
+            }
+        }
+        result
+    }
+
+    ☉ λ exp(x: !f64) -> !f64 {
+        exp_impl(x)
+    }
+
+    /// Sine (Taylor series)
+    ☉ λ sin(x: !f64) -> !f64 {
+        // Reduce to [-π, π]
+        ≔ x = x % TAU;
+        ≔ x = ⎇ x > PI { x - TAU } ⎉ ⎇ x < -PI { x + TAU } ⎉ { x };
+
+        // Taylor series
+        ≔ Δ result = 0.0;
+        ≔ Δ term = x;
+        ≔ x2 = x * x;
+        ∀ n ∈ 0..50 {
+            result += term;
+            term *= -x2 / ((2 * n + 2) * (2 * n + 3)) as f64;
+            ⎇ abs(term) < 0.000000000000001 {
+                ⊗;
+            }
+        }
+        result
+    }
+
+    /// Cosine
+    ☉ λ cos(x: !f64) -> !f64 {
+        sin(x + PI / 2.0)
+    }
+
+    /// Tangent
+    ☉ λ tan(x: !f64) -> !f64 {
+        sin(x) / cos(x)
+    }
+
+    /// Floor
+    ☉ λ floor(x: !f64) -> !f64 {
+        x as i64 as f64
+    }
+
+    /// Ceiling
+    ☉ λ ceil(x: !f64) -> !f64 {
+        ≔ f = floor(x);
+        ⎇ x > f { f + 1.0 } ⎉ { f }
+    }
+
+    /// Round to nearest integer
+    ☉ λ round(x: !f64) -> !f64 {
+        floor(x + 0.5)
+    }
+
+    /// Minimum
+    ☉ λ min(a: !f64, b: !f64) -> !f64 {
+        ⎇ a < b { a } ⎉ { b }
+    }
+
+    /// Maximum
+    ☉ λ max(a: !f64, b: !f64) -> !f64 {
+        ⎇ a > b { a } ⎉ { b }
+    }
+
+    /// Clamp value to range
+    ☉ λ clamp(x: !f64, lo: !f64, hi: !f64) -> !f64 {
+        max(lo, min(hi, x))
+    }
+}
+
+/// String operations
+☉ scroll string {
+    /// Split string by delimiter
+    ☉ λ split(s: !&str, delim: !&str) -> ![String] {
+        ≔ Δ result: ![String] = [];
+        ≔ Δ current = String·new();
+
+        ∀ c ∈ s.chars() {
+            ⎇ delim.contains(c) {
+                ⎇ !current.is_empty() {
+                    result.push(current);
+                    current = String·new();
+                }
+            } ⎉ {
+                current.push(c);
+            }
+        }
+
+        ⎇ !current.is_empty() {
+            result.push(current);
+        }
+
+        result
+    }
+
+    /// Join strings with separator
+    ☉ λ join(parts: ![&str], sep: !&str) -> !String {
+        ⎇ parts.is_empty() {
+            ⤺ String·new();
+        }
+
+        ≔ Δ result = parts[0].to_string();
+        ≔ Δ idx: usize = 1;
+        ⟳ idx < parts.len() {
+            result.push_str(sep);
+            result.push_str(parts[idx]);
+            idx = idx + 1;
+        }
+        result
+    }
+
+    /// Trim whitespace
+    ☉ λ trim(s: !&str) -> !String {
+        s.trim().to_string()
+    }
+
+    /// Convert to uppercase
+    ☉ λ upper(s: !&str) -> !String {
+        s.to_uppercase()
+    }
+
+    /// Convert to lowercase
+    ☉ λ lower(s: !&str) -> !String {
+        s.to_lowercase()
+    }
+
+    /// Check ⎇ string contains substring
+    ☉ λ contains(s: !&str, needle: !&str) -> !bool {
+        s.contains(needle)
+    }
+
+    /// Check ⎇ starts with prefix
+    ☉ λ starts_with(s: !&str, prefix: !&str) -> !bool {
+        s.starts_with(prefix)
+    }
+
+    /// Check ⎇ ends with suffix
+    ☉ λ ends_with(s: !&str, suffix: !&str) -> !bool {
+        s.ends_with(suffix)
+    }
+
+    /// Replace all occurrences
+    ☉ λ replace(s: !&str, from: !&str, to: !&str) -> !String {
+        s.replace(from, to)
+    }
+}
+
+/// Array/collection operations
+☉ scroll collections {
+    /// Create range [start, end)
+    ☉ λ range(start: !i64, end: !i64) -> ![i64] {
+        ≔ Δ result: ![i64] = [];
+        ∀ i ∈ start..end {
+            result.push(i);
+        }
+        result
+    }
+
+    /// Create range with step
+    ☉ λ range_step(start: !i64, end: !i64, step: !i64) -> ![i64] {
+        ≔ Δ result: ![i64] = [];
+        ≔ Δ i = start;
+        ⎇ step > 0 {
+            ⟳ i < end {
+                result.push(i);
+                i += step;
+            }
+        } ⎉ ⎇ step < 0 {
+            ⟳ i > end {
+                result.push(i);
+                i += step;
+            }
+        }
+        result
+    }
+
+    /// Repeat value n times
+    ☉ λ repeat<T>(value: !T, n: !u64) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ _ ∈ 0..n {
+            result.push(value.clone());
+        }
+        result
+    }
+
+    /// Zip two arrays
+    ☉ λ combineTwo<A, B>(a: ![A], b: ![B]) -> ![(A, B)] {
+        ≔ len = math·min(a.len() as f64, b.len() as f64) as u64;
+        ≔ Δ result: ![(A, B)] = [];
+        ∀ i ∈ 0..len {
+            result.push((a[i].clone(), b[i].clone()));
+        }
+        result
+    }
+
+    /// Enumerate array with indices
+    ☉ λ enumerate<T>(arr: ![T]) -> ![(u64, T)] {
+        ≔ Δ result: ![(u64, T)] = [];
+        ∀ (i, item) ∈ arr.iter().enumerate() {
+            result.push((i, item.clone()));
+        }
+        result
+    }
+
+    /// Reverse array
+    ☉ λ reverse<T>(arr: ![T]) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ i ∈ (0..arr.len()).rev() {
+            result.push(arr[i].clone());
+        }
+        result
+    }
+
+    /// Sort array (simple insertion sort ∀ bootstrap)
+    ☉ λ sort<T: Ord>(arr: ![T]) -> ![T] {
+        ≔ Δ result = arr.clone();
+        ∀ i ∈ 1..result.len() {
+            ≔ Δ j = i;
+            ⟳ j > 0 && result[j - 1] > result[j] {
+                result.swap(j - 1, j);
+                j -= 1;
+            }
+        }
+        result
+    }
+
+    /// Remove duplicates (preserving order)
+    ☉ λ unique<T: Eq>(arr: ![T]) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ item ∈ arr {
+            ⎇ !result.contains(&item) {
+                result.push(item);
+            }
+        }
+        result
+    }
+}
+
+/// Time operations
+☉ scroll time {
+    /// Get current time ∈ seconds since epoch
+    ☉ λ now() -> ~f64 {
+        // Returns Reported since it's external state
+        extern "C" {
+            λ time(t: *Δ i64) -> i64;
+        }
+        unsafe { time(null) as f64 }
+    }
+
+    /// Sleep ∀ given seconds
+    ☉ λ sleep(seconds: !f64) {
+        extern "C" {
+            λ usleep(usec: u32) -> i32;
+        }
+        ≔ usec = (seconds * 1_000_000.0) as u32;
+        unsafe { usleep(usec); }
+    }
+}
+
+/// Random number generation
+☉ scroll random {
+    /// Simple LCG random state
+    static Δ SEED: u64 = 12345;
+
+    /// Set random seed
+    ☉ λ seed(s: !u64) {
+        unsafe { SEED = s; }
+    }
+
+    /// Generate random u64
+    ☉ λ next_u64() -> !u64 {
+        unsafe {
+            SEED = SEED.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            SEED
+        }
+    }
+
+    /// Generate random f64 ∈ [0, 1)
+    ☉ λ random() -> !f64 {
+        (next_u64() as f64) / (u64·MAX as f64)
+    }
+
+    /// Generate random integer ∈ [min, max]
+    ☉ λ randint(min: !i64, max: !i64) -> !i64 {
+        ≔ range = (max - min + 1) as u64;
+        min + (next_u64() % range) as i64
+    }
+
+    /// Shuffle array ∈ place
+    ☉ λ shuffle<T>(Δ arr: ![T]) {
+        ∀ i ∈ (1..arr.len()).rev() {
+            ≔ j = randint(0, i as i64) as u64;
+            arr.swap(i, j);
+        }
+    }
+
+    /// Choose random element
+    ☉ λ choice<T>(arr: ![T]) -> ?T {
+        ⎇ arr.is_empty() {
+            null
+        } ⎉ {
+            ?arr[randint(0, arr.len() as i64 - 1) as u64].clone()
+        }
+    }
+}
+
+// ============================================================================
+// Synchronization Primitives
+// ============================================================================
+
+/// Atomic operations ∀ thread-safe programming
+☉ scroll sync {
+    ☉ scroll atomic {
+        /// Atomic u64 ∀ counters, IDs, and flags
+        ☉ Σ AtomicU64 {
+            value: !*Δ u64,
+        }
+
+        ⊢ AtomicU64 {
+            /// Create a new atomic with initial value
+            ☉ λ new(initial: !u64) -> !AtomicU64 {
+                ≔ ptr = Box·into_raw(Box·new(initial));
+                AtomicU64 { value: ptr }
+            }
+
+            /// Load the current value (acquire ordering)
+            ☉ λ load(self) -> !u64 {
+                unsafe { *self.value }
+            }
+
+            /// Store a new value (release ordering)
+            ☉ λ store(Δ self, val: !u64) {
+                unsafe { *self.value = val; }
+            }
+
+            /// Add to the current value, returning the previous value
+            ☉ λ fetch_add(Δ self, val: !u64) -> !u64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = prev + val;
+                    prev
+                }
+            }
+
+            /// Subtract from current value, returning previous value
+            ☉ λ fetch_sub(Δ self, val: !u64) -> !u64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = prev - val;
+                    prev
+                }
+            }
+
+            /// Bitwise OR with current value
+            ☉ λ fetch_or(Δ self, val: !u64) -> !u64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = prev ⋎ val;
+                    prev
+                }
+            }
+
+            /// Bitwise AND with current value
+            ☉ λ fetch_and(Δ self, val: !u64) -> !u64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = prev & val;
+                    prev
+                }
+            }
+
+            /// Bitwise XOR with current value
+            ☉ λ fetch_xor(Δ self, val: !u64) -> !u64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = prev ^ val;
+                    prev
+                }
+            }
+
+            /// Swap with a new value, returning the old value
+            ☉ λ swap(Δ self, val: !u64) -> !u64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = val;
+                    prev
+                }
+            }
+
+            /// Compare and swap: ⎇ current == expected, set to new and ⤺ true
+            ☉ λ compare_exchange(Δ self, expected: !u64, new: !u64) -> !bool {
+                unsafe {
+                    ⎇ *self.value == expected {
+                        *self.value = new;
+                        true
+                    } ⎉ {
+                        false
+                    }
+                }
+            }
+        }
+
+        /// Atomic i64 ∀ signed counters
+        ☉ Σ AtomicI64 {
+            value: !*Δ i64,
+        }
+
+        ⊢ AtomicI64 {
+            ☉ λ new(initial: !i64) -> !AtomicI64 {
+                ≔ ptr = Box·into_raw(Box·new(initial));
+                AtomicI64 { value: ptr }
+            }
+
+            ☉ λ load(self) -> !i64 {
+                unsafe { *self.value }
+            }
+
+            ☉ λ store(Δ self, val: !i64) {
+                unsafe { *self.value = val; }
+            }
+
+            ☉ λ fetch_add(Δ self, val: !i64) -> !i64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = prev + val;
+                    prev
+                }
+            }
+
+            ☉ λ fetch_sub(Δ self, val: !i64) -> !i64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = prev - val;
+                    prev
+                }
+            }
+        }
+
+        /// Atomic bool ∀ flags
+        ☉ Σ AtomicBool {
+            value: !*Δ bool,
+        }
+
+        ⊢ AtomicBool {
+            ☉ λ new(initial: !bool) -> !AtomicBool {
+                ≔ ptr = Box·into_raw(Box·new(initial));
+                AtomicBool { value: ptr }
+            }
+
+            ☉ λ load(self) -> !bool {
+                unsafe { *self.value }
+            }
+
+            ☉ λ store(Δ self, val: !bool) {
+                unsafe { *self.value = val; }
+            }
+
+            ☉ λ swap(Δ self, val: !bool) -> !bool {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = val;
+                    prev
+                }
+            }
+
+            ☉ λ compare_exchange(Δ self, expected: !bool, new: !bool) -> !bool {
+                unsafe {
+                    ⎇ *self.value == expected {
+                        *self.value = new;
+                        true
+                    } ⎉ {
+                        false
+                    }
+                }
+            }
+        }
+
+        /// Atomic usize ∀ indices and lengths
+        ☉ Σ AtomicUsize {
+            value: !*Δ u64,
+        }
+
+        ⊢ AtomicUsize {
+            ☉ λ new(initial: !u64) -> !AtomicUsize {
+                ≔ ptr = Box·into_raw(Box·new(initial));
+                AtomicUsize { value: ptr }
+            }
+
+            ☉ λ load(self) -> !u64 {
+                unsafe { *self.value }
+            }
+
+            ☉ λ store(Δ self, val: !u64) {
+                unsafe { *self.value = val; }
+            }
+
+            ☉ λ fetch_add(Δ self, val: !u64) -> !u64 {
+                unsafe {
+                    ≔ prev = *self.value;
+                    *self.value = prev + val;
+                    prev
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Cryptographic Functions
+// ============================================================================
+
+/// Cryptographic hash functions
+☉ scroll crypto {
+    /// CRC32 checksum (IEEE polynomial)
+    ☉ λ crc32(data: !&[u8]) -> !u32 {
+        ≔ Δ crc = 0xFFFFFFFFu32;
+        ∀ byte ∈ data {
+            crc = crc ^ (*byte as u32);
+            ∀ _ ∈ 0..8 {
+                crc = ⎇ crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB88320u32
+                } ⎉ {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+
+    /// CRC32C (Castagnoli polynomial, used ∈ iSCSI, Btrfs)
+    ☉ λ crc32c(data: !&[u8]) -> !u32 {
+        ≔ Δ crc = 0xFFFFFFFFu32;
+        ∀ byte ∈ data {
+            crc = crc ^ (*byte as u32);
+            ∀ _ ∈ 0..8 {
+                crc = ⎇ crc & 1 != 0 {
+                    (crc >> 1) ^ 0x82F63B78u32
+                } ⎉ {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+
+    /// Adler32 checksum (faster than CRC32, used ∈ zlib)
+    ☉ λ adler32(data: !&[u8]) -> !u32 {
+        ≔ mod_adler = 65521u32;
+        ≔ Δ a = 1u32;
+        ≔ Δ b = 0u32;
+
+        ∀ byte ∈ data {
+            a = (a + (*byte as u32)) % mod_adler;
+            b = (b + a) % mod_adler;
+        }
+
+        (b << 16) ⋎ a
+    }
+
+    /// FNV-1a hash (fast, good distribution)
+    ☉ λ fnv1a(data: !&[u8]) -> !u64 {
+        ≔ fnv_offset = 14695981039346656037u64;
+        ≔ fnv_prime = 1099511628211u64;
+
+        ≔ Δ hash = fnv_offset;
+        ∀ byte ∈ data {
+            hash = hash ^ (*byte as u64);
+            hash = hash.wrapping_mul(fnv_prime);
+        }
+        hash
+    }
+
+    /// Simple hash ∀ strings (djb2)
+    ☉ λ hash_string(s: !&str) -> !u64 {
+        ≔ Δ hash = 5381u64;
+        ∀ c ∈ s.bytes() {
+            hash = ((hash << 5) + hash) + (c as u64);
+        }
+        hash
+    }
+}
+
+// ============================================================================
+// Binary Data Utilities
+// ============================================================================
+
+/// Byte manipulation and binary data utilities
+☉ scroll bytes {
+    /// Read u16 from bytes (little-endian)
+    ☉ λ read_u16_le(data: !&[u8], offset: !u64) -> !u16 {
+        ≔ lo = data[offset] as u16;
+        ≔ hi = data[offset + 1] as u16;
+        lo ⋎ (hi << 8)
+    }
+
+    /// Read u16 from bytes (big-endian)
+    ☉ λ read_u16_be(data: !&[u8], offset: !u64) -> !u16 {
+        ≔ hi = data[offset] as u16;
+        ≔ lo = data[offset + 1] as u16;
+        lo ⋎ (hi << 8)
+    }
+
+    /// Read u32 from bytes (little-endian)
+    ☉ λ read_u32_le(data: !&[u8], offset: !u64) -> !u32 {
+        ≔ b0 = data[offset] as u32;
+        ≔ b1 = data[offset + 1] as u32;
+        ≔ b2 = data[offset + 2] as u32;
+        ≔ b3 = data[offset + 3] as u32;
+        b0 ⋎ (b1 << 8) ⋎ (b2 << 16) ⋎ (b3 << 24)
+    }
+
+    /// Read u32 from bytes (big-endian)
+    ☉ λ read_u32_be(data: !&[u8], offset: !u64) -> !u32 {
+        ≔ b3 = data[offset] as u32;
+        ≔ b2 = data[offset + 1] as u32;
+        ≔ b1 = data[offset + 2] as u32;
+        ≔ b0 = data[offset + 3] as u32;
+        b0 ⋎ (b1 << 8) ⋎ (b2 << 16) ⋎ (b3 << 24)
+    }
+
+    /// Read u64 from bytes (little-endian)
+    ☉ λ read_u64_le(data: !&[u8], offset: !u64) -> !u64 {
+        ≔ lo = read_u32_le(data, offset) as u64;
+        ≔ hi = read_u32_le(data, offset + 4) as u64;
+        lo ⋎ (hi << 32)
+    }
+
+    /// Read u64 from bytes (big-endian)
+    ☉ λ read_u64_be(data: !&[u8], offset: !u64) -> !u64 {
+        ≔ hi = read_u32_be(data, offset) as u64;
+        ≔ lo = read_u32_be(data, offset + 4) as u64;
+        lo ⋎ (hi << 32)
+    }
+
+    /// Write u16 to bytes (little-endian)
+    ☉ λ write_u16_le(data: !&Δ [u8], offset: !u64, value: !u16) {
+        data[offset] = (value & 0xFF) as u8;
+        data[offset + 1] = ((value >> 8) & 0xFF) as u8;
+    }
+
+    /// Write u32 to bytes (little-endian)
+    ☉ λ write_u32_le(data: !&Δ [u8], offset: !u64, value: !u32) {
+        data[offset] = (value & 0xFF) as u8;
+        data[offset + 1] = ((value >> 8) & 0xFF) as u8;
+        data[offset + 2] = ((value >> 16) & 0xFF) as u8;
+        data[offset + 3] = ((value >> 24) & 0xFF) as u8;
+    }
+
+    /// Write u64 to bytes (little-endian)
+    ☉ λ write_u64_le(data: !&Δ [u8], offset: !u64, value: !u64) {
+        write_u32_le(data, offset, (value & 0xFFFFFFFF) as u32);
+        write_u32_le(data, offset + 4, ((value >> 32) & 0xFFFFFFFF) as u32);
+    }
+
+    /// Compare byte slices
+    ☉ λ equals(a: !&[u8], b: !&[u8]) -> !bool {
+        ⎇ a.len() != b.len() {
+            ⤺ false;
+        }
+        ∀ i ∈ 0..a.len() {
+            ⎇ a[i] != b[i] {
+                ⤺ false;
+            }
+        }
+        true
+    }
+
+    /// Copy bytes from src to dst
+    ☉ λ copy(dst: !&Δ [u8], dst_offset: !u64, src: !&[u8], src_offset: !u64, count: !u64) {
+        ∀ i ∈ 0..count {
+            dst[dst_offset + i] = src[src_offset + i];
+        }
+    }
+
+    /// Fill bytes with a value
+    ☉ λ fill(data: !&Δ [u8], offset: !u64, count: !u64, value: !u8) {
+        ∀ i ∈ 0..count {
+            data[offset + i] = value;
+        }
+    }
+
+    /// Hex encode bytes to string
+    ☉ λ to_hex(data: !&[u8]) -> !String {
+        ≔ hex_chars = "0123456789abcdef";
+        ≔ Δ result = String·new();
+        ∀ byte ∈ data {
+            ≔ hi = ((*byte >> 4) & 0x0F) as u64;
+            ≔ lo = (*byte & 0x0F) as u64;
+            result.push(hex_chars.chars().nth(hi).unwrap());
+            result.push(hex_chars.chars().nth(lo).unwrap());
+        }
+        result
+    }
+
+    /// Hex decode string to bytes
+    ☉ λ from_hex(s: !&str) -> ?[u8] {
+        ⎇ s.len() % 2 != 0 {
+            ⤺ null;
+        }
+
+        ≔ hex_value = |c: char| {
+            ⌥ c {
+                '0' => ?(0 as u8),
+                '1' => ?(1 as u8),
+                '2' => ?(2 as u8),
+                '3' => ?(3 as u8),
+                '4' => ?(4 as u8),
+                '5' => ?(5 as u8),
+                '6' => ?(6 as u8),
+                '7' => ?(7 as u8),
+                '8' => ?(8 as u8),
+                '9' => ?(9 as u8),
+                'a' | 'A' => ?(10 as u8),
+                'b' | 'B' => ?(11 as u8),
+                'c' | 'C' => ?(12 as u8),
+                'd' | 'D' => ?(13 as u8),
+                'e' | 'E' => ?(14 as u8),
+                'f' | 'F' => ?(15 as u8),
+                _ => null,
+            }
+        };
+
+        ≔ Δ result: ![u8] = [];
+        ≔ chars: ![char] = s.chars().collect();
+        ≔ Δ i: u64 = 0;
+        ⟳ i < chars.len() {
+            ≔ hi = hex_value(chars[i]);
+            ≔ lo = hex_value(chars[i + 1]);
+            ⎇ hi.is_none() || lo.is_none() {
+                ⤺ null;
+            }
+            result.push((hi.unwrap() << 4) ⋎ lo.unwrap());
+            i = i + 2;
+        }
+        ?result
+    }
+}
+
+// ============================================================================
+// Runtime Initialization
+// ============================================================================
+
+/// Initialize runtime system
+☉ λ init() {
+    // Initialize random seed from time
+    random·seed(time·now() as u64);
+}
+
+/// Shutdown runtime system
+☉ λ shutdown() {
+    // Cleanup resources
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+scroll tests {
+    invoke super·*;
+
+    #[test]
+    λ test_arena_alloc() {
+        ≔ Δ arena = Arena·new();
+        ≔ ptr1 = arena.alloc(100 as u64);
+        ≔ ptr2 = arena.alloc(200 as u64);
+        assert!(ptr1 != ptr2);
+        assert!(arena.bytes_allocated() >= 300 as u64);
+    }
+
+    #[test]
+    λ test_string_interner() {
+        ≔ Δ interner = StringInterner·new();
+        ≔ id1 = interner.intern("hello");
+        ≔ id2 = interner.intern("world");
+        ≔ id3 = interner.intern("hello");
+        assert_eq!(id1, id3);
+        assert_ne!(id1, id2);
+        assert_eq!(interner.get(id1), ?"hello");
+    }
+
+    #[test]
+    λ test_evidence_check() {
+        ≔ Δ ctx = EvidenceContext·new();
+        assert!(ctx.check(IrEvidence·Reported, IrEvidence·Known, "test"));
+        assert!(!ctx.check(IrEvidence·Known, IrEvidence·Reported, "test"));
+        assert_eq!(ctx.violations().len(), 1);
+    }
+
+    #[test]
+    λ test_math_sqrt() {
+        assert!((math·sqrt(4.0) - 2.0).abs() < 0.0000000001);
+        assert!((math·sqrt(2.0) - 1.41421356).abs() < 0.000001);
+    }
+
+    #[test]
+    λ test_math_trig() {
+        assert!((math·sin(0.0)).abs() < 0.0000000001);
+        assert!((math·cos(0.0) - 1.0).abs() < 0.0000000001);
+        assert!((math·sin(math·PI / 2.0) - 1.0).abs() < 0.0000000001);
+    }
+
+    #[test]
+    λ test_collections_range() {
+        assert_eq!(collections·range(0, 5), [0, 1, 2, 3, 4]);
+        assert_eq!(collections·range(5, 5), []);
+    }
+
+    #[test]
+    λ test_string_split() {
+        assert_eq!(string·split("a,b,c", ","), ["a", "b", "c"]);
+    }
+
+    #[test]
+    λ test_atomic_u64() {
+        ≔ counter = sync·atomic·AtomicU64·new(0);
+        assert_eq!(counter.load(), 0);
+        counter.store(42);
+        assert_eq!(counter.load(), 42);
+        assert_eq!(counter.fetch_add(10), 42);
+        assert_eq!(counter.load(), 52);
+    }
+
+    #[test]
+    λ test_atomic_bool() {
+        ≔ flag = sync·atomic·AtomicBool·new(false);
+        assert_eq!(flag.load(), false);
+        assert_eq!(flag.swap(true), false);
+        assert_eq!(flag.load(), true);
+    }
+
+    #[test]
+    λ test_crc32() {
+        // "Hello" = [72, 101, 108, 108, 111]
+        ≔ data: ![u8] = [72, 101, 108, 108, 111];
+        ≔ checksum = crypto·crc32(&data);
+        // CRC32 should be deterministic
+        assert_eq!(checksum, crypto·crc32(&data));
+    }
+
+    #[test]
+    λ test_fnv1a() {
+        ≔ data1: ![u8] = [1, 2, 3];
+        ≔ data2: ![u8] = [1, 2, 4];
+        // Different data should produce different hashes
+        assert_ne!(crypto·fnv1a(&data1), crypto·fnv1a(&data2));
+        // Same data should produce same hash
+        assert_eq!(crypto·fnv1a(&data1), crypto·fnv1a(&data1));
+    }
+
+    #[test]
+    λ test_bytes_read_write_u32() {
+        ≔ Δ data: ![u8] = [0, 0, 0, 0];
+        bytes·write_u32_le(&Δ data, 0, 0x12345678);
+        assert_eq!(data[0], 0x78);
+        assert_eq!(data[1], 0x56);
+        assert_eq!(data[2], 0x34);
+        assert_eq!(data[3], 0x12);
+        assert_eq!(bytes·read_u32_le(&data, 0), 0x12345678);
+    }
+
+    #[test]
+    λ test_bytes_hex() {
+        ≔ data: ![u8] = [0xDE, 0xAD, 0xBE, 0xEF];
+        ≔ hex = bytes·to_hex(&data);
+        assert_eq!(hex, "deadbeef");
+
+        ≔ decoded = bytes·from_hex("deadbeef");
+        assert!(decoded.is_some());
+        assert_eq!(decoded.unwrap(), data);
+    }
+
+    #[test]
+    λ test_bytes_equals() {
+        ≔ a: ![u8] = [1, 2, 3];
+        ≔ b: ![u8] = [1, 2, 3];
+        ≔ c: ![u8] = [1, 2, 4];
+        assert!(bytes·equals(&a, &b));
+        assert!(!bytes·equals(&a, &c));
+    }
+}

@@ -1,0 +1,793 @@
+//! DNS Resolver - Pure Sigil Implementation
+//!
+//! Implements DNS query/response ∀ A (IPv4) record lookups.
+//! Uses UDP port 53 to communicate with DNS servers.
+//!
+//! Spec: docs/specs/NATIVE-NETWORKING-SPEC.md Section 5
+
+// ============================================================================
+// Linux x86_64 Syscall Numbers
+// ============================================================================
+
+const SYS_READ: i64 = 0;
+const SYS_WRITE: i64 = 1;
+const SYS_CLOSE: i64 = 3;
+const SYS_MMAP: i64 = 9;
+const SYS_MUNMAP: i64 = 11;
+const SYS_SOCKET: i64 = 41;
+const SYS_SENDTO: i64 = 44;
+const SYS_RECVFROM: i64 = 45;
+const SYS_SETSOCKOPT: i64 = 54;
+const SYS_BIND: i64 = 49;
+
+// Socket options
+const SOL_SOCKET: i64 = 1;
+const SO_RCVTIMEO: i64 = 20;
+
+// mmap flags
+const PROT_READ: i64 = 1;
+const PROT_WRITE: i64 = 2;
+const MAP_PRIVATE: i64 = 2;
+const MAP_ANONYMOUS: i64 = 32;
+
+const AF_INET: i64 = 2;
+const SOCK_DGRAM: i64 = 2;
+
+// DNS constants
+const DNS_PORT: i64 = 53;
+const DNS_TYPE_A: i64 = 1;      // IPv4 address
+const DNS_TYPE_AAAA: i64 = 28;  // IPv6 address
+const DNS_TYPE_CNAME: i64 = 5;  // Canonical name
+const DNS_CLASS_IN: i64 = 1;    // Internet class
+
+// DNS header flags
+const DNS_FLAG_RD: i64 = 256;    // 0x0100 - Recursion Desired
+const DNS_FLAG_QR: i64 = 32768;  // 0x8000 - Query/Response (1 = response)
+
+// Error codes
+const DNS_OK: i64 = 0;
+const DNS_ERR_SOCKET: i64 = -1;
+const DNS_ERR_SEND: i64 = -2;
+const DNS_ERR_RECV: i64 = -3;
+const DNS_ERR_TIMEOUT: i64 = -4;
+const DNS_ERR_FORMAT: i64 = -5;
+const DNS_ERR_NOTFOUND: i64 = -6;
+
+// ============================================================================
+// Syscall Wrappers
+// ============================================================================
+
+λ syscall1(num: i64, arg1: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+    ≔ ret: i64 = 0;
+    unsafe {
+        asm!("syscall",
+            inout("rax") num => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            in("r9") arg6,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack));
+    }
+    ret
+}
+
+// Allocate memory via mmap
+λ alloc_mem(size: i64) -> i64 {
+    // mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+    syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
+}
+
+// Free memory via munmap
+λ free_mem(ptr: i64, size: i64) -> i64 {
+    syscall3(SYS_MUNMAP, ptr, size, 0)
+}
+
+// Set socket receive timeout (seconds)
+λ set_socket_timeout(fd: i64, seconds: i64) -> i64 {
+    // Σ timeval { tv_sec, tv_usec } - 16 bytes on x86_64
+    ≔ timeval = alloc_mem(16);
+    ⎇ timeval < 0 {
+        ⤺ -1;
+    }
+    // Write tv_sec (8 bytes)
+    write_byte(timeval, 0, seconds & 255);
+    write_byte(timeval, 1, seconds >> 8 & 255);
+    write_byte(timeval, 2, 0);
+    write_byte(timeval, 3, 0);
+    write_byte(timeval, 4, 0);
+    write_byte(timeval, 5, 0);
+    write_byte(timeval, 6, 0);
+    write_byte(timeval, 7, 0);
+    // Write tv_usec = 0 (8 bytes)
+    write_byte(timeval, 8, 0);
+    write_byte(timeval, 9, 0);
+    write_byte(timeval, 10, 0);
+    write_byte(timeval, 11, 0);
+    write_byte(timeval, 12, 0);
+    write_byte(timeval, 13, 0);
+    write_byte(timeval, 14, 0);
+    write_byte(timeval, 15, 0);
+
+    ≔ ret = syscall5(SYS_SETSOCKOPT, fd, SOL_SOCKET, SO_RCVTIMEO, timeval, 16);
+    free_mem(timeval, 16);
+    ret
+}
+
+// ============================================================================
+// Memory Operations (byte-level)
+// ============================================================================
+
+λ write_byte(buf: i64, offset: i64, value: i64) -> i64 {
+    unsafe {
+        ≔ ptr = buf + offset;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr,
+            in("al") value as i8,
+            options(nostack));
+    }
+    offset + 1
+}
+
+λ write_u16_be(buf: i64, offset: i64, value: i64) -> i64 {
+    ≔ hi = value >> 8 & 255;
+    ≔ lo = value & 255;
+    unsafe {
+        ≔ ptr = buf + offset;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr,
+            in("al") hi as i8,
+            options(nostack));
+    }
+    unsafe {
+        ≔ ptr = buf + offset + 1;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr,
+            in("al") lo as i8,
+            options(nostack));
+    }
+    offset + 2
+}
+
+λ read_byte(buf: i64, offset: i64) -> i64 {
+    ≔ value: i64 = 0;
+    unsafe {
+        ≔ ptr = buf + offset;
+        asm!("movzx rax, byte ptr [rdi]",
+            in("rdi") ptr,
+            out("rax") value,
+            options(nostack, readonly));
+    }
+    value
+}
+
+λ read_u16_be(buf: i64, offset: i64) -> i64 {
+    ≔ u16_hi: i64 = 0;
+    ≔ u16_lo: i64 = 0;
+    u16_hi = read_byte(buf, offset);
+    u16_lo = read_byte(buf, offset + 1);
+    u16_hi << 8 | u16_lo
+}
+
+λ read_u32_be(buf: i64, offset: i64) -> i64 {
+    ≔ u32_b0: i64 = 0;
+    ≔ u32_b1: i64 = 0;
+    ≔ u32_b2: i64 = 0;
+    ≔ u32_b3: i64 = 0;
+    u32_b0 = read_byte(buf, offset);
+    u32_b1 = read_byte(buf, offset + 1);
+    u32_b2 = read_byte(buf, offset + 2);
+    u32_b3 = read_byte(buf, offset + 3);
+    u32_b0 << 24 | u32_b1 << 16 | u32_b2 << 8 | u32_b3
+}
+
+// ============================================================================
+// DNS Query Building
+// ============================================================================
+
+// Encode a domain name ∈ DNS label format
+// "example.com" -> [7]example[3]com[0]
+// Returns the new offset after writing
+λ encode_domain_name(buf: i64, offset: i64, domain: i64, domain_len: i64) -> i64 {
+    ≔ out_offset: i64 = offset;
+    ≔ label_start: i64 = 0;
+    ≔ label_len: i64 = 0;
+    ≔ i: i64 = 0;
+    ≔ j: i64 = 0;
+    ≔ ch: i64 = 0;
+    ≔ c: i64 = 0;
+
+    ⟳ i < domain_len {
+        ch = read_byte(domain, i);
+
+        ⎇ ch == 46 {  // '.'
+            // Write label length
+            label_len = i - label_start;
+            out_offset = write_byte(buf, out_offset, label_len);
+
+            // Write label bytes
+            j = label_start;
+            ⟳ j < i {
+                c = read_byte(domain, j);
+                out_offset = write_byte(buf, out_offset, c);
+                j = j + 1;
+            }
+
+            label_start = i + 1;
+        }
+        i = i + 1;
+    }
+
+    // Write final label
+    label_len = domain_len - label_start;
+    ⎇ label_len > 0 {
+        out_offset = write_byte(buf, out_offset, label_len);
+        j = label_start;
+        ⟳ j < domain_len {
+            c = read_byte(domain, j);
+            out_offset = write_byte(buf, out_offset, c);
+            j = j + 1;
+        }
+    }
+
+    // Write null terminator
+    out_offset = write_byte(buf, out_offset, 0);
+    out_offset
+}
+
+// Build a DNS query packet ∀ an A record lookup
+// Returns the packet length
+λ build_dns_query(buf: i64, query_id: i64, domain: i64, domain_len: i64) -> i64 {
+    ≔ offset: i64 = 0;
+
+    // Header (12 bytes)
+    offset = write_u16_be(buf, offset, query_id);        // Transaction ID
+    offset = write_u16_be(buf, offset, DNS_FLAG_RD);     // Flags: recursion desired
+    offset = write_u16_be(buf, offset, 1);               // QDCOUNT: 1 question
+    offset = write_u16_be(buf, offset, 0);               // ANCOUNT: 0 answers
+    offset = write_u16_be(buf, offset, 0);               // NSCOUNT: 0 authority
+    offset = write_u16_be(buf, offset, 0);               // ARCOUNT: 0 additional
+
+    // Question section
+    offset = encode_domain_name(buf, offset, domain, domain_len);
+    offset = write_u16_be(buf, offset, DNS_TYPE_A);      // QTYPE: A record
+    offset = write_u16_be(buf, offset, DNS_CLASS_IN);    // QCLASS: Internet
+
+    offset
+}
+
+// ============================================================================
+// DNS Response Parsing
+// ============================================================================
+
+// Skip a domain name ∈ DNS format (handles compression)
+// Returns the offset after the name
+λ skip_dns_name(buf: i64, offset: i64) -> i64 {
+    ≔ pos: i64 = offset;
+
+    ⟳ pos < offset + 256 {  // Safety limit
+        ≔ len = read_byte(buf, pos);
+
+        ⎇ len == 0 {
+            // End of name
+            ⤺ pos + 1;
+        }
+
+        ⎇ len & 192 == 192 {  // 0xC0
+            // Compression pointer (2 bytes)
+            ⤺ pos + 2;
+        }
+
+        // Regular label
+        pos = pos + 1 + len;
+    }
+
+    pos
+}
+
+// Parse DNS response and extract the first A record IP address
+// Returns packed IPv4 (4 bytes) or negative error code
+λ parse_dns_response(buf: i64, len: i64, expected_id: i64) -> i64 {
+    ⎇ len < 12 {
+        ⤺ DNS_ERR_FORMAT;
+    }
+
+    // Check transaction ID
+    ≔ resp_id = read_u16_be(buf, 0);
+    ⎇ resp_id != expected_id {
+        ⤺ DNS_ERR_FORMAT;
+    }
+
+    // Check flags
+    ≔ flags = read_u16_be(buf, 2);
+    ⎇ flags & DNS_FLAG_QR == 0 {
+        ⤺ DNS_ERR_FORMAT;  // Not a response
+    }
+
+    // Check RCODE (lower 4 bits of flags)
+    ≔ rcode = flags & 15;
+    ⎇ rcode == 3 {
+        ⤺ DNS_ERR_NOTFOUND;  // NXDOMAIN
+    }
+    ⎇ rcode != 0 {
+        ⤺ DNS_ERR_FORMAT;
+    }
+
+    ≔ qdcount = read_u16_be(buf, 4);
+    ≔ ancount = read_u16_be(buf, 6);
+
+    ⎇ ancount == 0 {
+        ⤺ DNS_ERR_NOTFOUND;
+    }
+
+    // Skip header (12 bytes)
+    ≔ offset: i64 = 12;
+
+    // Skip question section
+    ≔ q: i64 = 0;
+    ⟳ q < qdcount {
+        offset = skip_dns_name(buf, offset);
+        offset = offset + 4;  // Skip QTYPE and QCLASS
+        q = q + 1;
+    }
+
+    // Parse answer section
+    ≔ a: i64 = 0;
+    ⟳ a < ancount {
+        offset = skip_dns_name(buf, offset);
+
+        ≔ rtype = read_u16_be(buf, offset);
+        ≔ rclass = read_u16_be(buf, offset + 2);
+        // TTL at offset + 4 (4 bytes)
+        ≔ rdlength = read_u16_be(buf, offset + 8);
+
+        offset = offset + 10;  // Move past type, class, ttl, rdlength
+
+        ⎇ rtype == DNS_TYPE_A && rclass == DNS_CLASS_IN && rdlength == 4 {
+            // Found an A record - ⤺ the IP
+            ≔ ip = read_u32_be(buf, offset);
+            ⤺ ip;
+        }
+
+        // Skip this record's data
+        offset = offset + rdlength;
+        a = a + 1;
+    }
+
+    DNS_ERR_NOTFOUND
+}
+
+// ============================================================================
+// Socket Address Helpers
+// ============================================================================
+
+λ sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
+    // Clear buffer
+    ≔ i: i64 = 0;
+    ⟳ i < 16 {
+        ≔ offset: i64 = i;
+        unsafe {
+            ≔ ptr = buf + offset;
+            asm!("mov byte ptr [rdi], 0",
+                in("rdi") ptr,
+                options(nostack));
+        }
+        i = i + 1;
+    }
+
+    // sin_family = AF_INET (2)
+    unsafe {
+        asm!("mov word ptr [rdi], 2",
+            in("rdi") buf,
+            options(nostack));
+    }
+
+    // sin_port (network byte order)
+    ≔ port_hi = port >> 8 & 255;
+    ≔ port_lo = port & 255;
+    unsafe {
+        ≔ ptr2 = buf + 2;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr2,
+            in("al") port_hi as i8,
+            options(nostack));
+    }
+    unsafe {
+        ≔ ptr3 = buf + 3;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr3,
+            in("al") port_lo as i8,
+            options(nostack));
+    }
+
+    // sin_addr (network byte order - big endian)
+    ≔ b0 = ip_packed >> 24 & 255;
+    ≔ b1 = ip_packed >> 16 & 255;
+    ≔ b2 = ip_packed >> 8 & 255;
+    ≔ b3 = ip_packed & 255;
+    unsafe {
+        ≔ ptr = buf + 4;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr,
+            in("al") b0 as i8,
+            options(nostack));
+    }
+    unsafe {
+        ≔ ptr = buf + 5;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr,
+            in("al") b1 as i8,
+            options(nostack));
+    }
+    unsafe {
+        ≔ ptr = buf + 6;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr,
+            in("al") b2 as i8,
+            options(nostack));
+    }
+    unsafe {
+        ≔ ptr = buf + 7;
+        asm!("mov byte ptr [rdi], al",
+            in("rdi") ptr,
+            in("al") b3 as i8,
+            options(nostack));
+    }
+
+    16  // sizeof(sockaddr_in)
+}
+
+// ============================================================================
+// DNS Resolver
+// ============================================================================
+
+// Resolve a domain name to an IPv4 address
+// dns_server: packed IPv4 of DNS server (e.g., 8.8.8.8)
+// domain: pointer to domain string
+// domain_len: length of domain string
+// Returns: packed IPv4 address or negative error code
+λ dns_resolve(dns_server: i64, domain: i64, domain_len: i64) -> i64 {
+    // Allocate buffers via mmap
+    ≔ buf = alloc_mem(2048);
+    ⎇ buf < 0 {
+        ⤺ DNS_ERR_SOCKET;  // Use socket error ∀ memory failure
+    }
+
+    ≔ query_buf = buf;            // 0-511: query buffer
+    ≔ response_buf = buf + 512;   // 512-1023: response buffer
+    ≔ sockaddr_buf = buf + 1024;  // 1024-1039: sockaddr buffer
+
+    // Create UDP socket
+    ≔ fd = syscall3(SYS_SOCKET, AF_INET, SOCK_DGRAM, 0);
+    ⎇ fd < 0 {
+        free_mem(buf, 2048);
+        ⤺ DNS_ERR_SOCKET;
+    }
+
+    // Set 3 second receive timeout
+    set_socket_timeout(fd, 3);
+
+    // Build query
+    ≔ query_id: i64 = 4660;  // 0x1234 - Simple ID (should be random ∈ production)
+    ≔ query_len = build_dns_query(query_buf, query_id, domain, domain_len);
+
+    // Create DNS server address
+    ≔ sockaddr_len = sockaddr_in_create(sockaddr_buf, dns_server, DNS_PORT);
+
+    // Send query
+    ≔ sent = syscall6(SYS_SENDTO, fd, query_buf, query_len, 0, sockaddr_buf, sockaddr_len);
+    ⎇ sent < 0 {
+        syscall1(SYS_CLOSE, fd);
+        free_mem(buf, 2048);
+        ⤺ DNS_ERR_SEND;
+    }
+
+    // Receive response
+    // Note: In production, invoke poll/select with timeout
+    ≔ addrlen_ptr = buf + 1536;  // Use later part of buffer ∀ addrlen
+    unsafe {
+        asm!("mov qword ptr [rdi], 16",
+            in("rdi") addrlen_ptr,
+            options(nostack));
+    }
+
+    ≔ received = syscall6(SYS_RECVFROM, fd, response_buf, 512, 0, sockaddr_buf, addrlen_ptr);
+
+    syscall1(SYS_CLOSE, fd);
+
+    ⎇ received < 0 {
+        free_mem(buf, 2048);
+        ⤺ DNS_ERR_RECV;
+    }
+
+    // Parse response
+    ≔ result = parse_dns_response(response_buf, received, query_id);
+
+    free_mem(buf, 2048);
+    result
+}
+
+// ============================================================================
+// Test Functions
+// ============================================================================
+
+// Test 1: Encode domain name
+λ test_encode_domain() -> i64 {
+    ≔ buf = alloc_mem(256);
+    ⎇ buf < 0 {
+        ⤺ 99;  // mmap failed
+    }
+
+    // Write "example.com" to input buffer
+    // e=0x65 x=0x78 a=0x61 m=0x6d p=0x70 l=0x6c e=0x65 .=0x2e
+    // c=0x63 o=0x6f m=0x6d
+    ≔ domain = buf + 128;
+    write_byte(domain, 0, 101);   // e
+    write_byte(domain, 1, 120);   // x
+    write_byte(domain, 2, 97);    // a
+    write_byte(domain, 3, 109);   // m
+    write_byte(domain, 4, 112);   // p
+    write_byte(domain, 5, 108);   // l
+    write_byte(domain, 6, 101);   // e
+    write_byte(domain, 7, 46);    // .
+    write_byte(domain, 8, 99);    // c
+    write_byte(domain, 9, 111);   // o
+    write_byte(domain, 10, 109);  // m
+
+    ≔ output = buf;
+    ≔ end_offset = encode_domain_name(output, 0, domain, 11);
+
+    // Should produce: [7]example[3]com[0]
+    // Total: 1 + 7 + 1 + 3 + 1 = 13 bytes
+    ≔ result: i64 = 0;
+
+    ⎇ end_offset != 13 {
+        free_mem(buf, 256);
+        ⤺ 1;
+    }
+
+    // Check length bytes
+    ⎇ read_byte(output, 0) != 7 {
+        free_mem(buf, 256);
+        ⤺ 2;
+    }
+    ⎇ read_byte(output, 8) != 3 {
+        free_mem(buf, 256);
+        ⤺ 3;
+    }
+    ⎇ read_byte(output, 12) != 0 {
+        free_mem(buf, 256);
+        ⤺ 4;
+    }
+
+    free_mem(buf, 256);
+    0  // Pass
+}
+
+// Test 2: Build DNS query
+λ test_build_query() -> i64 {
+    ≔ buf = alloc_mem(512);
+    ⎇ buf < 0 {
+        ⤺ 99;  // mmap failed
+    }
+
+    // Create domain "a.b"
+    ≔ domain = buf + 256;
+    write_byte(domain, 0, 97);   // a
+    write_byte(domain, 1, 46);   // .
+    write_byte(domain, 2, 98);   // b
+
+    ≔ query_len = build_dns_query(buf, 43981, domain, 3);  // 0xABCD
+
+    // Header: 12 bytes
+    // Question: [1]a[1]b[0] = 5 bytes + TYPE(2) + CLASS(2) = 9 bytes
+    // Total: 21 bytes
+    ⎇ query_len != 21 {
+        free_mem(buf, 512);
+        ⤺ 1;
+    }
+
+    // Check transaction ID
+    ⎇ read_u16_be(buf, 0) != 43981 {  // 0xABCD
+        free_mem(buf, 512);
+        ⤺ 2;
+    }
+
+    // Check flags (RD bit set)
+    ⎇ read_u16_be(buf, 2) != 256 {  // 0x0100
+        free_mem(buf, 512);
+        ⤺ 3;
+    }
+
+    // Check QDCOUNT = 1
+    ⎇ read_u16_be(buf, 4) != 1 {
+        free_mem(buf, 512);
+        ⤺ 4;
+    }
+
+    free_mem(buf, 512);
+    0  // Pass
+}
+
+// Test 3: DNS resolve (requires network - 8.8.8.8)
+λ test_dns_resolve_google() -> i64 {
+    // DNS server: 8.8.8.8 = 134744072 (0x08080808)
+    ≔ dns_server: i64 = 134744072;
+
+    // Domain: "google.com"
+    ≔ buf = alloc_mem(64);
+    ⎇ buf < 0 {
+        ⤺ 99;  // mmap failed
+    }
+
+    // Write "google.com"
+    write_byte(buf, 0, 103);   // g
+    write_byte(buf, 1, 111);   // o
+    write_byte(buf, 2, 111);   // o
+    write_byte(buf, 3, 103);   // g
+    write_byte(buf, 4, 108);   // l
+    write_byte(buf, 5, 101);   // e
+    write_byte(buf, 6, 46);    // .
+    write_byte(buf, 7, 99);    // c
+    write_byte(buf, 8, 111);   // o
+    write_byte(buf, 9, 109);   // m
+
+    ≔ result = dns_resolve(dns_server, buf, 10);
+
+    free_mem(buf, 64);
+
+    // Result should be positive (a valid IP address)
+    ⎇ result > 0 {
+        0  // Pass
+    } ⎉ {
+        result  // Return error code
+    }
+}
+
+// Test 4: DNS resolve localhost (should work with local resolver)
+λ test_dns_resolve_localhost() -> i64 {
+    // Try with localhost DNS (127.0.0.1)
+    // Most systems have a local resolver
+    ≔ dns_server: i64 = 2130706433;  // 127.0.0.1 = 0x7F000001
+
+    ≔ buf = alloc_mem(64);
+    ⎇ buf < 0 {
+        ⤺ 99;  // mmap failed
+    }
+
+    // Write "localhost"
+    write_byte(buf, 0, 108);   // l
+    write_byte(buf, 1, 111);   // o
+    write_byte(buf, 2, 99);    // c
+    write_byte(buf, 3, 97);    // a
+    write_byte(buf, 4, 108);   // l
+    write_byte(buf, 5, 104);   // h
+    write_byte(buf, 6, 111);   // o
+    write_byte(buf, 7, 115);   // s
+    write_byte(buf, 8, 116);   // t
+
+    ≔ result = dns_resolve(dns_server, buf, 9);
+
+    free_mem(buf, 64);
+
+    // localhost should resolve to 127.0.0.1 (0x7F000001)
+    // But many local resolvers may not respond or may not have localhost
+    // So we just check it doesn't crash
+    ⎇ result > 0 || result == DNS_ERR_NOTFOUND || result == DNS_ERR_RECV {
+        0  // Pass (expected behaviors)
+    } ⎉ {
+        result
+    }
+}
+
+// ============================================================================
+// Main - Run all tests
+// ============================================================================
+
+// Helper to print a character
+λ print_char(c: i64) -> i64 {
+    ≔ buf = alloc_mem(16);
+    ⎇ buf < 0 {
+        ⤺ -1;
+    }
+    write_byte(buf, 0, c);
+    ≔ ret = syscall3(SYS_WRITE, 1, buf, 1);
+    free_mem(buf, 16);
+    ret
+}
+
+// Print result ∀ a test
+λ print_test_result(test_num: i64, result: i64) -> i64 {
+    print_char(84);  // T
+    print_char(48 + test_num);  // test number as char
+    print_char(58);  // :
+    ⎇ result == 0 {
+        print_char(80);  // P (pass)
+    } ⎉ {
+        print_char(70);  // F (fail)
+    }
+    print_char(10);  // newline
+    result
+}
+
+λ main() -> i64 {
+    ≔ failed: i64 = 0;
+
+    // Test 1: Domain encoding (offline)
+    ≔ r1 = test_encode_domain();
+    print_test_result(1, r1);
+    ⎇ r1 != 0 {
+        failed = failed + 1;
+    }
+
+    // Test 2: Query building (offline)
+    ≔ r2 = test_build_query();
+    print_test_result(2, r2);
+    ⎇ r2 != 0 {
+        failed = failed + 1;
+    }
+
+    // Test 3: DNS resolve (network test)
+    ≔ r3 = test_dns_resolve_google();
+    print_test_result(3, r3);
+    ⎇ r3 != 0 {
+        failed = failed + 1;
+    }
+
+    // Test 4: DNS resolve localhost
+    ≔ r4 = test_dns_resolve_localhost();
+    print_test_result(4, r4);
+    ⎇ r4 != 0 {
+        failed = failed + 1;
+    }
+
+    failed
+}

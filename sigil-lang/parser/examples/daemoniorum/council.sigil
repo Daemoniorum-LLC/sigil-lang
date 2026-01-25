@@ -1,0 +1,252 @@
+//! DAEMONIORUM - Council of Alters
+//!
+//! Defines the primary alters in the protagonist's system.
+//! Each alter has unique abilities, triggers, and reality preferences.
+
+use daemoniorum::core::{Trigger, Ability, RealityLayer};
+use daemoniorum::combat::{DamageType, StatusEffect};
+use daemoniorum::anima::{AnimaState, PAD};
+
+// ============================================================================
+// THE COUNCIL - Primary System Members
+// ============================================================================
+
+/// Abaddon - The Destroyer
+/// Combat specialist who emerges during physical threats.
+/// Prefers Fractured reality where violence has symbolic weight.
+pub alter Abaddon: Council {
+    archetype: Goetia::Abaddon,
+    preferred_reality: RealityLayer::Fractured,
+
+    abilities: [
+        Ability::new("Righteous Fury", DamageType::Physical, 35.0),
+        Ability::new("Protective Rage", DamageType::Emotional, 20.0),
+        Ability::new("Trauma Strike", DamageType::Reality, 45.0),
+    ],
+
+    triggers: [
+        Trigger::threat_detected(0.7),
+        Trigger::violence_witnessed(0.5),
+        Trigger::system_endangered(0.9),
+    ],
+
+    anima: {
+        base_arousal: 0.6,
+        base_dominance: 0.8,
+        expressiveness: 0.7,
+        susceptibility: 0.3,
+    },
+
+    states: {
+        Dormant -> Stirring: on Trigger::threat_detected where threat > 0.5,
+        Stirring -> Emerging: on Trigger::combat_initiated,
+        Emerging -> Fronting: on system.request_front(urgency: 0.8),
+        Fronting -> Receding: on combat.ended && stability > 0.6,
+        Triggered -> Fronting: on Trigger::system_endangered { bypass_deliberation: true },
+    },
+
+    /// Combat perception - sees enemies' true nature
+    fn perceive_threat(entity: Entity) -> ThreatAssessment@! {
+        let base = entity.threat_level;
+        let hidden = alter self {
+            // Abaddon can see through deception
+            entity.hidden_intentions.reveal()
+        };
+        ThreatAssessment::new(base, hidden)
+    }
+
+    /// Signature ability - channel trauma into devastating force
+    fn trauma_strike(target: Entity) -> Damage! {
+        requires reality == RealityLayer::Fractured;
+
+        let trauma_power = self.anima.arousal * self.trauma_reservoir;
+        let damage = Damage::reality(trauma_power * 45.0);
+
+        // Costs stability but deals massive damage
+        self.stability -= 0.1;
+        target.apply(damage)
+    }
+}
+
+/// Stolas - The Scholar
+/// Knowledge keeper who processes and organizes information.
+/// Prefers Grounded reality for clear thinking.
+pub alter Stolas: Council {
+    archetype: Goetia::Stolas,
+    preferred_reality: RealityLayer::Grounded,
+
+    abilities: [
+        Ability::new("Analyze", DamageType::Psychic, 15.0),
+        Ability::new("Knowledge Shield", DamageType::Psychic, 0.0),
+        Ability::new("Memory Recall", DamageType::Psychic, 10.0),
+    ],
+
+    triggers: [
+        Trigger::puzzle_encountered(0.6),
+        Trigger::knowledge_required(0.7),
+        Trigger::pattern_detected(0.4),
+    ],
+
+    anima: {
+        base_arousal: -0.2,
+        base_dominance: 0.3,
+        expressiveness: 0.4,
+        susceptibility: 0.5,
+    },
+
+    states: {
+        Dormant -> Stirring: on Trigger::puzzle_encountered,
+        Stirring -> CoConscious: on system.needs_analysis,
+        CoConscious -> Fronting: on complex_problem && urgency > 0.5,
+        Fronting -> CoConscious: on problem.solved,
+    },
+
+    /// Analyze an entity or object
+    fn analyze(target: Analyzable) -> Analysis@! {
+        let surface = target.observable_properties();
+        let deep = alter self {
+            // Deep analysis requires full attention
+            target.hidden_properties().map(|p| p.decode())
+        };
+        Analysis::combine(surface, deep)
+    }
+
+    /// Share knowledge with co-conscious alters
+    fn share_insight(insight: Knowledge!) -> Acknowledgment@~ {
+        cocon<Stolas, council.active()> {
+            broadcast(insight);
+            await_acknowledgments()
+        }
+    }
+}
+
+/// Beleth - The Diplomat
+/// Social specialist who handles external interactions.
+/// Can operate in both Grounded and Fractured realities.
+pub alter Beleth: Council {
+    archetype: Goetia::Beleth,
+    preferred_reality: RealityLayer::Grounded,
+
+    abilities: [
+        Ability::new("Charm", DamageType::Emotional, 0.0),
+        Ability::new("Persuade", DamageType::Psychic, 10.0),
+        Ability::new("Social Shield", DamageType::Emotional, 0.0),
+    ],
+
+    triggers: [
+        Trigger::social_interaction(0.5),
+        Trigger::negotiation_needed(0.7),
+        Trigger::deception_detected(0.6),
+    ],
+
+    anima: {
+        base_arousal: 0.1,
+        base_dominance: 0.4,
+        expressiveness: 0.9,
+        susceptibility: 0.4,
+    },
+
+    states: {
+        Dormant -> Stirring: on Trigger::social_interaction,
+        Stirring -> Fronting: on conversation.started,
+        Fronting -> CoConscious: on conversation.ended,
+        CoConscious -> Fronting: on Trigger::negotiation_needed,
+    },
+
+    /// Read a person's emotional state and intentions
+    fn read_person(target: Person) -> SocialReading@! {
+        let surface = target.displayed_emotion;
+        let true_state = alter self {
+            target.micro_expressions.analyze()
+        };
+        SocialReading::new(surface, true_state, confidence: 0.8)
+    }
+
+    /// Attempt to influence someone
+    fn influence(target: Person, goal: Outcome) -> InfluenceResult@! {
+        let rapport = self.build_rapport(target)?;
+        let approach = self.select_approach(target, goal);
+
+        match approach {
+            Approach::Charm => self.charm_attempt(target, goal),
+            Approach::Logic => self.logical_appeal(target, goal),
+            Approach::Emotion => self.emotional_appeal(target, goal),
+        }
+    }
+}
+
+// ============================================================================
+// CO-CONSCIOUS CHANNELS
+// ============================================================================
+
+/// Knowledge sharing channel between Council members
+cocon<Stolas, Beleth, Abaddon> council_intel {
+    /// Share threat intelligence
+    fn share_threat(threat: ThreatInfo!) -> Vec<Response>@~ {
+        let responses = participants.map(|p| p.assess_threat(threat));
+        responses.collect()
+    }
+
+    /// Coordinate a switch decision
+    fn deliberate_switch(target: Alter, reason: SwitchReason) -> SwitchDecision@~ {
+        let votes = participants.map(|p| p.vote_on_switch(target, reason));
+        SwitchDecision::from_votes(votes)
+    }
+}
+
+/// Rapid tactical communication during combat
+cocon<Abaddon, Beleth> tactical_cocon {
+    fn coordinate_attack(enemy: Entity) -> TacticalPlan@~ {
+        let threat = Abaddon.assess_threat(enemy);
+        let social = Beleth.read_person(enemy);
+        TacticalPlan::combine(threat, social)
+    }
+}
+
+// ============================================================================
+// TRIGGER HANDLERS
+// ============================================================================
+
+/// When a major threat is detected, Abaddon may force front
+on trigger ThreatDetected { level: threat_level } where threat_level > 0.9 {
+    switch! to Abaddon {
+        reason: SwitchReason::Emergency,
+        urgency: 1.0,
+        bypass_deliberation: true,
+        then: {
+            // Abaddon takes control
+            system.enter_combat_stance();
+        },
+        emergency: {
+            // If Abaddon unavailable, any protector
+            switch! to council.any_protector();
+        },
+    }
+}
+
+/// Social situations trigger Beleth
+on trigger SocialEncounter { person: target } where !target.is_hostile {
+    switch to Beleth {
+        reason: SwitchReason::TacticalNeed,
+        urgency: 0.6,
+        then: {
+            Beleth.prepare_social_mask();
+        },
+        else: {
+            // Stay current but co-con Beleth
+            system.bring_cocon(Beleth);
+        },
+    }
+}
+
+/// Complex puzzles bring Stolas forward
+on trigger PuzzleEncountered { complexity: c } where c > 0.7 {
+    switch to Stolas {
+        reason: SwitchReason::SkillRequired,
+        urgency: 0.5,
+        requires: !combat.active,
+        then: {
+            Stolas.enter_analysis_mode();
+        },
+    }
+}

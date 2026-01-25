@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate multiple function definitions don't cause redeclaration errors.
+// Validate multiple function definitions don't cainvoke redeclaration errors.
 //
 // Expected behavior:
 // Should print 42
