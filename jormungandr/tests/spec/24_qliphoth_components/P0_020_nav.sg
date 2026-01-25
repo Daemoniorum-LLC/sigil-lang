@@ -1,0 +1,318 @@
+// Test: Qliphoth Nav Component
+// TDD: RED - Tests the Nav navigation component
+//
+// Nav provides navigation menus with dropdown support
+
+invoke qliphoth·components·Nav;
+invoke qliphoth·components·NavItem;
+invoke qliphoth·components·NavDropdown;
+invoke qliphoth·core·VNode;
+
+// Test basic nav rendering
+rite test_nav_basic() {
+    ≔ nav = Nav {
+        items: [
+            NavItem { label: "Home", href: "/" },
+            NavItem { label: "About", href: "/about" },
+            NavItem { label: "Contact", href: "/contact" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+
+    assert_eq!(vnode.tag(), "nav");
+    assert!(vnode.has_class("nav"));
+
+    ≔ items = vnode.find_children_by_class("nav-item");
+    assert_eq!(items.len(), 3);
+}
+
+// Test nav with active item
+rite test_nav_active() {
+    ≔ nav = Nav {
+        items: [
+            NavItem { label: "Home", href: "/", active: yay },
+            NavItem { label: "About", href: "/about" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    ≔ items = vnode.find_children_by_class("nav-item");
+
+    assert!(items[0].has_class("nav-item-active"));
+    assert_eq!(items[0].attr("aria-current"), "page");
+}
+
+// Test nav with dropdown
+rite test_nav_dropdown() {
+    ≔ nav = Nav {
+        items: [
+            NavItem { label: "Home", href: "/" },
+            NavDropdown {
+                label: "Products",
+                items: [
+                    NavItem { label: "Product A", href: "/products/a" },
+                    NavItem { label: "Product B", href: "/products/b" },
+                    NavItem { label: "Product C", href: "/products/c" },
+                ]
+            },
+            NavItem { label: "Contact", href: "/contact" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+
+    // Should have dropdown
+    assert!(vnode.has_child_with_class("nav-dropdown"));
+
+    ≔ dropdown = vnode.find_child_by_class("nav-dropdown");
+
+    // Dropdown trigger
+    ≔ trigger = dropdown.find_child_by_class("nav-dropdown-trigger");
+    assert_eq!(trigger.text_content(), "Products");
+    assert_eq!(trigger.attr("aria-haspopup"), "true");
+    assert_eq!(trigger.attr("aria-expanded"), "false");
+
+    // Dropdown menu
+    assert!(dropdown.has_child_with_class("nav-dropdown-menu"));
+}
+
+// Test nav variants
+rite test_nav_variants() {
+    // Horizontal (default)
+    ≔ horizontal = Nav { variant: "horizontal", items: [] };
+    assert!(horizontal.render().has_class("nav-horizontal"));
+
+    // Vertical
+    ≔ vertical = Nav { variant: "vertical", items: [] };
+    assert!(vertical.render().has_class("nav-vertical"));
+
+    // Pills
+    ≔ pills = Nav { variant: "pills", items: [] };
+    assert!(pills.render().has_class("nav-pills"));
+
+    // Tabs
+    ≔ tabs = Nav { variant: "tabs", items: [] };
+    assert!(tabs.render().has_class("nav-tabs"));
+
+    // Underline
+    ≔ underline = Nav { variant: "underline", items: [] };
+    assert!(underline.render().has_class("nav-underline"));
+}
+
+// Test nav sizes
+rite test_nav_sizes() {
+    ≔ sm = Nav { size: "sm", items: [] };
+    assert!(sm.render().has_class("nav-sm"));
+
+    ≔ md = Nav { size: "md", items: [] };
+    assert!(md.render().has_class("nav-md"));
+
+    ≔ lg = Nav { size: "lg", items: [] };
+    assert!(lg.render().has_class("nav-lg"));
+}
+
+// Test nav item with icon
+rite test_nav_item_icon() {
+    ≔ nav = Nav {
+        items: [
+            NavItem { label: "Settings", href: "/settings", icon: "settings" },
+            NavItem { label: "Profile", href: "/profile", icon: "user" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    ≔ items = vnode.find_children_by_class("nav-item");
+
+    assert!(items[0].has_child_with_class("nav-item-icon"));
+}
+
+// Test nav item with badge
+rite test_nav_item_badge() {
+    ≔ nav = Nav {
+        items: [
+            NavItem { label: "Inbox", href: "/inbox", badge: 5 },
+            NavItem { label: "Sent", href: "/sent" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    ≔ inbox = vnode.find_children_by_class("nav-item")[0];
+
+    assert!(inbox.has_child_with_class("nav-item-badge"));
+    ≔ badge = inbox.find_child_by_class("nav-item-badge");
+    assert_eq!(badge.text_content(), "5");
+}
+
+// Test disabled nav item
+rite test_nav_item_disabled() {
+    ≔ nav = Nav {
+        items: [
+            NavItem { label: "Active", href: "/active" },
+            NavItem { label: "Disabled", href: "/disabled", disabled: yay },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    ≔ items = vnode.find_children_by_class("nav-item");
+
+    assert!(items[1].has_class("nav-item-disabled"));
+    assert_eq!(items[1].attr("aria-disabled"), "true");
+}
+
+// Test nav with divider
+rite test_nav_divider() {
+    ≔ nav = Nav {
+        items: [
+            NavItem { label: "Home", href: "/" },
+            NavItem { divider: yay },
+            NavItem { label: "Settings", href: "/settings" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    assert!(vnode.has_child_with_class("nav-divider"));
+}
+
+// Test nav with section labels
+rite test_nav_sections() {
+    ≔ nav = Nav {
+        variant: "vertical",
+        items: [
+            NavItem { section: "Main" },
+            NavItem { label: "Dashboard", href: "/dashboard" },
+            NavItem { label: "Analytics", href: "/analytics" },
+            NavItem { section: "Settings" },
+            NavItem { label: "Account", href: "/account" },
+            NavItem { label: "Billing", href: "/billing" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    ≔ sections = vnode.find_children_by_class("nav-section-label");
+    assert_eq!(sections.len(), 2);
+}
+
+// Test mega menu dropdown
+rite test_nav_mega_menu() {
+    ≔ nav = Nav {
+        items: [
+            NavDropdown {
+                label: "Solutions",
+                mega: yay,
+                columns: [
+                    {
+                        title: "By Use Case",
+                        items: [
+                            NavItem { label: "Enterprise", href: "/enterprise" },
+                            NavItem { label: "Startups", href: "/startups" },
+                        ]
+                    },
+                    {
+                        title: "By Industry",
+                        items: [
+                            NavItem { label: "Finance", href: "/finance" },
+                            NavItem { label: "Healthcare", href: "/healthcare" },
+                        ]
+                    }
+                ]
+            }
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    ≔ dropdown = vnode.find_child_by_class("nav-dropdown");
+    assert!(dropdown.has_class("nav-dropdown-mega"));
+}
+
+// Test nav alignment
+rite test_nav_alignment() {
+    // Start (default)
+    ≔ start = Nav { alignment: "start", items: [] };
+    assert!(start.render().has_class("nav-align-start"));
+
+    // Center
+    ≔ center = Nav { alignment: "center", items: [] };
+    assert!(center.render().has_class("nav-align-center"));
+
+    // End
+    ≔ end = Nav { alignment: "end", items: [] };
+    assert!(end.render().has_class("nav-align-end"));
+
+    // Space between
+    ≔ between = Nav { alignment: "between", items: [] };
+    assert!(between.render().has_class("nav-align-between"));
+}
+
+// Test collapsible nav
+rite test_nav_collapsible() {
+    ≔ nav = Nav {
+        collapsible: yay,
+        collapsed: yay,
+        items: [
+            NavItem { label: "Home", href: "/" },
+            NavItem { label: "About", href: "/about" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    assert!(vnode.has_class("nav-collapsible"));
+    assert!(vnode.has_class("nav-collapsed"));
+}
+
+// Test nav accessibility
+rite test_nav_accessibility() {
+    ≔ nav = Nav {
+        aria_label: "Main navigation",
+        items: [
+            NavItem { label: "Home", href: "/" },
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    assert_eq!(vnode.attr("aria-label"), "Main navigation");
+    assert_eq!(vnode.attr("role"), "navigation");
+}
+
+// Test nested nav (sidebar)
+rite test_nav_nested() {
+    ≔ nav = Nav {
+        variant: "vertical",
+        items: [
+            NavItem {
+                label: "Dashboard",
+                href: "/dashboard",
+                children: [
+                    NavItem { label: "Overview", href: "/dashboard/overview" },
+                    NavItem { label: "Reports", href: "/dashboard/reports" },
+                ]
+            }
+        ]
+    };
+
+    ≔ vnode = nav.render();
+    ≔ parent = vnode.find_children_by_class("nav-item")[0];
+    assert!(parent.has_child_with_class("nav-nested"));
+}
+
+rite main() {
+    test_nav_basic();
+    test_nav_active();
+    test_nav_dropdown();
+    test_nav_variants();
+    test_nav_sizes();
+    test_nav_item_icon();
+    test_nav_item_badge();
+    test_nav_item_disabled();
+    test_nav_divider();
+    test_nav_sections();
+    test_nav_mega_menu();
+    test_nav_alignment();
+    test_nav_collapsible();
+    test_nav_accessibility();
+    test_nav_nested();
+
+    print("✓ All Nav component tests passed");
+}
+
+// Expected output: ✓ All Nav component tests passed

@@ -1,0 +1,33 @@
+// Native Platform Test 03: Label Creation
+// Tests: Create a GTK label with text
+// Expected: 0 (label created successfully)
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    type GtkLabel;
+
+    rite gtk_init();
+    rite gtk_label_new(text: *c_char) → *GtkLabel;
+    rite gtk_label_set_text(label: *GtkLabel, text: *c_char);
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+
+    // Create label with initial text
+    ≔ label = gtk_label_new("Hello, Sigil!\0".as_ptr());
+
+    // Update the label text
+    gtk_label_set_text(label, "Updated Text\0".as_ptr());
+
+    0  // Success
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

@@ -1,0 +1,19 @@
+// FFI Test 26: Assign function to pointer variable
+// Tests: Function pointer variable assignment
+// Expected: 100
+
+rite double_it(x: i64) → i64 {
+    x * 2
+}
+
+rite triple_it(x: i64) → i64 {
+    x * 3
+}
+
+rite main() → i64 {
+    ≔ vary f: rite(i64) → i64 = double_it;
+    ≔ result1 = f(10);
+    f = triple_it;
+    ≔ result2 = f(10);
+    result1 + result2 + 50
+}

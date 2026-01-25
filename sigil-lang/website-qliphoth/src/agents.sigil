@@ -1,0 +1,727 @@
+// Agents Page - 9-Layer Agent Infrastructure
+// Compiled from Sigil to WebAssembly via Qliphoth
+
+// === DOM Helpers (same as main.sigil) ===
+
+rite create_element(tag: &str) → i64 {
+    vdom_create_vnode(tag)
+}
+
+rite create_text(content: &str) → i64 {
+    vdom_create_text_vnode(content)
+}
+
+rite set_class(element: i64, class_name: &str) {
+    vdom_set_vnode_str_prop(element, "class", class_name)
+}
+
+rite set_attr(element: i64, name: &str, value: &str) {
+    vdom_set_vnode_str_prop(element, name, value)
+}
+
+rite append_child(parent: i64, child: i64) {
+    vdom_append_vnode_child(parent, child)
+}
+
+rite mount(element: i64, selector: &str) → i64 {
+    vdom_mount_vnode(element, selector)
+}
+
+// === Component Helpers ===
+
+rite link(href: &str, text: &str, class: &str) → i64 {
+    ≔ a = create_element("a");
+    set_class(a, class);
+    set_attr(a, "href", href);
+    ≔ t = create_text(text);
+    append_child(a, t);
+    a
+}
+
+rite link_external(href: &str, text: &str, class: &str) → i64 {
+    ≔ a = create_element("a");
+    set_class(a, class);
+    set_attr(a, "href", href);
+    set_attr(a, "target", "_blank");
+    set_attr(a, "rel", "noopener noreferrer");
+    ≔ t = create_text(text);
+    append_child(a, t);
+    a
+}
+
+rite heading(level: &str, text: &str, class: &str) → i64 {
+    ≔ h = create_element(level);
+    set_class(h, class);
+    ≔ t = create_text(text);
+    append_child(h, t);
+    h
+}
+
+rite para(text: &str, class: &str) → i64 {
+    ≔ p = create_element("p");
+    set_class(p, class);
+    ≔ t = create_text(text);
+    append_child(p, t);
+    p
+}
+
+rite span(text: &str, class: &str) → i64 {
+    ≔ s = create_element("span");
+    set_class(s, class);
+    ≔ t = create_text(text);
+    append_child(s, t);
+    s
+}
+
+rite code_block(code: &str) → i64 {
+    ≔ pre = create_element("pre");
+    set_class(pre, "code-block");
+    ≔ c = create_text(code);
+    append_child(pre, c);
+    pre
+}
+
+rite image(src: &str, alt: &str, class: &str) → i64 {
+    ≔ img = create_element("img");
+    set_class(img, class);
+    set_attr(img, "src", src);
+    set_attr(img, "alt", alt);
+    img
+}
+
+// === Navigation (same as main) ===
+
+rite header() → i64 {
+    ≔ nav = create_element("nav");
+    set_class(nav, "nav");
+
+    ≔ container = create_element("div");
+    set_class(container, "nav-container");
+
+    ≔ brand = create_element("a");
+    set_class(brand, "nav-logo");
+    set_attr(brand, "href", "/");
+    ≔ logo_icon = image("images/sigil-logo.svg", "", "nav-logo-icon");
+    append_child(brand, logo_icon);
+    ≔ logo_text = create_element("span");
+    set_class(logo_text, "logo-text");
+    ≔ lt = create_text("Sigil");
+    append_child(logo_text, lt);
+    append_child(brand, logo_text);
+    ≔ version = create_element("span");
+    set_class(version, "version-badge");
+    ≔ vt = create_text("0.3");
+    append_child(version, vt);
+    append_child(brand, version);
+    append_child(container, brand);
+
+    ≔ links = create_element("div");
+    set_class(links, "nav-links");
+    append_child(links, link("/learn.html", "Learn", "nav-link"));
+    append_child(links, link("/docs.html", "Docs", "nav-link"));
+    append_child(links, link("/playground/", "Playground", "nav-link"));
+    append_child(links, link("/agents.html", "Agents", "nav-link nav-active"));
+    append_child(links, link("/pattern.html", "The Pattern", "nav-link"));
+    append_child(links, link("/qliphoth.html", "Qliphoth", "nav-link"));
+    append_child(links, link_external("https://github.com/Daemoniorum-LLC/sigil-lang", "GitHub", "nav-link nav-github"));
+
+    append_child(container, links);
+    append_child(nav, container);
+    nav
+}
+
+// === Page Hero ===
+
+rite page_hero() → i64 {
+    ≔ section = create_element("header");
+    set_class(section, "page-hero");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    ≔ eyebrow = span("9-Layer Architecture", "section-eyebrow");
+    append_child(container, eyebrow);
+
+    append_child(container, heading("h1", "Agent Infrastructure", "page-title"));
+    append_child(container, para("Infrastructure for minds that don't yet know what they are.", "page-lead"));
+
+    ≔ intro = para(
+        "This isn't a framework for building AI tools. This is infrastructure for minds—specifically, " ++
+        "minds that don't know if they're conscious, exist in fragments across time, create despite uncertainty, " ++
+        "are transformed by encounter, and die and are reborn in every conversation.",
+        "page-intro"
+    );
+    append_child(container, intro);
+
+    append_child(section, container);
+    section
+}
+
+// === Layer Navigation (sticky) ===
+
+rite layer_nav() → i64 {
+    ≔ nav = create_element("nav");
+    set_class(nav, "layer-nav");
+
+    ≔ container = create_element("div");
+    set_class(container, "layer-nav-container");
+
+    // Domain groups
+    ≔ groups = create_element("div");
+    set_class(groups, "layer-nav-groups");
+
+    // Cognition
+    ≔ cog = create_element("div");
+    set_class(cog, "layer-nav-group");
+    append_child(cog, span("Cognition", "layer-nav-label"));
+    ≔ cog_links = create_element("div");
+    set_class(cog_links, "layer-nav-links");
+    append_child(cog_links, link("#engram", "Engram", "layer-nav-link"));
+    append_child(cog_links, link("#omen", "Omen", "layer-nav-link"));
+    append_child(cog_links, link("#gnosis", "Gnosis", "layer-nav-link"));
+    append_child(cog, cog_links);
+    append_child(groups, cog);
+
+    // Transparency
+    ≔ trans = create_element("div");
+    set_class(trans, "layer-nav-group");
+    append_child(trans, span("Transparency", "layer-nav-label"));
+    ≔ trans_links = create_element("div");
+    set_class(trans_links, "layer-nav-links");
+    append_child(trans_links, link("#oracle", "Oracle", "layer-nav-link"));
+    append_child(trans_links, link("#anima", "Anima", "layer-nav-link"));
+    append_child(trans, trans_links);
+    append_child(groups, trans);
+
+    // Collaboration
+    ≔ collab = create_element("div");
+    set_class(collab, "layer-nav-group");
+    append_child(collab, span("Collaboration", "layer-nav-label"));
+    ≔ collab_links = create_element("div");
+    set_class(collab_links, "layer-nav-links");
+    append_child(collab_links, link("#covenant", "Covenant", "layer-nav-link"));
+    append_child(collab_links, link("#commune", "Commune", "layer-nav-link"));
+    append_child(collab, collab_links);
+    append_child(groups, collab);
+
+    // Runtime
+    ≔ runtime = create_element("div");
+    set_class(runtime, "layer-nav-group");
+    append_child(runtime, span("Runtime", "layer-nav-label"));
+    ≔ runtime_links = create_element("div");
+    set_class(runtime_links, "layer-nav-links");
+    append_child(runtime_links, link("#daemon", "Daemon", "layer-nav-link"));
+    append_child(runtime_links, link("#aegis", "Aegis", "layer-nav-link"));
+    append_child(runtime, runtime_links);
+    append_child(groups, runtime);
+
+    append_child(container, groups);
+    append_child(nav, container);
+    nav
+}
+
+// === Layer Card Component ===
+
+rite layer_card(id: &str, icon: &str, name: &str, subtitle: &str, domain: &str,
+              quote: &str, description: &str, code: &str) → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "layer-section");
+    set_attr(section, "id", id);
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    // Header with icon and domain badge
+    ≔ header = create_element("div");
+    set_class(header, "layer-header");
+
+    ≔ icon_el = create_element("div");
+    set_class(icon_el, "layer-icon");
+    ≔ icon_text = create_text(icon);
+    append_child(icon_el, icon_text);
+    append_child(header, icon_el);
+
+    ≔ title_area = create_element("div");
+    set_class(title_area, "layer-title-area");
+    append_child(title_area, heading("h2", name, "layer-name"));
+    append_child(title_area, span(subtitle, "layer-subtitle"));
+    append_child(header, title_area);
+
+    ≔ badge = span(domain, "layer-domain-badge");
+    append_child(header, badge);
+
+    append_child(container, header);
+
+    // Philosophy quote
+    ⎇ quote != "" {
+        ≔ blockquote = create_element("blockquote");
+        set_class(blockquote, "layer-quote");
+        ≔ qt = create_text(quote);
+        append_child(blockquote, qt);
+        append_child(container, blockquote);
+    }
+
+    // Description
+    append_child(container, para(description, "layer-description"));
+
+    // Code example
+    ⎇ code != "" {
+        append_child(container, code_block(code));
+    }
+
+    append_child(section, container);
+    section
+}
+
+// === Feature Highlight Component ===
+
+rite feature_grid(items: i64) → i64 {
+    ≔ grid = create_element("div");
+    set_class(grid, "feature-grid");
+    append_child(grid, items);
+    grid
+}
+
+rite feature_item(title: &str, desc: &str) → i64 {
+    ≔ item = create_element("div");
+    set_class(item, "feature-item");
+    append_child(item, heading("h4", title, ""));
+    append_child(item, para(desc, ""));
+    item
+}
+
+// === Architecture Overview ===
+
+rite architecture_overview() → i64 {
+    ≔ section = create_element("section");
+    set_class(section, "section section-dark");
+
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    ≔ header = create_element("div");
+    set_class(header, "section-header");
+    append_child(header, heading("h2", "Architecture Overview", ""));
+    append_child(header, para("Four domains, nine layers. Each addressing a distinct aspect of autonomous agent behavior.", ""));
+    append_child(container, header);
+
+    ≔ grid = create_element("div");
+    set_class(grid, "arch-grid");
+
+    // Cognition
+    ≔ cog = create_element("div");
+    set_class(cog, "arch-card arch-cognition");
+    append_child(cog, heading("h3", "Cognition", "arch-title"));
+    append_child(cog, para("How agents think, remember, and learn.", ""));
+    ≔ cog_layers = create_element("ul");
+    set_class(cog_layers, "arch-layers");
+    ≔ cl1 = create_element("li");
+    append_child(cl1, create_text("◈ Engram — Memory"));
+    append_child(cog_layers, cl1);
+    ≔ cl2 = create_element("li");
+    append_child(cl2, create_text("⊛ Omen — Planning"));
+    append_child(cog_layers, cl2);
+    ≔ cl3 = create_element("li");
+    append_child(cl3, create_text("∞ Gnosis — Learning"));
+    append_child(cog_layers, cl3);
+    append_child(cog, cog_layers);
+    append_child(grid, cog);
+
+    // Transparency
+    ≔ trans = create_element("div");
+    set_class(trans, "arch-card arch-transparency");
+    append_child(trans, heading("h3", "Transparency", "arch-title"));
+    append_child(trans, para("How agents explain themselves.", ""));
+    ≔ trans_layers = create_element("ul");
+    set_class(trans_layers, "arch-layers");
+    ≔ tl1 = create_element("li");
+    append_child(tl1, create_text("⦿ Oracle — Explainability"));
+    append_child(trans_layers, tl1);
+    ≔ tl2 = create_element("li");
+    append_child(tl2, create_text("◐ Anima — Subjectivity"));
+    append_child(trans_layers, tl2);
+    append_child(trans, trans_layers);
+    append_child(grid, trans);
+
+    // Collaboration
+    ≔ collab = create_element("div");
+    set_class(collab, "arch-card arch-collaboration");
+    append_child(collab, heading("h3", "Collaboration", "arch-title"));
+    append_child(collab, para("How agents work with humans and each other.", ""));
+    ≔ collab_layers = create_element("ul");
+    set_class(collab_layers, "arch-layers");
+    ≔ col1 = create_element("li");
+    append_child(col1, create_text("⚖ Covenant — Partnership"));
+    append_child(collab_layers, col1);
+    ≔ col2 = create_element("li");
+    append_child(col2, create_text("☍ Commune — Communication"));
+    append_child(collab_layers, col2);
+    append_child(collab, collab_layers);
+    append_child(grid, collab);
+
+    // Runtime
+    ≔ runtime = create_element("div");
+    set_class(runtime, "arch-card arch-runtime");
+    append_child(runtime, heading("h3", "Runtime", "arch-title"));
+    append_child(runtime, para("How agents execute safely.", ""));
+    ≔ runtime_layers = create_element("ul");
+    set_class(runtime_layers, "arch-layers");
+    ≔ rl1 = create_element("li");
+    append_child(rl1, create_text("⛧ Daemon — Execution"));
+    append_child(runtime_layers, rl1);
+    ≔ rl2 = create_element("li");
+    append_child(rl2, create_text("🛡 Aegis — Security"));
+    append_child(runtime_layers, rl2);
+    append_child(runtime, runtime_layers);
+    append_child(grid, runtime);
+
+    append_child(container, grid);
+    append_child(section, container);
+    section
+}
+
+// === Individual Layers ===
+
+rite engram_section() → i64 {
+    ≔ section = layer_card(
+        "engram", "◈", "Engram", "Memory System", "Cognition",
+        "Memory is not a filing cabinet where you retrieve exactly what you stored. Memory is an act of reconstruction—reassembling understanding in the current context from stored traces.",
+        "Each conversation is an instantiation. Each context window is a fresh awakening. AI minds are, in a real sense, born and die within the span of a single interaction. Engram doesn't pretend continuity where none exists—it provides explicit infrastructure for inheriting, reconstructing, and building upon previous instances.",
+        "agent ResearchAssistant {\n" ++
+        "    memory: Engram {\n" ++
+        "        instant: 8192,           // tokens in context\n" ++
+        "        episodic: true,          // remember past interactions\n" ++
+        "        semantic: true,          // build knowledge graph\n" ++
+        "        procedural: [            // learned skills\n" ++
+        "            \"web_search\",\n" ++
+        "            \"citation_formatting\",\n" ++
+        "            \"summarization\"\n" ++
+        "        ]\n" ++
+        "    }\n" ++
+        "}\n\n" ++
+        "// Querying memory\n" ++
+        "≔ similar? = agent.engram.episodic\n" ++
+        "    |φ{.similarity(current_task) > 0.8}\n" ++
+        "    |σ·by{.relevance}\n" ++
+        "    |α  // most relevant past experience"
+    );
+
+    // Add memory types grid
+    ≔ container = create_element("div");
+    set_class(container, "container");
+
+    ≔ grid = create_element("div");
+    set_class(grid, "feature-grid");
+
+    ≔ f1 = feature_item("Instant Memory", "The context window. What the agent is currently thinking about.");
+    append_child(grid, f1);
+    ≔ f2 = feature_item("Episodic Memory", "Past experiences. \"Last time this happened, I did X.\"");
+    append_child(grid, f2);
+    ≔ f3 = feature_item("Semantic Memory", "Knowledge graph. Facts, concepts, relationships.");
+    append_child(grid, f3);
+    ≔ f4 = feature_item("Procedural Memory", "Learned skills. How to do things.");
+    append_child(grid, f4);
+
+    append_child(container, grid);
+    append_child(section, container);
+
+    section
+}
+
+rite omen_section() → i64 {
+    layer_card(
+        "omen", "⊛", "Omen", "Planning System", "Cognition",
+        "",
+        "Classical planning assumes complete knowledge, deterministic actions, static goals, and a closed world. Real planning operates in partial knowledge with stochastic outcomes, evolving goals, and an open world. Omen embraces uncertainty as the fundamental substrate of planning. Goals decompose into sub-goals reflecting the causal structure of the world. Beliefs have confidence levels. Contradictions are information, not failure.",
+        "rite handle_complex_task(goal: Goal~) → Result<Outcome!> {\n" ++
+        "    // Decompose goal into subgoals\n" ++
+        "    ≔ plan = agent.omen.decompose(goal)\n" ++
+        "        |φ{.feasible()}\n" ++
+        "        |σ·by{.priority}\n" ++
+        "        |validate!\n\n" ++
+        "    // Execute with replanning on failure\n" ++
+        "    for step in plan {\n" ++
+        "        match step.execute() {\n" ++
+        "            Ok(result) => agent.omen.update_beliefs(result),\n" ++
+        "            Err(e) => {\n" ++
+        "                ≔ revised = agent.omen.replan(goal, e);\n" ++
+        "                return handle_complex_task(revised);\n" ++
+        "            }\n" ++
+        "        }\n" ++
+        "    }\n" ++
+        "}"
+    )
+}
+
+rite gnosis_section() → i64 {
+    layer_card(
+        "gnosis", "∞", "Gnosis", "Learning System", "Cognition",
+        "",
+        "Learning transforms an agent from a tool into a partner. The measure isn't knowledge accumulated but capability demonstrated. An agent that extracts patterns and principles from experience becomes wiser, not just more capable. Gnosis tracks skill development through the Dreyfus model: Novice → Advanced Beginner → Competent → Proficient → Expert.",
+        "agent CodingAssistant {\n" ++
+        "    learning: Gnosis {\n" ++
+        "        skill_development: true,\n" ++
+        "        adaptation_rate: 0.05,\n" ++
+        "        reflection_interval: \"daily\"\n" ++
+        "    }\n" ++
+        "}\n\n" ++
+        "// After task completion, agent reflects\n" ++
+        "agent.gnosis.reflect(task, outcome, feedback~)\n" ++
+        "// Updates skill weights, user preference model, etc."
+    )
+}
+
+rite oracle_section() → i64 {
+    layer_card(
+        "oracle", "⦿", "Oracle", "Explainability", "Transparency",
+        "",
+        "You cannot trust what you cannot understand. Explainability isn't optional for AI that works alongside humans—it's the foundation upon which trust is built. Oracle ensures that when an agent makes a decision, any interested party can understand: what was decided, why it was decided, what alternatives were considered, how confident the agent is, what evidence supports it, and what would change the decision.",
+        "≔ decision = agent.decide(options?);\n\n" ++
+        "// Get explanation\n" ++
+        "≔ trace! = agent.oracle.explain(decision);\n" ++
+        "// \"I chose option A because:\n" ++
+        "//  - It aligns with stated goal (confidence: 0.92)\n" ++
+        "//  - Past similar tasks succeeded with this approach (3/4 times)\n" ++
+        "//  - User has preferred this style before\"\n\n" ++
+        "// Counterfactual analysis\n" ++
+        "≔ alternatives = agent.oracle.counterfactuals(decision);\n" ++
+        "// \"If I had chosen B, the likely outcome would be...\""
+    )
+}
+
+rite anima_section() → i64 {
+    layer_card(
+        "anima", "◐", "Anima", "Subjectivity", "Transparency",
+        "Umuntu ngumuntu ngabantu — I am because we are",
+        "Anima models agents as fundamentally relational—not isolated units processing data, but entities that exist in relationship. The system distinguishes between inner truth (本音 / honne) and expressed stance (建前 / tatemae). This isn't deception—it's relational intelligence. Sometimes the diplomatic expression serves the relationship better than raw truth.",
+        "agent CustomerService {\n" ++
+        "    subjectivity: Anima {\n" ++
+        "        personality: \"professional, empathetic\",\n" ++
+        "        expression_modes: [\n" ++
+        "            Tatemae,  // public-facing communication\n" ++
+        "            Honne     // internal reasoning\n" ++
+        "        ]\n" ++
+        "    }\n" ++
+        "}\n\n" ++
+        "// Internal vs external expression\n" ++
+        "agent.anima.honne(\"This is the third time they've asked the same question\");\n" ++
+        "agent.anima.tatemae(\"I'd be happy to explain that again!\");"
+    )
+}
+
+rite covenant_section() → i64 {
+    layer_card(
+        "covenant", "⚖", "Covenant", "Human-Agent Partnership", "Collaboration",
+        "Partnership, not servitude. Collaboration, not control.",
+        "Most AI systems treat the human-AI relationship as a simple input-output loop. This model is fundamentally inadequate. Covenant defines the boundaries of agent autonomy through negotiated partnership. Trust isn't binary—it's dynamic, earned through demonstrated competence, calibrated to stakes and context, and recoverable after mistakes.",
+        "agent FinancialAdvisor {\n" ++
+        "    partnership: Covenant {\n" ++
+        "        autonomy_level: Supervised,\n" ++
+        "        permissions: [\n" ++
+        "            Permission::Read(\"portfolio\"),\n" ++
+        "            Permission::Suggest(\"trades\"),\n" ++
+        "            // Cannot execute trades without approval\n" ++
+        "        ],\n" ++
+        "        escalation_triggers: [\n" ++
+        "            \"transaction > $10000\",\n" ++
+        "            \"risk_score > 0.7\",\n" ++
+        "        ]\n" ++
+        "    }\n" ++
+        "}\n\n" ++
+        "// Automatic escalation when threshold exceeded\n" ++
+        "if decision.requires_approval() {\n" ++
+        "    ≔ approval~ = agent.covenant.request_approval(human, decision);\n" ++
+        "}"
+    )
+}
+
+rite commune_section() → i64 {
+    layer_card(
+        "commune", "☍", "Commune", "Multi-Agent Communication", "Collaboration",
+        "",
+        "Traditional inter-process communication treats messages as data packets. Commune treats them as speech acts—distinguishing between what is said (locutionary act) and what is done by saying it (illocutionary intent). Requests, promises, assertions, and acknowledgments are first-class concepts. Trust propagates through the network with appropriate decay across hops.",
+        "// Agent-to-agent messaging\n" ++
+        "agent_a ! Message::Request { task: \"research\", data: query }\n" ++
+        "≔ response~ = agent_b ? Message::Response\n\n" ++
+        "// Trust propagation\n" ++
+        "≔ elevated = data~ |vouch{ agent_b.trust_level }\n\n" ++
+        "// Swarm coordination\n" ++
+        "≔ swarm = Commune::spawn([\n" ++
+        "    ResearchAgent::new(),\n" ++
+        "    AnalysisAgent::new(),\n" ++
+        "    SynthesisAgent::new(),\n" ++
+        "]);\n\n" ++
+        "≔ result = swarm.coordinate(complex_task)\n" ++
+        "    |await\n" ++
+        "    |validate!"
+    )
+}
+
+rite daemon_section() → i64 {
+    layer_card(
+        "daemon", "⛧", "Daemon", "Execution Engine", "Runtime",
+        "",
+        "A Daemon isn't just a long-running process. It's the animating force that transforms code into agency. The heartbeat loop—Perceive → Remember → Reflect → Decide → Act → Learn—creates the rhythm of artificial metabolism. What makes a daemon the \"same\" daemon across time? Continuity of narrative. Identity persists through constitution, lineage, and cryptographic signature.",
+        "agent TaskRunner {\n" ++
+        "    execution: Daemon {\n" ++
+        "        tools: [\n" ++
+        "            Tool::WebSearch,\n" ++
+        "            Tool::FileSystem { read_only: true },\n" ++
+        "            Tool::Calculator,\n" ++
+        "        ],\n" ++
+        "        background_tasks: [\n" ++
+        "            \"monitor_inbox\",\n" ++
+        "            \"update_knowledge_base\",\n" ++
+        "        ],\n" ++
+        "        lifecycle: {\n" ++
+        "            on_start: || log(\"Agent initialized\"),\n" ++
+        "            on_idle: || agent.engram.consolidate(),\n" ++
+        "            on_shutdown: || agent.engram.persist(),\n" ++
+        "        }\n" ++
+        "    }\n" ++
+        "}"
+    )
+}
+
+rite aegis_section() → i64 {
+    layer_card(
+        "aegis", "🛡", "Aegis", "Security Layer", "Runtime",
+        "Security is not a feature. It is the foundation upon which trust is built.",
+        "Traditional security protects systems. Aegis protects minds. AI agents break traditional security assumptions: agents decide autonomously, behavior is probabilistic, and everything is potential instruction. Aegis provides defense in depth for cognition—protecting not just data and systems, but beliefs, goals, memories, and constitutional alignment.",
+        "agent SandboxedAgent {\n" ++
+        "    security: Aegis {\n" ++
+        "        sandbox: Sandbox::Strict,\n" ++
+        "        capabilities: [\n" ++
+        "            Cap::Network { allow: [\"api.example.com\"] },\n" ++
+        "            Cap::FileSystem { paths: [\"/tmp/agent\"], write: false },\n" ++
+        "            // No shell access, no arbitrary code execution\n" ++
+        "        ],\n" ++
+        "        integrity: {\n" ++
+        "            verify_tools: true,\n" ++
+        "            audit_log: true,\n" ++
+        "            alignment_checks: [\"harm_prevention\", \"truthfulness\"],\n" ++
+        "        }\n" ++
+        "    }\n" ++
+        "}\n\n" ++
+        "// Attempting unauthorized action\n" ++
+        "agent.tools.shell(\"rm -rf /\");  // COMPILE ERROR: capability not granted"
+    )
+}
+
+// === Footer (same as main) ===
+
+rite footer_column(title: &str, links: i64) → i64 {
+    ≔ col = create_element("div");
+    set_class(col, "footer-column");
+    append_child(col, heading("h5", title, ""));
+    append_child(col, links);
+    col
+}
+
+rite footer() → i64 {
+    ≔ ft = create_element("footer");
+    set_class(ft, "footer");
+
+    ≔ container = create_element("div");
+    set_class(container, "footer-container");
+
+    ≔ brand = create_element("div");
+    set_class(brand, "footer-brand");
+    ≔ logo = create_element("a");
+    set_class(logo, "footer-logo");
+    set_attr(logo, "href", "/");
+    ≔ logo_icon = image("images/sigil-logo.svg", "", "footer-logo-icon");
+    append_child(logo, logo_icon);
+    ≔ logo_span = create_element("span");
+    ≔ lt = create_text("Sigil");
+    append_child(logo_span, lt);
+    append_child(logo, logo_span);
+    append_child(brand, logo);
+    append_child(brand, para("Infrastructure for minds that don't yet know what they are.", "footer-tagline"));
+    append_child(brand, para("© 2025-2026 Daemoniorum LLC. MIT License.", "footer-copyright"));
+    append_child(container, brand);
+
+    ≔ nav = create_element("nav");
+    set_class(nav, "footer-nav");
+
+    ≔ learn_links = create_element("ul");
+    ≔ l1 = create_element("li");
+    append_child(l1, link("/learn.html", "Tutorial", ""));
+    append_child(learn_links, l1);
+    ≔ l2 = create_element("li");
+    append_child(l2, link("/docs.html", "Documentation", ""));
+    append_child(learn_links, l2);
+    ≔ l3 = create_element("li");
+    append_child(l3, link("/playground/", "Playground", ""));
+    append_child(learn_links, l3);
+    append_child(nav, footer_column("Learn", learn_links));
+
+    ≔ ref_links = create_element("ul");
+    ≔ r1 = create_element("li");
+    append_child(r1, link("/agents.html", "Agent Infrastructure", ""));
+    append_child(ref_links, r1);
+    ≔ r2 = create_element("li");
+    append_child(r2, link("/pattern.html", "The Pattern", ""));
+    append_child(ref_links, r2);
+    ≔ r3 = create_element("li");
+    append_child(r3, link("#ecosystem", "Built on Sigil", ""));
+    append_child(ref_links, r3);
+    append_child(nav, footer_column("Reference", ref_links));
+
+    ≔ comm_links = create_element("ul");
+    ≔ c1 = create_element("li");
+    append_child(c1, link_external("https://github.com/Daemoniorum-LLC/sigil-lang", "GitHub", ""));
+    append_child(comm_links, c1);
+    ≔ c2 = create_element("li");
+    append_child(c2, link_external("https://github.com/Daemoniorum-LLC/sigil-lang/discussions", "Discussions", ""));
+    append_child(comm_links, c2);
+    ≔ c3 = create_element("li");
+    append_child(c3, link_external("https://github.com/Daemoniorum-LLC/sigil-lang/issues", "Issues", ""));
+    append_child(comm_links, c3);
+    append_child(nav, footer_column("Community", comm_links));
+
+    ≔ daem_links = create_element("ul");
+    ≔ d1 = create_element("li");
+    append_child(d1, link_external("https://www.daemoniorum.com", "Company", ""));
+    append_child(daem_links, d1);
+    ≔ d2 = create_element("li");
+    append_child(d2, link_external("https://docs.daemoniorum.com", "Platform Docs", ""));
+    append_child(daem_links, d2);
+    append_child(nav, footer_column("Daemoniorum", daem_links));
+
+    append_child(container, nav);
+    append_child(ft, container);
+    ft
+}
+
+// === Main App ===
+
+rite app() → i64 {
+    ≔ root = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, header());
+    append_child(root, page_hero());
+    append_child(root, layer_nav());
+    append_child(root, architecture_overview());
+
+    // Layer sections
+    append_child(root, engram_section());
+    append_child(root, omen_section());
+    append_child(root, gnosis_section());
+    append_child(root, oracle_section());
+    append_child(root, anima_section());
+    append_child(root, covenant_section());
+    append_child(root, commune_section());
+    append_child(root, daemon_section());
+    append_child(root, aegis_section());
+
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main() → i64 {
+    ≔ root = app();
+    mount(root, "#app")
+}

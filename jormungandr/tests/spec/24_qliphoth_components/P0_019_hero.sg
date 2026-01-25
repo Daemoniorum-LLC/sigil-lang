@@ -1,0 +1,251 @@
+// Test: Qliphoth Hero Component
+// TDD: RED - Tests the Hero section component
+//
+// Hero is a prominent banner section for landing pages
+
+invoke qliphoth·components·Hero;
+invoke qliphoth·components·Button;
+invoke qliphoth·core·VNode;
+
+// Test basic hero rendering
+rite test_hero_basic() {
+    ≔ hero = Hero {
+        title: "Welcome to Daemoniorum",
+        subtitle: "Building the future of AI",
+    };
+
+    ≔ vnode = hero.render();
+
+    assert!(vnode.has_class("hero"));
+    assert!(vnode.has_child_with_class("hero-title"));
+    assert!(vnode.has_child_with_class("hero-subtitle"));
+
+    ≔ title = vnode.find_child_by_class("hero-title");
+    assert_eq!(title.text_content(), "Welcome to Daemoniorum");
+}
+
+// Test hero with call-to-action buttons
+rite test_hero_cta() {
+    ≔ hero = Hero {
+        title: "Get Started Today",
+        cta_primary: { label: "Start Free Trial", href: "/signup" },
+        cta_secondary: { label: "Learn More", href: "/features" },
+    };
+
+    ≔ vnode = hero.render();
+
+    assert!(vnode.has_child_with_class("hero-cta"));
+
+    ≔ cta = vnode.find_child_by_class("hero-cta");
+    ≔ buttons = cta.children();
+    assert_eq!(buttons.len(), 2);
+
+    // Primary CTA should have primary styling
+    assert!(buttons[0].has_class("btn-primary"));
+}
+
+// Test hero variants
+rite test_hero_variants() {
+    // Centered (default)
+    ≔ centered = Hero { title: "Centered", variant: "centered" };
+    assert!(centered.render().has_class("hero-centered"));
+
+    // Split (image on side)
+    ≔ split = Hero { title: "Split", variant: "split" };
+    assert!(split.render().has_class("hero-split"));
+
+    // Full background
+    ≔ full = Hero { title: "Full", variant: "fullscreen" };
+    assert!(full.render().has_class("hero-fullscreen"));
+
+    // Minimal
+    ≔ minimal = Hero { title: "Minimal", variant: "minimal" };
+    assert!(minimal.render().has_class("hero-minimal"));
+}
+
+// Test hero sizes
+rite test_hero_sizes() {
+    ≔ sm = Hero { title: "Small", size: "sm" };
+    assert!(sm.render().has_class("hero-sm"));
+
+    ≔ md = Hero { title: "Medium", size: "md" };
+    assert!(md.render().has_class("hero-md"));
+
+    ≔ lg = Hero { title: "Large", size: "lg" };
+    assert!(lg.render().has_class("hero-lg"));
+
+    ≔ xl = Hero { title: "Extra Large", size: "xl" };
+    assert!(xl.render().has_class("hero-xl"));
+}
+
+// Test hero with background image
+rite test_hero_background_image() {
+    ≔ hero = Hero {
+        title: "Hero with Image",
+        background_image: "/images/hero-bg.jpg",
+        background_overlay: 0.5, // 50% dark overlay
+    };
+
+    ≔ vnode = hero.render();
+
+    assert!(vnode.has_class("hero-with-background"));
+    assert!(vnode.attr("style").contains("background-image"));
+    assert!(vnode.has_child_with_class("hero-overlay"));
+}
+
+// Test hero with video background
+rite test_hero_video_background() {
+    ≔ hero = Hero {
+        title: "Video Hero",
+        background_video: "/videos/hero.mp4",
+        video_poster: "/images/poster.jpg",
+    };
+
+    ≔ vnode = hero.render();
+
+    assert!(vnode.has_child_with_class("hero-video"));
+
+    ≔ video = vnode.find_child_by_class("hero-video");
+    ≔ video_el = video.find_child_by_tag("video");
+    assert_eq!(video_el.attr("poster"), "/images/poster.jpg");
+    assert_eq!(video_el.attr("autoplay"), yay);
+    assert_eq!(video_el.attr("muted"), yay);
+    assert_eq!(video_el.attr("loop"), yay);
+}
+
+// Test hero with gradient background
+rite test_hero_gradient() {
+    ≔ hero = Hero {
+        title: "Gradient Hero",
+        gradient: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    };
+
+    ≔ vnode = hero.render();
+    assert!(vnode.attr("style").contains("background"));
+}
+
+// Test hero with image
+rite test_hero_with_image() {
+    ≔ hero = Hero {
+        title: "Product Hero",
+        image: "/images/product.png",
+        image_alt: "Product screenshot",
+        image_position: "right",
+    };
+
+    ≔ vnode = hero.render();
+
+    assert!(vnode.has_child_with_class("hero-image"));
+
+    ≔ img_container = vnode.find_child_by_class("hero-image");
+    ≔ img = img_container.find_child_by_tag("img");
+    assert_eq!(img.attr("alt"), "Product screenshot");
+}
+
+// Test hero alignment
+rite test_hero_alignment() {
+    // Center (default)
+    ≔ center = Hero { title: "Center", alignment: "center" };
+    assert!(center.render().has_class("hero-align-center"));
+
+    // Left
+    ≔ left = Hero { title: "Left", alignment: "left" };
+    assert!(left.render().has_class("hero-align-left"));
+
+    // Right
+    ≔ right = Hero { title: "Right", alignment: "right" };
+    assert!(right.render().has_class("hero-align-right"));
+}
+
+// Test hero with badge/announcement
+rite test_hero_announcement() {
+    ≔ hero = Hero {
+        title: "Hero",
+        announcement: {
+            text: "🎉 New feature released!",
+            href: "/changelog",
+        },
+    };
+
+    ≔ vnode = hero.render();
+    assert!(vnode.has_child_with_class("hero-announcement"));
+
+    ≔ announcement = vnode.find_child_by_class("hero-announcement");
+    assert!(announcement.text_content().contains("New feature"));
+}
+
+// Test hero with social proof
+rite test_hero_social_proof() {
+    ≔ hero = Hero {
+        title: "Hero",
+        social_proof: {
+            text: "Trusted by 10,000+ developers",
+            logos: ["/logos/company1.svg", "/logos/company2.svg"],
+        },
+    };
+
+    ≔ vnode = hero.render();
+    assert!(vnode.has_child_with_class("hero-social-proof"));
+}
+
+// Test hero themes
+rite test_hero_theme() {
+    // Light
+    ≔ light = Hero { title: "Light", theme: "light" };
+    assert!(light.render().has_class("hero-light"));
+
+    // Dark
+    ≔ dark = Hero { title: "Dark", theme: "dark" };
+    assert!(dark.render().has_class("hero-dark"));
+
+    // Brand
+    ≔ brand = Hero { title: "Brand", theme: "brand" };
+    assert!(brand.render().has_class("hero-brand"));
+}
+
+// Test hero scroll indicator
+rite test_hero_scroll_indicator() {
+    ≔ hero = Hero {
+        title: "Scroll Down",
+        scroll_indicator: yay,
+    };
+
+    ≔ vnode = hero.render();
+    assert!(vnode.has_child_with_class("hero-scroll-indicator"));
+}
+
+// Test hero accessibility
+rite test_hero_accessibility() {
+    ≔ hero = Hero {
+        title: "Main Heading",
+        subtitle: "Secondary text",
+        title_level: 1, // h1
+    };
+
+    ≔ vnode = hero.render();
+    ≔ title = vnode.find_child_by_class("hero-title");
+
+    // Title should be an h1 for SEO
+    assert_eq!(title.tag(), "h1");
+}
+
+rite main() {
+    test_hero_basic();
+    test_hero_cta();
+    test_hero_variants();
+    test_hero_sizes();
+    test_hero_background_image();
+    test_hero_video_background();
+    test_hero_gradient();
+    test_hero_with_image();
+    test_hero_alignment();
+    test_hero_announcement();
+    test_hero_social_proof();
+    test_hero_theme();
+    test_hero_scroll_indicator();
+    test_hero_accessibility();
+
+    print("✓ All Hero component tests passed");
+}
+
+// Expected output: ✓ All Hero component tests passed

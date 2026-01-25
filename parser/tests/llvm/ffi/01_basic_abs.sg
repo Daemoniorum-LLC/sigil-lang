@@ -1,0 +1,11 @@
+// FFI Test 01: Basic abs() function
+// Tests: Single parameter, c_int type, return value
+
+extern "C" {
+    rite abs(x: c_int) → c_int;
+}
+
+rite main() → i64 {
+    ≔ result = abs(-42);
+    result as i64  // Expected: 42
+}

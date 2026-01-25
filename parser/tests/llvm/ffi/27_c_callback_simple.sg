@@ -1,0 +1,15 @@
+// FFI Test 27: Sigil function as C callback
+// Tests: Pass Sigil function to higher-order Sigil function
+// Expected: 50
+
+rite call_with_value(f: rite(i64) → i64, x: i64) → i64 {
+    f(x)
+}
+
+rite double_it(x: i64) → i64 {
+    x * 2
+}
+
+rite main() → i64 {
+    call_with_value(double_it, 25)
+}

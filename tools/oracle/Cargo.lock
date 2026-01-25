@@ -1976,7 +1976,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-oracle"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "dashmap",
  "ropey",
@@ -1991,9 +1991,9 @@ dependencies = [
 
 [[package]]
 name = "sigil-parser"
-version = "0.1.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ada2499c47881b4295f30a6cfb261bf2cb389cb1cd5cad1cc96c4ffc38503ac"
+checksum = "ea6da3046a4b71dcf4531ac89316c00922bd7b0875b3719c71bc3b70c76259ff"
 dependencies = [
  "aes-gcm",
  "argon2",

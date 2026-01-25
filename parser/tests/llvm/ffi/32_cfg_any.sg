@@ -1,0 +1,17 @@
+// FFI Test 32: Conditional compilation - any()
+// Tests: #[cfg(any(target_os = "linux", target_os = "macos"))]
+// Expected: 1 on Unix-like systems
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+rite is_unix() → i64 {
+    1
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+rite is_unix() → i64 {
+    0
+}
+
+rite main() → i64 {
+    is_unix()
+}

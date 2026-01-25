@@ -1,0 +1,50 @@
+//! qliphoth-router - Type-safe Routing for Sigil Web Applications
+//!
+//! A client-side router with:
+//! - Type-safe route definitions
+//! - Path parameters and query strings
+//! - Nested routes
+//! - Route guards
+//! - History API integration
+//!
+//! ## Quick Start
+//!
+//! ```sigil
+//! use qliphoth_router::prelude::*;
+//!
+//! #[component]
+//! fn App() -> Element! {
+//!     html! {
+//!         <Router>
+//!             <Route path="/" component={Home} />
+//!             <Route path="/users/:id" component={UserProfile} />
+//!             <Route path="/products/*" component={ProductRoutes} />
+//!             <Route path="*" component={NotFound} />
+//!         </Router>
+//!     }
+//! }
+//! ```
+
+pub mod router;
+pub mod route;
+pub mod link;
+pub mod params;
+pub mod history;
+pub mod guards;
+
+pub use router::Router;
+pub use route::Route;
+pub use link::Link;
+pub use params::{Params, use_params, use_query};
+pub use history::{use_navigate, use_location, Navigate};
+pub use guards::{RouteGuard, Redirect};
+
+/// Prelude - common imports
+pub mod prelude {
+    pub use crate::Router;
+    pub use crate::Route;
+    pub use crate::Link;
+    pub use crate::params::*;
+    pub use crate::history::*;
+    pub use crate::guards::*;
+}

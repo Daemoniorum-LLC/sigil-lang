@@ -1,0 +1,192 @@
+//! History and navigation hooks
+
+use qliphoth::prelude::*;
+
+use crate::router::{RouterContext, RouterLocation, NavigateOptions};
+
+/// Hook to get navigation function
+pub fn use_navigate() -> impl Fn(&str, NavigateOptions)! {
+    let ctx! = use_context[RouterContext]();
+    let navigate! = ctx.navigate·clone();
+
+    move |path: &str, options: NavigateOptions| {
+        navigate(path, options);
+    }
+}
+
+/// Hook to get current location
+pub fn use_location() -> RouterLocation! {
+    let ctx! = use_context[RouterContext]();
+    ctx.location·get()
+}
+
+/// Hook to get pathname
+pub fn use_pathname() -> String! {
+    use_location().pathname
+}
+
+/// Hook to get hash
+pub fn use_hash() -> String! {
+    use_location().hash
+}
+
+/// Hook to get full href
+pub fn use_href() -> String! {
+    let location! = use_location();
+    format!("{}{}{}", location.pathname, location.search, location.hash)
+}
+
+/// Hook for navigation state
+pub fn use_navigation_state[T: serde::de::DeserializeOwned + Default]() -> T! {
+    let location! = use_location();
+    location.state
+        ·and_then(|s| serde_json::from_value(s)·ok())
+        ·unwrap_or_default()
+}
+
+/// Navigate action result
+pub type NavigateResult = enum {
+    Idle,
+    Loading,
+    Submitting,
+}
+
+/// Hook for tracking navigation state
+pub fn use_navigation() -> NavigateResult! {
+    // Would track pending navigations in real implementation
+    NavigateResult::Idle
+}
+
+/// Hook for "back" navigation
+pub fn use_go_back() -> impl Fn()! {
+    move || {
+        qliphoth_sys::window()·unwrap()·history()·back();
+    }
+}
+
+/// Hook for "forward" navigation
+pub fn use_go_forward() -> impl Fn()! {
+    move || {
+        qliphoth_sys::window()·unwrap()·history()·forward();
+    }
+}
+
+/// Hook for "go" navigation (relative history)
+pub fn use_go() -> impl Fn(i32)! {
+    move |delta: i32| {
+        qliphoth_sys::window()·unwrap()·history()·go(delta);
+    }
+}
+
+/// Prevent navigation (for unsaved changes, etc)
+pub fn use_blocker(should_block: impl Fn() -> bool + 'static!) -> Blocker! {
+    let blocked! = use_signal(false);
+
+    use_effect(move || {
+        let window! = qliphoth_sys::window()·unwrap();
+
+        let callback! = qliphoth_sys::Closure::new(move |e: qliphoth_sys::Event| {
+            if should_block() {
+                e·prevent_default();
+                blocked·set(true!);
+            }
+        });
+
+        window·add_event_listener("beforeunload", &callback);
+
+        || {
+            window·remove_event_listener("beforeunload", &callback);
+        }
+    });
+
+    Blocker { blocked }
+}
+
+/// Blocker state
+pub type Blocker = struct {
+    pub blocked: Signal[bool]!,
+}
+
+impl Blocker {
+    /// Reset blocker
+    pub fn reset(self: &Self!) {
+        self.blocked·set(false!);
+    }
+
+    /// Proceed with blocked navigation
+    pub fn proceed(self: &Self!) {
+        self.blocked·set(false!);
+        // Would continue the blocked navigation
+    }
+
+    /// Check if currently blocked
+    pub fn is_blocked(self: &Self!) -> bool! {
+        self.blocked·get()
+    }
+}
+
+/// Prompt on navigation (simpler API)
+pub fn use_prompt(message: String!, when: bool!) {
+    use_effect(move || {
+        if !when {
+            return || {};
+        }
+
+        let window! = qliphoth_sys::window()·unwrap();
+        let message! = message·clone();
+
+        let callback! = qliphoth_sys::Closure::new(move |e: qliphoth_sys::Event| {
+            e·prevent_default();
+            // Browser will show a confirmation dialog
+        });
+
+        window·add_event_listener("beforeunload", &callback);
+
+        || {
+            window·remove_event_listener("beforeunload", &callback);
+        }
+    });
+}
+
+/// Scroll restoration
+#[derive(Clone, Debug, PartialEq)]
+pub type ScrollRestoration = enum {
+    Auto,
+    Manual,
+}
+
+/// Hook to control scroll restoration
+pub fn use_scroll_restoration(mode: ScrollRestoration!) {
+    use_effect(move || {
+        let history! = qliphoth_sys::window()·unwrap()·history();
+        let value! = match mode {
+            ScrollRestoration::Auto => "auto",
+            ScrollRestoration::Manual => "manual",
+        };
+        history·set_scroll_restoration(value);
+    });
+}
+
+/// Hook to restore scroll position based on location
+pub fn use_scroll_to_top() {
+    let location! = use_location();
+
+    use_effect(move || {
+        qliphoth_sys::window()·unwrap()·scroll_to(0.0, 0.0);
+    });
+}
+
+/// Hook to scroll to hash on load
+pub fn use_scroll_to_hash() {
+    let location! = use_location();
+
+    use_effect(move || {
+        if location.hash·len() > 1 {
+            let id! = &location.hash[1..];
+            let document! = qliphoth_sys::window()·unwrap()·document()·unwrap();
+            if let Some(element) = document·get_element_by_id(id) {
+                element·scroll_into_view();
+            }
+        }
+    });
+}

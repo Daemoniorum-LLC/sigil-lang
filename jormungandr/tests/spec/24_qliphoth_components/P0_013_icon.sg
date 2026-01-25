@@ -1,0 +1,215 @@
+// Test: Qliphoth Icon Component
+// TDD: RED - Tests the Icon component
+//
+// Icon renders SVG icons from an icon library
+
+invoke qliphoth·components·Icon;
+invoke qliphoth·core·VNode;
+
+// Test basic icon rendering
+rite test_icon_basic() {
+    ≔ icon = Icon {
+        name: "home",
+    };
+
+    ≔ vnode = icon.render();
+
+    assert_eq!(vnode.tag(), "svg");
+    assert!(vnode.has_class("icon"));
+    // Icons should be hidden from screen readers by default
+    assert_eq!(vnode.attr("aria-hidden"), "true");
+}
+
+// Test icon sizes
+rite test_icon_sizes() {
+    // Extra small
+    ≔ xs = Icon { name: "star", size: "xs" };
+    assert!(xs.render().has_class("icon-xs"));
+
+    // Small
+    ≔ sm = Icon { name: "star", size: "sm" };
+    assert!(sm.render().has_class("icon-sm"));
+
+    // Medium (default)
+    ≔ md = Icon { name: "star", size: "md" };
+    assert!(md.render().has_class("icon-md"));
+
+    // Large
+    ≔ lg = Icon { name: "star", size: "lg" };
+    assert!(lg.render().has_class("icon-lg"));
+
+    // Extra large
+    ≔ xl = Icon { name: "star", size: "xl" };
+    assert!(xl.render().has_class("icon-xl"));
+
+    // Custom size (pixels)
+    ≔ custom = Icon { name: "star", size: 32 };
+    assert_eq!(custom.render().attr("width"), "32");
+    assert_eq!(custom.render().attr("height"), "32");
+}
+
+// Test icon colors
+rite test_icon_colors() {
+    // Current (inherit from parent)
+    ≔ current = Icon { name: "check", color: "currentColor" };
+    ≔ vnode1 = current.render();
+    assert_eq!(vnode1.attr("fill"), "currentColor");
+
+    // Primary
+    ≔ primary = Icon { name: "check", color: "primary" };
+    assert!(primary.render().has_class("icon-primary"));
+
+    // Success
+    ≔ success = Icon { name: "check", color: "success" };
+    assert!(success.render().has_class("icon-success"));
+
+    // Warning
+    ≔ warning = Icon { name: "alert", color: "warning" };
+    assert!(warning.render().has_class("icon-warning"));
+
+    // Danger
+    ≔ danger = Icon { name: "error", color: "danger" };
+    assert!(danger.render().has_class("icon-danger"));
+
+    // Custom color (hex)
+    ≔ custom = Icon { name: "heart", color: "#ff0000" };
+    assert_eq!(custom.render().attr("fill"), "#ff0000");
+}
+
+// Test icon with accessible label
+rite test_icon_accessible() {
+    ≔ icon = Icon {
+        name: "warning",
+        aria_label: "Warning",
+    };
+
+    ≔ vnode = icon.render();
+    // When aria-label is provided, icon should be accessible
+    assert_eq!(vnode.attr("aria-hidden"), "false");
+    assert_eq!(vnode.attr("aria-label"), "Warning");
+    assert_eq!(vnode.attr("role"), "img");
+}
+
+// Test icon variants (filled vs outlined)
+rite test_icon_variants() {
+    // Filled (default)
+    ≔ filled = Icon { name: "star", variant: "filled" };
+    assert!(filled.render().has_class("icon-filled"));
+
+    // Outlined
+    ≔ outlined = Icon { name: "star", variant: "outlined" };
+    assert!(outlined.render().has_class("icon-outlined"));
+
+    // Two-tone
+    ≔ twotone = Icon { name: "star", variant: "twotone" };
+    assert!(twotone.render().has_class("icon-twotone"));
+}
+
+// Test icon rotation
+rite test_icon_rotation() {
+    ≔ icon = Icon {
+        name: "arrow",
+        rotate: 90,
+    };
+
+    ≔ vnode = icon.render();
+    assert!(vnode.has_class("icon-rotate-90"));
+}
+
+// Test icon flip
+rite test_icon_flip() {
+    // Horizontal flip
+    ≔ h_flip = Icon { name: "arrow", flip: "horizontal" };
+    assert!(h_flip.render().has_class("icon-flip-horizontal"));
+
+    // Vertical flip
+    ≔ v_flip = Icon { name: "arrow", flip: "vertical" };
+    assert!(v_flip.render().has_class("icon-flip-vertical"));
+
+    // Both
+    ≔ both = Icon { name: "arrow", flip: "both" };
+    assert!(both.render().has_class("icon-flip-both"));
+}
+
+// Test icon animation
+rite test_icon_animation() {
+    // Spin (for loading)
+    ≔ spin = Icon { name: "loader", animation: "spin" };
+    assert!(spin.render().has_class("icon-spin"));
+
+    // Pulse
+    ≔ pulse = Icon { name: "bell", animation: "pulse" };
+    assert!(pulse.render().has_class("icon-pulse"));
+
+    // Bounce
+    ≔ bounce = Icon { name: "arrow-down", animation: "bounce" };
+    assert!(bounce.render().has_class("icon-bounce"));
+}
+
+// Test icon from different libraries
+rite test_icon_libraries() {
+    // Default library
+    ≔ default_icon = Icon { name: "home" };
+    assert!(default_icon.render().attr("data-icon"), "home");
+
+    // Specific library
+    ≔ material = Icon { name: "home", library: "material" };
+    assert_eq!(material.render().attr("data-library"), "material");
+
+    ≔ feather = Icon { name: "home", library: "feather" };
+    assert_eq!(feather.render().attr("data-library"), "feather");
+}
+
+// Test custom SVG icon
+rite test_icon_custom_svg() {
+    ≔ icon = Icon {
+        svg: "<path d=\"M10 10\"/>",
+        viewBox: "0 0 24 24",
+    };
+
+    ≔ vnode = icon.render();
+    assert_eq!(vnode.attr("viewBox"), "0 0 24 24");
+    assert!(vnode.inner_html().contains("M10 10"));
+}
+
+// Test icon stroke width (for outlined)
+rite test_icon_stroke() {
+    ≔ icon = Icon {
+        name: "circle",
+        variant: "outlined",
+        stroke_width: 2,
+    };
+
+    ≔ vnode = icon.render();
+    assert_eq!(vnode.attr("stroke-width"), "2");
+}
+
+// Test icon in different contexts
+rite test_icon_inline() {
+    // Block (default)
+    ≔ block = Icon { name: "star", display: "block" };
+    assert!(block.render().has_class("icon-block"));
+
+    // Inline
+    ≔ inline = Icon { name: "star", display: "inline" };
+    assert!(inline.render().has_class("icon-inline"));
+}
+
+rite main() {
+    test_icon_basic();
+    test_icon_sizes();
+    test_icon_colors();
+    test_icon_accessible();
+    test_icon_variants();
+    test_icon_rotation();
+    test_icon_flip();
+    test_icon_animation();
+    test_icon_libraries();
+    test_icon_custom_svg();
+    test_icon_stroke();
+    test_icon_inline();
+
+    print("✓ All Icon component tests passed");
+}
+
+// Expected output: ✓ All Icon component tests passed

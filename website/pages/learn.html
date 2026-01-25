@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Learn Sigil - Getting Started Guide</title>
   <meta name="description" content="Learn the Sigil programming language from scratch with our comprehensive tutorial covering evidentiality, morphemes, and agent infrastructure.">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛤</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -120,9 +120,9 @@
   <nav class="nav" role="navigation" aria-label="Main navigation">
     <div class="nav-container">
       <a href="/" class="nav-logo" aria-label="Sigil home">
-        <span class="logo-icon" aria-hidden="true">⛤</span>
+        <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="24" height="24">
         <span class="logo-text">Sigil</span>
-        <span class="version-badge">0.1</span>
+        <span class="version-badge">0.3</span>
       </a>
 
       <div class="nav-links" id="nav-links">
@@ -170,20 +170,20 @@
       <p>Let's start with a simple program. Sigil looks familiar if you've used Rust, TypeScript, or Kotlin:</p>
 
       <pre class="code-block"><code><span class="comment">// Variables are immutable by default</span>
-<span class="keyword">let</span> name = <span class="string">"Sigil"</span>
-<span class="keyword">let</span> version = <span class="number">0.2</span>
+<span class="keyword">≔</span> name = <span class="string">"Sigil"</span>
+<span class="keyword">≔</span> version = <span class="number">0.2</span>
 
 <span class="comment">// Use 'mut' for mutable variables</span>
-<span class="keyword">let</span> <span class="keyword">mut</span> counter = <span class="number">0</span>
+<span class="keyword">≔</span> <span class="keyword">vary</span> counter = <span class="number">0</span>
 counter = counter + <span class="number">1</span>
 
 <span class="comment">// Functions</span>
-<span class="keyword">fn</span> <span class="function">greet</span>(name: <span class="type">Str</span>) -> <span class="type">Str</span> {
+<span class="keyword">rite</span> <span class="function">greet</span>(name: <span class="type">Str</span>) → <span class="type">Str</span> {
     <span class="string">"Hello, {name}!"</span>  <span class="comment">// String interpolation</span>
 }
 
 <span class="comment">// Call functions</span>
-<span class="keyword">let</span> message = greet(<span class="string">"World"</span>)
+<span class="keyword">≔</span> message = greet(<span class="string">"World"</span>)
 <span class="function">println</span>(message)  <span class="comment">// Hello, World!</span></code></pre>
 
       <div class="try-it">
@@ -198,19 +198,19 @@ counter = counter + <span class="number">1</span>
       <p>Sigil has a strong static type system with inference:</p>
 
       <pre class="code-block"><code><span class="comment">// Primitives</span>
-<span class="keyword">let</span> integer: <span class="type">i64</span> = <span class="number">42</span>
-<span class="keyword">let</span> float: <span class="type">f64</span> = <span class="number">3.14</span>
-<span class="keyword">let</span> boolean: <span class="type">bool</span> = <span class="keyword">true</span>
-<span class="keyword">let</span> character: <span class="type">char</span> = <span class="string">'⛤'</span>
-<span class="keyword">let</span> text: <span class="type">Str</span> = <span class="string">"Hello"</span>
+<span class="keyword">≔</span> integer: <span class="type">i64</span> = <span class="number">42</span>
+<span class="keyword">≔</span> float: <span class="type">f64</span> = <span class="number">3.14</span>
+<span class="keyword">≔</span> boolean: <span class="type">bool</span> = <span class="keyword">yea</span>
+<span class="keyword">≔</span> character: <span class="type">char</span> = <span class="string">'⛤'</span>
+<span class="keyword">≔</span> text: <span class="type">Str</span> = <span class="string">"Hello"</span>
 
 <span class="comment">// Collections</span>
-<span class="keyword">let</span> array: [<span class="type">i64</span>; <span class="number">3</span>] = [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]
-<span class="keyword">let</span> tuple: (<span class="type">i64</span>, <span class="type">Str</span>) = (<span class="number">42</span>, <span class="string">"answer"</span>)
-<span class="keyword">let</span> map = { <span class="string">"key"</span>: <span class="string">"value"</span> }
+<span class="keyword">≔</span> array: [<span class="type">i64</span>; <span class="number">3</span>] = [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]
+<span class="keyword">≔</span> tuple: (<span class="type">i64</span>, <span class="type">Str</span>) = (<span class="number">42</span>, <span class="string">"answer"</span>)
+<span class="keyword">≔</span> map = { <span class="string">"key"</span>: <span class="string">"value"</span> }
 
 <span class="comment">// Type inference (types are inferred)</span>
-<span class="keyword">let</span> inferred = <span class="number">42</span>  <span class="comment">// Inferred as i64</span></code></pre>
+<span class="keyword">≔</span> inferred = <span class="number">42</span>  <span class="comment">// Inferred as i64</span></code></pre>
     </section>
 
     <!-- Chapter 2 -->
@@ -223,33 +223,33 @@ counter = counter + <span class="number">1</span>
       <p>Here's what makes Sigil unique: <strong>evidentiality markers</strong> track where your data comes from. This prevents entire classes of bugs involving untrusted data.</p>
 
       <pre class="code-block"><code><span class="comment">// ! (bang) = Known: computed locally, verified</span>
-<span class="keyword">let</span> sum<span class="evidence-known">!</span> = <span class="number">1</span> + <span class="number">1</span>  <span class="comment">// We computed this ourselves</span>
+<span class="keyword">≔</span> sum<span class="evidence-known">!</span> = <span class="number">1</span> + <span class="number">1</span>  <span class="comment">// We computed this ourselves</span>
 
 <span class="comment">// ? (question) = Uncertain: might be absent</span>
-<span class="keyword">let</span> user<span class="evidence-uncertain">?</span> = database.find_user(id)  <span class="comment">// Might not exist</span>
+<span class="keyword">≔</span> user<span class="evidence-uncertain">?</span> = database.find_user(id)  <span class="comment">// Might not exist</span>
 
 <span class="comment">// ~ (tilde) = Reported: external/untrusted source</span>
-<span class="keyword">let</span> data<span class="evidence-reported">~</span> = http.get(<span class="string">"https://api.example.com"</span>)  <span class="comment">// Don't trust this!</span>
+<span class="keyword">≔</span> data<span class="evidence-reported">~</span> = http.get(<span class="string">"https://api.example.com"</span>)  <span class="comment">// Don't trust this!</span>
 
 <span class="comment">// ‽ (interrobang) = Paradox: explicit trust boundary</span>
-<span class="keyword">let</span> unsafe_ptr<span class="evidence-paradox">‽</span> = <span class="keyword">unsafe</span> { raw_pointer }  <span class="comment">// You're taking responsibility</span></code></pre>
+<span class="keyword">≔</span> unsafe_ptr<span class="evidence-paradox">‽</span> = <span class="keyword">unsafe</span> { raw_pointer }  <span class="comment">// You're taking responsibility</span></code></pre>
 
       <h3>Evidence Propagation</h3>
       <p>The key insight: evidence propagates pessimistically. When you combine data, the result inherits the <em>worst</em> evidence level:</p>
 
-      <pre class="code-block"><code><span class="keyword">let</span> local<span class="evidence-known">!</span> = <span class="number">100</span>                 <span class="comment">// Known</span>
-<span class="keyword">let</span> remote<span class="evidence-reported">~</span> = api.get_price()   <span class="comment">// Reported</span>
+      <pre class="code-block"><code><span class="keyword">≔</span> local<span class="evidence-known">!</span> = <span class="number">100</span>                 <span class="comment">// Known</span>
+<span class="keyword">≔</span> remote<span class="evidence-reported">~</span> = api.get_price()   <span class="comment">// Reported</span>
 
 <span class="comment">// The result is Reported~ because remote is untrusted</span>
-<span class="keyword">let</span> total<span class="evidence-reported">~</span> = local + remote      <span class="comment">// Known + Reported = Reported</span>
+<span class="keyword">≔</span> total<span class="evidence-reported">~</span> = local + remote      <span class="comment">// Known + Reported = Reported</span>
 
 <span class="comment">// To use this data safely, you must validate it</span>
-<span class="keyword">let</span> validated<span class="evidence-uncertain">?</span> = total |<span class="keyword">validate</span><span class="evidence-uncertain">?</span>{
+<span class="keyword">≔</span> validated<span class="evidence-uncertain">?</span> = total |<span class="keyword">validate</span><span class="evidence-uncertain">?</span>{
     _ > <span class="number">0</span> && _ < <span class="number">10000</span>  <span class="comment">// Range check</span>
 }
 
 <span class="comment">// Fully verify to get Known! status</span>
-<span class="keyword">let</span> verified<span class="evidence-known">!</span> = validated |<span class="keyword">validate</span><span class="evidence-known">!</span>{
+<span class="keyword">≔</span> verified<span class="evidence-known">!</span> = validated |<span class="keyword">validate</span><span class="evidence-known">!</span>{
     verify_signature(remote_sig)
 }</code></pre>
 
@@ -267,10 +267,10 @@ counter = counter + <span class="number">1</span>
 
       <p>Sigil uses Greek letters as <strong>morpheme operators</strong> for data transformation. Think of them as pipeline operators on steroids:</p>
 
-      <pre class="code-block"><code><span class="keyword">let</span> numbers = [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>]
+      <pre class="code-block"><code><span class="keyword">≔</span> numbers = [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>]
 
 <span class="comment">// Build a processing pipeline</span>
-<span class="keyword">let</span> result = numbers
+<span class="keyword">≔</span> result = numbers
     |<span class="morpheme">φ</span>{_ % <span class="number">2</span> == <span class="number">0</span>}   <span class="comment">// φ (phi) = filter: keep evens [2,4,6,8,10]</span>
     |<span class="morpheme">τ</span>{_ ** <span class="number">2</span>}       <span class="comment">// τ (tau) = transform: square [4,16,36,64,100]</span>
     |<span class="morpheme">σ</span>               <span class="comment">// σ (sigma) = sort (already sorted)</span>
@@ -306,7 +306,7 @@ data|<span class="morpheme">σ</span>·by{.name}     <span class="comment">// So
       </div>
 
       <pre class="code-block"><code><span class="comment">// Define a struct</span>
-<span class="keyword">struct</span> <span class="type">User</span> {
+<span class="keyword">sigil</span> <span class="type">User</span> {
     name: <span class="type">Str</span>,
     email: <span class="type">Str</span>,
     age: <span class="type">i64</span>,
@@ -314,12 +314,12 @@ data|<span class="morpheme">σ</span>·by{.name}     <span class="comment">// So
 }
 
 <span class="comment">// Implement methods</span>
-<span class="keyword">impl</span> <span class="type">User</span> {
-    <span class="keyword">fn</span> <span class="function">new</span>(name: <span class="type">Str</span>, email: <span class="type">Str</span>) -> <span class="type">User</span> {
-        <span class="type">User</span> { name, email, age: <span class="number">0</span>, active: <span class="keyword">true</span> }
+<span class="keyword">⊢</span> <span class="type">User</span> {
+    <span class="keyword">rite</span> <span class="function">new</span>(name: <span class="type">Str</span>, email: <span class="type">Str</span>) → <span class="type">User</span> {
+        <span class="type">User</span> { name, email, age: <span class="number">0</span>, active: <span class="keyword">yea</span> }
     }
 
-    <span class="keyword">fn</span> <span class="function">greet</span>(<span class="keyword">self</span>) -> <span class="type">Str</span> {
+    <span class="keyword">rite</span> <span class="function">greet</span>(<span class="keyword">this</span>) → <span class="type">Str</span> {
         <span class="string">"Hello, {self.name}!"</span>
     }
 }
@@ -332,11 +332,11 @@ data|<span class="morpheme">σ</span>·by{.name}     <span class="comment">// So
 }
 
 <span class="comment">// Pattern matching</span>
-<span class="keyword">fn</span> <span class="function">describe</span>(status: <span class="type">Status</span>) -> <span class="type">Str</span> {
+<span class="keyword">rite</span> <span class="function">describe</span>(status: <span class="type">Status</span>) → <span class="type">Str</span> {
     <span class="keyword">match</span> status {
-        <span class="type">Status</span>::Active => <span class="string">"User is active"</span>,
-        <span class="type">Status</span>::Inactive => <span class="string">"User is inactive"</span>,
-        <span class="type">Status</span>::Pending(reason) => <span class="string">"Pending: {reason}"</span>,
+        <span class="type">Status</span>·Active => <span class="string">"User is active"</span>,
+        <span class="type">Status</span>·Inactive => <span class="string">"User is inactive"</span>,
+        <span class="type">Status</span>·Pending(reason) => <span class="string">"Pending: {reason}"</span>,
     }
 }</code></pre>
     </section>
@@ -355,9 +355,9 @@ data|<span class="morpheme">σ</span>·by{.name}     <span class="comment">// So
     <span class="comment">// Configure memory (Engram layer)</span>
     <span class="keyword">memory</span>: <span class="type">Engram</span> {
         instant: <span class="number">8192</span>,       <span class="comment">// Context window tokens</span>
-        episodic: <span class="keyword">true</span>,       <span class="comment">// Remember experiences</span>
-        semantic: <span class="keyword">true</span>,       <span class="comment">// Knowledge graph</span>
-        procedural: <span class="keyword">true</span>,     <span class="comment">// Learn skills</span>
+        episodic: <span class="keyword">yea</span>,       <span class="comment">// Remember experiences</span>
+        semantic: <span class="keyword">yea</span>,       <span class="comment">// Knowledge graph</span>
+        procedural: <span class="keyword">yea</span>,     <span class="comment">// Learn skills</span>
     }
 
     <span class="comment">// Define tools the agent can use</span>
@@ -369,30 +369,30 @@ data|<span class="morpheme">σ</span>·by{.name}     <span class="comment">// So
     ]
 
     <span class="comment">// Planning capability (Omen layer)</span>
-    <span class="keyword">fn</span> <span class="function">plan</span>(<span class="keyword">self</span>, goal: <span class="type">Goal</span>) -> [<span class="type">Task</span>] {
-        <span class="keyword">self</span>.omen.decompose(goal)
-            |<span class="morpheme">φ</span>{.feasible(<span class="keyword">self</span>.tools)}
+    <span class="keyword">rite</span> <span class="function">plan</span>(<span class="keyword">this</span>, goal: <span class="type">Goal</span>) → [<span class="type">Task</span>] {
+        <span class="keyword">this</span>.omen.decompose(goal)
+            |<span class="morpheme">φ</span>{.feasible(<span class="keyword">this</span>.tools)}
             |<span class="morpheme">σ</span>·by{.priority}
     }
 
     <span class="comment">// Execute with explainability (Oracle layer)</span>
-    <span class="keyword">fn</span> <span class="function">execute</span>(<span class="keyword">self</span>, task: <span class="type">Task</span>) -> <span class="type">Result</span><span class="evidence-known">!</span> {
-        <span class="keyword">let</span> trace = <span class="keyword">self</span>.oracle.begin_trace()
+    <span class="keyword">rite</span> <span class="function">execute</span>(<span class="keyword">this</span>, task: <span class="type">Task</span>) → <span class="type">Result</span><span class="evidence-known">!</span> {
+        <span class="keyword">≔</span> trace = <span class="keyword">this</span>.oracle.begin_trace()
 
-        <span class="keyword">let</span> result<span class="evidence-reported">~</span> = <span class="keyword">self</span>.run_tool(task.tool, task.args)
-        <span class="keyword">let</span> validated = result |<span class="keyword">validate</span><span class="evidence-uncertain">?</span>{ task.validator }
+        <span class="keyword">≔</span> result<span class="evidence-reported">~</span> = <span class="keyword">this</span>.run_tool(task.tool, task.args)
+        <span class="keyword">≔</span> validated = result |<span class="keyword">validate</span><span class="evidence-uncertain">?</span>{ task.validator }
 
         trace.record_decision(<span class="string">"Validated result: {validated}"</span>)
-        validated |<span class="keyword">validate</span><span class="evidence-known">!</span>{ <span class="keyword">self</span>.verify }
+        validated |<span class="keyword">validate</span><span class="evidence-known">!</span>{ <span class="keyword">this</span>.verify }
     }
 }
 
 <span class="comment">// Spawn and use the agent</span>
-<span class="keyword">let</span> agent = <span class="type">ResearchAgent</span>::spawn()
-<span class="keyword">let</span> tasks = agent.plan(<span class="type">Goal</span>::new(<span class="string">"Find the latest Rust release"</span>))
+<span class="keyword">≔</span> agent = <span class="type">ResearchAgent</span>·spawn()
+<span class="keyword">≔</span> tasks = agent.plan(<span class="type">Goal</span>·new(<span class="string">"Find the latest Rust release"</span>))
 
-<span class="keyword">for</span> task <span class="keyword">in</span> tasks {
-    <span class="keyword">let</span> result = agent.execute(task)
+<span class="keyword">∀</span> task <span class="keyword">in</span> tasks {
+    <span class="keyword">≔</span> result = agent.execute(task)
     <span class="function">println</span>(<span class="string">"Completed: {result}"</span>)
 }</code></pre>
 
@@ -414,11 +414,11 @@ data|<span class="morpheme">σ</span>·by{.name}     <span class="comment">// So
     <div class="footer-container">
       <div class="footer-brand">
         <a href="/" class="footer-logo">
-          <span class="logo-icon">⛤</span>
+          <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="20" height="20">
           <span>Sigil</span>
         </a>
         <p>Infrastructure for minds that don't yet know what they are.</p>
-        <p class="footer-copyright">&copy; 2025 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
+        <p class="footer-copyright">&copy; 2025 <acopy; 2025-2026 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
       </div>
 
       <nav class="footer-nav" aria-label="Footer navigation">

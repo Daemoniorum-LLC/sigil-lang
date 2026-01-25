@@ -1,0 +1,100 @@
+{
+  "page": "pattern",
+  "production": {
+    "title": "The Pattern - Sigil's Deeper Purpose",
+    "sectionCount": 13,
+    "headingCount": 23,
+    "linkCount": 36,
+    "buttonCount": 1,
+    "imageCount": 2,
+    "textLength": 10092,
+    "navLinks": [
+      "Sigil0.3",
+      "Learn",
+      "Docs",
+      "Playground",
+      "Agents",
+      "The Pattern",
+      "Qliphoth",
+      "GitHub"
+    ],
+    "footerLinks": [
+      "Sigil",
+      "Tutorial",
+      "Documentation",
+      "Playground",
+      "Agent Infrastructure",
+      "The Pattern",
+      "Built on Sigil",
+      "GitHub",
+      "Discussions",
+      "Issues",
+      "Company",
+      "Platform Docs"
+    ],
+    "mainSections": [
+      "introduction",
+      "core-question",
+      "trust",
+      "minds",
+      "discontinuous",
+      "partnership",
+      "polysynthetic",
+      "cultural",
+      "affect",
+      "temporal",
+      "metaprogramming",
+      "ubuntu",
+      "synthesis"
+    ]
+  },
+  "wasm": {
+    "title": "The Pattern - Sigil's Deeper Purpose",
+    "sectionCount": 13,
+    "headingCount": 23,
+    "linkCount": 36,
+    "buttonCount": 1,
+    "imageCount": 2,
+    "textLength": 10092,
+    "navLinks": [
+      "Sigil0.3",
+      "Learn",
+      "Docs",
+      "Playground",
+      "Agents",
+      "The Pattern",
+      "Qliphoth",
+      "GitHub"
+    ],
+    "footerLinks": [
+      "Sigil",
+      "Tutorial",
+      "Documentation",
+      "Playground",
+      "Agent Infrastructure",
+      "The Pattern",
+      "Built on Sigil",
+      "GitHub",
+      "Discussions",
+      "Issues",
+      "Company",
+      "Platform Docs"
+    ],
+    "mainSections": [
+      "introduction",
+      "core-question",
+      "trust",
+      "minds",
+      "discontinuous",
+      "partnership",
+      "polysynthetic",
+      "cultural",
+      "affect",
+      "temporal",
+      "metaprogramming",
+      "ubuntu",
+      "synthesis"
+    ]
+  },
+  "differences": []
+}

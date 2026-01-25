@@ -1,0 +1,62 @@
+//! qliphoth-sys - Browser API Bindings for Sigil
+//!
+//! Low-level bindings to Web APIs for WebAssembly applications.
+//! These provide the foundation for qliphoth and can be used directly.
+//!
+//! ## Features
+//!
+//! Enable only the APIs you need to minimize bundle size:
+//!
+//! ```toml
+//! [dependencies]
+//! qliphoth-sys = { version = "0.2.0", features = ["Window", "Document", "Fetch"] }
+//! ```
+
+pub mod window;
+pub mod document;
+pub mod element;
+pub mod node;
+pub mod events;
+pub mod console;
+pub mod storage;
+pub mod location;
+pub mod history;
+pub mod navigator;
+pub mod fetch;
+pub mod timers;
+pub mod closure;
+pub mod js;
+
+// Re-exports
+pub use window::*;
+pub use document::*;
+pub use element::*;
+pub use node::*;
+pub use events::*;
+pub use console::*;
+pub use storage::*;
+pub use location::*;
+pub use history::*;
+pub use navigator::*;
+pub use fetch::*;
+pub use timers::*;
+pub use closure::*;
+pub use js::*;
+
+/// Get the global window object
+pub fn window() -> Option[Window]? {
+    Window::get()
+}
+
+/// Console logging convenience functions
+pub fn log(msg: &str!) {
+    console::log(msg);
+}
+
+pub fn warn(msg: &str!) {
+    console::warn(msg);
+}
+
+pub fn error(msg: &str!) {
+    console::error(msg);
+}

@@ -1,0 +1,239 @@
+// Test: Daemoniorum Team Grid Component
+// TDD: RED - Tests the team member display grid
+//
+// TeamGrid displays team members with photos, roles, and social links
+
+invoke daemoniorum·components·TeamGrid;
+invoke daemoniorum·components·TeamMember;
+invoke qliphoth·core·VNode;
+
+// Test basic team grid rendering
+rite test_team_grid_basic() {
+    ≔ grid = TeamGrid {
+        children: [
+            TeamMember {
+                name: "Alice Smith",
+                role: "CEO",
+                avatar: "/team/alice.jpg",
+            },
+            TeamMember {
+                name: "Bob Jones",
+                role: "CTO",
+                avatar: "/team/bob.jpg",
+            },
+        ]
+    };
+
+    ≔ vnode = grid.render();
+
+    assert!(vnode.has_class("team-grid"));
+    ≔ members = vnode.find_children_by_class("team-member");
+    assert_eq!(members.len(), 2);
+}
+
+// Test team member rendering
+rite test_team_member_basic() {
+    ≔ member = TeamMember {
+        name: "Jane Doe",
+        role: "Lead Engineer",
+        avatar: "/team/jane.jpg",
+        bio: "Jane leads our engineering team with 10+ years of experience.",
+    };
+
+    ≔ vnode = member.render();
+
+    assert!(vnode.has_class("team-member"));
+    assert!(vnode.has_child_with_class("team-member-avatar"));
+    assert!(vnode.has_child_with_class("team-member-name"));
+    assert!(vnode.has_child_with_class("team-member-role"));
+    assert!(vnode.has_child_with_class("team-member-bio"));
+
+    ≔ name = vnode.find_child_by_class("team-member-name");
+    assert_eq!(name.text_content(), "Jane Doe");
+}
+
+// Test team member with social links
+rite test_team_member_social() {
+    ≔ member = TeamMember {
+        name: "John Smith",
+        role: "Developer",
+        avatar: "/team/john.jpg",
+        social: [
+            { platform: "twitter", url: "https://twitter.com/john" },
+            { platform: "github", url: "https://github.com/john" },
+            { platform: "linkedin", url: "https://linkedin.com/in/john" },
+        ],
+    };
+
+    ≔ vnode = member.render();
+    assert!(vnode.has_child_with_class("team-member-social"));
+
+    ≔ social = vnode.find_child_by_class("team-member-social");
+    ≔ links = social.find_children_by_class("team-member-social-link");
+    assert_eq!(links.len(), 3);
+}
+
+// Test team grid columns
+rite test_team_grid_columns() {
+    ≔ two_col = TeamGrid { columns: 2, children: [] };
+    assert!(two_col.render().has_class("team-grid-cols-2"));
+
+    ≔ three_col = TeamGrid { columns: 3, children: [] };
+    assert!(three_col.render().has_class("team-grid-cols-3"));
+
+    ≔ four_col = TeamGrid { columns: 4, children: [] };
+    assert!(four_col.render().has_class("team-grid-cols-4"));
+}
+
+// Test team member variants
+rite test_team_member_variants() {
+    // Card (default)
+    ≔ card = TeamMember { name: "N", role: "R", variant: "card" };
+    assert!(card.render().has_class("team-member-card"));
+
+    // Minimal
+    ≔ minimal = TeamMember { name: "N", role: "R", variant: "minimal" };
+    assert!(minimal.render().has_class("team-member-minimal"));
+
+    // Detailed
+    ≔ detailed = TeamMember { name: "N", role: "R", variant: "detailed" };
+    assert!(detailed.render().has_class("team-member-detailed"));
+
+    // Horizontal
+    ≔ horizontal = TeamMember { name: "N", role: "R", variant: "horizontal" };
+    assert!(horizontal.render().has_class("team-member-horizontal"));
+}
+
+// Test team member with email
+rite test_team_member_email() {
+    ≔ member = TeamMember {
+        name: "Contact Person",
+        role: "Support",
+        email: "contact@daemoniorum.com",
+    };
+
+    ≔ vnode = member.render();
+    assert!(vnode.has_child_with_class("team-member-email"));
+
+    ≔ email = vnode.find_child_by_class("team-member-email");
+    assert_eq!(email.attr("href"), "mailto:contact@daemoniorum.com");
+}
+
+// Test team sections (departments)
+rite test_team_grid_sections() {
+    ≔ grid = TeamGrid {
+        sections: [
+            {
+                title: "Leadership",
+                members: [
+                    TeamMember { name: "CEO", role: "CEO" },
+                    TeamMember { name: "CTO", role: "CTO" },
+                ]
+            },
+            {
+                title: "Engineering",
+                members: [
+                    TeamMember { name: "Dev 1", role: "Engineer" },
+                    TeamMember { name: "Dev 2", role: "Engineer" },
+                ]
+            }
+        ]
+    };
+
+    ≔ vnode = grid.render();
+    ≔ sections = vnode.find_children_by_class("team-section");
+    assert_eq!(sections.len(), 2);
+
+    ≔ first_section = sections[0];
+    ≔ title = first_section.find_child_by_class("team-section-title");
+    assert_eq!(title.text_content(), "Leadership");
+}
+
+// Test team member hover effects
+rite test_team_member_interactive() {
+    ≔ member = TeamMember {
+        name: "Interactive Member",
+        role: "Role",
+        interactive: yay,
+        href: "/team/member",
+    };
+
+    ≔ vnode = member.render();
+    assert!(vnode.has_class("team-member-interactive"));
+    assert_eq!(vnode.attr("href"), "/team/member");
+}
+
+// Test team member with skills
+rite test_team_member_skills() {
+    ≔ member = TeamMember {
+        name: "Developer",
+        role: "Full Stack",
+        skills: ["Rust", "TypeScript", "Python", "Sigil"],
+    };
+
+    ≔ vnode = member.render();
+    assert!(vnode.has_child_with_class("team-member-skills"));
+
+    ≔ skills = vnode.find_child_by_class("team-member-skills");
+    ≔ tags = skills.find_children_by_class("team-member-skill-tag");
+    assert_eq!(tags.len(), 4);
+}
+
+// Test team member with location
+rite test_team_member_location() {
+    ≔ member = TeamMember {
+        name: "Remote Worker",
+        role: "Engineer",
+        location: "San Francisco, CA",
+        timezone: "PST",
+    };
+
+    ≔ vnode = member.render();
+    assert!(vnode.has_child_with_class("team-member-location"));
+}
+
+// Test team grid alignment
+rite test_team_grid_alignment() {
+    // Left
+    ≔ left = TeamGrid { alignment: "left", children: [] };
+    assert!(left.render().has_class("team-grid-align-left"));
+
+    // Center
+    ≔ center = TeamGrid { alignment: "center", children: [] };
+    assert!(center.render().has_class("team-grid-align-center"));
+}
+
+// Test team member accessibility
+rite test_team_member_accessibility() {
+    ≔ member = TeamMember {
+        name: "John Smith",
+        role: "Developer",
+        avatar: "/team/john.jpg",
+    };
+
+    ≔ vnode = member.render();
+
+    // Avatar should have alt text
+    ≔ avatar = vnode.find_child_by_class("team-member-avatar");
+    ≔ img = avatar.find_child_by_tag("img");
+    assert_eq!(img.attr("alt"), "John Smith");
+}
+
+rite main() {
+    test_team_grid_basic();
+    test_team_member_basic();
+    test_team_member_social();
+    test_team_grid_columns();
+    test_team_member_variants();
+    test_team_member_email();
+    test_team_grid_sections();
+    test_team_member_interactive();
+    test_team_member_skills();
+    test_team_member_location();
+    test_team_grid_alignment();
+    test_team_member_accessibility();
+
+    print("✓ All TeamGrid component tests passed");
+}
+
+// Expected output: ✓ All TeamGrid component tests passed
