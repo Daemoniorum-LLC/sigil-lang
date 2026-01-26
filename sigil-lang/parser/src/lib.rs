@@ -80,6 +80,9 @@ pub mod wasm;
 #[cfg(feature = "protocol-core")]
 pub mod protocol;
 
+#[cfg(feature = "websocket")]
+pub mod websocket;
+
 pub use ast::*;
 pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, FixSuggestion, Severity};
 pub use interpreter::{Evidence, Function, Interpreter, RuntimeError, Value};
