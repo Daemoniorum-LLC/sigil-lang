@@ -1,0 +1,3 @@
+[submodule "qliphoth"]
+	path = qliphoth
+	url = git@github.com:Daemoniorum-LLC/qliphoth.git
