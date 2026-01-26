@@ -879,8 +879,6 @@ fn ast_to_value_item(item: &Spanned<Item>) -> Value {
                 Value::String(Rc::new("Plurality".to_string())),
             );
         }
-<<<<<<< HEAD
-=======
         Item::Form(_) => {
             fields.insert(
                 "kind".to_string(),
@@ -899,7 +897,6 @@ fn ast_to_value_item(item: &Spanned<Item>) -> Value {
                 Value::String(Rc::new("LocaleEnum".to_string())),
             );
         }
->>>>>>> origin/main
     }
 
     Value::Struct {
@@ -13154,16 +13151,6 @@ impl Interpreter {
                                     Value::Int(k) => *k as usize,
                                     _ => 4,
                                 };
-<<<<<<< HEAD
-                                // Create n shards
-                                let inner_value = match &value {
-                                    Value::Struct { fields, .. } => fields
-                                        .borrow()
-                                        .get("value")
-                                        .cloned()
-                                        .unwrap_or(value.clone()),
-                                    _ => value.clone(),
-=======
                                 // Extract the integer value to encode
                                 let original_value: i64 = match &value {
                                     Value::Int(v) => *v,
@@ -13174,7 +13161,6 @@ impl Interpreter {
                                         }
                                     }
                                     _ => 0,
->>>>>>> origin/main
                                 };
 
                                 // Reed-Solomon encoding: create polynomial of degree k-1
@@ -13210,12 +13196,6 @@ impl Interpreter {
                                     let encoded_data = eval_poly(&coeffs, x);
 
                                     let mut shard_fields = std::collections::HashMap::new();
-<<<<<<< HEAD
-                                    shard_fields.insert("index".to_string(), Value::Int(i as i64));
-                                    shard_fields.insert("data".to_string(), inner_value.clone());
-                                    shard_fields
-                                        .insert("_k_threshold".to_string(), Value::Int(k as i64));
-=======
                                     shard_fields.insert("index".to_string(), Value::Int(x));
                                     shard_fields
                                         .insert("data".to_string(), Value::Int(encoded_data));
@@ -13225,7 +13205,6 @@ impl Interpreter {
                                         "_original".to_string(),
                                         Value::Int(original_value),
                                     );
->>>>>>> origin/main
                                     shards.push(Value::Struct {
                                         name: "Shard".to_string(),
                                         fields: Rc::new(RefCell::new(shard_fields)),
