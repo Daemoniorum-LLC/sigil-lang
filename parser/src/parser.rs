@@ -1025,6 +1025,19 @@ impl<'a> Parser<'a> {
                 Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
             }
             Some(Token::Enum) => Item::Enum(self.parse_enum(visibility)?),
+            Some(Token::Locale) => {
+                // locale ᛈ Name { ... } - parse as locale enum with value syntax
+                self.advance(); // consume 'locale'
+                self.expect(Token::Enum)?; // expect ᛈ
+                let enum_def = self.parse_locale_body(visibility)?;
+                Item::Enum(enum_def)
+            }
+            Some(Token::Translations) => {
+                // translations Name { ... } - parse as a struct with translation fields
+                self.advance(); // consume 'translations'
+                let struct_def = self.parse_translations_body(visibility)?;
+                Item::Struct(struct_def)
+            }
             Some(Token::Trait) | Some(Token::Theta) => Item::Trait(self.parse_trait(visibility)?),
             Some(Token::Impl) => Item::Impl(self.parse_impl()?),
             Some(Token::Unsafe) => {
@@ -1450,6 +1463,7 @@ impl<'a> Parser<'a> {
             name,
             generics,
             fields,
+            is_translations: false,
         })
     }
 
@@ -1527,6 +1541,202 @@ impl<'a> Parser<'a> {
             name,
             generics,
             variants,
+            is_locale: false,
+        })
+    }
+
+    /// Parse enum body after the `enum` keyword has been consumed
+    /// Used by locale parsing which consumes `locale` then `ᛈ` before calling this
+    fn parse_enum_body(&mut self, visibility: Visibility) -> ParseResult<EnumDef> {
+        let name = self.parse_ident()?;
+        let generics = self.parse_generics_opt()?;
+
+        self.expect(Token::LBrace)?;
+        let mut variants = Vec::new();
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Skip doc comments, line comments, and attributes before variants
+            while matches!(
+                self.current_token(),
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+            ) {
+                self.advance();
+            }
+            // Skip any outer attributes
+            while self.check(&Token::Hash) || self.check(&Token::At) {
+                self.parse_outer_attribute()?;
+            }
+            while matches!(
+                self.current_token(),
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+            ) {
+                self.advance();
+            }
+            if self.check(&Token::RBrace) {
+                break;
+            }
+            variants.push(self.parse_enum_variant()?);
+            if !self.consume_if(&Token::Comma) {
+                break;
+            }
+            while matches!(
+                self.current_token(),
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+            ) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RBrace)?;
+
+        Ok(EnumDef {
+            visibility,
+            name,
+            generics,
+            variants,
+            is_locale: false, // Caller will set to true for locale enums
+        })
+    }
+
+    /// Parse locale enum body - variants use value syntax { field: value } instead of { field: Type }
+    fn parse_locale_body(&mut self, visibility: Visibility) -> ParseResult<EnumDef> {
+        let name = self.parse_ident()?;
+        let generics = self.parse_generics_opt()?;
+
+        self.expect(Token::LBrace)?;
+        let mut variants = Vec::new();
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Skip comments
+            while matches!(
+                self.current_token(),
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+            ) {
+                self.advance();
+            }
+            if self.check(&Token::RBrace) {
+                break;
+            }
+            variants.push(self.parse_locale_variant()?);
+            if !self.consume_if(&Token::Comma) {
+                break;
+            }
+            while matches!(
+                self.current_token(),
+                Some(Token::DocComment(_))
+                    | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+            ) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RBrace)?;
+
+        Ok(EnumDef {
+            visibility,
+            name,
+            generics,
+            variants,
+            is_locale: true,
+        })
+    }
+
+    /// Parse a locale variant: Name { field: value, ... }
+    fn parse_locale_variant(&mut self) -> ParseResult<EnumVariant> {
+        let name = self.parse_ident()?;
+
+        // Parse the struct-like value initialization { field: value, ... }
+        // We'll store this as the discriminant expression (an AnonymousStruct)
+        let discriminant = if self.check(&Token::LBrace) {
+            self.expect(Token::LBrace)?;
+            let mut fields = Vec::new();
+            while !self.check(&Token::RBrace) && !self.is_eof() {
+                self.skip_comments();
+                if self.check(&Token::RBrace) {
+                    break;
+                }
+                let field_name = self.parse_ident()?;
+                self.expect(Token::Colon)?;
+                self.skip_comments();
+                let value = self.parse_expr()?;
+                fields.push((field_name, value));
+                self.skip_comments();
+                if !self.consume_if(&Token::Comma) {
+                    break;
+                }
+            }
+            self.skip_comments();
+            self.expect(Token::RBrace)?;
+            Some(Expr::AnonymousStruct { fields })
+        } else {
+            None
+        };
+
+        Ok(EnumVariant {
+            name,
+            fields: StructFields::Unit, // Locale variants don't have type fields
+            discriminant,
+        })
+    }
+
+    /// Parse a translations body: `translations Name { locale: Type, field: Type = expr, ... }`
+    fn parse_translations_body(&mut self, visibility: Visibility) -> ParseResult<StructDef> {
+        let name = self.parse_ident()?;
+
+        self.expect(Token::LBrace)?;
+
+        let mut fields = Vec::new();
+        while !self.check(&Token::RBrace) && !self.is_eof() {
+            self.skip_comments();
+            if self.check(&Token::RBrace) {
+                break;
+            }
+
+            let field_name = self.parse_ident()?;
+
+            // Check if this is a parameterized translation: name(params): Type = expr
+            // For now, skip parameters and treat as simple field
+            if self.check(&Token::LParen) {
+                // Skip parameter list for now - treat as field name
+                self.expect(Token::LParen)?;
+                let _params = self.parse_params()?;
+                self.expect(Token::RParen)?;
+            }
+
+            self.expect(Token::Colon)?;
+            self.skip_comments();
+
+            let ty = self.parse_type()?;
+
+            // Parse default value (the match expression)
+            let default = if self.consume_if(&Token::Eq) {
+                self.skip_comments();
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+
+            fields.push(FieldDef {
+                visibility: Visibility::Public, // All translation fields are public
+                name: field_name,
+                ty,
+                default,
+            });
+
+            self.skip_comments();
+            // Allow comma or newline as separator
+            self.consume_if(&Token::Comma);
+        }
+
+        self.expect(Token::RBrace)?;
+
+        Ok(StructDef {
+            visibility,
+            attrs: StructAttrs::default(),
+            name,
+            generics: None,
+            fields: StructFields::Named(fields),
+            is_translations: true,
         })
     }
 
@@ -7518,6 +7728,19 @@ impl<'a> Parser<'a> {
                             evidentiality: self.parse_evidentiality_opt(),
                         });
                     }
+                    // Allow `super`, `above`, `↑` as identifier patterns when not followed by path separator
+                    if matches!(keyword, Some(Token::Super) | Some(Token::IntensityUp)) {
+                        return Ok(Pattern::Ident {
+                            mutable: false,
+                            name: Ident {
+                                name: "above".to_string(), // Use "above" as the canonical form
+                                evidentiality: None,
+                                affect: None,
+                                span,
+                            },
+                            evidentiality: self.parse_evidentiality_opt(),
+                        });
+                    }
                     return Err(ParseError::Custom(
                         "expected · after crate/super in path pattern".to_string(),
                     ));
@@ -7989,7 +8212,7 @@ impl<'a> Parser<'a> {
             Token::As => Some("as"),
             Token::Type => Some("type"),
             Token::Crate => Some("crate"),
-            Token::Super => Some("super"),
+            Token::Super => Some("above"), // 'above' maps to Super token, use "above" for identifier
             Token::Mod => Some("mod"),
             Token::Use => Some("use"),
             Token::Pub => Some("pub"),
@@ -8028,6 +8251,7 @@ impl<'a> Parser<'a> {
             Token::Saga => Some("saga"),
             Token::Scope => Some("scope"),
             Token::Rune => Some("rune"),
+            Token::Locale => Some("locale"), // Allow 'locale' as identifier in field/variable contexts
             // Plurality keywords - usable as identifiers in most contexts
             Token::Split => Some("split"),
             Token::Trigger => Some("trigger"),
@@ -8678,6 +8902,8 @@ impl<'a> Parser<'a> {
             Some(Token::Fn) | Some(Token::Lambda) // λ = fn
             | Some(Token::Struct) | Some(Token::Sigma) // Σ = struct
             | Some(Token::Enum) // ᛈ handled in lexer
+            | Some(Token::Locale) // locale for i18n enums
+            | Some(Token::Translations) // translations for i18n modules
             | Some(Token::Trait) | Some(Token::Theta) // Θ = trait
             | Some(Token::Impl) // ⊢ handled in lexer
             | Some(Token::Type) | Some(Token::Mod) | Some(Token::Use)

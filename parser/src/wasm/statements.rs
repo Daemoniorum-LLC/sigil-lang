@@ -692,6 +692,7 @@ mod tests {
                     default: None,
                 },
             ]),
+            is_translations: false,
         };
 
         compiler.register_struct(&def).unwrap();
@@ -957,6 +958,7 @@ mod tests {
                 crate::ast::TypeExpr::Path(TypePath { segments: vec![] }), // g
                 crate::ast::TypeExpr::Path(TypePath { segments: vec![] }), // b
             ]),
+            is_translations: false,
         };
 
         compiler.register_struct(&def).unwrap();
@@ -978,6 +980,7 @@ mod tests {
             name: make_ident("Unit"),
             generics: None,
             fields: StructFields::Unit,
+            is_translations: false,
         };
 
         compiler.register_struct(&def).unwrap();

@@ -1182,6 +1182,10 @@ pub struct Interpreter {
     pub environment: Rc<RefCell<Environment>>,
     /// Type definitions
     pub types: HashMap<String, TypeDef>,
+    /// Macro/rune definitions: macro_name -> MacroDef
+    pub macros: HashMap<String, crate::ast::MacroDef>,
+    /// Current pipe value for pipe-invoked runes (__pipe)
+    pub pipe_context: Option<Value>,
     /// Variant constructors: qualified_name -> (enum_name, variant_name, arity)
     pub variant_constructors: HashMap<String, (String, String, usize)>,
     /// Structs with #[derive(Default)]
@@ -1234,6 +1238,8 @@ impl Interpreter {
             globals: globals.clone(),
             environment,
             types: HashMap::new(),
+            macros: HashMap::new(),
+            pipe_context: None,
             variant_constructors: HashMap::new(),
             default_structs: HashMap::new(),
             return_value: None,
@@ -1531,6 +1537,7 @@ impl Interpreter {
                     },
                     generics: None,
                     fields: crate::ast::StructFields::Named(vec![]),
+                    is_translations: false,
                 },
             );
         }
@@ -3031,6 +3038,13 @@ impl Interpreter {
                 self.process_use_tree(&use_decl.tree, &[])?;
                 Ok(Value::Null)
             }
+            Item::Macro(macro_def) => {
+                // Register macro/rune definition for later invocation
+                let name = macro_def.name.name.clone();
+                crate::sigil_debug!("DEBUG registering macro: '{}', rules='{}'", name, macro_def.rules);
+                self.macros.insert(name, macro_def.clone());
+                Ok(Value::Null)
+            }
             _ => Ok(Value::Null), // Skip other items for now
         }
     }
@@ -3460,8 +3474,14 @@ impl Interpreter {
                         }
                     }
                     _ => {
-                        // Unknown macro - return tokens as string for debugging
-                        Ok(Value::String(Rc::new(tokens.clone())))
+                        // Check if it's a user-defined macro/rune
+                        crate::sigil_debug!("DEBUG looking up macro: '{}', available: {:?}", macro_name, self.macros.keys().collect::<Vec<_>>());
+                        if let Some(macro_def) = self.macros.get(macro_name).cloned() {
+                            self.expand_user_macro(&macro_def, tokens)
+                        } else {
+                            // Unknown macro - return tokens as string for debugging
+                            Ok(Value::String(Rc::new(tokens.clone())))
+                        }
                     }
                 }
             }
@@ -4968,7 +4988,7 @@ impl Interpreter {
             // Check variant constructors
             // Debug: trace variant lookup for Command
             if qualified_name.contains("Command") || qualified_name.contains("Analyze") {
-                eprintln!("DEBUG variant lookup: qualified_name='{}'", qualified_name);
+                crate::sigil_debug!("DEBUG variant lookup: qualified_name='{}'", qualified_name);
                 eprintln!(
                     "  found in variant_constructors: {}",
                     self.variant_constructors.contains_key(&qualified_name)
@@ -6487,7 +6507,7 @@ impl Interpreter {
         }
         // Also show the arms
         for (i, arm) in arms.iter().enumerate() {
-            eprintln!("DEBUG   arm {}: {:?}", i, arm.pattern);
+            crate::sigil_debug!("DEBUG   arm {}: {:?}", i, arm.pattern);
         }
         Err(RuntimeError::new(format!(
             "No matching pattern for {}",
@@ -11892,6 +11912,39 @@ impl Interpreter {
                         _ => {}
                     }
                 }
+
+                // Locale enum methods (i18n support)
+                // Locale variants have struct fields: code, name, fallback (optional)
+                // They provide methods: code(), display_name(), is_rtl()
+                if let Some(variant_fields) = fields {
+                    // Check if this looks like a locale variant (has code and name fields)
+                    if variant_fields.len() >= 1 {
+                        if let Some(Value::Struct { fields: struct_fields, .. }) = variant_fields.first() {
+                            let borrowed = struct_fields.borrow();
+                            match method.name.as_str() {
+                                "code" => {
+                                    if let Some(Value::String(code)) = borrowed.get("code") {
+                                        return Ok(Value::String(code.clone()));
+                                    }
+                                }
+                                "display_name" => {
+                                    if let Some(Value::String(name)) = borrowed.get("name") {
+                                        return Ok(Value::String(name.clone()));
+                                    }
+                                }
+                                "is_rtl" => {
+                                    // Check if rtl field exists and is true, otherwise default to false
+                                    if let Some(Value::Bool(rtl)) = borrowed.get("rtl") {
+                                        return Ok(Value::Bool(*rtl));
+                                    }
+                                    return Ok(Value::Bool(false));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
                 // Built-in clone method for all variants
                 if method.name == "clone" {
                     return Ok(recv.clone());
@@ -12600,8 +12653,25 @@ impl Interpreter {
             }
             PipeOp::Call(callee) => {
                 // |expr - call an arbitrary expression (like self.layer) with piped value
+                // Set pipe context for macro expansion (for pipe-invoked runes)
+                let prev_pipe_context = self.pipe_context.take();
+                self.pipe_context = Some(value.clone());
+
                 let callee_val = self.evaluate(callee)?;
-                match callee_val {
+
+                // Restore previous pipe context
+                self.pipe_context = prev_pipe_context;
+
+                // If the callee was a macro that expanded (returned a non-string value),
+                // return that result directly
+                match &callee_val {
+                    Value::String(s) if s.is_empty() => {
+                        // Empty string from unknown macro - error
+                        Err(RuntimeError::new(format!(
+                            "Cannot call non-function value in pipe: {:?}",
+                            callee_val
+                        )))
+                    }
                     Value::Function(f) => {
                         // Call the function with the piped value as argument
                         self.call_function(&f, vec![value])
@@ -12615,10 +12685,8 @@ impl Interpreter {
                         // For now, just return the value (ML layers would override)
                         Ok(value)
                     }
-                    _ => Err(RuntimeError::new(format!(
-                        "Cannot call non-function value in pipe: {:?}",
-                        callee_val
-                    ))),
+                    // For macros that expanded and returned a value, return that value
+                    _ => Ok(callee_val),
                 }
             }
             PipeOp::Method {
@@ -16331,6 +16399,219 @@ impl Interpreter {
             value: Box::new(value),
             evidence,
         })
+    }
+
+    /// Expand a user-defined macro/rune
+    fn expand_user_macro(&mut self, macro_def: &crate::ast::MacroDef, tokens: &str) -> Result<Value, RuntimeError> {
+        // The macro rules are stored in tokenized format: "{LParen RParen FatArrow {IntLit("99") }}"
+        // We need to extract the body expression and evaluate it
+        let rules = &macro_def.rules;
+
+        crate::sigil_debug!("DEBUG expand_user_macro: name='{}', rules='{}', tokens='{}'", macro_def.name.name, rules, tokens);
+
+        // Extract macro parameters from the pattern (before FatArrow)
+        // Pattern like: {LParen Ident("n") Colon Ident("expr") RParen FatArrow ...}
+        // The $n in source becomes just n in tokenized form
+        let mut macro_params: Vec<String> = Vec::new();
+        if let Some(arrow_pos) = rules.find("FatArrow") {
+            let pattern = &rules[..arrow_pos];
+            // Find all Ident("name") Colon patterns - these are macro parameters
+            let mut rest = pattern;
+            while let Some(ident_pos) = rest.find("Ident(") {
+                let after_ident = &rest[ident_pos + 6..];
+                if let Some(close_paren) = after_ident.find(')') {
+                    let mut name = after_ident[..close_paren].trim();
+                    if name.starts_with('"') && name.ends_with('"') {
+                        name = &name[1..name.len() - 1];
+                    }
+                    // Check if followed by Colon (indicating a parameter pattern)
+                    let remaining = &after_ident[close_paren + 1..];
+                    if remaining.trim_start().starts_with("Colon") {
+                        macro_params.push(name.to_string());
+                    }
+                }
+                rest = &rest[ident_pos + 6..];
+            }
+        }
+        crate::sigil_debug!("DEBUG expand_user_macro: macro_params={:?}", macro_params);
+
+        // Parse actual argument values from the invocation tokens
+        // tokens might be "5" or "IntLit(\"5\")" etc.
+        let arg_values: Vec<Value> = if !tokens.is_empty() {
+            // Simple case: single value
+            let tokens = tokens.trim();
+            if let Ok(expr) = self.parse_tokenized_body(tokens) {
+                if let Ok(val) = self.evaluate(&expr) {
+                    vec![val]
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+        crate::sigil_debug!("DEBUG expand_user_macro: arg_values={:?}", arg_values);
+
+        // Find FatArrow and extract the body after it
+        // The body is typically in the last { } block
+        if let Some(arrow_pos) = rules.find("FatArrow") {
+            // Find the body - it's between the last pair of { }
+            let after_arrow = &rules[arrow_pos..];
+
+            // Extract content between { and } after FatArrow
+            if let Some(brace_start) = after_arrow.find('{') {
+                let body_start = arrow_pos + brace_start + 1;
+
+                // Find the matching close brace (handle nesting)
+                let mut depth = 1;
+                let mut body_end = body_start;
+                for (i, c) in rules[body_start..].chars().enumerate() {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                body_end = body_start + i;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                if body_end > body_start {
+                    let mut body_tokens = rules[body_start..body_end].trim().to_string();
+                    crate::sigil_debug!("DEBUG expand_user_macro: body_tokens='{}'", body_tokens);
+
+                    // Substitute macro parameters with actual values
+                    // Replace Ident("n") with the actual argument value
+                    for (i, param_name) in macro_params.iter().enumerate() {
+                        let pattern = format!("Ident(\"{}\")", param_name);
+                        if let Some(arg_val) = arg_values.get(i) {
+                            // Convert the value back to tokenized form
+                            let replacement = match arg_val {
+                                Value::Int(n) => format!("IntLit(\"{}\")", n),
+                                Value::Float(f) => format!("FloatLit(\"{}\")", f),
+                                Value::String(s) => format!("StringLit(\"{}\")", s),
+                                Value::Bool(true) => "Ident(\"yay\")".to_string(),
+                                Value::Bool(false) => "Ident(\"nay\")".to_string(),
+                                _ => format!("IntLit(\"0\")"), // Fallback
+                            };
+                            body_tokens = body_tokens.replace(&pattern, &replacement);
+                        }
+                    }
+                    crate::sigil_debug!("DEBUG expand_user_macro: after substitution body_tokens='{}'", body_tokens);
+
+                    // Convert the tokenized body back to an expression
+                    // For simple cases like "IntLit("99")", parse it
+                    let body_expr = self.parse_tokenized_body(&body_tokens)?;
+
+                    // Create a new scope with __pipe bound if we have pipe context
+                    let prev_env = self.environment.clone();
+                    self.environment = Rc::new(RefCell::new(Environment::with_parent(prev_env.clone())));
+
+                    // Bind __pipe if we have a pipe context
+                    if let Some(pipe_val) = &self.pipe_context {
+                        self.environment.borrow_mut().define("__pipe".to_string(), pipe_val.clone());
+                    }
+
+                    // Evaluate the body expression
+                    let result = self.evaluate(&body_expr);
+
+                    // Restore environment
+                    self.environment = prev_env;
+
+                    return result;
+                }
+            }
+        }
+
+        // If we can't parse the macro, return null
+        Ok(Value::Null)
+    }
+
+    /// Parse a tokenized macro body into an expression
+    fn parse_tokenized_body(&self, tokens: &str) -> Result<Expr, RuntimeError> {
+        // Handle common patterns in tokenized format:
+        // "IntLit("99")" -> Expr::Literal(Literal::Int(99))
+        // "Ident(__pipe) Star IntLit("2")" -> __pipe * 2
+        // etc.
+
+        let tokens = tokens.trim();
+        crate::sigil_debug!("DEBUG parse_tokenized_body: '{}'", tokens);
+
+        // Try to find operator patterns first (binary expressions)
+        // Pattern: expr1 Operator expr2
+        let ops = ["Star", "Plus", "Minus", "Slash", "Percent"];
+        for op in &ops {
+            if let Some(pos) = tokens.find(op) {
+                let left_str = tokens[..pos].trim();
+                let right_str = tokens[pos + op.len()..].trim();
+
+                let left = self.parse_tokenized_body(left_str)?;
+                let right = self.parse_tokenized_body(right_str)?;
+
+                let binary_op = match *op {
+                    "Star" => crate::ast::BinOp::Mul,
+                    "Plus" => crate::ast::BinOp::Add,
+                    "Minus" => crate::ast::BinOp::Sub,
+                    "Slash" => crate::ast::BinOp::Div,
+                    "Percent" => crate::ast::BinOp::Rem,
+                    _ => unreachable!(),
+                };
+
+                return Ok(Expr::Binary {
+                    left: Box::new(left),
+                    op: binary_op,
+                    right: Box::new(right),
+                });
+            }
+        }
+
+        // Handle IntLit("99")
+        if tokens.starts_with("IntLit(") {
+            if let Some(start) = tokens.find('"') {
+                if let Some(end) = tokens[start + 1..].find('"') {
+                    let num_str = &tokens[start + 1..start + 1 + end];
+                    return Ok(Expr::Literal(crate::ast::Literal::Int {
+                        value: num_str.to_string(),
+                        base: crate::ast::NumBase::Decimal,
+                        suffix: None,
+                    }));
+                }
+            }
+        }
+
+        // Handle Ident(name) or Ident("name")
+        if tokens.starts_with("Ident(") {
+            if let Some(end) = tokens.find(')') {
+                let mut name = tokens[6..end].trim();
+                // Remove surrounding quotes if present
+                if name.starts_with('"') && name.ends_with('"') {
+                    name = &name[1..name.len() - 1];
+                }
+                return Ok(Expr::Path(crate::ast::TypePath {
+                    segments: vec![crate::ast::PathSegment {
+                        ident: crate::ast::Ident {
+                            name: name.to_string(),
+                            evidentiality: None,
+                            affect: None,
+                            span: crate::span::Span::default(),
+                        },
+                        generics: None,
+                    }],
+                }));
+            }
+        }
+
+        // Fallback: try parsing as regular Sigil source
+        let mut parser = crate::Parser::new(tokens);
+        match parser.parse_expr() {
+            Ok(expr) => Ok(expr),
+            Err(e) => Err(RuntimeError::new(format!("Failed to parse macro body '{}': {:?}", tokens, e))),
+        }
     }
 
     /// Evaluate format! macro - parse format string and arguments

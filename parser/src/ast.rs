@@ -1026,6 +1026,8 @@ pub struct StructDef {
     pub name: Ident,
     pub generics: Option<Generics>,
     pub fields: StructFields,
+    /// Whether this is a translations module (i18n)
+    pub is_translations: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1051,6 +1053,8 @@ pub struct EnumDef {
     pub name: Ident,
     pub generics: Option<Generics>,
     pub variants: Vec<EnumVariant>,
+    /// Whether this is a locale enum (i18n)
+    pub is_locale: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

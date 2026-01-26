@@ -293,6 +293,10 @@ pub enum Token {
     Struct,
     #[token("ᛈ")] // perthro rune for enum
     Enum,
+    #[token("locale")] // locale for i18n enum
+    Locale,
+    #[token("translations")] // translations for i18n translation modules
+    Translations,
     // Note: Θ handled by Token::Theta - parser is context-aware
     #[token("aspect")] // aspect for trait
     Trait,
