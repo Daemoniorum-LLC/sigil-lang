@@ -2,13 +2,15 @@
 
 A polysynthetic programming language with evidentiality types, morpheme operators, and LLVM compilation. Includes agent infrastructure libraries for building AI systems.
 
-## v0.2.0
+## v0.4.0 — The Native Tongue Release
 
 This release includes:
 
-- Native symbol vocabulary (`≔`, `→`, `λ`, `σ`, `θ`, middledot syntax)
-- SIMD backend (AVX-512 F32x16 operations)
-- CUDA backend (GPU compute via `--cuda` flag)
+- **Native symbol syntax** — Full symbolic vocabulary (`λ` fn, `≔` let, `Σ` struct, `⊢` impl, `☉` pub, `·` paths)
+- **WASM playground** — Browser-based Sigil execution environment
+- **Evidentiality linting** — Correctness checking validates proper marker usage for data sources
+- **LLVM FFI support** — Direct foreign function interface from Sigil to native code
+- **Runtime enhancements** — Networking syscalls, threading primitives, async I/O with epoll
 - LSP server, formatter, linter, package manager
 - HTTP and WebSocket clients
 - Agent infrastructure libraries:
