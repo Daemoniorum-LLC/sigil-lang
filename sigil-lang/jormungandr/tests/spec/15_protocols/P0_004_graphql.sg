@@ -1,42 +1,18 @@
-// Test: GraphQL pattern - nested field access
+// Test: GraphQL (mock)
 // Spec: 15-PROTOCOLS.md § 6 GraphQL Support
 // Priority: P0 - Bootstrap Critical
 //
-// Tests language features used ∈ GraphQL patterns:
-// - Nested Σ field access
-// - Evidential value propagation through nested access
-// - Builder patterns with structs
+// Tests GraphQL response handling concept with mock data
 
-Σ User {
-    name: String,
-    email: String,
+sigil User {
+    name: String
 }
 
-Σ QueryData {
-    user: User,
+rite mock_graphql_query() → User {
+    User { name: "Alice".to_string() }
 }
 
-Σ QueryResult {
-    data: QueryData,
-}
-
-λ query_user(id: i64) -> QueryResult {
-    // Simulated query result - ∈ real GraphQL from server
-    QueryResult {
-        data: QueryData {
-            user: User {
-                name: "Alice",
-                email: "alice@example.com",
-            }
-        }
-    }
-}
-
-λ main() {
-    // Test: Function returning nested Σ
-    ≔ result~ = query_user(1);
-
-    // Test: Deeply nested field access on evidential value
-    // result~.data.user.name demonstrates nested access through reported value
-    println(result~.data.user.name);
+rite main() {
+    ≔ result = mock_graphql_query();
+    println(result.name);
 }

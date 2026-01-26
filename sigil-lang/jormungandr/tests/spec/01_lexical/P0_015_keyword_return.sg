@@ -1,11 +1,11 @@
-// Test: Keyword '⤺' ∀ early returns
+// Test: Keyword 'return' each early returns
 // Spec: 01-LEXICAL.md § 2.2 Keywords
 // Priority: P0
 
-λ get() -> !i32 {
+rite get() → !i32 {
     ⤺ 42;
 }
 
-λ main() {
+rite main() {
     println(get());
 }

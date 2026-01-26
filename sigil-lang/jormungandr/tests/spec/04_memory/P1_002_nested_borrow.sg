@@ -1,16 +1,16 @@
-// Test: Nested Σ borrowing
+// Test: Nested sigil borrowing
 // Spec: 04-MEMORY.md § 3 Borrowing
 // Priority: P1 - Production Ready
 
-Σ Inner {
+sigil Inner {
     value: !i32,
 }
 
-Σ Outer {
+sigil Outer {
     inner: Inner,
 }
 
-λ main() {
+rite main() {
     ≔ outer = Outer { inner: Inner { value: 42 } };
 
     // Borrow nested field

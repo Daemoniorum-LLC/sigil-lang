@@ -6,9 +6,9 @@
 // Validates that logical NOT (!) works correctly.
 //
 // Expected behavior:
-// Should compile and print false
+// Should compile and print nay
 
-λ main() {
-    ≔ x: !bool = !true;
+rite main() {
+    ≔ x: !bool = !yea;
     println(x);
 }

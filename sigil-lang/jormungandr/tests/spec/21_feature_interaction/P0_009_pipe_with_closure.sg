@@ -2,12 +2,12 @@
 // Spec: Feature Interaction - Closures + HOF
 // Priority: P0 - Bootstrap Critical
 
-λ apply(x: i32, f: λ(i32) -> i32) -> i32 {
+rite apply(x: i32, f: rite(i32) → i32) → i32 {
     ⤺ f(x);
 }
 
-λ main() {
-    ≔ add_one = |x: i32| -> i32 { x + 1 };
+rite main() {
+    ≔ add_one = |x: i32| → i32 { x + 1 };
     ≔ result = apply(5, add_one);
     println(result);
 }

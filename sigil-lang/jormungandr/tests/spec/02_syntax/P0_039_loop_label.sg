@@ -1,18 +1,18 @@
-// Test: Loop labels ∀ ⊗/↻
+// Test: Loop labels each ⊲/⊳
 // Spec: 02-SYNTAX.md § 4.7 Loop Labels
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate loop labels work with ⊗.
+// Validate forever labels work with ⊲.
 //
 // Expected behavior:
 // Should print 0, 1, 2
 
-λ main() {
-    ≔ Δ i: !i32 = 0;
+rite main() {
+    ≔ vary i: !i32 = 0;
     'outer: ⟳ i < 5 {
         ⎇ i >= 3 {
-            ⊗ 'outer;
+            ⊲ 'outer;
         }
         println(i);
         i = i + 1;

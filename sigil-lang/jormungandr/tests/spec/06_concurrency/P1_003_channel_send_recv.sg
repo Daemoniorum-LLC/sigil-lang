@@ -5,7 +5,7 @@
 // Note: In single-threaded interpreter, we invoke try_recv
 // after send since blocking recv would deadlock.
 
-λ main() {
+rite main() {
     ≔ ch = channel_new();
 
     // Send a value

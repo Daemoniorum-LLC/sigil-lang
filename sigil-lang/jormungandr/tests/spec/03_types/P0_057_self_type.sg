@@ -1,28 +1,28 @@
-// Test: Self type ∈ ⊢ block
-// Spec: 03-TYPES.md § 7.4 Self Type
+// Test: This type of ⊢ block
+// Spec: 03-TYPES.md § 7.4 This Type
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate Self type works correctly ∈ ⊢ blocks.
+// Validate This type works correctly of ⊢ blocks.
 //
 // Expected behavior:
 // Should print 42
 
-☉ Σ Value {
+☉ sigil Value {
     x: !i32
 }
 
 ⊢ Value {
-    ☉ λ new(x: !i32) -> Self {
-        Self { x: x }
+    ☉ rite new(x: !i32) → This {
+        This { x: x }
     }
 
-    ☉ λ get(self) -> !i32 {
-        self.x
+    ☉ rite get(this) → !i32 {
+        this.x
     }
 }
 
-λ main() {
+rite main() {
     ≔ v: !Value = Value·new(42);
     println(v.get());
 }

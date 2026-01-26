@@ -2,21 +2,21 @@
 // Spec: 18-COMPILER.md § 4.3 Traits
 // Priority: P1 - Production Ready
 
-Θ Printable {
-    λ print(&self);
+aspect Printable {
+    rite print(&this);
 }
 
-Σ Value {
+sigil Value {
     n: !i32,
 }
 
-⊢ Printable ∀ Value {
-    λ print(&self) {
-        println(self.n);
+⊢ Value : Printable {
+    rite print(&this) {
+        println(this.n);
     }
 }
 
-λ main() {
+rite main() {
     ≔ v = Value { n: 42 };
     v.print();
 }

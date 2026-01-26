@@ -3,10 +3,10 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-λ get_number() -> i32 {
+rite get_number() → i32 {
     ⤺ "hello";  // ERROR: returning String but declared i32
 }
 
-λ main() {
+rite main() {
     println(get_number());
 }

@@ -1,5 +1,0 @@
-λ test_push() {
-    ≔ Δ name: String = "hello".to_string();
-    ≔ c: char = 'x';
-    name.push(c);
-}

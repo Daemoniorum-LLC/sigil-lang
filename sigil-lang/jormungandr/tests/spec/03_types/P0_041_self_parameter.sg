@@ -1,10 +1,10 @@
-// Test: self parameter ∈ methods
-// Spec: 03-TYPES.md § 4.3 Self Parameter
+// Test: this parameter of methods
+// Spec: 03-TYPES.md § 4.3 This Parameter
 // Priority: P0
 
-☉ Σ Counter { val: !i32 }
-⊢ Counter { ☉ λ get(&self) -> !i32 { self.val } }
+☉ sigil Counter { val: !i32 }
+⊢ Counter { ☉ rite get(&this) → !i32 { this.val } }
 
-λ main() {
+rite main() {
     println(Counter { val: 42 }.get());
 }

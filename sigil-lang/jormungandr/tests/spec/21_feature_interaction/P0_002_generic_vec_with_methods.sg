@@ -2,8 +2,8 @@
 // Spec: Feature Interaction - Generics + Methods
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
-    ≔ Δ v: Vec<i32> = Vec·new();
+rite main() {
+    ≔ vary v: Vec<i32> = Vec·new();
     v.push(10);
     v.push(20);
     v.push(30);

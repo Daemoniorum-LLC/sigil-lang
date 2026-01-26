@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should push 42 and print length (1)
 
-λ main() {
-    ≔ Δ v: !Vec<i32> = Vec·new();
+rite main() {
+    ≔ vary v: !Vec<i32> = Vec·new();
     v.push(42);
     println(v.len());
 }

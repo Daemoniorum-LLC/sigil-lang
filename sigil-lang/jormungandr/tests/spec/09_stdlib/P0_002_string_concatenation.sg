@@ -2,8 +2,8 @@
 // Spec: 09-STDLIB.md § 2.2 String Operations
 // Priority: P0
 
-λ main() {
-    ≔ Δ s: !String = "Hello";
+rite main() {
+    ≔ vary s: !String = "Hello";
     s.push_str(" World");
     println(s);
 }

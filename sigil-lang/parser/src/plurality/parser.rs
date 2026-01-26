@@ -57,18 +57,12 @@ impl<'a> PluralityParser for Parser<'a> {
         let visibility = self.parse_visibility()?;
 
         match self.current_token() {
-            Some(Token::Alter) => {
-                Ok(PluralityItem::Alter(self.parse_alter_def(visibility)?))
-            }
-            Some(Token::Headspace) => {
-                Ok(PluralityItem::Headspace(self.parse_headspace_def(visibility)?))
-            }
-            Some(Token::Reality) => {
-                Ok(PluralityItem::Reality(self.parse_reality_def(visibility)?))
-            }
-            Some(Token::CoCon) => {
-                Ok(PluralityItem::CoConChannel(self.parse_cocon_channel()?))
-            }
+            Some(Token::Alter) => Ok(PluralityItem::Alter(self.parse_alter_def(visibility)?)),
+            Some(Token::Headspace) => Ok(PluralityItem::Headspace(
+                self.parse_headspace_def(visibility)?,
+            )),
+            Some(Token::Reality) => Ok(PluralityItem::Reality(self.parse_reality_def(visibility)?)),
+            Some(Token::CoCon) => Ok(PluralityItem::CoConChannel(self.parse_cocon_channel()?)),
             Some(Token::On) => Ok(PluralityItem::TriggerHandler(self.parse_trigger_handler()?)),
             Some(t) => Err(ParseError::UnexpectedToken {
                 expected: "plurality item (alter, headspace, reality, cocon, or trigger handler)"
@@ -312,15 +306,9 @@ impl<'a> PluralityParser for Parser<'a> {
     /// Parse a plurality-specific expression
     fn parse_plurality_expr(&mut self) -> ParseResult<PluralityExpr> {
         match self.current_token() {
-            Some(Token::Alter) => {
-                Ok(PluralityExpr::AlterBlock(self.parse_alter_block()?))
-            }
-            Some(Token::Switch) => {
-                Ok(PluralityExpr::Switch(self.parse_switch_expr()?))
-            }
-            Some(Token::Split) => {
-                Ok(PluralityExpr::Split(self.parse_split_expr()?))
-            }
+            Some(Token::Alter) => Ok(PluralityExpr::AlterBlock(self.parse_alter_block()?)),
+            Some(Token::Switch) => Ok(PluralityExpr::Switch(self.parse_switch_expr()?)),
+            Some(Token::Split) => Ok(PluralityExpr::Split(self.parse_split_expr()?)),
             Some(t) => Err(ParseError::UnexpectedToken {
                 expected: "plurality expression (alter, switch, or split)".to_string(),
                 found: t.clone(),
@@ -985,7 +973,11 @@ impl<'a> Parser<'a> {
         let condition = self.parse_expr()?;
         self.consume_if(&Token::Comma);
 
-        Ok(RealityTransform { from, to, condition })
+        Ok(RealityTransform {
+            from,
+            to,
+            condition,
+        })
     }
 
     /// Parse switch configuration
@@ -1145,11 +1137,11 @@ mod tests {
     fn test_parse_alter_def_basic() {
         let source = r#"
             alter Abaddon: Council {
-                archetype: Goetia::Abaddon,
+                archetype: Goetia·Abaddon,
             }
         "#;
         let result = parse_plurality(source);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Parse failed: {:?}", result);
         if let Ok(PluralityItem::Alter(def)) = result {
             assert_eq!(def.name.name, "Abaddon");
             assert_eq!(def.category, AlterCategory::Council);
@@ -1161,7 +1153,7 @@ mod tests {
         let source = r#"
             alter test {
                 switch to Beleth {
-                    reason: SwitchReason::Combat,
+                    reason: SwitchReason·Combat,
                     urgency: 0.8,
                 }
             }

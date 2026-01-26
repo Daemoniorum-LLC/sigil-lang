@@ -1,16 +1,16 @@
-// Test: Nested Σ access
+// Test: Nested sigil access
 // Spec: Edge Cases - Deep Nesting
 // Priority: P0 - Bootstrap Critical
 
-Σ Inner {
+sigil Inner {
     value: i32,
 }
 
-Σ Outer {
+sigil Outer {
     inner: Inner,
 }
 
-λ main() {
+rite main() {
     ≔ o = Outer { inner: Inner { value: 42 } };
     println(o.inner.value);
 }

@@ -9,7 +9,7 @@
 // Expected behavior:
 // Should compile and print 84 (42 + 42)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ≔ y: !i32 = 42;
     ≔ z: !i32 = x + y;

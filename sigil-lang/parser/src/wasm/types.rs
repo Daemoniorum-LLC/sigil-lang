@@ -248,47 +248,6 @@ impl Scope {
     }
 }
 
-/// Qualified item reference for module-level lookups.
-#[derive(Clone, Debug)]
-pub enum QualifiedItem {
-    /// Function with its index
-    Function(u32),
-    /// Struct layout
-    Struct(StructLayout),
-    /// Enum layout
-    Enum(EnumLayout),
-    /// Constant with its global index
-    Const(u32),
-    /// Static with its global index
-    Static(u32),
-}
-
-impl QualifiedItem {
-    /// Get function index if this is a function.
-    pub fn as_function(&self) -> Option<u32> {
-        match self {
-            QualifiedItem::Function(idx) => Some(*idx),
-            _ => None,
-        }
-    }
-
-    /// Get struct layout if this is a struct.
-    pub fn as_struct(&self) -> Option<&StructLayout> {
-        match self {
-            QualifiedItem::Struct(layout) => Some(layout),
-            _ => None,
-        }
-    }
-
-    /// Get enum layout if this is an enum.
-    pub fn as_enum(&self) -> Option<&EnumLayout> {
-        match self {
-            QualifiedItem::Enum(layout) => Some(layout),
-            _ => None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

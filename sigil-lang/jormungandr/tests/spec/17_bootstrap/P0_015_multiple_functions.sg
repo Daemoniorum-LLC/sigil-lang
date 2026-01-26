@@ -1,4 +1,4 @@
-// Test: Multiple functions ∈ same file
+// Test: Multiple functions of same file
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § CG-004 Multiple Functions
 // Priority: P0 - Bootstrap Critical
 //
@@ -8,15 +8,15 @@
 // Expected behavior:
 // Should print 42
 
-λ get_answer() -> !i32 {
+rite get_answer() → !i32 {
     42
 }
 
-λ add_zero(x: !i32) -> !i32 {
+rite add_zero(x: !i32) → !i32 {
     x + 0
 }
 
-λ main() {
+rite main() {
     ≔ x: !i32 = get_answer();
     ≔ y: !i32 = add_zero(x);
     println(y);

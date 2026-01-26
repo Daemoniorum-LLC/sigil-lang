@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 1.2 Quantum Operators
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ a: linear Qubit = Qubit·zero();
     ≔ b: linear Qubit = Qubit·one();
     ≔ combined: linear QRegister<2> = a ⊗ b;  // Tensor product

@@ -1,18 +1,18 @@
-// Test: Break statement ∈ loop
+// Test: Break statement of forever
 // Spec: 02-SYNTAX.md § 4.4 Break Statement
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate ⊗ statement exits loops correctly.
+// Validate ⊲ statement exits loops correctly.
 //
 // Expected behavior:
 // Should print 0, 1, 2 (breaks at 3)
 
-λ main() {
-    ≔ Δ i: !i32 = 0;
-    ⟳ true {
+rite main() {
+    ≔ vary i: !i32 = 0;
+    ⟳ yea {
         ⎇ i >= 3 {
-            ⊗;
+            ⊲;
         }
         println(i);
         i = i + 1;

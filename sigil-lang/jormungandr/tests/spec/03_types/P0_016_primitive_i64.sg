@@ -3,12 +3,12 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that the i64 type works correctly ∀ 64-bit integers.
+// Validates that the i64 type works correctly each 64-bit integers.
 //
 // Expected behavior:
 // Should compile and print 9223372036854775807 (max i64)
 
-λ main() {
+rite main() {
     ≔ x: !i64 = 9223372036854775807;
     println(x);
 }

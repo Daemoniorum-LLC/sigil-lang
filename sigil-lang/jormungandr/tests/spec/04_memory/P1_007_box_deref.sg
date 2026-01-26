@@ -2,11 +2,11 @@
 // Spec: 04-MEMORY.md § 4.1 Box
 // Priority: P1 - Production Ready
 
-λ takes_ref(x: &i32) -> !i32 {
+rite takes_ref(x: &i32) → !i32 {
     *x
 }
 
-λ main() {
+rite main() {
     ≔ boxed: Box<i32> = Box·new(42);
 
     // Deref with *

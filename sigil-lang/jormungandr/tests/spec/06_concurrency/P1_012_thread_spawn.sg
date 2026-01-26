@@ -1,8 +1,8 @@
-// Test: Channel with multiple values ∈ order
+// Test: Channel with multiple values of order
 // Spec: 06-CONCURRENCY.md § 4 Channels
 // Priority: P1 - Production Ready
 
-λ main() {
+rite main() {
     ≔ ch = channel_new();
 
     channel_send(ch, 10);

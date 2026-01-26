@@ -2,9 +2,9 @@
 // Spec: 13-QUANTUM-HOLOGRAPHIC.md § 5 Verification
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ shards~ = receive_untrusted_shards();
-    ≔ qh_state = shards~|quantum_reconstruct;
+    ≔ qh_state = quantum_reconstruct(shards~);
     ≔ verified! = qh_state|□verify;  // Quantum + cryptographic verification
     println(verified!);
 }

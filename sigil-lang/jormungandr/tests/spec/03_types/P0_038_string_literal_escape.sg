@@ -2,7 +2,7 @@
 // Spec: 03-TYPES.md § 3.3 String Type
 // Priority: P0
 
-λ main() {
+rite main() {
     ≔ s: !String = "Hello\nWorld";
     println(s);
 }

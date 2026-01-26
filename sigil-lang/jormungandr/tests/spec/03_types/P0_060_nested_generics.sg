@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should print 42
 
-☉ Σ Box<T> {
+☉ sigil Box<T> {
     value: T
 }
 
-λ main() {
+rite main() {
     ≔ b: !Box<!Box<!i32>> = Box { value: Box { value: 42 } };
     println(b.value.value);
 }

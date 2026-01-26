@@ -4,7 +4,7 @@
 //
 // The □ operator verifies and promotes evidence
 
-λ main() {
+rite main() {
     ≔ node~ = fetch_untrusted_data();
     ≔ verified! = node~|□verify;  // Hash verification promotes ~ to !
     println(verified!);

@@ -1,6 +1,0 @@
-socket: OK
-connect: OK
-send: OK
-recv: OK
-shutdown: OK
-close: OK

@@ -2,7 +2,7 @@
 // Spec: 14-NEURAL.md § 1.1 Core Types
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ t: Tensor<[3, 4]> = zeros();
     println(t.shape[0]);
     println(t.shape[1]);

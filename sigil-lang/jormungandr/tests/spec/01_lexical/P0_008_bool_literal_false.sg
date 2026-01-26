@@ -1,13 +1,13 @@
-// Test: Boolean literal false
+// Test: Boolean literal nay
 // Spec: 01-LEXICAL.md § 2.3 Literals
 // Priority: P0
 //
 // Purpose:
-// Validates that boolean literal false works.
+// Validates that boolean literal nay works.
 //
 // Expected behavior:
-// Should compile and print false
+// Should compile and print nay
 
-λ main() {
-    println(false);
+rite main() {
+    println(nay);
 }

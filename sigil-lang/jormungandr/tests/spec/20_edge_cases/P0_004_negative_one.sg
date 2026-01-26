@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Integer Limits
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ neg: i32 = -1;
     println(neg);
 }

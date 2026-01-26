@@ -3,7 +3,7 @@
 //! Represents the polysynthetic structure with evidentiality markers.
 //! This is the core data structure that all compiler phases work with.
 //!
-//! Self-hosted conversion: ast.rs -> ast.sg
+//! This-hosted conversion: ast.rs → ast.sg
 //! Original: 1592 lines of Rust
 //! Status: Complete
 
@@ -17,10 +17,10 @@ invoke tome·span·{Span, Spanned};
 /// Outer: `#[name]` or `#[name(args)]`
 /// Inner: `#![name]` or `#![name(args)]`
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ Attribute {
+☉ sigil Attribute {
     ☉ name: !Ident,
     ☉ args: ?AttrArgs,
-    ☉ is_inner: !bool,  // true ∀ #![...], false ∀ #[...]
+    ☉ is_inner: !bool,  // yea ∀ #![...], nay ∀ #[...]
 }
 
 /// Arguments to an attribute.
@@ -47,11 +47,11 @@ invoke tome·span·{Span, Spanned};
 
 /// Crate-level configuration derived from inner attributes.
 #[derive(Debug, Clone, PartialEq, Default)]
-☉ Σ CrateConfig {
+☉ sigil CrateConfig {
     /// `#![no_std]` - disable standard library
-    ☉ no_std: !bool = false,
+    ☉ no_std: !bool = nay,
     /// `#![no_main]` - custom entry point
-    ☉ no_main: !bool = false,
+    ☉ no_main: !bool = nay,
     /// `#![feature(...)]` - enabled features
     ☉ features: ![String] = [],
     /// Target architecture
@@ -62,7 +62,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Target-specific configuration.
 #[derive(Debug, Clone, PartialEq, Default)]
-☉ Σ TargetConfig {
+☉ sigil TargetConfig {
     ☉ arch: ?String,      // "x86_64", "aarch64", "riscv64"
     ☉ os: ?String,        // "none", "linux", "windows"
     ☉ abi: ?String,       // "gnu", "musl", "msvc"
@@ -71,7 +71,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Linker configuration ∀ bare-metal/OS development.
 #[derive(Debug, Clone, PartialEq, Default)]
-☉ Σ LinkerConfig {
+☉ sigil LinkerConfig {
     ☉ script: ?String,
     ☉ entry_point: ?String,
     ☉ base_address: ?u64,
@@ -83,7 +83,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Memory region ∀ linker scripts.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ MemoryRegion {
+☉ sigil MemoryRegion {
     ☉ name: !String,
     ☉ origin: !u64,
     ☉ length: !u64,
@@ -92,15 +92,15 @@ invoke tome·span·{Span, Spanned};
 
 /// Memory region attributes.
 #[derive(Debug, Clone, PartialEq, Default)]
-☉ Σ MemoryAttributes {
-    ☉ readable: !bool = false,
-    ☉ writable: !bool = false,
-    ☉ executable: !bool = false,
+☉ sigil MemoryAttributes {
+    ☉ readable: !bool = nay,
+    ☉ writable: !bool = nay,
+    ☉ executable: !bool = nay,
 }
 
 /// Output section configuration.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ SectionConfig {
+☉ sigil SectionConfig {
     ☉ name: !String,
     ☉ address: ?u64,
     ☉ align: ?u64,
@@ -113,7 +113,7 @@ invoke tome·span·{Span, Spanned};
 
 /// SIMD vector type.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ SimdType {
+☉ sigil SimdType {
     ☉ element_type: !Box<TypeExpr>,
     ☉ lanes: !u8,
 }
@@ -179,11 +179,11 @@ invoke tome·span·{Span, Spanned};
 
 /// Struct attributes including derive.
 #[derive(Debug, Clone, PartialEq, Default)]
-☉ Σ StructAttrs {
+☉ sigil StructAttrs {
     ☉ repr: ?StructRepr,
-    ☉ packed: !bool = false,
+    ☉ packed: !bool = nay,
     ☉ align: ?u64,
-    ☉ simd: !bool = false,
+    ☉ simd: !bool = nay,
     ☉ derives: ![DeriveTrait] = [],
     ☉ outer_attrs: ![Attribute] = [],
 }
@@ -194,7 +194,7 @@ invoke tome·span·{Span, Spanned};
 
 /// A complete Sigil source file.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ SourceFile {
+☉ sigil SourceFile {
     ☉ path: ?String,  // Source file path (set by driver)
     ☉ attrs: ![Attribute],
     ☉ config: !CrateConfig,
@@ -223,14 +223,14 @@ invoke tome·span·{Span, Spanned};
 /// Macro rules definition.
 /// We parse these to allow bootstrap but don't expand them.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ MacroRulesDef {
+☉ sigil MacroRulesDef {
     ☉ name: !Ident,
     ☉ exported: !bool,
 }
 
 /// Foreign function interface block.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ ExternBlock {
+☉ sigil ExternBlock {
     ☉ abi: !String,
     ☉ items: ![ExternItem],
 }
@@ -244,7 +244,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Foreign function declaration.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ ExternFunction {
+☉ sigil ExternFunction {
     ☉ visibility: !Visibility,
     ☉ name: !Ident,
     ☉ params: ![Param],
@@ -254,7 +254,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Foreign static variable.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ ExternStatic {
+☉ sigil ExternStatic {
     ☉ visibility: !Visibility,
     ☉ mutable: !bool,
     ☉ name: !Ident,
@@ -263,20 +263,20 @@ invoke tome·span·{Span, Spanned};
 
 /// Function attributes.
 #[derive(Debug, Clone, PartialEq, Default)]
-☉ Σ FunctionAttrs {
-    ☉ naked: !bool = false,
+☉ sigil FunctionAttrs {
+    ☉ naked: !bool = nay,
     ☉ inline_hint: ?InlineHint,
     ☉ calling_convention: ?String,
-    ☉ no_mangle: !bool = false,
+    ☉ no_mangle: !bool = nay,
     ☉ link_section: ?String,
-    ☉ export: !bool = false,
-    ☉ panic_handler: !bool = false,
-    ☉ entry: !bool = false,
+    ☉ export: !bool = nay,
+    ☉ panic_handler: !bool = nay,
+    ☉ entry: !bool = nay,
     ☉ interrupt: ?u32,
     ☉ align: ?u64,
-    ☉ cold: !bool = false,
-    ☉ hot: !bool = false,
-    ☉ test: !bool = false,
+    ☉ cold: !bool = nay,
+    ☉ hot: !bool = nay,
+    ☉ test: !bool = nay,
     ☉ outer_attrs: ![Attribute] = [],
 }
 
@@ -299,12 +299,12 @@ invoke tome·span·{Span, Spanned};
 
 /// Function definition.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ Function {
+☉ sigil Function {
     ☉ visibility: !Visibility,
     ☉ is_async: !bool,
     ☉ attrs: !FunctionAttrs,
     ☉ name: !Ident,
-    ☉ aspect: ?Aspect,
+    ☉ fn_aspect: ?Aspect,
     ☉ generics: ?Generics,
     ☉ params: ![Param],
     ☉ return_type: ?TypeExpr,
@@ -324,7 +324,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Identifier with optional evidentiality and affect markers.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ Ident {
+☉ sigil Ident {
     ☉ name: !String,
     ☉ evidentiality: ?Evidentiality,
     ☉ affect: ?Affect,
@@ -333,8 +333,8 @@ invoke tome·span·{Span, Spanned};
 
 ⊢ Ident {
     /// Create a simple identifier without markers.
-    ☉ λ new(name: !String, span: !Span) -> !Self {
-        Self {
+    ☉ rite new(name: !String, span: !Span) → !This {
+        This {
             name,
             evidentiality: null,
             affect: null,
@@ -343,8 +343,8 @@ invoke tome·span·{Span, Spanned};
     }
 
     /// Create an identifier with evidentiality.
-    ☉ λ with_evidence(name: !String, evidence: !Evidentiality, span: !Span) -> !Self {
-        Self {
+    ☉ rite with_evidence(name: !String, evidence: !Evidentiality, span: !Span) → !This {
+        This {
             name,
             evidentiality: evidence,
             affect: null,
@@ -365,8 +365,8 @@ invoke tome·span·{Span, Spanned};
 
 ⊢ Evidentiality {
     /// Get the symbol ∀ this evidentiality level.
-    ☉ λ symbol(self) -> !char {
-        ⌥ self {
+    ☉ rite symbol(this) → !char {
+        ⌥ this {
             Evidentiality·Known => '!',
             Evidentiality·Uncertain => '?',
             Evidentiality·Reported => '~',
@@ -376,8 +376,8 @@ invoke tome·span·{Span, Spanned};
     }
 
     /// Lattice join (pessimistic - max uncertainty).
-    ☉ λ join(self, other: !Evidentiality) -> !Evidentiality {
-        ⌥ (self, other) {
+    ☉ rite join(this, other: !Evidentiality) → !Evidentiality {
+        ⌥ (this, other) {
             (Evidentiality·Paradox, _) | (_, Evidentiality·Paradox) => Evidentiality·Paradox,
             (Evidentiality·Prediction, _) | (_, Evidentiality·Prediction) => Evidentiality·Prediction,
             (Evidentiality·Reported, _) | (_, Evidentiality·Reported) => Evidentiality·Reported,
@@ -387,8 +387,8 @@ invoke tome·span·{Span, Spanned};
     }
 
     /// Lattice meet (optimistic - min uncertainty).
-    ☉ λ meet(self, other: !Evidentiality) -> !Evidentiality {
-        ⌥ (self, other) {
+    ☉ rite meet(this, other: !Evidentiality) → !Evidentiality {
+        ⌥ (this, other) {
             (Evidentiality·Known, _) | (_, Evidentiality·Known) => Evidentiality·Known,
             (Evidentiality·Uncertain, _) | (_, Evidentiality·Uncertain) => Evidentiality·Uncertain,
             (Evidentiality·Reported, _) | (_, Evidentiality·Reported) => Evidentiality·Reported,
@@ -400,9 +400,9 @@ invoke tome·span·{Span, Spanned};
 
 /// Affective markers ∀ sentiment and emotion tracking.
 #[derive(Debug, Clone, PartialEq, Default)]
-☉ Σ Affect {
+☉ sigil Affect {
     ☉ sentiment: ?Sentiment,
-    ☉ sarcasm: !bool = false,
+    ☉ sarcasm: !bool = nay,
     ☉ intensity: ?Intensity,
     ☉ formality: ?Formality,
     ☉ emotion: ?Emotion,
@@ -410,13 +410,13 @@ invoke tome·span·{Span, Spanned};
 }
 
 ⊢ Affect {
-    ☉ λ is_empty(self) -> !bool {
-        self.sentiment == null &&
-        !self.sarcasm &&
-        self.intensity == null &&
-        self.formality == null &&
-        self.emotion == null &&
-        self.confidence == null
+    ☉ rite is_empty(this) → !bool {
+        this.sentiment == null ∧
+        !this.sarcasm ∧
+        this.intensity == null ∧
+        this.formality == null ∧
+        this.emotion == null ∧
+        this.confidence == null
     }
 }
 
@@ -464,14 +464,14 @@ invoke tome·span·{Span, Spanned};
 
 /// Function parameter.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ Param {
+☉ sigil Param {
     ☉ pattern: !Pattern,
     ☉ ty: !TypeExpr,
 }
 
 /// Generic parameters.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ Generics {
+☉ sigil Generics {
     ☉ params: ![GenericParam],
 }
 
@@ -492,12 +492,12 @@ invoke tome·span·{Span, Spanned};
 
 /// Where clainvoke ∀ bounds.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ WhereClainvoke {
+☉ sigil WhereClainvoke {
     ☉ predicates: ![WherePredicate],
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ WherePredicate {
+☉ sigil WherePredicate {
     ☉ ty: !TypeExpr,
     ☉ bounds: ![TypeExpr],
 }
@@ -507,9 +507,9 @@ invoke tome·span·{Span, Spanned};
 ☉ ᛈ TypeExpr {
     /// Simple named type: `i32`, `String`
     Path(!TypePath),
-    /// Reference: `&T`, `&Δ T`, `&'a T`, `&'static T`
+    /// Reference: `&T`, `&vary T`, `&'a T`, `&'static T`
     Reference { lifetime: ?String, mutable: !bool, inner: !Box<TypeExpr> },
-    /// Pointer: `*const T`, `*Δ T`
+    /// Pointer: `*◆ T`, `*vary T`
     Pointer { mutable: !bool, inner: !Box<TypeExpr> },
     /// Array: `[T; N]`
     Array { element: !Box<TypeExpr>, size: !Box<Expr> },
@@ -517,7 +517,7 @@ invoke tome·span·{Span, Spanned};
     Slice(!Box<TypeExpr>),
     /// Tuple: `(A, B, C)`
     Tuple(![TypeExpr]),
-    /// Function: `λ(A, B) -> C`
+    /// Function: `λ(A, B) → C`
     Function {
         params: ![TypeExpr],
         return_type: ?Box<TypeExpr>,
@@ -542,7 +542,7 @@ invoke tome·span·{Span, Spanned};
     ImplTrait {
         bounds: ![TypeExpr],
     },
-    /// Dynamic Θ object: `dyn Trait`
+    /// Dynamic aspect object: `dyn Trait`
     DynTrait {
         bounds: ![TypeExpr],
     },
@@ -557,14 +557,14 @@ invoke tome·span·{Span, Spanned};
 
 /// Type path with optional generics.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ TypePath {
+☉ sigil TypePath {
     ☉ segments: ![PathSegment],
 }
 
 ⊢ TypePath {
     /// Create a simple type path from a single name.
-    ☉ λ simple(name: !String, span: !Span) -> !Self {
-        Self {
+    ☉ rite simple(name: !String, span: !Span) → !This {
+        This {
             segments: [PathSegment {
                 ident: Ident·new(name, span),
                 generics: null,
@@ -574,7 +574,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ PathSegment {
+☉ sigil PathSegment {
     ☉ ident: !Ident,
     ☉ generics: ?[TypeExpr],
 }
@@ -589,7 +589,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Struct definition.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ StructDef {
+☉ sigil StructDef {
     ☉ visibility: !Visibility,
     ☉ attrs: !StructAttrs,
     ☉ name: !Ident,
@@ -605,7 +605,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ FieldDef {
+☉ sigil FieldDef {
     ☉ visibility: !Visibility,
     ☉ name: !Ident,
     ☉ ty: !TypeExpr,
@@ -614,7 +614,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Enum definition.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ EnumDef {
+☉ sigil EnumDef {
     ☉ visibility: !Visibility,
     ☉ name: !Ident,
     ☉ generics: ?Generics,
@@ -622,7 +622,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ EnumVariant {
+☉ sigil EnumVariant {
     ☉ name: !Ident,
     ☉ fields: !StructFields,
     ☉ discriminant: ?Expr,
@@ -630,7 +630,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Trait definition.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ TraitDef {
+☉ sigil TraitDef {
     ☉ visibility: !Visibility,
     ☉ name: !Ident,
     ☉ generics: ?Generics,
@@ -647,7 +647,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Impl block.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ ImplBlock {
+☉ sigil ImplBlock {
     ☉ generics: ?Generics,
     ☉ trait_: ?TypePath,
     ☉ self_ty: !TypeExpr,
@@ -663,7 +663,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Type alias.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ TypeAlias {
+☉ sigil TypeAlias {
     ☉ visibility: !Visibility,
     ☉ name: !Ident,
     ☉ generics: ?Generics,
@@ -672,7 +672,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Module.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ Module {
+☉ sigil Module {
     ☉ visibility: !Visibility,
     ☉ name: !Ident,
     ☉ items: ?[Spanned<Item>],
@@ -680,7 +680,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Use declaration.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ UseDecl {
+☉ sigil UseDecl {
     ☉ visibility: !Visibility,
     ☉ tree: !UseTree,
 }
@@ -696,7 +696,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Const definition.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ ConstDef {
+☉ sigil ConstDef {
     ☉ visibility: !Visibility,
     ☉ name: !Ident,
     ☉ ty: !TypeExpr,
@@ -705,7 +705,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Static definition.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ StaticDef {
+☉ sigil StaticDef {
     ☉ visibility: !Visibility,
     ☉ mutable: !bool,
     ☉ name: !Ident,
@@ -715,7 +715,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Actor definition.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ ActorDef {
+☉ sigil ActorDef {
     ☉ visibility: !Visibility,
     ☉ name: !Ident,
     ☉ generics: ?Generics,
@@ -724,7 +724,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ MessageHandler {
+☉ sigil MessageHandler {
     ☉ message: !Ident,
     ☉ params: ![Param],
     ☉ return_type: ?TypeExpr,
@@ -733,7 +733,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Code block.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ Block {
+☉ sigil Block {
     ☉ stmts: ![Stmt],
     ☉ expr: ?Box<Expr>,
 }
@@ -793,7 +793,7 @@ invoke tome·span·{Span, Spanned};
     },
     /// Path pattern (∀ ᛈ unit variants like None)
     Path(!TypePath),
-    /// Reference pattern: &x or &Δ x
+    /// Reference pattern: &x or &vary x
     Ref {
         mutable: !bool,
         pattern: !Box<Pattern>,
@@ -801,7 +801,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ FieldPattern {
+☉ sigil FieldPattern {
     ☉ name: !Ident,
     ☉ pattern: ?Pattern,
 }
@@ -890,18 +890,18 @@ invoke tome·span·{Span, Spanned};
     },
     /// Loop
     Loop(!Block),
-    /// While loop
+    /// While forever
     While {
         condition: !Box<Expr>,
         body: !Block,
     },
-    /// While ≔ loop
+    /// While ≔ forever
     WhileLet {
         pattern: !Pattern,
         scrutinee: !Box<Expr>,
         body: !Block,
     },
-    /// For loop
+    /// For forever
     For {
         pattern: !Pattern,
         iter: !Box<Expr>,
@@ -953,12 +953,12 @@ invoke tome·span·{Span, Spanned};
     ExternBlockExpr(!ExternBlock),
     /// Dereference: `*ptr`
     Deref(!Box<Expr>),
-    /// Address-of: `&expr` or `&Δ expr`
+    /// Address-of: `&expr` or `&vary expr`
     AddrOf {
         mutable: !bool,
         expr: !Box<Expr>,
     },
-    /// Reference expression: `&expr` or `&Δ expr` (alias ∀ AddrOf)
+    /// Reference expression: `&expr` or `&vary expr` (alias ∀ AddrOf)
     Reference {
         mutable: !bool,
         expr: !Box<Expr>,
@@ -1047,7 +1047,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Inline assembly.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ InlineAsm {
+☉ sigil InlineAsm {
     ☉ template: !String,
     ☉ outputs: ![AsmOperand],
     ☉ inputs: ![AsmOperand],
@@ -1056,7 +1056,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ AsmOperand {
+☉ sigil AsmOperand {
     ☉ constraint: !String,
     ☉ expr: !Expr,
     ☉ kind: !AsmOperandKind,
@@ -1071,14 +1071,14 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-☉ Σ AsmOptions {
-    ☉ is_volatile: !bool = false,
-    ☉ pure_asm: !bool = false,
-    ☉ nomem: !bool = false,
-    ☉ nostack: !bool = false,
-    ☉ preserves_flags: !bool = false,
-    ☉ readonly: !bool = false,
-    ☉ att_syntax: !bool = false,
+☉ sigil AsmOptions {
+    ☉ is_volatile: !bool = nay,
+    ☉ pure_asm: !bool = nay,
+    ☉ nomem: !bool = nay,
+    ☉ nostack: !bool = nay,
+    ☉ preserves_flags: !bool = nay,
+    ☉ readonly: !bool = nay,
+    ☉ att_syntax: !bool = nay,
 }
 
 /// Pipe operation ∈ a chain.
@@ -1147,7 +1147,7 @@ invoke tome·span·{Span, Spanned};
 
 /// Incorporation segment.
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ IncorporationSegment {
+☉ sigil IncorporationSegment {
     ☉ name: !Ident,
     ☉ args: ?[Expr],
 }
@@ -1265,20 +1265,20 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ FieldInit {
+☉ sigil FieldInit {
     ☉ name: !Ident,
     ☉ value: ?Expr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ MatchArm {
+☉ sigil MatchArm {
     ☉ pattern: !Pattern,
     ☉ guard: ?Expr,
     ☉ body: !Expr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-☉ Σ ClosureParam {
+☉ sigil ClosureParam {
     ☉ pattern: !Pattern,
     ☉ ty: ?TypeExpr,
 }
@@ -1288,7 +1288,7 @@ invoke tome·span·{Span, Spanned};
 // ============================================
 
 #[test]
-λ test_evidentiality_join() {
+rite test_evidentiality_join() {
     // Pessimistic join: max uncertainty
     assert_eq!(
         Evidentiality·Known.join(Evidentiality·Known),
@@ -1309,7 +1309,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[test]
-λ test_evidentiality_meet() {
+rite test_evidentiality_meet() {
     // Optimistic meet: min uncertainty
     assert_eq!(
         Evidentiality·Paradox.meet(Evidentiality·Paradox),
@@ -1326,17 +1326,17 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[test]
-λ test_ident_creation() {
+rite test_ident_creation() {
     ≔ span = Span·new(0, 3);
-    ≔ ident = Ident·new("foo", span);
+    ≔ ident = Ident·new("foo".to_string(), span);
     assert_eq!(ident.name, "foo");
     assert_eq!(ident.evidentiality, null);
 }
 
 #[test]
-λ test_type_path_simple() {
+rite test_type_path_simple() {
     ≔ span = Span·new(0, 3);
-    ≔ path = TypePath·simple("i32", span);
+    ≔ path = TypePath·simple("i32".to_string(), span);
     assert_eq!(path.segments.len(), 1);
     assert_eq!(path.segments[0].ident.name, "i32");
 }

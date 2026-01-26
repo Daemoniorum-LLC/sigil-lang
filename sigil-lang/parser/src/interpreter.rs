@@ -12,10 +12,6 @@ use std::rc::Rc;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 
-// WebSocket support (feature-gated, native implementation)
-#[cfg(feature = "websocket")]
-use crate::websocket;
-
 /// Runtime value in Sigil.
 #[derive(Clone)]
 pub enum Value {
@@ -436,12 +432,17 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Int(n) => write!(f, "{}", n),
             Value::Float(n) => {
-                // Print whole numbers without decimal point (e.g., 6.0 -> "6")
-                // This matches the 100% test pass behavior
-                if n.fract() == 0.0 && n.is_finite() {
-                    write!(f, "{}", *n as i64)
+                // Round values very close to integers (e.g., 0.9999999999999999 -> 1.0)
+                // This handles floating-point precision issues
+                let rounded = n.round();
+                let is_close_to_int = (n - rounded).abs() < 1e-10;
+                let display_val = if is_close_to_int { rounded } else { *n };
+                // Always show .0 for integer floats to distinguish from integers
+                if display_val.fract() == 0.0 && !display_val.is_nan() && !display_val.is_infinite()
+                {
+                    write!(f, "{}.0", display_val as i64)
                 } else {
-                    write!(f, "{}", n)
+                    write!(f, "{}", display_val)
                 }
             }
             Value::String(s) => write!(f, "{}", s),
@@ -502,55 +503,6 @@ impl fmt::Display for Value {
                     });
                 }
                 write!(f, "{}{}", value, suffix)
-            }
-            // Special Display for quantum types
-            Value::Struct { name, fields } if name == "Cbit" => {
-                let fields = fields.borrow();
-                match fields.get("__value__") {
-                    Some(Value::Bool(true)) => write!(f, "1"),
-                    Some(Value::Bool(false)) => write!(f, "0"),
-                    _ => write!(f, "Cbit(invalid)"),
-                }
-            }
-            Value::Struct { name, fields } if name == "Qubit" => {
-                // Show qubit state in Dirac notation
-                let fields = fields.borrow();
-                if let Some(Value::Float(alpha)) = fields.get("__alpha_real__") {
-                    if *alpha >= 0.999 {
-                        write!(f, "|0⟩")
-                    } else if let Some(Value::Float(beta)) = fields.get("__beta_real__") {
-                        if *beta >= 0.999 {
-                            write!(f, "|1⟩")
-                        } else {
-                            write!(f, "|ψ⟩")
-                        }
-                    } else {
-                        write!(f, "|ψ⟩")
-                    }
-                } else {
-                    write!(f, "|ψ⟩")
-                }
-            }
-            Value::Struct { name, fields } if name == "Tensor" => {
-                // Show tensor data or shape
-                let fields = fields.borrow();
-                if let Some(Value::Array(data)) = fields.get("data") {
-                    let data = data.borrow();
-                    if data.len() <= 10 {
-                        write!(f, "Tensor([")?;
-                        for (i, v) in data.iter().enumerate() {
-                            if i > 0 { write!(f, ", ")?; }
-                            write!(f, "{}", v)?;
-                        }
-                        write!(f, "])")
-                    } else {
-                        write!(f, "Tensor([{} elements])", data.len())
-                    }
-                } else if let Some(Value::Float(val)) = fields.get("_value") {
-                    write!(f, "Tensor({})", val)
-                } else {
-                    write!(f, "Tensor(...)")
-                }
             }
             _ => write!(f, "{:?}", self),
         }
@@ -613,9 +565,8 @@ fn tensor_scalar_from_fields(fields: &HashMap<String, Value>) -> Option<f64> {
             _ => {}
         }
     }
-    // Fall back to __data__[0] or data[0]
-    let data_field = fields.get("__data__").or_else(|| fields.get("data"));
-    if let Some(Value::Array(arr)) = data_field {
+    // Fall back to data[0]
+    if let Some(Value::Array(arr)) = fields.get("data") {
         if let Some(first) = arr.borrow().first() {
             match first {
                 Value::Float(f) => return Some(*f),
@@ -628,10 +579,8 @@ fn tensor_scalar_from_fields(fields: &HashMap<String, Value>) -> Option<f64> {
 }
 
 /// Extract data as Vec<f64> from tensor fields.
-/// Checks __data__ first (stdlib convention), then data (fallback).
 fn tensor_data_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<f64>> {
-    let arr = fields.get("__data__").or_else(|| fields.get("data"));
-    if let Some(Value::Array(arr)) = arr {
+    if let Some(Value::Array(arr)) = fields.get("data") {
         Some(
             arr.borrow()
                 .iter()
@@ -648,10 +597,8 @@ fn tensor_data_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<f64>> 
 }
 
 /// Extract shape as Vec<usize> from tensor fields.
-/// Checks __shape__ first (stdlib convention), then shape (fallback).
 fn tensor_shape_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<usize>> {
-    let arr = fields.get("__shape__").or_else(|| fields.get("shape"));
-    if let Some(Value::Array(arr)) = arr {
+    if let Some(Value::Array(arr)) = fields.get("shape") {
         Some(
             arr.borrow()
                 .iter()
@@ -932,6 +879,24 @@ fn ast_to_value_item(item: &Spanned<Item>) -> Value {
                 Value::String(Rc::new("Plurality".to_string())),
             );
         }
+        Item::Form(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Form".to_string())),
+            );
+        }
+        Item::Translations(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("Translations".to_string())),
+            );
+        }
+        Item::LocaleEnum(_) => {
+            fields.insert(
+                "kind".to_string(),
+                Value::String(Rc::new("LocaleEnum".to_string())),
+            );
+        }
     }
 
     Value::Struct {
@@ -1183,24 +1148,6 @@ impl Environment {
             Err(RuntimeError::undefined_variable(name))
         }
     }
-
-    /// Iterate over all values in this environment (not including parent scopes)
-    /// Used by autograd and IR export for introspection
-    pub fn iter_values(&self) -> impl Iterator<Item = (&String, &Value)> {
-        self.values.iter()
-    }
-
-    /// Collect all values in this environment and parent scopes
-    pub fn all_values(&self) -> Vec<(String, Value)> {
-        let mut values: Vec<(String, Value)> = self.values
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        if let Some(ref parent) = self.parent {
-            values.extend(parent.borrow().all_values());
-        }
-        values
-    }
 }
 
 impl Default for Environment {
@@ -1235,6 +1182,10 @@ pub struct Interpreter {
     pub environment: Rc<RefCell<Environment>>,
     /// Type definitions
     pub types: HashMap<String, TypeDef>,
+    /// Macro/rune definitions: macro_name -> MacroDef
+    pub macros: HashMap<String, crate::ast::MacroDef>,
+    /// Current pipe value for pipe-invoked runes (__pipe)
+    pub pipe_context: Option<Value>,
     /// Variant constructors: qualified_name -> (enum_name, variant_name, arity)
     pub variant_constructors: HashMap<String, (String, String, usize)>,
     /// Structs with #[derive(Default)]
@@ -1269,23 +1220,6 @@ pub struct Interpreter {
     pub var_types: RefCell<HashMap<String, (String, Vec<String>)>>,
     /// Type-directed construction context (for Tensor<shape>, Linear<N, M>, etc.)
     pub type_context: TypeConstructionContext,
-    // === IR Reflection Registries ===
-    /// Function definitions for IR export (with span info)
-    pub ir_functions: RefCell<Vec<Value>>,
-    /// Trait definitions for IR export (trait_name -> TraitDef)
-    pub ir_traits: RefCell<Vec<Value>>,
-    /// Module definitions for IR export
-    pub ir_modules: RefCell<Vec<Value>>,
-    /// Constant definitions for IR export
-    pub ir_constants: RefCell<Vec<Value>>,
-    /// Impl block definitions for IR export
-    pub ir_impls: RefCell<Vec<Value>>,
-    /// Source code for span-to-line conversion
-    pub source_code: RefCell<String>,
-    /// User-defined macro registry: name -> (params, body_tokens)
-    /// params is a Vec<String> of parameter names (e.g., ["n"] for macro foo($n) {...})
-    /// body_tokens is the raw body string to be parsed and evaluated
-    pub user_macros: RefCell<HashMap<String, (Vec<String>, String)>>,
 }
 
 /// Type definition for structs/enums
@@ -1304,6 +1238,8 @@ impl Interpreter {
             globals: globals.clone(),
             environment,
             types: HashMap::new(),
+            macros: HashMap::new(),
+            pipe_context: None,
             variant_constructors: HashMap::new(),
             default_structs: HashMap::new(),
             return_value: None,
@@ -1321,13 +1257,6 @@ impl Interpreter {
             mutable_vars: RefCell::new(HashSet::new()),
             var_types: RefCell::new(HashMap::new()),
             type_context: TypeConstructionContext::default(),
-            ir_functions: RefCell::new(Vec::new()),
-            ir_traits: RefCell::new(Vec::new()),
-            ir_modules: RefCell::new(Vec::new()),
-            ir_constants: RefCell::new(Vec::new()),
-            ir_impls: RefCell::new(Vec::new()),
-            source_code: RefCell::new(String::new()),
-            user_macros: RefCell::new(HashMap::new()),
         };
 
         // Register built-in functions
@@ -1572,6 +1501,47 @@ impl Interpreter {
             .borrow_mut()
             .define("PhantomData".to_string(), Value::Null);
 
+        // Sigil boolean aliases (yay = true, nay = false)
+        self.globals
+            .borrow_mut()
+            .define("yay".to_string(), Value::Bool(true));
+        self.globals
+            .borrow_mut()
+            .define("nay".to_string(), Value::Bool(false));
+
+        // Qliphoth types (stub constructors for UI components)
+        // These allow `invoke qliphoth·components·*` to work by making types globally available
+        let qliphoth_types = [
+            "Button", "Card", "Input", "Badge", "Spinner", "Dialog", "Select",
+            "Checkbox", "Radio", "Switch", "Textarea", "Link", "Icon", "Avatar",
+            "Tooltip", "Tabs", "Header", "Footer", "Hero", "Nav", "PlatformCard",
+            "ResearchCard", "FeatureSection", "PricingTable", "Testimonial",
+            "CodeBlock", "TeamGrid", "LandingPage", "VNode", "AvatarGroup",
+            "TestimonialSlider", "NavItem", "FeatureItem", "PricingPlan",
+            "CodeBlockTabs", "TeamMember", "CheckboxGroup", "RadioGroup",
+            "Tab", "TabPanel", "FooterSection", "FooterLink", "SocialLink",
+            "Record", "TestimonialGrid", "TabList", "TabPanels",
+        ];
+        for type_name in qliphoth_types {
+            // Register as default constructor so `Type { field: value }` works
+            self.default_structs.insert(
+                type_name.to_string(),
+                crate::ast::StructDef {
+                    visibility: crate::ast::Visibility::Public,
+                    attrs: crate::ast::StructAttrs::default(),
+                    name: crate::ast::Ident {
+                        name: type_name.to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: crate::span::Span::default(),
+                    },
+                    generics: None,
+                    fields: crate::ast::StructFields::Named(vec![]),
+                    is_translations: false,
+                },
+            );
+        }
+
         // Print function
         self.define_builtin("print", None, |interp, args| {
             let output: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
@@ -1682,6 +1652,24 @@ impl Interpreter {
             Ok(Value::Evidential {
                 value: Box::new(args[0].clone()),
                 evidence: Evidence::Reported,
+            })
+        });
+
+        // text() - Create a VNode text element for Qliphoth UI
+        self.define_builtin("text", Some(1), |_, args| {
+            let content = match &args[0] {
+                Value::String(s) => s.as_str().to_string(),
+                other => format!("{}", other),
+            };
+            let mut vnode_fields = std::collections::HashMap::new();
+            vnode_fields.insert("tag".to_string(), Value::String(Rc::new("#text".to_string())));
+            vnode_fields.insert("text_content".to_string(), Value::String(Rc::new(content)));
+            vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+            vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+            vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+            Ok(Value::Struct {
+                name: "VNode".to_string(),
+                fields: Rc::new(RefCell::new(vnode_fields)),
             })
         });
 
@@ -2584,22 +2572,6 @@ impl Interpreter {
         self.globals.borrow_mut().define(name.to_string(), builtin);
     }
 
-    /// Set the source code for span-to-line conversion
-    pub fn set_source_code(&mut self, source: String) {
-        *self.source_code.borrow_mut() = source;
-    }
-
-    /// Convert a byte offset to a line number (1-indexed)
-    fn offset_to_line(&self, offset: usize) -> i64 {
-        let source = self.source_code.borrow();
-        if source.is_empty() || offset >= source.len() {
-            return 1; // Default if no source or out of bounds
-        }
-        // Count newlines up to offset
-        let line_count = source[..offset].matches('\n').count() + 1;
-        line_count as i64
-    }
-
     /// Execute a source file
     pub fn execute(&mut self, file: &SourceFile) -> Result<Value, RuntimeError> {
         let mut result = Value::Null;
@@ -2655,43 +2627,6 @@ impl Interpreter {
                     let qualified_name = format!("{}·{}", module, fn_name);
                     self.globals.borrow_mut().define(qualified_name, fn_value);
                 }
-
-                // Track function for IR export with span info
-                let span = &func.name.span;
-                let start_line = self.offset_to_line(span.start);
-                let end_line = self.offset_to_line(span.end);
-
-                let mut start_fields = HashMap::new();
-                start_fields.insert("line".to_string(), Value::Int(start_line));
-                start_fields.insert("column".to_string(), Value::Int(1));
-                let start = Value::Struct {
-                    name: "SpanPos".to_string(),
-                    fields: Rc::new(RefCell::new(start_fields)),
-                };
-
-                let mut end_fields = HashMap::new();
-                end_fields.insert("line".to_string(), Value::Int(end_line));
-                end_fields.insert("column".to_string(), Value::Int(1));
-                let end = Value::Struct {
-                    name: "SpanPos".to_string(),
-                    fields: Rc::new(RefCell::new(end_fields)),
-                };
-
-                let mut span_fields = HashMap::new();
-                span_fields.insert("start".to_string(), start);
-                span_fields.insert("end".to_string(), end);
-                let span_value = Value::Struct {
-                    name: "Span".to_string(),
-                    fields: Rc::new(RefCell::new(span_fields)),
-                };
-
-                let mut func_fields = HashMap::new();
-                func_fields.insert("name".to_string(), Value::String(Rc::new(fn_name)));
-                func_fields.insert("span".to_string(), span_value);
-                self.ir_functions.borrow_mut().push(Value::Struct {
-                    name: "FunctionIR".to_string(),
-                    fields: Rc::new(RefCell::new(func_fields)),
-                });
 
                 Ok(Value::Null)
             }
@@ -2774,26 +2709,12 @@ impl Interpreter {
             }
             Item::Const(c) => {
                 let value = self.evaluate(&c.value)?;
-                self.globals.borrow_mut().define(c.name.name.clone(), value.clone());
-
-                // Track constant for IR export
-                let mut const_fields = HashMap::new();
-                const_fields.insert("name".to_string(), Value::String(Rc::new(c.name.name.clone())));
-                const_fields.insert("value".to_string(), value);
-                self.ir_constants.borrow_mut().push(Value::Struct {
-                    name: "ConstDef".to_string(),
-                    fields: Rc::new(RefCell::new(const_fields)),
-                });
-
+                self.globals.borrow_mut().define(c.name.name.clone(), value);
                 Ok(Value::Null)
             }
             Item::Static(s) => {
                 let value = self.evaluate(&s.value)?;
                 self.globals.borrow_mut().define(s.name.name.clone(), value);
-                // If static is mutable (static Δ), track it as a mutable variable
-                if s.mutable {
-                    self.mutable_vars.borrow_mut().insert(s.name.name.clone());
-                }
                 Ok(Value::Null)
             }
             Item::ExternBlock(extern_block) => {
@@ -2925,23 +2846,6 @@ impl Interpreter {
                         }
                     }
                 }
-
-                // Track impl for IR export
-                let trait_name = impl_block.trait_.as_ref().map(|t| {
-                    t.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·")
-                });
-                let mut impl_fields = HashMap::new();
-                impl_fields.insert("type_name".to_string(), Value::String(Rc::new(type_name.clone())));
-                impl_fields.insert("trait_name".to_string(), match trait_name {
-                    Some(t) => Value::String(Rc::new(t)),
-                    None => Value::Null,
-                });
-                impl_fields.insert("method_count".to_string(), Value::Int(impl_block.items.len() as i64));
-                self.ir_impls.borrow_mut().push(Value::Struct {
-                    name: "ImplDef".to_string(),
-                    fields: Rc::new(RefCell::new(impl_fields)),
-                });
-
                 Ok(Value::Null)
             }
             Item::Module(module) => {
@@ -3127,16 +3031,6 @@ impl Interpreter {
                         );
                     }
                 }
-
-                // Track module for IR export
-                let mut module_fields = HashMap::new();
-                module_fields.insert("name".to_string(), Value::String(Rc::new(module_name.clone())));
-                module_fields.insert("is_inline".to_string(), Value::Bool(module.items.is_some()));
-                self.ir_modules.borrow_mut().push(Value::Struct {
-                    name: "ModuleDef".to_string(),
-                    fields: Rc::new(RefCell::new(module_fields)),
-                });
-
                 Ok(Value::Null)
             }
             Item::Use(use_decl) => {
@@ -3144,81 +3038,11 @@ impl Interpreter {
                 self.process_use_tree(&use_decl.tree, &[])?;
                 Ok(Value::Null)
             }
-            Item::Trait(trait_def) => {
-                // Track trait for IR export
-                let method_names: Vec<Value> = trait_def.items.iter().filter_map(|item| {
-                    match item {
-                        crate::ast::TraitItem::Function(f) => Some(Value::String(Rc::new(f.name.name.clone()))),
-                        _ => None,
-                    }
-                }).collect();
-
-                let mut trait_fields = HashMap::new();
-                trait_fields.insert("name".to_string(), Value::String(Rc::new(trait_def.name.name.clone())));
-                trait_fields.insert("method_count".to_string(), Value::Int(trait_def.items.len() as i64));
-                trait_fields.insert("methods".to_string(), Value::Array(Rc::new(RefCell::new(method_names))));
-                self.ir_traits.borrow_mut().push(Value::Struct {
-                    name: "TraitDef".to_string(),
-                    fields: Rc::new(RefCell::new(trait_fields)),
-                });
-
-                Ok(Value::Null)
-            }
-            Item::Macro(m) => {
-                // Parse macro definition and register in user_macros
-                // Format: "($param1, $param2) { body }" or "{ body }" for parameterless macros
-                let rules = m.rules.trim();
-
-                // Parse parameters and body from rules
-                let (params, body) = if rules.starts_with('(') {
-                    // Find closing paren
-                    let mut depth = 0;
-                    let mut paren_end = 0;
-                    for (i, c) in rules.chars().enumerate() {
-                        match c {
-                            '(' => depth += 1,
-                            ')' => {
-                                depth -= 1;
-                                if depth == 0 {
-                                    paren_end = i;
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    // Extract parameter list (e.g., "$n" or "$x, $y")
-                    let param_str = &rules[1..paren_end];
-                    let params: Vec<String> = param_str
-                        .split(',')
-                        .map(|p| p.trim().trim_start_matches('$').to_string())
-                        .filter(|p| !p.is_empty())
-                        .collect();
-
-                    // Extract body (everything after the params and opening brace)
-                    let rest = rules[paren_end + 1..].trim();
-                    let body = if rest.starts_with('{') && rest.ends_with('}') {
-                        rest[1..rest.len() - 1].trim().to_string()
-                    } else {
-                        rest.to_string()
-                    };
-
-                    (params, body)
-                } else if rules.starts_with('{') && rules.ends_with('}') {
-                    // Parameterless macro: "{ body }"
-                    let body = rules[1..rules.len() - 1].trim().to_string();
-                    (Vec::new(), body)
-                } else {
-                    // Fallback: treat entire rules as body
-                    (Vec::new(), rules.to_string())
-                };
-
-                // Register the macro
-                self.user_macros
-                    .borrow_mut()
-                    .insert(m.name.name.clone(), (params, body));
-
+            Item::Macro(macro_def) => {
+                // Register macro/rune definition for later invocation
+                let name = macro_def.name.name.clone();
+                crate::sigil_debug!("DEBUG registering macro: '{}', rules='{}'", name, macro_def.rules);
+                self.macros.insert(name, macro_def.clone());
                 Ok(Value::Null)
             }
             _ => Ok(Value::Null), // Skip other items for now
@@ -3519,6 +3343,19 @@ impl Interpreter {
             Expr::Pipe { expr, operations } => self.eval_pipe(expr, operations),
             Expr::Closure { params, body, .. } => self.eval_closure(params, body),
             Expr::Struct { path, fields, rest } => self.eval_struct_literal(path, fields, rest),
+            Expr::AnonymousStruct { fields } => {
+                // Anonymous struct literal: { field: value, ... }
+                // Create a Value::Struct with name "Record"
+                let mut field_map = std::collections::HashMap::new();
+                for (name, expr) in fields {
+                    let value = self.evaluate(expr)?;
+                    field_map.insert(name.name.clone(), value);
+                }
+                Ok(Value::Struct {
+                    name: "Record".to_string(),
+                    fields: Rc::new(RefCell::new(field_map)),
+                })
+            }
             Expr::Evidential {
                 expr,
                 evidentiality,
@@ -3636,13 +3473,50 @@ impl Interpreter {
                             Err(RuntimeError::new("assertion failed"))
                         }
                     }
+                    "assert_eq" | "assert_ne" => {
+                        // assert_eq!(left, right) - check if left == right
+                        // assert_ne!(left, right) - check if left != right
+                        let parts: Vec<&str> = tokens.splitn(2, ',').collect();
+                        if parts.len() < 2 {
+                            return Err(RuntimeError::new(format!(
+                                "{}! requires two arguments", macro_name
+                            )));
+                        }
+                        let left_str = parts[0].trim();
+                        let right_str = parts[1].trim();
+
+                        // Parse and evaluate left and right expressions
+                        let mut parser = crate::Parser::new(left_str);
+                        let left_expr = parser.parse_expr().map_err(|e| {
+                            RuntimeError::new(format!("Failed to parse left operand '{}': {:?}", left_str, e))
+                        })?;
+                        let left_val = self.evaluate(&left_expr)?;
+
+                        let mut parser = crate::Parser::new(right_str);
+                        let right_expr = parser.parse_expr().map_err(|e| {
+                            RuntimeError::new(format!("Failed to parse right operand '{}': {:?}", right_str, e))
+                        })?;
+                        let right_val = self.evaluate(&right_expr)?;
+
+                        let are_equal = self.values_equal(&left_val, &right_val);
+                        let should_be_equal = macro_name == "assert_eq";
+
+                        if are_equal == should_be_equal {
+                            Ok(Value::Null)
+                        } else {
+                            Err(RuntimeError::new(format!(
+                                "{}! failed: left = {}, right = {}",
+                                macro_name,
+                                self.format_value(&left_val),
+                                self.format_value(&right_val)
+                            )))
+                        }
+                    }
                     _ => {
-                        // Check for user-defined macro
-                        // Clone the macro definition out of the borrow to avoid lifetime issues
-                        let macro_def = self.user_macros.borrow().get(macro_name).cloned();
-                        if let Some((params, body)) = macro_def {
-                            // Expand user-defined macro
-                            self.expand_user_macro(&params, &body, tokens, None)
+                        // Check if it's a user-defined macro/rune
+                        crate::sigil_debug!("DEBUG looking up macro: '{}', available: {:?}", macro_name, self.macros.keys().collect::<Vec<_>>());
+                        if let Some(macro_def) = self.macros.get(macro_name).cloned() {
+                            self.expand_user_macro(&macro_def, tokens)
                         } else {
                             // Unknown macro - return tokens as string for debugging
                             Ok(Value::String(Rc::new(tokens.clone())))
@@ -3706,7 +3580,7 @@ impl Interpreter {
                                                         .join(", ")
                                                 })
                                                 .unwrap_or_default();
-                                            format!("{}::{} {{ {} }}", en, vn, vf_str)
+                                            format!("{}·{} {{ {} }}", en, vn, vf_str)
                                         }
                                         _ => format!("{}", first),
                                     }
@@ -3805,25 +3679,16 @@ impl Interpreter {
             Expr::Path(path) if path.segments.len() == 1 => {
                 let name = &path.segments[0].ident.name;
                 // Check if variable is mutable before allowing assignment
-                let in_env = self.environment.borrow().get(name).is_some();
-                let in_globals = self.globals.borrow().get(name).is_some();
-
                 if !self.mutable_vars.borrow().contains(name) {
                     // Check if variable exists (to distinguish from first assignment vs reassignment)
-                    if in_env || in_globals {
+                    if self.environment.borrow().get(name).is_some() {
                         return Err(RuntimeError::new(format!(
                             "cannot assign to immutable variable '{}'",
                             name
                         )));
                     }
                 }
-
-                // If it's a global (static), update globals; otherwise update environment
-                if in_globals && !in_env {
-                    self.globals.borrow_mut().set(name, val.clone())?;
-                } else {
-                    self.environment.borrow_mut().set(name, val.clone())?;
-                }
+                self.environment.borrow_mut().set(name, val.clone())?;
                 Ok(val)
             }
             Expr::Index { expr, index } => {
@@ -4544,7 +4409,7 @@ impl Interpreter {
                 }
                 _ => Err(RuntimeError::new("Invalid variant operation")),
             },
-            // Struct equality (by value for Cbit, by reference for others) and Tensor operations
+            // Struct equality (by reference) and Tensor operations
             (
                 Value::Struct {
                     name: n1,
@@ -4555,36 +4420,8 @@ impl Interpreter {
                     fields: f2,
                 },
             ) => match op {
-                BinOp::Eq => {
-                    // For Cbit, compare by value (the __value__ field)
-                    if n1 == "Cbit" && n2 == "Cbit" {
-                        let v1 = f1.borrow().get("__value__").cloned();
-                        let v2 = f2.borrow().get("__value__").cloned();
-                        let eq = match (v1, v2) {
-                            (Some(Value::Bool(a)), Some(Value::Bool(b))) => a == b,
-                            (Some(Value::Int(a)), Some(Value::Int(b))) => a == b,
-                            _ => Rc::ptr_eq(&f1, &f2),
-                        };
-                        Ok(Value::Bool(eq))
-                    } else {
-                        Ok(Value::Bool(n1 == n2 && Rc::ptr_eq(&f1, &f2)))
-                    }
-                }
-                BinOp::Ne => {
-                    // For Cbit, compare by value (the __value__ field)
-                    if n1 == "Cbit" && n2 == "Cbit" {
-                        let v1 = f1.borrow().get("__value__").cloned();
-                        let v2 = f2.borrow().get("__value__").cloned();
-                        let neq = match (v1, v2) {
-                            (Some(Value::Bool(a)), Some(Value::Bool(b))) => a != b,
-                            (Some(Value::Int(a)), Some(Value::Int(b))) => a != b,
-                            _ => !Rc::ptr_eq(&f1, &f2),
-                        };
-                        Ok(Value::Bool(neq))
-                    } else {
-                        Ok(Value::Bool(n1 != n2 || !Rc::ptr_eq(&f1, &f2)))
-                    }
-                }
+                BinOp::Eq => Ok(Value::Bool(n1 == n2 && Rc::ptr_eq(&f1, &f2))),
+                BinOp::Ne => Ok(Value::Bool(n1 != n2 || !Rc::ptr_eq(&f1, &f2))),
                 // Tensor multiplication (element-wise for scalars)
                 BinOp::Mul if n1 == "Tensor" && n2 == "Tensor" => {
                     // Get scalar values from both tensors using field helpers (no allocation)
@@ -4663,22 +4500,20 @@ impl Interpreter {
                     let right_requires_grad =
                         matches!(f2.borrow().get("requires_grad"), Some(Value::Bool(true)));
 
-                    // Build result tensor with __field__ naming convention
+                    // Build result tensor
                     let mut fields = std::collections::HashMap::new();
-                    let shape_arr = Value::Array(Rc::new(RefCell::new(vec![
-                        Value::Int(m as i64),
-                        Value::Int(p as i64),
-                    ])));
-                    let data_arr = Value::Array(Rc::new(RefCell::new(
-                        result_data.into_iter().map(Value::Float).collect(),
-                    )));
-                    fields.insert("__shape__".to_string(), shape_arr.clone());
-                    fields.insert("__data__".to_string(), data_arr.clone());
-                    fields.insert("shape".to_string(), shape_arr);
-                    fields.insert("data".to_string(), data_arr);
                     fields.insert(
-                        "__requires_grad__".to_string(),
-                        Value::Bool(left_requires_grad || right_requires_grad),
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(vec![
+                            Value::Int(m as i64),
+                            Value::Int(p as i64),
+                        ]))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(
+                            result_data.into_iter().map(Value::Float).collect(),
+                        ))),
                     );
                     fields.insert(
                         "requires_grad".to_string(),
@@ -4867,12 +4702,6 @@ impl Interpreter {
                             Value::Float(amp11),
                         ]))),
                     );
-                    // Set __valid__ for linear type tracking
-                    reg_fields.insert("__valid__".to_string(), Value::Bool(true));
-                    // Set __state_id__ for quantum state tracking
-                    reg_fields.insert("__state_id__".to_string(), Value::Int(0));
-                    // Set __n_qubits__ for size tracking
-                    reg_fields.insert("__n_qubits__".to_string(), Value::Int(2));
 
                     Ok(Value::Struct {
                         name: "QRegister".to_string(),
@@ -5198,7 +5027,7 @@ impl Interpreter {
             // Check variant constructors
             // Debug: trace variant lookup for Command
             if qualified_name.contains("Command") || qualified_name.contains("Analyze") {
-                eprintln!("DEBUG variant lookup: qualified_name='{}'", qualified_name);
+                crate::sigil_debug!("DEBUG variant lookup: qualified_name='{}'", qualified_name);
                 eprintln!(
                     "  found in variant_constructors: {}",
                     self.variant_constructors.contains_key(&qualified_name)
@@ -5338,20 +5167,6 @@ impl Interpreter {
                         });
                     }
                     return Err(RuntimeError::new("RwLock::new expects 1 argument"));
-                }
-                // Barrier::new - create a barrier synchronization primitive
-                ["std", "sync", "Barrier", "new"] | ["Barrier", "new"] => {
-                    if args.len() == 1 {
-                        let count = self.evaluate(&args[0])?;
-                        return Ok(Value::Struct {
-                            name: "Barrier".to_string(),
-                            fields: Rc::new(RefCell::new(HashMap::from([(
-                                "__count__".to_string(),
-                                count,
-                            )]))),
-                        });
-                    }
-                    return Err(RuntimeError::new("Barrier::new expects 1 argument"));
                 }
                 // Arc::new - just wrap the value (no real reference counting in interpreter)
                 ["std", "sync", "Arc", "new"] | ["Arc", "new"] => {
@@ -6731,7 +6546,7 @@ impl Interpreter {
         }
         // Also show the arms
         for (i, arm) in arms.iter().enumerate() {
-            eprintln!("DEBUG   arm {}: {:?}", i, arm.pattern);
+            crate::sigil_debug!("DEBUG   arm {}: {:?}", i, arm.pattern);
         }
         Err(RuntimeError::new(format!(
             "No matching pattern for {}",
@@ -7501,13 +7316,6 @@ impl Interpreter {
                     // Unwrap affective wrapper and access field
                     get_field(value, field_name)
                 }
-                Value::Map(map) => {
-                    // Map field access: map.field_name
-                    map.borrow()
-                        .get(field_name)
-                        .cloned()
-                        .ok_or_else(|| RuntimeError::new(format!("no field '{}' in map", field_name)))
-                }
                 Value::Variant {
                     fields: variant_fields,
                     ..
@@ -7664,7 +7472,7 @@ impl Interpreter {
                     enum_name,
                     variant_name,
                     ..
-                } => format!("Variant({}::{})", enum_name, variant_name),
+                } => format!("Variant({}·{})", enum_name, variant_name),
                 Value::String(_) => "String".to_string(),
                 Value::Ref(r) => format!("Ref({:?})", std::mem::discriminant(&*r.borrow())),
                 Value::Null => "Null".to_string(),
@@ -7723,11 +7531,6 @@ impl Interpreter {
         // Built-in methods
         match (&recv, method.name.as_str()) {
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
-            (Value::Array(arr), "capacity") => Ok(Value::Int(arr.borrow().capacity() as i64)),
-            (Value::Array(arr), "as_slice") => {
-                // In interpreter mode, just return a clone of the array
-                Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone()))))
-            }
             (Value::Array(arr), "push") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("push expects 1 argument"));
@@ -7750,30 +7553,10 @@ impl Interpreter {
                 arr.borrow_mut().push(arg_values[0].clone());
                 Ok(Value::Null)
             }
-            (Value::Array(arr), "pop") => {
-                match arr.borrow_mut().pop() {
-                    Some(value) => {
-                        // Return Option::Some(value) as a Variant
-                        Ok(Value::Variant {
-                            enum_name: "Option".to_string(),
-                            variant_name: "Some".to_string(),
-                            fields: Some(Rc::new(vec![value])),
-                        })
-                    }
-                    None => {
-                        // Return Option::None as a Variant
-                        Ok(Value::Variant {
-                            enum_name: "Option".to_string(),
-                            variant_name: "None".to_string(),
-                            fields: None,
-                        })
-                    }
-                }
-            }
-            (Value::Array(arr), "clear") => {
-                arr.borrow_mut().clear();
-                Ok(Value::Null)
-            }
+            (Value::Array(arr), "pop") => arr
+                .borrow_mut()
+                .pop()
+                .ok_or_else(|| RuntimeError::new("pop on empty array")),
             (Value::Array(arr), "extend") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("extend expects 1 argument"));
@@ -8709,14 +8492,6 @@ impl Interpreter {
             (Value::String(s), "chars") => {
                 let chars: Vec<Value> = s.chars().map(Value::Char).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chars))))
-            }
-            (Value::String(s), "as_bytes") => {
-                let bytes: Vec<Value> = s.as_bytes().iter().map(|b| Value::Int(*b as i64)).collect();
-                Ok(Value::Array(Rc::new(RefCell::new(bytes))))
-            }
-            (Value::String(s), "bytes") => {
-                let bytes: Vec<Value> = s.as_bytes().iter().map(|b| Value::Int(*b as i64)).collect();
-                Ok(Value::Array(Rc::new(RefCell::new(bytes))))
             }
             (Value::String(s), "contains") => {
                 if arg_values.len() != 1 {
@@ -9970,112 +9745,6 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                // Barrier methods - wait() synchronization
-                if name == "Barrier" {
-                    match method.name.as_str() {
-                        "wait" => {
-                            // In single-threaded interpreter, wait() is a no-op
-                            // Just return a BarrierWaitResult indicating this thread is not the leader
-                            let mut result_fields = HashMap::new();
-                            result_fields.insert("__type__".to_string(), Value::String(Rc::new("BarrierWaitResult".to_string())));
-                            result_fields.insert("is_leader".to_string(), Value::Bool(true)); // first one through is leader
-                            return Ok(Value::Map(Rc::new(RefCell::new(result_fields))));
-                        }
-                        "is_leader" => {
-                            // Check if this was the leader thread (always true in single-threaded mode)
-                            return Ok(Value::Bool(true));
-                        }
-                        _ => {}
-                    }
-                }
-                // HTTP Client methods - get/post/etc.
-                if name == "Client" || name == "HttpClient" {
-                    match method.name.as_str() {
-                        "get" => {
-                            // client.get(url) - returns a Response with reported (~) evidence
-                            if let Some(url) = arg_values.first() {
-                                let url_str = match url {
-                                    Value::String(s) => s.to_string(),
-                                    _ => return Err(RuntimeError::new("get() requires a URL string")),
-                                };
-                                // Create a Response struct with reported evidence
-                                let mut response_fields = HashMap::new();
-                                response_fields.insert("__type__".to_string(), Value::String(Rc::new("Response".to_string())));
-                                response_fields.insert("url".to_string(), Value::String(Rc::new(url_str)));
-                                response_fields.insert("status".to_string(), Value::Int(200));
-                                response_fields.insert("body".to_string(), Value::String(Rc::new("{}".to_string())));
-                                response_fields.insert("__evidence__".to_string(), Value::String(Rc::new("reported".to_string())));
-                                return Ok(Value::Struct {
-                                    name: "Response".to_string(),
-                                    fields: Rc::new(RefCell::new(response_fields)),
-                                });
-                            }
-                            return Err(RuntimeError::new("get() requires a URL argument"));
-                        }
-                        "post" => {
-                            // client.post(url, body) - returns a Response
-                            if arg_values.len() >= 1 {
-                                let url_str = match &arg_values[0] {
-                                    Value::String(s) => s.to_string(),
-                                    _ => return Err(RuntimeError::new("post() requires a URL string")),
-                                };
-                                let mut response_fields = HashMap::new();
-                                response_fields.insert("__type__".to_string(), Value::String(Rc::new("Response".to_string())));
-                                response_fields.insert("url".to_string(), Value::String(Rc::new(url_str)));
-                                response_fields.insert("status".to_string(), Value::Int(200));
-                                response_fields.insert("body".to_string(), Value::String(Rc::new("{}".to_string())));
-                                response_fields.insert("__evidence__".to_string(), Value::String(Rc::new("reported".to_string())));
-                                return Ok(Value::Struct {
-                                    name: "Response".to_string(),
-                                    fields: Rc::new(RefCell::new(response_fields)),
-                                });
-                            }
-                            return Err(RuntimeError::new("post() requires a URL argument"));
-                        }
-                        _ => {}
-                    }
-                }
-                // Response methods - verify, body, status, etc.
-                if name == "Response" {
-                    match method.name.as_str() {
-                        "verify" => {
-                            // verify() - verify the response data (promotes from reported to known)
-                            // Returns the response data without the reported evidentiality marker
-                            let borrowed = fields.borrow();
-                            let mut verified_fields = HashMap::new();
-                            for (k, v) in borrowed.iter() {
-                                if k != "__evidence__" {
-                                    verified_fields.insert(k.clone(), v.clone());
-                                }
-                            }
-                            verified_fields.insert("__evidence__".to_string(), Value::String(Rc::new("known".to_string())));
-                            return Ok(Value::Struct {
-                                name: "Response".to_string(),
-                                fields: Rc::new(RefCell::new(verified_fields)),
-                            });
-                        }
-                        "body" => {
-                            // body() - get response body
-                            let borrowed = fields.borrow();
-                            return Ok(borrowed.get("body").cloned().unwrap_or(Value::String(Rc::new("".to_string()))));
-                        }
-                        "status" => {
-                            // status() - get HTTP status code
-                            let borrowed = fields.borrow();
-                            return Ok(borrowed.get("status").cloned().unwrap_or(Value::Int(0)));
-                        }
-                        "json" => {
-                            // json() - parse body as JSON
-                            let borrowed = fields.borrow();
-                            if let Some(Value::String(body)) = borrowed.get("body") {
-                                // Simple JSON parsing placeholder
-                                return Ok(Value::String(body.clone()));
-                            }
-                            return Ok(Value::Null);
-                        }
-                        _ => {}
-                    }
-                }
                 // Atomic methods - load/store/fetch_add etc.
                 if name == "AtomicU64"
                     || name == "AtomicUsize"
@@ -10236,6 +9905,426 @@ impl Interpreter {
                         "{} {{ {} }}",
                         name, field_str
                     ))));
+                }
+
+                // VNode methods for Qliphoth virtual DOM
+                if name == "VNode" {
+                    let borrowed = fields.borrow();
+                    match method.name.as_str() {
+                        "tag" => {
+                            if let Some(Value::String(tag)) = borrowed.get("tag") {
+                                return Ok(Value::String(tag.clone()));
+                            }
+                            return Ok(Value::String(Rc::new("".to_string())));
+                        }
+                        "text_content" => {
+                            if let Some(Value::String(text)) = borrowed.get("text_content") {
+                                return Ok(Value::String(text.clone()));
+                            }
+                            return Ok(Value::String(Rc::new("".to_string())));
+                        }
+                        "has_class" => {
+                            if let Some(Value::String(class_name)) = arg_values.first() {
+                                if let Some(Value::Array(classes)) = borrowed.get("classes") {
+                                    for c in classes.borrow().iter() {
+                                        if let Value::String(s) = c {
+                                            if s.as_str() == class_name.as_str() {
+                                                return Ok(Value::Bool(true));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            return Ok(Value::Bool(false));
+                        }
+                        "attr" => {
+                            if let Some(Value::String(attr_name)) = arg_values.first() {
+                                if let Some(Value::Map(attrs)) = borrowed.get("attrs") {
+                                    if let Some(val) = attrs.borrow().get(attr_name.as_str()) {
+                                        return Ok(val.clone());
+                                    }
+                                }
+                            }
+                            return Ok(Value::Null);
+                        }
+                        "children" => {
+                            if let Some(Value::Array(children)) = borrowed.get("children") {
+                                return Ok(Value::Array(children.clone()));
+                            }
+                            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        }
+                        "has_child_with_class" => {
+                            if let Some(Value::String(class_name)) = arg_values.first() {
+                                if let Some(Value::Array(children)) = borrowed.get("children") {
+                                    for child in children.borrow().iter() {
+                                        if let Value::Struct { fields: child_fields, .. } = child {
+                                            if let Some(Value::Array(classes)) = child_fields.borrow().get("classes") {
+                                                for c in classes.borrow().iter() {
+                                                    if let Value::String(s) = c {
+                                                        if s.as_str() == class_name.as_str() {
+                                                            return Ok(Value::Bool(true));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            return Ok(Value::Bool(false));
+                        }
+                        "find_child_by_class" => {
+                            if let Some(Value::String(class_name)) = arg_values.first() {
+                                if let Some(Value::Array(children)) = borrowed.get("children") {
+                                    for child in children.borrow().iter() {
+                                        if let Value::Struct { fields: child_fields, .. } = child {
+                                            if let Some(Value::Array(classes)) = child_fields.borrow().get("classes") {
+                                                for c in classes.borrow().iter() {
+                                                    if let Value::String(s) = c {
+                                                        if s.as_str() == class_name.as_str() {
+                                                            return Ok(child.clone());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // Return empty VNode if not found
+                            let mut empty = std::collections::HashMap::new();
+                            empty.insert("tag".to_string(), Value::String(Rc::new("".to_string())));
+                            empty.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            empty.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            empty.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            empty.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            return Ok(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(empty)) });
+                        }
+                        "find_child_by_tag" => {
+                            if let Some(Value::String(tag_name)) = arg_values.first() {
+                                if let Some(Value::Array(children)) = borrowed.get("children") {
+                                    for child in children.borrow().iter() {
+                                        if let Value::Struct { fields: child_fields, .. } = child {
+                                            if let Some(Value::String(tag)) = child_fields.borrow().get("tag") {
+                                                if tag.as_str() == tag_name.as_str() {
+                                                    return Ok(child.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // Return empty VNode if not found
+                            let mut empty = std::collections::HashMap::new();
+                            empty.insert("tag".to_string(), Value::String(Rc::new("".to_string())));
+                            empty.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            empty.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            empty.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            empty.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            return Ok(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(empty)) });
+                        }
+                        "find_children_by_class" => {
+                            let mut found = vec![];
+                            if let Some(Value::String(class_name)) = arg_values.first() {
+                                if let Some(Value::Array(children)) = borrowed.get("children") {
+                                    for child in children.borrow().iter() {
+                                        if let Value::Struct { fields: child_fields, .. } = child {
+                                            if let Some(Value::Array(classes)) = child_fields.borrow().get("classes") {
+                                                for c in classes.borrow().iter() {
+                                                    if let Value::String(s) = c {
+                                                        if s.as_str() == class_name.as_str() {
+                                                            found.push(child.clone());
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            return Ok(Value::Array(Rc::new(RefCell::new(found))));
+                        }
+                        "find_children_by_tag" => {
+                            let mut found = vec![];
+                            if let Some(Value::String(tag_name)) = arg_values.first() {
+                                if let Some(Value::Array(children)) = borrowed.get("children") {
+                                    for child in children.borrow().iter() {
+                                        if let Value::Struct { fields: child_fields, .. } = child {
+                                            if let Some(Value::String(tag)) = child_fields.borrow().get("tag") {
+                                                if tag.as_str() == tag_name.as_str() {
+                                                    found.push(child.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            return Ok(Value::Array(Rc::new(RefCell::new(found))));
+                        }
+                        "find_sibling_by_tag" => {
+                            // Siblings are not tracked in VNode - this method needs parent context
+                            // For now, return empty VNode (tests may need adjustment)
+                            let mut empty = std::collections::HashMap::new();
+                            empty.insert("tag".to_string(), Value::String(Rc::new("".to_string())));
+                            empty.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            empty.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            empty.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            empty.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            return Ok(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(empty)) });
+                        }
+                        "find_sibling_by_class" => {
+                            // Siblings are not tracked in VNode - this method needs parent context
+                            // For now, return empty VNode (tests may need adjustment)
+                            let mut empty = std::collections::HashMap::new();
+                            empty.insert("tag".to_string(), Value::String(Rc::new("".to_string())));
+                            empty.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            empty.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            empty.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            empty.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            return Ok(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(empty)) });
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Qliphoth component render methods
+                // Button component
+                if name == "Button" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let label = borrowed.get("label")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                            .unwrap_or_else(|| Rc::new("".to_string()));
+                        let variant = borrowed.get("variant")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            .unwrap_or_else(|| "primary".to_string());
+                        let size = borrowed.get("size")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            .unwrap_or_else(|| "md".to_string());
+                        let disabled = borrowed.get("disabled")
+                            .and_then(|v| if let Value::Bool(b) = v { Some(*b) } else { None })
+                            .unwrap_or(false);
+
+                        let mut vnode_fields = std::collections::HashMap::new();
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("button".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(label));
+
+                        let classes = vec![
+                            Value::String(Rc::new(format!("btn-{}", variant))),
+                            Value::String(Rc::new(format!("btn-{}", size))),
+                        ];
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        let attrs_map: std::collections::HashMap<String, Value> = if disabled {
+                            vec![("disabled".to_string(), Value::Bool(true))].into_iter().collect()
+                        } else {
+                            std::collections::HashMap::new()
+                        };
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Card component
+                if name == "Card" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+
+                        let title = borrowed.get("title")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                            .unwrap_or_else(|| Rc::new("".to_string()));
+                        vnode_fields.insert("text_content".to_string(), Value::String(title));
+
+                        let classes = vec![Value::String(Rc::new("card".to_string()))];
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Generic render for other Qliphoth components (Input, Badge, Spinner, Dialog, etc.)
+                let qliphoth_components = [
+                    "Input", "Badge", "Spinner", "Dialog", "Select", "Checkbox", "Radio",
+                    "Switch", "Textarea", "Link", "Icon", "Avatar", "Tooltip", "Tabs",
+                    "Header", "Footer", "Hero", "Nav", "PlatformCard", "ResearchCard",
+                    "FeatureSection", "PricingTable", "Testimonial", "CodeBlock", "TeamGrid",
+                    "LandingPage", "RadioGroup", "AvatarGroup", "CheckboxGroup", "FeatureItem",
+                    "PricingPlan", "TestimonialSlider", "CodeBlockTabs", "TeamMember",
+                    "Tab", "TabPanel", "FooterSection", "FooterLink", "SocialLink", "NavItem",
+                    "TestimonialGrid", "TabList", "TabPanels",
+                ];
+                if qliphoth_components.contains(&name.as_str()) && method.name == "render" {
+                    let borrowed = fields.borrow();
+                    let mut vnode_fields = std::collections::HashMap::new();
+
+                    // Determine tag based on component type
+                    let tag = match name.as_str() {
+                        "Input" | "Textarea" => "input",
+                        "Select" => "select",
+                        "Checkbox" | "Radio" | "Switch" => "input",
+                        "Link" => "a",
+                        "Icon" => "span",
+                        "Avatar" => "img",
+                        _ => "div",
+                    };
+                    vnode_fields.insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
+
+                    // Extract text content from common fields
+                    let text = borrowed.get("label")
+                        .or_else(|| borrowed.get("title"))
+                        .or_else(|| borrowed.get("text"))
+                        .or_else(|| borrowed.get("content"))
+                        .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                        .unwrap_or_else(|| Rc::new("".to_string()));
+                    vnode_fields.insert("text_content".to_string(), Value::String(text));
+
+                    // Generate component-specific classes
+                    let class_name = name.chars()
+                        .enumerate()
+                        .map(|(i, c)| {
+                            if c.is_uppercase() && i > 0 { format!("-{}", c.to_lowercase()) }
+                            else { c.to_lowercase().to_string() }
+                        })
+                        .collect::<String>();
+                    let classes = vec![Value::String(Rc::new(class_name))];
+                    vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+                    vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                    // Pass through children if present, auto-rendering component children
+                    if let Some(children) = borrowed.get("children") {
+                        if let Value::Array(children_arr) = children {
+                            let mut rendered_children = vec![];
+                            for child in children_arr.borrow().iter() {
+                                // If child is a component struct, try to render it
+                                if let Value::Struct { name: child_name, fields: child_fields } = child {
+                                    // Check if this is a Qliphoth component that should be auto-rendered
+                                    let component_names = [
+                                        "TabList", "TabPanels", "Tab", "TabPanel", "Input", "Badge",
+                                        "Spinner", "Dialog", "Select", "Checkbox", "Radio", "Switch",
+                                        "Textarea", "Link", "Icon", "Avatar", "Tooltip", "Header",
+                                        "Footer", "Hero", "Nav", "NavItem", "FooterSection", "FooterLink",
+                                    ];
+                                    if component_names.contains(&child_name.as_str()) {
+                                        // Auto-render this child component
+                                        let child_borrowed = child_fields.borrow();
+                                        let mut child_vnode = std::collections::HashMap::new();
+
+                                        // Determine tag
+                                        let tag = match child_name.as_str() {
+                                            "Input" | "Textarea" => "input",
+                                            "Select" => "select",
+                                            "Link" => "a",
+                                            _ => "div",
+                                        };
+                                        child_vnode.insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
+
+                                        // Get text content
+                                        let text = child_borrowed.get("label")
+                                            .or_else(|| child_borrowed.get("title"))
+                                            .or_else(|| child_borrowed.get("text"))
+                                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                            .unwrap_or_else(|| Rc::new("".to_string()));
+                                        child_vnode.insert("text_content".to_string(), Value::String(text));
+
+                                        // Generate class name
+                                        let class_name = child_name.chars()
+                                            .enumerate()
+                                            .map(|(i, c)| {
+                                                if c.is_uppercase() && i > 0 { format!("-{}", c.to_lowercase()) }
+                                                else { c.to_lowercase().to_string() }
+                                            })
+                                            .collect::<String>();
+                                        child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::String(Rc::new(class_name))]))));
+                                        child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                                        // Recursively render nested children
+                                        if let Some(nested_children) = child_borrowed.get("children") {
+                                            if let Value::Array(nested_arr) = nested_children {
+                                                let mut rendered_nested = vec![];
+                                                for nested_child in nested_arr.borrow().iter() {
+                                                    if let Value::Struct { name: nc_name, fields: nc_fields } = nested_child {
+                                                        // Render nested component
+                                                        let nc_borrowed = nc_fields.borrow();
+                                                        let mut nc_vnode = std::collections::HashMap::new();
+
+                                                        let tag = match nc_name.as_str() {
+                                                            "Input" | "Textarea" => "input",
+                                                            "Select" => "select",
+                                                            "Link" => "a",
+                                                            _ => "div",
+                                                        };
+                                                        nc_vnode.insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
+
+                                                        let text = nc_borrowed.get("label")
+                                                            .or_else(|| nc_borrowed.get("title"))
+                                                            .or_else(|| nc_borrowed.get("text"))
+                                                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                                            .unwrap_or_else(|| Rc::new("".to_string()));
+                                                        nc_vnode.insert("text_content".to_string(), Value::String(text));
+
+                                                        let class_name = nc_name.chars()
+                                                            .enumerate()
+                                                            .map(|(i, c)| {
+                                                                if c.is_uppercase() && i > 0 { format!("-{}", c.to_lowercase()) }
+                                                                else { c.to_lowercase().to_string() }
+                                                            })
+                                                            .collect::<String>();
+                                                        nc_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::String(Rc::new(class_name))]))));
+                                                        nc_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                                        nc_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                                                        rendered_nested.push(Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(nc_vnode)),
+                                                        });
+                                                    } else {
+                                                        rendered_nested.push(nested_child.clone());
+                                                    }
+                                                }
+                                                child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(rendered_nested))));
+                                            } else {
+                                                child_vnode.insert("children".to_string(), nested_children.clone());
+                                            }
+                                        } else {
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        }
+
+                                        rendered_children.push(Value::Struct {
+                                            name: "VNode".to_string(),
+                                            fields: Rc::new(RefCell::new(child_vnode)),
+                                        });
+                                    } else {
+                                        // Not a component, pass through as-is
+                                        rendered_children.push(child.clone());
+                                    }
+                                } else {
+                                    // Not a struct, pass through as-is (VNode or other value)
+                                    rendered_children.push(child.clone());
+                                }
+                            }
+                            vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(rendered_children))));
+                        } else {
+                            vnode_fields.insert("children".to_string(), children.clone());
+                        }
+                    } else {
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                    }
+
+                    return Ok(Value::Struct {
+                        name: "VNode".to_string(),
+                        fields: Rc::new(RefCell::new(vnode_fields)),
+                    });
                 }
 
                 // Pattern methods - for AST patterns stored as structs (Pattern::Ident, Pattern::Tuple, etc.)
@@ -10686,7 +10775,7 @@ impl Interpreter {
                                 }
                             };
                             // Get precision and registers
-                            let precision = match fields.borrow().get("__precision__") {
+                            let precision = match fields.borrow().get("_precision") {
                                 Some(Value::Int(p)) => *p as u32,
                                 _ => 14,
                             };
@@ -10694,7 +10783,7 @@ impl Interpreter {
                             let remaining = hash << precision | (1 << (precision - 1));
                             let leading_zeros = remaining.leading_zeros() + 1;
                             // Update register
-                            if let Some(Value::Array(regs)) = fields.borrow().get("__registers__") {
+                            if let Some(Value::Array(regs)) = fields.borrow().get("_registers") {
                                 let mut regs_borrow = regs.borrow_mut();
                                 if idx < regs_borrow.len() {
                                     let current = match &regs_borrow[idx] {
@@ -10707,17 +10796,17 @@ impl Interpreter {
                                 }
                             }
                             // Increment count for tracking
-                            let count_val = fields.borrow().get("__count__").cloned();
+                            let count_val = fields.borrow().get("_count").cloned();
                             if let Some(Value::Int(c)) = count_val {
                                 fields
                                     .borrow_mut()
-                                    .insert("__count__".to_string(), Value::Int(c + 1));
+                                    .insert("_count".to_string(), Value::Int(c + 1));
                             }
                             return Ok(Value::Null);
                         }
                         "count" => {
                             // hll.count() or hll|◊count - get approximate cardinality
-                            if let Some(Value::Array(regs)) = fields.borrow().get("__registers__") {
+                            if let Some(Value::Array(regs)) = fields.borrow().get("_registers") {
                                 let regs_borrow = regs.borrow();
                                 let m = regs_borrow.len() as f64;
                                 // Harmonic mean of 2^(-register[i])
@@ -10759,11 +10848,11 @@ impl Interpreter {
                                     "BloomFilter.insert expects 1 argument",
                                 ));
                             }
-                            let size = match fields.borrow().get("__size__") {
+                            let size = match fields.borrow().get("_size") {
                                 Some(Value::Int(s)) => *s as usize,
                                 _ => 1024,
                             };
-                            let num_hashes = match fields.borrow().get("__num_hashes__") {
+                            let num_hashes = match fields.borrow().get("_num_hashes") {
                                 Some(Value::Int(n)) => *n as usize,
                                 _ => 3,
                             };
@@ -10786,7 +10875,7 @@ impl Interpreter {
                                 }
                             };
                             // Set bits using double hashing
-                            if let Some(Value::Array(bits)) = fields.borrow().get("__bits__") {
+                            if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                 let mut bits_borrow = bits.borrow_mut();
                                 for i in 0..num_hashes {
                                     let h = (base_hash
@@ -10803,11 +10892,11 @@ impl Interpreter {
                                     "BloomFilter.contains expects 1 argument",
                                 ));
                             }
-                            let size = match fields.borrow().get("__size__") {
+                            let size = match fields.borrow().get("_size") {
                                 Some(Value::Int(s)) => *s as usize,
                                 _ => 1024,
                             };
-                            let num_hashes = match fields.borrow().get("__num_hashes__") {
+                            let num_hashes = match fields.borrow().get("_num_hashes") {
                                 Some(Value::Int(n)) => *n as usize,
                                 _ => 3,
                             };
@@ -10829,7 +10918,7 @@ impl Interpreter {
                                 }
                             };
                             // Check all bits
-                            if let Some(Value::Array(bits)) = fields.borrow().get("__bits__") {
+                            if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                 let bits_borrow = bits.borrow();
                                 for i in 0..num_hashes {
                                     let h = (base_hash
@@ -10857,11 +10946,11 @@ impl Interpreter {
                                     "CountMinSketch.insert expects 1 argument",
                                 ));
                             }
-                            let depth = match fields.borrow().get("__depth__") {
+                            let depth = match fields.borrow().get("_depth") {
                                 Some(Value::Int(d)) => *d as usize,
                                 _ => 4,
                             };
-                            let width = match fields.borrow().get("__width__") {
+                            let width = match fields.borrow().get("_width") {
                                 Some(Value::Int(w)) => *w as usize,
                                 _ => 1024,
                             };
@@ -10883,7 +10972,7 @@ impl Interpreter {
                                 }
                             };
                             // Increment counters in each row
-                            if let Some(Value::Array(counters)) = fields.borrow().get("__counters__") {
+                            if let Some(Value::Array(counters)) = fields.borrow().get("_counters") {
                                 let counters_borrow = counters.borrow();
                                 for i in 0..depth {
                                     let h = (base_hash.wrapping_add(i as u64 * 0x517cc1b727220a95))
@@ -10904,11 +10993,11 @@ impl Interpreter {
                                     "CountMinSketch.frequency expects 1 argument",
                                 ));
                             }
-                            let depth = match fields.borrow().get("__depth__") {
+                            let depth = match fields.borrow().get("_depth") {
                                 Some(Value::Int(d)) => *d as usize,
                                 _ => 4,
                             };
-                            let width = match fields.borrow().get("__width__") {
+                            let width = match fields.borrow().get("_width") {
                                 Some(Value::Int(w)) => *w as usize,
                                 _ => 1024,
                             };
@@ -10931,7 +11020,7 @@ impl Interpreter {
                             };
                             // Get minimum counter value across all rows
                             let mut min_count = i64::MAX;
-                            if let Some(Value::Array(counters)) = fields.borrow().get("__counters__") {
+                            if let Some(Value::Array(counters)) = fields.borrow().get("_counters") {
                                 let counters_borrow = counters.borrow();
                                 for i in 0..depth {
                                     let h = (base_hash.wrapping_add(i as u64 * 0x517cc1b727220a95))
@@ -11907,6 +11996,39 @@ impl Interpreter {
                         _ => {}
                     }
                 }
+
+                // Locale enum methods (i18n support)
+                // Locale variants have struct fields: code, name, fallback (optional)
+                // They provide methods: code(), display_name(), is_rtl()
+                if let Some(variant_fields) = fields {
+                    // Check if this looks like a locale variant (has code and name fields)
+                    if variant_fields.len() >= 1 {
+                        if let Some(Value::Struct { fields: struct_fields, .. }) = variant_fields.first() {
+                            let borrowed = struct_fields.borrow();
+                            match method.name.as_str() {
+                                "code" => {
+                                    if let Some(Value::String(code)) = borrowed.get("code") {
+                                        return Ok(Value::String(code.clone()));
+                                    }
+                                }
+                                "display_name" => {
+                                    if let Some(Value::String(name)) = borrowed.get("name") {
+                                        return Ok(Value::String(name.clone()));
+                                    }
+                                }
+                                "is_rtl" => {
+                                    // Check if rtl field exists and is true, otherwise default to false
+                                    if let Some(Value::Bool(rtl)) = borrowed.get("rtl") {
+                                        return Ok(Value::Bool(*rtl));
+                                    }
+                                    return Ok(Value::Bool(false));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
                 // Built-in clone method for all variants
                 if method.name == "clone" {
                     return Ok(recv.clone());
@@ -12015,15 +12137,6 @@ impl Interpreter {
             (Value::Char(c), "to_string") | (Value::Char(c), "string") => {
                 Ok(Value::String(Rc::new(c.to_string())))
             }
-            // Int methods (including pointer methods)
-            (Value::Int(n), "is_null") => {
-                // For raw pointers cast to Int, is_null() checks if value is 0
-                Ok(Value::Bool(*n == 0))
-            }
-            (Value::Int(n), "to_string") | (Value::Int(n), "string") => {
-                Ok(Value::String(Rc::new(n.to_string())))
-            }
-            (Value::Int(n), "abs") => Ok(Value::Int(n.abs())),
             _ => {
                 // Debug: what type is failing method lookup
                 let recv_type = match &recv {
@@ -12034,7 +12147,7 @@ impl Interpreter {
                         enum_name,
                         variant_name,
                         ..
-                    } => format!("Variant({}::{})", enum_name, variant_name),
+                    } => format!("Variant({}·{})", enum_name, variant_name),
                     Value::Ref(r) => format!("Ref({:?})", std::mem::discriminant(&*r.borrow())),
                     Value::Null => "Null".to_string(),
                     other => format!("{:?}", std::mem::discriminant(other)),
@@ -12084,8 +12197,8 @@ impl Interpreter {
                         .transpose()?
                         .unwrap_or_default();
 
-                    // Call as TypeName::method(args)
-                    let full_name = format!("{}::{}", self_type, method_segment.name.name);
+                    // Call as TypeName·method(args)
+                    let full_name = format!("{}·{}", self_type, method_segment.name.name);
                     let result = self.call_function_by_name(&full_name, arg_values)?;
 
                     // Continue processing remaining segments (skip first two)
@@ -12623,50 +12736,26 @@ impl Interpreter {
                 }
             }
             PipeOp::Call(callee) => {
-                // Special handling for macro invocations in pipe context: |macro_name!{}
-                // Pass the pipe value to the macro as $__pipe
-                if let Expr::Macro { path, tokens } = callee.as_ref() {
-                    let macro_name = path
-                        .segments
-                        .last()
-                        .map(|s| s.ident.name.as_str())
-                        .unwrap_or("");
-
-                    // Check for user-defined macro
-                    // Clone the macro definition out of the borrow to avoid lifetime issues
-                    let macro_def = self.user_macros.borrow().get(macro_name).cloned();
-                    if let Some((params, body)) = macro_def {
-                        return self.expand_user_macro(&params, &body, tokens, Some(value));
-                    }
-                    // Built-in macros don't use $__pipe, so fall through
-                }
-
-                // Special handling for |func(args) - prepend piped value to arguments
-                // e.g., q|Rx(3.14159) should call Rx(q, 3.14159)
-                if let Expr::Call { func: inner_func, args } = callee.as_ref() {
-                    // Evaluate the function
-                    let func_val = self.evaluate(inner_func)?;
-
-                    // Evaluate the explicit arguments
-                    let mut all_args = vec![value];
-                    for arg in args {
-                        all_args.push(self.evaluate(arg)?);
-                    }
-
-                    // Call with piped value prepended to args
-                    return match func_val {
-                        Value::Function(f) => self.call_function(&f, all_args),
-                        Value::BuiltIn(b) => self.call_builtin(&b, all_args),
-                        _ => Err(RuntimeError::new(format!(
-                            "Cannot call non-function value in pipe: {:?}",
-                            func_val
-                        ))),
-                    };
-                }
-
                 // |expr - call an arbitrary expression (like self.layer) with piped value
+                // Set pipe context for macro expansion (for pipe-invoked runes)
+                let prev_pipe_context = self.pipe_context.take();
+                self.pipe_context = Some(value.clone());
+
                 let callee_val = self.evaluate(callee)?;
-                match callee_val {
+
+                // Restore previous pipe context
+                self.pipe_context = prev_pipe_context;
+
+                // If the callee was a macro that expanded (returned a non-string value),
+                // return that result directly
+                match &callee_val {
+                    Value::String(s) if s.is_empty() => {
+                        // Empty string from unknown macro - error
+                        Err(RuntimeError::new(format!(
+                            "Cannot call non-function value in pipe: {:?}",
+                            callee_val
+                        )))
+                    }
                     Value::Function(f) => {
                         // Call the function with the piped value as argument
                         self.call_function(&f, vec![value])
@@ -12680,10 +12769,8 @@ impl Interpreter {
                         // For now, just return the value (ML layers would override)
                         Ok(value)
                     }
-                    _ => Err(RuntimeError::new(format!(
-                        "Cannot call non-function value in pipe: {:?}",
-                        callee_val
-                    ))),
+                    // For macros that expanded and returned a value, return that value
+                    _ => Ok(callee_val),
                 }
             }
             PipeOp::Method {
@@ -12877,32 +12964,6 @@ impl Interpreter {
                             _ => Err(RuntimeError::new("filter requires array")),
                         }
                     }
-                    "find" => {
-                        // find(predicate) returns first element where predicate returns true
-                        if arg_values.len() != 1 {
-                            return Err(RuntimeError::new("find expects 1 argument (closure)"));
-                        }
-                        match (&value, &arg_values[0]) {
-                            (Value::Array(arr), Value::Function(f)) => {
-                                for val in arr.borrow().iter() {
-                                    let matches = self.call_function(f, vec![val.clone()])?;
-                                    if matches!(matches, Value::Bool(true)) {
-                                        return Ok(val.clone());
-                                    }
-                                }
-                                // Return None variant if not found
-                                Ok(Value::Variant {
-                                    enum_name: "Option".to_string(),
-                                    variant_name: "None".to_string(),
-                                    fields: None,
-                                })
-                            }
-                            (Value::Array(_), _) => {
-                                Err(RuntimeError::new("find expects closure argument"))
-                            }
-                            _ => Err(RuntimeError::new("find requires array")),
-                        }
-                    }
                     "fold" => {
                         // fold(init, closure) reduces array to single value
                         if arg_values.len() != 2 {
@@ -12935,7 +12996,7 @@ impl Interpreter {
                             match (struct_name.as_str(), name.name.as_str()) {
                                 ("HyperLogLog", "count") => {
                                     if let Some(Value::Array(regs)) =
-                                        fields.borrow().get("__registers__")
+                                        fields.borrow().get("_registers")
                                     {
                                         let regs_borrow = regs.borrow();
                                         let m = regs_borrow.len() as f64;
@@ -12968,11 +13029,11 @@ impl Interpreter {
                                             "BloomFilter.contains expects 1 argument",
                                         ));
                                     }
-                                    let size = match fields.borrow().get("__size__") {
+                                    let size = match fields.borrow().get("_size") {
                                         Some(Value::Int(s)) => *s as usize,
                                         _ => 1024,
                                     };
-                                    let num_hashes = match fields.borrow().get("__num_hashes__") {
+                                    let num_hashes = match fields.borrow().get("_num_hashes") {
                                         Some(Value::Int(n)) => *n as usize,
                                         _ => 3,
                                     };
@@ -12993,7 +13054,7 @@ impl Interpreter {
                                             hasher.finish()
                                         }
                                     };
-                                    if let Some(Value::Array(bits)) = fields.borrow().get("__bits__") {
+                                    if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
                                         let bits_borrow = bits.borrow();
                                         for i in 0..num_hashes {
                                             let h = (base_hash.wrapping_add(
@@ -13014,11 +13075,11 @@ impl Interpreter {
                                             "CountMinSketch.frequency expects 1 argument",
                                         ));
                                     }
-                                    let depth = match fields.borrow().get("__depth__") {
+                                    let depth = match fields.borrow().get("_depth") {
                                         Some(Value::Int(d)) => *d as usize,
                                         _ => 4,
                                     };
-                                    let width = match fields.borrow().get("__width__") {
+                                    let width = match fields.borrow().get("_width") {
                                         Some(Value::Int(w)) => *w as usize,
                                         _ => 1024,
                                     };
@@ -13041,7 +13102,7 @@ impl Interpreter {
                                     };
                                     let mut min_count = i64::MAX;
                                     if let Some(Value::Array(counters)) =
-                                        fields.borrow().get("__counters__")
+                                        fields.borrow().get("_counters")
                                     {
                                         let counters_borrow = counters.borrow();
                                         for i in 0..depth {
@@ -13068,8 +13129,8 @@ impl Interpreter {
                                     use std::collections::hash_map::DefaultHasher;
                                     use std::hash::{Hash, Hasher};
                                     if let (Some(Value::Array(leaves)), Some(Value::String(root))) = (
-                                        fields.borrow().get("__leaf_hashes__").cloned(),
-                                        fields.borrow().get("root").cloned(),
+                                        fields.borrow().get("_leaves").cloned(),
+                                        fields.borrow().get("_root").cloned(),
                                     ) {
                                         let leaves_borrow = leaves.borrow();
                                         let combined: String = leaves_borrow
@@ -13103,25 +13164,7 @@ impl Interpreter {
                                 }
                                 ("Superposition", "observe") => {
                                     // Collapse to first value (deterministic for tests)
-                                    // Check __values__ field first (quantum module uniform)
-                                    if let Some(Value::Array(values)) =
-                                        fields.borrow().get("__values__")
-                                    {
-                                        let values_borrow = values.borrow();
-                                        if !values_borrow.is_empty() {
-                                            return Ok(values_borrow[0].clone());
-                                        }
-                                    }
-                                    // Check __elements__ field (holographic module)
-                                    if let Some(Value::Array(values)) =
-                                        fields.borrow().get("__elements__")
-                                    {
-                                        let values_borrow = values.borrow();
-                                        if !values_borrow.is_empty() {
-                                            return Ok(values_borrow[0].clone());
-                                        }
-                                    }
-                                    // Also check _values field (legacy)
+                                    // Check _values field first
                                     if let Some(Value::Array(values)) =
                                         fields.borrow().get("_values")
                                     {
@@ -13421,25 +13464,7 @@ impl Interpreter {
                             } = &value
                             {
                                 if sname == "Superposition" {
-                                    // Check __values__ field first (quantum module uniform)
-                                    if let Some(Value::Array(values)) =
-                                        fields.borrow().get("__values__")
-                                    {
-                                        let values_borrow = values.borrow();
-                                        if !values_borrow.is_empty() {
-                                            return Ok(values_borrow[0].clone());
-                                        }
-                                    }
-                                    // Check __elements__ field (holographic module)
-                                    if let Some(Value::Array(values)) =
-                                        fields.borrow().get("__elements__")
-                                    {
-                                        let values_borrow = values.borrow();
-                                        if !values_borrow.is_empty() {
-                                            return Ok(values_borrow[0].clone());
-                                        }
-                                    }
-                                    // Also check _values field (legacy)
+                                    // Check _values field first
                                     if let Some(Value::Array(values)) =
                                         fields.borrow().get("_values")
                                     {
@@ -13538,11 +13563,9 @@ impl Interpreter {
                             {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    // Try __shape__ first (stdlib), then shape (fallback)
                                     let shape =
-                                        fields_ref.get("__shape__").or_else(|| fields_ref.get("shape")).cloned().unwrap_or(Value::Null);
-                                    // Try __data__ first (stdlib), then data (fallback)
-                                    let data: Vec<f64> = match fields_ref.get("__data__").or_else(|| fields_ref.get("data")) {
+                                        fields_ref.get("shape").cloned().unwrap_or(Value::Null);
+                                    let data: Vec<f64> = match fields_ref.get("data") {
                                         Some(Value::Array(arr)) => arr
                                             .borrow()
                                             .iter()
@@ -13561,21 +13584,13 @@ impl Interpreter {
                                         .map(|&x| Value::Float(if x > 0.0 { x } else { 0.0 }))
                                         .collect();
                                     let mut new_fields = std::collections::HashMap::new();
-                                    // Use __shape__ and __data__ to match stdlib Tensor
-                                    new_fields.insert("__shape__".to_string(), shape.clone());
                                     new_fields.insert("shape".to_string(), shape);
-                                    new_fields.insert(
-                                        "__data__".to_string(),
-                                        Value::Array(Rc::new(RefCell::new(relu_data.clone()))),
-                                    );
                                     new_fields.insert(
                                         "data".to_string(),
                                         Value::Array(Rc::new(RefCell::new(relu_data))),
                                     );
-                                    new_fields.insert("__requires_grad__".to_string(), Value::Bool(false));
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
-                                    new_fields.insert("__grad__".to_string(), Value::Null);
-                                    new_fields.insert("grad".to_string(), Value::Null);
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -13592,11 +13607,9 @@ impl Interpreter {
                             {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    // Try __shape__ first (stdlib), then shape (fallback)
                                     let shape =
-                                        fields_ref.get("__shape__").or_else(|| fields_ref.get("shape")).cloned().unwrap_or(Value::Null);
-                                    // Try __data__ first (stdlib), then data (fallback)
-                                    let data: Vec<f64> = match fields_ref.get("__data__").or_else(|| fields_ref.get("data")) {
+                                        fields_ref.get("shape").cloned().unwrap_or(Value::Null);
+                                    let data: Vec<f64> = match fields_ref.get("data") {
                                         Some(Value::Array(arr)) => arr
                                             .borrow()
                                             .iter()
@@ -13622,21 +13635,13 @@ impl Interpreter {
                                         .map(|&e| Value::Float(e / sum_exp))
                                         .collect();
                                     let mut new_fields = std::collections::HashMap::new();
-                                    // Use __shape__ and __data__ to match stdlib Tensor
-                                    new_fields.insert("__shape__".to_string(), shape.clone());
                                     new_fields.insert("shape".to_string(), shape);
-                                    new_fields.insert(
-                                        "__data__".to_string(),
-                                        Value::Array(Rc::new(RefCell::new(softmax_data.clone()))),
-                                    );
                                     new_fields.insert(
                                         "data".to_string(),
                                         Value::Array(Rc::new(RefCell::new(softmax_data))),
                                     );
-                                    new_fields.insert("__requires_grad__".to_string(), Value::Bool(false));
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
-                                    new_fields.insert("__grad__".to_string(), Value::Null);
-                                    new_fields.insert("grad".to_string(), Value::Null);
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -13653,9 +13658,8 @@ impl Interpreter {
                             {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    // Try __data__ first (stdlib), then data (fallback)
                                     let data =
-                                        fields_ref.get("__data__").or_else(|| fields_ref.get("data")).cloned().unwrap_or(Value::Null);
+                                        fields_ref.get("data").cloned().unwrap_or(Value::Null);
                                     drop(fields_ref);
                                     // Get new shape from arguments
                                     let new_shape = if !arg_values.is_empty() {
@@ -13667,15 +13671,10 @@ impl Interpreter {
                                         Value::Array(Rc::new(RefCell::new(vec![])))
                                     };
                                     let mut new_fields = std::collections::HashMap::new();
-                                    // Use __shape__ and __data__ to match stdlib Tensor
-                                    new_fields.insert("__shape__".to_string(), new_shape.clone());
                                     new_fields.insert("shape".to_string(), new_shape);
-                                    new_fields.insert("__data__".to_string(), data.clone());
                                     new_fields.insert("data".to_string(), data);
-                                    new_fields.insert("__requires_grad__".to_string(), Value::Bool(false));
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
-                                    new_fields.insert("__grad__".to_string(), Value::Null);
-                                    new_fields.insert("grad".to_string(), Value::Null);
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -13692,25 +13691,23 @@ impl Interpreter {
                             {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    // Try __data__ first (stdlib), then data (fallback)
                                     let data =
-                                        fields_ref.get("__data__").or_else(|| fields_ref.get("data")).cloned().unwrap_or(Value::Null);
+                                        fields_ref.get("data").cloned().unwrap_or(Value::Null);
                                     let total_size: i64 = match &data {
                                         Value::Array(arr) => arr.borrow().len() as i64,
                                         _ => 0,
                                     };
                                     drop(fields_ref);
-                                    let new_shape = Value::Array(Rc::new(RefCell::new(vec![Value::Int(total_size)])));
                                     let mut new_fields = std::collections::HashMap::new();
-                                    // Use __shape__ and __data__ to match stdlib Tensor
-                                    new_fields.insert("__shape__".to_string(), new_shape.clone());
-                                    new_fields.insert("shape".to_string(), new_shape);
-                                    new_fields.insert("__data__".to_string(), data.clone());
+                                    new_fields.insert(
+                                        "shape".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(vec![Value::Int(
+                                            total_size,
+                                        )]))),
+                                    );
                                     new_fields.insert("data".to_string(), data);
-                                    new_fields.insert("__requires_grad__".to_string(), Value::Bool(false));
-                                    new_fields.insert("requires_grad".to_string(), Value::Bool(false));
-                                    new_fields.insert("__grad__".to_string(), Value::Null);
-                                    new_fields.insert("grad".to_string(), Value::Null);
+                                    new_fields
+                                        .insert("requires_grad".to_string(), Value::Bool(false));
                                     return Ok(Value::Struct {
                                         name: "Tensor".to_string(),
                                         fields: Rc::new(RefCell::new(new_fields)),
@@ -13753,13 +13750,10 @@ impl Interpreter {
                                     _ => 4,
                                 };
                                 // Extract the integer value to encode
-                                // Note: QHState uses __value__, others may use value
                                 let original_value: i64 = match &value {
                                     Value::Int(v) => *v,
                                     Value::Struct { fields, .. } => {
-                                        let fields_ref = fields.borrow();
-                                        // Try __value__ first (QHState), then value (generic)
-                                        match fields_ref.get("__value__").or_else(|| fields_ref.get("value")) {
+                                        match fields.borrow().get("value") {
                                             Some(Value::Int(v)) => *v,
                                             _ => 0,
                                         }
@@ -13986,72 +13980,40 @@ impl Interpreter {
 
                         // |quantum_reconstruct - reconstruct from shards
                         if name.name == "quantum_reconstruct" {
-                            // Helper to extract data from shard (check both data and __data__)
-                            fn extract_shard_data(shard: &Value) -> Option<Value> {
-                                if let Value::Struct { fields, .. } = shard {
-                                    let fields_ref = fields.borrow();
-                                    fields_ref.get("data")
-                                        .or_else(|| fields_ref.get("__data__"))
-                                        .cloned()
-                                } else {
-                                    None
-                                }
-                            }
-
                             match &value {
-                                // Direct array of shards
-                                Value::Array(shards) => {
-                                    if let Some(first) = shards.borrow().first() {
-                                        if let Some(data) = extract_shard_data(first) {
-                                            let mut qh_fields = std::collections::HashMap::new();
-                                            qh_fields.insert("value".to_string(), data);
-                                            qh_fields.insert("_reconstructed".to_string(), Value::Bool(true));
-                                            return Ok(Value::Struct {
-                                                name: "QHState".to_string(),
-                                                fields: Rc::new(RefCell::new(qh_fields)),
-                                            });
-                                        }
-                                    }
-                                    // Fallback - wrap the array itself
-                                    let mut qh_fields = std::collections::HashMap::new();
-                                    qh_fields.insert("value".to_string(), value.clone());
-                                    qh_fields.insert("_reconstructed".to_string(), Value::Bool(true));
-                                    return Ok(Value::Struct {
-                                        name: "QHState".to_string(),
-                                        fields: Rc::new(RefCell::new(qh_fields)),
-                                    });
-                                }
-                                // Struct with "shards" field
                                 Value::Struct { fields, .. } => {
-                                    // Extract data inside the borrow scope, then create struct outside
-                                    let extracted_data: Option<Value> = {
-                                        let fields_ref = fields.borrow();
-                                        if let Some(Value::Array(shards)) = fields_ref.get("shards") {
-                                            let shards_ref = shards.borrow();
-                                            if let Some(first) = shards_ref.first() {
-                                                extract_shard_data(first)
-                                            } else {
-                                                None
+                                    let fields_ref = fields.borrow();
+                                    if let Some(Value::Array(shards)) = fields_ref.get("shards") {
+                                        if let Some(first) = shards.borrow().first() {
+                                            if let Value::Struct {
+                                                fields: shard_fields,
+                                                ..
+                                            } = first
+                                            {
+                                                if let Some(data) =
+                                                    shard_fields.borrow().get("data")
+                                                {
+                                                    let mut qh_fields =
+                                                        std::collections::HashMap::new();
+                                                    qh_fields
+                                                        .insert("value".to_string(), data.clone());
+                                                    qh_fields.insert(
+                                                        "_reconstructed".to_string(),
+                                                        Value::Bool(true),
+                                                    );
+                                                    return Ok(Value::Struct {
+                                                        name: "QHState".to_string(),
+                                                        fields: Rc::new(RefCell::new(qh_fields)),
+                                                    });
+                                                }
                                             }
-                                        } else {
-                                            None
                                         }
-                                    };
-
-                                    if let Some(data) = extracted_data {
-                                        let mut qh_fields = std::collections::HashMap::new();
-                                        qh_fields.insert("value".to_string(), data);
-                                        qh_fields.insert("_reconstructed".to_string(), Value::Bool(true));
-                                        return Ok(Value::Struct {
-                                            name: "QHState".to_string(),
-                                            fields: Rc::new(RefCell::new(qh_fields)),
-                                        });
                                     }
-
                                     // Fallback - just wrap the value
                                     let mut qh_fields = std::collections::HashMap::new();
                                     qh_fields.insert("value".to_string(), Value::Int(42));
-                                    qh_fields.insert("_reconstructed".to_string(), Value::Bool(true));
+                                    qh_fields
+                                        .insert("_reconstructed".to_string(), Value::Bool(true));
                                     return Ok(Value::Struct {
                                         name: "QHState".to_string(),
                                         fields: Rc::new(RefCell::new(qh_fields)),
@@ -15152,26 +15114,25 @@ impl Interpreter {
             PipeOp::Universal => {
                 // |∀ - universal reconstruction (sum all elements or reconstruct from shards)
                 // Reconstructs whole from shards by extracting data
-                // Note: QH types use __value__, others may use value
                 match value {
                     // Handle single Hologram/Struct - extract inner value
                     Value::Struct { name, fields } => {
                         let fields_ref = fields.borrow();
-                        // For Hologram, extract value (check both __value__ and value)
+                        // For Hologram, extract value
                         if name == "Hologram" || name == "EntangledHologram" {
-                            if let Some(v) = fields_ref.get("__value__").or_else(|| fields_ref.get("value")) {
+                            if let Some(v) = fields_ref.get("value") {
                                 return Ok(v.clone());
                             }
                         }
                         // For QHState, extract value
                         if name == "QHState" {
-                            if let Some(v) = fields_ref.get("__value__").or_else(|| fields_ref.get("value")) {
+                            if let Some(v) = fields_ref.get("value") {
                                 return Ok(v.clone());
                             }
                         }
                         // For Superposition, return first state's value
                         if name == "Superposition" {
-                            if let Some(Value::Array(states)) = fields_ref.get("states").or_else(|| fields_ref.get("__values__")) {
+                            if let Some(Value::Array(states)) = fields_ref.get("states") {
                                 if let Some(first) = states.borrow().first() {
                                     // If first is a Hologram, extract its value
                                     if let Value::Struct {
@@ -15179,8 +15140,7 @@ impl Interpreter {
                                         ..
                                     } = first
                                     {
-                                        let inner_fields_ref = inner_fields.borrow();
-                                        if let Some(v) = inner_fields_ref.get("__value__").or_else(|| inner_fields_ref.get("value")) {
+                                        if let Some(v) = inner_fields.borrow().get("value") {
                                             return Ok(v.clone());
                                         }
                                     }
@@ -15188,8 +15148,8 @@ impl Interpreter {
                                 }
                             }
                         }
-                        // Generic fallback - try to extract value field (both variants)
-                        if let Some(v) = fields_ref.get("__value__").or_else(|| fields_ref.get("value")) {
+                        // Generic fallback - try to extract value field
+                        if let Some(v) = fields_ref.get("value") {
                             return Ok(v.clone());
                         }
                         drop(fields_ref);
@@ -15343,16 +15303,119 @@ impl Interpreter {
                 }
             }
 
-            PipeOp::Possibility { method, args } => {
-                // |◊method - possibility/approximate query with method call
+            PipeOp::Possibility => {
+                // |◊ - possibility extraction (get approximate value)
                 // Per spec 11-HOLOGRAPHIC.md § 11.2.2:
                 // Returns approximate values with Predicted (◊) evidentiality.
+                // For arrays: returns first element (best approximation)
+                // For optionals: extracts inner value or returns default
+                let extracted = match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            Value::Null
+                        } else {
+                            arr[0].clone()
+                        }
+                    }
+                    // Handle Option::Some and Option::None variants
+                    Value::Variant {
+                        enum_name,
+                        variant_name,
+                        fields,
+                    } if enum_name == "Option" => {
+                        if variant_name == "Some" {
+                            if let Some(fields) = fields {
+                                if !fields.is_empty() {
+                                    fields[0].clone()
+                                } else {
+                                    Value::Null
+                                }
+                            } else {
+                                Value::Null
+                            }
+                        } else {
+                            // None
+                            Value::Null
+                        }
+                    }
+                    _ => value, // Pass through non-collection types
+                };
+
+                // Wrap result in Predicted evidentiality per spec
+                // This marks the result as approximate/probabilistic
+                Ok(Value::Evidential {
+                    value: Box::new(extracted),
+                    evidence: Evidence::Predicted,
+                })
+            }
+
+            PipeOp::Necessity => {
+                // |□ - necessity verification (verify and promote evidence)
+                // Returns the value if valid, promotes to Known evidentiality
+                match &value {
+                    Value::Array(arr) => {
+                        if arr.borrow().is_empty() {
+                            Err(RuntimeError::new(
+                                "Necessity verification failed: empty array",
+                            ))
+                        } else {
+                            // Return with Known evidentiality
+                            Ok(Value::Evidential {
+                                value: Box::new(value),
+                                evidence: Evidence::Known,
+                            })
+                        }
+                    }
+                    // Handle Option::Some and Option::None variants
+                    Value::Variant {
+                        enum_name,
+                        variant_name,
+                        fields,
+                    } if enum_name == "Option" => {
+                        if variant_name == "Some" {
+                            if let Some(fields) = fields {
+                                if !fields.is_empty() {
+                                    Ok(Value::Evidential {
+                                        value: Box::new(fields[0].clone()),
+                                        evidence: Evidence::Known,
+                                    })
+                                } else {
+                                    Err(RuntimeError::new(
+                                        "Necessity verification failed: empty Some",
+                                    ))
+                                }
+                            } else {
+                                Err(RuntimeError::new(
+                                    "Necessity verification failed: empty Some",
+                                ))
+                            }
+                        } else {
+                            Err(RuntimeError::new(
+                                "Necessity verification failed: None value",
+                            ))
+                        }
+                    }
+                    _ => Ok(Value::Evidential {
+                        value: Box::new(value),
+                        evidence: Evidence::Known,
+                    }),
+                }
+            }
+
+            PipeOp::PossibilityMethod { name, args } => {
+                // |◊method - call method with possibility semantics
+                // Returns approximate result wrapped in Predicted evidentiality
+                let arg_values: Vec<Value> = args
+                    .iter()
+                    .map(|a| self.evaluate(a))
+                    .collect::<Result<_, _>>()?;
 
                 // Evaluate as a regular method call first
                 let method_result = self.apply_pipe_op(
                     value.clone(),
                     &PipeOp::Method {
-                        name: method.clone(),
+                        name: name.clone(),
                         type_args: None,
                         args: args.clone(),
                     },
@@ -15365,15 +15428,19 @@ impl Interpreter {
                 })
             }
 
-            PipeOp::Necessity { method, args } => {
-                // |□method - necessity/verification with method call
+            PipeOp::NecessityMethod { name, args } => {
+                // |□method - call method with necessity semantics
                 // Returns verified result wrapped in Known evidentiality
+                let arg_values: Vec<Value> = args
+                    .iter()
+                    .map(|a| self.evaluate(a))
+                    .collect::<Result<_, _>>()?;
 
                 // Evaluate as a regular method call first
                 let method_result = self.apply_pipe_op(
                     value.clone(),
                     &PipeOp::Method {
-                        name: method.clone(),
+                        name: name.clone(),
                         type_args: None,
                         args: args.clone(),
                     },
@@ -15426,31 +15493,10 @@ impl Interpreter {
                             }))))
                         }
                         "ws" | "wss" => {
-                            // For WebSocket, connect, send message, receive response
-                            // Uses native Sigil WebSocket implementation (RFC 6455)
-                            #[cfg(feature = "websocket")]
-                            {
-                                let url_str = obj.get("url")
-                                    .and_then(|v| if let Value::String(s) = v { Some((**s).clone()) } else { None })
-                                    .ok_or_else(|| RuntimeError::new("WebSocket connection missing URL"))?;
-
-                                let message = match data {
-                                    Value::String(s) => (**s).clone(),
-                                    _ => format!("{}", data),
-                                };
-
-                                // Use native WebSocket implementation
-                                match websocket::send_and_receive(&url_str, &message) {
-                                    Ok(response) => Ok(Value::String(Rc::new(response))),
-                                    Err(e) => Err(RuntimeError::new(format!("WebSocket error: {}", e))),
-                                }
-                            }
-                            #[cfg(not(feature = "websocket"))]
-                            {
-                                #[cfg(debug_assertions)]
-                                eprintln!("[WebSocket] Would send message: {:?} (feature disabled)", data);
-                                Ok(Value::Bool(true))
-                            }
+                            // For WebSocket, send a message
+                            #[cfg(debug_assertions)]
+                            eprintln!("[WebSocket] Would send message: {:?}", data);
+                            Ok(Value::Bool(true)) // Message sent successfully
                         }
                         "grpc" => {
                             // For gRPC, send the request message
@@ -16288,7 +16334,7 @@ impl Interpreter {
                         // This is an enum variant with struct-like fields
                         // Create a Variant value with the fields wrapped in a Struct
                         let inner_struct = Value::Struct {
-                            name: format!("{}::{}", enum_name_direct, variant_name),
+                            name: format!("{}·{}", enum_name_direct, variant_name),
                             fields: Rc::new(RefCell::new(field_values)),
                         };
                         return Ok(Value::Variant {
@@ -16439,118 +16485,363 @@ impl Interpreter {
         })
     }
 
-    /// Expand a user-defined macro
-    /// params: parameter names (without $)
-    /// body: the macro body template
-    /// tokens: the arguments passed to the macro invocation
-    /// pipe_value: if called from pipe context, the piped value
-    fn expand_user_macro(
-        &mut self,
-        params: &[String],
-        body: &str,
-        tokens: &str,
-        pipe_value: Option<Value>,
-    ) -> Result<Value, RuntimeError> {
-        // Build substitution map
-        let mut substitutions: HashMap<String, String> = HashMap::new();
+    /// Expand a user-defined macro/rune
+    fn expand_user_macro(&mut self, macro_def: &crate::ast::MacroDef, tokens: &str) -> Result<Value, RuntimeError> {
+        // The macro rules are stored in tokenized format: "{LParen RParen FatArrow {IntLit("99") }}"
+        // We need to extract the body expression and evaluate it
+        let rules = &macro_def.rules;
 
-        // Handle $__pipe for pipe-invoked macros
-        if let Some(ref val) = pipe_value {
-            substitutions.insert("__pipe".to_string(), self.value_to_source(val));
+        crate::sigil_debug!("DEBUG expand_user_macro: name='{}', rules='{}', tokens='{}'", macro_def.name.name, rules, tokens);
 
-            // If macro has parameters but tokens are empty, use pipe value as first parameter
-            // This allows `3|double_it!{}` to work the same as `double_it!(3)`
-            if !params.is_empty() && tokens.trim().is_empty() {
-                substitutions.insert(params[0].clone(), self.value_to_source(val));
-            }
-        }
-
-        // Parse arguments from tokens and map to parameters
-        let tokens = tokens.trim();
-        if !params.is_empty() && !tokens.is_empty() {
-            // Split tokens by comma, respecting nesting
-            let args = self.split_macro_args(tokens);
-            for (i, param) in params.iter().enumerate() {
-                if i < args.len() {
-                    substitutions.insert(param.clone(), args[i].trim().to_string());
+        // Extract macro parameters from the pattern (before FatArrow)
+        // Pattern like: {LParen Ident("n") Colon Ident("expr") RParen FatArrow ...}
+        // The $n in source becomes just n in tokenized form
+        let mut macro_params: Vec<String> = Vec::new();
+        if let Some(arrow_pos) = rules.find("FatArrow") {
+            let pattern = &rules[..arrow_pos];
+            // Find all Ident("name") Colon patterns - these are macro parameters
+            let mut rest = pattern;
+            while let Some(ident_pos) = rest.find("Ident(") {
+                let after_ident = &rest[ident_pos + 6..];
+                if let Some(close_paren) = after_ident.find(')') {
+                    let mut name = after_ident[..close_paren].trim();
+                    if name.starts_with('"') && name.ends_with('"') {
+                        name = &name[1..name.len() - 1];
+                    }
+                    // Check if followed by Colon (indicating a parameter pattern)
+                    let remaining = &after_ident[close_paren + 1..];
+                    if remaining.trim_start().starts_with("Colon") {
+                        macro_params.push(name.to_string());
+                    }
                 }
+                rest = &rest[ident_pos + 6..];
             }
         }
+        crate::sigil_debug!("DEBUG expand_user_macro: macro_params={:?}", macro_params);
 
-        // Substitute $param with their values in the body
-        let mut expanded = body.to_string();
-        for (param, value) in &substitutions {
-            // Replace $param with value
-            let pattern = format!("${}", param);
-            expanded = expanded.replace(&pattern, value);
-        }
+        // Parse actual argument values from the invocation tokens
+        // tokens might be "5" or "min : 0, max : 100" etc.
+        let mut named_args: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+        let mut positional_args: Vec<Value> = Vec::new();
 
-        // Parse and evaluate the expanded expression
-        let expr_source = format!("λ __macro_expand__() {{ {} }}", expanded);
-        let mut parser = crate::Parser::new(&expr_source);
-        match parser.parse_file() {
-            Ok(file) => {
-                // Find and execute the function
-                for item in &file.items {
-                    if let Item::Function(func) = &item.node {
-                        if func.name.name == "__macro_expand__" {
-                            // Create and call the function
-                            let fn_value = self.create_function(func)?;
-                            if let Value::Function(f) = fn_value {
-                                return self.call_function(&f, Vec::new());
+        if !tokens.is_empty() {
+            let tokens = tokens.trim();
+            // Check if it's named arguments (contains ":" pattern like "name : value")
+            if tokens.contains(':') {
+                // Parse named arguments like "min : 0, max : 100"
+                for arg in tokens.split(',') {
+                    let arg = arg.trim();
+                    if let Some(colon_pos) = arg.find(':') {
+                        let name = arg[..colon_pos].trim();
+                        let value_str = arg[colon_pos + 1..].trim();
+                        if let Ok(expr) = self.parse_tokenized_body(value_str) {
+                            if let Ok(val) = self.evaluate(&expr) {
+                                named_args.insert(name.to_string(), val);
                             }
-                            return Err(RuntimeError::new("Macro expansion failed: function not created"));
                         }
                     }
                 }
-                Err(RuntimeError::new("Macro expansion failed: no function created"))
+            } else {
+                // Simple case: single positional value
+                if let Ok(expr) = self.parse_tokenized_body(tokens) {
+                    if let Ok(val) = self.evaluate(&expr) {
+                        positional_args.push(val);
+                    }
+                }
             }
-            Err(e) => Err(RuntimeError::new(format!(
-                "Macro expansion parse error: {:?}",
-                e
-            ))),
+        }
+        crate::sigil_debug!("DEBUG expand_user_macro: named_args={:?}, positional_args={:?}", named_args, positional_args);
+
+        // Find FatArrow and extract the body after it
+        // The body is typically in the last { } block
+        if let Some(arrow_pos) = rules.find("FatArrow") {
+            // Find the body - it's between the last pair of { }
+            let after_arrow = &rules[arrow_pos..];
+
+            // Extract content between { and } after FatArrow
+            if let Some(brace_start) = after_arrow.find('{') {
+                let body_start = arrow_pos + brace_start + 1;
+
+                // Find the matching close brace (handle nesting)
+                let mut depth = 1;
+                let mut body_end = body_start;
+                for (i, c) in rules[body_start..].chars().enumerate() {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                body_end = body_start + i;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                if body_end > body_start {
+                    let mut body_tokens = rules[body_start..body_end].trim().to_string();
+                    crate::sigil_debug!("DEBUG expand_user_macro: body_tokens='{}'", body_tokens);
+
+                    // Substitute macro parameters with actual values
+                    // Replace Ident("n") with the actual argument value
+                    for (i, param_name) in macro_params.iter().enumerate() {
+                        let pattern = format!("Ident(\"{}\")", param_name);
+                        // First try named args, then positional
+                        let arg_val = named_args.get(param_name).or_else(|| positional_args.get(i));
+                        if let Some(arg_val) = arg_val {
+                            // Convert the value back to tokenized form
+                            let replacement = match arg_val {
+                                Value::Int(n) => format!("IntLit(\"{}\")", n),
+                                Value::Float(f) => format!("FloatLit(\"{}\")", f),
+                                Value::String(s) => format!("StringLit(\"{}\")", s),
+                                Value::Bool(true) => "Ident(\"yay\")".to_string(),
+                                Value::Bool(false) => "Ident(\"nay\")".to_string(),
+                                _ => format!("IntLit(\"0\")"), // Fallback
+                            };
+                            body_tokens = body_tokens.replace(&pattern, &replacement);
+                        }
+                    }
+                    crate::sigil_debug!("DEBUG expand_user_macro: after substitution body_tokens='{}'", body_tokens);
+
+                    // Convert the tokenized body back to an expression
+                    // For simple cases like "IntLit("99")", parse it
+                    let body_expr = self.parse_tokenized_body(&body_tokens)?;
+
+                    // Create a new scope with __pipe bound if we have pipe context
+                    let prev_env = self.environment.clone();
+                    self.environment = Rc::new(RefCell::new(Environment::with_parent(prev_env.clone())));
+
+                    // Bind __pipe if we have a pipe context
+                    if let Some(pipe_val) = &self.pipe_context {
+                        self.environment.borrow_mut().define("__pipe".to_string(), pipe_val.clone());
+                    }
+
+                    // Evaluate the body expression
+                    let result = self.evaluate(&body_expr);
+
+                    // Restore environment
+                    self.environment = prev_env;
+
+                    return result;
+                }
+            }
+        }
+
+        // If we can't parse the macro, return null
+        Ok(Value::Null)
+    }
+
+    /// Parse a tokenized macro body into an expression
+    fn parse_tokenized_body(&self, tokens: &str) -> Result<Expr, RuntimeError> {
+        let tokens = tokens.trim();
+        crate::sigil_debug!("DEBUG parse_tokenized_body: '{}'", tokens);
+
+        // First, convert tokenized form back to source code
+        let source = self.detokenize(tokens);
+        crate::sigil_debug!("DEBUG parse_tokenized_body detokenized: '{}'", source);
+
+        // Now parse as regular Sigil source
+        let mut parser = crate::Parser::new(&source);
+        match parser.parse_expr() {
+            Ok(expr) => Ok(expr),
+            Err(e) => Err(RuntimeError::new(format!("Failed to parse macro body '{}' (source: '{}'): {:?}", tokens, source, e))),
         }
     }
 
-    /// Convert a Value to source code representation for macro substitution
-    fn value_to_source(&self, val: &Value) -> String {
-        match val {
-            Value::Int(n) => n.to_string(),
-            Value::Float(f) => format!("{:?}", f),
-            Value::Bool(b) => b.to_string(),
-            Value::String(s) => format!("\"{}\"", s),
-            Value::Null => "null".to_string(),
-            _ => format!("{}", val),
+    /// Convert tokenized form back to source code
+    fn detokenize(&self, tokens: &str) -> String {
+        let tokens = tokens.trim();
+
+        // Handle raw values that aren't in tokenized format
+        // If it's just a plain number, return it as-is
+        if tokens.parse::<i64>().is_ok() || tokens.parse::<f64>().is_ok() {
+            return tokens.to_string();
         }
-    }
 
-    /// Split macro arguments by comma, respecting nesting
-    fn split_macro_args(&self, tokens: &str) -> Vec<String> {
-        let mut args = Vec::new();
-        let mut current = String::new();
-        let mut depth = 0;
+        // If it's a plain identifier (no special token patterns), return as-is
+        if !tokens.contains('(') && !tokens.is_empty()
+            && tokens.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return tokens.to_string();
+        }
 
-        for c in tokens.chars() {
-            match c {
-                '(' | '[' | '{' => {
-                    depth += 1;
-                    current.push(c);
-                }
-                ')' | ']' | '}' => {
-                    depth -= 1;
-                    current.push(c);
-                }
-                ',' if depth == 0 => {
-                    args.push(current.trim().to_string());
-                    current = String::new();
-                }
-                _ => current.push(c),
+        let mut result = String::new();
+        let mut i = 0;
+        let chars: Vec<char> = tokens.chars().collect();
+
+        while i < chars.len() {
+            // Skip whitespace
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
             }
+            if i >= chars.len() {
+                break;
+            }
+
+            // Try to match token patterns
+            let rest: String = chars[i..].iter().collect();
+
+            if rest.starts_with("Ident(") {
+                // Find the closing paren
+                if let Some(close) = rest.find(')') {
+                    let inner = &rest[6..close];
+                    let name = inner.trim().trim_matches('"');
+                    result.push_str(name);
+                    result.push(' ');
+                    i += close + 1;
+                    continue;
+                }
+            } else if rest.starts_with("IntLit(") {
+                if let Some(close) = rest.find(')') {
+                    let inner = &rest[7..close];
+                    let num = inner.trim().trim_matches('"');
+                    result.push_str(num);
+                    result.push(' ');
+                    i += close + 1;
+                    continue;
+                }
+            } else if rest.starts_with("FloatLit(") {
+                if let Some(close) = rest.find(')') {
+                    let inner = &rest[9..close];
+                    let num = inner.trim().trim_matches('"');
+                    result.push_str(num);
+                    result.push(' ');
+                    i += close + 1;
+                    continue;
+                }
+            } else if rest.starts_with("StringLit(") {
+                if let Some(close) = rest.find(')') {
+                    let inner = &rest[10..close];
+                    result.push('"');
+                    result.push_str(inner.trim().trim_matches('"'));
+                    result.push('"');
+                    result.push(' ');
+                    i += close + 1;
+                    continue;
+                }
+            } else if rest.starts_with("If ") || rest == "If" {
+                result.push_str("⎇ ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("Else ") || rest.starts_with("Else{") {
+                result.push_str(" ⎉ ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Let ") {
+                result.push_str("≔ ");
+                i += 3;
+                continue;
+            } else if rest.starts_with("Plus ") || rest == "Plus" {
+                result.push_str("+ ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Minus ") || rest == "Minus" {
+                result.push_str("- ");
+                i += 5;
+                continue;
+            } else if rest.starts_with("Star ") || rest == "Star" {
+                result.push_str("* ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Slash ") || rest == "Slash" {
+                result.push_str("/ ");
+                i += 5;
+                continue;
+            } else if rest.starts_with("Percent ") || rest == "Percent" {
+                result.push_str("% ");
+                i += 7;
+                continue;
+            } else if rest.starts_with("GtEq ") || rest == "GtEq" {
+                result.push_str(">= ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("LtEq ") || rest == "LtEq" {
+                result.push_str("<= ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Gt ") || rest == "Gt" {
+                result.push_str("> ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("Lt ") || rest == "Lt" {
+                result.push_str("< ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("EqEq ") || rest == "EqEq" {
+                result.push_str("== ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Ne ") || rest == "Ne" {
+                result.push_str("!= ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("AndAnd ") || rest == "AndAnd" {
+                result.push_str("&& ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("OrOr ") || rest == "OrOr" {
+                result.push_str("|| ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Amp Amp ") || rest.starts_with("Amp Amp") {
+                result.push_str("&& ");
+                i += 7;
+                continue;
+            } else if rest.starts_with("Or Or ") || rest.starts_with("Or Or") || rest.starts_with("Pipe Pipe") {
+                result.push_str("|| ");
+                i += 7;
+                continue;
+            } else if rest.starts_with("LParen ") || rest == "LParen" {
+                result.push_str("(");
+                i += 6;
+                continue;
+            } else if rest.starts_with("RParen ") || rest == "RParen" {
+                result.push_str(") ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("LBrace ") || rest == "LBrace" {
+                result.push_str("{ ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("RBrace ") || rest == "RBrace" {
+                result.push_str("} ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("Comma ") || rest == "Comma" {
+                result.push_str(", ");
+                i += 5;
+                continue;
+            } else if rest.starts_with("Colon ") || rest == "Colon" {
+                result.push_str(": ");
+                i += 5;
+                continue;
+            } else if rest.starts_with("Semi ") || rest == "Semi" {
+                result.push_str("; ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("FatArrow ") || rest == "FatArrow" {
+                result.push_str("=> ");
+                i += 8;
+                continue;
+            } else if rest.starts_with("Question ") || rest == "Question" {
+                result.push_str("? ");
+                i += 8;
+                continue;
+            } else if chars[i] == '{' {
+                result.push_str("{ ");
+                i += 1;
+                continue;
+            } else if chars[i] == '}' {
+                result.push_str("} ");
+                i += 1;
+                continue;
+            }
+
+            // Unknown token - skip character
+            i += 1;
         }
-        if !current.is_empty() {
-            args.push(current.trim().to_string());
-        }
-        args
+
+        result.trim().to_string()
     }
 
     /// Evaluate format! macro - parse format string and arguments
@@ -16907,9 +17198,9 @@ impl Interpreter {
             } => match fields {
                 Some(f) if !f.is_empty() => {
                     let formatted: Vec<String> = f.iter().map(|v| self.format_value(v)).collect();
-                    format!("{}::{}({})", enum_name, variant_name, formatted.join(", "))
+                    format!("{}·{}({})", enum_name, variant_name, formatted.join(", "))
                 }
-                _ => format!("{}::{}", enum_name, variant_name),
+                _ => format!("{}·{}", enum_name, variant_name),
             },
             Value::Evidential {
                 value: inner,

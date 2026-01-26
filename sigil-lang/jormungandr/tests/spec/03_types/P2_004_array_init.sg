@@ -2,7 +2,7 @@
 // Spec: 03-TYPES.md § 4.3 Arrays
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ arr: [i32; 5] = [10, 20, 30, 40, 50];
     println(arr[0]);
     println(arr[2]);

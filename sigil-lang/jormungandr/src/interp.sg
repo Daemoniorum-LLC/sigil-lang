@@ -1,4 +1,4 @@
-//! Tree-Walking Interpreter ∀ Sigil IR
+//! Tree-Walking Interpreter each Sigil IR
 //!
 //! This module provides an interpreter that directly executes the IR,
 //! serving as both a reference implementation and a stepping stone
@@ -7,9 +7,9 @@
 //! ## Execution Model
 //!
 //! The interpreter uses a stack-based execution model with:
-//! - Value stack ∀ operands and results
-//! - Call stack ∀ function invocations
-//! - Environment stack ∀ variable scoping
+//! - Value stack each operands and results
+//! - Call stack each function invocations
+//! - Environment stack each variable scoping
 //! - Evidence tracking at runtime
 //!
 //! ## Evidence at Runtime
@@ -17,7 +17,7 @@
 //! Unlike static typing, the interpreter tracks evidence dynamically:
 //! - Known (!) values are trusted implicitly
 //! - Uncertain (?) values trigger runtime checks
-//! - Reported (~) values are tagged ∀ provenance tracking
+//! - Reported (~) values are tagged each provenance tracking
 //! - Paradox (‽) values halt execution with an error
 
 invoke tome·ir·*;
@@ -91,8 +91,8 @@ invoke tome·typeck·EvidenceLevel;
 
 ⊢ Value {
     /// Check ⎇ this is a truthy value
-    ☉ λ is_truthy(self) -> !bool {
-        ⌥ self {
+    ☉ rite is_truthy(this) → !bool {
+        ⌥ this {
             Value·Bool(b) => b,
             Value·Int(n) => n != 0,
             Value·Float(f) => f != 0.0,
@@ -105,8 +105,8 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Convert to string representation
-    ☉ λ to_string(self) -> !String {
-        ⌥ self {
+    ☉ rite to_string(this) → !String {
+        ⌥ this {
             Value·Unit => "()",
             Value·Bool(b) => ⎇ b { "true" } ⎉ { "false" },
             Value·Int(n) => n.to_string(),
@@ -134,17 +134,17 @@ invoke tome·typeck·EvidenceLevel;
                 }
             },
             Value·Closure { .. } => "<closure>",
-            Value·Function(name) => format!("<λ {}>", name),
+            Value·Function(name) => format!("<rite {}>", name),
             Value·Ref(v) => format!("&{}", v.to_string()),
-            Value·RefMut(v) => format!("&Δ {}", v.to_string()),
+            Value·RefMut(v) => format!("&vary {}", v.to_string()),
             Value·Null => "null",
             Value·Never => "!",
         }
     }
 
-    /// Get type name ∀ error messages
-    ☉ λ type_name(self) -> !&str {
-        ⌥ self {
+    /// Get type name each error messages
+    ☉ rite type_name(this) → !&str {
+        ⌥ this {
             Value·Unit => "()",
             Value·Bool(_) => "bool",
             Value·Int(_) => "i64",
@@ -166,21 +166,21 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 /// Runtime value with evidence annotation
-☉ Σ EvidentialValue {
-    ☉ value: !Value,
-    ☉ evidence: !IrEvidence,
+☉ sigil EvidentialValue {
+    value: !Value,
+    evidence: !IrEvidence,
 }
 
 ⊢ EvidentialValue {
-    ☉ λ known(value: !Value) -> !EvidentialValue {
+    ☉ rite known(value: !Value) → !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Known }
     }
 
-    ☉ λ uncertain(value: !Value) -> !EvidentialValue {
+    ☉ rite uncertain(value: !Value) → !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Uncertain }
     }
 
-    ☉ λ reported(value: !Value) -> !EvidentialValue {
+    ☉ rite reported(value: !Value) → !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Reported }
     }
 }
@@ -190,7 +190,7 @@ invoke tome·typeck·EvidenceLevel;
 // ============================================================================
 
 /// Variable environment with scoping
-☉ Σ Environment {
+☉ sigil Environment {
     /// Variable bindings
     bindings: !Map<String, EvidentialValue>,
     /// Parent scope
@@ -199,7 +199,7 @@ invoke tome·typeck·EvidenceLevel;
 
 ⊢ Environment {
     /// Create a new empty environment
-    ☉ λ new() -> !Environment {
+    ☉ rite new() → !Environment {
         Environment {
             bindings: Map·new(),
             parent: null,
@@ -207,7 +207,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Create a child environment
-    ☉ λ child(parent: !Environment) -> !Environment {
+    ☉ rite child(parent: !Environment) → !Environment {
         Environment {
             bindings: Map·new(),
             parent: ?Box·new(parent),
@@ -215,28 +215,28 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Define a variable
-    ☉ λ define(Δ self, name: !String, value: !EvidentialValue) {
-        self.bindings.insert(name, value);
+    ☉ rite define(vary this, name: !String, value: !EvidentialValue) {
+        this.bindings.insert(name, value);
     }
 
     /// Look up a variable
-    ☉ λ get(self, name: !&str) -> Option<EvidentialValue> {
-        ⎇ ≔ Some(val) = self.bindings.get(name) {
-            ⤺ Some(val.clone());
+    ☉ rite get(this, name: !&str) → ?EvidentialValue {
+        ⎇ ≔ ?val = this.bindings.get(name) {
+            ⤺ ?val.clone();
         }
-        ⎇ ≔ Some(parent) = self.parent {
+        ⎇ ≔ ?parent = this.parent {
             ⤺ parent.get(name);
         }
-        None
+        null
     }
 
     /// Update an existing variable
-    ☉ λ set(Δ self, name: !&str, value: !EvidentialValue) -> !bool {
-        ⎇ self.bindings.contains_key(name) {
-            self.bindings.insert(name.to_string(), value);
+    ☉ rite set(vary this, name: !&str, value: !EvidentialValue) → !bool {
+        ⎇ this.bindings.contains_key(name) {
+            this.bindings.insert(name.to_string(), value);
             ⤺ true;
         }
-        ⎇ ≔ ?parent = self.parent {
+        ⎇ ≔ ?parent = this.parent {
             ⤺ parent.set(name, value);
         }
         false
@@ -248,13 +248,13 @@ invoke tome·typeck·EvidenceLevel;
 // ============================================================================
 
 /// Call stack frame
-☉ Σ CallFrame {
+☉ sigil CallFrame {
     /// Function name
-    ☉ function: !String,
+    function: !String,
     /// Local environment
-    ☉ env: !Environment,
-    /// Return address (∀ debugging)
-    ☉ return_addr: ?String,
+    env: !Environment,
+    /// Return address (each debugging)
+    return_addr: ?String,
 }
 
 // ============================================================================
@@ -262,7 +262,7 @@ invoke tome·typeck·EvidenceLevel;
 // ============================================================================
 
 /// The Sigil interpreter
-☉ Σ Interpreter {
+☉ sigil Interpreter {
     /// Global environment
     globals: !Environment,
 
@@ -275,7 +275,7 @@ invoke tome·typeck·EvidenceLevel;
     /// Function definitions
     functions: !Map<String, IrFunction>,
 
-    /// Output buffer (∀ print statements)
+    /// Output buffer (each print statements)
     output: ![String],
 
     /// Maximum call stack depth
@@ -284,8 +284,8 @@ invoke tome·typeck·EvidenceLevel;
 
 ⊢ Interpreter {
     /// Create a new interpreter
-    ☉ λ new() -> !Interpreter {
-        ≔ Δ interp = Interpreter {
+    ☉ rite new() → !Interpreter {
+        ≔ vary interp = Interpreter {
             globals: Environment·new(),
             call_stack: [],
             modules: Map·new(),
@@ -300,93 +300,93 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Register built-in functions
-    λ register_builtins(Δ self) {
+    rite register_builtins(vary this) {
         // I/O
-        self.globals.define("print", EvidentialValue·known(Value·Function("print")));
-        self.globals.define("println", EvidentialValue·known(Value·Function("println")));
-        self.globals.define("input", EvidentialValue·known(Value·Function("input")));
+        this.globals.define("print", EvidentialValue·known(Value·Function("print")));
+        this.globals.define("println", EvidentialValue·known(Value·Function("println")));
+        this.globals.define("input", EvidentialValue·known(Value·Function("input")));
 
         // Type conversions
-        self.globals.define("int", EvidentialValue·known(Value·Function("int")));
-        self.globals.define("float", EvidentialValue·known(Value·Function("float")));
-        self.globals.define("str", EvidentialValue·known(Value·Function("str")));
-        self.globals.define("bool", EvidentialValue·known(Value·Function("bool")));
+        this.globals.define("int", EvidentialValue·known(Value·Function("int")));
+        this.globals.define("float", EvidentialValue·known(Value·Function("float")));
+        this.globals.define("str", EvidentialValue·known(Value·Function("str")));
+        this.globals.define("bool", EvidentialValue·known(Value·Function("bool")));
 
         // Math
-        self.globals.define("abs", EvidentialValue·known(Value·Function("abs")));
-        self.globals.define("sqrt", EvidentialValue·known(Value·Function("sqrt")));
-        self.globals.define("sin", EvidentialValue·known(Value·Function("sin")));
-        self.globals.define("cos", EvidentialValue·known(Value·Function("cos")));
-        self.globals.define("pow", EvidentialValue·known(Value·Function("pow")));
-        self.globals.define("floor", EvidentialValue·known(Value·Function("floor")));
-        self.globals.define("ceil", EvidentialValue·known(Value·Function("ceil")));
-        self.globals.define("round", EvidentialValue·known(Value·Function("round")));
-        self.globals.define("min", EvidentialValue·known(Value·Function("min")));
-        self.globals.define("max", EvidentialValue·known(Value·Function("max")));
+        this.globals.define("abs", EvidentialValue·known(Value·Function("abs")));
+        this.globals.define("sqrt", EvidentialValue·known(Value·Function("sqrt")));
+        this.globals.define("sin", EvidentialValue·known(Value·Function("sin")));
+        this.globals.define("cos", EvidentialValue·known(Value·Function("cos")));
+        this.globals.define("pow", EvidentialValue·known(Value·Function("pow")));
+        this.globals.define("floor", EvidentialValue·known(Value·Function("floor")));
+        this.globals.define("ceil", EvidentialValue·known(Value·Function("ceil")));
+        this.globals.define("round", EvidentialValue·known(Value·Function("round")));
+        this.globals.define("min", EvidentialValue·known(Value·Function("min")));
+        this.globals.define("max", EvidentialValue·known(Value·Function("max")));
 
         // Collections
-        self.globals.define("len", EvidentialValue·known(Value·Function("len")));
-        self.globals.define("push", EvidentialValue·known(Value·Function("push")));
-        self.globals.define("pop", EvidentialValue·known(Value·Function("pop")));
-        self.globals.define("first", EvidentialValue·known(Value·Function("first")));
-        self.globals.define("last", EvidentialValue·known(Value·Function("last")));
-        self.globals.define("range", EvidentialValue·known(Value·Function("range")));
+        this.globals.define("len", EvidentialValue·known(Value·Function("len")));
+        this.globals.define("push", EvidentialValue·known(Value·Function("push")));
+        this.globals.define("pop", EvidentialValue·known(Value·Function("pop")));
+        this.globals.define("first", EvidentialValue·known(Value·Function("first")));
+        this.globals.define("last", EvidentialValue·known(Value·Function("last")));
+        this.globals.define("range", EvidentialValue·known(Value·Function("range")));
 
         // Assertions
-        self.globals.define("assert", EvidentialValue·known(Value·Function("assert")));
-        self.globals.define("assert_eq", EvidentialValue·known(Value·Function("assert_eq")));
+        this.globals.define("assert", EvidentialValue·known(Value·Function("assert")));
+        this.globals.define("assert_eq", EvidentialValue·known(Value·Function("assert_eq")));
 
         // Evidence
-        self.globals.define("evidence_of", EvidentialValue·known(Value·Function("evidence_of")));
-        self.globals.define("validate", EvidentialValue·known(Value·Function("validate")));
-        self.globals.define("verify", EvidentialValue·known(Value·Function("verify")));
+        this.globals.define("evidence_of", EvidentialValue·known(Value·Function("evidence_of")));
+        this.globals.define("validate", EvidentialValue·known(Value·Function("validate")));
+        this.globals.define("verify", EvidentialValue·known(Value·Function("verify")));
 
         // Control
-        self.globals.define("panic", EvidentialValue·known(Value·Function("panic")));
-        self.globals.define("todo", EvidentialValue·known(Value·Function("todo")));
+        this.globals.define("panic", EvidentialValue·known(Value·Function("panic")));
+        this.globals.define("todo", EvidentialValue·known(Value·Function("todo")));
     }
 
     /// Load an IR module
-    ☉ λ load_module(Δ self, module: !IrModule) {
+    ☉ rite load_module(vary this, module: !IrModule) {
         // Register all functions
-        ∀ func ∈ module.functions {
-            self.functions.insert(func.name.clone(), func);
+        each func ∈ module.functions {
+            this.functions.insert(func.name.clone(), func);
         }
 
         // Store module
-        self.modules.insert(module.source.clone(), module);
+        this.modules.insert(module.source.clone(), module);
     }
 
     /// Execute the main function
-    ☉ λ run(Δ self) -> !Result<EvidentialValue, RuntimeError> {
+    ☉ rite run(vary this) → !Result<EvidentialValue, RuntimeError> {
         // Find main function
-        ⎇ ≔ Some(_main_fn) = self.functions.get("main") {
-            self.call_function("main", Vec·new())
+        ⎇ ≔ ?main_fn = this.functions.get("main") {
+            this.call_function("main", [])
         } ⎉ {
             Result·Err(RuntimeError·new("no main function found"))
         }
     }
 
     /// Call a function by name
-    ☉ λ call_function(Δ self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
+    ☉ rite call_function(vary this, name: !&str, args: ![EvidentialValue]) → !Result<EvidentialValue, RuntimeError> {
         // Check stack depth
-        ⎇ self.call_stack.len() >= self.max_stack_depth {
+        ⎇ this.call_stack.len() >= this.max_stack_depth {
             ⤺ Result·Err(RuntimeError·new("stack overflow"));
         }
 
         // Handle built-in functions
-        ⎇ self.is_builtin(name) {
-            ⤺ self.call_builtin(name, args);
+        ⎇ this.is_builtin(name) {
+            ⤺ this.call_builtin(name, args);
         }
 
         // Find user function
-        ≔ func = ⌥ self.functions.get(name) {
-            Some(f) => f,
-            None => ⤺ Result·Err(RuntimeError·new(format!("undefined function: {}", name))),
+        ≔ func = ⌥ this.functions.get(name) {
+            ?f => f,
+            null => ⤺ Result·Err(RuntimeError·new(format!("undefined function: {}", name))),
         };
 
         // Create new environment
-        ≔ Δ env = Environment·child(self.globals);
+        ≔ vary env = Environment·child(this.globals);
 
         // Bind parameters
         ⎇ func.params.len() != args.len() {
@@ -396,12 +396,12 @@ invoke tome·typeck·EvidenceLevel;
             )));
         }
 
-        ∀ (param, arg) ∈ func.params.iter().zip(args.iter()) {
+        each (param, arg) ∈ func.params.iter().zip(args.iter()) {
             // Check evidence requirements
             ≔ required_ev = param.evidence;
-            ⎇ !self.check_evidence(required_ev, arg.evidence) {
+            ⎇ !this.check_evidence(required_ev, arg.evidence) {
                 ⤺ Result·Err(RuntimeError·new(format!(
-                    "evidence mis⌥ ∀ parameter {}: expected {}, got {}",
+                    "evidence mis⌥ each parameter {}: expected {}, got {}",
                     param.name, required_ev.name(), arg.evidence.name()
                 )));
             }
@@ -409,7 +409,7 @@ invoke tome·typeck·EvidenceLevel;
         }
 
         // Push call frame
-        self.call_stack.push(CallFrame {
+        this.call_stack.push(CallFrame {
             function: name.to_string(),
             env: env.clone(),
             return_addr: null,
@@ -417,18 +417,18 @@ invoke tome·typeck·EvidenceLevel;
 
         // Execute body
         ≔ result = ⌥ func.body {
-            Some(body) => self.eval_with_env(body, env),
-            None => Result·Ok(EvidentialValue·known(Value·Unit)),
+            ?body => this.eval_with_env(body, env),
+            null => Result·Ok(EvidentialValue·known(Value·Unit)),
         };
 
         // Pop call frame
-        self.call_stack.pop();
+        this.call_stack.pop();
 
         result
     }
 
     /// Check ⎇ evidence satisfies requirement
-    λ check_evidence(self, required: !IrEvidence, actual: !IrEvidence) -> !bool {
+    rite check_evidence(this, required: !IrEvidence, actual: !IrEvidence) → !bool {
         ≔ rank = |ev: !IrEvidence| {
             ⌥ ev {
                 IrEvidence·Known => 0,
@@ -442,7 +442,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Check ⎇ a function is built-in
-    λ is_builtin(self, name: !&str) -> !bool {
+    rite is_builtin(this, name: !&str) → !bool {
         ⌥ name {
             "print" | "println" | "input" |
             "int" | "float" | "str" | "bool" |
@@ -456,19 +456,19 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Call a built-in function
-    λ call_builtin(Δ self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
+    rite call_builtin(vary this, name: !&str, args: ![EvidentialValue]) → !Result<EvidentialValue, RuntimeError> {
         ⌥ name {
             "print" => {
-                ∀ arg ∈ args {
-                    self.output.push(arg.value.to_string());
+                each arg ∈ args {
+                    this.output.push(arg.value.to_string());
                 }
                 Result·Ok(EvidentialValue·known(Value·Unit))
             },
             "println" => {
-                ∀ arg ∈ args {
-                    self.output.push(arg.value.to_string());
+                each arg ∈ args {
+                    this.output.push(arg.value.to_string());
                 }
-                self.output.push("\n");
+                this.output.push("\n");
                 Result·Ok(EvidentialValue·known(Value·Unit))
             },
             "len" => {
@@ -608,8 +608,8 @@ invoke tome·typeck·EvidenceLevel;
                 }
                 ⌥ args[0].value {
                     Value·Array(arr) => ⌥ arr.first() {
-                        Some(v) => Result·Ok(EvidentialValue·uncertain(v.clone())),
-                        None => Result·Ok(EvidentialValue·known(Value·Null)),
+                        ?v => Result·Ok(EvidentialValue·uncertain(v.clone())),
+                        null => Result·Ok(EvidentialValue·known(Value·Null)),
                     },
                     _ => Result·Err(RuntimeError·new("first requires array")),
                 }
@@ -620,8 +620,8 @@ invoke tome·typeck·EvidenceLevel;
                 }
                 ⌥ args[0].value {
                     Value·Array(arr) => ⌥ arr.last() {
-                        Some(v) => Result·Ok(EvidentialValue·uncertain(v.clone())),
-                        None => Result·Ok(EvidentialValue·known(Value·Null)),
+                        ?v => Result·Ok(EvidentialValue·uncertain(v.clone())),
+                        null => Result·Ok(EvidentialValue·known(Value·Null)),
                     },
                     _ => Result·Err(RuntimeError·new("last requires array")),
                 }
@@ -639,7 +639,7 @@ invoke tome·typeck·EvidenceLevel;
                 ⎇ args.len() != 2 {
                     ⤺ Result·Err(RuntimeError·new("assert_eq expects 2 arguments"));
                 }
-                ≔ eq = self.values_equal(args[0].value, args[1].value);
+                ≔ eq = this.values_equal(args[0].value, args[1].value);
                 ⎇ !eq {
                     ⤺ Result·Err(RuntimeError·new(format!(
                         "assertion failed: {} != {}",
@@ -688,7 +688,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Check value equality
-    λ values_equal(self, a: !Value, b: !Value) -> !bool {
+    rite values_equal(this, a: !Value, b: !Value) → !bool {
         ⌥ (a, b) {
             (Value·Unit, Value·Unit) => true,
             (Value·Bool(a), Value·Bool(b)) => a == b,
@@ -698,15 +698,15 @@ invoke tome·typeck·EvidenceLevel;
             (Value·String(a), Value·String(b)) => a == b,
             (Value·Null, Value·Null) => true,
             (Value·Array(a), Value·Array(b)) => {
-                a.len() == b.len() &&
-                a.iter().zip(b.iter())|all{pair => self.values_equal(pair.0, pair.1)}
+                a.len() == b.len() ∧
+                a.iter().zip(b.iter())|all{pair => this.values_equal(pair.0, pair.1)}
             },
             _ => false,
         }
     }
 
     /// Evaluate an operation ∈ a given environment
-    λ eval_with_env(Δ self, op: !IrOperation, Δ env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+    rite eval_with_env(vary this, op: !IrOperation, vary env: !Environment) → !Result<EvidentialValue, RuntimeError> {
         ⌥ op {
             IrOperation·Literal { value, evidence, .. } => {
                 ≔ val = ⌥ value {
@@ -722,60 +722,60 @@ invoke tome·typeck·EvidenceLevel;
 
             IrOperation·Var { name, evidence, .. } => {
                 ⌥ env.get(name) {
-                    Some(val) => Result·Ok(val),
-                    None => ⌥ self.globals.get(name) {
-                        Some(val) => Result·Ok(val),
-                        None => Result·Err(RuntimeError·new(format!("undefined variable: {}", name))),
+                    ?val => Result·Ok(val),
+                    null => ⌥ this.globals.get(name) {
+                        ?val => Result·Ok(val),
+                        null => Result·Err(RuntimeError·new(format!("undefined variable: {}", name))),
                     },
                 }
             },
 
             IrOperation·Let { pattern, init, evidence, .. } => {
-                ≔ init_val = self.eval_with_env(*init, env)?;
-                self.bind_pattern(pattern, init_val, env)?;
+                ≔ init_val = this.eval_with_env(*init, env)?;
+                this.bind_pattern(pattern, init_val, env)?;
                 Result·Ok(EvidentialValue·known(Value·Unit))
             },
 
             IrOperation·Binary { operator, left, right, evidence, .. } => {
-                ≔ l = self.eval_with_env(*left, env)?;
-                ≔ r = self.eval_with_env(*right, env)?;
+                ≔ l = this.eval_with_env(*left, env)?;
+                ≔ r = this.eval_with_env(*right, env)?;
                 ≔ combined_ev = l.evidence.join(r.evidence);
 
-                ≔ result = self.eval_binary(operator, l.value, r.value)?;
+                ≔ result = this.eval_binary(operator, l.value, r.value)?;
                 Result·Ok(EvidentialValue { value: result, evidence: combined_ev })
             },
 
             IrOperation·Unary { operator, operand, evidence, .. } => {
-                ≔ val = self.eval_with_env(*operand, env)?;
+                ≔ val = this.eval_with_env(*operand, env)?;
 
-                ≔ result = self.eval_unary(operator, val.value)?;
+                ≔ result = this.eval_unary(operator, val.value)?;
                 Result·Ok(EvidentialValue { value: result, evidence: val.evidence })
             },
 
             IrOperation·Call { function, args, evidence, .. } => {
-                ≔ arg_results = args|τ{a => self.eval_with_env(a, env)}|collect_results();
+                ≔ arg_results = args|τ{a => this.eval_with_env(a, env)}|collect_results();
                 ≔ arg_vals = arg_results?;
-                self.call_function(function, arg_vals)
+                this.call_function(function, arg_vals)
             },
 
             IrOperation·If { condition, then_branch, else_branch, evidence, .. } => {
-                ≔ cond = self.eval_with_env(*condition, env)?;
+                ≔ cond = this.eval_with_env(*condition, env)?;
 
                 ⎇ cond.value.is_truthy() {
-                    self.eval_with_env(*then_branch, env)
+                    this.eval_with_env(*then_branch, env)
                 } ⎉ ⎇ ≔ ?else_expr = else_branch {
-                    self.eval_with_env(*else_expr, env)
+                    this.eval_with_env(*else_expr, env)
                 } ⎉ {
                     Result·Ok(EvidentialValue·known(Value·Unit))
                 }
             },
 
             IrOperation·Block { statements, evidence, .. } => {
-                ≔ Δ block_env = Environment·child(env);
-                ≔ Δ result = EvidentialValue·known(Value·Unit);
+                ≔ vary block_env = Environment·child(env);
+                ≔ vary result = EvidentialValue·known(Value·Unit);
 
-                ∀ stmt ∈ statements {
-                    result = self.eval_with_env(stmt, block_env)?;
+                each stmt ∈ statements {
+                    result = this.eval_with_env(stmt, block_env)?;
                 }
 
                 Result·Ok(result)
@@ -783,28 +783,28 @@ invoke tome·typeck·EvidenceLevel;
 
             IrOperation·Return { value, evidence } => {
                 ⌥ value {
-                    Some(v) => self.eval_with_env(*v, env),
-                    None => Result·Ok(EvidentialValue·known(Value·Unit)),
+                    ?v => this.eval_with_env(*v, env),
+                    null => Result·Ok(EvidentialValue·known(Value·Unit)),
                 }
             },
 
             IrOperation·Array { elements, evidence, .. } => {
-                ≔ vals = elements|τ{e => self.eval_with_env(e, env)?.value}|collect();
+                ≔ vals = elements|τ{e => this.eval_with_env(e, env)?.value}|collect();
                 Result·Ok(EvidentialValue { value: Value·Array(vals), evidence })
             },
 
             IrOperation·Tuple { elements, evidence, .. } => {
-                ≔ vals = elements|τ{e => self.eval_with_env(e, env)?.value}|collect();
+                ≔ vals = elements|τ{e => this.eval_with_env(e, env)?.value}|collect();
                 Result·Ok(EvidentialValue { value: Value·Tuple(vals), evidence })
             },
 
             IrOperation·Index { expr, index, evidence, .. } => {
-                ≔ arr = self.eval_with_env(*expr, env)?;
-                ≔ idx = self.eval_with_env(*index, env)?;
+                ≔ arr = this.eval_with_env(*expr, env)?;
+                ≔ idx = this.eval_with_env(*index, env)?;
 
                 ⌥ (arr.value, idx.value) {
                     (Value·Array(a), Value·Int(i)) => {
-                        ⎇ i < 0 || i >= a.len() as i64 {
+                        ⎇ i < 0 ∨ i >= a.len() as i64 {
                             Result·Err(RuntimeError·new("array index out of bounds"))
                         } ⎉ {
                             Result·Ok(EvidentialValue {
@@ -814,7 +814,7 @@ invoke tome·typeck·EvidenceLevel;
                         }
                     },
                     (Value·String(s), Value·Int(i)) => {
-                        ⎇ i < 0 || i >= s.len() as i64 {
+                        ⎇ i < 0 ∨ i >= s.len() as i64 {
                             Result·Err(RuntimeError·new("string index out of bounds"))
                         } ⎉ {
                             ≔ c = s.chars().nth(i as u64).unwrap();
@@ -829,23 +829,23 @@ invoke tome·typeck·EvidenceLevel;
             },
 
             IrOperation·Field { expr, field, evidence, .. } => {
-                ≔ obj = self.eval_with_env(*expr, env)?;
+                ≔ obj = this.eval_with_env(*expr, env)?;
 
                 ⌥ obj.value {
                     Value·Struct { fields, .. } => {
                         ⌥ fields.get(field) {
-                            Some(v) => Result·Ok(EvidentialValue {
+                            ?v => Result·Ok(EvidentialValue {
                                 value: v.clone(),
                                 evidence: obj.evidence,
                             }),
-                            None => Result·Err(RuntimeError·new(format!("no field: {}", field))),
+                            null => Result·Err(RuntimeError·new(format!("no field: {}", field))),
                         }
                     },
                     Value·Tuple(elements) => {
                         // Tuple field access like .0, .1
-                        ≔ idx: Option<u64> = field.parse().ok();
+                        ≔ idx: ?u64 = field.parse().ok();
                         ⌥ idx {
-                            Some(i) ⎇ i < elements.len() => Result·Ok(EvidentialValue {
+                            ?i ⎇ i < elements.len() => Result·Ok(EvidentialValue {
                                 value: elements[i].clone(),
                                 evidence: obj.evidence,
                             }),
@@ -869,31 +869,31 @@ invoke tome·typeck·EvidenceLevel;
             },
 
             IrOperation·Pipeline { input, steps, evidence, .. } => {
-                ≔ Δ current = self.eval_with_env(*input, env)?;
+                ≔ vary current = this.eval_with_env(*input, env)?;
 
-                ∀ step ∈ steps {
-                    current = self.eval_pipeline_step(step, current, env)?;
+                each step ∈ steps {
+                    current = this.eval_pipeline_step(step, current, env)?;
                 }
 
                 Result·Ok(current)
             },
 
             IrOperation·Match { scrutinee, arms, evidence, .. } => {
-                ≔ val = self.eval_with_env(*scrutinee, env)?;
+                ≔ val = this.eval_with_env(*scrutinee, env)?;
 
-                ∀ arm ∈ arms {
-                    ⎇ self.pattern_matches(arm.pattern, val.value, env)? {
-                        ≔ Δ arm_env = Environment·child(env);
-                        self.bind_pattern(arm.pattern, val.clone(), arm_env)?;
+                each arm ∈ arms {
+                    ⎇ this.pattern_matches(arm.pattern, val.value, env)? {
+                        ≔ vary arm_env = Environment·child(env);
+                        this.bind_pattern(arm.pattern, val.clone(), arm_env)?;
 
                         ⎇ ≔ ?guard = arm.guard {
-                            ≔ guard_val = self.eval_with_env(guard, arm_env)?;
+                            ≔ guard_val = this.eval_with_env(guard, arm_env)?;
                             ⎇ !guard_val.value.is_truthy() {
-                                ↻;
+                                ⊳;
                             }
                         }
 
-                        ⤺ self.eval_with_env(arm.body, arm_env);
+                        ⤺ this.eval_with_env(arm.body, arm_env);
                     }
                 }
 
@@ -903,13 +903,13 @@ invoke tome·typeck·EvidenceLevel;
             IrOperation·Loop { variant, condition, iterator, body, .. } => {
                 ⌥ variant {
                     LoopVariant·Infinite => {
-                        loop {
-                            ≔ result = self.eval_with_env(*body.clone(), env);
+                        forever {
+                            ≔ result = this.eval_with_env(*body.clone(), env);
                             ⌥ result {
                                 Result·Err(RuntimeError { is_break: true, value: ?v, .. }) => {
                                     ⤺ Result·Ok(v);
                                 },
-                                Result·Err(RuntimeError { is_continue: true, .. }) => continue,
+                                Result·Err(RuntimeError { is_continue: true, .. }) => ⊳,
                                 Result·Err(e) => ⤺ Result·Err(e),
                                 _ => {},
                             }
@@ -918,17 +918,17 @@ invoke tome·typeck·EvidenceLevel;
                     LoopVariant·While => {
                         ⟳ {
                             ≔ cond = ⌥ condition {
-                                Some(c) => self.eval_with_env(*c.clone(), env)?,
-                                None => EvidentialValue·known(Value·Bool(true)),
+                                ?c => this.eval_with_env(*c.clone(), env)?,
+                                null => EvidentialValue·known(Value·Bool(true)),
                             };
                             cond.value.is_truthy()
                         } {
-                            ≔ result = self.eval_with_env(*body.clone(), env);
+                            ≔ result = this.eval_with_env(*body.clone(), env);
                             ⌥ result {
-                                Result·Err(RuntimeError { is_break: true, value: Some(v), .. }) => {
+                                Result·Err(RuntimeError { is_break: true, value: ?v, .. }) => {
                                     ⤺ Result·Ok(v);
                                 },
-                                Result·Err(RuntimeError { is_continue: true, .. }) => continue,
+                                Result·Err(RuntimeError { is_continue: true, .. }) => ⊳,
                                 Result·Err(e) => ⤺ Result·Err(e),
                                 _ => {},
                             }
@@ -937,26 +937,26 @@ invoke tome·typeck·EvidenceLevel;
                     },
                     LoopVariant·For => {
                         ⎇ ≔ ?iter = iterator {
-                            ≔ iterable = self.eval_with_env(*iter.iterable, env)?;
+                            ≔ iterable = this.eval_with_env(*iter.iterable, env)?;
                             ≔ items = ⌥ iterable.value {
                                 Value·Array(a) => a,
                                 Value·String(s) => s.chars()|τ{c => Value·Char(c)}|collect(),
                                 _ => ⤺ Result·Err(RuntimeError·new("not iterable")),
                             };
 
-                            ∀ item ∈ items {
-                                ≔ Δ loop_env = Environment·child(env);
-                                self.bind_pattern(iter.pattern, EvidentialValue {
+                            each item ∈ items {
+                                ≔ vary loop_env = Environment·child(env);
+                                this.bind_pattern(iter.pattern, EvidentialValue {
                                     value: item,
                                     evidence: iterable.evidence,
                                 }, loop_env)?;
 
-                                ≔ result = self.eval_with_env(*body.clone(), loop_env);
+                                ≔ result = this.eval_with_env(*body.clone(), loop_env);
                                 ⌥ result {
                                     Result·Err(RuntimeError { is_break: true, value: ?v, .. }) => {
                                         ⤺ Result·Ok(v);
                                     },
-                                    Result·Err(RuntimeError { is_continue: true, .. }) => continue,
+                                    Result·Err(RuntimeError { is_continue: true, .. }) => ⊳,
                                     Result·Err(e) => ⤺ Result·Err(e),
                                     _ => {},
                                 }
@@ -969,8 +969,8 @@ invoke tome·typeck·EvidenceLevel;
 
             IrOperation·Break { value, .. } => {
                 ≔ val = ⌥ value {
-                    Some(v) => Some(self.eval_with_env(*v, env)?),
-                    None => None,
+                    ?v => ?this.eval_with_env(*v, env)?,
+                    null => null,
                 };
                 Result·Err(RuntimeError·break_with(val))
             },
@@ -980,7 +980,7 @@ invoke tome·typeck·EvidenceLevel;
             },
 
             IrOperation·EvidenceCoerce { expr, to_evidence, .. } => {
-                ≔ val = self.eval_with_env(*expr, env)?;
+                ≔ val = this.eval_with_env(*expr, env)?;
                 Result·Ok(EvidentialValue {
                     value: val.value,
                     evidence: to_evidence,
@@ -992,23 +992,23 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Evaluate binary operation
-    λ eval_binary(self, op: !BinaryOp, left: !Value, right: !Value) -> !Result<Value, RuntimeError> {
+    rite eval_binary(this, op: !BinaryOp, left: !Value, right: !Value) → !Result<Value, RuntimeError> {
         ⌥ op {
             BinaryOp·Add => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a + b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a + b)),
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·String(format!("{}{}", a, b))),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ +")),
+                _ => Result·Err(RuntimeError·new("invalid operands each +")),
             },
             BinaryOp·Sub => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a - b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a - b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ -")),
+                _ => Result·Err(RuntimeError·new("invalid operands each -")),
             },
             BinaryOp·Mul => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a * b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a * b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ *")),
+                _ => Result·Err(RuntimeError·new("invalid operands each *")),
             },
             BinaryOp·Div => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => {
@@ -1019,93 +1019,93 @@ invoke tome·typeck·EvidenceLevel;
                     }
                 },
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a / b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ /")),
+                _ => Result·Err(RuntimeError·new("invalid operands each /")),
             },
             BinaryOp·Rem => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a % b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a % b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ %")),
+                _ => Result·Err(RuntimeError·new("invalid operands each %")),
             },
             BinaryOp·Pow => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a.pow(b as u32))),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Float(a.powf(b))),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ **")),
+                _ => Result·Err(RuntimeError·new("invalid operands each **")),
             },
-            BinaryOp·Eq => Result·Ok(Value·Bool(self.values_equal(left, right))),
-            BinaryOp·Ne => Result·Ok(Value·Bool(!self.values_equal(left, right))),
+            BinaryOp·Eq => Result·Ok(Value·Bool(this.values_equal(left, right))),
+            BinaryOp·Ne => Result·Ok(Value·Bool(!this.values_equal(left, right))),
             BinaryOp·Lt => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a < b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a < b)),
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·Bool(a < b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ <")),
+                _ => Result·Err(RuntimeError·new("invalid operands each <")),
             },
             BinaryOp·Le => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a <= b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a <= b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ <=")),
+                _ => Result·Err(RuntimeError·new("invalid operands each <=")),
             },
             BinaryOp·Gt => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a > b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a > b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ >")),
+                _ => Result·Err(RuntimeError·new("invalid operands each >")),
             },
             BinaryOp·Ge => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Bool(a >= b)),
                 (Value·Float(a), Value·Float(b)) => Result·Ok(Value·Bool(a >= b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ >=")),
+                _ => Result·Err(RuntimeError·new("invalid operands each >=")),
             },
             BinaryOp·And => ⌥ (left, right) {
-                (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a && b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ &&")),
+                (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a ∧ b)),
+                _ => Result·Err(RuntimeError·new("invalid operands each ∧")),
             },
             BinaryOp·Or => ⌥ (left, right) {
-                (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a || b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ ||")),
+                (Value·Bool(a), Value·Bool(b)) => Result·Ok(Value·Bool(a ∨ b)),
+                _ => Result·Err(RuntimeError·new("invalid operands each ∨")),
             },
             BinaryOp·BitAnd => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a & b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ &")),
+                _ => Result·Err(RuntimeError·new("invalid operands each &")),
             },
             BinaryOp·BitOr => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a | b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ |")),
+                _ => Result·Err(RuntimeError·new("invalid operands each |")),
             },
             BinaryOp·BitXor => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a ^ b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ ^")),
+                _ => Result·Err(RuntimeError·new("invalid operands each ^")),
             },
             BinaryOp·Shl => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a << b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ <<")),
+                _ => Result·Err(RuntimeError·new("invalid operands each <<")),
             },
             BinaryOp·Shr => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a >> b)),
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ >>")),
+                _ => Result·Err(RuntimeError·new("invalid operands each >>")),
             },
             BinaryOp·Concat => ⌥ (left, right) {
                 (Value·String(a), Value·String(b)) => Result·Ok(Value·String(format!("{}{}", a, b))),
                 (Value·Array(a), Value·Array(b)) => {
-                    ≔ Δ result = a.clone();
+                    ≔ vary result = a.clone();
                     result.extend(b);
                     Result·Ok(Value·Array(result))
                 },
-                _ => Result·Err(RuntimeError·new("invalid operands ∀ ++")),
+                _ => Result·Err(RuntimeError·new("invalid operands each ++")),
             },
         }
     }
 
     /// Evaluate unary operation
-    λ eval_unary(self, op: !UnaryOp, val: !Value) -> !Result<Value, RuntimeError> {
+    rite eval_unary(this, op: !UnaryOp, val: !Value) → !Result<Value, RuntimeError> {
         ⌥ op {
             UnaryOp·Neg => ⌥ val {
                 Value·Int(n) => Result·Ok(Value·Int(-n)),
                 Value·Float(f) => Result·Ok(Value·Float(-f)),
-                _ => Result·Err(RuntimeError·new("invalid operand ∀ unary -")),
+                _ => Result·Err(RuntimeError·new("invalid operand each unary -")),
             },
             UnaryOp·Not => ⌥ val {
                 Value·Bool(b) => Result·Ok(Value·Bool(!b)),
                 Value·Int(n) => Result·Ok(Value·Int(!n)),
-                _ => Result·Err(RuntimeError·new("invalid operand ∀ !")),
+                _ => Result·Err(RuntimeError·new("invalid operand each !")),
             },
             UnaryOp·Ref => Result·Ok(Value·Ref(Box·new(val))),
             UnaryOp·RefMut => Result·Ok(Value·RefMut(Box·new(val))),
@@ -1117,24 +1117,24 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Evaluate a pipeline step
-    λ eval_pipeline_step(Δ self, step: !IrPipelineStep, input: !EvidentialValue, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+    rite eval_pipeline_step(vary this, step: !IrPipelineStep, input: !EvidentialValue, env: !Environment) → !Result<EvidentialValue, RuntimeError> {
         ⌥ step {
             IrPipelineStep·Morpheme { morpheme, body, .. } => {
-                self.eval_morpheme(morpheme, input, body, env)
+                this.eval_morpheme(morpheme, input, body, env)
             },
             IrPipelineStep·Call { function, args } => {
-                ≔ Δ all_args = [input];
-                ∀ arg ∈ args {
-                    all_args.push(self.eval_with_env(arg, env)?);
+                ≔ vary all_args = [input];
+                each arg ∈ args {
+                    all_args.push(this.eval_with_env(arg, env)?);
                 }
-                self.call_function(function, all_args)
+                this.call_function(function, all_args)
             },
             IrPipelineStep·Method { name, args } => {
-                ≔ Δ all_args = [input];
-                ∀ arg ∈ args {
-                    all_args.push(self.eval_with_env(arg, env)?);
+                ≔ vary all_args = [input];
+                each arg ∈ args {
+                    all_args.push(this.eval_with_env(arg, env)?);
                 }
-                self.call_function(name, all_args)
+                this.call_function(name, all_args)
             },
             IrPipelineStep·Identity => Result·Ok(input),
             IrPipelineStep·Await => Result·Ok(input), // Sync interpreter, await is no-op
@@ -1143,7 +1143,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Evaluate a morpheme operation
-    λ eval_morpheme(Δ self, kind: !MorphemeKind, input: !EvidentialValue, body: ?Box<IrOperation>, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+    rite eval_morpheme(vary this, kind: !MorphemeKind, input: !EvidentialValue, body: ?Box<IrOperation>, env: !Environment) → !Result<EvidentialValue, RuntimeError> {
         ≔ arr = ⌥ input.value {
             Value·Array(a) => a,
             _ => ⤺ Result·Err(RuntimeError·new("morpheme requires array input")),
@@ -1153,15 +1153,15 @@ invoke tome·typeck·EvidenceLevel;
             MorphemeKind·Transform => {
                 // τ{expr} - map over array
                 ≔ body = ⌥ body {
-                    Some(b) => *b,
-                    None => ⤺ Result·Err(RuntimeError·new("transform requires body")),
+                    ?b => *b,
+                    null => ⤺ Result·Err(RuntimeError·new("transform requires body")),
                 };
 
-                ≔ Δ results = Vec·new();
-                ∀ item ∈ arr {
-                    ≔ Δ item_env = Environment·child(env);
+                ≔ results: ![Value] = [];
+                each item ∈ arr {
+                    ≔ vary item_env = Environment·child(env);
                     item_env.define("it", EvidentialValue { value: item, evidence: input.evidence });
-                    ≔ result = self.eval_with_env(body.clone(), item_env)?;
+                    ≔ result = this.eval_with_env(body.clone(), item_env)?;
                     results.push(result.value);
                 }
                 Result·Ok(EvidentialValue { value: Value·Array(results), evidence: input.evidence })
@@ -1169,15 +1169,15 @@ invoke tome·typeck·EvidenceLevel;
             MorphemeKind·Filter => {
                 // φ{predicate} - filter array
                 ≔ body = ⌥ body {
-                    Some(b) => *b,
-                    None => ⤺ Result·Err(RuntimeError·new("filter requires body")),
+                    ?b => *b,
+                    null => ⤺ Result·Err(RuntimeError·new("filter requires body")),
                 };
 
-                ≔ Δ results = Vec·new();
-                ∀ item ∈ arr {
-                    ≔ Δ item_env = Environment·child(env);
+                ≔ results: ![Value] = [];
+                each item ∈ arr {
+                    ≔ vary item_env = Environment·child(env);
                     item_env.define("it", EvidentialValue { value: item.clone(), evidence: input.evidence });
-                    ≔ result = self.eval_with_env(body.clone(), item_env)?;
+                    ≔ result = this.eval_with_env(body.clone(), item_env)?;
                     ⎇ result.value.is_truthy() {
                         results.push(item);
                     }
@@ -1187,22 +1187,22 @@ invoke tome·typeck·EvidenceLevel;
             MorphemeKind·Reduce => {
                 // ρ{accumulator} - fold array
                 ≔ body = ⌥ body {
-                    Some(b) => *b,
-                    None => ⤺ Result·Err(RuntimeError·new("reduce requires body")),
+                    ?b => *b,
+                    null => ⤺ Result·Err(RuntimeError·new("reduce requires body")),
                 };
 
                 ⎇ arr.is_empty() {
                     ⤺ Result·Err(RuntimeError·new("cannot reduce empty array"));
                 }
 
-                ≔ Δ acc = arr[0].clone();
-                ≔ Δ idx: usize = 1;
+                ≔ vary acc = arr[0].clone();
+                ≔ vary idx: usize = 1;
                 ⟳ idx < arr.len() {
                     ≔ item = arr[idx].clone();
-                    ≔ Δ fold_env = Environment·child(env);
+                    ≔ vary fold_env = Environment·child(env);
                     fold_env.define("acc", EvidentialValue { value: acc, evidence: input.evidence });
                     fold_env.define("it", EvidentialValue { value: item, evidence: input.evidence });
-                    ≔ result = self.eval_with_env(body.clone(), fold_env)?;
+                    ≔ result = this.eval_with_env(body.clone(), fold_env)?;
                     acc = result.value;
                     idx = idx + 1;
                 }
@@ -1210,8 +1210,8 @@ invoke tome·typeck·EvidenceLevel;
             },
             MorphemeKind·Sum => {
                 // Σ - sum numbers
-                ≔ Δ sum = 0.0;
-                ∀ item ∈ arr {
+                ≔ vary sum = 0.0;
+                each item ∈ arr {
                     ⌥ item {
                         Value·Int(n) => sum += n as f64,
                         Value·Float(f) => sum += f,
@@ -1222,8 +1222,8 @@ invoke tome·typeck·EvidenceLevel;
             },
             MorphemeKind·Product => {
                 // Π - product of numbers
-                ≔ Δ prod = 1.0;
-                ∀ item ∈ arr {
+                ≔ vary prod = 1.0;
+                each item ∈ arr {
                     ⌥ item {
                         Value·Int(n) => prod *= n as f64,
                         Value·Float(f) => prod *= f,
@@ -1236,8 +1236,8 @@ invoke tome·typeck·EvidenceLevel;
                 ⎇ arr.is_empty() {
                     ⤺ Result·Err(RuntimeError·new("min on empty array"));
                 }
-                ≔ Δ min_val = arr[0].clone();
-                ≔ Δ idx: usize = 1;
+                ≔ vary min_val = arr[0].clone();
+                ≔ vary idx: usize = 1;
                 ⟳ idx < arr.len() {
                     ≔ item = arr[idx].clone();
                     ⌥ (min_val.clone(), item) {
@@ -1253,8 +1253,8 @@ invoke tome·typeck·EvidenceLevel;
                 ⎇ arr.is_empty() {
                     ⤺ Result·Err(RuntimeError·new("max on empty array"));
                 }
-                ≔ Δ max_val = arr[0].clone();
-                ≔ Δ idx: usize = 1;
+                ≔ vary max_val = arr[0].clone();
+                ≔ vary idx: usize = 1;
                 ⟳ idx < arr.len() {
                     ≔ item = arr[idx].clone();
                     ⌥ (max_val.clone(), item) {
@@ -1268,26 +1268,26 @@ invoke tome·typeck·EvidenceLevel;
             },
             MorphemeKind·First => {
                 ⌥ arr.first() {
-                    Some(v) => Result·Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence·Uncertain }),
-                    None => Result·Ok(EvidentialValue { value: Value·Null, evidence: IrEvidence·Uncertain }),
+                    ?v => Result·Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence·Uncertain }),
+                    null => Result·Ok(EvidentialValue { value: Value·Null, evidence: IrEvidence·Uncertain }),
                 }
             },
             MorphemeKind·Last => {
                 ⌥ arr.last() {
-                    Some(v) => Result·Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence·Uncertain }),
-                    None => Result·Ok(EvidentialValue { value: Value·Null, evidence: IrEvidence·Uncertain }),
+                    ?v => Result·Ok(EvidentialValue { value: v.clone(), evidence: IrEvidence·Uncertain }),
+                    null => Result·Ok(EvidentialValue { value: Value·Null, evidence: IrEvidence·Uncertain }),
                 }
             },
             MorphemeKind·All => {
                 // ρ& - all elements truthy
-                ≔ Δ all_truthy = true;
-                ∀ item ∈ arr { ⎇ !item.is_truthy() { all_truthy = false; ⊗; } }
+                ≔ vary all_truthy = true;
+                each item ∈ arr { ⎇ !item.is_truthy() { all_truthy = false; ⊲; } }
                 Result·Ok(EvidentialValue { value: Value·Bool(all_truthy), evidence: input.evidence })
             },
             MorphemeKind·Any => {
                 // ρ| - any element truthy
-                ≔ Δ any_truthy = false;
-                ∀ item ∈ arr { ⎇ item.is_truthy() { any_truthy = true; ⊗; } }
+                ≔ vary any_truthy = false;
+                each item ∈ arr { ⎇ item.is_truthy() { any_truthy = true; ⊲; } }
                 Result·Ok(EvidentialValue { value: Value·Bool(any_truthy), evidence: input.evidence })
             },
             _ => Result·Err(RuntimeError·new(format!("unsupported morpheme: {}", kind.symbol()))),
@@ -1295,7 +1295,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Check ⎇ a pattern matches a value
-    λ pattern_matches(self, pattern: !IrPattern, value: !Value, env: !Environment) -> !Result<bool, RuntimeError> {
+    rite pattern_matches(this, pattern: !IrPattern, value: !Value, env: !Environment) → !Result<bool, RuntimeError> {
         ⌥ pattern {
             IrPattern·Wildcard => Result·Ok(true),
             IrPattern·Ident { .. } => Result·Ok(true),
@@ -1308,7 +1308,7 @@ invoke tome·typeck·EvidenceLevel;
                     LiteralValue·String(s) => Value·String(s),
                     LiteralValue·Null => Value·Null,
                 };
-                Result·Ok(self.values_equal(lit, value))
+                Result·Ok(this.values_equal(lit, value))
             },
             IrPattern·Tuple { elements } => {
                 ⌥ value {
@@ -1316,8 +1316,8 @@ invoke tome·typeck·EvidenceLevel;
                         ⎇ elements.len() != vals.len() {
                             ⤺ Result·Ok(false);
                         }
-                        ∀ (pat, val) ∈ elements.iter().zip(vals.iter()) {
-                            ⎇ !self.pattern_matches(pat, val, env)? {
+                        each (pat, val) ∈ elements.iter().zip(vals.iter()) {
+                            ⎇ !this.pattern_matches(pat, val, env)? {
                                 ⤺ Result·Ok(false);
                             }
                         }
@@ -1327,8 +1327,8 @@ invoke tome·typeck·EvidenceLevel;
                 }
             },
             IrPattern·Or { patterns } => {
-                ∀ pat ∈ patterns {
-                    ⎇ self.pattern_matches(pat, value.clone(), env)? {
+                each pat ∈ patterns {
+                    ⎇ this.pattern_matches(pat, value.clone(), env)? {
                         ⤺ Result·Ok(true);
                     }
                 }
@@ -1340,15 +1340,15 @@ invoke tome·typeck·EvidenceLevel;
                     Value·Enum { name, variant, fields: vals } => {
                         // Check ⎇ the path matches "EnumName·Variant" or just "Variant"
                         ≔ full_path = format!("{}·{}", name, variant);
-                        ⎇ path != full_path && path != variant {
+                        ⎇ path != full_path ∧ path != variant {
                             ⤺ Result·Ok(false);
                         }
                         // Check ⎇ all inner patterns match
                         ⎇ fields.len() != vals.len() {
                             ⤺ Result·Ok(false);
                         }
-                        ∀ (pat, val) ∈ fields.iter().zip(vals.iter()) {
-                            ⎇ !self.pattern_matches(pat, val.clone(), env)? {
+                        each (pat, val) ∈ fields.iter().zip(vals.iter()) {
+                            ⎇ !this.pattern_matches(pat, val.clone(), env)? {
                                 ⤺ Result·Ok(false);
                             }
                         }
@@ -1367,22 +1367,22 @@ invoke tome·typeck·EvidenceLevel;
                         }
                         // Check ⎇ path matches
                         ≔ full_path = format!("{}·{}", name, variant);
-                        Result·Ok(path == full_path || path == variant)
+                        Result·Ok(path == full_path ∨ path == variant)
                     },
                     _ => Result·Ok(false),
                 }
             },
-            _ => Result·Ok(true), // Default ⌥ ∀ complex patterns
+            _ => Result·Ok(true), // Default ⌥ each complex patterns
         }
     }
 
     /// Bind pattern variables to values ∈ environment
-    λ bind_pattern(Δ self, pattern: !IrPattern, value: !EvidentialValue, Δ env: !Environment) -> !Result<(), RuntimeError> {
+    rite bind_pattern(vary this, pattern: !IrPattern, value: !EvidentialValue, vary env: !Environment) → !Result<(), RuntimeError> {
         ⌥ pattern {
             IrPattern·Ident { name, evidence, .. } => {
                 ≔ ev = ⌥ evidence {
-                    Some(e) => e,
-                    None => value.evidence,
+                    ?e => e,
+                    null => value.evidence,
                 };
                 env.define(name, EvidentialValue { value: value.value, evidence: ev });
                 Result·Ok(())
@@ -1390,15 +1390,15 @@ invoke tome·typeck·EvidenceLevel;
             IrPattern·Tuple { elements } => {
                 ⌥ value.value {
                     Value·Tuple(vals) => {
-                        ∀ (pat, val) ∈ elements.iter().zip(vals.iter()) {
-                            self.bind_pattern(pat, EvidentialValue {
+                        each (pat, val) ∈ elements.iter().zip(vals.iter()) {
+                            this.bind_pattern(pat, EvidentialValue {
                                 value: val.clone(),
                                 evidence: value.evidence,
                             }, env)?;
                         }
                         Result·Ok(())
                     },
-                    _ => Result·Err(RuntimeError·new("expected tuple ∀ destructuring")),
+                    _ => Result·Err(RuntimeError·new("expected tuple each destructuring")),
                 }
             },
             IrPattern·Wildcard => Result·Ok(()),
@@ -1406,15 +1406,15 @@ invoke tome·typeck·EvidenceLevel;
                 // CG-099: Extract ᛈ fields and bind to inner patterns
                 ⌥ value.value {
                     Value·Enum { fields: vals, .. } => {
-                        ∀ (pat, val) ∈ fields.iter().zip(vals.iter()) {
-                            self.bind_pattern(pat, EvidentialValue {
+                        each (pat, val) ∈ fields.iter().zip(vals.iter()) {
+                            this.bind_pattern(pat, EvidentialValue {
                                 value: val.clone(),
                                 evidence: value.evidence,
                             }, env)?;
                         }
                         Result·Ok(())
                     },
-                    _ => Result·Err(RuntimeError·new("expected ᛈ ∀ TupleStruct pattern")),
+                    _ => Result·Err(RuntimeError·new("expected ᛈ each TupleStruct pattern")),
                 }
             },
             IrPattern·Path { .. } => {
@@ -1424,7 +1424,7 @@ invoke tome·typeck·EvidenceLevel;
             IrPattern·Or { patterns } => {
                 // CG-099: Bind using first pattern (all alternatives should bind same names)
                 ⎇ !patterns.is_empty() {
-                    self.bind_pattern(patterns[0].clone(), value, env)?;
+                    this.bind_pattern(patterns[0].clone(), value, env)?;
                 }
                 Result·Ok(())
             },
@@ -1433,8 +1433,8 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Get interpreter output
-    ☉ λ get_output(self) -> !String {
-        self.output.join("")
+    ☉ rite get_output(this) → !String {
+        this.output.join("")
     }
 }
 
@@ -1443,42 +1443,42 @@ invoke tome·typeck·EvidenceLevel;
 // ============================================================================
 
 /// Runtime error
-☉ Σ RuntimeError {
-    ☉ message: !String,
-    ☉ stack_trace: ![String],
-    ☉ is_break: !bool,
-    ☉ is_continue: !bool,
-    ☉ value: Option<EvidentialValue>,
+☉ sigil RuntimeError {
+    message: !String,
+    stack_trace: ![String],
+    is_break: !bool,
+    is_continue: !bool,
+    value: ?EvidentialValue,
 }
 
 ⊢ RuntimeError {
-    ☉ λ new(message: !String) -> !RuntimeError {
+    ☉ rite new(message: !String) → !RuntimeError {
         RuntimeError {
             message,
-            stack_trace: Vec·new(),
+            stack_trace: [],
             is_break: false,
             is_continue: false,
-            value: None,
+            value: null,
         }
     }
 
-    ☉ λ break_with(value: Option<EvidentialValue>) -> !RuntimeError {
+    ☉ rite break_with(value: ?EvidentialValue) → !RuntimeError {
         RuntimeError {
-            message: "break".to_string(),
-            stack_trace: Vec·new(),
+            message: "⊲",
+            stack_trace: [],
             is_break: true,
             is_continue: false,
             value,
         }
     }
 
-    ☉ λ continue_loop() -> !RuntimeError {
+    ☉ rite continue_loop() → !RuntimeError {
         RuntimeError {
-            message: "continue".to_string(),
-            stack_trace: Vec·new(),
+            message: "⊳",
+            stack_trace: [],
             is_break: false,
             is_continue: true,
-            value: None,
+            value: null,
         }
     }
 }
@@ -1492,7 +1492,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_value_to_string() {
+    rite test_value_to_string() {
         assert_eq!(Value·Int(42).to_string(), "42");
         assert_eq!(Value·Bool(true).to_string(), "true");
         assert_eq!(Value·String("hello").to_string(), "hello");
@@ -1500,7 +1500,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_value_is_truthy() {
+    rite test_value_is_truthy() {
         assert!(Value·Bool(true).is_truthy());
         assert!(!Value·Bool(false).is_truthy());
         assert!(Value·Int(1).is_truthy());
@@ -1509,7 +1509,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_evidence_check() {
+    rite test_evidence_check() {
         ≔ interp = Interpreter·new();
         assert!(interp.check_evidence(IrEvidence·Reported, IrEvidence·Known));
         assert!(interp.check_evidence(IrEvidence·Uncertain, IrEvidence·Known));
@@ -1517,8 +1517,8 @@ scroll tests {
     }
 
     #[test]
-    λ test_builtin_len() {
-        ≔ Δ interp = Interpreter·new();
+    rite test_builtin_len() {
+        ≔ vary interp = Interpreter·new();
         ≔ args = [EvidentialValue·known(Value·String("hello"))];
         ≔ result = interp.call_builtin("len", args);
         assert!(result.is_ok());
@@ -1529,7 +1529,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_binary_ops() {
+    rite test_binary_ops() {
         ≔ interp = Interpreter·new();
         assert_eq!(interp.eval_binary(BinaryOp·Add, Value·Int(2), Value·Int(3)).unwrap(), Value·Int(5));
         assert_eq!(interp.eval_binary(BinaryOp·Mul, Value·Int(4), Value·Int(5)).unwrap(), Value·Int(20));

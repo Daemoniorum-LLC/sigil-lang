@@ -2,7 +2,7 @@
 // Spec: Edge Cases - String Escapes
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ s: String = "Line1\nLine2\tTabbed";
     println(s);
 }

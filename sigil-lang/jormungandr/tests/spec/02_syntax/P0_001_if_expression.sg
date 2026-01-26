@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print 42
 
-λ main() {
-    ≔ x: !i32 = ⎇ true { 42 } ⎉ { 0 };
+rite main() {
+    ≔ x: !i32 = ⎇ yea { 42 } ⎉ { 0 };
     println(x);
 }

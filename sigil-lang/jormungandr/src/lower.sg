@@ -13,7 +13,6 @@
 //! 5. **Name Resolution**: Resolve all identifiers to unique IDs
 
 invoke tome·ast·*;
-invoke tome·ast·{UnaryOp as AstUnaryOp};
 invoke tome·ir·*;
 invoke tome·span·Span;
 invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
@@ -23,7 +22,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// The lowering context tracks state during AST → IR conversion
-☉ Σ LoweringContext {
+☉ sigil LoweringContext {
     /// Type checker ∀ type information
     type_checker: !TypeChecker,
 
@@ -33,7 +32,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
     /// Current function being lowered
     current_function: ?String,
 
-    /// Current Self type name (when inside ⊢ block)
+    /// Current This type name (when inside ⊢ block)
     current_self_type: ?String,
 
     /// Collected errors
@@ -45,13 +44,13 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
     /// Variable type map: variable name → type name (∀ method resolution)
     var_types: !Map<String, String>,
 
-    /// CG-015: Map of qualified method name -> has_mut_self
-    /// e.g., "Lexer·advance" -> true, "Lexer·peek" -> false
+    /// CG-015: Map of qualified method name → has_mut_self
+    /// e.g., "Lexer·advance" → yea, "Lexer·peek" → nay
     method_signatures: !Map<String, bool>,
 
     /// Import resolution map: imported name → qualified path
-    /// e.g., "bar" -> "foo·bar" from `invoke foo·bar;`
-    /// e.g., "bar" -> "foo·bar", "baz" -> "foo·baz" from `invoke foo·{bar, baz};`
+    /// e.g., "bar" → "foo·bar" from `invoke foo·bar;`
+    /// e.g., "bar" → "foo·bar", "baz" → "foo·baz" from `invoke foo·{bar, baz};`
     imports: !Map<String, String>,
 
     /// Namespace stack ∀ tracking current module path
@@ -61,14 +60,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 ⊢ LoweringContext {
     /// Create a new lowering context
-    ☉ λ new(type_checker: !TypeChecker) -> !LoweringContext {
-        // Pre-populate imports with standard library types
-        ≔ Δ imports = Map·new();
-        imports.insert("Some".to_string(), "Option·Some".to_string());
-        imports.insert("None".to_string(), "Option·None".to_string());
-        imports.insert("Ok".to_string(), "Result·Ok".to_string());
-        imports.insert("Err".to_string(), "Result·Err".to_string());
-
+    ☉ rite new(type_checker: !TypeChecker) → !LoweringContext {
         LoweringContext {
             type_checker,
             id_counter: 0,
@@ -78,28 +70,28 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             var_ids: Map·new(),
             var_types: Map·new(),
             method_signatures: Map·new(),
-            imports,
+            imports: Map·new(),
             namespace_stack: Vec·new(),
         }
     }
 
     /// Generate a unique ID
-    λ fresh_id(Δ self) -> !String {
-        ≔ id = self.id_counter;
-        self.id_counter += 1;
+    rite fresh_id(vary this) → !String {
+        ≔ id = this.id_counter;
+        this.id_counter += 1;
         format!("id_{}", id)
     }
 
     /// Get the current namespace as a qualified name
-    /// e.g., ["foo", "bar"] -> "foo·bar·"
-    λ current_namespace(self) -> !String {
-        ⎇ self.namespace_stack.len() == 0 {
+    /// e.g., ["foo", "bar"] → "foo·bar·"
+    rite current_namespace(this) → !String {
+        ⎇ this.namespace_stack.len() == 0 {
             "".to_string()
         } ⎉ {
             // Build namespace string manually
-            ≔ stack = self.namespace_stack;
-            ≔ Δ result = stack[0].clone();
-            ≔ Δ i = 1;
+            ≔ stack = this.namespace_stack;
+            ≔ vary result = stack[0].clone();
+            ≔ vary i = 1;
             ⟳ i < stack.len() {
                 result = format!("{}·{}", result, stack[i]);
                 i += 1;
@@ -109,43 +101,43 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
     }
 
     /// Qualify a name with the current namespace
-    /// e.g., "baz" ∈ namespace ["foo", "bar"] -> "foo·bar·baz"
-    λ qualify_name(self, name: !&str) -> !String {
-        ≔ ns = self.current_namespace();
+    /// e.g., "baz" ∈ namespace ["foo", "bar"] → "foo·bar·baz"
+    rite qualify_name(this, name: !&str) → !String {
+        ≔ ns = this.current_namespace();
         format!("{}{}", ns, name)
     }
 
     /// Record an error
-    λ error(Δ self, err: !LowerError) {
-        self.errors.push(err);
+    rite error(vary this, err: !LowerError) {
+        this.errors.push(err);
     }
 
     /// Get or create an ID ∀ a variable
-    λ get_var_id(Δ self, name: !&str) -> !String {
-        ⎇ ≔ ?id = self.var_ids.get(name) {
+    rite get_var_id(vary this, name: !&str) → !String {
+        ⎇ ≔ ?id = this.var_ids.get(name) {
             id.clone()
         } ⎉ {
-            ≔ id = self.fresh_id();
-            self.var_ids.insert(name.to_string(), id.clone());
+            ≔ id = this.fresh_id();
+            this.var_ids.insert(name.to_string(), id.clone());
             id
         }
     }
 }
 
 /// Lowering error
-☉ Σ LowerError {
+☉ sigil LowerError {
     ☉ message: !String,
     ☉ span: ?Span,
 }
 
 ⊢ LowerError {
-    ☉ λ new(message: !String) -> !LowerError {
+    ☉ rite new(message: !String) → !LowerError {
         LowerError { message, span: null }
     }
 
-    ☉ λ with_span(Δ self, span: !Span) -> !LowerError {
-        self.span = ?span;
-        self
+    ☉ rite with_span(vary this, span: !Span) → !LowerError {
+        this.span = ?span;
+        this
     }
 }
 
@@ -154,20 +146,20 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a complete source file to IR
-☉ λ lower_file(file: !SourceFile, type_checker: !TypeChecker, path: !String) -> !Result<IrModule, [LowerError]> {
-    ≔ Δ ctx = LoweringContext·new(type_checker);
-    ≔ Δ module = IrModule·new(path);
+☉ rite lower_file(file: !SourceFile, type_checker: !TypeChecker, path: !String) → !Result<IrModule, [LowerError]> {
+    ≔ vary ctx = LoweringContext·new(type_checker);
+    ≔ vary module = IrModule·new(path);
 
     // Lower all items
-    ≔ Δ idx: usize = 0;
+    ≔ vary idx: usize = 0;
     ⟳ idx < file.items.len() {
-        lower_item(&Δ ctx, &Δ module, file.items[idx].node);
+        lower_item(&vary ctx, &vary module, file.items[idx].node);
         idx = idx + 1;
     }
 
     // Report errors but ↻ - allows codegen to proceed
     // even with lowering errors (∀ development/bootstrapping)
-    ≔ Δ err_idx: usize = 0;
+    ≔ vary err_idx: usize = 0;
     ⟳ err_idx < ctx.errors.len() {
         // Skip eprintln! macro - not available ∈ bootstrap context
         ≔ _ = format!("Lowering error: {}", ctx.errors[err_idx]);
@@ -182,7 +174,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 /// Process a invoke declaration tree and populate the imports map
 /// prefix: accumulated module path (e.g., "std·collections")
-λ process_use_decl(ctx: &Δ LoweringContext, prefix: !&str, tree: !UseTree) {
+rite process_use_decl(ctx: &vary LoweringContext, prefix: !&str, tree: !UseTree) {
     ⌥ tree {
         UseTree·Path { prefix: segment, suffix } => {
             // Build up the path: prefix·segment
@@ -219,7 +211,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         },
         UseTree·Group(trees) => {
             // invoke prefix·{a, b, c};
-            ∀ subtree ∈ trees {
+            each subtree ∈ trees {
                 process_use_decl(ctx, prefix, subtree);
             }
         },
@@ -227,7 +219,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a single item
-λ lower_item(ctx: &Δ LoweringContext, module: &Δ IrModule, item: !Item) {
+rite lower_item(ctx: &vary LoweringContext, module: &vary IrModule, item: !Item) {
     ⌥ item {
         Item·Function(f) => {
             ⎇ ≔ ?ir_fn = lower_function(ctx, f) {
@@ -264,28 +256,28 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                 _ => "".to_string(),
             };
 
-            // Set current Self type ∀ resolving Self ∈ Σ expressions
+            // Set current This type ∀ resolving This ∈ sigil expressions
             ctx.current_self_type = ?type_name.clone();
 
             // Add each method to module.functions with qualified name
-            ∀ impl_item ∈ i.items.clone() {
+            each impl_item ∈ i.items.clone() {
                 ⎇ ≔ ImplItem·Function(f) = impl_item {
                     // Create a copy of the function with qualified name
                     ≔ qualified_name = format!("{}·{}", type_name, f.name.name);
-                    ≔ Δ qualified_func = f.clone();
+                    ≔ vary qualified_func = f.clone();
                     qualified_func.name.name = qualified_name.clone();
 
-                    // CG-015: Check ⎇ first param is `Δ self` and record signature
+                    // CG-015: Check ⎇ first param is `vary this` and record signature
                     ≔ has_mut_self = ⎇ f.params.len() > 0 {
                         ≔ first = &f.params[0];
                         ⌥ first.pattern {
                             Pattern·Ident { name, mutable, .. } => {
-                                name.name == "self" && mutable
+                                name.name == "this" ∧ mutable
                             },
-                            _ => false,
+                            _ => nay,
                         }
                     } ⎉ {
-                        false
+                        nay
                     };
                     ctx.method_signatures.insert(qualified_name.clone(), has_mut_self);
 
@@ -297,7 +289,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
             module.impls.push(lower_impl(ctx, i));
 
-            // Reset current Self type
+            // Reset current This type
             ctx.current_self_type = null;
         },
         Item·Use(u) => {
@@ -309,7 +301,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             ctx.namespace_stack.push(m.name.name.clone());
 
             // Recursively process module items
-            ∀ item ∈ m.items {
+            each item ∈ m.items {
                 lower_item(ctx, module, item);
             }
 
@@ -327,7 +319,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a function definition
-λ lower_function(ctx: &Δ LoweringContext, func: !Function) -> ?IrFunction {
+rite lower_function(ctx: &vary LoweringContext, func: !Function) → ?IrFunction {
     ≔ name = ctx.qualify_name(func.name.name.as_str());
     ≔ id = ctx.fresh_id();
 
@@ -341,7 +333,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
     // Lower generics
     ≔ generics = ⌥ func.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
-        null => [],
+        null | Option·None => [],
     };
 
     // Lower parameters
@@ -350,13 +342,13 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
     // Lower ⤺ type
     ≔ return_type = ⌥ func.return_type {
         ?t => lower_type(ctx, t),
-        null => IrType·Unit,
+        null | Option·None => IrType·Unit,
     };
 
     // Lower body
     ≔ body = ⌥ func.body {
         ?b => ?lower_block(ctx, b),
-        null => null,
+        null | Option·None => null,
     };
 
     // Visibility
@@ -382,7 +374,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a generic parameter
-λ lower_generic_param(ctx: &Δ LoweringContext, param: !GenericParam) -> !IrGenericParam {
+rite lower_generic_param(ctx: &vary LoweringContext, param: !GenericParam) → !IrGenericParam {
     ⌥ param {
         GenericParam·Type { .. } => {
             ≔ name = param.name;
@@ -391,7 +383,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                 name: name.name,
                 bounds: ⌥ bounds {
                     ?b => b|τ{bound => bound.to_string()}|collect(),
-                    null => [],
+                    null | Option·None => [],
                 },
             }
         },
@@ -410,32 +402,32 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a function parameter
-λ lower_param(ctx: &Δ LoweringContext, param: !Parameter) -> !IrParam {
+rite lower_param(ctx: &vary LoweringContext, param: !Parameter) → !IrParam {
     ≔ name = ⌥ param.pattern.binding_name() {
         ?n => n,
-        null => "_",
+        null | Option·None => "_",
     };
 
     ≔ ty = ⌥ param.ty {
         ?t => lower_type(ctx, t),
-        null => IrType·Infer,  // Closure params may have optional types
+        null | Option·None => IrType·Infer,  // Closure params may have optional types
     };
     ≔ evidence = ⌥ param.pattern.evidentiality() {
         ?e => IrEvidence·from_typeck(EvidenceLevel·from_ast(e)),
-        null => IrEvidence·Known,
+        null | Option·None => IrEvidence·Known,
     };
 
     // CG-015: Extract mutability from the pattern
     ≔ mutable = ⌥ param.pattern {
         Pattern·Ident { mutable: m, .. } => m,
-        _ => false,
+        _ => nay,
     };
 
     IrParam { name, ty, evidence, mutable }
 }
 
 /// Lower visibility
-λ lower_visibility(vis: !Visibility) -> !IrVisibility {
+rite lower_visibility(vis: !Visibility) → !IrVisibility {
     ⌥ vis {
         Visibility·Public => IrVisibility·Public,
         Visibility·Crate => IrVisibility·Crate,
@@ -450,37 +442,37 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 /// Extract the base type name from a TypeExpr ∀ variable type tracking
 /// Handles both Path types and Evidential types (like !IrTypeDef)
-λ extract_type_name(ty: !TypeExpr) -> Option<String> {
+rite extract_type_name(ty: !TypeExpr) → ?String {
     ⌥ ty {
         TypeExpr·Path(p) => {
             ⎇ p.segments.len() == 1 {
-                Some(p.segments[0].ident.name.clone())
+                ?p.segments[0].ident.name.clone()
             } ⎉ {
-                None
+                null
             }
         },
         TypeExpr·Evidential { inner, .. } => {
-            // Unwrap evidential type (e.g., !IrTypeDef -> IrTypeDef)
+            // Unwrap evidential type (e.g., !IrTypeDef → IrTypeDef)
             extract_type_name(*inner)
         },
-        _ => None,
+        _ => null,
     }
 }
 
 /// Lower a type expression to IR type
-λ lower_type(ctx: &Δ LoweringContext, ty: !TypeExpr) -> !IrType {
+rite lower_type(ctx: &vary LoweringContext, ty: !TypeExpr) → !IrType {
     ⌥ ty {
         // Handle null TypeExpr gracefully (shouldn't happen but safety first)
-        null => IrType·Infer,
+        null | Option·None => IrType·Infer,
 
         TypeExpr·Path(path) => {
             ≔ name = path.segments|τ{s => s.ident.name}|join("·");
             ≔ generics = ⌥ path.segments.last() {
                 ?seg => ⌥ seg.generics {
                     ?gs => gs|τ{t => lower_type(ctx, t)}|collect(),
-                    null => [],
+                    null | Option·None => [],
                 },
-                null => [],
+                null | Option·None => [],
             };
 
             // Check ∀ primitive types
@@ -520,7 +512,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                 element: Box·new(lower_type(ctx, *element)),
                 length: ⌥ length {
                     ?s => ?eval_const_length(ctx, s),
-                    null => null,
+                    null | Option·None => null,
                 },
             }
         },
@@ -540,9 +532,9 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                 params: params|τ{t => lower_type(ctx, t)}|collect(),
                 return_type: Box·new(⌥ return_type {
                     ?t => lower_type(ctx, *t),
-                    null => IrType·Unit,
+                    null | Option·None => IrType·Unit,
                 }),
-                is_async: false,
+                is_async: nay,
             }
         },
 
@@ -592,7 +584,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Evaluate a constant expression to u64 (∀ array lengths)
-λ eval_const_length(ctx: &Δ LoweringContext, expr: !Expr) -> !u64 {
+rite eval_const_length(ctx: &vary LoweringContext, expr: !Expr) → !u64 {
     ⌥ expr {
         Expr·Literal(lit) => {
             ⌥ lit {
@@ -617,11 +609,11 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // Type Definition Lowering
 // ============================================================================
 
-/// Lower a Σ definition
-λ lower_struct(ctx: &Δ LoweringContext, s: !Struct) -> !IrTypeDef {
+/// Lower a sigil definition
+rite lower_struct(ctx: &vary LoweringContext, s: !Struct) → !IrTypeDef {
     ≔ generics = ⌥ s.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
-        null => [],
+        null | Option·None => [],
     };
 
     ≔ fields = ⌥ s.fields {
@@ -649,10 +641,10 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower an ᛈ definition
-λ lower_enum(ctx: &Δ LoweringContext, e: !Enum) -> !IrTypeDef {
+rite lower_enum(ctx: &vary LoweringContext, e: !Enum) → !IrTypeDef {
     ≔ generics = ⌥ e.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
-        null => [],
+        null | Option·None => [],
     };
 
     ≔ variants = e.variants|τ{v => {
@@ -677,7 +669,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             fields,
             discriminant: ⌥ v.discriminant {
                 ?d => ?eval_const_i64(ctx, d),
-                null => null,
+                null | Option·None => null,
             },
         }
     }}|collect();
@@ -691,10 +683,10 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a type alias
-λ lower_type_alias(ctx: &Δ LoweringContext, t: !TypeAlias) -> !IrTypeDef {
+rite lower_type_alias(ctx: &vary LoweringContext, t: !TypeAlias) → !IrTypeDef {
     ≔ generics = ⌥ t.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
-        null => [],
+        null | Option·None => [],
     };
 
     IrTypeDef·TypeAlias {
@@ -706,7 +698,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Evaluate a constant expression to i64 (∀ ᛈ discriminants)
-λ eval_const_i64(ctx: &Δ LoweringContext, expr: !Expr) -> !i64 {
+rite eval_const_i64(ctx: &vary LoweringContext, expr: !Expr) → !i64 {
     ⌥ expr {
         Expr·Literal(Literal·Int { value, .. }) => value,
         _ => {
@@ -721,7 +713,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a constant definition
-λ lower_const(ctx: &Δ LoweringContext, c: !Const) -> ?IrConstant {
+rite lower_const(ctx: &vary LoweringContext, c: !Const) → ?IrConstant {
     ≔ ty = lower_type(ctx, c.ty);
     ≔ value = lower_expr(ctx, c.value);
     ≔ visibility = lower_visibility(c.visibility);
@@ -739,17 +731,17 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // Trait and Impl Lowering
 // ============================================================================
 
-/// Lower a Θ definition
-λ lower_trait(ctx: &Δ LoweringContext, t: !TraitDef) -> !IrTraitDef {
+/// Lower a aspect definition
+rite lower_trait(ctx: &vary LoweringContext, t: !TraitDef) → !IrTraitDef {
     ≔ generics = ⌥ t.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
-        null => [],
+        null | Option·None => [],
     };
 
     ≔ super_traits = t.supertraits|τ{s => s.to_string()}|collect();
 
     ≔ methods = t.items
-        |φ{item => ⌥ item { TraitItem·Method(_) => true, _ => false }}
+        |φ{item => ⌥ item { TraitItem·Method(_) => yea, _ => nay }}
         |τ{item => ⌥ item {
             TraitItem·Method(f) => lower_function(ctx, f),
             _ => null,
@@ -768,27 +760,27 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower an ⊢ block
-λ lower_impl(ctx: &Δ LoweringContext, i: !ImplBlock) -> !IrImplBlock {
+rite lower_impl(ctx: &vary LoweringContext, i: !ImplBlock) → !IrImplBlock {
     ≔ generics = ⌥ i.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
-        null => [],
+        null | Option·None => [],
     };
 
-    ≔ trait_name: Option<String> = ⌥ i.trait_ {
+    ≔ trait_name = ⌥ i.trait_ {
         ?p => {
-            ≔ Δ names = Vec·new();
-            ∀ seg ∈ p.segments {
-                names.push(seg.ident.name.clone());
+            ≔ vary names: ![String] = Vec·new();
+            each seg ∈ p.segments {
+                names.push(seg.ident.name);
             }
-            Some(names.join("·"))
+            ?names.join("·")
         },
-        null => None,
+        null | Option·None => null,
     };
 
     ≔ target_type = lower_type(ctx, i.self_ty);
 
     ≔ methods = i.items
-        |φ{item => ⌥ item { ImplItem·Function(_) => true, _ => false }}
+        |φ{item => ⌥ item { ImplItem·Function(_) => yea, _ => nay }}
         |τ{item => ⌥ item {
             ImplItem·Function(f) => lower_function(ctx, f),
             _ => panic("unreachable"),
@@ -809,7 +801,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower an expression to IR operation
-λ lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
+rite lower_expr(ctx: &vary LoweringContext, expr: !Expr) → !IrOperation {
     ⌥ expr {
         Expr·Literal(lit) => lower_literal(ctx, lit),
 
@@ -858,7 +850,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         Expr·Call { .. } => {
             ≔ func = expr.func;
             ≔ args = expr.args;
-            ≔ Δ func_name = ⌥ *func {
+            ≔ vary func_name = ⌥ *func {
                 Expr·Path(path) => path.segments|τ{s => s.ident.name}|join("·"),
                 _ => "<anonymous>",
             };
@@ -883,8 +875,8 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         },
 
         Expr·Array(elements) => {
-            ≔ Δ ir_elements = Vec·new();
-            ≔ Δ idx: usize = 0;
+            ≔ vary ir_elements: ![IrOperation] = Vec·new();
+            ≔ vary idx: usize = 0;
             ⟳ idx < elements.len() {
                 ir_elements.push(lower_expr(ctx, elements[idx]));
                 idx = idx + 1;
@@ -907,8 +899,8 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         },
 
         Expr·Tuple(elements) => {
-            ≔ Δ ir_elements = Vec·new();
-            ≔ Δ idx: usize = 0;
+            ≔ vary ir_elements: ![IrOperation] = Vec·new();
+            ≔ vary idx: usize = 0;
             ⟳ idx < elements.len() {
                 ir_elements.push(lower_expr(ctx, elements[idx]));
                 idx = idx + 1;
@@ -925,22 +917,22 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             ≔ path = expr.path;
             ≔ fields = expr.fields;
             ≔ rest = expr.rest;
-            // Get Σ name from path
-            ≔ Δ name = path.segments|τ{s => s.ident.name}|join("·");
+            // Get sigil name from path
+            ≔ vary name = path.segments|τ{s => s.ident.name}|join("·");
 
-            // Resolve Self to actual type name when inside ⊢ block
-            ⎇ name == "Self" {
+            // Resolve This to actual type name when inside ⊢ block
+            ⎇ name == "This" {
                 ⎇ ≔ ?self_type = ctx.current_self_type.clone() {
                     name = self_type;
                 }
             }
 
-            // Lower each field, handling shorthand syntax (Self { x } means Self { x: x })
+            // Lower each field, handling shorthand syntax (This { x } means This { x: x })
             ≔ ir_fields = fields|τ{f => {
                 ≔ value_expr = ⌥ f.value {
                     ?v => lower_expr(ctx, v),
-                    null => {
-                        // Shorthand syntax: Self { x } means Self { x: x }
+                    null | Option·None => {
+                        // Shorthand syntax: This { x } means This { x: x }
                         // Generate a variable reference ∀ the field name
                         ≔ field_name = f.name.name.clone();
                         ≔ id = ctx.get_var_id(field_name.clone());
@@ -958,7 +950,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             // Lower rest expression ⎇ present
             ≔ ir_rest = ⌥ rest {
                 ?r => ?Box·new(lower_expr(ctx, *r)),
-                null => null,
+                null | Option·None => null,
             };
 
             IrOperation·StructInit {
@@ -980,7 +972,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             ≔ ir_then = lower_block(ctx, then_branch);
             ≔ ir_⎉ = ⌥ else_branch {
                 ?e => ?Box·new(lower_expr(ctx, *e)),
-                null => null,
+                null | Option·None => null,
             };
 
             IrOperation·If {
@@ -1045,7 +1037,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         // CG-012: Handle ⊗ expression
         Expr·Break(value) => {
             ≔ ir_value = ⌥ value {
-                null => null,
+                null | Option·None => null,
                 _ => ?Box·new(lower_expr(ctx, *value!)),
             };
             IrOperation·Break {
@@ -1113,7 +1105,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         Expr·Return(val) => {
             ≔ ir_val = ⌥ val {
                 ?v => ?Box·new(lower_expr(ctx, *v)),
-                null => null,
+                null | Option·None => null,
             };
 
             IrOperation·Return {
@@ -1128,11 +1120,11 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             ≔ inclusive = expr.inclusive;
             ≔ ir_start = ⌥ start {
                 ?s => ?Box·new(lower_expr(ctx, *s)),
-                null => null,
+                null | Option·None => null,
             };
             ≔ ir_end = ⌥ end {
                 ?e => ?Box·new(lower_expr(ctx, *e)),
-                null => null,
+                null | Option·None => null,
             };
 
             IrOperation·Range {
@@ -1146,8 +1138,8 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
         Expr·Closure { params, body, .. } => {
             // Collect parameter names to exclude from capture analysis
-            ≔ Δ param_names = Vec·new();
-            ∀ p ∈ params.iter() {
+            ≔ vary param_names: ![String] = Vec·new();
+            each p ∈ params.iter() {
                 ⎇ ≔ ?name = p.pattern.binding_name() {
                     param_names.push(name.to_string());
                 }
@@ -1189,7 +1181,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                 ?Evidentiality·Uncertain => IrEvidence·Uncertain,
                 ?Evidentiality·Reported => IrEvidence·Reported,
                 ?Evidentiality·Paradox => IrEvidence·Paradox,
-                null => IrEvidence·Known,
+                null | Option·None => IrEvidence·Known,
             };
 
             IrOperation·Await {
@@ -1212,7 +1204,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             }
         },
 
-        // Let expression (∀ if-≔ patterns): returns true ⎇ pattern matches
+        // Let expression (∀ if-≔ patterns): returns yea ⎇ pattern matches
         Expr·Let { .. } => {
             ≔ pattern = expr.pattern;
             ≔ value = expr.value;
@@ -1235,27 +1227,28 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             ≔ ir_args = args|τ{a => lower_expr(ctx, a)}|collect();
 
             // Try to resolve method calls to qualified calls
-            // 1. If receiver is 'self' and we're ∈ an ⊢ block, invoke Type·method(self, args)
+            // 1. If receiver is 'this' and we're ∈ an ⊢ block, invoke Type·method(this, args)
             // 2. If receiver is a variable with known type, invoke Type·method(var, args)
-            ≔ receiver_type: Option<String> = ⌥ *receiver {
+            ≔ receiver_type = ⌥ *receiver {
                 Expr·Path(p) => {
                     ⎇ p.segments.len() == 1 {
                         ≔ name = p.segments[0].ident.name.clone();
-                        ⎇ name == "self" {
+                        ⎇ name == "this" {
                             ctx.current_self_type.clone()
                         } ⎉ {
                             // Look up variable type
-                            ⌥ ctx.var_types.get(name.as_str()) {
-                                Some(type_name) => Some(type_name.clone()),
-                                None => None,
+                            ⎇ ≔ ?type_name = ctx.var_types.get(name.as_str()) {
+                                ?type_name.clone()
+                            } ⎉ {
+                                null
                             }
                         }
                     } ⎉ ⎇ p.segments.len() == 2 {
                         // 2-segment path like Token·Fn - invoke first segment as type
                         // This handles ᛈ variant constructors
-                        Some(p.segments[0].ident.name.clone())
+                        ?p.segments[0].ident.name.clone()
                     } ⎉ {
-                        None
+                        null
                     }
                 },
                 Expr·Call { func, .. } => {
@@ -1264,18 +1257,18 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                         Expr·Path(p) => {
                             ⎇ p.segments.len() == 2 {
                                 // Enum variant constructor with data - invoke first segment as type
-                                Some(p.segments[0].ident.name.clone())
+                                ?p.segments[0].ident.name.clone()
                             } ⎉ {
-                                None
+                                null
                             }
                         },
-                        _ => None,
+                        _ => null,
                     }
                 },
-                _ => None,
+                _ => null,
             };
 
-            ⎇ ≔ Some(recv_type) = receiver_type {
+            ⎇ ≔ ?recv_type = receiver_type {
                 // Strip evidence prefixes (Uncertain, Known, Reported) from type name
                 // These are generated by the interpreter ∀ evidential types
                 ≔ base_type = ⎇ recv_type.starts_with("Uncertain") {
@@ -1290,15 +1283,14 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
                 // Generate qualified call: Type·method(receiver, args)
                 ≔ qualified_name = format!("{}·{}", base_type, method.name);
-                ≔ Δ all_args = Vec·new();
-                all_args.push(ir_receiver);
-                ∀ arg ∈ ir_args {
+                ≔ vary all_args = [ir_receiver];
+                each arg ∈ ir_args {
                     all_args.push(arg);
                 }
                 ⤺ IrOperation·Call {
                     function: qualified_name,
                     args: all_args,
-                    type_args: Vec·new(),
+                    type_args: [],
                     ty: IrType·Infer,
                     evidence: IrEvidence·Known,
                 };
@@ -1338,7 +1330,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             // Handle known macros
             ⌥ macro_name.as_str() {
                 "write" | "writeln" => {
-                    // write!(buf, "format", args...) -> macro_write(buf, "format", args...)
+                    // write!(buf, "format", args...) → macro_write(buf, "format", args...)
                     IrOperation·MacroExpansion {
                         name: macro_name,
                         tokens,
@@ -1347,8 +1339,8 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                     }
                 },
                 "format" => {
-                    // format!("...", args) -> MacroExpansion with tokens passed through
-                    // Note: Argument translation (e.g., x.len() -> sigil_len(x)) happens in
+                    // format!("...", args) → MacroExpansion with tokens passed through
+                    // Note: Argument translation (e.g., x.len() → sigil_len(x)) happens in
                     // build.sh post-processing due to complexity of re-parsing at lowering phase
                     IrOperation·MacroExpansion {
                         name: macro_name,
@@ -1358,7 +1350,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                     }
                 },
                 "print" | "println" => {
-                    // print!("...") -> macro_print("...")
+                    // print!("...") → macro_print("...")
                     IrOperation·MacroExpansion {
                         name: macro_name,
                         tokens,
@@ -1367,7 +1359,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                     }
                 },
                 "vec" => {
-                    // vec![a, b, c] -> macro_vec(a, b, c)
+                    // vec![a, b, c] → macro_vec(a, b, c)
                     IrOperation·MacroExpansion {
                         name: macro_name,
                         tokens,
@@ -1376,7 +1368,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                     }
                 },
                 "assert" | "assert_eq" => {
-                    // assert!(cond) -> macro_assert(cond)
+                    // assert!(cond) → macro_assert(cond)
                     IrOperation·MacroExpansion {
                         name: macro_name,
                         tokens,
@@ -1435,7 +1427,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             }
         },
 
-        // Address-of: &expr or &Δ expr
+        // Address-of: &expr or &vary expr
         Expr·AddrOf { expr: inner, mutable } => {
             ≔ ir_inner = lower_expr(ctx, *inner);
             ≔ op = ⎇ mutable { UnaryOp·RefMut } ⎉ { UnaryOp·Ref };
@@ -1507,7 +1499,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Helper to parse integer literals with different bases
-λ parse_int_literal(value_str: !String, base: !NumBase) -> !i64 {
+rite parse_int_literal(value_str: !String, base: !NumBase) → !i64 {
     // Remove underscores ∀ readability (they're allowed ∈ literals)
     ≔ clean_str = value_str.replace("_", "");
 
@@ -1515,7 +1507,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         NumBase·Decimal => clean_str as i64,
         NumBase·Hex => {
             // Remove "0x" prefix
-            ≔ hex_digits = ⎇ clean_str.starts_with("0x") || clean_str.starts_with("0X") {
+            ≔ hex_digits = ⎇ clean_str.starts_with("0x") ∨ clean_str.starts_with("0X") {
                 clean_str[2..].to_string()
             } ⎉ {
                 clean_str
@@ -1525,7 +1517,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         },
         NumBase·Binary => {
             // Remove "0b" prefix
-            ≔ bin_digits = ⎇ clean_str.starts_with("0b") || clean_str.starts_with("0B") {
+            ≔ bin_digits = ⎇ clean_str.starts_with("0b") ∨ clean_str.starts_with("0B") {
                 clean_str[2..].to_string()
             } ⎉ {
                 clean_str
@@ -1534,7 +1526,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         },
         NumBase·Octal => {
             // Remove "0o" prefix
-            ≔ oct_digits = ⎇ clean_str.starts_with("0o") || clean_str.starts_with("0O") {
+            ≔ oct_digits = ⎇ clean_str.starts_with("0o") ∨ clean_str.starts_with("0O") {
                 clean_str[2..].to_string()
             } ⎉ {
                 clean_str
@@ -1546,7 +1538,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a literal
-λ lower_literal(ctx: &Δ LoweringContext, lit: !Literal) -> !IrOperation {
+rite lower_literal(ctx: &vary LoweringContext, lit: !Literal) → !IrOperation {
     ⌥ lit {
         Literal·Int { value, base, .. } => {
             // Parse the string value according to its base
@@ -1587,8 +1579,8 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         },
         Literal·ByteString(bytes) => {
             // Convert bytes to string by treating as ASCII/UTF-8
-            ≔ Δ s = String·new();
-            ∀ b ∈ bytes {
+            ≔ vary s = String·new();
+            each b ∈ bytes {
                 s.push(b as char);
             }
             IrOperation·Literal {
@@ -1618,21 +1610,21 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 /// Find free variables ∈ an expression that are not ∈ the bound set
 /// This is used ∀ closure capture analysis
-λ find_free_variables(expr: &Expr, bound: &[String]) -> ![String] {
-    ≔ Δ free = Vec·new();
+rite find_free_variables(expr: &Expr, bound: &[String]) → ![String] {
+    ≔ free: ![String] = Vec·new();
     collect_free_vars(expr, bound, free)
 }
 
 /// Helper to collect free variables, returning updated array
-λ collect_free_vars(expr: &Expr, bound: &[String], free: ![String]) -> ![String] {
-    ≔ Δ result = free;
+rite collect_free_vars(expr: &Expr, bound: &[String], free: ![String]) → ![String] {
+    ≔ vary result = free;
     ⌥ expr {
         Expr·Path(path) => {
             // Single-segment paths are potential variable references
             ⎇ path.segments.len() == 1 {
                 ≔ name = path.segments[0].ident.name.clone();
                 // Check ⎇ it's not already bound or already ∈ free
-                ⎇ !bound.contains(&name) && !result.contains(&name) {
+                ⎇ !bound.contains(&name) ∧ !result.contains(&name) {
                     result.push(name);
                 }
             }
@@ -1646,19 +1638,19 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         },
         Expr·Call { func, args, .. } => {
             result = collect_free_vars(func, bound, result);
-            ∀ arg ∈ args.iter() {
+            each arg ∈ args.iter() {
                 result = collect_free_vars(arg, bound, result);
             }
         },
         Expr·MethodCall { receiver, args, .. } => {
             result = collect_free_vars(receiver, bound, result);
-            ∀ arg ∈ args.iter() {
+            each arg ∈ args.iter() {
                 result = collect_free_vars(arg, bound, result);
             }
         },
         Expr·If { condition, then_block, else_block, .. } => {
             result = collect_free_vars(condition, bound, result);
-            ∀ stmt ∈ then_block.stmts.iter() {
+            each stmt ∈ then_block.stmts.iter() {
                 result = collect_free_vars_stmt(stmt, bound, result);
             }
             ⎇ ≔ Some(else_expr) = else_block {
@@ -1666,17 +1658,17 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             }
         },
         Expr·Block(block) => {
-            ∀ stmt ∈ block.stmts.iter() {
+            each stmt ∈ block.stmts.iter() {
                 result = collect_free_vars_stmt(stmt, bound, result);
             }
             // Also check the optional final expression
             ⌥ block.expr {
                 ?e => result = collect_free_vars(*e, bound, result),
-                null => {},
+                null | Option·None => {},
             }
         },
         Expr·Array(elements) => {
-            ∀ elem ∈ elements.iter() {
+            each elem ∈ elements.iter() {
                 result = collect_free_vars(elem, bound, result);
             }
         },
@@ -1685,7 +1677,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             result = collect_free_vars(&*count, bound, result);
         },
         Expr·Tuple(elements) => {
-            ∀ elem ∈ elements.iter() {
+            each elem ∈ elements.iter() {
                 result = collect_free_vars(elem, bound, result);
             }
         },
@@ -1703,18 +1695,18 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         },
         Expr·Match { expr, arms, .. } => {
             result = collect_free_vars(expr, bound, result);
-            ∀ arm ∈ arms.iter() {
+            each arm ∈ arms.iter() {
                 // Pattern bindings would extend bound, but ∀ simplicity just recurse into body
                 result = collect_free_vars(&arm.body, bound, result);
             }
         },
         // Closure within closure - extend bound with params, then recurse
         Expr·Closure { params, body, .. } => {
-            ≔ Δ inner_bound = Vec·new();
-            ∀ b ∈ bound.iter() {
+            ≔ vary inner_bound: ![String] = Vec·new();
+            each b ∈ bound.iter() {
                 inner_bound.push(b.clone());
             }
-            ∀ p ∈ params.iter() {
+            each p ∈ params.iter() {
                 inner_bound.push(p.name.clone());
             }
             result = collect_free_vars(body, &inner_bound, result);
@@ -1723,18 +1715,18 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         Expr·For { pattern, iter, body, .. } => {
             result = collect_free_vars(iter, bound, result);
             // Pattern bindings extend bound ∀ body
-            ∀ stmt ∈ body.stmts.iter() {
+            each stmt ∈ body.stmts.iter() {
                 result = collect_free_vars_stmt(stmt, bound, result);
             }
         },
         Expr·While { condition, body, .. } => {
             result = collect_free_vars(condition, bound, result);
-            ∀ stmt ∈ body.stmts.iter() {
+            each stmt ∈ body.stmts.iter() {
                 result = collect_free_vars_stmt(stmt, bound, result);
             }
         },
         Expr·Loop(body) => {
-            ∀ stmt ∈ body.stmts.iter() {
+            each stmt ∈ body.stmts.iter() {
                 result = collect_free_vars_stmt(stmt, bound, result);
             }
         },
@@ -1745,7 +1737,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Helper to collect free variables from statements, returning updated array
-λ collect_free_vars_stmt(stmt: &Stmt, bound: &[String], free: ![String]) -> ![String] {
+rite collect_free_vars_stmt(stmt: &Stmt, bound: &[String], free: ![String]) → ![String] {
     ⌥ stmt {
         Stmt·Expr(expr) => collect_free_vars(expr, bound, free),
         Stmt·Let { init, .. } => {
@@ -1760,7 +1752,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a binary operator
-λ lower_binop(op: !BinOp) -> !BinaryOp {
+rite lower_binop(op: !BinOp) → !BinaryOp {
     ⌥ op {
         BinOp·Add => BinaryOp·Add,
         BinOp·Sub => BinaryOp·Sub,
@@ -1785,14 +1777,14 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
     }
 }
 
-/// Lower a unary operator (AST UnaryOp -> IR UnaryOp)
-λ lower_unaryop(op: !AstUnaryOp) -> !UnaryOp {
+/// Lower a unary operator (AST UnaryOp → IR UnaryOp)
+rite lower_unaryop(op: !ast·UnaryOp) → !UnaryOp {
     ⌥ op {
-        AstUnaryOp·Neg => UnaryOp·Neg,
-        AstUnaryOp·Not => UnaryOp·Not,
-        AstUnaryOp·Ref => UnaryOp·Ref,
-        AstUnaryOp·RefMut => UnaryOp·RefMut,
-        AstUnaryOp·Deref => UnaryOp·Deref,
+        ast·UnaryOp·Neg => UnaryOp·Neg,
+        ast·UnaryOp·Not => UnaryOp·Not,
+        ast·UnaryOp·Ref => UnaryOp·Ref,
+        ast·UnaryOp·RefMut => UnaryOp·RefMut,
+        ast·UnaryOp·Deref => UnaryOp·Deref,
     }
 }
 
@@ -1801,17 +1793,17 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a block
-λ lower_block(ctx: &Δ LoweringContext, block: !Block) -> !IrOperation {
-    ≔ Δ statements = Vec·new();
+rite lower_block(ctx: &vary LoweringContext, block: !Block) → !IrOperation {
+    ≔ vary statements: ![IrOperation] = Vec·new();
 
-    ≔ Δ idx: usize = 0;
+    ≔ vary idx: usize = 0;
     ⟳ idx < block.stmts.len() {
         statements.push(lower_stmt(ctx, block.stmts[idx]));
         idx = idx + 1;
     }
 
     // If there's a trailing expression, add it as the last statement
-    ⎇ ≔ Some(expr) = block.expr {
+    ⎇ ≔ ?expr = block.expr {
         statements.push(lower_expr(ctx, expr));
     }
 
@@ -1823,7 +1815,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a statement
-λ lower_stmt(ctx: &Δ LoweringContext, stmt: !Stmt) -> !IrOperation {
+rite lower_stmt(ctx: &vary LoweringContext, stmt: !Stmt) → !IrOperation {
     ⌥ stmt {
         Stmt·Let { .. } => {
             ≔ pattern = stmt.pattern;
@@ -1831,13 +1823,13 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             ≔ init = stmt.init;
             ≔ ir_pattern = lower_pattern(ctx, pattern.clone());
             ≔ type_annotation = ⌥ ty {
-                Some(t) => Some(lower_type(ctx, t)),
-                None => None,
+                ?t => ?lower_type(ctx, t),
+                null | Option·None => null,
             };
 
             // Try to infer type from init expression (e.g., Point·new(...) → Point)
-            ≔ inferred_type: Option<String> = ⌥ init.clone() {
-                Some(e) => {
+            ≔ inferred_type = ⌥ init.clone() {
+                ?e => {
                     ⌥ e {
                         Expr·Call { .. } => {
                             ≔ func = e.func;
@@ -1846,36 +1838,36 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                                     // If call is Type·method, extract Type
                                     ≔ segments = p.segments;
                                     ⎇ segments.len() >= 2 {
-                                        Some(segments[0].ident.name.clone())
-                                    } ⎉ ⎇ segments.len() == 1 && segments[0].ident.name.contains("·") {
+                                        ?segments[0].ident.name.clone()
+                                    } ⎉ ⎇ segments.len() == 1 ∧ segments[0].ident.name.contains("·") {
                                         // Handle qualified name like "Point·new"
                                         ≔ parts = segments[0].ident.name.split("·");
-                                        ⎇ parts.len() >= 1 { Some(parts[0].to_string()) } ⎉ { None }
+                                        ⎇ parts.len() >= 1 { ?parts[0].to_string() } ⎉ { null }
                                     } ⎉ {
-                                        None
+                                        null
                                     }
                                 },
-                                _ => None,
+                                _ => null,
                             }
                         },
-                        _ => None,
+                        _ => null,
                     }
                 },
-                None => None,
+                null | Option·None => null,
             };
 
             // Track variable type from inference or explicit annotation
-            ≔ final_type: Option<String> = ⎇ ≔ Some(type_name) = inferred_type {
-                Some(type_name)
+            ≔ final_type = ⎇ ≔ ?type_name = inferred_type {
+                ?type_name
             } ⎉ {
                 // Try to get type name from explicit annotation
                 ⌥ ty {
-                    Some(t) => extract_type_name(t),
-                    None => None,
+                    ?t => extract_type_name(t),
+                    null | Option·None => null,
                 }
             };
 
-            ⎇ ≔ Some(type_name) = final_type {
+            ⎇ ≔ ?type_name = final_type {
                 ⌥ pattern {
                     Pattern·Ident { .. } => {
                         ≔ name = pattern.name;
@@ -1886,8 +1878,8 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             }
 
             ≔ ir_init = ⌥ init {
-                Some(e) => lower_expr(ctx, e),
-                None => IrOperation·Literal {
+                ?e => lower_expr(ctx, e),
+                null | Option·None => IrOperation·Literal {
                     variant: LiteralVariant·Null,
                     value: LiteralValue·Null,
                     ty: IrType·Unit,
@@ -1911,7 +1903,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             ≔ ir_pattern = lower_pattern(ctx, pattern.clone());
             ≔ type_annotation = ⌥ ty {
                 ?t => ?lower_type(ctx, t),
-                null => null,
+                null | Option·None => null,
             };
 
             ≔ ir_init = lower_expr(ctx, init);
@@ -1944,12 +1936,12 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a pattern
-λ lower_pattern(ctx: &Δ LoweringContext, pattern: !Pattern) -> !IrPattern {
+rite lower_pattern(ctx: &vary LoweringContext, pattern: !Pattern) → !IrPattern {
     ⌥ pattern {
         Pattern·Ident { name, mutable, by_ref, evidentiality } => {
             ≔ ev = ⌥ evidentiality {
                 ?e => ?IrEvidence·from_typeck(EvidenceLevel·from_ast(e)),
-                null => null,
+                null | Option·None => null,
             };
             IrPattern·Ident {
                 name: name.name,
@@ -1965,10 +1957,10 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             path: path.segments|τ{s => s.ident.name}|join("·"),
             fields: fields|τ{f => (f.name.name, ⌥ f.pattern {
                 ?p => lower_pattern(ctx, p),
-                null => IrPattern·Ident {
+                null | Option·None => IrPattern·Ident {
                     name: f.name.name,
-                    mutable: false,
-                    by_ref: false,
+                    mutable: nay,
+                    by_ref: nay,
                     evidence: null,
                 },
             })}|collect(),
@@ -1990,11 +1982,11 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
         Pattern·Range { start, end, inclusive } => IrPattern·Range {
             start: ⌥ start {
                 ?s => ?Box·new(lower_pattern(ctx, *s)),
-                null => null,
+                null | Option·None => null,
             },
             end: ⌥ end {
                 ?e => ?Box·new(lower_pattern(ctx, *e)),
-                null => null,
+                null | Option·None => null,
             },
             inclusive,
         },
@@ -2016,8 +2008,8 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
                 // This allows codegen to emit proper null checks instead of "⎇ (1)"
                 IrPattern·Wildcard => IrPattern·Ident {
                     name: "_".to_string(),
-                    mutable: false,
-                    by_ref: false,
+                    mutable: nay,
+                    by_ref: nay,
                     evidence: ev,
                 },
                 _ => inner_lowered,  // Other patterns: ⤺ as-is (evidence noted but not stored)
@@ -2033,7 +2025,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a literal to LiteralValue
-λ lower_literal_value(ctx: &Δ LoweringContext, lit: !Literal) -> !LiteralValue {
+rite lower_literal_value(ctx: &vary LoweringContext, lit: !Literal) → !LiteralValue {
     ⌥ lit {
         Literal·Int { value, .. } => LiteralValue·Int(value),
         Literal·Float { value, .. } => LiteralValue·Float(value),
@@ -2050,11 +2042,11 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a ⌥ arm
-λ lower_match_arm(ctx: &Δ LoweringContext, arm: !MatchArm) -> !IrMatchArm {
+rite lower_match_arm(ctx: &vary LoweringContext, arm: !MatchArm) → !IrMatchArm {
     ≔ pattern = lower_pattern(ctx, arm.pattern);
     ≔ guard = ⌥ arm.guard {
         ?g => ?lower_expr(ctx, g),
-        null => null,
+        null | Option·None => null,
     };
     ≔ body = lower_expr(ctx, arm.body);
 
@@ -2066,7 +2058,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a pipeline expression
-λ lower_pipeline(ctx: &Δ LoweringContext, input: !Expr, operations: ![PipeOp]) -> !IrOperation {
+rite lower_pipeline(ctx: &vary LoweringContext, input: !Expr, operations: ![PipeOp]) → !IrOperation {
     ≔ ir_input = lower_expr(ctx, input);
     ≔ steps = operations|τ{op => lower_pipe_op(ctx, op)}|collect();
 
@@ -2079,7 +2071,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a pipe operation
-λ lower_pipe_op(ctx: &Δ LoweringContext, op: !PipeOp) -> !IrPipelineStep {
+rite lower_pipe_op(ctx: &vary LoweringContext, op: !PipeOp) → !IrPipelineStep {
     ⌥ op {
         PipeOp·Transform(body) => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Transform,
@@ -2096,7 +2088,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             symbol: "σ",
             body: ⌥ body {
                 ?b => ?Box·new(lower_expr(ctx, *b)),
-                null => null,
+                null | Option·None => null,
             },
         },
         PipeOp·Reduce(body) => IrPipelineStep·Morpheme {
@@ -2146,4 +2138,4 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 // Tests removed - need interpreter support ∀ slice methods before TDD can work
-// Integration tests are ∈ self-hosted/tests/
+// Integration tests are ∈ this-hosted/tests/

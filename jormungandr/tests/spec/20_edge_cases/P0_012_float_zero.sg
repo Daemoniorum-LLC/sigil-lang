@@ -1,8 +1,0 @@
-// Test: Float zero
-// Spec: Edge Cases - Float Boundaries
-// Priority: P0 - Bootstrap Critical
-
-rite main() {
-    ≔ f: f64 = 0.0;
-    println(f);
-}

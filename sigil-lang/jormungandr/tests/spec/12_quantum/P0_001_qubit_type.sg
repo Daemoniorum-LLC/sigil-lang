@@ -4,7 +4,7 @@
 //
 // Qubit is a LINEAR type - must be used exactly once
 
-λ main() {
+rite main() {
     ≔ q: linear Qubit = Qubit·zero();
     ≔ result: Cbit = q|measure;  // Consumes q
     println(result);

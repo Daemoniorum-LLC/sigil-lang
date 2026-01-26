@@ -3,12 +3,12 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that logical OR (||) works correctly.
+// Validates that logical OR (∨) works correctly.
 //
 // Expected behavior:
-// Should compile and print true
+// Should compile and print yea
 
-λ main() {
-    ≔ x: !bool = true || false;
+rite main() {
+    ≔ x: !bool = yea ∨ nay;
     println(x);
 }

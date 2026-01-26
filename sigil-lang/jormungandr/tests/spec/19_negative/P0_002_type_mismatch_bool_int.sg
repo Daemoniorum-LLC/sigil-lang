@@ -3,7 +3,7 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
-    ≔ x: i32 = true;  // ERROR: cannot assign bool to i32
+rite main() {
+    ≔ x: i32 = yea;  // ERROR: cannot assign bool to i32
     println(x);
 }

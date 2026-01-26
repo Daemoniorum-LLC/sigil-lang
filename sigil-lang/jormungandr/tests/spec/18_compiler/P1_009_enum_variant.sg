@@ -8,7 +8,7 @@
     Pending,
 }
 
-λ main() {
+rite main() {
     ≔ s = Status·Active;
 
     ⌥ s {

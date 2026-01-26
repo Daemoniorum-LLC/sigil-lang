@@ -1,4 +1,4 @@
-// Test: Clone method ∀ deep copying
+// Test: Clone method each deep copying
 // Spec: 04-MEMORY.md § 2.3 Clone Semantics
 // Priority: P0
 //
@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print Hello then Hello
 
-λ main() {
+rite main() {
     ≔ s1: !String = "Hello";
     ≔ s2: !String = s1.clone();
     println(s1);

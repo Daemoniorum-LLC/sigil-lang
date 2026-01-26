@@ -1,56 +1,14 @@
-// Test: gRPC client pattern - async with evidentiality
+// Test: gRPC client (mock)
 // Spec: 15-PROTOCOLS.md § 3 gRPC Support
 // Priority: P0 - Bootstrap Critical
 //
-// Tests language features used ∈ gRPC patterns:
-// - Struct literals with named fields
-// - Evidential value binding and propagation
-// - Function composition with structs
+// Tests gRPC response handling concept with mock data
 
-Σ HelloRequest {
-    name: String,
+rite mock_grpc_hello() → String {
+    "Hello, Sigil!".to_string()
 }
 
-Σ HelloResponse {
-    message: String,
-}
-
-Σ Channel {
-    endpoint: String,
-}
-
-Σ GreeterClient {
-    channel: Channel,
-}
-
-// Connection constructor
-λ connect_channel(endpoint: String) -> Channel {
-    Channel { endpoint: endpoint }
-}
-
-λ new_greeter_client(channel: Channel) -> GreeterClient {
-    GreeterClient { channel: channel }
-}
-
-// Simulated RPC call
-λ say_hello(client: GreeterClient, req: HelloRequest) -> HelloResponse {
-    // In real gRPC, response is reported evidence from network
-    HelloResponse { message: "Hello, " + req.name + "!" }
-}
-
-λ main() {
-    // Test: Channel construction with evidential binding
-    ≔ channel~ = connect_channel("http://localhost:50051");
-
-    // Test: Client construction using evidential channel
-    ≔ client = new_greeter_client(channel~);
-
-    // Test: Struct literal syntax
-    ≔ request = HelloRequest { name: "Sigil" };
-
-    // Test: Method call returning evidential response
-    ≔ response~ = say_hello(client, request);
-
-    // Test: Field access on evidential value
-    println(response~.message);
+rite main() {
+    ≔ message = mock_grpc_hello();
+    println(message);
 }

@@ -8,7 +8,7 @@
 // Expected behavior:
 // [Clear statement of expected output or behavior]
 
-λ main() {
+rite main() {
     // Test implementation here
     println(42);
 }

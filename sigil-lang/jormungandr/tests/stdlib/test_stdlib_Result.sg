@@ -6,18 +6,18 @@ rite main() {
 
     // Result·Ok - creates Ok variant
     ≔ ok = Result·Ok(42);
-    assert_eq(type_of(ok), "Result·Ok");
+    assert_eq(type_of(ok), "Result::Ok");
 
     // Result·Err - creates Err variant
     ≔ err = Result·Err("error message");
-    assert_eq(type_of(err), "Result·Err");
+    assert_eq(type_of(err), "Result::Err");
 
     // Different value types
     ≔ str_ok = Result·Ok("success");
-    assert_eq(type_of(str_ok), "Result·Ok");
+    assert_eq(type_of(str_ok), "Result::Ok");
 
     ≔ num_err = Result·Err(404);
-    assert_eq(type_of(num_err), "Result·Err");
+    assert_eq(type_of(num_err), "Result::Err");
 
     println("ALL RESULT TESTS PASSED!");
 }

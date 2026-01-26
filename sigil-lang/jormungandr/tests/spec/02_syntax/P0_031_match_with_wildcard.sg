@@ -3,12 +3,12 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate wildcard pattern ∈ ⌥ works.
+// Validate wildcard pattern of ⌥ works.
 //
 // Expected behavior:
 // Should print 99 (default case)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 10;
     ⌥ x {
         42 => println(42),

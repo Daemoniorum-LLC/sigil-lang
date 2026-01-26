@@ -6,9 +6,9 @@
 // Validates that comparison operators work correctly.
 //
 // Expected behavior:
-// Should compile and print true
+// Should compile and print yea
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ≔ y: !bool = x == 42;
     println(y);

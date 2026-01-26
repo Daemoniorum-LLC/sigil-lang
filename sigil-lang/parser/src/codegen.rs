@@ -391,6 +391,13 @@ pub mod jit {
                             stat.name.name
                         );
                     }
+                    ExternItem::Type(ty) => {
+                        // TODO: Implement extern type aliases
+                        eprintln!(
+                            "Warning: extern type '{}' not yet implemented",
+                            ty.name.name
+                        );
+                    }
                 }
             }
 
@@ -1046,7 +1053,12 @@ pub mod jit {
 
                 Ok((val, false))
             }
-            ast::Stmt::LetElse { pattern, init, else_branch, .. } => {
+            ast::Stmt::LetElse {
+                pattern,
+                init,
+                else_branch,
+                ..
+            } => {
                 // For let-else, we evaluate the init and bind the pattern
                 // The else branch diverges (must return/break/panic)
                 let val = compile_expr(module, functions, extern_fns, builder, scope, init)?;
@@ -1315,7 +1327,9 @@ pub mod jit {
                 else_branch.as_deref(),
             ),
 
-            Expr::While { condition, body, .. } => compile_while(
+            Expr::While {
+                condition, body, ..
+            } => compile_while(
                 module, functions, extern_fns, builder, scope, condition, body,
             ),
 
@@ -1569,7 +1583,11 @@ pub mod jit {
                             result
                         }
                         // Method calls, await, and named morphemes
-                        PipeOp::Method { name, type_args: _, args } => {
+                        PipeOp::Method {
+                            name,
+                            type_args: _,
+                            args,
+                        } => {
                             // Compile as a method call on the result
                             let mut call_args = vec![result];
                             for arg in args {
@@ -1602,7 +1620,10 @@ pub mod jit {
                             )?;
                             // For now, treat as function call with result as first arg
                             compile_call(
-                                module, functions, extern_fns, builder,
+                                module,
+                                functions,
+                                extern_fns,
+                                builder,
                                 "sigil_call",
                                 &[callee_val, result],
                             )?
@@ -1990,10 +2011,12 @@ pub mod jit {
                         | PipeOp::Flatten
                         | PipeOp::Unique
                         | PipeOp::Enumerate
-                        // Holographic operations (Spec 11)
+                        // Holographic operations
                         | PipeOp::Universal
-                        | PipeOp::Possibility { .. }
-                        | PipeOp::Necessity { .. } => {
+                        | PipeOp::Possibility
+                        | PipeOp::Necessity
+                        | PipeOp::PossibilityMethod { .. }
+                        | PipeOp::NecessityMethod { .. } => {
                             // Fallback to interpreter for these complex operations
                             result
                         }
@@ -3954,11 +3977,11 @@ pub mod jit {
         fn test_extern_block_parsing_and_declaration() {
             let source = r#"
                 extern "C" {
-                    fn abs(x: c_int) -> c_int;
-                    fn strlen(s: *const c_char) -> usize;
+                    rite abs(x: c_int) → c_int;
+                    rite strlen(s: *◆ c_char) → usize;
                 }
 
-                fn main() -> i64 {
+                rite main() → i64 {
                     42
                 }
             "#;
@@ -3998,10 +4021,10 @@ pub mod jit {
         fn test_extern_variadic_function() {
             let source = r#"
                 extern "C" {
-                    fn printf(fmt: *const c_char, ...) -> c_int;
+                    rite printf(fmt: *◆ c_char, ...) → c_int;
                 }
 
-                fn main() -> i64 {
+                rite main() → i64 {
                     0
                 }
             "#;
@@ -4022,10 +4045,10 @@ pub mod jit {
         fn test_extern_c_abi_only() {
             let source = r#"
                 extern "Rust" {
-                    fn some_func(x: i32) -> i32;
+                    rite some_func(x: i32) → i32;
                 }
 
-                fn main() -> i64 {
+                rite main() → i64 {
                     0
                 }
             "#;
@@ -4054,10 +4077,10 @@ pub mod jit {
                 let source = format!(
                     r#"
                     extern "C" {{
-                        fn test_func(x: {}) -> {};
+                        rite test_func(x: {}) → {};
                     }}
 
-                    fn main() -> i64 {{ 0 }}
+                    rite main() → i64 {{ 0 }}
                 "#,
                     type_name, type_name
                 );

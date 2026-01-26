@@ -2,19 +2,19 @@
 // Spec: 06-CONCURRENCY.md § 4.2 Atomic Bool
 // Priority: P1 - Standard Feature
 
-λ main() {
+rite main() {
     // Create atomic bool
-    ≔ flag = AtomicBool·new(false);
+    ≔ flag = AtomicBool·new(nay);
 
     // Load initial value
     println(flag.load());
 
-    // Store true
-    flag.store(true);
+    // Store yea
+    flag.store(yea);
     println(flag.load());
 
     // Swap and get old value
-    ≔ old = flag.swap(false);
+    ≔ old = flag.swap(nay);
     println(old);
     println(flag.load());
 }

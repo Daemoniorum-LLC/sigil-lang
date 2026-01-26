@@ -2,8 +2,8 @@
 // Spec: 09-STDLIB.md § 4.1 Vec
 // Priority: P2 - Enhancement
 
-λ main() {
-    ≔ Δ v: Vec<i32> = vec![1, 2, 3, 4, 5];
+rite main() {
+    ≔ vary v: Vec<i32> = vec![1, 2, 3, 4, 5];
     println(v.len());
 
     v.clear();

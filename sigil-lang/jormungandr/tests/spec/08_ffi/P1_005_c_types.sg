@@ -2,13 +2,13 @@
 // Spec: 08-FFI.md § 2.2 C Types
 // Priority: P1 - Standard Feature
 
-// Type aliases ∀ C interop
+// Type aliases each C interop
 type c_int = !i32;
 type c_uint = !u32;
 type c_char = !i8;
 type size_t = !usize;
 
-λ main() {
+rite main() {
     ≔ x: c_int = 42;
     ≔ y: size_t = 100;
     println(x);

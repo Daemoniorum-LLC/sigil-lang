@@ -2,7 +2,7 @@
 // Spec: 14-NEURAL.md § 1 Overview
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ model = Sequential·new([
         Linear·<784, 256>·new(),
         ReLU·new(),

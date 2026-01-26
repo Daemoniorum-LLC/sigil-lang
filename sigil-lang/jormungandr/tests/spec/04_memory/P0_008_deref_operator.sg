@@ -2,7 +2,7 @@
 // Spec: 04-MEMORY.md § 3.3 Dereference
 // Priority: P0
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ≔ r: &!i32 = &x;
     ≔ val: !i32 = *r;

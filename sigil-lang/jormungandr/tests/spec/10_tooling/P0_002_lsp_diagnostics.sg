@@ -4,12 +4,12 @@
 //
 // This would test LSP hover/completion/diagnostics
 
-λ add(a: !i32, b: !i32) -> !i32 {
+rite add(a: !i32, b: !i32) → !i32 {
     a + b
 }
 
-λ main() {
+rite main() {
     ≔ result = add(1, 2);
-    // LSP should provide type info ∀ `result`
+    // LSP should provide type info each `result`
     println(result);
 }

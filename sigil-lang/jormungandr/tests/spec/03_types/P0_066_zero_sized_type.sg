@@ -1,4 +1,4 @@
-// Test: Zero-sized type (unit Σ)
+// Test: Zero-sized type (unit struct)
 // Spec: 03-TYPES.md § 10.2 Zero-Sized Types
 // Priority: P0 - Bootstrap Critical
 //
@@ -8,13 +8,13 @@
 // Expected behavior:
 // Should print 42
 
-☉ Σ Marker;
+☉ sigil Marker;
 
-λ process(_m: Marker) -> !i32 {
+rite process(_m: Marker) → !i32 {
     42
 }
 
-λ main() {
+rite main() {
     ≔ m: Marker = Marker;
     println(process(m));
 }

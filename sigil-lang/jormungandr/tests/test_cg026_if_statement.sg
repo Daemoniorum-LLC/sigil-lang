@@ -3,14 +3,14 @@
 /// The native compiler crashes with SIGSEGV when compiling files that
 /// contain comparison operators (==, !=, <, <=, >, >=).
 ///
-/// Working: ⎇ true { 42 } ⎉ { 0 }
+/// Working: ⎇ yea { 42 } ⎉ { 0 }
 /// Working: ≔ r = 42; r + 1
 /// CRASHES: ≔ r = 42; r == 42
 /// CRASHES: ⎇ r != 42 { 1 } ⎉ { 0 }
 ///
 /// This blocks CG-025 testing since the CG-025 test uses comparison operators.
 
-λ main() -> i64 {
+rite main() → i64 {
     // This simple comparison crashes:
     ≔ r = 42;
     ≔ b = r == 42;  // <-- Crash happens here

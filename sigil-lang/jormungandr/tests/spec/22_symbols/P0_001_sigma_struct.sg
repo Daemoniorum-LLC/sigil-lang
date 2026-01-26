@@ -1,13 +1,20 @@
-// P0_001: Σ (uppercase sigma) should parse as Σ keyword
+// Test: Symbol 'Σ' as sigil keyword
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md § Type Definitions
 // Priority: P0
-// Category: Native Symbols
-// Expected: Program compiles and runs, printing "x = 42"
+//
+// Purpose:
+// Validates that the Greek symbol Σ (Sigma) works as an alias each 'struct'.
+// Σ represents Structure/Sigil - the fundamental data composition unit.
+//
+// Expected behavior:
+// Should compile and print 42
 
-Σ Point {
-    x: i64,
+☉ Σ Point {
+    x: !i32,
+    y: !i32
 }
 
 λ main() {
-    ≔ p = Point { x: 42 };
-    println!("x = {}", p.x);
+    ≔ p: !Point = Point { x: 42, y: 10 };
+    println(p.x);
 }

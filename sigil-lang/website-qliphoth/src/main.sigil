@@ -21,6 +21,21 @@ extern "wasm" {
 // === DOM Helpers ===
 // These call the pre-registered WASM imports
 
+<<<<<<< HEAD
+rite create_element(tag: &str!) → i32! {
+    vdom_create_vnode(tag)
+}
+
+rite create_text(content: &str!) → i32! {
+    vdom_create_text_vnode(content)
+}
+
+rite set_class(element: i32!, class_name: &str!) {
+    vdom_set_vnode_str_prop(element, "class", class_name)
+}
+
+rite set_attr(element: i32!, attr: &str!, value: &str!) {
+=======
 rite create_element(tag: str!) → i32! {
     vdom_create_vnode(tag)
 }
@@ -34,6 +49,7 @@ rite set_class(element: i32!, class_name: str!) {
 }
 
 rite set_attr(element: i32!, attr: str!, value: str!) {
+>>>>>>> origin/main
     vdom_set_vnode_str_prop(element, attr, value)
 }
 
@@ -41,7 +57,11 @@ rite append_child(parent: i32!, child: i32!) {
     vdom_append_vnode_child(parent, child)
 }
 
+<<<<<<< HEAD
+rite mount(element: i32!, selector: &str!) {
+=======
 rite mount(element: i32!, selector: str!) {
+>>>>>>> origin/main
     vdom_mount_vnode(element, selector);
 }
 
@@ -64,12 +84,43 @@ rite header() → i32! {
     ≔ learn! = create_element("a");
     set_class(learn, "nav-link");
     set_attr(learn, "href", "/pages/learn.html");
+<<<<<<< HEAD
+    ≔ learn_text! = create_text("Learn");
+    append_child(learn, learn_text);
+=======
     append_child(learn, create_text("Learn"));
+>>>>>>> origin/main
     append_child(links, learn);
 
     ≔ docs! = create_element("a");
     set_class(docs, "nav-link");
     set_attr(docs, "href", "/pages/docs.html");
+<<<<<<< HEAD
+    ≔ docs_text! = create_text("Docs");
+    append_child(docs, docs_text);
+    append_child(links, docs);
+
+    ≔ examples! = create_element("a");
+    set_class(examples, "nav-link");
+    set_attr(examples, "href", "/pages/examples.html");
+    ≔ examples_text! = create_text("Examples");
+    append_child(examples, examples_text);
+    append_child(links, examples);
+
+    ≔ playground! = create_element("a");
+    set_class(playground, "nav-link");
+    set_attr(playground, "href", "/pages/playground.html");
+    ≔ playground_text! = create_text("Playground");
+    append_child(playground, playground_text);
+    append_child(links, playground);
+
+    ≔ github! = create_element("a");
+    set_class(github, "nav-link");
+    set_attr(github, "href", "https://github.com/Daemoniorum-LLC/sigil-lang");
+    set_attr(github, "target", "_blank");
+    ≔ gh_text! = create_text("GitHub");
+    append_child(github, gh_text);
+=======
     append_child(docs, create_text("Docs"));
     append_child(links, docs);
 
@@ -101,11 +152,16 @@ rite header() → i32! {
     set_attr(gh_icon, "src", "/github-icon.svg");
     set_attr(gh_icon, "alt", "GitHub");
     append_child(github, gh_icon);
+>>>>>>> origin/main
     append_child(links, github);
 
     ≔ version! = create_element("span");
     set_class(version, "version-badge");
+<<<<<<< HEAD
+    ≔ ver_text! = create_text("v1.0");
+=======
     ≔ ver_text! = create_text("0.3");
+>>>>>>> origin/main
     append_child(version, ver_text);
     append_child(links, version);
 
@@ -113,6 +169,8 @@ rite header() → i32! {
     nav
 }
 
+<<<<<<< HEAD
+=======
 rite hero_marker(marker: str!, class: str!, desc: str!) → i32! {
     ≔ item! = create_element("div");
     set_class(item, class);
@@ -126,10 +184,51 @@ rite hero_marker(marker: str!, class: str!, desc: str!) → i32! {
     item
 }
 
+>>>>>>> origin/main
 rite hero() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "hero");
 
+<<<<<<< HEAD
+    ≔ h1! = create_element("h1");
+    ≔ heading! = create_text("Sigil");
+    append_child(h1, heading);
+    append_child(section, h1);
+
+    ≔ tagline! = create_element("p");
+    set_class(tagline, "tagline");
+    ≔ text! = create_text("Type-safe data provenance through evidentiality markers");
+    append_child(tagline, text);
+    append_child(section, tagline);
+
+    ≔ sub! = create_element("p");
+    set_class(sub, "subtitle");
+    ≔ sub_text! = create_text("A systems language designed for AI agents");
+    append_child(sub, sub_text);
+    append_child(section, sub);
+
+    // Evidentiality markers display
+    ≔ markers! = create_element("div");
+    set_class(markers, "ev-display");
+
+    ≔ known! = create_element("span");
+    set_class(known, "ev ev-known");
+    ≔ known_text! = create_text("! known");
+    append_child(known, known_text);
+    append_child(markers, known);
+
+    ≔ uncertain! = create_element("span");
+    set_class(uncertain, "ev ev-uncertain");
+    ≔ uncertain_text! = create_text("? uncertain");
+    append_child(uncertain, uncertain_text);
+    append_child(markers, uncertain);
+
+    ≔ reported! = create_element("span");
+    set_class(reported, "ev ev-reported");
+    ≔ reported_text! = create_text("~ reported");
+    append_child(reported, reported_text);
+    append_child(markers, reported);
+=======
     // Title with logo
     ≔ h1! = create_element("h1");
     set_class(h1, "hero-title");
@@ -150,6 +249,7 @@ rite hero() → i32! {
     set_class(desc, "hero-desc");
     append_child(desc, create_text("Sigil tracks data provenance in the type system."));
     append_child(section, desc);
+>>>>>>> origin/main
 
     // 5 Evidentiality markers grid
     ≔ markers! = create_element("div");
@@ -179,6 +279,22 @@ rite hero() → i32! {
     section
 }
 
+<<<<<<< HEAD
+rite announcement() → i32! {
+    ≔ banner! = create_element("div");
+    set_class(banner, "announcement-banner");
+
+    ≔ badge! = create_element("span");
+    set_class(badge, "badge");
+    ≔ badge_text! = create_text("FIXED POINT");
+    append_child(badge, badge_text);
+    append_child(banner, badge);
+
+    ≔ msg! = create_element("p");
+    ≔ msg_text! = create_text("The Sigil compiler now compiles itself. This page was compiled from Sigil to WebAssembly.");
+    append_child(msg, msg_text);
+    append_child(banner, msg);
+=======
 rite problem_section() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "problem-section");
@@ -192,6 +308,7 @@ rite problem_section() → i32! {
     set_class(desc, "section-desc");
     append_child(desc, create_text("In Rust, TypeScript, or Go, this code compiles without warnings:"));
     append_child(section, desc);
+>>>>>>> origin/main
 
     ≔ comparison! = create_element("div");
     set_class(comparison, "code-comparison");
@@ -264,6 +381,8 @@ rite problem_section() → i32! {
     section
 }
 
+<<<<<<< HEAD
+=======
 rite ev_card(marker: str!, title: str!, subtitle: str!, desc: str!, code: str!, class: str!) → i32! {
     ≔ card! = create_element("div");
     set_class(card, class);
@@ -900,6 +1019,7 @@ rite announcement() → i32! {
     wrap
 }
 
+>>>>>>> origin/main
 rite features_section() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "features-section");
@@ -968,6 +1088,8 @@ rite features_section() → i32! {
     section
 }
 
+<<<<<<< HEAD
+=======
 rite code_density_section() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "code-density-section");
@@ -1091,6 +1213,7 @@ rite code_density_section() → i32! {
     section
 }
 
+>>>>>>> origin/main
 rite code_example() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "code-section");
@@ -1118,6 +1241,12 @@ rite code_example() → i32! {
         "    parse_user(response)\n" ++
         "}\n\n" ++
         "// Morpheme operators for data pipelines\n" ++
+<<<<<<< HEAD
+        "≔ results! = data\n" ++
+        "    |τ validate?\n" ++
+        "    |τ transform!\n" ++
+        "    |∥ process_parallel;\n"
+=======
         "≔ result = users~                  // ~ reported data from external source\n" ++
         "    |φ{.active}                    // φ filter: keep only active users\n" ++
         "    |φ{.age >= 18}                 // φ filter: keep adults only\n" ++
@@ -1126,6 +1255,7 @@ rite code_example() → i32! {
         "    |validate?                     // ? uncertain: validation may fail\n" ++
         "    |τ{.to_public_profile()}       // τ transform: strip private fields\n" ++
         "    |validate!                     // ! known: final validation must pass\n"
+>>>>>>> origin/main
     );
     append_child(pre, code);
     append_child(section, pre);
@@ -1133,6 +1263,8 @@ rite code_example() → i32! {
     section
 }
 
+<<<<<<< HEAD
+=======
 // Footer link helpers
 rite footer_link(text: str!, href: str!) → i32! {
     ≔ li! = create_element("li");
@@ -1167,10 +1299,15 @@ rite footer_column(title: str!) → i32! {
     col
 }
 
+>>>>>>> origin/main
 rite footer() → i32! {
     ≔ ft! = create_element("footer");
     set_class(ft, "site-footer");
 
+<<<<<<< HEAD
+    ≔ text! = create_text("2025-2026 Daemoniorum LLC - Built with Sigil + Qliphoth");
+    append_child(ft, text);
+=======
     // Brand section with logo and tagline
     ≔ brand_section! = create_element("div");
     set_class(brand_section, "footer-brand");
@@ -1241,6 +1378,7 @@ rite footer() → i32! {
     set_class(copyright, "footer-copyright");
     append_child(copyright, create_text("© 2025-2026 Daemoniorum LLC"));
     append_child(ft, copyright);
+>>>>>>> origin/main
 
     ft
 }
@@ -1277,6 +1415,8 @@ rite app() → i32! {
 ☉ rite main() {
     console_log_i64(42);
     ≔ root_element! = app();
+<<<<<<< HEAD
+=======
     mount(root_element, "#app");
 }
 
@@ -1951,5 +2091,6 @@ rite pattern_app() → i32! {
 
 ☉ rite main_pattern() {
     ≔ root_element! = pattern_app();
+>>>>>>> origin/main
     mount(root_element, "#app");
 }

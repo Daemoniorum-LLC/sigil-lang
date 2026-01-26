@@ -1,9 +1,0 @@
-// Test: String concatenation with push_str
-// Spec: 09-STDLIB.md § 2.2 String Operations
-// Priority: P0
-
-rite main() {
-    ≔ vary s: !String = "Hello";
-    s.push_str(" World");
-    println(s);
-}

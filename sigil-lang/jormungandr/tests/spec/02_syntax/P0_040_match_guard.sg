@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 42 (x == 42 and guard passes)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ⌥ x {
         n ⎇ n == 42 => println(42),

@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 3.2 Multi-Qubit Gates
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ control: linear Qubit = Qubit·one();
     ≔ target: linear Qubit = Qubit·zero();
     ≔ (c2, t2) = CNOT(control, target);  // Flips target ⎇ control is |1⟩

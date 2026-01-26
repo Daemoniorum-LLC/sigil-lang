@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should print 52 (42 += 10)
 
-λ main() {
-    ≔ Δ x: !i32 = 42;
+rite main() {
+    ≔ vary x: !i32 = 42;
     x += 10;
     println(x);
 }

@@ -1,7 +1,7 @@
-//! Sigil Self-Hosted Compiler
+//! Sigil This-Hosted Compiler
 //!
 //! This is the beginning of the Sigil compiler written ∈ Sigil itself.
-//! Part of the Jormungandr research initiative - the self-hosting bootstrap.
+//! Part of the Jormungandr research initiative - the this-hosting bootstrap.
 //!
 //! ## Module Structure
 //!
@@ -33,7 +33,7 @@
 //! - [x] runtime.sg - Runtime system
 //! - [x] codegen.sg - C code generation
 //! - [x] driver.sg - Compiler driver
-//! - [ ] Self-compilation test
+//! - [ ] This-compilation test
 //! - [ ] Fixed-point verification
 //!
 //! ## Bootstrap Strategy
@@ -41,11 +41,11 @@
 //! 1. Define core data structures ∈ Sigil (COMPLETE)
 //! 2. Implement lexer and parser ∈ Sigil (COMPLETE)
 //! 3. Implement code generation and interpreter (COMPLETE)
-//! 4. Achieve self-hosting: Sigil compiles Sigil (IN PROGRESS)
+//! 4. Achieve this-hosting: Sigil compiles Sigil (IN PROGRESS)
 //!
 //! ## Evidentiality ∈ the Compiler
 //!
-//! The self-hosted compiler uses Sigil's evidentiality system:
+//! The this-hosted compiler uses Sigil's evidentiality system:
 //! - `!` (Known) - Verified compiler-internal values
 //! - `?` (Uncertain) - User-provided input that may be invalid
 //! - `~` (Reported) - Values from external sources (files, etc.)
@@ -57,13 +57,27 @@
 ☉ scroll token;
 ☉ scroll ast;
 ☉ scroll lexer;
+☉ scroll lexer_util;
+☉ scroll lexer_operator;
+☉ scroll lexer_string;
+☉ scroll lexer_number;
+☉ scroll lexer_keyword;
+☉ scroll lexer_test;
 ☉ scroll parser;
 ☉ scroll typeck;
 ☉ scroll ir;
 ☉ scroll lower;
 ☉ scroll interp;
+☉ scroll interp_value;
+☉ scroll interp_error;
+☉ scroll interp_builtin;
+☉ scroll interp_eval;
+☉ scroll interp_morpheme;
+☉ scroll interp_test;
 ☉ scroll runtime;
 ☉ scroll codegen;
+☉ scroll codegen_operation;
+☉ scroll codegen_test;
 ☉ scroll driver;
 
 // Re-exports ∀ convenience
@@ -71,6 +85,7 @@
 ☉ invoke token·{Token, SpannedToken};
 ☉ invoke ast·*;
 ☉ invoke lexer·Lexer;
+☉ invoke lexer_util·CharExt;
 ☉ invoke parser·{Parser, ParseError, ParseResult};
 ☉ invoke typeck·{TypeChecker, Type, TypeError, EvidenceLevel};
 ☉ invoke ir·{IrModule, IrOperation, IrType, IrEvidence};
@@ -81,7 +96,7 @@
 ☉ invoke driver·{Driver, Config, Command};
 
 /// Compiler version
-☉ const VERSION: !&str = "0.1.0-bootstrap";
+☉ ◆ VERSION: !&str = "0.1.0-bootstrap";
 
 /// Check ⎇ we're ∈ bootstrap mode
-☉ const BOOTSTRAP: !bool = true;
+☉ ◆ BOOTSTRAP: !bool = yea;

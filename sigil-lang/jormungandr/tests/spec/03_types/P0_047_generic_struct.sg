@@ -1,4 +1,4 @@
-// Test: Generic Σ basic usage
+// Test: Generic sigil basic usage
 // Spec: 03-TYPES.md § 5.1 Generic Types
 // Priority: P0 - Bootstrap Critical
 //
@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should print 42
 
-☉ Σ Box<T> {
+☉ sigil Box<T> {
     value: T
 }
 
-λ main() {
+rite main() {
     ≔ b: !Box<!i32> = Box { value: 42 };
     println(b.value);
 }

@@ -1,8 +1,0 @@
-// Negative Test: Continue outside of forever
-// Should fail with syntax error
-// Priority: P0 - Bootstrap Critical
-
-rite main() {
-    ⊳;  // ERROR: ⊳ outside of forever
-    println("done");
-}

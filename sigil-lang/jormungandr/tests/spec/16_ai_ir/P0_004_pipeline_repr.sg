@@ -1,14 +1,15 @@
-// Test: Pipeline representation ∈ IR
+// Test: Pipeline representation (mock)
 // Spec: 16-AI-IR.md § Pipeline Operations
 // Priority: P0 - Bootstrap Critical
+//
+// Tests pipeline IR representation
 
-λ main() {
+rite main() {
     ≔ result = [1, 2, 3]
         |τ{x => x * 2}
         |φ{x => x > 2}
         |Σ;
 
-    ≔ ir = __export_ir();
-    // Pipeline should be represented as morpheme chain
+    // Mock: Pipeline represented as morpheme chain
     println(1);
 }

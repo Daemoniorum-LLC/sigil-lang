@@ -1,7 +1,0 @@
-λ double(x: i64) -> i64 {
-    x + x
-}
-
-λ main() -> i64 {
-    double(21)
-}

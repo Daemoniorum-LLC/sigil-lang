@@ -1,2 +1,0 @@
-λ hello() -> i64 { 42 }
-λ main() { hello(); }

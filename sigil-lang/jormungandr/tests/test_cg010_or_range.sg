@@ -3,12 +3,12 @@
 //! Range patterns inside Or patterns like:
 //!   'a'..='z' | 'A'..='Z'
 //! Should generate:
-//!   (val >= 'a' && val <= 'z') || (val >= 'A' && val <= 'Z')
+//!   (val >= 'a' ∧ val <= 'z') ∨ (val >= 'A' ∧ val <= 'Z')
 //!
-//! Bug: Currently generates (val >= 'a' && 1) - missing upper bound
+//! Bug: Currently generates (val >= 'a' ∧ 1) - missing upper bound
 
 /// Classify using OR of ranges (the bug pattern)
-☉ λ is_letter_or_digit(c: !char) -> !i32 {
+☉ rite is_letter_or_digit(c: !char) → !i32 {
     ⌥ c {
         'a'..='z' | 'A'..='Z' => 1,
         '0'..='9' => 2,
@@ -16,7 +16,7 @@
     }
 }
 
-☉ λ main() -> !i32 {
+☉ rite main() → !i32 {
     // Test lowercase
     ⎇ is_letter_or_digit('a') != 1 { ⤺ 1; }
     ⎇ is_letter_or_digit('z') != 1 { ⤺ 2; }

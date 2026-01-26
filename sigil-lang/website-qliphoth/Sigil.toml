@@ -1,6 +1,6 @@
 [package]
 name = "sigil-lang-site"
-version = "1.0.0"
+version = "0.3.0"
 edition = "2025"
 description = "The official Sigil programming language website - built with Sigil and Qliphoth"
 authors = ["Daemoniorum LLC"]
@@ -9,8 +9,9 @@ homepage = "https://sigil-lang.com"
 repository = "https://github.com/Daemoniorum-LLC/sigil-lang"
 
 [dependencies]
-qliphoth-core = { path = "../../../qliphoth/crates/qliphoth-core" }
-qliphoth-ui = { path = "../../../qliphoth/crates/qliphoth-ui" }
+# Qliphoth framework (React-inspired Sigil web framework)
+qliphoth = { path = "../../qliphoth" }
+# Web compilation support
 sigil-web = { version = "0.1", features = ["router", "spa"] }
 sigil-wasm = { version = "0.1" }
 wasm-bindgen = { version = "0.2" }

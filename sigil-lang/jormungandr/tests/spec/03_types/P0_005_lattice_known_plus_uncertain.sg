@@ -10,7 +10,7 @@
 // When adding a Known value and an Uncertain value, the result
 // should have Uncertain evidence. Should print 141 (42 + 99).
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ≔ y: ?i32 = 99;
     ≔ z = x + y;  // Should be ?i32

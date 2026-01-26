@@ -57,15 +57,11 @@ impl WasmCompiler {
         // Start if block (returns i64)
         func.push(Instruction::If(BlockType::Result(ValType::I64)));
 
-
-
         // Compile then branch
         self.compile_block(then_branch)?;
 
         let func = self.current_function_mut().unwrap();
         func.push(Instruction::Else);
-
-
 
         // Compile else branch if present
         if let Some(else_expr) = else_branch {
@@ -98,7 +94,12 @@ impl WasmCompiler {
     }
 
     /// Compile a while loop.
-    pub fn compile_while(&mut self, condition: &Expr, body: &Block, label: Option<String>) -> WasmResult<()> {
+    pub fn compile_while(
+        &mut self,
+        condition: &Expr,
+        body: &Block,
+        label: Option<String>,
+    ) -> WasmResult<()> {
         // Structure:
         // block $break           ;; empty result (break jumps here without value)
         //   loop $continue
@@ -119,7 +120,7 @@ impl WasmCompiler {
 
         // Push loop context
         self.loop_stack.push(LoopContext {
-            break_label: 1, // Relative depth to break block
+            break_label: 1,    // Relative depth to break block
             continue_label: 0, // Relative depth to loop
             name: label,
         });
@@ -134,8 +135,6 @@ impl WasmCompiler {
         // Inner loop for continue
         func.push(Instruction::Loop(BlockType::Empty));
 
-
-
         // Compile condition
         self.compile_expr(condition)?;
 
@@ -145,8 +144,6 @@ impl WasmCompiler {
         // I64Eqz returns i32 (1 if zero, 0 if nonzero)
         func.push(Instruction::I64Eqz);
         func.push(Instruction::BrIf(1)); // Break if condition is false
-
-
 
         // Compile body
         self.compile_block(body)?;
@@ -175,12 +172,13 @@ impl WasmCompiler {
     }
 
     /// Compile a for loop.
-    pub fn compile_for(&mut self, pattern: &Pattern, iter: &Expr, body: &Block, label: Option<String>) -> WasmResult<()> {
-        // Check if iterating over a range (0..n or 0..=n)
-        if let Expr::Range { start, end, inclusive } = iter {
-            return self.compile_for_range(pattern, start.as_deref(), end.as_deref(), *inclusive, body, label);
-        }
-
+    pub fn compile_for(
+        &mut self,
+        pattern: &Pattern,
+        iter: &Expr,
+        body: &Block,
+        label: Option<String>,
+    ) -> WasmResult<()> {
         // For arrays: iterate using index
         // Structure:
         // let arr = <iter>
@@ -234,8 +232,6 @@ impl WasmCompiler {
         // Inner loop
         func.push(Instruction::Loop(BlockType::Empty));
 
-
-
         // Push loop context
         self.loop_stack.push(LoopContext {
             break_label: 1,
@@ -266,8 +262,6 @@ impl WasmCompiler {
             memory_index: 0,
         }));
 
-
-
         // Bind pattern
         self.bind_pattern(pattern)?;
 
@@ -284,129 +278,6 @@ impl WasmCompiler {
         func.push(Instruction::I64Const(1));
         func.push(Instruction::I64Add);
         func.push(Instruction::LocalSet(idx_idx));
-
-        // Continue
-        func.push(Instruction::Br(0));
-
-        // End loop
-        func.push(Instruction::End);
-
-        // End block
-        func.push(Instruction::End);
-
-        // Result (unit) - for loops return unit
-        func.push(Instruction::I64Const(0));
-
-        // Pop loop context and scope
-        self.loop_stack.pop();
-        self.scope_vars.pop();
-
-        Ok(())
-    }
-
-    /// Compile a for loop over a range (start..end or start..=end).
-    fn compile_for_range(
-        &mut self,
-        pattern: &Pattern,
-        start: Option<&Expr>,
-        end: Option<&Expr>,
-        inclusive: bool,
-        body: &Block,
-        label: Option<String>,
-    ) -> WasmResult<()> {
-        // Structure:
-        // let i = <start> (or 0 if None)
-        // let end = <end>
-        // block $break
-        //   loop $continue
-        //     if i >= end (or > for exclusive): br $break
-        //     let <pattern> = i
-        //     <body>
-        //     i = i + 1
-        //     br $continue
-        //   end
-        // end
-
-        // Push new scope for loop variables
-        self.scope_vars.push(std::collections::HashMap::new());
-
-        // Compile start value (default to 0)
-        if let Some(start_expr) = start {
-            self.compile_expr(start_expr)?;
-        } else {
-            let func = self
-                .current_function_mut()
-                .ok_or_else(|| WasmError::internal("not in function context"))?;
-            func.push(Instruction::I64Const(0));
-        }
-
-        let func = self
-            .current_function_mut()
-            .ok_or_else(|| WasmError::internal("not in function context"))?;
-
-        // Store current value in a local
-        let idx_local = func.alloc_local("__range_idx".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(idx_local));
-
-        // Compile end value
-        if let Some(end_expr) = end {
-            self.compile_expr(end_expr)?;
-        } else {
-            // No end - this would be an infinite range, which we don't support in for loops
-            return Err(WasmError::unsupported("infinite ranges in for loops"));
-        }
-
-        let func = self.current_function_mut().unwrap();
-
-        let end_local = func.alloc_local("__range_end".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(end_local));
-
-        // Outer block for break
-        func.push(Instruction::Block(BlockType::Empty));
-
-        // Inner loop
-        func.push(Instruction::Loop(BlockType::Empty));
-
-        // Push loop context
-        self.loop_stack.push(LoopContext {
-            break_label: 1,
-            continue_label: 0,
-            name: label,
-        });
-
-        let func = self.current_function_mut().unwrap();
-
-        // Check termination condition
-        // For exclusive (..): if i >= end, break
-        // For inclusive (..=): if i > end, break
-        func.push(Instruction::LocalGet(idx_local));
-        func.push(Instruction::LocalGet(end_local));
-        if inclusive {
-            func.push(Instruction::I64GtS); // i > end
-        } else {
-            func.push(Instruction::I64GeS); // i >= end
-        }
-        func.push(Instruction::BrIf(1)); // Break if done
-
-        // Push current value for pattern binding
-        func.push(Instruction::LocalGet(idx_local));
-
-        // Bind pattern (e.g., `i` in `for i in 0..n`)
-        self.bind_pattern(pattern)?;
-
-        // Compile body
-        self.compile_block(body)?;
-
-        let func = self.current_function_mut().unwrap();
-
-        // Drop body result
-        func.push(Instruction::Drop);
-
-        // Increment index: i = i + 1
-        func.push(Instruction::LocalGet(idx_local));
-        func.push(Instruction::I64Const(1));
-        func.push(Instruction::I64Add);
-        func.push(Instruction::LocalSet(idx_local));
 
         // Continue
         func.push(Instruction::Br(0));
@@ -453,8 +324,6 @@ impl WasmCompiler {
         // Inner loop
         func.push(Instruction::Loop(BlockType::Empty));
 
-
-
         // Compile body
         self.compile_block(body)?;
 
@@ -492,8 +361,6 @@ impl WasmCompiler {
         let scrutinee_idx = func.alloc_local("__match_scrutinee".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(scrutinee_idx));
 
-
-
         // Compile arms as a chain of if-else
         self.compile_match_arms(scrutinee_idx, arms, 0)
     }
@@ -527,7 +394,6 @@ impl WasmCompiler {
             // Bind pattern variables
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::LocalGet(scrutinee_idx));
-    
 
             self.bind_pattern(&arm.pattern)?;
 
@@ -543,14 +409,11 @@ impl WasmCompiler {
             func.push(Instruction::I32WrapI64);
             func.push(Instruction::If(BlockType::Result(ValType::I64)));
 
-    
-
             // Pattern matched - bind and execute body
             self.scope_vars.push(std::collections::HashMap::new());
 
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::LocalGet(scrutinee_idx));
-    
 
             self.bind_pattern(&arm.pattern)?;
 
@@ -560,13 +423,11 @@ impl WasmCompiler {
                 let func = self.current_function_mut().unwrap();
                 func.push(Instruction::I32WrapI64);
                 func.push(Instruction::If(BlockType::Result(ValType::I64)));
-        
 
                 self.compile_expr(&arm.body)?;
 
                 let func = self.current_function_mut().unwrap();
                 func.push(Instruction::Else);
-        
 
                 // Guard failed - try next arm
                 self.compile_match_arms(scrutinee_idx, arms, index + 1)?;
@@ -581,8 +442,6 @@ impl WasmCompiler {
 
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::Else);
-
-    
 
             // Try next arm
             self.compile_match_arms(scrutinee_idx, arms, index + 1)?;
@@ -674,7 +533,8 @@ impl WasmCompiler {
                                 memory_index: 0,
                             }));
 
-                            let temp_idx = func.alloc_local(format!("__struct_{}", i), ValType::I64);
+                            let temp_idx =
+                                func.alloc_local(format!("__struct_{}", i), ValType::I64);
                             func.push(Instruction::LocalSet(temp_idx));
                             temp_idx
                         } else {
@@ -732,19 +592,21 @@ impl WasmCompiler {
                 }
             }
 
-            Pattern::Range { start, end, inclusive } => {
+            Pattern::Range {
+                start,
+                end,
+                inclusive,
+            } => {
                 // Range pattern: check start <= scrutinee <= end (or < end if not inclusive)
                 let func = self.current_function_mut().unwrap();
                 func.push(Instruction::I64Const(1)); // Start with true
-
-        
 
                 // Check start bound if present
                 if let Some(start_pat) = start {
                     if let Pattern::Literal(lit) = start_pat.as_ref() {
                         let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(scrutinee_idx));
-                
+
                         self.compile_literal(lit)?;
                         let func = self.current_function_mut().unwrap();
                         func.push(Instruction::I64GeS); // scrutinee >= start
@@ -758,7 +620,7 @@ impl WasmCompiler {
                     if let Pattern::Literal(lit) = end_pat.as_ref() {
                         let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(scrutinee_idx));
-                
+
                         self.compile_literal(lit)?;
                         let func = self.current_function_mut().unwrap();
                         if *inclusive {
@@ -929,11 +791,13 @@ impl WasmCompiler {
             }
         }
         // Fallback: simple hash
-        variant_name.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32))
+        variant_name
+            .bytes()
+            .fold(0u32, |acc, b| acc.wrapping_add(b as u32))
     }
 
     /// Bind pattern variables from value on stack.
-    pub(crate) fn bind_pattern(&mut self, pattern: &Pattern) -> WasmResult<()> {
+    fn bind_pattern(&mut self, pattern: &Pattern) -> WasmResult<()> {
         match pattern {
             Pattern::Wildcard => {
                 // Discard value
@@ -965,8 +829,6 @@ impl WasmCompiler {
                 let ptr_idx = func.alloc_local("__tuple_ptr".to_string(), ValType::I64);
                 func.push(Instruction::LocalSet(ptr_idx));
 
-        
-
                 // Bind each element
                 for (i, pat) in patterns.iter().enumerate() {
                     let func = self.current_function_mut().unwrap();
@@ -977,7 +839,6 @@ impl WasmCompiler {
                         align: 3,
                         memory_index: 0,
                     }));
-            
 
                     self.bind_pattern(pat)?;
                 }
@@ -990,8 +851,6 @@ impl WasmCompiler {
                 let ptr_idx = func.alloc_local("__struct_ptr".to_string(), ValType::I64);
                 func.push(Instruction::LocalSet(ptr_idx));
 
-        
-
                 for (i, field) in fields.iter().enumerate() {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::LocalGet(ptr_idx));
@@ -1001,7 +860,6 @@ impl WasmCompiler {
                         align: 3,
                         memory_index: 0,
                     }));
-            
 
                     if let Some(pat) = &field.pattern {
                         self.bind_pattern(pat)?;
@@ -1041,8 +899,6 @@ impl WasmCompiler {
                 let ptr_idx = func.alloc_local("__tuplestruct_ptr".to_string(), ValType::I64);
                 func.push(Instruction::LocalSet(ptr_idx));
 
-        
-
                 // Bind each field (skip tag at offset 0)
                 for (i, pat) in fields.iter().enumerate() {
                     let func = self.current_function_mut().unwrap();
@@ -1053,7 +909,6 @@ impl WasmCompiler {
                         align: 3,
                         memory_index: 0,
                     }));
-            
 
                     self.bind_pattern(pat)?;
                 }
@@ -1067,8 +922,6 @@ impl WasmCompiler {
                 let ptr_idx = func.alloc_local("__slice_ptr".to_string(), ValType::I64);
                 func.push(Instruction::LocalSet(ptr_idx));
 
-        
-
                 // Bind each element (skip 4-byte length)
                 for (i, pat) in patterns.iter().enumerate() {
                     let func = self.current_function_mut().unwrap();
@@ -1079,7 +932,6 @@ impl WasmCompiler {
                         align: 3,
                         memory_index: 0,
                     }));
-            
 
                     self.bind_pattern(pat)?;
                 }
@@ -1140,9 +992,7 @@ impl WasmCompiler {
     /// Compile a statement (for use in blocks).
     pub fn compile_stmt(&mut self, stmt: &Stmt) -> WasmResult<()> {
         match stmt {
-            Stmt::Let {
-                pattern, init, ..
-            } => {
+            Stmt::Let { pattern, init, .. } => {
                 // Compile init value
                 if let Some(val) = init {
                     self.compile_expr(val)?;
@@ -1289,7 +1139,9 @@ mod tests {
     fn test_compile_loop() {
         let mut compiler = create_test_compiler_with_function();
 
-        compiler.compile_loop(&make_block(make_int(0)), None).unwrap();
+        compiler
+            .compile_loop(&make_block(make_int(0)), None)
+            .unwrap();
 
         let func = compiler.current_function().unwrap();
         assert!(func

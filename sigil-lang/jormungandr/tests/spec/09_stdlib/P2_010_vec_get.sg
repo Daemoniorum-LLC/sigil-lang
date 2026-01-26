@@ -2,7 +2,7 @@
 // Spec: 09-STDLIB.md § 1.1 Vec
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ v: Vec<i32> = vec![10, 20, 30];
     println(v[0]);
     println(v[2]);

@@ -6,11 +6,11 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use super::combat::{CombatState, CombatResult, Enemy};
+use super::combat::{CombatResult, CombatState, Enemy};
 use super::perception::PerceptionManager;
 use super::runtime::{
-    Alter, AlterCategory, AlterPresenceState, AnimaState, FrontingState,
-    MemoryAccess, PluralSystem, RealityLayer, Trigger, TriggerCategory,
+    Alter, AlterCategory, AlterPresenceState, AnimaState, FrontingState, MemoryAccess,
+    PluralSystem, RealityLayer, Trigger, TriggerCategory,
 };
 
 // ============================================================================
@@ -274,7 +274,11 @@ impl GameLoop {
         let combat_result = if let Some(ref mut combat) = self.state.combat {
             // Combat is turn-based, so this mainly handles animations/effects
             combat.check_combat_end();
-            if combat.is_over { combat.result.clone() } else { None }
+            if combat.is_over {
+                combat.result.clone()
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -427,12 +431,18 @@ impl GameLoop {
 
     /// Request an alter switch
     fn request_alter_switch(&mut self, alter_id: &str) {
-        let urgency = if self.state.phase == GamePhase::Combat { 0.8 } else { 0.5 };
+        let urgency = if self.state.phase == GamePhase::Combat {
+            0.8
+        } else {
+            0.5
+        };
         let result = self.state.system.request_switch(alter_id, urgency, false);
 
         match result {
             super::runtime::SwitchResult::Success => {
-                self.state.events.push(GameEvent::AlterSwitched(alter_id.to_string()));
+                self.state
+                    .events
+                    .push(GameEvent::AlterSwitched(alter_id.to_string()));
 
                 // Reality might shift based on new fronter
                 if let Some(alter) = self.state.system.alters.get(alter_id) {
@@ -440,10 +450,14 @@ impl GameLoop {
                 }
             }
             super::runtime::SwitchResult::Resisted { resistance } => {
-                self.state.events.push(GameEvent::SwitchResisted(resistance));
+                self.state
+                    .events
+                    .push(GameEvent::SwitchResisted(resistance));
             }
             super::runtime::SwitchResult::Failed(reason) => {
-                self.state.events.push(GameEvent::SwitchFailed(format!("{:?}", reason)));
+                self.state
+                    .events
+                    .push(GameEvent::SwitchFailed(format!("{:?}", reason)));
             }
             _ => {}
         }
@@ -460,7 +474,9 @@ impl GameLoop {
 
             // Move toward grounded reality
             if self.state.perception.state.layer != RealityLayer::Grounded {
-                self.state.perception.begin_layer_transition(RealityLayer::Grounded, 0.1);
+                self.state
+                    .perception
+                    .begin_layer_transition(RealityLayer::Grounded, 0.1);
             }
 
             self.state.events.push(GameEvent::GroundingSuccess);
@@ -564,7 +580,10 @@ impl GameLoop {
     // ========================================================================
 
     fn find_protector(&self) -> Option<String> {
-        self.state.system.alters.values()
+        self.state
+            .system
+            .alters
+            .values()
             .find(|a| a.abilities.contains("protection") || a.abilities.contains("combat"))
             .map(|a| a.id.clone())
     }
@@ -762,8 +781,10 @@ pub struct TriggerZone {
 
 impl TriggerZone {
     fn contains(&self, pos: (f32, f32)) -> bool {
-        pos.0 >= self.bounds.0.0 && pos.0 <= self.bounds.1.0 &&
-        pos.1 >= self.bounds.0.1 && pos.1 <= self.bounds.1.1
+        pos.0 >= self.bounds.0 .0
+            && pos.0 <= self.bounds.1 .0
+            && pos.1 >= self.bounds.0 .1
+            && pos.1 <= self.bounds.1 .1
     }
 }
 

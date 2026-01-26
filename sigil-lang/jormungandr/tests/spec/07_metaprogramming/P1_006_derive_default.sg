@@ -3,12 +3,12 @@
 // Priority: P1 - Standard Feature
 
 #[derive(Default)]
-☉ Σ Point {
+☉ sigil Point {
     x: !i32,
     y: !i32
 }
 
-λ main() {
+rite main() {
     // Test that derive(Default) is recognized
     println("derive recognized");
 }

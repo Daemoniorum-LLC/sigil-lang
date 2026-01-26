@@ -1,4 +1,4 @@
-// Test: Return statement ∈ function
+// Test: Return statement of function
 // Spec: 02-SYNTAX.md § 5.1 Return Statements
 // Priority: P0 - Bootstrap Critical
 //
@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should ⤺ 42 and print it.
 
-λ get_value() -> !i32 {
+rite get_value() → !i32 {
     ⤺ 42;
 }
 
-λ main() {
+rite main() {
     ≔ x: !i32 = get_value();
     println(x);
 }

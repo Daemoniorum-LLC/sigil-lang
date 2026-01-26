@@ -1,8 +1,0 @@
-// Test: Basic type inference
-// Spec: 03-TYPES.md § 7.1 Type Inference
-// Priority: P0
-
-rite main() {
-    ≔ x = 42;
-    println(x);
-}

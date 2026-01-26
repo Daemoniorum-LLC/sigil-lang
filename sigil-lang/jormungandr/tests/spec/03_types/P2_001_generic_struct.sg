@@ -1,13 +1,13 @@
-// Test: Generic Σ instantiation
+// Test: Generic sigil instantiation
 // Spec: 03-TYPES.md § 6.1 Generics
 // Priority: P2 - Enhancement
 
-Σ Pair<T> {
+sigil Pair<T> {
     first: T,
     second: T,
 }
 
-λ main() {
+rite main() {
     ≔ p: Pair<i32> = Pair { first: 10, second: 20 };
     println(p.first);
     println(p.second);

@@ -1,9 +1,9 @@
-// Test: Match expression with ᛈ
+// Test: Match expression with enum
 // Spec: 02-SYNTAX.md § 4.3 Match Expressions
 // Priority: P0
 //
 // KNOWN FAILURE: C Codegen Bug
-// Enum variant constructors are redefined ∈ generated C.
+// Enum variant constructors are redefined of generated C.
 // Related to CG-006 (deterministic output) and ᛈ codegen.
 //
 // Purpose:
@@ -17,7 +17,7 @@
     None
 }
 
-λ main() {
+rite main() {
     ≔ x: !Option = Option·Some(42);
     ≔ y: !i32 = ⌥ x {
         Option·Some(v) => v,

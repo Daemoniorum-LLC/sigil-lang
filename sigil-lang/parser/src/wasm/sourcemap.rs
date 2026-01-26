@@ -58,7 +58,7 @@ impl SourceLineMap {
 
         // Binary search to find the line
         let line_idx = match self.line_starts.binary_search(&offset) {
-            Ok(idx) => idx,  // Exact match at line start
+            Ok(idx) => idx,                    // Exact match at line start
             Err(idx) => idx.saturating_sub(1), // Between line starts
         };
 
@@ -306,8 +306,16 @@ mod tests {
             start: SourceLocation::new(1, 0),
             end: SourceLocation::new(5, 1),
             mappings: vec![
-                InstructionMapping { instruction_idx: 0, line: 2, column: 4 },
-                InstructionMapping { instruction_idx: 1, line: 3, column: 4 },
+                InstructionMapping {
+                    instruction_idx: 0,
+                    line: 2,
+                    column: 4,
+                },
+                InstructionMapping {
+                    instruction_idx: 1,
+                    line: 3,
+                    column: 4,
+                },
             ],
         });
 
@@ -328,5 +336,68 @@ mod tests {
         let map = builder.build();
         assert_eq!(map.functions.len(), 1);
         assert!(map.functions.contains_key("main"));
+    }
+
+    #[test]
+    fn test_custom_section_format() {
+        let mut map = SourceMap::new("test.sigil");
+        map.add_function(FunctionSourceMap {
+            name: "add".to_string(),
+            start: SourceLocation::new(1, 0),
+            end: SourceLocation::new(3, 1),
+            mappings: vec![],
+        });
+
+        let section_bytes = map.to_custom_section();
+
+        // Custom section starts with name length + name
+        let name = b"sigil_sourcemap";
+        assert_eq!(section_bytes[0], name.len() as u8);
+        assert_eq!(&section_bytes[1..1 + name.len()], name);
+
+        // Rest should be valid JSON
+        let json_bytes = &section_bytes[1 + name.len()..];
+        let json_str = std::str::from_utf8(json_bytes).expect("valid UTF-8");
+        assert!(json_str.starts_with("{"));
+        assert!(json_str.contains("\"add\""));
+    }
+
+    #[test]
+    fn test_source_map_with_inline_source() {
+        let source = "rite main() → i64 { 42 }";
+        let map = SourceMap::with_source("example.sg", source);
+
+        let json = map.to_json();
+        assert!(json.contains("\"source_content\""));
+        assert!(json.contains("rite main"));
+    }
+
+    #[test]
+    fn test_builder_multiple_functions() {
+        let source = "rite foo() → i64 { 1 }\nrite bar() → i64 { 2 }";
+        let mut builder = SourceMapBuilder::new("multi.sg", source);
+
+        builder.begin_function("foo", Span::new(0, 22));
+        builder.add_instruction(0, Span::new(19, 20)); // 1
+        builder.end_function();
+
+        builder.begin_function("bar", Span::new(23, 45));
+        builder.add_instruction(0, Span::new(42, 43)); // 2
+        builder.end_function();
+
+        let map = builder.build();
+        assert_eq!(map.functions.len(), 2);
+        assert!(map.functions.contains_key("foo"));
+        assert!(map.functions.contains_key("bar"));
+
+        // Check foo's instruction mapping
+        let foo = map.functions.get("foo").unwrap();
+        assert_eq!(foo.mappings.len(), 1);
+        assert_eq!(foo.mappings[0].line, 1);
+
+        // Check bar's instruction mapping
+        let bar = map.functions.get("bar").unwrap();
+        assert_eq!(bar.mappings.len(), 1);
+        assert_eq!(bar.mappings[0].line, 2);
     }
 }

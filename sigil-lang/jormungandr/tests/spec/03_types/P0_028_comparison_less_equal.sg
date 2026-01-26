@@ -6,9 +6,9 @@
 // Validates that less-than-or-equal comparison works correctly.
 //
 // Expected behavior:
-// Should compile and print true
+// Should compile and print yea
 
-λ main() {
+rite main() {
     ≔ x: !bool = 10 <= 10;
     println(x);
 }

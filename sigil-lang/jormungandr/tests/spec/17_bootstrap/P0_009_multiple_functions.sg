@@ -2,9 +2,9 @@
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.3 Function Generation
 // Priority: P0
 
-λ helper1() -> !i32 { 20 }
-λ helper2() -> !i32 { 22 }
+rite helper1() → !i32 { 20 }
+rite helper2() → !i32 { 22 }
 
-λ main() {
+rite main() {
     println(helper1() + helper2());
 }

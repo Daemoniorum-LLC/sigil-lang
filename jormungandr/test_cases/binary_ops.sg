@@ -1,9 +1,0 @@
-λ add(a: i64, b: i64) -> i64 { a + b }
-λ sub(a: i64, b: i64) -> i64 { a - b }
-λ mul(a: i64, b: i64) -> i64 { a * b }
-
-λ main() -> i64 {
-    ≔ x = add(10, 5);
-    ≔ y = sub(x, 3);
-    mul(y, 3)
-}

@@ -4,38 +4,28 @@
 
 use wasm_encoder::{Instruction, ValType};
 
-use std::path::PathBuf;
-
 use super::error::{WasmError, WasmResult};
 use super::types::{CompiledFunction, EnumLayout, StructLayout};
 use super::WasmCompiler;
 use crate::ast::{
-    ConstDef, EnumDef, Function, ImplItem, Item, MacroInvocation, Module, Param, SourceFile,
-    StaticDef, StructDef, StructFields, UseDecl, UseTree, Visibility,
+    ConstDef, EnumDef, Function, ImplItem, Item, Param, SourceFile, StaticDef, StructDef,
+    StructFields, Visibility,
 };
-use crate::parser::Parser;
 
 impl WasmCompiler {
     /// Compile a source file.
     pub fn compile_file(&mut self, file: &SourceFile) -> WasmResult<()> {
-        // First pass: process use declarations (for cross-module linking)
-        // Including from nested modules
-        self.collect_use_declarations(&file.items)?;
+        // First pass: collect type definitions (structs, enums)
+        for item in &file.items {
+            self.collect_type_def(&item.node)?;
+        }
 
-        // Second pass: collect type definitions (structs, enums)
-        // Including from nested modules
-        self.collect_all_type_defs(&file.items)?;
+        // Second pass: collect function signatures
+        for item in &file.items {
+            self.collect_function_sig(&item.node)?;
+        }
 
-        // Third pass: pre-scan function bodies to add external imports
-        // This must happen BEFORE collecting function signatures to preserve indices
-        // Including from nested modules
-        self.prescan_all_functions(&file.items)?;
-
-        // Fourth pass: collect function signatures
-        // Including from nested modules
-        self.collect_all_function_sigs(&file.items)?;
-
-        // Fifth pass: compile function bodies
+        // Third pass: compile function bodies
         for item in &file.items {
             self.compile_item(&item.node)?;
         }
@@ -43,447 +33,12 @@ impl WasmCompiler {
         Ok(())
     }
 
-    /// Recursively collect use declarations from items and nested modules.
-    fn collect_use_declarations(&mut self, items: &[crate::span::Spanned<Item>]) -> WasmResult<()> {
-        for item in items {
-            match &item.node {
-                Item::Use(use_decl) => {
-                    self.process_use_decl(use_decl)?;
-                }
-                Item::Module(module) => {
-                    if let Some(nested_items) = &module.items {
-                        self.module_path.push(module.name.name.clone());
-                        self.collect_use_declarations(nested_items)?;
-                        self.module_path.pop();
-                    } else {
-                        // File-based module - load and process
-                        let module_name = module.name.name.clone();
-                        let items = self.load_module_file(&module_name)?;
-                        self.module_path.push(module_name);
-                        self.collect_use_declarations(&items)?;
-                        self.module_path.pop();
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
-
-    /// Recursively collect type definitions from items and nested modules.
-    fn collect_all_type_defs(&mut self, items: &[crate::span::Spanned<Item>]) -> WasmResult<()> {
-        for item in items {
-            match &item.node {
-                Item::Module(module) => {
-                    if let Some(nested_items) = &module.items {
-                        self.module_path.push(module.name.name.clone());
-                        self.collect_all_type_defs(nested_items)?;
-                        self.module_path.pop();
-                    } else {
-                        // File-based module - load and process
-                        let module_name = module.name.name.clone();
-                        let items = self.load_module_file(&module_name)?;
-                        self.module_path.push(module_name);
-                        self.collect_all_type_defs(&items)?;
-                        self.module_path.pop();
-                    }
-                }
-                _ => {
-                    self.collect_type_def(&item.node)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Recursively pre-scan all function bodies for external calls.
-    fn prescan_all_functions(&mut self, items: &[crate::span::Spanned<Item>]) -> WasmResult<()> {
-        for item in items {
-            match &item.node {
-                Item::Function(func) => {
-                    if let Some(body) = &func.body {
-                        self.scan_for_external_calls(body)?;
-                    }
-                }
-                Item::Module(module) => {
-                    if let Some(nested_items) = &module.items {
-                        self.module_path.push(module.name.name.clone());
-                        self.prescan_all_functions(nested_items)?;
-                        self.module_path.pop();
-                    } else {
-                        // File-based module - load and process
-                        let module_name = module.name.name.clone();
-                        let items = self.load_module_file(&module_name)?;
-                        self.module_path.push(module_name);
-                        self.prescan_all_functions(&items)?;
-                        self.module_path.pop();
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
-
-    /// Recursively collect function signatures from items and nested modules.
-    fn collect_all_function_sigs(&mut self, items: &[crate::span::Spanned<Item>]) -> WasmResult<()> {
-        for item in items {
-            match &item.node {
-                Item::Module(module) => {
-                    if let Some(nested_items) = &module.items {
-                        self.module_path.push(module.name.name.clone());
-                        self.collect_all_function_sigs(nested_items)?;
-                        self.module_path.pop();
-                    } else {
-                        // File-based module - load and process
-                        self.load_and_collect_module_sigs(module)?;
-                    }
-                }
-                _ => {
-                    self.collect_function_sig(&item.node)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Load a file-based module and collect its function signatures.
-    fn load_and_collect_module_sigs(&mut self, module: &Module) -> WasmResult<()> {
-        let module_name = &module.name.name;
-        let items = self.load_module_file(module_name)?;
-
-        self.module_path.push(module_name.clone());
-        self.collect_all_function_sigs(&items)?;
-        self.module_path.pop();
-
-        Ok(())
-    }
-
-    /// Load a file-based module and return its parsed items.
-    /// Handles both `foo.sigil` and `foo/mod.sigil` patterns.
-    /// Uses caching to avoid re-parsing the same file multiple times.
-    fn load_module_file(&mut self, module_name: &str) -> WasmResult<Vec<crate::span::Spanned<Item>>> {
-        use std::fs;
-
-        // If no source_dir is set, we can't resolve file modules
-        if self.source_dir.as_os_str().is_empty() {
-            return Err(WasmError::io(format!(
-                "cannot resolve module '{}': no source directory set (use compile_from_path)",
-                module_name
-            )));
-        }
-
-        // Try foo.sigil first
-        let file_path = self.source_dir.join(format!("{}.sigil", module_name));
-
-        // Then try foo/mod.sigil
-        let dir_path = self.source_dir.join(module_name).join("mod.sigil");
-
-        let path = if file_path.exists() {
-            file_path
-        } else if dir_path.exists() {
-            dir_path
-        } else {
-            return Err(WasmError::module_not_found(
-                module_name,
-                &[file_path.display().to_string(), dir_path.display().to_string()],
-            ));
-        };
-
-        // Get canonical path for caching
-        let canonical = path.canonicalize()
-            .map_err(|e| WasmError::io(format!("cannot resolve path {}: {}", path.display(), e)))?;
-
-        // Check cache first
-        if let Some(items) = self.module_cache.get(&canonical) {
-            return Ok(items.clone());
-        }
-
-        // Track this module to detect circular imports during initial loading
-        if self.loaded_modules.contains(&canonical) {
-            // Already loaded - return from cache (should have been cached)
-            return self.module_cache.get(&canonical)
-                .cloned()
-                .ok_or_else(|| WasmError::internal("module marked as loaded but not cached"));
-        }
-        self.loaded_modules.insert(canonical.clone());
-
-        // Read and parse the module file
-        let source = fs::read_to_string(&path)
-            .map_err(|e| WasmError::io(format!("cannot read {}: {}", path.display(), e)))?;
-
-        let mut parser = Parser::new(&source);
-        let file = parser.parse_file()
-            .map_err(|e| WasmError::parse(format!("in {}: {}", path.display(), e)))?;
-
-        // Cache the parsed items
-        self.module_cache.insert(canonical, file.items.clone());
-
-        Ok(file.items)
-    }
-
-    /// Store loaded module items for later compilation.
-    /// Returns a reference to the stored items.
-    fn get_or_load_module_items(&mut self, module_name: &str) -> WasmResult<Vec<crate::span::Spanned<Item>>> {
-        // Note: In a more sophisticated implementation, we'd cache these.
-        // For now, we reload each time (collection vs compilation phases).
-        self.load_module_file(module_name)
-    }
-
-    /// Scan a block for external function calls and add them as WASM imports.
-    fn scan_for_external_calls(&mut self, block: &crate::ast::Block) -> WasmResult<()> {
-        use crate::ast::{Expr, Stmt};
-
-        for stmt in &block.stmts {
-            match stmt {
-                Stmt::Let { init: Some(expr), .. }
-                | Stmt::Expr(expr)
-                | Stmt::Semi(expr) => {
-                    self.scan_expr_for_external_calls(expr)?;
-                }
-                Stmt::LetElse { init, else_branch, .. } => {
-                    self.scan_expr_for_external_calls(init)?;
-                    self.scan_expr_for_external_calls(else_branch)?;
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(expr) = &block.expr {
-            self.scan_expr_for_external_calls(expr)?;
-        }
-
-        Ok(())
-    }
-
-    /// Recursively scan an expression for external function calls.
-    fn scan_expr_for_external_calls(&mut self, expr: &crate::ast::Expr) -> WasmResult<()> {
-        use crate::ast::Expr;
-
-        match expr {
-            Expr::Call { func, args } => {
-                // Check if this is a call to an external import
-                if let Expr::Path(path) = func.as_ref() {
-                    let simple_name = path.segments.first()
-                        .map(|s| s.ident.name.as_str())
-                        .unwrap_or("");
-
-                    // If it's in external_imports, add the WASM import now
-                    if let Some((module_name, _)) = self.external_imports.get(simple_name).cloned() {
-                        self.get_or_add_external_import(&module_name, simple_name, args.len());
-                    }
-                }
-
-                // Also scan the function expression and arguments
-                self.scan_expr_for_external_calls(func)?;
-                for arg in args {
-                    self.scan_expr_for_external_calls(arg)?;
-                }
-            }
-            Expr::Binary { left, right, .. } => {
-                self.scan_expr_for_external_calls(left)?;
-                self.scan_expr_for_external_calls(right)?;
-            }
-            Expr::Unary { expr, .. } => {
-                self.scan_expr_for_external_calls(expr)?;
-            }
-            Expr::If { condition, then_branch, else_branch } => {
-                self.scan_expr_for_external_calls(condition)?;
-                self.scan_for_external_calls(then_branch)?;
-                if let Some(else_expr) = else_branch {
-                    self.scan_expr_for_external_calls(else_expr)?;
-                }
-            }
-            Expr::Block(block) => {
-                self.scan_for_external_calls(block)?;
-            }
-            Expr::Match { expr, arms } => {
-                self.scan_expr_for_external_calls(expr)?;
-                for arm in arms {
-                    if let Some(guard) = &arm.guard {
-                        self.scan_expr_for_external_calls(guard)?;
-                    }
-                    self.scan_expr_for_external_calls(&arm.body)?;
-                }
-            }
-            Expr::While { condition, body, .. } => {
-                self.scan_expr_for_external_calls(condition)?;
-                self.scan_for_external_calls(body)?;
-            }
-            Expr::Loop { body, .. } => {
-                self.scan_for_external_calls(body)?;
-            }
-            Expr::For { iter, body, .. } => {
-                self.scan_expr_for_external_calls(iter)?;
-                self.scan_for_external_calls(body)?;
-            }
-            Expr::Closure { body, .. } => {
-                self.scan_expr_for_external_calls(body)?;
-            }
-            Expr::Return(Some(expr)) | Expr::Await { expr, .. } => {
-                self.scan_expr_for_external_calls(expr)?;
-            }
-            Expr::Tuple(exprs) | Expr::Array(exprs) => {
-                for e in exprs {
-                    self.scan_expr_for_external_calls(e)?;
-                }
-            }
-            Expr::Index { expr, index } => {
-                self.scan_expr_for_external_calls(expr)?;
-                self.scan_expr_for_external_calls(index)?;
-            }
-            Expr::Field { expr, .. } | Expr::Try(expr) => {
-                self.scan_expr_for_external_calls(expr)?;
-            }
-            Expr::MethodCall { receiver, args, .. } => {
-                self.scan_expr_for_external_calls(receiver)?;
-                for arg in args {
-                    self.scan_expr_for_external_calls(arg)?;
-                }
-            }
-            Expr::Struct { fields, rest, .. } => {
-                for field in fields {
-                    if let Some(value) = &field.value {
-                        self.scan_expr_for_external_calls(value)?;
-                    }
-                }
-                if let Some(rest_expr) = rest {
-                    self.scan_expr_for_external_calls(rest_expr)?;
-                }
-            }
-            Expr::Range { start, end, .. } => {
-                if let Some(s) = start {
-                    self.scan_expr_for_external_calls(s)?;
-                }
-                if let Some(e) = end {
-                    self.scan_expr_for_external_calls(e)?;
-                }
-            }
-            Expr::Assign { target, value } => {
-                self.scan_expr_for_external_calls(target)?;
-                self.scan_expr_for_external_calls(value)?;
-            }
-            Expr::Cast { expr, .. } | Expr::AddrOf { expr, .. } | Expr::Deref(expr) => {
-                self.scan_expr_for_external_calls(expr)?;
-            }
-            Expr::Pipe { expr, .. } => {
-                self.scan_expr_for_external_calls(expr)?;
-            }
-            // Terminal expressions - no recursion needed
-            Expr::Literal(_)
-            | Expr::Path(_)
-            | Expr::Break { .. }
-            | Expr::Continue { .. }
-            | Expr::Return(None) => {}
-            // Other expressions - skip for now
-            _ => {}
-        }
-
-        Ok(())
-    }
-
-    /// Process a use declaration to register external module imports.
-    fn process_use_decl(&mut self, use_decl: &UseDecl) -> WasmResult<()> {
-        self.process_use_tree(&use_decl.tree, &[])
-    }
-
-    /// Recursively process a use tree to extract module imports.
-    fn process_use_tree(&mut self, tree: &UseTree, prefix: &[String]) -> WasmResult<()> {
-        match tree {
-            UseTree::Path { prefix: path_prefix, suffix } => {
-                let mut new_prefix = prefix.to_vec();
-                new_prefix.push(path_prefix.name.clone());
-                self.process_use_tree(suffix, &new_prefix)
-            }
-            UseTree::Name(name) => {
-                if !prefix.is_empty() {
-                    // External import: use foo::bar::Baz
-                    // module_name = first segment (e.g., "foo")
-                    // qualified_name = full path (e.g., "foo::bar::Baz")
-                    let module_name = prefix[0].clone();
-                    let mut full_path = prefix.to_vec();
-                    full_path.push(name.name.clone());
-                    let qualified_name = full_path.join("::");
-                    let simple_name = name.name.clone();
-
-                    // Register the external import
-                    self.external_imports.insert(
-                        simple_name,
-                        (module_name, qualified_name),
-                    );
-                }
-                Ok(())
-            }
-            UseTree::Rename { name, alias } => {
-                if !prefix.is_empty() {
-                    let module_name = prefix[0].clone();
-                    let mut full_path = prefix.to_vec();
-                    full_path.push(name.name.clone());
-                    let qualified_name = full_path.join("::");
-                    let alias_name = alias.name.clone();
-
-                    self.external_imports.insert(
-                        alias_name,
-                        (module_name, qualified_name),
-                    );
-                }
-                Ok(())
-            }
-            UseTree::Glob => {
-                // Glob imports (use foo::*) not supported for WASM linking
-                // Would require parsing the external module
-                Ok(())
-            }
-            UseTree::Group(trees) => {
-                for subtree in trees {
-                    self.process_use_tree(subtree, prefix)?;
-                }
-                Ok(())
-            }
-        }
-    }
-
     /// Collect type definition from an item.
     fn collect_type_def(&mut self, item: &Item) -> WasmResult<()> {
         match item {
             Item::Struct(def) => self.register_struct(def),
             Item::Enum(def) => self.register_enum(def),
-            Item::TypeAlias(alias) => {
-                // Handle type aliases with inline struct/enum definitions
-                // e.g., `type VNode = enum { Text(String), Element(VElement) }`
-                self.register_type_alias(alias)
-            }
             _ => Ok(()),
-        }
-    }
-
-    /// Register a type alias, extracting inline struct/enum definitions.
-    fn register_type_alias(&mut self, alias: &crate::ast::TypeAlias) -> WasmResult<()> {
-        use crate::ast::TypeExpr;
-
-        match &alias.ty {
-            TypeExpr::InlineEnum { variants } => {
-                // Create synthetic EnumDef
-                let def = crate::ast::EnumDef {
-                    visibility: alias.visibility.clone(),
-                    name: alias.name.clone(),
-                    generics: alias.generics.clone(),
-                    variants: variants.clone(),
-                };
-                self.register_enum(&def)
-            }
-            TypeExpr::InlineStruct { fields } => {
-                // Create synthetic StructDef
-                let def = crate::ast::StructDef {
-                    visibility: alias.visibility.clone(),
-                    attrs: crate::ast::StructAttrs::default(),
-                    name: alias.name.clone(),
-                    generics: alias.generics.clone(),
-                    fields: crate::ast::StructFields::Named(fields.clone()),
-                };
-                self.register_struct(&def)
-            }
-            _ => Ok(()), // Regular type aliases don't need special handling
         }
     }
 
@@ -494,32 +49,88 @@ impl WasmCompiler {
                 self.register_function_sig(func)?;
             }
             Item::Impl(impl_block) => {
-                // Register impl methods with qualified names like Type::method
-                let type_name = self.type_path_to_string(&impl_block.self_ty);
-                self.module_path.push(type_name);
+                // Extract type name from self_ty for method name mangling
+                let type_name = self.extract_type_name(&impl_block.self_ty);
+
+                // Register each method with mangled name: TypeName_methodName
                 for impl_item in &impl_block.items {
-                    if let crate::ast::ImplItem::Function(func) = impl_item {
-                        self.register_function_sig(func)?;
+                    if let ImplItem::Function(func) = impl_item {
+                        self.register_impl_method_sig(func, &type_name)?;
                     }
                 }
-                self.module_path.pop();
             }
             _ => {}
         }
         Ok(())
     }
 
-    /// Convert a type path to a string for use in qualified names.
-    fn type_path_to_string(&self, ty: &crate::ast::TypeExpr) -> String {
+    /// Extract the simple type name from a TypeExpr.
+    fn extract_type_name(&self, ty: &crate::ast::TypeExpr) -> String {
         match ty {
             crate::ast::TypeExpr::Path(path) => {
-                path.segments.iter()
-                    .map(|s| s.ident.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join("::")
+                // Get the first segment's name (e.g., "Counter" from "Counter<T>")
+                path.segments
+                    .first()
+                    .map(|s| s.ident.name.clone())
+                    .unwrap_or_else(|| "Unknown".to_string())
             }
             _ => "Unknown".to_string(),
         }
+    }
+
+    /// Register an impl method signature with mangled name.
+    fn register_impl_method_sig(&mut self, func: &Function, type_name: &str) -> WasmResult<()> {
+        // Mangle name: TypeName_methodName
+        let mangled_name = format!("{}_{}", type_name, func.name.name);
+
+        // Skip if already registered
+        if self.func_map.contains_key(&mangled_name) {
+            return Ok(());
+        }
+
+        // Build parameter types - include self parameter if present
+        let param_types: Vec<ValType> = func.params.iter().map(|_| ValType::I64).collect();
+
+        // Result type
+        let result_types = if func.return_type.is_some() {
+            vec![ValType::I64]
+        } else {
+            vec![] // Unit return
+        };
+
+        let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
+        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+
+        // Record function index with mangled name
+        self.func_map.insert(mangled_name.clone(), func_idx);
+
+        // Also register with simple name for method calls (receiver.method())
+        // This allows both Counter·new() and counter.increment() to work
+        if !self.func_map.contains_key(&func.name.name) {
+            self.func_map.insert(func.name.name.clone(), func_idx);
+        }
+
+        // Create function
+        let params_with_names: Vec<(String, ValType)> = func
+            .params
+            .iter()
+            .map(|p| (p.pattern_name().unwrap_or_default(), ValType::I64))
+            .collect();
+
+        let is_exported = matches!(func.visibility, Visibility::Public);
+
+        let compiled_func = CompiledFunction::new(
+            mangled_name,
+            type_idx,
+            func_idx,
+            params_with_names,
+            result_types,
+            is_exported,
+        );
+
+        self.functions.push(compiled_func);
+
+        Ok(())
     }
 
     /// Compile a top-level item.
@@ -532,25 +143,25 @@ impl WasmCompiler {
             Item::Struct(_) | Item::Enum(_) => Ok(()),
             Item::Trait(_) => Ok(()), // Traits are compile-time only
             Item::Impl(impl_block) => {
-                // Push type name onto module path to match how we registered the functions
-                let type_name = self.type_path_to_string(&impl_block.self_ty);
-                self.module_path.push(type_name);
+                let type_name = self.extract_type_name(&impl_block.self_ty);
                 for item in &impl_block.items {
                     if let ImplItem::Function(func) = item {
-                        self.compile_function(func)?;
+                        self.compile_impl_method(func, &type_name)?;
                     }
                 }
-                self.module_path.pop();
                 Ok(())
             }
             Item::TypeAlias(_) => Ok(()), // Type aliases are compile-time only
-            Item::Module(module) => self.compile_module(module),
+            Item::Module(_) => Err(WasmError::unsupported("nested modules")),
             Item::Use(_) => Ok(()), // Use declarations are resolved during parsing
             Item::Actor(_) => Err(WasmError::unsupported("actors")),
             Item::ExternBlock(_) => Ok(()), // Extern functions are imports
-            Item::Macro(_) => Ok(()), // Macro definitions are compile-time only
-            Item::MacroInvocation(mac) => self.compile_macro_invocation(mac),
+            Item::Macro(_) => Ok(()),       // Macro definitions are compile-time only
+            Item::MacroInvocation(_) => Err(WasmError::unsupported("macro invocations")),
             Item::Plurality(_) => Err(WasmError::unsupported("plurality items")),
+            Item::Form(_) => Err(WasmError::unsupported("form definitions")),
+            Item::Translations(_) => Err(WasmError::unsupported("translation definitions")),
+            Item::LocaleEnum(_) => Err(WasmError::unsupported("locale enum definitions")),
         }
     }
 
@@ -614,11 +225,8 @@ impl WasmCompiler {
 
     /// Register a function signature (without compiling body).
     fn register_function_sig(&mut self, func: &Function) -> WasmResult<()> {
-        // Build qualified name
-        let qualified_name = self.qualify_name(&func.name.name);
-
         // Skip if already registered
-        if self.func_map.contains_key(&qualified_name) {
+        if self.func_map.contains_key(&func.name.name) {
             return Ok(());
         }
 
@@ -636,12 +244,8 @@ impl WasmCompiler {
 
         let func_idx = self.imports.import_count() + self.functions.len() as u32;
 
-        // Record function index with both qualified and simple names
-        self.func_map.insert(qualified_name.clone(), func_idx);
-        // Also register simple name for backwards compatibility
-        if !self.module_path.is_empty() {
-            self.func_map.insert(func.name.name.clone(), func_idx);
-        }
+        // Record function index
+        self.func_map.insert(func.name.name.clone(), func_idx);
 
         // Create function (body will be compiled later)
         let params_with_names: Vec<(String, ValType)> = func
@@ -668,36 +272,29 @@ impl WasmCompiler {
 
     /// Compile a function.
     fn compile_function(&mut self, func: &Function) -> WasmResult<()> {
-        // Find the function index (try qualified name first, then simple name)
-        let qualified_name = self.qualify_name(&func.name.name);
+        self.compile_function_with_name(func, &func.name.name)
+    }
+
+    /// Compile an impl method using its mangled name.
+    fn compile_impl_method(&mut self, func: &Function, type_name: &str) -> WasmResult<()> {
+        let mangled_name = format!("{}_{}", type_name, func.name.name);
+        self.compile_function_with_name(func, &mangled_name)
+    }
+
+    /// Compile a function with a specific lookup name.
+    fn compile_function_with_name(&mut self, func: &Function, lookup_name: &str) -> WasmResult<()> {
+        // Find the function index
         let func_idx = self
             .func_map
-            .get(&qualified_name)
-            .or_else(|| self.func_map.get(&func.name.name))
+            .get(lookup_name)
             .copied()
-            .ok_or_else(|| WasmError::internal(format!(
-                "function not registered: '{}' (qualified: '{}')",
-                func.name.name, qualified_name
-            )))?;
+            .ok_or_else(|| WasmError::internal("function not registered"))?;
 
-        // Find the function in our list by matching func_idx
-        // NOTE: We can't use (func_idx - import_count) because import_count may have
-        // changed since registration due to dynamic import additions during compilation
-        let fn_list_idx = self.functions
-            .iter()
-            .position(|f| f.func_idx == func_idx)
-            .ok_or_else(|| WasmError::internal(format!(
-                "function not found in list: func_idx={}, qualified='{}'",
-                func_idx, qualified_name
-            )))?;
+        // Find the function in our list
+        let fn_list_idx = (func_idx - self.imports.import_count()) as usize;
 
         // Set as current function
         self.current_fn_idx = Some(fn_list_idx);
-
-        // Track function in source map (if debug info enabled)
-        if let Some(ref mut source_map) = self.source_map {
-            source_map.begin_function(&func.name.name, func.name.span);
-        }
 
         // Mark if this is an async function
         let is_async = func.is_async;
@@ -728,11 +325,6 @@ impl WasmCompiler {
                 }
                 compiled_func.push(Instruction::End);
             }
-        }
-
-        // End source map function tracking
-        if let Some(ref mut source_map) = self.source_map {
-            source_map.end_function();
         }
 
         // Clear current function
@@ -802,47 +394,8 @@ impl WasmCompiler {
 
     /// Compile a const definition.
     fn compile_const(&mut self, def: &ConstDef) -> WasmResult<()> {
-        use crate::ast::{Expr, Literal};
-
         // Consts are inlined at use sites, but we need to evaluate them
         // For now, add as a global
-
-        // Check if this is a string constant (plain, raw, or multi-line)
-        let string_content = match &def.value {
-            Expr::Literal(Literal::String(s)) => Some(s.as_str()),
-            Expr::Literal(Literal::RawString(s)) => Some(s.as_str()),
-            Expr::Literal(Literal::MultiLineString(s)) => Some(s.as_str()),
-            _ => None,
-        };
-        if let Some(s) = string_content {
-            // String constants are stored in the data segment
-            // The global holds the offset into the data segment
-            let offset = self.add_string(s);
-            let idx = self.globals.len() as u32;
-            self.globals.push((ValType::I64, false, offset as i64));
-            self.global_map.insert(def.name.name.clone(), idx);
-            // Also track this as a string constant for proper access
-            self.string_consts.insert(def.name.name.clone(), offset);
-            return Ok(());
-        }
-
-        // Check for reference to string literal: &"string" or &str literal
-        if let Expr::AddrOf { expr, .. } = &def.value {
-            let string_content = match expr.as_ref() {
-                Expr::Literal(Literal::String(s)) => Some(s.as_str()),
-                Expr::Literal(Literal::RawString(s)) => Some(s.as_str()),
-                Expr::Literal(Literal::MultiLineString(s)) => Some(s.as_str()),
-                _ => None,
-            };
-            if let Some(s) = string_content {
-                let offset = self.add_string(s);
-                let idx = self.globals.len() as u32;
-                self.globals.push((ValType::I64, false, offset as i64));
-                self.global_map.insert(def.name.name.clone(), idx);
-                self.string_consts.insert(def.name.name.clone(), offset);
-                return Ok(());
-            }
-        }
 
         // Evaluate constant expression at compile time
         let const_val = self.eval_const_expr(&def.value)?;
@@ -856,107 +409,12 @@ impl WasmCompiler {
 
     /// Compile a static definition.
     fn compile_static(&mut self, def: &StaticDef) -> WasmResult<()> {
+        // Add as mutable global
+        let init_val = self.eval_const_expr(&def.value)?;
+
         let idx = self.globals.len() as u32;
-
-        // Try to evaluate as constant expression first
-        match self.eval_const_expr(&def.value) {
-            Ok(init_val) => {
-                // Constant initializer - add directly
-                self.globals.push((ValType::I64, def.mutable, init_val));
-            }
-            Err(_) => {
-                // Non-constant initializer - defer to __wasm_start
-                // Initialize to 0 for now, actual init happens at runtime
-                self.globals.push((ValType::I64, true, 0)); // Must be mutable for deferred init
-                self.deferred_static_inits.push((idx, def.value.clone()));
-            }
-        }
-
+        self.globals.push((ValType::I64, def.mutable, init_val));
         self.global_map.insert(def.name.name.clone(), idx);
-        Ok(())
-    }
-
-    /// Compile a macro invocation at item level.
-    /// Handles `thread_local! { ... }` by treating it as a static declaration
-    /// (WASM is single-threaded, so thread-local storage is just a global).
-    fn compile_macro_invocation(&mut self, mac: &MacroInvocation) -> WasmResult<()> {
-        // Get the macro name from the path
-        let macro_name = mac
-            .path
-            .segments
-            .last()
-            .map(|s| s.ident.name.as_str())
-            .unwrap_or("");
-
-        match macro_name {
-            "thread_local" => {
-                // Parse the tokens to extract static definitions
-                // tokens looks like: "pub static RUNTIME: RefCell[Runtime] = RefCell·new(Runtime·new());"
-                let tokens = &mac.tokens;
-
-                // Create a synthetic source with a static declaration
-                let source = tokens.trim().to_string();
-
-                // Use the parser to parse this as an item
-                let mut parser = Parser::new(&source);
-                match parser.parse_file() {
-                    Ok(file) => {
-                        // Process each item in the macro body
-                        for item in &file.items {
-                            match &item.node {
-                                Item::Static(def) => {
-                                    self.compile_static(def)?;
-                                }
-                                _ => {
-                                    // thread_local! can only contain static definitions
-                                    return Err(WasmError::internal(format!(
-                                        "thread_local! macro can only contain static definitions, got: {:?}",
-                                        item.node
-                                    )));
-                                }
-                            }
-                        }
-                        Ok(())
-                    }
-                    Err(e) => Err(WasmError::parse(format!(
-                        "failed to parse thread_local! body: {}",
-                        e
-                    ))),
-                }
-            }
-            _ => {
-                // Unknown macro - return unsupported error
-                Err(WasmError::unsupported(&format!(
-                    "macro invocation: {}!",
-                    macro_name
-                )))
-            }
-        }
-    }
-
-    /// Compile a module (scroll declaration).
-    /// Note: Type definitions and function signatures are already collected
-    /// during the recursive collection passes. This only compiles the bodies.
-    fn compile_module(&mut self, module: &Module) -> WasmResult<()> {
-        // Push module name onto the path
-        self.module_path.push(module.name.name.clone());
-
-        if let Some(items) = &module.items {
-            // Inline module - compile the provided items
-            for item in items {
-                self.compile_item(&item.node)?;
-            }
-        } else {
-            // File-based module - load and compile
-            let module_name = module.name.name.clone();
-            let items = self.get_or_load_module_items(&module_name)?;
-            for item in &items {
-                self.compile_item(&item.node)?;
-            }
-        }
-
-        // Pop module name from path
-        self.module_path.pop();
 
         Ok(())
     }
@@ -1025,7 +483,11 @@ impl WasmCompiler {
 
             Expr::Path(path) => {
                 // Look up const
-                let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                let name = path
+                    .segments
+                    .first()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
                 if let Some(&idx) = self.global_map.get(name) {
                     Ok(self.globals[idx as usize].2)
                 } else {
@@ -1045,18 +507,30 @@ trait ParamExt {
 
 impl ParamExt for Param {
     fn pattern_name(&self) -> Option<String> {
-        use crate::ast::Pattern;
-        match &self.pattern {
-            Pattern::Ident { name, .. } => Some(name.name.clone()),
-            _ => None,
-        }
+        extract_pattern_name(&self.pattern)
+    }
+}
+
+/// Extract name from a pattern, handling nested patterns like &this or &vary this.
+fn extract_pattern_name(pattern: &crate::ast::Pattern) -> Option<String> {
+    use crate::ast::Pattern;
+    match pattern {
+        Pattern::Ident { name, .. } => Some(name.name.clone()),
+        // Handle &this and &vary this - extract inner pattern name
+        Pattern::Ref { pattern: inner, .. } => extract_pattern_name(inner),
+        // Handle ref binding
+        Pattern::RefBinding { name, .. } => Some(name.name.clone()),
+        _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Block, BinOp, CrateConfig, EnumVariant, FieldDef, Ident, Literal, NumBase, StructAttrs, TypePath, UnaryOp};
+    use crate::ast::{
+        BinOp, Block, CrateConfig, EnumVariant, FieldDef, Ident, Literal, NumBase, StructAttrs,
+        TypePath, UnaryOp,
+    };
     use crate::span::{Span, Spanned};
 
     fn make_int(value: i64) -> crate::ast::Expr {
@@ -1083,6 +557,7 @@ mod tests {
             is_const: false,
             is_unsafe: false,
             attrs: Default::default(),
+            outer_attrs: Vec::new(),
             name: make_ident(name),
             aspect: None,
             generics: None,
@@ -1217,6 +692,7 @@ mod tests {
                     default: None,
                 },
             ]),
+            is_translations: false,
         };
 
         compiler.register_struct(&def).unwrap();
@@ -1272,7 +748,9 @@ mod tests {
                 },
                 EnumVariant {
                     name: make_ident("Some"),
-                    fields: StructFields::Tuple(vec![crate::ast::TypeExpr::Path(TypePath { segments: vec![] })]),
+                    fields: StructFields::Tuple(vec![crate::ast::TypeExpr::Path(TypePath {
+                        segments: vec![],
+                    })]),
                     discriminant: None,
                 },
             ],
@@ -1292,10 +770,14 @@ mod tests {
     fn test_eval_const_expr_bool() {
         let compiler = WasmCompiler::new();
 
-        let true_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Bool(true))).unwrap();
+        let true_result = compiler
+            .eval_const_expr(&crate::ast::Expr::Literal(Literal::Bool(true)))
+            .unwrap();
         assert_eq!(true_result, 1);
 
-        let false_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Bool(false))).unwrap();
+        let false_result = compiler
+            .eval_const_expr(&crate::ast::Expr::Literal(Literal::Bool(false)))
+            .unwrap();
         assert_eq!(false_result, 0);
     }
 
@@ -1303,10 +785,14 @@ mod tests {
     fn test_eval_const_expr_null() {
         let compiler = WasmCompiler::new();
 
-        let null_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Null)).unwrap();
+        let null_result = compiler
+            .eval_const_expr(&crate::ast::Expr::Literal(Literal::Null))
+            .unwrap();
         assert_eq!(null_result, 0);
 
-        let empty_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Empty)).unwrap();
+        let empty_result = compiler
+            .eval_const_expr(&crate::ast::Expr::Literal(Literal::Empty))
+            .unwrap();
         assert_eq!(empty_result, 0);
     }
 
@@ -1472,6 +958,7 @@ mod tests {
                 crate::ast::TypeExpr::Path(TypePath { segments: vec![] }), // g
                 crate::ast::TypeExpr::Path(TypePath { segments: vec![] }), // b
             ]),
+            is_translations: false,
         };
 
         compiler.register_struct(&def).unwrap();
@@ -1493,6 +980,7 @@ mod tests {
             name: make_ident("Unit"),
             generics: None,
             fields: StructFields::Unit,
+            is_translations: false,
         };
 
         compiler.register_struct(&def).unwrap();
@@ -1511,6 +999,7 @@ mod tests {
             is_const: false,
             is_unsafe: false,
             attrs: Default::default(),
+            outer_attrs: Vec::new(),
             name: make_ident("helper"),
             aspect: None,
             generics: None,

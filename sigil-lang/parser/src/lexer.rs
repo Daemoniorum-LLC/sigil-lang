@@ -256,65 +256,12 @@ fn process_byte_char_escape(s: &str) -> u8 {
 #[derive(Logos, Debug, Clone, PartialEq)]
 #[logos(skip r"[ \t\r\n\f]+")]
 pub enum Token {
-    // === Evidential Doc Comments (SGDOC) ===
-    // These must come before LineComment to match first
-    // Format: //<marker> <content> or //<marker><marker> <content> for inner docs
-    // Inner docs (//!!, //~~, etc.) have priority 10 to match before outer docs
-
-    /// Verified doc comment: //! content (backed by test)
-    /// Inner variant: //!! documents the containing module
-    #[regex(r"//!![^\n]*", priority = 10, callback = |lex| lex.slice()[4..].trim().to_string())]
-    DocCommentVerifiedInner(String),
-    #[regex(r"//![^!\n][^\n]*", priority = 8, callback = |lex| lex.slice()[3..].trim().to_string())]
-    DocCommentVerified(String),
-
-    /// Reported doc comment: //~ content (from spec/author, default)
-    /// Inner variant: //~~ documents the containing module
-    #[regex(r"//~~[^\n]*", priority = 10, callback = |lex| lex.slice()[4..].trim().to_string())]
-    DocCommentReportedInner(String),
-    #[regex(r"//~[^~\n][^\n]*", priority = 8, callback = |lex| lex.slice()[3..].trim().to_string())]
-    DocCommentReported(String),
-
-    /// Uncertain doc comment: //? content (needs investigation)
-    /// Inner variant: //?? documents the containing module
-    #[regex(r"//\?\?[^\n]*", priority = 10, callback = |lex| lex.slice()[4..].trim().to_string())]
-    DocCommentUncertainInner(String),
-    #[regex(r"//\?[^\?\n][^\n]*", priority = 8, callback = |lex| lex.slice()[3..].trim().to_string())]
-    DocCommentUncertain(String),
-
-    /// Predicted doc comment: //◊ content (planned feature)
-    /// Inner variant: //◊◊ documents the containing module
-    #[regex(r"//◊◊[^\n]*", priority = 10, callback = |lex| {
-        // ◊ is multi-byte UTF-8, use trim_start_matches
-        lex.slice().trim_start_matches("//◊◊").trim().to_string()
-    })]
-    DocCommentPredictedInner(String),
-    #[regex(r"//◊[^◊\n][^\n]*", priority = 8, callback = |lex| {
-        lex.slice().trim_start_matches("//◊").trim().to_string()
-    })]
-    DocCommentPredicted(String),
-
-    /// Paradox doc comment: //‽ content (known inconsistency)
-    /// Inner variant: //‽‽ documents the containing module
-    #[regex(r"//‽‽[^\n]*", priority = 10, callback = |lex| {
-        // ‽ is multi-byte UTF-8, use trim_start_matches
-        lex.slice().trim_start_matches("//‽‽").trim().to_string()
-    })]
-    DocCommentParadoxInner(String),
-    #[regex(r"//‽[^‽\n][^\n]*", priority = 8, callback = |lex| {
-        lex.slice().trim_start_matches("//‽").trim().to_string()
-    })]
-    DocCommentParadox(String),
-
-    // === Regular Comments ===
-    // Legacy doc comment (maps to Reported for backwards compat)
-    // Must have priority > LineComment to match /// before //
-    #[regex(r"///[^\n]*", priority = 5, callback = |lex| lex.slice()[3..].trim().to_string())]
-    DocComment(String),
-
-    // Standard line comment (must be lower priority than doc comments)
-    #[regex(r"//[^\n]*", priority = 1, callback = |lex| lex.slice().to_string())]
+    // === Comments ===
+    #[regex(r"//[^\n]*", |lex| lex.slice().to_string())]
     LineComment(String),
+
+    #[regex(r"//![^\n]*", |lex| lex.slice().to_string())]
+    DocComment(String),
 
     // Tilde comment style: ~~ ... ~~
     #[regex(r"~~[^\n]*", |lex| lex.slice().to_string())]
@@ -324,72 +271,42 @@ pub enum Token {
     #[token("/*", block_comment_callback)]
     BlockComment(String),
 
-    // === Deprecated Rust Syntax ===
-    // These tokens capture Rust-like syntax for helpful error messages
-    // The parser maps these to Sigil equivalents in error messages
-    #[token("fn", |lex| lex.slice().to_string())]
-    #[token("let", |lex| lex.slice().to_string())]
-    #[token("mut", |lex| lex.slice().to_string())]
-    #[token("struct", |lex| lex.slice().to_string())]
-    #[token("enum", |lex| lex.slice().to_string())]
-    #[token("trait", |lex| lex.slice().to_string())]
-    #[token("impl", |lex| lex.slice().to_string())]
-    #[token("mod", |lex| lex.slice().to_string())]
-    #[token("use", |lex| lex.slice().to_string())]
-    #[token("pub", |lex| lex.slice().to_string())]
-    #[token("if", |lex| lex.slice().to_string())]
-    #[token("else", |lex| lex.slice().to_string())]
-    #[token("match", |lex| lex.slice().to_string())]
-    #[token("while", |lex| lex.slice().to_string())]
-    #[token("for", |lex| lex.slice().to_string())]
-    #[token("in", |lex| lex.slice().to_string())]
-    #[token("break", |lex| lex.slice().to_string())]
-    #[token("continue", |lex| lex.slice().to_string())]
-    #[token("return", |lex| lex.slice().to_string())]
-    DeprecatedRustKeyword(String),
-
-    // Rust mutable reference &mut - use &Δ in Sigil
-    #[token("&mut")]
-    DeprecatedAmpMut,
-
-    // === Keywords (Native Sigil Syntax Only) ===
-    #[token("λ")]  // Lambda - function
-    #[token("rite")]  // Rite - method/ritual (Sigil alternative to fn in impl blocks)
+    // === Keywords (Sigil-native only - Rust purged) ===
+    // Note: λ/Λ handled by Token::Lambda - parser is context-aware
+    #[token("rite")] // rite (ritual/spell) for function
     Fn,
     #[token("async")]
-    #[token("⌛")]  // Hourglass - time/waiting (native symbol alternative)
     Async,
-    #[token("≔")]  // Definition assignment
+    #[token("≔")] // definition operator
     Let,
-    #[token("Δ")]  // Delta - change/mutable
-    #[token("vary")]  // Vary - mutable/changing (Sigil prose alternative)
+    // Note: ∆ handled by Token::Delta - parser is context-aware
+    #[token("vary")] // vary for mutable
     Mut,
-    #[token("const")]
-    #[token("◆")]  // Diamond - solid, fixed (native symbol alternative)
+    #[token("◆")] // diamond for const
     Const,
     #[token("linear")]
     Linear,
-    #[token("affine")]
-    Affine,
-    #[token("relevant")]
-    Relevant,
     #[token("type")]
     Type,
-    #[token("sigil")]
-    #[token("Σ")]
+    // Note: Σ handled by Token::Sigma - parser is context-aware
+    #[token("sigil")] // sigil for struct
     Struct,
-    #[token("ᛈ")]  // Perthro rune - lot cup, choices/fate
+    #[token("ᛈ")] // perthro rune for enum
     Enum,
-    #[token("Θ")]  // Theta - theory, aspect
-    #[token("aspect")]  // Aspect - trait/interface (Sigil prose alternative)
+    #[token("locale")] // locale for i18n enum
+    Locale,
+    #[token("translations")] // translations for i18n translation modules
+    Translations,
+    // Note: Θ handled by Token::Theta - parser is context-aware
+    #[token("aspect")] // aspect for trait
     Trait,
-    #[token("⊢")]  // Turnstile - proves/provides
+    #[token("⊢")] // turnstile for impl
     Impl,
-    #[token("scroll")]
+    #[token("scroll")] // scroll for module
     Mod,
-    #[token("invoke")]
+    #[token("invoke")] // invoke for use/import
     Use,
-    #[token("☉")]  // Sun - visible, public
+    #[token("☉")] // sun for public
     Pub,
     #[token("actor")]
     Actor,
@@ -404,48 +321,49 @@ pub enum Token {
     #[token("macro_rules")]
     MacroRules,
 
-    // Control flow (Native Sigil Syntax Only)
-    // Note: ∀ (ForAll token) is used contextually as `for` by parser
-    // Note: ∈ (ElementOf token) is used contextually as `in` by parser
-    // Note: ⊗ (Tensor token) is used contextually as `break` by parser
-    // Note: ↻ (CycleArrow token) is used contextually as `continue` by parser
-    // Note: ∞ (Infinity token) is used contextually as `loop` by parser
-    #[token("⎇")]  // ISO branch symbol
+    // Control flow (Sigil-native only)
+    #[token("⎇")] // ISO branch symbol for if
     If,
-    #[token("⎉")]  // ISO alternative symbol
+    #[token("⎉")] // ISO alternative symbol for else
     Else,
-    #[token("⌥")]  // Option key - choices
+    #[token("⌥")] // option key symbol for match
     Match,
-    #[token("loop")]
-    Loop, // Legacy - parser also handles ∞ (Infinity token) for loop
-    #[token("⟳")]  // Cycle arrow
+    // Note: ∞ handled by Token::Infinity - parser is context-aware
+    #[token("forever")] // forever for infinite loop
+    Loop,
+    #[token("⟳")] // cycle arrow for while
     While,
-    // For - parser uses ForAll (∀) token contextually
-    // In - parser uses ElementOf (∈) token contextually
-    // Break - parser uses Tensor (⊗) token contextually
-    // Continue - parser uses CycleArrow (↻) token contextually
-    #[token("⤺")]  // Return arrow
+    // Note: ∀ handled by Token::ForAll - parser is context-aware
+    #[token("each")] // each for iteration
+    For,
+    // Note: ∈ handled by Token::ElementOf - parser is context-aware
+    #[token("of")] // of for membership
+    In,
+    #[token("⊲")] // left triangle for break
+    Break,
+    #[token("⊳")] // right triangle for continue
+    Continue,
+    #[token("⤺")] // return arrow
     Return,
     #[token("yield")]
     Yield,
     #[token("await")]
     Await,
 
-    // Other keywords
-    #[token("self")]
-    #[token("this")]  // This - current instance (Sigil prose alternative)
+    // Other keywords (Sigil-native only)
+    // Note: ξ/Ξ handled by Token::Xi - parser is context-aware
+    #[token("this")] // this for self reference
     SelfLower,
-    // Note: ⊙ kept for Hadamard product - self uses keyword only
-    #[token("Self")]
-    #[token("This")]  // This - current type (Sigil prose alternative)
+    #[token("This")] // This for Self type
     SelfUpper,
-    #[token("super")]
+    // Note: ↑ handled by Token::IntensityUp - parser is context-aware
+    #[token("above")] // above for super/parent
     Super,
-    #[token("tome")]
+    #[token("tome")] // tome for crate
     Crate,
-    #[token("where")]
+    #[token("∋")] // such that for where clauses
     Where,
-    #[token("as")]
+    #[token("as")] // type casting - no better symbolic alternative
     As,
     #[token("dyn")]
     Dyn,
@@ -515,9 +433,12 @@ pub enum Token {
     AlterSourceBlended,
 
     // Boolean literals
-    #[token("true")]
+    // Note: ⊤/⊥ handled by Token::Top/Bottom - parser is context-aware
+    #[token("yea")] // yea for true (Sigil-native)
+    #[token("true")] // true for compatibility
     True,
-    #[token("false")]
+    #[token("nay")] // nay for false (Sigil-native)
+    #[token("false")] // false for compatibility
     False,
 
     // Null literal
@@ -534,23 +455,27 @@ pub enum Token {
     Phi, // Filter
 
     #[token("σ")]
-    Sigma, // Sort morpheme (lowercase only - uppercase Σ is struct keyword)
+    #[token("Σ")]
+    Sigma, // Sort/Sum - also struct in declaration context
 
     #[token("ρ")]
     #[token("Ρ")]
     Rho, // Reduce
 
+    #[token("λ")]
     #[token("Λ")]
-    Lambda, // Lambda morpheme (uppercase only - lowercase λ is fn keyword)
+    Lambda, // Lambda - also fn in declaration context
 
     #[token("Π")]
     Pi, // Product
 
-    // Note: ⌛ (hourglass) is now mapped to Async keyword
+    #[token("⌛")]
+    Hourglass, // Await symbol
 
     // Additional morphemes
     #[token("δ")]
-    Delta, // Difference/change morpheme (lowercase only - uppercase Δ is mut keyword)
+    #[token("Δ")]
+    Delta, // Difference/change
 
     #[token("ε")]
     Epsilon, // Empty/null
@@ -587,7 +512,8 @@ pub enum Token {
     Psi, // Psychological/mental state
 
     #[token("θ")]
-    Theta, // Threshold/angle morpheme (lowercase only - uppercase Θ is trait keyword)
+    #[token("Θ")]
+    Theta, // Threshold/angle
 
     #[token("κ")]
     #[token("Κ")]
@@ -598,21 +524,19 @@ pub enum Token {
     #[token("parallel")]
     Parallel, // Parallel execution (U+2225)
 
-    #[token("gpu")]
-    Gpu, // GPU compute shader
-
     #[token("⊛")]
-    Convolve, // Convolution/merge operator (U+229B - circled asterisk)
+    #[token("gpu")]
+    Gpu, // GPU compute shader (U+229B - circled asterisk)
 
     // === Quantifiers (for AI-native set operations) ===
     #[token("∀")]
-    ForAll, // Universal quantification (parser handles contextual use as `for` keyword)
+    ForAll, // Universal quantification
 
     #[token("∃")]
     Exists, // Existential quantification
 
     #[token("∈")]
-    ElementOf, // Membership test (parser handles contextual use as `in` keyword)
+    ElementOf, // Membership test
 
     #[token("∉")]
     NotElementOf, // Non-membership
@@ -744,11 +668,10 @@ pub enum Token {
     Lozenge, // Predicted/speculative (U+25CA) - Token◊
 
     #[token("□")]
-    BoxSquare, // Necessity/verification (U+25A1) - |□verify
+    BoxSymbol, // Necessity/verification (U+25A1) - holographic necessity operator
 
     // === Legion Morphemes (Holographic Agent Collective) ===
     // From Infernum 2.0 - distributed memory and multi-agent coordination
-
     #[token("∿")]
     #[token("legion_field")]
     LegionField, // Collective memory substrate (U+223F sine wave) - memory∿
@@ -859,10 +782,9 @@ pub enum Token {
     // === Operators ===
     #[token("|")]
     Pipe,
-    #[token("·")]
-    MiddleDot, // Incorporation
-    #[token("->")]
-    #[token("→")]  // Unicode arrow (U+2192) - native Sigil syntax
+    #[token("·")] // middle dot - Sigil path separator (Rust :: purged)
+    MiddleDot,
+    #[token("→")] // rightwards arrow (Rust -> purged)
     Arrow,
     #[token("=>")]
     FatArrow,
@@ -892,10 +814,11 @@ pub enum Token {
     Percent,
     #[token("**")]
     StarStar, // Exponentiation
+    // Note: ∧/∨ handled by Token::LogicAnd/LogicOr - parser is context-aware
     #[token("&&")]
-    AndAnd,
+    AndAnd, // Logical AND
     #[token("||")]
-    OrOr,
+    OrOr, // Logical OR
     #[token("!")]
     Bang, // Evidentiality: known / logical not
     #[token("?")]
@@ -938,9 +861,8 @@ pub enum Token {
     DotDotEq,
     #[token("++")]
     PlusPlus, // Concatenation
-    // Deprecated Rust operator - use · (middledot) for paths
-    #[token("::")]
-    DeprecatedColonColon,
+    // ColonColon now uses · (MiddleDot handles this - Rust :: purged)
+    ColonColon,
     #[token(":")]
     Colon,
     #[token(";")]
@@ -978,7 +900,7 @@ pub enum Token {
     #[token("◯")]
     Circle, // Geometric zero
     #[token("∞")]
-    Infinity, // Infinite value (parser handles contextual use for loop keyword)
+    Infinity, // Ananta
 
     // === Protocol Operations (Sigil-native networking) ===
     #[token("⇒")]
@@ -1173,9 +1095,6 @@ impl Token {
                 | Token::Let
                 | Token::Mut
                 | Token::Const
-                | Token::Linear
-                | Token::Affine
-                | Token::Relevant
                 | Token::Type
                 | Token::Struct
                 | Token::Enum
@@ -1193,10 +1112,10 @@ impl Token {
                 | Token::Match
                 | Token::Loop
                 | Token::While
-                | Token::ForAll      // ∀ - used as for keyword
-                | Token::ElementOf   // ∈ - used as in keyword
-                | Token::Tensor      // ⊗ - used as break keyword
-                | Token::CycleArrow  // ↻ - used as continue keyword
+                | Token::For
+                | Token::In
+                | Token::Break
+                | Token::Continue
                 | Token::Return
                 | Token::Yield
                 | Token::Await
@@ -1236,7 +1155,7 @@ impl Token {
         matches!(
             self,
             Token::Tau | Token::Phi | Token::Sigma | Token::Rho |
-            Token::Lambda | Token::Pi | Token::Async |
+            Token::Lambda | Token::Pi | Token::Hourglass |
             Token::Delta | Token::Epsilon | Token::Omega | Token::Alpha | Token::Zeta |
             Token::Mu | Token::Chi | Token::Nu | Token::Xi |  // Access morphemes
             Token::Parallel | Token::Gpu |  // Concurrency morphemes
@@ -1316,7 +1235,7 @@ impl Token {
                 | Token::Gather     // ⟀ - interference gathering
                 | Token::Broadcast  // ↠ - one-to-many
                 | Token::Consensus  // ⇢ - many-to-one
-                | Token::Partial    // ∂ - decay
+                | Token::Partial // ∂ - decay
         )
     }
 
@@ -1381,68 +1300,6 @@ impl Token {
             self,
             Token::IntensityUp | Token::IntensityDown | Token::IntensityMax
         )
-    }
-
-    /// Returns true if this token is any kind of doc comment (evidential or legacy)
-    pub fn is_doc_comment(&self) -> bool {
-        matches!(
-            self,
-            Token::DocCommentVerified(_)
-                | Token::DocCommentVerifiedInner(_)
-                | Token::DocCommentReported(_)
-                | Token::DocCommentReportedInner(_)
-                | Token::DocCommentUncertain(_)
-                | Token::DocCommentUncertainInner(_)
-                | Token::DocCommentPredicted(_)
-                | Token::DocCommentPredictedInner(_)
-                | Token::DocCommentParadox(_)
-                | Token::DocCommentParadoxInner(_)
-                | Token::DocComment(_)  // Legacy /// comments map to Reported
-        )
-    }
-
-    /// Returns true if this is an inner doc comment (documents the enclosing item)
-    pub fn is_inner_doc_comment(&self) -> bool {
-        matches!(
-            self,
-            Token::DocCommentVerifiedInner(_)
-                | Token::DocCommentReportedInner(_)
-                | Token::DocCommentUncertainInner(_)
-                | Token::DocCommentPredictedInner(_)
-                | Token::DocCommentParadoxInner(_)
-        )
-    }
-
-    /// Returns the evidentiality marker for a doc comment (!, ~, ?, ◊, ‽)
-    /// Returns '~' (Reported) for legacy /// comments as default
-    pub fn doc_comment_evidentiality(&self) -> Option<char> {
-        match self {
-            Token::DocCommentVerified(_) | Token::DocCommentVerifiedInner(_) => Some('!'),
-            Token::DocCommentReported(_) | Token::DocCommentReportedInner(_) => Some('~'),
-            Token::DocCommentUncertain(_) | Token::DocCommentUncertainInner(_) => Some('?'),
-            Token::DocCommentPredicted(_) | Token::DocCommentPredictedInner(_) => Some('◊'),
-            Token::DocCommentParadox(_) | Token::DocCommentParadoxInner(_) => Some('‽'),
-            Token::DocComment(_) => Some('~'),  // Legacy defaults to Reported
-            _ => None,
-        }
-    }
-
-    /// Extracts the content string from a doc comment token
-    pub fn doc_comment_content(&self) -> Option<&str> {
-        match self {
-            Token::DocCommentVerified(s)
-            | Token::DocCommentVerifiedInner(s)
-            | Token::DocCommentReported(s)
-            | Token::DocCommentReportedInner(s)
-            | Token::DocCommentUncertain(s)
-            | Token::DocCommentUncertainInner(s)
-            | Token::DocCommentPredicted(s)
-            | Token::DocCommentPredictedInner(s)
-            | Token::DocCommentParadox(s)
-            | Token::DocCommentParadoxInner(s)
-            | Token::DocComment(s) => Some(s.as_str()),
-            _ => None,
-        }
     }
 }
 
@@ -1519,7 +1376,7 @@ mod tests {
         assert!(matches!(lexer.next_token(), Some((Token::Lambda, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Sigma, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Pi, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Async, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Hourglass, _))));
     }
 
     #[test]
@@ -1646,12 +1503,12 @@ mod tests {
     #[test]
     fn test_lifetime_labels() {
         // Test loop labels
-        let mut lexer = Lexer::new("'outer: loop { break 'outer }");
+        let mut lexer = Lexer::new("'outer: forever { ⊲ 'outer }");
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::Colon, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Loop, _))));
         assert!(matches!(lexer.next_token(), Some((Token::LBrace, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::DeprecatedRustKeyword(s), _)) if s == "break"));
+        assert!(matches!(lexer.next_token(), Some((Token::Break, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::RBrace, _))));
     }

@@ -3,8 +3,8 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ⎇ 42 {  // ERROR: condition must be bool
-        println("true");
+        println("yea");
     }
 }

@@ -3,10 +3,10 @@
 // Priority: P1 - Production Ready
 
 extern "C" {
-    λ abs(x: c_int) -> c_int;
+    rite abs(x: c_int) → c_int;
 }
 
-λ main() {
+rite main() {
     // We can declare extern functions
     println(1);
 }

@@ -1,18 +1,18 @@
-// Test: Drop Θ is called
+// Test: Drop aspect is called
 // Spec: 04-MEMORY.md § 6.2 Drop
 // Priority: P1 - Production Ready
 
-Σ Dropper {
+sigil Dropper {
     id: !i32,
 }
 
-⊢ Drop ∀ Dropper {
-    λ drop(&Δ self) {
-        println(self.id);
+⊢ Dropper : Drop {
+    rite drop(&vary this) {
+        println(this.id);
     }
 }
 
-λ main() {
+rite main() {
     ≔ a = Dropper { id: 100 };
 
     println(0);

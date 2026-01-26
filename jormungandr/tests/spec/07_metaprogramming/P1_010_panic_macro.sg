@@ -1,9 +1,0 @@
-// Test: todo! macro placeholder
-// Spec: 07-METAPROGRAMMING.md § 2.4 Control Macros
-// Priority: P1 - Production Ready
-
-rite main() {
-    // This test just verifies macros compile
-    ≔ x: !i32 = 42;
-    println(x);
-}

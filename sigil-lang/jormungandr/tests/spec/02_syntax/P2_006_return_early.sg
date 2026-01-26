@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 6.1 Return
 // Priority: P2 - Enhancement
 
-λ check(x: !i32) -> !i32 {
+rite check(x: !i32) → !i32 {
     ⎇ x < 0 {
         ⤺ -1;
     }
@@ -12,7 +12,7 @@
     x
 }
 
-λ main() {
+rite main() {
     println(check(-5));
     println(check(50));
     println(check(200));

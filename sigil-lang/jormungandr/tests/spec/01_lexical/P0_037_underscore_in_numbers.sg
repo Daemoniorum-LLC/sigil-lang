@@ -1,14 +1,14 @@
-// Test: Underscores ∈ numeric literals
+// Test: Underscores of numeric literals
 // Spec: 01-LEXICAL.md § 2.1 Numeric Separators
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate underscores ∈ numbers ∀ readability.
+// Validate underscores of numbers each readability.
 //
 // Expected behavior:
 // Should print 1000000 (1_000_000)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 1_000_000;
     println(x);
 }

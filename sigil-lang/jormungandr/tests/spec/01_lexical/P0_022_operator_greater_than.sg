@@ -6,9 +6,9 @@
 // Validate greater than comparison operator.
 //
 // Expected behavior:
-// Should print false (5 > 10)
+// Should print nay (5 > 10)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 5;
     ≔ y: !i32 = 10;
     println(x > y);

@@ -1,9 +1,9 @@
-// Test: While loop compilation
+// Test: While forever compilation
 // Spec: 18-COMPILER.md § 3.1 Control Flow
 // Priority: P1 - Production Ready
 
-λ main() {
-    ≔ Δ i: !i32 = 0;
+rite main() {
+    ≔ vary i: !i32 = 0;
     ⟳ i < 5 {
         println(i);
         i = i + 1;

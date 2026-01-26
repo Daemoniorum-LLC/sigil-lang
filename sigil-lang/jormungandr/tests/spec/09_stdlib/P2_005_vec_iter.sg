@@ -2,10 +2,10 @@
 // Spec: 09-STDLIB.md § 4.1 Vec
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ v: Vec<i32> = vec![1, 2, 3];
 
-    ∀ item ∈ v {
+    each item of v {
         println(item);
     }
 }

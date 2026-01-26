@@ -2,8 +2,8 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
-    ≔ x = true;
+rite main() {
+    ≔ x = yea;
     ≔ y = -x;  // ERROR: cannot negate bool
     println(y);
 }

@@ -6,9 +6,9 @@
 // Validate logical NOT works correctly.
 //
 // Expected behavior:
-// Should print false (!true)
+// Should print nay (!yea)
 
-λ main() {
-    ≔ x: !bool = true;
+rite main() {
+    ≔ x: !bool = yea;
     println(!x);
 }

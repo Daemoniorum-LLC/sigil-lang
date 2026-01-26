@@ -78,6 +78,20 @@ impl ImportRegistry {
         func_idx
     }
 
+    /// Add an import from another WASM module (for multi-module linking).
+    /// This is used when one Sigil module imports from another.
+    pub fn add_wasm_module_import(
+        &mut self,
+        wasm_module_name: &str,
+        func_name: &str,
+        params: Vec<ValType>,
+        results: Vec<ValType>,
+    ) -> u32 {
+        // WASM modules are prefixed with "$" to distinguish from JS runtime
+        let module = format!("${}", wasm_module_name);
+        self.add_import(&module, func_name, params, results)
+    }
+
     /// Look up a function index by qualified name.
     pub fn get_func(&self, qualified_name: &str) -> Option<u32> {
         self.func_map.get(qualified_name).copied()
@@ -129,25 +143,6 @@ impl ImportRegistry {
         self.register_vdom_imports();
         self.register_signal_imports();
         self.register_async_imports();
-        self.register_browser_imports();
-    }
-
-    fn register_browser_imports(&mut self) {
-        use ValType::*;
-        // Window and document access - add aliases for direct lookup
-        self.add_import_with_alias("browser", "window", "window", vec![], vec![I32]);
-        self.add_import_with_alias("browser", "document", "document", vec![], vec![I32]);
-        // Window properties
-        self.add_import("browser", "inner_width", vec![I32], vec![I32]);
-        self.add_import("browser", "inner_height", vec![I32], vec![I32]);
-        // Event listeners on window
-        self.add_import("browser", "add_event_listener", vec![I32, I32, I32, I32], vec![I32]);
-        self.add_import("browser", "remove_event_listener", vec![I32, I32], vec![]);
-        // Media query
-        self.add_import("browser", "match_media", vec![I32, I32], vec![I32]);
-        self.add_import("browser", "mql_matches", vec![I32], vec![I32]);
-        self.add_import("browser", "mql_add_listener", vec![I32, I32], vec![I32]);
-        self.add_import("browser", "mql_remove_listener", vec![I32, I32], vec![]);
     }
 
     fn register_console_imports(&mut self) {
@@ -157,6 +152,16 @@ impl ImportRegistry {
         self.add_import("console", "log_str", vec![I32, I32], vec![]);
         // Register 'print' as a builtin with direct lookup alias
         self.add_import_with_alias("console", "print", "print", vec![I64], vec![]);
+        // Register 'println' variants for WASM output
+        self.add_import_with_alias("console", "println_i64", "println", vec![I64], vec![]);
+        self.add_import_with_alias("console", "println_f64", "println_f64", vec![F64], vec![]);
+        self.add_import_with_alias(
+            "console",
+            "println_str",
+            "println_str",
+            vec![I32, I32],
+            vec![],
+        );
     }
 
     fn register_string_imports(&mut self) {
@@ -170,20 +175,6 @@ impl ImportRegistry {
         self.add_import("string", "from_float", vec![F64], vec![I32]); // (float) -> str
         self.add_import("string", "parse_int", vec![I32], vec![I64]); // (str) -> int
         self.add_import("string", "parse_float", vec![I32], vec![F64]); // (str) -> float
-        // Additional string methods
-        self.add_import("string", "lines", vec![I32], vec![I32]); // (str) -> array of strings
-        self.add_import("string", "split_whitespace", vec![I32], vec![I32]); // (str) -> array of strings
-        self.add_import("string", "split", vec![I32, I32], vec![I32]); // (str, delimiter) -> array
-        self.add_import("string", "trim", vec![I32], vec![I32]); // (str) -> trimmed str
-        self.add_import("string", "trim_start", vec![I32], vec![I32]); // (str) -> trimmed str
-        self.add_import("string", "trim_end", vec![I32], vec![I32]); // (str) -> trimmed str
-        self.add_import("string", "to_uppercase", vec![I32], vec![I32]); // (str) -> uppercase str
-        self.add_import("string", "to_lowercase", vec![I32], vec![I32]); // (str) -> lowercase str
-        self.add_import("string", "contains", vec![I32, I32], vec![I32]); // (str, substr) -> bool
-        self.add_import("string", "starts_with", vec![I32, I32], vec![I32]); // (str, prefix) -> bool
-        self.add_import("string", "ends_with", vec![I32, I32], vec![I32]); // (str, suffix) -> bool
-        self.add_import("string", "replace", vec![I32, I32, I32], vec![I32]); // (str, from, to) -> new str
-        self.add_import("string", "chars", vec![I32], vec![I32]); // (str) -> array of chars
     }
 
     fn register_dom_imports(&mut self) {
@@ -210,7 +201,12 @@ impl ImportRegistry {
 
     fn register_event_imports(&mut self) {
         use ValType::*;
-        self.add_import("events", "add_listener", vec![I32, I32, I32, I32], vec![I32]);
+        self.add_import(
+            "events",
+            "add_listener",
+            vec![I32, I32, I32, I32],
+            vec![I32],
+        );
         self.add_import("events", "remove_listener", vec![I32], vec![]);
         self.add_import("events", "prevent_default", vec![I32], vec![]);
         self.add_import("events", "stop_propagation", vec![I32], vec![]);
@@ -264,29 +260,99 @@ impl ImportRegistry {
         use ValType::*;
         // Core array operations with aliases for direct lookup
         self.add_import_with_alias("morpheme", "array_new", "array_new", vec![], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_push", "array_push", vec![I32, I64], vec![]);
-        self.add_import_with_alias("morpheme", "array_get", "array_get", vec![I32, I32], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_set", "array_set", vec![I32, I32, I64], vec![]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_push",
+            "array_push",
+            vec![I32, I64],
+            vec![],
+        );
+        self.add_import_with_alias(
+            "morpheme",
+            "array_get",
+            "array_get",
+            vec![I32, I32],
+            vec![I64],
+        );
+        self.add_import_with_alias(
+            "morpheme",
+            "array_set",
+            "array_set",
+            vec![I32, I32, I64],
+            vec![],
+        );
         self.add_import_with_alias("morpheme", "array_len", "array_len", vec![I32], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_map", "array_map", vec![I32, I32], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_filter", "array_filter", vec![I32, I32], vec![I32]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_map",
+            "array_map",
+            vec![I32, I32],
+            vec![I32],
+        );
+        self.add_import_with_alias(
+            "morpheme",
+            "array_filter",
+            "array_filter",
+            vec![I32, I32],
+            vec![I32],
+        );
         // Parallel morphemes - use Web Workers or SharedArrayBuffer for parallelism
         self.add_import("morpheme", "array_parallel_map", vec![I32, I32], vec![I32]);
-        self.add_import("morpheme", "array_parallel_filter", vec![I32, I32], vec![I32]);
-        self.add_import("morpheme", "array_parallel_reduce", vec![I32, I32, I64], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_reduce", "array_reduce", vec![I32, I32, I64], vec![I64]);
+        self.add_import(
+            "morpheme",
+            "array_parallel_filter",
+            vec![I32, I32],
+            vec![I32],
+        );
+        self.add_import(
+            "morpheme",
+            "array_parallel_reduce",
+            vec![I32, I32, I64],
+            vec![I64],
+        );
+        self.add_import_with_alias(
+            "morpheme",
+            "array_reduce",
+            "array_reduce",
+            vec![I32, I32, I64],
+            vec![I64],
+        );
         self.add_import_with_alias("morpheme", "array_sort", "array_sort", vec![I32], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_first", "array_first", vec![I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_first",
+            "array_first",
+            vec![I32],
+            vec![I64],
+        );
         self.add_import_with_alias("morpheme", "array_last", "array_last", vec![I32], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_nth", "array_nth", vec![I32, I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_nth",
+            "array_nth",
+            vec![I32, I32],
+            vec![I64],
+        );
         // Additional reduce operations for ρ+, ρ*, etc.
         self.add_import_with_alias("morpheme", "array_sum", "array_sum", vec![I32], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_product", "array_product", vec![I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_product",
+            "array_product",
+            vec![I32],
+            vec![I64],
+        );
         self.add_import_with_alias("morpheme", "array_min", "array_min", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_max", "array_max", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_all", "array_all", vec![I32], vec![I32]);
         self.add_import_with_alias("morpheme", "array_any", "array_any", vec![I32], vec![I32]);
-        self.add_import_with_alias("morpheme", "array_random_element", "array_random_element", vec![I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_random_element",
+            "array_random_element",
+            vec![I32],
+            vec![I64],
+        );
     }
 
     fn register_math_imports(&mut self) {
@@ -302,17 +368,7 @@ impl ImportRegistry {
         self.add_import("math", "ceil", vec![F64], vec![F64]);
         self.add_import("math", "round", vec![F64], vec![F64]);
         self.add_import("math", "abs", vec![F64], vec![F64]);
-        self.add_import("math", "abs_int", vec![I64], vec![I64]); // integer abs
         self.add_import("math", "random", vec![], vec![F64]);
-        // Additional math functions
-        self.add_import("math", "clamp", vec![F64, F64, F64], vec![F64]); // (value, min, max) -> clamped
-        self.add_import("math", "clamp_int", vec![I64, I64, I64], vec![I64]); // (value, min, max) -> clamped
-        self.add_import("math", "min", vec![F64, F64], vec![F64]);
-        self.add_import("math", "max", vec![F64, F64], vec![F64]);
-        self.add_import("math", "min_int", vec![I64, I64], vec![I64]);
-        self.add_import("math", "max_int", vec![I64, I64], vec![I64]);
-        self.add_import("math", "signum", vec![F64], vec![F64]);
-        self.add_import("math", "signum_int", vec![I64], vec![I64]);
     }
 
     fn register_vdom_imports(&mut self) {
@@ -470,5 +526,83 @@ mod tests {
                 type_idx
             );
         }
+    }
+
+    // ============================================
+    // Multi-Module Linking Tests
+    // ============================================
+
+    #[test]
+    fn test_wasm_module_import() {
+        let mut registry = ImportRegistry::empty();
+
+        // Import a function from another WASM module
+        let func_idx = registry.add_wasm_module_import(
+            "math_lib",
+            "add",
+            vec![ValType::I64, ValType::I64],
+            vec![ValType::I64],
+        );
+
+        assert_eq!(func_idx, 0);
+        // WASM module imports use "$" prefix to distinguish from JS runtime
+        assert_eq!(registry.get_func("$math_lib_add"), Some(0));
+    }
+
+    #[test]
+    fn test_multiple_wasm_module_imports() {
+        let mut registry = ImportRegistry::empty();
+
+        // Import from first module
+        let idx1 = registry.add_wasm_module_import("module_a", "foo", vec![], vec![ValType::I64]);
+
+        // Import from second module
+        let idx2 = registry.add_wasm_module_import("module_b", "bar", vec![], vec![ValType::I64]);
+
+        // Import another function from first module
+        let idx3 = registry.add_wasm_module_import("module_a", "baz", vec![], vec![ValType::I64]);
+
+        assert_eq!(idx1, 0);
+        assert_eq!(idx2, 1);
+        assert_eq!(idx3, 2);
+
+        // All should be findable
+        assert!(registry.get_func("$module_a_foo").is_some());
+        assert!(registry.get_func("$module_b_bar").is_some());
+        assert!(registry.get_func("$module_a_baz").is_some());
+    }
+
+    #[test]
+    fn test_wasm_import_has_correct_module_name() {
+        let mut registry = ImportRegistry::empty();
+
+        registry.add_wasm_module_import("other_module", "helper", vec![], vec![]);
+
+        let import = &registry.imports()[0];
+        assert_eq!(import.module, "$other_module");
+        assert_eq!(import.name, "helper");
+    }
+
+    #[test]
+    fn test_mixed_js_and_wasm_imports() {
+        let mut registry = ImportRegistry::empty();
+
+        // Add a JS runtime import
+        let js_idx = registry.add_import("console", "log", vec![ValType::I64], vec![]);
+
+        // Add a WASM module import
+        let wasm_idx =
+            registry.add_wasm_module_import("my_lib", "calc", vec![], vec![ValType::I64]);
+
+        // Both should coexist
+        assert_eq!(registry.get_func("console_log"), Some(js_idx));
+        assert_eq!(registry.get_func("$my_lib_calc"), Some(wasm_idx));
+
+        // Check that the modules are different
+        let js_import = &registry.imports()[js_idx as usize];
+        let wasm_import = &registry.imports()[wasm_idx as usize];
+
+        assert_eq!(js_import.module, "console");
+        assert_eq!(wasm_import.module, "$my_lib");
     }
 }

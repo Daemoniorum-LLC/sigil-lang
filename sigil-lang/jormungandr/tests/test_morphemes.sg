@@ -1,4 +1,4 @@
-//! Morpheme operator test ∀ the Sigil self-hosted compiler
+//! Morpheme operator test each the Sigil this-hosted compiler
 //!
 //! This tests Sigil's morpheme operators and pipe chains:
 //! - τ (transform) - map operation
@@ -14,7 +14,7 @@
 //! - γ (group) - group by
 
 /// Test transform (τ) morpheme
-☉ λ test_transform() -> !bool {
+☉ rite test_transform() → !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Double each number
@@ -26,11 +26,11 @@
     ≔ tripled_plus_one = numbers|τ{x => x * 3}|τ{x => x + 1};
     assert(tripled_plus_one[0] == 4, "1*3+1 should be 4");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test filter (φ) morpheme
-☉ λ test_filter() -> !bool {
+☉ rite test_filter() → !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Keep only even numbers
@@ -42,11 +42,11 @@
     ≔ doubled_evens = numbers|φ{x => x % 2 == 0}|τ{x => x * 2};
     assert(doubled_evens[0] == 4, "first doubled even should be 4");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test sort (σ) morpheme
-☉ λ test_sort() -> !bool {
+☉ rite test_sort() → !bool {
     ≔ numbers: ![i32] = [5, 2, 8, 1, 9, 3];
 
     // Default sort (ascending)
@@ -58,11 +58,11 @@
     ≔ descending = numbers|σ{a, b => b - a};
     assert(descending[0] == 9, "first descending should be 9");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test reduce (ρ) morpheme
-☉ λ test_reduce() -> !bool {
+☉ rite test_reduce() → !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Sum via reduce
@@ -77,11 +77,11 @@
     ≔ max = numbers|ρ{numbers[0], acc, x => ⎇ x > acc { x } ⎉ { acc }};
     assert(max == 5, "max should be 5");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test sum (Σ) morpheme
-☉ λ test_sum() -> !bool {
+☉ rite test_sum() → !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Direct sum
@@ -92,22 +92,22 @@
     ≔ sum_squares = numbers|τ{x => x * x}|Σ;
     assert(sum_squares == 55, "sum of squares should be 55");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test product (Π) morpheme
-☉ λ test_product() -> !bool {
+☉ rite test_product() → !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Direct product
     ≔ prod = numbers|Π;
     assert(prod == 120, "product should be 120");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test first (α) and last (ω) morphemes
-☉ λ test_first_last() -> !bool {
+☉ rite test_first_last() → !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // First element
@@ -126,22 +126,22 @@
     ≔ last_odd = numbers|φ{x => x % 2 != 0}|ω;
     assert(last_odd == 5, "last odd should be 5");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test distinct (δ) morpheme
-☉ λ test_distinct() -> !bool {
+☉ rite test_distinct() → !bool {
     ≔ numbers: ![i32] = [1, 2, 2, 3, 3, 3, 4, 4, 4, 4];
 
     // Unique values
     ≔ unique = numbers|δ;
     assert(unique.len() == 4, "should have 4 unique values");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test complex pipe chains
-☉ λ test_complex_chains() -> !bool {
+☉ rite test_complex_chains() → !bool {
     ≔ data: ![i32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Filter evens, square them, sort descending, take sum
@@ -153,16 +153,16 @@
 
     assert(result == 220, "complex chain should give 220");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
-/// Test Σ with pipe chains
-☉ Σ Person {
+/// Test sigil with pipe chains
+☉ sigil Person {
     ☉ name: !String,
     ☉ age: !i32,
 }
 
-☉ λ test_struct_pipes() -> !bool {
+☉ rite test_struct_pipes() → !bool {
     ≔ people: ![Person] = [
         Person { name: "Alice", age: 30 },
         Person { name: "Bob", age: 25 },
@@ -184,22 +184,22 @@
     ≔ avg_age = total_age / people.len();
     assert(avg_age == 30, "average age should be 30");
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Test incorporation syntax
-☉ λ test_incorporation() -> !bool {
+☉ rite test_incorporation() → !bool {
     // Incorporation combines operations: file·open·read
     // This is polysynthetic: the incorporated form is a unit
 
     // For testing, we'll simulate with method chains
     // Real incorporation would invoke the · operator
 
-    ⤺ true;
+    ⤺ yea;
 }
 
 /// Main entry point
-☉ λ main() -> !i32 {
+☉ rite main() → !i32 {
     assert(test_transform(), "test_transform failed");
     assert(test_filter(), "test_filter failed");
     assert(test_sort(), "test_sort failed");

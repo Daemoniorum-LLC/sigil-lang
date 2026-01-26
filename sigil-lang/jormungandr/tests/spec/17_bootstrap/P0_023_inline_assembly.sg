@@ -3,12 +3,12 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate inline asm works ∈ C codegen.
+// Validate inline asm works of C codegen.
 //
 // Expected behavior:
 // Should print 42 (via asm or fallback)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     unsafe {
         // Most implementations will invoke C fallback

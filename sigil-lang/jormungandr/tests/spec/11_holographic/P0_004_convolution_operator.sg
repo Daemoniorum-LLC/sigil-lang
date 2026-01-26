@@ -4,7 +4,7 @@
 //
 // The ⊛ operator combines/merges shards
 
-λ main() {
+rite main() {
     ≔ shards_a: Vec<i32> = vec![1, 2];
     ≔ shards_b: Vec<i32> = vec![3, 4];
     ≔ merged = shards_a ⊛ shards_b;  // Convolution merge

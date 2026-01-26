@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Collection Boundaries
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ v: Vec<i32> = Vec·new();
     println(v.len());
 }

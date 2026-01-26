@@ -1,23 +1,23 @@
-// Test: Call Θ method through concrete type
-☉ Θ Describable {
-    λ describe(&self) -> !String;
+// Test: Call aspect method through concrete type
+☉ aspect Describable {
+    rite describe(&this) → !String;
 }
 
-☉ Σ Book {
+☉ sigil Book {
     title: !String,
     author: !String
 }
 
-⊢ Describable ∀ Book {
-    λ describe(&self) -> !String {
-        ≔ Δ result: !String = self.title.clone();
+⊢ Book : Describable {
+    rite describe(&this) → !String {
+        ≔ vary result: !String = this.title.clone();
         result.push_str(" by ");
-        result.push_str(&self.author);
+        result.push_str(&this.author);
         result
     }
 }
 
-λ main() {
+rite main() {
     ≔ book: !Book = Book {
         title: "The Sigil Language",
         author: "The Daemoniorum Team"

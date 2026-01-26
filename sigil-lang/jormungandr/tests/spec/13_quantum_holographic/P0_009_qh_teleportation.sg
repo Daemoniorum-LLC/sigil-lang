@@ -2,7 +2,7 @@
 // Spec: 13-QUANTUM-HOLOGRAPHIC.md § 9 Teleportation
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ data: QHState<i32> = QHState·encode(99);
     ≔ (alice, bob) = create_epr_pair();
     ≔ teleported = data|teleport(alice, bob);

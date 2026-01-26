@@ -2,8 +2,8 @@
 // Spec: 06-CONCURRENCY.md § 5.3 Atomics
 // Priority: P1 - Production Ready
 
-λ main() {
-    ≔ flag: AtomicBool = AtomicBool·new(false);
+rite main() {
+    ≔ flag: AtomicBool = AtomicBool·new(nay);
 
     // Initial
     ⎇ flag.load() {
@@ -12,8 +12,8 @@
         println(0);
     }
 
-    // Store true
-    flag.store(true);
+    // Store yea
+    flag.store(yea);
 
     // After store
     ⎇ flag.load() {

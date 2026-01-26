@@ -1,24 +1,24 @@
-// Test: Clone Θ implementation
+// Test: Clone aspect implementation
 // Spec: 04-MEMORY.md § 2.3 Clone Trait
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate Clone Θ works correctly.
+// Validate Clone aspect works correctly.
 //
 // Expected behavior:
 // Should print 42
 
-☉ Σ Value {
+☉ sigil Value {
     x: !i32
 }
 
-⊢ Clone ∀ Value {
-    λ clone(self) -> !Value {
-        Value { x: self.x }
+⊢ Value : Clone {
+    rite clone(this) → !Value {
+        Value { x: this.x }
     }
 }
 
-λ main() {
+rite main() {
     ≔ v: !Value = Value { x: 42 };
     ≔ v2: !Value = v.clone();
     println(v2.x);

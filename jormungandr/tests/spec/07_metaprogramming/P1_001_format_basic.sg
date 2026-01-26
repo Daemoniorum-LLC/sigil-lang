@@ -1,8 +1,0 @@
-// Test: Basic format! macro
-// Spec: 07-METAPROGRAMMING.md § 1.1 Format Macro
-// Priority: P1 - Standard Feature
-
-rite main() {
-    ≔ s = format!("Hello, World!");
-    println(s);
-}

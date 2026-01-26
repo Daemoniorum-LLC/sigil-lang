@@ -1,7 +1,0 @@
-// Negative Test: Undefined variable
-// Should fail with undefined variable error
-// Priority: P0 - Bootstrap Critical
-
-rite main() {
-    println(undefined_var);  // ERROR: undefined variable
-}

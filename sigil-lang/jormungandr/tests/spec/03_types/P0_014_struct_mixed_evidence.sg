@@ -1,20 +1,20 @@
 // Test: Struct with mixed evidence fields
-// Spec: 03-TYPES.md § 2.5 Evidence ∈ Struct Fields
+// Spec: 03-TYPES.md § 2.5 Evidence of Struct Fields
 // Priority: P0
 //
 // Purpose:
-// Validates that Σ fields can have different evidence markers
+// Validates that sigil fields can have different evidence markers
 // and that each field maintains its evidence independently.
 //
 // Expected behavior:
 // Should compile and print 42 then 99 on separate lines
 
-☉ Σ Data {
+☉ sigil Data {
     certain: !i32,
     uncertain: ?i32
 }
 
-λ main() {
+rite main() {
     ≔ d: !Data = Data { certain: 42, uncertain: 99 };
     println(d.certain);
     println(d.uncertain);

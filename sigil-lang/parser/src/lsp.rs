@@ -267,8 +267,14 @@ impl SigilLanguageServer {
             match item {
                 crate::ast::Item::Function(func) => {
                     let range = Range {
-                        start: Position { line: 0, character: 0 },
-                        end: Position { line: 0, character: 0 },
+                        start: Position {
+                            line: 0,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 0,
+                            character: 0,
+                        },
                     };
 
                     #[allow(deprecated)]
@@ -285,8 +291,14 @@ impl SigilLanguageServer {
                 }
                 crate::ast::Item::Struct(s) => {
                     let range = Range {
-                        start: Position { line: 0, character: 0 },
-                        end: Position { line: 0, character: 0 },
+                        start: Position {
+                            line: 0,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 0,
+                            character: 0,
+                        },
                     };
 
                     #[allow(deprecated)]
@@ -303,8 +315,14 @@ impl SigilLanguageServer {
                 }
                 crate::ast::Item::Enum(e) => {
                     let range = Range {
-                        start: Position { line: 0, character: 0 },
-                        end: Position { line: 0, character: 0 },
+                        start: Position {
+                            line: 0,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 0,
+                            character: 0,
+                        },
                     };
 
                     #[allow(deprecated)]
@@ -321,8 +339,14 @@ impl SigilLanguageServer {
                 }
                 crate::ast::Item::Trait(t) => {
                     let range = Range {
-                        start: Position { line: 0, character: 0 },
-                        end: Position { line: 0, character: 0 },
+                        start: Position {
+                            line: 0,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 0,
+                            character: 0,
+                        },
                     };
 
                     #[allow(deprecated)]
@@ -412,7 +436,9 @@ impl LanguageServer for SigilLanguageServer {
             {
                 let mut state = self.state.write().unwrap();
                 state.documents.insert(uri.clone(), content.clone());
-                state.versions.insert(uri.clone(), params.text_document.version);
+                state
+                    .versions
+                    .insert(uri.clone(), params.text_document.version);
             }
 
             // Re-parse and publish diagnostics
@@ -432,7 +458,11 @@ impl LanguageServer for SigilLanguageServer {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let uri = params.text_document_position_params.text_document.uri.to_string();
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .to_string();
         let position = params.text_document_position_params.position;
 
         if let Some(info) = self.get_hover_info(&uri, position) {
@@ -463,8 +493,16 @@ impl LanguageServer for SigilLanguageServer {
             ("in", "Iterator keyword", CompletionItemKind::KEYWORD),
             ("match", "Pattern match", CompletionItemKind::KEYWORD),
             ("return", "Return statement", CompletionItemKind::KEYWORD),
-            ("struct", "Structure definition", CompletionItemKind::KEYWORD),
-            ("enum", "Enumeration definition", CompletionItemKind::KEYWORD),
+            (
+                "struct",
+                "Structure definition",
+                CompletionItemKind::KEYWORD,
+            ),
+            (
+                "enum",
+                "Enumeration definition",
+                CompletionItemKind::KEYWORD,
+            ),
             ("trait", "Trait definition", CompletionItemKind::KEYWORD),
             ("impl", "Implementation block", CompletionItemKind::KEYWORD),
             ("true", "Boolean true", CompletionItemKind::KEYWORD),
@@ -514,7 +552,9 @@ impl LanguageServer for SigilLanguageServer {
         }
 
         // Types
-        let types = ["i64", "f64", "bool", "String", "Array", "Map", "Option", "Result"];
+        let types = [
+            "i64", "f64", "bool", "String", "Array", "Map", "Option", "Result",
+        ];
 
         for ty in types {
             items.push(CompletionItem {

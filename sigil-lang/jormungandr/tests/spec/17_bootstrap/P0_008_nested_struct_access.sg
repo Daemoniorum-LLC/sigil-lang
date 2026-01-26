@@ -1,22 +1,22 @@
-// Test: Nested Σ field access
+// Test: Nested sigil field access
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § CG-001 Field Access
 // Priority: P0
 //
 // Purpose:
-// Validates that nested Σ access generates correct C code.
+// Validates that nested sigil access generates correct C code.
 //
 // Expected behavior:
 // Should compile and print 42
 
-☉ Σ Inner {
+☉ sigil Inner {
     value: !i32
 }
 
-☉ Σ Outer {
+☉ sigil Outer {
     inner: !Inner
 }
 
-λ main() {
+rite main() {
     ≔ o: !Outer = Outer { inner: Inner { value: 42 } };
     println(o.inner.value);
 }

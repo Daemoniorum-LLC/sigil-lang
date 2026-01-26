@@ -1,8 +1,8 @@
-// Test: Underscore ∈ identifiers
+// Test: Underscore of identifiers
 // Spec: 01-LEXICAL.md § 2.1 Identifiers
 // Priority: P0
 
-λ main() {
+rite main() {
     ≔ my_value: !i32 = 42;
     println(my_value);
 }

@@ -1,8 +1,8 @@
-// Test: Deeply nested ⎇
+// Test: Deeply nested if
 // Spec: 02-SYNTAX.md § 5.1 If
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ a: !i32 = 1;
     ≔ b: !i32 = 2;
     ≔ c: !i32 = 3;

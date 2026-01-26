@@ -1,8 +1,8 @@
-// Negative Test: Break outside of loop
+// Negative Test: Break outside of forever
 // Should fail with syntax error
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
-    ⊗;  // ERROR: ⊗ outside of loop
+rite main() {
+    ⊲;  // ERROR: ⊲ outside of forever
     println("done");
 }

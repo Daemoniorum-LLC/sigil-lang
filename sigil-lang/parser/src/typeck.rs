@@ -7,7 +7,7 @@
 use crate::ast::*;
 use crate::span::Span;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
@@ -74,6 +74,9 @@ pub enum Type {
     /// Atomic type
     Atomic(Box<Type>),
 
+    /// Linear type - value can only be used once
+    Linear(Box<Type>),
+
     /// Type variable for inference
     Var(TypeVar),
 
@@ -103,16 +106,10 @@ pub enum Type {
     /// Inline enum type: enum { Variant1, Variant2, ... }
     InlineEnum(Vec<String>),
     /// Associated type binding: Output = Type
-    AssocTypeBinding { name: String, ty: Box<Type> },
-
-    /// Linear type wrapper - value must be used exactly once (no-cloning theorem)
-    Linear(Box<Type>),
-
-    /// Affine type wrapper - value can be used at most once (can be dropped)
-    Affine(Box<Type>),
-
-    /// Relevant type wrapper - value must be used at least once (can be cloned)
-    Relevant(Box<Type>),
+    AssocTypeBinding {
+        name: String,
+        ty: Box<Type>,
+    },
 }
 
 /// Integer sizes
@@ -217,120 +214,67 @@ impl EvidenceLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeVar(pub u32);
 
-/// Type error categories for better diagnostics
-#[derive(Debug, Clone)]
-pub enum TypeErrorKind {
-    /// Type mismatch: expected one type, got another
-    Mismatch {
-        expected: String,
-        actual: String,
-        context: Option<String>,
-    },
-    /// Undefined type, trait, or associated item
-    Undefined {
-        name: String,
-        kind: &'static str, // "type", "trait", "method", "field"
-    },
-    /// Missing trait implementation
-    MissingImpl {
-        type_name: String,
-        trait_name: String,
-    },
-    /// Invalid operation on type
-    InvalidOperation {
-        operation: String,
-        type_name: String,
-    },
-    /// Generic error with message
-    Generic {
-        message: String,
-    },
+/// Type error codes for structured diagnostics
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeErrorCode {
+    /// E0308: Type mismatch
+    TypeMismatch,
+    /// E0425: Undefined name (variable, function, type)
+    UndefinedName,
+    /// E0382: Use after move / borrow errors
+    BorrowError,
+    /// E0600: Evidentiality constraint violation
+    EvidentialityError,
+    /// E0601: Condition must be boolean
+    NonBoolCondition,
+    /// E0602: Array elements must have same type
+    HeterogeneousArray,
+    /// E0603: Invalid index type
+    InvalidIndex,
+    /// E0604: Invalid operand type
+    InvalidOperand,
+    /// E0605: Missing match arm
+    MissingMatchArm,
+    /// E0606: Invalid reduction operation
+    InvalidReduction,
+    /// E0300: Generic type error
+    Generic,
 }
 
-/// Type error with rich context
+impl TypeErrorCode {
+    pub fn code(&self) -> &'static str {
+        match self {
+            TypeErrorCode::TypeMismatch => "E0308",
+            TypeErrorCode::UndefinedName => "E0425",
+            TypeErrorCode::BorrowError => "E0382",
+            TypeErrorCode::EvidentialityError => "E0600",
+            TypeErrorCode::NonBoolCondition => "E0601",
+            TypeErrorCode::HeterogeneousArray => "E0602",
+            TypeErrorCode::InvalidIndex => "E0603",
+            TypeErrorCode::InvalidOperand => "E0604",
+            TypeErrorCode::MissingMatchArm => "E0605",
+            TypeErrorCode::InvalidReduction => "E0606",
+            TypeErrorCode::Generic => "E0300",
+        }
+    }
+}
+
+/// Type error
 #[derive(Debug, Clone)]
 pub struct TypeError {
-    pub kind: TypeErrorKind,
     pub message: String,
     pub span: Option<Span>,
     pub notes: Vec<String>,
-    pub help: Option<String>,
+    pub code: TypeErrorCode,
 }
 
 impl TypeError {
     pub fn new(message: impl Into<String>) -> Self {
-        let msg = message.into();
         Self {
-            kind: TypeErrorKind::Generic { message: msg.clone() },
-            message: msg,
+            message: message.into(),
             span: None,
             notes: Vec::new(),
-            help: None,
-        }
-    }
-
-    /// Create a type mismatch error
-    pub fn mismatch(expected: impl Into<String>, actual: impl Into<String>) -> Self {
-        let exp = expected.into();
-        let act = actual.into();
-        let msg = format!("expected `{}`, found `{}`", exp, act);
-        Self {
-            kind: TypeErrorKind::Mismatch {
-                expected: exp,
-                actual: act,
-                context: None,
-            },
-            message: msg,
-            span: None,
-            notes: Vec::new(),
-            help: None,
-        }
-    }
-
-    /// Create an undefined type/trait error
-    pub fn undefined(name: impl Into<String>, kind: &'static str) -> Self {
-        let n = name.into();
-        let msg = format!("cannot find {} `{}` in this scope", kind, n);
-        Self {
-            kind: TypeErrorKind::Undefined { name: n, kind },
-            message: msg,
-            span: None,
-            notes: Vec::new(),
-            help: None,
-        }
-    }
-
-    /// Create a missing trait implementation error
-    pub fn missing_impl(type_name: impl Into<String>, trait_name: impl Into<String>) -> Self {
-        let t = type_name.into();
-        let tr = trait_name.into();
-        let msg = format!("the trait `{}` is not implemented for `{}`", tr, t);
-        Self {
-            kind: TypeErrorKind::MissingImpl {
-                type_name: t,
-                trait_name: tr,
-            },
-            message: msg,
-            span: None,
-            notes: Vec::new(),
-            help: None,
-        }
-    }
-
-    /// Create an invalid operation error
-    pub fn invalid_op(operation: impl Into<String>, type_name: impl Into<String>) -> Self {
-        let op = operation.into();
-        let ty = type_name.into();
-        let msg = format!("cannot {} type `{}`", op, ty);
-        Self {
-            kind: TypeErrorKind::InvalidOperation {
-                operation: op,
-                type_name: ty,
-            },
-            message: msg,
-            span: None,
-            notes: Vec::new(),
-            help: None,
+            code: TypeErrorCode::Generic,
         }
     }
 
@@ -344,34 +288,81 @@ impl TypeError {
         self
     }
 
-    pub fn with_help(mut self, help: impl Into<String>) -> Self {
-        self.help = Some(help.into());
+    pub fn with_code(mut self, code: TypeErrorCode) -> Self {
+        self.code = code;
         self
     }
 
-    /// Get error code for documentation
-    pub fn code(&self) -> &'static str {
-        match &self.kind {
-            TypeErrorKind::Mismatch { .. } => "T001",
-            TypeErrorKind::Undefined { .. } => "T002",
-            TypeErrorKind::MissingImpl { .. } => "T003",
-            TypeErrorKind::InvalidOperation { .. } => "T004",
-            TypeErrorKind::Generic { .. } => "T000",
-        }
+    // Convenient constructors for common error types
+
+    /// Type mismatch error: expected X, found Y
+    pub fn type_mismatch(expected: &str, found: &str) -> Self {
+        Self::new(format!(
+            "type mismatch: expected `{}`, found `{}`",
+            expected, found
+        ))
+        .with_code(TypeErrorCode::TypeMismatch)
+    }
+
+    /// Undefined name error
+    pub fn undefined(kind: &str, name: &str) -> Self {
+        Self::new(format!("{} `{}` not found in this scope", kind, name))
+            .with_code(TypeErrorCode::UndefinedName)
+    }
+
+    /// Condition must be boolean error
+    pub fn non_bool_condition(context: &str, found: &str) -> Self {
+        Self::new(format!(
+            "{} condition must be `bool`, found `{}`",
+            context, found
+        ))
+        .with_code(TypeErrorCode::NonBoolCondition)
+    }
+
+    /// Array elements must have same type
+    pub fn heterogeneous_array(first_type: &str, found_type: &str) -> Self {
+        Self::new(format!(
+            "array elements must have the same type: expected `{}`, found `{}`",
+            first_type, found_type
+        ))
+        .with_code(TypeErrorCode::HeterogeneousArray)
+    }
+
+    /// Invalid index type
+    pub fn invalid_index(found: &str) -> Self {
+        Self::new(format!("array index must be an integer, found `{}`", found))
+            .with_code(TypeErrorCode::InvalidIndex)
+    }
+
+    /// Invalid operand type
+    pub fn invalid_operand(op: &str, found: &str) -> Self {
+        Self::new(format!("invalid operand type `{}` for `{}`", found, op))
+            .with_code(TypeErrorCode::InvalidOperand)
+    }
+
+    /// Missing match arm
+    pub fn missing_match_arm() -> Self {
+        Self::new("match expression has no arms").with_code(TypeErrorCode::MissingMatchArm)
+    }
+
+    /// Invalid reduction
+    pub fn invalid_reduction(op: &str, found: &str) -> Self {
+        Self::new(format!(
+            "`{}` requires array or slice, found `{}`",
+            op, found
+        ))
+        .with_code(TypeErrorCode::InvalidReduction)
     }
 }
 
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "error[{}]: {}", self.code(), self.message)?;
+        write!(f, "{}", self.message)?;
         if let Some(span) = self.span {
-            write!(f, "\n  --> at {}", span)?;
+            write!(f, " at {}", span)?;
         }
         for note in &self.notes {
             write!(f, "\n  note: {}", note)?;
-        }
-        if let Some(help) = &self.help {
-            write!(f, "\n  help: {}", help)?;
         }
         Ok(())
     }
@@ -384,8 +375,10 @@ pub struct TypeEnv {
     bindings: HashMap<String, (Type, EvidenceLevel)>,
     /// Parent scope
     parent: Option<Rc<RefCell<TypeEnv>>>,
-    /// Set of linear variables that have been consumed (used)
-    consumed_linear: std::collections::HashSet<String>,
+    /// Linear variables declared in this scope (per spec 11-HOLOGRAPHIC.md § 7)
+    linear_vars: HashSet<String>,
+    /// Linear variables that have been consumed (used once)
+    linear_used: HashSet<String>,
 }
 
 impl TypeEnv {
@@ -393,7 +386,8 @@ impl TypeEnv {
         Self {
             bindings: HashMap::new(),
             parent: None,
-            consumed_linear: std::collections::HashSet::new(),
+            linear_vars: HashSet::new(),
+            linear_used: HashSet::new(),
         }
     }
 
@@ -401,16 +395,22 @@ impl TypeEnv {
         Self {
             bindings: HashMap::new(),
             parent: Some(parent),
-            consumed_linear: std::collections::HashSet::new(),
+            linear_vars: HashSet::new(),
+            linear_used: HashSet::new(),
         }
     }
 
     /// Define a new binding
     pub fn define(&mut self, name: String, ty: Type, evidence: EvidenceLevel) {
+        // Track linear variables for compile-time enforcement
+        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types must be used exactly once
+        if matches!(ty, Type::Linear(_)) {
+            self.linear_vars.insert(name.clone());
+        }
         self.bindings.insert(name, (ty, evidence));
     }
 
-    /// Look up a binding (without consuming)
+    /// Look up a binding
     pub fn lookup(&self, name: &str) -> Option<(Type, EvidenceLevel)> {
         if let Some(binding) = self.bindings.get(name) {
             Some(binding.clone())
@@ -421,39 +421,45 @@ impl TypeEnv {
         }
     }
 
-    /// Check if a variable has a linear type
+    /// Check if a variable is linear
     pub fn is_linear(&self, name: &str) -> bool {
-        if let Some((ty, _)) = self.lookup(name) {
-            matches!(ty, Type::Linear(_))
+        if self.linear_vars.contains(name) {
+            true
+        } else if let Some(ref parent) = self.parent {
+            parent.borrow().is_linear(name)
         } else {
             false
         }
     }
 
-    /// Check if a linear variable has already been consumed
-    pub fn is_consumed(&self, name: &str) -> bool {
-        if self.consumed_linear.contains(name) {
-            return true;
+    /// Check if a linear variable has been consumed
+    pub fn is_linear_consumed(&self, name: &str) -> bool {
+        if self.linear_used.contains(name) {
+            true
+        } else if let Some(ref parent) = self.parent {
+            parent.borrow().is_linear_consumed(name)
+        } else {
+            false
         }
-        if let Some(ref parent) = self.parent {
-            return parent.borrow().is_consumed(name);
-        }
-        false
     }
 
-    /// Mark a linear variable as consumed
-    pub fn consume(&mut self, name: &str) {
-        self.consumed_linear.insert(name.to_string());
+    /// Mark a linear variable as consumed (returns false if already consumed)
+    pub fn consume_linear(&mut self, name: &str) -> bool {
+        // Check if already consumed in this or parent scope
+        if self.is_linear_consumed(name) {
+            return false; // Already consumed - error
+        }
+        // Mark as consumed in this scope
+        self.linear_used.insert(name.to_string());
+        true
     }
 
-    /// Get all unconsumed linear variables in this scope (for checking at scope exit)
-    pub fn get_unconsumed_linear_vars(&self) -> Vec<String> {
-        self.bindings
+    /// Get linear variables that were declared but not used (must-be-used check)
+    pub fn unused_linear_vars(&self) -> Vec<String> {
+        self.linear_vars
             .iter()
-            .filter(|(name, (ty, _))| {
-                matches!(ty, Type::Linear(_)) && !self.consumed_linear.contains(*name)
-            })
-            .map(|(name, _)| name.clone())
+            .filter(|name| !self.linear_used.contains(*name))
+            .cloned()
             .collect()
     }
 }
@@ -489,12 +495,10 @@ pub struct TypeChecker {
     types: HashMap<String, TypeDef>,
     /// Function signatures
     functions: HashMap<String, Type>,
-    /// Stdlib function names (can be shadowed by user code)
-    stdlib_functions: std::collections::HashSet<String>,
     /// Associated functions/methods per type: type_name -> (method_name -> method_type)
     impl_methods: HashMap<String, HashMap<String, Type>>,
-    /// Current Self type when inside an impl block (includes generic type variables)
-    current_self_type: Option<Type>,
+    /// Current Self type when inside an impl block
+    current_self_type: Option<String>,
     /// Current generic type parameters (name -> type variable)
     current_generics: HashMap<String, Type>,
     /// Expected return type for the current function (for checking return statements)
@@ -513,7 +517,6 @@ impl TypeChecker {
             env: Rc::new(RefCell::new(TypeEnv::new())),
             types: HashMap::new(),
             functions: HashMap::new(),
-            stdlib_functions: std::collections::HashSet::new(),
             impl_methods: HashMap::new(),
             current_self_type: None,
             current_generics: HashMap::new(),
@@ -526,12 +529,6 @@ impl TypeChecker {
         // Register built-in types and functions
         checker.register_builtins();
         checker
-    }
-
-    /// Add a stdlib function (these can be shadowed by user code)
-    fn add_stdlib_fn(&mut self, name: &str, fn_type: Type) {
-        self.functions.insert(name.to_string(), fn_type);
-        self.stdlib_functions.insert(name.to_string());
     }
 
     fn register_builtins(&mut self) {
@@ -674,18 +671,6 @@ impl TypeChecker {
         );
         self.functions.insert(
             "log".to_string(),
-            func(vec![f64_ty.clone(), f64_ty.clone()], f64_ty.clone()),  // log(value, base)
-        );
-        self.functions.insert(
-            "log10".to_string(),
-            func(vec![f64_ty.clone()], f64_ty.clone()),
-        );
-        self.functions.insert(
-            "log2".to_string(),
-            func(vec![f64_ty.clone()], f64_ty.clone()),
-        );
-        self.functions.insert(
-            "ln".to_string(),
             func(vec![f64_ty.clone()], f64_ty.clone()),
         );
         self.functions.insert(
@@ -914,9 +899,6 @@ impl TypeChecker {
             "mod_cycle".to_string(),
             func(vec![i64_ty.clone(), i64_ty.clone()], i64_ty.clone()),
         );
-
-        // Mark all registered functions as stdlib (can be shadowed by user code)
-        self.stdlib_functions = self.functions.keys().cloned().collect();
     }
 
     /// Fresh type variable
@@ -933,9 +915,16 @@ impl TypeChecker {
             Type::Array { element, .. } => self.type_contains_var(element.as_ref()),
             Type::Slice(inner) => self.type_contains_var(inner.as_ref()),
             Type::Tuple(elems) => elems.iter().any(|e| self.type_contains_var(e)),
-            Type::Ref { inner, .. } | Type::Ptr { inner, .. } => self.type_contains_var(inner.as_ref()),
-            Type::Function { params, return_type, .. } => {
-                params.iter().any(|p| self.type_contains_var(p)) || self.type_contains_var(return_type.as_ref())
+            Type::Ref { inner, .. } | Type::Ptr { inner, .. } => {
+                self.type_contains_var(inner.as_ref())
+            }
+            Type::Function {
+                params,
+                return_type,
+                ..
+            } => {
+                params.iter().any(|p| self.type_contains_var(p))
+                    || self.type_contains_var(return_type.as_ref())
             }
             Type::Named { generics, .. } => generics.iter().any(|g| self.type_contains_var(g)),
             Type::Evidential { inner, .. } => self.type_contains_var(inner.as_ref()),
@@ -963,9 +952,11 @@ impl TypeChecker {
             Type::Slice(inner) => self.occurs_in(v, inner),
             Type::Tuple(elems) => elems.iter().any(|e| self.occurs_in(v, e)),
             Type::Ref { inner, .. } | Type::Ptr { inner, .. } => self.occurs_in(v, inner),
-            Type::Function { params, return_type, .. } => {
-                params.iter().any(|p| self.occurs_in(v, p)) || self.occurs_in(v, return_type)
-            }
+            Type::Function {
+                params,
+                return_type,
+                ..
+            } => params.iter().any(|p| self.occurs_in(v, p)) || self.occurs_in(v, return_type),
             Type::Named { generics, .. } => generics.iter().any(|g| self.occurs_in(v, g)),
             Type::Evidential { inner, .. } => self.occurs_in(v, inner),
             Type::Atomic(inner) => self.occurs_in(v, inner),
@@ -1001,7 +992,11 @@ impl TypeChecker {
                 size: *size,
             },
             Type::Slice(inner) => Type::Slice(Box::new(self.freshen_inner(inner, mapping))),
-            Type::Ref { lifetime, mutable, inner } => Type::Ref {
+            Type::Ref {
+                lifetime,
+                mutable,
+                inner,
+            } => Type::Ref {
                 lifetime: lifetime.clone(),
                 mutable: *mutable,
                 inner: Box::new(self.freshen_inner(inner, mapping)),
@@ -1048,6 +1043,16 @@ impl TypeChecker {
 
     /// Pop current scope
     fn pop_scope(&mut self) {
+        // Check for unused linear variables before leaving scope (must-be-used check)
+        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types must be used exactly once
+        let unused = self.env.borrow().unused_linear_vars();
+        for var_name in unused {
+            self.error(TypeError::new(format!(
+                "linear variable '{}' was declared but never used (linear types must be consumed exactly once)",
+                var_name
+            )));
+        }
+
         let parent = self.env.borrow().parent.clone();
         if let Some(p) = parent {
             self.env = p;
@@ -1259,16 +1264,6 @@ impl TypeChecker {
     fn collect_fn_sig(&mut self, item: &Item) {
         match item {
             Item::Function(f) => {
-                // Set up generic type parameters as type variables
-                if let Some(ref generics) = f.generics {
-                    for param in &generics.params {
-                        if let crate::ast::GenericParam::Type { name, .. } = param {
-                            let type_var = self.fresh_var();
-                            self.current_generics.insert(name.name.clone(), type_var);
-                        }
-                    }
-                }
-
                 let params: Vec<Type> = f.params.iter().map(|p| self.convert_type(&p.ty)).collect();
 
                 let return_type = f
@@ -1283,42 +1278,31 @@ impl TypeChecker {
                     is_async: f.is_async,
                 };
 
-                // Check for duplicate function definition (allow shadowing stdlib functions)
-                if self.functions.contains_key(&f.name.name)
-                    && !self.stdlib_functions.contains(&f.name.name)
-                {
+                // Check for duplicate function definition
+                if self.functions.contains_key(&f.name.name) {
                     self.error(TypeError::new(format!(
                         "duplicate function definition: '{}'",
                         f.name.name
                     )));
                 }
                 self.functions.insert(f.name.name.clone(), fn_type);
-
-                // Clear generics after processing
-                self.current_generics.clear();
             }
             Item::Impl(impl_block) => {
                 // Get the type name being implemented
                 let type_name = self.type_path_to_name(&impl_block.self_ty);
 
+                // Set current_self_type so Self resolves correctly in convert_type
+                self.current_self_type = Some(type_name.clone());
+
                 // Set up generic type parameters as type variables
-                // Must do this FIRST so we can include generics in current_self_type
-                let mut generic_types = Vec::new();
                 if let Some(ref generics) = impl_block.generics {
                     for param in &generics.params {
                         if let crate::ast::GenericParam::Type { name, .. } = param {
                             let type_var = self.fresh_var();
-                            self.current_generics.insert(name.name.clone(), type_var.clone());
-                            generic_types.push(type_var);
+                            self.current_generics.insert(name.name.clone(), type_var);
                         }
                     }
                 }
-
-                // Set current_self_type with generics so Self resolves correctly
-                self.current_self_type = Some(Type::Named {
-                    name: type_name.clone(),
-                    generics: generic_types,
-                });
 
                 // Collect associated functions/methods
                 for impl_item in &impl_block.items {
@@ -1357,13 +1341,12 @@ impl TypeChecker {
     /// Convert a TypePath to a simple type name string
     fn type_path_to_name(&self, ty: &crate::ast::TypeExpr) -> String {
         match ty {
-            crate::ast::TypeExpr::Path(path) => {
-                path.segments
-                    .iter()
-                    .map(|s| s.ident.name.clone())
-                    .collect::<Vec<_>>()
-                    .join("::")
-            }
+            crate::ast::TypeExpr::Path(path) => path
+                .segments
+                .iter()
+                .map(|s| s.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::"),
             _ => "Unknown".to_string(),
         }
     }
@@ -1399,27 +1382,19 @@ impl TypeChecker {
                 }
             }
             Item::Impl(impl_block) => {
-                // Get the type name being implemented
+                // Set current_self_type so Self resolves correctly
                 let type_name = self.type_path_to_name(&impl_block.self_ty);
+                self.current_self_type = Some(type_name);
 
                 // Set up generic type parameters as type variables
-                // Must do this FIRST so we can include generics in current_self_type
-                let mut generic_types = Vec::new();
                 if let Some(ref generics) = impl_block.generics {
                     for param in &generics.params {
                         if let crate::ast::GenericParam::Type { name, .. } = param {
                             let type_var = self.fresh_var();
-                            self.current_generics.insert(name.name.clone(), type_var.clone());
-                            generic_types.push(type_var);
+                            self.current_generics.insert(name.name.clone(), type_var);
                         }
                     }
                 }
-
-                // Set current_self_type with generics so Self resolves correctly
-                self.current_self_type = Some(Type::Named {
-                    name: type_name,
-                    generics: generic_types,
-                });
 
                 // Check each function in the impl block
                 for impl_item in &impl_block.items {
@@ -1439,16 +1414,6 @@ impl TypeChecker {
     /// Check a function body
     fn check_function(&mut self, func: &Function) {
         self.push_scope();
-
-        // Set up generic type parameters as type variables
-        if let Some(ref generics) = func.generics {
-            for param in &generics.params {
-                if let crate::ast::GenericParam::Type { name, .. } = param {
-                    let type_var = self.fresh_var();
-                    self.current_generics.insert(name.name.clone(), type_var);
-                }
-            }
-        }
 
         // Bind parameters with evidence inference
         for param in &func.params {
@@ -1502,7 +1467,10 @@ impl TypeChecker {
             // - For public functions, warn if evidence should be annotated at module boundary
             let type_has_evidence = self.type_has_explicit_evidence(func.return_type.as_ref());
             // Function name evidentiality (e.g., validate_model! has ! evidentiality)
-            let name_evidence = func.name.evidentiality.as_ref()
+            let name_evidence = func
+                .name
+                .evidentiality
+                .as_ref()
                 .map(|e| EvidenceLevel::from_ast(*e));
             let has_explicit_evidence = type_has_evidence || name_evidence.is_some();
             let actual_evidence = self.get_evidence(&body_type);
@@ -1545,8 +1513,6 @@ impl TypeChecker {
             }
         }
 
-        // Clear generics after processing
-        self.current_generics.clear();
         self.pop_scope();
     }
 
@@ -1602,7 +1568,9 @@ impl TypeChecker {
                     (Some(d), Some(i)) => {
                         if !self.unify(d, i) {
                             // Report type mismatch error
-                            let binding_name = pattern.binding_name().unwrap_or_else(|| "<pattern>".to_string());
+                            let binding_name = pattern
+                                .binding_name()
+                                .unwrap_or_else(|| "<pattern>".to_string());
                             let mut err = TypeError::new(format!(
                                 "type mismatch in let binding '{}': expected {:?}, found {:?}",
                                 binding_name, d, i
@@ -1640,7 +1608,12 @@ impl TypeChecker {
                 }
                 Type::Unit
             }
-            Stmt::LetElse { pattern, ty, init, else_branch } => {
+            Stmt::LetElse {
+                pattern,
+                ty,
+                init,
+                else_branch,
+            } => {
                 // Type check let-else similar to let
                 let declared_ty = ty.as_ref().map(|t| self.convert_type(t));
                 let init_ty = self.infer_expr(init);
@@ -1673,23 +1646,20 @@ impl TypeChecker {
             Expr::Path(path) => {
                 if path.segments.len() == 1 {
                     let name = &path.segments[0].ident.name;
-
-                    // First, lookup the type (immutable borrow)
+                    // First, check if variable exists and get its type
                     let lookup_result = self.env.borrow().lookup(name);
-
                     if let Some((ty, _)) = lookup_result {
-                        // Check for linear type double-use
-                        if matches!(ty, Type::Linear(_)) {
-                            let already_consumed = self.env.borrow().is_consumed(name);
-                            if already_consumed {
-                                // Linear variable used twice - no-cloning violation!
+                        // Check for linear type consumption (compile-time enforcement)
+                        // Per spec 11-HOLOGRAPHIC.md § 7: Linear types can only be used once
+                        let is_linear = self.env.borrow().is_linear(name);
+                        if is_linear {
+                            let consumed_ok = self.env.borrow_mut().consume_linear(name);
+                            if !consumed_ok {
+                                // Already consumed - double use error
                                 self.error(TypeError::new(format!(
-                                    "linear value '{}' used twice: linear types cannot be cloned (no-cloning theorem)",
+                                    "linear variable '{}' used more than once (linear types can only be consumed once)",
                                     name
                                 )));
-                            } else {
-                                // Mark as consumed for future use checks
-                                self.env.borrow_mut().consume(name);
                             }
                         }
                         return ty;
@@ -1764,16 +1734,18 @@ impl TypeChecker {
                     for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
                         // Check argument type matches parameter type
                         if !self.unify(param, arg) {
-                            // Allow implicit numeric coercion: int → float
-                            let is_numeric_coercion = Self::is_numeric_coercion(param, arg);
-                            // Allow reference coercions: &mut T → &T, &Box<T> → &T, &Vec<T> → &[T]
-                            let is_reference_coercion = Self::is_reference_coercion(param, arg);
+                            // Allow implicit coercions: int → float, &mut T → &T
+                            let is_coercible = Self::is_coercible(param, arg);
                             // Only report error for concrete type mismatches, not type variables
-                            if !matches!(param, Type::Var(_)) && !matches!(arg, Type::Var(_))
-                                && !is_numeric_coercion && !is_reference_coercion {
+                            if !matches!(param, Type::Var(_))
+                                && !matches!(arg, Type::Var(_))
+                                && !is_coercible
+                            {
                                 self.error(TypeError::new(format!(
                                     "type mismatch in argument {}: expected {}, found {}",
-                                    i + 1, param, arg
+                                    i + 1,
+                                    param,
+                                    arg
                                 )));
                             }
                         }
@@ -1821,7 +1793,10 @@ impl TypeChecker {
                     for elem in &elements[1..] {
                         let t = self.infer_expr(elem);
                         if !self.unify(&elem_ty, &t) {
-                            self.error(TypeError::new("array elements must have same type"));
+                            self.error(TypeError::heterogeneous_array(
+                                &format!("{}", elem_ty),
+                                &format!("{}", t),
+                            ));
                         }
                     }
                     Type::Array {
@@ -1844,7 +1819,7 @@ impl TypeChecker {
             } => {
                 let cond_ty = self.infer_expr(condition);
                 if !self.unify(&Type::Bool, &cond_ty) {
-                    self.error(TypeError::new("if condition must be bool"));
+                    self.error(TypeError::non_bool_condition("if", &format!("{}", cond_ty)));
                 }
 
                 let then_ty = self.check_block(then_branch);
@@ -1882,13 +1857,14 @@ impl TypeChecker {
             }
 
             Expr::While {
-                condition,
-                body,
-                ..
+                condition, body, ..
             } => {
                 let cond_ty = self.infer_expr(condition);
                 if !self.unify(&Type::Bool, &cond_ty) {
-                    self.error(TypeError::new("while condition must be bool"));
+                    self.error(TypeError::non_bool_condition(
+                        "while",
+                        &format!("{}", cond_ty),
+                    ));
                 }
                 self.check_block(body);
                 Type::Unit
@@ -1928,7 +1904,7 @@ impl TypeChecker {
                 match coll_ty {
                     Type::Array { element, .. } | Type::Slice(element) => {
                         if !matches!(idx_ty, Type::Int(_)) {
-                            self.error(TypeError::new("index must be integer"));
+                            self.error(TypeError::invalid_index(&format!("{}", idx_ty)));
                         }
                         *element
                     }
@@ -1948,7 +1924,9 @@ impl TypeChecker {
 
                 // Check against expected return type if we're inside a function
                 if let Some(expected) = self.expected_return_type.clone() {
-                    if !self.unify(&expected, &actual_type) {
+                    if !self.unify(&expected, &actual_type)
+                        && !Self::is_coercible(&expected, &actual_type)
+                    {
                         self.error(TypeError::new(format!(
                             "type mismatch in return: expected {}, found {}",
                             expected, actual_type
@@ -1995,7 +1973,10 @@ impl TypeChecker {
                     if let Some(ref guard) = arm.guard {
                         let guard_ty = self.infer_expr(guard);
                         if !self.unify(&Type::Bool, &guard_ty) {
-                            self.error(TypeError::new("match guard must be bool"));
+                            self.error(TypeError::non_bool_condition(
+                                "match guard",
+                                &format!("{}", guard_ty),
+                            ));
                         }
                     }
 
@@ -2039,29 +2020,8 @@ impl TypeChecker {
                 let (recv_inner, recv_ev) = self.strip_evidence(&recv_ty);
                 let _arg_types: Vec<Type> = args.iter().map(|a| self.infer_expr(a)).collect();
 
-                // FIRST: Check user-defined methods in impl_methods
-                // This takes priority over hardcoded patterns
-                let user_method_result = if let Type::Named { name: ref type_name, .. } = recv_inner {
-                    self.impl_methods.get(type_name)
-                        .and_then(|methods| methods.get(&method.name))
-                        .cloned()
-                        .and_then(|fn_type| {
-                            if let Type::Function { return_type, .. } = self.freshen(&fn_type) {
-                                Some(*return_type)
-                            } else {
-                                None
-                            }
-                        })
-                } else {
-                    None
-                };
-
-                // If user-defined method found, use it; otherwise fall back to hardcoded patterns
-                let result_ty = if let Some(user_ty) = user_method_result {
-                    user_ty
-                } else {
-                    // Resolve known methods based on receiver type and method name
-                    match method.name.as_str() {
+                // Resolve known methods based on receiver type and method name
+                let result_ty = match method.name.as_str() {
                     // Collection methods returning usize
                     "len" | "count" | "size" => Type::Int(IntSize::USize),
 
@@ -2069,8 +2029,8 @@ impl TypeChecker {
                     "is_empty" | "contains" | "starts_with" | "ends_with" | "is_some"
                     | "is_none" | "is_ok" | "is_err" | "is_ascii" | "is_alphabetic"
                     | "is_numeric" | "is_alphanumeric" | "is_whitespace" | "is_uppercase"
-                    | "is_lowercase" | "exists" | "is_file" | "is_dir" | "is_match"
-                    | "matches" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" => Type::Bool,
+                    | "is_lowercase" | "exists" | "is_file" | "is_dir" | "is_match" | "matches"
+                    | "eq" | "ne" | "lt" | "le" | "gt" | "ge" => Type::Bool,
 
                     // String methods returning String
                     "to_string" | "to_lowercase" | "to_uppercase" | "trim" | "trim_start"
@@ -2092,8 +2052,8 @@ impl TypeChecker {
                     "clone" | "cloned" | "copied" => recv_inner.clone(),
 
                     // Option/Result unwrapping - return inner type or fresh var
-                    "unwrap" | "unwrap_or" | "unwrap_or_default" | "unwrap_or_else"
-                    | "expect" | "ok" | "err" => {
+                    "unwrap" | "unwrap_or" | "unwrap_or_default" | "unwrap_or_else" | "expect"
+                    | "ok" | "err" => {
                         if let Type::Named { name, generics } = &recv_inner {
                             if (name == "Option" || name == "Result") && !generics.is_empty() {
                                 generics[0].clone()
@@ -2109,28 +2069,37 @@ impl TypeChecker {
                     "collect" => self.fresh_var(),
 
                     // Iterator/collection transformation methods - preserve receiver type
-                    "iter" | "into_iter" | "iter_mut" | "rev" | "skip" | "take"
-                    | "filter" | "map" | "filter_map" | "flat_map" | "enumerate"
-                    | "zip" | "chain" | "flatten" | "reverse" | "sorted"
-                    | "dedup" | "unique" | "peekable" | "fuse" | "cycle" | "step_by"
-                    | "take_while" | "skip_while" | "scan" | "inspect" => recv_inner.clone(),
+                    "iter" | "into_iter" | "iter_mut" | "rev" | "skip" | "take" | "filter"
+                    | "map" | "filter_map" | "flat_map" | "enumerate" | "zip" | "chain"
+                    | "flatten" | "reverse" | "sorted" | "dedup" | "unique" | "peekable"
+                    | "fuse" | "cycle" | "step_by" | "take_while" | "skip_while" | "scan"
+                    | "inspect" => recv_inner.clone(),
 
                     // String splitting/iteration - returns iterator (fresh var for proper chaining)
-                    "split" | "rsplit" | "splitn" | "rsplitn" | "split_whitespace"
-                    | "split_ascii_whitespace" | "lines" | "chars" | "bytes"
-                    | "char_indices" | "split_terminator" | "rsplit_terminator"
-                    | "split_inclusive" | "matches_iter" => self.fresh_var(),
+                    "split"
+                    | "rsplit"
+                    | "splitn"
+                    | "rsplitn"
+                    | "split_whitespace"
+                    | "split_ascii_whitespace"
+                    | "lines"
+                    | "chars"
+                    | "bytes"
+                    | "char_indices"
+                    | "split_terminator"
+                    | "rsplit_terminator"
+                    | "split_inclusive"
+                    | "matches_iter" => self.fresh_var(),
 
                     // HashMap/BTreeMap methods - return iterator-like fresh var
-                    "keys" | "values" | "values_mut" | "into_keys"
-                    | "into_values" | "entry" | "drain" => self.fresh_var(),
+                    "keys" | "values" | "values_mut" | "into_keys" | "into_values" | "entry"
+                    | "drain" => self.fresh_var(),
 
                     // Methods returning Option<T>
-                    "first" | "last" | "get" | "get_mut" | "pop" | "pop_front"
-                    | "pop_back" | "find" | "find_map" | "position" | "rposition"
-                    | "next" | "next_back" | "peek" | "nth" | "last_mut"
-                    | "binary_search" | "parent" | "file_name" | "file_stem"
-                    | "extension" => Type::Named {
+                    "first" | "last" | "get" | "get_mut" | "pop" | "pop_front" | "pop_back"
+                    | "find" | "find_map" | "position" | "rposition" | "next" | "next_back"
+                    | "peek" | "nth" | "last_mut" | "binary_search" | "parent" | "file_name"
+                    | "file_stem" | "extension" => Type::Named {
                         name: "Option".to_string(),
                         generics: vec![self.fresh_var()],
                     },
@@ -2142,18 +2111,17 @@ impl TypeChecker {
                     },
 
                     // Push/insert/mutating methods return unit
-                    "push" | "push_str" | "push_front" | "push_back" | "insert"
-                    | "remove" | "clear" | "sort" | "sort_by" | "sort_by_key"
-                    | "sort_unstable" | "truncate" | "resize" | "extend" | "append"
-                    | "retain" | "swap" | "swap_remove" => Type::Unit,
+                    "push" | "push_str" | "push_front" | "push_back" | "insert" | "remove"
+                    | "clear" | "sort" | "sort_by" | "sort_by_key" | "sort_unstable"
+                    | "truncate" | "resize" | "extend" | "append" | "retain" | "swap"
+                    | "swap_remove" => Type::Unit,
 
                     // Numeric methods
-                    "abs" | "floor" | "ceil" | "round" | "trunc" | "fract" | "sqrt"
-                    | "cbrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan"
-                    | "sinh" | "cosh" | "tanh" | "exp" | "exp2" | "ln" | "log"
-                    | "log2" | "log10" | "pow" | "powi" | "powf" | "min" | "max"
-                    | "clamp" | "signum" | "copysign" | "saturating_add"
-                    | "saturating_sub" | "saturating_mul" | "wrapping_add"
+                    "abs" | "floor" | "ceil" | "round" | "trunc" | "fract" | "sqrt" | "cbrt"
+                    | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
+                    | "tanh" | "exp" | "exp2" | "ln" | "log" | "log2" | "log10" | "pow"
+                    | "powi" | "powf" | "min" | "max" | "clamp" | "signum" | "copysign"
+                    | "saturating_add" | "saturating_sub" | "saturating_mul" | "wrapping_add"
                     | "wrapping_sub" | "wrapping_mul" | "checked_add" | "checked_sub"
                     | "checked_mul" | "checked_div" => recv_inner.clone(),
 
@@ -2167,35 +2135,11 @@ impl TypeChecker {
                     "duration_since" | "elapsed" | "as_secs" | "as_millis" | "as_micros"
                     | "as_nanos" | "from_secs" | "from_millis" => recv_inner.clone(),
 
-                    // Path methods returning PathBuf (only for Path/PathBuf receivers)
-                    "to_path_buf" | "with_extension" | "with_file_name" => {
-                        Type::Named {
-                            name: "PathBuf".to_string(),
-                            generics: vec![],
-                        }
-                    }
-
-                    // join: Path::join returns PathBuf, but Vec::join/Iterator::join returns String
-                    "join" => {
-                        // Check if receiver is Path or PathBuf
-                        let is_path_type = if let Type::Named { name, .. } = &recv_inner {
-                            name == "Path" || name == "PathBuf"
-                        } else {
-                            false
-                        };
-                        if is_path_type {
-                            Type::Named {
-                                name: "PathBuf".to_string(),
-                                generics: vec![],
-                            }
-                        } else {
-                            // Vec::join and Iterator::join return String
-                            Type::Named {
-                                name: "String".to_string(),
-                                generics: vec![],
-                            }
-                        }
-                    }
+                    // Path methods returning PathBuf/String
+                    "to_path_buf" | "join" | "with_extension" | "with_file_name" => Type::Named {
+                        name: "PathBuf".to_string(),
+                        generics: vec![],
+                    },
 
                     // Path methods returning &str via OsStr
                     "to_str" => Type::Named {
@@ -2214,8 +2158,8 @@ impl TypeChecker {
                     },
 
                     // IO methods
-                    "read" | "write" | "flush" | "read_to_string" | "read_to_end"
-                    | "read_line" | "write_all" => Type::Named {
+                    "read" | "write" | "flush" | "read_to_string" | "read_to_end" | "read_line"
+                    | "write_all" => Type::Named {
                         name: "Result".to_string(),
                         generics: vec![self.fresh_var(), self.fresh_var()],
                     },
@@ -2234,9 +2178,7 @@ impl TypeChecker {
                     "and" | "or" => recv_inner.clone(),
 
                     // Default: return fresh type variable
-                    // (user-defined methods were already checked above)
                     _ => self.fresh_var(),
-                    }
                 };
 
                 // Propagate evidence from receiver
@@ -2314,6 +2256,15 @@ impl TypeChecker {
                 }
             }
 
+            // If-let pattern: `⎇ ≔ Some(x) = expr { ... }`
+            // The Let expression itself evaluates to bool (whether pattern matched)
+            Expr::Let { pattern: _, value } => {
+                // Infer the value type for binding purposes
+                let _ = self.infer_expr(value);
+                // The let-pattern expression returns bool
+                Type::Bool
+            }
+
             _ => {
                 // Handle other expression types
                 self.fresh_var()
@@ -2377,30 +2328,37 @@ impl TypeChecker {
         let (right_inner, right_ev) = self.strip_evidence(right);
 
         // Helper to detect type variable or function types (incomplete inference)
-        let is_var_or_fn = |ty: &Type| {
-            matches!(ty, Type::Var(_) | Type::Function { .. })
-        };
+        let is_var_or_fn = |ty: &Type| matches!(ty, Type::Var(_) | Type::Function { .. });
 
         let result_ty = match op {
-            // Arithmetic: numeric -> numeric with coercion
+            // Arithmetic: numeric -> numeric (with int → float promotion)
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::Pow => {
-                // Numeric coercion: if either operand is float, result is float
-                let is_left_float = matches!(&left_inner, Type::Float(_));
-                let is_right_float = matches!(&right_inner, Type::Float(_));
-
-                if is_left_float || is_right_float {
-                    // Result is the wider float type
-                    if is_left_float { left_inner } else { right_inner }
-                } else {
-                    // Both are ints (or unknown) - try to unify
-                    let _ = self.unify(&left_inner, &right_inner);
-                    left_inner
+                // Numeric type promotion: if either operand is float, result is float
+                match (&left_inner, &right_inner) {
+                    // Both floats: use larger precision (f64 > f32)
+                    (Type::Float(l), Type::Float(r)) => Type::Float(
+                        if matches!(l, FloatSize::F64) || matches!(r, FloatSize::F64) {
+                            FloatSize::F64
+                        } else {
+                            *l
+                        },
+                    ),
+                    // Float + Int: promote to float's size
+                    (Type::Float(f), Type::Int(_)) | (Type::Int(_), Type::Float(f)) => {
+                        Type::Float(*f)
+                    }
+                    // Otherwise: try to unify (bootstrapping mode)
+                    _ => {
+                        let _ = self.unify(&left_inner, &right_inner);
+                        left_inner
+                    }
                 }
             }
 
             // Matrix multiplication: tensor @ tensor -> tensor
             // Hadamard/element-wise: tensor ⊙ tensor -> tensor
             // Tensor product: tensor ⊗ tensor -> tensor
+            // Convolution: array ⊛ array -> array
             BinOp::MatMul | BinOp::Hadamard | BinOp::TensorProd | BinOp::Convolve => {
                 // Return a fresh type variable for now (proper tensor type checking would go here)
                 self.fresh_var()
@@ -2410,9 +2368,12 @@ impl TypeChecker {
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 // For bootstrapping: skip error when either side is a type variable or function
                 // (indicates incomplete type inference from unhandled expressions)
+                // Also allow coercible types (String ↔ str, numeric promotions, etc.)
                 if !self.unify(&left_inner, &right_inner)
                     && !is_var_or_fn(&left_inner)
                     && !is_var_or_fn(&right_inner)
+                    && !Self::is_coercible(&left_inner, &right_inner)
+                    && !Self::is_coercible(&right_inner, &left_inner)
                 {
                     self.error(TypeError::new(format!(
                         "comparison operands must have same type: left={:?}, right={:?}",
@@ -2425,10 +2386,16 @@ impl TypeChecker {
             // Logical: bool -> bool
             BinOp::And | BinOp::Or => {
                 if !self.unify(&Type::Bool, &left_inner) {
-                    self.error(TypeError::new("logical operand must be bool"));
+                    self.error(
+                        TypeError::invalid_operand("&&/||", &format!("{}", left_inner))
+                            .with_note("logical operators require boolean operands"),
+                    );
                 }
                 if !self.unify(&Type::Bool, &right_inner) {
-                    self.error(TypeError::new("logical operand must be bool"));
+                    self.error(
+                        TypeError::invalid_operand("&&/||", &format!("{}", right_inner))
+                            .with_note("logical operators require boolean operands"),
+                    );
                 }
                 Type::Bool
             }
@@ -2439,7 +2406,10 @@ impl TypeChecker {
             // String concatenation
             BinOp::Concat => {
                 if !self.unify(&Type::Str, &left_inner) {
-                    self.error(TypeError::new("concat operand must be string"));
+                    self.error(
+                        TypeError::invalid_operand("++", &format!("{}", left_inner))
+                            .with_note("string concatenation requires string operands"),
+                    );
                 }
                 Type::Str
             }
@@ -2513,7 +2483,9 @@ impl TypeChecker {
         // Also strip reference wrapper for pipe operations
         // This allows `&[T]` to be treated as `[T]` in pipes
         let inner = match inner_ev_stripped {
-            Type::Ref { inner: ref_inner, .. } => (*ref_inner).clone(),
+            Type::Ref {
+                inner: ref_inner, ..
+            } => (*ref_inner).clone(),
             other => other,
         };
 
@@ -2543,7 +2515,8 @@ impl TypeChecker {
                 } else if let Type::Named { name, generics } = &inner {
                     // Support Vec<T>, LinkedList<T>, etc.
                     if (name == "Vec" || name == "LinkedList" || name == "VecDeque")
-                        && !generics.is_empty() {
+                        && !generics.is_empty()
+                    {
                         generics[0].clone()
                     } else {
                         self.fresh_var()
@@ -2552,7 +2525,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable when input is unknown
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::new("reduce requires array or slice"));
+                    self.error(TypeError::invalid_reduction(
+                        "reduce",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2563,7 +2539,8 @@ impl TypeChecker {
                 } else if let Type::Named { name, generics } = &inner {
                     // Support Vec<T>, etc.
                     if (name == "Vec" || name == "LinkedList" || name == "VecDeque")
-                        && !generics.is_empty() {
+                        && !generics.is_empty()
+                    {
                         Some(Box::new(generics[0].clone()))
                     } else {
                         None
@@ -2576,7 +2553,10 @@ impl TypeChecker {
                         Type::Int(_) | Type::Float(_) => *element,
                         Type::Var(_) => *element, // For bootstrapping: allow type variables
                         _ => {
-                            self.error(TypeError::new("numeric reduction requires numeric array"));
+                            self.error(TypeError::invalid_operand(
+                                "numeric reduction",
+                                &format!("{}", element),
+                            ));
                             Type::Error
                         }
                     }
@@ -2584,7 +2564,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable when input is unknown
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::new("reduction requires array or slice"));
+                    self.error(TypeError::invalid_reduction(
+                        "numeric reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2596,9 +2579,13 @@ impl TypeChecker {
                         Type::Array { .. } => *element,
                         Type::Var(_) => self.fresh_var(), // For bootstrapping
                         _ => {
-                            self.error(TypeError::new(
-                                "concat reduction requires array of strings or arrays",
-                            ));
+                            self.error(
+                                TypeError::invalid_operand(
+                                    "concat reduction",
+                                    &format!("{}", element),
+                                )
+                                .with_note("concat requires strings or arrays"),
+                            );
                             Type::Error
                         }
                     }
@@ -2606,7 +2593,10 @@ impl TypeChecker {
                     // For bootstrapping: return fresh type variable
                     self.fresh_var()
                 } else {
-                    self.error(TypeError::new("concat reduction requires array or slice"));
+                    self.error(TypeError::invalid_reduction(
+                        "concat reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2617,9 +2607,13 @@ impl TypeChecker {
                         Type::Bool => Type::Bool,
                         Type::Var(_) => Type::Bool, // For bootstrapping: assume bool
                         _ => {
-                            self.error(TypeError::new(
-                                "boolean reduction requires array of booleans",
-                            ));
+                            self.error(
+                                TypeError::invalid_operand(
+                                    "boolean reduction",
+                                    &format!("{}", element),
+                                )
+                                .with_note("all/any requires array of booleans"),
+                            );
                             Type::Error
                         }
                     }
@@ -2627,7 +2621,10 @@ impl TypeChecker {
                     // For bootstrapping: return bool
                     Type::Bool
                 } else {
-                    self.error(TypeError::new("boolean reduction requires array or slice"));
+                    self.error(TypeError::invalid_reduction(
+                        "boolean reduction",
+                        &format!("{}", inner),
+                    ));
                     Type::Error
                 }
             }
@@ -2636,7 +2633,7 @@ impl TypeChecker {
             PipeOp::Match(arms) => {
                 // All arms should return the same type
                 if arms.is_empty() {
-                    self.error(TypeError::new("match expression has no arms"));
+                    self.error(TypeError::missing_match_arm());
                     Type::Error
                 } else {
                     // Infer type from first arm, other arms should match
@@ -2670,7 +2667,11 @@ impl TypeChecker {
             }
 
             // Method call
-            PipeOp::Method { name, type_args: _, args: _ } => {
+            PipeOp::Method {
+                name,
+                type_args: _,
+                args: _,
+            } => {
                 // Look up method
                 if let Some(fn_ty) = self.functions.get(&name.name).cloned() {
                     // Freshen to get fresh type variables for polymorphic functions
@@ -2724,7 +2725,8 @@ impl TypeChecker {
                 } else if let Type::Named { name, generics } = &inner {
                     // Support Vec<T>, VecDeque<T>, etc.
                     if (name == "Vec" || name == "VecDeque" || name == "LinkedList")
-                        && !generics.is_empty() {
+                        && !generics.is_empty()
+                    {
                         generics[0].clone()
                     } else {
                         self.fresh_var()
@@ -2966,25 +2968,30 @@ impl TypeChecker {
             PipeOp::Flatten | PipeOp::Unique => self.fresh_var(),
             PipeOp::Enumerate => self.fresh_var(), // Array of (index, value) tuples
 
-            // Holographic operations (Spec 11-HOLOGRAPHIC.md)
-            PipeOp::Universal => {
-                // |∀ - Universal reconstruction: [T] -> T (sum/aggregate)
-                if let Type::Array { element, .. } | Type::Slice(element) = inner {
-                    *element
-                } else if let Type::Named { name, generics } = &inner {
-                    if (name == "Vec" || name == "LinkedList" || name == "VecDeque")
-                        && !generics.is_empty()
-                    {
-                        generics[0].clone()
-                    } else {
-                        self.fresh_var()
-                    }
-                } else {
-                    self.fresh_var()
+            // Holographic operations
+            PipeOp::Universal => self.fresh_var(), // Reconstructed value (sum/merge)
+            PipeOp::Possibility => self.fresh_var(), // Approximate value
+            PipeOp::Necessity => Type::Evidential {
+                inner: Box::new(self.fresh_var()),
+                evidence: EvidenceLevel::Known,
+            },
+            PipeOp::PossibilityMethod { args, .. } => {
+                // Type the arguments
+                for arg in args {
+                    let _ = self.infer_expr(arg);
+                }
+                self.fresh_var() // Returns predicted value
+            }
+            PipeOp::NecessityMethod { args, .. } => {
+                // Type the arguments
+                for arg in args {
+                    let _ = self.infer_expr(arg);
+                }
+                Type::Evidential {
+                    inner: Box::new(self.fresh_var()),
+                    evidence: EvidenceLevel::Known,
                 }
             }
-            PipeOp::Possibility { .. } => self.fresh_var(), // |◊method - approximate query result
-            PipeOp::Necessity { .. } => self.fresh_var(),   // |□method - verified result
         };
 
         // Preserve evidence through pipe
@@ -3072,7 +3079,11 @@ impl TypeChecker {
                     self.bind_pattern(first, ty, evidence);
                 }
             }
-            Pattern::Wildcard | Pattern::Rest | Pattern::Literal(_) | Pattern::Range { .. } | Pattern::Path(_) => {
+            Pattern::Wildcard
+            | Pattern::Rest
+            | Pattern::Literal(_)
+            | Pattern::Range { .. }
+            | Pattern::Path(_) => {
                 // These don't introduce bindings
             }
             Pattern::Ref { pattern, .. } => {
@@ -3165,13 +3176,6 @@ impl TypeChecker {
             (Type::Ref { mutable: false, inner: a, .. }, Type::Str) if matches!(a.as_ref(), Type::Str) => true,
             (Type::Str, Type::Ref { mutable: false, inner: b, .. }) if matches!(b.as_ref(), Type::Str) => true,
 
-            // For bootstrapping: allow String to coerce to &str (via Deref)
-            // This allows passing String where &str is expected
-            (Type::Named { name: n, .. }, Type::Ref { mutable: false, inner, .. })
-                if n == "String" && matches!(inner.as_ref(), Type::Str) => true,
-            (Type::Ref { mutable: false, inner, .. }, Type::Named { name: n, .. })
-                if n == "String" && matches!(inner.as_ref(), Type::Str) => true,
-
             // Arrays
             (Type::Array { element: a, size: sa }, Type::Array { element: b, size: sb }) => {
                 (sa == sb || sa.is_none() || sb.is_none()) && self.unify(a, b)
@@ -3227,12 +3231,90 @@ impl TypeChecker {
             // Cycles
             (Type::Cycle { modulus: a }, Type::Cycle { modulus: b }) => a == b,
 
+            // Linear types: inner must unify
+            (Type::Linear(a), Type::Linear(b)) => self.unify(a, b),
+            // Allow linear to unify with non-linear for assignment
+            (Type::Linear(a), b) => self.unify(a, b),
+            (a, Type::Linear(b)) => self.unify(a, b),
+
             // For bootstrapping: treat type parameters (single uppercase letter names like T, U, E)
             // as compatible with any type. This allows generic functions to type check without
             // full generic instantiation support.
             (Type::Named { name, generics }, _) | (_, Type::Named { name, generics })
                 if generics.is_empty() && Self::is_type_parameter(name) => {
                 true
+            }
+
+            // ImplTrait: impl Into<T> should accept types that can convert to T
+            // For bootstrapping, be lenient: impl Into<str> accepts &str, String, &str
+            (Type::ImplTrait(bounds), actual) => {
+                // Check if any bound is satisfied
+                for bound in bounds {
+                    if let Type::Named { name, generics } = bound {
+                        // impl Into<T> - accept if actual can convert to T
+                        if name == "Into" && !generics.is_empty() {
+                            let target = &generics[0];
+                            // Direct match
+                            if self.unify(actual, target) {
+                                return true;
+                            }
+                            // &str can convert to str
+                            if matches!(target, Type::Str) {
+                                if let Type::Ref { inner, mutable: false, .. } = actual {
+                                    if matches!(inner.as_ref(), Type::Str) {
+                                        return true;
+                                    }
+                                }
+                                // String can convert to str
+                                if let Type::Named { name: n, .. } = actual {
+                                    if n == "String" {
+                                        return true;
+                                    }
+                                }
+                            }
+                            // &T can convert to T for reference types
+                            if let Type::Ref { inner, .. } = actual {
+                                if self.unify(inner, target) {
+                                    return true;
+                                }
+                            }
+                        }
+                        // impl AsRef<T> - accept if actual can reference as T
+                        if name == "AsRef" && !generics.is_empty() {
+                            let target = &generics[0];
+                            // Direct match or reference to target
+                            if self.unify(actual, target) {
+                                return true;
+                            }
+                            // &T implements AsRef<T>
+                            if let Type::Ref { inner, .. } = actual {
+                                if self.unify(inner, target) {
+                                    return true;
+                                }
+                            }
+                            // String implements AsRef<str>
+                            if matches!(target, Type::Str) {
+                                if let Type::Named { name: n, .. } = actual {
+                                    if n == "String" {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        // Other traits: be lenient for bootstrapping
+                        // Just check if actual matches the bound directly
+                        if self.unify(actual, bound) {
+                            return true;
+                        }
+                    }
+                }
+                // For bootstrapping: if no specific handling, be lenient
+                // This allows the codebase to compile while we improve the type system
+                true
+            }
+            (actual, Type::ImplTrait(bounds)) => {
+                // Symmetric case
+                self.unify(&Type::ImplTrait(bounds.clone()), actual)
             }
 
             _ => false,
@@ -3242,11 +3324,20 @@ impl TypeChecker {
     /// Check if a name looks like a type parameter (single uppercase letter or common generic names)
     fn is_type_parameter(name: &str) -> bool {
         // Single uppercase letter (T, U, E, K, V, etc.)
-        if name.len() == 1 && name.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false) {
+        if name.len() == 1
+            && name
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_uppercase())
+                .unwrap_or(false)
+        {
             return true;
         }
         // Common generic parameter names
-        matches!(name, "Item" | "Output" | "Error" | "Key" | "Value" | "Idx" | "Self")
+        matches!(
+            name,
+            "Item" | "Output" | "Error" | "Key" | "Value" | "Idx" | "Self"
+        )
     }
 
     /// Check if this is an allowed implicit numeric coercion (int → float)
@@ -3265,73 +3356,162 @@ impl TypeChecker {
         }
     }
 
-    /// Check for reference coercions (reborrow, deref coercion, unsized coercion)
-    fn is_reference_coercion(expected: &Type, actual: &Type) -> bool {
-        // Extract inner types from references
-        let (exp_inner, exp_mutable) = match expected {
-            Type::Ref { inner, mutable, .. } => (inner.as_ref(), *mutable),
-            _ => return false,
+    /// Strip evidential wrappers and compare inner types structurally
+    fn types_match(a: &Type, b: &Type) -> bool {
+        // Strip evidential wrappers from both sides
+        let a_inner = match a {
+            Type::Evidential { inner, .. } => inner.as_ref(),
+            other => other,
         };
-        let (act_inner, act_mutable) = match actual {
-            Type::Ref { inner, mutable, .. } => (inner.as_ref(), *mutable),
-            _ => return false,
+        let b_inner = match b {
+            Type::Evidential { inner, .. } => inner.as_ref(),
+            other => other,
         };
-
-        // 1. Reborrow: &mut T → &T (mutable ref can become immutable ref)
-        if !exp_mutable && act_mutable {
-            // Compare inner types (ignoring mutability)
-            if Self::types_structurally_equal(exp_inner, act_inner) {
-                return true;
-            }
+        // Recursively compare if still wrapped
+        if a_inner != a || b_inner != b {
+            return Self::types_match(a_inner, b_inner);
         }
-
-        // 2. Deref coercion: &Box<T> → &T
-        if let Type::Named { name, generics, .. } = act_inner {
-            if name == "Box" && !generics.is_empty() {
-                if Self::types_structurally_equal(exp_inner, &generics[0]) {
-                    return true;
-                }
-            }
-        }
-
-        // 3. Unsized coercion: &Vec<T> → &[T]
-        if let Type::Named { name, generics, .. } = act_inner {
-            if name == "Vec" && !generics.is_empty() {
-                if let Type::Slice(element) = exp_inner {
-                    if Self::types_structurally_equal(element.as_ref(), &generics[0]) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        false
+        // Compare structurally
+        a == b
     }
 
-    /// Helper to compare types structurally (ignoring small differences)
-    fn types_structurally_equal(a: &Type, b: &Type) -> bool {
-        match (a, b) {
-            (Type::Int(a_bits), Type::Int(b_bits)) => a_bits == b_bits,
-            (Type::Float(a_bits), Type::Float(b_bits)) => a_bits == b_bits,
-            (Type::Bool, Type::Bool) => true,
-            (Type::Str, Type::Str) => true,
-            (Type::Named { name: a_name, generics: a_gen, .. },
-             Type::Named { name: b_name, generics: b_gen, .. }) => {
-                a_name == b_name && a_gen.len() == b_gen.len() &&
-                a_gen.iter().zip(b_gen.iter()).all(|(a, b)| Self::types_structurally_equal(a, b))
+    /// Check if this is an allowed implicit reference coercion (&mut T → &T)
+    fn is_reference_coercion(expected: &Type, actual: &Type) -> bool {
+        match (expected, actual) {
+            // &mut T can coerce to &T (but not vice versa)
+            (
+                Type::Ref {
+                    inner: exp_inner,
+                    mutable: false,
+                    ..
+                },
+                Type::Ref {
+                    inner: act_inner,
+                    mutable: true,
+                    ..
+                },
+            ) => {
+                // Inner types must match (handling evidential wrappers)
+                Self::types_match(exp_inner.as_ref(), act_inner.as_ref())
             }
-            (Type::Slice(a_el), Type::Slice(b_el)) => {
-                Self::types_structurally_equal(a_el, b_el)
+            // Also handle through evidential wrappers
+            (Type::Evidential { inner: exp, .. }, actual) => {
+                Self::is_reference_coercion(exp.as_ref(), actual)
             }
-            (Type::Ref { inner: a_in, .. }, Type::Ref { inner: b_in, .. }) => {
-                Self::types_structurally_equal(a_in, b_in)
+            (expected, Type::Evidential { inner: act, .. }) => {
+                Self::is_reference_coercion(expected, act.as_ref())
             }
-            (Type::Evidential { inner: a_in, .. }, Type::Evidential { inner: b_in, .. }) => {
-                Self::types_structurally_equal(a_in, b_in)
+            _ => false,
+        }
+    }
+
+    /// Check if this is an allowed implicit deref coercion
+    /// Supports: &Box<T> → &T, &mut Box<T> → &mut T, &Vec<T> → &[T], &String → &str
+    fn is_deref_coercion(expected: &Type, actual: &Type) -> bool {
+        match (expected, actual) {
+            // Reference coercions with mutability consistency
+            (
+                Type::Ref {
+                    inner: exp_inner,
+                    mutable: exp_mut,
+                    ..
+                },
+                Type::Ref {
+                    inner: act_inner,
+                    mutable: act_mut,
+                    ..
+                },
+            ) => {
+                // For deref coercion, mutability must be consistent:
+                // &T → &T (ok), &mut T → &mut T (ok), &mut T → &T (ok, handled by is_reference_coercion)
+                // But &T → &mut T is NOT allowed
+                if *act_mut && !*exp_mut {
+                    // actual is &mut but expected is & - this is reborrow, not deref coercion
+                    return false;
+                }
+
+                if let Type::Named { name, generics } = act_inner.as_ref() {
+                    // &Box<T> → &T or &mut Box<T> → &mut T
+                    if name == "Box" && generics.len() == 1 {
+                        return Self::types_match(exp_inner.as_ref(), &generics[0]);
+                    }
+                    // &Vec<T> → &[T]
+                    if name == "Vec" && generics.len() == 1 {
+                        if let Type::Slice(slice_elem) = exp_inner.as_ref() {
+                            return Self::types_match(slice_elem.as_ref(), &generics[0]);
+                        }
+                    }
+                    // &String → &str
+                    if name == "String" && generics.is_empty() {
+                        if matches!(exp_inner.as_ref(), Type::Str) {
+                            return true;
+                        }
+                    }
+                }
+                false
             }
-            // Allow evidential to match non-evidential for inner comparison
-            (Type::Evidential { inner, .. }, other) | (other, Type::Evidential { inner, .. }) => {
-                Self::types_structurally_equal(inner, other)
+            // Also handle through evidential wrappers
+            (Type::Evidential { inner: exp, .. }, actual) => {
+                Self::is_deref_coercion(exp.as_ref(), actual)
+            }
+            (expected, Type::Evidential { inner: act, .. }) => {
+                Self::is_deref_coercion(expected, act.as_ref())
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if any implicit coercion is allowed
+    fn is_coercible(expected: &Type, actual: &Type) -> bool {
+        Self::is_numeric_coercion(expected, actual)
+            || Self::is_reference_coercion(expected, actual)
+            || Self::is_deref_coercion(expected, actual)
+            || Self::is_string_coercion(expected, actual)
+    }
+
+    /// Check for String ↔ str coercions
+    fn is_string_coercion(expected: &Type, actual: &Type) -> bool {
+        match (expected, actual) {
+            // str → String (via to_string())
+            (Type::Named { name, generics }, Type::Str)
+                if name == "String" && generics.is_empty() =>
+            {
+                true
+            }
+            // String → str (via deref)
+            (Type::Str, Type::Named { name, generics })
+                if name == "String" && generics.is_empty() =>
+            {
+                true
+            }
+            // &str → String
+            (
+                Type::Named { name, generics },
+                Type::Ref {
+                    inner,
+                    mutable: false,
+                    ..
+                },
+            ) if name == "String" && generics.is_empty() && matches!(inner.as_ref(), Type::Str) => {
+                true
+            }
+            // String → &str (via deref coercion)
+            (
+                Type::Ref {
+                    inner,
+                    mutable: false,
+                    ..
+                },
+                Type::Named { name, generics },
+            ) if matches!(inner.as_ref(), Type::Str) && name == "String" && generics.is_empty() => {
+                true
+            }
+            // Handle through evidential wrappers
+            (Type::Evidential { inner: exp, .. }, actual) => {
+                Self::is_string_coercion(exp.as_ref(), actual)
+            }
+            (expected, Type::Evidential { inner: act, .. }) => {
+                Self::is_string_coercion(expected, act.as_ref())
             }
             _ => false,
         }
@@ -3361,10 +3541,13 @@ impl TypeChecker {
                         "usize" => return Type::Int(IntSize::USize),
                         "f32" => return Type::Float(FloatSize::F32),
                         "f64" => return Type::Float(FloatSize::F64),
-                        // Handle Self type - resolve to current impl type (with generics)
+                        // Handle Self type - resolve to current impl type
                         "Self" => {
                             if let Some(ref self_ty) = self.current_self_type {
-                                return self_ty.clone();
+                                return Type::Named {
+                                    name: self_ty.clone(),
+                                    generics: vec![],
+                                };
                             }
                         }
                         _ => {
@@ -3393,7 +3576,11 @@ impl TypeChecker {
                 Type::Named { name, generics }
             }
 
-            TypeExpr::Reference { lifetime, mutable, inner } => Type::Ref {
+            TypeExpr::Reference {
+                lifetime,
+                mutable,
+                inner,
+            } => Type::Ref {
                 lifetime: lifetime.clone(),
                 mutable: *mutable,
                 inner: Box::new(self.convert_type(inner)),
@@ -3462,6 +3649,11 @@ impl TypeChecker {
                 Type::Atomic(Box::new(inner_ty))
             }
 
+            TypeExpr::Linear(inner) => {
+                let inner_ty = self.convert_type(inner);
+                Type::Linear(Box::new(inner_ty))
+            }
+
             TypeExpr::Never => Type::Never,
             TypeExpr::Infer => Type::Var(TypeVar(0)), // Fresh var
             TypeExpr::Lifetime(name) => Type::Lifetime(name.clone()),
@@ -3494,13 +3686,29 @@ impl TypeChecker {
                 // For now, treat as an inferred/opaque type
                 Type::Var(TypeVar(0))
             }
-            TypeExpr::QualifiedPath { self_type, trait_path, item_path } => {
+            TypeExpr::QualifiedPath {
+                self_type,
+                trait_path,
+                item_path,
+            } => {
                 // Qualified path: <Type as Trait>::AssociatedType
                 // For now, represent as a named type with a synthesized name
-                let trait_part = trait_path.as_ref()
-                    .map(|tp| tp.segments.iter().map(|s| s.ident.name.clone()).collect::<Vec<_>>().join("::"))
+                let trait_part = trait_path
+                    .as_ref()
+                    .map(|tp| {
+                        tp.segments
+                            .iter()
+                            .map(|s| s.ident.name.clone())
+                            .collect::<Vec<_>>()
+                            .join("::")
+                    })
                     .unwrap_or_default();
-                let item_part = item_path.segments.iter().map(|s| s.ident.name.clone()).collect::<Vec<_>>().join("::");
+                let item_part = item_path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.clone())
+                    .collect::<Vec<_>>()
+                    .join("::");
                 let name = if trait_part.is_empty() {
                     format!("<_>::{}", item_part)
                 } else {
@@ -3511,11 +3719,6 @@ impl TypeChecker {
                     generics: vec![self.convert_type(self_type)],
                 }
             }
-            // Linear/affine/relevant type modifiers - wrap the inner type
-            // Linear types enforce the no-cloning theorem at compile time
-            TypeExpr::Linear(inner) => Type::Linear(Box::new(self.convert_type(inner))),
-            TypeExpr::Affine(inner) => Type::Affine(Box::new(self.convert_type(inner))),
-            TypeExpr::Relevant(inner) => Type::Relevant(Box::new(self.convert_type(inner))),
         }
     }
 
@@ -3619,8 +3822,15 @@ impl fmt::Display for Type {
                 }
                 write!(f, ") -> {}", return_type)
             }
-            Type::Ref { lifetime, mutable, inner } => {
-                let lt = lifetime.as_ref().map(|l| format!("'{} ", l)).unwrap_or_default();
+            Type::Ref {
+                lifetime,
+                mutable,
+                inner,
+            } => {
+                let lt = lifetime
+                    .as_ref()
+                    .map(|l| format!("'{} ", l))
+                    .unwrap_or_default();
                 write!(f, "&{}{}{}", lt, if *mutable { "mut " } else { "" }, inner)
             }
             Type::Ptr { mutable, inner } => {
@@ -3635,6 +3845,7 @@ impl fmt::Display for Type {
             Type::Never => write!(f, "!"),
             Type::Simd { element, lanes } => write!(f, "simd<{}, {}>", element, lanes),
             Type::Atomic(inner) => write!(f, "atomic<{}>", inner),
+            Type::Linear(inner) => write!(f, "linear {}", inner),
             Type::Lifetime(name) => write!(f, "'{}", name),
             Type::TraitObject(bounds) => {
                 write!(f, "dyn ")?;
@@ -3689,10 +3900,6 @@ impl fmt::Display for Type {
             Type::AssocTypeBinding { name, ty } => {
                 write!(f, "{} = {}", name, ty)
             }
-            // Linear type modifiers for quantum computing
-            Type::Linear(inner) => write!(f, "linear {}", inner),
-            Type::Affine(inner) => write!(f, "affine {}", inner),
-            Type::Relevant(inner) => write!(f, "relevant {}", inner),
         }
     }
 }
@@ -3711,14 +3918,14 @@ mod tests {
 
     #[test]
     fn test_basic_types() {
-        assert!(check("fn main() { let x: i64 = 42; }").is_ok());
-        assert!(check("fn main() { let x: bool = true; }").is_ok());
-        assert!(check("fn main() { let x: f64 = 3.14; }").is_ok());
+        assert!(check("rite main() { ≔ x: i64 = 42; }").is_ok());
+        assert!(check("rite main() { ≔ x: bool = true; }").is_ok());
+        assert!(check("rite main() { ≔ x: f64 = 3.14; }").is_ok());
     }
 
     #[test]
     fn test_type_mismatch() {
-        assert!(check("fn main() { let x: bool = 42; }").is_err());
+        assert!(check("rite main() { ≔ x: bool = 42; }").is_err());
     }
 
     #[test]
@@ -3726,10 +3933,10 @@ mod tests {
         // Evidence should propagate through operations
         assert!(check(
             r#"
-            fn main() {
-                let known: i64! = 42;
-                let uncertain: i64? = 10;
-                let result = known + uncertain;
+            rite main() {
+                ≔ known: i64! = 42;
+                ≔ uncertain: i64? = 10;
+                ≔ result = known + uncertain;
             }
         "#
         )
@@ -3740,11 +3947,11 @@ mod tests {
     fn test_function_return() {
         let result = check(
             r#"
-            fn add(a: i64, b: i64) -> i64 {
-                return a + b;
+            rite add(a: i64, b: i64) → i64 {
+                ⤺ a + b;
             }
-            fn main() {
-                let x = add(1, 2);
+            rite main() {
+                ≔ x = add(1, 2);
             }
         "#,
         );
@@ -3760,9 +3967,9 @@ mod tests {
     fn test_array_types() {
         assert!(check(
             r#"
-            fn main() {
-                let arr = [1, 2, 3];
-                let x = arr[0];
+            rite main() {
+                ≔ arr = [1, 2, 3];
+                ≔ x = arr[0];
             }
         "#
         )
@@ -3778,10 +3985,10 @@ mod tests {
         // Evidence should be inferred from initializer when not explicitly annotated
         assert!(check(
             r#"
-            fn main() {
-                let reported_val: i64~ = 42;
+            rite main() {
+                ≔ reported_val: i64~ = 42;
                 // x should inherit ~ evidence from reported_val
-                let x = reported_val + 1;
+                ≔ x = reported_val + 1;
             }
         "#
         )
@@ -3793,11 +4000,11 @@ mod tests {
         // Explicit annotation should override inference
         assert!(check(
             r#"
-            fn main() {
-                let reported_val: i64~ = 42;
+            rite main() {
+                ≔ reported_val: i64~ = 42;
                 // Explicit ! annotation - this would fail if we checked evidence properly
                 // but the type system allows it as an override
-                let x! = 42;
+                ≔ x! = 42;
             }
         "#
         )
@@ -3809,12 +4016,12 @@ mod tests {
         // Evidence from both branches should be joined
         assert!(check(
             r#"
-            fn main() {
-                let known_val: i64! = 1;
-                let reported_val: i64~ = 2;
-                let cond: bool = true;
+            rite main() {
+                ≔ known_val: i64! = 1;
+                ≔ reported_val: i64~ = 2;
+                ≔ cond: bool = true;
                 // Result should have ~ evidence (join of ! and ~)
-                let result = if cond { known_val } else { reported_val };
+                ≔ result = ⎇ cond { known_val } ⎉ { reported_val };
             }
         "#
         )
@@ -3826,11 +4033,11 @@ mod tests {
         // Binary operations should join evidence levels
         assert!(check(
             r#"
-            fn main() {
-                let known: i64! = 1;
-                let reported: i64~ = 2;
+            rite main() {
+                ≔ known: i64! = 1;
+                ≔ reported: i64~ = 2;
                 // Result should have ~ evidence (max of ! and ~)
-                let result = known + reported;
+                ≔ result = known + reported;
             }
         "#
         )
@@ -3843,8 +4050,8 @@ mod tests {
         // Note: This test is structural - the type checker should handle it
         assert!(check(
             r#"
-            fn main() {
-                let x: i64 = 1;
+            rite main() {
+                ≔ x: i64 = 1;
             }
         "#
         )

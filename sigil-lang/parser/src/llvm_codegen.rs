@@ -498,12 +498,15 @@ pub mod llvm {
             self.module
                 .add_function("sigil_write_str", print_str_type, None);
 
+<<<<<<< HEAD
+=======
             // Jormungandr-compatible print functions (const char*) -> void
             self.module.add_function("print", print_str_type, None);
             self.module.add_function("println", print_str_type, None);
             self.module.add_function("eprint", print_str_type, None);
             self.module.add_function("eprintln", print_str_type, None);
 
+>>>>>>> origin/main
             // sigil_write_float(f64) -> void
             self.module
                 .add_function("sigil_write_float", print_float_type, None);
@@ -2745,6 +2748,8 @@ pub mod llvm {
                                 .map(|v| v.into_int_value())
                                 .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                         }
+<<<<<<< HEAD
+=======
                         "iter" => {
                             // v.iter() returns the array/vec itself for iteration
                             // In Sigil, .iter() is an identity operation that signals
@@ -2965,6 +2970,7 @@ pub mod llvm {
                             }
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
+>>>>>>> origin/main
                         _ => {}
                     }
 
@@ -2996,6 +3002,9 @@ pub mod llvm {
                             }
                         }
                     }
+<<<<<<< HEAD
+                    Err(format!("Unknown method: {}", method_name))
+=======
 
                     // Fallback: Try to call as a method that mutates/accesses the receiver
                     // Many methods like `collect_type_def`, `check`, etc. just return unit or
@@ -3067,6 +3076,7 @@ pub mod llvm {
                     // Default fallback - return 0 as unit
                     // eprintln!("DEBUG: Unknown method '{}' - treating as no-op", method_name);
                     return Ok(self.context.i64_type().const_int(0, false));
+>>>>>>> origin/main
                 }
                 // ============================================
                 // Sigil-native expressions
@@ -5359,6 +5369,8 @@ pub mod llvm {
                 return Ok(self.context.i64_type().const_int(0, false));
             };
 
+<<<<<<< HEAD
+=======
             // Resolve Self:: and This:: to the actual type name
             let full_path = if full_path.starts_with("Self::")
                 || full_path.starts_with("This::")
@@ -5546,6 +5558,7 @@ pub mod llvm {
                 return Ok(self.context.i64_type().const_int(0, false));
             }
 
+>>>>>>> origin/main
             // Handle qualified type paths (e.g., Vec::new, Box::new)
             match full_path.as_str() {
                 "Vec::new" => {

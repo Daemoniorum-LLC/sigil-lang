@@ -1,8 +1,0 @@
-// Test: i32·MIN boundary value
-// Spec: Edge Cases - Integer Limits
-// Priority: P0 - Bootstrap Critical
-
-rite main() {
-    ≔ min: i32 = -2147483648;  // i32·MIN
-    println(min);
-}

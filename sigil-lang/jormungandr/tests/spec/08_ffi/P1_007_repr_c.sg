@@ -1,14 +1,14 @@
-// Test: repr(C) Σ layout
+// Test: repr(C) sigil layout
 // Spec: 08-FFI.md § 3.1 Struct Layout
 // Priority: P1 - Production Ready
 
 #[repr(C)]
-Σ Point {
+sigil Point {
     x: !i32,
     y: !i32,
 }
 
-λ main() {
+rite main() {
     ≔ p = Point { x: 10, y: 20 };
     println(p.x);
     println(p.y);

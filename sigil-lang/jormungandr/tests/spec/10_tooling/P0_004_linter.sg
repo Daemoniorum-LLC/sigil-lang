@@ -4,7 +4,7 @@
 //
 // Linter should warn about unused variable
 
-λ main() {
+rite main() {
     ≔ unused: !i32 = 42;
     ≔ used: !i32 = 100;
     println(used);
