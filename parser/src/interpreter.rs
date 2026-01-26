@@ -3473,6 +3473,45 @@ impl Interpreter {
                             Err(RuntimeError::new("assertion failed"))
                         }
                     }
+                    "assert_eq" | "assert_ne" => {
+                        // assert_eq!(left, right) - check if left == right
+                        // assert_ne!(left, right) - check if left != right
+                        let parts: Vec<&str> = tokens.splitn(2, ',').collect();
+                        if parts.len() < 2 {
+                            return Err(RuntimeError::new(format!(
+                                "{}! requires two arguments", macro_name
+                            )));
+                        }
+                        let left_str = parts[0].trim();
+                        let right_str = parts[1].trim();
+
+                        // Parse and evaluate left and right expressions
+                        let mut parser = crate::Parser::new(left_str);
+                        let left_expr = parser.parse_expr().map_err(|e| {
+                            RuntimeError::new(format!("Failed to parse left operand '{}': {:?}", left_str, e))
+                        })?;
+                        let left_val = self.evaluate(&left_expr)?;
+
+                        let mut parser = crate::Parser::new(right_str);
+                        let right_expr = parser.parse_expr().map_err(|e| {
+                            RuntimeError::new(format!("Failed to parse right operand '{}': {:?}", right_str, e))
+                        })?;
+                        let right_val = self.evaluate(&right_expr)?;
+
+                        let are_equal = self.values_equal(&left_val, &right_val);
+                        let should_be_equal = macro_name == "assert_eq";
+
+                        if are_equal == should_be_equal {
+                            Ok(Value::Null)
+                        } else {
+                            Err(RuntimeError::new(format!(
+                                "{}! failed: left = {}, right = {}",
+                                macro_name,
+                                self.format_value(&left_val),
+                                self.format_value(&right_val)
+                            )))
+                        }
+                    }
                     _ => {
                         // Check if it's a user-defined macro/rune
                         crate::sigil_debug!("DEBUG looking up macro: '{}', available: {:?}", macro_name, self.macros.keys().collect::<Vec<_>>());
@@ -10209,9 +10248,54 @@ impl Interpreter {
                                         child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::String(Rc::new(class_name))]))));
                                         child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
 
-                                        // Recursively handle nested children
+                                        // Recursively render nested children
                                         if let Some(nested_children) = child_borrowed.get("children") {
-                                            child_vnode.insert("children".to_string(), nested_children.clone());
+                                            if let Value::Array(nested_arr) = nested_children {
+                                                let mut rendered_nested = vec![];
+                                                for nested_child in nested_arr.borrow().iter() {
+                                                    if let Value::Struct { name: nc_name, fields: nc_fields } = nested_child {
+                                                        // Render nested component
+                                                        let nc_borrowed = nc_fields.borrow();
+                                                        let mut nc_vnode = std::collections::HashMap::new();
+
+                                                        let tag = match nc_name.as_str() {
+                                                            "Input" | "Textarea" => "input",
+                                                            "Select" => "select",
+                                                            "Link" => "a",
+                                                            _ => "div",
+                                                        };
+                                                        nc_vnode.insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
+
+                                                        let text = nc_borrowed.get("label")
+                                                            .or_else(|| nc_borrowed.get("title"))
+                                                            .or_else(|| nc_borrowed.get("text"))
+                                                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                                            .unwrap_or_else(|| Rc::new("".to_string()));
+                                                        nc_vnode.insert("text_content".to_string(), Value::String(text));
+
+                                                        let class_name = nc_name.chars()
+                                                            .enumerate()
+                                                            .map(|(i, c)| {
+                                                                if c.is_uppercase() && i > 0 { format!("-{}", c.to_lowercase()) }
+                                                                else { c.to_lowercase().to_string() }
+                                                            })
+                                                            .collect::<String>();
+                                                        nc_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::String(Rc::new(class_name))]))));
+                                                        nc_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                                        nc_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                                                        rendered_nested.push(Value::Struct {
+                                                            name: "VNode".to_string(),
+                                                            fields: Rc::new(RefCell::new(nc_vnode)),
+                                                        });
+                                                    } else {
+                                                        rendered_nested.push(nested_child.clone());
+                                                    }
+                                                }
+                                                child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(rendered_nested))));
+                                            } else {
+                                                child_vnode.insert("children".to_string(), nested_children.clone());
+                                            }
                                         } else {
                                             child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
                                         }
@@ -16436,23 +16520,37 @@ impl Interpreter {
         crate::sigil_debug!("DEBUG expand_user_macro: macro_params={:?}", macro_params);
 
         // Parse actual argument values from the invocation tokens
-        // tokens might be "5" or "IntLit(\"5\")" etc.
-        let arg_values: Vec<Value> = if !tokens.is_empty() {
-            // Simple case: single value
+        // tokens might be "5" or "min : 0, max : 100" etc.
+        let mut named_args: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+        let mut positional_args: Vec<Value> = Vec::new();
+
+        if !tokens.is_empty() {
             let tokens = tokens.trim();
-            if let Ok(expr) = self.parse_tokenized_body(tokens) {
-                if let Ok(val) = self.evaluate(&expr) {
-                    vec![val]
-                } else {
-                    vec![]
+            // Check if it's named arguments (contains ":" pattern like "name : value")
+            if tokens.contains(':') {
+                // Parse named arguments like "min : 0, max : 100"
+                for arg in tokens.split(',') {
+                    let arg = arg.trim();
+                    if let Some(colon_pos) = arg.find(':') {
+                        let name = arg[..colon_pos].trim();
+                        let value_str = arg[colon_pos + 1..].trim();
+                        if let Ok(expr) = self.parse_tokenized_body(value_str) {
+                            if let Ok(val) = self.evaluate(&expr) {
+                                named_args.insert(name.to_string(), val);
+                            }
+                        }
+                    }
                 }
             } else {
-                vec![]
+                // Simple case: single positional value
+                if let Ok(expr) = self.parse_tokenized_body(tokens) {
+                    if let Ok(val) = self.evaluate(&expr) {
+                        positional_args.push(val);
+                    }
+                }
             }
-        } else {
-            vec![]
-        };
-        crate::sigil_debug!("DEBUG expand_user_macro: arg_values={:?}", arg_values);
+        }
+        crate::sigil_debug!("DEBUG expand_user_macro: named_args={:?}, positional_args={:?}", named_args, positional_args);
 
         // Find FatArrow and extract the body after it
         // The body is typically in the last { } block
@@ -16489,7 +16587,9 @@ impl Interpreter {
                     // Replace Ident("n") with the actual argument value
                     for (i, param_name) in macro_params.iter().enumerate() {
                         let pattern = format!("Ident(\"{}\")", param_name);
-                        if let Some(arg_val) = arg_values.get(i) {
+                        // First try named args, then positional
+                        let arg_val = named_args.get(param_name).or_else(|| positional_args.get(i));
+                        if let Some(arg_val) = arg_val {
                             // Convert the value back to tokenized form
                             let replacement = match arg_val {
                                 Value::Int(n) => format!("IntLit(\"{}\")", n),
@@ -16534,84 +16634,214 @@ impl Interpreter {
 
     /// Parse a tokenized macro body into an expression
     fn parse_tokenized_body(&self, tokens: &str) -> Result<Expr, RuntimeError> {
-        // Handle common patterns in tokenized format:
-        // "IntLit("99")" -> Expr::Literal(Literal::Int(99))
-        // "Ident(__pipe) Star IntLit("2")" -> __pipe * 2
-        // etc.
-
         let tokens = tokens.trim();
         crate::sigil_debug!("DEBUG parse_tokenized_body: '{}'", tokens);
 
-        // Try to find operator patterns first (binary expressions)
-        // Pattern: expr1 Operator expr2
-        let ops = ["Star", "Plus", "Minus", "Slash", "Percent"];
-        for op in &ops {
-            if let Some(pos) = tokens.find(op) {
-                let left_str = tokens[..pos].trim();
-                let right_str = tokens[pos + op.len()..].trim();
+        // First, convert tokenized form back to source code
+        let source = self.detokenize(tokens);
+        crate::sigil_debug!("DEBUG parse_tokenized_body detokenized: '{}'", source);
 
-                let left = self.parse_tokenized_body(left_str)?;
-                let right = self.parse_tokenized_body(right_str)?;
-
-                let binary_op = match *op {
-                    "Star" => crate::ast::BinOp::Mul,
-                    "Plus" => crate::ast::BinOp::Add,
-                    "Minus" => crate::ast::BinOp::Sub,
-                    "Slash" => crate::ast::BinOp::Div,
-                    "Percent" => crate::ast::BinOp::Rem,
-                    _ => unreachable!(),
-                };
-
-                return Ok(Expr::Binary {
-                    left: Box::new(left),
-                    op: binary_op,
-                    right: Box::new(right),
-                });
-            }
-        }
-
-        // Handle IntLit("99")
-        if tokens.starts_with("IntLit(") {
-            if let Some(start) = tokens.find('"') {
-                if let Some(end) = tokens[start + 1..].find('"') {
-                    let num_str = &tokens[start + 1..start + 1 + end];
-                    return Ok(Expr::Literal(crate::ast::Literal::Int {
-                        value: num_str.to_string(),
-                        base: crate::ast::NumBase::Decimal,
-                        suffix: None,
-                    }));
-                }
-            }
-        }
-
-        // Handle Ident(name) or Ident("name")
-        if tokens.starts_with("Ident(") {
-            if let Some(end) = tokens.find(')') {
-                let mut name = tokens[6..end].trim();
-                // Remove surrounding quotes if present
-                if name.starts_with('"') && name.ends_with('"') {
-                    name = &name[1..name.len() - 1];
-                }
-                return Ok(Expr::Path(crate::ast::TypePath {
-                    segments: vec![crate::ast::PathSegment {
-                        ident: crate::ast::Ident {
-                            name: name.to_string(),
-                            evidentiality: None,
-                            affect: None,
-                            span: crate::span::Span::default(),
-                        },
-                        generics: None,
-                    }],
-                }));
-            }
-        }
-
-        // Fallback: try parsing as regular Sigil source
-        let mut parser = crate::Parser::new(tokens);
+        // Now parse as regular Sigil source
+        let mut parser = crate::Parser::new(&source);
         match parser.parse_expr() {
             Ok(expr) => Ok(expr),
-            Err(e) => Err(RuntimeError::new(format!("Failed to parse macro body '{}': {:?}", tokens, e))),
+            Err(e) => Err(RuntimeError::new(format!("Failed to parse macro body '{}' (source: '{}'): {:?}", tokens, source, e))),
         }
+    }
+
+    /// Convert tokenized form back to source code
+    fn detokenize(&self, tokens: &str) -> String {
+        let tokens = tokens.trim();
+
+        // Handle raw values that aren't in tokenized format
+        // If it's just a plain number, return it as-is
+        if tokens.parse::<i64>().is_ok() || tokens.parse::<f64>().is_ok() {
+            return tokens.to_string();
+        }
+
+        // If it's a plain identifier (no special token patterns), return as-is
+        if !tokens.contains('(') && !tokens.is_empty()
+            && tokens.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return tokens.to_string();
+        }
+
+        let mut result = String::new();
+        let mut i = 0;
+        let chars: Vec<char> = tokens.chars().collect();
+
+        while i < chars.len() {
+            // Skip whitespace
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
+            }
+            if i >= chars.len() {
+                break;
+            }
+
+            // Try to match token patterns
+            let rest: String = chars[i..].iter().collect();
+
+            if rest.starts_with("Ident(") {
+                // Find the closing paren
+                if let Some(close) = rest.find(')') {
+                    let inner = &rest[6..close];
+                    let name = inner.trim().trim_matches('"');
+                    result.push_str(name);
+                    result.push(' ');
+                    i += close + 1;
+                    continue;
+                }
+            } else if rest.starts_with("IntLit(") {
+                if let Some(close) = rest.find(')') {
+                    let inner = &rest[7..close];
+                    let num = inner.trim().trim_matches('"');
+                    result.push_str(num);
+                    result.push(' ');
+                    i += close + 1;
+                    continue;
+                }
+            } else if rest.starts_with("FloatLit(") {
+                if let Some(close) = rest.find(')') {
+                    let inner = &rest[9..close];
+                    let num = inner.trim().trim_matches('"');
+                    result.push_str(num);
+                    result.push(' ');
+                    i += close + 1;
+                    continue;
+                }
+            } else if rest.starts_with("StringLit(") {
+                if let Some(close) = rest.find(')') {
+                    let inner = &rest[10..close];
+                    result.push('"');
+                    result.push_str(inner.trim().trim_matches('"'));
+                    result.push('"');
+                    result.push(' ');
+                    i += close + 1;
+                    continue;
+                }
+            } else if rest.starts_with("If ") || rest == "If" {
+                result.push_str("⎇ ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("Else ") || rest.starts_with("Else{") {
+                result.push_str(" ⎉ ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Let ") {
+                result.push_str("≔ ");
+                i += 3;
+                continue;
+            } else if rest.starts_with("Plus ") || rest == "Plus" {
+                result.push_str("+ ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Minus ") || rest == "Minus" {
+                result.push_str("- ");
+                i += 5;
+                continue;
+            } else if rest.starts_with("Star ") || rest == "Star" {
+                result.push_str("* ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Slash ") || rest == "Slash" {
+                result.push_str("/ ");
+                i += 5;
+                continue;
+            } else if rest.starts_with("Percent ") || rest == "Percent" {
+                result.push_str("% ");
+                i += 7;
+                continue;
+            } else if rest.starts_with("GtEq ") || rest == "GtEq" {
+                result.push_str(">= ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("LtEq ") || rest == "LtEq" {
+                result.push_str("<= ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Gt ") || rest == "Gt" {
+                result.push_str("> ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("Lt ") || rest == "Lt" {
+                result.push_str("< ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("EqEq ") || rest == "EqEq" {
+                result.push_str("== ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Ne ") || rest == "Ne" {
+                result.push_str("!= ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("AndAnd ") || rest == "AndAnd" {
+                result.push_str("&& ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("OrOr ") || rest == "OrOr" {
+                result.push_str("|| ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Amp Amp ") || rest.starts_with("Amp Amp") {
+                result.push_str("&& ");
+                i += 7;
+                continue;
+            } else if rest.starts_with("Or Or ") || rest.starts_with("Or Or") || rest.starts_with("Pipe Pipe") {
+                result.push_str("|| ");
+                i += 7;
+                continue;
+            } else if rest.starts_with("LParen ") || rest == "LParen" {
+                result.push_str("(");
+                i += 6;
+                continue;
+            } else if rest.starts_with("RParen ") || rest == "RParen" {
+                result.push_str(") ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("LBrace ") || rest == "LBrace" {
+                result.push_str("{ ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("RBrace ") || rest == "RBrace" {
+                result.push_str("} ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("Comma ") || rest == "Comma" {
+                result.push_str(", ");
+                i += 5;
+                continue;
+            } else if rest.starts_with("Colon ") || rest == "Colon" {
+                result.push_str(": ");
+                i += 5;
+                continue;
+            } else if rest.starts_with("Semi ") || rest == "Semi" {
+                result.push_str("; ");
+                i += 4;
+                continue;
+            } else if rest.starts_with("FatArrow ") || rest == "FatArrow" {
+                result.push_str("=> ");
+                i += 8;
+                continue;
+            } else if rest.starts_with("Question ") || rest == "Question" {
+                result.push_str("? ");
+                i += 8;
+                continue;
+            } else if chars[i] == '{' {
+                result.push_str("{ ");
+                i += 1;
+                continue;
+            } else if chars[i] == '}' {
+                result.push_str("} ");
+                i += 1;
+                continue;
+            }
+
+            // Unknown token - skip character
+            i += 1;
+        }
+
+        result.trim().to_string()
     }
 
     /// Evaluate format! macro - parse format string and arguments

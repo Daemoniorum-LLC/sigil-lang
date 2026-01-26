@@ -815,9 +815,10 @@ pub enum Token {
     #[token("**")]
     StarStar, // Exponentiation
     // Note: ∧/∨ handled by Token::LogicAnd/LogicOr - parser is context-aware
-    // AndAnd and OrOr tokens kept for compatibility but won't lex anything
-    AndAnd,
-    OrOr,
+    #[token("&&")]
+    AndAnd, // Logical AND
+    #[token("||")]
+    OrOr, // Logical OR
     #[token("!")]
     Bang, // Evidentiality: known / logical not
     #[token("?")]
