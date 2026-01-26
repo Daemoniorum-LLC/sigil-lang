@@ -13,11 +13,7 @@
     Err(E),
 }
 
-<<<<<<< HEAD
-impl<T, E> Result<T, E> {
-=======
 ⊢<T, E> Result<T, E> {
->>>>>>> origin/main
     ☉ rite is_ok(this) → !bool {
         ⌥ this {
             Result·Ok(_) => yea,

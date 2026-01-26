@@ -6906,6 +6906,34 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace)?;
         self.skip_comments();
 
+        // Try to detect anonymous struct literal pattern: `{ field: value, ... }`
+        // We check if current is Ident and next is Colon (not TypeColon or FatArrow)
+        let is_anonymous_struct = matches!(self.current_token(), Some(Token::Ident(_)))
+            && matches!(self.peek_next(), Some(Token::Colon));
+
+        if is_anonymous_struct {
+            // Parse anonymous struct literal
+            let mut fields = Vec::new();
+            while !self.check(&Token::RBrace) && !self.is_eof() {
+                self.skip_comments();
+                if self.check(&Token::RBrace) {
+                    break;
+                }
+                let field_name = self.parse_ident()?;
+                self.expect(Token::Colon)?;
+                self.skip_comments();
+                let value = self.parse_expr()?;
+                fields.push((field_name, value));
+                self.skip_comments();
+                if !self.consume_if(&Token::Comma) {
+                    break;
+                }
+            }
+            self.skip_comments();
+            self.expect(Token::RBrace)?;
+            return Ok(Expr::AnonymousStruct { fields });
+        }
+
         // Try to detect closure pattern: `{x => ...}` using lookahead
         // We check if current is Ident and next is FatArrow without consuming tokens
         let is_simple_closure = matches!(self.current_token(), Some(Token::Ident(_)))

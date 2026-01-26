@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-// Test: ⊢ Trait for Type
-=======
 // Test: ⊢ Trait ∀ Type
->>>>>>> origin/main
 ☉ aspect Summable {
     rite sum(&this) → !i32;
 }

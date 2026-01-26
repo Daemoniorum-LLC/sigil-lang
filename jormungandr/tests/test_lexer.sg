@@ -3,15 +3,9 @@
 //! Tests all token types, numeric bases, escapes, and Unicode symbols.
 //! Target: 100% lexer coverage each regression detection.
 
-<<<<<<< HEAD
-use crate·lexer·Lexer;
-use crate·token·Token;
-use crate·span·Span;
-=======
 invoke crate·lexer·Lexer;
 invoke crate·token·Token;
 invoke crate·span·Span;
->>>>>>> origin/main
 
 // ============================================================================
 // Test Helpers

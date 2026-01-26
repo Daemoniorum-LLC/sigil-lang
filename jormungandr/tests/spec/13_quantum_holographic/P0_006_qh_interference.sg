@@ -6,11 +6,7 @@ rite main() {
     ≔ a: QHState<i32> = QHState·superpose([1, 2]);
     ≔ b: QHState<i32> = QHState·superpose([2, 3]);
     ≔ combined = interfere(a, b);
-<<<<<<< HEAD
-    // Interference can cause constructive/destructive effects
-=======
     // Interference can cainvoke constructive/destructive effects
->>>>>>> origin/main
     ≔ result! = combined|measure;
     println(result!);
 }

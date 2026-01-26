@@ -17,11 +17,7 @@ rite main() {
     // eprintln - outputs to stderr with newline
     eprintln("line");
 
-<<<<<<< HEAD
-    // These are IO functions that don't return values to check
-=======
     // These are IO functions that don't ⤺ values to check
->>>>>>> origin/main
     // Just verify they don't crash
 
     println("ALL IO TESTS PASSED!");

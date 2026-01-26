@@ -1289,6 +1289,10 @@ pub enum Expr {
         fields: Vec<FieldInit>,
         rest: Option<Box<Expr>>,
     },
+    /// Anonymous struct literal: `{ field: value, ... }`
+    AnonymousStruct {
+        fields: Vec<(Ident, Expr)>,
+    },
     /// Block expression
     Block(Block),
     /// If expression

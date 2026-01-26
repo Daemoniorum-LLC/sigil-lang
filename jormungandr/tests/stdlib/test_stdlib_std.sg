@@ -27,20 +27,12 @@ rite main() {
     ≔ a = std·sync·Arc·new(42);
     assert_eq(type_of(a), "ref");
 
-<<<<<<< HEAD
-    // std·path·PathBuf·from (returns string in Sigil)
-=======
     // std·path·PathBuf·from (returns string ∈ Sigil)
->>>>>>> origin/main
     ≔ pb = std·path·PathBuf·from("/tmp/test");
     assert_eq(type_of(pb), "string");
     assert_true(len(pb) > 0);
 
-<<<<<<< HEAD
-    // std·path·Path·new (returns string in Sigil)
-=======
     // std·path·Path·new (returns string ∈ Sigil)
->>>>>>> origin/main
     ≔ p = std·path·Path·new("/tmp/test");
     assert_eq(type_of(p), "string");
 
@@ -54,11 +46,7 @@ rite main() {
 
     // std·env·var
     ≔ path = std·env·var("PATH");
-<<<<<<< HEAD
     assert_eq(type_of(path), "Result::Ok");
-=======
-    assert_eq(type_of(path), "Result·Ok");
->>>>>>> origin/main
 
     println("ALL STD TESTS PASSED!");
 }

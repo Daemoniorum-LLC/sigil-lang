@@ -4,13 +4,8 @@
 //! function signatures, control flow, and evidence tagging.
 //! Target: 100% codegen coverage each regression detection.
 
-<<<<<<< HEAD
-use crate·ir·*;
-use crate·codegen·CodeGen;
-=======
 invoke crate·ir·*;
 invoke crate·codegen·CodeGen;
->>>>>>> origin/main
 
 // ============================================================================
 // Test Helpers

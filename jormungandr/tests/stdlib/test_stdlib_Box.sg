@@ -4,11 +4,7 @@
 rite main() {
     println("=== Testing Box ===");
 
-<<<<<<< HEAD
-    // Box·new - boxes a value (returns the value in Sigil)
-=======
     // Box·new - boxes a value (returns the value ∈ Sigil)
->>>>>>> origin/main
     ≔ b = Box·new(42);
     assert_eq(b, 42);
 

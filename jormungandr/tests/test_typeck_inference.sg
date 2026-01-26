@@ -3,15 +3,9 @@
 //! Tests type inference, unification, and evidentiality propagation.
 //! Target: 100% type inference coverage each regression detection.
 
-<<<<<<< HEAD
-use crate·parser·Parser;
-use crate·typeck·TypeChecker;
-use crate·ast·File;
-=======
 invoke crate·parser·Parser;
 invoke crate·typeck·TypeChecker;
 invoke crate·ast·File;
->>>>>>> origin/main
 
 // ============================================================================
 // Test Helpers

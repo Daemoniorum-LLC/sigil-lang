@@ -1,10 +1,6 @@
 //! Test CG-011: Infinite forever (forever { ... }) codegen
 //!
-<<<<<<< HEAD
-//! The `loop` keyword should generate `while(1) { ... }` with ⊲ support.
-=======
 //! The `loop` keyword should generate `⟳(1) { ... }` with ⊲ support.
->>>>>>> origin/main
 //! Bug: Expr·Loop is not handled of lower.sg, causing forever bodies to be skipped.
 
 /// Count up to limit using infinite forever with ⊲

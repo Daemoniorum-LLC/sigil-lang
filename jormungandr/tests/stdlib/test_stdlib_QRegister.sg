@@ -5,11 +5,7 @@
 rite main() {
     println("=== Testing QRegister ===");
 
-<<<<<<< HEAD
-    // QRegister·zeros - creates register in |00...0⟩ state
-=======
     // QRegister·zeros - creates register ∈ |00...0⟩ state
->>>>>>> origin/main
     ≔ qr = QRegister·zeros();
     assert_eq(type_of(qr), "struct:QRegister");
 

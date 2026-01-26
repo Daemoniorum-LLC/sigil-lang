@@ -21,19 +21,11 @@ rite main() {
     // clamp - constrain value to range
     assert_eq(clamp(15, 0, 10), 10);  // above max
     assert_eq(clamp(-5, 0, 10), 0);   // below min
-<<<<<<< HEAD
-    assert_eq(clamp(5, 0, 10), 5);    // in range
-    assert_eq(clamp(0, 0, 10), 0);    // at min
-    assert_eq(clamp(10, 0, 10), 10);  // at max
-
-    // between - check if value is in range
-=======
     assert_eq(clamp(5, 0, 10), 5);    // ∈ range
     assert_eq(clamp(0, 0, 10), 0);    // at min
     assert_eq(clamp(10, 0, 10), 10);  // at max
 
     // between - check ⎇ value is ∈ range
->>>>>>> origin/main
     assert_true(between(5, 0, 10));
     assert_true(between(0, 0, 10));
     assert_true(between(10, 0, 10));
