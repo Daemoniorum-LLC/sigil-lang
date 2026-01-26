@@ -98,12 +98,12 @@ rite main() {
     assert_eq(len(parts[1]), 3);
 
     // all
-    assert_true(all([yea, yea, yea]));
-    assert_false(all([yea, nay, yea]));
+    assert_true(all([true, true, true]));
+    assert_false(all([true, false, true]));
 
     // any
-    assert_true(any([nay, nay, yea]));
-    assert_false(any([nay, nay, nay]));
+    assert_true(any([false, false, true]));
+    assert_false(any([false, false, false]));
 
     // frequencies - count occurrences (returns a map)
     ≔ freqs = frequencies(["a", "b", "a", "a"]);

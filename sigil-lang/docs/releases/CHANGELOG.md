@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Ecosystem libraries**: 157 files migrated to native Sigil syntax
-- **Test suite expanded**: 577 tests (100% pass rate)
+- **Test suite expanded**: 509/596 tests passing (85% pass rate)
 - **Self-hosted compiler**: Jormungandr now functional for bootstrap experiments
 
 ### Fixed

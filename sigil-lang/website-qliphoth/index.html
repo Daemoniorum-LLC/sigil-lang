@@ -31,7 +31,7 @@
         "programmingLanguage": "Sigil",
         "codeRepository": "https://github.com/Daemoniorum-LLC/sigil-lang",
         "license": "https://opensource.org/licenses/MIT",
-        "version": "1.0.0",
+        "version": "0.4.0",
         "author": {
             "@type": "Organization",
             "name": "Daemoniorum LLC",
@@ -60,7 +60,8 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- Preload WASM -->
-    <link rel="preload" href="./site.wasm" as="fetch" crossorigin>
+    <link rel="preload" href="./public/wasm/index.wasm" as="fetch" crossorigin>
+
 
     <style>
         /* Critical CSS - Inlined for fast first paint */
@@ -220,35 +221,52 @@
     </div>
 
     <script type="module">
+        import { SigilRuntime } from './sigil_runtime.js';
+
         async function init() {
+            const loading = document.getElementById('loading');
+            const loaderText = loading.querySelector('.loader-text');
+            const loaderSub = loading.querySelector('.loader-sub');
+
             try {
-                // Load the WASM module
-                const module = await import('./site.js');
-                const instance = await module.default();
+                loaderText.textContent = 'Initializing runtime...';
 
-                // Hide loader
-                document.getElementById('loading').classList.add('hidden');
+                // Create Sigil runtime
+                const runtime = new SigilRuntime();
 
-                // Initialize Sigil runtime
-                if (instance._sigil_init) {
-                    instance._sigil_init();
+                loaderSub.textContent = 'Fetching WASM module...';
+                const response = await fetch('./public/wasm/index.wasm');
+                const bytes = await response.arrayBuffer();
+
+                loaderText.textContent = 'Instantiating WebAssembly...';
+                const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
+                runtime.init(instance);
+
+                loaderSub.textContent = 'Rendering page...';
+                if (instance.exports.main) {
+                    instance.exports.main();
+
+                    // Hide loader
+                    loading.classList.add('hidden');
+
+                    console.log('[Sigil] Website initialized');
+                    console.log('[Sigil] This page was compiled from Sigil source to WebAssembly');
+                } else {
+                    throw new Error('No main() export found in WASM module');
                 }
-
-                console.log('[Sigil] Website initialized');
-                console.log('[Sigil] Fixed point achieved: This site was compiled by a self-hosting Sigil compiler');
 
             } catch (error) {
                 console.error('[Sigil] Initialization failed:', error);
 
                 // Show error with fallback option
-                document.getElementById('loading').innerHTML = `
+                loading.innerHTML = `
                     <div class="error">
                         <h1>WebAssembly Loading Failed</h1>
                         <p>The WASM module could not be loaded. This might happen if:</p>
                         <ul style="text-align: left; margin: 1rem 0; color: #a0a0aa;">
-                            <li>Emscripten build is not available yet</li>
                             <li>Your browser doesn't support WebAssembly</li>
                             <li>There's a network error</li>
+                            <li>The WASM module is corrupted</li>
                         </ul>
                         <pre>${error.message}</pre>
                         <p style="margin-top: 1rem; color: #a0a0aa;">

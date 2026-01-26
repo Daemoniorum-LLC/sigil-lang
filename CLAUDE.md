@@ -10,7 +10,7 @@
 
 The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 414/414 P0 tests passing (100%)
+**Test Results**: 509/596 tests passing (85%), all P0 (stable) tests pass
 
 ```bash
 cd parser
@@ -27,7 +27,7 @@ cd ../jormungandr/tests
 ## Why Rust Compiler?
 
 The Rust compiler:
-- 100% test pass rate (414/414 P0 tests)
+- 85% test pass rate (509/596 tests), all P0 (stable) tests pass
 - Full lexer, parser, interpreter, JIT (Cranelift), and LLVM backend
 - Includes stdlib with Rc<T>, Cell<T>, Drop, HTTP, WebSocket
 

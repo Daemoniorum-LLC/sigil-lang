@@ -465,6 +465,7 @@ impl WasmCompiler {
             TypeExpr::InlineEnum { variants } => {
                 // Create synthetic EnumDef
                 let def = crate::ast::EnumDef {
+                    doc_comments: Vec::new(),
                     visibility: alias.visibility.clone(),
                     name: alias.name.clone(),
                     generics: alias.generics.clone(),
@@ -475,6 +476,7 @@ impl WasmCompiler {
             TypeExpr::InlineStruct { fields } => {
                 // Create synthetic StructDef
                 let def = crate::ast::StructDef {
+                    doc_comments: Vec::new(),
                     visibility: alias.visibility.clone(),
                     attrs: crate::ast::StructAttrs::default(),
                     name: alias.name.clone(),

@@ -20,7 +20,7 @@ pub fn AnnouncementBanner() -> Element! {
                 <p class="announcement-text">
                     <strong>"Sigil has reached fixed point!"</strong>
                     " The compiler now compiles itself. "
-                    <a href="https://github.com/Daemoniorum-LLC/sigil-lang/releases/tag/v1.0.0"
+                    <a href="https://github.com/Daemoniorum-LLC/sigil-lang/releases/tag/v0.4.0"
                        class="announcement-link"
                        target="_blank"
                        rel="noopener noreferrer">

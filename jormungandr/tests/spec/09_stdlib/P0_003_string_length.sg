@@ -1,8 +1,0 @@
-// Test: String length method
-// Spec: 09-STDLIB.md § 2.2 String Operations
-// Priority: P0
-
-rite main() {
-    ≔ s: !String = "Sigil";
-    println(5);
-}

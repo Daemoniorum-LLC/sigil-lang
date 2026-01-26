@@ -1,23 +1,24 @@
 # Sigil Interpreter Specification & TDD Roadmap
 
-**Version:** 1.7.0
+**Version:** 1.9.0
 **Date:** 2026-01-25
-**Status:** Waves 1-6 Complete, 100% Pass Rate
+**Status:** Waves 1-7 Complete, 91% Pass Rate (All P0 Stable)
 **Component:** `parser/src/interpreter.rs`
 
 ---
 
 ## Executive Summary
 
-This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **577/577 tests (100%)**, achieving full test coverage.
+This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **545/596 tests (91%)**, with all P0 (stable) tests passing.
 
 ### Current State (Updated 2026-01-25)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Total Tests | 577 | Across 22 spec categories |
-| Passing | 577 | 100% pass rate |
-| Failing | 0 | All tests passing |
+| Total Tests | 596 | Across 22 spec categories |
+| Passing | 545 | 91% pass rate |
+| Failing | 51 | P1/P2 experimental features |
+| P0 Status | Stable | All P0 tests passing |
 | Jormungandr | Working | Self-hosted compiler functional |
 
 ### Wave Completion Status

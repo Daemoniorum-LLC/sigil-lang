@@ -310,7 +310,7 @@ sigil-lang/
 │   │   ├── interpreter.rs   # Tree-walking interpreter
 │   │   └── stdlib.rs    # Standard library
 │   ├── runtime/         # C runtime for AOT binaries
-│   └── tests/           # Test suite (577 tests)
+│   └── tests/           # Test suite (596 tests, 85% passing)
 ├── rust_comparison/     # Benchmarks vs Rust
 ├── docs/                # Language specification
 │   ├── GETTING_STARTED.md
@@ -326,8 +326,8 @@ sigil-lang/
 
 ```bash
 cd jormungandr/tests
-./run_tests_rust.sh      # Run all 577 tests (100% pass rate)
-./run_tests_rust.sh --priority P0  # Run P0 tests only (376 tests)
+./run_tests_rust.sh      # Run all tests (509/596 pass, 85%)
+./run_tests_rust.sh --priority P0  # Run P0 tests only (all stable)
 ```
 
 ## Documentation

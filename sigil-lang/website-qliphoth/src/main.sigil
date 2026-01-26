@@ -91,6 +91,12 @@ rite header() → i32! {
     append_child(pattern, create_text("The Pattern"));
     append_child(links, pattern);
 
+    ≔ changelog! = create_element("a");
+    set_class(changelog, "nav-link");
+    set_attr(changelog, "href", "/pages/changelog.html");
+    append_child(changelog, create_text("Changelog"));
+    append_child(links, changelog);
+
     ≔ github! = create_element("a");
     set_class(github, "nav-link github-link");
     set_attr(github, "href", "https://github.com/Daemoniorum-LLC/sigil-lang");
@@ -105,7 +111,7 @@ rite header() → i32! {
 
     ≔ version! = create_element("span");
     set_class(version, "version-badge");
-    ≔ ver_text! = create_text("0.3");
+    ≔ ver_text! = create_text("0.4");
     append_child(version, ver_text);
     append_child(links, version);
 
@@ -887,12 +893,12 @@ rite announcement() → i32! {
 
     ≔ text! = create_element("span");
     set_class(text, "announcement-text");
-    append_child(text, create_text("Sigil 0.3.0 — Native symbols, SIMD/CUDA backends, LSP, formatter"));
+    append_child(text, create_text("Sigil 0.4.0 — Native syntax, SGDOC, native runtime, SIMD/CUDA"));
     append_child(banner, text);
 
     ≔ link! = create_element("a");
     set_class(link, "announcement-link");
-    set_attr(link, "href", "https://github.com/Daemoniorum-LLC/sigil-lang/releases");
+    set_attr(link, "href", "https://github.com/Daemoniorum-LLC/sigil-lang/releases/tag/v0.4.0");
     append_child(link, create_text("Release notes →"));
     append_child(banner, link);
 
@@ -1212,6 +1218,7 @@ rite footer() → i32! {
     ≔ agent_ul! = create_element("ul");
     append_child(agent_ul, footer_link("The Pattern", "/pages/pattern.html"));
     append_child(agent_ul, footer_link("Built on Sigil", "/pages/built-on-sigil.html"));
+    append_child(agent_ul, footer_link("Changelog", "/pages/changelog.html"));
     append_child(agent_ul, footer_link_ext("Releases", "https://github.com/Daemoniorum-LLC/sigil-lang/releases"));
     append_child(agent_col, agent_ul);
     append_child(container, agent_col);
@@ -1951,5 +1958,134 @@ rite pattern_app() → i32! {
 
 ☉ rite main_pattern() {
     ≔ root_element! = pattern_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Changelog Page
+// =============================================================================
+
+rite changelog_version(version: str!, date: str!, highlights: i32!) → i32! {
+    ≔ section! = create_element("section");
+    set_class(section, "changelog-version");
+
+    ≔ header! = create_element("div");
+    set_class(header, "version-header");
+
+    ≔ h2! = create_element("h2");
+    append_child(h2, create_text(version));
+    append_child(header, h2);
+
+    ≔ d! = create_element("span");
+    set_class(d, "version-date");
+    append_child(d, create_text(date));
+    append_child(header, d);
+
+    append_child(section, header);
+    append_child(section, highlights);
+
+    section
+}
+
+rite changelog_item(category: str!, text: str!) → i32! {
+    ≔ li! = create_element("li");
+    set_class(li, "changelog-item");
+
+    ≔ cat! = create_element("span");
+    set_class(cat, "changelog-category");
+    append_child(cat, create_text(category));
+    append_child(li, cat);
+
+    ≔ txt! = create_element("span");
+    append_child(txt, create_text(text));
+    append_child(li, txt);
+
+    li
+}
+
+rite changelog_v040() → i32! {
+    ≔ ul! = create_element("ul");
+    set_class(ul, "changelog-list");
+
+    append_child(ul, changelog_item("Syntax", "Native Unicode syntax (λ, ≔, ·, Σ, ∀, &Δ)"));
+    append_child(ul, changelog_item("Runtime", "Zero C dependency native runtime via syscalls"));
+    append_child(ul, changelog_item("Docs", "SGDOC evidential documentation system (//!, //~, //?, //◊, //‽)"));
+    append_child(ul, changelog_item("Tooling", "LSP server, formatter, linter, Tome package manager"));
+    append_child(ul, changelog_item("Compute", "SIMD backend (AVX-512 F32x16)"));
+    append_child(ul, changelog_item("Compute", "CUDA backend (GPU via --cuda flag)"));
+    append_child(ul, changelog_item("Network", "HTTP and WebSocket clients"));
+    append_child(ul, changelog_item("Tests", "577/577 tests passing (100%)"));
+
+    ul
+}
+
+rite changelog_v030() → i32! {
+    ≔ ul! = create_element("ul");
+    set_class(ul, "changelog-list");
+
+    append_child(ul, changelog_item("Syntax", "Native symbol vocabulary (≔, →, middledot)"));
+    append_child(ul, changelog_item("Backend", "LLVM AOT compilation"));
+    append_child(ul, changelog_item("Stdlib", "Rc<T>, Cell<T>, Drop trait"));
+    append_child(ul, changelog_item("Memory", "Mutable reference sync-back mechanism"));
+
+    ul
+}
+
+rite changelog_v020() → i32! {
+    ≔ ul! = create_element("ul");
+    set_class(ul, "changelog-list");
+
+    append_child(ul, changelog_item("Core", "Evidentiality type system (!, ?, ~, ◊, ‽)"));
+    append_child(ul, changelog_item("Core", "Morpheme operators (φ, τ, σ, ρ, Σ, Π)"));
+    append_child(ul, changelog_item("Backend", "Cranelift JIT compilation"));
+    append_child(ul, changelog_item("Agents", "9-layer agent infrastructure"));
+
+    ul
+}
+
+rite changelog_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ content! = create_element("div");
+    set_class(content, "page-content changelog-page");
+
+    ≔ hero! = create_element("section");
+    set_class(hero, "changelog-hero");
+
+    ≔ h1! = create_element("h1");
+    append_child(h1, create_text("Changelog"));
+    append_child(hero, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    append_child(lead, create_text("Release history and version notes for Sigil."));
+    append_child(hero, lead);
+
+    ≔ gh_link! = create_element("a");
+    set_class(gh_link, "btn btn-secondary");
+    set_attr(gh_link, "href", "https://github.com/Daemoniorum-LLC/sigil-lang/releases");
+    set_attr(gh_link, "target", "_blank");
+    append_child(gh_link, create_text("View on GitHub"));
+    append_child(hero, gh_link);
+
+    append_child(content, hero);
+
+    // Version sections
+    append_child(content, changelog_version("v0.4.0", "January 2026", changelog_v040()));
+    append_child(content, changelog_version("v0.3.0", "January 2026", changelog_v030()));
+    append_child(content, changelog_version("v0.2.0", "December 2025", changelog_v020()));
+
+    append_child(root, content);
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main_changelog() {
+    ≔ root_element! = changelog_app();
     mount(root_element, "#app");
 }

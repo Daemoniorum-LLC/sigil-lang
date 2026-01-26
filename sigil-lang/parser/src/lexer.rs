@@ -444,6 +444,7 @@ pub enum Token {
     #[token("tome")]
     Crate,
     #[token("where")]
+    #[token("∋")]  // Contains as member - native where clause
     Where,
     #[token("as")]
     As,
@@ -606,6 +607,7 @@ pub enum Token {
 
     // === Quantifiers (for AI-native set operations) ===
     #[token("∀")]
+    #[token("each")]  // Prose alternative for impl blocks: ⊢ Trait each Type
     ForAll, // Universal quantification (parser handles contextual use as `for` keyword)
 
     #[token("∃")]
@@ -951,6 +953,8 @@ pub enum Token {
     Dot,
     #[token("@")]
     At,
+    #[token("$")]
+    Dollar, // For macro parameters like $n, $__pipe
     #[token("#!")]
     HashBang, // Inner attribute prefix #![...]
     #[token("#")]

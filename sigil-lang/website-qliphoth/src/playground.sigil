@@ -254,7 +254,7 @@ rite playground_footer() → i64 {
     ≔ footer = div_with_class("playground-footer");
 
     ≔ info = div_with_class("footer-info");
-    append_child(info, span("Sigil 0.3.0", "version-badge"));
+    append_child(info, span("Sigil 0.4.0", "version-badge"));
     append_child(info, span(" | ", "separator"));
     append_child(info, span("Powered by Qliphoth + Athame", "footer-text"));
     append_child(footer, info);

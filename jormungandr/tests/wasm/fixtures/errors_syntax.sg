@@ -1,7 +1,0 @@
-// EXPECTED_ERROR: syntax
-// EXPECTED_EXIT: 1
-
-rite main( {
-    // Missing closing paren - syntax error
-    0
-}

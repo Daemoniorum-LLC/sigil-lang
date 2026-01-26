@@ -1,5 +1,0 @@
-// Simple hello world each bootstrap testing
-☉ rite main() → !i32 {
-    println("Hello from Sigil!");
-    ⤺ 0;
-}

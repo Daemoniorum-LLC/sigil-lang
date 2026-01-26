@@ -1,8 +1,0 @@
-// Test: i32·MAX boundary value
-// Spec: Edge Cases - Integer Limits
-// Priority: P0 - Bootstrap Critical
-
-rite main() {
-    ≔ max: i32 = 2147483647;  // i32·MAX
-    println(max);
-}

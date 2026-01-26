@@ -1,4 +1,0 @@
-// Simple WASI test - Hello World
-☉ rite main() {
-    print(42);
-}

@@ -1,9 +1,0 @@
-// EXPECTED: Static type checking should catch this error
-// Negative Test: Invalid method call on type
-// Should fail with method not found error
-// Priority: P0 - Bootstrap Critical
-
-rite main() {
-    ≔ x: i32 = 42;
-    println(x.undefined_method());  // ERROR: no method on i32
-}

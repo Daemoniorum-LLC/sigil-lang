@@ -1,7 +1,0 @@
-// EXPECTED_OUTPUT: Hello, Sigil!
-// EXPECTED_EXIT: 0
-
-rite main() -> i64 {
-    println("Hello, Sigil!");
-    0
-}

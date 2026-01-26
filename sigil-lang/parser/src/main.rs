@@ -493,8 +493,8 @@ fn run_file(path: &str, program_args: &[String], skip_typecheck: bool) -> ExitCo
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
 
-    // Store source text for IR export line number calculation
-    interpreter.source_text = Some(source.clone());
+    // Set source code for span-to-line conversion in IR export
+    interpreter.set_source_code(source);
 
     // Set source directory for module resolution
     if let Some(parent) = std::path::Path::new(path).parent() {
@@ -609,14 +609,8 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     eprintln!("Crate name: {}", crate_name);
 
     // Set up interpreter state for multi-module project
-    interpreter.set_source_dir(abs_dir.to_string_lossy().to_string());
-    interpreter.set_crate_name(crate_name.clone());
-
-    // For Jormungandr compatibility, also register "tome" as an alias
-    // (Jormungandr uses `invoke tome::*` patterns)
-    if crate_name != "tome" {
-        interpreter.set_crate_alias("tome".to_string());
-    }
+    interpreter.set_current_source_dir(Some(abs_dir.to_string_lossy().to_string()));
+    // Note: crate_name and crate_alias tracked in main.rs for multi-module compilation
 
     // Parse and execute each file to register its definitions
     for file_path in &files {
@@ -639,8 +633,8 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
         if module_name == "lib" {
             interpreter.set_current_module(None);
         } else {
-            // Register module name so `crate·module·*` works
-            interpreter.register_module(module_name.to_string());
+            // Set module name so module-scoped items work
+            interpreter.set_current_module(Some(module_name.to_string()));
         }
 
         let mut parser = Parser::new(&source);

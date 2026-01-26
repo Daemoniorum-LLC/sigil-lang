@@ -4,7 +4,7 @@
 
 The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 577/577 tests passing (100%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
+**Test Results**: 557/596 tests passing (93%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
 
 ```bash
 cd parser
@@ -21,7 +21,7 @@ cd ../jormungandr/tests
 ## Why Rust Compiler?
 
 The Rust compiler:
-- 100% test pass rate (577/577 tests, 376 P0)
+- 93% test pass rate (557/596 tests, all P0 tests pass)
 - Full lexer, parser, interpreter, JIT (Cranelift), and LLVM backend
 - Includes stdlib with Rc<T>, Cell<T>, Drop, HTTP, WebSocket
 
@@ -68,7 +68,7 @@ cd jormungandr/tests
 ./run_tests_rust.sh --priority P0      # Run P0 tests only
 ```
 
-**Current Status**: 577/577 passing (100%)
+**Current Status**: 557/596 passing (93%), all P0 stable
 
 Notable implementations:
 - Mutable reference semantics via sync-back mechanism
@@ -190,3 +190,32 @@ Cuda·cleanup();
 - Added CUDA backend (GPU compute via Driver API)
 - Added LSP server, formatter, linter, package manager
 - Added HTTP and WebSocket clients
+
+## Website
+
+### Canonical: Qliphoth (WASM)
+
+The **website-qliphoth/** directory contains the canonical Sigil website, written entirely in Sigil and compiled to WebAssembly.
+
+**URL:** https://sigil-lang.com
+
+**Architecture:**
+- Source: `website-qliphoth/src/*.sigil`
+- Build: `./build.sh` (compiles Sigil → WASM)
+- Runtime: `sigil_runtime.js` (Qliphoth runtime)
+- Deploy: `website-qliphoth/deploy/`
+
+**Build Commands:**
+```bash
+cd website-qliphoth
+./build.sh              # Build all WASM files
+./build.sh --clean      # Clean rebuild
+```
+
+### Deprecated: Static HTML
+
+The **website/** directory contains a deprecated static HTML fallback.
+
+**Status:** DEPRECATED
+
+Do not update. Exists only as fallback for browsers without WASM support. The error handler in `website-qliphoth/index.html` links to this as a fallback.

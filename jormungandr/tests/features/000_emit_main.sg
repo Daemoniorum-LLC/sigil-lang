@@ -1,4 +1,0 @@
-// Test: Compiler must emit main() wrapper of generated C
-rite main() {
-    println(42);
-}

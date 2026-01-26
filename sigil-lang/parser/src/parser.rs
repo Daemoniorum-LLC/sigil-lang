@@ -2290,7 +2290,10 @@ impl<'a> Parser<'a> {
                     }
                     Some(tok) => {
                         body.push_str(&Self::token_to_source(tok));
-                        body.push(' ');
+                        // Don't add space after $ (Dollar) to keep $param together
+                        if !matches!(tok, Token::Dollar) {
+                            body.push(' ');
+                        }
                     }
                     None => break,
                 }
@@ -2320,7 +2323,10 @@ impl<'a> Parser<'a> {
                 }
                 Some(tok) => {
                     body.push_str(&Self::token_to_source(tok));
-                    body.push(' ');
+                    // Don't add space after $ (Dollar) to keep $param together
+                    if !matches!(tok, Token::Dollar) {
+                        body.push(' ');
+                    }
                 }
                 None => break,
             }
@@ -2445,6 +2451,7 @@ impl<'a> Parser<'a> {
             Token::Hash => "#".to_string(),
             Token::HashBang => "#!".to_string(),
             Token::At => "@".to_string(),
+            Token::Dollar => "$".to_string(),
             Token::Underscore => "_".to_string(),
             // Comparison operators
             Token::Eq => "=".to_string(),

@@ -370,7 +370,7 @@ rite header() → i64 {
     append_child(brand, logo_text);
     ≔ version = create_element("span");
     set_class(version, "version-badge");
-    ≔ vt = create_text("0.3");
+    ≔ vt = create_text("0.4");
     append_child(version, vt);
     append_child(brand, version);
     append_child(container, brand);
@@ -398,26 +398,26 @@ rite announcement_banner() → i64 {
     ≔ banner = create_element("aside");
     set_class(banner, "announcement-banner");
     set_attr(banner, "role", "banner");
-    set_attr(banner, "aria-label", "Sigil 0.3.0 announcement");
+    set_attr(banner, "aria-label", "Sigil 0.4.0 announcement");
 
     ≔ container = create_element("div");
     set_class(container, "announcement-container");
 
-    ≔ badge = span("0.3.0", "announcement-badge");
+    ≔ badge = span("0.4.0", "announcement-badge");
     append_child(container, badge);
 
     ≔ text_el = create_element("p");
     set_class(text_el, "announcement-text");
 
     ≔ strong = create_element("strong");
-    ≔ st = create_text("Sigil 0.3.0 Released!");
+    ≔ st = create_text("Sigil 0.4.0 Released!");
     append_child(strong, st);
     append_child(text_el, strong);
 
-    ≔ desc = create_text(" Native symbols, SIMD/CUDA backends, LSP, formatter, and more. ");
+    ≔ desc = create_text(" Native syntax, SGDOC documentation, native runtime, SIMD/CUDA. ");
     append_child(text_el, desc);
 
-    ≔ link_el = link_external("https://github.com/Daemoniorum-LLC/sigil-lang/releases/tag/v0.3.0", "Read the release notes →", "announcement-link");
+    ≔ link_el = link_external("https://github.com/Daemoniorum-LLC/sigil-lang/releases/tag/v0.4.0", "Read the release notes →", "announcement-link");
     append_child(text_el, link_el);
 
     append_child(container, text_el);
@@ -1156,7 +1156,7 @@ rite compute_section() → i64 {
 
     ≔ header = create_element("div");
     set_class(header, "section-header");
-    ≔ eyebrow = span("New in 0.3.0", "section-eyebrow");
+    ≔ eyebrow = span("New in 0.4.0", "section-eyebrow");
     append_child(header, eyebrow);
     append_child(header, heading("h2", "Compute Backends", ""));
     append_child(header, para("Native SIMD and CUDA support for numerical workloads.", ""));

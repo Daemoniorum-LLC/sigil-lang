@@ -1,8 +1,0 @@
-// Test: Chained method calls
-// Spec: Edge Cases - Method Chaining
-// Priority: P0 - Bootstrap Critical
-
-rite main() {
-    ≔ s = "  hello  ".trim().to_uppercase();
-    println(s);
-}

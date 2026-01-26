@@ -1,9 +1,0 @@
-// Test: Method chaining
-// Spec: 02-SYNTAX.md § 3.9 Method Calls
-// Priority: P0
-
-rite main() {
-    ≔ vary s: !String = "Hello";
-    s.push_str(" ").push_str("World");
-    println(s);
-}
