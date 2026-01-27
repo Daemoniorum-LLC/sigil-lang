@@ -1233,6 +1233,100 @@ pub enum TypeDef {
     Enum(EnumDef),
 }
 
+/// Represents a repetition pattern in a macro: $(...)*  or  $(...)+ or $(...)?
+#[derive(Debug, Clone)]
+struct RepetitionPattern {
+    /// Variable name inside the repetition (e.g., "elem" from $($elem:expr),*)
+    var_name: String,
+    /// Fragment type (e.g., "expr")
+    frag_type: String,
+    /// Separator between repetitions (e.g., "Comma" for ,)
+    separator: Option<String>,
+    /// Repetition kind: Star (*), Plus (+), or Question (?)
+    kind: RepetitionKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RepetitionKind {
+    ZeroOrMore, // *
+    OneOrMore,  // +
+    Optional,   // ?
+}
+
+/// Parse repetition patterns from a tokenized macro pattern string.
+/// Returns a list of repetition patterns found.
+fn parse_repetition_patterns(pattern: &str) -> Vec<RepetitionPattern> {
+    let mut patterns = Vec::new();
+    let macro_types = ["expr", "ident", "ty", "literal", "block", "stmt", "pat", "tt"];
+
+    // Look for pattern: LParen Ident("var") Colon Ident("type") RParen [Comma] Star|Plus|Question
+    // The $(...) becomes LParen ... RParen in tokenized form
+    let mut rest = pattern;
+
+    while let Some(lparen_pos) = rest.find("LParen") {
+        let after_lparen = &rest[lparen_pos + 6..];
+
+        // Try to match: Ident("var") Colon Ident("type") RParen [Comma] Star|Plus|Question
+        if after_lparen.trim_start().starts_with("Ident(") {
+            let ident_start = after_lparen.trim_start();
+            if let Some(close1) = ident_start[6..].find(')') {
+                let var_name = ident_start[7..6 + close1].trim().trim_matches('"');
+                let after_var = &ident_start[6 + close1 + 1..];
+
+                // Check for Colon Ident("type")
+                if after_var.trim_start().starts_with("Colon") {
+                    let after_colon = after_var.trim_start()[5..].trim_start();
+                    if after_colon.starts_with("Ident(") {
+                        if let Some(close2) = after_colon[6..].find(')') {
+                            let type_name = after_colon[7..6 + close2].trim().trim_matches('"');
+
+                            if macro_types.contains(&type_name) {
+                                let after_type = &after_colon[6 + close2 + 1..];
+
+                                // Look for RParen followed by optional separator and repetition kind
+                                if let Some(rparen_pos) = after_type.find("RParen") {
+                                    let after_rparen = &after_type[rparen_pos + 6..].trim_start();
+
+                                    // Check for separator and repetition kind
+                                    let (separator, after_sep) = if after_rparen.starts_with("Comma") {
+                                        (Some("Comma".to_string()), &after_rparen[5..])
+                                    } else {
+                                        (None, *after_rparen)
+                                    };
+
+                                    let after_sep = after_sep.trim_start();
+                                    let kind = if after_sep.starts_with("Star") {
+                                        Some(RepetitionKind::ZeroOrMore)
+                                    } else if after_sep.starts_with("Plus") {
+                                        Some(RepetitionKind::OneOrMore)
+                                    } else if after_sep.starts_with("Question") {
+                                        Some(RepetitionKind::Optional)
+                                    } else {
+                                        None
+                                    };
+
+                                    if let Some(kind) = kind {
+                                        patterns.push(RepetitionPattern {
+                                            var_name: var_name.to_string(),
+                                            frag_type: type_name.to_string(),
+                                            separator,
+                                            kind,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        rest = &rest[lparen_pos + 6..];
+    }
+
+    patterns
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         let globals = Rc::new(RefCell::new(Environment::new()));
@@ -20406,6 +20500,158 @@ impl Interpreter {
 
         crate::sigil_debug!("DEBUG expand_user_macro: name='{}', rules='{}', tokens='{}'", macro_def.name.name, rules, tokens);
 
+        // Check for repetition patterns first: $($var:type),* or $($var:type)+ or $($var:type)?
+        if let Some(arrow_pos) = rules.find("FatArrow") {
+            let pattern = &rules[..arrow_pos];
+            let body = &rules[arrow_pos..];
+            let rep_patterns = parse_repetition_patterns(pattern);
+
+            if !rep_patterns.is_empty() {
+                crate::sigil_debug!("DEBUG expand_user_macro: found repetition patterns: {:?}", rep_patterns);
+
+                // Handle the first (usually only) repetition pattern
+                let rep = &rep_patterns[0];
+
+                // Split input tokens by the separator (usually comma)
+                let input_values: Vec<String> = if rep.separator.as_deref() == Some("Comma") {
+                    self.split_args_at_depth_zero(tokens)
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                } else {
+                    // No separator means whitespace-separated or single value
+                    tokens.split_whitespace().map(|s| s.to_string()).collect()
+                };
+
+                crate::sigil_debug!("DEBUG expand_user_macro: input_values={:?}", input_values);
+
+                // Validate repetition count based on kind
+                match rep.kind {
+                    RepetitionKind::OneOrMore if input_values.is_empty() => {
+                        return Err(RuntimeError::new(format!(
+                            "macro '{}' requires at least one element for $(...)+",
+                            macro_def.name.name
+                        )));
+                    }
+                    RepetitionKind::Optional if input_values.len() > 1 => {
+                        return Err(RuntimeError::new(format!(
+                            "macro '{}' accepts at most one element for $(...)?",
+                            macro_def.name.name
+                        )));
+                    }
+                    _ => {}
+                }
+
+                // Evaluate each input value
+                let mut evaluated_values: Vec<Value> = Vec::new();
+                for input in &input_values {
+                    let input = input.trim();
+                    if input.is_empty() {
+                        continue;
+                    }
+                    let mut parser = crate::Parser::new(input);
+                    match parser.parse_expr() {
+                        Ok(expr) => {
+                            if let Ok(val) = self.evaluate(&expr) {
+                                evaluated_values.push(val);
+                            }
+                        }
+                        Err(_) => {
+                            // Try tokenized parsing
+                            if let Ok(expr) = self.parse_tokenized_body(input) {
+                                if let Ok(val) = self.evaluate(&expr) {
+                                    evaluated_values.push(val);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                crate::sigil_debug!("DEBUG expand_user_macro: evaluated {} values", evaluated_values.len());
+
+                // Now expand the body with the repetition
+                // Look for common patterns like [$($elem),*] → array literal
+                if body.contains("LBracket") && body.contains("RBracket") {
+                    // Array pattern: [$($elem),*]
+                    // Just return the array of evaluated values
+                    return Ok(Value::Array(Rc::new(RefCell::new(evaluated_values))));
+                }
+
+                // For other patterns, we need more complex expansion
+                // For now, bind the values as an array to the variable name
+                let prev_env = self.environment.clone();
+                self.environment = Rc::new(RefCell::new(Environment::with_parent(prev_env.clone())));
+
+                // Bind __pipe if we have a pipe context
+                if let Some(pipe_val) = &self.pipe_context {
+                    self.environment.borrow_mut().define("__pipe".to_string(), pipe_val.clone());
+                }
+
+                // Bind the repetition variable as an array
+                self.environment.borrow_mut().define(
+                    rep.var_name.clone(),
+                    Value::Array(Rc::new(RefCell::new(evaluated_values.clone())))
+                );
+
+                // Also bind each value individually for simple single-element access
+                if evaluated_values.len() == 1 {
+                    self.environment.borrow_mut().define(
+                        rep.var_name.clone(),
+                        evaluated_values[0].clone()
+                    );
+                }
+
+                // Try to parse and evaluate the body
+                // Extract body tokens between { }
+                if let Some(brace_start) = body.find('{') {
+                    let body_start = brace_start + 1;
+                    let mut depth = 1;
+                    let mut body_end = body_start;
+                    let body_chars: Vec<char> = body.chars().collect();
+                    for (i, c) in body_chars[body_start..].iter().enumerate() {
+                        match c {
+                            '{' => depth += 1,
+                            '}' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    body_end = body_start + i;
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if body_end > body_start {
+                        let body_tokens = &body[body_start..body_end].trim();
+                        crate::sigil_debug!("DEBUG expand_user_macro repetition: body_tokens='{}'", body_tokens);
+
+                        // Convert to source and evaluate
+                        let source = self.detokenize(body_tokens);
+                        crate::sigil_debug!("DEBUG expand_user_macro repetition: detokenized source='{}'", source);
+
+                        let mut parser = crate::Parser::new(&source);
+                        match parser.parse_expr() {
+                            Ok(expr) => {
+                                let result = self.evaluate(&expr);
+                                self.environment = prev_env;
+                                return result;
+                            }
+                            Err(e) => {
+                                crate::sigil_debug!("DEBUG expand_user_macro repetition: parse failed: {:?}", e);
+                            }
+                        }
+                    }
+                }
+
+                self.environment = prev_env;
+
+                // Fall back to returning the array of values
+                return Ok(Value::Array(Rc::new(RefCell::new(evaluated_values))));
+            }
+        }
+
+        // Non-repetition macro expansion (original code path)
         // Extract macro parameters from the pattern (before FatArrow)
         // Pattern like: {LParen LBrace Ident("field") Colon Ident("var_name") Colon Ident("expr") ... FatArrow ...}
         // For pattern `field: $var_name:expr`, we need to map field names to variable names

@@ -1,0 +1,25 @@
+// Test: one-or-more repetition pattern (+)
+// Spec: 07-METAPROGRAMMING.md § 2.3 Repetition Patterns
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $($var:type),+ captures one or more comma-separated elements.
+// Empty input should be rejected (tested separately as error case).
+//
+// Expected behavior:
+// - One or more inputs return array with all elements
+
+rune at_least_one! {
+    ($($elem:expr),+) => { [$($elem),+] }
+}
+
+rite main() {
+    // Single element
+    ≔ one = at_least_one!{42};
+    println(one[0]);
+
+    // Multiple elements
+    ≔ many = at_least_one!{1, 2, 3, 4};
+    println(many|len());
+    println(many[3]);
+}

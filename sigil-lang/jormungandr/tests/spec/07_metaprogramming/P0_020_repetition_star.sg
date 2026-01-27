@@ -1,0 +1,27 @@
+// Test: zero-or-more repetition pattern (*)
+// Spec: 07-METAPROGRAMMING.md § 2.3 Repetition Patterns
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $($var:type),* captures zero or more comma-separated elements
+// and expands them correctly in the macro body.
+//
+// Expected behavior:
+// - Empty input returns empty array
+// - Multiple inputs return array with all elements
+
+rune my_array! {
+    ($($elem:expr),*) => { [$($elem),*] }
+}
+
+rite main() {
+    // Multiple elements
+    ≔ arr = my_array!{10, 20, 30};
+    println(arr[0]);
+    println(arr[1]);
+    println(arr[2]);
+
+    // Empty case
+    ≔ empty = my_array!{};
+    println(empty|len());
+}

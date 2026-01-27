@@ -1,22 +1,22 @@
 # Sigil Interpreter Specification & TDD Roadmap
 
-**Version:** 1.7.0
-**Date:** 2026-01-25
-**Status:** Waves 1-6 Complete, 100% Pass Rate
+**Version:** 1.9.0
+**Date:** 2026-01-26
+**Status:** Waves 1-8 Complete (Core), 100% Pass Rate
 **Component:** `parser/src/interpreter.rs`
 
 ---
 
 ## Executive Summary
 
-This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **711/711 tests (100%)**, achieving full test coverage.
+This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **714/714 tests (100%)**, achieving full test coverage.
 
 ### Current State (Updated 2026-01-26)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Total Tests | 711 | Across 24 spec categories |
-| Passing | 711 | 100% pass rate |
+| Total Tests | 714 | Across 24 spec categories |
+| Passing | 714 | 100% pass rate |
 | Failing | 0 | All tests passing |
 | Jormungandr | Working | Self-hosted compiler functional |
 
@@ -552,7 +552,7 @@ cd jormungandr/tests && ./run_tests_rust.sh
 
 ## Wave 8: Metaprogramming (Runes)
 
-**Status:** In Progress
+**Status:** ✅ Complete (Core Features)
 **Spec Reference:** [07-METAPROGRAMMING.md](./07-METAPROGRAMMING.md)
 
 ### P0-RUNE: Pipe-Invoked Runes (§2.6)
@@ -596,9 +596,14 @@ cd jormungandr/tests && ./run_tests_rust.sh
 | P2-FRAG-003 | meta fragment | `P2_003_frag_meta.sg` | ❌ Deferred | Attribute content |
 | P2-FRAG-004 | lifetime fragment | `P2_004_frag_lifetime.sg` | ❌ Deferred | Lifetime matching |
 | P2-FRAG-005 | vis fragment | `P2_005_frag_vis.sg` | ❌ Deferred | Visibility matching |
-| P2-REP-001 | Zero-or-more | `P2_010_rep_star.sg` | ❌ Deferred | `$(...)* `repetition |
-| P2-REP-002 | One-or-more | `P2_011_rep_plus.sg` | ❌ Deferred | `$(...)+` repetition |
-| P2-REP-003 | Optional | `P2_012_rep_opt.sg` | ❌ Deferred | `$(...)?` repetition |
+
+### P0-REP: Repetition Patterns (§2.3)
+
+| ID | Feature | Test File | Status | Notes |
+|----|---------|-----------|--------|-------|
+| P0-REP-001 | Zero-or-more | `P0_020_repetition_star.sg` | ✅ Done | `$($var:type),*` repetition |
+| P0-REP-002 | One-or-more | `P0_021_repetition_plus.sg` | ✅ Done | `$($var:type),+` repetition |
+| P0-REP-003 | Optional | `P0_022_repetition_optional.sg` | ✅ Done | `$($var:type)?` repetition |
 
 ### Test Directory Structure
 
@@ -631,3 +636,4 @@ jormungandr/tests/spec/07_metaprogramming/
 | 1.6.0 | 2026-01-21 | Claude Code | Wave 5 complete: Module resolution + 22 LLVM intrinsics |
 | 1.7.0 | 2026-01-25 | Claude Code | Wave 6-7 complete: Native syntax migration, SGDOC tooling, 100% tests |
 | 1.8.0 | 2026-01-26 | Claude Code | Wave 8: Added Metaprogramming (Runes) test requirements per §2.6, §2.2, §13 |
+| 1.9.0 | 2026-01-26 | Claude Code | Wave 8 core complete: Implemented repetition patterns ($(...)*,+,?) per §2.3 |

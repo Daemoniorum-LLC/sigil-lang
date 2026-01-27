@@ -1,0 +1,26 @@
+// Test: optional repetition pattern (?)
+// Spec: 07-METAPROGRAMMING.md § 2.3 Repetition Patterns
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $($var:type)? captures zero or one element.
+// More than one element should be rejected (tested separately as error case).
+//
+// Expected behavior:
+// - Empty input returns empty array
+// - Single element returns single-element array
+
+rune maybe_one! {
+    ($($elem:expr)?) => { [$($elem)?] }
+}
+
+rite main() {
+    // With one element
+    ≔ one = maybe_one!{99};
+    println(one|len());
+    println(one[0]);
+
+    // With no elements
+    ≔ none = maybe_one!{};
+    println(none|len());
+}
