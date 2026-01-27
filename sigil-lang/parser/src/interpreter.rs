@@ -10105,23 +10105,73 @@ impl Interpreter {
                         let disabled = borrowed.get("disabled")
                             .and_then(|v| if let Value::Bool(b) = v { Some(*b) } else { None })
                             .unwrap_or(false);
+                        let loading = borrowed.get("loading")
+                            .and_then(|v| if let Value::Bool(b) = v { Some(*b) } else { None })
+                            .unwrap_or(false);
+                        let button_type = borrowed.get("button_type")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            .unwrap_or_else(|| "button".to_string());
 
                         let mut vnode_fields = std::collections::HashMap::new();
                         vnode_fields.insert("tag".to_string(), Value::String(Rc::new("button".to_string())));
                         vnode_fields.insert("text_content".to_string(), Value::String(label));
 
-                        let classes = vec![
+                        let mut classes = vec![
                             Value::String(Rc::new(format!("btn-{}", variant))),
                             Value::String(Rc::new(format!("btn-{}", size))),
                         ];
+                        if disabled {
+                            classes.push(Value::String(Rc::new("btn-disabled".to_string())));
+                        }
                         vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
 
-                        let attrs_map: std::collections::HashMap<String, Value> = if disabled {
-                            vec![("disabled".to_string(), Value::Bool(true))].into_iter().collect()
-                        } else {
-                            std::collections::HashMap::new()
-                        };
+                        // Always set attrs with explicit values
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        attrs_map.insert("disabled".to_string(), Value::Bool(disabled));
+                        attrs_map.insert("type".to_string(), Value::String(Rc::new(button_type)));
+                        if disabled {
+                            attrs_map.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if loading {
+                            attrs_map.insert("disabled".to_string(), Value::Bool(true));
+                            attrs_map.insert("aria-busy".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if let Some(v) = borrowed.get("aria_label") {
+                            attrs_map.insert("aria-label".to_string(), v.clone());
+                        }
                         vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Add children for loading spinner, icon, etc.
+                        let mut children = vec![];
+                        if loading {
+                            let mut spinner_fields = std::collections::HashMap::new();
+                            spinner_fields.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            spinner_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            spinner_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("btn-spinner".to_string()))
+                            ]))));
+                            spinner_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            spinner_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(spinner_fields)),
+                            });
+                        }
+                        if let Some(Value::String(icon)) = borrowed.get("icon") {
+                            let mut icon_fields = std::collections::HashMap::new();
+                            icon_fields.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            icon_fields.insert("text_content".to_string(), Value::String(icon.clone()));
+                            icon_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("btn-icon".to_string()))
+                            ]))));
+                            icon_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            icon_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct {
+                                name: "VNode".to_string(),
+                                fields: Rc::new(RefCell::new(icon_fields)),
+                            });
+                        }
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
 
                         return Ok(Value::Struct {
                             name: "VNode".to_string(),
@@ -10155,27 +10205,38 @@ impl Interpreter {
 
                 // Generic render for other Qliphoth components (Input, Badge, Spinner, Dialog, etc.)
                 let qliphoth_components = [
-                    "Input", "Badge", "Spinner", "Dialog", "Select", "Checkbox", "Radio",
+                    "Button", "Card", "Input", "Badge", "Spinner", "Dialog", "Select", "Checkbox", "Radio",
                     "Switch", "Textarea", "Link", "Icon", "Avatar", "Tooltip", "Tabs",
                     "Header", "Footer", "Hero", "Nav", "PlatformCard", "ResearchCard",
                     "FeatureSection", "PricingTable", "Testimonial", "CodeBlock", "TeamGrid",
                     "LandingPage", "RadioGroup", "AvatarGroup", "CheckboxGroup", "FeatureItem",
                     "PricingPlan", "TestimonialSlider", "CodeBlockTabs", "TeamMember",
                     "Tab", "TabPanel", "FooterSection", "FooterLink", "SocialLink", "NavItem",
-                    "TestimonialGrid", "TabList", "TabPanels",
+                    "TestimonialGrid", "TabList", "TabPanels", "DialogHeader", "DialogBody", "DialogFooter",
                 ];
                 if qliphoth_components.contains(&name.as_str()) && method.name == "render" {
                     let borrowed = fields.borrow();
                     let mut vnode_fields = std::collections::HashMap::new();
+                    let mut attrs = std::collections::HashMap::new();
 
-                    // Determine tag based on component type
+                    // Determine tag based on component type - use semantic HTML tags
                     let tag = match name.as_str() {
-                        "Input" | "Textarea" => "input",
+                        "Button" => "button",
+                        "Input" => "input",
+                        "Textarea" => "textarea",
                         "Select" => "select",
                         "Checkbox" | "Radio" | "Switch" => "input",
                         "Link" => "a",
-                        "Icon" => "span",
+                        "Icon" => "svg",
                         "Avatar" => "img",
+                        "Dialog" => "dialog",
+                        "Header" => "header",
+                        "Footer" => "footer",
+                        "Nav" => "nav",
+                        "Hero" => "section",
+                        "Tabs" | "TabList" => "div",
+                        "Tab" | "TabPanel" => "div",
+                        "CodeBlock" => "pre",
                         _ => "div",
                     };
                     vnode_fields.insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
@@ -10190,16 +10251,129 @@ impl Interpreter {
                     vnode_fields.insert("text_content".to_string(), Value::String(text));
 
                     // Generate component-specific classes
-                    let class_name = name.chars()
+                    let mut class_name = name.chars()
                         .enumerate()
                         .map(|(i, c)| {
                             if c.is_uppercase() && i > 0 { format!("-{}", c.to_lowercase()) }
                             else { c.to_lowercase().to_string() }
                         })
                         .collect::<String>();
-                    let classes = vec![Value::String(Rc::new(class_name))];
+
+                    // Add variant/size-specific classes
+                    if let Some(Value::String(variant)) = borrowed.get("variant") {
+                        class_name.push_str(&format!(" {}-{}", class_name, variant));
+                    }
+                    if let Some(Value::String(size)) = borrowed.get("size") {
+                        let base = name.chars()
+                            .enumerate()
+                            .map(|(i, c)| {
+                                if c.is_uppercase() && i > 0 { format!("-{}", c.to_lowercase()) }
+                                else { c.to_lowercase().to_string() }
+                            })
+                            .collect::<String>();
+                        class_name.push_str(&format!(" {}-{}", base, size));
+                    }
+                    if let Some(Value::String(position)) = borrowed.get("position") {
+                        let base = name.chars()
+                            .enumerate()
+                            .map(|(i, c)| {
+                                if c.is_uppercase() && i > 0 { format!("-{}", c.to_lowercase()) }
+                                else { c.to_lowercase().to_string() }
+                            })
+                            .collect::<String>();
+                        class_name.push_str(&format!(" {}-{}", base, position));
+                    }
+
+                    let classes: Vec<Value> = class_name.split_whitespace()
+                        .map(|s| Value::String(Rc::new(s.to_string())))
+                        .collect();
                     vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
-                    vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                    // Populate attrs based on component type and props
+                    match name.as_str() {
+                        "Button" => {
+                            // Default type is "button" (not "submit")
+                            let btn_type = borrowed.get("button_type")
+                                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                .unwrap_or_else(|| Rc::new("button".to_string()));
+                            attrs.insert("type".to_string(), Value::String(btn_type));
+                            if let Some(v) = borrowed.get("aria_label") { attrs.insert("aria-label".to_string(), v.clone()); }
+                            // Handle loading state
+                            if let Some(Value::Bool(true)) = borrowed.get("loading") {
+                                attrs.insert("aria-busy".to_string(), Value::String(Rc::new("true".to_string())));
+                            }
+                        }
+                        "Dialog" => {
+                            // Check if alert dialog
+                            if let Some(Value::Bool(true)) = borrowed.get("alert") {
+                                attrs.insert("role".to_string(), Value::String(Rc::new("alertdialog".to_string())));
+                            } else {
+                                attrs.insert("role".to_string(), Value::String(Rc::new("dialog".to_string())));
+                            }
+                            attrs.insert("aria-modal".to_string(), Value::String(Rc::new("true".to_string())));
+                            if let Some(v) = borrowed.get("aria_labelledby") { attrs.insert("aria-labelledby".to_string(), v.clone()); }
+                            if let Some(v) = borrowed.get("aria_describedby") { attrs.insert("aria-describedby".to_string(), v.clone()); }
+                            if let Some(v) = borrowed.get("initial_focus") {
+                                if let Value::String(s) = v { attrs.insert("data-initial-focus".to_string(), Value::String(s.clone())); }
+                            }
+                            if let Some(Value::Bool(b)) = borrowed.get("close_on_escape") {
+                                attrs.insert("data-close-on-escape".to_string(), Value::String(Rc::new(if *b { "true" } else { "false" }.to_string())));
+                            }
+                        }
+                        "Link" => {
+                            if let Some(v) = borrowed.get("href") { attrs.insert("href".to_string(), v.clone()); }
+                            if let Some(v) = borrowed.get("target") { attrs.insert("target".to_string(), v.clone()); }
+                        }
+                        "Input" | "Textarea" => {
+                            if let Some(v) = borrowed.get("placeholder") { attrs.insert("placeholder".to_string(), v.clone()); }
+                            if let Some(v) = borrowed.get("value") { attrs.insert("value".to_string(), v.clone()); }
+                            if let Some(v) = borrowed.get("name") { attrs.insert("name".to_string(), v.clone()); }
+                            if let Some(Value::String(t)) = borrowed.get("input_type") { attrs.insert("type".to_string(), Value::String(t.clone())); }
+                            if let Some(Value::Bool(true)) = borrowed.get("disabled") { attrs.insert("disabled".to_string(), Value::Bool(true)); }
+                            if let Some(Value::Bool(true)) = borrowed.get("readonly") { attrs.insert("readonly".to_string(), Value::Bool(true)); }
+                        }
+                        "Select" => {
+                            if let Some(v) = borrowed.get("name") { attrs.insert("name".to_string(), v.clone()); }
+                            if let Some(Value::Bool(true)) = borrowed.get("disabled") { attrs.insert("disabled".to_string(), Value::Bool(true)); }
+                        }
+                        "Checkbox" | "Radio" | "Switch" => {
+                            if let Some(v) = borrowed.get("name") { attrs.insert("name".to_string(), v.clone()); }
+                            if let Some(Value::Bool(true)) = borrowed.get("checked") { attrs.insert("checked".to_string(), Value::Bool(true)); }
+                            if let Some(Value::Bool(true)) = borrowed.get("disabled") { attrs.insert("disabled".to_string(), Value::Bool(true)); }
+                            let input_type = if name == "Radio" { "radio" } else { "checkbox" };
+                            attrs.insert("type".to_string(), Value::String(Rc::new(input_type.to_string())));
+                        }
+                        "Avatar" => {
+                            if let Some(v) = borrowed.get("src") { attrs.insert("src".to_string(), v.clone()); }
+                            if let Some(v) = borrowed.get("alt") { attrs.insert("alt".to_string(), v.clone()); }
+                        }
+                        "Tooltip" => {
+                            if let Some(v) = borrowed.get("trigger") { attrs.insert("trigger".to_string(), v.clone()); }
+                        }
+                        "Tabs" => {
+                            if let Some(Value::Bool(b)) = borrowed.get("manual") { attrs.insert("data-manual".to_string(), Value::Bool(*b)); }
+                        }
+                        "CodeBlock" => {
+                            if let Some(v) = borrowed.get("language") { attrs.insert("language".to_string(), v.clone()); }
+                        }
+                        "Testimonial" => {
+                            if let Some(v) = borrowed.get("author") { attrs.insert("author".to_string(), v.clone()); }
+                        }
+                        _ => {}
+                    }
+
+                    // Common attributes for all components
+                    if let Some(v) = borrowed.get("id") { attrs.insert("id".to_string(), v.clone()); }
+                    if let Some(v) = borrowed.get("aria_label") { attrs.insert("aria-label".to_string(), v.clone()); }
+
+                    // Handle disabled - always set explicitly (false if not specified)
+                    let is_disabled = matches!(borrowed.get("disabled"), Some(Value::Bool(true)));
+                    attrs.insert("disabled".to_string(), Value::Bool(is_disabled));
+                    if is_disabled {
+                        attrs.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+                    }
+
+                    vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs))));
 
                     // Pass through children if present, auto-rendering component children
                     if let Some(children) = borrowed.get("children") {
