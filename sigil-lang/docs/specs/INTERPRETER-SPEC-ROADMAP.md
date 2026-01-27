@@ -9,14 +9,14 @@
 
 ## Executive Summary
 
-This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **577/577 tests (100%)**, achieving full test coverage.
+This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **711/711 tests (100%)**, achieving full test coverage.
 
-### Current State (Updated 2026-01-25)
+### Current State (Updated 2026-01-26)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Total Tests | 577 | Across 22 spec categories |
-| Passing | 577 | 100% pass rate |
+| Total Tests | 711 | Across 24 spec categories |
+| Passing | 711 | 100% pass rate |
 | Failing | 0 | All tests passing |
 | Jormungandr | Working | Self-hosted compiler functional |
 
@@ -548,6 +548,76 @@ cd jormungandr/tests && ./run_tests_rust.sh
 
 ---
 
+---
+
+## Wave 8: Metaprogramming (Runes)
+
+**Status:** In Progress
+**Spec Reference:** [07-METAPROGRAMMING.md](./07-METAPROGRAMMING.md)
+
+### P0-RUNE: Pipe-Invoked Runes (§2.6)
+
+| ID | Feature | Test File | Status | Notes |
+|----|---------|-----------|--------|-------|
+| P0-RUNE-001 | Basic pipe invocation | `P0_001_pipe_invoked_basic.sg` | ✅ Done | `value\|rune!{}` with `__pipe` |
+| P0-RUNE-002 | Pipe with validation | `P0_002_pipe_invoked_validate.sg` | ✅ Done | Return semantics, Result types |
+| P0-RUNE-003 | Chained pipe invocations | `P0_003_pipe_chained.sg` | ✅ Done | Multiple `\|` in sequence |
+| P0-RUNE-004 | Pipe with arguments | `P0_004_pipe_with_args.sg` | ✅ Done | `value\|rune!{arg}` combined |
+| P0-RUNE-005 | Simple expressions | `P0_005_simple_expr.sg` | ✅ Done | Expression macros |
+
+### P0-FRAG: Fragment Types (§2.2)
+
+| ID | Feature | Test File | Status | Notes |
+|----|---------|-----------|--------|-------|
+| P0-FRAG-001 | expr fragment | `P0_010_frag_expr.sg` | ✅ Done | Expression matching |
+| P0-FRAG-002 | ident fragment | `P0_011_frag_ident.sg` | ✅ Done | Identifier matching |
+| P0-FRAG-003 | ty fragment | `P0_012_frag_ty.sg` | Deferred | Type matching (not yet implemented) |
+| P0-FRAG-004 | literal fragment | `P0_013_frag_literal.sg` | ✅ Done | Literal matching |
+| P0-FRAG-005 | block fragment | `P0_014_frag_block.sg` | Deferred | Block matching (not yet implemented) |
+| P0-FRAG-006 | stmt fragment | `P0_015_frag_stmt.sg` | Deferred | Statement matching (not yet implemented) |
+| P0-FRAG-007 | pat fragment | `P0_016_frag_pat.sg` | Deferred | Pattern matching (not yet implemented) |
+| P0-FRAG-008 | tt fragment | `P0_017_frag_tt.sg` | Deferred | Token tree matching (not yet implemented) |
+
+### P1-RUNE: Edge Cases (§13.3)
+
+| ID | Feature | Test File | Status | Notes |
+|----|---------|-----------|--------|-------|
+| P1-RUNE-001 | Empty arguments | `P1_020_edge_empty_args.sg` | ✅ Done | `rune!()` vs `rune!{}` |
+| P1-RUNE-002 | Nested pipes | `P0_003_pipe_chained.sg` | ✅ Done | Deep chaining tested in P0_003 |
+| P1-RUNE-003 | Named parameters | `P0_002_pipe_invoked_validate.sg` | ✅ Done | Tested in P0_002 |
+| P1-RUNE-004 | Multiple parameters | `P0_004_pipe_with_args.sg` | ✅ Done | Tested in P0_004 |
+
+### P2-RUNE: Extended Fragment Types (Future)
+
+| ID | Feature | Test File | Status | Notes |
+|----|---------|-----------|--------|-------|
+| P2-FRAG-001 | path fragment | `P2_001_frag_path.sg` | ❌ Deferred | Module path matching |
+| P2-FRAG-002 | item fragment | `P2_002_frag_item.sg` | ❌ Deferred | Item matching |
+| P2-FRAG-003 | meta fragment | `P2_003_frag_meta.sg` | ❌ Deferred | Attribute content |
+| P2-FRAG-004 | lifetime fragment | `P2_004_frag_lifetime.sg` | ❌ Deferred | Lifetime matching |
+| P2-FRAG-005 | vis fragment | `P2_005_frag_vis.sg` | ❌ Deferred | Visibility matching |
+| P2-REP-001 | Zero-or-more | `P2_010_rep_star.sg` | ❌ Deferred | `$(...)* `repetition |
+| P2-REP-002 | One-or-more | `P2_011_rep_plus.sg` | ❌ Deferred | `$(...)+` repetition |
+| P2-REP-003 | Optional | `P2_012_rep_opt.sg` | ❌ Deferred | `$(...)?` repetition |
+
+### Test Directory Structure
+
+```
+jormungandr/tests/spec/07_metaprogramming/
+├── P0_001_pipe_invoked_basic.sg        ✅ Existing
+├── P0_001_pipe_invoked_basic.expected  ✅ Existing
+├── P0_002_pipe_invoked_validate.sg     ✅ Existing
+├── P0_002_pipe_invoked_validate.expected ✅ Existing
+├── P0_003_pipe_chained.sg              ❌ Create
+├── P0_004_pipe_with_args.sg            ❌ Create
+├── P0_005_return_scoping.sg            ❌ Create
+├── P0_010_frag_expr.sg                 ❌ Create
+├── P0_011_frag_ident.sg                ❌ Create
+├── ...
+```
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Changes |
@@ -560,3 +630,4 @@ cd jormungandr/tests && ./run_tests_rust.sh
 | 1.5.0 | 2026-01-21 | Claude Code | Wave 4 complete: Native Runtime (12 modules, all phases A-F) |
 | 1.6.0 | 2026-01-21 | Claude Code | Wave 5 complete: Module resolution + 22 LLVM intrinsics |
 | 1.7.0 | 2026-01-25 | Claude Code | Wave 6-7 complete: Native syntax migration, SGDOC tooling, 100% tests |
+| 1.8.0 | 2026-01-26 | Claude Code | Wave 8: Added Metaprogramming (Runes) test requirements per §2.6, §2.2, §13 |

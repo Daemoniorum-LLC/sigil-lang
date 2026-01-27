@@ -1,0 +1,61 @@
+// Test: expr fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (expr)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that the `expr` fragment type correctly matches
+// various forms of Sigil expressions when used with pipe invocation.
+//
+// Expected behavior:
+// `$x:expr` matches literals, identifiers, function calls,
+// operators, blocks, and compound expressions.
+
+rune double! {
+    () => { __pipe * 2 }
+}
+
+rune add_expr! {
+    ($n:expr) => { __pipe + $n }
+}
+
+rune multiply_by! {
+    ($n:expr) => { __pipe * $n }
+}
+
+rune wrap_result! {
+    () => { Ok(__pipe) }
+}
+
+rite compute(a: i32, b: i32) → i32 {
+    a * b
+}
+
+rite main() {
+    // Literal expression as pipe source
+    ≔ a = 42|double!{};
+    println(a);  // 84
+
+    // Identifier expression as pipe source
+    ≔ val = 10;
+    ≔ b = val|double!{};
+    println(b);  // 20
+
+    // Function call expression as pipe source
+    ≔ c = compute(3, 4)|double!{};
+    println(c);  // 24
+
+    // Binary operation as expr argument
+    ≔ d = 5|add_expr!{3};
+    println(d);  // 8
+
+    // Function call as expr argument
+    ≔ e = 10|multiply_by!{6};
+    println(e);  // 60
+
+    // Wrapped in Result
+    ≔ f = 100|wrap_result!{};
+    ⌥ f {
+        Ok(v) => println(v),
+        Err(_) => println("error"),
+    }
+}

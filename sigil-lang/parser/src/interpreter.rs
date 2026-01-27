@@ -1188,6 +1188,10 @@ pub struct Interpreter {
     pub pipe_context: Option<Value>,
     /// Variant constructors: qualified_name -> (enum_name, variant_name, arity)
     pub variant_constructors: HashMap<String, (String, String, usize)>,
+    /// Locale enum metadata: "EnumName·VariantName" -> { code, name, fallback, rtl }
+    pub locale_metadata: HashMap<String, HashMap<String, Value>>,
+    /// Translation struct definitions: struct_name -> TranslationsDef (for i18n)
+    pub translations_defs: HashMap<String, crate::ast::TranslationsDef>,
     /// Structs with #[derive(Default)]
     pub default_structs: HashMap<String, StructDef>,
     /// Output buffer (for testing)
@@ -1241,6 +1245,8 @@ impl Interpreter {
             macros: HashMap::new(),
             pipe_context: None,
             variant_constructors: HashMap::new(),
+            locale_metadata: HashMap::new(),
+            translations_defs: HashMap::new(),
             default_structs: HashMap::new(),
             return_value: None,
             output: Vec::new(),
@@ -2631,6 +2637,65 @@ impl Interpreter {
                 Ok(Value::Null)
             }
             Item::Struct(s) => {
+                // Check if this is a translations struct (parsed from `translations Name { ... }`)
+                if s.is_translations {
+                    let name = s.name.name.clone();
+
+                    // Convert StructDef to TranslationsDef
+                    if let crate::ast::StructFields::Named(field_defs) = &s.fields {
+                        // Find the locale field to get locale_type
+                        let locale_type = field_defs.iter()
+                            .find(|f| f.name.name == "locale")
+                            .map(|f| f.ty.clone())
+                            .unwrap_or_else(|| crate::ast::TypeExpr::Path(crate::ast::TypePath {
+                                segments: vec![crate::ast::PathSegment {
+                                    ident: crate::ast::Ident {
+                                        name: "Locale".to_string(),
+                                        evidentiality: None,
+                                        affect: None,
+                                        span: crate::span::Span::default(),
+                                    },
+                                    generics: None,
+                                }],
+                            }));
+
+                        // Convert other fields to TranslationEntry (Property or Method)
+                        let entries: Vec<crate::ast::TranslationEntry> = field_defs.iter()
+                            .filter(|f| f.name.name != "locale")
+                            .map(|f| {
+                                let body = Box::new(f.default.clone().unwrap_or(Expr::Literal(Literal::Null)));
+                                if let Some(ref params) = f.params {
+                                    // This is a method with parameters
+                                    crate::ast::TranslationEntry::Method(crate::ast::TranslationMethod {
+                                        name: f.name.clone(),
+                                        params: params.clone(),
+                                        return_type: f.ty.clone(),
+                                        body,
+                                    })
+                                } else {
+                                    // This is a simple property
+                                    crate::ast::TranslationEntry::Property(crate::ast::TranslationProperty {
+                                        name: f.name.clone(),
+                                        return_type: f.ty.clone(),
+                                        body,
+                                    })
+                                }
+                            })
+                            .collect();
+
+                        let translations_def = crate::ast::TranslationsDef {
+                            visibility: s.visibility.clone(),
+                            name: s.name.clone(),
+                            generics: s.generics.clone(),
+                            locale_type,
+                            entries,
+                        };
+
+                        self.translations_defs.insert(name, translations_def);
+                    }
+                    return Ok(Value::Null);
+                }
+
                 // Register with simple name
                 self.types
                     .insert(s.name.name.clone(), TypeDef::Struct(s.clone()));
@@ -2704,6 +2769,42 @@ impl Interpreter {
                         qualified_name.clone(),
                         (enum_name.clone(), variant_name.clone(), arity),
                     );
+
+                    // For locale enums, extract and store metadata
+                    if e.is_locale {
+                        if let Some(ref discriminant) = variant.discriminant {
+                            // The discriminant is an AnonymousStruct with fields like { code: "en", name: "English" }
+                            if let Expr::AnonymousStruct { fields } = discriminant {
+                                let mut metadata = HashMap::new();
+                                // Collect all variant names for this enum to resolve variant references
+                                let variant_names: Vec<String> = e.variants.iter()
+                                    .map(|v| v.name.name.clone())
+                                    .collect();
+
+                                for (field_name, field_expr) in fields {
+                                    // Check if this is a variant reference (e.g., fallback: En)
+                                    let value = match field_expr {
+                                        Expr::Path(path) if path.segments.len() == 1 => {
+                                            let name = &path.segments[0].ident.name;
+                                            if variant_names.contains(name) {
+                                                // Resolve to the enum variant
+                                                Value::Variant {
+                                                    enum_name: enum_name.clone(),
+                                                    variant_name: name.clone(),
+                                                    fields: None,
+                                                }
+                                            } else {
+                                                self.evaluate(field_expr)?
+                                            }
+                                        }
+                                        _ => self.evaluate(field_expr)?
+                                    };
+                                    metadata.insert(field_name.name.clone(), value);
+                                }
+                                self.locale_metadata.insert(qualified_name.clone(), metadata);
+                            }
+                        }
+                    }
                 }
                 Ok(Value::Null)
             }
@@ -3043,6 +3144,15 @@ impl Interpreter {
                 let name = macro_def.name.name.clone();
                 crate::sigil_debug!("DEBUG registering macro: '{}', rules='{}'", name, macro_def.rules);
                 self.macros.insert(name, macro_def.clone());
+                Ok(Value::Null)
+            }
+            Item::Translations(t) => {
+                // Register the translations module
+                let name = t.name.name.clone();
+
+                // Store translations definition for constructor and method dispatch
+                self.translations_defs.insert(name.clone(), t.clone());
+
                 Ok(Value::Null)
             }
             _ => Ok(Value::Null), // Skip other items for now
@@ -5083,6 +5193,28 @@ impl Interpreter {
                 }
             }
 
+            // Check for Translations·new(locale) constructor
+            if path.segments.len() == 2 && path.segments[1].ident.name == "new" {
+                let translations_name = &path.segments[0].ident.name;
+                if let Some(translations_def) = self.translations_defs.get(translations_name).cloned() {
+                    if args.len() != 1 {
+                        return Err(RuntimeError::new(format!(
+                            "{}·new expects 1 argument (locale), got {}",
+                            translations_name, args.len()
+                        )));
+                    }
+                    let locale_val = self.evaluate(&args[0])?;
+                    // Create a translations instance struct with locale and the translations definition
+                    let mut fields = HashMap::new();
+                    fields.insert("locale".to_string(), locale_val);
+                    fields.insert("__translations_def__".to_string(), Value::String(Rc::new(translations_name.clone())));
+                    return Ok(Value::Struct {
+                        name: translations_name.clone(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    });
+                }
+            }
+
             // Check for built-in type constructors (Map::new, String::new, HashMap::new, etc.)
             let segments: Vec<&str> = path
                 .segments
@@ -6590,7 +6722,23 @@ impl Interpreter {
                 );
                 Ok(matches)
             }
-            (Pattern::Ident { .. }, _) => Ok(true),
+            // Pattern::Ident matching against a variant - check if names match
+            (Pattern::Ident { name, .. }, Value::Variant { variant_name, .. }) => {
+                // If the ident name matches the variant name, it's a variant match
+                // Otherwise, treat it as a binding (which always matches)
+                if name.name == *variant_name {
+                    Ok(true)
+                } else {
+                    // Check if this ident might be a variant name (uppercase)
+                    // If it starts with uppercase, it's probably a variant reference, not a binding
+                    if name.name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                        Ok(false) // This is a variant name that doesn't match
+                    } else {
+                        Ok(true) // Lowercase = binding, always matches
+                    }
+                }
+            }
+            (Pattern::Ident { .. }, _) => Ok(true), // Binding pattern matches any non-variant value
             (Pattern::Literal(lit), val) => {
                 let lit_val = self.eval_literal(lit)?;
                 let result = self.values_equal(&lit_val, val);
@@ -7368,6 +7516,57 @@ impl Interpreter {
         }
     }
 
+    /// Evaluate a translation match expression with the given locale value
+    fn eval_translation_match(&mut self, body: &Expr, locale_val: &Value) -> Result<Value, RuntimeError> {
+        // The body should be a Match expression like: ⌥ lang { En => "value", Es => "otro" }
+        match body {
+            Expr::Match { expr, arms } => {
+                // expr is the variable name (e.g., 'lang')
+                // Bind it to the locale value temporarily
+                if let Expr::Path(path) = &**expr {
+                    if path.segments.len() == 1 {
+                        let var_name = &path.segments[0].ident.name;
+                        let prev_env = self.environment.clone();
+                        self.environment = Rc::new(RefCell::new(
+                            Environment::with_parent(prev_env.clone())
+                        ));
+                        self.environment.borrow_mut().define(var_name.clone(), locale_val.clone());
+
+                        // Now evaluate the match with the bound variable
+                        // Get the locale variant name for matching
+                        let locale_variant = match locale_val {
+                            Value::Variant { variant_name, .. } => variant_name.clone(),
+                            _ => {
+                                self.environment = prev_env;
+                                return Err(RuntimeError::new("locale must be an enum variant"));
+                            }
+                        };
+
+                        // Find matching arm
+                        for arm in arms {
+                            if self.pattern_matches(&arm.pattern, locale_val)? {
+                                let result = self.evaluate(&arm.body)?;
+                                self.environment = prev_env;
+                                return Ok(result);
+                            }
+                        }
+
+                        self.environment = prev_env;
+                        return Err(RuntimeError::new(format!(
+                            "no translation arm matches locale variant '{}'", locale_variant
+                        )));
+                    }
+                }
+                // Try evaluating directly if it's not a simple path
+                self.evaluate(body)
+            }
+            _ => {
+                // Not a match expression - just evaluate normally
+                self.evaluate(body)
+            }
+        }
+    }
+
     fn eval_method_call(
         &mut self,
         receiver: &Expr,
@@ -7528,8 +7727,90 @@ impl Interpreter {
             }
         }
 
+        // Handle translations struct method dispatch (i18n)
+        if let Value::Struct { name, fields } = &recv {
+            let is_translations = {
+                let borrowed = fields.borrow();
+                borrowed.get("__translations_def__").cloned()
+            };
+            if let Some(Value::String(trans_name)) = is_translations {
+                if let Some(translations_def) = self.translations_defs.get(&*trans_name).cloned() {
+                    let locale_val = fields.borrow().get("locale").cloned()
+                        .ok_or_else(|| RuntimeError::new("translations instance missing locale"))?;
+
+                    // Find the matching entry (property or method)
+                    for entry in &translations_def.entries {
+                        match entry {
+                            crate::ast::TranslationEntry::Property(prop) if prop.name.name == method.name => {
+                                // Evaluate the body with the locale value bound
+                                return self.eval_translation_match(&prop.body, &locale_val);
+                            }
+                            crate::ast::TranslationEntry::Method(meth) if meth.name.name == method.name => {
+                                // Bind parameters and evaluate body
+                                if arg_values.len() != meth.params.len() {
+                                    return Err(RuntimeError::new(format!(
+                                        "{}() expects {} arguments, got {}",
+                                        method.name, meth.params.len(), arg_values.len()
+                                    )));
+                                }
+                                // Create environment with parameters
+                                let prev_env = self.environment.clone();
+                                self.environment = Rc::new(RefCell::new(
+                                    Environment::with_parent(prev_env.clone())
+                                ));
+                                for (param, value) in meth.params.iter().zip(arg_values.iter()) {
+                                    // Extract name from pattern (typically Pattern::Ident)
+                                    let param_name = match &param.pattern {
+                                        crate::ast::Pattern::Ident { name, .. } => name.name.clone(),
+                                        _ => continue, // Skip complex patterns
+                                    };
+                                    self.environment.borrow_mut().define(param_name, value.clone());
+                                }
+                                let result = self.eval_translation_match(&meth.body, &locale_val);
+                                self.environment = prev_env;
+                                return result;
+                            }
+                            _ => {}
+                        }
+                    }
+                    return Err(RuntimeError::new(format!(
+                        "no translation method '{}' on {}", method.name, name
+                    )));
+                }
+            }
+        }
+
         // Built-in methods
         match (&recv, method.name.as_str()) {
+            // Locale enum variant methods (i18n)
+            (Value::Variant { enum_name, variant_name, .. }, "code") => {
+                let key = format!("{}·{}", enum_name, variant_name);
+                if let Some(metadata) = self.locale_metadata.get(&key) {
+                    if let Some(code) = metadata.get("code") {
+                        return Ok(code.clone());
+                    }
+                }
+                Err(RuntimeError::new(format!("no code() method for variant {}", key)))
+            }
+            (Value::Variant { enum_name, variant_name, .. }, "display_name") => {
+                let key = format!("{}·{}", enum_name, variant_name);
+                if let Some(metadata) = self.locale_metadata.get(&key) {
+                    if let Some(name) = metadata.get("name") {
+                        return Ok(name.clone());
+                    }
+                }
+                Err(RuntimeError::new(format!("no display_name() method for variant {}", key)))
+            }
+            (Value::Variant { enum_name, variant_name, .. }, "is_rtl") => {
+                let key = format!("{}·{}", enum_name, variant_name);
+                if let Some(metadata) = self.locale_metadata.get(&key) {
+                    if let Some(rtl) = metadata.get("rtl") {
+                        return Ok(rtl.clone());
+                    }
+                }
+                // Default to false (LTR) if not specified
+                Ok(Value::Bool(false))
+            }
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
             (Value::Array(arr), "push") => {
                 if arg_values.len() != 1 {
@@ -10185,16 +10466,3474 @@ impl Interpreter {
                     if method.name == "render" {
                         let borrowed = fields.borrow();
                         let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Handle as_element for semantic HTML (default: div)
+                        let tag = borrowed.get("as_element")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            .unwrap_or_else(|| "div".to_string());
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new(tag)));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("card".to_string()))];
+
+                        // Handle variant (elevated, outlined, filled)
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("card-{}", variant))));
+                        }
+
+                        // Handle padding (none, sm, md, lg)
+                        if let Some(Value::String(padding)) = borrowed.get("padding") {
+                            classes.push(Value::String(Rc::new(format!("card-p-{}", padding))));
+                        }
+
+                        // Handle clickable state
+                        let clickable = matches!(borrowed.get("clickable"), Some(Value::Bool(true)));
+                        if clickable {
+                            classes.push(Value::String(Rc::new("card-clickable".to_string())));
+                            classes.push(Value::String(Rc::new("cursor-pointer".to_string())));
+                        }
+
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if clickable {
+                            attrs_map.insert("role".to_string(), Value::String(Rc::new("button".to_string())));
+                            attrs_map.insert("tabindex".to_string(), Value::String(Rc::new("0".to_string())));
+                        }
+                        if let Some(v) = borrowed.get("aria_label") {
+                            attrs_map.insert("aria-label".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Process children (CardHeader, CardBody, CardFooter)
+                        let mut rendered_children = vec![];
+                        if let Some(Value::Array(children)) = borrowed.get("children") {
+                            for child in children.borrow().iter() {
+                                if let Value::Struct { name: child_name, fields: child_fields } = child {
+                                    let child_borrowed = child_fields.borrow();
+                                    let mut child_vnode = std::collections::HashMap::new();
+                                    child_vnode.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                    child_vnode.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                                    match child_name.as_str() {
+                                        "CardHeader" => {
+                                            child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::String(Rc::new("card-header".to_string()))
+                                            ]))));
+                                            child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                                            // Build CardHeader children (title, subtitle, image)
+                                            let mut header_children = vec![];
+
+                                            // Handle image if present
+                                            if let Some(Value::String(image_src)) = child_borrowed.get("image") {
+                                                let mut img_node = std::collections::HashMap::new();
+                                                img_node.insert("tag".to_string(), Value::String(Rc::new("img".to_string())));
+                                                img_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                                img_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                let mut img_attrs = std::collections::HashMap::new();
+                                                img_attrs.insert("src".to_string(), Value::String(image_src.clone()));
+                                                if let Some(Value::String(alt)) = child_borrowed.get("image_alt") {
+                                                    img_attrs.insert("alt".to_string(), Value::String(alt.clone()));
+                                                }
+                                                img_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(img_attrs))));
+                                                img_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                header_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(img_node)),
+                                                });
+                                            }
+
+                                            // Handle title
+                                            if let Some(Value::String(title)) = child_borrowed.get("title") {
+                                                let mut title_node = std::collections::HashMap::new();
+                                                title_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                                title_node.insert("text_content".to_string(), Value::String(title.clone()));
+                                                title_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::String(Rc::new("card-title".to_string()))
+                                                ]))));
+                                                title_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                                title_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                header_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(title_node)),
+                                                });
+                                            }
+
+                                            // Handle subtitle
+                                            if let Some(Value::String(subtitle)) = child_borrowed.get("subtitle") {
+                                                let mut subtitle_node = std::collections::HashMap::new();
+                                                subtitle_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                                subtitle_node.insert("text_content".to_string(), Value::String(subtitle.clone()));
+                                                subtitle_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::String(Rc::new("card-subtitle".to_string()))
+                                                ]))));
+                                                subtitle_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                                subtitle_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                header_children.push(Value::Struct {
+                                                    name: "VNode".to_string(),
+                                                    fields: Rc::new(RefCell::new(subtitle_node)),
+                                                });
+                                            }
+
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(header_children))));
+                                        }
+                                        "CardBody" => {
+                                            child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::String(Rc::new("card-body".to_string()))
+                                            ]))));
+                                            child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        }
+                                        "CardFooter" => {
+                                            child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::String(Rc::new("card-footer".to_string()))
+                                            ]))));
+                                            child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        }
+                                        _ => {
+                                            // Unknown child type - just pass through
+                                            child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                            child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        }
+                                    }
+
+                                    rendered_children.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(child_vnode)),
+                                    });
+                                }
+                            }
+                        }
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(rendered_children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Input component - Agent-native wrapper pattern
+                // Renders: div.input-field > [input, label, ?helper/?error]
+                if name == "Input" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Wrapper div
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Handle states for wrapper classes
+                        let disabled = matches!(borrowed.get("disabled"), Some(Value::Bool(true)));
+                        let has_error = borrowed.get("error").is_some();
+
+                        // Wrapper classes
+                        let mut wrapper_classes = vec![Value::String(Rc::new("input-field".to_string()))];
+                        if disabled {
+                            wrapper_classes.push(Value::String(Rc::new("input-disabled".to_string())));
+                        }
+                        if has_error {
+                            wrapper_classes.push(Value::String(Rc::new("input-has-error".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(wrapper_classes))));
+
+                        // Wrapper attrs
+                        let mut wrapper_attrs: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("id") {
+                            wrapper_attrs.insert("data-field-id".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(wrapper_attrs))));
+
+                        // Build children
+                        let mut children = vec![];
+
+                        // 1. Input element
+                        let mut input_node = std::collections::HashMap::new();
+                        input_node.insert("tag".to_string(), Value::String(Rc::new("input".to_string())));
+                        input_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Input classes
+                        let mut input_classes = vec![Value::String(Rc::new("input".to_string()))];
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            input_classes.push(Value::String(Rc::new(format!("input-{}", size))));
+                        }
+                        if has_error {
+                            input_classes.push(Value::String(Rc::new("input-error".to_string())));
+                        }
+                        input_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(input_classes))));
+
+                        // Input attrs
+                        let mut input_attrs = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("name") {
+                            input_attrs.insert("name".to_string(), v.clone());
+                        }
+                        let input_type = borrowed.get("input_type")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.as_str().to_string()) } else { None })
+                            .unwrap_or_else(|| "text".to_string());
+                        input_attrs.insert("type".to_string(), Value::String(Rc::new(input_type)));
+
+                        if let Some(v) = borrowed.get("placeholder") { input_attrs.insert("placeholder".to_string(), v.clone()); }
+                        if let Some(v) = borrowed.get("value") { input_attrs.insert("value".to_string(), v.clone()); }
+                        if let Some(v) = borrowed.get("id") { input_attrs.insert("id".to_string(), v.clone()); }
+                        if let Some(v) = borrowed.get("autocomplete") { input_attrs.insert("autocomplete".to_string(), v.clone()); }
+                        if let Some(v) = borrowed.get("pattern") { input_attrs.insert("pattern".to_string(), v.clone()); }
+                        if let Some(v) = borrowed.get("title") { input_attrs.insert("title".to_string(), v.clone()); }
+
+                        if let Some(Value::Int(n)) = borrowed.get("min_length") {
+                            input_attrs.insert("minlength".to_string(), Value::String(Rc::new(n.to_string())));
+                        }
+                        if let Some(Value::Int(n)) = borrowed.get("max_length") {
+                            input_attrs.insert("maxlength".to_string(), Value::String(Rc::new(n.to_string())));
+                        }
+
+                        if disabled {
+                            input_attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+                        if matches!(borrowed.get("readonly"), Some(Value::Bool(true))) {
+                            input_attrs.insert("readonly".to_string(), Value::Bool(true));
+                        }
+                        if matches!(borrowed.get("required"), Some(Value::Bool(true))) {
+                            input_attrs.insert("required".to_string(), Value::Bool(true));
+                            input_attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+
+                        if has_error {
+                            input_attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                input_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-error", id))));
+                            }
+                        } else if borrowed.get("helper").is_some() {
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                input_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-helper", id))));
+                            }
+                        }
+
+                        input_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(input_attrs))));
+
+                        // Input children (prefix, suffix, icon)
+                        let mut input_children = vec![];
+
+                        if let Some(Value::String(prefix)) = borrowed.get("prefix") {
+                            let mut prefix_node = std::collections::HashMap::new();
+                            prefix_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            prefix_node.insert("text_content".to_string(), Value::String(prefix.clone()));
+                            prefix_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("input-prefix".to_string()))
+                            ]))));
+                            prefix_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            prefix_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            input_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(prefix_node)) });
+                        }
+
+                        if let Some(Value::String(_icon)) = borrowed.get("prefix_icon") {
+                            let mut icon_node = std::collections::HashMap::new();
+                            icon_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            icon_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            icon_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("input-icon".to_string()))
+                            ]))));
+                            icon_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            icon_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            input_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(icon_node)) });
+                        }
+
+                        if let Some(Value::String(suffix)) = borrowed.get("suffix") {
+                            let mut suffix_node = std::collections::HashMap::new();
+                            suffix_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            suffix_node.insert("text_content".to_string(), Value::String(suffix.clone()));
+                            suffix_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("input-suffix".to_string()))
+                            ]))));
+                            suffix_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            suffix_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            input_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(suffix_node)) });
+                        }
+
+                        input_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(input_children))));
+                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(input_node)) });
+
+                        // 2. Label element (if label prop provided)
+                        if let Some(Value::String(label_text)) = borrowed.get("label") {
+                            let mut label_node = std::collections::HashMap::new();
+                            label_node.insert("tag".to_string(), Value::String(Rc::new("label".to_string())));
+                            label_node.insert("text_content".to_string(), Value::String(label_text.clone()));
+                            label_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("input-label".to_string()))
+                            ]))));
+
+                            let mut label_attrs = std::collections::HashMap::new();
+                            if let Some(v) = borrowed.get("id") {
+                                label_attrs.insert("for".to_string(), v.clone());
+                            }
+                            label_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(label_attrs))));
+                            label_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(label_node)) });
+                        }
+
+                        // 3. Helper text (if no error)
+                        if let Some(Value::String(helper_text)) = borrowed.get("helper") {
+                            if !has_error {
+                                let mut helper_node = std::collections::HashMap::new();
+                                helper_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                                helper_node.insert("text_content".to_string(), Value::String(helper_text.clone()));
+                                helper_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                    Value::String(Rc::new("input-helper".to_string()))
+                                ]))));
+
+                                let mut helper_attrs = std::collections::HashMap::new();
+                                if let Some(Value::String(id)) = borrowed.get("id") {
+                                    helper_attrs.insert("id".to_string(), Value::String(Rc::new(format!("{}-helper", id))));
+                                }
+                                helper_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(helper_attrs))));
+                                helper_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(helper_node)) });
+                            }
+                        }
+
+                        // 4. Error message (if error prop provided)
+                        if let Some(Value::String(error_text)) = borrowed.get("error") {
+                            let mut error_node = std::collections::HashMap::new();
+                            error_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            error_node.insert("text_content".to_string(), Value::String(error_text.clone()));
+                            error_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("input-error-message".to_string()))
+                            ]))));
+
+                            let mut error_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                error_attrs.insert("id".to_string(), Value::String(Rc::new(format!("{}-error", id))));
+                            }
+                            error_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(error_attrs))));
+                            error_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(error_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Badge component
+                if name == "Badge" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+
+                        // Text content from label or count
+                        let text_content = if let Some(Value::Int(count)) = borrowed.get("count") {
+                            let max = borrowed.get("max")
+                                .and_then(|v| if let Value::Int(n) = v { Some(*n) } else { None })
+                                .unwrap_or(99);
+                            if *count > max {
+                                Rc::new(format!("{}+", max))
+                            } else {
+                                Rc::new(count.to_string())
+                            }
+                        } else if let Some(Value::String(label)) = borrowed.get("label") {
+                            label.clone()
+                        } else {
+                            Rc::new("".to_string())
+                        };
+                        vnode_fields.insert("text_content".to_string(), Value::String(text_content));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("badge".to_string()))];
+
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("badge-{}", variant))));
+                        }
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("badge-{}", size))));
+                        }
+                        if let Some(Value::String(appearance)) = borrowed.get("appearance") {
+                            classes.push(Value::String(Rc::new(format!("badge-{}", appearance))));
+                        }
+                        if matches!(borrowed.get("dot"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("badge-dot".to_string())));
+                            classes.push(Value::String(Rc::new("badge-circular".to_string())));
+                        }
+                        if matches!(borrowed.get("pill"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("badge-pill".to_string())));
+                        }
+
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("aria_label") {
+                            attrs_map.insert("aria-label".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("role") {
+                            attrs_map.insert("role".to_string(), v.clone());
+                        }
+                        // Handle hidden for zero count
+                        if matches!(borrowed.get("hide_zero"), Some(Value::Bool(true))) {
+                            if let Some(Value::Int(0)) = borrowed.get("count") {
+                                attrs_map.insert("hidden".to_string(), Value::Bool(true));
+                            }
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children (icon, dismiss button)
+                        let mut children = vec![];
+                        if borrowed.get("icon").is_some() {
+                            let mut icon_node = std::collections::HashMap::new();
+                            icon_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            icon_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            icon_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("badge-icon".to_string()))
+                            ]))));
+                            icon_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            icon_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(icon_node)) });
+                        }
+                        if matches!(borrowed.get("dismissible"), Some(Value::Bool(true))) {
+                            let mut dismiss_node = std::collections::HashMap::new();
+                            dismiss_node.insert("tag".to_string(), Value::String(Rc::new("button".to_string())));
+                            dismiss_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            dismiss_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("badge-dismiss".to_string()))
+                            ]))));
+                            let mut dismiss_attrs = std::collections::HashMap::new();
+                            dismiss_attrs.insert("aria-label".to_string(), Value::String(Rc::new("Remove".to_string())));
+                            dismiss_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(dismiss_attrs))));
+                            dismiss_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(dismiss_node)) });
+                        }
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Spinner component
+                if name == "Spinner" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
                         vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
 
-                        let title = borrowed.get("title")
-                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
-                            .unwrap_or_else(|| Rc::new("".to_string()));
-                        vnode_fields.insert("text_content".to_string(), Value::String(title));
+                        // Text content from label
+                        let label = borrowed.get("label")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None });
+                        let text = label.clone().unwrap_or_else(|| Rc::new("".to_string()));
+                        vnode_fields.insert("text_content".to_string(), Value::String(text));
 
-                        let classes = vec![Value::String(Rc::new("card".to_string()))];
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("spinner".to_string()))];
+
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("spinner-{}", size))));
+                        }
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("spinner-{}", variant))));
+                        }
+                        if let Some(Value::String(appearance)) = borrowed.get("appearance") {
+                            classes.push(Value::String(Rc::new(format!("spinner-{}", appearance))));
+                        }
+                        if let Some(Value::String(label_position)) = borrowed.get("label_position") {
+                            classes.push(Value::String(Rc::new(format!("spinner-label-{}", label_position))));
+                        }
+                        if matches!(borrowed.get("overlay"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("spinner-overlay".to_string())));
+                            classes.push(Value::String(Rc::new("spinner-blocking".to_string())));
+                        }
+                        if matches!(borrowed.get("inline"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("spinner-inline".to_string())));
+                        }
+
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        attrs_map.insert("role".to_string(), Value::String(Rc::new("status".to_string())));
+                        attrs_map.insert("aria-live".to_string(), Value::String(Rc::new("polite".to_string())));
+                        if let Some(ref l) = label {
+                            attrs_map.insert("aria-label".to_string(), Value::String(l.clone()));
+                        }
+                        if let Some(v) = borrowed.get("aria_label") {
+                            attrs_map.insert("aria-label".to_string(), v.clone());
+                        }
+                        if let Some(Value::Int(delay)) = borrowed.get("delay") {
+                            attrs_map.insert("data-delay".to_string(), Value::String(Rc::new(delay.to_string())));
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children (spinner-label)
+                        let mut children = vec![];
+                        if label.is_some() {
+                            let mut label_classes = vec![Value::String(Rc::new("spinner-label".to_string()))];
+                            if matches!(borrowed.get("label_hidden"), Some(Value::Bool(true))) {
+                                label_classes.push(Value::String(Rc::new("sr-only".to_string())));
+                            }
+                            let mut label_node = std::collections::HashMap::new();
+                            label_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            label_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            label_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(label_classes))));
+                            label_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            label_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(label_node)) });
+                        }
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Dialog component
+                if name == "Dialog" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("dialog".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("dialog".to_string()))];
+
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("dialog-{}", size))));
+                        }
+                        if let Some(Value::String(position)) = borrowed.get("position") {
+                            classes.push(Value::String(Rc::new(format!("dialog-{}", position))));
+                        }
+
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Check if any child is a DialogHeader with a title (for auto aria-labelledby)
+                        let mut has_title = false;
+                        if let Some(Value::Array(children)) = borrowed.get("children") {
+                            for child in children.borrow().iter() {
+                                if let Value::Struct { name: child_name, fields: child_fields } = child {
+                                    if child_name == "DialogHeader" {
+                                        let child_borrowed = child_fields.borrow();
+                                        if child_borrowed.get("title").is_some() {
+                                            has_title = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if matches!(borrowed.get("alert"), Some(Value::Bool(true))) {
+                            attrs_map.insert("role".to_string(), Value::String(Rc::new("alertdialog".to_string())));
+                        } else {
+                            attrs_map.insert("role".to_string(), Value::String(Rc::new("dialog".to_string())));
+                        }
+                        attrs_map.insert("aria-modal".to_string(), Value::String(Rc::new("true".to_string())));
+                        if let Some(v) = borrowed.get("aria_labelledby") {
+                            attrs_map.insert("aria-labelledby".to_string(), v.clone());
+                        } else if has_title {
+                            // Auto-set aria-labelledby to dialog-title if there's a DialogHeader with title
+                            attrs_map.insert("aria-labelledby".to_string(), Value::String(Rc::new("dialog-title".to_string())));
+                        }
+                        if let Some(v) = borrowed.get("aria_describedby") {
+                            attrs_map.insert("aria-describedby".to_string(), v.clone());
+                        }
+                        if let Some(Value::String(focus)) = borrowed.get("initial_focus") {
+                            attrs_map.insert("data-initial-focus".to_string(), Value::String(focus.clone()));
+                        }
+                        if let Some(Value::Bool(b)) = borrowed.get("close_on_escape") {
+                            attrs_map.insert("data-close-on-escape".to_string(), Value::String(Rc::new(if *b { "true" } else { "false" }.to_string())));
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children (backdrop, close button, DialogHeader, DialogBody, DialogFooter)
+                        let mut rendered_children = vec![];
+
+                        // Add backdrop
+                        let static_backdrop = matches!(borrowed.get("static_backdrop"), Some(Value::Bool(true)));
+                        let mut backdrop_classes = vec![Value::String(Rc::new("dialog-backdrop".to_string()))];
+                        if static_backdrop {
+                            backdrop_classes.push(Value::String(Rc::new("dialog-backdrop-static".to_string())));
+                        }
+                        let mut backdrop_node = std::collections::HashMap::new();
+                        backdrop_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        backdrop_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                        backdrop_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(backdrop_classes))));
+                        backdrop_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                        backdrop_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                        rendered_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(backdrop_node)) });
+
+                        // Add close button (unless hide_close)
+                        if !matches!(borrowed.get("hide_close"), Some(Value::Bool(true))) {
+                            let mut close_node = std::collections::HashMap::new();
+                            close_node.insert("tag".to_string(), Value::String(Rc::new("button".to_string())));
+                            close_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            close_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("dialog-close".to_string()))
+                            ]))));
+                            let mut close_attrs = std::collections::HashMap::new();
+                            close_attrs.insert("aria-label".to_string(), Value::String(Rc::new("Close".to_string())));
+                            close_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(close_attrs))));
+                            close_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            rendered_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(close_node)) });
+                        }
+
+                        // Process children (DialogHeader, DialogBody, DialogFooter)
+                        let scrollable = matches!(borrowed.get("scrollable"), Some(Value::Bool(true)));
+                        if let Some(Value::Array(children)) = borrowed.get("children") {
+                            for child in children.borrow().iter() {
+                                if let Value::Struct { name: child_name, fields: child_fields } = child {
+                                    let child_borrowed = child_fields.borrow();
+                                    let mut child_vnode = std::collections::HashMap::new();
+                                    child_vnode.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                    child_vnode.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                                    match child_name.as_str() {
+                                        "DialogHeader" => {
+                                            child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::String(Rc::new("dialog-header".to_string()))
+                                            ]))));
+                                            child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                                            // Build header children (title, subtitle)
+                                            let mut header_children = vec![];
+                                            if let Some(Value::String(title)) = child_borrowed.get("title") {
+                                                let mut title_node = std::collections::HashMap::new();
+                                                title_node.insert("tag".to_string(), Value::String(Rc::new("h2".to_string())));
+                                                title_node.insert("text_content".to_string(), Value::String(title.clone()));
+                                                title_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::String(Rc::new("dialog-title".to_string()))
+                                                ]))));
+                                                let mut title_attrs = std::collections::HashMap::new();
+                                                title_attrs.insert("id".to_string(), Value::String(Rc::new("dialog-title".to_string())));
+                                                title_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(title_attrs))));
+                                                title_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                header_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(title_node)) });
+                                            }
+                                            if let Some(Value::String(subtitle)) = child_borrowed.get("subtitle") {
+                                                let mut subtitle_node = std::collections::HashMap::new();
+                                                subtitle_node.insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                                                subtitle_node.insert("text_content".to_string(), Value::String(subtitle.clone()));
+                                                subtitle_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::String(Rc::new("dialog-subtitle".to_string()))
+                                                ]))));
+                                                subtitle_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                                subtitle_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                header_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(subtitle_node)) });
+                                            }
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(header_children))));
+                                        }
+                                        "DialogBody" => {
+                                            let mut body_classes = vec![Value::String(Rc::new("dialog-body".to_string()))];
+                                            if scrollable {
+                                                body_classes.push(Value::String(Rc::new("dialog-body-scrollable".to_string())));
+                                            }
+                                            child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(body_classes))));
+                                            child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        }
+                                        "DialogFooter" => {
+                                            child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::String(Rc::new("dialog-footer".to_string()))
+                                            ]))));
+                                            child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        }
+                                        _ => {
+                                            child_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                            child_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                            child_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        }
+                                    }
+
+                                    rendered_children.push(Value::Struct {
+                                        name: "VNode".to_string(),
+                                        fields: Rc::new(RefCell::new(child_vnode)),
+                                    });
+                                }
+                            }
+                        }
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(rendered_children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Select component - Agent-native wrapper pattern
+                // Renders: div.select-field > [select, label, ?helper/?error]
+                if name == "Select" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Wrapper div
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Handle states for wrapper classes
+                        let disabled = matches!(borrowed.get("disabled"), Some(Value::Bool(true)));
+                        let has_error = borrowed.get("error").is_some();
+
+                        // Wrapper classes
+                        let mut wrapper_classes = vec![Value::String(Rc::new("select-field".to_string()))];
+                        if disabled {
+                            wrapper_classes.push(Value::String(Rc::new("select-disabled".to_string())));
+                        }
+                        if has_error {
+                            wrapper_classes.push(Value::String(Rc::new("select-has-error".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(wrapper_classes))));
+
+                        // Wrapper attrs
+                        let mut wrapper_attrs: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("id") {
+                            wrapper_attrs.insert("data-field-id".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(wrapper_attrs))));
+
+                        // Build children
+                        let mut children = vec![];
+
+                        // 1. Select element
+                        let mut select_node = std::collections::HashMap::new();
+                        select_node.insert("tag".to_string(), Value::String(Rc::new("select".to_string())));
+                        select_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Select classes
+                        let mut select_classes = vec![Value::String(Rc::new("select".to_string()))];
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            select_classes.push(Value::String(Rc::new(format!("select-{}", size))));
+                        }
+                        if has_error {
+                            select_classes.push(Value::String(Rc::new("select-error".to_string())));
+                        }
+                        if matches!(borrowed.get("native"), Some(Value::Bool(true))) {
+                            select_classes.push(Value::String(Rc::new("select-native".to_string())));
+                        } else if matches!(borrowed.get("native"), Some(Value::Bool(false))) {
+                            select_classes.push(Value::String(Rc::new("select-custom".to_string())));
+                        }
+                        select_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(select_classes))));
+
+                        // Select attrs
+                        let mut select_attrs = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("name") { select_attrs.insert("name".to_string(), v.clone()); }
+                        if let Some(v) = borrowed.get("id") { select_attrs.insert("id".to_string(), v.clone()); }
+                        if let Some(v) = borrowed.get("value") { select_attrs.insert("value".to_string(), v.clone()); }
+                        if let Some(v) = borrowed.get("aria_label") { select_attrs.insert("aria-label".to_string(), v.clone()); }
+
+                        if disabled {
+                            select_attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+                        if matches!(borrowed.get("required"), Some(Value::Bool(true))) {
+                            select_attrs.insert("required".to_string(), Value::Bool(true));
+                            select_attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if matches!(borrowed.get("multiple"), Some(Value::Bool(true))) {
+                            select_attrs.insert("multiple".to_string(), Value::Bool(true));
+                        }
+                        if has_error {
+                            select_attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                select_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-error", id))));
+                            }
+                        } else if borrowed.get("helper").is_some() {
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                select_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-helper", id))));
+                            }
+                        }
+                        select_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(select_attrs))));
+
+                        // Render option children
+                        let mut option_children = vec![];
+                        if let Some(Value::Array(options_arr)) = borrowed.get("options") {
+                            // Group options by their group field (for optgroups)
+                            // Use Vec to preserve insertion order
+                            let mut group_order: Vec<String> = vec![];
+                            let mut groups: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+                            let mut ungrouped: Vec<Value> = vec![];
+
+                            for opt in options_arr.borrow().iter() {
+                                if let Value::Struct { name: opt_name, fields: opt_fields } = opt {
+                                    if opt_name == "SelectOption" {
+                                        let opt_borrowed = opt_fields.borrow();
+                                        if let Some(Value::String(group)) = opt_borrowed.get("group") {
+                                            let group_str = group.to_string();
+                                            if !groups.contains_key(&group_str) {
+                                                group_order.push(group_str.clone());
+                                            }
+                                            groups.entry(group_str).or_insert_with(Vec::new).push(opt.clone());
+                                        } else {
+                                            ungrouped.push(opt.clone());
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If there are groups, render optgroups (in insertion order)
+                            if !groups.is_empty() {
+                                for group_label in group_order.iter() {
+                                    let group_opts = groups.get(group_label).unwrap();
+                                    let mut optgroup_node = std::collections::HashMap::new();
+                                    optgroup_node.insert("tag".to_string(), Value::String(Rc::new("optgroup".to_string())));
+                                    optgroup_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                    optgroup_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                    let mut og_attrs = std::collections::HashMap::new();
+                                    og_attrs.insert("label".to_string(), Value::String(Rc::new(group_label.clone())));
+                                    optgroup_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(og_attrs))));
+
+                                    let mut og_children = vec![];
+                                    for opt in group_opts {
+                                        if let Value::Struct { fields: opt_fields, .. } = opt {
+                                            let opt_borrowed = opt_fields.borrow();
+                                            let mut opt_node = std::collections::HashMap::new();
+                                            opt_node.insert("tag".to_string(), Value::String(Rc::new("option".to_string())));
+                                            let label_text = opt_borrowed.get("label")
+                                                .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                                .unwrap_or_default();
+                                            opt_node.insert("text_content".to_string(), Value::String(Rc::new(label_text)));
+                                            opt_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                            let mut opt_attrs = std::collections::HashMap::new();
+                                            if let Some(v) = opt_borrowed.get("value") { opt_attrs.insert("value".to_string(), v.clone()); }
+                                            if matches!(opt_borrowed.get("disabled"), Some(Value::Bool(true))) {
+                                                opt_attrs.insert("disabled".to_string(), Value::Bool(true));
+                                            }
+                                            opt_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(opt_attrs))));
+                                            opt_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                            og_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(opt_node)) });
+                                        }
+                                    }
+                                    optgroup_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(og_children))));
+                                    option_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(optgroup_node)) });
+                                }
+                            } else {
+                                // No groups - render options directly
+                                for opt in ungrouped {
+                                    if let Value::Struct { fields: opt_fields, .. } = opt {
+                                        let opt_borrowed = opt_fields.borrow();
+                                        let mut opt_node = std::collections::HashMap::new();
+                                        opt_node.insert("tag".to_string(), Value::String(Rc::new("option".to_string())));
+                                        let label_text = opt_borrowed.get("label")
+                                            .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                            .unwrap_or_default();
+                                        opt_node.insert("text_content".to_string(), Value::String(Rc::new(label_text)));
+                                        opt_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        let mut opt_attrs = std::collections::HashMap::new();
+                                        if let Some(v) = opt_borrowed.get("value") { opt_attrs.insert("value".to_string(), v.clone()); }
+                                        if matches!(opt_borrowed.get("disabled"), Some(Value::Bool(true))) {
+                                            opt_attrs.insert("disabled".to_string(), Value::Bool(true));
+                                        }
+                                        opt_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(opt_attrs))));
+                                        opt_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        option_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(opt_node)) });
+                                    }
+                                }
+                            }
+                        }
+                        select_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(option_children))));
+                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(select_node)) });
+
+                        // 2. Label element (if label prop provided)
+                        if let Some(Value::String(label_text)) = borrowed.get("label") {
+                            let mut label_node = std::collections::HashMap::new();
+                            label_node.insert("tag".to_string(), Value::String(Rc::new("label".to_string())));
+                            label_node.insert("text_content".to_string(), Value::String(label_text.clone()));
+                            label_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("select-label".to_string()))
+                            ]))));
+
+                            let mut label_attrs = std::collections::HashMap::new();
+                            if let Some(v) = borrowed.get("id") {
+                                label_attrs.insert("for".to_string(), v.clone());
+                            }
+                            label_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(label_attrs))));
+                            label_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(label_node)) });
+                        }
+
+                        // 3. Helper text (if no error)
+                        if let Some(Value::String(helper_text)) = borrowed.get("helper") {
+                            if !has_error {
+                                let mut helper_node = std::collections::HashMap::new();
+                                helper_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                                helper_node.insert("text_content".to_string(), Value::String(helper_text.clone()));
+                                helper_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                    Value::String(Rc::new("select-helper".to_string()))
+                                ]))));
+
+                                let mut helper_attrs = std::collections::HashMap::new();
+                                if let Some(Value::String(id)) = borrowed.get("id") {
+                                    helper_attrs.insert("id".to_string(), Value::String(Rc::new(format!("{}-helper", id))));
+                                }
+                                helper_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(helper_attrs))));
+                                helper_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(helper_node)) });
+                            }
+                        }
+
+                        // 4. Error message (if error prop provided)
+                        if let Some(Value::String(error_text)) = borrowed.get("error") {
+                            let mut error_node = std::collections::HashMap::new();
+                            error_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            error_node.insert("text_content".to_string(), Value::String(error_text.clone()));
+                            error_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("select-error-message".to_string()))
+                            ]))));
+
+                            let mut error_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                error_attrs.insert("id".to_string(), Value::String(Rc::new(format!("{}-error", id))));
+                            }
+                            error_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(error_attrs))));
+                            error_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(error_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Header component
+                if name == "Header" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("header".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("header".to_string()))];
+
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("header-{}", variant))));
+                        }
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("header-{}", size))));
+                        }
+                        if let Some(Value::String(position)) = borrowed.get("position") {
+                            classes.push(Value::String(Rc::new(format!("header-{}", position))));
+                        }
+                        if let Some(Value::String(theme)) = borrowed.get("theme") {
+                            classes.push(Value::String(Rc::new(format!("header-{}", theme))));
+                        }
+                        if matches!(borrowed.get("sticky"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("header-sticky".to_string())));
+                        }
+
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("aria_label") {
+                            attrs_map.insert("aria-label".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children (logo, brand, nav, actions, mobile toggle, search, user menu)
+                        let mut children = vec![];
+
+                        // Logo
+                        if let Some(Value::String(logo_src)) = borrowed.get("logo") {
+                            let mut logo_link = std::collections::HashMap::new();
+                            logo_link.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            logo_link.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            logo_link.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("header-logo".to_string()))
+                            ]))));
+                            let mut link_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(href)) = borrowed.get("logo_href") {
+                                link_attrs.insert("href".to_string(), Value::String(href.clone()));
+                            }
+                            logo_link.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(link_attrs))));
+
+                            // Add img child
+                            let mut img_node = std::collections::HashMap::new();
+                            img_node.insert("tag".to_string(), Value::String(Rc::new("img".to_string())));
+                            img_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            img_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            let mut img_attrs = std::collections::HashMap::new();
+                            img_attrs.insert("src".to_string(), Value::String(logo_src.clone()));
+                            if let Some(Value::String(alt)) = borrowed.get("logo_alt") {
+                                img_attrs.insert("alt".to_string(), Value::String(alt.clone()));
+                            }
+                            img_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(img_attrs))));
+                            img_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                            logo_link.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(img_node)) }
+                            ]))));
+
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(logo_link)) });
+                        }
+
+                        // Brand
+                        if let Some(Value::String(brand_text)) = borrowed.get("brand") {
+                            let mut brand_link = std::collections::HashMap::new();
+                            brand_link.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                            brand_link.insert("text_content".to_string(), Value::String(brand_text.clone()));
+                            brand_link.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("header-brand".to_string()))
+                            ]))));
+                            let mut link_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(href)) = borrowed.get("brand_href") {
+                                link_attrs.insert("href".to_string(), Value::String(href.clone()));
+                            }
+                            brand_link.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(link_attrs))));
+                            brand_link.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(brand_link)) });
+                        }
+
+                        // Nav wrapper (if there are Nav children)
+                        let has_nav = if let Some(Value::Array(child_arr)) = borrowed.get("children") {
+                            child_arr.borrow().iter().any(|c| {
+                                if let Value::Struct { name: n, .. } = c { n == "Nav" } else { false }
+                            })
+                        } else { false };
+                        if has_nav {
+                            let mut nav_wrapper = std::collections::HashMap::new();
+                            nav_wrapper.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            nav_wrapper.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            nav_wrapper.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("header-nav".to_string()))
+                            ]))));
+                            nav_wrapper.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            nav_wrapper.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(nav_wrapper)) });
+                        }
+
+                        // Actions
+                        if borrowed.get("actions").is_some() {
+                            let mut actions_div = std::collections::HashMap::new();
+                            actions_div.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            actions_div.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            actions_div.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("header-actions".to_string()))
+                            ]))));
+                            actions_div.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            // Add placeholder children for buttons
+                            let mut action_children = vec![];
+                            if let Some(Value::Array(actions)) = borrowed.get("actions") {
+                                for _ in actions.borrow().iter() {
+                                    let mut btn = std::collections::HashMap::new();
+                                    btn.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                                    btn.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                    btn.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                    btn.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                    btn.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                    action_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(btn)) });
+                                }
+                            }
+                            actions_div.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(action_children))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(actions_div)) });
+                        }
+
+                        // Mobile menu toggle
+                        if matches!(borrowed.get("mobile_menu"), Some(Value::Bool(true))) {
+                            let mut toggle = std::collections::HashMap::new();
+                            toggle.insert("tag".to_string(), Value::String(Rc::new("button".to_string())));
+                            toggle.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            toggle.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("header-mobile-toggle".to_string()))
+                            ]))));
+                            let mut toggle_attrs = std::collections::HashMap::new();
+                            toggle_attrs.insert("aria-label".to_string(), Value::String(Rc::new("Toggle navigation menu".to_string())));
+                            toggle_attrs.insert("aria-expanded".to_string(), Value::String(Rc::new("false".to_string())));
+                            toggle.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(toggle_attrs))));
+                            toggle.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(toggle)) });
+                        }
+
+                        // Search
+                        if matches!(borrowed.get("search"), Some(Value::Bool(true))) {
+                            let mut search_div = std::collections::HashMap::new();
+                            search_div.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            search_div.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            search_div.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("header-search".to_string()))
+                            ]))));
+                            search_div.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            // Add input child
+                            let mut input_node = std::collections::HashMap::new();
+                            input_node.insert("tag".to_string(), Value::String(Rc::new("input".to_string())));
+                            input_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            input_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            let mut input_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(ph)) = borrowed.get("search_placeholder") {
+                                input_attrs.insert("placeholder".to_string(), Value::String(ph.clone()));
+                            }
+                            input_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(input_attrs))));
+                            input_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                            search_div.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(input_node)) }
+                            ]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(search_div)) });
+                        }
+
+                        // User menu
+                        if borrowed.get("user").is_some() {
+                            let mut user_menu = std::collections::HashMap::new();
+                            user_menu.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            user_menu.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            user_menu.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("header-user-menu".to_string()))
+                            ]))));
+                            user_menu.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            user_menu.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(user_menu)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Hero component
+                if name == "Hero" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("section".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("hero".to_string()))];
+
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("hero-{}", variant))));
+                        }
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("hero-{}", size))));
+                        }
+                        if let Some(Value::String(alignment)) = borrowed.get("alignment") {
+                            classes.push(Value::String(Rc::new(format!("hero-align-{}", alignment))));
+                        }
+                        if let Some(Value::String(theme)) = borrowed.get("theme") {
+                            classes.push(Value::String(Rc::new(format!("hero-{}", theme))));
+                        }
+                        if borrowed.get("background_image").is_some() {
+                            classes.push(Value::String(Rc::new("hero-with-background".to_string())));
+                        }
+
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        // Handle background image style
+                        if let Some(Value::String(bg)) = borrowed.get("background_image") {
+                            attrs_map.insert("style".to_string(), Value::String(Rc::new(format!("background-image: url({})", bg))));
+                        }
+                        if let Some(Value::String(gradient)) = borrowed.get("gradient") {
+                            attrs_map.insert("style".to_string(), Value::String(Rc::new(format!("background: {}", gradient))));
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children (title, subtitle, cta, overlay, video, image, etc.)
+                        let mut children = vec![];
+
+                        // Background overlay
+                        if borrowed.get("background_overlay").is_some() {
+                            let mut overlay = std::collections::HashMap::new();
+                            overlay.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            overlay.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            overlay.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-overlay".to_string()))
+                            ]))));
+                            overlay.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            overlay.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(overlay)) });
+                        }
+
+                        // Video background
+                        if let Some(Value::String(_video)) = borrowed.get("background_video") {
+                            let mut video_div = std::collections::HashMap::new();
+                            video_div.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            video_div.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            video_div.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-video".to_string()))
+                            ]))));
+                            video_div.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            // Add video element
+                            let mut video_el = std::collections::HashMap::new();
+                            video_el.insert("tag".to_string(), Value::String(Rc::new("video".to_string())));
+                            video_el.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            video_el.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            let mut video_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(poster)) = borrowed.get("video_poster") {
+                                video_attrs.insert("poster".to_string(), Value::String(poster.clone()));
+                            }
+                            video_attrs.insert("autoplay".to_string(), Value::Bool(true));
+                            video_attrs.insert("muted".to_string(), Value::Bool(true));
+                            video_attrs.insert("loop".to_string(), Value::Bool(true));
+                            video_el.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(video_attrs))));
+                            video_el.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                            video_div.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(video_el)) }
+                            ]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(video_div)) });
+                        }
+
+                        // Announcement
+                        if borrowed.get("announcement").is_some() {
+                            let mut announce = std::collections::HashMap::new();
+                            announce.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            announce.insert("text_content".to_string(), Value::String(Rc::new("New feature".to_string())));
+                            announce.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-announcement".to_string()))
+                            ]))));
+                            announce.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            announce.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(announce)) });
+                        }
+
+                        // Title
+                        if let Some(Value::String(title)) = borrowed.get("title") {
+                            let title_level = borrowed.get("title_level")
+                                .and_then(|v| if let Value::Int(n) = v { Some(*n) } else { None })
+                                .unwrap_or(2);
+                            let tag = format!("h{}", title_level);
+                            let mut title_node = std::collections::HashMap::new();
+                            title_node.insert("tag".to_string(), Value::String(Rc::new(tag)));
+                            title_node.insert("text_content".to_string(), Value::String(title.clone()));
+                            title_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-title".to_string()))
+                            ]))));
+                            title_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            title_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(title_node)) });
+                        }
+
+                        // Subtitle
+                        if let Some(Value::String(subtitle)) = borrowed.get("subtitle") {
+                            let mut subtitle_node = std::collections::HashMap::new();
+                            subtitle_node.insert("tag".to_string(), Value::String(Rc::new("p".to_string())));
+                            subtitle_node.insert("text_content".to_string(), Value::String(subtitle.clone()));
+                            subtitle_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-subtitle".to_string()))
+                            ]))));
+                            subtitle_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            subtitle_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(subtitle_node)) });
+                        }
+
+                        // CTA buttons
+                        if borrowed.get("cta_primary").is_some() || borrowed.get("cta_secondary").is_some() {
+                            let mut cta_div = std::collections::HashMap::new();
+                            cta_div.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            cta_div.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            cta_div.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-cta".to_string()))
+                            ]))));
+                            cta_div.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            let mut cta_children = vec![];
+                            if borrowed.get("cta_primary").is_some() {
+                                let mut btn = std::collections::HashMap::new();
+                                btn.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                                btn.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                btn.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                    Value::String(Rc::new("btn-primary".to_string()))
+                                ]))));
+                                btn.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                btn.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                cta_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(btn)) });
+                            }
+                            if borrowed.get("cta_secondary").is_some() {
+                                let mut btn = std::collections::HashMap::new();
+                                btn.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                                btn.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                btn.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                btn.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                btn.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                cta_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(btn)) });
+                            }
+                            cta_div.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(cta_children))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(cta_div)) });
+                        }
+
+                        // Image
+                        if borrowed.get("image").is_some() {
+                            let mut img_container = std::collections::HashMap::new();
+                            img_container.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            img_container.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            img_container.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-image".to_string()))
+                            ]))));
+                            img_container.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            let mut img = std::collections::HashMap::new();
+                            img.insert("tag".to_string(), Value::String(Rc::new("img".to_string())));
+                            img.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            img.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            let mut img_attrs = std::collections::HashMap::new();
+                            if let Some(v) = borrowed.get("image") { img_attrs.insert("src".to_string(), v.clone()); }
+                            if let Some(Value::String(alt)) = borrowed.get("image_alt") {
+                                img_attrs.insert("alt".to_string(), Value::String(alt.clone()));
+                            }
+                            img.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(img_attrs))));
+                            img.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                            img_container.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(img)) }
+                            ]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(img_container)) });
+                        }
+
+                        // Social proof
+                        if borrowed.get("social_proof").is_some() {
+                            let mut sp = std::collections::HashMap::new();
+                            sp.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            sp.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            sp.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-social-proof".to_string()))
+                            ]))));
+                            sp.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            sp.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(sp)) });
+                        }
+
+                        // Scroll indicator
+                        if matches!(borrowed.get("scroll_indicator"), Some(Value::Bool(true))) {
+                            let mut scroll = std::collections::HashMap::new();
+                            scroll.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            scroll.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            scroll.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("hero-scroll-indicator".to_string()))
+                            ]))));
+                            scroll.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            scroll.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(scroll)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Footer component
+                if name == "Footer" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("footer".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("footer".to_string()))];
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("footer-{}", variant))));
+                        }
+                        if let Some(Value::String(theme)) = borrowed.get("theme") {
+                            classes.push(Value::String(Rc::new(format!("footer-{}", theme))));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut footer_attrs: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(aria_label) = borrowed.get("aria_label") {
+                            footer_attrs.insert("aria-label".to_string(), aria_label.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(footer_attrs))));
+
+                        // Build children
+                        let mut children = vec![];
+
+                        // Logo - wrapper div containing img element
+                        if let Some(Value::String(logo_src)) = borrowed.get("logo") {
+                            let mut logo_wrapper = std::collections::HashMap::new();
+                            logo_wrapper.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            logo_wrapper.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            logo_wrapper.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("footer-logo".to_string()))
+                            ]))));
+                            logo_wrapper.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            // Create img element inside logo wrapper
+                            let mut img_node = std::collections::HashMap::new();
+                            img_node.insert("tag".to_string(), Value::String(Rc::new("img".to_string())));
+                            img_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            img_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            let mut img_attrs = std::collections::HashMap::new();
+                            img_attrs.insert("src".to_string(), Value::String(logo_src.clone()));
+                            if let Some(alt) = borrowed.get("logo_alt") {
+                                img_attrs.insert("alt".to_string(), alt.clone());
+                            }
+                            img_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(img_attrs))));
+                            img_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                            logo_wrapper.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(img_node)) }
+                            ]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(logo_wrapper)) });
+                        }
+
+                        // Tagline
+                        if let Some(Value::String(tagline)) = borrowed.get("tagline") {
+                            let mut tagline_node = std::collections::HashMap::new();
+                            tagline_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            tagline_node.insert("text_content".to_string(), Value::String(tagline.clone()));
+                            tagline_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("footer-tagline".to_string()))
+                            ]))));
+                            tagline_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            tagline_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(tagline_node)) });
+                        }
+
+                        // Copyright
+                        if let Some(Value::String(copyright)) = borrowed.get("copyright") {
+                            let mut copyright_node = std::collections::HashMap::new();
+                            copyright_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            copyright_node.insert("text_content".to_string(), Value::String(copyright.clone()));
+                            copyright_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("footer-copyright".to_string()))
+                            ]))));
+                            copyright_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            copyright_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(copyright_node)) });
+                        }
+
+                        // Social links
+                        if let Some(Value::Array(social_arr)) = borrowed.get("social") {
+                            let mut social_node = std::collections::HashMap::new();
+                            social_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            social_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            social_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("footer-social".to_string()))
+                            ]))));
+                            social_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            // Create individual social link children
+                            let mut social_children = vec![];
+                            for social_item in social_arr.borrow().iter() {
+                                // Handle both Map and Struct (anonymous record literals become Struct)
+                                let item_fields: Option<std::cell::Ref<'_, std::collections::HashMap<String, Value>>> = match social_item {
+                                    Value::Map(item_map) => Some(item_map.borrow()),
+                                    Value::Struct { fields: item_fields, .. } => Some(item_fields.borrow()),
+                                    _ => None,
+                                };
+
+                                if let Some(item_borrowed) = item_fields {
+                                    let mut link_node = std::collections::HashMap::new();
+                                    link_node.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                                    link_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                    link_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                        Value::String(Rc::new("footer-social-link".to_string()))
+                                    ]))));
+
+                                    let mut link_attrs = std::collections::HashMap::new();
+                                    if let Some(href) = item_borrowed.get("href") {
+                                        link_attrs.insert("href".to_string(), href.clone());
+                                    }
+                                    if let Some(label) = item_borrowed.get("label") {
+                                        link_attrs.insert("aria-label".to_string(), label.clone());
+                                    }
+                                    link_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(link_attrs))));
+                                    link_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                                    social_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(link_node)) });
+                                }
+                            }
+                            social_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(social_children))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(social_node)) });
+                        }
+
+                        // Legal links
+                        if let Some(Value::Array(legal_arr)) = borrowed.get("legal") {
+                            let mut legal_node = std::collections::HashMap::new();
+                            legal_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            legal_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            legal_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("footer-legal".to_string()))
+                            ]))));
+                            legal_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            let mut legal_children = vec![];
+                            for legal_item in legal_arr.borrow().iter() {
+                                let item_fields: Option<std::cell::Ref<'_, std::collections::HashMap<String, Value>>> = match legal_item {
+                                    Value::Map(item_map) => Some(item_map.borrow()),
+                                    Value::Struct { fields: item_fields, .. } => Some(item_fields.borrow()),
+                                    _ => None,
+                                };
+
+                                if let Some(item_borrowed) = item_fields {
+                                    let mut link_node = std::collections::HashMap::new();
+                                    link_node.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+
+                                    let label = item_borrowed.get("label")
+                                        .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                        .unwrap_or_default();
+                                    link_node.insert("text_content".to_string(), Value::String(Rc::new(label)));
+                                    link_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                        Value::String(Rc::new("footer-legal-link".to_string()))
+                                    ]))));
+
+                                    let mut link_attrs = std::collections::HashMap::new();
+                                    if let Some(href) = item_borrowed.get("href") {
+                                        link_attrs.insert("href".to_string(), href.clone());
+                                    }
+                                    link_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(link_attrs))));
+                                    link_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                                    legal_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(link_node)) });
+                                }
+                            }
+                            legal_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(legal_children))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(legal_node)) });
+                        }
+
+                        // Newsletter section
+                        if matches!(borrowed.get("newsletter"), Some(Value::Bool(true))) {
+                            let mut newsletter_node = std::collections::HashMap::new();
+                            newsletter_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            newsletter_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            newsletter_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("footer-newsletter".to_string()))
+                            ]))));
+                            newsletter_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            // Newsletter has a form child
+                            let mut form_node = std::collections::HashMap::new();
+                            form_node.insert("tag".to_string(), Value::String(Rc::new("form".to_string())));
+                            form_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            form_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            form_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            form_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                            newsletter_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(form_node)) }
+                            ]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(newsletter_node)) });
+                        }
+
+                        // App badges
+                        if let Some(Value::Array(badges_arr)) = borrowed.get("app_badges") {
+                            let mut badges_node = std::collections::HashMap::new();
+                            badges_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            badges_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            badges_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("footer-app-badges".to_string()))
+                            ]))));
+                            badges_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                            let mut badge_children = vec![];
+                            for badge_item in badges_arr.borrow().iter() {
+                                let item_fields: Option<std::cell::Ref<'_, std::collections::HashMap<String, Value>>> = match badge_item {
+                                    Value::Map(item_map) => Some(item_map.borrow()),
+                                    Value::Struct { fields: item_fields, .. } => Some(item_fields.borrow()),
+                                    _ => None,
+                                };
+
+                                if let Some(item_borrowed) = item_fields {
+                                    let mut badge_link = std::collections::HashMap::new();
+                                    badge_link.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                                    badge_link.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                    badge_link.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                        Value::String(Rc::new("footer-app-badge".to_string()))
+                                    ]))));
+
+                                    let mut badge_attrs = std::collections::HashMap::new();
+                                    if let Some(href) = item_borrowed.get("href") {
+                                        badge_attrs.insert("href".to_string(), href.clone());
+                                    }
+                                    if let Some(store) = item_borrowed.get("store") {
+                                        badge_attrs.insert("data-store".to_string(), store.clone());
+                                    }
+                                    badge_link.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(badge_attrs))));
+                                    badge_link.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                                    badge_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(badge_link)) });
+                                }
+                            }
+                            badges_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(badge_children))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(badges_node)) });
+                        }
+
+                        // Language selector
+                        if matches!(borrowed.get("language_selector"), Some(Value::Bool(true))) {
+                            let mut lang_node = std::collections::HashMap::new();
+                            lang_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            lang_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            lang_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("footer-language".to_string()))
+                            ]))));
+                            lang_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            lang_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(lang_node)) });
+                        }
+
+                        // Process FooterSection children
+                        if let Some(Value::Array(child_arr)) = borrowed.get("children") {
+                            for child in child_arr.borrow().iter() {
+                                if let Value::Struct { name: child_name, fields: child_fields } = child {
+                                    if child_name == "FooterSection" {
+                                        let child_borrowed = child_fields.borrow();
+                                        let mut section_node = std::collections::HashMap::new();
+                                        section_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                        section_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                        section_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                            Value::String(Rc::new("footer-section".to_string()))
+                                        ]))));
+                                        section_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                                        // Add title
+                                        let mut section_children = vec![];
+                                        if let Some(Value::String(title)) = child_borrowed.get("title") {
+                                            let mut title_node = std::collections::HashMap::new();
+                                            title_node.insert("tag".to_string(), Value::String(Rc::new("h3".to_string())));
+                                            title_node.insert("text_content".to_string(), Value::String(title.clone()));
+                                            title_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::String(Rc::new("footer-section-title".to_string()))
+                                            ]))));
+                                            title_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                            title_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                            section_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(title_node)) });
+                                        }
+                                        section_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(section_children))));
+                                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(section_node)) });
+                                    }
+                                }
+                            }
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Nav component
+                if name == "Nav" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("nav".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("nav".to_string()))];
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("nav-{}", variant))));
+                        }
+                        if let Some(Value::String(orientation)) = borrowed.get("orientation") {
+                            classes.push(Value::String(Rc::new(format!("nav-{}", orientation))));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs - nav has role="navigation" by default
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        attrs_map.insert("role".to_string(), Value::String(Rc::new("navigation".to_string())));
+                        if let Some(v) = borrowed.get("aria_label") {
+                            attrs_map.insert("aria-label".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children from items array
+                        let mut children = vec![];
+                        if let Some(Value::Array(items)) = borrowed.get("items") {
+                            for item in items.borrow().iter() {
+                                if let Value::Struct { name: item_name, fields: item_fields } = item {
+                                    let item_borrowed = item_fields.borrow();
+                                    let mut item_node = std::collections::HashMap::new();
+
+                                    if item_name == "NavItem" {
+                                        // Check if this is a section label (has section prop but no href)
+                                        let is_section = item_borrowed.get("section").is_some();
+
+                                        if is_section {
+                                            // Section label - renders as span with nav-section-label class
+                                            item_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                                            let section_name = item_borrowed.get("section")
+                                                .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                                .unwrap_or_else(|| Rc::new("".to_string()));
+                                            item_node.insert("text_content".to_string(), Value::String(section_name));
+                                            item_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                Value::String(Rc::new("nav-section-label".to_string()))
+                                            ]))));
+                                            item_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                            item_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(item_node)) });
+                                            continue;
+                                        }
+
+                                        // Regular nav item - renders as anchor
+                                        item_node.insert("tag".to_string(), Value::String(Rc::new("a".to_string())));
+                                        let label = item_borrowed.get("label")
+                                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                            .unwrap_or_else(|| Rc::new("".to_string()));
+                                        item_node.insert("text_content".to_string(), Value::String(label));
+
+                                        let mut item_classes = vec![Value::String(Rc::new("nav-item".to_string()))];
+                                        if matches!(item_borrowed.get("active"), Some(Value::Bool(true))) {
+                                            item_classes.push(Value::String(Rc::new("nav-item-active".to_string())));
+                                        }
+                                        item_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(item_classes))));
+
+                                        let mut item_attrs = std::collections::HashMap::new();
+                                        if let Some(v) = item_borrowed.get("href") {
+                                            item_attrs.insert("href".to_string(), v.clone());
+                                        }
+                                        if matches!(item_borrowed.get("active"), Some(Value::Bool(true))) {
+                                            item_attrs.insert("aria-current".to_string(), Value::String(Rc::new("page".to_string())));
+                                        }
+                                        if matches!(item_borrowed.get("disabled"), Some(Value::Bool(true))) {
+                                            item_attrs.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+                                        }
+                                        item_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(item_attrs))));
+
+                                        // Build NavItem children (icon, badge)
+                                        let mut nav_item_children = vec![];
+
+                                        // Icon child
+                                        if let Some(icon_val) = item_borrowed.get("icon") {
+                                            let icon_name = match icon_val {
+                                                Value::String(s) => s.to_string(),
+                                                _ => "".to_string(),
+                                            };
+                                            if !icon_name.is_empty() {
+                                                let mut icon_node = std::collections::HashMap::new();
+                                                icon_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                                                icon_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                                icon_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::String(Rc::new("nav-item-icon".to_string()))
+                                                ]))));
+                                                let mut icon_attrs = std::collections::HashMap::new();
+                                                icon_attrs.insert("data-icon".to_string(), Value::String(Rc::new(icon_name)));
+                                                icon_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(icon_attrs))));
+                                                icon_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                nav_item_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(icon_node)) });
+                                            }
+                                        }
+
+                                        // Badge child
+                                        if let Some(badge_val) = item_borrowed.get("badge") {
+                                            let badge_text = match badge_val {
+                                                Value::Int(n) => n.to_string(),
+                                                Value::String(s) => s.to_string(),
+                                                _ => "".to_string(),
+                                            };
+                                            if !badge_text.is_empty() {
+                                                let mut badge_node = std::collections::HashMap::new();
+                                                badge_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                                                badge_node.insert("text_content".to_string(), Value::String(Rc::new(badge_text)));
+                                                badge_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                    Value::String(Rc::new("nav-item-badge".to_string()))
+                                                ]))));
+                                                badge_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                                badge_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                nav_item_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(badge_node)) });
+                                            }
+                                        }
+
+                                        item_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(nav_item_children))));
+                                    } else if item_name == "NavDropdown" {
+                                        item_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                        item_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                        item_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                            Value::String(Rc::new("nav-dropdown".to_string()))
+                                        ]))));
+                                        item_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                                        // Add dropdown trigger and menu
+                                        let mut dropdown_children = vec![];
+
+                                        // Trigger
+                                        let mut trigger = std::collections::HashMap::new();
+                                        trigger.insert("tag".to_string(), Value::String(Rc::new("button".to_string())));
+                                        let trigger_label = item_borrowed.get("label")
+                                            .and_then(|v| if let Value::String(s) = v { Some(s.clone()) } else { None })
+                                            .unwrap_or_else(|| Rc::new("".to_string()));
+                                        trigger.insert("text_content".to_string(), Value::String(trigger_label));
+                                        trigger.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                            Value::String(Rc::new("nav-dropdown-trigger".to_string()))
+                                        ]))));
+                                        let mut trigger_attrs = std::collections::HashMap::new();
+                                        trigger_attrs.insert("aria-haspopup".to_string(), Value::String(Rc::new("true".to_string())));
+                                        trigger_attrs.insert("aria-expanded".to_string(), Value::String(Rc::new("false".to_string())));
+                                        trigger.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(trigger_attrs))));
+                                        trigger.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        dropdown_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(trigger)) });
+
+                                        // Menu
+                                        let mut menu = std::collections::HashMap::new();
+                                        menu.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                        menu.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                        menu.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                            Value::String(Rc::new("nav-dropdown-menu".to_string()))
+                                        ]))));
+                                        menu.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                        menu.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                        dropdown_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(menu)) });
+
+                                        item_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(dropdown_children))));
+                                    } else {
+                                        continue;
+                                    }
+
+                                    children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(item_node)) });
+                                }
+                            }
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Link component
+                if name == "Link" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Tag is "button" if as_button is true, otherwise "a"
+                        let tag = if matches!(borrowed.get("as_button"), Some(Value::Bool(true))) {
+                            "button"
+                        } else {
+                            "a"
+                        };
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
+
+                        // Extract text content from children
+                        let text = if let Some(Value::Array(children_arr)) = borrowed.get("children") {
+                            let children_borrowed = children_arr.borrow();
+                            children_borrowed.iter()
+                                .filter_map(|c| {
+                                    // Handle VNode children (from text() helper - VNode with tag="#text")
+                                    if let Value::Struct { name: cn, fields: cf } = c {
+                                        let cf_borrowed = cf.borrow();
+                                        // Check for VNode with tag="#text" (from text() helper)
+                                        if cn == "VNode" {
+                                            if let Some(Value::String(tag)) = cf_borrowed.get("tag") {
+                                                if tag.as_str() == "#text" {
+                                                    if let Some(Value::String(tc)) = cf_borrowed.get("text_content") {
+                                                        return Some(tc.to_string());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        // Check for TextNode struct
+                                        if cn == "text" || cn == "TextNode" {
+                                            if let Some(Value::String(s)) = cf_borrowed.get("content").or(cf_borrowed.get("text")) {
+                                                return Some(s.to_string());
+                                            }
+                                        }
+                                    }
+                                    // Handle direct string children
+                                    if let Value::String(s) = c {
+                                        return Some(s.to_string());
+                                    }
+                                    None
+                                })
+                                .collect::<Vec<_>>()
+                                .join("")
+                        } else {
+                            String::new()
+                        };
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new(text)));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("link".to_string()))];
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("link-{}", variant))));
+                        }
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("link-{}", size))));
+                        }
+                        if let Some(Value::String(color)) = borrowed.get("color") {
+                            classes.push(Value::String(Rc::new(format!("link-{}", color))));
+                        }
+                        if let Some(Value::String(underline)) = borrowed.get("underline") {
+                            classes.push(Value::String(Rc::new(format!("link-underline-{}", underline))));
+                        }
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("link-disabled".to_string())));
+                        }
+                        if matches!(borrowed.get("active"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("link-active".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+
+                        // If disabled, don't include href and add aria-disabled + tabindex
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) {
+                            attrs_map.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+                            attrs_map.insert("tabindex".to_string(), Value::String(Rc::new("0".to_string())));
+                            // No href when disabled - use nay (Bool(false)) for agent-native semantics
+                            attrs_map.insert("href".to_string(), Value::Bool(false));
+                        } else if let Some(v) = borrowed.get("href") {
+                            attrs_map.insert("href".to_string(), v.clone());
+                        }
+
+                        // External links get target="_blank" and rel="noopener noreferrer"
+                        if matches!(borrowed.get("external"), Some(Value::Bool(true))) {
+                            attrs_map.insert("target".to_string(), Value::String(Rc::new("_blank".to_string())));
+                            attrs_map.insert("rel".to_string(), Value::String(Rc::new("noopener noreferrer".to_string())));
+                        } else {
+                            if let Some(v) = borrowed.get("target") {
+                                attrs_map.insert("target".to_string(), v.clone());
+                            }
+                            if let Some(v) = borrowed.get("rel") {
+                                attrs_map.insert("rel".to_string(), v.clone());
+                            }
+                        }
+
+                        if let Some(v) = borrowed.get("aria_label") {
+                            attrs_map.insert("aria-label".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("download") {
+                            attrs_map.insert("download".to_string(), v.clone());
+                        }
+                        if matches!(borrowed.get("active"), Some(Value::Bool(true))) {
+                            attrs_map.insert("aria-current".to_string(), Value::String(Rc::new("page".to_string())));
+                        }
+
+                        // If as_button, add type="button"
+                        if matches!(borrowed.get("as_button"), Some(Value::Bool(true))) {
+                            attrs_map.insert("type".to_string(), Value::String(Rc::new("button".to_string())));
+                        }
+
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children - add icon if present
+                        let mut children = vec![];
+                        if borrowed.get("icon").is_some() {
+                            let mut icon_node = std::collections::HashMap::new();
+                            icon_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            icon_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            icon_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("link-icon".to_string()))
+                            ]))));
+                            icon_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            icon_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(icon_node)) });
+                        }
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Avatar component
+                if name == "Avatar" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Container is a div
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+
+                        // Text content from initials
+                        let text = if borrowed.get("src").is_none() || matches!(borrowed.get("src"), Some(Value::String(s)) if s.is_empty()) {
+                            if let Some(Value::String(name_str)) = borrowed.get("name") {
+                                // Generate initials from name
+                                let initials: String = name_str.split_whitespace()
+                                    .filter_map(|word| word.chars().next())
+                                    .take(2)
+                                    .collect::<String>()
+                                    .to_uppercase();
+                                initials
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new(text)));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("avatar".to_string()))];
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("avatar-{}", size))));
+                        }
+                        if let Some(Value::String(shape)) = borrowed.get("shape") {
+                            classes.push(Value::String(Rc::new(format!("avatar-{}", shape))));
+                        }
+                        if let Some(Value::String(color)) = borrowed.get("color") {
+                            if color.as_str() == "auto" {
+                                classes.push(Value::String(Rc::new("avatar-color-auto".to_string())));
+                            } else {
+                                classes.push(Value::String(Rc::new(format!("avatar-{}", color))));
+                            }
+                        }
+                        if matches!(borrowed.get("loading"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("avatar-loading".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs - custom size style
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(Value::Int(custom_size)) = borrowed.get("size") {
+                            attrs_map.insert("style".to_string(), Value::String(Rc::new(format!("width: {}px; height: {}px;", custom_size, custom_size))));
+                        }
+                        // data-fallback attr for error handling
+                        if borrowed.get("name").is_some() {
+                            attrs_map.insert("data-fallback".to_string(), Value::String(Rc::new("initials".to_string())));
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children
+                        let mut children = vec![];
+
+                        // Image child if src is provided and not empty
+                        let has_src = matches!(borrowed.get("src"), Some(Value::String(s)) if !s.is_empty());
+                        if has_src {
+                            let mut img_node = std::collections::HashMap::new();
+                            img_node.insert("tag".to_string(), Value::String(Rc::new("img".to_string())));
+                            img_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            img_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                            let mut img_attrs = std::collections::HashMap::new();
+                            if let Some(v) = borrowed.get("src") {
+                                img_attrs.insert("src".to_string(), v.clone());
+                            }
+                            if let Some(v) = borrowed.get("alt") {
+                                img_attrs.insert("alt".to_string(), v.clone());
+                            }
+                            img_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(img_attrs))));
+                            img_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(img_node)) });
+                        } else if borrowed.get("name").is_some() {
+                            // Show initials fallback
+                            let mut initials_node = std::collections::HashMap::new();
+                            initials_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            initials_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            initials_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("avatar-initials".to_string()))
+                            ]))));
+                            initials_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            initials_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(initials_node)) });
+                        } else if borrowed.get("icon").is_some() {
+                            // Show icon fallback
+                            let mut icon_node = std::collections::HashMap::new();
+                            icon_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            icon_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            icon_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("avatar-icon".to_string()))
+                            ]))));
+                            icon_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            icon_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(icon_node)) });
+                        }
+
+                        // Loading skeleton
+                        if matches!(borrowed.get("loading"), Some(Value::Bool(true))) {
+                            let mut skeleton_node = std::collections::HashMap::new();
+                            skeleton_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            skeleton_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            skeleton_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("avatar-skeleton".to_string()))
+                            ]))));
+                            skeleton_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            skeleton_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(skeleton_node)) });
+                        }
+
+                        // Status indicator
+                        if let Some(Value::String(status)) = borrowed.get("status") {
+                            let mut status_classes = vec![
+                                Value::String(Rc::new("avatar-status".to_string())),
+                                Value::String(Rc::new(format!("avatar-status-{}", status))),
+                            ];
+                            if let Some(Value::String(position)) = borrowed.get("status_position") {
+                                status_classes.push(Value::String(Rc::new(format!("avatar-status-{}", position))));
+                            }
+
+                            let mut status_node = std::collections::HashMap::new();
+                            status_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            status_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            status_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(status_classes))));
+                            status_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            status_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(status_node)) });
+                        }
+
+                        // Badge
+                        if let Some(badge_val) = borrowed.get("badge") {
+                            let badge_text = match badge_val {
+                                Value::Int(n) => n.to_string(),
+                                Value::String(s) => s.to_string(),
+                                _ => String::new(),
+                            };
+
+                            let mut badge_node = std::collections::HashMap::new();
+                            badge_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            badge_node.insert("text_content".to_string(), Value::String(Rc::new(badge_text)));
+                            badge_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("avatar-badge".to_string()))
+                            ]))));
+                            badge_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            badge_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(badge_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // AvatarGroup component
+                if name == "AvatarGroup" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("avatar-group".to_string()))];
+                        if let Some(Value::String(spacing)) = borrowed.get("spacing") {
+                            classes.push(Value::String(Rc::new(format!("avatar-group-{}", spacing))));
+                        }
                         vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
                         vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                        // Process children with max limit
+                        let max = borrowed.get("max")
+                            .and_then(|v| if let Value::Int(n) = v { Some(*n as usize) } else { None })
+                            .unwrap_or(usize::MAX);
+
+                        let mut children = vec![];
+                        let mut total_count = 0;
+
+                        if let Some(Value::Array(child_arr)) = borrowed.get("children") {
+                            total_count = child_arr.borrow().len();
+                            for (i, child) in child_arr.borrow().iter().enumerate() {
+                                if i >= max {
+                                    break;
+                                }
+                                // Render each avatar child
+                                if let Value::Struct { name: child_name, fields: child_fields } = child {
+                                    if child_name == "Avatar" {
+                                        let child_borrowed = child_fields.borrow();
+                                        let mut avatar_vnode = std::collections::HashMap::new();
+                                        avatar_vnode.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                        avatar_vnode.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                        avatar_vnode.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                            Value::String(Rc::new("avatar".to_string()))
+                                        ]))));
+                                        avatar_vnode.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                                        // Add img child
+                                        let mut img_children = vec![];
+                                        if let Some(src) = child_borrowed.get("src") {
+                                            let mut img_node = std::collections::HashMap::new();
+                                            img_node.insert("tag".to_string(), Value::String(Rc::new("img".to_string())));
+                                            img_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                            img_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                            let mut img_attrs = std::collections::HashMap::new();
+                                            img_attrs.insert("src".to_string(), src.clone());
+                                            if let Some(alt) = child_borrowed.get("alt").or(child_borrowed.get("name")) {
+                                                img_attrs.insert("alt".to_string(), alt.clone());
+                                            }
+                                            img_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(img_attrs))));
+                                            img_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                            img_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(img_node)) });
+                                        }
+                                        avatar_vnode.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(img_children))));
+
+                                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(avatar_vnode)) });
+                                    }
+                                }
+                            }
+                        }
+
+                        // Add overflow indicator if needed
+                        if total_count > max {
+                            let overflow_count = total_count - max;
+                            let mut overflow_node = std::collections::HashMap::new();
+                            overflow_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            overflow_node.insert("text_content".to_string(), Value::String(Rc::new(format!("+{}", overflow_count))));
+                            overflow_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("avatar".to_string())),
+                                Value::String(Rc::new("avatar-overflow".to_string())),
+                            ]))));
+                            overflow_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            overflow_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(overflow_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Checkbox component - Agent-native wrapper pattern
+                // Renders: div.checkbox-field > [input.checkbox, label, ?description, ?error]
+                if name == "Checkbox" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Wrapper div
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build wrapper classes
+                        let mut classes = vec![Value::String(Rc::new("checkbox-field".to_string()))];
+                        if let Some(Value::String(label_pos)) = borrowed.get("label_position") {
+                            classes.push(Value::String(Rc::new(format!("checkbox-label-{}", label_pos))));
+                        }
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) {
+                            classes.push(Value::String(Rc::new("checkbox-disabled".to_string())));
+                        }
+                        if borrowed.get("error").is_some() {
+                            classes.push(Value::String(Rc::new("checkbox-error".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Wrapper attrs - include id for easy access
+                        let mut wrapper_attrs: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("id") {
+                            wrapper_attrs.insert("data-field-id".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(wrapper_attrs))));
+
+                        // Build children
+                        let mut children = vec![];
+
+                        // 1. Input element
+                        let mut input_node = std::collections::HashMap::new();
+                        input_node.insert("tag".to_string(), Value::String(Rc::new("input".to_string())));
+                        input_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        let mut input_classes = vec![Value::String(Rc::new("checkbox".to_string()))];
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            input_classes.push(Value::String(Rc::new(format!("checkbox-{}", size))));
+                        }
+                        if matches!(borrowed.get("indeterminate"), Some(Value::Bool(true))) {
+                            input_classes.push(Value::String(Rc::new("checkbox-indeterminate".to_string())));
+                        }
+                        input_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(input_classes))));
+
+                        let mut input_attrs = std::collections::HashMap::new();
+                        input_attrs.insert("type".to_string(), Value::String(Rc::new("checkbox".to_string())));
+                        if let Some(v) = borrowed.get("name") {
+                            input_attrs.insert("name".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("id") {
+                            input_attrs.insert("id".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("value") {
+                            input_attrs.insert("value".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("checked") {
+                            input_attrs.insert("checked".to_string(), v.clone());
+                        }
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) {
+                            input_attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+                        if matches!(borrowed.get("indeterminate"), Some(Value::Bool(true))) {
+                            input_attrs.insert("data-indeterminate".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if borrowed.get("error").is_some() {
+                            input_attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if let Some(v) = borrowed.get("aria_label") {
+                            input_attrs.insert("aria-label".to_string(), v.clone());
+                        }
+                        if borrowed.get("description").is_some() {
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                input_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+                            }
+                        }
+                        input_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(input_attrs))));
+                        input_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(input_node)) });
+
+                        // 2. Label element (if label prop provided)
+                        if let Some(Value::String(label_text)) = borrowed.get("label") {
+                            let mut label_node = std::collections::HashMap::new();
+                            label_node.insert("tag".to_string(), Value::String(Rc::new("label".to_string())));
+                            label_node.insert("text_content".to_string(), Value::String(label_text.clone()));
+                            label_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("checkbox-label".to_string()))
+                            ]))));
+
+                            let mut label_attrs = std::collections::HashMap::new();
+                            if let Some(v) = borrowed.get("id") {
+                                label_attrs.insert("for".to_string(), v.clone());
+                            }
+                            label_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(label_attrs))));
+                            label_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(label_node)) });
+                        }
+
+                        // 3. Description element (if description prop provided)
+                        if let Some(Value::String(desc_text)) = borrowed.get("description") {
+                            let mut desc_node = std::collections::HashMap::new();
+                            desc_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            desc_node.insert("text_content".to_string(), Value::String(desc_text.clone()));
+                            desc_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("checkbox-description".to_string()))
+                            ]))));
+
+                            let mut desc_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                desc_attrs.insert("id".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+                            }
+                            desc_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(desc_attrs))));
+                            desc_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(desc_node)) });
+                        }
+
+                        // 4. Error message element (if error prop provided)
+                        if let Some(Value::String(error_text)) = borrowed.get("error") {
+                            let mut error_node = std::collections::HashMap::new();
+                            error_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            error_node.insert("text_content".to_string(), Value::String(error_text.clone()));
+                            error_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("checkbox-error-message".to_string()))
+                            ]))));
+                            error_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            error_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(error_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // CheckboxGroup component
+                if name == "CheckboxGroup" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        let classes = vec![Value::String(Rc::new("checkbox-group".to_string()))];
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        attrs_map.insert("role".to_string(), Value::String(Rc::new("group".to_string())));
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Process options to create checkbox children
+                        let mut children = vec![];
+                        let selected_values: Vec<String> = borrowed.get("value")
+                            .and_then(|v| if let Value::Array(arr) = v {
+                                Some(arr.borrow().iter()
+                                    .filter_map(|x| if let Value::String(s) = x { Some(s.to_string()) } else { None })
+                                    .collect())
+                            } else { None })
+                            .unwrap_or_default();
+
+                        if let Some(Value::Array(options)) = borrowed.get("options") {
+                            for opt in options.borrow().iter() {
+                                // Handle both Map and Struct (Record) for anonymous struct literals
+                                let opt_fields: Option<std::cell::Ref<'_, std::collections::HashMap<String, Value>>> = match opt {
+                                    Value::Map(m) => Some(m.borrow()),
+                                    Value::Struct { fields, .. } => Some(fields.borrow()),
+                                    _ => None,
+                                };
+
+                                if let Some(opt_borrowed) = opt_fields {
+                                    let opt_value = opt_borrowed.get("value")
+                                        .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                        .unwrap_or_default();
+
+                                    let is_checked = selected_values.contains(&opt_value);
+
+                                    let mut checkbox_node = std::collections::HashMap::new();
+                                    checkbox_node.insert("tag".to_string(), Value::String(Rc::new("input".to_string())));
+                                    checkbox_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                    checkbox_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                        Value::String(Rc::new("checkbox".to_string()))
+                                    ]))));
+
+                                    let mut cb_attrs = std::collections::HashMap::new();
+                                    cb_attrs.insert("type".to_string(), Value::String(Rc::new("checkbox".to_string())));
+                                    cb_attrs.insert("value".to_string(), Value::String(Rc::new(opt_value)));
+                                    cb_attrs.insert("checked".to_string(), Value::Bool(is_checked));
+                                    checkbox_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(cb_attrs))));
+                                    checkbox_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                                    children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(checkbox_node)) });
+                                }
+                            }
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Textarea component - Agent-native wrapper pattern
+                // Renders: div.textarea-field > [textarea, label, ?description, ?error]
+                if name == "Textarea" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Wrapper div
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Wrapper classes
+                        let mut wrapper_classes = vec![Value::String(Rc::new("textarea-field".to_string()))];
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) {
+                            wrapper_classes.push(Value::String(Rc::new("textarea-disabled".to_string())));
+                        }
+                        if borrowed.get("error").is_some() {
+                            wrapper_classes.push(Value::String(Rc::new("textarea-has-error".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(wrapper_classes))));
+
+                        // Wrapper attrs
+                        let mut wrapper_attrs: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("id") {
+                            wrapper_attrs.insert("data-field-id".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(wrapper_attrs))));
+
+                        // Build children
+                        let mut children = vec![];
+
+                        // 1. Textarea element
+                        let mut textarea_node = std::collections::HashMap::new();
+                        textarea_node.insert("tag".to_string(), Value::String(Rc::new("textarea".to_string())));
+
+                        // Text content from value
+                        let text = borrowed.get("value")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                            .unwrap_or_default();
+                        textarea_node.insert("text_content".to_string(), Value::String(Rc::new(text)));
+
+                        // Textarea classes
+                        let mut textarea_classes = vec![Value::String(Rc::new("textarea".to_string()))];
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            textarea_classes.push(Value::String(Rc::new(format!("textarea-{}", size))));
+                        }
+                        if let Some(Value::String(resize)) = borrowed.get("resize") {
+                            textarea_classes.push(Value::String(Rc::new(format!("textarea-resize-{}", resize))));
+                        }
+                        if matches!(borrowed.get("auto_resize"), Some(Value::Bool(true))) {
+                            textarea_classes.push(Value::String(Rc::new("textarea-auto-resize".to_string())));
+                        }
+                        if borrowed.get("error").is_some() {
+                            textarea_classes.push(Value::String(Rc::new("textarea-error".to_string())));
+                        }
+                        textarea_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(textarea_classes))));
+
+                        // Textarea attrs
+                        let mut textarea_attrs = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("name") {
+                            textarea_attrs.insert("name".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("id") {
+                            textarea_attrs.insert("id".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("placeholder") {
+                            textarea_attrs.insert("placeholder".to_string(), v.clone());
+                        }
+                        if let Some(Value::Int(rows)) = borrowed.get("rows") {
+                            textarea_attrs.insert("rows".to_string(), Value::String(Rc::new(rows.to_string())));
+                        }
+                        if let Some(Value::Int(max_len)) = borrowed.get("max_length") {
+                            textarea_attrs.insert("maxlength".to_string(), Value::String(Rc::new(max_len.to_string())));
+                        }
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) {
+                            textarea_attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+                        if matches!(borrowed.get("readonly"), Some(Value::Bool(true))) {
+                            textarea_attrs.insert("readonly".to_string(), Value::Bool(true));
+                        }
+                        if matches!(borrowed.get("required"), Some(Value::Bool(true))) {
+                            textarea_attrs.insert("required".to_string(), Value::Bool(true));
+                            textarea_attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if borrowed.get("error").is_some() {
+                            textarea_attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if let Some(v) = borrowed.get("aria_label") {
+                            textarea_attrs.insert("aria-label".to_string(), v.clone());
+                        }
+                        if borrowed.get("description").is_some() {
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                textarea_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+                            }
+                        }
+                        // Auto-resize data attrs
+                        if let Some(Value::Int(min_rows)) = borrowed.get("min_rows") {
+                            textarea_attrs.insert("data-min-rows".to_string(), Value::String(Rc::new(min_rows.to_string())));
+                        }
+                        if let Some(Value::Int(max_rows)) = borrowed.get("max_rows") {
+                            textarea_attrs.insert("data-max-rows".to_string(), Value::String(Rc::new(max_rows.to_string())));
+                        }
+                        textarea_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(textarea_attrs))));
+                        textarea_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(textarea_node)) });
+
+                        // 2. Label element (if label prop provided)
+                        if let Some(Value::String(label_text)) = borrowed.get("label") {
+                            let mut label_node = std::collections::HashMap::new();
+                            label_node.insert("tag".to_string(), Value::String(Rc::new("label".to_string())));
+                            label_node.insert("text_content".to_string(), Value::String(label_text.clone()));
+                            label_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("textarea-label".to_string()))
+                            ]))));
+
+                            let mut label_attrs = std::collections::HashMap::new();
+                            if let Some(v) = borrowed.get("id") {
+                                label_attrs.insert("for".to_string(), v.clone());
+                            }
+                            label_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(label_attrs))));
+                            label_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(label_node)) });
+                        }
+
+                        // 3. Description element (if description prop provided)
+                        if let Some(Value::String(desc_text)) = borrowed.get("description") {
+                            let mut desc_node = std::collections::HashMap::new();
+                            desc_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            desc_node.insert("text_content".to_string(), Value::String(desc_text.clone()));
+                            desc_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("textarea-description".to_string()))
+                            ]))));
+
+                            let mut desc_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                desc_attrs.insert("id".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+                            }
+                            desc_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(desc_attrs))));
+                            desc_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(desc_node)) });
+                        }
+
+                        // 4. Error message element (if error prop provided)
+                        if let Some(Value::String(error_text)) = borrowed.get("error") {
+                            let mut error_node = std::collections::HashMap::new();
+                            error_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            error_node.insert("text_content".to_string(), Value::String(error_text.clone()));
+                            error_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("textarea-error-message".to_string()))
+                            ]))));
+                            error_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            error_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(error_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Radio component - Agent-native wrapper pattern
+                // Renders: div.radio-field > [input, label, ?description]
+                if name == "Radio" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Wrapper div
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Wrapper classes
+                        let mut wrapper_classes = vec![Value::String(Rc::new("radio-field".to_string()))];
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) {
+                            wrapper_classes.push(Value::String(Rc::new("radio-disabled".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(wrapper_classes))));
+
+                        // Wrapper attrs
+                        let mut wrapper_attrs: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("id") {
+                            wrapper_attrs.insert("data-field-id".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(wrapper_attrs))));
+
+                        // Build children
+                        let mut children = vec![];
+
+                        // 1. Input element
+                        let mut input_node = std::collections::HashMap::new();
+                        input_node.insert("tag".to_string(), Value::String(Rc::new("input".to_string())));
+                        input_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        let mut input_classes = vec![Value::String(Rc::new("radio".to_string()))];
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            input_classes.push(Value::String(Rc::new(format!("radio-{}", size))));
+                        }
+                        input_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(input_classes))));
+
+                        let mut input_attrs = std::collections::HashMap::new();
+                        input_attrs.insert("type".to_string(), Value::String(Rc::new("radio".to_string())));
+                        if let Some(v) = borrowed.get("name") {
+                            input_attrs.insert("name".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("value") {
+                            input_attrs.insert("value".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("id") {
+                            input_attrs.insert("id".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("checked") {
+                            input_attrs.insert("checked".to_string(), v.clone());
+                        }
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) {
+                            input_attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+                        if let Some(v) = borrowed.get("aria_label") {
+                            input_attrs.insert("aria-label".to_string(), v.clone());
+                        }
+                        if borrowed.get("description").is_some() {
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                input_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+                            }
+                        }
+                        input_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(input_attrs))));
+                        input_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(input_node)) });
+
+                        // 2. Label element (if label prop provided)
+                        if let Some(Value::String(label_text)) = borrowed.get("label") {
+                            let mut label_node = std::collections::HashMap::new();
+                            label_node.insert("tag".to_string(), Value::String(Rc::new("label".to_string())));
+                            label_node.insert("text_content".to_string(), Value::String(label_text.clone()));
+                            label_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("radio-label".to_string()))
+                            ]))));
+
+                            let mut label_attrs = std::collections::HashMap::new();
+                            if let Some(v) = borrowed.get("id") {
+                                label_attrs.insert("for".to_string(), v.clone());
+                            }
+                            label_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(label_attrs))));
+                            label_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(label_node)) });
+                        }
+
+                        // 3. Description element (if description prop provided)
+                        if let Some(Value::String(desc_text)) = borrowed.get("description") {
+                            let mut desc_node = std::collections::HashMap::new();
+                            desc_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            desc_node.insert("text_content".to_string(), Value::String(desc_text.clone()));
+                            desc_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("radio-description".to_string()))
+                            ]))));
+
+                            let mut desc_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                desc_attrs.insert("id".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+                            }
+                            desc_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(desc_attrs))));
+                            desc_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(desc_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // RadioGroup component
+                if name == "RadioGroup" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("radio-group".to_string()))];
+                        if let Some(Value::String(orientation)) = borrowed.get("orientation") {
+                            classes.push(Value::String(Rc::new(format!("radio-group-{}", orientation))));
+                        }
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("radio-group-{}", variant))));
+                        }
+                        if borrowed.get("error").is_some() {
+                            classes.push(Value::String(Rc::new("radio-group-error".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        attrs_map.insert("role".to_string(), Value::String(Rc::new("radiogroup".to_string())));
+                        if let Some(v) = borrowed.get("label") {
+                            attrs_map.insert("aria-label".to_string(), v.clone());
+                        }
+                        if matches!(borrowed.get("required"), Some(Value::Bool(true))) {
+                            attrs_map.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if borrowed.get("error").is_some() {
+                            attrs_map.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Process options to create radio children
+                        let mut children = vec![];
+                        let selected_value = borrowed.get("value")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                            .unwrap_or_default();
+                        let is_required = matches!(borrowed.get("required"), Some(Value::Bool(true)));
+                        let group_name = borrowed.get("name")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                            .unwrap_or_default();
+                        let is_card_variant = matches!(borrowed.get("variant"), Some(Value::String(s)) if s.as_str() == "card");
+
+                        if let Some(Value::Array(options)) = borrowed.get("options") {
+                            for opt in options.borrow().iter() {
+                                // Handle both Map and Struct (Record) for anonymous struct literals
+                                let opt_fields: Option<std::cell::Ref<'_, std::collections::HashMap<String, Value>>> = match opt {
+                                    Value::Map(m) => Some(m.borrow()),
+                                    Value::Struct { fields, .. } => Some(fields.borrow()),
+                                    _ => None,
+                                };
+
+                                if let Some(opt_borrowed) = opt_fields {
+                                    let opt_value = opt_borrowed.get("value")
+                                        .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                        .unwrap_or_default();
+
+                                    let is_checked = opt_value == selected_value;
+                                    let is_opt_disabled = matches!(opt_borrowed.get("disabled"), Some(Value::Bool(true)));
+
+                                    let mut radio_node = std::collections::HashMap::new();
+                                    radio_node.insert("tag".to_string(), Value::String(Rc::new("input".to_string())));
+                                    radio_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                                    let radio_class = if is_card_variant { "radio-card" } else { "radio" };
+                                    radio_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                        Value::String(Rc::new(radio_class.to_string()))
+                                    ]))));
+
+                                    let mut radio_attrs = std::collections::HashMap::new();
+                                    radio_attrs.insert("type".to_string(), Value::String(Rc::new("radio".to_string())));
+                                    radio_attrs.insert("name".to_string(), Value::String(Rc::new(group_name.clone())));
+                                    radio_attrs.insert("value".to_string(), Value::String(Rc::new(opt_value)));
+                                    radio_attrs.insert("checked".to_string(), Value::Bool(is_checked));
+                                    if is_opt_disabled {
+                                        radio_attrs.insert("disabled".to_string(), Value::Bool(true));
+                                    }
+                                    if is_required {
+                                        radio_attrs.insert("required".to_string(), Value::Bool(true));
+                                    }
+                                    radio_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(radio_attrs))));
+                                    radio_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                                    children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(radio_node)) });
+                                }
+                            }
+                        }
+
+                        // Add error message child if error present
+                        if let Some(Value::String(error_msg)) = borrowed.get("error") {
+                            let mut error_node = std::collections::HashMap::new();
+                            error_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            error_node.insert("text_content".to_string(), Value::String(error_msg.clone()));
+                            error_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("radio-group-error-message".to_string()))
+                            ]))));
+                            error_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            error_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(error_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Switch component - Agent-native wrapper pattern
+                // Renders: div.switch-field > [input.switch, label, ?description]
+                if name == "Switch" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        // Wrapper div
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Wrapper classes
+                        let mut wrapper_classes = vec![Value::String(Rc::new("switch-field".to_string()))];
+                        if let Some(Value::String(label_pos)) = borrowed.get("label_position") {
+                            wrapper_classes.push(Value::String(Rc::new(format!("switch-label-{}", label_pos))));
+                        }
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) ||
+                           matches!(borrowed.get("loading"), Some(Value::Bool(true))) {
+                            wrapper_classes.push(Value::String(Rc::new("switch-disabled".to_string())));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(wrapper_classes))));
+
+                        // Wrapper attrs
+                        let mut wrapper_attrs: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("id") {
+                            wrapper_attrs.insert("data-field-id".to_string(), v.clone());
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(wrapper_attrs))));
+
+                        // Build children
+                        let mut children = vec![];
+
+                        // 1. Input element (switch)
+                        let mut input_node = std::collections::HashMap::new();
+                        input_node.insert("tag".to_string(), Value::String(Rc::new("input".to_string())));
+                        input_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        let mut input_classes = vec![Value::String(Rc::new("switch".to_string()))];
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            input_classes.push(Value::String(Rc::new(format!("switch-{}", size))));
+                        }
+                        if let Some(Value::String(color)) = borrowed.get("color") {
+                            input_classes.push(Value::String(Rc::new(format!("switch-{}", color))));
+                        }
+                        if matches!(borrowed.get("loading"), Some(Value::Bool(true))) {
+                            input_classes.push(Value::String(Rc::new("switch-loading".to_string())));
+                        }
+                        input_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(input_classes))));
+
+                        let mut input_attrs = std::collections::HashMap::new();
+                        input_attrs.insert("type".to_string(), Value::String(Rc::new("checkbox".to_string())));
+                        input_attrs.insert("role".to_string(), Value::String(Rc::new("switch".to_string())));
+                        if let Some(v) = borrowed.get("name") {
+                            input_attrs.insert("name".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("id") {
+                            input_attrs.insert("id".to_string(), v.clone());
+                        }
+                        if let Some(v) = borrowed.get("checked") {
+                            input_attrs.insert("checked".to_string(), v.clone());
+                            if matches!(v, Value::Bool(true)) {
+                                input_attrs.insert("aria-checked".to_string(), Value::String(Rc::new("true".to_string())));
+                            }
+                        }
+                        if matches!(borrowed.get("disabled"), Some(Value::Bool(true))) ||
+                           matches!(borrowed.get("loading"), Some(Value::Bool(true))) {
+                            input_attrs.insert("disabled".to_string(), Value::Bool(true));
+                        }
+                        if matches!(borrowed.get("required"), Some(Value::Bool(true))) {
+                            input_attrs.insert("required".to_string(), Value::Bool(true));
+                            input_attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+                        if let Some(v) = borrowed.get("aria_label") {
+                            input_attrs.insert("aria-label".to_string(), v.clone());
+                        }
+                        if borrowed.get("description").is_some() {
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                input_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+                            }
+                        }
+                        input_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(input_attrs))));
+
+                        // Input children (on/off labels, icons, spinner)
+                        let mut input_children = vec![];
+
+                        // On/off labels
+                        if borrowed.get("on_label").is_some() {
+                            let mut on_label = std::collections::HashMap::new();
+                            on_label.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            on_label.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            on_label.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("switch-label-on".to_string()))
+                            ]))));
+                            on_label.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            on_label.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            input_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(on_label)) });
+                        }
+                        if borrowed.get("off_label").is_some() {
+                            let mut off_label = std::collections::HashMap::new();
+                            off_label.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            off_label.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            off_label.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("switch-label-off".to_string()))
+                            ]))));
+                            off_label.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            off_label.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            input_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(off_label)) });
+                        }
+
+                        // On/off icons
+                        if borrowed.get("on_icon").is_some() {
+                            let mut on_icon = std::collections::HashMap::new();
+                            on_icon.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            on_icon.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            on_icon.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("switch-icon-on".to_string()))
+                            ]))));
+                            on_icon.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            on_icon.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            input_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(on_icon)) });
+                        }
+                        if borrowed.get("off_icon").is_some() {
+                            let mut off_icon = std::collections::HashMap::new();
+                            off_icon.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            off_icon.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            off_icon.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("switch-icon-off".to_string()))
+                            ]))));
+                            off_icon.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            off_icon.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            input_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(off_icon)) });
+                        }
+
+                        // Loading spinner
+                        if matches!(borrowed.get("loading"), Some(Value::Bool(true))) {
+                            let mut spinner = std::collections::HashMap::new();
+                            spinner.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            spinner.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                            spinner.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("switch-spinner".to_string()))
+                            ]))));
+                            spinner.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                            spinner.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            input_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(spinner)) });
+                        }
+
+                        input_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(input_children))));
+                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(input_node)) });
+
+                        // 2. Label element (if label prop provided)
+                        if let Some(Value::String(label_text)) = borrowed.get("label") {
+                            let mut label_node = std::collections::HashMap::new();
+                            label_node.insert("tag".to_string(), Value::String(Rc::new("label".to_string())));
+                            label_node.insert("text_content".to_string(), Value::String(label_text.clone()));
+                            label_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("switch-label".to_string()))
+                            ]))));
+
+                            let mut label_attrs = std::collections::HashMap::new();
+                            if let Some(v) = borrowed.get("id") {
+                                label_attrs.insert("for".to_string(), v.clone());
+                            }
+                            label_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(label_attrs))));
+                            label_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(label_node)) });
+                        }
+
+                        // 3. Description element (if description prop provided)
+                        if let Some(Value::String(desc_text)) = borrowed.get("description") {
+                            let mut desc_node = std::collections::HashMap::new();
+                            desc_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                            desc_node.insert("text_content".to_string(), Value::String(desc_text.clone()));
+                            desc_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                Value::String(Rc::new("switch-description".to_string()))
+                            ]))));
+
+                            let mut desc_attrs = std::collections::HashMap::new();
+                            if let Some(Value::String(id)) = borrowed.get("id") {
+                                desc_attrs.insert("id".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+                            }
+                            desc_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(desc_attrs))));
+                            desc_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(desc_node)) });
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Icon component
+                if name == "Icon" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("svg".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("icon".to_string()))];
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("icon-{}", size))));
+                        }
+                        if let Some(Value::String(color)) = borrowed.get("color") {
+                            if color.as_str() != "currentColor" {
+                                classes.push(Value::String(Rc::new(format!("icon-{}", color))));
+                            }
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+
+                        // When aria_label is provided, icon is accessible (aria-hidden=false, role=img)
+                        if let Some(aria_label) = borrowed.get("aria_label") {
+                            attrs_map.insert("aria-hidden".to_string(), Value::String(Rc::new("false".to_string())));
+                            attrs_map.insert("aria-label".to_string(), aria_label.clone());
+                            attrs_map.insert("role".to_string(), Value::String(Rc::new("img".to_string())));
+                        } else {
+                            attrs_map.insert("aria-hidden".to_string(), Value::String(Rc::new("true".to_string())));
+                        }
+
+                        // Color as fill - handle currentColor and custom hex colors
+                        if let Some(Value::String(color)) = borrowed.get("color") {
+                            if color.as_str() == "currentColor" || color.starts_with('#') {
+                                attrs_map.insert("fill".to_string(), Value::String(color.clone()));
+                            }
+                        }
+
+                        // Custom size
+                        if let Some(Value::Int(size)) = borrowed.get("size") {
+                            attrs_map.insert("width".to_string(), Value::String(Rc::new(size.to_string())));
+                            attrs_map.insert("height".to_string(), Value::String(Rc::new(size.to_string())));
+                        }
+
+                        // Icon name as data-icon attribute
+                        if let Some(icon_name) = borrowed.get("name") {
+                            attrs_map.insert("data-icon".to_string(), icon_name.clone());
+                        }
+
+                        // Library as data-library attribute
+                        if let Some(library) = borrowed.get("library") {
+                            attrs_map.insert("data-library".to_string(), library.clone());
+                        }
+
+                        // viewBox attribute for custom SVG
+                        if let Some(view_box) = borrowed.get("viewBox") {
+                            attrs_map.insert("viewBox".to_string(), view_box.clone());
+                        }
+
+                        // stroke-width for outlined variants
+                        if let Some(Value::Int(stroke)) = borrowed.get("stroke_width") {
+                            attrs_map.insert("stroke-width".to_string(), Value::String(Rc::new(stroke.to_string())));
+                        }
+
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Tooltip component - agent-native wrapper pattern
+                // Renders: div.tooltip-wrapper > [div.tooltip-trigger, div.tooltip-content, ?span.tooltip-arrow]
+                if name == "Tooltip" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        let classes = vec![Value::String(Rc::new("tooltip-wrapper".to_string()))];
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build wrapper attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        if let Some(v) = borrowed.get("trigger") {
+                            attrs_map.insert("data-trigger".to_string(), v.clone());
+                        }
+                        if let Some(Value::Int(delay)) = borrowed.get("delay") {
+                            attrs_map.insert("data-delay".to_string(), Value::String(Rc::new(delay.to_string())));
+                        }
+                        if let Some(Value::String(touch)) = borrowed.get("touch_trigger") {
+                            attrs_map.insert("data-touch-trigger".to_string(), Value::String(touch.clone()));
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Build children
+                        let mut children = vec![];
+                        let is_disabled = matches!(borrowed.get("disabled"), Some(Value::Bool(true)));
+                        let tooltip_id = borrowed.get("id")
+                            .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None });
+
+                        // 1. Trigger wrapper - wraps children with aria-describedby
+                        let mut trigger_node = std::collections::HashMap::new();
+                        trigger_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        trigger_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                        trigger_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                            Value::String(Rc::new("tooltip-trigger".to_string()))
+                        ]))));
+                        let mut trigger_attrs = std::collections::HashMap::new();
+                        if let Some(ref id) = tooltip_id {
+                            trigger_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(id.clone())));
+                        }
+                        trigger_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(trigger_attrs))));
+                        trigger_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(trigger_node)) });
+
+                        // 2. Content (skip if disabled)
+                        if !is_disabled {
+                            let mut content_classes = vec![Value::String(Rc::new("tooltip-content".to_string()))];
+                            if let Some(Value::String(position)) = borrowed.get("position") {
+                                content_classes.push(Value::String(Rc::new(format!("tooltip-{}", position))));
+                            }
+                            if let Some(Value::String(alignment)) = borrowed.get("alignment") {
+                                content_classes.push(Value::String(Rc::new(format!("tooltip-align-{}", alignment))));
+                            }
+                            if let Some(Value::String(variant)) = borrowed.get("variant") {
+                                content_classes.push(Value::String(Rc::new(format!("tooltip-{}", variant))));
+                            }
+                            if let Some(Value::String(animation)) = borrowed.get("animation") {
+                                content_classes.push(Value::String(Rc::new(format!("tooltip-animation-{}", animation))));
+                            }
+
+                            let content_text = borrowed.get("content")
+                                .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                .unwrap_or_default();
+
+                            let mut content_node = std::collections::HashMap::new();
+                            content_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                            content_node.insert("text_content".to_string(), Value::String(Rc::new(content_text)));
+                            content_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(content_classes))));
+                            let mut content_attrs = std::collections::HashMap::new();
+                            content_attrs.insert("role".to_string(), Value::String(Rc::new("tooltip".to_string())));
+                            if let Some(ref id) = tooltip_id {
+                                content_attrs.insert("id".to_string(), Value::String(Rc::new(id.clone())));
+                            }
+                            content_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(content_attrs))));
+                            content_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                            children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(content_node)) });
+
+                            // 3. Arrow element - default to true, only skip if explicitly nay
+                            let show_arrow = !matches!(borrowed.get("arrow"), Some(Value::Bool(false)));
+                            if show_arrow {
+                                let mut arrow_node = std::collections::HashMap::new();
+                                arrow_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                                arrow_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                arrow_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                    Value::String(Rc::new("tooltip-arrow".to_string()))
+                                ]))));
+                                arrow_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                arrow_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(arrow_node)) });
+                            }
+                        }
+
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+                        return Ok(Value::Struct {
+                            name: "VNode".to_string(),
+                            fields: Rc::new(RefCell::new(vnode_fields)),
+                        });
+                    }
+                }
+
+                // Tabs component - Agent-native container for tab navigation
+                if name == "Tabs" {
+                    if method.name == "render" {
+                        let borrowed = fields.borrow();
+                        let mut vnode_fields = std::collections::HashMap::new();
+
+                        vnode_fields.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                        vnode_fields.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+
+                        // Build classes
+                        let mut classes = vec![Value::String(Rc::new("tabs".to_string()))];
+                        if let Some(Value::String(variant)) = borrowed.get("variant") {
+                            classes.push(Value::String(Rc::new(format!("tabs-{}", variant))));
+                        }
+                        if let Some(Value::String(size)) = borrowed.get("size") {
+                            classes.push(Value::String(Rc::new(format!("tabs-{}", size))));
+                        }
+                        if let Some(Value::String(orientation)) = borrowed.get("orientation") {
+                            classes.push(Value::String(Rc::new(format!("tabs-{}", orientation))));
+                        }
+                        if let Some(Value::String(alignment)) = borrowed.get("alignment") {
+                            classes.push(Value::String(Rc::new(format!("tabs-align-{}", alignment))));
+                        }
+                        vnode_fields.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(classes))));
+
+                        // Build attrs
+                        let mut attrs_map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+                        // keyboard_activation prop becomes data-keyboard-activation attribute
+                        if let Some(Value::String(ka)) = borrowed.get("keyboard_activation") {
+                            attrs_map.insert("data-keyboard-activation".to_string(), Value::String(ka.clone()));
+                        }
+                        vnode_fields.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(attrs_map))));
+
+                        // Get active index for tab selection
+                        let active_index = borrowed.get("index")
+                            .and_then(|v| if let Value::Int(i) = v { Some(*i as usize) } else { None })
+                            .unwrap_or(0);
+
+                        // Check if lazy loading is enabled
+                        let is_lazy = matches!(borrowed.get("lazy"), Some(Value::Bool(true)));
+
+                        // First pass: collect Tab IDs and TabPanel IDs for ARIA coordination
+                        let mut tab_ids: Vec<String> = vec![];
+                        let mut panel_ids: Vec<String> = vec![];
+
+                        if let Some(Value::Array(child_arr)) = borrowed.get("children") {
+                            for child in child_arr.borrow().iter() {
+                                if let Value::Struct { name: child_name, fields: child_fields } = child {
+                                    if child_name == "TabList" {
+                                        let child_borrowed = child_fields.borrow();
+                                        if let Some(Value::Array(tab_arr)) = child_borrowed.get("children") {
+                                            for tab in tab_arr.borrow().iter() {
+                                                if let Value::Struct { name: tab_name, fields: tab_fields } = tab {
+                                                    if tab_name == "Tab" {
+                                                        let tab_id = tab_fields.borrow().get("id")
+                                                            .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                                            .unwrap_or_default();
+                                                        tab_ids.push(tab_id);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else if child_name == "TabPanels" {
+                                        let child_borrowed = child_fields.borrow();
+                                        if let Some(Value::Array(panel_arr)) = child_borrowed.get("children") {
+                                            for panel in panel_arr.borrow().iter() {
+                                                if let Value::Struct { name: panel_name, fields: panel_fields } = panel {
+                                                    if panel_name == "TabPanel" {
+                                                        let panel_id = panel_fields.borrow().get("id")
+                                                            .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                                            .unwrap_or_default();
+                                                        panel_ids.push(panel_id);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Process children (TabList, TabPanels, etc.)
+                        let mut children = vec![];
+                        if let Some(Value::Array(child_arr)) = borrowed.get("children") {
+                            for child in child_arr.borrow().iter() {
+                                if let Value::Struct { name: child_name, fields: child_fields } = child {
+                                    // Recursively render child components
+                                    if child_name == "TabList" {
+                                        let child_borrowed = child_fields.borrow();
+                                        let mut child_node = std::collections::HashMap::new();
+                                        child_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                        child_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                        child_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                            Value::String(Rc::new("tab-list".to_string()))
+                                        ]))));
+
+                                        // TabList has role="tablist" and aria-label
+                                        let mut child_attrs = std::collections::HashMap::new();
+                                        child_attrs.insert("role".to_string(), Value::String(Rc::new("tablist".to_string())));
+                                        if let Some(al) = child_borrowed.get("aria_label") {
+                                            child_attrs.insert("aria-label".to_string(), al.clone());
+                                        }
+                                        child_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(child_attrs))));
+
+                                        // Render Tab children
+                                        let mut tab_children = vec![];
+                                        if let Some(Value::Array(tab_arr)) = child_borrowed.get("children") {
+                                            for (idx, tab) in tab_arr.borrow().iter().enumerate() {
+                                                if let Value::Struct { name: tab_name, fields: tab_fields } = tab {
+                                                    if tab_name == "Tab" {
+                                                        let tab_borrowed = tab_fields.borrow();
+                                                        let mut tab_node = std::collections::HashMap::new();
+                                                        tab_node.insert("tag".to_string(), Value::String(Rc::new("button".to_string())));
+
+                                                        let label = tab_borrowed.get("label")
+                                                            .and_then(|v| if let Value::String(s) = v { Some(s.to_string()) } else { None })
+                                                            .unwrap_or_default();
+                                                        tab_node.insert("text_content".to_string(), Value::String(Rc::new(label)));
+                                                        tab_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                            Value::String(Rc::new("tab".to_string()))
+                                                        ]))));
+
+                                                        // Tab has role="tab" and aria-selected
+                                                        let mut tab_attrs = std::collections::HashMap::new();
+                                                        tab_attrs.insert("role".to_string(), Value::String(Rc::new("tab".to_string())));
+                                                        let is_selected = idx == active_index;
+                                                        tab_attrs.insert("aria-selected".to_string(), Value::String(Rc::new(
+                                                            if is_selected { "true" } else { "false" }.to_string()
+                                                        )));
+                                                        if matches!(tab_borrowed.get("disabled"), Some(Value::Bool(true))) {
+                                                            tab_attrs.insert("disabled".to_string(), Value::Bool(true));
+                                                            tab_attrs.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+                                                        }
+                                                        // aria-controls links tab to corresponding panel
+                                                        if let Some(panel_id) = panel_ids.get(idx) {
+                                                            if !panel_id.is_empty() {
+                                                                tab_attrs.insert("aria-controls".to_string(), Value::String(Rc::new(panel_id.clone())));
+                                                            }
+                                                        }
+                                                        tab_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(tab_attrs))));
+
+                                                        // Build tab children (icon, badge)
+                                                        let mut inner_children = vec![];
+
+                                                        // Icon child
+                                                        if let Some(icon_val) = tab_borrowed.get("icon") {
+                                                            let icon_name = match icon_val {
+                                                                Value::String(s) => s.to_string(),
+                                                                _ => "".to_string(),
+                                                            };
+                                                            if !icon_name.is_empty() {
+                                                                let mut icon_node = std::collections::HashMap::new();
+                                                                icon_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                                                                icon_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                                                icon_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                                    Value::String(Rc::new("tab-icon".to_string()))
+                                                                ]))));
+                                                                let mut icon_attrs = std::collections::HashMap::new();
+                                                                icon_attrs.insert("data-icon".to_string(), Value::String(Rc::new(icon_name)));
+                                                                icon_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(icon_attrs))));
+                                                                icon_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                                inner_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(icon_node)) });
+                                                            }
+                                                        }
+
+                                                        // Badge child
+                                                        if let Some(badge_val) = tab_borrowed.get("badge") {
+                                                            let badge_text = match badge_val {
+                                                                Value::Int(n) => n.to_string(),
+                                                                Value::String(s) => s.to_string(),
+                                                                _ => "".to_string(),
+                                                            };
+                                                            if !badge_text.is_empty() {
+                                                                let mut badge_node = std::collections::HashMap::new();
+                                                                badge_node.insert("tag".to_string(), Value::String(Rc::new("span".to_string())));
+                                                                badge_node.insert("text_content".to_string(), Value::String(Rc::new(badge_text)));
+                                                                badge_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                                    Value::String(Rc::new("tab-badge".to_string()))
+                                                                ]))));
+                                                                badge_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                                                                badge_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                                inner_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(badge_node)) });
+                                                            }
+                                                        }
+
+                                                        tab_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(inner_children))));
+                                                        tab_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(tab_node)) });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        child_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(tab_children))));
+                                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(child_node)) });
+                                    } else if child_name == "TabPanels" {
+                                        let child_borrowed = child_fields.borrow();
+                                        let mut child_node = std::collections::HashMap::new();
+                                        child_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                        child_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                        child_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                            Value::String(Rc::new("tab-panels".to_string()))
+                                        ]))));
+                                        child_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+
+                                        // Render TabPanel children (respecting lazy loading)
+                                        let mut panel_children = vec![];
+                                        if let Some(Value::Array(panel_arr)) = child_borrowed.get("children") {
+                                            for (panel_idx, panel) in panel_arr.borrow().iter().enumerate() {
+                                                // In lazy mode, only render the active panel
+                                                if is_lazy && panel_idx != active_index {
+                                                    continue;
+                                                }
+                                                if let Value::Struct { name: panel_name, .. } = panel {
+                                                    if panel_name == "TabPanel" {
+                                                        let mut panel_node = std::collections::HashMap::new();
+                                                        panel_node.insert("tag".to_string(), Value::String(Rc::new("div".to_string())));
+                                                        panel_node.insert("text_content".to_string(), Value::String(Rc::new("".to_string())));
+                                                        panel_node.insert("classes".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+                                                            Value::String(Rc::new("tab-panel".to_string()))
+                                                        ]))));
+                                                        let mut panel_attrs = std::collections::HashMap::new();
+                                                        panel_attrs.insert("role".to_string(), Value::String(Rc::new("tabpanel".to_string())));
+                                                        // aria-labelledby links panel to corresponding tab
+                                                        if let Some(tab_id) = tab_ids.get(panel_idx) {
+                                                            if !tab_id.is_empty() {
+                                                                panel_attrs.insert("aria-labelledby".to_string(), Value::String(Rc::new(tab_id.clone())));
+                                                            }
+                                                        }
+                                                        panel_node.insert("attrs".to_string(), Value::Map(Rc::new(RefCell::new(panel_attrs))));
+                                                        panel_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(vec![]))));
+                                                        panel_children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(panel_node)) });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        child_node.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(panel_children))));
+                                        children.push(Value::Struct { name: "VNode".to_string(), fields: Rc::new(RefCell::new(child_node)) });
+                                    }
+                                }
+                            }
+                        }
+                        vnode_fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
 
                         return Ok(Value::Struct {
                             name: "VNode".to_string(),
@@ -16668,12 +20407,22 @@ impl Interpreter {
         crate::sigil_debug!("DEBUG expand_user_macro: name='{}', rules='{}', tokens='{}'", macro_def.name.name, rules, tokens);
 
         // Extract macro parameters from the pattern (before FatArrow)
-        // Pattern like: {LParen Ident("n") Colon Ident("expr") RParen FatArrow ...}
-        // The $n in source becomes just n in tokenized form
+        // Pattern like: {LParen LBrace Ident("field") Colon Ident("var_name") Colon Ident("expr") ... FatArrow ...}
+        // For pattern `field: $var_name:expr`, we need to map field names to variable names
+        // Also handle `$n:expr` positional patterns which tokenize as Ident("n") Colon Ident("expr")
         let mut macro_params: Vec<String> = Vec::new();
+        let mut field_to_var: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        // Known macro parameter types
+        let macro_types = ["expr", "ident", "ty", "literal", "block", "stmt", "pat", "tt"];
+
         if let Some(arrow_pos) = rules.find("FatArrow") {
             let pattern = &rules[..arrow_pos];
-            // Find all Ident("name") Colon patterns - these are macro parameters
+
+            // Handle patterns like Ident("name") Colon Ident("type")
+            // This can be:
+            // 1. Simple positional: $n:expr → Ident("n") Colon Ident("expr")
+            // 2. Field pattern: field: $var:expr → Ident("field") Colon Ident("var") Colon Ident("expr")
             let mut rest = pattern;
             while let Some(ident_pos) = rest.find("Ident(") {
                 let after_ident = &rest[ident_pos + 6..];
@@ -16682,17 +20431,56 @@ impl Interpreter {
                     if name.starts_with('"') && name.ends_with('"') {
                         name = &name[1..name.len() - 1];
                     }
-                    // Check if followed by Colon (indicating a parameter pattern)
+                    // Check if followed by Colon and then another Ident
                     let remaining = &after_ident[close_paren + 1..];
-                    if remaining.trim_start().starts_with("Colon") {
-                        macro_params.push(name.to_string());
+                    let trimmed = remaining.trim_start();
+                    if trimmed.starts_with("Colon") {
+                        let after_colon = &trimmed[5..].trim_start();
+                        // Check if next is Ident
+                        if after_colon.starts_with("Ident(") {
+                            let var_after = &after_colon[6..];
+                            if let Some(var_close) = var_after.find(')') {
+                                let mut second_name = var_after[..var_close].trim();
+                                if second_name.starts_with('"') && second_name.ends_with('"') {
+                                    second_name = &second_name[1..second_name.len() - 1];
+                                }
+                                // Check if the second name is a type specifier (like "expr")
+                                let var_remaining = &var_after[var_close + 1..];
+                                if var_remaining.trim_start().starts_with("Colon") {
+                                    // This is a field: $var:type pattern (three parts)
+                                    // name=field, second_name=var, next is :type
+                                    // Extract the third part (the type)
+                                    let after_second_colon = &var_remaining.trim_start()[5..].trim_start();
+                                    if after_second_colon.starts_with("Ident(") {
+                                        let type_after = &after_second_colon[6..];
+                                        if let Some(type_close) = type_after.find(')') {
+                                            let mut type_name = type_after[..type_close].trim();
+                                            if type_name.starts_with('"') && type_name.ends_with('"') {
+                                                type_name = &type_name[1..type_name.len() - 1];
+                                            }
+                                            if macro_types.contains(&type_name) {
+                                                // Field: $var:type pattern
+                                                field_to_var.insert(name.to_string(), second_name.to_string());
+                                                if !macro_params.contains(&second_name.to_string()) {
+                                                    macro_params.push(second_name.to_string());
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else if macro_types.contains(&second_name) {
+                                    // This is a positional $name:type pattern (two parts)
+                                    // name is the variable, second_name is the type
+                                    if !macro_params.contains(&name.to_string()) {
+                                        macro_params.push(name.to_string());
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 rest = &rest[ident_pos + 6..];
             }
         }
-        crate::sigil_debug!("DEBUG expand_user_macro: macro_params={:?}", macro_params);
-
         // Parse actual argument values from the invocation tokens
         // tokens might be "5" or "min : 0, max : 100" etc.
         let mut named_args: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
@@ -16703,15 +20491,32 @@ impl Interpreter {
             // Check if it's named arguments (contains ":" pattern like "name : value")
             if tokens.contains(':') {
                 // Parse named arguments like "min : 0, max : 100"
-                for arg in tokens.split(',') {
+                // Split by commas at depth 0 only (handle nested parens)
+                let args = self.split_args_at_depth_zero(tokens);
+                for arg in args {
                     let arg = arg.trim();
                     if let Some(colon_pos) = arg.find(':') {
-                        let name = arg[..colon_pos].trim();
+                        let field_name = arg[..colon_pos].trim();
                         let value_str = arg[colon_pos + 1..].trim();
-                        if let Ok(expr) = self.parse_tokenized_body(value_str) {
-                            if let Ok(val) = self.evaluate(&expr) {
-                                named_args.insert(name.to_string(), val);
+                        // Try parsing as source code first (for invocation like "range_i32(1, 4096)")
+                        let mut parser = crate::Parser::new(value_str);
+                        let parse_result = parser.parse_expr();
+                        let expr = match parse_result {
+                            Ok(expr) => expr,
+                            Err(_) => {
+                                // Fall back to tokenized body parsing
+                                match self.parse_tokenized_body(value_str) {
+                                    Ok(expr) => expr,
+                                    Err(_) => continue,
+                                }
                             }
+                        };
+                        if let Ok(val) = self.evaluate(&expr) {
+                            // Use the variable name if there's a mapping, otherwise use field name
+                            let key = field_to_var.get(field_name)
+                                .cloned()
+                                .unwrap_or_else(|| field_name.to_string());
+                            named_args.insert(key, val);
                         }
                     }
                 }
@@ -16724,7 +20529,6 @@ impl Interpreter {
                 }
             }
         }
-        crate::sigil_debug!("DEBUG expand_user_macro: named_args={:?}, positional_args={:?}", named_args, positional_args);
 
         // Find FatArrow and extract the body after it
         // The body is typically in the last { } block
@@ -16771,7 +20575,24 @@ impl Interpreter {
                                 Value::String(s) => format!("StringLit(\"{}\")", s),
                                 Value::Bool(true) => "Ident(\"yay\")".to_string(),
                                 Value::Bool(false) => "Ident(\"nay\")".to_string(),
-                                _ => format!("IntLit(\"0\")"), // Fallback
+                                Value::Function(func) => {
+                                    // If the function has a name, use it
+                                    if let Some(ref name) = func.name {
+                                        format!("Ident(\"{}\")", name)
+                                    } else {
+                                        // Anonymous function - keep the parameter name as is
+                                        pattern.clone()
+                                    }
+                                }
+                                Value::BuiltIn(builtin) => format!("Ident(\"{}\")", builtin.name),
+                                Value::Variant { enum_name, variant_name, .. } => {
+                                    format!("Ident(\"{}\") MiddleDot Ident(\"{}\")", enum_name, variant_name)
+                                }
+                                _ => {
+                                    // For unknown types, don't substitute - leave the param name
+                                    crate::sigil_debug!("DEBUG macro substitution: unknown value type for '{}': {:?}", param_name, arg_val);
+                                    pattern.clone()
+                                }
                             };
                             body_tokens = body_tokens.replace(&pattern, &replacement);
                         }
@@ -16782,7 +20603,7 @@ impl Interpreter {
                     // For simple cases like "IntLit("99")", parse it
                     let body_expr = self.parse_tokenized_body(&body_tokens)?;
 
-                    // Create a new scope with __pipe bound if we have pipe context
+                    // Create a new scope with __pipe and macro parameters bound
                     let prev_env = self.environment.clone();
                     self.environment = Rc::new(RefCell::new(Environment::with_parent(prev_env.clone())));
 
@@ -16791,8 +20612,26 @@ impl Interpreter {
                         self.environment.borrow_mut().define("__pipe".to_string(), pipe_val.clone());
                     }
 
+                    // Bind all macro parameters in the environment
+                    // This is especially important for values that can't be substituted (like closures)
+                    for (i, param_name) in macro_params.iter().enumerate() {
+                        let arg_val = named_args.get(param_name).or_else(|| positional_args.get(i));
+                        if let Some(arg_val) = arg_val {
+                            self.environment.borrow_mut().define(param_name.clone(), arg_val.clone());
+                        }
+                    }
+
                     // Evaluate the body expression
-                    let result = self.evaluate(&body_expr);
+                    // Important: catch return statements and convert them to values
+                    // (return inside a macro should return from the macro, not the caller)
+                    let result = match self.evaluate(&body_expr) {
+                        Ok(val) => Ok(val),
+                        Err(e) if e.message == "return" => {
+                            // Extract return value from stored location
+                            Ok(self.return_value.take().unwrap_or(Value::Null))
+                        }
+                        Err(e) => Err(e),
+                    };
 
                     // Restore environment
                     self.environment = prev_env;
@@ -16819,8 +20658,55 @@ impl Interpreter {
         let mut parser = crate::Parser::new(&source);
         match parser.parse_expr() {
             Ok(expr) => Ok(expr),
-            Err(e) => Err(RuntimeError::new(format!("Failed to parse macro body '{}' (source: '{}'): {:?}", tokens, source, e))),
+            Err(e) => {
+                // If parsing as expression fails and the source contains statements (Let, If, etc.),
+                // try wrapping in braces and parsing as a block expression
+                let trimmed = source.trim();
+                if trimmed.starts_with("≔") || trimmed.starts_with("⎇") || trimmed.starts_with("⤺")
+                   || trimmed.starts_with("let ") || trimmed.starts_with("if ") || trimmed.starts_with("return ") {
+                    let block_source = format!("{{ {} }}", source);
+                    let mut parser2 = crate::Parser::new(&block_source);
+                    match parser2.parse_expr() {
+                        Ok(expr) => return Ok(expr),
+                        Err(_) => {}
+                    }
+                }
+                Err(RuntimeError::new(format!("Failed to parse macro body '{}' (source: '{}'): {:?}", tokens, source, e)))
+            },
         }
+    }
+
+    /// Split arguments by comma at depth 0 only (handles nested parentheses)
+    fn split_args_at_depth_zero(&self, s: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut current = String::new();
+        let mut depth = 0;
+
+        for c in s.chars() {
+            match c {
+                '(' | '[' | '{' => {
+                    depth += 1;
+                    current.push(c);
+                }
+                ')' | ']' | '}' => {
+                    depth -= 1;
+                    current.push(c);
+                }
+                ',' if depth == 0 => {
+                    if !current.trim().is_empty() {
+                        result.push(current.trim().to_string());
+                    }
+                    current.clear();
+                }
+                _ => current.push(c),
+            }
+        }
+
+        if !current.trim().is_empty() {
+            result.push(current.trim().to_string());
+        }
+
+        result
     }
 
     /// Convert tokenized form back to source code
@@ -16992,6 +20878,30 @@ impl Interpreter {
             } else if rest.starts_with("Semi ") || rest == "Semi" {
                 result.push_str("; ");
                 i += 4;
+                continue;
+            } else if rest.starts_with("Eq ") || rest == "Eq" {
+                result.push_str("= ");
+                i += 2;
+                continue;
+            } else if rest.starts_with("Bang ") || rest == "Bang" {
+                result.push_str("!");
+                i += 4;
+                continue;
+            } else if rest.starts_with("Amp ") || rest == "Amp" {
+                result.push_str("&");
+                i += 3;
+                continue;
+            } else if rest.starts_with("Dot ") || rest == "Dot" {
+                result.push_str(".");
+                i += 3;
+                continue;
+            } else if rest.starts_with("Return ") || rest == "Return" {
+                result.push_str("⤺ ");
+                i += 6;
+                continue;
+            } else if rest.starts_with("MiddleDot ") || rest == "MiddleDot" {
+                result.push_str("·");
+                i += 9;
                 continue;
             } else if rest.starts_with("FatArrow ") || rest == "FatArrow" {
                 result.push_str("=> ");

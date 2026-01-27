@@ -1,0 +1,45 @@
+// Test: Chained pipe-invoked runes
+// Spec: 07-METAPROGRAMMING.md § 2.6.4 Chaining Pipe-Invoked Runes
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that multiple pipe-invoked runes can be chained,
+// with each rune receiving the output of the previous one.
+//
+// Expected behavior:
+// Each `|` creates a new scope with its own `__pipe` binding,
+// containing the result of the previous expression.
+
+rune add_one! {
+    () => { __pipe + 1 }
+}
+
+rune double! {
+    () => { __pipe * 2 }
+}
+
+rune square! {
+    () => { __pipe * __pipe }
+}
+
+rune to_string! {
+    () => { String·from_int(__pipe) }
+}
+
+rite main() {
+    // Simple chain of two runes
+    ≔ x = 5|add_one!{}|double!{};
+    println(x);  // (5+1)*2 = 12
+
+    // Chain of three runes
+    ≔ y = 3|double!{}|add_one!{}|double!{};
+    println(y);  // ((3*2)+1)*2 = 14
+
+    // Chain ending with type conversion
+    ≔ z = 7|square!{}|to_string!{};
+    println(z);  // "49"
+
+    // Four-level chain
+    ≔ w = 2|double!{}|double!{}|double!{}|double!{};
+    println(w);  // 2*2*2*2*2 = 32
+}

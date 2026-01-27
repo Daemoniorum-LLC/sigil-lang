@@ -1,0 +1,49 @@
+// Test: ident fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (ident)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that the `ident` fragment type correctly matches
+// single identifier tokens when used with named parameters.
+//
+// Expected behavior:
+// `$name:ident` matches variable names and function names.
+// Does not match keywords, literals, or punctuation.
+
+rune identity! {
+    () => { __pipe }
+}
+
+rune transform! {
+    ({ fn_name: $fn_name:ident }) => {
+        $fn_name(__pipe)
+    }
+}
+
+rite square(x: i32) → i32 {
+    x * x
+}
+
+rite cube(x: i32) → i32 {
+    x * x * x
+}
+
+rite double(x: i32) → i32 {
+    x * 2
+}
+
+rite main() {
+    // Identity through pipe
+    ≔ a = 42|identity!{};
+    println(a);  // 42
+
+    // Call function by name via ident
+    ≔ sq = 5|transform!{ fn_name: square };
+    println(sq);  // 25
+
+    ≔ cb = 3|transform!{ fn_name: cube };
+    println(cb);  // 27
+
+    ≔ dbl = 10|transform!{ fn_name: double };
+    println(dbl);  // 20
+}

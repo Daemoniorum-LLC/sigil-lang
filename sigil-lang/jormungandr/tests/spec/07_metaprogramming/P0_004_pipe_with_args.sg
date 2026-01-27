@@ -1,0 +1,61 @@
+// Test: Pipe invocation with arguments
+// Spec: 07-METAPROGRAMMING.md § 2.6.3 Combining Pipe and Arguments
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that pipe invocations can include additional arguments
+// alongside the implicit `__pipe` variable.
+//
+// Expected behavior:
+// The rune receives both `__pipe` (from the left of `|`) and
+// explicit arguments (from inside `{}`).
+
+rune add! {
+    ($n:expr) => { __pipe + $n }
+}
+
+rune multiply! {
+    ($n:expr) => { __pipe * $n }
+}
+
+rune clamp_value! {
+    ({ lo: $lo:expr, hi: $hi:expr }) => {
+        ⎇ __pipe < $lo {
+            $lo
+        } ⎉ ⎇ __pipe > $hi {
+            $hi
+        } ⎉ {
+            __pipe
+        }
+    }
+}
+
+rune with_fallback! {
+    ($fallback:expr) => {
+        ⎇ __pipe == null {
+            $fallback
+        } ⎉ {
+            __pipe
+        }
+    }
+}
+
+rite main() {
+    // Single argument
+    ≔ a = 10|add!{5};
+    println(a);  // 15
+
+    // Named arguments (block syntax)
+    ≔ b = 50|clamp_value!{ lo: 0, hi: 100 };
+    println(b);  // 50 (within range)
+
+    ≔ c = -10|clamp_value!{ lo: 0, hi: 100 };
+    println(c);  // 0 (clamped to lo)
+
+    ≔ d = 150|clamp_value!{ lo: 0, hi: 100 };
+    println(d);  // 100 (clamped to hi)
+
+    // Chained with args
+    ≔ e = 5|add!{3}|multiply!{2};
+    println(e);  // (5+3)*2 = 16
+}

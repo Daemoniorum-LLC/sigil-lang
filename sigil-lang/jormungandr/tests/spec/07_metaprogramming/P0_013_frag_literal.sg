@@ -1,0 +1,36 @@
+// Test: literal fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (literal)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that literal values (integers, floats, strings) can be
+// passed as arguments to pipe-invoked runes.
+//
+// Expected behavior:
+// Literal values work as expr arguments to runes.
+
+rune add_num! {
+    ($n:expr) => { __pipe + $n }
+}
+
+rune multiply_num! {
+    ($n:expr) => { __pipe * $n }
+}
+
+rite main() {
+    // Integer literal as argument
+    ≔ a = 10|add_num!{32};
+    println(a);  // 42
+
+    // Another integer
+    ≔ b = 7|multiply_num!{6};
+    println(b);  // 42
+
+    // Chained operations with literals
+    ≔ c = 5|add_num!{5}|multiply_num!{2};
+    println(c);  // 20
+
+    // Float literal
+    ≔ d = 3.0|multiply_num!{2.0};
+    println(d);  // 6.0
+}

@@ -1,0 +1,45 @@
+// Test: Edge case - empty rune arguments
+// Spec: 07-METAPROGRAMMING.md § 13.3.1 Empty Rune Arguments
+// Priority: P1 = Quality of Life
+//
+// Purpose:
+// Validates that runes can be invoked with empty arguments
+// using either `()` or `{}` syntax.
+//
+// Expected behavior:
+// `rune!()` and `rune!{}` are equivalent for zero-argument runes.
+
+rune get_answer! {
+    () => { 42 }
+}
+
+rune get_message! {
+    () => { "hello world" }
+}
+
+rune make_pair! {
+    () => { (1, 2) }
+}
+
+rite main() {
+    // Empty parentheses
+    ≔ a = get_answer!();
+    println(a);  // 42
+
+    // Empty braces
+    ≔ b = get_answer!{};
+    println(b);  // 42
+
+    // Pipe with empty parens
+    ≔ c = 0|get_message!();
+    println(c);  // hello world
+
+    // Pipe with empty braces
+    ≔ d = 0|get_message!{};
+    println(d);  // hello world
+
+    // Verify both produce same result
+    ≔ pair1 = make_pair!();
+    ≔ pair2 = make_pair!{};
+    println(pair1.0 == pair2.0 && pair1.1 == pair2.1);  // true
+}

@@ -1,0 +1,42 @@
+// Test: Simple expression macros
+// Spec: 07-METAPROGRAMMING.md § 2.6 Pipe-Invoked Runes
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that simple expression runes work correctly
+// when pipe-invoked, producing values that can be used
+// in further expressions.
+//
+// Note: Return scoping is tested in P0_002_pipe_invoked_validate.sg
+
+rune square! {
+    () => { __pipe * __pipe }
+}
+
+rune negate! {
+    () => { -__pipe }
+}
+
+rune add_ten! {
+    () => { __pipe + 10 }
+}
+
+rite main() {
+    // Test square
+    ≔ sq = 5|square!{};
+    println(sq);  // 25
+
+    // Test negate
+    ≔ neg = 7|negate!{};
+    println(neg);  // -7
+
+    // Test add_ten
+    ≔ sum = 32|add_ten!{};
+    println(sum);  // 42
+
+    // Chained
+    ≔ chained = 3|square!{}|add_ten!{};
+    println(chained);  // 9 + 10 = 19
+
+    println("All checks complete");
+}

@@ -54,21 +54,191 @@ let numbers = vec![1, 2, 3, 4, 5]
 
 ### 2.2 Rune Fragment Types
 
-| Fragment | Syntax | Matches |
-|----------|--------|---------|
-| `expr` | `$x:expr` | Any expression |
-| `ty` | `$T:ty` | Any type |
-| `ident` | `$name:ident` | Identifier |
-| `path` | `$p:path` | Module path |
-| `pat` | `$p:pat` | Pattern |
-| `stmt` | `$s:stmt` | Statement |
-| `block` | `$b:block` | Block `{ ... }` |
-| `item` | `$i:item` | Top-level item |
-| `meta` | `$m:meta` | Attribute content |
-| `tt` | `$t:tt` | Token tree |
-| `literal` | `$l:literal` | Literal value |
-| `lifetime` | `$a:lifetime` | Lifetime `'a` |
-| `vis` | `$v:vis` | Visibility |
+Fragment types (also called "fragment specifiers") define what kind of syntax a rune parameter can capture. Each fragment type has specific parsing rules and valid contexts.
+
+| Fragment | Syntax | Matches | Implemented |
+|----------|--------|---------|-------------|
+| `expr` | `$x:expr` | Any expression | ✅ Yes |
+| `ty` | `$T:ty` | Any type | ✅ Yes |
+| `ident` | `$name:ident` | Identifier | ✅ Yes |
+| `path` | `$p:path` | Module path | ❌ No |
+| `pat` | `$p:pat` | Pattern | ✅ Yes |
+| `stmt` | `$s:stmt` | Statement | ✅ Yes |
+| `block` | `$b:block` | Block `{ ... }` | ✅ Yes |
+| `item` | `$i:item` | Top-level item | ❌ No |
+| `meta` | `$m:meta` | Attribute content | ❌ No |
+| `tt` | `$t:tt` | Token tree | ✅ Yes |
+| `literal` | `$l:literal` | Literal value | ✅ Yes |
+| `lifetime` | `$a:lifetime` | Lifetime `'a` | ❌ No |
+| `vis` | `$v:vis` | Visibility | ❌ No |
+
+#### 2.2.1 Fragment Type Definitions
+
+**`expr` — Expression**
+Matches any valid Sigil expression. This is the most permissive fragment type.
+
+```sigil
+// Valid: literals, identifiers, function calls, operators, blocks
+rune double! { ($x:expr) => { $x + $x } }
+double!(42)              // 42 + 42
+double!(foo)             // foo + foo
+double!(bar(1, 2))       // bar(1, 2) + bar(1, 2)
+double!({ let y = 1; y })  // block expression
+```
+
+**Parsing:** Consumes a complete expression according to Sigil's expression grammar. Respects operator precedence and grouping.
+
+**`ty` — Type**
+Matches any type annotation.
+
+```sigil
+rune new_vec! { ($T:ty) => { Vec<$T>·new() } }
+new_vec!(i32)            // Vec<i32>·new()
+new_vec!(String)         // Vec<String>·new()
+new_vec!(Option<i64>)    // Vec<Option<i64>>·new()
+```
+
+**Parsing:** Consumes a type expression including generic parameters, arrays, references, and function types.
+
+**`ident` — Identifier**
+Matches a single identifier token (variable name, type name, etc.).
+
+```sigil
+rune getter! { ($field:ident) => { fn $field(&self) -> i32 { self.$field } } }
+getter!(x)               // fn x(&self) -> i32 { self.x }
+getter!(count)           // fn count(&self) -> i32 { self.count }
+```
+
+**Parsing:** Consumes exactly one identifier token. Does not match keywords, literals, or punctuation.
+
+**`path` — Module Path** *(Not yet implemented)*
+Matches a potentially-qualified path like `std·collections·HashMap`.
+
+```sigil
+rune use_type! { ($p:path) => { let x: $p = $p·new() } }
+use_type!(Vec)                       // simple path
+use_type!(std·io·File)               // qualified path
+use_type!(crate·models·User)         // crate-relative path
+```
+
+**Parsing:** Consumes a sequence of identifiers separated by `·` (middledot).
+
+**`pat` — Pattern**
+Matches a pattern as used in `match` arms, `let` bindings, and function parameters.
+
+```sigil
+rune match_arm! { ($p:pat => $body:expr) => { $p => { $body } } }
+match_arm!(Some(x) => x + 1)         // Some(x) => { x + 1 }
+match_arm!((a, b) => a * b)          // (a, b) => { a * b }
+```
+
+**Parsing:** Consumes a complete pattern including destructuring, bindings, and guards.
+
+**`stmt` — Statement**
+Matches a single statement (with or without trailing semicolon).
+
+```sigil
+rune debug_stmt! { ($s:stmt) => { println("executing..."); $s } }
+debug_stmt!(let x = 42)              // println("executing..."); let x = 42
+debug_stmt!(foo())                   // println("executing..."); foo()
+```
+
+**Parsing:** Consumes a complete statement. If the statement naturally has a semicolon, it is included.
+
+**`block` — Block**
+Matches a curly-brace-delimited block `{ ... }`.
+
+```sigil
+rune timed! { ($b:block) => { let t = now(); $b; elapsed(t) } }
+timed!({ expensive_computation(); cleanup() })
+```
+
+**Parsing:** Consumes an opening `{`, all content, and closing `}`. The braces are part of the captured fragment.
+
+**`item` — Item** *(Not yet implemented)*
+Matches a top-level item: function, struct, enum, trait, impl, const, static, or module.
+
+```sigil
+rune trace_item! { ($i:item) => { println("defined item"); $i } }
+trace_item!(fn foo() { })            // function
+trace_item!(struct Bar { x: i32 })   // struct
+```
+
+**Parsing:** Consumes a complete item definition.
+
+**`meta` — Attribute Content** *(Not yet implemented)*
+Matches the content inside an attribute annotation `//@ rune: ...`.
+
+```sigil
+rune conditional! { ($m:meta) => { //@ rune: cfg($m) } }
+conditional!(target_os = "linux")
+```
+
+**Parsing:** Consumes attribute-style key-value or identifier content.
+
+**`tt` — Token Tree**
+Matches a single token or balanced group of tokens. This is the most flexible but least semantic fragment type.
+
+```sigil
+rune pass_through! { ($($t:tt)*) => { $($t)* } }
+pass_through!(foo bar { baz })       // foo bar { baz }
+```
+
+**Parsing:** A `tt` is either:
+1. A single non-delimiter token (identifier, literal, operator)
+2. A balanced group: `(...)`, `[...]`, or `{...}` including all contents
+
+**`literal` — Literal Value**
+Matches a literal: integer, float, string, character, or boolean.
+
+```sigil
+rune const_array! { ($($l:literal),*) => { [$($l),*] } }
+const_array!(1, 2, 3)                // [1, 2, 3]
+const_array!("a", "b")               // ["a", "b"]
+```
+
+**Parsing:** Consumes exactly one literal token.
+
+**`lifetime` — Lifetime Annotation** *(Not yet implemented)*
+Matches a lifetime like `'a` or `'static`.
+
+```sigil
+rune ref_with_lt! { ($a:lifetime, $T:ty) => { &$a $T } }
+ref_with_lt!('a, str)                // &'a str
+ref_with_lt!('static, i32)           // &'static i32
+```
+
+**Parsing:** Consumes a `'` followed by an identifier or `static`.
+
+**`vis` — Visibility** *(Not yet implemented)*
+Matches a visibility qualifier: empty, `pub`, `pub(crate)`, `pub(super)`, or `pub(in path)`.
+
+```sigil
+rune make_field! { ($v:vis $name:ident: $T:ty) => { $v $name: $T } }
+make_field!(pub x: i32)              // pub x: i32
+make_field!(pub(crate) y: String)    // pub(crate) y: String
+make_field!(z: bool)                 // z: bool (private)
+```
+
+**Parsing:** Optionally consumes `pub` and any restriction parentheses. May match nothing (empty = private).
+
+#### 2.2.2 Fragment Follow Restrictions
+
+Certain fragment types have restrictions on what tokens may follow them, to ensure unambiguous parsing:
+
+| Fragment | May be followed by |
+|----------|-------------------|
+| `expr`, `stmt` | `=>`, `,`, `;`, `)`, `]`, `}` |
+| `pat` | `=>`, `,`, `=`, `|`, `if`, `in` |
+| `ty`, `path` | `=>`, `,`, `;`, `=`, `>`, `{`, `[`, `:`, `as`, `where` |
+| `ident`, `literal`, `lifetime` | Any token |
+| `tt`, `block`, `item`, `meta`, `vis` | Any token |
+
+**Example:** This is invalid because `:` cannot follow `$x:expr`:
+```sigil
+// INVALID: colon cannot follow expr
+rune bad! { ($x:expr : $y:ty) => { } }
+```
 
 ### 2.3 Repetition Patterns
 
@@ -147,6 +317,119 @@ rune define_var! {
 define_var!(x = 42)
 print!(x)  // Works: x is visible
 ```
+
+### 2.6 Pipe-Invoked Runes
+
+Runes can be invoked using pipe syntax, enabling fluent method-chain-like patterns. When a rune is invoked via pipe (`|`), the left-hand value is bound to the magic variable `__pipe` within the rune body.
+
+#### 2.6.1 Syntax
+
+```sigil
+// Standard invocation (prefix form)
+rune_name!{args}
+
+// Pipe invocation (infix form)
+value|rune_name!{args}
+```
+
+The pipe form `value|rune!{args}` is semantically equivalent to `rune!{args}` with `__pipe` bound to `value` in the expansion environment.
+
+#### 2.6.2 The `__pipe` Magic Variable
+
+When a rune is pipe-invoked, the runtime automatically binds the left-hand value to `__pipe`:
+
+```sigil
+rune validate! {
+    () => {
+        ⎇ __pipe == "" {
+            ⤺ Err(ValidationError·Empty("field"))
+        }
+        ⤺ Ok(__pipe)
+    }
+}
+
+// Usage
+≔ input = "hello"
+≔ result = input|validate!{}  // __pipe = "hello" inside rune body
+// result = Ok("hello")
+
+≔ empty = ""
+≔ result2 = empty|validate!{}  // __pipe = "" inside rune body
+// result2 = Err(ValidationError·Empty("field"))
+```
+
+#### 2.6.3 Combining Pipe and Arguments
+
+Pipe invocations can include additional arguments alongside `__pipe`:
+
+```sigil
+rune with_default! {
+    ($default:expr) => {
+        ⎇ __pipe == null {
+            ⤺ $default
+        }
+        ⤺ __pipe
+    }
+}
+
+// Usage
+≔ value = null
+≔ result = value|with_default!{42}  // Returns 42
+```
+
+#### 2.6.4 Chaining Pipe-Invoked Runes
+
+Pipe invocations can be chained, with each rune receiving the output of the previous:
+
+```sigil
+rune trim! {
+    () => { __pipe|String·trim() }
+}
+
+rune uppercase! {
+    () => { __pipe|String·to_upper() }
+}
+
+rune validate_length! {
+    ($min:expr) => {
+        ⎇ __pipe|len() < $min {
+            ⤺ Err("too short")
+        }
+        ⤺ Ok(__pipe)
+    }
+}
+
+// Chained usage
+≔ result = "  hello world  "|trim!{}|uppercase!{}|validate_length!{5}
+// result = Ok("HELLO WORLD")
+```
+
+#### 2.6.5 Return Semantics in Pipe-Invoked Runes
+
+Return statements (`⤺` or `return`) within a pipe-invoked rune body return from the **rune expansion**, not from the calling function. The rune body evaluates as a single expression:
+
+```sigil
+rune safe_divide! {
+    ($divisor:expr) => {
+        ⎇ $divisor == 0 {
+            ⤺ Err("division by zero")  // Returns Err from rune, not caller
+        }
+        ⤺ Ok(__pipe / $divisor)
+    }
+}
+
+fn calculate(x: i64) -> Result<i64, String> {
+    ≔ step1 = x|safe_divide!{2}    // If divisor is 0, returns Err
+    println("After macro")          // This line WILL execute
+    step1                           // Return the result
+}
+```
+
+#### 2.6.6 Type of `__pipe`
+
+The `__pipe` variable has the same type as the left-hand expression. Within the rune body, `__pipe` can be used anywhere an expression of that type is expected.
+
+**Important:** The rune author must ensure the rune body is compatible with the types passed via pipe. Type mismatches will be caught at compile time when the rune is expanded.
 
 ---
 
@@ -914,3 +1197,154 @@ const _: () = compile_print!(Three·NAME);
 | **Inscription** | Compile | Item | Item | Declarative decoration |
 
 The Sigil programmer wields these tools like a grimoire — each incantation reshaping code at the moment of compilation, before a single instruction executes.
+
+---
+
+## 13. Implementation Notes and Known Limitations
+
+This section documents the current implementation state, known limitations, and edge cases for the interpreter-based rune system.
+
+### 13.1 Implementation Status
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Basic rune definition | ✅ Complete | `rune name! { pattern => body }` |
+| Positional parameters | ✅ Complete | `($x:expr)`, `($a:expr, $b:expr)` |
+| Named parameters | ✅ Complete | `(field: $var:expr)` |
+| Pipe invocation | ✅ Complete | `value\|rune!{args}` with `__pipe` |
+| Return scoping | ✅ Complete | Return in macro returns from macro, not caller |
+| Fragment types (core) | ✅ Complete | `expr`, `ident`, `ty`, `literal`, `block`, `stmt`, `pat`, `tt` |
+| Fragment types (extended) | ❌ Pending | `path`, `item`, `meta`, `lifetime`, `vis` |
+| Repetition patterns | ❌ Pending | `$(...)*`, `$(...)+`, `$(...)?` |
+| Recursive runes | ❌ Pending | Runes that invoke themselves |
+| Hygiene | ❌ Pending | Variable scoping in expansions |
+
+### 13.2 Known Limitations
+
+#### 13.2.1 Token-Based Pattern Storage
+
+**Limitation:** Rune patterns and bodies are stored as tokenized strings rather than proper AST nodes.
+
+**Impact:**
+- Pattern matching relies on string manipulation of token sequences
+- Some edge cases with complex nesting may fail to match
+- Error messages may reference token positions rather than source positions
+
+**Example:**
+```sigil
+// The pattern ($n:expr) is stored internally as:
+// "LParen Ident(\"n\") Colon Ident(\"expr\") RParen FatArrow ..."
+```
+
+**Workaround:** Keep rune patterns simple. Avoid deeply nested token structures in patterns.
+
+#### 13.2.2 Argument Splitting Heuristics
+
+**Limitation:** Comma-splitting for multiple arguments uses depth tracking that may fail with complex expressions.
+
+**Affected Cases:**
+- String literals containing commas: `"a, b"` may be incorrectly split
+- Nested generic types with multiple parameters
+- Complex expressions with multiple comma-separated sub-expressions
+
+**Example (may fail):**
+```sigil
+rune process! { ($a:expr, $b:expr) => { ... } }
+process!("hello, world", x)  // May incorrectly split at the comma in the string
+```
+
+**Workaround:** Wrap complex arguments in parentheses: `process!(("hello, world"), x)`
+
+#### 13.2.3 Named Argument Detection
+
+**Limitation:** Named arguments are detected by checking for colon (`:`) in argument strings.
+
+**Impact:** Arguments containing colons (like ternary expressions or type annotations) may be misinterpreted as named arguments.
+
+**Example (may fail):**
+```sigil
+rune cond! { ($x:expr) => { ... } }
+cond!(a ? b : c)  // The `:` may cause incorrect parsing
+```
+
+**Workaround:** Wrap such expressions: `cond!((a ? b : c))`
+
+#### 13.2.4 Statement-Starting Body Detection
+
+**Limitation:** The parser must detect when a macro body starts with a statement (requiring block wrapping) vs. an expression.
+
+**Detected Patterns:**
+- `≔` (let binding)
+- `⎇` (if statement)
+- `⤺` (return statement)
+- `let `, `if `, `return ` (ASCII equivalents)
+
+**Not Detected:**
+- `while`, `for`, `loop` as statement starters
+- Match expressions that don't start with known patterns
+- Custom statement-like constructs
+
+**Workaround:** Explicitly wrap complex macro bodies in blocks: `{ ... }`
+
+#### 13.2.5 String Literal Handling in Detokenization
+
+**Limitation:** String literals in tokenized patterns may lose escape sequences during round-trip processing.
+
+**Impact:** Patterns or bodies containing escaped characters (`\n`, `\t`, `\"`) may not expand correctly.
+
+**Workaround:** Avoid complex escape sequences in rune definitions. Use raw strings where possible.
+
+### 13.3 Edge Cases
+
+#### 13.3.1 Empty Rune Arguments
+
+Both forms are valid and equivalent:
+```sigil
+rune empty! { () => { 42 } }
+empty!()    // OK
+empty!{}    // OK - braces treated as empty args
+```
+
+#### 13.3.2 Pipe with No Arguments
+
+```sigil
+rune identity! { () => { __pipe } }
+42|identity!{}   // Returns 42
+42|identity!()   // Also valid
+```
+
+#### 13.3.3 Nested Pipe Invocations
+
+```sigil
+rune add_one! { () => { __pipe + 1 } }
+1|add_one!{}|add_one!{}|add_one!{}   // Returns 4
+```
+
+Each `|` creates a new scope with its own `__pipe` binding.
+
+#### 13.3.4 Return Value Propagation
+
+Return statements in macro bodies are captured and converted to the macro's value:
+
+```sigil
+rune early_return! {
+    ($cond:expr) => {
+        ⎇ $cond { ⤺ "early" }
+        "normal"
+    }
+}
+
+≔ r1 = true|early_return!{}   // "early" (return captured)
+≔ r2 = false|early_return!{}  // "normal"
+```
+
+### 13.4 Future Work
+
+The following improvements are planned:
+
+1. **AST-based pattern storage** — Replace tokenized string storage with proper AST nodes
+2. **Proper lexer integration** — Use the lexer for argument splitting instead of string heuristics
+3. **Repetition patterns** — Implement `$(...)*`, `$(...)+`, `$(...)?` repetition
+4. **Extended fragment types** — Implement `path`, `item`, `meta`, `lifetime`, `vis`
+5. **Hygiene system** — Implement proper macro hygiene with gensym for introduced identifiers
+6. **Better error messages** — Source-mapped errors pointing to original rune definitions
