@@ -1,0 +1,89 @@
+// 05_http_client.sg - HTTP client for API requests
+//
+// Run: sigil run examples/05_http_client.sg
+//
+// Note: Requires network access
+
+use std·http·{Client, Request, Response};
+use std·json;
+
+// Simple GET request
+λ fetch_data(url: &str) → Result<String, String> {
+    ≔ client = Client·new();
+    ≔ response = client.get(url)?;
+
+    if response.status == 200 {
+        Ok(response.body)
+    } else {
+        Err("HTTP " + str(response.status))
+    }
+}
+
+// GET with headers
+λ fetch_with_auth(url: &str, token: &str) → Result<Response, String> {
+    ≔ client = Client·new();
+
+    client
+        .get(url)
+        .header("Authorization", "Bearer " + token)
+        .header("Accept", "application/json")
+        .send()
+}
+
+// POST with JSON body
+λ create_resource(url: &str, data: &str) → Result<Response, String> {
+    ≔ client = Client·new();
+
+    client
+        .post(url)
+        .header("Content-Type", "application/json")
+        .body(data)
+        .send()
+}
+
+// Parse JSON response
+Σ User {
+    id: i32,
+    name: String,
+    email: String,
+}
+
+λ fetch_user(id: i32) → Result<User, String> {
+    ≔ url = "https://jsonplaceholder.typicode.com/users/" + str(id);
+    ≔ response = fetch_data(&url)?;
+
+    // Parse JSON (~ marks as external/reported data)
+    ≔ parsed = json·parse(&response)~?;
+
+    Ok(User {
+        id: parsed["id"].as_i32()~,
+        name: parsed["name"].as_string()~,
+        email: parsed["email"].as_string()~,
+    })
+}
+
+λ main() {
+    println("=== HTTP Client Examples ===\n");
+
+    // Fetch a user from public API
+    println("Fetching user from API...");
+    match fetch_user(1) {
+        Ok(user) => {
+            println("User ID: " + str(user.id));
+            println("Name: " + user.name);
+            println("Email: " + user.email);
+        },
+        Err(e) => println("Error: " + e),
+    }
+
+    // POST example (simulated)
+    println("\n--- POST Request ---");
+    ≔ post_data = r#"{"title": "Test", "body": "Content", "userId": 1}"#;
+    match create_resource("https://jsonplaceholder.typicode.com/posts", post_data) {
+        Ok(response) => {
+            println("Status: " + str(response.status));
+            println("Response: " + response.body);
+        },
+        Err(e) => println("Error: " + e),
+    }
+}
