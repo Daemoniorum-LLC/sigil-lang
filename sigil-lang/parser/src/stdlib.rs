@@ -34888,7 +34888,7 @@ fn register_neural(interp: &mut Interpreter) {
                 // This is a simplified implementation - proper autograd would traverse the computation graph
                 let tensors_to_update: Vec<Rc<RefCell<HashMap<String, Value>>>> = {
                     let env = interp.environment.borrow();
-                    env.values.iter().filter_map(|(_, (value, _))| {
+                    env.iter_values().filter_map(|(_, value)| {
                         if let Value::Struct { name: n, fields: f } = value {
                             if n == "Tensor" {
                                 let fb = f.borrow();
@@ -35230,8 +35230,8 @@ fn register_ai_ir(interp: &mut Interpreter) {
         let functions: Vec<Value> = {
             let globals = interp.globals.borrow();
             let mut funcs = Vec::new();
-            for (name, value) in globals.values.iter() {
-                if let (Value::Function(_), _) = value {
+            for (name, value) in globals.iter_values() {
+                if let Value::Function(_) = value {
                     let mut func_fields = HashMap::new();
                     func_fields.insert("name".to_string(), Value::String(Rc::new(name.clone())));
 

@@ -1286,6 +1286,23 @@ pub struct Interpreter {
     /// params is a Vec<String> of parameter names (e.g., ["n"] for macro foo($n) {...})
     /// body_tokens is the raw body string to be parsed and evaluated
     pub user_macros: RefCell<HashMap<String, (Vec<String>, String)>>,
+    // === AI IR Export Fields (Phase 8) ===
+    /// Source text for span-to-line conversion (used by __export_ir)
+    pub source_text: Option<String>,
+    /// Function spans for IR export (function_name -> span)
+    pub function_spans: HashMap<String, crate::span::Span>,
+    /// Raw trait definitions for IR export
+    pub trait_defs: Vec<crate::ast::TraitDef>,
+    /// Raw impl blocks for IR export
+    pub impl_blocks: Vec<crate::ast::ImplBlock>,
+    /// Constant definitions for IR export (const_name, span)
+    pub const_defs: Vec<(String, crate::span::Span)>,
+    /// Modules in current crate for IR export
+    pub crate_modules: HashSet<String>,
+    /// Current crate name for module resolution
+    pub crate_name: Option<String>,
+    /// Alias for current crate (e.g., "tome" for tome commands)
+    pub crate_alias: Option<String>,
 }
 
 /// Type definition for structs/enums
@@ -1328,6 +1345,15 @@ impl Interpreter {
             ir_impls: RefCell::new(Vec::new()),
             source_code: RefCell::new(String::new()),
             user_macros: RefCell::new(HashMap::new()),
+            // Phase 8: AI IR Export fields
+            source_text: None,
+            function_spans: HashMap::new(),
+            trait_defs: Vec::new(),
+            impl_blocks: Vec::new(),
+            const_defs: Vec::new(),
+            crate_modules: HashSet::new(),
+            crate_name: None,
+            crate_alias: None,
         };
 
         // Register built-in functions
@@ -1349,6 +1375,27 @@ impl Interpreter {
     /// Set current source directory for resolving relative module paths
     pub fn set_current_source_dir(&mut self, dir: Option<String>) {
         self.current_source_dir = dir;
+    }
+
+    /// Set source directory for the current program (for module resolution)
+    /// This is the directory containing the entry point file
+    pub fn set_source_dir(&mut self, dir: String) {
+        self.current_source_dir = Some(dir);
+    }
+
+    /// Set the current crate name (for module prefixing)
+    pub fn set_crate_name(&mut self, name: String) {
+        self.crate_name = Some(name);
+    }
+
+    /// Set an alias for the current crate (e.g., "tome" for tome commands)
+    pub fn set_crate_alias(&mut self, alias: String) {
+        self.crate_alias = Some(alias);
+    }
+
+    /// Register a module in the current crate for IR export
+    pub fn register_module(&mut self, name: String) {
+        self.crate_modules.insert(name);
     }
 
     /// Get program arguments (uses overridden args if set, otherwise env::args)
@@ -2656,6 +2703,9 @@ impl Interpreter {
                     self.globals.borrow_mut().define(qualified_name, fn_value);
                 }
 
+                // Track function span for IR export (raw span for __export_ir)
+                self.function_spans.insert(fn_name.clone(), func.name.span.clone());
+
                 // Track function for IR export with span info
                 let span = &func.name.span;
                 let start_line = self.offset_to_line(span.start);
@@ -2773,6 +2823,9 @@ impl Interpreter {
                 Ok(Value::Null)
             }
             Item::Const(c) => {
+                // Track constant for IR export (raw name + span for __export_ir)
+                self.const_defs.push((c.name.name.clone(), c.name.span.clone()));
+
                 let value = self.evaluate(&c.value)?;
                 self.globals.borrow_mut().define(c.name.name.clone(), value.clone());
 
@@ -2881,6 +2934,9 @@ impl Interpreter {
                 Ok(Value::Null)
             }
             Item::Impl(impl_block) => {
+                // Track impl block for IR export (raw AST for __export_ir)
+                self.impl_blocks.push(impl_block.clone());
+
                 // Extract type name from self_ty
                 let type_name = match &impl_block.self_ty {
                     TypeExpr::Path(path) => path
@@ -2947,6 +3003,9 @@ impl Interpreter {
             Item::Module(module) => {
                 // Handle module definitions
                 let module_name = &module.name.name;
+
+                // Track module for IR export
+                self.crate_modules.insert(module_name.clone());
 
                 if let Some(items) = &module.items {
                     // Inline module: mod foo { ... }
@@ -3038,6 +3097,10 @@ impl Interpreter {
                                 // Handle nested modules recursively
                                 let nested_name =
                                     format!("{}·{}", module_name, nested_mod.name.name);
+
+                                // Track nested module for IR export
+                                self.crate_modules.insert(nested_name.clone());
+
                                 if let Some(nested_items) = &nested_mod.items {
                                     // Create a temporary module item with qualified name
                                     // and process it recursively
@@ -3145,7 +3208,10 @@ impl Interpreter {
                 Ok(Value::Null)
             }
             Item::Trait(trait_def) => {
-                // Track trait for IR export
+                // Track trait for IR export (raw AST for __export_ir)
+                self.trait_defs.push(trait_def.clone());
+
+                // Also track as Value for legacy ir_traits
                 let method_names: Vec<Value> = trait_def.items.iter().filter_map(|item| {
                     match item {
                         crate::ast::TraitItem::Function(f) => Some(Value::String(Rc::new(f.name.name.clone()))),
