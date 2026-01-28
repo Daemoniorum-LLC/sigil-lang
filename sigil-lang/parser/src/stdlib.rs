@@ -47,7 +47,7 @@ use crate::interpreter::{
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -6174,7 +6174,6 @@ fn register_concurrency(interp: &mut Interpreter) {
 
     // TcpStream::write_all - write all bytes to stream
     define(interp, "TcpStream·write_all", Some(2), |_, args| {
-        use std::io::Write;
 
         let stream_id = match &args[0] {
             Value::Map(m) => {
@@ -6230,7 +6229,6 @@ fn register_concurrency(interp: &mut Interpreter) {
 
     // TcpStream::flush - flush the stream
     define(interp, "TcpStream·flush", Some(1), |_, args| {
-        use std::io::Write;
 
         let stream_id = match &args[0] {
             Value::Map(m) => {
@@ -9192,8 +9190,7 @@ fn register_fs(interp: &mut Interpreter) {
         use std::fs::OpenOptions;
         match OpenOptions::new().append(true).create(true).open(&path) {
             Ok(mut file) => {
-                use std::io::Write;
-                match file.write_all(content.as_bytes()) {
+                        match file.write_all(content.as_bytes()) {
                     Ok(()) => Ok(Value::Null),
                     Err(e) => Err(RuntimeError::new(format!("fs_append() write error: {}", e))),
                 }
@@ -9496,14 +9493,12 @@ fn register_fs(interp: &mut Interpreter) {
         match fd {
             1 => {
                 print!("{}", output);
-                use std::io::Write;
-                std::io::stdout().flush().ok();
+                        std::io::stdout().flush().ok();
                 Ok(Value::Int(output.len() as i64))
             }
             2 => {
                 eprint!("{}", output);
-                use std::io::Write;
-                std::io::stderr().flush().ok();
+                        std::io::stderr().flush().ok();
                 Ok(Value::Int(output.len() as i64))
             }
             _ => Err(RuntimeError::new(format!("write() unsupported fd: {}", fd))),
@@ -28607,7 +28602,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Producer·connect(addr) - Connect to Kafka broker
     define(interp, "Producer·connect", Some(1), |_, args| {
-        use std::io::{Read, Write};
 
         let addr = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -28711,7 +28705,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Producer.send(topic, key, value) - Send message to Kafka
     define(interp, "Producer·send", Some(4), |_, args| {
-        use std::io::{Read, Write};
 
         // args[0] = self (Producer), args[1] = topic, args[2] = key, args[3] = value
         let (stream_id, correlation_id, producer_fields) = match &args[0] {
@@ -28956,7 +28949,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Consumer·connect(addr) - Connect to Kafka broker as consumer
     define(interp, "Consumer·connect", Some(1), |_, args| {
-        use std::io::{Read, Write};
 
         let addr = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -29050,7 +29042,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Consumer·poll(timeout_ms) - Poll for messages
     define(interp, "Consumer·poll", Some(2), |_, args| {
-        use std::io::{Read, Write};
 
         let (stream_id, correlation_id, consumer_fields) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -29192,12 +29183,12 @@ fn register_protocol(interp: &mut Interpreter) {
                         offset += 4;
                         let error_code = i16::from_be_bytes([response[offset], response[offset+1]]);
                         offset += 2;
-                        let high_watermark = i64::from_be_bytes([
+                        let _high_watermark = i64::from_be_bytes([
                             response[offset], response[offset+1], response[offset+2], response[offset+3],
                             response[offset+4], response[offset+5], response[offset+6], response[offset+7]
                         ]);
                         offset += 8;
-                        let last_stable_offset = i64::from_be_bytes([
+                        let _last_stable_offset = i64::from_be_bytes([
                             response[offset], response[offset+1], response[offset+2], response[offset+3],
                             response[offset+4], response[offset+5], response[offset+6], response[offset+7]
                         ]);
@@ -29257,7 +29248,7 @@ fn register_protocol(interp: &mut Interpreter) {
                             batch_offset += 4;
 
                             // Parse records
-                            for i in 0..records_count {
+                            for _i in 0..records_count {
                                 if batch_offset >= batch_end { break; }
 
                                 // Record: length(varint) + attributes(1) + timestampDelta(varint) + offsetDelta(varint) + keyLength(varint) + key + valueLength(varint) + value + headersCount(varint) + headers
@@ -29365,7 +29356,6 @@ fn register_protocol(interp: &mut Interpreter) {
     // Connection·connect(addr) - Connect to AMQP broker with PLAIN auth
     // Address format: "host:port" or "user:pass@host:port"
     define(interp, "Connection·connect", Some(1), |_, args| {
-        use std::io::{Read, Write};
 
         let addr = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -29538,7 +29528,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Connection.create_channel() - Open an AMQP channel
     define(interp, "Connection·create_channel", Some(1), |_, args| {
-        use std::io::{Read, Write};
 
         let (stream_id, next_channel, conn_fields) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -29590,7 +29579,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Channel.declare_queue(name) - Declare a queue
     define(interp, "Channel·declare_queue", Some(2), |_, args| {
-        use std::io::{Read, Write};
 
         let (stream_id, channel_id) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -29650,7 +29638,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Channel.publish(exchange, routing_key, body) - Publish a message
     define(interp, "Channel·publish", Some(4), |_, args| {
-        use std::io::{Read, Write};
 
         let (stream_id, channel_id) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -29731,7 +29718,6 @@ fn register_protocol(interp: &mut Interpreter) {
     // Exchange·declare(channel, name, type) - Declare an exchange
     // type: "direct", "fanout", "topic", "headers"
     define(interp, "Exchange·declare", Some(3), |_, args| {
-        use std::io::{Read, Write};
 
         let (stream_id, channel_id) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -29799,7 +29785,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Queue·bind(channel, queue, exchange, routing_key) - Bind queue to exchange
     define(interp, "Queue·bind", Some(4), |_, args| {
-        use std::io::{Read, Write};
 
         let (stream_id, channel_id) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -29883,7 +29868,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Connection·close(conn) - Close AMQP connection gracefully
     define(interp, "Connection·close", Some(1), |_, args| {
-        use std::io::{Read, Write};
 
         let stream_id = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -29945,7 +29929,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Channel·consume(queue, consumer_tag) - Start consuming from queue
     define(interp, "Channel·consume", Some(3), |_, args| {
-        use std::io::{Read, Write};
 
         let (stream_id, channel_id) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -30023,9 +30006,7 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // AmqpConsumer·next(timeout_ms) - Wait for next delivery
     define(interp, "AmqpConsumer·next", Some(2), |_, args| {
-        use std::io::{Read, Write};
-
-        let (stream_id, channel_id, consumer_tag) = match &args[0] {
+        let (stream_id, channel_id, _consumer_tag) = match &args[0] {
             Value::Struct { fields, .. } => {
                 let borrowed = fields.borrow();
                 let sid = match borrowed.get("__stream_id__") {
@@ -30134,7 +30115,7 @@ fn register_protocol(interp: &mut Interpreter) {
                 // Parse content header
                 let header = &header_frame.2;
                 if header.len() < 12 { return Ok(Value::Null); }
-                let body_size = u64::from_be_bytes([
+                let _body_size = u64::from_be_bytes([
                     header[4], header[5], header[6], header[7],
                     header[8], header[9], header[10], header[11]
                 ]);
@@ -30171,7 +30152,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Delivery·ack(delivery) - Acknowledge a delivery
     define(interp, "Delivery·ack", Some(1), |_, args| {
-        use std::io::Write;
 
         let (stream_id, channel_id, delivery_tag) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -30213,7 +30193,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Delivery·reject(delivery, requeue) - Reject a delivery
     define(interp, "Delivery·reject", Some(2), |_, args| {
-        use std::io::Write;
 
         let (stream_id, channel_id, delivery_tag) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -30260,7 +30239,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // Delivery·nack(delivery, multiple, requeue) - Negative acknowledge (RabbitMQ extension)
     define(interp, "Delivery·nack", Some(3), |_, args| {
-        use std::io::Write;
 
         let (stream_id, channel_id, delivery_tag) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -30313,7 +30291,6 @@ fn register_protocol(interp: &mut Interpreter) {
 
     // AmqpConsumer·cancel(consumer) - Cancel consuming
     define(interp, "AmqpConsumer·cancel", Some(1), |_, args| {
-        use std::io::{Read, Write};
 
         let (stream_id, channel_id, consumer_tag) = match &args[0] {
             Value::Struct { fields, .. } => {
@@ -37498,15 +37475,13 @@ fn register_sys(interp: &mut Interpreter) {
         match fd {
             1 => {
                 // stdout
-                use std::io::Write;
-                print!("{}", output);
+                        print!("{}", output);
                 std::io::stdout().flush().ok();
                 Ok(Value::Int(output.len() as i64))
             }
             2 => {
                 // stderr
-                use std::io::Write;
-                eprint!("{}", output);
+                        eprint!("{}", output);
                 std::io::stderr().flush().ok();
                 Ok(Value::Int(output.len() as i64))
             }
