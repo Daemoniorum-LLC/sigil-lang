@@ -528,6 +528,75 @@ jormungandr/tests/spec/
 
 ---
 
+## Phase 8: AI IR Export (P1-IR) - BASIC COMPLETE
+
+**Goal:** Enable `__export_ir()` stdlib function for AI agent consumption of program IR.
+
+**Status:** Core functionality implemented. All 10 AI IR tests passing.
+
+**Spec:** [16-AI-IR.md](./16-AI-IR.md)
+
+### Gap Analysis (Discovered 2026-01-27)
+
+The stdlib's `__export_ir()` function and autograd backward pass reference Interpreter fields that don't exist or have mismatched names:
+
+| Expected by stdlib.rs | Current Interpreter | Gap Type |
+|-----------------------|---------------------|----------|
+| `source_text: Option<String>` | `source_code: RefCell<String>` | Name mismatch |
+| `function_spans: HashMap<String, Span>` | None | Missing |
+| `trait_defs: Vec<TraitDef>` | `ir_traits: RefCell<Vec<Value>>` | Type mismatch |
+| `impl_blocks: Vec<ImplBlock>` | `ir_impls: RefCell<Vec<Value>>` | Type mismatch |
+| `const_defs: Vec<(String, Span)>` | `ir_constants: RefCell<Vec<Value>>` | Type mismatch |
+| `crate_modules: HashSet<String>` | None | Missing |
+
+Additionally:
+- `Environment.values` is private but autograd needs to iterate over it (line 34891)
+- `main.rs` calls non-existent methods: `set_source_dir`, `set_crate_name`, `set_crate_alias`, `register_module`
+
+### Design Decision
+
+The stdlib expects **raw AST types** for maximum flexibility when building the IR export. The current `ir_*` fields store **pre-converted Values** which limits introspection.
+
+**Resolution:** Add the missing fields with the expected types. The pre-converted `ir_*` fields can remain for other use cases.
+
+### Implementation Plan
+
+1. **Environment accessibility**
+   - Add `pub fn iter_values(&self) -> impl Iterator<...>` to Environment
+   - Keep internal `values` private for encapsulation
+
+2. **Interpreter fields** - Add to struct:
+   ```rust
+   pub source_text: Option<String>,
+   pub function_spans: HashMap<String, crate::span::Span>,
+   pub trait_defs: Vec<crate::ast::TraitDef>,
+   pub impl_blocks: Vec<crate::ast::ImplBlock>,
+   pub const_defs: Vec<(String, crate::span::Span)>,
+   pub crate_modules: HashSet<String>,
+   ```
+
+3. **Interpreter methods** - Add to impl:
+   ```rust
+   pub fn set_source_dir(&mut self, dir: String)
+   pub fn set_crate_name(&mut self, name: String)
+   pub fn set_crate_alias(&mut self, alias: String)
+   pub fn register_module(&mut self, name: String)
+   ```
+
+4. **Populate fields** during parsing/execution
+
+### Tests to Create
+
+```bash
+# IR export tests
+tests/spec/16_ai_ir/P1_001_export_ir_functions.sg
+tests/spec/16_ai_ir/P1_002_export_ir_traits.sg
+tests/spec/16_ai_ir/P1_003_export_ir_modules.sg
+tests/spec/16_ai_ir/P1_004_export_ir_complete.sg
+```
+
+---
+
 ## Appendix: Test Commands
 
 ```bash
@@ -561,3 +630,4 @@ cd jormungandr/tests && ./run_tests_rust.sh
 | 1.5.0 | 2026-01-21 | Claude Code | Wave 4 complete: Native Runtime (12 modules, all phases A-F) |
 | 1.6.0 | 2026-01-21 | Claude Code | Wave 5 complete: Module resolution + 22 LLVM intrinsics |
 | 1.7.0 | 2026-01-25 | Claude Code | Wave 6-7 complete: Native syntax migration, SGDOC tooling, 100% tests |
+| 1.8.0 | 2026-01-27 | Claude Code | Phase 8 gap analysis: AI IR export fields missing in Interpreter |

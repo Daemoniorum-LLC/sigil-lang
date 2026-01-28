@@ -286,10 +286,6 @@ fn register_core(interp: &mut Interpreter) {
     interp.globals.borrow_mut().define("f64·NEG_INFINITY".to_string(), Value::Float(f64::NEG_INFINITY));
     interp.globals.borrow_mut().define("f64·NAN".to_string(), Value::Float(f64::NAN));
 
-    // Boolean aliases (archaic/alternative forms)
-    interp.globals.borrow_mut().define("yea".to_string(), Value::Bool(true));
-    interp.globals.borrow_mut().define("nay".to_string(), Value::Bool(false));
-
     // SeekFrom enum variants for file seeking (register as variant constructors)
     interp.variant_constructors.insert("SeekFrom·Start".to_string(), ("SeekFrom".to_string(), "Start".to_string(), 1));
     interp.variant_constructors.insert("SeekFrom·End".to_string(), ("SeekFrom".to_string(), "End".to_string(), 1));
@@ -5698,30 +5694,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    // Barrier::new - create barrier synchronization primitive
-    define(interp, "Barrier·new", Some(1), |_, args| {
-        let count = match &args[0] {
-            Value::Int(i) => *i,
-            _ => 1,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("Barrier".to_string())));
-        map.insert("count".to_string(), Value::Int(count));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
-
-    // std::sync::Barrier::new
-    define(interp, "std·sync·Barrier·new", Some(1), |_, args| {
-        let count = match &args[0] {
-            Value::Int(i) => *i,
-            _ => 1,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("Barrier".to_string())));
-        map.insert("count".to_string(), Value::Int(count));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
-
     // AtomicU64::new - create atomic counter
     define(interp, "AtomicU64·new", Some(1), |_, args| {
         let val = match &args[0] {
@@ -6589,33 +6561,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         fields.insert("max_redirects".to_string(), Value::Int(10));
         Ok(Value::Struct {
             name: "HttpClient".to_string(),
-            fields: Rc::new(RefCell::new(fields)),
-        })
-    });
-
-    // Client::new - HTTP Client (protocol·http·Client)
-    // Client is the base HTTP client type
-    define(interp, "Client·new", Some(0), |_, _| {
-        let mut fields = HashMap::new();
-        fields.insert("timeout_ms".to_string(), Value::Int(30000));
-        fields.insert("follow_redirects".to_string(), Value::Bool(true));
-        fields.insert("max_redirects".to_string(), Value::Int(10));
-        fields.insert("__type__".to_string(), Value::String(Rc::new("Client".to_string())));
-        Ok(Value::Struct {
-            name: "Client".to_string(),
-            fields: Rc::new(RefCell::new(fields)),
-        })
-    });
-
-    // Also register as protocol·http·Client·new
-    define(interp, "protocol·http·Client·new", Some(0), |_, _| {
-        let mut fields = HashMap::new();
-        fields.insert("timeout_ms".to_string(), Value::Int(30000));
-        fields.insert("follow_redirects".to_string(), Value::Bool(true));
-        fields.insert("max_redirects".to_string(), Value::Int(10));
-        fields.insert("__type__".to_string(), Value::String(Rc::new("Client".to_string())));
-        Ok(Value::Struct {
-            name: "Client".to_string(),
             fields: Rc::new(RefCell::new(fields)),
         })
     });
@@ -13098,7 +13043,7 @@ fn register_pattern(interp: &mut Interpreter) {
                 ..
             } => {
                 return Ok(Value::String(Rc::new(format!(
-                    "{}·{}",
+                    "{}::{}",
                     enum_name, variant_name
                 ))))
             }
@@ -33148,14 +33093,10 @@ fn register_quantum(interp: &mut Interpreter) {
         }
     });
 
-    // len for Array/String/QRegister (used in tests)
+    // len for Array (used in tests)
     define(interp, "len", Some(1), |_, args| {
         match &args[0] {
             Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
-            Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
-            Value::Tuple(t) => Ok(Value::Int(t.len() as i64)),
-            Value::Map(m) => Ok(Value::Int(m.borrow().len() as i64)),
-            Value::Set(s) => Ok(Value::Int(s.borrow().len() as i64)),
             Value::Struct { name, fields } if name == "QRegister" => {
                 let fields = fields.borrow();
                 match fields.get("__n_qubits__") {
@@ -33163,7 +33104,7 @@ fn register_quantum(interp: &mut Interpreter) {
                     _ => Err(RuntimeError::new("invalid QRegister")),
                 }
             }
-            _ => Err(RuntimeError::new("len() requires array, string, tuple, map, set, or QRegister")),
+            _ => Err(RuntimeError::new("len expects Array or QRegister")),
         }
     });
 
@@ -34519,16 +34460,11 @@ fn register_neural(interp: &mut Interpreter) {
 
     // zeros() - Create tensor filled with zeros
     // Shape is inferred from type annotation at call site, defaults to [1]
-    define(interp, "zeros", None, |interp, args| {
-        // If no args, check type context for shape from type annotation
+    define(interp, "zeros", None, |_, args| {
+        // If no args, default to scalar
         // If args[0] is array, use as shape
         let shape = if args.is_empty() {
-            // Check type context for inferred shape from Tensor<[dim1, dim2, ...]>
-            if let Some(inferred_shape) = interp.type_context.tensor_shape.borrow().clone() {
-                inferred_shape
-            } else {
-                vec![1]
-            }
+            vec![1]
         } else {
             match &args[0] {
                 Value::Array(arr) => {
@@ -34548,15 +34484,9 @@ fn register_neural(interp: &mut Interpreter) {
     });
 
     // ones() - Create tensor filled with ones
-    define(interp, "ones", None, |interp, args| {
-        // If no args, check type context for shape from type annotation
+    define(interp, "ones", None, |_, args| {
         let shape = if args.is_empty() {
-            // Check type context for inferred shape from Tensor<[dim1, dim2, ...]>
-            if let Some(inferred_shape) = interp.type_context.tensor_shape.borrow().clone() {
-                inferred_shape
-            } else {
-                vec![1]
-            }
+            vec![1]
         } else {
             match &args[0] {
                 Value::Array(arr) => {
@@ -34576,14 +34506,9 @@ fn register_neural(interp: &mut Interpreter) {
     });
 
     // randn() - Create tensor with random normal values
-    define(interp, "randn", None, |interp, args| {
-        // If no args, check type context for shape from type annotation
+    define(interp, "randn", None, |_, args| {
         let shape = if args.is_empty() {
-            if let Some(inferred_shape) = interp.type_context.tensor_shape.borrow().clone() {
-                inferred_shape
-            } else {
-                vec![1]
-            }
+            vec![1]
         } else {
             match &args[0] {
                 Value::Array(arr) => {
@@ -34730,7 +34655,7 @@ fn register_neural(interp: &mut Interpreter) {
         }
     });
 
-    // flatten(tensor_or_array) - Flatten to 1D
+    // flatten(tensor) - Flatten to 1D
     define(interp, "flatten", Some(1), |_, args| {
         match &args[0] {
             Value::Struct { name, fields } if name == "Tensor" => {
@@ -34744,18 +34669,7 @@ fn register_neural(interp: &mut Interpreter) {
                 drop(f);
                 Ok(create_tensor(data, vec![len], requires_grad))
             }
-            // Also support regular arrays (from collections stdlib)
-            Value::Array(arr) => {
-                let mut flattened = Vec::new();
-                for item in arr.borrow().iter() {
-                    match item {
-                        Value::Array(inner) => flattened.extend(inner.borrow().clone()),
-                        other => flattened.push(other.clone()),
-                    }
-                }
-                Ok(Value::Array(Rc::new(RefCell::new(flattened))))
-            }
-            _ => Err(RuntimeError::new("flatten expects Tensor or Array")),
+            _ => Err(RuntimeError::new("flatten expects Tensor")),
         }
     });
 
@@ -34989,7 +34903,7 @@ fn register_neural(interp: &mut Interpreter) {
 
                 // Set gradients on all requires_grad tensors
                 for tensor_fields in tensors_to_update {
-                    let mut f = tensor_fields.borrow_mut();
+                    let mut f: std::cell::RefMut<'_, HashMap<String, Value>> = tensor_fields.borrow_mut();
                     if let Some(Value::Array(data)) = f.get("__data__").cloned() {
                         let grad_data: Vec<Value> = data.borrow().iter().map(|_| Value::Float(1.0)).collect();
                         let shape: Vec<i64> = match f.get("__shape__") {
@@ -35309,10 +35223,47 @@ fn register_ai_ir(interp: &mut Interpreter) {
     define(interp, "__export_ir", Some(0), |interp, _args| {
         let mut ir_fields = HashMap::new();
 
-        // Get functions from IR registry (has span info)
-        ir_fields.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(
-            interp.ir_functions.borrow().clone()
-        ))));
+        // Get source text for line number calculation
+        let source_text = interp.source_text.clone().unwrap_or_default();
+
+        // Collect functions from globals with proper span info
+        let functions: Vec<Value> = {
+            let globals = interp.globals.borrow();
+            let mut funcs = Vec::new();
+            for (name, value) in globals.iter_values() {
+                if let Value::Function(_) = value {
+                    let mut func_fields = HashMap::new();
+                    func_fields.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+
+                    // Get line number from function_spans registry
+                    let line = if let Some(span) = interp.function_spans.get(name) {
+                        byte_offset_to_line(&source_text, span.start)
+                    } else {
+                        1 // Default to line 1 if no span info
+                    };
+
+                    // Add span info with proper line number
+                    let mut span_fields = HashMap::new();
+                    let mut start_fields = HashMap::new();
+                    start_fields.insert("line".to_string(), Value::Int(line));
+                    span_fields.insert("start".to_string(), Value::Struct {
+                        name: "Position".to_string(),
+                        fields: Rc::new(RefCell::new(start_fields)),
+                    });
+                    func_fields.insert("span".to_string(), Value::Struct {
+                        name: "Span".to_string(),
+                        fields: Rc::new(RefCell::new(span_fields)),
+                    });
+
+                    funcs.push(Value::Struct {
+                        name: "FunctionIR".to_string(),
+                        fields: Rc::new(RefCell::new(func_fields)),
+                    });
+                }
+            }
+            funcs
+        };
+        ir_fields.insert("functions".to_string(), Value::Array(Rc::new(RefCell::new(functions))));
 
         // Collect types from types registry
         let types: Vec<Value> = {
@@ -35350,14 +35301,13 @@ fn register_ai_ir(interp: &mut Interpreter) {
         };
         ir_fields.insert("types".to_string(), Value::Array(Rc::new(RefCell::new(types))));
 
-        // Evidentiality lattice - 5 levels: Known(!), Uncertain(?), Reported(~), Predicted(◊), Paradox(‽)
+        // Evidentiality lattice - 4 levels: Known(!), Uncertain(?), Reported(~), Inferred(◊)
         let mut lattice_fields = HashMap::new();
         let levels = vec![
             Value::String(Rc::new("Known".to_string())),
             Value::String(Rc::new("Uncertain".to_string())),
             Value::String(Rc::new("Reported".to_string())),
-            Value::String(Rc::new("Predicted".to_string())),
-            Value::String(Rc::new("Paradox".to_string())),
+            Value::String(Rc::new("Inferred".to_string())),
         ];
         lattice_fields.insert("levels".to_string(), Value::Array(Rc::new(RefCell::new(levels))));
         ir_fields.insert("evidentiality_lattice".to_string(), Value::Struct {
@@ -35365,19 +35315,65 @@ fn register_ai_ir(interp: &mut Interpreter) {
             fields: Rc::new(RefCell::new(lattice_fields)),
         });
 
-        // Return tracked IR items from interpreter registries
-        ir_fields.insert("traits".to_string(), Value::Array(Rc::new(RefCell::new(
-            interp.ir_traits.borrow().clone()
-        ))));
-        ir_fields.insert("modules".to_string(), Value::Array(Rc::new(RefCell::new(
-            interp.ir_modules.borrow().clone()
-        ))));
-        ir_fields.insert("constants".to_string(), Value::Array(Rc::new(RefCell::new(
-            interp.ir_constants.borrow().clone()
-        ))));
-        ir_fields.insert("impls".to_string(), Value::Array(Rc::new(RefCell::new(
-            interp.ir_impls.borrow().clone()
-        ))));
+        // Traits - use trait_defs registry for accurate count
+        let traits: Vec<Value> = interp.trait_defs.iter()
+            .map(|trait_def| {
+                let mut trait_fields = HashMap::new();
+                trait_fields.insert("name".to_string(), Value::String(Rc::new(trait_def.name.name.clone())));
+                Value::Struct {
+                    name: "TraitIR".to_string(),
+                    fields: Rc::new(RefCell::new(trait_fields)),
+                }
+            })
+            .collect();
+        ir_fields.insert("traits".to_string(), Value::Array(Rc::new(RefCell::new(traits))));
+
+        // Modules - use crate_modules registry
+        let modules: Vec<Value> = {
+            interp.crate_modules.iter()
+                .map(|name| {
+                    let mut mod_fields = HashMap::new();
+                    mod_fields.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+                    Value::Struct {
+                        name: "ModuleIR".to_string(),
+                        fields: Rc::new(RefCell::new(mod_fields)),
+                    }
+                })
+                .collect()
+        };
+        ir_fields.insert("modules".to_string(), Value::Array(Rc::new(RefCell::new(modules))));
+
+        // Constants - use const_defs registry for accurate tracking
+        let constants: Vec<Value> = interp.const_defs.iter()
+            .map(|(name, _span)| {
+                let mut const_fields = HashMap::new();
+                const_fields.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+                Value::Struct {
+                    name: "ConstIR".to_string(),
+                    fields: Rc::new(RefCell::new(const_fields)),
+                }
+            })
+            .collect();
+        ir_fields.insert("constants".to_string(), Value::Array(Rc::new(RefCell::new(constants))));
+
+        // Impls - use impl_blocks registry for accurate count
+        let impls: Vec<Value> = interp.impl_blocks.iter()
+            .map(|impl_block| {
+                let type_name = match &impl_block.self_ty {
+                    crate::ast::TypeExpr::Path(path) => {
+                        path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("::")
+                    }
+                    _ => "Unknown".to_string(),
+                };
+                let mut impl_fields = HashMap::new();
+                impl_fields.insert("type_name".to_string(), Value::String(Rc::new(type_name)));
+                Value::Struct {
+                    name: "ImplIR".to_string(),
+                    fields: Rc::new(RefCell::new(impl_fields)),
+                }
+            })
+            .collect();
+        ir_fields.insert("impls".to_string(), Value::Array(Rc::new(RefCell::new(impls))));
 
         Ok(Value::Struct {
             name: "IR".to_string(),
