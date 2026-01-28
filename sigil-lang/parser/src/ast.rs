@@ -716,6 +716,8 @@ pub struct Function {
     pub return_type: Option<TypeExpr>,
     pub where_clause: Option<WhereClause>,
     pub body: Option<Block>,
+    /// Documentation comments (for SGDOC extraction)
+    pub doc_comments: Vec<DocComment>,
 }
 
 /// Visibility modifier.
@@ -745,6 +747,30 @@ pub enum Evidentiality {
     Reported,  // ~ - EMA, eventually consistent
     Predicted, // ◊ - model output, speculative
     Paradox,   // ‽ - contradiction detected
+}
+
+// ============================================
+// SGDOC Documentation Comments
+// ============================================
+
+/// Evidential documentation comment attached to an item.
+/// Supports the 5-marker evidentiality lattice: !, ~, ?, ◊, ‽
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocComment {
+    /// The evidentiality marker for this documentation
+    pub evidentiality: Evidentiality,
+    /// Whether this is an inner doc comment (documents the enclosing item)
+    pub is_inner: bool,
+    /// The text content of the documentation
+    pub content: String,
+    /// Source span
+    pub span: Span,
+}
+
+impl DocComment {
+    pub fn new(evidentiality: Evidentiality, is_inner: bool, content: String, span: Span) -> Self {
+        Self { evidentiality, is_inner, content, span }
+    }
 }
 
 // ============================================
@@ -1028,6 +1054,8 @@ pub struct StructDef {
     pub fields: StructFields,
     /// Whether this is a translations module (i18n)
     pub is_translations: bool,
+    /// Documentation comments (for SGDOC extraction)
+    pub doc_comments: Vec<DocComment>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1041,6 +1069,8 @@ pub enum StructFields {
 pub struct FieldDef {
     pub visibility: Visibility,
     pub name: Ident,
+    /// Optional parameters for translation methods (e.g., `greeting(name: String): String!`)
+    pub params: Option<Vec<Param>>,
     pub ty: TypeExpr,
     /// Default value for the field (e.g., `field: Type = default_expr`)
     pub default: Option<Expr>,
@@ -1055,6 +1085,8 @@ pub struct EnumDef {
     pub variants: Vec<EnumVariant>,
     /// Whether this is a locale enum (i18n)
     pub is_locale: bool,
+    /// Documentation comments (for SGDOC extraction)
+    pub doc_comments: Vec<DocComment>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1072,6 +1104,8 @@ pub struct TraitDef {
     pub generics: Option<Generics>,
     pub supertraits: Vec<TypeExpr>,
     pub items: Vec<TraitItem>,
+    /// Documentation comments (for SGDOC extraction)
+    pub doc_comments: Vec<DocComment>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1088,6 +1122,8 @@ pub struct ImplBlock {
     pub trait_: Option<TypePath>,
     pub self_ty: TypeExpr,
     pub items: Vec<ImplItem>,
+    /// Documentation comments (for SGDOC extraction)
+    pub doc_comments: Vec<DocComment>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1112,6 +1148,8 @@ pub struct Module {
     pub visibility: Visibility,
     pub name: Ident,
     pub items: Option<Vec<Spanned<Item>>>,
+    /// Documentation comments (for SGDOC extraction)
+    pub doc_comments: Vec<DocComment>,
 }
 
 /// Use declaration.
@@ -1137,6 +1175,8 @@ pub struct ConstDef {
     pub name: Ident,
     pub ty: TypeExpr,
     pub value: Expr,
+    /// Documentation comments (for SGDOC extraction)
+    pub doc_comments: Vec<DocComment>,
 }
 
 /// Static definition.
@@ -1147,6 +1187,8 @@ pub struct StaticDef {
     pub name: Ident,
     pub ty: TypeExpr,
     pub value: Expr,
+    /// Documentation comments (for SGDOC extraction)
+    pub doc_comments: Vec<DocComment>,
 }
 
 /// Actor definition (concurrency).

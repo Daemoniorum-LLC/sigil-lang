@@ -1,0 +1,389 @@
+================================================================================
+Native function definition with rite
+================================================================================
+
+rite main() {
+    return 0;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (return_statement (literal (number_literal))))))
+
+================================================================================
+Function with lambda symbol
+================================================================================
+
+λ add(a: i32, b: i32) → i32 {
+    return a + b;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list
+      (parameter name: (identifier) (primitive_type))
+      (parameter name: (identifier) (primitive_type)))
+    (primitive_type)
+    (block
+      (return_statement
+        (binary_expression (path (identifier)) (path (identifier)))))))
+
+================================================================================
+Variable binding with definition operator
+================================================================================
+
+rite test() {
+    ≔ x = 42;
+    ≔ y = "hello";
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern (identifier))
+        (literal (number_literal)))
+      (let_statement
+        (identifier_pattern (identifier))
+        (literal (string_literal))))))
+
+================================================================================
+Mutable variable with vary
+================================================================================
+
+rite mutate() {
+    ≔ vary x = 0;
+    x = 1;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern (identifier))
+        (literal (number_literal)))
+      (assignment_statement (path (identifier)) (literal (number_literal))))))
+
+================================================================================
+Boolean literals yea and nay
+================================================================================
+
+rite flags() {
+    ≔ a = yea;
+    ≔ b = nay;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement (identifier_pattern (identifier)) (literal (boolean_literal)))
+      (let_statement (identifier_pattern (identifier)) (literal (boolean_literal))))))
+
+================================================================================
+Struct with sigil keyword
+================================================================================
+
+sigil Point {
+    x: f64,
+    y: f64,
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_definition
+    name: (identifier)
+    (struct_body
+      (struct_field name: (identifier) (primitive_type))
+      (struct_field name: (identifier) (primitive_type)))))
+
+================================================================================
+Trait with aspect keyword
+================================================================================
+
+aspect Drawable {
+    rite draw();
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_definition
+    name: (identifier)
+    (trait_body
+      (function_signature
+        name: (identifier)
+        (parameter_list)))))
+
+================================================================================
+Implementation with turnstile
+================================================================================
+
+⊢ Drawable for Point {
+    rite draw() {
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (impl_block
+    (path (identifier))
+    (path (identifier))
+    (impl_body
+      (function_definition
+        name: (identifier)
+        (parameter_list)
+        (block)))))
+
+================================================================================
+Public with sun symbol
+================================================================================
+
+☉ rite public_fn() {
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (visibility)
+    name: (identifier)
+    (parameter_list)
+    (block)))
+
+================================================================================
+Constant with diamond
+================================================================================
+
+◆ MAX_SIZE: usize = 100;
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    name: (identifier)
+    (primitive_type)
+    (literal (number_literal))))
+
+================================================================================
+Module with scroll
+================================================================================
+
+scroll utils {
+    ☉ rite helper() {
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (mod_declaration
+    name: (identifier)
+    (block
+      (function_definition
+        (visibility)
+        name: (identifier)
+        (parameter_list)
+        (block)))))
+
+================================================================================
+Import with invoke
+================================================================================
+
+invoke std::io;
+invoke this::utils::helper;
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (use_declaration
+    (use_path (identifier) (identifier)))
+  (use_declaration
+    (use_path (identifier) (identifier) (identifier))))
+
+================================================================================
+For loop with each
+================================================================================
+
+rite iterate() {
+    each i in 0..10 {
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (for_expression
+        (identifier_pattern (identifier))
+        (range_expression (literal (number_literal)) (literal (number_literal)))
+        (block)))))
+
+================================================================================
+Infinite loop with forever
+================================================================================
+
+rite run_forever() {
+    forever {
+        break;
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (loop_expression
+        (block
+          (break_statement))))))
+
+================================================================================
+While loop with cycle symbol
+================================================================================
+
+rite countdown() {
+    ≔ vary n = 10;
+    ⟳ n > 0 {
+        n = n - 1;
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern (identifier))
+        (literal (number_literal)))
+      (while_expression
+        (binary_expression (path (identifier)) (literal (number_literal)))
+        (block
+          (assignment_statement
+            (path (identifier))
+            (binary_expression (path (identifier)) (literal (number_literal)))))))))
+
+================================================================================
+Reference with vary for mutable
+================================================================================
+
+rite modify(x: &vary i32) {
+    *x = 42;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list
+      (parameter
+        name: (identifier)
+        (reference_type (primitive_type))))
+    (block
+      (assignment_statement
+        (dereference_expression (path (identifier)))
+        (literal (number_literal))))))
+
+================================================================================
+Closure with arrow return type
+================================================================================
+
+rite closures() {
+    ≔ add = |a, b| → i32 { a + b };
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    (parameter_list)
+    (block
+      (let_statement
+        (identifier_pattern (identifier))
+        (closure
+          (closure_parameters
+            (closure_parameter (identifier_pattern (identifier)))
+            (closure_parameter (identifier_pattern (identifier))))
+          (primitive_type)
+          (block
+            (binary_expression (path (identifier)) (path (identifier)))))))))
+
+================================================================================
+Path with tome (crate) and above (super)
+================================================================================
+
+invoke tome::config;
+invoke above::parent;
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (use_declaration
+    (use_path (identifier) (identifier)))
+  (use_declaration
+    (use_path (identifier) (identifier))))
+
+================================================================================
+Mixed vocabulary (English and native)
+================================================================================
+
+pub fn english_style() -> i32 {
+    let x = true;
+    return x as i32;
+}
+
+☉ rite native_style() → i32 {
+    ≔ x = yea;
+    return x as i32;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (visibility)
+    name: (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (let_statement (identifier_pattern (identifier)) (literal (boolean_literal)))
+      (return_statement (cast_expression (path (identifier)) (primitive_type)))))
+  (function_definition
+    (visibility)
+    name: (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (let_statement (identifier_pattern (identifier)) (literal (boolean_literal)))
+      (return_statement (cast_expression (path (identifier)) (primitive_type))))))

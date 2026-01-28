@@ -2,6 +2,25 @@
 //!
 //! Native code generation using LLVM for maximum performance.
 //! This backend targets near-native Rust/C++ performance.
+//!
+//! # Module Structure
+//!
+//! - **Types & Structs** (lines ~30-100): Core types, StructInfo, EnumInfo, LlvmCompiler
+//! - **Runtime Functions** (lines ~110-335): JIT-mode runtime helpers (print, math, vec, string, file I/O)
+//! - **Compiler Core** (lines ~335-470): new(), compile(), declare_runtime_functions()
+//! - **Type System** (lines ~810-1240): struct/enum registration, type conversion, evidential types
+//! - **Impl Blocks** (lines ~1240-1510): impl method declaration and compilation
+//! - **Functions** (lines ~1510-1680): function declaration, compilation, blocks, statements
+//! - **Expressions** (lines ~1680-3290): main compile_expr and all expression handlers
+//! - **Pipe Operations** (lines ~3380-3560): morpheme pipe compilation
+//! - **Array Operations** (lines ~3560-4740): sum, product, transform, filter, reduce, etc.
+//! - **Control Flow** (lines ~4970-5355): if, while, for loop compilation
+//! - **Call Compilation** (lines ~5355-7000): method calls, function calls, stdlib integration
+//! - **Macro Compilation** (lines ~7000-7365): print!, vec!, assert! macros
+//! - **Module System** (lines ~7365-7460): use declarations, modules
+//! - **Optimization & Output** (lines ~7460-7680): LLVM passes, run(), write_object_file()
+//!
+//! Tests are in a separate file: `llvm_codegen/tests.rs`
 
 #[cfg(feature = "llvm")]
 pub mod llvm {
@@ -498,15 +517,12 @@ pub mod llvm {
             self.module
                 .add_function("sigil_write_str", print_str_type, None);
 
-<<<<<<< HEAD
-=======
             // Jormungandr-compatible print functions (const char*) -> void
             self.module.add_function("print", print_str_type, None);
             self.module.add_function("println", print_str_type, None);
             self.module.add_function("eprint", print_str_type, None);
             self.module.add_function("eprintln", print_str_type, None);
 
->>>>>>> origin/main
             // sigil_write_float(f64) -> void
             self.module
                 .add_function("sigil_write_float", print_float_type, None);
@@ -2748,8 +2764,6 @@ pub mod llvm {
                                 .map(|v| v.into_int_value())
                                 .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                         }
-<<<<<<< HEAD
-=======
                         "iter" => {
                             // v.iter() returns the array/vec itself for iteration
                             // In Sigil, .iter() is an identity operation that signals
@@ -2970,7 +2984,6 @@ pub mod llvm {
                             }
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
->>>>>>> origin/main
                         _ => {}
                     }
 
@@ -3002,9 +3015,6 @@ pub mod llvm {
                             }
                         }
                     }
-<<<<<<< HEAD
-                    Err(format!("Unknown method: {}", method_name))
-=======
 
                     // Fallback: Try to call as a method that mutates/accesses the receiver
                     // Many methods like `collect_type_def`, `check`, etc. just return unit or
@@ -3074,9 +3084,7 @@ pub mod llvm {
                     }
 
                     // Default fallback - return 0 as unit
-                    // eprintln!("DEBUG: Unknown method '{}' - treating as no-op", method_name);
                     return Ok(self.context.i64_type().const_int(0, false));
->>>>>>> origin/main
                 }
                 // ============================================
                 // Sigil-native expressions
@@ -3205,8 +3213,7 @@ pub mod llvm {
                         }
                         "vec" => {
                             // vec![...] - parse and create Vec
-                            // TODO: implement vec macro
-                            Ok(self.context.i64_type().const_int(0, false))
+                            self.compile_vec_macro(fn_value, scope, tokens)
                         }
                         "panic" => {
                             // For now, just exit with code 1
@@ -3221,8 +3228,7 @@ pub mod llvm {
                             Ok(self.context.i64_type().const_int(0, false))
                         }
                         "assert" | "assert_eq" | "assert_ne" => {
-                            // TODO: implement assertions
-                            Ok(self.context.i64_type().const_int(0, false))
+                            self.compile_assert_macro(fn_value, scope, tokens, macro_name)
                         }
                         _ => {
                             // Unknown macro - try to call as function
@@ -5322,24 +5328,46 @@ pub mod llvm {
             Ok(self.context.i64_type().const_int(0, false))
         }
 
-        /// Get the length of an array (represented as i64 for now)
-        fn get_array_length(&self, _array_val: IntValue<'ctx>) -> Result<IntValue<'ctx>, String> {
-            // For now, arrays are represented as packed structs or pointers
-            // The length would typically be stored alongside the data
-            // Simplified: return a constant for testing, needs proper implementation
-            // TODO: Implement proper array length extraction from runtime representation
-            Ok(self.context.i64_type().const_int(0, false))
+        /// Get the length of an array/vec (calls sigil_vec_len)
+        fn get_array_length(&self, array_val: IntValue<'ctx>) -> Result<IntValue<'ctx>, String> {
+            // Arrays/Vecs are represented as pointers to runtime Vec structures
+            // Call sigil_vec_len to get the length
+            let len_fn = self
+                .module
+                .get_function("sigil_vec_len")
+                .ok_or("sigil_vec_len not declared")?;
+            let call = self
+                .builder
+                .build_call(len_fn, &[array_val.into()], "array_len")
+                .map_err(|e| e.to_string())?;
+            Ok(call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
         }
 
-        /// Get an element from an array at a given index
+        /// Get an element from an array/vec at a given index (calls sigil_vec_get)
         fn get_array_element(
             &self,
-            _array_val: IntValue<'ctx>,
-            _index: IntValue<'ctx>,
+            array_val: IntValue<'ctx>,
+            index: IntValue<'ctx>,
         ) -> Result<IntValue<'ctx>, String> {
-            // For now, return a placeholder
-            // TODO: Implement proper array element access
-            Ok(self.context.i64_type().const_int(0, false))
+            // Arrays/Vecs are represented as pointers to runtime Vec structures
+            // Call sigil_vec_get to get the element at the index
+            let get_fn = self
+                .module
+                .get_function("sigil_vec_get")
+                .ok_or("sigil_vec_get not declared")?;
+            let call = self
+                .builder
+                .build_call(get_fn, &[array_val.into(), index.into()], "array_get")
+                .map_err(|e| e.to_string())?;
+            Ok(call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
         }
 
         /// Compile a function call
@@ -5369,8 +5397,6 @@ pub mod llvm {
                 return Ok(self.context.i64_type().const_int(0, false));
             };
 
-<<<<<<< HEAD
-=======
             // Resolve Self:: and This:: to the actual type name
             let full_path = if full_path.starts_with("Self::")
                 || full_path.starts_with("This::")
@@ -5384,7 +5410,6 @@ pub mod llvm {
                     } else {
                         full_path.split('·').last().unwrap_or("")
                     };
-                    // eprintln!("DEBUG: Resolving Self/This to {}::{}", self_type, method);
                     format!("{}::{}", self_type, method)
                 } else {
                     return Err(format!(
@@ -5396,7 +5421,7 @@ pub mod llvm {
                 full_path
             };
 
-            // Handle common enum/type constructors explicitly (match statement has mysterious issues)
+            // Handle common enum/type constructors explicitly
             if full_path == "Result::Ok" || full_path == "Result·Ok" {
                 if args.is_empty() {
                     return Ok(self.context.i64_type().const_int(0, false));
@@ -5466,12 +5491,10 @@ pub mod llvm {
                                 } else {
                                     "eprint"
                                 }
+                            } else if with_newline {
+                                "println"
                             } else {
-                                if with_newline {
-                                    "println"
-                                } else {
-                                    "print"
-                                }
+                                "print"
                             };
                             // Try extern C functions first, fall back to sigil_print_str
                             if let Some(print_fn) = self.module.get_function(print_fn_name) {
@@ -5558,7 +5581,6 @@ pub mod llvm {
                 return Ok(self.context.i64_type().const_int(0, false));
             }
 
->>>>>>> origin/main
             // Handle qualified type paths (e.g., Vec::new, Box::new)
             match full_path.as_str() {
                 "Vec::new" => {
@@ -7191,6 +7213,272 @@ pub mod llvm {
             global.as_pointer_value()
         }
 
+        /// Split a string by commas, respecting bracket nesting.
+        /// Handles parentheses (), brackets [], braces {}, and angle brackets <>.
+        fn split_args(tokens: &str) -> Vec<String> {
+            let mut args = Vec::new();
+            let mut current = String::new();
+            let mut depth_paren = 0i32;
+            let mut depth_bracket = 0i32;
+            let mut depth_brace = 0i32;
+            let mut depth_angle = 0i32;
+            let mut in_string = false;
+            let mut escape_next = false;
+
+            for c in tokens.chars() {
+                if escape_next {
+                    current.push(c);
+                    escape_next = false;
+                    continue;
+                }
+
+                if c == '\\' && in_string {
+                    current.push(c);
+                    escape_next = true;
+                    continue;
+                }
+
+                if c == '"' {
+                    in_string = !in_string;
+                    current.push(c);
+                    continue;
+                }
+
+                if in_string {
+                    current.push(c);
+                    continue;
+                }
+
+                match c {
+                    '(' => {
+                        depth_paren += 1;
+                        current.push(c);
+                    }
+                    ')' => {
+                        depth_paren -= 1;
+                        current.push(c);
+                    }
+                    '[' => {
+                        depth_bracket += 1;
+                        current.push(c);
+                    }
+                    ']' => {
+                        depth_bracket -= 1;
+                        current.push(c);
+                    }
+                    '{' => {
+                        depth_brace += 1;
+                        current.push(c);
+                    }
+                    '}' => {
+                        depth_brace -= 1;
+                        current.push(c);
+                    }
+                    '<' => {
+                        depth_angle += 1;
+                        current.push(c);
+                    }
+                    '>' => {
+                        depth_angle -= 1;
+                        current.push(c);
+                    }
+                    ',' if depth_paren == 0
+                        && depth_bracket == 0
+                        && depth_brace == 0
+                        && depth_angle == 0 =>
+                    {
+                        let trimmed = current.trim().to_string();
+                        if !trimmed.is_empty() {
+                            args.push(trimmed);
+                        }
+                        current.clear();
+                    }
+                    _ => {
+                        current.push(c);
+                    }
+                }
+            }
+
+            // Don't forget the last argument
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                args.push(trimmed);
+            }
+
+            args
+        }
+
+        /// Compile vec![...] macro - creates a new Vec and pushes elements
+        fn compile_vec_macro(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            tokens: &str,
+        ) -> Result<IntValue<'ctx>, String> {
+            let tokens = tokens.trim();
+
+            // Parse comma-separated elements (bracket-aware)
+            let elements = if tokens.is_empty() {
+                Vec::new()
+            } else {
+                Self::split_args(tokens)
+            };
+
+            // Create new vec with capacity
+            let capacity = elements.len() as u64;
+            let vec_new_fn = self
+                .module
+                .get_function("sigil_vec_new")
+                .ok_or("sigil_vec_new not declared")?;
+            let cap_val = self.context.i64_type().const_int(capacity, false);
+            let vec_call = self
+                .builder
+                .build_call(vec_new_fn, &[cap_val.into()], "vec_new")
+                .map_err(|e| e.to_string())?;
+            let vec_ptr = vec_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .ok_or("vec_new did not return a value")?;
+
+            // Push each element
+            if !elements.is_empty() {
+                let vec_push_fn = self
+                    .module
+                    .get_function("sigil_vec_push")
+                    .ok_or("sigil_vec_push not declared")?;
+
+                for elem_str in &elements {
+                    let elem_val = self.compile_format_arg(fn_value, scope, elem_str)?;
+                    self.builder
+                        .build_call(vec_push_fn, &[vec_ptr.into(), elem_val.into()], "")
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+
+            Ok(vec_ptr)
+        }
+
+        /// Helper to emit a conditional panic check.
+        /// If `should_panic` is true, branches to panic block; otherwise continues.
+        fn emit_assert_check(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            should_panic: IntValue<'ctx>,
+            panic_msg: &str,
+            block_prefix: &str,
+        ) -> Result<(), String> {
+            // Get or declare sigil_panic
+            let panic_fn = self.module.get_function("sigil_panic").unwrap_or_else(|| {
+                let panic_type = self.context.void_type().fn_type(
+                    &[self.context.ptr_type(inkwell::AddressSpace::default()).into()],
+                    false,
+                );
+                self.module.add_function("sigil_panic", panic_type, None)
+            });
+
+            // Create blocks for conditional panic
+            let panic_block = self
+                .context
+                .append_basic_block(fn_value, &format!("{}_panic", block_prefix));
+            let continue_block = self
+                .context
+                .append_basic_block(fn_value, &format!("{}_continue", block_prefix));
+
+            self.builder
+                .build_conditional_branch(should_panic, panic_block, continue_block)
+                .map_err(|e| e.to_string())?;
+
+            // Panic block
+            self.builder.position_at_end(panic_block);
+            let msg = self.create_global_string(panic_msg, &format!("{}_msg", block_prefix));
+            self.builder
+                .build_call(panic_fn, &[msg.into()], "")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unreachable()
+                .map_err(|e| e.to_string())?;
+
+            // Continue block
+            self.builder.position_at_end(continue_block);
+            Ok(())
+        }
+
+        /// Compile assert!, assert_eq!, assert_ne! macros
+        fn compile_assert_macro(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            tokens: &str,
+            macro_name: &str,
+        ) -> Result<IntValue<'ctx>, String> {
+            let tokens = tokens.trim();
+
+            match macro_name {
+                "assert" => {
+                    // assert!(condition) - panic if condition is false
+                    let condition = self.compile_format_arg(fn_value, scope, tokens)?;
+                    let zero = self.context.i64_type().const_int(0, false);
+                    let is_false = self
+                        .builder
+                        .build_int_compare(inkwell::IntPredicate::EQ, condition, zero, "is_false")
+                        .map_err(|e| e.to_string())?;
+
+                    self.emit_assert_check(fn_value, is_false, "assertion failed", "assert")?;
+                }
+                "assert_eq" => {
+                    // assert_eq!(left, right) - panic if left != right
+                    let args = Self::split_args(tokens);
+                    if args.len() != 2 {
+                        return Err(format!(
+                            "assert_eq! requires two arguments, got {}",
+                            args.len()
+                        ));
+                    }
+                    let left = self.compile_format_arg(fn_value, scope, &args[0])?;
+                    let right = self.compile_format_arg(fn_value, scope, &args[1])?;
+                    let not_equal = self
+                        .builder
+                        .build_int_compare(inkwell::IntPredicate::NE, left, right, "not_equal")
+                        .map_err(|e| e.to_string())?;
+
+                    self.emit_assert_check(
+                        fn_value,
+                        not_equal,
+                        "assertion failed: left != right",
+                        "assert_eq",
+                    )?;
+                }
+                "assert_ne" => {
+                    // assert_ne!(left, right) - panic if left == right
+                    let args = Self::split_args(tokens);
+                    if args.len() != 2 {
+                        return Err(format!(
+                            "assert_ne! requires two arguments, got {}",
+                            args.len()
+                        ));
+                    }
+                    let left = self.compile_format_arg(fn_value, scope, &args[0])?;
+                    let right = self.compile_format_arg(fn_value, scope, &args[1])?;
+                    let equal = self
+                        .builder
+                        .build_int_compare(inkwell::IntPredicate::EQ, left, right, "equal")
+                        .map_err(|e| e.to_string())?;
+
+                    self.emit_assert_check(
+                        fn_value,
+                        equal,
+                        "assertion failed: left == right",
+                        "assert_ne",
+                    )?;
+                }
+                _ => return Err(format!("Unknown assert macro: {}", macro_name)),
+            }
+
+            // Return unit (0) for void-like result
+            Ok(self.context.i64_type().const_int(0, false))
+        }
+
         /// Process a use declaration to register imports
         fn process_use(&mut self, use_decl: &ast::UseDecl) -> Result<(), String> {
             self.process_use_tree(&use_decl.tree, &[])
@@ -7504,741 +7792,8 @@ pub mod llvm {
     }
 
     // ============================================
-    // Tests
+    // Tests (in sibling file tests.rs)
     // ============================================
     #[cfg(test)]
-    mod tests {
-        use super::*;
-        use crate::optimize::OptLevel;
-
-        fn run_sigil(source: &str) -> Result<i64, String> {
-            let context = Context::create();
-            let mut compiler = LlvmCompiler::new(&context, OptLevel::Standard)?;
-            compiler.compile(source)?;
-            compiler.run()
-        }
-
-        // ============================================
-        // Evidentiality Tests
-        // ============================================
-
-        #[test]
-        fn test_evidential_known_unwrap() {
-            // Known (!) just returns the inner value
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 42!;
-                    x
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 42);
-        }
-
-        #[test]
-        fn test_evidential_uncertain() {
-            // Uncertain (?) wraps and unwraps correctly
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 100?;
-                    x
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 100);
-        }
-
-        #[test]
-        fn test_evidential_reported() {
-            // Reported (~) wraps and unwraps correctly
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 200~;
-                    x
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 200);
-        }
-
-        #[test]
-        fn test_evidential_predicted() {
-            // Predicted (◊) wraps and unwraps correctly
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 300◊;
-                    x
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 300);
-        }
-
-        #[test]
-        fn test_evidential_in_expression() {
-            // Evidential values can be used in expressions
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let a = 10?;
-                    let b = 20?;
-                    a + b
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 30);
-        }
-
-        #[test]
-        fn test_evidential_unwrap_chain() {
-            // Chain: uncertain -> known (unwrap)
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 42?;
-                    let y = x!;
-                    y
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 42);
-        }
-
-        #[test]
-        fn test_evidential_nested() {
-            // Nested evidential operations
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = (50?)!;
-                    x + 5
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 55);
-        }
-
-        #[test]
-        fn test_evidential_with_arithmetic() {
-            // Evidential values with arithmetic
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let known = 100!;
-                    let uncertain = 50?;
-                    known + uncertain * 2
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 200);
-        }
-
-        #[test]
-        fn test_evidential_function_return() {
-            // Function returning evidential value
-            let result = run_sigil(
-                r#"
-                fn get_uncertain() -> i64 {
-                    42?
-                }
-
-                fn main() -> i64 {
-                    let x = get_uncertain();
-                    x + 8
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 50);
-        }
-
-        #[test]
-        fn test_evidential_mixed_markers() {
-            // Mix different evidentiality markers
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let a = 10!;  // known
-                    let b = 20?;  // uncertain
-                    let c = 30~;  // reported
-                    a + b + c
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 60);
-        }
-
-        #[test]
-        fn test_evidential_in_if() {
-            // Evidential in conditional
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 1?;
-                    if x == 1 {
-                        100?
-                    } else {
-                        200?
-                    }
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 100);
-        }
-
-        #[test]
-        fn test_evidential_paradox() {
-            // Paradox (‽) marker - contradiction detection
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 42‽;
-                    x
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 42);
-        }
-
-        #[test]
-        fn test_evidential_multiple_unwraps() {
-            // Multiple sequential unwraps
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let a = 10?;
-                    let b = a!;
-                    let c = b!;
-                    c
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 10);
-        }
-
-        #[test]
-        fn test_evidential_in_loop() {
-            // Evidential values in a loop
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let mut sum = 0?;
-                    let mut i = 0;
-                    while i < 5 {
-                        sum = sum + i?;
-                        i = i + 1;
-                    }
-                    sum!
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 10); // 0 + 1 + 2 + 3 + 4 = 10
-        }
-
-        #[test]
-        fn test_evidential_comparison() {
-            // Comparison of evidential values
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let a = 10?;
-                    let b = 20?;
-                    if a < b {
-                        1!
-                    } else {
-                        0!
-                    }
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 1);
-        }
-
-        #[test]
-        fn test_evidential_negation() {
-            // Negation with evidential values
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 42?;
-                    let y = -x;
-                    y + 100
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 58); // -42 + 100 = 58
-        }
-
-        #[test]
-        fn test_evidential_chain_operations() {
-            // Chain of operations with mixed evidentiality
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 10!;
-                    let y = 20?;
-                    let z = 30~;
-                    let w = 40◊;
-                    x + y + z + w
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 100);
-        }
-
-        #[test]
-        fn test_evidential_deeply_nested() {
-            // Deeply nested evidential expressions
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = ((((42?)?)?)?)?;
-                    x!
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 42);
-        }
-
-        #[test]
-        fn test_evidential_struct_field() {
-            // Evidential values as struct fields
-            let result = run_sigil(
-                r#"
-                struct Data {
-                    value: i64,
-                }
-
-                fn main() -> i64 {
-                    let d = Data { value: 100? };
-                    d.value + 1
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 101);
-        }
-
-        #[test]
-        fn test_evidential_function_param() {
-            // Function with evidential parameter
-            let result = run_sigil(
-                r#"
-                fn double(x: i64) -> i64 {
-                    x * 2
-                }
-
-                fn main() -> i64 {
-                    let val = 25?;
-                    double(val!)
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 50);
-        }
-
-        #[test]
-        fn test_evidential_all_markers_chain() {
-            // All 5 evidentiality markers in sequence
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let known = 1!;      // Known
-                    let uncertain = 2?;  // Uncertain
-                    let reported = 3~;   // Reported
-                    let predicted = 4◊;  // Predicted
-                    let paradox = 5‽;    // Paradox
-                    known + uncertain + reported + predicted + paradox
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 15);
-        }
-
-        // ============================================
-        // Generic Monomorphization Tests (existing)
-        // ============================================
-
-        #[test]
-        fn test_generic_struct_basic() {
-            let result = run_sigil(
-                r#"
-                struct Container<T> {
-                    value: T,
-                    count: i32,
-                }
-
-                fn main() -> i64 {
-                    let c = Container::<i32> { value: 42, count: 1 };
-                    c.value + c.count
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 43);
-        }
-
-        #[test]
-        fn test_generic_struct_two_params() {
-            let result = run_sigil(
-                r#"
-                struct Pair<A, B> {
-                    first: A,
-                    second: B,
-                }
-
-                fn main() -> i64 {
-                    let p = Pair::<i32, i32> { first: 10, second: 20 };
-                    p.first + p.second
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 30);
-        }
-
-        // ============================================
-        // Morpheme Tests - Element Access
-        // ============================================
-
-        #[test]
-        fn test_morpheme_first() {
-            // First element: [1, 2, 3] |α returns 1
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [10, 20, 30] |α
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 10);
-        }
-
-        #[test]
-        fn test_morpheme_last() {
-            // Last element: [1, 2, 3] |ω returns 3
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [10, 20, 30] |ω
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 30);
-        }
-
-        #[test]
-        fn test_morpheme_middle() {
-            // Middle element: [1, 2, 3, 4, 5] |μ returns 3
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [10, 20, 30, 40, 50] |μ
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 30);
-        }
-
-        #[test]
-        fn test_morpheme_nth() {
-            // Nth element: [1, 2, 3] |ν{1} returns 2
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [10, 20, 30] |ν{1}
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 20);
-        }
-
-        // ============================================
-        // Morpheme Tests - Reductions
-        // ============================================
-
-        #[test]
-        fn test_morpheme_reduce_min() {
-            // Simple min of two values
-            let result = run_sigil(
-                r#"
-                fn min2(a: i64, b: i64) -> i64 {
-                    if a < b { a } else { b }
-                }
-                fn main() -> i64 {
-                    min2(min2(5, 2), min2(8, 1))
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 1);
-        }
-
-        #[test]
-        fn test_morpheme_reduce_max() {
-            // Simple max of two values
-            let result = run_sigil(
-                r#"
-                fn max2(a: i64, b: i64) -> i64 {
-                    if a > b { a } else { b }
-                }
-                fn main() -> i64 {
-                    max2(max2(5, 2), max2(8, 9))
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 9);
-        }
-
-        #[test]
-        fn test_morpheme_reduce_all_true() {
-            // All: [1, 2, 3] |ρ& returns 1 (all non-zero)
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [1, 2, 3] |ρ&
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 1);
-        }
-
-        #[test]
-        fn test_morpheme_reduce_all_false() {
-            // All: [1, 0, 3] |ρ& returns 0 (not all non-zero)
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [1, 0, 3] |ρ&
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 0);
-        }
-
-        #[test]
-        fn test_morpheme_reduce_any_true() {
-            // Any: [0, 0, 1] |ρ| returns 1 (at least one non-zero)
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [0, 0, 1] |ρ|
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 1);
-        }
-
-        #[test]
-        fn test_morpheme_reduce_any_false() {
-            // Any: [0, 0, 0] |ρ| returns 0 (none non-zero)
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [0, 0, 0] |ρ|
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 0);
-        }
-
-        // ============================================
-        // Combined Morpheme Tests
-        // ============================================
-
-        #[test]
-        fn test_morpheme_transform_then_first() {
-            // Transform then first: [1, 2, 3] |τ{|x| x * 10} |α returns 10
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let arr = [1, 2, 3] |τ{|x| x * 10};
-                    arr |α
-                }
-            "#,
-            );
-            // Note: This tests that transform returns array, then first extracts
-            // Current impl may need adjustment
-            assert!(result.is_ok());
-        }
-
-        #[test]
-        fn test_morpheme_filter_then_sum() {
-            // Filter then sum: keep values > 3, sum them
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [1, 5, 2, 8, 3, 7] |φ{|x| x > 3} |ρ+
-                }
-            "#,
-            );
-            // After filter: [5, 8, 7], sum = 20
-            assert_eq!(result.unwrap(), 20);
-        }
-
-        // ============================================
-        // New Morpheme Tests - Sort, Choice, Custom Reduce
-        // ============================================
-
-        #[test]
-        fn test_morpheme_sort_basic() {
-            // Sort returns minimum (first after sort): [3, 1, 2] |σ returns 1
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [3, 1, 2] |σ
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 1);
-        }
-
-        #[test]
-        fn test_morpheme_sort_already_sorted() {
-            // Sort already sorted: [1, 2, 3] |σ returns 1
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [1, 2, 3] |σ
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 1);
-        }
-
-        #[test]
-        fn test_morpheme_sort_reverse() {
-            // Sort reverse: [5, 4, 3, 2, 1] |σ returns 1
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [5, 4, 3, 2, 1] |σ
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 1);
-        }
-
-        #[test]
-        fn test_morpheme_sort_single() {
-            // Sort single element: [42] |σ returns 42
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [42] |σ
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 42);
-        }
-
-        #[test]
-        fn test_morpheme_choice_deterministic() {
-            // Choice is deterministic based on array contents
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [10, 20, 30] |χ
-                }
-            "#,
-            );
-            // Result should be one of 10, 20, or 30
-            let val = result.unwrap();
-            assert!(val == 10 || val == 20 || val == 30);
-        }
-
-        #[test]
-        fn test_morpheme_choice_single() {
-            // Choice with single element: [42] |χ returns 42
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [42] |χ
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 42);
-        }
-
-        #[test]
-        fn test_morpheme_custom_reduce_sum() {
-            // Custom reduce sum: [1, 2, 3, 4] |ρ{|a, x| a + x} = 10
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [1, 2, 3, 4] |ρ{|acc, x| acc + x}
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 10);
-        }
-
-        #[test]
-        fn test_morpheme_custom_reduce_product() {
-            // Custom reduce product: [1, 2, 3, 4] |ρ{|a, x| a * x} = 24
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [1, 2, 3, 4] |ρ{|acc, x| acc * x}
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 24);
-        }
-
-        #[test]
-        fn test_morpheme_custom_reduce_difference() {
-            // Custom reduce difference: [100, 20, 5] |ρ{|a, x| a - x} = 75
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [100, 20, 5] |ρ{|acc, x| acc - x}
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 75);
-        }
-
-        #[test]
-        fn test_morpheme_custom_reduce_single() {
-            // Custom reduce single element: [42] |ρ{|a, x| a + x} = 42
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    [42] |ρ{|acc, x| acc + x}
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 42);
-        }
-
-        #[test]
-        fn test_morpheme_await_expr() {
-            // Await expression form: expr⌛ (postfix syntax)
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 42;
-                    x⌛
-                }
-            "#,
-            );
-            // In sync LLVM context, await is identity
-            assert_eq!(result.unwrap(), 42);
-        }
-
-        #[test]
-        fn test_morpheme_await_nested() {
-            // Nested await expressions
-            let result = run_sigil(
-                r#"
-                fn main() -> i64 {
-                    let x = 21;
-                    let y = x⌛ + x⌛;
-                    y
-                }
-            "#,
-            );
-            assert_eq!(result.unwrap(), 42);
-        }
-    }
+    mod tests;
 }

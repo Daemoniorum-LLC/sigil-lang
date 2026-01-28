@@ -186,7 +186,7 @@ rite problem_section() → VNode! {
                 ·child(
                     CodeBlock::new(
                         "// In Sigil - the compiler catches this:\n" ++
-                        "async rite get_user(id: !String) → !Profile {\n" ++
+                        "async λ get_user(id: !String) → !Profile {\n" ++
                         "    ≔ response~ = Http·get(\"/api/users/{id}\").await  // ~ = external\n" ++
                         "    ≔ profile~ = response·json::<~Profile>()           // ~ propagates\n" ++
                         "    save_to_database(profile)  // ERROR: ~ cannot flow to !\n" ++
@@ -361,7 +361,7 @@ rite getting_started_section() → VNode! {
         ·child(
             CodeBlock::new(
                 "// hello.sigil\n" ++
-                "rite main() {\n" ++
+                "λ main() {\n" ++
                 "    ≔ name! = \"World\"\n" ++
                 "    println(\"Hello, {name}!\")\n" ++
                 "}",
@@ -505,7 +505,7 @@ rite chapter_1() → VNode! {
             ·child(
                 CodeBlock::new(
                     "// hello.sigil\n" ++
-                    "rite main() {\n" ++
+                    "λ main() {\n" ++
                     "    println(\"Hello, Sigil!\")\n" ++
                     "}",
                     "sigil"
@@ -577,7 +577,7 @@ rite chapter_4() → VNode! {
             )
             ·child(
                 CodeBlock::new(
-                    "☉ sigil User {\n" ++
+                    "☉ Σ User {\n" ++
                     "    id: !i64,\n" ++
                     "    name: !String,\n" ++
                     "}",
@@ -766,7 +766,7 @@ rite agent_layer(name: &str, components: &str) → VNode! {
             ·child(h1()·class("playground-title")·style("font-size: 3rem; color: #e8e8ec;")·child(text("Sigil Playground"))·to_vnode())
             ·child(p()·class("playground-description")·style("color: #a0a0aa;")·child(text("Interactive browser-based Sigil environment."))·to_vnode())
             ·child(div()·class("playground-actions")·child(Button::primary("Learn Sigil", "/pages/learn.html")·to_vnode())·child(Button::secondary("Docs", "/pages/docs.html")·to_vnode())·to_vnode())
-            ·child(div()·class("playground-preview")·style("margin-top: 2rem;")·child(div()·class("preview-code")·child(CodeBlock::new("rite main() { println(\"Hello!\") }", "sigil")·to_vnode())·to_vnode())·to_vnode())
+            ·child(div()·class("playground-preview")·style("margin-top: 2rem;")·child(div()·class("preview-code")·child(CodeBlock::new("λ main() { println(\"Hello!\") }", "sigil")·to_vnode())·to_vnode())·to_vnode())
             ·child(ul()·class("feature-list")·style("list-style: none; margin-top: 1rem;")·child(li()·child(text("Browser execution"))·to_vnode())·to_vnode())
             ·child(div()·class("notify-form")·child(a()·class("notify-btn")·attr("href", "https://github.com/Daemoniorum-LLC/sigil-lang")·child(text("Star on GitHub"))·to_vnode())·to_vnode())
             ·to_vnode()
@@ -831,7 +831,7 @@ rite examples_content() → VNode! {
         ·child(p()·style(prose_style)·child(text("The classic first program in Sigil."))·to_vnode())
         ·child(
             CodeBlock::new(
-                "rite main() {\n" ++
+                "λ main() {\n" ++
                 "    println(\"Hello, Sigil!\")\n" ++
                 "}",
                 "sigil"
@@ -842,7 +842,7 @@ rite examples_content() → VNode! {
         ·child(p()·style(prose_style)·child(text("Every value carries provenance information."))·to_vnode())
         ·child(
             CodeBlock::new(
-                "rite main() {\n" ++
+                "λ main() {\n" ++
                 "    ≔ computed!  = 2 + 2        // Known: verified locally\n" ++
                 "    ≔ maybe?     = find_user(1) // Uncertain: might be absent\n" ++
                 "    ≔ external~  = api·fetch()  // Reported: external source\n" ++
@@ -856,7 +856,7 @@ rite examples_content() → VNode! {
         ·child(p()·style(prose_style)·child(text("Morpheme operators create readable data transformations."))·to_vnode())
         ·child(
             CodeBlock::new(
-                "rite process_users(users: Vec<User>~) → Vec<PublicProfile>! {\n" ++
+                "λ process_users(users: Vec<User>~) → Vec<PublicProfile>! {\n" ++
                 "    users\n" ++
                 "        |φ{.active}              // filter active\n" ++
                 "        |φ{.age >= 18}           // filter adults\n" ++
@@ -870,17 +870,17 @@ rite examples_content() → VNode! {
         )
         // Example 4: Struct Definition
         ·child(h3()·style(heading_style)·child(text("Struct Definition"))·to_vnode())
-        ·child(p()·style(prose_style)·child(text("Define data structures with the sigil keyword."))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Define data structures with the Σ keyword."))·to_vnode())
         ·child(
             CodeBlock::new(
-                "☉ sigil User {\n" ++
+                "☉ Σ User {\n" ++
                 "    id: !i64,\n" ++
                 "    name: !String,\n" ++
                 "    email: ?String,\n" ++
                 "}\n" ++
                 "\n" ++
                 "⊢ User {\n" ++
-                "    ☉ rite new(id: !i64, name: !String) → This! {\n" ++
+                "    ☉ λ new(id: !i64, name: !String) → This! {\n" ++
                 "        User { id, name, email: None }\n" ++
                 "    }\n" ++
                 "}",
@@ -894,7 +894,7 @@ rite examples_content() → VNode! {
             CodeBlock::new(
                 "use sigil_http::*\n" ++
                 "\n" ++
-                "async rite handle_user(req: Request~) → Response! {\n" ++
+                "async λ handle_user(req: Request~) → Response! {\n" ++
                 "    ≔ id~ = req·param(\"id\")\n" ++
                 "    ≔ user? = db·find_user(id).await\n" ++
                 "\n" ++
@@ -904,7 +904,7 @@ rite examples_content() → VNode! {
                 "    }\n" ++
                 "}\n" ++
                 "\n" ++
-                "rite main() {\n" ++
+                "λ main() {\n" ++
                 "    Server::new()\n" ++
                 "        ·get(\"/users/:id\", handle_user)\n" ++
                 "        ·listen(8080)\n" ++
@@ -915,28 +915,1122 @@ rite examples_content() → VNode! {
         ·to_vnode()
 }
 
+// =============================================================================
+// Grimoire Page - Package Registry Documentation
+// =============================================================================
+
+☉ sigil Grimoire { }
+⊢ Grimoire { ☉ rite new() → This! { Grimoire { } } }
+⊢ Component for Grimoire {
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(grimoire_sidebar())
+            ·child(grimoire_content())
+            ·to_vnode()
+    }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Grimoire::new() }
+}
+
+rite grimoire_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Getting Started", vec!["What is Grimoire?", "Quick Start", "Grimoire.toml"], section_style, title_style, link_style))
+        ·child(sidebar_section("Commands", vec!["conjure", "inscribe", "summon", "banish", "attune", "forge", "consecrate"], section_style, title_style, link_style))
+        ·child(sidebar_section("Bindings", vec!["Version", "Path", "Git"], section_style, title_style, link_style))
+        ·child(sidebar_section("Publishing", vec!["Preparing", "Consecrate", "Versioning"], section_style, title_style, link_style))
+        ·to_vnode()
+}
+
+rite grimoire_content() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;"
+    ≔ subheading_style! = "font-size: 1.125rem; font-weight: 600; color: #e8e8ec; margin: 1.5rem 0 0.75rem;"
+
+    article()
+        ·class("docs-content")
+        // Title and intro
+        ·child(
+            h1()
+                ·id("grimoire")
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("The Grimoire"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("Sigil's package registry and dependency manager. Discover, share, and manage reusable tomes (packages) of Sigil code."))
+                ·to_vnode()
+        )
+        // Feature highlights
+        ·child(
+            div()
+                ·class("feature-highlight")
+                ·style("display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 3rem;")
+                ·child(highlight_item("Ritual Commands", "conjure, summon, forge"))
+                ·child(highlight_item("Simple Bindings", "version, path, git"))
+                ·child(highlight_item("Reproducible", "Grimoire.lock"))
+                ·to_vnode()
+        )
+        // Quick Start
+        ·child(h2()·id("quick-start")·style(heading_style)·child(text("Quick Start"))·to_vnode())
+        ·child(h3()·style(subheading_style)·child(text("Create a New Tome"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "# Conjure a new tome into existence\n" ++
+                "$ sigil conjure my-tome\n" ++
+                "    Created tome 'my-tome' at ./my-tome\n" ++
+                "\n" ++
+                "$ cd my-tome && tree\n" ++
+                ".\n" ++
+                "├── Grimoire.toml\n" ++
+                "├── .gitignore\n" ++
+                "└── src\n" ++
+                "    └── main.sg",
+                "bash"
+            )·to_vnode()
+        )
+        ·child(h3()·style(subheading_style)·child(text("Add a Dependency"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "# Summon the aegis security library\n" ++
+                "$ sigil summon aegis\n" ++
+                "    Added aegis = \"0.2\" to [bindings]\n" ++
+                "\n" ++
+                "# Or with a specific version\n" ++
+                "$ sigil summon chorus \"^0.1\"\n" ++
+                "    Added chorus = \"^0.1\" to [bindings]",
+                "bash"
+            )·to_vnode()
+        )
+        ·child(h3()·style(subheading_style)·child(text("Build Your Project"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "# Forge shapes your tome into being\n" ++
+                "$ sigil forge\n" ++
+                "    Attuning bindings...\n" ++
+                "    Resolved aegis 0.2.1\n" ++
+                "    Resolved chorus 0.1.3\n" ++
+                "    Forged my-tome v0.1.0",
+                "bash"
+            )·to_vnode()
+        )
+        // Grimoire.toml
+        ·child(h2()·id("grimoire-toml")·style(heading_style)·child(text("Grimoire.toml"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Every Sigil tome has a Grimoire.toml manifest file:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "# Tome metadata\n" ++
+                "[tome]\n" ++
+                "name = \"my-tome\"\n" ++
+                "version = \"0.1.0\"\n" ++
+                "authors = [\"Your Name <you@example.com>\"]\n" ++
+                "edition = \"2026\"\n" ++
+                "description = \"A brief description of your tome\"\n" ++
+                "license = \"MIT\"\n" ++
+                "\n" ++
+                "# Dependencies (bindings)\n" ++
+                "[bindings]\n" ++
+                "aegis = \"0.2\"                      # Registry binding\n" ++
+                "chorus = { version = \"^0.1\" }      # Detailed version\n" ++
+                "local-lib = { path = \"../lib\" }    # Local path\n" ++
+                "utils = { git = \"https://github.com/org/utils\" }\n" ++
+                "\n" ++
+                "# Dev-only dependencies\n" ++
+                "[dev_bindings]\n" ++
+                "test-utils = \"0.1\"\n" ++
+                "\n" ++
+                "# Custom scripts (rites)\n" ++
+                "[rites]\n" ++
+                "test = \"sigil run tests/all.sg\"\n" ++
+                "bench = \"sigil run benchmarks/main.sg\"",
+                "toml"
+            )·to_vnode()
+        )
+        // Commands
+        ·child(h2()·id("commands")·style(heading_style)·child(text("Commands"))·to_vnode())
+        ·child(grimoire_command_table())
+        // Version Bindings
+        ·child(h2()·id("bindings")·style(heading_style)·child(text("Version Bindings"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Specify dependencies from the Grimoire registry using version requirements:"))·to_vnode())
+        ·child(grimoire_version_table())
+        // Git Bindings
+        ·child(h3()·style(subheading_style)·child(text("Git Bindings"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "[bindings]\n" ++
+                "# Basic git binding (uses default branch)\n" ++
+                "utils = { git = \"https://github.com/org/utils\" }\n" ++
+                "\n" ++
+                "# Specific branch\n" ++
+                "utils = { git = \"...\", branch = \"develop\" }\n" ++
+                "\n" ++
+                "# Specific tag or commit\n" ++
+                "utils = { git = \"...\", tag = \"v1.0.0\" }\n" ++
+                "utils = { git = \"...\", rev = \"a1b2c3d\" }",
+                "toml"
+            )·to_vnode()
+        )
+        // Registry API
+        ·child(h2()·id("registry")·style(heading_style)·child(text("Registry API"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("The Grimoire registry is a simple static file server:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "https://sigil-lang.com/grimoire/\n" ++
+                "├── index.json           # Registry index\n" ++
+                "└── tomes/\n" ++
+                "    └── aegis/\n" ++
+                "        ├── 0.1.0.tar.gz\n" ++
+                "        └── 0.2.1.tar.gz",
+                "text"
+            )·to_vnode()
+        )
+        // CTA
+        ·child(
+            div()
+                ·style("display: flex; gap: 1rem; margin-top: 3rem;")
+                ·child(Button::primary("Start Tutorial", "/pages/learn.html")·to_vnode())
+                ·child(Button::secondary("Read Docs", "/pages/docs.html")·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+rite grimoire_command_table() → VNode! {
+    ≔ cell_style! = "padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #a0a0aa;"
+    ≔ cmd_style! = "padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #14A088; font-family: 'IBM Plex Mono', monospace;"
+
+    table()
+        ·class("docs-table")
+        ·style("width: 100%; border-collapse: collapse; margin: 1.5rem 0;")
+        ·child(
+            thead()·child(
+                tr()
+                    ·child(th()·style("text-align: left; padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #e8e8ec;")·child(text("Command"))·to_vnode())
+                    ·child(th()·style("text-align: left; padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #e8e8ec;")·child(text("Description"))·to_vnode())
+                    ·to_vnode()
+            )·to_vnode()
+        )
+        ·child(
+            tbody()
+                ·child(tr()·child(td()·style(cmd_style)·child(text("sigil conjure <name>"))·to_vnode())·child(td()·style(cell_style)·child(text("Create a new tome"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cmd_style)·child(text("sigil inscribe"))·to_vnode())·child(td()·style(cell_style)·child(text("Initialize existing directory as tome"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cmd_style)·child(text("sigil summon <tome>"))·to_vnode())·child(td()·style(cell_style)·child(text("Add a dependency"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cmd_style)·child(text("sigil banish <tome>"))·to_vnode())·child(td()·style(cell_style)·child(text("Remove a dependency"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cmd_style)·child(text("sigil attune"))·to_vnode())·child(td()·style(cell_style)·child(text("Resolve and download dependencies"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cmd_style)·child(text("sigil forge"))·to_vnode())·child(td()·style(cell_style)·child(text("Build the tome"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cmd_style)·child(text("sigil consecrate"))·to_vnode())·child(td()·style(cell_style)·child(text("Publish to registry"))·to_vnode())·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+rite grimoire_version_table() → VNode! {
+    ≔ cell_style! = "padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #a0a0aa;"
+    ≔ code_style! = "padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #14A088; font-family: 'IBM Plex Mono', monospace;"
+
+    table()
+        ·class("docs-table")
+        ·style("width: 100%; border-collapse: collapse; margin: 1.5rem 0;")
+        ·child(
+            thead()·child(
+                tr()
+                    ·child(th()·style("text-align: left; padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #e8e8ec;")·child(text("Syntax"))·to_vnode())
+                    ·child(th()·style("text-align: left; padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #e8e8ec;")·child(text("Meaning"))·to_vnode())
+                    ·child(th()·style("text-align: left; padding: 0.75rem; border-bottom: 1px solid #1a1a1f; color: #e8e8ec;")·child(text("Example"))·to_vnode())
+                    ·to_vnode()
+            )·to_vnode()
+        )
+        ·child(
+            tbody()
+                ·child(tr()·child(td()·style(code_style)·child(text("\"1.2.3\""))·to_vnode())·child(td()·style(cell_style)·child(text("Exact version"))·to_vnode())·child(td()·style(cell_style)·child(text("1.2.3 only"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(code_style)·child(text("\"^1.2\""))·to_vnode())·child(td()·style(cell_style)·child(text("Compatible (same major)"))·to_vnode())·child(td()·style(cell_style)·child(text("1.2.x, 1.9.x"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(code_style)·child(text("\"~1.2\""))·to_vnode())·child(td()·style(cell_style)·child(text("Patch updates only"))·to_vnode())·child(td()·style(cell_style)·child(text("1.2.x"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(code_style)·child(text("\"*\""))·to_vnode())·child(td()·style(cell_style)·child(text("Latest stable"))·to_vnode())·child(td()·style(cell_style)·child(text("Latest"))·to_vnode())·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+// =============================================================================
+// Native Syntax Page - Symbol Reference and Migration Guide
+// =============================================================================
+
+☉ sigil Syntax { }
+⊢ Syntax { ☉ rite new() → This! { Syntax { } } }
+⊢ Component for Syntax {
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(syntax_sidebar())
+            ·child(syntax_content())
+            ·to_vnode()
+    }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Syntax::new() }
+}
+
+rite syntax_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Native Syntax", vec!["Overview", "Symbol Reference", "Why Symbols?"], section_style, title_style, link_style))
+        ·child(sidebar_section("Keywords", vec!["Functions", "Structures", "Variables", "Control Flow"], section_style, title_style, link_style))
+        ·child(sidebar_section("Migration", vec!["From English", "sigil migrate", "Editor Setup"], section_style, title_style, link_style))
+        ·to_vnode()
+}
+
+rite syntax_content() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;"
+    ≔ subheading_style! = "font-size: 1.125rem; font-weight: 600; color: #e8e8ec; margin: 1.5rem 0 0.75rem;"
+
+    article()
+        ·class("docs-content")
+        // Title and intro
+        ·child(
+            h1()
+                ·id("syntax")
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("Native Syntax"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("Sigil v0.4.0 introduces native syntax — mathematical symbols that express programming concepts more directly than English keywords."))
+                ·to_vnode()
+        )
+        // Symbol Reference Table
+        ·child(h2()·style(heading_style)·child(text("Symbol Reference"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Every native symbol has an English equivalent. Use whichever feels natural."))·to_vnode())
+        ·child(syntax_reference_table())
+        // Why Symbols section
+        ·child(h2()·style(heading_style)·child(text("Why Symbols?"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Native symbols aren't about being clever — they're about density and clarity:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "// English keywords (32 chars)\n" ++
+                "pub fn sum(a: &mut i32) { }\n\n" ++
+                "// Native symbols (23 chars, same meaning)\n" ++
+                "☉ λ sum(a: &Δ i32!) { }",
+                "sigil"
+            )·to_vnode()
+        )
+        ·child(p()·style(prose_style)·child(text("Symbols work because they're already familiar from mathematics. λ is lambda calculus. ∀ is 'for all'. Σ is summation/aggregation."))·to_vnode())
+        // Migration section
+        ·child(h2()·style(heading_style)·child(text("Migration"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Convert existing Sigil code to native syntax with one command:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "# Convert a single file\n" ++
+                "sigil migrate src/main.sigil\n\n" ++
+                "# Convert entire project\n" ++
+                "sigil migrate --recursive src/\n\n" ++
+                "# Preview changes without writing\n" ++
+                "sigil migrate --dry-run src/main.sigil",
+                "bash"
+            )·to_vnode()
+        )
+        ·child(h3()·style(subheading_style)·child(text("Editor Support"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("All major editors support Unicode symbol input:"))·to_vnode())
+        ·child(
+            ul()
+                ·style("color: #a0a0aa; margin-bottom: 1.5rem; padding-left: 1.5rem;")
+                ·child(li()·child(text("VS Code: Use the Sigil extension with symbol snippets"))·to_vnode())
+                ·child(li()·child(text("Vim/Neovim: Enable digraphs or use the Sigil LSP"))·to_vnode())
+                ·child(li()·child(text("Emacs: Configure input method or use abbrev-mode"))·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+rite syntax_reference_table() → VNode! {
+    ≔ table_style! = "width: 100%; border-collapse: collapse; margin: 1.5rem 0 2rem;"
+    ≔ header_style! = "padding: 0.75rem 1rem; text-align: left; border-bottom: 2px solid #14A088; color: #e8e8ec; font-weight: 600;"
+    ≔ cell_style! = "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; color: #a0a0aa;"
+    ≔ symbol_style! = "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; font-family: 'IBM Plex Mono', monospace; font-size: 1.25rem; color: #14A088;"
+
+    table()
+        ·style(table_style)
+        ·child(
+            thead()
+                ·child(
+                    tr()
+                        ·child(th()·style(header_style)·child(text("Symbol"))·to_vnode())
+                        ·child(th()·style(header_style)·child(text("English"))·to_vnode())
+                        ·child(th()·style(header_style)·child(text("Usage"))·to_vnode())
+                        ·to_vnode()
+                )
+                ·to_vnode()
+        )
+        ·child(
+            tbody()
+                ·child(tr()·child(td()·style(symbol_style)·child(text("λ"))·to_vnode())·child(td()·style(cell_style)·child(text("fn / rite"))·to_vnode())·child(td()·style(cell_style)·child(text("Function definition"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("Σ"))·to_vnode())·child(td()·style(cell_style)·child(text("struct / sigil"))·to_vnode())·child(td()·style(cell_style)·child(text("Structure definition"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("≔"))·to_vnode())·child(td()·style(cell_style)·child(text("let"))·to_vnode())·child(td()·style(cell_style)·child(text("Variable binding"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("☉"))·to_vnode())·child(td()·style(cell_style)·child(text("pub"))·to_vnode())·child(td()·style(cell_style)·child(text("Public visibility"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("·"))·to_vnode())·child(td()·style(cell_style)·child(text("::"))·to_vnode())·child(td()·style(cell_style)·child(text("Path separator"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("&Δ"))·to_vnode())·child(td()·style(cell_style)·child(text("&mut"))·to_vnode())·child(td()·style(cell_style)·child(text("Mutable reference"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("∀"))·to_vnode())·child(td()·style(cell_style)·child(text("for"))·to_vnode())·child(td()·style(cell_style)·child(text("For loop"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("∈"))·to_vnode())·child(td()·style(cell_style)·child(text("in"))·to_vnode())·child(td()·style(cell_style)·child(text("Iterator binding"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("∞"))·to_vnode())·child(td()·style(cell_style)·child(text("loop"))·to_vnode())·child(td()·style(cell_style)·child(text("Infinite loop"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("⊢"))·to_vnode())·child(td()·style(cell_style)·child(text("impl"))·to_vnode())·child(td()·style(cell_style)·child(text("Implementation block"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(symbol_style)·child(text("→"))·to_vnode())·child(td()·style(cell_style)·child(text("->"))·to_vnode())·child(td()·style(cell_style)·child(text("Return type"))·to_vnode())·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+// =============================================================================
+// Runtime Page - Zero-C Architecture
+// =============================================================================
+
+☉ sigil Runtime { }
+⊢ Runtime { ☉ rite new() → This! { Runtime { } } }
+⊢ Component for Runtime {
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(runtime_sidebar())
+            ·child(runtime_content())
+            ·to_vnode()
+    }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Runtime::new() }
+}
+
+rite runtime_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Runtime", vec!["Overview", "Zero-C Architecture", "Memory Model"], section_style, title_style, link_style))
+        ·child(sidebar_section("Platforms", vec!["Linux", "macOS", "Windows"], section_style, title_style, link_style))
+        ·child(sidebar_section("Backends", vec!["Interpreter", "Cranelift JIT", "LLVM AOT"], section_style, title_style, link_style))
+        ·to_vnode()
+}
+
+rite runtime_content() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;"
+    ≔ subheading_style! = "font-size: 1.125rem; font-weight: 600; color: #e8e8ec; margin: 1.5rem 0 0.75rem;"
+
+    article()
+        ·class("docs-content")
+        // Title and intro
+        ·child(
+            h1()
+                ·id("runtime")
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("Sigil Runtime"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("Sigil v0.4.0 introduces the Zero-C runtime — a pure Sigil/assembly runtime with no C standard library dependency."))
+                ·to_vnode()
+        )
+        // Zero-C section
+        ·child(h2()·style(heading_style)·child(text("Zero-C Architecture"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("The Zero-C runtime bypasses libc entirely, providing:"))·to_vnode())
+        ·child(
+            ul()
+                ·style("color: #a0a0aa; margin-bottom: 1.5rem; padding-left: 1.5rem;")
+                ·child(li()·child(text("Minimal binary size (~50KB for hello world)"))·to_vnode())
+                ·child(li()·child(text("Direct syscalls on Linux (no libc wrapper overhead)"))·to_vnode())
+                ·child(li()·child(text("Predictable memory layout for security analysis"))·to_vnode())
+                ·child(li()·child(text("No hidden global state from C runtime"))·to_vnode())
+                ·to_vnode()
+        )
+        ·child(
+            CodeBlock::new(
+                "# Build with Zero-C runtime (default in v0.4.0)\n" ++
+                "sigil compile main.sigil -o main\n\n" ++
+                "# Explicit Zero-C flag\n" ++
+                "sigil compile main.sigil -o main --runtime=zero-c\n\n" ++
+                "# Use standard C runtime (compatibility mode)\n" ++
+                "sigil compile main.sigil -o main --runtime=libc",
+                "bash"
+            )·to_vnode()
+        )
+        // Execution Modes section
+        ·child(h2()·style(heading_style)·child(text("Execution Modes"))·to_vnode())
+        ·child(h3()·style(subheading_style)·child(text("Interpreter"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Fast startup for scripting and development:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "sigil run script.sigil      # Interpret directly\n" ++
+                "sigil run -w script.sigil   # Watch mode, re-run on change",
+                "bash"
+            )·to_vnode()
+        )
+        ·child(h3()·style(subheading_style)·child(text("Cranelift JIT"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Fast compilation, reasonable performance:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "sigil jit program.sigil     # JIT compile and run",
+                "bash"
+            )·to_vnode()
+        )
+        ·child(h3()·style(subheading_style)·child(text("LLVM AOT"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Full optimization for production:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "sigil compile program.sigil -o program           # Default (O2)\n" ++
+                "sigil compile program.sigil -o program --lto     # Link-time optimization\n" ++
+                "sigil compile program.sigil -o program --cuda    # GPU compute support",
+                "bash"
+            )·to_vnode()
+        )
+        // Platform Support
+        ·child(h2()·style(heading_style)·child(text("Platform Support"))·to_vnode())
+        ·child(platform_support_table())
+        ·to_vnode()
+}
+
+rite platform_support_table() → VNode! {
+    ≔ table_style! = "width: 100%; border-collapse: collapse; margin: 1.5rem 0 2rem;"
+    ≔ header_style! = "padding: 0.75rem 1rem; text-align: left; border-bottom: 2px solid #14A088; color: #e8e8ec; font-weight: 600;"
+    ≔ cell_style! = "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; color: #a0a0aa;"
+    ≔ check_style! = "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; color: #14A088; text-align: center;"
+
+    table()
+        ·style(table_style)
+        ·child(
+            thead()
+                ·child(
+                    tr()
+                        ·child(th()·style(header_style)·child(text("Platform"))·to_vnode())
+                        ·child(th()·style(header_style)·child(text("Interpreter"))·to_vnode())
+                        ·child(th()·style(header_style)·child(text("JIT"))·to_vnode())
+                        ·child(th()·style(header_style)·child(text("AOT"))·to_vnode())
+                        ·child(th()·style(header_style)·child(text("Zero-C"))·to_vnode())
+                        ·to_vnode()
+                )
+                ·to_vnode()
+        )
+        ·child(
+            tbody()
+                ·child(tr()·child(td()·style(cell_style)·child(text("Linux x86_64"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cell_style)·child(text("Linux aarch64"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cell_style)·child(text("macOS x86_64"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(cell_style)·child(text("libc"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cell_style)·child(text("macOS aarch64"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(cell_style)·child(text("libc"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cell_style)·child(text("Windows x86_64"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(cell_style)·child(text("CRT"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(cell_style)·child(text("WebAssembly"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(cell_style)·child(text("—"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·child(td()·style(check_style)·child(text("✓"))·to_vnode())·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+// =============================================================================
+// Tooling Page - LSP, Formatter, Linter, SGDOC
+// =============================================================================
+
+☉ sigil Tooling { }
+⊢ Tooling { ☉ rite new() → This! { Tooling { } } }
+⊢ Component for Tooling {
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(tooling_sidebar())
+            ·child(tooling_content())
+            ·to_vnode()
+    }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Tooling::new() }
+}
+
+rite tooling_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Tooling", vec!["Overview", "Installation"], section_style, title_style, link_style))
+        ·child(sidebar_section("Editor Support", vec!["LSP Server", "VS Code", "Vim/Neovim"], section_style, title_style, link_style))
+        ·child(sidebar_section("Code Quality", vec!["Formatter", "Linter", "SGDOC"], section_style, title_style, link_style))
+        ·to_vnode()
+}
+
+rite tooling_content() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;"
+    ≔ subheading_style! = "font-size: 1.125rem; font-weight: 600; color: #e8e8ec; margin: 1.5rem 0 0.75rem;"
+
+    article()
+        ·class("docs-content")
+        // Title and intro
+        ·child(
+            h1()
+                ·id("tooling")
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("Tooling Suite"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("Sigil v0.4.0 includes a complete development toolchain: LSP server, code formatter, evidentiality-aware linter, and documentation generator."))
+                ·to_vnode()
+        )
+        // LSP Section
+        ·child(h2()·style(heading_style)·child(text("Language Server (LSP)"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("The Sigil LSP provides intelligent code assistance in any editor:"))·to_vnode())
+        ·child(
+            ul()
+                ·style("color: #a0a0aa; margin-bottom: 1.5rem; padding-left: 1.5rem;")
+                ·child(li()·child(text("Go to definition and find references"))·to_vnode())
+                ·child(li()·child(text("Hover documentation with evidentiality markers"))·to_vnode())
+                ·child(li()·child(text("Real-time diagnostics and error highlighting"))·to_vnode())
+                ·child(li()·child(text("Code completion with type inference"))·to_vnode())
+                ·child(li()·child(text("Automatic symbol input (type 'fn' → get 'λ')"))·to_vnode())
+                ·to_vnode()
+        )
+        ·child(
+            CodeBlock::new(
+                "# Start the LSP server\n" ++
+                "sigil lsp\n\n" ++
+                "# VS Code: Install 'Sigil' extension from marketplace\n" ++
+                "# Vim/Neovim: Add to your LSP config\n" ++
+                "# Emacs: Use lsp-mode or eglot",
+                "bash"
+            )·to_vnode()
+        )
+        // Formatter Section
+        ·child(h2()·style(heading_style)·child(text("Code Formatter"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Consistent code style across your project:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "# Format a single file\n" ++
+                "sigil fmt src/main.sigil\n\n" ++
+                "# Format entire project\n" ++
+                "sigil fmt --recursive src/\n\n" ++
+                "# Check formatting without modifying\n" ++
+                "sigil fmt --check src/\n\n" ++
+                "# Configuration in .sigil.toml\n" ++
+                "[format]\n" ++
+                "indent = 4\n" ++
+                "max_width = 100\n" ++
+                "native_symbols = true  # Convert keywords to symbols",
+                "bash"
+            )·to_vnode()
+        )
+        // Linter Section
+        ·child(h2()·style(heading_style)·child(text("Evidentiality Linter"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("The linter enforces evidentiality rules and detects trust boundary violations:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "# Run linter\n" ++
+                "sigil lint src/\n\n" ++
+                "# Lint with specific rules\n" ++
+                "sigil lint --rules=trust-boundaries,unused-markers src/\n\n" ++
+                "# Example output:\n" ++
+                "src/api.sigil:42:12 warning[trust-boundary]\n" ++
+                "  Reported (~) data flows to known (!) without validation\n" ++
+                "  \n" ++
+                "  42 │     save_to_db(response~)  // response needs validation\n" ++
+                "     │                ~~~~~~~~",
+                "bash"
+            )·to_vnode()
+        )
+        // SGDOC Section
+        ·child(h2()·style(heading_style)·child(text("Documentation (SGDOC)"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Generate documentation from Sigil doc comments:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "/// Validates user input and returns trusted data.\n" ++
+                "/// \n" ++
+                "/// # Arguments\n" ++
+                "/// * `input` - Reported data from external source\n" ++
+                "/// \n" ++
+                "/// # Returns\n" ++
+                "/// Known (!) data after validation\n" ++
+                "☉ λ validate(input: String~) → String! {\n" ++
+                "    // ...\n" ++
+                "}",
+                "sigil"
+            )·to_vnode()
+        )
+        ·child(
+            CodeBlock::new(
+                "# Generate HTML documentation\n" ++
+                "sigil doc src/ --output docs/\n\n" ++
+                "# Generate with private items\n" ++
+                "sigil doc src/ --output docs/ --private\n\n" ++
+                "# JSON output for custom tooling\n" ++
+                "sigil doc src/ --format json > api.json",
+                "bash"
+            )·to_vnode()
+        )
+        ·to_vnode()
+}
+
+// =============================================================================
+// Agents Page - 9-Layer Architecture
+// =============================================================================
+
 ☉ sigil Agents { }
 ⊢ Agents { ☉ rite new() → This! { Agents { } } }
 ⊢ Component for Agents {
-    rite render(&this) → VNode! { placeholder_page("Agent Infrastructure", "9-layer architecture deep dive coming soon.") }
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(agents_sidebar())
+            ·child(agents_content())
+            ·to_vnode()
+    }
     rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
     rite from_props(_props: HashMap<String, PropValue>) → This! { Agents::new() }
 }
 
+rite agents_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Architecture", vec!["Overview", "9-Layer Model", "Data Flow"], section_style, title_style, link_style))
+        ·child(sidebar_section("Layers", vec!["Perception", "Memory", "Reasoning", "Planning"], section_style, title_style, link_style))
+        ·child(sidebar_section("Integration", vec!["Grimoire Personas", "Tool Registry"], section_style, title_style, link_style))
+        ·to_vnode()
+}
+
+rite agents_content() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;"
+
+    article()
+        ·class("docs-content")
+        ·child(
+            h1()
+                ·id("agents")
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("Agent Infrastructure"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("Sigil's 9-layer agent architecture provides a principled foundation for building autonomous AI systems with explicit trust boundaries."))
+                ·to_vnode()
+        )
+        ·child(h2()·style(heading_style)·child(text("The 9-Layer Model"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Each layer has clear responsibilities and evidentiality requirements:"))·to_vnode())
+        ·child(agents_layer_table())
+        ·child(h2()·style(heading_style)·child(text("Evidentiality in Agents"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Agent architectures must track data provenance. External inputs (user messages, API responses) are marked ~. Internal computations produce ! data. The agent runtime enforces these boundaries."))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "Σ AgentMessage {\n" ++
+                "    content: String~,     // External input\n" ++
+                "    timestamp: i64!,      // System clock\n" ++
+                "    confidence: f32◊,     // Model prediction\n" ++
+                "}\n\n" ++
+                "λ process(msg: AgentMessage) → Response! {\n" ++
+                "    ≔ validated! = msg.content |> validate { sanitize() };\n" ++
+                "    // Now safe to use in trusted context\n" ++
+                "    generate_response(validated)\n" ++
+                "}",
+                "sigil"
+            )·to_vnode()
+        )
+        ·to_vnode()
+}
+
+rite agents_layer_table() → VNode! {
+    ≔ table_style! = "width: 100%; border-collapse: collapse; margin: 1.5rem 0 2rem;"
+    ≔ header_style! = "padding: 0.75rem 1rem; text-align: left; border-bottom: 2px solid #14A088; color: #e8e8ec; font-weight: 600;"
+    ≔ cell_style! = "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; color: #a0a0aa;"
+    ≔ layer_style! = "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; color: #14A088; font-weight: 600;"
+
+    table()
+        ·style(table_style)
+        ·child(
+            thead()
+                ·child(
+                    tr()
+                        ·child(th()·style(header_style)·child(text("Layer"))·to_vnode())
+                        ·child(th()·style(header_style)·child(text("Responsibility"))·to_vnode())
+                        ·child(th()·style(header_style)·child(text("Markers"))·to_vnode())
+                        ·to_vnode()
+                )
+                ·to_vnode()
+        )
+        ·child(
+            tbody()
+                ·child(tr()·child(td()·style(layer_style)·child(text("1. Perception"))·to_vnode())·child(td()·style(cell_style)·child(text("Parse and normalize inputs"))·to_vnode())·child(td()·style(cell_style)·child(text("~ → ~"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(layer_style)·child(text("2. Memory"))·to_vnode())·child(td()·style(cell_style)·child(text("Store and retrieve context"))·to_vnode())·child(td()·style(cell_style)·child(text("~ | !"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(layer_style)·child(text("3. Attention"))·to_vnode())·child(td()·style(cell_style)·child(text("Focus on relevant context"))·to_vnode())·child(td()·style(cell_style)·child(text("◊"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(layer_style)·child(text("4. Reasoning"))·to_vnode())·child(td()·style(cell_style)·child(text("Logical inference"))·to_vnode())·child(td()·style(cell_style)·child(text("! | ◊"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(layer_style)·child(text("5. Planning"))·to_vnode())·child(td()·style(cell_style)·child(text("Multi-step strategy"))·to_vnode())·child(td()·style(cell_style)·child(text("◊"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(layer_style)·child(text("6. Decision"))·to_vnode())·child(td()·style(cell_style)·child(text("Action selection"))·to_vnode())·child(td()·style(cell_style)·child(text("!"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(layer_style)·child(text("7. Execution"))·to_vnode())·child(td()·style(cell_style)·child(text("Tool invocation"))·to_vnode())·child(td()·style(cell_style)·child(text("~ | !"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(layer_style)·child(text("8. Reflection"))·to_vnode())·child(td()·style(cell_style)·child(text("Evaluate outcomes"))·to_vnode())·child(td()·style(cell_style)·child(text("◊"))·to_vnode())·to_vnode())
+                ·child(tr()·child(td()·style(layer_style)·child(text("9. Meta"))·to_vnode())·child(td()·style(cell_style)·child(text("Self-monitoring"))·to_vnode())·child(td()·style(cell_style)·child(text("!"))·to_vnode())·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+// =============================================================================
+// Pattern Page - Philosophy Documentation
+// =============================================================================
+
 ☉ sigil Pattern { }
 ⊢ Pattern { ☉ rite new() → This! { Pattern { } } }
 ⊢ Component for Pattern {
-    rite render(&this) → VNode! { placeholder_page("The Pattern", "Philosophy documentation coming soon.") }
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(pattern_sidebar())
+            ·child(pattern_content())
+            ·to_vnode()
+    }
     rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
     rite from_props(_props: HashMap<String, PropValue>) → This! { Pattern::new() }
 }
 
+rite pattern_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Philosophy", vec!["Overview", "Core Principles"], section_style, title_style, link_style))
+        ·child(sidebar_section("Evidentiality", vec!["Data Has History", "Trust is Explicit"], section_style, title_style, link_style))
+        ·child(sidebar_section("Design", vec!["Pipelines Over Loops", "Types as Documentation"], section_style, title_style, link_style))
+        ·to_vnode()
+}
+
+rite pattern_content() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;"
+
+    article()
+        ·class("docs-content")
+        ·child(
+            h1()
+                ·id("pattern")
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("The Pattern"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("The philosophy behind Sigil's design: a language where data provenance is not an afterthought but the foundation."))
+                ·to_vnode()
+        )
+        ·child(h2()·style(heading_style)·child(text("Data Has History"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Every value in Sigil carries information about where it came from. This isn't metadata—it's enforced by the type system. A String~ is fundamentally different from a String! even though both hold text."))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("The ~ marker doesn't mean 'dangerous'. It means 'from elsewhere'. External data requires explicit validation before it can cross into trusted contexts."))·to_vnode())
+        ·child(h2()·style(heading_style)·child(text("Trust is Explicit"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Most languages implicitly trust all data equally. Sigil makes trust explicit through validation boundaries:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "// The pipe-validate operator creates trust boundaries\n" ++
+                "≔ user_input~ = get_input();\n" ++
+                "≔ trusted! = user_input |> validate {\n" ++
+                "    sanitize();\n" ++
+                "    verify_format();\n" ++
+                "};\n\n" ++
+                "// trusted is now ! — it crossed the boundary explicitly",
+                "sigil"
+            )·to_vnode()
+        )
+        ·child(h2()·style(heading_style)·child(text("Pipelines Over Loops"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Morpheme operators (φ map, τ transform, σ filter, ρ reduce) express data transformations declaratively. This makes the flow of data—and therefore the flow of trust—visible at a glance."))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "// Declarative pipeline with visible data flow\n" ++
+                "≔ result! = users~\n" ++
+                "    |φ{ validate_user }\n" ++
+                "    |σ{ |u| u.active }\n" ++
+                "    |τ{ |u| u.email };\n\n" ++
+                "// Each step's evidentiality is type-checked",
+                "sigil"
+            )·to_vnode()
+        )
+        ·child(h2()·style(heading_style)·child(text("Types as Documentation"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("In Sigil, function signatures tell you not just what types flow through, but what trust levels are expected and produced. A function λ process(input: Data~) → Result! documents its trust boundary in the signature."))·to_vnode())
+        ·to_vnode()
+}
+
+// =============================================================================
+// Contributing Page
+// =============================================================================
+
 ☉ sigil Contributing { }
 ⊢ Contributing { ☉ rite new() → This! { Contributing { } } }
 ⊢ Component for Contributing {
-    rite render(&this) → VNode! { placeholder_page("Contributing", "Contribution guide coming soon.") }
+    rite render(&this) → VNode! {
+        ≔ layout_style! = "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;"
+
+        div()
+            ·class("docs-layout")
+            ·style(layout_style)
+            ·child(contributing_sidebar())
+            ·child(contributing_content())
+            ·to_vnode()
+    }
     rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
     rite from_props(_props: HashMap<String, PropValue>) → This! { Contributing::new() }
+}
+
+rite contributing_sidebar() → VNode! {
+    ≔ sidebar_style! = "position: sticky; top: 8rem; height: fit-content;"
+    ≔ section_style! = "margin-bottom: 2rem;"
+    ≔ title_style! = "font-size: 0.75rem; font-weight: 600; color: #6c6c76; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem;"
+    ≔ link_style! = "display: block; color: #a0a0aa; font-size: 0.875rem; padding: 0.375rem 0; text-decoration: none;"
+
+    aside()
+        ·class("docs-sidebar")
+        ·style(sidebar_style)
+        ·child(sidebar_section("Getting Started", vec!["Overview", "Setup", "Building"], section_style, title_style, link_style))
+        ·child(sidebar_section("Guidelines", vec!["Code Style", "Testing", "Documentation"], section_style, title_style, link_style))
+        ·child(sidebar_section("Process", vec!["Issues", "Pull Requests", "Review"], section_style, title_style, link_style))
+        ·to_vnode()
+}
+
+rite contributing_content() → VNode! {
+    ≔ prose_style! = "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;"
+
+    article()
+        ·class("docs-content")
+        ·child(
+            h1()
+                ·id("contributing")
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;")
+                ·child(text("Contributing to Sigil"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·class("lead")
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;")
+                ·child(text("Thank you for your interest in contributing to Sigil. This guide will help you get started."))
+                ·to_vnode()
+        )
+        ·child(h2()·style(heading_style)·child(text("Development Setup"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Clone the repository and build the compiler:"))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "git clone https://github.com/Daemoniorum-LLC/sigil-lang.git\n" ++
+                "cd sigil-lang/parser\n" ++
+                "cargo build --release\n\n" ++
+                "# Run the test suite\n" ++
+                "cd ../jormungandr/tests\n" ++
+                "./run_tests_rust.sh",
+                "bash"
+            )·to_vnode()
+        )
+        ·child(h2()·style(heading_style)·child(text("Code Style"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("Use native symbols in Sigil code. Run sigil fmt before committing. All public functions require doc comments with evidentiality markers documented."))·to_vnode())
+        ·child(h2()·style(heading_style)·child(text("Testing"))·to_vnode())
+        ·child(p()·style(prose_style)·child(text("All changes require tests. The test suite is in jormungandr/tests/. Add tests for new features and bug fixes."))·to_vnode())
+        ·child(
+            CodeBlock::new(
+                "# Run all tests\n" ++
+                "./run_tests_rust.sh\n\n" ++
+                "# Run specific test section\n" ++
+                "./run_tests_rust.sh --spec 03_types\n\n" ++
+                "# Run P0 (critical) tests only\n" ++
+                "./run_tests_rust.sh --priority P0",
+                "bash"
+            )·to_vnode()
+        )
+        ·child(h2()·style(heading_style)·child(text("Pull Request Process"))·to_vnode())
+        ·child(
+            ul()
+                ·style("color: #a0a0aa; margin-bottom: 1.5rem; padding-left: 1.5rem;")
+                ·child(li()·child(text("Fork the repository and create a feature branch"))·to_vnode())
+                ·child(li()·child(text("Write tests for your changes"))·to_vnode())
+                ·child(li()·child(text("Ensure all tests pass locally"))·to_vnode())
+                ·child(li()·child(text("Submit a PR with a clear description"))·to_vnode())
+                ·child(li()·child(text("Address review feedback"))·to_vnode())
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+// =============================================================================
+// Downloads Page
+// =============================================================================
+
+☉ sigil Download { }
+⊢ Download { ☉ rite new() → This! { Download { } } }
+⊢ Component for Download {
+    rite render(&this) → VNode! {
+        div()
+            ·class("page-content")
+            ·style("padding: 0 1.5rem;")
+            ·child(downloads_hero())
+            ·child(downloads_grid())
+            ·child(install_section())
+            ·child(checksums_section())
+            ·to_vnode()
+    }
+    rite props_to_map(&this) → HashMap<String, PropValue>! { HashMap::new() }
+    rite from_props(_props: HashMap<String, PropValue>) → This! { Download::new() }
+}
+
+rite downloads_hero() → VNode! {
+    div()
+        ·class("downloads-hero")
+        ·child(
+            h1()
+                ·style("font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1rem;")
+                ·child(text("Download Sigil"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·style("font-size: 1.25rem; color: #a0a0aa; margin-bottom: 0.5rem;")
+                ·child(text("Version 0.4.0 — Released January 2026"))
+                ·to_vnode()
+        )
+        ·child(
+            p()
+                ·style("font-size: 1rem; color: #6c6c76;")
+                ·child(text("Native syntax, zero-C runtime, complete tooling suite"))
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+rite downloads_grid() → VNode! {
+    ≔ base_url! = "https://github.com/Daemoniorum-LLC/sigil-lang/releases/download/v0.4.0/"
+
+    div()
+        ·class("downloads-grid")
+        ·child(download_card("Linux", "x86_64", "sigil-linux-x86_64.tar.gz", base_url, false))
+        ·child(download_card("Linux", "aarch64", "sigil-linux-aarch64.tar.gz", base_url, false))
+        ·child(download_card("macOS", "Apple Silicon", "sigil-macos-aarch64.tar.gz", base_url, false))
+        ·child(download_card("macOS", "Intel", "sigil-macos-x86_64.tar.gz", base_url, false))
+        ·child(download_card("Windows", "x86_64", "sigil-windows-x86_64.zip", base_url, false))
+        ·to_vnode()
+}
+
+rite download_card(platform: &str, arch: &str, filename: &str, base_url: &str, recommended: bool) → VNode! {
+    ≔ icon! = match platform {
+        "Linux" => "🐧",
+        "macOS" => "🍎",
+        "Windows" => "🪟",
+        _ => "📦"
+    }
+
+    ≔ card_class! = if recommended { "download-card recommended" } else { "download-card" }
+
+    div()
+        ·class(card_class)
+        ·child(div()·class("download-card-icon")·child(text(icon))·to_vnode())
+        ·child(h3()·child(text(platform))·to_vnode())
+        ·child(p()·child(text(arch))·to_vnode())
+        ·child(
+            a()
+                ·class("btn btn-primary")
+                ·attr("href", base_url ++ filename)
+                ·child(text("Download"))
+                ·to_vnode()
+        )
+        ·to_vnode()
+}
+
+rite install_section() → VNode! {
+    ≔ section_style! = "max-width: 800px; margin: 2rem auto; padding: 2rem 0;"
+    ≔ heading_style! = "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin-bottom: 1.5rem; text-align: center;"
+
+    section()
+        ·style(section_style)
+        ·child(h2()·style(heading_style)·child(text("Alternative Installation Methods"))·to_vnode())
+        ·child(install_method("Homebrew (macOS/Linux)", "brew install daemoniorum/tap/sigil"))
+        ·child(install_method("Cargo (from source)", "cargo install --git https://github.com/Daemoniorum-LLC/sigil-lang.git --path parser"))
+        ·child(install_method("Shell Script", "curl -sSL https://sigil-lang.com/install.sh | sh"))
+        ·to_vnode()
+}
+
+rite install_method(name: &str, command: &str) → VNode! {
+    ≔ method_style! = "margin-bottom: 1.5rem;"
+    ≔ label_style! = "font-size: 0.875rem; color: #a0a0aa; margin-bottom: 0.5rem;"
+    ≔ cmd_style! = "background: #0a0a0d; border: 1px solid #1a1a1f; border-radius: 0.5rem; padding: 1rem 1.25rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem; color: #e8e8ec;"
+
+    div()
+        ·style(method_style)
+        ·child(p()·style(label_style)·child(text(name))·to_vnode())
+        ·child(pre()·style(cmd_style)·child(text(command))·to_vnode())
+        ·to_vnode()
+}
+
+rite checksums_section() → VNode! {
+    ≔ section_style! = "max-width: 800px; margin: 2rem auto; padding: 2rem 0; border-top: 1px solid #1a1a1f;"
+    ≔ heading_style! = "font-size: 1.25rem; font-weight: 600; color: #e8e8ec; margin-bottom: 1rem;"
+    ≔ text_style! = "font-size: 0.9rem; color: #a0a0aa; margin-bottom: 1rem;"
+
+    section()
+        ·style(section_style)
+        ·child(h3()·style(heading_style)·child(text("Verify Your Download"))·to_vnode())
+        ·child(p()·style(text_style)·child(text("Compare the SHA256 checksum of your downloaded file against the checksums file:"))·to_vnode())
+        ·child(
+            a()
+                ·class("btn btn-outline")
+                ·attr("href", "https://github.com/Daemoniorum-LLC/sigil-lang/releases/download/v0.4.0/SHA256SUMS.txt")
+                ·child(text("Download SHA256SUMS.txt"))
+                ·to_vnode()
+        )
+        ·to_vnode()
 }
 
 ☉ sigil NotFound { }

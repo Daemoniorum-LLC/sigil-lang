@@ -21,21 +21,6 @@ extern "wasm" {
 // === DOM Helpers ===
 // These call the pre-registered WASM imports
 
-<<<<<<< HEAD
-rite create_element(tag: &str!) → i32! {
-    vdom_create_vnode(tag)
-}
-
-rite create_text(content: &str!) → i32! {
-    vdom_create_text_vnode(content)
-}
-
-rite set_class(element: i32!, class_name: &str!) {
-    vdom_set_vnode_str_prop(element, "class", class_name)
-}
-
-rite set_attr(element: i32!, attr: &str!, value: &str!) {
-=======
 rite create_element(tag: str!) → i32! {
     vdom_create_vnode(tag)
 }
@@ -49,7 +34,6 @@ rite set_class(element: i32!, class_name: str!) {
 }
 
 rite set_attr(element: i32!, attr: str!, value: str!) {
->>>>>>> origin/main
     vdom_set_vnode_str_prop(element, attr, value)
 }
 
@@ -57,11 +41,7 @@ rite append_child(parent: i32!, child: i32!) {
     vdom_append_vnode_child(parent, child)
 }
 
-<<<<<<< HEAD
-rite mount(element: i32!, selector: &str!) {
-=======
 rite mount(element: i32!, selector: str!) {
->>>>>>> origin/main
     vdom_mount_vnode(element, selector);
 }
 
@@ -84,45 +64,26 @@ rite header() → i32! {
     ≔ learn! = create_element("a");
     set_class(learn, "nav-link");
     set_attr(learn, "href", "/pages/learn.html");
-<<<<<<< HEAD
-    ≔ learn_text! = create_text("Learn");
-    append_child(learn, learn_text);
-=======
     append_child(learn, create_text("Learn"));
->>>>>>> origin/main
     append_child(links, learn);
 
     ≔ docs! = create_element("a");
     set_class(docs, "nav-link");
     set_attr(docs, "href", "/pages/docs.html");
-<<<<<<< HEAD
-    ≔ docs_text! = create_text("Docs");
-    append_child(docs, docs_text);
-    append_child(links, docs);
-
-    ≔ examples! = create_element("a");
-    set_class(examples, "nav-link");
-    set_attr(examples, "href", "/pages/examples.html");
-    ≔ examples_text! = create_text("Examples");
-    append_child(examples, examples_text);
-    append_child(links, examples);
-
-    ≔ playground! = create_element("a");
-    set_class(playground, "nav-link");
-    set_attr(playground, "href", "/pages/playground.html");
-    ≔ playground_text! = create_text("Playground");
-    append_child(playground, playground_text);
-    append_child(links, playground);
-
-    ≔ github! = create_element("a");
-    set_class(github, "nav-link");
-    set_attr(github, "href", "https://github.com/Daemoniorum-LLC/sigil-lang");
-    set_attr(github, "target", "_blank");
-    ≔ gh_text! = create_text("GitHub");
-    append_child(github, gh_text);
-=======
     append_child(docs, create_text("Docs"));
     append_child(links, docs);
+
+    ≔ syntax! = create_element("a");
+    set_class(syntax, "nav-link");
+    set_attr(syntax, "href", "/pages/syntax.html");
+    append_child(syntax, create_text("Syntax"));
+    append_child(links, syntax);
+
+    ≔ grimoire! = create_element("a");
+    set_class(grimoire, "nav-link");
+    set_attr(grimoire, "href", "/pages/grimoire.html");
+    append_child(grimoire, create_text("Grimoire"));
+    append_child(links, grimoire);
 
     ≔ playground! = create_element("a");
     set_class(playground, "nav-link");
@@ -152,16 +113,11 @@ rite header() → i32! {
     set_attr(gh_icon, "src", "/github-icon.svg");
     set_attr(gh_icon, "alt", "GitHub");
     append_child(github, gh_icon);
->>>>>>> origin/main
     append_child(links, github);
 
     ≔ version! = create_element("span");
     set_class(version, "version-badge");
-<<<<<<< HEAD
-    ≔ ver_text! = create_text("v1.0");
-=======
-    ≔ ver_text! = create_text("0.3");
->>>>>>> origin/main
+    ≔ ver_text! = create_text("0.4");
     append_child(version, ver_text);
     append_child(links, version);
 
@@ -169,8 +125,6 @@ rite header() → i32! {
     nav
 }
 
-<<<<<<< HEAD
-=======
 rite hero_marker(marker: str!, class: str!, desc: str!) → i32! {
     ≔ item! = create_element("div");
     set_class(item, class);
@@ -184,51 +138,28 @@ rite hero_marker(marker: str!, class: str!, desc: str!) → i32! {
     item
 }
 
->>>>>>> origin/main
+rite symbol_chip(symbol: str!, meaning: str!) → i32! {
+    ≔ chip! = create_element("span");
+    set_class(chip, "symbol-chip");
+    ≔ sym! = create_element("span");
+    set_class(sym, "symbol-chip-symbol");
+    append_child(sym, create_text(symbol));
+    append_child(chip, sym);
+    ≔ eq! = create_element("span");
+    set_class(eq, "symbol-chip-equals");
+    append_child(eq, create_text(" = "));
+    append_child(chip, eq);
+    ≔ mean! = create_element("span");
+    set_class(mean, "symbol-chip-meaning");
+    append_child(mean, create_text(meaning));
+    append_child(chip, mean);
+    chip
+}
+
 rite hero() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "hero");
 
-<<<<<<< HEAD
-    ≔ h1! = create_element("h1");
-    ≔ heading! = create_text("Sigil");
-    append_child(h1, heading);
-    append_child(section, h1);
-
-    ≔ tagline! = create_element("p");
-    set_class(tagline, "tagline");
-    ≔ text! = create_text("Type-safe data provenance through evidentiality markers");
-    append_child(tagline, text);
-    append_child(section, tagline);
-
-    ≔ sub! = create_element("p");
-    set_class(sub, "subtitle");
-    ≔ sub_text! = create_text("A systems language designed for AI agents");
-    append_child(sub, sub_text);
-    append_child(section, sub);
-
-    // Evidentiality markers display
-    ≔ markers! = create_element("div");
-    set_class(markers, "ev-display");
-
-    ≔ known! = create_element("span");
-    set_class(known, "ev ev-known");
-    ≔ known_text! = create_text("! known");
-    append_child(known, known_text);
-    append_child(markers, known);
-
-    ≔ uncertain! = create_element("span");
-    set_class(uncertain, "ev ev-uncertain");
-    ≔ uncertain_text! = create_text("? uncertain");
-    append_child(uncertain, uncertain_text);
-    append_child(markers, uncertain);
-
-    ≔ reported! = create_element("span");
-    set_class(reported, "ev ev-reported");
-    ≔ reported_text! = create_text("~ reported");
-    append_child(reported, reported_text);
-    append_child(markers, reported);
-=======
     // Title with logo
     ≔ h1! = create_element("h1");
     set_class(h1, "hero-title");
@@ -240,16 +171,85 @@ rite hero() → i32! {
     append_child(h1, create_text("Sigil"));
     append_child(section, h1);
 
+    // v0.4.0 feature highlight
+    ≔ version_tag! = create_element("span");
+    set_class(version_tag, "hero-version-tag");
+    append_child(version_tag, create_text("v0.4.0 — Native Syntax"));
+    append_child(section, version_tag);
+
     ≔ subtitle! = create_element("p");
     set_class(subtitle, "hero-subtitle");
-    append_child(subtitle, create_text("A programming language that knows which data to trust."));
+    append_child(subtitle, create_text("Native symbols for native ideas."));
     append_child(section, subtitle);
 
     ≔ desc! = create_element("p");
     set_class(desc, "hero-desc");
-    append_child(desc, create_text("Sigil tracks data provenance in the type system."));
+    append_child(desc, create_text("A programming language that knows which data to trust."));
     append_child(section, desc);
->>>>>>> origin/main
+
+    // Native syntax transformation showcase
+    ≔ syntax_showcase! = create_element("div");
+    set_class(syntax_showcase, "syntax-showcase");
+
+    // Before (English keywords)
+    ≔ before_panel! = create_element("div");
+    set_class(before_panel, "syntax-panel syntax-before");
+    ≔ before_label! = create_element("span");
+    set_class(before_label, "syntax-label");
+    append_child(before_label, create_text("English Keywords"));
+    append_child(before_panel, before_label);
+    ≔ before_code! = create_element("pre");
+    set_class(before_code, "code-block");
+    append_child(before_code, create_text(
+        "pub fn validate(user: &mut User) {\n" ++
+        "    let hash = compute_hash();\n" ++
+        "    for field in user.fields {\n" ++
+        "        verify(field)\n" ++
+        "    }\n" ++
+        "}"
+    ));
+    append_child(before_panel, before_code);
+    append_child(syntax_showcase, before_panel);
+
+    // Arrow
+    ≔ arrow! = create_element("div");
+    set_class(arrow, "syntax-arrow");
+    append_child(arrow, create_text("→"));
+    append_child(syntax_showcase, arrow);
+
+    // After (Native symbols)
+    ≔ after_panel! = create_element("div");
+    set_class(after_panel, "syntax-panel syntax-after");
+    ≔ after_label! = create_element("span");
+    set_class(after_label, "syntax-label");
+    append_child(after_label, create_text("Native Sigil"));
+    append_child(after_panel, after_label);
+    ≔ after_code! = create_element("pre");
+    set_class(after_code, "code-block");
+    append_child(after_code, create_text(
+        "☉ λ validate(user: &Δ User!) {\n" ++
+        "    ≔ hash! = compute_hash();\n" ++
+        "    ∀ field ∈ user.fields {\n" ++
+        "        verify(field)\n" ++
+        "    }\n" ++
+        "}"
+    ));
+    append_child(after_panel, after_code);
+    append_child(syntax_showcase, after_panel);
+
+    append_child(section, syntax_showcase);
+
+    // Symbol reference row
+    ≔ symbol_ref! = create_element("div");
+    set_class(symbol_ref, "symbol-reference");
+    append_child(symbol_ref, symbol_chip("λ", "fn"));
+    append_child(symbol_ref, symbol_chip("Σ", "struct"));
+    append_child(symbol_ref, symbol_chip("≔", "let"));
+    append_child(symbol_ref, symbol_chip("☉", "pub"));
+    append_child(symbol_ref, symbol_chip("&Δ", "&mut"));
+    append_child(symbol_ref, symbol_chip("∀", "for"));
+    append_child(symbol_ref, symbol_chip("·", "::"));
+    append_child(section, symbol_ref);
 
     // 5 Evidentiality markers grid
     ≔ markers! = create_element("div");
@@ -264,37 +264,30 @@ rite hero() → i32! {
     // CTA buttons
     ≔ cta! = create_element("div");
     set_class(cta, "hero-cta");
+    ≔ btn_download! = create_element("a");
+    set_class(btn_download, "btn btn-primary btn-download");
+    set_attr(btn_download, "href", "/pages/download.html");
+    ≔ dl_icon! = create_element("span");
+    set_class(dl_icon, "btn-icon");
+    append_child(dl_icon, create_text("↓"));
+    append_child(btn_download, dl_icon);
+    append_child(btn_download, create_text(" Download v0.4.0"));
+    append_child(cta, btn_download);
     ≔ btn_primary! = create_element("a");
-    set_class(btn_primary, "btn btn-primary");
+    set_class(btn_primary, "btn btn-secondary");
     set_attr(btn_primary, "href", "/pages/learn.html");
-    append_child(btn_primary, create_text("Learn Sigil"));
+    append_child(btn_primary, create_text("Get Started"));
     append_child(cta, btn_primary);
-    ≔ btn_secondary! = create_element("a");
-    set_class(btn_secondary, "btn btn-secondary");
-    set_attr(btn_secondary, "href", "#problem");
-    append_child(btn_secondary, create_text("See the Problem It Solves"));
-    append_child(cta, btn_secondary);
+    ≔ btn_tertiary! = create_element("a");
+    set_class(btn_tertiary, "btn btn-outline");
+    set_attr(btn_tertiary, "href", "/pages/syntax.html");
+    append_child(btn_tertiary, create_text("Native Syntax"));
+    append_child(cta, btn_tertiary);
     append_child(section, cta);
 
     section
 }
 
-<<<<<<< HEAD
-rite announcement() → i32! {
-    ≔ banner! = create_element("div");
-    set_class(banner, "announcement-banner");
-
-    ≔ badge! = create_element("span");
-    set_class(badge, "badge");
-    ≔ badge_text! = create_text("FIXED POINT");
-    append_child(badge, badge_text);
-    append_child(banner, badge);
-
-    ≔ msg! = create_element("p");
-    ≔ msg_text! = create_text("The Sigil compiler now compiles itself. This page was compiled from Sigil to WebAssembly.");
-    append_child(msg, msg_text);
-    append_child(banner, msg);
-=======
 rite problem_section() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "problem-section");
@@ -308,7 +301,6 @@ rite problem_section() → i32! {
     set_class(desc, "section-desc");
     append_child(desc, create_text("In Rust, TypeScript, or Go, this code compiles without warnings:"));
     append_child(section, desc);
->>>>>>> origin/main
 
     ≔ comparison! = create_element("div");
     set_class(comparison, "code-comparison");
@@ -359,7 +351,7 @@ rite problem_section() → i32! {
     set_class(sg_pre, "code-block");
     set_attr(sg_pre, "data-language", "sigil");
     append_child(sg_pre, create_text(
-        "async rite get_user_profile(id: Str!) → Profile! {\n" ++
+        "async λ get_user_profile(id: Str!) → Profile! {\n" ++
         "    ≔ response~ = Http·get(\"/api/users/{id}\").await;\n" ++
         "    ≔ profile~ = response.json::<Profile~>();\n" ++
         "    save_to_database(profile);  // ERROR: ~ cannot flow to !\n" ++
@@ -381,8 +373,6 @@ rite problem_section() → i32! {
     section
 }
 
-<<<<<<< HEAD
-=======
 rite ev_card(marker: str!, title: str!, subtitle: str!, desc: str!, code: str!, class: str!) → i32! {
     ≔ card! = create_element("div");
     set_class(card, class);
@@ -852,7 +842,7 @@ rite ecosystem_section() → i32! {
     set_class(ae_pre, "code-block");
     set_attr(ae_pre, "data-language", "sigil");
     append_child(ae_pre, create_text(
-        "rite update(world: &mut World) {\n    world.query::<Transform, Velocity>()\n        |τ{|(t, v)| t.pos += v.dir * dt!}\n}"
+        "λ update(world: &Δ World) {\n    world.query::<Transform, Velocity>()\n        |τ{|(t, v)| t.pos += v.dir * dt!}\n}"
     ));
     append_child(ae_card, ae_pre);
     append_child(grid, ae_card);
@@ -1006,7 +996,7 @@ rite announcement() → i32! {
 
     ≔ text! = create_element("span");
     set_class(text, "announcement-text");
-    append_child(text, create_text("Sigil 0.3.0 — Native symbols, SIMD/CUDA backends, LSP, formatter"));
+    append_child(text, create_text("Sigil 0.4.0 — Native syntax, zero-C runtime, LSP, formatter, linter, package manager"));
     append_child(banner, text);
 
     ≔ link! = create_element("a");
@@ -1019,7 +1009,6 @@ rite announcement() → i32! {
     wrap
 }
 
->>>>>>> origin/main
 rite features_section() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "features-section");
@@ -1088,8 +1077,6 @@ rite features_section() → i32! {
     section
 }
 
-<<<<<<< HEAD
-=======
 rite code_density_section() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "code-density-section");
@@ -1197,11 +1184,11 @@ rite code_density_section() → i32! {
         "sigil Todo { id: i32!, title: Str!, done: bool! }\n\n" ++
         "≔ todos: Vec<Todo>! = vec![];\n" ++
         "≔ next: i32! = 1;\n\n" ++
-        "rite add(title: Str!) → Todo! {\n" ++
+        "λ add(title: Str!) → Todo! {\n" ++
         "    ≔ t! = Todo { id: next, title, done: false };\n" ++
         "    next += 1; todos.push(t); t\n" ++
         "}\n\n" ++
-        "rite toggle(id: i32!) {\n" ++
+        "λ toggle(id: i32!) {\n" ++
         "    todos.find(|x| x.id == id)?.done ^= true;\n" ++
         "}"
     );
@@ -1213,7 +1200,6 @@ rite code_density_section() → i32! {
     section
 }
 
->>>>>>> origin/main
 rite code_example() → i32! {
     ≔ section! = create_element("section");
     set_class(section, "code-section");
@@ -1234,19 +1220,13 @@ rite code_example() → i32! {
 
     ≔ code! = create_text(
         "// Evidentiality markers track data provenance\n" ++
-        "rite fetch_user(id: i64?) → User~ {\n" ++
+        "λ fetch_user(id: i64?) → User~ {\n" ++
         "    // id is uncertain (?) - from user input\n" ++
         "    // return is reported (~) - from external API\n" ++
         "    ≔ response~ = http·get(url);\n" ++
         "    parse_user(response)\n" ++
         "}\n\n" ++
         "// Morpheme operators for data pipelines\n" ++
-<<<<<<< HEAD
-        "≔ results! = data\n" ++
-        "    |τ validate?\n" ++
-        "    |τ transform!\n" ++
-        "    |∥ process_parallel;\n"
-=======
         "≔ result = users~                  // ~ reported data from external source\n" ++
         "    |φ{.active}                    // φ filter: keep only active users\n" ++
         "    |φ{.age >= 18}                 // φ filter: keep adults only\n" ++
@@ -1255,7 +1235,6 @@ rite code_example() → i32! {
         "    |validate?                     // ? uncertain: validation may fail\n" ++
         "    |τ{.to_public_profile()}       // τ transform: strip private fields\n" ++
         "    |validate!                     // ! known: final validation must pass\n"
->>>>>>> origin/main
     );
     append_child(pre, code);
     append_child(section, pre);
@@ -1263,8 +1242,6 @@ rite code_example() → i32! {
     section
 }
 
-<<<<<<< HEAD
-=======
 // Footer link helpers
 rite footer_link(text: str!, href: str!) → i32! {
     ≔ li! = create_element("li");
@@ -1299,15 +1276,10 @@ rite footer_column(title: str!) → i32! {
     col
 }
 
->>>>>>> origin/main
 rite footer() → i32! {
     ≔ ft! = create_element("footer");
     set_class(ft, "site-footer");
 
-<<<<<<< HEAD
-    ≔ text! = create_text("2025-2026 Daemoniorum LLC - Built with Sigil + Qliphoth");
-    append_child(ft, text);
-=======
     // Brand section with logo and tagline
     ≔ brand_section! = create_element("div");
     set_class(brand_section, "footer-brand");
@@ -1338,9 +1310,11 @@ rite footer() → i32! {
     ≔ learn_ul! = create_element("ul");
     append_child(learn_ul, footer_link("Tutorial", "/pages/learn.html"));
     append_child(learn_ul, footer_link("Documentation", "/pages/docs.html"));
-    append_child(learn_ul, footer_link("Playground", "/playground/"));
+    append_child(learn_ul, footer_link("Native Syntax", "/pages/syntax.html"));
+    append_child(learn_ul, footer_link("Runtime", "/pages/runtime.html"));
+    append_child(learn_ul, footer_link("Tooling", "/pages/tooling.html"));
+    append_child(learn_ul, footer_link("Grimoire", "/pages/grimoire.html"));
     append_child(learn_ul, footer_link("Examples", "/pages/examples.html"));
-    append_child(learn_ul, footer_link("Reference", "/pages/docs.html#reference"));
     append_child(learn_col, learn_ul);
     append_child(container, learn_col);
 
@@ -1378,7 +1352,6 @@ rite footer() → i32! {
     set_class(copyright, "footer-copyright");
     append_child(copyright, create_text("© 2025-2026 Daemoniorum LLC"));
     append_child(ft, copyright);
->>>>>>> origin/main
 
     ft
 }
@@ -1415,8 +1388,6 @@ rite app() → i32! {
 ☉ rite main() {
     console_log_i64(42);
     ≔ root_element! = app();
-<<<<<<< HEAD
-=======
     mount(root_element, "#app");
 }
 
@@ -1806,7 +1777,7 @@ rite examples_content() → i32! {
     ≔ h3_1! = create_element("h3");
     append_child(h3_1, create_text("Hello World"));
     append_child(article, h3_1);
-    append_child(article, learn_code_block("rite main() {\n    println(\"Hello, Sigil!\")\n}", "sigil"));
+    append_child(article, learn_code_block("λ main() {\n    println(\"Hello, Sigil!\")\n}", "sigil"));
 
     // Example 2
     ≔ h3_2! = create_element("h3");
@@ -1830,7 +1801,7 @@ rite examples_content() → i32! {
     ≔ h3_5! = create_element("h3");
     append_child(h3_5, create_text("HTTP Server"));
     append_child(article, h3_5);
-    append_child(article, learn_code_block("async rite handle_user(req: Request~) → Response! {\n    ≔ id~ = req·param(\"id\")\n    ≔ user? = db·find_user(id).await\n    match user {\n        Some(u) => Response·json(u),\n        None => Response·not_found()\n    }\n}", "sigil"));
+    append_child(article, learn_code_block("async λ handle_user(req: Request~) → Response! {\n    ≔ id~ = req·param(\"id\")\n    ≔ user? = db·find_user(id).await\n    match user {\n        Some(u) => Response·json(u),\n        None => Response·not_found()\n    }\n}", "sigil"));
 
     article
 }
@@ -1909,7 +1880,7 @@ rite playground_app() → i32! {
     set_class(preview, "playground-preview");
     ≔ preview_code! = create_element("div");
     set_class(preview_code, "preview-code");
-    append_child(preview_code, learn_code_block("rite main() { println(\"Hello!\") }", "sigil"));
+    append_child(preview_code, learn_code_block("λ main() { println(\"Hello!\") }", "sigil"));
     append_child(preview, preview_code);
     append_child(hero, preview);
 
@@ -2091,6 +2062,721 @@ rite pattern_app() → i32! {
 
 ☉ rite main_pattern() {
     ≔ root_element! = pattern_app();
->>>>>>> origin/main
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Grimoire Page (Package Manager Documentation)
+// =============================================================================
+
+rite grimoire_sidebar() → i32! {
+    ≔ sidebar! = create_element("aside");
+    set_class(sidebar, "docs-sidebar");
+
+    append_child(sidebar, docs_sidebar_section("Getting Started", docs_sidebar_links("Quick Start")));
+    append_child(sidebar, docs_sidebar_section("Grimoire.toml", docs_sidebar_links("tome")));
+    append_child(sidebar, docs_sidebar_section("Commands", docs_sidebar_links("conjure")));
+    append_child(sidebar, docs_sidebar_section("Bindings", docs_sidebar_links("Versioned")));
+
+    sidebar
+}
+
+rite grimoire_content() → i32! {
+    ≔ article! = create_element("article");
+    set_class(article, "docs-content");
+
+    // Title
+    ≔ h1! = create_element("h1");
+    append_child(h1, create_text("The Grimoire"));
+    append_child(article, h1);
+
+    // Intro
+    ≔ intro! = create_element("p");
+    set_class(intro, "docs-intro");
+    append_child(intro, create_text("Grimoire is Sigil's package manager. It handles tomes (libraries), bindings (dependencies), and invocations (commands) using ritual-inspired vocabulary."));
+    append_child(article, intro);
+
+    // Quick Start section
+    ≔ qs_h2! = create_element("h2");
+    set_attr(qs_h2, "id", "quick-start");
+    append_child(qs_h2, create_text("Quick Start"));
+    append_child(article, qs_h2);
+
+    ≔ qs_code! = create_element("pre");
+    set_class(qs_code, "code-block");
+    set_attr(qs_code, "data-language", "bash");
+    append_child(qs_code, create_text("# Create a new tome\nsigil tome conjure my-project\ncd my-project\n\n# Add a binding (dependency)\nsigil tome inscribe json \"^1.0\"\n\n# Build the project\nsigil tome forge"));
+    append_child(article, qs_code);
+
+    // Grimoire.toml section
+    ≔ toml_h2! = create_element("h2");
+    set_attr(toml_h2, "id", "grimoire-toml");
+    append_child(toml_h2, create_text("Grimoire.toml"));
+    append_child(article, toml_h2);
+
+    ≔ toml_desc! = create_element("p");
+    append_child(toml_desc, create_text("Every Sigil project has a Grimoire.toml manifest file:"));
+    append_child(article, toml_desc);
+
+    ≔ toml_code! = create_element("pre");
+    set_class(toml_code, "code-block");
+    set_attr(toml_code, "data-language", "toml");
+    append_child(toml_code, create_text("[tome]\nname = \"my-project\"\nversion = \"0.1.0\"\nedition = \"2026\"\n\n[bindings]\njson = \"^1.0\"\ncrypto = { git = \"https://github.com/example/crypto\" }\nlocal-lib = { path = \"../libs/local-lib\" }"));
+    append_child(article, toml_code);
+
+    // Commands section
+    ≔ cmd_h2! = create_element("h2");
+    set_attr(cmd_h2, "id", "commands");
+    append_child(cmd_h2, create_text("Commands"));
+    append_child(article, cmd_h2);
+
+    // Command list
+    ≔ cmd_list! = create_element("dl");
+    set_class(cmd_list, "command-list");
+
+    // conjure
+    ≔ dt1! = create_element("dt");
+    ≔ code1! = create_element("code");
+    append_child(code1, create_text("sigil tome conjure <name>"));
+    append_child(dt1, code1);
+    append_child(cmd_list, dt1);
+    ≔ dd1! = create_element("dd");
+    append_child(dd1, create_text("Create a new tome (project)"));
+    append_child(cmd_list, dd1);
+
+    // inscribe
+    ≔ dt2! = create_element("dt");
+    ≔ code2! = create_element("code");
+    append_child(code2, create_text("sigil tome inscribe <name> <version>"));
+    append_child(dt2, code2);
+    append_child(cmd_list, dt2);
+    ≔ dd2! = create_element("dd");
+    append_child(dd2, create_text("Add a binding (dependency) to the manifest"));
+    append_child(cmd_list, dd2);
+
+    // summon
+    ≔ dt3! = create_element("dt");
+    ≔ code3! = create_element("code");
+    append_child(code3, create_text("sigil tome summon"));
+    append_child(dt3, code3);
+    append_child(cmd_list, dt3);
+    ≔ dd3! = create_element("dd");
+    append_child(dd3, create_text("Fetch and install all bindings"));
+    append_child(cmd_list, dd3);
+
+    // banish
+    ≔ dt4! = create_element("dt");
+    ≔ code4! = create_element("code");
+    append_child(code4, create_text("sigil tome banish <name>"));
+    append_child(dt4, code4);
+    append_child(cmd_list, dt4);
+    ≔ dd4! = create_element("dd");
+    append_child(dd4, create_text("Remove a binding"));
+    append_child(cmd_list, dd4);
+
+    // attune
+    ≔ dt5! = create_element("dt");
+    ≔ code5! = create_element("code");
+    append_child(code5, create_text("sigil tome attune"));
+    append_child(dt5, code5);
+    append_child(cmd_list, dt5);
+    ≔ dd5! = create_element("dd");
+    append_child(dd5, create_text("Resolve and lock all binding versions"));
+    append_child(cmd_list, dd5);
+
+    // forge
+    ≔ dt6! = create_element("dt");
+    ≔ code6! = create_element("code");
+    append_child(code6, create_text("sigil tome forge"));
+    append_child(dt6, code6);
+    append_child(cmd_list, dt6);
+    ≔ dd6! = create_element("dd");
+    append_child(dd6, create_text("Build the project"));
+    append_child(cmd_list, dd6);
+
+    // consecrate
+    ≔ dt7! = create_element("dt");
+    ≔ code7! = create_element("code");
+    append_child(code7, create_text("sigil tome consecrate"));
+    append_child(dt7, code7);
+    append_child(cmd_list, dt7);
+    ≔ dd7! = create_element("dd");
+    append_child(dd7, create_text("Publish to the Grimoire registry"));
+    append_child(cmd_list, dd7);
+
+    append_child(article, cmd_list);
+
+    // Bindings section
+    ≔ bind_h2! = create_element("h2");
+    set_attr(bind_h2, "id", "bindings");
+    append_child(bind_h2, create_text("Binding Types"));
+    append_child(article, bind_h2);
+
+    ≔ bind_desc! = create_element("p");
+    append_child(bind_desc, create_text("Grimoire supports three types of bindings:"));
+    append_child(article, bind_desc);
+
+    // Binding types list
+    ≔ bind_list! = create_element("dl");
+    set_class(bind_list, "command-list");
+
+    // Version binding
+    ≔ bdt1! = create_element("dt");
+    append_child(bdt1, create_text("Version Binding"));
+    append_child(bind_list, bdt1);
+    ≔ bdd1! = create_element("dd");
+    ≔ bcode1! = create_element("code");
+    append_child(bcode1, create_text("json = \"^1.0\""));
+    append_child(bdd1, bcode1);
+    append_child(bdd1, create_text(" — Fetch from the Grimoire registry"));
+    append_child(bind_list, bdd1);
+
+    // Path binding
+    ≔ bdt2! = create_element("dt");
+    append_child(bdt2, create_text("Path Binding"));
+    append_child(bind_list, bdt2);
+    ≔ bdd2! = create_element("dd");
+    ≔ bcode2! = create_element("code");
+    append_child(bcode2, create_text("local = { path = \"../lib\" }"));
+    append_child(bdd2, bcode2);
+    append_child(bdd2, create_text(" — Use a local directory"));
+    append_child(bind_list, bdd2);
+
+    // Git binding
+    ≔ bdt3! = create_element("dt");
+    append_child(bdt3, create_text("Git Binding"));
+    append_child(bind_list, bdt3);
+    ≔ bdd3! = create_element("dd");
+    ≔ bcode3! = create_element("code");
+    append_child(bcode3, create_text("lib = { git = \"https://...\" }"));
+    append_child(bdd3, bcode3);
+    append_child(bdd3, create_text(" — Clone from git repository"));
+    append_child(bind_list, bdd3);
+
+    append_child(article, bind_list);
+
+    // Version specifiers
+    ≔ ver_h2! = create_element("h2");
+    set_attr(ver_h2, "id", "version-specifiers");
+    append_child(ver_h2, create_text("Version Specifiers"));
+    append_child(article, ver_h2);
+
+    ≔ ver_list! = create_element("ul");
+    set_class(ver_list, "version-list");
+
+    ≔ v1! = create_element("li");
+    ≔ vc1! = create_element("code");
+    append_child(vc1, create_text("\"1.0.0\""));
+    append_child(v1, vc1);
+    append_child(v1, create_text(" — Exact version"));
+    append_child(ver_list, v1);
+
+    ≔ v2! = create_element("li");
+    ≔ vc2! = create_element("code");
+    append_child(vc2, create_text("\"^1.0\""));
+    append_child(v2, vc2);
+    append_child(v2, create_text(" — Compatible (>=1.0.0 <2.0.0)"));
+    append_child(ver_list, v2);
+
+    ≔ v3! = create_element("li");
+    ≔ vc3! = create_element("code");
+    append_child(vc3, create_text("\"~1.0\""));
+    append_child(v3, vc3);
+    append_child(v3, create_text(" — Patch updates only (>=1.0.0 <1.1.0)"));
+    append_child(ver_list, v3);
+
+    ≔ v4! = create_element("li");
+    ≔ vc4! = create_element("code");
+    append_child(vc4, create_text("\"*\""));
+    append_child(v4, vc4);
+    append_child(v4, create_text(" — Any version"));
+    append_child(ver_list, v4);
+
+    append_child(article, ver_list);
+
+    article
+}
+
+rite grimoire_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ layout! = create_element("div");
+    set_class(layout, "docs-layout");
+    append_child(layout, grimoire_sidebar());
+    append_child(layout, grimoire_content());
+    append_child(root, layout);
+
+    append_child(root, footer());
+
+    root
+}
+
+☉ rite main_grimoire() {
+    ≔ root_element! = grimoire_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Native Syntax Page
+// =============================================================================
+
+rite syntax_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ layout! = create_element("div");
+    set_class(layout, "docs-layout");
+    set_attr(layout, "style", "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;");
+
+    append_child(layout, syntax_page_sidebar());
+    append_child(layout, syntax_page_content());
+
+    append_child(root, layout);
+    append_child(root, footer());
+
+    root
+}
+
+rite syntax_page_sidebar() → i32! {
+    ≔ sidebar! = create_element("aside");
+    set_class(sidebar, "docs-sidebar");
+    set_attr(sidebar, "style", "position: sticky; top: 8rem; height: fit-content;");
+
+    append_child(sidebar, docs_sidebar_section("Native Syntax", docs_sidebar_links("Overview")));
+    append_child(sidebar, docs_sidebar_section("Keywords", docs_sidebar_links("Functions")));
+    append_child(sidebar, docs_sidebar_section("Migration", docs_sidebar_links("From English")));
+
+    sidebar
+}
+
+rite syntax_page_content() → i32! {
+    ≔ article! = create_element("article");
+    set_class(article, "docs-content");
+
+    ≔ h1! = create_element("h1");
+    set_attr(h1, "style", "font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;");
+    append_child(h1, create_text("Native Syntax"));
+    append_child(article, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    set_attr(lead, "style", "font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;");
+    append_child(lead, create_text("Sigil v0.4.0 introduces native syntax — mathematical symbols that express programming concepts more directly than English keywords."));
+    append_child(article, lead);
+
+    ≔ h2! = create_element("h2");
+    set_attr(h2, "style", "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;");
+    append_child(h2, create_text("Symbol Reference"));
+    append_child(article, h2);
+
+    append_child(article, syntax_table());
+
+    ≔ why_h2! = create_element("h2");
+    set_attr(why_h2, "style", "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;");
+    append_child(why_h2, create_text("Why Symbols?"));
+    append_child(article, why_h2);
+
+    ≔ why_p! = create_element("p");
+    set_attr(why_p, "style", "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;");
+    append_child(why_p, create_text("Symbols work because they're already familiar from mathematics. λ is lambda calculus. ∀ is 'for all'. Σ is summation/aggregation."));
+    append_child(article, why_p);
+
+    article
+}
+
+rite syntax_table() → i32! {
+    ≔ table! = create_element("table");
+    set_attr(table, "style", "width: 100%; border-collapse: collapse; margin: 1.5rem 0 2rem;");
+
+    ≔ thead! = create_element("thead");
+    ≔ tr_h! = create_element("tr");
+
+    ≔ th1! = create_element("th");
+    set_attr(th1, "style", "padding: 0.75rem 1rem; text-align: left; border-bottom: 2px solid #14A088; color: #e8e8ec; font-weight: 600;");
+    append_child(th1, create_text("Symbol"));
+    append_child(tr_h, th1);
+
+    ≔ th2! = create_element("th");
+    set_attr(th2, "style", "padding: 0.75rem 1rem; text-align: left; border-bottom: 2px solid #14A088; color: #e8e8ec; font-weight: 600;");
+    append_child(th2, create_text("English"));
+    append_child(tr_h, th2);
+
+    ≔ th3! = create_element("th");
+    set_attr(th3, "style", "padding: 0.75rem 1rem; text-align: left; border-bottom: 2px solid #14A088; color: #e8e8ec; font-weight: 600;");
+    append_child(th3, create_text("Usage"));
+    append_child(tr_h, th3);
+
+    append_child(thead, tr_h);
+    append_child(table, thead);
+
+    ≔ tbody! = create_element("tbody");
+    append_child(tbody, syntax_row("λ", "fn", "Function definition"));
+    append_child(tbody, syntax_row("Σ", "struct", "Structure definition"));
+    append_child(tbody, syntax_row("≔", "let", "Variable binding"));
+    append_child(tbody, syntax_row("☉", "pub", "Public visibility"));
+    append_child(tbody, syntax_row("·", "::", "Path separator"));
+    append_child(tbody, syntax_row("&Δ", "&mut", "Mutable reference"));
+    append_child(tbody, syntax_row("∀", "for", "For loop"));
+    append_child(tbody, syntax_row("∈", "in", "Iterator binding"));
+    append_child(tbody, syntax_row("⊢", "impl", "Implementation block"));
+    append_child(tbody, syntax_row("→", "->", "Return type"));
+    append_child(table, tbody);
+
+    table
+}
+
+rite syntax_row(symbol: str!, english: str!, usage: str!) → i32! {
+    ≔ tr! = create_element("tr");
+
+    ≔ td1! = create_element("td");
+    set_attr(td1, "style", "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; font-family: 'IBM Plex Mono', monospace; font-size: 1.25rem; color: #14A088;");
+    append_child(td1, create_text(symbol));
+    append_child(tr, td1);
+
+    ≔ td2! = create_element("td");
+    set_attr(td2, "style", "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; color: #a0a0aa;");
+    append_child(td2, create_text(english));
+    append_child(tr, td2);
+
+    ≔ td3! = create_element("td");
+    set_attr(td3, "style", "padding: 0.75rem 1rem; border-bottom: 1px solid #1a1a1f; color: #a0a0aa;");
+    append_child(td3, create_text(usage));
+    append_child(tr, td3);
+
+    tr
+}
+
+☉ rite main_syntax() {
+    ≔ root_element! = syntax_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Runtime Page
+// =============================================================================
+
+rite runtime_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ layout! = create_element("div");
+    set_class(layout, "docs-layout");
+    set_attr(layout, "style", "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;");
+
+    append_child(layout, runtime_page_sidebar());
+    append_child(layout, runtime_page_content());
+
+    append_child(root, layout);
+    append_child(root, footer());
+
+    root
+}
+
+rite runtime_page_sidebar() → i32! {
+    ≔ sidebar! = create_element("aside");
+    set_class(sidebar, "docs-sidebar");
+    set_attr(sidebar, "style", "position: sticky; top: 8rem; height: fit-content;");
+
+    append_child(sidebar, docs_sidebar_section("Runtime", docs_sidebar_links("Overview")));
+    append_child(sidebar, docs_sidebar_section("Platforms", docs_sidebar_links("Linux")));
+    append_child(sidebar, docs_sidebar_section("Backends", docs_sidebar_links("Interpreter")));
+
+    sidebar
+}
+
+rite runtime_page_content() → i32! {
+    ≔ article! = create_element("article");
+    set_class(article, "docs-content");
+
+    ≔ h1! = create_element("h1");
+    set_attr(h1, "style", "font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;");
+    append_child(h1, create_text("Sigil Runtime"));
+    append_child(article, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    set_attr(lead, "style", "font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;");
+    append_child(lead, create_text("Sigil v0.4.0 introduces the Zero-C runtime — a pure Sigil/assembly runtime with no C standard library dependency."));
+    append_child(article, lead);
+
+    ≔ h2! = create_element("h2");
+    set_attr(h2, "style", "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;");
+    append_child(h2, create_text("Zero-C Architecture"));
+    append_child(article, h2);
+
+    ≔ list! = create_element("ul");
+    set_attr(list, "style", "color: #a0a0aa; margin-bottom: 1.5rem; padding-left: 1.5rem;");
+    append_child(list, runtime_list_item("Minimal binary size (~50KB for hello world)"));
+    append_child(list, runtime_list_item("Direct syscalls on Linux (no libc wrapper overhead)"));
+    append_child(list, runtime_list_item("Predictable memory layout for security analysis"));
+    append_child(list, runtime_list_item("No hidden global state from C runtime"));
+    append_child(article, list);
+
+    ≔ modes_h2! = create_element("h2");
+    set_attr(modes_h2, "style", "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;");
+    append_child(modes_h2, create_text("Execution Modes"));
+    append_child(article, modes_h2);
+
+    ≔ modes_p! = create_element("p");
+    set_attr(modes_p, "style", "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;");
+    append_child(modes_p, create_text("Interpreter for development, Cranelift JIT for fast compilation, LLVM AOT for production with full optimizations."));
+    append_child(article, modes_p);
+
+    article
+}
+
+rite runtime_list_item(text_content: str!) → i32! {
+    ≔ li! = create_element("li");
+    append_child(li, create_text(text_content));
+    li
+}
+
+☉ rite main_runtime() {
+    ≔ root_element! = runtime_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Tooling Page
+// =============================================================================
+
+rite tooling_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ layout! = create_element("div");
+    set_class(layout, "docs-layout");
+    set_attr(layout, "style", "display: grid; grid-template-columns: 250px 1fr; gap: 2rem; padding: 8rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto;");
+
+    append_child(layout, tooling_page_sidebar());
+    append_child(layout, tooling_page_content());
+
+    append_child(root, layout);
+    append_child(root, footer());
+
+    root
+}
+
+rite tooling_page_sidebar() → i32! {
+    ≔ sidebar! = create_element("aside");
+    set_class(sidebar, "docs-sidebar");
+    set_attr(sidebar, "style", "position: sticky; top: 8rem; height: fit-content;");
+
+    append_child(sidebar, docs_sidebar_section("Tooling", docs_sidebar_links("Overview")));
+    append_child(sidebar, docs_sidebar_section("Editor Support", docs_sidebar_links("LSP Server")));
+    append_child(sidebar, docs_sidebar_section("Code Quality", docs_sidebar_links("Formatter")));
+
+    sidebar
+}
+
+rite tooling_page_content() → i32! {
+    ≔ article! = create_element("article");
+    set_class(article, "docs-content");
+
+    ≔ h1! = create_element("h1");
+    set_attr(h1, "style", "font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1.5rem;");
+    append_child(h1, create_text("Tooling Suite"));
+    append_child(article, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    set_attr(lead, "style", "font-size: 1.25rem; color: #a0a0aa; margin-bottom: 2rem;");
+    append_child(lead, create_text("Sigil v0.4.0 includes a complete development toolchain: LSP server, code formatter, evidentiality-aware linter, and documentation generator."));
+    append_child(article, lead);
+
+    ≔ lsp_h2! = create_element("h2");
+    set_attr(lsp_h2, "style", "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;");
+    append_child(lsp_h2, create_text("Language Server (LSP)"));
+    append_child(article, lsp_h2);
+
+    ≔ lsp_list! = create_element("ul");
+    set_attr(lsp_list, "style", "color: #a0a0aa; margin-bottom: 1.5rem; padding-left: 1.5rem;");
+    append_child(lsp_list, runtime_list_item("Go to definition and find references"));
+    append_child(lsp_list, runtime_list_item("Hover documentation with evidentiality markers"));
+    append_child(lsp_list, runtime_list_item("Real-time diagnostics and error highlighting"));
+    append_child(lsp_list, runtime_list_item("Code completion with type inference"));
+    append_child(article, lsp_list);
+
+    ≔ fmt_h2! = create_element("h2");
+    set_attr(fmt_h2, "style", "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;");
+    append_child(fmt_h2, create_text("Code Formatter"));
+    append_child(article, fmt_h2);
+
+    ≔ fmt_p! = create_element("p");
+    set_attr(fmt_p, "style", "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;");
+    append_child(fmt_p, create_text("Consistent code style with sigil fmt. Supports native symbol conversion and configurable formatting rules."));
+    append_child(article, fmt_p);
+
+    ≔ lint_h2! = create_element("h2");
+    set_attr(lint_h2, "style", "font-size: 1.5rem; font-weight: 600; color: #e8e8ec; margin: 2.5rem 0 1rem;");
+    append_child(lint_h2, create_text("Evidentiality Linter"));
+    append_child(article, lint_h2);
+
+    ≔ lint_p! = create_element("p");
+    set_attr(lint_p, "style", "font-size: 1.0625rem; line-height: 1.8; color: #a0a0aa; margin-bottom: 1.5rem;");
+    append_child(lint_p, create_text("The linter enforces evidentiality rules and detects trust boundary violations at compile time."));
+    append_child(article, lint_p);
+
+    article
+}
+
+☉ rite main_tooling() {
+    ≔ root_element! = tooling_app();
+    mount(root_element, "#app");
+}
+
+// =============================================================================
+// Download Page
+// =============================================================================
+
+rite download_app() → i32! {
+    ≔ root! = create_element("div");
+    set_class(root, "app");
+
+    append_child(root, announcement());
+    append_child(root, header());
+
+    ≔ content! = create_element("div");
+    set_class(content, "page-content download-page");
+
+    // Hero section
+    ≔ hero! = create_element("section");
+    set_class(hero, "download-hero");
+
+    ≔ h1! = create_element("h1");
+    append_child(h1, create_text("Download Sigil"));
+    append_child(hero, h1);
+
+    ≔ lead! = create_element("p");
+    set_class(lead, "lead");
+    append_child(lead, create_text("Native binaries for Linux, macOS, and Windows."));
+    append_child(hero, lead);
+
+    ≔ version_tag! = create_element("span");
+    set_class(version_tag, "version-badge");
+    append_child(version_tag, create_text("v0.4.0"));
+    append_child(hero, version_tag);
+
+    append_child(content, hero);
+
+    // Downloads grid
+    ≔ grid! = create_element("div");
+    set_class(grid, "downloads-grid");
+
+    append_child(grid, download_card("Linux x86_64", "linux-x86_64", "Most Linux distributions (Intel/AMD)", "https://github.com/Daemoniorum-LLC/sigil-lang/releases/latest/download/sigil-kit-linux-x86_64.tar.gz", "T"));
+    append_child(grid, download_card("Linux ARM64", "linux-aarch64", "Raspberry Pi 4+, ARM servers", "https://github.com/Daemoniorum-LLC/sigil-lang/releases/latest/download/sigil-kit-linux-aarch64.tar.gz", "T"));
+    append_child(grid, download_card("macOS x86_64", "macos-x86_64", "Intel Macs (2020 and earlier)", "https://github.com/Daemoniorum-LLC/sigil-lang/releases/latest/download/sigil-kit-macos-x86_64.tar.gz", "A"));
+    append_child(grid, download_card("macOS ARM64", "macos-aarch64", "Apple Silicon (M1/M2/M3)", "https://github.com/Daemoniorum-LLC/sigil-lang/releases/latest/download/sigil-kit-macos-aarch64.tar.gz", "A"));
+    append_child(grid, download_card("Windows x86_64", "windows-x86_64", "Windows 10/11 (64-bit)", "https://github.com/Daemoniorum-LLC/sigil-lang/releases/latest/download/sigil-kit-windows-x86_64.zip", "W"));
+
+    append_child(content, grid);
+
+    // Install section
+    ≔ install! = create_element("section");
+    set_class(install, "install-section");
+
+    ≔ install_h2! = create_element("h2");
+    append_child(install_h2, create_text("Installation"));
+    append_child(install, install_h2);
+
+    // Linux/macOS install
+    ≔ unix_install! = create_element("div");
+    set_class(unix_install, "install-method");
+    ≔ unix_h3! = create_element("h3");
+    append_child(unix_h3, create_text("Linux / macOS"));
+    append_child(unix_install, unix_h3);
+    ≔ unix_code! = create_element("pre");
+    set_class(unix_code, "code-block");
+    ≔ unix_code_inner! = create_element("code");
+    append_child(unix_code_inner, create_text("tar -xzf sigil-kit-*.tar.gz\ncd sigil-kit-*\n./install.sh"));
+    append_child(unix_code, unix_code_inner);
+    append_child(unix_install, unix_code);
+    append_child(install, unix_install);
+
+    // Windows install
+    ≔ win_install! = create_element("div");
+    set_class(win_install, "install-method");
+    ≔ win_h3! = create_element("h3");
+    append_child(win_h3, create_text("Windows"));
+    append_child(install, win_h3);
+    ≔ win_code! = create_element("pre");
+    set_class(win_code, "code-block");
+    ≔ win_code_inner! = create_element("code");
+    append_child(win_code_inner, create_text("Expand-Archive sigil-kit-windows-x86_64.zip .\ncd sigil-kit-windows-x86_64\n.\\install.sh"));
+    append_child(win_code, win_code_inner);
+    append_child(win_install, win_code);
+    append_child(install, win_install);
+
+    append_child(content, install);
+
+    // Checksums section
+    ≔ checksums! = create_element("section");
+    set_class(checksums, "checksums-section");
+
+    ≔ checksums_h2! = create_element("h2");
+    append_child(checksums_h2, create_text("Verify Your Download"));
+    append_child(checksums, checksums_h2);
+
+    ≔ checksums_p! = create_element("p");
+    append_child(checksums_p, create_text("Verify your download with SHA256 checksums:"));
+    append_child(checksums, checksums_p);
+
+    ≔ checksums_link! = create_element("a");
+    set_class(checksums_link, "btn btn-secondary");
+    set_attr(checksums_link, "href", "https://github.com/Daemoniorum-LLC/sigil-lang/releases/latest/download/SHA256SUMS.txt");
+    append_child(checksums_link, create_text("Download SHA256SUMS.txt"));
+    append_child(checksums, checksums_link);
+
+    append_child(content, checksums);
+
+    append_child(root, content);
+    append_child(root, footer());
+
+    root
+}
+
+rite download_card(title: &str, platform: &str, desc: &str, url: &str, icon_char: &str) → i32! {
+    ≔ card! = create_element("div");
+    set_class(card, "download-card");
+    set_attr(card, "data-platform", platform);
+
+    ≔ icon! = create_element("div");
+    set_class(icon, "download-icon");
+    append_child(icon, create_text(icon_char));
+    append_child(card, icon);
+
+    ≔ h3! = create_element("h3");
+    append_child(h3, create_text(title));
+    append_child(card, h3);
+
+    ≔ p! = create_element("p");
+    set_class(p, "download-desc");
+    append_child(p, create_text(desc));
+    append_child(card, p);
+
+    ≔ btn! = create_element("a");
+    set_class(btn, "btn btn-primary download-btn");
+    set_attr(btn, "href", url);
+    append_child(btn, create_text("Download"));
+    append_child(card, btn);
+
+    card
+}
+
+☉ rite main_download() {
+    ≔ root_element! = download_app();
     mount(root_element, "#app");
 }

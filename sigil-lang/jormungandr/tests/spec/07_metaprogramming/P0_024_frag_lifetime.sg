@@ -1,0 +1,24 @@
+// Test: lifetime fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (lifetime)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $a:lifetime captures lifetime annotations as strings.
+// Lifetimes like 'a, 'static are captured without evaluation.
+//
+// Expected behavior:
+// - Lifetime annotations captured as strings with leading '
+
+rune capture_lifetime! {
+    ($a:lifetime) => { $a }
+}
+
+rite main() {
+    // Static lifetime
+    ≔ lt1 = capture_lifetime!{'static};
+    println(lt1);
+
+    // Named lifetime
+    ≔ lt2 = capture_lifetime!{'a};
+    println(lt2);
+}

@@ -1,0 +1,20 @@
+// Test: complex body expansion - product pattern
+// Spec: 07-METAPROGRAMMING.md § 2.3 Complex Body Expansion
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that body repetition patterns like `1 $(* $x)+` expand correctly.
+// The expression should expand to: 1 * val1 * val2 * val3 ...
+//
+// Expected behavior:
+// - Pattern expands to arithmetic expression
+// - All values are multiplied together
+
+rune product! {
+    ($($x:expr),+) => { 1 $(* $x)+ }
+}
+
+rite main() {
+    ≔ result = product!{2, 3, 4};
+    println(result);  // Should be 24
+}

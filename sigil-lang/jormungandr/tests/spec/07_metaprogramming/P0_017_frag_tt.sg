@@ -1,0 +1,25 @@
+// Test: tt fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (tt)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $t:tt captures a single token or balanced group.
+// Token trees are the most flexible fragment type.
+//
+// Expected behavior:
+// - Single tokens captured as strings
+// - Balanced groups captured with delimiters
+
+rune capture_tt! {
+    ($t:tt) => { $t }
+}
+
+rite main() {
+    // Single identifier token
+    ≔ t1 = capture_tt!{foo};
+    println(t1);
+
+    // Single literal token
+    ≔ t2 = capture_tt!{42};
+    println(t2);
+}

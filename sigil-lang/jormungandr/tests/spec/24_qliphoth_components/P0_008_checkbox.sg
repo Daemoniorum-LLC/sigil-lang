@@ -2,6 +2,7 @@
 // TDD: RED - Tests the Checkbox form control
 //
 // Checkbox for boolean selections with indeterminate state support
+// Wrapper pattern: div.checkbox-field > [input.checkbox, label, ?description, ?error]
 
 invoke qliphoth·components·Checkbox;
 invoke qliphoth·core·VNode;
@@ -15,9 +16,15 @@ rite test_checkbox_basic() {
 
     ≔ vnode = checkbox.render();
 
-    assert_eq!(vnode.attr("type"), "checkbox");
-    assert_eq!(vnode.attr("name"), "agree");
-    assert!(vnode.has_class("checkbox"));
+    // Wrapper is a div
+    assert_eq!(vnode.tag(), "div");
+    assert!(vnode.has_class("checkbox-field"));
+
+    // Find the actual input element inside
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("type"), "checkbox");
+    assert_eq!(input_el.attr("name"), "agree");
+    assert!(input_el.has_class("checkbox"));
 }
 
 // Test checkbox checked state
@@ -31,7 +38,8 @@ rite test_checkbox_checked() {
     };
 
     ≔ vnode = checkbox.render();
-    assert_eq!(vnode.attr("checked"), yay);
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("checked"), yay);
 }
 
 // Test checkbox with label
@@ -45,10 +53,11 @@ rite test_checkbox_with_label() {
     ≔ vnode = checkbox.render();
 
     // Input should have id
-    assert_eq!(vnode.attr("id"), "newsletter-checkbox");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("id"), "newsletter-checkbox");
 
-    // Label should be associated
-    ≔ label = vnode.find_sibling_by_tag("label");
+    // Label is now a child of the wrapper (not sibling)
+    ≔ label = vnode.find_child_by_tag("label");
     assert_eq!(label.attr("for"), "newsletter-checkbox");
     assert_eq!(label.text_content(), "Subscribe to newsletter");
 }
@@ -73,8 +82,12 @@ rite test_checkbox_disabled() {
     };
 
     ≔ vnode = checkbox.render();
-    assert_eq!(vnode.attr("disabled"), yay);
+    // Wrapper has disabled class
     assert!(vnode.has_class("checkbox-disabled"));
+
+    // Input element has disabled attr
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("disabled"), yay);
 }
 
 // Test indeterminate state
@@ -86,36 +99,47 @@ rite test_checkbox_indeterminate() {
     };
 
     ≔ vnode = checkbox.render();
+    ≔ input_el = vnode.find_child_by_tag("input");
     // Indeterminate is set via JS property, not attribute
-    assert_eq!(vnode.attr("data-indeterminate"), "true");
-    assert!(vnode.has_class("checkbox-indeterminate"));
+    assert_eq!(input_el.attr("data-indeterminate"), "true");
+    assert!(input_el.has_class("checkbox-indeterminate"));
 }
 
 // Test checkbox sizes
 rite test_checkbox_sizes() {
     ≔ sm = Checkbox { name: "sm", size: "sm" };
-    assert!(sm.render().has_class("checkbox-sm"));
+    ≔ sm_el = sm.render().find_child_by_tag("input");
+    assert!(sm_el.has_class("checkbox-sm"));
 
     ≔ md = Checkbox { name: "md", size: "md" };
-    assert!(md.render().has_class("checkbox-md"));
+    ≔ md_el = md.render().find_child_by_tag("input");
+    assert!(md_el.has_class("checkbox-md"));
 
     ≔ lg = Checkbox { name: "lg", size: "lg" };
-    assert!(lg.render().has_class("checkbox-lg"));
+    ≔ lg_el = lg.render().find_child_by_tag("input");
+    assert!(lg_el.has_class("checkbox-lg"));
 }
 
 // Test checkbox with error
 rite test_checkbox_error() {
     ≔ checkbox = Checkbox {
         name: "agree",
+        id: "agree-checkbox",
         error: "You must agree to continue",
         required: yay,
     };
 
     ≔ vnode = checkbox.render();
-    assert!(vnode.has_class("checkbox-error"));
-    assert_eq!(vnode.attr("aria-invalid"), "true");
 
-    ≔ error_msg = vnode.find_sibling_by_class("checkbox-error-message");
+    // Wrapper has error class
+    assert!(vnode.has_class("checkbox-error"));
+
+    // Input has aria-invalid
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("aria-invalid"), "true");
+
+    // Error message is now a child of the wrapper
+    ≔ error_msg = vnode.find_child_by_class("checkbox-error-message");
     assert_eq!(error_msg.text_content(), "You must agree to continue");
 }
 
@@ -123,16 +147,20 @@ rite test_checkbox_error() {
 rite test_checkbox_description() {
     ≔ checkbox = Checkbox {
         name: "marketing",
+        id: "marketing-checkbox",
         label: "Marketing emails",
         description: "Receive updates about new features and promotions",
     };
 
     ≔ vnode = checkbox.render();
-    ≔ desc = vnode.find_sibling_by_class("checkbox-description");
+
+    // Description is now a child of the wrapper
+    ≔ desc = vnode.find_child_by_class("checkbox-description");
     assert_eq!(desc.text_content(), "Receive updates about new features and promotions");
 
     // Description should be linked via aria-describedby
-    assert!(vnode.attr("aria-describedby").contains("description"));
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert!(input_el.attr("aria-describedby").contains("description"));
 }
 
 // Test checkbox value (for form submission)
@@ -144,7 +172,8 @@ rite test_checkbox_value() {
     };
 
     ≔ vnode = checkbox.render();
-    assert_eq!(vnode.attr("value"), "blue");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("value"), "blue");
 }
 
 // Test checkbox accessibility
@@ -155,7 +184,8 @@ rite test_checkbox_accessibility() {
     };
 
     ≔ vnode = checkbox.render();
-    assert_eq!(vnode.attr("aria-label"), "Toggle dark mode");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("aria-label"), "Toggle dark mode");
 }
 
 // Test checkbox group (multiple checkboxes)

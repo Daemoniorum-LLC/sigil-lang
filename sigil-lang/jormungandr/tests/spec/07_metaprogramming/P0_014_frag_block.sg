@@ -1,0 +1,25 @@
+// Test: block fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (block)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $b:block captures a curly-brace-delimited block.
+// The block is executed as a unit.
+//
+// Expected behavior:
+// - Block is captured and can be executed
+// - Block returns its final expression value
+
+rune exec_block! {
+    ($b:block) => { $b }
+}
+
+rite main() {
+    // Simple block returning a value
+    ≔ result = exec_block!{{ 40 + 2 }};
+    println(result);
+
+    // Another simple block
+    ≔ result2 = exec_block!{{ 5 * 10 }};
+    println(result2);
+}

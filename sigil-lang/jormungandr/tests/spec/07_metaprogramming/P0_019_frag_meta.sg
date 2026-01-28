@@ -1,0 +1,23 @@
+// Test: meta fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (meta)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $m:meta captures attribute content.
+// Meta content is captured as strings.
+//
+// Expected behavior:
+// - Attribute content captured as string
+
+rune capture_meta! {
+    ($m:meta) => { $m }
+}
+
+rite main() {
+    // Capture simple attribute content
+    ≔ m1 = capture_meta!{debug};
+    println(m1);
+
+    ≔ m2 = capture_meta!{inline};
+    println(m2);
+}

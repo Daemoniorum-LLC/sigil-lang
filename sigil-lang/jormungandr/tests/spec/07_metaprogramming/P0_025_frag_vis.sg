@@ -1,0 +1,20 @@
+// Test: vis fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (vis)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $v:vis captures visibility qualifiers as strings.
+// Visibility like pub, pub(crate) are captured without evaluation.
+//
+// Expected behavior:
+// - Visibility qualifiers captured as strings
+
+rune capture_vis! {
+    ($v:vis) => { $v }
+}
+
+rite main() {
+    // Public visibility
+    ≔ v1 = capture_vis!{pub};
+    println(v1);
+}

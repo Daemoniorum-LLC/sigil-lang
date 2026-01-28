@@ -7303,11 +7303,19 @@
     "named": false
   },
   {
+    "type": "above",
+    "named": false
+  },
+  {
     "type": "alpha",
     "named": false
   },
   {
     "type": "as",
+    "named": false
+  },
+  {
+    "type": "aspect",
     "named": false
   },
   {
@@ -7355,6 +7363,10 @@
     "named": false
   },
   {
+    "type": "each",
+    "named": false
+  },
+  {
     "type": "else",
     "named": false
   },
@@ -7392,6 +7404,10 @@
   },
   {
     "type": "for",
+    "named": false
+  },
+  {
+    "type": "forever",
     "named": false
   },
   {
@@ -7479,6 +7495,10 @@
     "named": false
   },
   {
+    "type": "nay",
+    "named": false
+  },
+  {
     "type": "number_literal",
     "named": true
   },
@@ -7519,6 +7539,10 @@
     "named": false
   },
   {
+    "type": "rite",
+    "named": false
+  },
+  {
     "type": "rune",
     "named": false
   },
@@ -7552,6 +7576,14 @@
   },
   {
     "type": "tau",
+    "named": false
+  },
+  {
+    "type": "this",
+    "named": false
+  },
+  {
+    "type": "tome",
     "named": false
   },
   {
@@ -7603,11 +7635,19 @@
     "named": false
   },
   {
+    "type": "vary",
+    "named": false
+  },
+  {
     "type": "where",
     "named": false
   },
   {
     "type": "while",
+    "named": false
+  },
+  {
+    "type": "yea",
     "named": false
   },
   {
@@ -7771,7 +7811,15 @@
     "named": false
   },
   {
+    "type": "→",
+    "named": false
+  },
+  {
     "type": "∥",
+    "named": false
+  },
+  {
+    "type": "≔",
     "named": false
   },
   {
@@ -7779,7 +7827,23 @@
     "named": false
   },
   {
+    "type": "⊢",
+    "named": false
+  },
+  {
     "type": "⌛",
+    "named": false
+  },
+  {
+    "type": "◆",
+    "named": false
+  },
+  {
+    "type": "☉",
+    "named": false
+  },
+  {
+    "type": "⟳",
     "named": false
   }
 ]

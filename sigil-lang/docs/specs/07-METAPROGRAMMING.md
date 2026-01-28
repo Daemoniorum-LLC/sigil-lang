@@ -59,18 +59,18 @@ Fragment types (also called "fragment specifiers") define what kind of syntax a 
 | Fragment | Syntax | Matches | Implemented |
 |----------|--------|---------|-------------|
 | `expr` | `$x:expr` | Any expression | ✅ Yes |
-| `ty` | `$T:ty` | Any type | ✅ Yes |
-| `ident` | `$name:ident` | Identifier | ✅ Yes |
-| `path` | `$p:path` | Module path | ❌ No |
-| `pat` | `$p:pat` | Pattern | ✅ Yes |
-| `stmt` | `$s:stmt` | Statement | ✅ Yes |
-| `block` | `$b:block` | Block `{ ... }` | ✅ Yes |
+| `ty` | `$T:ty` | Any type | ✅ Yes (string capture) |
+| `ident` | `$name:ident` | Identifier | ✅ Yes (string capture) |
+| `path` | `$p:path` | Module path | ✅ Yes (string capture) |
+| `pat` | `$p:pat` | Pattern | ✅ Yes (string capture) |
+| `stmt` | `$s:stmt` | Statement | ✅ Yes (string capture) |
+| `block` | `$b:block` | Block `{ ... }` | ✅ Yes (executed) |
 | `item` | `$i:item` | Top-level item | ❌ No |
 | `meta` | `$m:meta` | Attribute content | ❌ No |
-| `tt` | `$t:tt` | Token tree | ✅ Yes |
+| `tt` | `$t:tt` | Token tree | ✅ Yes (string capture) |
 | `literal` | `$l:literal` | Literal value | ✅ Yes |
-| `lifetime` | `$a:lifetime` | Lifetime `'a` | ❌ No |
-| `vis` | `$v:vis` | Visibility | ❌ No |
+| `lifetime` | `$a:lifetime` | Lifetime `'a` | ✅ Yes (string capture) |
+| `vis` | `$v:vis` | Visibility | ✅ Yes (string capture) |
 
 #### 2.2.1 Fragment Type Definitions
 

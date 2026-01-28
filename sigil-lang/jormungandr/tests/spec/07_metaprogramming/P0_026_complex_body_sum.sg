@@ -1,0 +1,20 @@
+// Test: complex body expansion - sum pattern
+// Spec: 07-METAPROGRAMMING.md § 2.3 Complex Body Expansion
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that body repetition patterns like `0 $(+ $x)+` expand correctly.
+// The expression should expand to: 0 + val1 + val2 + val3 ...
+//
+// Expected behavior:
+// - Pattern expands to arithmetic expression
+// - All values are added together
+
+rune sum! {
+    ($($x:expr),+) => { 0 $(+ $x)+ }
+}
+
+rite main() {
+    ≔ result = sum!{1, 2, 3};
+    println(result);  // Should be 6
+}

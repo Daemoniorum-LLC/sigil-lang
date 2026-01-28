@@ -30,6 +30,38 @@ pub const GRIMOIRE_LOCK: &str = "Grimoire.lock";
 /// Directory for cached tomes
 pub const TOMES_DIR: &str = ".tomes";
 
+/// The Grimoire registry URL
+pub const REGISTRY_URL: &str = "https://www.sigil-lang.com/grimoire";
+
+/// Registry index file
+pub const REGISTRY_INDEX: &str = "index.json";
+
+// ============================================================================
+// Registry Types
+// ============================================================================
+
+/// The registry index structure
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RegistryIndex {
+    /// Map of tome name to metadata
+    pub tomes: HashMap<String, RegistryTome>,
+}
+
+/// Metadata for a tome in the registry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistryTome {
+    /// Short description
+    #[serde(default)]
+    pub description: String,
+    /// Available versions (newest first)
+    pub versions: Vec<String>,
+    /// Latest stable version
+    pub latest: String,
+    /// Yanked versions (should not be used)
+    #[serde(default)]
+    pub yanked: Vec<String>,
+}
+
 // ============================================================================
 // Grimoire.toml Structure
 // ============================================================================
@@ -613,11 +645,8 @@ fn resolve_binding(
 ) -> Result<ResolvedBinding, String> {
     match binding {
         Binding::Version(version) => {
-            // Registry binding - placeholder for future Grimoire registry
-            Err(format!(
-                "Registry bindings not yet implemented. Use path: or git: for '{}'",
-                name
-            ))
+            // Registry binding - fetch from Grimoire
+            resolve_registry_binding(name, version, tomes_dir)
         }
         Binding::Detailed(spec) => {
             if let Some(path) = &spec.path {
@@ -657,11 +686,8 @@ fn resolve_binding(
                     },
                 })
             } else if let Some(version) = &spec.version {
-                // Registry binding with version
-                Err(format!(
-                    "Registry bindings not yet implemented. Use path: or git: for '{}'",
-                    name
-                ))
+                // Registry binding with version in detailed spec
+                resolve_registry_binding(name, version, tomes_dir)
             } else {
                 Err(format!(
                     "Invalid binding for '{}': must specify version, path, or git",
@@ -755,6 +781,282 @@ fn get_git_author() -> Option<String> {
     }
 }
 
+// ============================================================================
+// Registry Operations
+// ============================================================================
+
+/// Cache for registry index (avoids repeated fetches during attune)
+static REGISTRY_CACHE: std::sync::OnceLock<RegistryIndex> = std::sync::OnceLock::new();
+
+/// Fetch the registry index from the Grimoire
+pub fn fetch_registry_index() -> Result<&'static RegistryIndex, String> {
+    // Return cached index if available
+    if let Some(index) = REGISTRY_CACHE.get() {
+        return Ok(index);
+    }
+
+    // Fetch from registry
+    let url = format!("{}/{}", REGISTRY_URL, REGISTRY_INDEX);
+    let index = fetch_and_parse_index(&url)?;
+
+    // Cache and return
+    Ok(REGISTRY_CACHE.get_or_init(|| index))
+}
+
+/// Fetch and parse the index from a URL
+fn fetch_and_parse_index(url: &str) -> Result<RegistryIndex, String> {
+    use std::process::Command;
+
+    // Use curl to fetch (available on most systems)
+    let output = Command::new("curl")
+        .args(["-sSf", "--max-time", "30", url])
+        .output()
+        .map_err(|e| format!("Failed to fetch registry index: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Failed to fetch registry index from {}: {}",
+            url, stderr
+        ));
+    }
+
+    let json = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 in registry index: {}", e))?;
+
+    serde_json::from_str(&json).map_err(|e| format!("Failed to parse registry index: {}", e))
+}
+
+/// Find a tome in the registry
+pub fn find_tome_in_registry(name: &str) -> Result<&'static RegistryTome, String> {
+    let index = fetch_registry_index()?;
+    index
+        .tomes
+        .get(name)
+        .ok_or_else(|| format!("Tome '{}' not found in Grimoire registry", name))
+}
+
+/// Resolve a version requirement to a specific version
+pub fn resolve_version(tome: &RegistryTome, requirement: &str) -> Result<String, String> {
+    // Simple version matching for now
+    // Supports: exact ("1.0.0"), caret ("^1.0"), tilde ("~1.0"), wildcard ("*")
+
+    let requirement = requirement.trim();
+
+    // Wildcard - use latest
+    if requirement == "*" || requirement.is_empty() {
+        return Ok(tome.latest.clone());
+    }
+
+    // Exact version
+    if !requirement.starts_with('^')
+        && !requirement.starts_with('~')
+        && !requirement.starts_with('>')
+        && !requirement.starts_with('<')
+    {
+        // Check if exact version exists
+        if tome.versions.contains(&requirement.to_string()) {
+            if tome.yanked.contains(&requirement.to_string()) {
+                return Err(format!("Version {} has been yanked", requirement));
+            }
+            return Ok(requirement.to_string());
+        }
+        return Err(format!(
+            "Version {} not found. Available: {}",
+            requirement,
+            tome.versions.join(", ")
+        ));
+    }
+
+    // Caret version (^1.0 means >=1.0.0 <2.0.0)
+    if let Some(base) = requirement.strip_prefix('^') {
+        let parts: Vec<&str> = base.split('.').collect();
+        let major: u32 = parts
+            .first()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        // Find highest matching version
+        for version in &tome.versions {
+            if tome.yanked.contains(version) {
+                continue;
+            }
+            let v_parts: Vec<&str> = version.split('.').collect();
+            let v_major: u32 = v_parts
+                .first()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+
+            if v_major == major && version_satisfies(version, base) {
+                return Ok(version.clone());
+            }
+        }
+        return Err(format!("No version satisfies {}", requirement));
+    }
+
+    // Tilde version (~1.0 means >=1.0.0 <1.1.0)
+    if let Some(base) = requirement.strip_prefix('~') {
+        let parts: Vec<&str> = base.split('.').collect();
+        let major: u32 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let minor: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        for version in &tome.versions {
+            if tome.yanked.contains(version) {
+                continue;
+            }
+            let v_parts: Vec<&str> = version.split('.').collect();
+            let v_major: u32 = v_parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let v_minor: u32 = v_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+            if v_major == major && v_minor == minor && version_satisfies(version, base) {
+                return Ok(version.clone());
+            }
+        }
+        return Err(format!("No version satisfies {}", requirement));
+    }
+
+    // Fallback to latest for unrecognized formats
+    Ok(tome.latest.clone())
+}
+
+/// Check if version >= base
+fn version_satisfies(version: &str, base: &str) -> bool {
+    let v_parts: Vec<u32> = version
+        .split('.')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let b_parts: Vec<u32> = base.split('.').filter_map(|s| s.parse().ok()).collect();
+
+    for i in 0..3 {
+        let v = v_parts.get(i).copied().unwrap_or(0);
+        let b = b_parts.get(i).copied().unwrap_or(0);
+        if v > b {
+            return true;
+        }
+        if v < b {
+            return false;
+        }
+    }
+    true // Equal
+}
+
+/// Download and extract a tome from the registry
+pub fn download_tome(
+    name: &str,
+    version: &str,
+    tomes_dir: &Path,
+) -> Result<PathBuf, String> {
+    let tome_dir = tomes_dir.join(format!("{}-{}", name, version));
+
+    // Skip if already downloaded
+    if tome_dir.exists() {
+        let grimoire_path = tome_dir.join(GRIMOIRE_TOML);
+        if grimoire_path.exists() {
+            return Ok(tome_dir);
+        }
+        // Incomplete download, remove and retry
+        fs::remove_dir_all(&tome_dir)
+            .map_err(|e| format!("Failed to clean incomplete download: {}", e))?;
+    }
+
+    // Download tarball
+    let tarball_url = format!("{}/tomes/{}/{}.tar.gz", REGISTRY_URL, name, version);
+    let tarball_path = tomes_dir.join(format!("{}-{}.tar.gz", name, version));
+
+    download_file(&tarball_url, &tarball_path)?;
+
+    // Extract tarball
+    extract_tarball(&tarball_path, tomes_dir)?;
+
+    // Clean up tarball
+    let _ = fs::remove_file(&tarball_path);
+
+    // Verify extraction
+    if !tome_dir.exists() {
+        return Err(format!(
+            "Extraction failed: expected directory {} not found",
+            tome_dir.display()
+        ));
+    }
+
+    Ok(tome_dir)
+}
+
+/// Download a file from URL to path
+fn download_file(url: &str, dest: &Path) -> Result<(), String> {
+    use std::process::Command;
+
+    // Ensure parent directory exists
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+
+    let output = Command::new("curl")
+        .args([
+            "-sSfL",
+            "--max-time",
+            "120",
+            "-o",
+            dest.to_str().unwrap_or(""),
+            url,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to download {}: {}", url, e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Download failed for {}: {}", url, stderr));
+    }
+
+    Ok(())
+}
+
+/// Extract a tarball to a directory
+fn extract_tarball(tarball: &Path, dest: &Path) -> Result<(), String> {
+    use std::process::Command;
+
+    let output = Command::new("tar")
+        .args([
+            "-xzf",
+            tarball.to_str().unwrap_or(""),
+            "-C",
+            dest.to_str().unwrap_or(""),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to extract tarball: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Extraction failed: {}", stderr));
+    }
+
+    Ok(())
+}
+
+/// Resolve a registry binding (version string) to a local path
+fn resolve_registry_binding(
+    name: &str,
+    version: &str,
+    tomes_dir: &Path,
+) -> Result<ResolvedBinding, String> {
+    // Find tome in registry
+    let tome = find_tome_in_registry(name)?;
+
+    // Resolve version requirement to specific version
+    let resolved_version = resolve_version(tome, version)?;
+
+    // Download if needed
+    let tome_path = download_tome(name, &resolved_version, tomes_dir)?;
+
+    Ok(ResolvedBinding {
+        name: name.to_string(),
+        version: resolved_version,
+        path: tome_path,
+        source: BindingSource::Registry,
+    })
+}
+
 /// List available rites (scripts)
 pub fn list_rites(path: &Path) -> Result<Vec<(String, String)>, String> {
     let grimoire = Grimoire::load(path)?;
@@ -835,5 +1137,125 @@ mod tests {
         assert!(toml.contains("[tome]"));
         assert!(toml.contains("name = \"test-tome\""));
         assert!(toml.contains("[bindings]"));
+    }
+
+    // Registry tests
+
+    #[test]
+    fn test_version_satisfies() {
+        // Equal versions
+        assert!(version_satisfies("1.0.0", "1.0.0"));
+        assert!(version_satisfies("1.2.3", "1.2.3"));
+
+        // Greater versions
+        assert!(version_satisfies("1.1.0", "1.0.0"));
+        assert!(version_satisfies("2.0.0", "1.0.0"));
+        assert!(version_satisfies("1.0.1", "1.0.0"));
+
+        // Lesser versions
+        assert!(!version_satisfies("0.9.0", "1.0.0"));
+        assert!(!version_satisfies("1.0.0", "1.0.1"));
+    }
+
+    #[test]
+    fn test_resolve_version_exact() {
+        let tome = RegistryTome {
+            description: "Test".to_string(),
+            versions: vec!["1.0.0".to_string(), "0.9.0".to_string()],
+            latest: "1.0.0".to_string(),
+            yanked: vec![],
+        };
+
+        // Exact match
+        assert_eq!(resolve_version(&tome, "1.0.0").unwrap(), "1.0.0");
+        assert_eq!(resolve_version(&tome, "0.9.0").unwrap(), "0.9.0");
+
+        // Version not found
+        assert!(resolve_version(&tome, "2.0.0").is_err());
+    }
+
+    #[test]
+    fn test_resolve_version_wildcard() {
+        let tome = RegistryTome {
+            description: "Test".to_string(),
+            versions: vec!["1.0.0".to_string()],
+            latest: "1.0.0".to_string(),
+            yanked: vec![],
+        };
+
+        // Wildcard returns latest
+        assert_eq!(resolve_version(&tome, "*").unwrap(), "1.0.0");
+        assert_eq!(resolve_version(&tome, "").unwrap(), "1.0.0");
+    }
+
+    #[test]
+    fn test_resolve_version_caret() {
+        let tome = RegistryTome {
+            description: "Test".to_string(),
+            versions: vec![
+                "1.2.0".to_string(),
+                "1.1.0".to_string(),
+                "1.0.0".to_string(),
+                "0.9.0".to_string(),
+            ],
+            latest: "1.2.0".to_string(),
+            yanked: vec![],
+        };
+
+        // Caret version ^1.0 means >=1.0.0 <2.0.0
+        assert_eq!(resolve_version(&tome, "^1.0").unwrap(), "1.2.0");
+        assert_eq!(resolve_version(&tome, "^1.1").unwrap(), "1.2.0");
+
+        // No matching version
+        assert!(resolve_version(&tome, "^2.0").is_err());
+    }
+
+    #[test]
+    fn test_resolve_version_yanked() {
+        let tome = RegistryTome {
+            description: "Test".to_string(),
+            versions: vec!["1.0.0".to_string(), "0.9.0".to_string()],
+            latest: "1.0.0".to_string(),
+            yanked: vec!["1.0.0".to_string()],
+        };
+
+        // Yanked version returns error
+        assert!(resolve_version(&tome, "1.0.0").is_err());
+
+        // Non-yanked version works
+        assert_eq!(resolve_version(&tome, "0.9.0").unwrap(), "0.9.0");
+    }
+
+    #[test]
+    fn test_registry_index_parsing() {
+        let json = r#"{
+            "tomes": {
+                "aegis": {
+                    "description": "Security primitives",
+                    "versions": ["0.2.0", "0.1.0"],
+                    "latest": "0.2.0",
+                    "yanked": []
+                }
+            }
+        }"#;
+
+        let index: RegistryIndex = serde_json::from_str(json).unwrap();
+        assert!(index.tomes.contains_key("aegis"));
+        let aegis = &index.tomes["aegis"];
+        assert_eq!(aegis.latest, "0.2.0");
+        assert_eq!(aegis.versions.len(), 2);
+    }
+
+    #[test]
+    fn test_registry_tome_default_yanked() {
+        // Test that yanked defaults to empty when not present
+        let json = r#"{
+            "description": "Test",
+            "versions": ["1.0.0"],
+            "latest": "1.0.0"
+        }"#;
+
+        let tome: RegistryTome = serde_json::from_str(json).unwrap();
+        assert!(tome.yanked.is_empty());
     }
 }

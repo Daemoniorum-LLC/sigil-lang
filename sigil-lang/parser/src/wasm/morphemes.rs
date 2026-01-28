@@ -165,13 +165,8 @@ impl WasmCompiler {
             }
             PipeOp::NecessityMethod { .. } => Err(WasmError::unsupported("necessity method call")),
 
-<<<<<<< HEAD
             // Call arbitrary expression as function on piped value
             PipeOp::Call(expr) => self.compile_apply_to_stack(expr),
-=======
-            // Function call in pipe context
-            PipeOp::Call(_) => Err(WasmError::unsupported("call in pipe context")),
->>>>>>> origin/main
         }
     }
 

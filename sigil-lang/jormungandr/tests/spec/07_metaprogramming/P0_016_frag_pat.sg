@@ -1,0 +1,24 @@
+// Test: pat fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (pat)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $p:pat captures patterns for matching.
+// Patterns are captured as strings for use in match arms.
+//
+// Expected behavior:
+// - Pattern captured as string representation
+
+rune capture_pat! {
+    ($p:pat) => { $p }
+}
+
+rite main() {
+    // Simple identifier pattern
+    ≔ p1 = capture_pat!{x};
+    println(p1);
+
+    // Wildcard pattern
+    ≔ p2 = capture_pat!{_};
+    println(p2);
+}

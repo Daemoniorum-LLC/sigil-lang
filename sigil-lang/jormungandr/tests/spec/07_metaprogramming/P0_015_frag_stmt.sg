@@ -1,0 +1,23 @@
+// Test: stmt fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (stmt)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $s:stmt captures a single statement.
+// For now, stmt is captured as a string (like ident, ty, pat).
+//
+// Expected behavior:
+// - Statement is captured as a string representation
+
+rune capture_stmt! {
+    ($s:stmt) => { $s }
+}
+
+rite main() {
+    // Capture simple statements as strings
+    ≔ s1 = capture_stmt!{abc};
+    println(s1);
+
+    ≔ s2 = capture_stmt!{xyz};
+    println(s2);
+}

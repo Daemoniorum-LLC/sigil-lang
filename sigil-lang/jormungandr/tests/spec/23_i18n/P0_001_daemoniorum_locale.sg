@@ -1,23 +1,23 @@
-// Test: Daemoniorum Locale Definitions
+// Test: Locale Definitions
 // TDD: RED → GREEN - Tests the locale ᛈ construct
 //
-// This test defines and verifies the DaemoniorumLocale enum
+// This test defines and verifies the Locale enum
 
 // Define the locale enum using our new construct
-locale ᛈ DaemoniorumLocale {
+locale ᛈ Locale {
     En { code: "en", name: "English" },
     Es { code: "es", name: "Español", fallback: En },
 }
 
 rite main() {
     // Test 1: En variant exists with correct metadata
-    ≔ en = DaemoniorumLocale·En;
+    ≔ en = Locale·En;
     assert_eq!(en.code(), "en");
     assert_eq!(en.display_name(), "English");
     assert_eq!(en.is_rtl(), nay);
 
     // Test 2: Es variant exists with correct metadata
-    ≔ es = DaemoniorumLocale·Es;
+    ≔ es = Locale·Es;
     assert_eq!(es.code(), "es");
     assert_eq!(es.display_name(), "Español");
     assert_eq!(es.is_rtl(), nay);

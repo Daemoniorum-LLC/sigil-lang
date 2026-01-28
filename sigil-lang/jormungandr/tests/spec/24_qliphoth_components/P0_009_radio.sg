@@ -2,6 +2,7 @@
 // TDD: RED - Tests the Radio button form control
 //
 // Radio buttons for single selection from a group of options
+// Wrapper pattern: div.radio-field > [input.radio, label, ?description]
 
 invoke qliphoth·components·Radio;
 invoke qliphoth·components·RadioGroup;
@@ -17,10 +18,16 @@ rite test_radio_basic() {
 
     ≔ vnode = radio.render();
 
-    assert_eq!(vnode.attr("type"), "radio");
-    assert_eq!(vnode.attr("name"), "plan");
-    assert_eq!(vnode.attr("value"), "free");
-    assert!(vnode.has_class("radio"));
+    // Wrapper is a div
+    assert_eq!(vnode.tag(), "div");
+    assert!(vnode.has_class("radio-field"));
+
+    // Find the actual input element inside
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("type"), "radio");
+    assert_eq!(input_el.attr("name"), "plan");
+    assert_eq!(input_el.attr("value"), "free");
+    assert!(input_el.has_class("radio"));
 }
 
 // Test radio checked state
@@ -32,7 +39,8 @@ rite test_radio_checked() {
     };
 
     ≔ vnode = radio.render();
-    assert_eq!(vnode.attr("checked"), yay);
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("checked"), yay);
 }
 
 // Test radio with label
@@ -47,10 +55,11 @@ rite test_radio_with_label() {
     ≔ vnode = radio.render();
 
     // Input should have id
-    assert_eq!(vnode.attr("id"), "size-medium");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("id"), "size-medium");
 
-    // Label should be associated
-    ≔ label = vnode.find_sibling_by_tag("label");
+    // Label is now a child of the wrapper (not sibling)
+    ≔ label = vnode.find_child_by_tag("label");
     assert_eq!(label.attr("for"), "size-medium");
     assert_eq!(label.text_content(), "Medium");
 }
@@ -65,20 +74,27 @@ rite test_radio_disabled() {
     };
 
     ≔ vnode = radio.render();
-    assert_eq!(vnode.attr("disabled"), yay);
+    // Wrapper has disabled class
     assert!(vnode.has_class("radio-disabled"));
+
+    // Input has disabled attr
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("disabled"), yay);
 }
 
 // Test radio sizes
 rite test_radio_sizes() {
     ≔ sm = Radio { name: "s", value: "1", size: "sm" };
-    assert!(sm.render().has_class("radio-sm"));
+    ≔ sm_el = sm.render().find_child_by_tag("input");
+    assert!(sm_el.has_class("radio-sm"));
 
     ≔ md = Radio { name: "m", value: "2", size: "md" };
-    assert!(md.render().has_class("radio-md"));
+    ≔ md_el = md.render().find_child_by_tag("input");
+    assert!(md_el.has_class("radio-md"));
 
     ≔ lg = Radio { name: "l", value: "3", size: "lg" };
-    assert!(lg.render().has_class("radio-lg"));
+    ≔ lg_el = lg.render().find_child_by_tag("input");
+    assert!(lg_el.has_class("radio-lg"));
 }
 
 // Test radio group
@@ -194,12 +210,15 @@ rite test_radio_with_description() {
     ≔ radio = Radio {
         name: "plan",
         value: "pro",
+        id: "plan-pro",
         label: "Pro Plan",
         description: "Best for growing teams. Includes advanced features.",
     };
 
     ≔ vnode = radio.render();
-    ≔ desc = vnode.find_sibling_by_class("radio-description");
+
+    // Description is now a child of the wrapper
+    ≔ desc = vnode.find_child_by_class("radio-description");
     assert_eq!(desc.text_content(), "Best for growing teams. Includes advanced features.");
 }
 
@@ -231,7 +250,8 @@ rite test_radio_accessibility() {
     };
 
     ≔ vnode = radio.render();
-    assert_eq!(vnode.attr("aria-label"), "Option one");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("aria-label"), "Option one");
 }
 
 rite main() {

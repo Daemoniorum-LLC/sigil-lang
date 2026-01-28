@@ -7,32 +7,36 @@
 
 ; === Keywords ===
 [
-  "fn"
-  "let"
-  "mut"
-  "const"
+  ; Function definition
+  "fn" "rite" "λ"
+  ; Variable binding
+  "let" "≔"
+  ; Mutability
+  "mut" "vary"
+  ; Constants
+  "const" "◆"
+  ; Type definition
   "type"
-  "struct"
-  "sigil"
+  ; Struct definition
+  "struct" "sigil"
+  ; Enum
   "enum"
-  "trait"
-  "impl"
-  "mod"
-  "scroll"
-  "use"
-  "invoke"
-  "pub"
-  "async"
-  "await"
-  "move"
-  "ref"
-  "unsafe"
-  "extern"
-  "dyn"
-  "where"
-  "as"
-  "macro"
-  "rune"
+  ; Trait
+  "trait" "aspect"
+  ; Implementation
+  "impl" "⊢"
+  ; Modules
+  "mod" "scroll"
+  ; Imports
+  "use" "invoke"
+  ; Visibility
+  "pub" "☉"
+  ; Async/await
+  "async" "await"
+  ; Other keywords
+  "move" "ref" "unsafe" "extern" "dyn" "where" "as"
+  ; Macros
+  "macro" "rune"
 ] @keyword
 
 ; Control flow
@@ -40,20 +44,21 @@
   "if"
   "else"
   "match"
-  "loop"
-  "while"
-  "for"
+  ; Loop keywords
+  "loop" "forever"
+  "while" "⟳"
+  "for" "each"
   "in"
   "break"
   "continue"
   "return"
 ] @keyword.control
 
-; Self/Super/Crate
+; Self/Super/Crate (and Sigil equivalents)
 [
-  "self"
-  "super"
-  "crate"
+  "self" "this"
+  "super" "above"
+  "crate" "tome"
 ] @variable.builtin
 
 ; Self type in impl blocks
@@ -110,6 +115,8 @@
 (string_literal) @string
 (char_literal) @character
 (boolean_literal) @boolean
+; Native boolean literals
+["yea" "nay"] @boolean
 (escape_sequence) @string.escape
 
 ; === Operators ===
@@ -146,7 +153,7 @@
   ".."
   "..="
   "=>"
-  "->"
+  "->" "→"
   "::"
 ] @operator
 

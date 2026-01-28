@@ -50,6 +50,7 @@ pub mod ast;
 pub mod diagnostic;
 pub mod ffi;
 pub mod fmt;
+pub mod holographic;
 pub mod interpreter;
 pub mod ir;
 pub mod lexer;

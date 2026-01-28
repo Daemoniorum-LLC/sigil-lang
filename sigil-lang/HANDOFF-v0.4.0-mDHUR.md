@@ -1,4 +1,4 @@
-# Handoff Document: Sigil v0.4.0 Prep (Session mDHUR)
+# Handoff Document: Sigil v0.4.0 Prep (Session mDHUR - Continuation)
 
 **Date:** 2026-01-26
 **Branch:** `feature/v0.4.0-structural-cleanup`
@@ -6,72 +6,86 @@
 
 ## Summary
 
-This session focused on v0.4.0 parser improvements and structural cleanup:
-1. Macro/rune enhancements (assert_eq!/assert_ne!, named args)
-2. Structural cleanup (moved duplicates into sigil-lang/)
-3. Qliphoth VNode rendering improvements
+This session continued v0.4.0 parser improvements with focus on Qliphoth component handlers:
+1. Fixed CheckboxGroup/RadioGroup for Record types
+2. Implemented agent-native wrapper patterns for form components
+3. Added dedicated handlers for Link, Icon, Tooltip, Tabs, Footer
 
 ## Test Status
 
-**Current:** 681/714 tests passing (95%)
+**Current:** 694/706 tests passing (98%)
+**Progress:** +3 tests from previous session (was 691)
 
-### Completed Work
+### Session Progress
 
-#### 1. Structural Cleanup
-- Removed 35 duplicate directories from sigil/ root
-- Synced v0.4.0 features (assert_eq/ne, WebSocket) from prep branch to sigil-lang/
-- Moved benchmarks, tree-sitter-sigil, sigil-web-interface into sigil-lang/
-- Hoisted website-qliphoth to sigil/ ecosystem level
-- Added qliphoth as submodule under sigil/
+#### 1. Fixed Issues
+- **Link disabled prop** - Changed `Value::Null` to `Value::Bool(false)` for proper Sigil semantics
+- **CheckboxGroup/RadioGroup** - Fixed to handle both `Value::Map` and `Value::Struct` (Record) types
+- **Icon accessibility** - Added `aria-hidden="false"`, `aria-label`, `role="img"` when aria_label is provided
+- **Icon fill attribute** - Added hex color support (colors starting with `#`)
+- **Icon data attributes** - Added `data-icon` and `data-library` attributes
+- **Tooltip delay** - Added `data-delay` attribute for delay prop
+- **Tooltip arrow** - Added conditional arrow child based on `arrow` prop
+- **Tooltip disabled** - Skip rendering content when `disabled: yay`
+- **Tabs component** - Added full dedicated handler with:
+  - `data-keyboard-activation` attribute
+  - Tab children with `role="tab"`, `aria-selected`
+  - TabPanel children with `role="tabpanel"`
+  - Support for `index` prop for controlled tabs
+- **Footer logo/tagline** - Added logo wrapper with img child, tagline div
 
-#### 2. Macro Improvements (from original session)
-- `assert_eq!` and `assert_ne!` macros
-- Named argument support in macros
-- Re-enabled `&&` and `||` token lexing
-- New `detokenize()` function for macro body parsing
+### Remaining Work (10 failing tests)
 
-#### 3. Qliphoth VNode Improvements (this continuation)
-- **Button component**: Fully working with all tests passing
-  - Proper tag mapping (button -> "button")
-  - Disabled/type/aria-* attributes
-  - Loading state with spinner child
-  - Icon support with btn-icon child
-- **Generic component render**: Improved tag mapping
-  - Dialog -> dialog, Header -> header, Footer -> footer, Nav -> nav
-  - Textarea -> textarea, Icon -> svg, Hero -> section
-- **Attribute population**: Component props now map to VNode attrs
-  - Dialog: role, aria-modal, aria-labelledby, data-initial-focus
-  - Link: href, target
-  - Input/Textarea: placeholder, value, name, type
-  - Avatar: src, alt
-  - Common: id, aria-label, disabled
+#### i18n Module (3 tests)
+- Module not implemented, requires stdlib work
+- Errors: `no method 'code' on enum 'DaemoniorumLocale'`
 
-## Remaining Work
+#### Select Component (1 test)
+- `id` attribute returns `null` - test expects `role-select`
+- Mystery: The Select handler at line 10933 does have id handling
+- May be an issue with how struct fields are resolved
 
-### Qliphoth Component Tests (31 failing)
+#### Icon Component (1 test)
+- `viewBox` attribute not implemented for custom SVG icons
+- Test expects `attr("viewBox")` to return `"0 0 24 24"`
 
-These are "TDD: RED" tests - they define expected behavior for a full component library.
-Each component needs:
-1. Specific render handler (like Button has)
-2. Child VNode generation for internal structure
-3. Proper class/attribute propagation
+#### Tooltip Component (1 test)
+- Error: `undefined variable: Trigger`
+- Likely a test dependency issue (Trigger component not defined)
 
-**Priority components to fix:**
-- Card (with CardHeader, CardBody, CardFooter)
-- Dialog (with DialogHeader, DialogBody, DialogFooter)
-- Input, Select, Checkbox, Radio, Switch
-- Header, Footer, Nav (with child structure)
+#### Tabs Component (1 test)
+- `index 1 out of bounds for length 0` - Tab children still not found
+- Tab array is empty when trying to access `tab_buttons[1]`
+- Need to investigate why Tab children aren't being processed
 
-### i18n Tests (3 failing)
-- P0_001_daemoniorum_locale
-- P0_002_common_translations
-- P0_003_landing_translations
+#### Footer Component (1 test)
+- `left = 0, right = 3` for social links length
+- Social links may not be rendering correctly
 
-These require i18n module implementation in stdlib.
+#### Nav Component (1 test)
+- `undefined variable: Trigger` - component not defined
+- Skip for now
 
-## Files Changed (This Session)
+### Root Cause Analysis
 
-- `parser/src/interpreter.rs` - Button component render, generic VNode improvements
+| Component | Test | Error | Status |
+|-----------|------|-------|--------|
+| i18n | test_* | method not found | Needs stdlib module |
+| Select | test_select_with_label | `id = null` | Investigate field resolution |
+| Icon | test_icon_custom_svg | `viewBox = null` | Add viewBox prop |
+| Tooltip | test_tooltip_* | `Trigger undefined` | Test dependency |
+| Tabs | test_tabs_controlled | index out of bounds | Tab children not found |
+| Footer | test_footer_social | `0 != 3` | Social links empty |
+| Nav | test_nav_* | `Trigger undefined` | Component not defined |
+
+## Files Changed (This Session Continuation)
+
+- `parser/src/interpreter.rs` - Enhanced component handlers:
+  - Link: Fixed disabled prop to return `Value::Bool(false)` instead of `Value::Null`
+  - Icon: Added aria_label accessibility, hex color fill, data-icon, data-library
+  - Tooltip: Added delay attribute, arrow handling, disabled check
+  - Tabs: Full implementation with TabList/Tab/TabPanel rendering
+  - Footer: Added logo wrapper with img, tagline div
 
 ## Verification
 
@@ -88,15 +102,28 @@ cd ../jormungandr/tests
 ../../parser/target/release/sigil run spec/24_qliphoth_components/P0_001_button.sg
 ```
 
+## Passing Components (14/20)
+
+- Button, Card, Input, Badge, Spinner, Dialog
+- Checkbox, Radio, Switch, Textarea
+- Link, Avatar, Header, Hero
+
 ## Next Steps
 
-1. **Fix Card component** - Similar pattern to Button
-2. **Fix Dialog component** - Add child generation for DialogHeader/Body/Footer
-3. **Consider component framework** - Current approach is repetitive; could abstract
-4. **i18n module** - Implement translation loading in stdlib
+1. **Select id debugging** - Investigate why id is null despite handler code
+2. **Tabs Tab children** - Debug why Tab children aren't being processed
+3. **Icon viewBox** - Add viewBox attribute handling
+4. **Footer social links** - Verify social link rendering
+5. **i18n module** - Implement translation loading in stdlib
 
-## Context
+## Key Lessons Learned
 
-Part of Sigil v0.4.0 preparation. The Qliphoth component tests define the target API
-for a production component library. The Button implementation serves as a template
-for other components.
+1. **Anonymous struct literals become `Value::Struct`** - `{ key: value }` becomes `Value::Struct` with name "Record", not `Value::Map`
+
+2. **`text()` helper creates VNode** - Creates `VNode` with `tag: "#text"` and `text_content`
+
+3. **Wrapper pattern is agent-native** - Form components render wrapper elements for composition over traversal
+
+4. **Sigil boolean semantics** - Use `Value::Bool(false)` not `Value::Null` for `nay` values
+
+5. **Conditional rendering** - Check props like `disabled: yay` before rendering child elements

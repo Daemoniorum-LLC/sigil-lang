@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grimoire - Sigil Package Registry</title>
+  <meta name="description" content="The Grimoire is Sigil's package registry. Learn how to publish, discover, and manage Sigil tomes (packages).">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛤</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="../css/docs.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Navigation -->
+  <nav class="nav" role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+      <a href="/" class="nav-logo">
+        <span class="logo-icon">⛤</span>
+        <span class="logo-text">Sigil</span>
+      </a>
+      <div class="nav-links">
+        <a href="/pages/docs.html">Docs</a>
+        <a href="/pages/learn.html">Learn</a>
+        <a href="/pages/grimoire.html" class="active">Grimoire</a>
+        <a href="/pages/playground.html" class="nav-coming-soon">Playground <span class="soon-badge">Soon</span></a>
+        <a href="/pages/agents.html">Agent Infrastructure</a>
+        <a href="https://github.com/Daemoniorum-LLC/sigil-lang" class="nav-github" aria-label="GitHub repository" rel="noopener noreferrer" target="_blank">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Mobile Docs Menu Toggle -->
+  <button class="docs-sidebar-toggle" aria-expanded="false" aria-controls="docs-sidebar">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16"/>
+    </svg>
+    <span class="toggle-text">Show Menu</span>
+  </button>
+
+  <div class="docs-layout" id="main-content">
+    <!-- Sidebar -->
+    <aside class="docs-sidebar">
+      <div class="sidebar-section">
+        <h4>Getting Started</h4>
+        <ul>
+          <li><a href="#introduction">What is Grimoire?</a></li>
+          <li><a href="#quick-start">Quick Start</a></li>
+          <li><a href="#grimoire-toml">Grimoire.toml</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>Commands</h4>
+        <ul>
+          <li><a href="#conjure">conjure</a></li>
+          <li><a href="#inscribe">inscribe</a></li>
+          <li><a href="#summon">summon</a></li>
+          <li><a href="#banish">banish</a></li>
+          <li><a href="#attune">attune</a></li>
+          <li><a href="#forge">forge</a></li>
+          <li><a href="#consecrate">consecrate</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>Bindings</h4>
+        <ul>
+          <li><a href="#version-bindings">Version Bindings</a></li>
+          <li><a href="#path-bindings">Path Bindings</a></li>
+          <li><a href="#git-bindings">Git Bindings</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>Publishing</h4>
+        <ul>
+          <li><a href="#preparing">Preparing a Tome</a></li>
+          <li><a href="#publishing">Publishing</a></li>
+          <li><a href="#versioning">Versioning</a></li>
+          <li><a href="#yanking">Yanking</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>Reference</h4>
+        <ul>
+          <li><a href="#manifest-reference">Manifest Reference</a></li>
+          <li><a href="#lock-file">Lock File</a></li>
+          <li><a href="#registry-api">Registry API</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="docs-content">
+      <article>
+        <h1 id="introduction">The Grimoire</h1>
+        <p class="lead">The Grimoire is Sigil's package registry and dependency manager. It lets you discover, share, and manage reusable <em>tomes</em> (packages) of Sigil code.</p>
+
+        <div class="feature-highlight">
+          <div class="highlight-item">
+            <h4>Ritual Commands</h4>
+            <p>Evocative commands like <code>conjure</code>, <code>summon</code>, and <code>forge</code> for intuitive package management.</p>
+          </div>
+          <div class="highlight-item">
+            <h4>Simple Bindings</h4>
+            <p>Declare dependencies with version, path, or git bindings in <code>Grimoire.toml</code>.</p>
+          </div>
+          <div class="highlight-item">
+            <h4>Reproducible Builds</h4>
+            <p><code>Grimoire.lock</code> ensures consistent builds across environments.</p>
+          </div>
+        </div>
+
+        <h2 id="quick-start">Quick Start</h2>
+
+        <h3>Create a New Tome</h3>
+        <pre class="code-block"><code><span class="comment"># Conjure a new tome into existence</span>
+$ sigil conjure my-tome
+    <span class="string">Created</span> tome 'my-tome' at ./my-tome
+
+$ cd my-tome
+$ tree
+.
+├── Grimoire.toml
+├── .gitignore
+└── src
+    └── main.sg</code></pre>
+
+        <h3>Add a Dependency</h3>
+        <pre class="code-block"><code><span class="comment"># Summon the aegis security library</span>
+$ sigil summon aegis
+    <span class="string">Added</span> aegis = "0.2" to [bindings]
+
+<span class="comment"># Or with a specific version</span>
+$ sigil summon chorus "^0.1"
+    <span class="string">Added</span> chorus = "^0.1" to [bindings]</code></pre>
+
+        <h3>Build Your Project</h3>
+        <pre class="code-block"><code><span class="comment"># Forge shapes your tome into being</span>
+$ sigil forge
+    <span class="string">Attuning</span> bindings...
+    <span class="string">Resolved</span> aegis 0.2.1
+    <span class="string">Resolved</span> chorus 0.1.3
+    <span class="string">Forged</span> my-tome v0.1.0</code></pre>
+
+        <h2 id="grimoire-toml">Grimoire.toml</h2>
+        <p>Every Sigil tome has a <code>Grimoire.toml</code> manifest file:</p>
+        <pre class="code-block"><code><span class="comment"># Tome metadata</span>
+[tome]
+name = <span class="string">"my-tome"</span>
+version = <span class="string">"0.1.0"</span>
+authors = [<span class="string">"Your Name &lt;you@example.com&gt;"</span>]
+edition = <span class="string">"2026"</span>
+description = <span class="string">"A brief description of your tome"</span>
+license = <span class="string">"MIT"</span>
+repository = <span class="string">"https://github.com/you/my-tome"</span>
+
+<span class="comment"># Dependencies (bindings)</span>
+[bindings]
+aegis = <span class="string">"0.2"</span>                      <span class="comment"># Registry binding</span>
+chorus = { version = <span class="string">"^0.1"</span> }       <span class="comment"># Detailed version</span>
+local-lib = { path = <span class="string">"../lib"</span> }    <span class="comment"># Local path</span>
+utils = { git = <span class="string">"https://github.com/org/utils"</span> }
+
+<span class="comment"># Dev-only dependencies</span>
+[dev_bindings]
+test-utils = <span class="string">"0.1"</span>
+
+<span class="comment"># Custom scripts (rites)</span>
+[rites]
+test = <span class="string">"sigil run tests/all.sg"</span>
+bench = <span class="string">"sigil run benchmarks/main.sg"</span></code></pre>
+
+        <h2 id="conjure">sigil conjure</h2>
+        <p>Summon a new tome into existence. Creates a new project with standard structure.</p>
+        <pre class="code-block"><code>$ sigil conjure &lt;name&gt; [path]
+
+<span class="comment"># Examples:</span>
+$ sigil conjure my-app           <span class="comment"># Creates ./my-app/</span>
+$ sigil conjure my-lib ./libs    <span class="comment"># Creates ./libs/my-lib/</span></code></pre>
+
+        <h2 id="inscribe">sigil inscribe</h2>
+        <p>Mark an existing directory as a tome. Useful for converting existing projects.</p>
+        <pre class="code-block"><code>$ sigil inscribe
+    <span class="string">Inscribed</span> Grimoire.toml in current directory</code></pre>
+
+        <h2 id="summon">sigil summon</h2>
+        <p>Call forth a dependency and add it to your bindings.</p>
+        <pre class="code-block"><code>$ sigil summon &lt;tome&gt; [version]
+
+<span class="comment"># Examples:</span>
+$ sigil summon aegis             <span class="comment"># Latest version</span>
+$ sigil summon aegis "0.2"       <span class="comment"># Exact version</span>
+$ sigil summon aegis "^0.2"      <span class="comment"># Compatible with 0.2.x</span>
+$ sigil summon aegis "path:../aegis"  <span class="comment"># Local path</span>
+$ sigil summon aegis "git:https://..."  <span class="comment"># Git repository</span></code></pre>
+
+        <h2 id="banish">sigil banish</h2>
+        <p>Cast out a dependency from your bindings.</p>
+        <pre class="code-block"><code>$ sigil banish &lt;tome&gt;
+
+<span class="comment"># Example:</span>
+$ sigil banish old-dep
+    <span class="string">Banished</span> old-dep from [bindings]</code></pre>
+
+        <h2 id="attune">sigil attune</h2>
+        <p>Realign with latest binding versions. Downloads and resolves all dependencies.</p>
+        <pre class="code-block"><code>$ sigil attune
+    <span class="string">Fetching</span> registry index...
+    <span class="string">Resolving</span> aegis ^0.2 → 0.2.1
+    <span class="string">Downloading</span> aegis-0.2.1.tar.gz
+    <span class="string">Extracting</span> to .tomes/aegis-0.2.1/
+    <span class="string">Attuned</span> 3 bindings</code></pre>
+
+        <h2 id="forge">sigil forge</h2>
+        <p>Shape the tome into being. Builds your project with all dependencies.</p>
+        <pre class="code-block"><code>$ sigil forge
+    <span class="string">Forged</span> my-tome v0.1.0 (src/main.sg)</code></pre>
+
+        <h2 id="consecrate">sigil consecrate</h2>
+        <p>Enshrine your tome in the Grimoire registry for others to use.</p>
+        <pre class="code-block"><code>$ sigil consecrate
+    <span class="string">Packaging</span> my-tome v0.1.0...
+    <span class="string">Uploading</span> to grimoire registry...
+    <span class="string">Consecrated</span> my-tome v0.1.0</code></pre>
+
+        <h2 id="version-bindings">Version Bindings</h2>
+        <p>Specify dependencies from the Grimoire registry using version requirements:</p>
+
+        <table class="docs-table">
+          <thead>
+            <tr>
+              <th>Syntax</th>
+              <th>Meaning</th>
+              <th>Example Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>"1.2.3"</code></td>
+              <td>Exact version</td>
+              <td>1.2.3 only</td>
+            </tr>
+            <tr>
+              <td><code>"^1.2"</code></td>
+              <td>Compatible (same major)</td>
+              <td>1.2.0, 1.3.0, 1.9.9</td>
+            </tr>
+            <tr>
+              <td><code>"~1.2"</code></td>
+              <td>Patch updates only</td>
+              <td>1.2.0, 1.2.1, 1.2.9</td>
+            </tr>
+            <tr>
+              <td><code>"*"</code></td>
+              <td>Latest stable</td>
+              <td>Latest version</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 id="path-bindings">Path Bindings</h2>
+        <p>Use local paths for development or monorepo setups:</p>
+        <pre class="code-block"><code>[bindings]
+<span class="comment"># Detailed syntax</span>
+my-lib = { path = <span class="string">"../my-lib"</span> }
+
+<span class="comment"># Inline syntax when summoning</span>
+$ sigil summon my-lib "path:../my-lib"</code></pre>
+
+        <h2 id="git-bindings">Git Bindings</h2>
+        <p>Pull dependencies directly from git repositories:</p>
+        <pre class="code-block"><code>[bindings]
+<span class="comment"># Basic git binding (uses default branch)</span>
+utils = { git = <span class="string">"https://github.com/org/utils"</span> }
+
+<span class="comment"># Specific branch</span>
+utils = { git = <span class="string">"https://github.com/org/utils"</span>, branch = <span class="string">"develop"</span> }
+
+<span class="comment"># Specific tag</span>
+utils = { git = <span class="string">"https://github.com/org/utils"</span>, tag = <span class="string">"v1.0.0"</span> }
+
+<span class="comment"># Specific commit</span>
+utils = { git = <span class="string">"https://github.com/org/utils"</span>, rev = <span class="string">"a1b2c3d"</span> }</code></pre>
+
+        <h2 id="preparing">Preparing a Tome for Publishing</h2>
+        <p>Before consecrating your tome to the Grimoire, ensure:</p>
+        <ul>
+          <li>Your <code>Grimoire.toml</code> has all required fields (name, version, description, license)</li>
+          <li>The version follows <a href="https://semver.org" rel="noopener noreferrer" target="_blank">Semantic Versioning</a></li>
+          <li>Your code compiles without errors: <code>sigil forge</code></li>
+          <li>Tests pass (if you have them)</li>
+        </ul>
+
+        <h2 id="publishing">Publishing to the Registry</h2>
+        <pre class="code-block"><code><span class="comment"># Verify your manifest</span>
+$ sigil forge
+
+<span class="comment"># Consecrate to the Grimoire</span>
+$ sigil consecrate
+    <span class="string">Packaging</span> aegis v0.2.1...
+    <span class="string">Verifying</span> manifest...
+    <span class="string">Creating</span> aegis-0.2.1.tar.gz (12.4 KB)
+    <span class="string">Uploading</span> to https://sigil-lang.com/grimoire/
+    <span class="string">Consecrated</span> aegis v0.2.1
+
+<span class="comment"># Your tome is now available!</span>
+$ sigil summon aegis "0.2.1"</code></pre>
+
+        <h2 id="versioning">Versioning Guidelines</h2>
+        <p>The Grimoire uses <a href="https://semver.org" rel="noopener noreferrer" target="_blank">Semantic Versioning</a>:</p>
+        <ul>
+          <li><strong>MAJOR</strong> (1.0.0 → 2.0.0): Breaking API changes</li>
+          <li><strong>MINOR</strong> (1.0.0 → 1.1.0): New features, backward compatible</li>
+          <li><strong>PATCH</strong> (1.0.0 → 1.0.1): Bug fixes, backward compatible</li>
+        </ul>
+
+        <h2 id="yanking">Yanking Versions</h2>
+        <p>If you publish a broken version, you can yank it to prevent new installations:</p>
+        <pre class="code-block"><code><span class="comment"># Yank a specific version</span>
+$ sigil yank aegis 0.2.0
+    <span class="string">Yanked</span> aegis v0.2.0
+
+<span class="comment"># Existing projects with this version in Grimoire.lock still work</span>
+<span class="comment"># New installations will skip yanked versions</span></code></pre>
+
+        <h2 id="manifest-reference">Manifest Reference</h2>
+        <p>Complete <code>Grimoire.toml</code> field reference:</p>
+
+        <h3>[tome] Section</h3>
+        <table class="docs-table">
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Required</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>name</code></td><td>Yes</td><td>Tome name (lowercase, hyphens allowed)</td></tr>
+            <tr><td><code>version</code></td><td>Yes</td><td>Semantic version (MAJOR.MINOR.PATCH)</td></tr>
+            <tr><td><code>authors</code></td><td>No</td><td>List of author names/emails</td></tr>
+            <tr><td><code>edition</code></td><td>No</td><td>Sigil edition year (e.g., "2026")</td></tr>
+            <tr><td><code>description</code></td><td>No*</td><td>Short description (*required for publishing)</td></tr>
+            <tr><td><code>license</code></td><td>No*</td><td>SPDX license identifier (*required for publishing)</td></tr>
+            <tr><td><code>repository</code></td><td>No</td><td>Source repository URL</td></tr>
+            <tr><td><code>homepage</code></td><td>No</td><td>Project homepage URL</td></tr>
+            <tr><td><code>keywords</code></td><td>No</td><td>Discovery keywords (max 5)</td></tr>
+            <tr><td><code>categories</code></td><td>No</td><td>Category tags</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="lock-file">Grimoire.lock</h2>
+        <p>The lock file records exact versions for reproducible builds:</p>
+        <pre class="code-block"><code>version = <span class="number">1</span>
+
+[[bindings]]
+name = <span class="string">"aegis"</span>
+version = <span class="string">"0.2.1"</span>
+source = <span class="string">"registry"</span>
+checksum = <span class="string">"sha256:a1b2c3d4..."</span>
+dependencies = []
+
+[[bindings]]
+name = <span class="string">"utils"</span>
+version = <span class="string">"0.0.0-git"</span>
+source = <span class="string">"git:https://github.com/org/utils#main"</span>
+dependencies = [<span class="string">"aegis"</span>]</code></pre>
+        <p><strong>Tip:</strong> Commit <code>Grimoire.lock</code> for applications. Exclude it for libraries.</p>
+
+        <h2 id="registry-api">Registry API</h2>
+        <p>The Grimoire registry is a simple static file server:</p>
+        <pre class="code-block"><code>https://sigil-lang.com/grimoire/
+├── index.json           <span class="comment"># Registry index</span>
+└── tomes/
+    └── aegis/
+        ├── 0.1.0.tar.gz
+        └── 0.2.1.tar.gz</code></pre>
+
+        <h3>Index Format</h3>
+        <pre class="code-block"><code>{
+  <span class="string">"tomes"</span>: {
+    <span class="string">"aegis"</span>: {
+      <span class="string">"description"</span>: <span class="string">"Security primitives for Sigil"</span>,
+      <span class="string">"versions"</span>: [<span class="string">"0.2.1"</span>, <span class="string">"0.2.0"</span>, <span class="string">"0.1.0"</span>],
+      <span class="string">"latest"</span>: <span class="string">"0.2.1"</span>,
+      <span class="string">"yanked"</span>: [<span class="string">"0.2.0"</span>]
+    }
+  }
+}</code></pre>
+
+        <div class="next-prev-nav">
+          <a href="/pages/docs.html" class="nav-button">
+            <span class="nav-label">Previous</span>
+            <span class="nav-title">&larr; Documentation</span>
+          </a>
+          <a href="/pages/agents.html" class="nav-button">
+            <span class="nav-label">Next</span>
+            <span class="nav-title">Agent Infrastructure &rarr;</span>
+          </a>
+        </div>
+      </article>
+    </main>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <a href="/" class="footer-logo">
+          <span class="logo-icon">⛤</span>
+          <span>Sigil</span>
+        </a>
+        <p>Infrastructure for minds that don't yet know what they are.</p>
+        <p class="footer-copyright">&copy; 2025 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
+      </div>
+
+      <nav class="footer-nav" aria-label="Footer navigation">
+        <div class="footer-column">
+          <h5>Learn</h5>
+          <ul>
+            <li><a href="/pages/learn.html">Tutorial</a></li>
+            <li><a href="/pages/docs.html">Documentation</a></li>
+            <li><a href="/pages/grimoire.html">Grimoire</a></li>
+            <li><a href="/pages/playground.html">Playground</a></li>
+            <li><a href="/pages/examples.html">Examples</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Reference</h5>
+          <ul>
+            <li><a href="/pages/agents.html">Agent Infrastructure</a></li>
+            <li><a href="/pages/pattern.html">The Pattern</a></li>
+            <li><a href="/#ecosystem">Built on Sigil</a></li>
+            <li><a href="https://github.com/Daemoniorum-LLC/sigil-lang/releases" rel="noopener noreferrer" target="_blank">Releases</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Community</h5>
+          <ul>
+            <li><a href="https://github.com/Daemoniorum-LLC/sigil-lang" rel="noopener noreferrer" target="_blank">GitHub</a></li>
+            <li><a href="https://github.com/Daemoniorum-LLC/sigil-lang/discussions" rel="noopener noreferrer" target="_blank">Discussions</a></li>
+            <li><a href="https://github.com/Daemoniorum-LLC/sigil-lang/issues" rel="noopener noreferrer" target="_blank">Issues</a></li>
+            <li><a href="/pages/contributing.html">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Daemoniorum</h5>
+          <ul>
+            <li><a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Company</a></li>
+            <li><a href="https://docs.daemoniorum.com" rel="noopener noreferrer" target="_blank">Platform Docs</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="../js/main.js"></script>
+  <script>
+    // Highlight current section in sidebar based on scroll
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.id;
+          document.querySelectorAll('.docs-sidebar a').forEach(link => {
+            link.classList.toggle('active', link.getAttribute('href') === '#' + id);
+          });
+        }
+      });
+    }, { rootMargin: '-20% 0px -80% 0px' });
+
+    document.querySelectorAll('h1[id], h2[id], h3[id]').forEach(heading => {
+      observer.observe(heading);
+    });
+  </script>
+</body>
+</html>

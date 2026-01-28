@@ -1,0 +1,24 @@
+// Test: ty fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (ty)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $T:ty captures type annotations as strings.
+// Types like i32, String, Vec<i32> are captured without evaluation.
+//
+// Expected behavior:
+// - Type names captured as strings
+
+rune capture_ty! {
+    ($T:ty) => { $T }
+}
+
+rite main() {
+    // Simple type
+    ≔ t1 = capture_ty!{i32};
+    println(t1);
+
+    // Another type
+    ≔ t2 = capture_ty!{String};
+    println(t2);
+}

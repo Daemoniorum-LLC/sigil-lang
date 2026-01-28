@@ -27,14 +27,14 @@ use sigil_web::prelude::*
         aside()
             ·class("announcement-banner")
             ·attr("role", "banner")
-            ·attr("aria-label", "Sigil 0.3 announcement")
+            ·attr("aria-label", "Sigil 0.4 announcement")
             ·child(
                 div()
                     ·class("announcement-container")
                     ·child(
                         span()
                             ·class("announcement-badge")
-                            ·child(text("0.3"))
+                            ·child(text("0.4"))
                             ·to_vnode()
                     )
                     ·child(
@@ -42,10 +42,10 @@ use sigil_web::prelude::*
                             ·class("announcement-text")
                             ·child(
                                 strong()
-                                    ·child(text("Sigil 0.3.0"))
+                                    ·child(text("Sigil 0.4.0"))
                                     ·to_vnode()
                             )
-                            ·child(text(" — Native symbols, SIMD/CUDA backends, LSP, formatter "))
+                            ·child(text(" — Native syntax, zero-C runtime, LSP, formatter, linter, package manager "))
                             ·child(
                                 a()
                                     ·attr("href", "https://github.com/Daemoniorum-LLC/sigil-lang/releases")
@@ -170,7 +170,7 @@ use sigil_web::prelude::*
                                 span()
                                     ·class("version-badge")
                                     ·style(version_badge_style)
-                                    ·child(text("0.3"))
+                                    ·child(text("0.4"))
                                     ·to_vnode()
                             )
                             ·to_vnode()

@@ -151,7 +151,8 @@ rite test_tab_disabled() {
     };
 
     ≔ vnode = tabs.render();
-    ≔ tab_buttons = vnode.find_children_by_class("tab");
+    ≔ tab_list = vnode.find_child_by_class("tab-list");
+    ≔ tab_buttons = tab_list.find_children_by_class("tab");
 
     assert_eq!(tab_buttons[1].attr("disabled"), yay);
     assert_eq!(tab_buttons[1].attr("aria-disabled"), "true");
@@ -172,7 +173,8 @@ rite test_tab_with_icon() {
     };
 
     ≔ vnode = tabs.render();
-    ≔ tab_buttons = vnode.find_children_by_class("tab");
+    ≔ tab_list = vnode.find_child_by_class("tab-list");
+    ≔ tab_buttons = tab_list.find_children_by_class("tab");
     assert!(tab_buttons[0].has_child_with_class("tab-icon"));
 }
 
@@ -191,7 +193,8 @@ rite test_tab_with_badge() {
     };
 
     ≔ vnode = tabs.render();
-    ≔ tab = vnode.find_children_by_class("tab")[0];
+    ≔ tab_list = vnode.find_child_by_class("tab-list");
+    ≔ tab = tab_list.find_children_by_class("tab")[0];
     assert!(tab.has_child_with_class("tab-badge"));
     ≔ badge = tab.find_child_by_class("tab-badge");
     assert_eq!(badge.text_content(), "5");
@@ -219,7 +222,8 @@ rite test_tabs_lazy() {
 
     ≔ vnode = tabs.render();
     // Only active panel should be rendered
-    ≔ panels = vnode.find_children_by_class("tab-panel");
+    ≔ tab_panels = vnode.find_child_by_class("tab-panels");
+    ≔ panels = tab_panels.find_children_by_class("tab-panel");
     assert_eq!(panels.len(), 1);
 }
 
@@ -257,7 +261,9 @@ rite test_tabs_accessibility() {
     assert_eq!(tab_buttons[0].attr("aria-controls"), "panel-home");
 
     // Panel should have proper role
-    ≔ panel = vnode.find_child_by_class("tab-panel");
+    ≔ tab_panels_container = vnode.find_child_by_class("tab-panels");
+    ≔ panels = tab_panels_container.find_children_by_class("tab-panel");
+    ≔ panel = panels[0];
     assert_eq!(panel.attr("role"), "tabpanel");
     assert_eq!(panel.attr("aria-labelledby"), "tab-home");
 }

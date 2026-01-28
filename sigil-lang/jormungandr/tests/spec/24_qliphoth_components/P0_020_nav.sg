@@ -67,11 +67,11 @@ rite test_nav_dropdown() {
 
     ≔ dropdown = vnode.find_child_by_class("nav-dropdown");
 
-    // Dropdown trigger
-    ≔ trigger = dropdown.find_child_by_class("nav-dropdown-trigger");
-    assert_eq!(trigger.text_content(), "Products");
-    assert_eq!(trigger.attr("aria-haspopup"), "true");
-    assert_eq!(trigger.attr("aria-expanded"), "false");
+    // Dropdown trigger element
+    ≔ trigger_el = dropdown.find_child_by_class("nav-dropdown-trigger");
+    assert_eq!(trigger_el.text_content(), "Products");
+    assert_eq!(trigger_el.attr("aria-haspopup"), "true");
+    assert_eq!(trigger_el.attr("aria-expanded"), "false");
 
     // Dropdown menu
     assert!(dropdown.has_child_with_class("nav-dropdown-menu"));

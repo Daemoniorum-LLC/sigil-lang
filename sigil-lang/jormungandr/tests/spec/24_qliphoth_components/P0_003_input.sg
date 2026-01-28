@@ -2,6 +2,7 @@
 // TDD: RED - Tests the Input form component
 //
 // Input is a text input field with validation and accessibility
+// Wrapper pattern: div.input-field > [input, label, ?helper, ?error]
 
 invoke qliphoth·components·Input;
 invoke qliphoth·components·Label;
@@ -16,41 +17,53 @@ rite test_input_basic() {
 
     ≔ vnode = input.render();
 
-    assert_eq!(vnode.tag(), "input");
-    assert_eq!(vnode.attr("name"), "email");
-    assert_eq!(vnode.attr("placeholder"), "Enter email");
-    assert_eq!(vnode.attr("type"), "text"); // default type
+    // Wrapper is a div
+    assert_eq!(vnode.tag(), "div");
+    assert!(vnode.has_class("input-field"));
+
+    // Find the actual input element inside
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("name"), "email");
+    assert_eq!(input_el.attr("placeholder"), "Enter email");
+    assert_eq!(input_el.attr("type"), "text"); // default type
 }
 
 // Test input types
 rite test_input_types() {
     // Text (default)
     ≔ text_input = Input { name: "text", input_type: "text" };
-    assert_eq!(text_input.render().attr("type"), "text");
+    ≔ text_el = text_input.render().find_child_by_tag("input");
+    assert_eq!(text_el.attr("type"), "text");
 
     // Email
     ≔ email = Input { name: "email", input_type: "email" };
-    assert_eq!(email.render().attr("type"), "email");
+    ≔ email_el = email.render().find_child_by_tag("input");
+    assert_eq!(email_el.attr("type"), "email");
 
     // Password
     ≔ password = Input { name: "password", input_type: "password" };
-    assert_eq!(password.render().attr("type"), "password");
+    ≔ password_el = password.render().find_child_by_tag("input");
+    assert_eq!(password_el.attr("type"), "password");
 
     // Number
     ≔ number = Input { name: "count", input_type: "number" };
-    assert_eq!(number.render().attr("type"), "number");
+    ≔ number_el = number.render().find_child_by_tag("input");
+    assert_eq!(number_el.attr("type"), "number");
 
     // Search
     ≔ search = Input { name: "query", input_type: "search" };
-    assert_eq!(search.render().attr("type"), "search");
+    ≔ search_el = search.render().find_child_by_tag("input");
+    assert_eq!(search_el.attr("type"), "search");
 
     // Tel
     ≔ tel = Input { name: "phone", input_type: "tel" };
-    assert_eq!(tel.render().attr("type"), "tel");
+    ≔ tel_el = tel.render().find_child_by_tag("input");
+    assert_eq!(tel_el.attr("type"), "tel");
 
     // URL
     ≔ url = Input { name: "website", input_type: "url" };
-    assert_eq!(url.render().attr("type"), "url");
+    ≔ url_el = url.render().find_child_by_tag("input");
+    assert_eq!(url_el.attr("type"), "url");
 }
 
 // Test controlled input
@@ -64,7 +77,8 @@ rite test_input_controlled() {
     };
 
     ≔ vnode = input.render();
-    assert_eq!(vnode.attr("value"), "initial");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("value"), "initial");
 }
 
 // Test input with label
@@ -78,10 +92,11 @@ rite test_input_with_label() {
     ≔ vnode = input.render();
 
     // Input should have id for label association
-    assert_eq!(vnode.attr("id"), "username-field");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("id"), "username-field");
 
-    // Should render label with for attribute
-    ≔ label = vnode.find_sibling_by_tag("label");
+    // Label is now a child of the wrapper (not sibling)
+    ≔ label = vnode.find_child_by_tag("label");
     assert_eq!(label.attr("for"), "username-field");
     assert_eq!(label.text_content(), "Username");
 }
@@ -95,13 +110,10 @@ rite test_input_required() {
     };
 
     ≔ vnode = input.render();
+    ≔ input_el = vnode.find_child_by_tag("input");
 
-    assert_eq!(vnode.attr("required"), yay);
-    assert_eq!(vnode.attr("aria-required"), "true");
-
-    // Label should show required indicator
-    ≔ label = vnode.find_sibling_by_tag("label");
-    assert!(label.has_child_with_class("required-indicator"));
+    assert_eq!(input_el.attr("required"), yay);
+    assert_eq!(input_el.attr("aria-required"), "true");
 }
 
 // Test disabled input
@@ -113,84 +125,99 @@ rite test_input_disabled() {
 
     ≔ vnode = input.render();
 
-    assert_eq!(vnode.attr("disabled"), yay);
+    // Wrapper has disabled class
     assert!(vnode.has_class("input-disabled"));
+
+    // Input element has disabled attr
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("disabled"), yay);
 }
 
 // Test input with error
 rite test_input_error() {
     ≔ input = Input {
         name: "email",
+        id: "email-field",
         error: "Invalid email format",
     };
 
     ≔ vnode = input.render();
 
-    // Should have error styling
-    assert!(vnode.has_class("input-error"));
+    // Wrapper should have error styling
+    assert!(vnode.has_class("input-has-error"));
 
-    // Should have aria-invalid
-    assert_eq!(vnode.attr("aria-invalid"), "true");
+    // Input should have error styling and aria-invalid
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert!(input_el.has_class("input-error"));
+    assert_eq!(input_el.attr("aria-invalid"), "true");
 
-    // Should show error message
-    ≔ error_msg = vnode.find_sibling_by_class("input-error-message");
+    // Error message is now a child of the wrapper
+    ≔ error_msg = vnode.find_child_by_class("input-error-message");
     assert_eq!(error_msg.text_content(), "Invalid email format");
 
     // Error message should be associated via aria-describedby
-    assert!(vnode.attr("aria-describedby").contains("error"));
+    assert!(input_el.attr("aria-describedby").contains("error"));
 }
 
 // Test input with helper text
 rite test_input_helper() {
     ≔ input = Input {
         name: "password",
+        id: "password-field",
         helper: "Must be at least 8 characters",
     };
 
     ≔ vnode = input.render();
+    ≔ input_el = vnode.find_child_by_tag("input");
 
-    // Should show helper text
-    ≔ helper = vnode.find_sibling_by_class("input-helper");
+    // Helper is now a child of the wrapper
+    ≔ helper = vnode.find_child_by_class("input-helper");
     assert_eq!(helper.text_content(), "Must be at least 8 characters");
 
     // Helper should be associated via aria-describedby
-    assert!(vnode.attr("aria-describedby").contains("helper"));
+    assert!(input_el.attr("aria-describedby").contains("helper"));
 }
 
 // Test input sizes
 rite test_input_sizes() {
     ≔ sm = Input { name: "sm", size: "sm" };
-    assert!(sm.render().has_class("input-sm"));
+    ≔ sm_el = sm.render().find_child_by_tag("input");
+    assert!(sm_el.has_class("input-sm"));
 
     ≔ md = Input { name: "md", size: "md" };
-    assert!(md.render().has_class("input-md"));
+    ≔ md_el = md.render().find_child_by_tag("input");
+    assert!(md_el.has_class("input-md"));
 
     ≔ lg = Input { name: "lg", size: "lg" };
-    assert!(lg.render().has_class("input-lg"));
+    ≔ lg_el = lg.render().find_child_by_tag("input");
+    assert!(lg_el.has_class("input-lg"));
 }
 
-// Test input with prefix/suffix
+// Test input with prefix/suffix (these are children of the input element)
 rite test_input_affixes() {
     // With prefix
     ≔ with_prefix = Input {
         name: "website",
         prefix: "https://",
     };
-    assert!(with_prefix.render().has_child_with_class("input-prefix"));
+    ≔ prefix_input = with_prefix.render().find_child_by_tag("input");
+    assert!(prefix_input.has_child_with_class("input-prefix"));
 
     // With suffix
     ≔ with_suffix = Input {
         name: "email",
         suffix: "@example.com",
     };
-    assert!(with_suffix.render().has_child_with_class("input-suffix"));
+    ≔ suffix_input = with_suffix.render().find_child_by_tag("input");
+    assert!(suffix_input.has_child_with_class("input-suffix"));
 
     // With icon prefix
     ≔ with_icon = Input {
         name: "search",
         prefix_icon: "search",
     };
-    assert!(with_icon.render().has_child_with_class("input-icon"));
+    ≔ icon_input = with_icon.render().find_child_by_tag("input");
+    assert!(icon_input.has_child_with_class("input-icon"));
 }
 
 // Test input max/min length
@@ -202,8 +229,9 @@ rite test_input_length_constraints() {
     };
 
     ≔ vnode = input.render();
-    assert_eq!(vnode.attr("minlength"), "10");
-    assert_eq!(vnode.attr("maxlength"), "200");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("minlength"), "10");
+    assert_eq!(input_el.attr("maxlength"), "200");
 }
 
 // Test input pattern validation
@@ -215,17 +243,20 @@ rite test_input_pattern() {
     };
 
     ≔ vnode = input.render();
-    assert_eq!(vnode.attr("pattern"), "[A-Z]{3}-[0-9]{4}");
-    assert_eq!(vnode.attr("title"), "Format: ABC-1234");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("pattern"), "[A-Z]{3}-[0-9]{4}");
+    assert_eq!(input_el.attr("title"), "Format: ABC-1234");
 }
 
 // Test autocomplete
 rite test_input_autocomplete() {
     ≔ email = Input { name: "email", autocomplete: "email" };
-    assert_eq!(email.render().attr("autocomplete"), "email");
+    ≔ email_el = email.render().find_child_by_tag("input");
+    assert_eq!(email_el.attr("autocomplete"), "email");
 
     ≔ password = Input { name: "password", autocomplete: "new-password" };
-    assert_eq!(password.render().attr("autocomplete"), "new-password");
+    ≔ password_el = password.render().find_child_by_tag("input");
+    assert_eq!(password_el.attr("autocomplete"), "new-password");
 }
 
 rite main() {

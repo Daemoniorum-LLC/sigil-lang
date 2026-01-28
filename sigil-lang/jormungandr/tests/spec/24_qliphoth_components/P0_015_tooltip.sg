@@ -178,9 +178,9 @@ rite test_tooltip_accessibility() {
 
     ≔ vnode = tooltip.render();
 
-    // Trigger should reference tooltip via aria-describedby
-    ≔ trigger = vnode.find_child_by_class("tooltip-trigger");
-    assert_eq!(trigger.attr("aria-describedby"), "help-tooltip");
+    // Trigger element should reference tooltip via aria-describedby
+    ≔ trigger_el = vnode.find_child_by_class("tooltip-trigger");
+    assert_eq!(trigger_el.attr("aria-describedby"), "help-tooltip");
 
     // Tooltip should have proper role
     ≔ content = vnode.find_child_by_class("tooltip-content");

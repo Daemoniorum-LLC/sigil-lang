@@ -4177,7 +4177,7 @@ fn print_help() {
     println!();
     println!("  {}// Variables{}", colors::COMMENT, colors::RESET);
     println!(
-        "  {}let{} x = {}42{};",
+        "  {}≔{} x = {}42{};",
         colors::KEYWORD,
         colors::RESET,
         colors::NUMBER,
@@ -4229,7 +4229,7 @@ fn print_help() {
     println!();
     println!("  {}// Functions{}", colors::COMMENT, colors::RESET);
     println!(
-        "  {}fn{} add(a, b) {{ a + b }}",
+        "  {}rite{} add(a, b) {{ a + b }}",
         colors::KEYWORD,
         colors::RESET
     );

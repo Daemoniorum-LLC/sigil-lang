@@ -562,6 +562,7 @@ impl Optimizer {
             return_type: None,
             where_clause: None,
             body: Some(body),
+            doc_comments: Vec::new(),
         }
     }
 
@@ -640,6 +641,7 @@ impl Optimizer {
             return_type: original.return_type.clone(),
             where_clause: original.where_clause.clone(),
             body: Some(body),
+            doc_comments: Vec::new(),
         }
     }
 
@@ -705,6 +707,7 @@ impl Optimizer {
                 .body
                 .as_ref()
                 .map(|b| self.redirect_calls_in_block(func_name, func_name, b)),
+            doc_comments: Vec::new(),
         };
 
         // 2. Create cache initializer function
@@ -750,6 +753,7 @@ impl Optimizer {
             return_type: None,
             where_clause: None,
             body: Some(cache_init_body),
+            doc_comments: Vec::new(),
         };
 
         // 3. Create wrapper function
@@ -1016,6 +1020,7 @@ impl Optimizer {
             return_type: original.return_type.clone(),
             where_clause: original.where_clause.clone(),
             body: Some(body),
+            doc_comments: Vec::new(),
         }
     }
 
@@ -1153,6 +1158,7 @@ impl Optimizer {
             return_type: func.return_type.clone(),
             where_clause: func.where_clause.clone(),
             body,
+            doc_comments: Vec::new(),
         }
     }
 
@@ -2924,68 +2930,74 @@ impl Optimizer {
 
     fn pass_cse_block(&mut self, block: &Block) -> Block {
         // Step 1: Collect all expressions in this block
-        let mut collected = Vec::new();
+        let mut collected = Vec::with_capacity(32); // Pre-allocate for typical block size
         collect_exprs_from_block(block, &mut collected);
 
-        // Step 2: Count occurrences using hash + equality check
-        let mut expr_counts: HashMap<u64, Vec<Expr>> = HashMap::new();
-        for ce in &collected {
-            let entry = expr_counts.entry(ce.hash).or_insert_with(Vec::new);
-            // Check if this exact expression is already in the bucket
-            let found = entry.iter().any(|e| expr_eq(e, &ce.expr));
-            if !found {
-                entry.push(ce.expr.clone());
-            }
+        if collected.is_empty() {
+            return self.pass_cse_nested(block);
         }
 
-        // Count actual occurrences (need to count duplicates)
-        let mut occurrence_counts: Vec<(Expr, usize)> = Vec::new();
-        for ce in &collected {
-            // Find or create entry for this expression
-            let existing = occurrence_counts
-                .iter_mut()
-                .find(|(e, _)| expr_eq(e, &ce.expr));
-            if let Some((_, count)) = existing {
-                *count += 1;
+        // Step 2: Count occurrences using hash buckets with equality check
+        // Using (hash, index into unique_exprs) -> count
+        let estimated_unique = (collected.len() / 2).max(4);
+        let mut unique_exprs: Vec<Expr> = Vec::with_capacity(estimated_unique);
+        let mut hash_to_indices: HashMap<u64, Vec<usize>> = HashMap::with_capacity(estimated_unique);
+        let mut occurrence_counts: Vec<usize> = Vec::with_capacity(estimated_unique);
+
+        for ce in collected {
+            let indices = hash_to_indices.entry(ce.hash).or_default();
+
+            // Check if this exact expression is already tracked
+            let found_idx = indices.iter().find(|&&idx| expr_eq(&unique_exprs[idx], &ce.expr));
+
+            if let Some(&idx) = found_idx {
+                occurrence_counts[idx] += 1;
             } else {
-                occurrence_counts.push((ce.expr.clone(), 1));
+                // New unique expression - take ownership instead of cloning
+                let new_idx = unique_exprs.len();
+                unique_exprs.push(ce.expr);
+                occurrence_counts.push(1);
+                indices.push(new_idx);
             }
         }
 
-        // Step 3: Find expressions that occur 2+ times
-        let candidates: Vec<Expr> = occurrence_counts
-            .into_iter()
-            .filter(|(_, count)| *count >= 2)
-            .map(|(expr, _)| expr)
-            .collect();
+        // Step 3: Find expressions that occur 2+ times, collect with their var names
+        let mut candidates: Vec<(String, Expr)> = Vec::new();
+        for (expr, count) in unique_exprs.into_iter().zip(occurrence_counts.into_iter()) {
+            if count >= 2 {
+                let var_name = format!("__cse_{}", self.cse_counter);
+                self.cse_counter += 1;
+                candidates.push((var_name, expr));
+            }
+        }
 
         if candidates.is_empty() {
             // No CSE opportunities, just recurse into nested blocks
             return self.pass_cse_nested(block);
         }
 
-        // Step 4: Create let bindings for each candidate and replace occurrences
-        let mut result_block = block.clone();
-        let mut new_lets: Vec<Stmt> = Vec::new();
+        // Step 4: Build replacement map and let bindings in one pass
+        let mut new_lets: Vec<Stmt> = Vec::with_capacity(candidates.len());
+        let mut replacements: Vec<(&str, &Expr)> = Vec::with_capacity(candidates.len());
 
-        for expr in candidates {
-            let var_name = format!("__cse_{}", self.cse_counter);
-            self.cse_counter += 1;
+        for (var_name, expr) in &candidates {
+            replacements.push((var_name.as_str(), expr));
+        }
 
-            // Create the let binding
-            new_lets.push(make_cse_let(&var_name, expr.clone()));
+        // Step 5: Replace all occurrences in block (single pass for all candidates)
+        let result_block = replace_multiple_in_block(block, &replacements);
 
-            // Replace all occurrences in the block
-            result_block = replace_in_block(&result_block, &expr, &var_name);
-
+        // Step 6: Create let bindings (now we can consume the expressions)
+        for (var_name, expr) in candidates {
+            new_lets.push(make_cse_let(&var_name, expr));
             self.stats.expressions_deduplicated += 1;
         }
 
-        // Step 5: Prepend the new let bindings to the block
+        // Step 7: Prepend the new let bindings to the block
         let mut final_stmts = new_lets;
         final_stmts.extend(result_block.stmts);
 
-        // Step 6: Recurse into nested blocks
+        // Step 8: Recurse into nested blocks
         let result = Block {
             stmts: final_stmts,
             expr: result_block.expr,
@@ -3433,6 +3445,128 @@ fn replace_in_block(block: &Block, target: &Expr, var_name: &str) -> Block {
         .map(|e| Box::new(replace_in_expr(e, target, var_name)));
 
     Block { stmts, expr }
+}
+
+/// Replace multiple expressions in a single pass (more efficient than repeated single replacements)
+fn replace_multiple_in_block(block: &Block, replacements: &[(&str, &Expr)]) -> Block {
+    if replacements.is_empty() {
+        return block.clone();
+    }
+
+    let stmts = block
+        .stmts
+        .iter()
+        .map(|stmt| match stmt {
+            Stmt::Let { pattern, ty, init } => Stmt::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: init
+                    .as_ref()
+                    .map(|e| replace_multiple_in_expr(e, replacements)),
+            },
+            Stmt::LetElse {
+                pattern,
+                ty,
+                init,
+                else_branch,
+            } => Stmt::LetElse {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                init: replace_multiple_in_expr(init, replacements),
+                else_branch: Box::new(replace_multiple_in_expr(else_branch, replacements)),
+            },
+            Stmt::Expr(e) => Stmt::Expr(replace_multiple_in_expr(e, replacements)),
+            Stmt::Semi(e) => Stmt::Semi(replace_multiple_in_expr(e, replacements)),
+            Stmt::Item(item) => Stmt::Item(item.clone()),
+        })
+        .collect();
+
+    let expr = block
+        .expr
+        .as_ref()
+        .map(|e| Box::new(replace_multiple_in_expr(e, replacements)));
+
+    Block { stmts, expr }
+}
+
+/// Replace multiple expressions in an expression tree (single pass)
+fn replace_multiple_in_expr(expr: &Expr, replacements: &[(&str, &Expr)]) -> Expr {
+    // Check if this expression matches any target
+    for (var_name, target) in replacements {
+        if expr_eq(expr, target) {
+            return Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident {
+                        name: var_name.to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: Span { start: 0, end: 0 },
+                    },
+                    generics: None,
+                }],
+            });
+        }
+    }
+
+    // Otherwise, recurse into subexpressions
+    match expr {
+        Expr::Binary { op, left, right } => Expr::Binary {
+            op: *op,
+            left: Box::new(replace_multiple_in_expr(left, replacements)),
+            right: Box::new(replace_multiple_in_expr(right, replacements)),
+        },
+        Expr::Unary { op, expr: inner } => Expr::Unary {
+            op: *op,
+            expr: Box::new(replace_multiple_in_expr(inner, replacements)),
+        },
+        Expr::Index { expr: e, index } => Expr::Index {
+            expr: Box::new(replace_multiple_in_expr(e, replacements)),
+            index: Box::new(replace_multiple_in_expr(index, replacements)),
+        },
+        Expr::Call { func, args } => Expr::Call {
+            func: Box::new(replace_multiple_in_expr(func, replacements)),
+            args: args
+                .iter()
+                .map(|a| replace_multiple_in_expr(a, replacements))
+                .collect(),
+        },
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => Expr::If {
+            condition: Box::new(replace_multiple_in_expr(condition, replacements)),
+            then_branch: replace_multiple_in_block(then_branch, replacements),
+            else_branch: else_branch
+                .as_ref()
+                .map(|e| Box::new(replace_multiple_in_expr(e, replacements))),
+        },
+        Expr::While {
+            label,
+            condition,
+            body,
+        } => Expr::While {
+            label: label.clone(),
+            condition: Box::new(replace_multiple_in_expr(condition, replacements)),
+            body: replace_multiple_in_block(body, replacements),
+        },
+        Expr::Block(block) => Expr::Block(replace_multiple_in_block(block, replacements)),
+        Expr::Return(e) => Expr::Return(
+            e.as_ref()
+                .map(|e| Box::new(replace_multiple_in_expr(e, replacements))),
+        ),
+        Expr::Assign { target: t, value } => Expr::Assign {
+            target: t.clone(),
+            value: Box::new(replace_multiple_in_expr(value, replacements)),
+        },
+        Expr::Array(elements) => Expr::Array(
+            elements
+                .iter()
+                .map(|e| replace_multiple_in_expr(e, replacements))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
 }
 
 /// Create a let statement for a CSE variable

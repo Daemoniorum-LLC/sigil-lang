@@ -4,7 +4,7 @@
 
 The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 577/577 tests passing (100%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
+**Test Results**: 728/728 tests passing (100%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
 
 ```bash
 cd parser
@@ -68,7 +68,7 @@ cd jormungandr/tests
 ./run_tests_rust.sh --priority P0      # Run P0 tests only
 ```
 
-**Current Status**: 577/577 passing (100%)
+**Current Status**: 728/728 passing (100%)
 
 Notable implementations:
 - Mutable reference semantics via sync-back mechanism

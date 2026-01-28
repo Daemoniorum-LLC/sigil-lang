@@ -790,15 +790,152 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Skip any comments
+    /// Check if a token is any kind of comment (including evidential doc comments)
+    fn is_comment_token(tok: &Token) -> bool {
+        matches!(
+            tok,
+            Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)
+        ) || tok.is_doc_comment()
+    }
+
+    /// Check if the current token is a comment
+    pub(crate) fn current_is_comment(&self) -> bool {
+        self.current_token()
+            .map(|t| Self::is_comment_token(&t))
+            .unwrap_or(false)
+    }
+
+    /// Skip any comments (including evidential doc comments)
     pub(crate) fn skip_comments(&mut self) {
-        while matches!(
-            self.current_token(),
-            Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
-                | Some(Token::DocComment(_))
-        ) {
-            self.advance();
+        while let Some(tok) = self.current_token() {
+            if Self::is_comment_token(&tok) {
+                self.advance();
+            } else {
+                break;
+            }
         }
+    }
+
+    /// Collect doc comments preceding an item for SGDOC extraction.
+    /// Handles evidentiality-aware doc comments (//!, //~, //?, //◊, //‽) and legacy (///).
+    pub(crate) fn collect_doc_comments(&mut self) -> Vec<crate::ast::DocComment> {
+        use crate::ast::{DocComment, Evidentiality};
+
+        let mut doc_comments = Vec::new();
+
+        while let Some((tok, span)) = self.current.clone() {
+            // Check if it's a doc comment token
+            match &tok {
+                Token::DocCommentVerified(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Known,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentVerifiedInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Known,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentReported(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Reported,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentReportedInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Reported,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentUncertain(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Uncertain,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentUncertainInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Uncertain,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentPredicted(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Predicted,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentPredictedInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Predicted,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentParadox(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Paradox,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocCommentParadoxInner(content) => {
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Paradox,
+                        true,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                Token::DocComment(content) => {
+                    // Legacy /// comments map to Reported (default)
+                    doc_comments.push(DocComment::new(
+                        Evidentiality::Reported,
+                        false,
+                        content.clone(),
+                        span,
+                    ));
+                    self.advance();
+                }
+                // Skip regular comments but don't break
+                Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_) => {
+                    self.advance();
+                }
+                // Stop on non-comment tokens
+                _ => break,
+            }
+        }
+
+        doc_comments
     }
 
     /// Check if the current token is `>`, including pending `>` from split `>>`.
@@ -960,6 +1097,9 @@ impl<'a> Parser<'a> {
     fn parse_item(&mut self) -> ParseResult<Spanned<Item>> {
         let start_span = self.current_span();
 
+        // Collect doc comments for SGDOC before parsing item
+        let doc_comments = self.collect_doc_comments();
+
         // Collect outer attributes (#[...] or @[...] or //@ rune: ...)
         let mut outer_attrs = Vec::new();
         while self.check(&Token::Hash) || self.check(&Token::At) {
@@ -1019,10 +1159,10 @@ impl<'a> Parser<'a> {
 
         let item = match self.current_token() {
             Some(Token::Fn) | Some(Token::Lambda) | Some(Token::Async) | Some(Token::Hourglass) => {
-                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs, doc_comments.clone())?)
             }
             Some(Token::Struct) | Some(Token::Sigma) => {
-                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
+                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs, doc_comments.clone())?)
             }
             Some(Token::Enum) => Item::Enum(self.parse_enum(visibility)?),
             Some(Token::Locale) => {
@@ -1046,12 +1186,12 @@ impl<'a> Parser<'a> {
                 match self.current_token() {
                     Some(Token::Impl) => Item::Impl(self.parse_impl()?),
                     Some(Token::Fn) | Some(Token::Async) => {
-                        Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                        Item::Function(self.parse_function_with_attrs(visibility, outer_attrs, doc_comments.clone())?)
                     }
                     Some(Token::Trait) => Item::Trait(self.parse_trait(visibility)?),
                     Some(t) => {
                         return Err(ParseError::UnexpectedToken {
-                            expected: "impl, fn, or trait after unsafe".to_string(),
+                            expected: "impl/⊢, fn/rite/λ, or trait/aspect after unsafe".to_string(),
                             found: t.clone(),
                             span: self.current_span(),
                         })
@@ -1069,7 +1209,7 @@ impl<'a> Parser<'a> {
                     .map(|t| matches!(t, Token::Fn | Token::Async))
                     == Some(true)
                 {
-                    Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                    Item::Function(self.parse_function_with_attrs(visibility, outer_attrs, doc_comments.clone())?)
                 } else {
                     Item::Const(self.parse_const(visibility)?)
                 }
@@ -1082,11 +1222,11 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Naked) => {
                 // naked fn -> function with naked attribute
-                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
+                Item::Function(self.parse_function_with_attrs(visibility, outer_attrs, doc_comments.clone())?)
             }
             Some(Token::Packed) => {
                 // packed struct -> struct with packed attribute
-                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs)?)
+                Item::Struct(self.parse_struct_with_attrs(visibility, outer_attrs, doc_comments.clone())?)
             }
             // Plurality items (DAEMONIORUM extensions)
             Some(Token::Alter) => {
@@ -1164,13 +1304,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function(&mut self, visibility: Visibility) -> ParseResult<Function> {
-        self.parse_function_with_attrs(visibility, Vec::new())
+        self.parse_function_with_attrs(visibility, Vec::new(), Vec::new())
     }
 
     fn parse_function_with_attrs(
         &mut self,
         visibility: Visibility,
         outer_attrs: Vec<Attribute>,
+        doc_comments: Vec<crate::ast::DocComment>,
     ) -> ParseResult<Function> {
         // Parse function attributes from outer attributes
         let mut attrs = self.process_function_attrs(&outer_attrs);
@@ -1293,6 +1434,7 @@ impl<'a> Parser<'a> {
             return_type,
             where_clause,
             body,
+            doc_comments,
         })
     }
 
@@ -1367,6 +1509,7 @@ impl<'a> Parser<'a> {
         &mut self,
         visibility: Visibility,
         outer_attrs: Vec<Attribute>,
+        doc_comments: Vec<crate::ast::DocComment>,
     ) -> ParseResult<StructDef> {
         // Parse struct attributes
         let mut attrs = StructAttrs::default();
@@ -1464,6 +1607,7 @@ impl<'a> Parser<'a> {
             generics,
             fields,
             is_translations: false,
+            doc_comments,
         })
     }
 
@@ -1542,6 +1686,7 @@ impl<'a> Parser<'a> {
             generics,
             variants,
             is_locale: false,
+            doc_comments: Vec::new(),
         })
     }
 
@@ -1596,6 +1741,7 @@ impl<'a> Parser<'a> {
             generics,
             variants,
             is_locale: false, // Caller will set to true for locale enums
+            doc_comments: Vec::new(),
         })
     }
 
@@ -1638,6 +1784,7 @@ impl<'a> Parser<'a> {
             generics,
             variants,
             is_locale: true,
+            doc_comments: Vec::new(),
         })
     }
 
@@ -1695,13 +1842,14 @@ impl<'a> Parser<'a> {
             let field_name = self.parse_ident()?;
 
             // Check if this is a parameterized translation: name(params): Type = expr
-            // For now, skip parameters and treat as simple field
-            if self.check(&Token::LParen) {
-                // Skip parameter list for now - treat as field name
+            let params = if self.check(&Token::LParen) {
                 self.expect(Token::LParen)?;
-                let _params = self.parse_params()?;
+                let parsed_params = self.parse_params()?;
                 self.expect(Token::RParen)?;
-            }
+                Some(parsed_params)
+            } else {
+                None
+            };
 
             self.expect(Token::Colon)?;
             self.skip_comments();
@@ -1719,6 +1867,7 @@ impl<'a> Parser<'a> {
             fields.push(FieldDef {
                 visibility: Visibility::Public, // All translation fields are public
                 name: field_name,
+                params,
                 ty,
                 default,
             });
@@ -1737,6 +1886,7 @@ impl<'a> Parser<'a> {
             generics: None,
             fields: StructFields::Named(fields),
             is_translations: true,
+            doc_comments: Vec::new(),
         })
     }
 
@@ -1805,6 +1955,7 @@ impl<'a> Parser<'a> {
             generics,
             supertraits,
             items,
+            doc_comments: Vec::new(),
         })
     }
 
@@ -1920,6 +2071,7 @@ impl<'a> Parser<'a> {
             trait_,
             self_ty,
             items,
+            doc_comments: Vec::new(),
         })
     }
 
@@ -1938,7 +2090,7 @@ impl<'a> Parser<'a> {
             | Some(Token::Async)
             | Some(Token::Hourglass)
             | Some(Token::Unsafe) => Ok(ImplItem::Function(
-                self.parse_function_with_attrs(visibility, outer_attrs)?,
+                self.parse_function_with_attrs(visibility, outer_attrs, Vec::new())?,
             )),
             Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
             Some(Token::Const) => {
@@ -1951,7 +2103,7 @@ impl<'a> Parser<'a> {
                 }) == Some(true)
                 {
                     Ok(ImplItem::Function(
-                        self.parse_function_with_attrs(visibility, outer_attrs)?,
+                        self.parse_function_with_attrs(visibility, outer_attrs, Vec::new())?,
                     ))
                 } else {
                     Ok(ImplItem::Const(self.parse_const(visibility)?))
@@ -2020,6 +2172,7 @@ impl<'a> Parser<'a> {
             visibility,
             name,
             items,
+            doc_comments: Vec::new(),
         })
     }
 
@@ -2205,6 +2358,7 @@ impl<'a> Parser<'a> {
             name,
             ty,
             value,
+            doc_comments: Vec::new(),
         })
     }
 
@@ -2225,6 +2379,7 @@ impl<'a> Parser<'a> {
             name,
             ty,
             value,
+            doc_comments: Vec::new(),
         })
     }
 
@@ -2447,6 +2602,7 @@ impl<'a> Parser<'a> {
                 state.push(FieldDef {
                     visibility: vis,
                     name: field_name,
+                    params: None,
                     ty,
                     default,
                 });
@@ -2494,7 +2650,7 @@ impl<'a> Parser<'a> {
                 }
                 Some(token) => {
                     return Err(ParseError::UnexpectedToken {
-                        expected: "fn or static".to_string(),
+                        expected: "fn/rite/λ or static".to_string(),
                         found: token.clone(),
                         span: self.current_span(),
                     });
@@ -3135,6 +3291,7 @@ impl<'a> Parser<'a> {
                     fields.push(FieldDef {
                         visibility,
                         name,
+                        params: None,
                         ty,
                         default: None,
                     });
@@ -3190,6 +3347,7 @@ impl<'a> Parser<'a> {
                             fields.push(FieldDef {
                                 visibility: Visibility::Private,
                                 name,
+                                params: None,
                                 ty,
                                 default: None,
                             });
@@ -8790,6 +8948,7 @@ impl<'a> Parser<'a> {
             fields.push(FieldDef {
                 visibility,
                 name,
+                params: None,
                 ty,
                 default,
             });

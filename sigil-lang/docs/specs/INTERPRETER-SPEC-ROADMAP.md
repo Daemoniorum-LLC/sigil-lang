@@ -1,24 +1,25 @@
 # Sigil Interpreter Specification & TDD Roadmap
 
-**Version:** 1.9.0
-**Date:** 2026-01-26
-**Status:** Waves 1-8 Complete (Core), 100% Pass Rate
+**Version:** 1.13.0
+**Date:** 2026-01-27
+**Status:** Waves 1-8 Complete + Deferred Items Resolved, 100% Pass Rate (728 tests)
 **Component:** `parser/src/interpreter.rs`
 
 ---
 
 ## Executive Summary
 
-This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **714/714 tests (100%)**, achieving full test coverage.
+This document defines the specification and TDD roadmap for the Sigil interpreter, based on comprehensive test analysis. The interpreter currently passes **728/728 tests (100%)**, achieving full test coverage.
 
-### Current State (Updated 2026-01-26)
+### Current State (Updated 2026-01-27)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Total Tests | 714 | Across 24 spec categories |
-| Passing | 714 | 100% pass rate |
+| Total Tests | 728 | Across 24 spec categories |
+| Passing | 728 | 100% pass rate |
 | Failing | 0 | All tests passing |
 | Jormungandr | Working | Self-hosted compiler functional |
+| Deferred Items | 0 | All P1 items complete |
 
 ### Wave Completion Status
 
@@ -63,13 +64,13 @@ Features that improve developer experience and code safety.
 | P1-MEM-002 | Box<T> deref | 1 | ✅ Done | Heap allocation |
 | P1-MEM-003 | Slice borrowing | 1 | ✅ Done | View into arrays |
 | P1-MEM-004 | Lifetime elision | 1 | ✅ Done | Ergonomic lifetimes |
-| P1-COERCE-001 | Type coercion | 1 | Deferred | Implicit conversions |
-| P1-PTR-001 | Nullable pointer | 1 | Deferred | FFI compatibility |
+| P1-COERCE-001 | Type coercion | 1 | ✅ Done | Implicit conversions |
+| P1-PTR-001 | Nullable pointer | 1 | ✅ Done | FFI compatibility, is_null() |
 | P1-MATH-001 | exp/log functions | 1 | ✅ Done | Math stdlib |
 | P1-VEC-001 | Vec::clear() | 1 | ✅ Done | Collection ops |
 | P1-STATIC-001 | Static variables | 1 | ✅ Done | Global state |
 
-**Total P1 Gaps: 2 tests** (7/9 complete)
+**Total P1 Gaps: 0 tests** (9/9 complete)
 
 ### P1-BOOTSTRAP: Native Runtime (Self-Hosting) ✅ COMPLETE
 
@@ -177,10 +178,10 @@ Features planned for future releases or experimental modules.
 | P2-PROB | Probabilistic types | 10 | Experimental | Superposition |
 | P2-PROTO | Protocol clients | 10 | Experimental | HTTP, gRPC, Kafka |
 | P2-REFLECT | Reflection/IR | 10 | Experimental | Metaprogramming |
-| P2-LOOP | Infinite loop detection | 1 | Deferred | Edge case |
-| P2-FOR | For-step syntax | 1 | Deferred | Sugar |
+| P2-LOOP | Infinite loop (forever) | 1 | ✅ Done | `forever` keyword |
+| P2-FOR | For-step syntax | 1 | ✅ Done | `each i of 1..10` |
 
-**Total P2 Gaps: 62 tests**
+**Total P2 Gaps: 60 tests** (experimental features only)
 
 ---
 
@@ -571,12 +572,12 @@ cd jormungandr/tests && ./run_tests_rust.sh
 |----|---------|-----------|--------|-------|
 | P0-FRAG-001 | expr fragment | `P0_010_frag_expr.sg` | ✅ Done | Expression matching |
 | P0-FRAG-002 | ident fragment | `P0_011_frag_ident.sg` | ✅ Done | Identifier matching |
-| P0-FRAG-003 | ty fragment | `P0_012_frag_ty.sg` | Deferred | Type matching (not yet implemented) |
+| P0-FRAG-003 | ty fragment | `P0_012_frag_ty.sg` | ✅ Done | Type matching (string capture) |
 | P0-FRAG-004 | literal fragment | `P0_013_frag_literal.sg` | ✅ Done | Literal matching |
-| P0-FRAG-005 | block fragment | `P0_014_frag_block.sg` | Deferred | Block matching (not yet implemented) |
-| P0-FRAG-006 | stmt fragment | `P0_015_frag_stmt.sg` | Deferred | Statement matching (not yet implemented) |
-| P0-FRAG-007 | pat fragment | `P0_016_frag_pat.sg` | Deferred | Pattern matching (not yet implemented) |
-| P0-FRAG-008 | tt fragment | `P0_017_frag_tt.sg` | Deferred | Token tree matching (not yet implemented) |
+| P0-FRAG-005 | block fragment | `P0_014_frag_block.sg` | ✅ Done | Block matching (executed) |
+| P0-FRAG-006 | stmt fragment | `P0_015_frag_stmt.sg` | ✅ Done | Statement matching (string capture) |
+| P0-FRAG-007 | pat fragment | `P0_016_frag_pat.sg` | ✅ Done | Pattern matching (string capture) |
+| P0-FRAG-008 | tt fragment | `P0_017_frag_tt.sg` | ✅ Done | Token tree matching (string capture) |
 
 ### P1-RUNE: Edge Cases (§13.3)
 
@@ -587,15 +588,20 @@ cd jormungandr/tests && ./run_tests_rust.sh
 | P1-RUNE-003 | Named parameters | `P0_002_pipe_invoked_validate.sg` | ✅ Done | Tested in P0_002 |
 | P1-RUNE-004 | Multiple parameters | `P0_004_pipe_with_args.sg` | ✅ Done | Tested in P0_004 |
 
-### P2-RUNE: Extended Fragment Types (Future)
+### P0-FRAG: Extended Fragment Types (§2.2.1)
 
 | ID | Feature | Test File | Status | Notes |
 |----|---------|-----------|--------|-------|
-| P2-FRAG-001 | path fragment | `P2_001_frag_path.sg` | ❌ Deferred | Module path matching |
-| P2-FRAG-002 | item fragment | `P2_002_frag_item.sg` | ❌ Deferred | Item matching |
-| P2-FRAG-003 | meta fragment | `P2_003_frag_meta.sg` | ❌ Deferred | Attribute content |
-| P2-FRAG-004 | lifetime fragment | `P2_004_frag_lifetime.sg` | ❌ Deferred | Lifetime matching |
-| P2-FRAG-005 | vis fragment | `P2_005_frag_vis.sg` | ❌ Deferred | Visibility matching |
+| P0-FRAG-009 | path fragment | `P0_023_frag_path.sg` | ✅ Done | Module path as string |
+| P0-FRAG-010 | lifetime fragment | `P0_024_frag_lifetime.sg` | ✅ Done | Lifetime as string (`'static`) |
+| P0-FRAG-011 | vis fragment | `P0_025_frag_vis.sg` | ✅ Done | Visibility as string (`pub`) |
+
+### P0-FRAG: Final Fragment Types
+
+| ID | Feature | Test File | Status | Notes |
+|----|---------|-----------|--------|-------|
+| P0-FRAG-012 | item fragment | `P0_018_frag_item.sg` | ✅ Done | Item matching (string capture) |
+| P0-FRAG-013 | meta fragment | `P0_019_frag_meta.sg` | ✅ Done | Attribute content (string capture) |
 
 ### P0-REP: Repetition Patterns (§2.3)
 
@@ -604,6 +610,8 @@ cd jormungandr/tests && ./run_tests_rust.sh
 | P0-REP-001 | Zero-or-more | `P0_020_repetition_star.sg` | ✅ Done | `$($var:type),*` repetition |
 | P0-REP-002 | One-or-more | `P0_021_repetition_plus.sg` | ✅ Done | `$($var:type),+` repetition |
 | P0-REP-003 | Optional | `P0_022_repetition_optional.sg` | ✅ Done | `$($var:type)?` repetition |
+| P0-REP-004 | Complex body sum | `P0_026_complex_body_sum.sg` | ✅ Done | `0 $(+ $x)+` expansion |
+| P0-REP-005 | Complex body product | `P0_027_complex_body_product.sg` | ✅ Done | `1 $(* $x)+` expansion |
 
 ### Test Directory Structure
 
@@ -637,3 +645,7 @@ jormungandr/tests/spec/07_metaprogramming/
 | 1.7.0 | 2026-01-25 | Claude Code | Wave 6-7 complete: Native syntax migration, SGDOC tooling, 100% tests |
 | 1.8.0 | 2026-01-26 | Claude Code | Wave 8: Added Metaprogramming (Runes) test requirements per §2.6, §2.2, §13 |
 | 1.9.0 | 2026-01-26 | Claude Code | Wave 8 core complete: Implemented repetition patterns ($(...)*,+,?) per §2.3 |
+| 1.10.0 | 2026-01-26 | Claude Code | Extended fragments (path, lifetime, vis) + complex body expansion (sum/product) |
+| 1.10.1 | 2026-01-26 | Claude Code | Enabled network tests (HTTP, WebSocket) - 721 tests, websocket default feature |
+| 1.11.0 | 2026-01-26 | Claude Code | All P0 fragment types complete: ty, block, stmt, pat, tt (726 tests) |
+| 1.12.0 | 2026-01-26 | Claude Code | Final fragment types: item, meta - ALL 13 fragment types complete (728 tests) |

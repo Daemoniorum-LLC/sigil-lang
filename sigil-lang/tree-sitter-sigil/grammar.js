@@ -53,11 +53,11 @@ module.exports = grammar({
     function_definition: $ => seq(
       optional($.visibility),
       optional('async'),
-      'fn',
+      choice('fn', 'rite', 'λ'),
       field('name', $.identifier),
       optional($.generic_parameters),
       $.parameter_list,
-      optional(seq('->', $._type)),
+      optional(seq(choice('->', '→'), $._type)),
       optional($.where_clause),
       $.block,
     ),
@@ -73,7 +73,7 @@ module.exports = grammar({
     ),
 
     parameter: $ => seq(
-      optional('mut'),
+      optional(choice('mut', 'vary')),
       field('name', $.identifier),
       optional($.evidentiality_marker),
       optional(seq(':', $._type)),
@@ -152,7 +152,7 @@ module.exports = grammar({
     // === Trait Definition ===
     trait_definition: $ => seq(
       optional($.visibility),
-      'trait',
+      choice('trait', 'aspect'),
       field('name', $.identifier),
       optional($.generic_parameters),
       optional($.trait_bounds),
@@ -174,18 +174,18 @@ module.exports = grammar({
     function_signature: $ => seq(
       optional($.visibility),
       optional('async'),
-      'fn',
+      choice('fn', 'rite', 'λ'),
       field('name', $.identifier),
       optional($.generic_parameters),
       $.parameter_list,
-      optional(seq('->', $._type)),
+      optional(seq(choice('->', '→'), $._type)),
       optional($.where_clause),
       ';',
     ),
 
     // === Impl Block ===
     impl_block: $ => seq(
-      'impl',
+      choice('impl', '⊢'),
       optional($.generic_parameters),
       optional(seq($._type, 'for')),
       $._type,
@@ -246,7 +246,7 @@ module.exports = grammar({
     // === Const Declaration ===
     const_declaration: $ => seq(
       optional($.visibility),
-      'const',
+      choice('const', '◆'),
       field('name', $.identifier),
       ':',
       $._type,
@@ -289,8 +289,8 @@ module.exports = grammar({
 
     // === Visibility ===
     visibility: $ => choice(
-      'pub',
-      seq('pub', '(', choice('crate', 'super', seq('in', $.path)), ')'),
+      choice('pub', '☉'),
+      seq(choice('pub', '☉'), '(', choice('crate', 'tome', 'super', 'above', seq('in', $.path)), ')'),
     ),
 
     // === Generics ===
@@ -407,13 +407,13 @@ module.exports = grammar({
     reference_type: $ => seq(
       '&',
       optional($.lifetime),
-      optional('mut'),
+      optional(choice('mut', 'vary')),
       $._type,
     ),
 
     pointer_type: $ => seq(
       '*',
-      choice('const', 'mut'),
+      choice('const', '◆', 'mut', 'vary'),
       $._type,
     ),
 
@@ -444,9 +444,9 @@ module.exports = grammar({
     function_type: $ => seq(
       optional('unsafe'),
       optional(seq('extern', optional($.string_literal))),
-      'fn',
+      choice('fn', 'rite', 'λ'),
       $.parameter_list,
-      optional(seq('->', $._type)),
+      optional(seq(choice('->', '→'), $._type)),
     ),
 
     impl_trait: $ => seq(
@@ -502,7 +502,7 @@ module.exports = grammar({
     ),
 
     let_statement: $ => seq(
-      'let',
+      choice('let', '≔'),
       // Note: 'mut' is part of identifier_pattern, not here
       $._pattern,
       optional($.evidentiality_marker),
@@ -611,7 +611,7 @@ module.exports = grammar({
       /u\{[0-9a-fA-F]+\}/,
     ))),
 
-    boolean_literal: $ => choice('true', 'false'),
+    boolean_literal: $ => choice('true', 'yea', 'false', 'nay'),
 
     unary_expression: $ => prec.left(14, choice(
       seq('-', $._expression),
@@ -757,20 +757,20 @@ module.exports = grammar({
 
     loop_expression: $ => seq(
       optional($.label),
-      'loop',
+      choice('loop', 'forever'),
       $.block,
     ),
 
     while_expression: $ => seq(
       optional($.label),
-      'while',
+      choice('while', '⟳'),
       $._expression,
       $.block,
     ),
 
     for_expression: $ => seq(
       optional($.label),
-      'for',
+      choice('for', 'each'),
       $._pattern,
       'in',
       $._expression,
@@ -785,7 +785,7 @@ module.exports = grammar({
         seq('|', optional($.closure_parameters), '|'),
         '||',
       ),
-      optional(seq('->', $._type)),
+      optional(seq(choice('->', '→'), $._type)),
       $._expression,  // _expression includes block
     ),
 
@@ -803,7 +803,7 @@ module.exports = grammar({
 
     reference_expression: $ => prec(14, seq(
       '&',
-      optional('mut'),
+      optional(choice('mut', 'vary')),
       $._expression,
     )),
 
@@ -920,7 +920,7 @@ module.exports = grammar({
 
     identifier_pattern: $ => prec(1, seq(
       optional('ref'),
-      optional('mut'),
+      optional(choice('mut', 'vary')),
       $.identifier,
       optional(seq('@', $._pattern)),
     )),
@@ -951,7 +951,7 @@ module.exports = grammar({
 
     field_pattern: $ => choice(
       seq(field('name', $.identifier), ':', $._pattern),
-      seq(optional('ref'), optional('mut'), $.identifier),
+      seq(optional('ref'), optional(choice('mut', 'vary')), $.identifier),
     ),
 
     enum_pattern: $ => seq(
@@ -985,11 +985,11 @@ module.exports = grammar({
     // === Paths and Identifiers ===
     // self/super/crate can stand alone or prefix a path
     path: $ => prec.left(choice(
-      // Standalone self/crate/super
-      choice('self', 'crate', 'super'),
+      // Standalone self/crate/super (and Sigil equivalents)
+      choice('self', 'this', 'crate', 'tome', 'super', 'above'),
       // Path starting with :: or a prefix
       seq(
-        optional(choice('::', seq(choice('self', 'crate', 'super'), '::'))),
+        optional(choice('::', seq(choice('self', 'this', 'crate', 'tome', 'super', 'above'), '::'))),
         $.identifier,
         repeat(seq('::', $.identifier)),
       ),

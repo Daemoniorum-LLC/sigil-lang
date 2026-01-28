@@ -2,6 +2,7 @@
 // TDD: RED - Tests the Switch toggle component
 //
 // Switch is a toggle control for binary on/off settings
+// Wrapper pattern: div.switch-field > [input.switch, label, ?description]
 
 invoke qliphoth·components·Switch;
 invoke qliphoth·core·VNode;
@@ -14,9 +15,15 @@ rite test_switch_basic() {
 
     ≔ vnode = switch_ctrl.render();
 
-    assert!(vnode.has_class("switch"));
-    assert_eq!(vnode.attr("role"), "switch");
-    assert_eq!(vnode.attr("type"), "checkbox");
+    // Wrapper is a div
+    assert_eq!(vnode.tag(), "div");
+    assert!(vnode.has_class("switch-field"));
+
+    // Find the actual input element inside
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert!(input_el.has_class("switch"));
+    assert_eq!(input_el.attr("role"), "switch");
+    assert_eq!(input_el.attr("type"), "checkbox");
 }
 
 // Test switch checked state
@@ -30,8 +37,9 @@ rite test_switch_checked() {
     };
 
     ≔ vnode = switch_ctrl.render();
-    assert_eq!(vnode.attr("checked"), yay);
-    assert_eq!(vnode.attr("aria-checked"), "true");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("checked"), yay);
+    assert_eq!(input_el.attr("aria-checked"), "true");
 }
 
 // Test switch with label
@@ -44,11 +52,12 @@ rite test_switch_with_label() {
 
     ≔ vnode = switch_ctrl.render();
 
-    // Should have id
-    assert_eq!(vnode.attr("id"), "wifi-switch");
+    // Input should have id
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("id"), "wifi-switch");
 
-    // Label should be associated
-    ≔ label = vnode.find_sibling_by_tag("label");
+    // Label is now a child of the wrapper (not sibling)
+    ≔ label = vnode.find_child_by_tag("label");
     assert_eq!(label.attr("for"), "wifi-switch");
     assert_eq!(label.text_content(), "Enable WiFi");
 }
@@ -73,23 +82,30 @@ rite test_switch_disabled() {
     };
 
     ≔ vnode = switch_ctrl.render();
-    assert_eq!(vnode.attr("disabled"), yay);
+    // Wrapper has disabled class
     assert!(vnode.has_class("switch-disabled"));
+
+    // Input has disabled attr
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("disabled"), yay);
 }
 
 // Test switch sizes
 rite test_switch_sizes() {
     ≔ sm = Switch { name: "sm", size: "sm" };
-    assert!(sm.render().has_class("switch-sm"));
+    ≔ sm_el = sm.render().find_child_by_tag("input");
+    assert!(sm_el.has_class("switch-sm"));
 
     ≔ md = Switch { name: "md", size: "md" };
-    assert!(md.render().has_class("switch-md"));
+    ≔ md_el = md.render().find_child_by_tag("input");
+    assert!(md_el.has_class("switch-md"));
 
     ≔ lg = Switch { name: "lg", size: "lg" };
-    assert!(lg.render().has_class("switch-lg"));
+    ≔ lg_el = lg.render().find_child_by_tag("input");
+    assert!(lg_el.has_class("switch-lg"));
 }
 
-// Test switch with on/off labels
+// Test switch with on/off labels (inside the input element)
 rite test_switch_state_labels() {
     ≔ switch_ctrl = Switch {
         name: "status",
@@ -98,13 +114,14 @@ rite test_switch_state_labels() {
     };
 
     ≔ vnode = switch_ctrl.render();
+    ≔ input_el = vnode.find_child_by_tag("input");
 
-    // Should have both state labels
-    assert!(vnode.has_child_with_class("switch-label-on"));
-    assert!(vnode.has_child_with_class("switch-label-off"));
+    // State labels are inside the input element
+    assert!(input_el.has_child_with_class("switch-label-on"));
+    assert!(input_el.has_child_with_class("switch-label-off"));
 }
 
-// Test switch with icons
+// Test switch with icons (inside the input element)
 rite test_switch_icons() {
     ≔ switch_ctrl = Switch {
         name: "theme",
@@ -113,26 +130,31 @@ rite test_switch_icons() {
     };
 
     ≔ vnode = switch_ctrl.render();
+    ≔ input_el = vnode.find_child_by_tag("input");
 
-    // Should have icon containers
-    assert!(vnode.has_child_with_class("switch-icon-on"));
-    assert!(vnode.has_child_with_class("switch-icon-off"));
+    // Icon containers are inside the input element
+    assert!(input_el.has_child_with_class("switch-icon-on"));
+    assert!(input_el.has_child_with_class("switch-icon-off"));
 }
 
 // Test switch with description
 rite test_switch_description() {
     ≔ switch_ctrl = Switch {
         name: "analytics",
+        id: "analytics-switch",
         label: "Analytics",
         description: "Allow us to collect anonymous usage data",
     };
 
     ≔ vnode = switch_ctrl.render();
-    ≔ desc = vnode.find_sibling_by_class("switch-description");
+
+    // Description is now a child of the wrapper
+    ≔ desc = vnode.find_child_by_class("switch-description");
     assert_eq!(desc.text_content(), "Allow us to collect anonymous usage data");
 
     // Should be linked via aria-describedby
-    assert!(vnode.attr("aria-describedby").contains("description"));
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert!(input_el.attr("aria-describedby").contains("description"));
 }
 
 // Test loading switch
@@ -143,26 +165,31 @@ rite test_switch_loading() {
     };
 
     ≔ vnode = switch_ctrl.render();
-    assert!(vnode.has_class("switch-loading"));
-    assert!(vnode.has_child_with_class("switch-spinner"));
+    ≔ input_el = vnode.find_child_by_tag("input");
+
+    assert!(input_el.has_class("switch-loading"));
+    assert!(input_el.has_child_with_class("switch-spinner"));
 
     // Should be disabled when loading
-    assert_eq!(vnode.attr("disabled"), yay);
+    assert_eq!(input_el.attr("disabled"), yay);
 }
 
 // Test switch colors
 rite test_switch_colors() {
     // Success (green when on)
     ≔ success = Switch { name: "s", color: "success" };
-    assert!(success.render().has_class("switch-success"));
+    ≔ success_el = success.render().find_child_by_tag("input");
+    assert!(success_el.has_class("switch-success"));
 
     // Warning
     ≔ warning = Switch { name: "w", color: "warning" };
-    assert!(warning.render().has_class("switch-warning"));
+    ≔ warning_el = warning.render().find_child_by_tag("input");
+    assert!(warning_el.has_class("switch-warning"));
 
     // Danger
     ≔ danger = Switch { name: "d", color: "danger" };
-    assert!(danger.render().has_class("switch-danger"));
+    ≔ danger_el = danger.render().find_child_by_tag("input");
+    assert!(danger_el.has_class("switch-danger"));
 }
 
 // Test switch accessibility
@@ -173,8 +200,9 @@ rite test_switch_accessibility() {
     };
 
     ≔ vnode = switch_ctrl.render();
-    assert_eq!(vnode.attr("aria-label"), "Toggle experimental feature");
-    assert_eq!(vnode.attr("role"), "switch");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("aria-label"), "Toggle experimental feature");
+    assert_eq!(input_el.attr("role"), "switch");
 }
 
 // Test switch required (for forms)
@@ -186,8 +214,9 @@ rite test_switch_required() {
     };
 
     ≔ vnode = switch_ctrl.render();
-    assert_eq!(vnode.attr("required"), yay);
-    assert_eq!(vnode.attr("aria-required"), "true");
+    ≔ input_el = vnode.find_child_by_tag("input");
+    assert_eq!(input_el.attr("required"), yay);
+    assert_eq!(input_el.attr("aria-required"), "true");
 }
 
 rite main() {

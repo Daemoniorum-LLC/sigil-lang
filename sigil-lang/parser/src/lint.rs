@@ -89,12 +89,20 @@ pub struct LintConfig {
 impl Default for LintConfig {
     fn default() -> Self {
         let mut reserved = HashSet::new();
+        // English keywords
         for word in &[
             "from", "split", "ref", "location", "save", "type", "move", "match", "loop", "if",
             "else", "while", "for", "in", "return", "break", "continue", "fn", "let", "mut",
             "const", "static", "struct", "enum", "trait", "impl", "pub", "mod", "use", "as",
             "where", "async", "await", "dyn", "unsafe", "extern", "crate", "self", "super", "true",
             "false",
+        ] {
+            reserved.insert(word.to_string());
+        }
+        // Sigil native vocabulary
+        for word in &[
+            "rite", "sigil", "aspect", "scroll", "invoke", "vary", "each", "forever",
+            "yea", "nay", "this", "above", "tome",
         ] {
             reserved.insert(word.to_string());
         }
@@ -578,15 +586,15 @@ Reserved words have special meaning in the language and cannot be used
 as variable, function, or type names.
 
 Example:
-    let location = "here";  // Error: 'location' is reserved
+    ≔ location = "here";  // Error: 'location' is reserved
 
 Fix:
-    let place = "here";     // Use an alternative name
+    ≔ place = "here";     // Use an alternative name
 
 Common alternatives:
-  - location -> place
-  - save -> slot, store
-  - from -> source, origin
+  - location → place
+  - save → slot, store
+  - from → source, origin
 "#
             }
             LintId::NestedGenerics => {
@@ -595,11 +603,11 @@ This lint warns about nested generic parameters which may not parse
 correctly in the current version of Sigil.
 
 Example:
-    fn process(data: Vec<Option<i32>>) { }  // May not parse
+    rite process(data: Vec<Option<i32>>) { }  // May not parse
 
 Fix:
     type OptInt = Option<i32>;
-    fn process(data: Vec<OptInt>) { }  // Use type alias
+    rite process(data: Vec<OptInt>) { }  // Use type alias
 "#
             }
             LintId::UnusedVariable => {
@@ -608,15 +616,15 @@ This lint detects variables that are declared but never used.
 Unused variables may indicate incomplete code or typos.
 
 Example:
-    let x = 42;
+    ≔ x = 42;
     println(y);  // 'x' is never used, 'y' may be a typo
 
 Fix:
-    let x = 42;
+    ≔ x = 42;
     println(x);  // Use the variable
 
     // Or prefix with underscore to indicate intentionally unused:
-    let _x = 42;
+    ≔ _x = 42;
 "#
             }
             LintId::Shadowing => {
@@ -626,19 +634,19 @@ outer scope. While sometimes intentional, shadowing can make code
 harder to understand.
 
 Example:
-    let x = 1;
+    ≔ x = 1;
     {
-        let x = 2;  // Shadows outer 'x'
+        ≔ x = 2;  // Shadows outer 'x'
     }
 
 Fix:
-    let x = 1;
+    ≔ x = 1;
     {
-        let x_inner = 2;  // Use distinct name
+        ≔ x_inner = 2;  // Use distinct name
     }
 
     // Or prefix with underscore if intentional:
-    let _x = 2;
+    ≔ _x = 2;
 "#
             }
             LintId::DeepNesting => {
@@ -690,11 +698,11 @@ This lint detects division by a literal zero, which will cause
 a runtime panic.
 
 Example:
-    let result = x / 0;  // Will panic!
+    ≔ result = x / 0;  // Will panic!
 
 Fix:
     if divisor != 0 {
-        let result = x / divisor;
+        ≔ result = x / divisor;
     }
 "#
             }
@@ -704,8 +712,8 @@ This lint detects conditions that are always true or always false,
 indicating likely bugs or unnecessary code.
 
 Example:
-    if true { ... }      // Always executes
-    while false { ... }  // Never executes
+    if yea { ... }      // Always executes
+    ⟳ nay { ... }       // Never executes (while false)
 
 Fix:
     // Remove unnecessary conditions
@@ -760,12 +768,12 @@ This lint suggests removing unnecessary return statements.
 In Sigil, the last expression is the return value.
 
 Example:
-    fn add(a: i32, b: i32) -> i32 {
+    rite add(a: i32, b: i32) → i32 {
         return a + b;  // Unnecessary return
     }
 
 Fix:
-    fn add(a: i32, b: i32) -> i32 {
+    rite add(a: i32, b: i32) → i32 {
         a + b  // Implicit return
     }
 "#
@@ -776,7 +784,7 @@ This lint warns when a function with a return type may not return
 a value on all execution paths.
 
 Example:
-    fn maybe_return(x: i32) -> i32 {
+    rite maybe_return(x: i32) → i32 {
         if x > 0 {
             return x;
         }
@@ -784,7 +792,7 @@ Example:
     }
 
 Fix:
-    fn maybe_return(x: i32) -> i32 {
+    rite maybe_return(x: i32) → i32 {
         if x > 0 {
             x
         } else {
@@ -805,10 +813,10 @@ of method chains. Morpheme pipelines are more idiomatic in Sigil
 and provide clearer data flow semantics.
 
 Example (method chain):
-    let result = data.iter().map(|x| x * 2).filter(|x| *x > 10).collect();
+    ≔ result = data.iter().map(|x| x * 2).filter(|x| *x > 10).collect();
 
 Preferred (morpheme pipeline):
-    let result = data
+    ≔ result = data
         |τ{_ * 2}       // τ (tau) = transform/map
         |φ{_ > 10}      // φ (phi) = filter
         |σ;             // σ (sigma) = collect/sort
@@ -2795,9 +2803,10 @@ impl Linter {
             Expr::Literal(Literal::Bool(val)) => Some(*val),
             Expr::Path(p) if p.segments.len() == 1 => {
                 let name = &p.segments[0].ident.name;
-                if name == "true" {
+                // Support both English (true/false) and Sigil native (yea/nay) booleans
+                if name == "true" || name == "yea" {
                     Some(true)
-                } else if name == "false" {
+                } else if name == "false" || name == "nay" {
                     Some(false)
                 } else {
                     None

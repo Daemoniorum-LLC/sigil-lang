@@ -1,0 +1,23 @@
+// Test: item fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (item)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $i:item captures top-level item definitions.
+// Items are captured as strings for code generation.
+//
+// Expected behavior:
+// - Item definition captured as string
+
+rune capture_item! {
+    ($i:item) => { $i }
+}
+
+rite main() {
+    // Capture a simple identifier (stand-in for item name)
+    ≔ i1 = capture_item!{MyStruct};
+    println(i1);
+
+    ≔ i2 = capture_item!{MyEnum};
+    println(i2);
+}

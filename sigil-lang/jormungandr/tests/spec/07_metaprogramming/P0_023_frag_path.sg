@@ -1,0 +1,25 @@
+// Test: path fragment type
+// Spec: 07-METAPROGRAMMING.md § 2.2.1 Fragment Type Definitions (path)
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that $p:path captures module paths as strings.
+// Paths like Vec, std·io·File are captured without evaluation.
+//
+// Expected behavior:
+// - Simple identifiers captured as strings
+// - Module paths captured as strings
+
+rune capture_path! {
+    ($p:path) => { $p }
+}
+
+rite main() {
+    // Simple identifier as path
+    ≔ p1 = capture_path!{Vec};
+    println(p1);
+
+    // Another simple path
+    ≔ p2 = capture_path!{HashMap};
+    println(p2);
+}

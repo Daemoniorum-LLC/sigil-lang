@@ -256,12 +256,65 @@ fn process_byte_char_escape(s: &str) -> u8 {
 #[derive(Logos, Debug, Clone, PartialEq)]
 #[logos(skip r"[ \t\r\n\f]+")]
 pub enum Token {
-    // === Comments ===
-    #[regex(r"//[^\n]*", |lex| lex.slice().to_string())]
-    LineComment(String),
+    // === Evidential Doc Comments (SGDOC) ===
+    // These must come before LineComment to match first
+    // Format: //<marker> <content> or //<marker><marker> <content> for inner docs
+    // Inner docs (//!!, //~~, etc.) have priority 10 to match before outer docs
 
-    #[regex(r"//![^\n]*", |lex| lex.slice().to_string())]
+    /// Verified doc comment: //! content (backed by test)
+    /// Inner variant: //!! documents the containing module
+    #[regex(r"//!![^\n]*", priority = 10, callback = |lex| lex.slice()[4..].trim().to_string())]
+    DocCommentVerifiedInner(String),
+    #[regex(r"//![^!\n][^\n]*", priority = 8, callback = |lex| lex.slice()[3..].trim().to_string())]
+    DocCommentVerified(String),
+
+    /// Reported doc comment: //~ content (from spec/author, default)
+    /// Inner variant: //~~ documents the containing module
+    #[regex(r"//~~[^\n]*", priority = 10, callback = |lex| lex.slice()[4..].trim().to_string())]
+    DocCommentReportedInner(String),
+    #[regex(r"//~[^~\n][^\n]*", priority = 8, callback = |lex| lex.slice()[3..].trim().to_string())]
+    DocCommentReported(String),
+
+    /// Uncertain doc comment: //? content (needs investigation)
+    /// Inner variant: //?? documents the containing module
+    #[regex(r"//\?\?[^\n]*", priority = 10, callback = |lex| lex.slice()[4..].trim().to_string())]
+    DocCommentUncertainInner(String),
+    #[regex(r"//\?[^\?\n][^\n]*", priority = 8, callback = |lex| lex.slice()[3..].trim().to_string())]
+    DocCommentUncertain(String),
+
+    /// Predicted doc comment: //◊ content (planned feature)
+    /// Inner variant: //◊◊ documents the containing module
+    #[regex(r"//◊◊[^\n]*", priority = 10, callback = |lex| {
+        // ◊ is multi-byte UTF-8, use trim_start_matches
+        lex.slice().trim_start_matches("//◊◊").trim().to_string()
+    })]
+    DocCommentPredictedInner(String),
+    #[regex(r"//◊[^◊\n][^\n]*", priority = 8, callback = |lex| {
+        lex.slice().trim_start_matches("//◊").trim().to_string()
+    })]
+    DocCommentPredicted(String),
+
+    /// Paradox doc comment: //‽ content (known inconsistency)
+    /// Inner variant: //‽‽ documents the containing module
+    #[regex(r"//‽‽[^\n]*", priority = 10, callback = |lex| {
+        // ‽ is multi-byte UTF-8, use trim_start_matches
+        lex.slice().trim_start_matches("//‽‽").trim().to_string()
+    })]
+    DocCommentParadoxInner(String),
+    #[regex(r"//‽[^‽\n][^\n]*", priority = 8, callback = |lex| {
+        lex.slice().trim_start_matches("//‽").trim().to_string()
+    })]
+    DocCommentParadox(String),
+
+    // === Regular Comments ===
+    // Legacy doc comment (maps to Reported for backwards compat)
+    // Must have priority > LineComment to match /// before //
+    #[regex(r"///[^\n]*", priority = 5, callback = |lex| lex.slice()[3..].trim().to_string())]
     DocComment(String),
+
+    // Standard line comment (must be lower priority than doc comments)
+    #[regex(r"//[^\n]*", priority = 1, callback = |lex| lex.slice().to_string())]
+    LineComment(String),
 
     // Tilde comment style: ~~ ... ~~
     #[regex(r"~~[^\n]*", |lex| lex.slice().to_string())]
@@ -1300,6 +1353,68 @@ impl Token {
             self,
             Token::IntensityUp | Token::IntensityDown | Token::IntensityMax
         )
+    }
+
+    /// Returns true if this token is any kind of doc comment (evidential or legacy)
+    pub fn is_doc_comment(&self) -> bool {
+        matches!(
+            self,
+            Token::DocCommentVerified(_)
+                | Token::DocCommentVerifiedInner(_)
+                | Token::DocCommentReported(_)
+                | Token::DocCommentReportedInner(_)
+                | Token::DocCommentUncertain(_)
+                | Token::DocCommentUncertainInner(_)
+                | Token::DocCommentPredicted(_)
+                | Token::DocCommentPredictedInner(_)
+                | Token::DocCommentParadox(_)
+                | Token::DocCommentParadoxInner(_)
+                | Token::DocComment(_) // Legacy /// comments map to Reported
+        )
+    }
+
+    /// Returns true if this is an inner doc comment (documents the enclosing item)
+    pub fn is_inner_doc_comment(&self) -> bool {
+        matches!(
+            self,
+            Token::DocCommentVerifiedInner(_)
+                | Token::DocCommentReportedInner(_)
+                | Token::DocCommentUncertainInner(_)
+                | Token::DocCommentPredictedInner(_)
+                | Token::DocCommentParadoxInner(_)
+        )
+    }
+
+    /// Returns the evidentiality marker for a doc comment (!, ~, ?, ◊, ‽)
+    /// Returns '~' (Reported) for legacy /// comments as default
+    pub fn doc_comment_evidentiality(&self) -> Option<char> {
+        match self {
+            Token::DocCommentVerified(_) | Token::DocCommentVerifiedInner(_) => Some('!'),
+            Token::DocCommentReported(_) | Token::DocCommentReportedInner(_) => Some('~'),
+            Token::DocCommentUncertain(_) | Token::DocCommentUncertainInner(_) => Some('?'),
+            Token::DocCommentPredicted(_) | Token::DocCommentPredictedInner(_) => Some('◊'),
+            Token::DocCommentParadox(_) | Token::DocCommentParadoxInner(_) => Some('‽'),
+            Token::DocComment(_) => Some('~'), // Legacy defaults to Reported
+            _ => None,
+        }
+    }
+
+    /// Extracts the content string from a doc comment token
+    pub fn doc_comment_content(&self) -> Option<&str> {
+        match self {
+            Token::DocCommentVerified(s)
+            | Token::DocCommentVerifiedInner(s)
+            | Token::DocCommentReported(s)
+            | Token::DocCommentReportedInner(s)
+            | Token::DocCommentUncertain(s)
+            | Token::DocCommentUncertainInner(s)
+            | Token::DocCommentPredicted(s)
+            | Token::DocCommentPredictedInner(s)
+            | Token::DocCommentParadox(s)
+            | Token::DocCommentParadoxInner(s)
+            | Token::DocComment(s) => Some(s.as_str()),
+            _ => None,
+        }
     }
 }
 

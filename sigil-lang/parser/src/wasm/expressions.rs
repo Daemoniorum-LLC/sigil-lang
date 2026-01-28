@@ -203,13 +203,13 @@ impl WasmCompiler {
             Expr::LegionBroadcast { .. } => Err(WasmError::unsupported("Legion broadcast")),
             Expr::LegionConsensus { .. } => Err(WasmError::unsupported("Legion consensus")),
             Expr::LegionDecay { .. } => Err(WasmError::unsupported("Legion decay")),
-<<<<<<< HEAD
-
             // Named arguments are handled at call sites, not as standalone expressions
             Expr::NamedArg { value, .. } => self.compile_expr(value),
-=======
-            Expr::NamedArg { .. } => Err(WasmError::unsupported("named arguments")),
->>>>>>> origin/main
+
+            // Template and anonymous struct expressions - not yet supported in WASM
+            Expr::AnonymousStruct { .. } => Err(WasmError::unsupported("anonymous structs")),
+            Expr::Template(_) => Err(WasmError::unsupported("template expressions")),
+            Expr::TemplateFragment { .. } => Err(WasmError::unsupported("template fragments")),
         }
     }
 

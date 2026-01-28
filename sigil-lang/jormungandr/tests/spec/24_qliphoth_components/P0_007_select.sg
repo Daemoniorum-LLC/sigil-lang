@@ -2,12 +2,14 @@
 // TDD: RED - Tests the Select dropdown component
 //
 // Select provides a dropdown for choosing from a list of options
+// Agent-native wrapper pattern: div.select-field > [select, label, ?helper, ?error]
 
 invoke qliphoth·components·Select;
 invoke qliphoth·components·SelectOption;
 invoke qliphoth·core·VNode;
 
 // Test basic select rendering
+// Wrapper pattern: div.select-field > select.select
 rite test_select_basic() {
     ≔ select = Select {
         name: "country",
@@ -21,8 +23,14 @@ rite test_select_basic() {
 
     ≔ vnode = select.render();
 
-    assert!(vnode.has_class("select"));
-    assert_eq!(vnode.attr("name"), "country");
+    // Wrapper is a div with select-field class
+    assert_eq!(vnode.tag(), "div");
+    assert!(vnode.has_class("select-field"));
+
+    // Find the actual select element inside
+    ≔ select_el = vnode.find_child_by_tag("select");
+    assert!(select_el.has_class("select"));
+    assert_eq!(select_el.attr("name"), "country");
 }
 
 // Test select with value
@@ -40,10 +48,12 @@ rite test_select_controlled() {
     };
 
     ≔ vnode = select.render();
-    assert_eq!(vnode.attr("value"), "uk");
+    ≔ select_el = vnode.find_child_by_tag("select");
+    assert_eq!(select_el.attr("value"), "uk");
 }
 
 // Test select with label
+// Updated for agent-native wrapper pattern: div.select-field > [select, label]
 rite test_select_with_label() {
     ≔ select = Select {
         name: "role",
@@ -57,11 +67,16 @@ rite test_select_with_label() {
 
     ≔ vnode = select.render();
 
-    // Should have id for label association
-    assert_eq!(vnode.attr("id"), "role-select");
+    // Wrapper is a div with select-field class
+    assert_eq!(vnode.tag(), "div");
+    assert!(vnode.has_class("select-field"));
 
-    // Should render label
-    ≔ label = vnode.find_sibling_by_tag("label");
+    // Find the actual select element inside
+    ≔ select_el = vnode.find_child_by_tag("select");
+    assert_eq!(select_el.attr("id"), "role-select");
+
+    // Label is now a child of the wrapper (not sibling)
+    ≔ label = vnode.find_child_by_tag("label");
     assert_eq!(label.attr("for"), "role-select");
     assert_eq!(label.text_content(), "User Role");
 }
@@ -75,8 +90,13 @@ rite test_select_disabled() {
     };
 
     ≔ vnode = select.render();
-    assert_eq!(vnode.attr("disabled"), yay);
+
+    // Wrapper has disabled class
     assert!(vnode.has_class("select-disabled"));
+
+    // Select element has disabled attribute
+    ≔ select_el = vnode.find_child_by_tag("select");
+    assert_eq!(select_el.attr("disabled"), yay);
 }
 
 // Test select with disabled options
@@ -91,7 +111,8 @@ rite test_select_disabled_options() {
     };
 
     ≔ vnode = select.render();
-    ≔ options = vnode.find_children_by_tag("option");
+    ≔ select_el = vnode.find_child_by_tag("select");
+    ≔ options = select_el.find_children_by_tag("option");
     assert_eq!(options[1].attr("disabled"), yay);
 }
 
@@ -108,7 +129,8 @@ rite test_select_optgroup() {
     };
 
     ≔ vnode = select.render();
-    ≔ groups = vnode.find_children_by_tag("optgroup");
+    ≔ select_el = vnode.find_child_by_tag("select");
+    ≔ groups = select_el.find_children_by_tag("optgroup");
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].attr("label"), "Cars");
     assert_eq!(groups[1].attr("label"), "Trucks");
@@ -128,8 +150,9 @@ rite test_select_required() {
     };
 
     ≔ vnode = select.render();
-    assert_eq!(vnode.attr("required"), yay);
-    assert_eq!(vnode.attr("aria-required"), "true");
+    ≔ select_el = vnode.find_child_by_tag("select");
+    assert_eq!(select_el.attr("required"), yay);
+    assert_eq!(select_el.attr("aria-required"), "true");
 }
 
 // Test select with error
@@ -141,24 +164,36 @@ rite test_select_error() {
     };
 
     ≔ vnode = select.render();
-    assert!(vnode.has_class("select-error"));
-    assert_eq!(vnode.attr("aria-invalid"), "true");
 
-    // Error message should be displayed
-    ≔ error_msg = vnode.find_sibling_by_class("select-error-message");
+    // Wrapper has error class
+    assert!(vnode.has_class("select-has-error"));
+
+    // Select element has error class and aria-invalid
+    ≔ select_el = vnode.find_child_by_tag("select");
+    assert!(select_el.has_class("select-error"));
+    assert_eq!(select_el.attr("aria-invalid"), "true");
+
+    // Error message is a child of wrapper
+    ≔ error_msg = vnode.find_child_by_class("select-error-message");
     assert_eq!(error_msg.text_content(), "Please select a category");
 }
 
 // Test select sizes
 rite test_select_sizes() {
     ≔ sm = Select { name: "sm", size: "sm", options: [] };
-    assert!(sm.render().has_class("select-sm"));
+    ≔ sm_vnode = sm.render();
+    ≔ sm_select = sm_vnode.find_child_by_tag("select");
+    assert!(sm_select.has_class("select-sm"));
 
     ≔ md = Select { name: "md", size: "md", options: [] };
-    assert!(md.render().has_class("select-md"));
+    ≔ md_vnode = md.render();
+    ≔ md_select = md_vnode.find_child_by_tag("select");
+    assert!(md_select.has_class("select-md"));
 
     ≔ lg = Select { name: "lg", size: "lg", options: [] };
-    assert!(lg.render().has_class("select-lg"));
+    ≔ lg_vnode = lg.render();
+    ≔ lg_select = lg_vnode.find_child_by_tag("select");
+    assert!(lg_select.has_class("select-lg"));
 }
 
 // Test multiple select
@@ -177,7 +212,8 @@ rite test_select_multiple() {
     };
 
     ≔ vnode = select.render();
-    assert_eq!(vnode.attr("multiple"), yay);
+    ≔ select_el = vnode.find_child_by_tag("select");
+    assert_eq!(select_el.attr("multiple"), yay);
 }
 
 // Test select with helper text
@@ -189,7 +225,8 @@ rite test_select_helper() {
     };
 
     ≔ vnode = select.render();
-    ≔ helper = vnode.find_sibling_by_class("select-helper");
+    // Helper is a child of wrapper
+    ≔ helper = vnode.find_child_by_class("select-helper");
     assert_eq!(helper.text_content(), "Select your local timezone");
 }
 
@@ -201,7 +238,9 @@ rite test_select_native() {
         native: yay,
         options: []
     };
-    assert!(native_select.render().has_class("select-native"));
+    ≔ native_vnode = native_select.render();
+    ≔ native_el = native_vnode.find_child_by_tag("select");
+    assert!(native_el.has_class("select-native"));
 
     // Custom dropdown (styled)
     ≔ custom = Select {
@@ -209,7 +248,9 @@ rite test_select_native() {
         native: nay,
         options: []
     };
-    assert!(custom.render().has_class("select-custom"));
+    ≔ custom_vnode = custom.render();
+    ≔ custom_el = custom_vnode.find_child_by_tag("select");
+    assert!(custom_el.has_class("select-custom"));
 }
 
 // Test select accessibility
@@ -223,7 +264,8 @@ rite test_select_accessibility() {
     };
 
     ≔ vnode = select.render();
-    assert_eq!(vnode.attr("aria-label"), "Select your country");
+    ≔ select_el = vnode.find_child_by_tag("select");
+    assert_eq!(select_el.attr("aria-label"), "Select your country");
 }
 
 rite main() {
