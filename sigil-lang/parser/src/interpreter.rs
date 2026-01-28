@@ -565,8 +565,8 @@ fn tensor_scalar_from_fields(fields: &HashMap<String, Value>) -> Option<f64> {
             _ => {}
         }
     }
-    // Fall back to data[0]
-    if let Some(Value::Array(arr)) = fields.get("data") {
+    // Fall back to data[0] (public name is standard)
+    if let Some(Value::Array(arr)) = fields.get("data").or_else(|| fields.get("__data__")) {
         if let Some(first) = arr.borrow().first() {
             match first {
                 Value::Float(f) => return Some(*f),
@@ -580,7 +580,8 @@ fn tensor_scalar_from_fields(fields: &HashMap<String, Value>) -> Option<f64> {
 
 /// Extract data as Vec<f64> from tensor fields.
 fn tensor_data_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<f64>> {
-    if let Some(Value::Array(arr)) = fields.get("data") {
+    // Public field name is standard
+    if let Some(Value::Array(arr)) = fields.get("data").or_else(|| fields.get("__data__")) {
         Some(
             arr.borrow()
                 .iter()
@@ -1105,7 +1106,7 @@ impl fmt::Display for EvalError {
 /// Environment for variable bindings
 #[derive(Clone)]
 pub struct Environment {
-    values: HashMap<String, Value>,
+    pub values: HashMap<String, Value>,
     parent: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -1147,6 +1148,25 @@ impl Environment {
         } else {
             Err(RuntimeError::undefined_variable(name))
         }
+    }
+
+    /// Iterate over all values in this environment (not including parent scopes)
+    /// Used by autograd and IR export for introspection
+    pub fn iter_values(&self) -> impl Iterator<Item = (&String, &Value)> {
+        self.values.iter()
+    }
+
+    /// Collect all values in this environment and parent scopes
+    pub fn all_values(&self) -> Vec<(String, Value)> {
+        let mut values: Vec<(String, Value)> = self
+            .values
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if let Some(ref parent) = self.parent {
+            values.extend(parent.borrow().all_values());
+        }
+        values
     }
 }
 
@@ -1224,6 +1244,19 @@ pub struct Interpreter {
     pub var_types: RefCell<HashMap<String, (String, Vec<String>)>>,
     /// Type-directed construction context (for Tensor<shape>, Linear<N, M>, etc.)
     pub type_context: TypeConstructionContext,
+    // === IR Reflection Registries (Phase 23: AI IR Intrinsics) ===
+    /// Trait definitions for IR export
+    pub trait_defs: Vec<crate::ast::TraitDef>,
+    /// Impl blocks for IR export
+    pub impl_blocks: Vec<crate::ast::ImplBlock>,
+    /// Constant definitions: (name, span) for IR export
+    pub const_defs: Vec<(String, crate::span::Span)>,
+    /// Function spans: name -> span for source mapping
+    pub function_spans: HashMap<String, crate::span::Span>,
+    /// Source text for line number calculation in IR export
+    pub source_text: Option<String>,
+    /// Registered modules in current crate (module_name -> loaded)
+    pub crate_modules: HashSet<String>,
 }
 
 /// Type definition for structs/enums
@@ -1257,7 +1290,7 @@ enum RepetitionKind {
 /// Returns a list of repetition patterns found.
 fn parse_repetition_patterns(pattern: &str) -> Vec<RepetitionPattern> {
     let mut patterns = Vec::new();
-    let macro_types = ["expr", "ident", "ty", "literal", "block", "stmt", "pat", "tt"];
+    let macro_types = ["expr", "ident", "ty", "literal", "block", "stmt", "pat", "tt", "item", "meta", "path", "vis", "lifetime"];
 
     // Look for pattern: LParen Ident("var") Colon Ident("type") RParen [Comma] Star|Plus|Question
     // The $(...) becomes LParen ... RParen in tokenized form
@@ -1357,6 +1390,13 @@ impl Interpreter {
             mutable_vars: RefCell::new(HashSet::new()),
             var_types: RefCell::new(HashMap::new()),
             type_context: TypeConstructionContext::default(),
+            // IR Reflection Registries (Phase 23)
+            trait_defs: Vec::new(),
+            impl_blocks: Vec::new(),
+            const_defs: Vec::new(),
+            function_spans: HashMap::new(),
+            source_text: None,
+            crate_modules: HashSet::new(),
         };
 
         // Register built-in functions
@@ -1638,6 +1678,7 @@ impl Interpreter {
                     generics: None,
                     fields: crate::ast::StructFields::Named(vec![]),
                     is_translations: false,
+                    doc_comments: Vec::new(),
                 },
             );
         }
@@ -4867,50 +4908,11 @@ impl Interpreter {
                         fields: Rc::new(RefCell::new(fields)),
                     })
                 }
-                // Tensor product (⊗) for qubits
+                // Tensor product (⊗) for qubits - delegate to stdlib
                 BinOp::TensorProd if n1 == "Qubit" && n2 == "Qubit" => {
-                    // |ψ₁⟩ ⊗ |ψ₂⟩ creates a 2-qubit register
-                    // |ψ₁⟩ = α₁|0⟩ + β₁|1⟩, |ψ₂⟩ = α₂|0⟩ + β₂|1⟩
-                    // Result: α₁α₂|00⟩ + α₁β₂|01⟩ + β₁α₂|10⟩ + β₁β₂|11⟩
-                    let alpha1 = match f1.borrow().get("_alpha_real") {
-                        Some(Value::Float(f)) => *f,
-                        _ => 1.0,
-                    };
-                    let beta1 = match f1.borrow().get("_beta_real") {
-                        Some(Value::Float(f)) => *f,
-                        _ => 0.0,
-                    };
-                    let alpha2 = match f2.borrow().get("_alpha_real") {
-                        Some(Value::Float(f)) => *f,
-                        _ => 1.0,
-                    };
-                    let beta2 = match f2.borrow().get("_beta_real") {
-                        Some(Value::Float(f)) => *f,
-                        _ => 0.0,
-                    };
-
-                    // State amplitudes for 2-qubit system: |00⟩, |01⟩, |10⟩, |11⟩
-                    let amp00 = alpha1 * alpha2;
-                    let amp01 = alpha1 * beta2;
-                    let amp10 = beta1 * alpha2;
-                    let amp11 = beta1 * beta2;
-
-                    let mut reg_fields = HashMap::new();
-                    reg_fields.insert("_size".to_string(), Value::Int(2));
-                    reg_fields.insert(
-                        "_state".to_string(),
-                        Value::Array(Rc::new(RefCell::new(vec![
-                            Value::Float(amp00),
-                            Value::Float(amp01),
-                            Value::Float(amp10),
-                            Value::Float(amp11),
-                        ]))),
-                    );
-
-                    Ok(Value::Struct {
-                        name: "QRegister".to_string(),
-                        fields: Rc::new(RefCell::new(reg_fields)),
-                    })
+                    let left_val = Value::Struct { name: n1.clone(), fields: f1.clone() };
+                    let right_val = Value::Struct { name: n2.clone(), fields: f2.clone() };
+                    self.call_function_by_name("tensor", vec![left_val, right_val])
                 }
                 _ => Err(RuntimeError::new("Invalid struct operation")),
             },
@@ -7402,8 +7404,8 @@ impl Interpreter {
             (Value::Struct { name, fields }, Value::Int(i)) if name == "Tensor" => {
                 let fields_ref = fields.borrow();
 
-                // Get shape and data
-                let shape: Vec<i64> = match fields_ref.get("shape") {
+                // Get shape and data (public field names are the standard)
+                let shape: Vec<i64> = match fields_ref.get("shape").or_else(|| fields_ref.get("__shape__")) {
                     Some(Value::Array(arr)) => arr
                         .borrow()
                         .iter()
@@ -7414,7 +7416,7 @@ impl Interpreter {
                         .collect(),
                     _ => vec![],
                 };
-                let data: Vec<f64> = match fields_ref.get("data") {
+                let data: Vec<f64> = match fields_ref.get("data").or_else(|| fields_ref.get("__data__")) {
                     Some(Value::Array(arr)) => arr
                         .borrow()
                         .iter()
@@ -8239,6 +8241,16 @@ impl Interpreter {
                     }
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(results))))
+            }
+            // Special handling for Hologram: |∀ decodes and returns the original value
+            (Value::Struct { name, fields }, "∀") if name == "Hologram" => {
+                let fields_ref = fields.borrow();
+                if let Some(val) = fields_ref.get("__value__").or_else(|| fields_ref.get("__original__")) {
+                    Ok(val.clone())
+                } else {
+                    drop(fields_ref);
+                    Ok(Value::Struct { name: name.clone(), fields: fields.clone() })
+                }
             }
             (Value::Array(arr), "∀")
             | (Value::Array(arr), "for_each")
@@ -14757,7 +14769,27 @@ impl Interpreter {
                                     "HyperLogLog.insert expects 1 argument",
                                 ));
                             }
-                            // Hash the value
+
+                            // First check if we're using hybrid mode (exact counting for small sets)
+                            let use_hll = match fields.borrow().get("__use_hll__") {
+                                Some(Value::Bool(b)) => *b,
+                                _ => false,
+                            };
+
+                            if !use_hll {
+                                // Use exact counting with small set
+                                let val_key = format!("{:?}", arg_values[0]);
+                                if let Some(Value::Map(small_set)) = fields.borrow().get("__small_set__") {
+                                    small_set.borrow_mut().insert(val_key, Value::Bool(true));
+                                    // Check if we should switch to HLL (threshold ~1000)
+                                    if small_set.borrow().len() > 1000 {
+                                        fields.borrow_mut().insert("__use_hll__".to_string(), Value::Bool(true));
+                                    }
+                                }
+                                return Ok(Value::Null);
+                            }
+
+                            // Hash the value for HLL mode
                             let hash = match &arg_values[0] {
                                 Value::String(s) => {
                                     use std::collections::hash_map::DefaultHasher;
@@ -14781,16 +14813,16 @@ impl Interpreter {
                                     hasher.finish()
                                 }
                             };
-                            // Get precision and registers
-                            let precision = match fields.borrow().get("_precision") {
+                            // Get precision and registers (note: field names have double underscores)
+                            let precision = match fields.borrow().get("__precision__") {
                                 Some(Value::Int(p)) => *p as u32,
-                                _ => 14,
+                                _ => 10, // Default precision
                             };
                             let idx = (hash >> (64 - precision)) as usize;
                             let remaining = hash << precision | (1 << (precision - 1));
                             let leading_zeros = remaining.leading_zeros() + 1;
                             // Update register
-                            if let Some(Value::Array(regs)) = fields.borrow().get("_registers") {
+                            if let Some(Value::Array(regs)) = fields.borrow().get("__registers__") {
                                 let mut regs_borrow = regs.borrow_mut();
                                 if idx < regs_borrow.len() {
                                     let current = match &regs_borrow[idx] {
@@ -14802,18 +14834,25 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            // Increment count for tracking
-                            let count_val = fields.borrow().get("_count").cloned();
-                            if let Some(Value::Int(c)) = count_val {
-                                fields
-                                    .borrow_mut()
-                                    .insert("_count".to_string(), Value::Int(c + 1));
-                            }
                             return Ok(Value::Null);
                         }
                         "count" => {
                             // hll.count() or hll|◊count - get approximate cardinality
-                            if let Some(Value::Array(regs)) = fields.borrow().get("_registers") {
+                            // First check if using exact small set mode
+                            let use_hll = match fields.borrow().get("__use_hll__") {
+                                Some(Value::Bool(b)) => *b,
+                                _ => false,
+                            };
+
+                            if !use_hll {
+                                // Return exact count from small set
+                                if let Some(Value::Map(small_set)) = fields.borrow().get("__small_set__") {
+                                    return Ok(Value::Int(small_set.borrow().len() as i64));
+                                }
+                            }
+
+                            // HLL mode: compute approximate cardinality
+                            if let Some(Value::Array(regs)) = fields.borrow().get("__registers__") {
                                 let regs_borrow = regs.borrow();
                                 let m = regs_borrow.len() as f64;
                                 // Harmonic mean of 2^(-register[i])
@@ -14829,7 +14868,7 @@ impl Interpreter {
                                         zeros += 1;
                                     }
                                 }
-                                // Alpha correction factor for m=16384
+                                // Alpha correction factor
                                 let alpha = 0.7213 / (1.0 + 1.079 / m);
                                 let estimate = alpha * m * m / sum;
                                 // Linear counting for small cardinalities
@@ -14855,13 +14894,13 @@ impl Interpreter {
                                     "BloomFilter.insert expects 1 argument",
                                 ));
                             }
-                            let size = match fields.borrow().get("_size") {
+                            let size = match fields.borrow().get("__size__") {
                                 Some(Value::Int(s)) => *s as usize,
                                 _ => 1024,
                             };
-                            let num_hashes = match fields.borrow().get("_num_hashes") {
+                            let num_hashes = match fields.borrow().get("__num_hashes__") {
                                 Some(Value::Int(n)) => *n as usize,
-                                _ => 3,
+                                _ => 7,
                             };
                             // Hash the value multiple times
                             let base_hash = match &arg_values[0] {
@@ -14882,7 +14921,7 @@ impl Interpreter {
                                 }
                             };
                             // Set bits using double hashing
-                            if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
+                            if let Some(Value::Array(bits)) = fields.borrow().get("__bits__") {
                                 let mut bits_borrow = bits.borrow_mut();
                                 for i in 0..num_hashes {
                                     let h = (base_hash
@@ -14899,13 +14938,13 @@ impl Interpreter {
                                     "BloomFilter.contains expects 1 argument",
                                 ));
                             }
-                            let size = match fields.borrow().get("_size") {
+                            let size = match fields.borrow().get("__size__") {
                                 Some(Value::Int(s)) => *s as usize,
                                 _ => 1024,
                             };
-                            let num_hashes = match fields.borrow().get("_num_hashes") {
+                            let num_hashes = match fields.borrow().get("__num_hashes__") {
                                 Some(Value::Int(n)) => *n as usize,
-                                _ => 3,
+                                _ => 7,
                             };
                             let base_hash = match &arg_values[0] {
                                 Value::String(s) => {
@@ -14925,7 +14964,7 @@ impl Interpreter {
                                 }
                             };
                             // Check all bits
-                            if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
+                            if let Some(Value::Array(bits)) = fields.borrow().get("__bits__") {
                                 let bits_borrow = bits.borrow();
                                 for i in 0..num_hashes {
                                     let h = (base_hash
@@ -14953,11 +14992,11 @@ impl Interpreter {
                                     "CountMinSketch.insert expects 1 argument",
                                 ));
                             }
-                            let depth = match fields.borrow().get("_depth") {
+                            let depth = match fields.borrow().get("__depth__") {
                                 Some(Value::Int(d)) => *d as usize,
-                                _ => 4,
+                                _ => 5,
                             };
-                            let width = match fields.borrow().get("_width") {
+                            let width = match fields.borrow().get("__width__") {
                                 Some(Value::Int(w)) => *w as usize,
                                 _ => 1024,
                             };
@@ -14979,7 +15018,7 @@ impl Interpreter {
                                 }
                             };
                             // Increment counters in each row
-                            if let Some(Value::Array(counters)) = fields.borrow().get("_counters") {
+                            if let Some(Value::Array(counters)) = fields.borrow().get("__counters__") {
                                 let counters_borrow = counters.borrow();
                                 for i in 0..depth {
                                     let h = (base_hash.wrapping_add(i as u64 * 0x517cc1b727220a95))
@@ -15000,11 +15039,11 @@ impl Interpreter {
                                     "CountMinSketch.frequency expects 1 argument",
                                 ));
                             }
-                            let depth = match fields.borrow().get("_depth") {
+                            let depth = match fields.borrow().get("__depth__") {
                                 Some(Value::Int(d)) => *d as usize,
-                                _ => 4,
+                                _ => 5,
                             };
-                            let width = match fields.borrow().get("_width") {
+                            let width = match fields.borrow().get("__width__") {
                                 Some(Value::Int(w)) => *w as usize,
                                 _ => 1024,
                             };
@@ -15027,7 +15066,7 @@ impl Interpreter {
                             };
                             // Get minimum counter value across all rows
                             let mut min_count = i64::MAX;
-                            if let Some(Value::Array(counters)) = fields.borrow().get("_counters") {
+                            if let Some(Value::Array(counters)) = fields.borrow().get("__counters__") {
                                 let counters_borrow = counters.borrow();
                                 for i in 0..depth {
                                     let h = (base_hash.wrapping_add(i as u64 * 0x517cc1b727220a95))
@@ -17002,8 +17041,22 @@ impl Interpreter {
                             // Check for sketch type methods
                             match (struct_name.as_str(), name.name.as_str()) {
                                 ("HyperLogLog", "count") => {
+                                    // First check if using exact small set mode
+                                    let use_hll = match fields.borrow().get("__use_hll__") {
+                                        Some(Value::Bool(b)) => *b,
+                                        _ => false,
+                                    };
+
+                                    if !use_hll {
+                                        // Return exact count from small set
+                                        if let Some(Value::Map(small_set)) = fields.borrow().get("__small_set__") {
+                                            return Ok(Value::Int(small_set.borrow().len() as i64));
+                                        }
+                                    }
+
+                                    // HLL mode: compute approximate cardinality
                                     if let Some(Value::Array(regs)) =
-                                        fields.borrow().get("_registers")
+                                        fields.borrow().get("__registers__")
                                     {
                                         let regs_borrow = regs.borrow();
                                         let m = regs_borrow.len() as f64;
@@ -17036,13 +17089,13 @@ impl Interpreter {
                                             "BloomFilter.contains expects 1 argument",
                                         ));
                                     }
-                                    let size = match fields.borrow().get("_size") {
+                                    let size = match fields.borrow().get("__size__") {
                                         Some(Value::Int(s)) => *s as usize,
                                         _ => 1024,
                                     };
-                                    let num_hashes = match fields.borrow().get("_num_hashes") {
+                                    let num_hashes = match fields.borrow().get("__num_hashes__") {
                                         Some(Value::Int(n)) => *n as usize,
-                                        _ => 3,
+                                        _ => 7,
                                     };
                                     let base_hash = match &arg_values[0] {
                                         Value::String(s) => {
@@ -17061,7 +17114,7 @@ impl Interpreter {
                                             hasher.finish()
                                         }
                                     };
-                                    if let Some(Value::Array(bits)) = fields.borrow().get("_bits") {
+                                    if let Some(Value::Array(bits)) = fields.borrow().get("__bits__") {
                                         let bits_borrow = bits.borrow();
                                         for i in 0..num_hashes {
                                             let h = (base_hash.wrapping_add(
@@ -17082,11 +17135,11 @@ impl Interpreter {
                                             "CountMinSketch.frequency expects 1 argument",
                                         ));
                                     }
-                                    let depth = match fields.borrow().get("_depth") {
+                                    let depth = match fields.borrow().get("__depth__") {
                                         Some(Value::Int(d)) => *d as usize,
                                         _ => 4,
                                     };
-                                    let width = match fields.borrow().get("_width") {
+                                    let width = match fields.borrow().get("__width__") {
                                         Some(Value::Int(w)) => *w as usize,
                                         _ => 1024,
                                     };
@@ -17109,7 +17162,7 @@ impl Interpreter {
                                     };
                                     let mut min_count = i64::MAX;
                                     if let Some(Value::Array(counters)) =
-                                        fields.borrow().get("_counters")
+                                        fields.borrow().get("__counters__")
                                     {
                                         let counters_borrow = counters.borrow();
                                         for i in 0..depth {
@@ -17171,9 +17224,18 @@ impl Interpreter {
                                 }
                                 ("Superposition", "observe") => {
                                     // Collapse to first value (deterministic for tests)
-                                    // Check _values field first
+                                    // Check __elements__ field first (stdlib create_superposition)
                                     if let Some(Value::Array(values)) =
-                                        fields.borrow().get("_values")
+                                        fields.borrow().get("__elements__")
+                                    {
+                                        let values_borrow = values.borrow();
+                                        if !values_borrow.is_empty() {
+                                            return Ok(values_borrow[0].clone());
+                                        }
+                                    }
+                                    // Check __values__ field (alternate uniform)
+                                    if let Some(Value::Array(values)) =
+                                        fields.borrow().get("__values__")
                                     {
                                         let values_borrow = values.borrow();
                                         if !values_borrow.is_empty() {
@@ -17191,275 +17253,63 @@ impl Interpreter {
                                     }
                                     return Ok(Value::Null);
                                 }
+                                // === Holographic Quantum ===
+                                ("Hologram", "∀") => {
+                                    // Extract the original value from Hologram
+                                    let fields_ref = fields.borrow();
+                                    if let Some(val) = fields_ref.get("__value__").or_else(|| fields_ref.get("__original__")) {
+                                        return Ok(val.clone());
+                                    }
+                                    drop(fields_ref);
+                                    return Ok(value.clone());
+                                }
                                 // === Quantum Gate Operations ===
+                                // All qubit operations delegate to stdlib (state registry format required)
                                 ("Qubit", "H") => {
-                                    // Hadamard gate: |0⟩ → (|0⟩ + |1⟩)/√2, |1⟩ → (|0⟩ - |1⟩)/√2
-                                    let alpha_real = match fields.borrow().get("_alpha_real") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 1.0,
-                                    };
-                                    let beta_real = match fields.borrow().get("_beta_real") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    let sqrt2_inv = 1.0 / std::f64::consts::SQRT_2;
-                                    // H|ψ⟩ = H(α|0⟩ + β|1⟩) = α(|0⟩+|1⟩)/√2 + β(|0⟩-|1⟩)/√2
-                                    let new_alpha = (alpha_real + beta_real) * sqrt2_inv;
-                                    let new_beta = (alpha_real - beta_real) * sqrt2_inv;
-
-                                    let mut new_fields = std::collections::HashMap::new();
-                                    new_fields
-                                        .insert("_alpha_real".to_string(), Value::Float(new_alpha));
-                                    new_fields.insert("_alpha_imag".to_string(), Value::Float(0.0));
-                                    new_fields
-                                        .insert("_beta_real".to_string(), Value::Float(new_beta));
-                                    new_fields.insert("_beta_imag".to_string(), Value::Float(0.0));
-                                    return Ok(Value::Struct {
-                                        name: "Qubit".to_string(),
-                                        fields: Rc::new(RefCell::new(new_fields)),
-                                    });
+                                    return self.call_function_by_name("H", vec![value.clone()]);
                                 }
                                 ("Qubit", "X") => {
-                                    // Pauli-X gate (bit flip): |0⟩ → |1⟩, |1⟩ → |0⟩
-                                    let alpha_real = match fields.borrow().get("_alpha_real") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 1.0,
-                                    };
-                                    let alpha_imag = match fields.borrow().get("_alpha_imag") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    let beta_real = match fields.borrow().get("_beta_real") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    let beta_imag = match fields.borrow().get("_beta_imag") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    // X swaps α and β
-                                    let mut new_fields = std::collections::HashMap::new();
-                                    new_fields
-                                        .insert("_alpha_real".to_string(), Value::Float(beta_real));
-                                    new_fields
-                                        .insert("_alpha_imag".to_string(), Value::Float(beta_imag));
-                                    new_fields
-                                        .insert("_beta_real".to_string(), Value::Float(alpha_real));
-                                    new_fields
-                                        .insert("_beta_imag".to_string(), Value::Float(alpha_imag));
-                                    return Ok(Value::Struct {
-                                        name: "Qubit".to_string(),
-                                        fields: Rc::new(RefCell::new(new_fields)),
-                                    });
+                                    return self.call_function_by_name("X", vec![value.clone()]);
+                                }
+                                ("Qubit", "Y") => {
+                                    return self.call_function_by_name("Y", vec![value.clone()]);
+                                }
+                                ("Qubit", "Z") => {
+                                    return self.call_function_by_name("Z", vec![value.clone()]);
                                 }
                                 ("Qubit", "measure") => {
-                                    // Measurement: collapse to |0⟩ or |1⟩ based on |α|² and |β|²
-                                    // For deterministic testing, we measure based on |β|² > |α|²
-                                    let alpha_real = match fields.borrow().get("_alpha_real") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 1.0,
-                                    };
-                                    let alpha_imag = match fields.borrow().get("_alpha_imag") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    let beta_real = match fields.borrow().get("_beta_real") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    let beta_imag = match fields.borrow().get("_beta_imag") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    let alpha_sq =
-                                        alpha_real * alpha_real + alpha_imag * alpha_imag;
-                                    let beta_sq = beta_real * beta_real + beta_imag * beta_imag;
-                                    // For determinism: if |α|² > |β|², return 0, else return 1
-                                    // When equal (like after Hadamard), default to 0 for consistency
-                                    let result = if alpha_sq >= beta_sq { 0 } else { 1 };
-                                    return Ok(Value::Int(result));
-                                }
-                                // === QRegister Operations ===
-                                ("QRegister", "H_all") => {
-                                    // Apply Hadamard to all qubits in the register
-                                    let size = match fields.borrow().get("_size") {
-                                        Some(Value::Int(n)) => *n as usize,
-                                        _ => 1,
-                                    };
-                                    let state: Vec<f64> = match fields.borrow().get("_state") {
-                                        Some(Value::Array(arr)) => arr
-                                            .borrow()
-                                            .iter()
-                                            .filter_map(|v| match v {
-                                                Value::Float(f) => Some(*f),
-                                                _ => None,
-                                            })
-                                            .collect(),
-                                        _ => vec![1.0],
-                                    };
-
-                                    // Apply H⊗H⊗...⊗H (n times) to the state vector
-                                    // For simplicity, create uniform superposition
-                                    let dim = 1 << size; // 2^n
-                                    let amp = 1.0 / (dim as f64).sqrt();
-                                    let new_state: Vec<Value> =
-                                        (0..dim).map(|_| Value::Float(amp)).collect();
-
-                                    let mut new_fields = HashMap::new();
-                                    new_fields.insert("_size".to_string(), Value::Int(size as i64));
-                                    new_fields.insert(
-                                        "_state".to_string(),
-                                        Value::Array(Rc::new(RefCell::new(new_state))),
-                                    );
-
-                                    return Ok(Value::Struct {
-                                        name: "QRegister".to_string(),
-                                        fields: Rc::new(RefCell::new(new_fields)),
-                                    });
-                                }
-                                ("QRegister", "measure_all") => {
-                                    // Measure all qubits, return array of Cbit values
-                                    let size = match fields.borrow().get("_size") {
-                                        Some(Value::Int(n)) => *n as usize,
-                                        _ => 1,
-                                    };
-                                    let state: Vec<f64> = match fields.borrow().get("_state") {
-                                        Some(Value::Array(arr)) => arr
-                                            .borrow()
-                                            .iter()
-                                            .filter_map(|v| match v {
-                                                Value::Float(f) => Some(*f),
-                                                _ => None,
-                                            })
-                                            .collect(),
-                                        _ => vec![1.0],
-                                    };
-
-                                    // Find the basis state with maximum amplitude (deterministic)
-                                    let mut max_idx = 0;
-                                    let mut max_amp_sq = 0.0;
-                                    for (i, amp) in state.iter().enumerate() {
-                                        let amp_sq = amp * amp;
-                                        if amp_sq > max_amp_sq {
-                                            max_amp_sq = amp_sq;
-                                            max_idx = i;
+                                    let cbit = self.call_function_by_name("measure", vec![value.clone()])?;
+                                    // Extract integer value from Cbit struct for pipe compatibility
+                                    if let Value::Struct { name: cbit_name, fields: cbit_fields } = cbit {
+                                        if cbit_name == "Cbit" {
+                                            if let Some(Value::Bool(b)) = cbit_fields.borrow().get("__value__") {
+                                                return Ok(Value::Int(if *b { 1 } else { 0 }));
+                                            }
                                         }
                                     }
-
-                                    // Convert index to binary representation as integer values (0 or 1)
-                                    let mut results: Vec<Value> = Vec::new();
-                                    for bit in 0..size {
-                                        let cbit_value = (max_idx >> (size - 1 - bit)) & 1;
-                                        // Return plain integer (0 or 1) for easy printing
-                                        results.push(Value::Int(cbit_value as i64));
-                                    }
-
-                                    return Ok(Value::Array(Rc::new(RefCell::new(results))));
+                                    return Ok(Value::Int(0));
+                                }
+                                // === QRegister Operations ===
+                                // All QRegister operations delegate to stdlib
+                                ("QRegister", "H_all") => {
+                                    return self.call_function_by_name("H_all", vec![value.clone()]);
+                                }
+                                ("QRegister", "measure_all") => {
+                                    return self.call_function_by_name("measure_all", vec![value.clone()]);
                                 }
                                 _ => {}
                             }
                         }
-                        // Handle rotation gates with arguments
-                        if (name.name == "Rx" || name.name == "Ry" || name.name == "Rz") {
-                            if let Value::Struct {
-                                name: sname,
-                                fields,
-                            } = &value
-                            {
+                        // Handle rotation gates - delegate to stdlib
+                        if name.name == "Rx" || name.name == "Ry" || name.name == "Rz" {
+                            if let Value::Struct { name: sname, .. } = &value {
                                 if sname == "Qubit" {
-                                    // Get the rotation angle from arguments
                                     let angle = if !arg_values.is_empty() {
-                                        match &arg_values[0] {
-                                            Value::Float(f) => *f,
-                                            Value::Int(n) => *n as f64,
-                                            _ => 0.0,
-                                        }
+                                        arg_values[0].clone()
                                     } else {
-                                        0.0
+                                        Value::Float(0.0)
                                     };
-
-                                    let alpha_real = match fields.borrow().get("_alpha_real") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 1.0,
-                                    };
-                                    let alpha_imag = match fields.borrow().get("_alpha_imag") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    let beta_real = match fields.borrow().get("_beta_real") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-                                    let beta_imag = match fields.borrow().get("_beta_imag") {
-                                        Some(Value::Float(f)) => *f,
-                                        _ => 0.0,
-                                    };
-
-                                    let (
-                                        new_alpha_real,
-                                        new_alpha_imag,
-                                        new_beta_real,
-                                        new_beta_imag,
-                                    ) = match name.name.as_str() {
-                                        "Rx" => {
-                                            // Rx(θ) = [[cos(θ/2), -i*sin(θ/2)], [-i*sin(θ/2), cos(θ/2)]]
-                                            let cos_half = (angle / 2.0).cos();
-                                            let sin_half = (angle / 2.0).sin();
-                                            // new_α = cos(θ/2)*α - i*sin(θ/2)*β
-                                            // new_β = -i*sin(θ/2)*α + cos(θ/2)*β
-                                            let nar = cos_half * alpha_real + sin_half * beta_imag;
-                                            let nai = cos_half * alpha_imag - sin_half * beta_real;
-                                            let nbr = sin_half * alpha_imag + cos_half * beta_real;
-                                            let nbi = -sin_half * alpha_real + cos_half * beta_imag;
-                                            (nar, nai, nbr, nbi)
-                                        }
-                                        "Ry" => {
-                                            // Ry(θ) = [[cos(θ/2), -sin(θ/2)], [sin(θ/2), cos(θ/2)]]
-                                            let cos_half = (angle / 2.0).cos();
-                                            let sin_half = (angle / 2.0).sin();
-                                            let nar = cos_half * alpha_real - sin_half * beta_real;
-                                            let nai = cos_half * alpha_imag - sin_half * beta_imag;
-                                            let nbr = sin_half * alpha_real + cos_half * beta_real;
-                                            let nbi = sin_half * alpha_imag + cos_half * beta_imag;
-                                            (nar, nai, nbr, nbi)
-                                        }
-                                        "Rz" => {
-                                            // Rz(θ) = [[e^(-iθ/2), 0], [0, e^(iθ/2)]]
-                                            let cos_half = (angle / 2.0).cos();
-                                            let sin_half = (angle / 2.0).sin();
-                                            // new_α = e^(-iθ/2) * α = (cos - i*sin) * α
-                                            let nar = cos_half * alpha_real + sin_half * alpha_imag;
-                                            let nai =
-                                                -sin_half * alpha_real + cos_half * alpha_imag;
-                                            // new_β = e^(iθ/2) * β = (cos + i*sin) * β
-                                            let nbr = cos_half * beta_real - sin_half * beta_imag;
-                                            let nbi = sin_half * beta_real + cos_half * beta_imag;
-                                            (nar, nai, nbr, nbi)
-                                        }
-                                        _ => (alpha_real, alpha_imag, beta_real, beta_imag),
-                                    };
-
-                                    let mut new_fields = std::collections::HashMap::new();
-                                    new_fields.insert(
-                                        "_alpha_real".to_string(),
-                                        Value::Float(new_alpha_real),
-                                    );
-                                    new_fields.insert(
-                                        "_alpha_imag".to_string(),
-                                        Value::Float(new_alpha_imag),
-                                    );
-                                    new_fields.insert(
-                                        "_beta_real".to_string(),
-                                        Value::Float(new_beta_real),
-                                    );
-                                    new_fields.insert(
-                                        "_beta_imag".to_string(),
-                                        Value::Float(new_beta_imag),
-                                    );
-                                    return Ok(Value::Struct {
-                                        name: "Qubit".to_string(),
-                                        fields: Rc::new(RefCell::new(new_fields)),
-                                    });
+                                    return self.call_function_by_name(&name.name, vec![value.clone(), angle]);
                                 }
                             }
                         }
@@ -17665,8 +17515,10 @@ impl Interpreter {
                             {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let data =
-                                        fields_ref.get("data").cloned().unwrap_or(Value::Null);
+                                    let data = fields_ref
+                                        .get("data")
+                                        .cloned()
+                                        .unwrap_or(Value::Null);
                                     drop(fields_ref);
                                     // Get new shape from arguments
                                     let new_shape = if !arg_values.is_empty() {
@@ -17698,8 +17550,10 @@ impl Interpreter {
                             {
                                 if sname == "Tensor" {
                                     let fields_ref = fields.borrow();
-                                    let data =
-                                        fields_ref.get("data").cloned().unwrap_or(Value::Null);
+                                    let data = fields_ref
+                                        .get("data")
+                                        .cloned()
+                                        .unwrap_or(Value::Null);
                                     let total_size: i64 = match &data {
                                         Value::Array(arr) => arr.borrow().len() as i64,
                                         _ => 0,
@@ -17760,7 +17614,8 @@ impl Interpreter {
                                 let original_value: i64 = match &value {
                                     Value::Int(v) => *v,
                                     Value::Struct { fields, .. } => {
-                                        match fields.borrow().get("value") {
+                                        let fields_ref = fields.borrow();
+                                        match fields_ref.get("__value__") {
                                             Some(Value::Int(v)) => *v,
                                             _ => 0,
                                         }
@@ -17827,9 +17682,25 @@ impl Interpreter {
                                     fields,
                                 } if sname == "QHState" => {
                                     let fields_ref = fields.borrow();
-                                    let inner =
-                                        fields_ref.get("value").cloned().unwrap_or(Value::Null);
-                                    // If superposition, pick first value (simulated collapse)
+                                    // Check for superposition (__values__) first, then regular value (__value__)
+                                    if let Some(values) = fields_ref.get("__values__") {
+                                        // Superposition: pick first value (simulated collapse)
+                                        if let Value::Array(arr) = values {
+                                            return Ok(arr
+                                                .borrow()
+                                                .first()
+                                                .cloned()
+                                                .unwrap_or(Value::Null));
+                                        }
+                                        return Ok(values.clone());
+                                    }
+                                    // Try regular value
+                                    let inner = fields_ref
+                                        .get("__value__")
+                                        .or_else(|| fields_ref.get("value"))
+                                        .cloned()
+                                        .unwrap_or(Value::Null);
+                                    // If value is an array (legacy superposition), pick first
                                     match inner {
                                         Value::Array(arr) => {
                                             return Ok(arr
@@ -17873,6 +17744,26 @@ impl Interpreter {
                                 }
                                 _ => return Ok(value.clone()),
                             }
+                        }
+
+                        // |∀ - extract value from Hologram (universal quantification / decode)
+                        if name.name == "∀" {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
+                                if sname == "Hologram" {
+                                    let fields_ref = fields.borrow();
+                                    if let Some(val) = fields_ref.get("__value__").or_else(|| fields_ref.get("__original__")) {
+                                        return Ok(val.clone());
+                                    }
+                                    drop(fields_ref);
+                                    return Ok(value.clone());
+                                }
+                            }
+                            // For non-Hologram, just return the value
+                            return Ok(value.clone());
                         }
 
                         // |interfere(other) - quantum interference
@@ -17951,17 +17842,20 @@ impl Interpreter {
                         // |teleport(alice, bob) - quantum teleportation
                         if name.name == "teleport" {
                             if arg_values.len() >= 2 {
-                                // Simulate teleportation - return the original value wrapped
+                                // Simulate teleportation - extract inner value from QHState
                                 let inner = match &value {
-                                    Value::Struct { fields, .. } => fields
-                                        .borrow()
-                                        .get("value")
-                                        .cloned()
-                                        .unwrap_or(value.clone()),
+                                    Value::Struct { fields, .. } => {
+                                        let fields_ref = fields.borrow();
+                                        fields_ref
+                                            .get("__value__")
+                                            .or_else(|| fields_ref.get("value"))
+                                            .cloned()
+                                            .unwrap_or(Value::Null)
+                                    }
                                     _ => value.clone(),
                                 };
                                 let mut fields = std::collections::HashMap::new();
-                                fields.insert("value".to_string(), inner);
+                                fields.insert("__value__".to_string(), inner);
                                 fields.insert("_teleported".to_string(), Value::Bool(true));
                                 return Ok(Value::Struct {
                                     name: "QHState".to_string(),
@@ -18077,7 +17971,7 @@ impl Interpreter {
                             match &value {
                                 Value::Struct { fields, .. } => {
                                     let fields_ref = fields.borrow();
-                                    if let Some(v) = fields_ref.get("value") {
+                                    if let Some(v) = fields_ref.get("__value__").or_else(|| fields_ref.get("value")) {
                                         return Ok(v.clone());
                                     }
                                     drop(fields_ref);
@@ -18091,9 +17985,9 @@ impl Interpreter {
                         if name.name == "is_pure" {
                             match &value {
                                 Value::Struct { fields, .. } => {
-                                    if let Some(Value::Bool(is_pure)) =
-                                        fields.borrow().get("_is_pure")
-                                    {
+                                    let fields_ref = fields.borrow();
+                                    // Check both _is_pure and __is_pure__ for compatibility
+                                    if let Some(Value::Bool(is_pure)) = fields_ref.get("__is_pure__") {
                                         return Ok(Value::Bool(*is_pure));
                                     }
                                     return Ok(Value::Bool(true)); // Default to pure
@@ -18855,7 +18749,19 @@ impl Interpreter {
             // ==========================================
             PipeOp::All(pred) => {
                 // |∀{p} - check if ALL elements satisfy predicate
-                match value {
+                // For Hologram: |∀ decodes and returns the original value
+                if let Value::Struct { name, fields } = &value {
+                    if name == "Hologram" {
+                        // Extract the original value from the Hologram
+                        let fields_ref = fields.borrow();
+                        if let Some(val) = fields_ref.get("__value__").or_else(|| fields_ref.get("__original__")) {
+                            return Ok(val.clone());
+                        }
+                        drop(fields_ref);
+                        return Ok(value.clone());
+                    }
+                }
+                match &value {
                     Value::Array(arr) => {
                         for elem in arr.borrow().iter() {
                             self.environment
@@ -19125,15 +19031,15 @@ impl Interpreter {
                     // Handle single Hologram/Struct - extract inner value
                     Value::Struct { name, fields } => {
                         let fields_ref = fields.borrow();
-                        // For Hologram, extract value
+                        // For Hologram, extract value (check __value__, _original, and value for compatibility)
                         if name == "Hologram" || name == "EntangledHologram" {
-                            if let Some(v) = fields_ref.get("value") {
+                            if let Some(v) = fields_ref.get("__value__").or_else(|| fields_ref.get("__original__")).or_else(|| fields_ref.get("value")) {
                                 return Ok(v.clone());
                             }
                         }
-                        // For QHState, extract value
+                        // For QHState, extract value (try both "__value__" and "value" for compatibility)
                         if name == "QHState" {
-                            if let Some(v) = fields_ref.get("value") {
+                            if let Some(v) = fields_ref.get("__value__").or_else(|| fields_ref.get("value")) {
                                 return Ok(v.clone());
                             }
                         }
@@ -19147,7 +19053,8 @@ impl Interpreter {
                                         ..
                                     } = first
                                     {
-                                        if let Some(v) = inner_fields.borrow().get("value") {
+                                        let inner_ref = inner_fields.borrow();
+                                        if let Some(v) = inner_ref.get("__value__").or_else(|| inner_ref.get("_original")).or_else(|| inner_ref.get("value")) {
                                             return Ok(v.clone());
                                         }
                                     }
@@ -20577,31 +20484,6 @@ impl Interpreter {
                     return Ok(Value::Array(Rc::new(RefCell::new(evaluated_values))));
                 }
 
-                // For other patterns, we need more complex expansion
-                // For now, bind the values as an array to the variable name
-                let prev_env = self.environment.clone();
-                self.environment = Rc::new(RefCell::new(Environment::with_parent(prev_env.clone())));
-
-                // Bind __pipe if we have a pipe context
-                if let Some(pipe_val) = &self.pipe_context {
-                    self.environment.borrow_mut().define("__pipe".to_string(), pipe_val.clone());
-                }
-
-                // Bind the repetition variable as an array
-                self.environment.borrow_mut().define(
-                    rep.var_name.clone(),
-                    Value::Array(Rc::new(RefCell::new(evaluated_values.clone())))
-                );
-
-                // Also bind each value individually for simple single-element access
-                if evaluated_values.len() == 1 {
-                    self.environment.borrow_mut().define(
-                        rep.var_name.clone(),
-                        evaluated_values[0].clone()
-                    );
-                }
-
-                // Try to parse and evaluate the body
                 // Extract body tokens between { }
                 if let Some(brace_start) = body.find('{') {
                     let body_start = brace_start + 1;
@@ -20623,11 +20505,113 @@ impl Interpreter {
                     }
 
                     if body_end > body_start {
-                        let body_tokens = &body[body_start..body_end].trim();
+                        let body_tokens = body[body_start..body_end].trim().to_string();
                         crate::sigil_debug!("DEBUG expand_user_macro repetition: body_tokens='{}'", body_tokens);
 
+                        // Check if body has a repetition pattern: LParen ... Ident("var") ... RParen (Plus|Star|Question)
+                        // This handles patterns like: 0 $(+ $x)+ or 1 $(* $x)+
+                        if let Some(lparen_pos) = body_tokens.find("LParen") {
+                            // Find the matching RParen followed by Plus/Star/Question
+                            let after_lparen = &body_tokens[lparen_pos + 6..];
+                            if let Some(rparen_pos) = after_lparen.find("RParen") {
+                                let after_rparen = after_lparen[rparen_pos + 6..].trim_start();
+                                // Check if followed by Plus, Star, or Question
+                                if after_rparen.starts_with("Plus") || after_rparen.starts_with("Star") || after_rparen.starts_with("Question") {
+                                    // Found body repetition pattern!
+                                    // Extract parts: prefix, repetition content, suffix
+                                    let prefix = &body_tokens[..lparen_pos].trim();
+                                    let rep_content = &after_lparen[..rparen_pos].trim();
+
+                                    // Determine where the suffix starts (after Plus/Star/Question)
+                                    let suffix_start = if after_rparen.starts_with("Plus") {
+                                        4
+                                    } else if after_rparen.starts_with("Star") {
+                                        4
+                                    } else {
+                                        8 // "Question"
+                                    };
+                                    let suffix = if after_rparen.len() > suffix_start {
+                                        after_rparen[suffix_start..].trim()
+                                    } else {
+                                        ""
+                                    };
+
+                                    crate::sigil_debug!("DEBUG body repetition: prefix='{}', rep_content='{}', suffix='{}'", prefix, rep_content, suffix);
+
+                                    // Build expanded body by replacing Ident("var") with each value
+                                    let var_pattern = format!("Ident(\"{}\")", rep.var_name);
+                                    let mut expanded = prefix.to_string();
+
+                                    for (i, val) in evaluated_values.iter().enumerate() {
+                                        if i > 0 || !prefix.is_empty() {
+                                            // Space between prefix and first expansion
+                                        }
+                                        // Replace Ident("var") with the actual value
+                                        let val_token = match val {
+                                            Value::Int(n) => format!("IntLit(\"{}\")", n),
+                                            Value::Float(f) => format!("FloatLit(\"{}\")", f),
+                                            Value::String(s) => format!("StringLit(\"{}\")", s),
+                                            Value::Bool(true) => "Ident(\"yay\")".to_string(),
+                                            Value::Bool(false) => "Ident(\"nay\")".to_string(),
+                                            _ => format!("IntLit(\"0\")"),
+                                        };
+                                        let expanded_rep = rep_content.replace(&var_pattern, &val_token);
+                                        expanded.push(' ');
+                                        expanded.push_str(&expanded_rep);
+                                    }
+
+                                    if !suffix.is_empty() {
+                                        expanded.push(' ');
+                                        expanded.push_str(suffix);
+                                    }
+
+                                    crate::sigil_debug!("DEBUG body repetition: expanded='{}'", expanded);
+
+                                    // Convert to source and evaluate
+                                    let source = self.detokenize(&expanded);
+                                    crate::sigil_debug!("DEBUG body repetition: detokenized source='{}'", source);
+
+                                    let mut parser = crate::Parser::new(&source);
+                                    match parser.parse_expr() {
+                                        Ok(expr) => {
+                                            let result = self.evaluate(&expr);
+                                            return result;
+                                        }
+                                        Err(e) => {
+                                            crate::sigil_debug!("DEBUG body repetition: parse failed: {:?}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // If not a body repetition, fall back to original behavior
+                        // For other patterns, we need more complex expansion
+                        // For now, bind the values as an array to the variable name
+                        let prev_env = self.environment.clone();
+                        self.environment = Rc::new(RefCell::new(Environment::with_parent(prev_env.clone())));
+
+                        // Bind __pipe if we have a pipe context
+                        if let Some(pipe_val) = &self.pipe_context {
+                            self.environment.borrow_mut().define("__pipe".to_string(), pipe_val.clone());
+                        }
+
+                        // Bind the repetition variable as an array
+                        self.environment.borrow_mut().define(
+                            rep.var_name.clone(),
+                            Value::Array(Rc::new(RefCell::new(evaluated_values.clone())))
+                        );
+
+                        // Also bind each value individually for simple single-element access
+                        if evaluated_values.len() == 1 {
+                            self.environment.borrow_mut().define(
+                                rep.var_name.clone(),
+                                evaluated_values[0].clone()
+                            );
+                        }
+
                         // Convert to source and evaluate
-                        let source = self.detokenize(body_tokens);
+                        let source = self.detokenize(&body_tokens);
                         crate::sigil_debug!("DEBUG expand_user_macro repetition: detokenized source='{}'", source);
 
                         let mut parser = crate::Parser::new(&source);
@@ -20641,10 +20625,10 @@ impl Interpreter {
                                 crate::sigil_debug!("DEBUG expand_user_macro repetition: parse failed: {:?}", e);
                             }
                         }
+
+                        self.environment = prev_env;
                     }
                 }
-
-                self.environment = prev_env;
 
                 // Fall back to returning the array of values
                 return Ok(Value::Array(Rc::new(RefCell::new(evaluated_values))));
@@ -20656,11 +20640,12 @@ impl Interpreter {
         // Pattern like: {LParen LBrace Ident("field") Colon Ident("var_name") Colon Ident("expr") ... FatArrow ...}
         // For pattern `field: $var_name:expr`, we need to map field names to variable names
         // Also handle `$n:expr` positional patterns which tokenize as Ident("n") Colon Ident("expr")
-        let mut macro_params: Vec<String> = Vec::new();
+        // Store (param_name, frag_type) pairs so we know how to handle each parameter
+        let mut macro_params: Vec<(String, String)> = Vec::new();
         let mut field_to_var: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
-        // Known macro parameter types
-        let macro_types = ["expr", "ident", "ty", "literal", "block", "stmt", "pat", "tt"];
+        // Known macro parameter types - must include all fragment specifiers
+        let macro_types = ["expr", "ident", "ty", "literal", "block", "stmt", "pat", "tt", "item", "meta", "path", "vis", "lifetime"];
 
         if let Some(arrow_pos) = rules.find("FatArrow") {
             let pattern = &rules[..arrow_pos];
@@ -20707,17 +20692,17 @@ impl Interpreter {
                                             if macro_types.contains(&type_name) {
                                                 // Field: $var:type pattern
                                                 field_to_var.insert(name.to_string(), second_name.to_string());
-                                                if !macro_params.contains(&second_name.to_string()) {
-                                                    macro_params.push(second_name.to_string());
+                                                if !macro_params.iter().any(|(n, _)| n == second_name) {
+                                                    macro_params.push((second_name.to_string(), type_name.to_string()));
                                                 }
                                             }
                                         }
                                     }
                                 } else if macro_types.contains(&second_name) {
                                     // This is a positional $name:type pattern (two parts)
-                                    // name is the variable, second_name is the type
-                                    if !macro_params.contains(&name.to_string()) {
-                                        macro_params.push(name.to_string());
+                                    // name is the variable, second_name is the type (fragment specifier)
+                                    if !macro_params.iter().any(|(n, _)| n == name) {
+                                                                macro_params.push((name.to_string(), second_name.to_string()));
                                     }
                                 }
                             }
@@ -20729,13 +20714,27 @@ impl Interpreter {
         }
         // Parse actual argument values from the invocation tokens
         // tokens might be "5" or "min : 0, max : 100" etc.
+        // Fragment types that should be captured as strings without evaluation:
+        // - ty: type names are for introspection
+        // - literal: already a value, not an expression
+        // - path: module paths as strings
+        // - vis: visibility specifiers as strings
+        // - lifetime: lifetime names as strings
+        // - pat: pattern syntax for match arms
+        // - stmt: statement text for metaprogramming
+        // - tt: token trees as strings
+        // - item: item definitions as strings
+        // - meta: attribute content as strings
+        // Note: ident is NOT here because identifiers may need to be used for code execution (function calls)
+        // Note: expr and block are also NOT here because they may contain code to evaluate
+        let string_fragment_types = ["ty", "literal", "path", "vis", "lifetime", "pat", "stmt", "tt", "item", "meta"];
         let mut named_args: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
         let mut positional_args: Vec<Value> = Vec::new();
 
         if !tokens.is_empty() {
             let tokens = tokens.trim();
             // Check if it's named arguments (contains ":" pattern like "name : value")
-            if tokens.contains(':') {
+            if tokens.contains(':') && !tokens.contains("::") {
                 // Parse named arguments like "min : 0, max : 100"
                 // Split by commas at depth 0 only (handle nested parens)
                 let args = self.split_args_at_depth_zero(tokens);
@@ -20744,33 +20743,84 @@ impl Interpreter {
                     if let Some(colon_pos) = arg.find(':') {
                         let field_name = arg[..colon_pos].trim();
                         let value_str = arg[colon_pos + 1..].trim();
-                        // Try parsing as source code first (for invocation like "range_i32(1, 4096)")
-                        let mut parser = crate::Parser::new(value_str);
-                        let parse_result = parser.parse_expr();
-                        let expr = match parse_result {
-                            Ok(expr) => expr,
-                            Err(_) => {
-                                // Fall back to tokenized body parsing
-                                match self.parse_tokenized_body(value_str) {
-                                    Ok(expr) => expr,
-                                    Err(_) => continue,
+
+                        // Find the fragment type for this parameter
+                        let param_key = field_to_var.get(field_name)
+                            .cloned()
+                            .unwrap_or_else(|| field_name.to_string());
+                        let frag_type = macro_params.iter()
+                            .find(|(n, _)| n == &param_key)
+                            .map(|(_, t)| t.as_str())
+                            .unwrap_or("expr");
+
+                        // For string fragment types (ty, ident, literal, path, vis, lifetime, pat), capture as string
+                        if string_fragment_types.contains(&frag_type) {
+                            named_args.insert(param_key, Value::String(Rc::new(value_str.to_string())));
+                        } else {
+                            // For expr, block, stmt, tt - evaluate as expression
+                            let mut parser = crate::Parser::new(value_str);
+                            let parse_result = parser.parse_expr();
+                            let expr = match parse_result {
+                                Ok(expr) => expr,
+                                Err(_) => {
+                                    // Fall back to tokenized body parsing
+                                    match self.parse_tokenized_body(value_str) {
+                                        Ok(expr) => expr,
+                                        Err(_) => continue,
+                                    }
                                 }
+                            };
+                            if let Ok(val) = self.evaluate(&expr) {
+                                named_args.insert(param_key, val);
                             }
-                        };
-                        if let Ok(val) = self.evaluate(&expr) {
-                            // Use the variable name if there's a mapping, otherwise use field name
-                            let key = field_to_var.get(field_name)
-                                .cloned()
-                                .unwrap_or_else(|| field_name.to_string());
-                            named_args.insert(key, val);
                         }
                     }
                 }
             } else {
-                // Simple case: single positional value
-                if let Ok(expr) = self.parse_tokenized_body(tokens) {
-                    if let Ok(val) = self.evaluate(&expr) {
-                        positional_args.push(val);
+                // Simple case: positional values (comma-separated or single)
+                let arg_tokens: Vec<String> = if tokens.contains(',') && !tokens.contains("::") {
+                    self.split_args_at_depth_zero(tokens)
+                } else {
+                    vec![tokens.to_string()]
+                };
+
+                for (i, arg_token) in arg_tokens.iter().enumerate() {
+                    let arg_token = arg_token.trim();
+                    if arg_token.is_empty() {
+                        continue;
+                    }
+
+                    // Find the fragment type for this positional parameter
+                    let frag_type = macro_params.get(i)
+                        .map(|(_, t)| t.as_str())
+                        .unwrap_or("expr");
+
+                    // For string fragment types (ty, ident, literal, path, vis, lifetime, pat), capture as string
+                    if string_fragment_types.contains(&frag_type) {
+                        // Detokenize first if in tokenized form, otherwise use raw
+                        let raw_value = if arg_token.starts_with("Lifetime(") {
+                            // Extract lifetime name from Lifetime("name") format
+                            // Should return 'name (with leading quote)
+                            if let Some(close) = arg_token.find(')') {
+                                let inner = &arg_token[9..close];
+                                let name = inner.trim().trim_matches('"');
+                                format!("'{}", name)
+                            } else {
+                                arg_token.to_string()
+                            }
+                        } else if arg_token.contains("Ident(") || arg_token.contains("IntLit(") {
+                            self.detokenize(arg_token)
+                        } else {
+                            arg_token.to_string()
+                        };
+                        positional_args.push(Value::String(Rc::new(raw_value)));
+                    } else {
+                        // For expr, block, stmt, tt - evaluate as expression
+                        if let Ok(expr) = self.parse_tokenized_body(arg_token) {
+                            if let Ok(val) = self.evaluate(&expr) {
+                                positional_args.push(val);
+                            }
+                        }
                     }
                 }
             }
@@ -20809,35 +20859,45 @@ impl Interpreter {
 
                     // Substitute macro parameters with actual values
                     // Replace Ident("n") with the actual argument value
-                    for (i, param_name) in macro_params.iter().enumerate() {
+                    for (i, (param_name, frag_type)) in macro_params.iter().enumerate() {
                         let pattern = format!("Ident(\"{}\")", param_name);
                         // First try named args, then positional
                         let arg_val = named_args.get(param_name).or_else(|| positional_args.get(i));
                         if let Some(arg_val) = arg_val {
                             // Convert the value back to tokenized form
-                            let replacement = match arg_val {
-                                Value::Int(n) => format!("IntLit(\"{}\")", n),
-                                Value::Float(f) => format!("FloatLit(\"{}\")", f),
-                                Value::String(s) => format!("StringLit(\"{}\")", s),
-                                Value::Bool(true) => "Ident(\"yay\")".to_string(),
-                                Value::Bool(false) => "Ident(\"nay\")".to_string(),
-                                Value::Function(func) => {
-                                    // If the function has a name, use it
-                                    if let Some(ref name) = func.name {
-                                        format!("Ident(\"{}\")", name)
-                                    } else {
-                                        // Anonymous function - keep the parameter name as is
+                            // For string fragment types (ty, ident, literal, path, vis, lifetime, pat),
+                            // the value is already a String - substitute as StringLit so it evaluates to the string
+                            let replacement = if string_fragment_types.contains(&frag_type.as_str()) {
+                                if let Value::String(s) = arg_val {
+                                    format!("StringLit(\"{}\")", s)
+                                } else {
+                                    pattern.clone()
+                                }
+                            } else {
+                                match arg_val {
+                                    Value::Int(n) => format!("IntLit(\"{}\")", n),
+                                    Value::Float(f) => format!("FloatLit(\"{}\")", f),
+                                    Value::String(s) => format!("StringLit(\"{}\")", s),
+                                    Value::Bool(true) => "Ident(\"yay\")".to_string(),
+                                    Value::Bool(false) => "Ident(\"nay\")".to_string(),
+                                    Value::Function(func) => {
+                                        // If the function has a name, use it
+                                        if let Some(ref name) = func.name {
+                                            format!("Ident(\"{}\")", name)
+                                        } else {
+                                            // Anonymous function - keep the parameter name as is
+                                            pattern.clone()
+                                        }
+                                    }
+                                    Value::BuiltIn(builtin) => format!("Ident(\"{}\")", builtin.name),
+                                    Value::Variant { enum_name, variant_name, .. } => {
+                                        format!("Ident(\"{}\") MiddleDot Ident(\"{}\")", enum_name, variant_name)
+                                    }
+                                    _ => {
+                                        // For unknown types, don't substitute - leave the param name
+                                        crate::sigil_debug!("DEBUG macro substitution: unknown value type for '{}': {:?}", param_name, arg_val);
                                         pattern.clone()
                                     }
-                                }
-                                Value::BuiltIn(builtin) => format!("Ident(\"{}\")", builtin.name),
-                                Value::Variant { enum_name, variant_name, .. } => {
-                                    format!("Ident(\"{}\") MiddleDot Ident(\"{}\")", enum_name, variant_name)
-                                }
-                                _ => {
-                                    // For unknown types, don't substitute - leave the param name
-                                    crate::sigil_debug!("DEBUG macro substitution: unknown value type for '{}': {:?}", param_name, arg_val);
-                                    pattern.clone()
                                 }
                             };
                             body_tokens = body_tokens.replace(&pattern, &replacement);
@@ -20860,7 +20920,7 @@ impl Interpreter {
 
                     // Bind all macro parameters in the environment
                     // This is especially important for values that can't be substituted (like closures)
-                    for (i, param_name) in macro_params.iter().enumerate() {
+                    for (i, (param_name, _frag_type)) in macro_params.iter().enumerate() {
                         let arg_val = named_args.get(param_name).or_else(|| positional_args.get(i));
                         if let Some(arg_val) = arg_val {
                             self.environment.borrow_mut().define(param_name.clone(), arg_val.clone());
@@ -20968,6 +21028,27 @@ impl Interpreter {
         // If it's a plain identifier (no special token patterns), return as-is
         if !tokens.contains('(') && !tokens.is_empty()
             && tokens.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return tokens.to_string();
+        }
+
+        // Check if this looks like raw Sigil source code rather than tokenized form
+        // Tokenized form has patterns like "Ident(", "IntLit(", "LBrace", "RBrace"
+        // Raw source has operators and symbols like +, -, *, {, }, etc. directly
+        let has_tokenized_patterns = tokens.contains("Ident(")
+            || tokens.contains("IntLit(")
+            || tokens.contains("FloatLit(")
+            || tokens.contains("StringLit(")
+            || tokens.contains("LBrace ")
+            || tokens.contains("RBrace ")
+            || tokens.contains("LParen ")
+            || tokens.contains("RParen ")
+            || tokens.contains("Plus ")
+            || tokens.contains("Minus ")
+            || tokens.contains("Star ")
+            || tokens.contains("FatArrow");
+
+        // If it doesn't have tokenized patterns, it's raw source - return as-is
+        if !has_tokenized_patterns {
             return tokens.to_string();
         }
 
