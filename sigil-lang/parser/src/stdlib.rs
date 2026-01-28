@@ -7874,6 +7874,19 @@ fn register_concurrency(interp: &mut Interpreter) {
         }
     });
 
+    // --- HTTP Convenience Aliases ---
+    // These provide snake_case alternatives to the module syntax
+
+    // http_get(url) - Alias for Http·get
+    define(interp, "http_get", Some(1), |interp, args| {
+        interp.call_function_by_name("Http·get", args.to_vec())
+    });
+
+    // http_post(url, body) - Alias for Http·post
+    define(interp, "http_post", Some(2), |interp, args| {
+        interp.call_function_by_name("Http·post", args.to_vec())
+    });
+
     // --- WebSocket ---
 
     // WebSocket::connect - Connect to a WebSocket server

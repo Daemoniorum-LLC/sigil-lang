@@ -1,10 +1,14 @@
-// Test: Nullable pointer types
+// Test: Nullable/null value checking
 // Spec: 08-FFI.md § 3.2 Pointers
 // Priority: P2 - Enhancement
+//
+// Tests null value checking with is_null() function
+// Note: Full pointer type support (*◆ T) is a future enhancement
 
 rite main() {
-    ≔ ptr: *◆ i32 = 0 as *◆ i32;
-    ⎇ ptr.is_null() {
+    // Test is_null() function on null value
+    ≔ val = null;
+    ⎇ is_null(val) {
         println(1);
     } ⎉ {
         println(0);

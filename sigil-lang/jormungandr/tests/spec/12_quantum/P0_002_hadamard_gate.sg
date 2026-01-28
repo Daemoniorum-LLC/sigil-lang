@@ -1,10 +1,20 @@
-// Test: Hadamard gate
+// Test: Hadamard gate creates superposition
 // Spec: 12-QUANTUM.md § 3.1 Single-Qubit Gates
 // Priority: P0 - Bootstrap Critical
+//
+// After H gate, measurement is 50/50 probabilistic (0 or 1)
+// Test verifies the gate and measurement work, not the specific outcome
 
 rite main() {
     ≔ q: linear Qubit = Qubit·zero();
     ≔ q2: linear Qubit = q|H;  // Hadamard creates superposition
-    ≔ result: Cbit = q2|measure;
-    println(result);  // 0 or 1 with equal probability
+    ≔ result = q2|measure;     // Returns 0 or 1
+
+    // Result should be 0 or 1 (probabilistic)
+    // Verify it's a valid measurement outcome
+    ⎇ result == 0 ∨ result == 1 {
+        println("OK");
+    } ⎉ {
+        println("FAIL");
+    }
 }
