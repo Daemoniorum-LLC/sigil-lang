@@ -1,0 +1,122 @@
+// 06_data_pipeline.sg - Functional data processing
+//
+// Run: sigil run examples/06_data_pipeline.sg
+
+Σ Transaction {
+    id: i32,
+    amount: f64,
+    category: String,
+    timestamp: i64,
+}
+
+⊢ Transaction {
+    λ new(id: i32, amount: f64, category: String, timestamp: i64) → This {
+        Transaction { id, amount, category, timestamp }
+    }
+}
+
+// Sample data generator
+λ sample_transactions() → [Transaction] {
+    [
+        Transaction·new(1, 150.00, "groceries".to_string(), 1706000000),
+        Transaction·new(2, 50.00, "transport".to_string(), 1706001000),
+        Transaction·new(3, 200.00, "groceries".to_string(), 1706002000),
+        Transaction·new(4, 75.00, "entertainment".to_string(), 1706003000),
+        Transaction·new(5, 300.00, "utilities".to_string(), 1706004000),
+        Transaction·new(6, 25.00, "transport".to_string(), 1706005000),
+        Transaction·new(7, 180.00, "groceries".to_string(), 1706006000),
+        Transaction·new(8, 45.00, "entertainment".to_string(), 1706007000),
+    ]
+}
+
+// Pipeline operations
+λ filter_by_category(transactions: &[Transaction], category: &str) → [Transaction] {
+    transactions
+        .iter()
+        .filter(|t| t.category == category)
+        .cloned()
+        .collect()
+}
+
+λ total_amount(transactions: &[Transaction]) → f64 {
+    transactions
+        .iter()
+        .map(|t| t.amount)
+        .fold(0.0, |acc, x| acc + x)
+}
+
+λ average_amount(transactions: &[Transaction]) → f64 {
+    ≔ total = total_amount(transactions);
+    ≔ count = transactions.len() as f64;
+    if count > 0.0 { total / count } else { 0.0 }
+}
+
+λ top_transactions(transactions: &[Transaction], n: usize) → [Transaction] {
+    ≔ sorted! = transactions.to_vec();
+    sorted.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap());
+    sorted.into_iter().take(n).collect()
+}
+
+// Aggregation by category
+Σ CategorySummary {
+    category: String,
+    count: i32,
+    total: f64,
+    average: f64,
+}
+
+λ summarize_by_category(transactions: &[Transaction]) → [CategorySummary] {
+    ≔ categories! = HashMap·new();
+
+    // Group by category
+    ∀ t ∈ transactions {
+        ≔ entry = categories.entry(t.category.clone()).or_insert((0, 0.0));
+        entry.0 = entry.0 + 1;
+        entry.1 = entry.1 + t.amount;
+    }
+
+    // Convert to summaries
+    categories
+        .iter()
+        .map(|(cat, (count, total))| CategorySummary {
+            category: cat.clone(),
+            count: *count,
+            total: *total,
+            average: *total / (*count as f64),
+        })
+        .collect()
+}
+
+λ main() {
+    ≔ transactions = sample_transactions();
+
+    println("=== Transaction Analysis ===\n");
+
+    // Overall statistics
+    println("Total transactions: " + str(transactions.len()));
+    println("Total amount: $" + str(total_amount(&transactions)));
+    println("Average amount: $" + str(average_amount(&transactions)));
+
+    // Filter by category
+    println("\n--- Groceries ---");
+    ≔ groceries = filter_by_category(&transactions, "groceries");
+    println("Count: " + str(groceries.len()));
+    println("Total: $" + str(total_amount(&groceries)));
+
+    // Top transactions
+    println("\n--- Top 3 Transactions ---");
+    ≔ top = top_transactions(&transactions, 3);
+    ∀ t ∈ top {
+        println("  #" + str(t.id) + ": $" + str(t.amount) + " (" + t.category + ")");
+    }
+
+    // Category summary
+    println("\n--- By Category ---");
+    ≔ summaries = summarize_by_category(&transactions);
+    ∀ s ∈ summaries {
+        println(s.category + ":");
+        println("  Transactions: " + str(s.count));
+        println("  Total: $" + str(s.total));
+        println("  Average: $" + str(s.average));
+    }
+}
