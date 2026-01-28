@@ -4897,53 +4897,42 @@ impl Interpreter {
                 // Tensor product (⊗) for qubits
                 BinOp::TensorProd if n1 == "Qubit" && n2 == "Qubit" => {
                     // |ψ₁⟩ ⊗ |ψ₂⟩ creates a 2-qubit register
-                    // |ψ₁⟩ = α₁|0⟩ + β₁|1⟩, |ψ₂⟩ = α₂|0⟩ + β₂|1⟩
-                    // Result: α₁α₂|00⟩ + α₁β₂|01⟩ + β₁α₂|10⟩ + β₁β₂|11⟩
-                    let alpha1 = match f1.borrow().get("_alpha_real") {
-                        Some(Value::Float(f)) => *f,
-                        _ => 1.0,
-                    };
-                    let beta1 = match f1.borrow().get("_beta_real") {
-                        Some(Value::Float(f)) => *f,
-                        _ => 0.0,
-                    };
-                    let alpha2 = match f2.borrow().get("_alpha_real") {
-                        Some(Value::Float(f)) => *f,
-                        _ => 1.0,
-                    };
-                    let beta2 = match f2.borrow().get("_beta_real") {
-                        Some(Value::Float(f)) => *f,
-                        _ => 0.0,
+                    // Get qubit states and merge them
+                    let get_state = |f: &Rc<RefCell<HashMap<String, Value>>>| -> (u64, usize) {
+                        let fields = f.borrow();
+                        let state_id = match fields.get("__state_id__") {
+                            Some(Value::Int(v)) => *v as u64,
+                            _ => 0,
+                        };
+                        let idx = match fields.get("__qubit_idx__") {
+                            Some(Value::Int(v)) => *v as usize,
+                            _ => 0,
+                        };
+                        (state_id, idx)
                     };
 
-                    // State amplitudes for 2-qubit system: |00⟩, |01⟩, |10⟩, |11⟩
-                    let amp00 = alpha1 * alpha2;
-                    let amp01 = alpha1 * beta2;
-                    let amp10 = beta1 * alpha2;
-                    let amp11 = beta1 * beta2;
+                    let (state_id1, _idx1) = get_state(&f1);
+                    let (state_id2, _idx2) = get_state(&f2);
 
-                    let mut reg_fields = HashMap::new();
-                    reg_fields.insert("_size".to_string(), Value::Int(2));
-                    reg_fields.insert(
-                        "_state".to_string(),
-                        Value::Array(Rc::new(RefCell::new(vec![
-                            Value::Float(amp00),
-                            Value::Float(amp01),
-                            Value::Float(amp10),
-                            Value::Float(amp11),
-                        ]))),
-                    );
-                    // Set __valid__ for linear type tracking
-                    reg_fields.insert("__valid__".to_string(), Value::Bool(true));
-                    // Set __state_id__ for quantum state tracking
-                    reg_fields.insert("__state_id__".to_string(), Value::Int(0));
-                    // Set __n_qubits__ for size tracking
-                    reg_fields.insert("__n_qubits__".to_string(), Value::Int(2));
+                    // Use stdlib to merge states and create register
+                    use crate::stdlib::{get_quantum_state, store_quantum_state, create_qregister_value};
 
-                    Ok(Value::Struct {
-                        name: "QRegister".to_string(),
-                        fields: Rc::new(RefCell::new(reg_fields)),
-                    })
+                    let state1 = get_quantum_state(state_id1);
+                    let state2 = get_quantum_state(state_id2);
+
+                    let n_qubits = match (&state1, &state2) {
+                        (Some(s1), Some(s2)) => {
+                            // Compute tensor product of states
+                            let combined = s1.tensor_product(s2);
+                            let total = combined.num_qubits();
+                            let new_id = store_quantum_state(combined);
+                            return Ok(create_qregister_value(new_id, total));
+                        }
+                        _ => 2, // fallback to 2 qubits if states not found
+                    };
+
+                    // Fallback: create a simple 2-qubit register
+                    Ok(create_qregister_value(0, n_qubits))
                 }
                 _ => Err(RuntimeError::new("Invalid struct operation")),
             },

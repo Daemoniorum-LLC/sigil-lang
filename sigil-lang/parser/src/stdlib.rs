@@ -286,6 +286,10 @@ fn register_core(interp: &mut Interpreter) {
     interp.globals.borrow_mut().define("f64·NEG_INFINITY".to_string(), Value::Float(f64::NEG_INFINITY));
     interp.globals.borrow_mut().define("f64·NAN".to_string(), Value::Float(f64::NAN));
 
+    // Boolean aliases (Sigil-style)
+    interp.globals.borrow_mut().define("yea".to_string(), Value::Bool(true));
+    interp.globals.borrow_mut().define("nay".to_string(), Value::Bool(false));
+
     // SeekFrom enum variants for file seeking (register as variant constructors)
     interp.variant_constructors.insert("SeekFrom·Start".to_string(), ("SeekFrom".to_string(), "Start".to_string(), 1));
     interp.variant_constructors.insert("SeekFrom·End".to_string(), ("SeekFrom".to_string(), "End".to_string(), 1));
@@ -13043,7 +13047,7 @@ fn register_pattern(interp: &mut Interpreter) {
                 ..
             } => {
                 return Ok(Value::String(Rc::new(format!(
-                    "{}::{}",
+                    "{}·{}",
                     enum_name, variant_name
                 ))))
             }
@@ -31869,7 +31873,7 @@ impl Complex {
 /// Quantum state: 2^n complex amplitudes for n qubits
 /// State |ψ⟩ = Σ αᵢ|i⟩ where i is binary representation
 #[derive(Clone, Debug)]
-struct QuantumState {
+pub struct QuantumState {
     /// Complex amplitudes, length 2^n
     amplitudes: Vec<Complex>,
     /// Number of qubits
@@ -31928,6 +31932,16 @@ impl QuantumState {
             n_qubits: new_n,
             valid_qubits: valid,
         }
+    }
+
+    /// Alias for tensor (tensor product)
+    pub fn tensor_product(&self, other: &Self) -> Self {
+        self.tensor(other)
+    }
+
+    /// Get number of qubits
+    pub fn num_qubits(&self) -> usize {
+        self.n_qubits
     }
 
     /// Apply 2x2 unitary matrix to single qubit at given index
@@ -32076,7 +32090,7 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-fn store_quantum_state(state: QuantumState) -> u64 {
+pub fn store_quantum_state(state: QuantumState) -> u64 {
     let id = crate::holographic::random_u64();
     QUANTUM_STATES.with(|states| {
         states.borrow_mut().insert(id, state);
@@ -32084,7 +32098,7 @@ fn store_quantum_state(state: QuantumState) -> u64 {
     id
 }
 
-fn get_quantum_state(id: u64) -> Option<QuantumState> {
+pub fn get_quantum_state(id: u64) -> Option<QuantumState> {
     QUANTUM_STATES.with(|states| {
         states.borrow().get(&id).cloned()
     })
@@ -32153,7 +32167,7 @@ fn get_qubit_handle(qubit: &Value) -> Result<(u64, usize), RuntimeError> {
 }
 
 /// Invalidate a qubit (mark as consumed for linear type checking)
-fn invalidate_qubit(qubit: &Value) -> Result<(), RuntimeError> {
+pub fn invalidate_qubit(qubit: &Value) -> Result<(), RuntimeError> {
     match qubit {
         Value::Struct { name, fields } if name == "Qubit" => {
             let mut fields = fields.borrow_mut();
@@ -32278,7 +32292,7 @@ fn apply_single_qubit_gate(qubit: &Value, gate: [[Complex; 2]; 2]) -> Result<Val
 
 /// Merge two qubits from different states into a single joint state
 /// Returns (new_state_id, control_idx, target_idx)
-fn merge_qubit_states(q1: &Value, q2: &Value) -> Result<(u64, usize, usize), RuntimeError> {
+pub fn merge_qubit_states(q1: &Value, q2: &Value) -> Result<(u64, usize, usize), RuntimeError> {
     let (state_id1, idx1) = get_qubit_handle(q1)?;
     let (state_id2, idx2) = get_qubit_handle(q2)?;
 
@@ -32305,6 +32319,18 @@ fn merge_qubit_states(q1: &Value, q2: &Value) -> Result<(u64, usize, usize), Run
         let new_idx2 = state1.n_qubits + idx2;
 
         Ok((new_id, new_idx1, new_idx2))
+    }
+}
+
+/// Create a QRegister value with the given state ID and qubit count
+pub fn create_qregister_value(state_id: u64, n_qubits: usize) -> Value {
+    let mut fields = HashMap::new();
+    fields.insert("__state_id__".to_string(), Value::Int(state_id as i64));
+    fields.insert("__n_qubits__".to_string(), Value::Int(n_qubits as i64));
+    fields.insert("__valid__".to_string(), Value::Bool(true));
+    Value::Struct {
+        name: "QRegister".to_string(),
+        fields: Rc::new(RefCell::new(fields)),
     }
 }
 
@@ -32479,18 +32505,6 @@ fn register_quantum(interp: &mut Interpreter) {
     // =========================================================================
     // QRegister - Quantum Register (proper joint state vector)
     // =========================================================================
-
-    // Helper: Create a QRegister struct with state_id and qubit count
-    fn create_qregister_value(state_id: u64, n_qubits: usize) -> Value {
-        let mut fields = HashMap::new();
-        fields.insert("__state_id__".to_string(), Value::Int(state_id as i64));
-        fields.insert("__n_qubits__".to_string(), Value::Int(n_qubits as i64));
-        fields.insert("__valid__".to_string(), Value::Bool(true));
-        Value::Struct {
-            name: "QRegister".to_string(),
-            fields: Rc::new(RefCell::new(fields)),
-        }
-    }
 
     // QRegister·zeros() - Create register of N qubits in |00...0⟩ state
     define(interp, "QRegister·zeros", Some(0), |_, _| {
@@ -33097,6 +33111,10 @@ fn register_quantum(interp: &mut Interpreter) {
     define(interp, "len", Some(1), |_, args| {
         match &args[0] {
             Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
+            Value::String(s) => Ok(Value::Int(s.chars().count() as i64)),
+            Value::Tuple(t) => Ok(Value::Int(t.len() as i64)),
+            Value::Map(m) => Ok(Value::Int(m.borrow().len() as i64)),
+            Value::Set(s) => Ok(Value::Int(s.borrow().len() as i64)),
             Value::Struct { name, fields } if name == "QRegister" => {
                 let fields = fields.borrow();
                 match fields.get("__n_qubits__") {
@@ -33104,7 +33122,7 @@ fn register_quantum(interp: &mut Interpreter) {
                     _ => Err(RuntimeError::new("invalid QRegister")),
                 }
             }
-            _ => Err(RuntimeError::new("len expects Array or QRegister")),
+            _ => Err(RuntimeError::new("len expects Array, String, Tuple, Map, Set, or QRegister")),
         }
     });
 
@@ -33899,13 +33917,7 @@ fn register_quantum(interp: &mut Interpreter) {
         };
 
         // Return tuple
-        let mut tuple_fields = HashMap::new();
-        tuple_fields.insert("0".to_string(), a_ent);
-        tuple_fields.insert("1".to_string(), b_ent);
-        Ok(Value::Struct {
-            name: "Tuple".to_string(),
-            fields: Rc::new(RefCell::new(tuple_fields)),
-        })
+        Ok(Value::Tuple(Rc::new(vec![a_ent, b_ent])))
     });
 
     // create_epr_pair() - Create EPR (Einstein-Podolsky-Rosen) entangled pair
@@ -33929,13 +33941,7 @@ fn register_quantum(interp: &mut Interpreter) {
             fields: Rc::new(RefCell::new(bob_fields)),
         };
 
-        let mut tuple_fields = HashMap::new();
-        tuple_fields.insert("0".to_string(), alice);
-        tuple_fields.insert("1".to_string(), bob);
-        Ok(Value::Struct {
-            name: "Tuple".to_string(),
-            fields: Rc::new(RefCell::new(tuple_fields)),
-        })
+        Ok(Value::Tuple(Rc::new(vec![alice, bob])))
     });
 
     // bell_state() - Create Bell state (maximally entangled pair)
@@ -34658,6 +34664,16 @@ fn register_neural(interp: &mut Interpreter) {
     // flatten(tensor) - Flatten to 1D
     define(interp, "flatten", Some(1), |_, args| {
         match &args[0] {
+            Value::Array(arr) => {
+                let mut flattened = Vec::new();
+                for item in arr.borrow().iter() {
+                    match item {
+                        Value::Array(inner) => flattened.extend(inner.borrow().clone()),
+                        other => flattened.push(other.clone()),
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(flattened))))
+            }
             Value::Struct { name, fields } if name == "Tensor" => {
                 let f = fields.borrow();
                 let data = match f.get("__data__") {
@@ -34669,7 +34685,7 @@ fn register_neural(interp: &mut Interpreter) {
                 drop(f);
                 Ok(create_tensor(data, vec![len], requires_grad))
             }
-            _ => Err(RuntimeError::new("flatten expects Tensor")),
+            _ => Err(RuntimeError::new("flatten expects Array or Tensor")),
         }
     });
 
