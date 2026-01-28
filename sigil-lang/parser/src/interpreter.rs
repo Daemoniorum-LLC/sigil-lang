@@ -565,8 +565,8 @@ fn tensor_scalar_from_fields(fields: &HashMap<String, Value>) -> Option<f64> {
             _ => {}
         }
     }
-    // Fall back to data[0] (public name is standard)
-    if let Some(Value::Array(arr)) = fields.get("data").or_else(|| fields.get("__data__")) {
+    // Fall back to data[0]
+    if let Some(Value::Array(arr)) = fields.get("data") {
         if let Some(first) = arr.borrow().first() {
             match first {
                 Value::Float(f) => return Some(*f),
@@ -580,8 +580,7 @@ fn tensor_scalar_from_fields(fields: &HashMap<String, Value>) -> Option<f64> {
 
 /// Extract data as Vec<f64> from tensor fields.
 fn tensor_data_from_fields(fields: &HashMap<String, Value>) -> Option<Vec<f64>> {
-    // Public field name is standard
-    if let Some(Value::Array(arr)) = fields.get("data").or_else(|| fields.get("__data__")) {
+    if let Some(Value::Array(arr)) = fields.get("data") {
         Some(
             arr.borrow()
                 .iter()
@@ -7404,8 +7403,8 @@ impl Interpreter {
             (Value::Struct { name, fields }, Value::Int(i)) if name == "Tensor" => {
                 let fields_ref = fields.borrow();
 
-                // Get shape and data (public field names are the standard)
-                let shape: Vec<i64> = match fields_ref.get("shape").or_else(|| fields_ref.get("__shape__")) {
+                // Get shape and data
+                let shape: Vec<i64> = match fields_ref.get("shape") {
                     Some(Value::Array(arr)) => arr
                         .borrow()
                         .iter()
@@ -7416,7 +7415,7 @@ impl Interpreter {
                         .collect(),
                     _ => vec![],
                 };
-                let data: Vec<f64> = match fields_ref.get("data").or_else(|| fields_ref.get("__data__")) {
+                let data: Vec<f64> = match fields_ref.get("data") {
                     Some(Value::Array(arr)) => arr
                         .borrow()
                         .iter()
