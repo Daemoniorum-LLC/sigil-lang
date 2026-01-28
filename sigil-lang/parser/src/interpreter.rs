@@ -5815,6 +5815,11 @@ impl Interpreter {
         let prev_env = self.environment.clone();
         self.environment = env;
 
+        // Save and reset linear state for this function scope
+        // Linear type tracking should be per-function, not global
+        let prev_linear_consumed = std::mem::take(&mut *self.linear_state.consumed.borrow_mut());
+        let prev_linear_vars = std::mem::take(&mut *self.linear_state.vars.borrow_mut());
+
         let result = match self.evaluate(&func.body) {
             Ok(val) => Ok(val),
             Err(e) if e.message == "return" => {
@@ -5823,6 +5828,10 @@ impl Interpreter {
             }
             Err(e) => Err(e),
         };
+
+        // Restore previous linear state
+        *self.linear_state.consumed.borrow_mut() = prev_linear_consumed;
+        *self.linear_state.vars.borrow_mut() = prev_linear_vars;
 
         self.environment = prev_env;
         result
@@ -14005,17 +14014,20 @@ impl Interpreter {
                         // |teleport(alice, bob) - quantum teleportation
                         if name.name == "teleport" {
                             if arg_values.len() >= 2 {
-                                // Simulate teleportation - return the original value wrapped
+                                // Simulate teleportation - return the original value
+                                // Extract __value__ from the QHState if present
                                 let inner = match &value {
-                                    Value::Struct { fields, .. } => fields
-                                        .borrow()
-                                        .get("value")
-                                        .cloned()
-                                        .unwrap_or(value.clone()),
+                                    Value::Struct { fields, .. } => {
+                                        let f = fields.borrow();
+                                        f.get("__value__")
+                                            .or_else(|| f.get("value"))
+                                            .cloned()
+                                            .unwrap_or(value.clone())
+                                    }
                                     _ => value.clone(),
                                 };
                                 let mut fields = std::collections::HashMap::new();
-                                fields.insert("value".to_string(), inner);
+                                fields.insert("__value__".to_string(), inner);
                                 fields.insert("_teleported".to_string(), Value::Bool(true));
                                 return Ok(Value::Struct {
                                     name: "QHState".to_string(),

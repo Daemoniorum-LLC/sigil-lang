@@ -1,6 +1,6 @@
-// Test: AMQP (RabbitMQ)
+// Test: AMQP consumer with acknowledgments
 // Spec: 15-PROTOCOLS.md § 8 AMQP Support
-// Priority: P0 - Bootstrap Critical
+// Priority: P1 - Important Feature
 //
 // REAL IMPLEMENTATION: This test uses the pure Sigil AMQP 0-9-1 wire protocol.
 // Requires: ./infrastructure/infra.sh up
@@ -10,9 +10,17 @@
 invoke protocol·amqp·{Connection, Channel, Queue};
 
 async λ main() {
+    // Connect and setup
     ≔ conn = Connection·connect("sigil:sigil@localhost:5672")|await~;
     ≔ ch = conn.create_channel()|await~;
-    ≔ queue = ch.declare_queue("sigil-test")|await~;
-    ch.publish("", "sigil-test", "hello amqp from sigil")|await;
+    ≔ queue = ch.declare_queue("sigil-consumer-test")|await~;
+
+    // Publish a message first
+    ch.publish("", "sigil-consumer-test", "hello from publisher")|await;
+
+    // Start consuming (pass queue name directly as string)
+    ≔ consumer = ch.consume("sigil-consumer-test", "test-consumer")|await~;
+
+    // Consumer setup worked
     println(1);
 }

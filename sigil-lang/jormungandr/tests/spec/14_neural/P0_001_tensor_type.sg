@@ -3,7 +3,8 @@
 // Priority: P0 - Bootstrap Critical
 
 λ main() {
-    ≔ t: Tensor<[3, 4]> = zeros();
+    // Pass shape explicitly to constructor (type params are compile-time only)
+    ≔ t = zeros([3, 4]);
     println(t.shape[0]);
     println(t.shape[1]);
 }

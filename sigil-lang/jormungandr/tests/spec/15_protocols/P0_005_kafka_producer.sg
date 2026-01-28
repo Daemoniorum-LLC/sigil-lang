@@ -1,12 +1,16 @@
 // Test: Kafka producer
 // Spec: 15-PROTOCOLS.md § 7 Kafka Support
 // Priority: P0 - Bootstrap Critical
+//
+// REAL IMPLEMENTATION: This test uses the pure Sigil Kafka wire protocol.
+// Requires: ./infrastructure/infra.sh up
+// If Kafka is not running, this test will fail with a connection error.
 
 invoke protocol·kafka·{Producer, Topic};
 
 async λ main() {
     ≔ producer = Producer·connect("localhost:9092")|await~;
-    ≔ topic = Topic·new("events");
-    producer.send(topic, "key", "value")|await;
+    ≔ topic = Topic·new("sigil-test");
+    producer.send(topic, "key", "hello kafka from sigil")|await;
     println(1);
 }
