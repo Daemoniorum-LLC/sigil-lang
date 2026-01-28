@@ -25,7 +25,18 @@ as implemented by RabbitMQ. The implementation uses only Sigil's TCP socket prim
 | Publisher confirms | P2 | Future |
 | TLS/SASL | P2 | Future |
 
-### 1.3 Implementation Status (2026-01-28)
+### 1.3 Known Issues
+
+**Method Call Syntax**: Static calls like `Channel·consume(ch, queue, tag)` may fail with
+type errors. Use method call syntax instead: `ch.consume(queue, tag)`. This is a known
+interpreter quirk where the static call dispatcher doesn't correctly pass the first argument
+in all cases. The method call syntax works reliably.
+
+**Queue Struct Passing**: When passing a Queue struct to `consume()`, use the queue name
+string directly instead: `ch.consume("queue-name", "consumer-tag")`. Passing the Queue
+struct returned from `declare_queue()` may cause type errors.
+
+### 1.4 Implementation Status (2026-01-28)
 
 **Implemented:**
 - Full connection handshake (Start/Tune/Open)
@@ -976,11 +987,26 @@ mod internal·Methods {
 3. Acknowledgments (ack, reject, nack)
 4. Consumer cancellation
 
-### Phase 5: Hardening (P1)
+### Phase 5: Hardening (P2)
 1. Heartbeat support
 2. Frame chunking for large messages
 3. Connection recovery
 4. Proper property encoding (all 14 basic properties)
+
+### Phase 6: Edge Cases (P2 - Future)
+
+The following edge cases are deferred for future hardening work:
+
+| Edge Case | Priority | Description |
+|-----------|----------|-------------|
+| Multiple deliveries | P2 | Consume multiple messages in sequence |
+| Requeue behavior | P2 | Verify reject with requeue=true returns message to queue |
+| Consumer cancellation mid-stream | P2 | Graceful shutdown while messages in flight |
+| Large messages | P2 | Messages exceeding frame_max requiring chunking |
+| Connection timeout | P2 | Graceful handling of broker connection failures |
+| Broker failover | P2 | Reconnection logic when broker becomes unavailable |
+| Channel errors | P2 | Handle channel-level exceptions without closing connection |
+| QoS/prefetch | P2 | Implement Basic.Qos for flow control |
 
 ---
 

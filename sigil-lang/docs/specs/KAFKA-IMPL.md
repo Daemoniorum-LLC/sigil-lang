@@ -20,7 +20,14 @@ dependencies.
 | Transactions | P2 | Future |
 | SASL authentication | P2 | Future |
 
-### 1.3 Implementation Status (2026-01-28)
+### 1.3 Known Issues
+
+**Method Call Syntax**: Static calls like `Consumer·subscribe(consumer, topics)` may fail with
+type errors. Use method call syntax instead: `consumer.subscribe(topics)`. This is a known
+interpreter quirk where the static call dispatcher doesn't correctly pass the first argument
+in all cases. The method call syntax works reliably.
+
+### 1.4 Implementation Status (2026-01-28)
 
 **Implemented:**
 - TCP connection with length-prefix framing
@@ -658,11 +665,26 @@ mod internal·Codec {
 2. Offset tracking
 3. Poll loop implementation
 
-### Phase 4: Hardening (P1)
+### Phase 4: Hardening (P2)
 1. Connection pooling
 2. Retry logic
 3. Compression support
 4. Proper CRC32-C implementation
+
+### Phase 5: Edge Cases (P2 - Future)
+
+The following edge cases are deferred for future hardening work:
+
+| Edge Case | Priority | Description |
+|-----------|----------|-------------|
+| Empty topic | P2 | Poll returns empty array when no messages available |
+| Multiple message batch | P2 | Produce and consume multiple messages in single batch |
+| Large messages | P2 | Messages exceeding default buffer size (64KB) |
+| Connection timeout | P2 | Graceful handling of broker connection failures |
+| Broker failover | P2 | Reconnection logic when broker becomes unavailable |
+| Partition reassignment | P2 | Handle partition leadership changes mid-stream |
+| Invalid topic | P2 | Graceful error handling for non-existent topics |
+| Consumer group coordination | P2 | JoinGroup, SyncGroup, Heartbeat for group consumption |
 
 ---
 
