@@ -59,7 +59,7 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Build
-        working-directory: parser
+        working-directory: sigil-lang/parser
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
             cargo install cross --git https://github.com/cross-rs/cross
@@ -72,16 +72,16 @@ jobs:
       - name: Package (Unix)
         if: matrix.os != 'windows-latest'
         run: |
-          cd parser/target/${{ matrix.target }}/release
+          cd sigil-lang/parser/target/${{ matrix.target }}/release
           tar -czvf ${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
-          mv ${{ matrix.asset_name }}.tar.gz ../../../../
+          mv ${{ matrix.asset_name }}.tar.gz ../../../../../
 
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          cd parser/target/${{ matrix.target }}/release
+          cd sigil-lang/parser/target/${{ matrix.target }}/release
           7z a ${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
-          mv ${{ matrix.asset_name }}.zip ../../../../
+          mv ${{ matrix.asset_name }}.zip ../../../../../
         shell: bash
 
       - name: Upload artifact

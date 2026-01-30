@@ -2,30 +2,22 @@
 
 A polysynthetic programming language with evidentiality types, morpheme operators, and native performance through LLVM. Includes comprehensive **Agent Infrastructure** for building intelligent, self-aware systems.
 
-## v0.4.0 - Native Syntax & Runtime
+## v0.4.0 — The Native Tongue Release
 
 This release completes the transition to native Sigil syntax:
 
-| Symbol | Purpose | Example |
-|--------|---------|---------|
-| `λ` | Function definition | `λ main() { ... }` |
-| `≔` | Variable binding | `≔ x = 42` |
-| `·` | Method/module access | `Vec·new()` |
-| `Σ` | Summation/reduction | `Σ(values)` |
-| `∀` | Universal iteration | `∀ item ∈ list { ... }` |
-| `&Δ` | Mutable reference | `λ modify(x: &Δi32)` |
-
-### What's New
-
-- **Native Runtime** - Zero C dependency, pure syscall-based runtime
-- **SGDOC** - Evidential documentation with epistemic markers (`//!`, `//~`, `//?`, `//◊`, `//‽`)
-- **SIMD Backend** - AVX-512 F32x16 operations
-- **CUDA Backend** - GPU compute via `--cuda` flag
-- **Tooling** - LSP server, formatter, linter, package manager (Tome)
-- **Protocols** - HTTP and WebSocket clients
-- **Agent Infrastructure**:
-  - **Aegis** - Security & safety framework
-  - **Anima** - Soul & consciousness modeling
+- **Native symbol syntax** — Full symbolic vocabulary (`λ` fn, `≔` let, `Σ` struct, `⊢` impl, `☉` pub, `·` paths)
+- **WASM playground** — Browser-based Sigil execution environment
+- **Evidentiality linting** — Correctness checking validates proper marker usage for data sources
+- **LLVM FFI support** — Direct foreign function interface from Sigil to native code
+- **Runtime enhancements** — Networking syscalls, threading primitives, async I/O with epoll
+- **SIMD Backend** — AVX-512 F32x16 operations
+- **CUDA Backend** — GPU compute via `--cuda` flag
+- LSP server, formatter, linter, package manager
+- HTTP and WebSocket clients
+- Agent infrastructure libraries:
+  - **Aegis** - Security & safety
+  - **Anima** - State modeling
   - **Commune** - Multi-agent communication
   - **Covenant** - Collaborative protocols
   - **Daemon** - Background processes
