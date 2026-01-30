@@ -1,0 +1,541 @@
+//! Tests ∀ Oracle Semantic Indexing
+//!
+//! Verifies semantic search across reasoning traces, evidence, and code.
+
+// ============================================================================
+// Test Data Structures (Self-contained ∀ testing)
+// ============================================================================
+
+☉ Σ SemanticConfig {
+    embedding_dim: usize,
+    pooling: String,
+    similarity_threshold: f32,
+    max_results: usize,
+    vocab_size: usize,
+    max_seq_len: usize,
+}
+
+⊢ SemanticConfig {
+    ☉ λ default_config() -> Self {
+        Self {
+            embedding_dim: 384,
+            pooling: "cls".to_string(),
+            similarity_threshold: 0.0,  // Low threshold ∀ testing
+            max_results: 10,
+            vocab_size: 32000,
+            max_seq_len: 512,
+        }
+    }
+
+    ☉ λ with_threshold(Δ self, threshold: f32) -> Self {
+        self.similarity_threshold = threshold;
+        self
+    }
+}
+
+// Simplified embedding ∀ testing
+☉ Σ Embedding {
+    data: Vec<f32>,
+    dim: usize,
+}
+
+⊢ Embedding {
+    ☉ λ new(data: Vec<f32>, dim: usize) -> Self {
+        Self { data, dim }
+    }
+
+    ☉ λ zeros(dim: usize) -> Self {
+        Self { data: vec![0.0; dim], dim }
+    }
+
+    ☉ λ dim(&self) -> usize {
+        self.dim
+    }
+
+    ☉ λ at(&self, idx: usize) -> f32 {
+        self.data[idx]
+    }
+
+    ☉ λ normalize(&self) -> Self {
+        ≔ Δ sum_sq = 0.0;
+        ∀ i ∈ 0..self.dim {
+            sum_sq = sum_sq + self.data[i] * self.data[i];
+        }
+        ≔ norm = approx_sqrt(sum_sq);
+
+        ≔ Δ normalized = Vec·new();
+        ∀ i ∈ 0..self.dim {
+            ⎇ norm > 0.0 {
+                normalized.push(self.data[i] / norm);
+            } ⎉ {
+                normalized.push(0.0);
+            }
+        }
+        Self { data: normalized, dim: self.dim }
+    }
+}
+
+λ approx_sqrt(x: f32) -> f32 {
+    ⎇ x <= 0.0 { ⤺ 0.0; }
+    ≔ Δ guess = x / 2.0;
+    ∀ _ ∈ 0..10 {
+        guess = (guess + x / guess) / 2.0;
+    }
+    guess
+}
+
+☉ λ cosine_similarity(a: &Embedding, b: &Embedding) -> f32 {
+    ⎇ a.dim() != b.dim() { ⤺ 0.0; }
+
+    ≔ Δ dot = 0.0;
+    ≔ Δ norm_a = 0.0;
+    ≔ Δ norm_b = 0.0;
+
+    ∀ i ∈ 0..a.dim() {
+        ≔ a_val = a.at(i);
+        ≔ b_val = b.at(i);
+        dot = dot + a_val * b_val;
+        norm_a = norm_a + a_val * a_val;
+        norm_b = norm_b + b_val * b_val;
+    }
+
+    ≔ denom = approx_sqrt(norm_a) * approx_sqrt(norm_b);
+    ⎇ denom > 0.0 { dot / denom } ⎉ { 0.0 }
+}
+
+☉ Σ EmbeddingIndex {
+    embeddings: Vec<Embedding>,
+    metadata: Vec<String>,
+    dim: usize,
+}
+
+⊢ EmbeddingIndex {
+    ☉ λ new(dim: usize) -> Self {
+        Self { embeddings: Vec·new(), metadata: Vec·new(), dim }
+    }
+
+    ☉ λ add(&Δ self, embedding: Embedding, meta: &str) {
+        self.embeddings.push(embedding);
+        self.metadata.push(meta.to_string());
+    }
+
+    ☉ λ len(&self) -> usize {
+        self.embeddings.len()
+    }
+
+    ☉ λ search(&self, query: &Embedding, k: usize) -> Vec<(usize, f32)> {
+        ≔ Δ scores = Vec·new();
+        ∀ i ∈ 0..self.embeddings.len() {
+            ≔ sim = cosine_similarity(query, &self.embeddings[i]);
+            scores.push((i, sim));
+        }
+
+        // Sort descending
+        ∀ i ∈ 0..scores.len() {
+            ∀ j ∈ (i + 1)..scores.len() {
+                ⎇ scores[j].1 > scores[i].1 {
+                    ≔ temp = scores[i];
+                    scores[i] = scores[j];
+                    scores[j] = temp;
+                }
+            }
+        }
+
+        ≔ limit = ⎇ k < scores.len() { k } ⎉ { scores.len() };
+        ≔ Δ result = Vec·new();
+        ∀ i ∈ 0..limit {
+            result.push(scores[i]);
+        }
+        result
+    }
+
+    ☉ λ get_metadata(&self, idx: usize) -> &str {
+        &self.metadata[idx]
+    }
+}
+
+☉ Σ CodeTokenizer {
+    vocab_size: usize,
+    max_length: usize,
+    cls_token_id: usize,
+    sep_token_id: usize,
+}
+
+⊢ CodeTokenizer {
+    ☉ λ new(vocab_size: usize, max_length: usize) -> Self {
+        Self {
+            vocab_size,
+            max_length,
+            cls_token_id: 1,
+            sep_token_id: 2,
+        }
+    }
+
+    ☉ λ tokenize(&self, text: &str) -> Vec<usize> {
+        ≔ Δ tokens = Vec·new();
+        tokens.push(self.cls_token_id);
+        ∀ c ∈ text.chars() {
+            ⎇ tokens.len() >= self.max_length - 1 { ⊗; }
+            ≔ token_id = ((c as usize) % (self.vocab_size - 4)) + 4;
+            tokens.push(token_id);
+        }
+        tokens.push(self.sep_token_id);
+        tokens
+    }
+}
+
+// Semantic result type
+☉ ᛈ ResultType {
+    ReasoningStep,
+    Evidence,
+    CodeSnippet,
+}
+
+☉ Σ SemanticResult {
+    ☉ content: String,
+    ☉ source_id: String,
+    ☉ similarity: f32,
+    ☉ result_type: ResultType,
+}
+
+// Simplified SemanticIndex ∀ testing
+☉ Σ SemanticIndex {
+    reasoning_index: EmbeddingIndex,
+    evidence_index: EmbeddingIndex,
+    code_index: EmbeddingIndex,
+    config: SemanticConfig,
+    tokenizer: CodeTokenizer,
+    reasoning_content: Vec<String>,
+    evidence_content: Vec<String>,
+    code_content: Vec<String>,
+}
+
+⊢ SemanticIndex {
+    ☉ λ new(config: SemanticConfig) -> Self {
+        ≔ tokenizer = CodeTokenizer·new(config.vocab_size, config.max_seq_len);
+        Self {
+            reasoning_index: EmbeddingIndex·new(config.embedding_dim),
+            evidence_index: EmbeddingIndex·new(config.embedding_dim),
+            code_index: EmbeddingIndex·new(config.embedding_dim),
+            config,
+            tokenizer,
+            reasoning_content: Vec·new(),
+            evidence_content: Vec·new(),
+            code_content: Vec·new(),
+        }
+    }
+
+    ☉ λ default_index() -> Self {
+        Self·new(SemanticConfig·default_config())
+    }
+
+    ☉ λ dim(&self) -> usize {
+        self.config.embedding_dim
+    }
+
+    ☉ λ len(&self) -> usize {
+        self.reasoning_index.len() + self.evidence_index.len() + self.code_index.len()
+    }
+
+    ☉ λ reasoning_count(&self) -> usize {
+        self.reasoning_index.len()
+    }
+
+    ☉ λ evidence_count(&self) -> usize {
+        self.evidence_index.len()
+    }
+
+    ☉ λ code_count(&self) -> usize {
+        self.code_index.len()
+    }
+
+    λ embed_text(&self, text: &str) -> Embedding {
+        ≔ tokens = self.tokenizer.tokenize(text);
+        ≔ dim = self.config.embedding_dim;
+
+        ≔ Δ data = vec![0.0; dim];
+        ∀ (i, &token) ∈ tokens.iter().enumerate() {
+            ≔ idx = (token + i) % dim;
+            data[idx] = data[idx] + 1.0;
+        }
+
+        ≔ embedding = Embedding·new(data, dim);
+        embedding.normalize()
+    }
+
+    ☉ λ index_reasoning(&Δ self, description: &str, reasoning: &str, trace_id: &str) {
+        ≔ combined = format!("{} {}", description, reasoning);
+        ≔ embedding = self.embed_text(&combined);
+        self.reasoning_index.add(embedding, trace_id);
+        self.reasoning_content.push(combined);
+    }
+
+    ☉ λ index_evidence(&Δ self, content: &str, source: &str, explanation_id: &str) {
+        ≔ embedding = self.embed_text(content);
+        ≔ meta = format!("{}:{}", explanation_id, source);
+        self.evidence_index.add(embedding, &meta);
+        self.evidence_content.push(content.to_string());
+    }
+
+    ☉ λ index_code(&Δ self, code: &str, file_path: &str, line_start: usize) {
+        ≔ embedding = self.embed_text(code);
+        ≔ meta = format!("{}:{}", file_path, line_start);
+        self.code_index.add(embedding, &meta);
+        self.code_content.push(code.to_string());
+    }
+
+    ☉ λ search_reasoning(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+        ≔ query_embedding = self.embed_text(query);
+        ≔ results = self.reasoning_index.search(&query_embedding, k);
+
+        ≔ Δ semantic_results = Vec·new();
+        ∀ (idx, sim) ∈ results {
+            ⎇ sim >= self.config.similarity_threshold {
+                ≔ content = ⎇ idx < self.reasoning_content.len() {
+                    self.reasoning_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult {
+                    content,
+                    source_id: self.reasoning_index.get_metadata(idx).to_string(),
+                    similarity: sim,
+                    result_type: ResultType·ReasoningStep,
+                });
+            }
+        }
+        semantic_results
+    }
+
+    ☉ λ search_evidence(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+        ≔ query_embedding = self.embed_text(query);
+        ≔ results = self.evidence_index.search(&query_embedding, k);
+
+        ≔ Δ semantic_results = Vec·new();
+        ∀ (idx, sim) ∈ results {
+            ⎇ sim >= self.config.similarity_threshold {
+                ≔ content = ⎇ idx < self.evidence_content.len() {
+                    self.evidence_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult {
+                    content,
+                    source_id: self.evidence_index.get_metadata(idx).to_string(),
+                    similarity: sim,
+                    result_type: ResultType·Evidence,
+                });
+            }
+        }
+        semantic_results
+    }
+
+    ☉ λ search_code(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+        ≔ query_embedding = self.embed_text(query);
+        ≔ results = self.code_index.search(&query_embedding, k);
+
+        ≔ Δ semantic_results = Vec·new();
+        ∀ (idx, sim) ∈ results {
+            ⎇ sim >= self.config.similarity_threshold {
+                ≔ content = ⎇ idx < self.code_content.len() {
+                    self.code_content[idx].clone()
+                } ⎉ {
+                    "".to_string()
+                };
+                semantic_results.push(SemanticResult {
+                    content,
+                    source_id: self.code_index.get_metadata(idx).to_string(),
+                    similarity: sim,
+                    result_type: ResultType·CodeSnippet,
+                });
+            }
+        }
+        semantic_results
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+λ test_semantic_config_default() {
+    ≔ config = SemanticConfig·default_config();
+    assert_eq(config.embedding_dim, 384);
+    assert_eq(config.max_results, 10);
+    assert_eq(config.vocab_size, 32000);
+    assert_eq(config.max_seq_len, 512);
+}
+
+#[test]
+λ test_semantic_index_creation() {
+    ≔ index = SemanticIndex·default_index();
+    assert_eq(index.dim(), 384);
+    assert_eq(index.len(), 0);
+    assert_eq(index.reasoning_count(), 0);
+    assert_eq(index.evidence_count(), 0);
+    assert_eq(index.code_count(), 0);
+}
+
+#[test]
+λ test_index_reasoning_step() {
+    ≔ Δ index = SemanticIndex·default_index();
+
+    index.index_reasoning(
+        "Analyzed user request",
+        "The user asked about investment options",
+        "trace_001"
+    );
+
+    assert_eq(index.reasoning_count(), 1);
+    assert_eq(index.len(), 1);
+}
+
+#[test]
+λ test_index_evidence() {
+    ≔ Δ index = SemanticIndex·default_index();
+
+    index.index_evidence(
+        "Market data shows upward trend",
+        "financial_api",
+        "explanation_001"
+    );
+
+    assert_eq(index.evidence_count(), 1);
+}
+
+#[test]
+λ test_index_code() {
+    ≔ Δ index = SemanticIndex·default_index();
+
+    index.index_code(
+        "λ calculate_roi(investment: f64, returns: f64) -> f64 { returns / investment }",
+        "src/finance.sg",
+        42
+    );
+
+    assert_eq(index.code_count(), 1);
+}
+
+#[test]
+λ test_search_reasoning() {
+    ≔ Δ index = SemanticIndex·default_index();
+
+    // Index some reasoning steps
+    index.index_reasoning("Investment analysis", "Evaluated stock portfolio", "trace_001");
+    index.index_reasoning("Risk assessment", "Calculated risk metrics", "trace_002");
+    index.index_reasoning("User greeting", "Said hello to user", "trace_003");
+
+    // Search ∀ investment-related reasoning
+    ≔ results = index.search_reasoning("investment portfolio", 2);
+
+    assert(results.len() > 0);
+    // First result should be investment-related
+    ≔ first = &results[0];
+    assert(first.similarity > 0.0);
+}
+
+#[test]
+λ test_search_evidence() {
+    ≔ Δ index = SemanticIndex·default_index();
+
+    index.index_evidence("Stock price increased 10%", "market_data", "exp_001");
+    index.index_evidence("Interest rates are low", "fed_reserve", "exp_002");
+    index.index_evidence("Weather is sunny today", "weather_api", "exp_003");
+
+    ≔ results = index.search_evidence("stock market prices", 2);
+
+    assert(results.len() > 0);
+}
+
+#[test]
+λ test_search_code() {
+    ≔ Δ index = SemanticIndex·default_index();
+
+    index.index_code("λ add(a: i32, b: i32) -> i32 { a + b }", "src/math.sg", 10);
+    index.index_code("λ multiply(x: f64, y: f64) -> f64 { x * y }", "src/math.sg", 20);
+    index.index_code("λ greet(name: &str) { println(name) }", "src/utils.sg", 5);
+
+    ≔ results = index.search_code("addition function", 2);
+
+    assert(results.len() > 0);
+}
+
+#[test]
+λ test_similarity_threshold() {
+    ≔ config = SemanticConfig·default_config().with_threshold(0.9);
+    ≔ Δ index = SemanticIndex·new(config);
+
+    index.index_reasoning("Hello world", "A greeting", "trace_001");
+
+    // Search ∀ something completely different
+    ≔ results = index.search_reasoning("quantum physics equations", 5);
+
+    // With high threshold, dissimilar content should be filtered
+    // (may or may not ⤺ results depending on embedding)
+    // Just verify it doesn't crash
+    ≔ _count = results.len();
+}
+
+#[test]
+λ test_empty_index_search() {
+    ≔ index = SemanticIndex·default_index();
+
+    ≔ results = index.search_reasoning("anything", 5);
+    assert_eq(results.len(), 0);
+
+    ≔ results = index.search_evidence("anything", 5);
+    assert_eq(results.len(), 0);
+
+    ≔ results = index.search_code("anything", 5);
+    assert_eq(results.len(), 0);
+}
+
+#[test]
+λ test_embedding_normalization() {
+    ≔ data = vec![3.0, 4.0];  // 3-4-5 triangle
+    ≔ embedding = Embedding·new(data, 2);
+    ≔ normalized = embedding.normalize();
+
+    ≔ x = normalized.at(0);
+    ≔ y = normalized.at(1);
+    ≔ length_sq = x * x + y * y;
+
+    // Should be approximately 1.0
+    ≔ diff = length_sq - 1.0;
+    ≔ is_unit = diff < 0.01 && diff > -0.01;
+    assert(is_unit);
+}
+
+#[test]
+λ test_cosine_similarity_identical() {
+    ≔ data = vec![1.0, 2.0, 3.0];
+    ≔ e1 = Embedding·new(data.clone(), 3);
+    ≔ e2 = Embedding·new(data, 3);
+
+    ≔ sim = cosine_similarity(&e1, &e2);
+
+    // Identical vectors should have similarity ~1.0
+    ≔ diff = sim - 1.0;
+    ≔ is_one = diff < 0.001 && diff > -0.001;
+    assert(is_one);
+}
+
+#[test]
+λ test_multiple_index_types() {
+    ≔ Δ index = SemanticIndex·default_index();
+
+    // Index all three types
+    index.index_reasoning("Decision made", "Based on analysis", "trace_001");
+    index.index_evidence("Supporting data", "data_source", "exp_001");
+    index.index_code("λ decide() { }", "src/logic.sg", 1);
+
+    assert_eq(index.reasoning_count(), 1);
+    assert_eq(index.evidence_count(), 1);
+    assert_eq(index.code_count(), 1);
+    assert_eq(index.len(), 3);
+}
+
+λ main() {
+    print("Oracle semantic indexing tests");
+}

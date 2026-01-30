@@ -1,0 +1,678 @@
+//! Tests ∀ Gnosis Core Types
+//!
+//! Verifies Context, Action, ExperienceOutcome, and utility types.
+
+invoke std·collections·HashMap;
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+☉ Σ Duration { nanos: u64 }
+
+⊢ Duration {
+    ☉ λ zero() -> Self { Self { nanos: 0 } }
+    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ λ as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
+    ☉ λ as_nanos(&self) -> u64 { self.nanos }
+}
+
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+
+☉ Σ Timestamp { nanos: u64 }
+
+⊢ Timestamp {
+    ☉ λ now() -> Self { Self { nanos: 1_000_000_000 } }
+    ☉ λ from_nanos(nanos: u64) -> Self { Self { nanos } }
+}
+
+⊢ PartialOrd ∀ Timestamp {
+    λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+        self.nanos.partial_cmp(&other.nanos)
+    }
+}
+
+⊢ PartialEq ∀ Timestamp {
+    λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+}
+
+☉ Σ HumanId { id: String }
+
+⊢ HumanId {
+    ☉ λ new(id: &str) -> Self { Self { id: id.to_string() } }
+}
+
+⊢ Clone ∀ HumanId {
+    λ clone(&self) -> Self { Self { id: self.id.clone() } }
+}
+
+⊢ PartialEq ∀ HumanId {
+    λ eq(&self, other: &Self) -> bool { self.id == other.id }
+}
+
+⊢ std·hash·Hash ∀ HumanId {
+    λ hash<H: std·hash·Hasher>(&self, state: &Δ H) {
+        self.id.hash(state);
+    }
+}
+
+⊢ Eq ∀ HumanId {}
+
+☉ Σ ExperienceId { id: String }
+
+⊢ ExperienceId {
+    ☉ λ generate() -> Self { Self { id: "exp_001".to_string() } }
+}
+
+⊢ Clone ∀ ExperienceId {
+    λ clone(&self) -> Self { Self { id: self.id.clone() } }
+}
+
+#[derive(Clone)]
+☉ Σ Context {
+    ☉ task_type: String,
+    ☉ constraints: Vec<String>,
+    ☉ domain: Option<String>,
+    ☉ human_id: Option<HumanId>,
+    ☉ features: HashMap<String, String>,
+}
+
+⊢ Context {
+    ☉ λ new(task_type: &str) -> Self {
+        Self {
+            task_type: task_type.to_string(),
+            constraints: vec![],
+            domain: None,
+            human_id: None,
+            features: HashMap·new(),
+        }
+    }
+
+    ☉ λ with_domain(Δ self, domain: &str) -> Self {
+        self.domain = Some(domain.to_string());
+        self
+    }
+
+    ☉ λ with_human(Δ self, human_id: HumanId) -> Self {
+        self.human_id = Some(human_id);
+        self
+    }
+
+    ☉ λ with_constraint(Δ self, constraint: &str) -> Self {
+        self.constraints.push(constraint.to_string());
+        self
+    }
+
+    ☉ λ with_feature(Δ self, key: &str, value: &str) -> Self {
+        self.features.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    ☉ λ similar_to(&self, other: &Context) -> bool {
+        self.task_type == other.task_type
+    }
+
+    ☉ λ matches(&self, other: &Context) -> bool {
+        self.task_type == other.task_type && self.domain == other.domain
+    }
+
+    ☉ λ has_constraint(&self, constraint: &str) -> bool {
+        self.constraints.contains(&constraint.to_string())
+    }
+
+    ☉ λ has_feature(&self, key: &str) -> bool {
+        self.features.contains_key(key)
+    }
+}
+
+#[derive(Clone)]
+☉ Σ Action {
+    ☉ approach: String,
+    ☉ skills: Vec<String>,
+    ☉ details: Option<String>,
+}
+
+⊢ Action {
+    ☉ λ new(approach: &str) -> Self {
+        Self {
+            approach: approach.to_string(),
+            skills: vec![],
+            details: None,
+        }
+    }
+
+    ☉ λ with_skill(Δ self, skill: &str) -> Self {
+        self.skills.push(skill.to_string());
+        self
+    }
+
+    ☉ λ with_details(Δ self, details: &str) -> Self {
+        self.details = Some(details.to_string());
+        self
+    }
+
+    ☉ λ skill_count(&self) -> usize {
+        self.skills.len()
+    }
+
+    ☉ λ has_skill(&self, skill: &str) -> bool {
+        self.skills.contains(&skill.to_string())
+    }
+}
+
+#[derive(Clone)]
+☉ Σ ExperienceOutcome {
+    ☉ success: bool,
+    ☉ quality: f32,
+    ☉ unexpected: bool,
+    ☉ details: Option<String>,
+}
+
+⊢ ExperienceOutcome {
+    ☉ λ success(quality: f32) -> Self {
+        Self {
+            success: true,
+            quality: quality.clamp(0.0, 1.0),
+            unexpected: false,
+            details: None,
+        }
+    }
+
+    ☉ λ failure(details: &str) -> Self {
+        Self {
+            success: false,
+            quality: 0.0,
+            unexpected: false,
+            details: Some(details.to_string()),
+        }
+    }
+
+    ☉ λ unexpected(quality: f32) -> Self {
+        Self {
+            success: true,
+            quality: quality.clamp(0.0, 1.0),
+            unexpected: true,
+            details: None,
+        }
+    }
+
+    ☉ λ with_details(Δ self, details: &str) -> Self {
+        self.details = Some(details.to_string());
+        self
+    }
+
+    ☉ λ is_high_quality(&self) -> bool {
+        self.success && self.quality >= 0.8
+    }
+
+    ☉ λ is_low_quality(&self) -> bool {
+        !self.success || self.quality < 0.5
+    }
+}
+
+#[derive(Clone)]
+☉ Σ Experience {
+    ☉ id: ExperienceId,
+    ☉ context: Context,
+    ☉ action: Action,
+    ☉ outcome: ExperienceOutcome,
+    ☉ timestamp: Timestamp,
+}
+
+⊢ Experience {
+    ☉ λ new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
+        Self {
+            id: ExperienceId·generate(),
+            context,
+            action,
+            outcome,
+            timestamp: Timestamp·now(),
+        }
+    }
+
+    ☉ λ skills_exercised(&self) -> Option<Vec<String>> {
+        ⎇ self.action.skills.is_empty() {
+            None
+        } ⎉ {
+            Some(self.action.skills.clone())
+        }
+    }
+
+    ☉ λ was_successful(&self) -> bool {
+        self.outcome.success
+    }
+
+    ☉ λ quality(&self) -> f32 {
+        self.outcome.quality
+    }
+}
+
+☉ Σ Confidence { value: f64 }
+
+⊢ Confidence {
+    ☉ λ new(value: f64) -> Self {
+        Self { value: value.clamp(0.0, 1.0) }
+    }
+
+    ☉ λ zero() -> Self { Self { value: 0.0 } }
+    ☉ λ full() -> Self { Self { value: 1.0 } }
+
+    ☉ λ value(&self) -> f64 { self.value }
+
+    ☉ λ is_high(&self) -> bool { self.value >= 0.7 }
+    ☉ λ is_low(&self) -> bool { self.value < 0.3 }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+☉ ᛈ Priority {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+⊢ Priority {
+    ☉ λ as_int(&self) -> u8 {
+        ⌥ self {
+            Priority·Critical => 4,
+            Priority·High => 3,
+            Priority·Normal => 2,
+            Priority·Low => 1,
+        }
+    }
+}
+
+// ============================================================================
+// Tests: Duration
+// ============================================================================
+
+#[test]
+λ test_duration_zero() {
+    ≔ d = Duration·zero();
+    assert_eq(d.as_secs(), 0);
+}
+
+#[test]
+λ test_duration_seconds() {
+    ≔ d = Duration·seconds(30);
+    assert_eq(d.as_secs(), 30);
+}
+
+#[test]
+λ test_duration_minutes() {
+    ≔ d = Duration·minutes(5);
+    assert_eq(d.as_secs(), 300);
+}
+
+#[test]
+λ test_duration_hours() {
+    ≔ d = Duration·hours(2);
+    assert_eq(d.as_secs(), 7200);
+}
+
+// ============================================================================
+// Tests: Timestamp
+// ============================================================================
+
+#[test]
+λ test_timestamp_now() {
+    ≔ t = Timestamp·now();
+    assert(t.nanos > 0);
+}
+
+#[test]
+λ test_timestamp_from_nanos() {
+    ≔ t = Timestamp·from_nanos(5000);
+    assert_eq(t.nanos, 5000);
+}
+
+#[test]
+λ test_timestamp_comparison() {
+    ≔ t1 = Timestamp·from_nanos(100);
+    ≔ t2 = Timestamp·from_nanos(200);
+    assert(t1 < t2);
+}
+
+// ============================================================================
+// Tests: HumanId
+// ============================================================================
+
+#[test]
+λ test_human_id_new() {
+    ≔ id = HumanId·new("user_123");
+    assert_eq(id.id, "user_123");
+}
+
+#[test]
+λ test_human_id_equality() {
+    ≔ id1 = HumanId·new("user_1");
+    ≔ id2 = HumanId·new("user_1");
+    assert(id1 == id2);
+}
+
+#[test]
+λ test_human_id_inequality() {
+    ≔ id1 = HumanId·new("user_1");
+    ≔ id2 = HumanId·new("user_2");
+    assert(id1 != id2);
+}
+
+#[test]
+λ test_human_id_clone() {
+    ≔ id1 = HumanId·new("test");
+    ≔ id2 = id1.clone();
+    assert(id1 == id2);
+}
+
+// ============================================================================
+// Tests: ExperienceId
+// ============================================================================
+
+#[test]
+λ test_experience_id_generate() {
+    ≔ id = ExperienceId·generate();
+    assert(!id.id.is_empty());
+}
+
+#[test]
+λ test_experience_id_clone() {
+    ≔ id1 = ExperienceId·generate();
+    ≔ id2 = id1.clone();
+    assert_eq(id1.id, id2.id);
+}
+
+// ============================================================================
+// Tests: Context
+// ============================================================================
+
+#[test]
+λ test_context_new() {
+    ≔ ctx = Context·new("code_review");
+    assert_eq(ctx.task_type, "code_review");
+    assert(ctx.domain.is_none());
+}
+
+#[test]
+λ test_context_with_domain() {
+    ≔ ctx = Context·new("analysis").with_domain("security");
+    assert_eq(ctx.domain.unwrap(), "security");
+}
+
+#[test]
+λ test_context_with_human() {
+    ≔ ctx = Context·new("chat").with_human(HumanId·new("alice"));
+    assert(ctx.human_id.is_some());
+}
+
+#[test]
+λ test_context_with_constraint() {
+    ≔ ctx = Context·new("task")
+        .with_constraint("time_limit")
+        .with_constraint("memory_limit");
+    assert_eq(ctx.constraints.len(), 2);
+    assert(ctx.has_constraint("time_limit"));
+}
+
+#[test]
+λ test_context_with_feature() {
+    ≔ ctx = Context·new("task")
+        .with_feature("language", "rust");
+    assert(ctx.has_feature("language"));
+}
+
+#[test]
+λ test_context_similar_to() {
+    ≔ ctx1 = Context·new("debugging");
+    ≔ ctx2 = Context·new("debugging").with_domain("frontend");
+    assert(ctx1.similar_to(&ctx2));
+}
+
+#[test]
+λ test_context_not_similar() {
+    ≔ ctx1 = Context·new("debugging");
+    ≔ ctx2 = Context·new("testing");
+    assert(!ctx1.similar_to(&ctx2));
+}
+
+#[test]
+λ test_context_matches() {
+    ≔ ctx1 = Context·new("analysis").with_domain("security");
+    ≔ ctx2 = Context·new("analysis").with_domain("security");
+    assert(ctx1.matches(&ctx2));
+}
+
+#[test]
+λ test_context_not_matches() {
+    ≔ ctx1 = Context·new("analysis").with_domain("security");
+    ≔ ctx2 = Context·new("analysis").with_domain("performance");
+    assert(!ctx1.matches(&ctx2));
+}
+
+// ============================================================================
+// Tests: Action
+// ============================================================================
+
+#[test]
+λ test_action_new() {
+    ≔ action = Action·new("step_through_debugger");
+    assert_eq(action.approach, "step_through_debugger");
+    assert_eq(action.skill_count(), 0);
+}
+
+#[test]
+λ test_action_with_skill() {
+    ≔ action = Action·new("refactor")
+        .with_skill("rust")
+        .with_skill("testing");
+    assert_eq(action.skill_count(), 2);
+    assert(action.has_skill("rust"));
+}
+
+#[test]
+λ test_action_with_details() {
+    ≔ action = Action·new("explain")
+        .with_details("Used analogies");
+    assert(action.details.is_some());
+}
+
+#[test]
+λ test_action_clone() {
+    ≔ a1 = Action·new("test").with_skill("python");
+    ≔ a2 = a1.clone();
+    assert_eq(a1.approach, a2.approach);
+}
+
+// ============================================================================
+// Tests: ExperienceOutcome
+// ============================================================================
+
+#[test]
+λ test_outcome_success() {
+    ≔ outcome = ExperienceOutcome·success(0.9);
+    assert(outcome.success);
+    assert_eq(outcome.quality, 0.9);
+    assert(!outcome.unexpected);
+}
+
+#[test]
+λ test_outcome_failure() {
+    ≔ outcome = ExperienceOutcome·failure("timeout");
+    assert(!outcome.success);
+    assert_eq(outcome.quality, 0.0);
+}
+
+#[test]
+λ test_outcome_unexpected() {
+    ≔ outcome = ExperienceOutcome·unexpected(0.7);
+    assert(outcome.success);
+    assert(outcome.unexpected);
+}
+
+#[test]
+λ test_outcome_quality_clamped() {
+    ≔ outcome = ExperienceOutcome·success(1.5);
+    assert_eq(outcome.quality, 1.0);
+}
+
+#[test]
+λ test_outcome_is_high_quality() {
+    ≔ high = ExperienceOutcome·success(0.85);
+    ≔ low = ExperienceOutcome·success(0.5);
+    assert(high.is_high_quality());
+    assert(!low.is_high_quality());
+}
+
+#[test]
+λ test_outcome_is_low_quality() {
+    ≔ failure = ExperienceOutcome·failure("error");
+    ≔ low = ExperienceOutcome·success(0.3);
+    ≔ good = ExperienceOutcome·success(0.7);
+    assert(failure.is_low_quality());
+    assert(low.is_low_quality());
+    assert(!good.is_low_quality());
+}
+
+#[test]
+λ test_outcome_with_details() {
+    ≔ outcome = ExperienceOutcome·success(0.8)
+        .with_details("Completed ahead of schedule");
+    assert(outcome.details.is_some());
+}
+
+// ============================================================================
+// Tests: Experience
+// ============================================================================
+
+#[test]
+λ test_experience_new() {
+    ≔ exp = Experience·new(
+        Context·new("coding"),
+        Action·new("write_tests"),
+        ExperienceOutcome·success(0.9)
+    );
+    assert(exp.was_successful());
+    assert_eq(exp.quality(), 0.9);
+}
+
+#[test]
+λ test_experience_skills_exercised_some() {
+    ≔ exp = Experience·new(
+        Context·new("coding"),
+        Action·new("implement").with_skill("rust").with_skill("async"),
+        ExperienceOutcome·success(0.8)
+    );
+    ≔ skills = exp.skills_exercised();
+    assert(skills.is_some());
+    assert_eq(skills.unwrap().len(), 2);
+}
+
+#[test]
+λ test_experience_skills_exercised_none() {
+    ≔ exp = Experience·new(
+        Context·new("reading"),
+        Action·new("review"),
+        ExperienceOutcome·success(0.7)
+    );
+    assert(exp.skills_exercised().is_none());
+}
+
+#[test]
+λ test_experience_was_successful() {
+    ≔ success = Experience·new(
+        Context·new("task"),
+        Action·new("do"),
+        ExperienceOutcome·success(0.9)
+    );
+    ≔ failure = Experience·new(
+        Context·new("task"),
+        Action·new("do"),
+        ExperienceOutcome·failure("error")
+    );
+    assert(success.was_successful());
+    assert(!failure.was_successful());
+}
+
+// ============================================================================
+// Tests: Confidence
+// ============================================================================
+
+#[test]
+λ test_confidence_new() {
+    ≔ c = Confidence·new(0.75);
+    assert_eq(c.value(), 0.75);
+}
+
+#[test]
+λ test_confidence_clamped() {
+    ≔ c = Confidence·new(1.5);
+    assert_eq(c.value(), 1.0);
+}
+
+#[test]
+λ test_confidence_zero() {
+    ≔ c = Confidence·zero();
+    assert_eq(c.value(), 0.0);
+}
+
+#[test]
+λ test_confidence_full() {
+    ≔ c = Confidence·full();
+    assert_eq(c.value(), 1.0);
+}
+
+#[test]
+λ test_confidence_is_high() {
+    ≔ high = Confidence·new(0.8);
+    ≔ low = Confidence·new(0.5);
+    assert(high.is_high());
+    assert(!low.is_high());
+}
+
+#[test]
+λ test_confidence_is_low() {
+    ≔ low = Confidence·new(0.2);
+    ≔ mid = Confidence·new(0.5);
+    assert(low.is_low());
+    assert(!mid.is_low());
+}
+
+// ============================================================================
+// Tests: Priority
+// ============================================================================
+
+#[test]
+λ test_priority_critical() {
+    ≔ p = Priority·Critical;
+    assert_eq(p.as_int(), 4);
+}
+
+#[test]
+λ test_priority_high() {
+    ≔ p = Priority·High;
+    assert_eq(p.as_int(), 3);
+}
+
+#[test]
+λ test_priority_normal() {
+    ≔ p = Priority·Normal;
+    assert_eq(p.as_int(), 2);
+}
+
+#[test]
+λ test_priority_low() {
+    ≔ p = Priority·Low;
+    assert_eq(p.as_int(), 1);
+}
+
+#[test]
+λ test_priority_equality() {
+    assert(Priority·High == Priority·High);
+    assert(Priority·Low != Priority·High);
+}
+
+λ main() {
+    print("Gnosis types tests");
+}

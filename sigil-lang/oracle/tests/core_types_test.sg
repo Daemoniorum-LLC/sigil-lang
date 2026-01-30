@@ -1,0 +1,341 @@
+//! Oracle Core Types Tests - 22 tests
+
+ᛈ ExplanationLevel {
+    Brief,
+    Standard,
+    Full,
+    Technical,
+}
+
+⊢ ExplanationLevel {
+    ☉ λ rank(&self) -> !u8 {
+        ⌥ self {
+            ExplanationLevel·Brief => 1,
+            ExplanationLevel·Standard => 2,
+            ExplanationLevel·Full => 3,
+            ExplanationLevel·Technical => 4,
+        }
+    }
+
+    ☉ λ includes_reasoning(&self) -> !bool {
+        self.rank() >= 2
+    }
+
+    ☉ λ includes_evidence(&self) -> !bool {
+        self.rank() >= 2
+    }
+
+    ☉ λ includes_alternatives(&self) -> !bool {
+        self.rank() >= 3
+    }
+
+    ☉ λ includes_internals(&self) -> !bool {
+        self.rank() >= 4
+    }
+
+    ☉ λ next_level(&self) -> Self {
+        ⌥ self {
+            ExplanationLevel·Brief => ExplanationLevel·Standard,
+            ExplanationLevel·Standard => ExplanationLevel·Full,
+            ExplanationLevel·Full => ExplanationLevel·Technical,
+            ExplanationLevel·Technical => ExplanationLevel·Technical,
+        }
+    }
+}
+
+ᛈ StepType {
+    Observation,
+    Retrieval,
+    Inference,
+    Evaluation,
+    Decision,
+    Planning,
+    Action,
+}
+
+⊢ StepType {
+    ☉ λ is_input(&self) -> !bool {
+        ⌥ self {
+            StepType·Observation => true,
+            StepType·Retrieval => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_reasoning(&self) -> !bool {
+        ⌥ self {
+            StepType·Inference => true,
+            StepType·Evaluation => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_output(&self) -> !bool {
+        ⌥ self {
+            StepType·Decision => true,
+            StepType·Action => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ typical_confidence(&self) -> !f32 {
+        ⌥ self {
+            StepType·Observation => 0.95,
+            StepType·Retrieval => 0.9,
+            StepType·Inference => 0.7,
+            StepType·Evaluation => 0.75,
+            StepType·Decision => 0.8,
+            StepType·Planning => 0.7,
+            StepType·Action => 0.85,
+        }
+    }
+}
+
+ᛈ EvidenceType {
+    DirectObservation,
+    Memory,
+    Inference,
+    ExternalSource,
+    UserStatement,
+}
+
+⊢ EvidenceType {
+    ☉ λ base_weight(&self) -> !f32 {
+        ⌥ self {
+            EvidenceType·DirectObservation => 1.0,
+            EvidenceType·Memory => 0.8,
+            EvidenceType·Inference => 0.6,
+            EvidenceType·ExternalSource => 0.7,
+            EvidenceType·UserStatement => 0.9,
+        }
+    }
+
+    ☉ λ is_primary(&self) -> !bool {
+        ⌥ self {
+            EvidenceType·DirectObservation => true,
+            EvidenceType·UserStatement => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ requires_verification(&self) -> !bool {
+        ⌥ self {
+            EvidenceType·ExternalSource => true,
+            EvidenceType·Inference => true,
+            _ => false,
+        }
+    }
+}
+
+ᛈ Epistemic {
+    Certain,
+    HighConfidence,
+    MediumConfidence,
+    LowConfidence,
+    Uncertain,
+}
+
+⊢ Epistemic {
+    ☉ λ confidence_range(&self) -> (!f32, !f32) {
+        ⌥ self {
+            Epistemic·Certain => (0.95, 1.0),
+            Epistemic·HighConfidence => (0.8, 0.95),
+            Epistemic·MediumConfidence => (0.5, 0.8),
+            Epistemic·LowConfidence => (0.2, 0.5),
+            Epistemic·Uncertain => (0.0, 0.2),
+        }
+    }
+
+    ☉ λ min_confidence(&self) -> !f32 {
+        ≔ (min, _) = self.confidence_range();
+        min
+    }
+
+    ☉ λ max_confidence(&self) -> !f32 {
+        ≔ (_, max) = self.confidence_range();
+        max
+    }
+
+    ☉ λ from_confidence(conf: !f32) -> Self {
+        ⎇ conf >= 0.95 {
+            Epistemic·Certain
+        } ⎉ ⎇ conf >= 0.8 {
+            Epistemic·HighConfidence
+        } ⎉ ⎇ conf >= 0.5 {
+            Epistemic·MediumConfidence
+        } ⎉ ⎇ conf >= 0.2 {
+            Epistemic·LowConfidence
+        } ⎉ {
+            Epistemic·Uncertain
+        }
+    }
+
+    ☉ λ is_reliable(&self) -> !bool {
+        ⌥ self {
+            Epistemic·Certain => true,
+            Epistemic·HighConfidence => true,
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+λ test_explanation_level_brief() {
+    ≔ level = ExplanationLevel·Brief;
+    assert(level.rank() == 1);
+    assert(!level.includes_reasoning());
+}
+
+#[test]
+λ test_explanation_level_standard() {
+    ≔ level = ExplanationLevel·Standard;
+    assert(level.rank() == 2);
+    assert(level.includes_reasoning());
+    assert(level.includes_evidence());
+    assert(!level.includes_alternatives());
+}
+
+#[test]
+λ test_explanation_level_full() {
+    ≔ level = ExplanationLevel·Full;
+    assert(level.rank() == 3);
+    assert(level.includes_alternatives());
+    assert(!level.includes_internals());
+}
+
+#[test]
+λ test_explanation_level_technical() {
+    ≔ level = ExplanationLevel·Technical;
+    assert(level.rank() == 4);
+    assert(level.includes_internals());
+}
+
+#[test]
+λ test_explanation_level_progression() {
+    ≔ brief = ExplanationLevel·Brief;
+    ≔ next = brief.next_level();
+    assert(next.rank() == 2);
+}
+
+#[test]
+λ test_step_type_observation() {
+    ≔ step = StepType·Observation;
+    assert(step.is_input());
+    assert(!step.is_reasoning());
+    assert(step.typical_confidence() == 0.95);
+}
+
+#[test]
+λ test_step_type_retrieval() {
+    ≔ step = StepType·Retrieval;
+    assert(step.is_input());
+    assert(step.typical_confidence() == 0.9);
+}
+
+#[test]
+λ test_step_type_inference() {
+    ≔ step = StepType·Inference;
+    assert(step.is_reasoning());
+    assert(!step.is_input());
+}
+
+#[test]
+λ test_step_type_evaluation() {
+    ≔ step = StepType·Evaluation;
+    assert(step.is_reasoning());
+}
+
+#[test]
+λ test_step_type_decision() {
+    ≔ step = StepType·Decision;
+    assert(step.is_output());
+    assert(!step.is_reasoning());
+}
+
+#[test]
+λ test_step_type_action() {
+    ≔ step = StepType·Action;
+    assert(step.is_output());
+}
+
+#[test]
+λ test_evidence_type_observation() {
+    ≔ e = EvidenceType·DirectObservation;
+    assert(e.base_weight() == 1.0);
+    assert(e.is_primary());
+}
+
+#[test]
+λ test_evidence_type_memory() {
+    ≔ e = EvidenceType·Memory;
+    assert(e.base_weight() == 0.8);
+    assert(!e.is_primary());
+}
+
+#[test]
+λ test_evidence_type_inference() {
+    ≔ e = EvidenceType·Inference;
+    assert(e.requires_verification());
+}
+
+#[test]
+λ test_evidence_type_external() {
+    ≔ e = EvidenceType·ExternalSource;
+    assert(e.requires_verification());
+    assert(!e.is_primary());
+}
+
+#[test]
+λ test_evidence_type_user() {
+    ≔ e = EvidenceType·UserStatement;
+    assert(e.is_primary());
+    assert(e.base_weight() == 0.9);
+}
+
+#[test]
+λ test_epistemic_certain() {
+    ≔ e = Epistemic·Certain;
+    assert(e.min_confidence() == 0.95);
+    assert(e.is_reliable());
+}
+
+#[test]
+λ test_epistemic_high() {
+    ≔ e = Epistemic·HighConfidence;
+    assert(e.min_confidence() == 0.8);
+    assert(e.is_reliable());
+}
+
+#[test]
+λ test_epistemic_medium() {
+    ≔ e = Epistemic·MediumConfidence;
+    assert(!e.is_reliable());
+    assert(e.min_confidence() == 0.5);
+}
+
+#[test]
+λ test_epistemic_from_confidence_certain() {
+    ≔ e = Epistemic·from_confidence(0.98);
+    assert(e.is_reliable());
+}
+
+#[test]
+λ test_epistemic_from_confidence_low() {
+    ≔ e = Epistemic·from_confidence(0.3);
+    assert(!e.is_reliable());
+}
+
+#[test]
+λ test_epistemic_uncertain() {
+    ≔ e = Epistemic·Uncertain;
+    assert(e.max_confidence() == 0.2);
+    assert(!e.is_reliable());
+}
+
+λ main() {
+    println("Oracle core types tests - 22 tests");
+}

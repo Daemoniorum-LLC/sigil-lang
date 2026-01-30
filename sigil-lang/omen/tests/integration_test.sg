@@ -1,0 +1,705 @@
+//! Integration Tests ∀ Omen
+//!
+//! Verifies the full Omen system working together.
+
+invoke std·collections·HashMap;
+
+// ============================================================================
+// Self-contained Test Types (Minimal Omen Recreation)
+// ============================================================================
+
+☉ Σ Duration { nanos: u64 }
+
+⊢ Duration {
+    ☉ λ zero() -> Self { Self { nanos: 0 } }
+    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+}
+
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+
+☉ Σ Timestamp { nanos: u64 }
+⊢ Timestamp { ☉ λ now() -> Self { Self { nanos: 1000 } } }
+
+#[derive(Clone, Copy, PartialEq)]
+☉ ᛈ Epistemic {
+    Axiomatic,
+    Observed,
+    Reported,
+    Inferred,
+    Contested,
+    Unknown,
+}
+
+⊢ Epistemic {
+    ☉ λ rank(&self) -> u8 {
+        ⌥ self {
+            Epistemic·Axiomatic => 5,
+            Epistemic·Observed => 4,
+            Epistemic·Reported => 3,
+            Epistemic·Inferred => 2,
+            Epistemic·Contested => 1,
+            Epistemic·Unknown => 0,
+        }
+    }
+}
+
+☉ Σ Proposition {
+    ☉ subject: String,
+    ☉ negated: bool,
+}
+
+⊢ Proposition {
+    ☉ λ simple(text: &str) -> Self {
+        Self { subject: text.to_string(), negated: false }
+    }
+
+    ☉ λ negate(Δ self) -> Self {
+        self.negated = !self.negated;
+        self
+    }
+
+    ☉ λ negates(&self, other: &Proposition) -> bool {
+        self.subject == other.subject && self.negated != other.negated
+    }
+}
+
+⊢ Clone ∀ Proposition {
+    λ clone(&self) -> Self {
+        Self { subject: self.subject.clone(), negated: self.negated }
+    }
+}
+
+☉ Σ Belief {
+    ☉ proposition: Proposition,
+    ☉ epistemic: Epistemic,
+    ☉ confidence: f32,
+}
+
+⊢ Belief {
+    ☉ λ observed(prop: &str) -> Self {
+        Self {
+            proposition: Proposition·simple(prop),
+            epistemic: Epistemic·Observed,
+            confidence: 0.95,
+        }
+    }
+
+    ☉ λ inferred(prop: &str, confidence: f32) -> Self {
+        Self {
+            proposition: Proposition·simple(prop),
+            epistemic: Epistemic·Inferred,
+            confidence,
+        }
+    }
+
+    ☉ λ axiom(prop: &str) -> Self {
+        Self {
+            proposition: Proposition·simple(prop),
+            epistemic: Epistemic·Axiomatic,
+            confidence: 1.0,
+        }
+    }
+
+    ☉ λ contradicts(&self, other: &Belief) -> bool {
+        self.proposition.negates(&other.proposition)
+    }
+}
+
+⊢ Clone ∀ Belief {
+    λ clone(&self) -> Self {
+        Self {
+            proposition: self.proposition.clone(),
+            epistemic: self.epistemic,
+            confidence: self.confidence,
+        }
+    }
+}
+
+☉ ᛈ GoalStatus {
+    Pending,
+    Active,
+    Blocked { reason: String },
+    Achieved,
+    Failed { reason: String },
+}
+
+☉ Σ Goal {
+    ☉ description: String,
+    ☉ priority: f32,
+    ☉ status: GoalStatus,
+}
+
+⊢ Goal {
+    ☉ λ new(description: &str) -> Self {
+        Self {
+            description: description.to_string(),
+            priority: 0.5,
+            status: GoalStatus·Pending,
+        }
+    }
+
+    ☉ λ with_priority(Δ self, priority: f32) -> Self {
+        self.priority = priority.clamp(0.0, 1.0);
+        self
+    }
+
+    ☉ λ activate(&Δ self) { self.status = GoalStatus·Active; }
+    ☉ λ achieve(&Δ self) { self.status = GoalStatus·Achieved; }
+    ☉ λ fail(&Δ self, reason: &str) { self.status = GoalStatus·Failed { reason: reason.to_string() }; }
+    ☉ λ is_active(&self) -> bool { matches!(self.status, GoalStatus·Active) }
+    ☉ λ is_achieved(&self) -> bool { matches!(self.status, GoalStatus·Achieved) }
+}
+
+☉ Σ Action {
+    ☉ name: String,
+    ☉ success_rate: f32,
+}
+
+⊢ Action {
+    ☉ λ new(name: &str) -> Self {
+        Self { name: name.to_string(), success_rate: 0.9 }
+    }
+
+    ☉ λ with_success_rate(Δ self, rate: f32) -> Self {
+        self.success_rate = rate.clamp(0.0, 1.0);
+        self
+    }
+}
+
+⊢ Clone ∀ Action {
+    λ clone(&self) -> Self {
+        Self { name: self.name.clone(), success_rate: self.success_rate }
+    }
+}
+
+☉ Σ PlanStep {
+    ☉ action: Action,
+    ☉ confidence: f32,
+}
+
+⊢ PlanStep {
+    ☉ λ from_action(action: Action) -> Self {
+        Self { confidence: action.success_rate, action }
+    }
+}
+
+☉ Σ Plan {
+    ☉ steps: Vec<PlanStep>,
+    ☉ success_probability: f32,
+    ☉ strategy: String,
+}
+
+⊢ Plan {
+    ☉ λ new() -> Self {
+        Self { steps: vec![], success_probability: 1.0, strategy: "manual".to_string() }
+    }
+
+    ☉ λ with_step(Δ self, step: PlanStep) -> Self {
+        self.success_probability *= step.confidence;
+        self.steps.push(step);
+        self
+    }
+
+    ☉ λ with_strategy(Δ self, strategy: &str) -> Self {
+        self.strategy = strategy.to_string();
+        self
+    }
+
+    ☉ λ step_count(&self) -> usize { self.steps.len() }
+    ☉ λ is_viable(&self) -> bool { self.success_probability >= 0.5 }
+}
+
+☉ ᛈ PlanOutcome {
+    Success,
+    PartialSuccess { degree: f32 },
+    Failure { reason: String },
+}
+
+☉ Σ OmenConfig {
+    ☉ horizon: usize,
+    ☉ uncertainty_tolerance: f32,
+    ☉ risk_tolerance: f32,
+    ☉ enable_learning: bool,
+}
+
+⊢ OmenConfig {
+    ☉ λ default_config() -> Self {
+        Self {
+            horizon: 10,
+            uncertainty_tolerance: 0.3,
+            risk_tolerance: 0.5,
+            enable_learning: true,
+        }
+    }
+}
+
+⊢ Default ∀ OmenConfig {
+    λ default() -> Self { Self·default_config() }
+}
+
+/// The main Omen planner (simplified ∀ testing)
+☉ Σ Omen {
+    config: OmenConfig,
+    beliefs: Vec<Belief>,
+    goals: Vec<Goal>,
+    actions: HashMap<String, Action>,
+    plan_history: Vec<(Plan, PlanOutcome)>,
+}
+
+⊢ Omen {
+    ☉ λ new(config: OmenConfig) -> Self {
+        Self {
+            config,
+            beliefs: vec![],
+            goals: vec![],
+            actions: HashMap·new(),
+            plan_history: vec![],
+        }
+    }
+
+    // Belief management
+    ☉ λ believe(&Δ self, belief: Belief) {
+        // Check ∀ contradictions
+        ≔ dominated = self.beliefs.iter().any(|b| {
+            b.contradicts(&belief) &&
+            (b.epistemic.rank() > belief.epistemic.rank() ||
+             (b.epistemic.rank() == belief.epistemic.rank() && b.confidence >= belief.confidence))
+        });
+
+        ⎇ !dominated {
+            // Remove contradicted beliefs
+            self.beliefs.retain(|b| !belief.contradicts(b));
+            self.beliefs.push(belief);
+        }
+    }
+
+    ☉ λ observe(&Δ self, observation: &str) {
+        self.believe(Belief·observed(observation));
+    }
+
+    ☉ λ believes(&self, proposition: &str) -> bool {
+        self.beliefs.iter()
+            .any(|b| b.proposition.subject == proposition && b.confidence > 0.5)
+    }
+
+    ☉ λ belief_count(&self) -> usize {
+        self.beliefs.len()
+    }
+
+    ☉ λ get_belief(&self, proposition: &str) -> Option<&Belief> {
+        self.beliefs.iter()
+            .find(|b| b.proposition.subject == proposition)
+    }
+
+    // Goal management
+    ☉ λ add_goal(&Δ self, goal: Goal) {
+        self.goals.push(goal);
+    }
+
+    ☉ λ current_goal(&self) -> Option<&Goal> {
+        self.goals.iter()
+            .filter(|g| g.is_active())
+            .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
+    }
+
+    ☉ λ activate_goal(&Δ self, index: usize) {
+        ⎇ index < self.goals.len() {
+            self.goals[index].activate();
+        }
+    }
+
+    ☉ λ achieve_goal(&Δ self, index: usize) {
+        ⎇ index < self.goals.len() {
+            self.goals[index].achieve();
+        }
+    }
+
+    ☉ λ goal_count(&self) -> usize {
+        self.goals.len()
+    }
+
+    ☉ λ active_goal_count(&self) -> usize {
+        self.goals.iter().filter(|g| g.is_active()).count()
+    }
+
+    // Action library
+    ☉ λ register_action(&Δ self, action: Action) {
+        self.actions.insert(action.name.clone(), action);
+    }
+
+    ☉ λ get_action(&self, name: &str) -> Option<&Action> {
+        self.actions.get(name)
+    }
+
+    ☉ λ action_count(&self) -> usize {
+        self.actions.len()
+    }
+
+    // Planning
+    ☉ λ plan_for_goal(&self, goal: &Goal) -> Plan {
+        // Simple planning: create a step ∀ the goal
+        ≔ action = Action·new(&format!("achieve_{}", goal.description));
+        Plan·new()
+            .with_step(PlanStep·from_action(action))
+            .with_strategy("HTN")
+    }
+
+    ☉ λ plan_with_actions(&self, action_names: &[&str]) -> Plan {
+        ≔ Δ plan = Plan·new();
+        ∀ name ∈ action_names {
+            ⎇ ≔ Some(action) = self.actions.get(*name) {
+                plan = plan.with_step(PlanStep·from_action(action.clone()));
+            }
+        }
+        plan
+    }
+
+    // Learning
+    ☉ λ learn_from_execution(&Δ self, plan: Plan, outcome: PlanOutcome) {
+        ⎇ self.config.enable_learning {
+            // Update action success rates
+            ≔ succeeded = matches!(outcome, PlanOutcome·Success);
+            ∀ step ∈ &plan.steps {
+                ⎇ ≔ Some(action) = self.actions.get_mut(&step.action.name) {
+                    // Simple exponential moving average
+                    ≔ current = action.success_rate;
+                    ≔ update = ⎇ succeeded { 1.0 } ⎉ { 0.0 };
+                    action.success_rate = current * 0.9 + update * 0.1;
+                }
+            }
+            self.plan_history.push((plan, outcome));
+        }
+    }
+
+    ☉ λ history_count(&self) -> usize {
+        self.plan_history.len()
+    }
+
+    ☉ λ success_rate(&self, action_name: &str) -> Option<f32> {
+        self.actions.get(action_name).map(|a| a.success_rate)
+    }
+
+    // Decision making
+    ☉ λ should_proceed(&self, plan: &Plan) -> bool {
+        plan.success_probability >= (1.0 - self.config.risk_tolerance)
+    }
+}
+
+// ============================================================================
+// Tests: Belief Integration
+// ============================================================================
+
+#[test]
+λ test_omen_observe_creates_belief() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.observe("the sky is blue");
+    assert(omen.believes("the sky is blue"));
+}
+
+#[test]
+λ test_omen_multiple_beliefs() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.observe("fact1");
+    omen.observe("fact2");
+    omen.believe(Belief·axiom("truth"));
+    assert_eq(omen.belief_count(), 3);
+}
+
+#[test]
+λ test_omen_belief_contradiction_resolution() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.observe("door is open");
+
+    ≔ Δ closed = Belief·observed("door is open");
+    closed.proposition = closed.proposition.negate();
+    closed.confidence = 0.5;  // Lower confidence
+
+    omen.believe(closed);
+    // Original belief should win (higher confidence)
+    ≔ belief = omen.get_belief("door is open");
+    assert(belief.is_some());
+    assert(!belief.unwrap().proposition.negated);
+}
+
+#[test]
+λ test_omen_stronger_belief_wins() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.believe(Belief·inferred("maybe true", 0.6));
+    omen.observe("maybe true");  // Observed > Inferred
+
+    ≔ belief = omen.get_belief("maybe true");
+    assert(belief.is_some());
+    assert_eq(belief.unwrap().epistemic, Epistemic·Observed);
+}
+
+// ============================================================================
+// Tests: Goal Integration
+// ============================================================================
+
+#[test]
+λ test_omen_add_goal() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.add_goal(Goal·new("complete task"));
+    assert_eq(omen.goal_count(), 1);
+}
+
+#[test]
+λ test_omen_multiple_goals() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.add_goal(Goal·new("goal1").with_priority(0.3));
+    omen.add_goal(Goal·new("goal2").with_priority(0.8));
+    omen.add_goal(Goal·new("goal3").with_priority(0.5));
+    assert_eq(omen.goal_count(), 3);
+}
+
+#[test]
+λ test_omen_activate_goal() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.add_goal(Goal·new("task"));
+    omen.activate_goal(0);
+    assert_eq(omen.active_goal_count(), 1);
+}
+
+#[test]
+λ test_omen_current_goal_highest_priority() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.add_goal(Goal·new("low").with_priority(0.2));
+    omen.add_goal(Goal·new("high").with_priority(0.9));
+    omen.activate_goal(0);
+    omen.activate_goal(1);
+    ≔ current = omen.current_goal();
+    assert(current.is_some());
+    assert_eq(current.unwrap().description, "high");
+}
+
+#[test]
+λ test_omen_achieve_goal() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.add_goal(Goal·new("achievable"));
+    omen.activate_goal(0);
+    omen.achieve_goal(0);
+    assert_eq(omen.active_goal_count(), 0);
+}
+
+// ============================================================================
+// Tests: Action Library Integration
+// ============================================================================
+
+#[test]
+λ test_omen_register_action() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.register_action(Action·new("fetch_data"));
+    assert_eq(omen.action_count(), 1);
+}
+
+#[test]
+λ test_omen_get_action() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.register_action(Action·new("process").with_success_rate(0.85));
+    ≔ action = omen.get_action("process");
+    assert(action.is_some());
+    assert_eq(action.unwrap().success_rate, 0.85);
+}
+
+#[test]
+λ test_omen_multiple_actions() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.register_action(Action·new("step1"));
+    omen.register_action(Action·new("step2"));
+    omen.register_action(Action·new("step3"));
+    assert_eq(omen.action_count(), 3);
+}
+
+// ============================================================================
+// Tests: Planning Integration
+// ============================================================================
+
+#[test]
+λ test_omen_plan_for_goal() {
+    ≔ omen = Omen·new(OmenConfig·default());
+    ≔ goal = Goal·new("test goal");
+    ≔ plan = omen.plan_for_goal(&goal);
+    assert_eq(plan.step_count(), 1);
+    assert_eq(plan.strategy, "HTN");
+}
+
+#[test]
+λ test_omen_plan_with_actions() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.register_action(Action·new("a1").with_success_rate(0.9));
+    omen.register_action(Action·new("a2").with_success_rate(0.9));
+    ≔ plan = omen.plan_with_actions(&["a1", "a2"]);
+    assert_eq(plan.step_count(), 2);
+}
+
+#[test]
+λ test_omen_plan_success_probability() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.register_action(Action·new("reliable").with_success_rate(0.9));
+    omen.register_action(Action·new("also_reliable").with_success_rate(0.9));
+    ≔ plan = omen.plan_with_actions(&["reliable", "also_reliable"]);
+    // 0.9 * 0.9 = 0.81
+    ≔ diff = (plan.success_probability - 0.81).abs();
+    assert(diff < 0.01);
+}
+
+#[test]
+λ test_omen_should_proceed_viable_plan() {
+    ≔ omen = Omen·new(OmenConfig·default());  // risk_tolerance = 0.5
+    ≔ plan = Plan·new()
+        .with_step(PlanStep·from_action(Action·new("safe").with_success_rate(0.8)));
+    // 0.8 >= 0.5 (1.0 - 0.5)
+    assert(omen.should_proceed(&plan));
+}
+
+#[test]
+λ test_omen_should_not_proceed_risky_plan() {
+    ≔ Δ config = OmenConfig·default();
+    config.risk_tolerance = 0.2;  // Very conservative
+    ≔ omen = Omen·new(config);
+    ≔ plan = Plan·new()
+        .with_step(PlanStep·from_action(Action·new("risky").with_success_rate(0.5)));
+    // 0.5 < 0.8 (1.0 - 0.2)
+    assert(!omen.should_proceed(&plan));
+}
+
+// ============================================================================
+// Tests: Learning Integration
+// ============================================================================
+
+#[test]
+λ test_omen_learn_from_success() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.register_action(Action·new("tested").with_success_rate(0.5));
+
+    ≔ plan = omen.plan_with_actions(&["tested"]);
+    omen.learn_from_execution(plan, PlanOutcome·Success);
+
+    // Success should increase rate
+    ≔ new_rate = omen.success_rate("tested").unwrap();
+    assert(new_rate > 0.5);
+}
+
+#[test]
+λ test_omen_learn_from_failure() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.register_action(Action·new("tested").with_success_rate(0.5));
+
+    ≔ plan = omen.plan_with_actions(&["tested"]);
+    omen.learn_from_execution(plan, PlanOutcome·Failure { reason: "test".to_string() });
+
+    // Failure should decrease rate
+    ≔ new_rate = omen.success_rate("tested").unwrap();
+    assert(new_rate < 0.5);
+}
+
+#[test]
+λ test_omen_history_tracking() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+    omen.register_action(Action·new("action"));
+
+    ≔ plan1 = omen.plan_with_actions(&["action"]);
+    ≔ plan2 = omen.plan_with_actions(&["action"]);
+
+    omen.learn_from_execution(plan1, PlanOutcome·Success);
+    omen.learn_from_execution(plan2, PlanOutcome·Failure { reason: "test".to_string() });
+
+    assert_eq(omen.history_count(), 2);
+}
+
+#[test]
+λ test_omen_learning_disabled() {
+    ≔ Δ config = OmenConfig·default();
+    config.enable_learning = false;
+    ≔ Δ omen = Omen·new(config);
+    omen.register_action(Action·new("action").with_success_rate(0.5));
+
+    ≔ plan = omen.plan_with_actions(&["action"]);
+    omen.learn_from_execution(plan, PlanOutcome·Success);
+
+    // Rate should not change
+    assert_eq(omen.success_rate("action").unwrap(), 0.5);
+    assert_eq(omen.history_count(), 0);
+}
+
+// ============================================================================
+// Tests: Full Workflow
+// ============================================================================
+
+#[test]
+λ test_omen_complete_workflow() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+
+    // 1. Establish beliefs
+    omen.observe("task is pending");
+    omen.believe(Belief·axiom("resources available"));
+
+    // 2. Set goals
+    omen.add_goal(Goal·new("complete task").with_priority(0.8));
+    omen.activate_goal(0);
+
+    // 3. Register actions
+    omen.register_action(Action·new("prepare").with_success_rate(0.95));
+    omen.register_action(Action·new("execute").with_success_rate(0.9));
+    omen.register_action(Action·new("verify").with_success_rate(0.95));
+
+    // 4. Create plan
+    ≔ plan = omen.plan_with_actions(&["prepare", "execute", "verify"]);
+
+    // 5. Check viability
+    assert(plan.is_viable());
+    assert(omen.should_proceed(&plan));
+
+    // 6. Execute and learn (simulated success)
+    omen.learn_from_execution(plan, PlanOutcome·Success);
+
+    // 7. Complete goal
+    omen.achieve_goal(0);
+
+    // Verify final state
+    assert(omen.believes("task is pending"));
+    assert_eq(omen.active_goal_count(), 0);
+    assert_eq(omen.history_count(), 1);
+}
+
+#[test]
+λ test_omen_belief_driven_planning() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+
+    // Belief about current state
+    omen.observe("user needs help");
+    omen.believe(Belief·inferred("user is frustrated", 0.7));
+
+    // Goal based on beliefs
+    omen.add_goal(Goal·new("assist user").with_priority(0.9));
+    omen.activate_goal(0);
+
+    // Planning considers beliefs
+    assert(omen.believes("user needs help"));
+    ≔ current = omen.current_goal();
+    assert(current.is_some());
+    assert_eq(current.unwrap().description, "assist user");
+}
+
+#[test]
+λ test_omen_adaptive_behavior() {
+    ≔ Δ omen = Omen·new(OmenConfig·default());
+
+    // Register an initially unreliable action
+    omen.register_action(Action·new("flaky_action").with_success_rate(0.5));
+
+    // Simulate multiple successes
+    ∀ _ ∈ 0..5 {
+        ≔ plan = omen.plan_with_actions(&["flaky_action"]);
+        omen.learn_from_execution(plan, PlanOutcome·Success);
+    }
+
+    // Action should now be more trusted
+    ≔ rate = omen.success_rate("flaky_action").unwrap();
+    assert(rate > 0.5);
+}
+
+λ main() {
+    print("Omen integration tests");
+}

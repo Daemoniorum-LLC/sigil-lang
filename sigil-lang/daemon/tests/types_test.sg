@@ -1,0 +1,252 @@
+//! Daemon Core Types Tests - 16 tests
+
+Σ DaemonId {
+    bytes: ![!u8; 16],
+}
+
+⊢ DaemonId {
+    ☉ λ new() -> Self {
+        DaemonId { bytes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] }
+    }
+
+    ☉ λ from_bytes(bytes: ![!u8; 16]) -> Self {
+        DaemonId { bytes }
+    }
+
+    ☉ λ is_valid(&self) -> !bool {
+        self.bytes[0] != 0 || self.bytes[1] != 0
+    }
+}
+
+Σ Identity {
+    id: DaemonId,
+    name_len: !usize,
+    desc_len: !usize,
+    schema_version: !u32,
+}
+
+⊢ Identity {
+    ☉ λ new(name_len: !usize) -> Self {
+        Identity {
+            id: DaemonId·new(),
+            name_len,
+            desc_len: 0,
+            schema_version: 1,
+        }
+    }
+
+    ☉ λ with_description(Δ self, desc_len: !usize) -> Self {
+        self.desc_len = desc_len;
+        self
+    }
+}
+
+Σ Directive {
+    priority: !u32,
+    content_len: !usize,
+    immutable: !bool,
+}
+
+⊢ Directive {
+    ☉ λ new(content_len: !usize) -> Self {
+        Directive { priority: 0, content_len, immutable: false }
+    }
+
+    ☉ λ with_priority(Δ self, priority: !u32) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    ☉ λ immutable(Δ self) -> Self {
+        self.immutable = true;
+        self
+    }
+}
+
+Σ Constitution {
+    directive_count: !usize,
+    allow_all: !bool,
+}
+
+⊢ Constitution {
+    ☉ λ default_constitution() -> Self {
+        Constitution { directive_count: 0, allow_all: true }
+    }
+
+    ☉ λ add_directive(&Δ self) {
+        self.directive_count = self.directive_count + 1;
+    }
+}
+
+Σ ResourceBounds {
+    max_memory_bytes: !usize,
+    max_cpu_percent: !u32,
+    max_tokens_per_minute: !u64,
+}
+
+⊢ ResourceBounds {
+    ☉ λ default_bounds() -> Self {
+        ResourceBounds {
+            max_memory_bytes: 512 * 1024 * 1024,
+            max_cpu_percent: 50,
+            max_tokens_per_minute: 10000,
+        }
+    }
+
+    ☉ λ restrictive() -> Self {
+        ResourceBounds {
+            max_memory_bytes: 64 * 1024 * 1024,
+            max_cpu_percent: 10,
+            max_tokens_per_minute: 1000,
+        }
+    }
+
+    ☉ λ permissive() -> Self {
+        ResourceBounds {
+            max_memory_bytes: 4 * 1024 * 1024 * 1024,
+            max_cpu_percent: 100,
+            max_tokens_per_minute: 100000,
+        }
+    }
+}
+
+Σ ActionSet {
+    allowed_count: !usize,
+    deny_all: !bool,
+}
+
+⊢ ActionSet {
+    ☉ λ all() -> Self {
+        ActionSet { allowed_count: 0, deny_all: false }
+    }
+
+    ☉ λ none() -> Self {
+        ActionSet { allowed_count: 0, deny_all: true }
+    }
+
+    ☉ λ only(count: !usize) -> Self {
+        ActionSet { allowed_count: count, deny_all: true }
+    }
+
+    ☉ λ is_allowed_any(&self) -> !bool {
+        !self.deny_all
+    }
+
+    ☉ λ has_allowlist(&self) -> !bool {
+        self.deny_all && self.allowed_count > 0
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+λ test_daemon_id_creation() {
+    ≔ id = DaemonId·new();
+    assert(id.is_valid());
+}
+
+#[test]
+λ test_daemon_id_from_bytes() {
+    ≔ bytes: ![!u8; 16] = [1; 16];
+    ≔ id = DaemonId·from_bytes(bytes);
+    assert(id.is_valid());
+}
+
+#[test]
+λ test_daemon_id_zero_bytes() {
+    ≔ bytes: ![!u8; 16] = [0; 16];
+    ≔ id = DaemonId·from_bytes(bytes);
+    assert(!id.is_valid());
+}
+
+#[test]
+λ test_identity_creation() {
+    ≔ identity = Identity·new(11);
+    assert(identity.schema_version == 1);
+}
+
+#[test]
+λ test_identity_with_description() {
+    ≔ identity = Identity·new(4).with_description(15);
+    assert(identity.desc_len == 15);
+}
+
+#[test]
+λ test_directive_creation() {
+    ≔ directive = Directive·new(10);
+    assert(directive.priority == 0);
+    assert(!directive.immutable);
+}
+
+#[test]
+λ test_directive_with_priority() {
+    ≔ directive = Directive·new(8).with_priority(100);
+    assert(directive.priority == 100);
+}
+
+#[test]
+λ test_directive_immutable() {
+    ≔ directive = Directive·new(10).immutable();
+    assert(directive.immutable);
+}
+
+#[test]
+λ test_constitution_default() {
+    ≔ constitution = Constitution·default_constitution();
+    assert(constitution.directive_count == 0);
+    assert(constitution.allow_all);
+}
+
+#[test]
+λ test_constitution_add_directives() {
+    ≔ Δ constitution = Constitution·default_constitution();
+    constitution.add_directive();
+    constitution.add_directive();
+    assert(constitution.directive_count == 2);
+}
+
+#[test]
+λ test_resource_bounds_default() {
+    ≔ bounds = ResourceBounds·default_bounds();
+    assert(bounds.max_memory_bytes == 512 * 1024 * 1024);
+    assert(bounds.max_cpu_percent == 50);
+}
+
+#[test]
+λ test_resource_bounds_restrictive() {
+    ≔ bounds = ResourceBounds·restrictive();
+    assert(bounds.max_memory_bytes == 64 * 1024 * 1024);
+    assert(bounds.max_cpu_percent == 10);
+}
+
+#[test]
+λ test_resource_bounds_permissive() {
+    ≔ bounds = ResourceBounds·permissive();
+    assert(bounds.max_cpu_percent == 100);
+}
+
+#[test]
+λ test_action_set_all() {
+    ≔ set = ActionSet·all();
+    assert(set.is_allowed_any());
+}
+
+#[test]
+λ test_action_set_none() {
+    ≔ set = ActionSet·none();
+    assert(!set.is_allowed_any());
+    assert(!set.has_allowlist());
+}
+
+#[test]
+λ test_action_set_only() {
+    ≔ set = ActionSet·only(2);
+    assert(!set.is_allowed_any());
+    assert(set.has_allowlist());
+}
+
+λ main() {
+    println("Daemon types tests - 16 tests");
+}

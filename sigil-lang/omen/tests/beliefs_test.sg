@@ -1,0 +1,697 @@
+//! Tests ∀ Omen Belief System
+//!
+//! Verifies Belief, Proposition, Evidence, BeliefSource, and BeliefManager.
+
+invoke std·collections·HashMap;
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+☉ Σ BeliefId { bytes: [u8; 16] }
+λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+
+⊢ BeliefId {
+    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+}
+
+⊢ Clone ∀ BeliefId {
+    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+}
+
+⊢ PartialEq ∀ BeliefId {
+    λ eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+☉ ᛈ Epistemic {
+    Axiomatic,
+    Observed,
+    Reported,
+    Inferred,
+    Contested,
+    Unknown,
+}
+
+⊢ Epistemic {
+    ☉ λ rank(&self) -> u8 {
+        ⌥ self {
+            Epistemic·Axiomatic => 5,
+            Epistemic·Observed => 4,
+            Epistemic·Reported => 3,
+            Epistemic·Inferred => 2,
+            Epistemic·Contested => 1,
+            Epistemic·Unknown => 0,
+        }
+    }
+}
+
+☉ Σ Timestamp { nanos: u64 }
+
+⊢ Timestamp {
+    ☉ λ now() -> Self { Self { nanos: 1000 } }
+}
+
+☉ Σ Proposition {
+    ☉ subject: String,
+    ☉ predicate: String,
+    ☉ value: Option<String>,
+    ☉ negated: bool,
+}
+
+⊢ Proposition {
+    ☉ λ simple(text: &str) -> Self {
+        Self {
+            subject: text.to_string(),
+            predicate: "is_true".to_string(),
+            value: None,
+            negated: false,
+        }
+    }
+
+    ☉ λ with_predicate(subject: &str, predicate: &str) -> Self {
+        Self {
+            subject: subject.to_string(),
+            predicate: predicate.to_string(),
+            value: None,
+            negated: false,
+        }
+    }
+
+    ☉ λ relation(subject: &str, predicate: &str, value: &str) -> Self {
+        Self {
+            subject: subject.to_string(),
+            predicate: predicate.to_string(),
+            value: Some(value.to_string()),
+            negated: false,
+        }
+    }
+
+    ☉ λ negate(Δ self) -> Self {
+        self.negated = !self.negated;
+        self
+    }
+
+    ☉ λ negates(&self, other: &Proposition) -> bool {
+        self.subject == other.subject &&
+        self.predicate == other.predicate &&
+        self.negated != other.negated
+    }
+
+    ☉ λ matches(&self, other: &Proposition) -> bool {
+        self.subject == other.subject &&
+        self.predicate == other.predicate &&
+        self.negated == other.negated
+    }
+}
+
+⊢ Clone ∀ Proposition {
+    λ clone(&self) -> Self {
+        Self {
+            subject: self.subject.clone(),
+            predicate: self.predicate.clone(),
+            value: self.value.clone(),
+            negated: self.negated,
+        }
+    }
+}
+
+☉ Σ Evidence {
+    ☉ content: String,
+    ☉ source: String,
+    ☉ strength: f32,
+}
+
+⊢ Evidence {
+    ☉ λ new(content: &str, source: &str, strength: f32) -> Self {
+        Self {
+            content: content.to_string(),
+            source: source.to_string(),
+            strength: strength.clamp(0.0, 1.0),
+        }
+    }
+
+    ☉ λ strong(content: &str, source: &str) -> Self {
+        Self·new(content, source, 0.9)
+    }
+
+    ☉ λ weak(content: &str, source: &str) -> Self {
+        Self·new(content, source, 0.3)
+    }
+}
+
+⊢ Clone ∀ Evidence {
+    λ clone(&self) -> Self {
+        Self {
+            content: self.content.clone(),
+            source: self.source.clone(),
+            strength: self.strength,
+        }
+    }
+}
+
+☉ ᛈ BeliefSource {
+    Observation,
+    Inference { premises: Vec<BeliefId> },
+    Testimony { source: String },
+    Assumption,
+    Axiom,
+}
+
+⊢ Clone ∀ BeliefSource {
+    λ clone(&self) -> Self {
+        ⌥ self {
+            BeliefSource·Observation => BeliefSource·Observation,
+            BeliefSource·Inference { premises } => BeliefSource·Inference {
+                premises: premises.iter().map(|id| id.clone()).collect()
+            },
+            BeliefSource·Testimony { source } => BeliefSource·Testimony { source: source.clone() },
+            BeliefSource·Assumption => BeliefSource·Assumption,
+            BeliefSource·Axiom => BeliefSource·Axiom,
+        }
+    }
+}
+
+☉ Σ Belief {
+    ☉ id: BeliefId,
+    ☉ proposition: Proposition,
+    ☉ epistemic: Epistemic,
+    ☉ confidence: f32,
+    ☉ evidence: Vec<Evidence>,
+    ☉ source: BeliefSource,
+    ☉ acquired: Timestamp,
+}
+
+⊢ Belief {
+    ☉ λ observed(proposition: &str) -> Self {
+        Self {
+            id: BeliefId·new(),
+            proposition: Proposition·simple(proposition),
+            epistemic: Epistemic·Observed,
+            confidence: 0.95,
+            evidence: vec![],
+            source: BeliefSource·Observation,
+            acquired: Timestamp·now(),
+        }
+    }
+
+    ☉ λ inferred(proposition: &str, confidence: f32) -> Self {
+        Self {
+            id: BeliefId·new(),
+            proposition: Proposition·simple(proposition),
+            epistemic: Epistemic·Inferred,
+            confidence: confidence.clamp(0.0, 1.0),
+            evidence: vec![],
+            source: BeliefSource·Assumption,
+            acquired: Timestamp·now(),
+        }
+    }
+
+    ☉ λ axiom(proposition: &str) -> Self {
+        Self {
+            id: BeliefId·new(),
+            proposition: Proposition·simple(proposition),
+            epistemic: Epistemic·Axiomatic,
+            confidence: 1.0,
+            evidence: vec![],
+            source: BeliefSource·Axiom,
+            acquired: Timestamp·now(),
+        }
+    }
+
+    ☉ λ reported(proposition: &str, source: &str) -> Self {
+        Self {
+            id: BeliefId·new(),
+            proposition: Proposition·simple(proposition),
+            epistemic: Epistemic·Reported,
+            confidence: 0.7,
+            evidence: vec![],
+            source: BeliefSource·Testimony { source: source.to_string() },
+            acquired: Timestamp·now(),
+        }
+    }
+
+    ☉ λ with_evidence(Δ self, evidence: Evidence) -> Self {
+        self.evidence.push(evidence);
+        self
+    }
+
+    ☉ λ contradicts(&self, other: &Belief) -> bool {
+        self.proposition.negates(&other.proposition)
+    }
+
+    ☉ λ is_certain(&self) -> bool {
+        self.confidence >= 0.99
+    }
+
+    ☉ λ is_probable(&self) -> bool {
+        self.confidence >= 0.5
+    }
+}
+
+⊢ Clone ∀ Belief {
+    λ clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            proposition: self.proposition.clone(),
+            epistemic: self.epistemic,
+            confidence: self.confidence,
+            evidence: self.evidence.clone(),
+            source: self.source.clone(),
+            acquired: Timestamp { nanos: self.acquired.nanos },
+        }
+    }
+}
+
+☉ Σ BeliefManager {
+    beliefs: HashMap<String, Belief>,
+    by_subject: HashMap<String, Vec<String>>,
+    id_counter: usize,
+}
+
+⊢ BeliefManager {
+    ☉ λ new() -> Self {
+        Self {
+            beliefs: HashMap·new(),
+            by_subject: HashMap·new(),
+            id_counter: 0,
+        }
+    }
+
+    ☉ λ add(&Δ self, belief: Belief) -> String {
+        ≔ key = format!("belief_{}", self.id_counter);
+        self.id_counter += 1;
+
+        ≔ subject = belief.proposition.subject.clone();
+        self.by_subject.entry(subject)
+            .or_default()
+            .push(key.clone());
+
+        self.beliefs.insert(key.clone(), belief);
+        key
+    }
+
+    ☉ λ get(&self, key: &str) -> Option<&Belief> {
+        self.beliefs.get(key)
+    }
+
+    ☉ λ holds(&self, proposition: &str) -> bool {
+        self.beliefs.values()
+            .any(|b| b.proposition.subject == proposition && b.confidence > 0.5)
+    }
+
+    ☉ λ about(&self, topic: &str) -> Vec<&Belief> {
+        self.by_subject.get(topic)
+            .map(|keys| keys.iter()
+                .filter_map(|k| self.beliefs.get(k))
+                .collect())
+            .unwrap_or_default()
+    }
+
+    ☉ λ count(&self) -> usize {
+        self.beliefs.len()
+    }
+
+    ☉ λ revise_with_evidence(&Δ self, evidence: Evidence) {
+        ∀ belief ∈ self.beliefs.values_mut() {
+            ⎇ belief.proposition.subject.contains(&evidence.content) {
+                belief.confidence = (belief.confidence + evidence.strength) / 2.0;
+                belief.evidence.push(evidence.clone());
+            }
+        }
+    }
+
+    ☉ λ remove(&Δ self, key: &str) -> Option<Belief> {
+        self.beliefs.remove(key)
+    }
+
+    ☉ λ strongest_about(&self, topic: &str) -> Option<&Belief> {
+        self.about(topic)
+            .into_iter()
+            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap())
+    }
+}
+
+// ============================================================================
+// Tests: Proposition
+// ============================================================================
+
+#[test]
+λ test_proposition_simple() {
+    ≔ p = Proposition·simple("sky is blue");
+    assert_eq(p.subject, "sky is blue");
+    assert_eq(p.predicate, "is_true");
+    assert(!p.negated);
+}
+
+#[test]
+λ test_proposition_with_predicate() {
+    ≔ p = Proposition·with_predicate("agent", "is_ready");
+    assert_eq(p.subject, "agent");
+    assert_eq(p.predicate, "is_ready");
+}
+
+#[test]
+λ test_proposition_relation() {
+    ≔ p = Proposition·relation("Alice", "knows", "Bob");
+    assert_eq(p.subject, "Alice");
+    assert_eq(p.predicate, "knows");
+    assert_eq(p.value.unwrap(), "Bob");
+}
+
+#[test]
+λ test_proposition_negate() {
+    ≔ p = Proposition·simple("it is raining").negate();
+    assert(p.negated);
+}
+
+#[test]
+λ test_proposition_double_negate() {
+    ≔ p = Proposition·simple("it is raining").negate().negate();
+    assert(!p.negated);
+}
+
+#[test]
+λ test_proposition_negates() {
+    ≔ p1 = Proposition·simple("raining");
+    ≔ p2 = Proposition·simple("raining").negate();
+    assert(p1.negates(&p2));
+    assert(p2.negates(&p1));
+}
+
+#[test]
+λ test_proposition_not_negates_different() {
+    ≔ p1 = Proposition·simple("raining");
+    ≔ p2 = Proposition·simple("sunny");
+    assert(!p1.negates(&p2));
+}
+
+#[test]
+λ test_proposition_matches() {
+    ≔ p1 = Proposition·simple("x");
+    ≔ p2 = Proposition·simple("x");
+    assert(p1.matches(&p2));
+}
+
+#[test]
+λ test_proposition_clone() {
+    ≔ p1 = Proposition·relation("A", "likes", "B");
+    ≔ p2 = p1.clone();
+    assert_eq(p1.subject, p2.subject);
+    assert_eq(p1.predicate, p2.predicate);
+}
+
+// ============================================================================
+// Tests: Evidence
+// ============================================================================
+
+#[test]
+λ test_evidence_new() {
+    ≔ e = Evidence·new("observation data", "sensor", 0.8);
+    assert_eq(e.content, "observation data");
+    assert_eq(e.source, "sensor");
+    assert_eq(e.strength, 0.8);
+}
+
+#[test]
+λ test_evidence_strong() {
+    ≔ e = Evidence·strong("direct observation", "camera");
+    assert_eq(e.strength, 0.9);
+}
+
+#[test]
+λ test_evidence_weak() {
+    ≔ e = Evidence·weak("rumor", "gossip");
+    assert_eq(e.strength, 0.3);
+}
+
+#[test]
+λ test_evidence_strength_clamped() {
+    ≔ e = Evidence·new("data", "source", 1.5);
+    assert_eq(e.strength, 1.0);
+}
+
+#[test]
+λ test_evidence_clone() {
+    ≔ e1 = Evidence·new("data", "src", 0.5);
+    ≔ e2 = e1.clone();
+    assert_eq(e1.strength, e2.strength);
+}
+
+// ============================================================================
+// Tests: BeliefSource
+// ============================================================================
+
+#[test]
+λ test_belief_source_observation() {
+    ≔ src = BeliefSource·Observation;
+    ≔ is_observation = ⌥ src {
+        BeliefSource·Observation => true,
+        _ => false,
+    };
+    assert(is_observation);
+}
+
+#[test]
+λ test_belief_source_inference() {
+    ≔ premise = BeliefId·new();
+    ≔ src = BeliefSource·Inference { premises: vec![premise] };
+    ≔ is_inference = ⌥ src {
+        BeliefSource·Inference { .. } => true,
+        _ => false,
+    };
+    assert(is_inference);
+}
+
+#[test]
+λ test_belief_source_testimony() {
+    ≔ src = BeliefSource·Testimony { source: "witness".to_string() };
+    ≔ is_testimony = ⌥ src {
+        BeliefSource·Testimony { .. } => true,
+        _ => false,
+    };
+    assert(is_testimony);
+}
+
+#[test]
+λ test_belief_source_assumption() {
+    ≔ src = BeliefSource·Assumption;
+    ≔ is_assumption = ⌥ src {
+        BeliefSource·Assumption => true,
+        _ => false,
+    };
+    assert(is_assumption);
+}
+
+#[test]
+λ test_belief_source_axiom() {
+    ≔ src = BeliefSource·Axiom;
+    ≔ is_axiom = ⌥ src {
+        BeliefSource·Axiom => true,
+        _ => false,
+    };
+    assert(is_axiom);
+}
+
+#[test]
+λ test_belief_source_clone() {
+    ≔ src = BeliefSource·Testimony { source: "expert".to_string() };
+    ≔ cloned = src.clone();
+    ≔ matches = ⌥ cloned {
+        BeliefSource·Testimony { source } => source == "expert",
+        _ => false,
+    };
+    assert(matches);
+}
+
+// ============================================================================
+// Tests: Belief
+// ============================================================================
+
+#[test]
+λ test_belief_observed() {
+    ≔ b = Belief·observed("the door is open");
+    assert_eq(b.epistemic, Epistemic·Observed);
+    assert_eq(b.confidence, 0.95);
+}
+
+#[test]
+λ test_belief_inferred() {
+    ≔ b = Belief·inferred("it will rain", 0.7);
+    assert_eq(b.epistemic, Epistemic·Inferred);
+    assert_eq(b.confidence, 0.7);
+}
+
+#[test]
+λ test_belief_axiom() {
+    ≔ b = Belief·axiom("1 + 1 = 2");
+    assert_eq(b.epistemic, Epistemic·Axiomatic);
+    assert_eq(b.confidence, 1.0);
+}
+
+#[test]
+λ test_belief_reported() {
+    ≔ b = Belief·reported("the meeting is at 3pm", "calendar");
+    assert_eq(b.epistemic, Epistemic·Reported);
+    assert_eq(b.confidence, 0.7);
+}
+
+#[test]
+λ test_belief_with_evidence() {
+    ≔ b = Belief·observed("sensor reading high")
+        .with_evidence(Evidence·strong("measurement", "thermometer"));
+    assert_eq(b.evidence.len(), 1);
+}
+
+#[test]
+λ test_belief_contradicts() {
+    ≔ b1 = Belief·observed("door is open");
+    ≔ Δ b2 = Belief·observed("door is open");
+    b2.proposition = b2.proposition.negate();
+    assert(b1.contradicts(&b2));
+}
+
+#[test]
+λ test_belief_not_contradicts() {
+    ≔ b1 = Belief·observed("door is open");
+    ≔ b2 = Belief·observed("window is open");
+    assert(!b1.contradicts(&b2));
+}
+
+#[test]
+λ test_belief_is_certain() {
+    ≔ b = Belief·axiom("truth");
+    assert(b.is_certain());
+}
+
+#[test]
+λ test_belief_not_certain() {
+    ≔ b = Belief·inferred("maybe", 0.6);
+    assert(!b.is_certain());
+}
+
+#[test]
+λ test_belief_is_probable() {
+    ≔ b = Belief·inferred("likely", 0.6);
+    assert(b.is_probable());
+}
+
+#[test]
+λ test_belief_not_probable() {
+    ≔ b = Belief·inferred("unlikely", 0.3);
+    assert(!b.is_probable());
+}
+
+#[test]
+λ test_belief_clone() {
+    ≔ b1 = Belief·observed("fact");
+    ≔ b2 = b1.clone();
+    assert_eq(b1.confidence, b2.confidence);
+}
+
+#[test]
+λ test_belief_confidence_clamped() {
+    ≔ b = Belief·inferred("test", 1.5);
+    assert_eq(b.confidence, 1.0);
+}
+
+// ============================================================================
+// Tests: BeliefManager
+// ============================================================================
+
+#[test]
+λ test_belief_manager_new() {
+    ≔ mgr = BeliefManager·new();
+    assert_eq(mgr.count(), 0);
+}
+
+#[test]
+λ test_belief_manager_add() {
+    ≔ Δ mgr = BeliefManager·new();
+    mgr.add(Belief·observed("test"));
+    assert_eq(mgr.count(), 1);
+}
+
+#[test]
+λ test_belief_manager_get() {
+    ≔ Δ mgr = BeliefManager·new();
+    ≔ key = mgr.add(Belief·observed("fact"));
+    ≔ b = mgr.get(&key);
+    assert(b.is_some());
+}
+
+#[test]
+λ test_belief_manager_holds() {
+    ≔ Δ mgr = BeliefManager·new();
+    mgr.add(Belief·observed("the sky is blue"));
+    assert(mgr.holds("the sky is blue"));
+}
+
+#[test]
+λ test_belief_manager_not_holds_low_confidence() {
+    ≔ Δ mgr = BeliefManager·new();
+    mgr.add(Belief·inferred("uncertain thing", 0.3));
+    assert(!mgr.holds("uncertain thing"));
+}
+
+#[test]
+λ test_belief_manager_about() {
+    ≔ Δ mgr = BeliefManager·new();
+    mgr.add(Belief·observed("weather"));
+    mgr.add(Belief·observed("weather"));
+    ≔ beliefs = mgr.about("weather");
+    assert_eq(beliefs.len(), 2);
+}
+
+#[test]
+λ test_belief_manager_about_empty() {
+    ≔ mgr = BeliefManager·new();
+    ≔ beliefs = mgr.about("nothing");
+    assert_eq(beliefs.len(), 0);
+}
+
+#[test]
+λ test_belief_manager_revise_with_evidence() {
+    ≔ Δ mgr = BeliefManager·new();
+    mgr.add(Belief·inferred("topic evidence", 0.5));
+    mgr.revise_with_evidence(Evidence·strong("evidence", "source"));
+    // Confidence should be revised
+    ≔ beliefs = mgr.about("topic evidence");
+    assert_eq(beliefs.len(), 1);
+}
+
+#[test]
+λ test_belief_manager_remove() {
+    ≔ Δ mgr = BeliefManager·new();
+    ≔ key = mgr.add(Belief·observed("temporary"));
+    assert_eq(mgr.count(), 1);
+    mgr.remove(&key);
+    assert_eq(mgr.count(), 0);
+}
+
+#[test]
+λ test_belief_manager_strongest_about() {
+    ≔ Δ mgr = BeliefManager·new();
+    mgr.add(Belief·inferred("topic", 0.3));
+    mgr.add(Belief·observed("topic"));  // confidence 0.95
+    ≔ strongest = mgr.strongest_about("topic");
+    assert(strongest.is_some());
+    assert_eq(strongest.unwrap().confidence, 0.95);
+}
+
+#[test]
+λ test_belief_manager_multiple_topics() {
+    ≔ Δ mgr = BeliefManager·new();
+    mgr.add(Belief·observed("topic_a"));
+    mgr.add(Belief·observed("topic_b"));
+    mgr.add(Belief·observed("topic_c"));
+    assert_eq(mgr.count(), 3);
+    assert_eq(mgr.about("topic_a").len(), 1);
+    assert_eq(mgr.about("topic_b").len(), 1);
+}
+
+λ main() {
+    print("Omen beliefs tests");
+}

@@ -1,0 +1,301 @@
+//! Commune Intent Tests - 17 tests
+
+ᛈ Urgency {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+⊢ Urgency {
+    ☉ λ priority(&self) -> !u32 {
+        ⌥ self {
+            Urgency·Critical => 100,
+            Urgency·High => 75,
+            Urgency·Normal => 50,
+            Urgency·Low => 25,
+        }
+    }
+
+    ☉ λ is_urgent(&self) -> !bool {
+        ⌥ self {
+            Urgency·Critical => true,
+            Urgency·High => true,
+            _ => false,
+        }
+    }
+}
+
+ᛈ Importance {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+⊢ Importance {
+    ☉ λ weight(&self) -> !f32 {
+        ⌥ self {
+            Importance·Critical => 1.0,
+            Importance·High => 0.75,
+            Importance·Normal => 0.5,
+            Importance·Low => 0.25,
+        }
+    }
+}
+
+ᛈ TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+⊢ TaskStatus {
+    ☉ λ is_active(&self) -> !bool {
+        ⌥ self {
+            TaskStatus·Pending => true,
+            TaskStatus·InProgress => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_terminal(&self) -> !bool {
+        ⌥ self {
+            TaskStatus·Completed => true,
+            TaskStatus·Failed => true,
+            TaskStatus·Cancelled => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_success(&self) -> !bool {
+        ⌥ self {
+            TaskStatus·Completed => true,
+            _ => false,
+        }
+    }
+}
+
+ᛈ VoteValue {
+    Approve,
+    Reject,
+    Abstain,
+    Block,
+}
+
+⊢ VoteValue {
+    ☉ λ is_positive(&self) -> !bool {
+        ⌥ self {
+            VoteValue·Approve => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_negative(&self) -> !bool {
+        ⌥ self {
+            VoteValue·Reject => true,
+            VoteValue·Block => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_blocking(&self) -> !bool {
+        ⌥ self {
+            VoteValue·Block => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ score(&self) -> !i32 {
+        ⌥ self {
+            VoteValue·Approve => 1,
+            VoteValue·Reject => -1,
+            VoteValue·Abstain => 0,
+            VoteValue·Block => -10,
+        }
+    }
+}
+
+ᛈ Priority {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+⊢ Priority {
+    ☉ λ value(&self) -> !u32 {
+        ⌥ self {
+            Priority·Critical => 4,
+            Priority·High => 3,
+            Priority·Normal => 2,
+            Priority·Low => 1,
+        }
+    }
+
+    ☉ λ is_high(&self) -> !bool {
+        ⌥ self {
+            Priority·Critical => true,
+            Priority·High => true,
+            _ => false,
+        }
+    }
+}
+
+Σ IntentInfo {
+    expects_response: !bool,
+    timeout_secs: !u64,
+}
+
+⊢ IntentInfo {
+    ☉ λ query() -> Self {
+        IntentInfo { expects_response: true, timeout_secs: 30 }
+    }
+
+    ☉ λ inform() -> Self {
+        IntentInfo { expects_response: false, timeout_secs: 0 }
+    }
+
+    ☉ λ request(urgency: Urgency) -> Self {
+        ≔ timeout = ⌥ urgency {
+            Urgency·Critical => 10,
+            Urgency·High => 30,
+            Urgency·Normal => 300,
+            Urgency·Low => 1800,
+        };
+        IntentInfo { expects_response: true, timeout_secs: timeout }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+λ test_urgency_priority_critical() {
+    ≔ u = Urgency·Critical;
+    assert(u.priority() == 100);
+    assert(u.is_urgent());
+}
+
+#[test]
+λ test_urgency_priority_high() {
+    ≔ u = Urgency·High;
+    assert(u.priority() == 75);
+    assert(u.is_urgent());
+}
+
+#[test]
+λ test_urgency_priority_normal() {
+    ≔ u = Urgency·Normal;
+    assert(u.priority() == 50);
+    assert(!u.is_urgent());
+}
+
+#[test]
+λ test_importance_weight() {
+    ≔ i = Importance·Critical;
+    assert(i.weight() == 1.0);
+}
+
+#[test]
+λ test_task_status_pending() {
+    ≔ s = TaskStatus·Pending;
+    assert(s.is_active());
+    assert(!s.is_terminal());
+}
+
+#[test]
+λ test_task_status_in_progress() {
+    ≔ s = TaskStatus·InProgress;
+    assert(s.is_active());
+    assert(!s.is_terminal());
+}
+
+#[test]
+λ test_task_status_completed() {
+    ≔ s = TaskStatus·Completed;
+    assert(!s.is_active());
+    assert(s.is_terminal());
+    assert(s.is_success());
+}
+
+#[test]
+λ test_task_status_failed() {
+    ≔ s = TaskStatus·Failed;
+    assert(s.is_terminal());
+    assert(!s.is_success());
+}
+
+#[test]
+λ test_vote_approve() {
+    ≔ v = VoteValue·Approve;
+    assert(v.is_positive());
+    assert(!v.is_negative());
+    assert(v.score() == 1);
+}
+
+#[test]
+λ test_vote_reject() {
+    ≔ v = VoteValue·Reject;
+    assert(!v.is_positive());
+    assert(v.is_negative());
+    assert(!v.is_blocking());
+}
+
+#[test]
+λ test_vote_block() {
+    ≔ v = VoteValue·Block;
+    assert(v.is_blocking());
+    assert(v.score() == -10);
+}
+
+#[test]
+λ test_vote_abstain() {
+    ≔ v = VoteValue·Abstain;
+    assert(!v.is_positive());
+    assert(!v.is_negative());
+    assert(v.score() == 0);
+}
+
+#[test]
+λ test_priority_values() {
+    ≔ c = Priority·Critical;
+    ≔ h = Priority·High;
+    assert(c.value() == 4);
+    assert(h.value() == 3);
+}
+
+#[test]
+λ test_priority_is_high() {
+    assert(Priority·Critical.is_high());
+    assert(Priority·High.is_high());
+    assert(!Priority·Normal.is_high());
+}
+
+#[test]
+λ test_intent_info_query() {
+    ≔ info = IntentInfo·query();
+    assert(info.expects_response);
+    assert(info.timeout_secs == 30);
+}
+
+#[test]
+λ test_intent_info_inform() {
+    ≔ info = IntentInfo·inform();
+    assert(!info.expects_response);
+}
+
+#[test]
+λ test_intent_info_request() {
+    ≔ critical = IntentInfo·request(Urgency·Critical);
+    ≔ normal = IntentInfo·request(Urgency·Normal);
+    assert(critical.timeout_secs == 10);
+    assert(normal.timeout_secs == 300);
+}
+
+λ main() {
+    println("Commune intent tests - 17 tests");
+}

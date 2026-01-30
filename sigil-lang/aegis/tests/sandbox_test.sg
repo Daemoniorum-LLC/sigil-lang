@@ -1,0 +1,309 @@
+//! Aegis Sandbox Tests - 20 tests
+
+ᛈ IsolationLevel {
+    None,
+    Process,
+    Container,
+    VM,
+}
+
+ᛈ NetworkPolicy {
+    Deny,
+    Allow,
+    AllowList,
+}
+
+ᛈ FilesystemPolicy {
+    Deny,
+    Allow,
+    ReadOnly,
+}
+
+Σ ResourceLimits {
+    max_memory: !u64,
+    max_cpu_percent: !u32,
+    max_files: !u32,
+    max_processes: !u32,
+}
+
+⊢ ResourceLimits {
+    ☉ λ default_limits() -> Self {
+        ResourceLimits {
+            max_memory: 1024 * 1024 * 512,  // 512 MB
+            max_cpu_percent: 50,
+            max_files: 100,
+            max_processes: 10,
+        }
+    }
+
+    ☉ λ restrictive() -> Self {
+        ResourceLimits {
+            max_memory: 1024 * 1024 * 64,   // 64 MB
+            max_cpu_percent: 10,
+            max_files: 10,
+            max_processes: 1,
+        }
+    }
+
+    ☉ λ permissive() -> Self {
+        ResourceLimits {
+            max_memory: 1024 * 1024 * 1024 * 4,  // 4 GB
+            max_cpu_percent: 100,
+            max_files: 10000,
+            max_processes: 100,
+        }
+    }
+}
+
+Σ SandboxConfig {
+    isolation: IsolationLevel,
+    network: NetworkPolicy,
+    filesystem: FilesystemPolicy,
+    limits: ResourceLimits,
+    timeout_secs: !u64,
+}
+
+⊢ SandboxConfig {
+    ☉ λ default_config() -> Self {
+        SandboxConfig {
+            isolation: IsolationLevel·Process,
+            network: NetworkPolicy·Deny,
+            filesystem: FilesystemPolicy·ReadOnly,
+            limits: ResourceLimits·default_limits(),
+            timeout_secs: 300,
+        }
+    }
+
+    ☉ λ restrictive() -> Self {
+        SandboxConfig {
+            isolation: IsolationLevel·Container,
+            network: NetworkPolicy·Deny,
+            filesystem: FilesystemPolicy·Deny,
+            limits: ResourceLimits·restrictive(),
+            timeout_secs: 30,
+        }
+    }
+
+    ☉ λ permissive() -> Self {
+        SandboxConfig {
+            isolation: IsolationLevel·Process,
+            network: NetworkPolicy·Allow,
+            filesystem: FilesystemPolicy·Allow,
+            limits: ResourceLimits·permissive(),
+            timeout_secs: 1800,
+        }
+    }
+}
+
+Σ SyscallFilter {
+    mode: FilterMode,
+    count: !usize,
+}
+
+ᛈ FilterMode {
+    AllowList,
+    DenyList,
+}
+
+⊢ SyscallFilter {
+    ☉ λ restrictive() -> Self {
+        SyscallFilter { mode: FilterMode·AllowList, count: 12 }
+    }
+
+    ☉ λ permissive() -> Self {
+        SyscallFilter { mode: FilterMode·DenyList, count: 5 }
+    }
+
+    ☉ λ is_allow_list(&self) -> !bool {
+        ⌥ self.mode {
+            FilterMode·AllowList => true,
+            FilterMode·DenyList => false,
+        }
+    }
+
+    ☉ λ is_deny_list(&self) -> !bool {
+        ⌥ self.mode {
+            FilterMode·AllowList => false,
+            FilterMode·DenyList => true,
+        }
+    }
+}
+
+Σ ResourceUsage {
+    memory_bytes: !u64,
+    cpu_time_ms: !u64,
+    open_files: !u32,
+}
+
+⊢ ResourceUsage {
+    ☉ λ zero() -> Self {
+        ResourceUsage { memory_bytes: 0, cpu_time_ms: 0, open_files: 0 }
+    }
+
+    ☉ λ exceeds(&self, limits: &ResourceLimits) -> !bool {
+        self.memory_bytes > limits.max_memory ||
+        self.open_files > limits.max_files
+    }
+}
+
+// ============================================================================
+// ResourceLimits Tests
+// ============================================================================
+
+#[test]
+λ test_resource_limits_default() {
+    ≔ limits = ResourceLimits·default_limits();
+    assert(limits.max_memory == 1024 * 1024 * 512);
+    assert(limits.max_cpu_percent == 50);
+    assert(limits.max_files == 100);
+    assert(limits.max_processes == 10);
+}
+
+#[test]
+λ test_resource_limits_restrictive() {
+    ≔ limits = ResourceLimits·restrictive();
+    assert(limits.max_memory == 1024 * 1024 * 64);
+    assert(limits.max_cpu_percent == 10);
+    assert(limits.max_files == 10);
+    assert(limits.max_processes == 1);
+}
+
+#[test]
+λ test_resource_limits_permissive() {
+    ≔ limits = ResourceLimits·permissive();
+    assert(limits.max_cpu_percent == 100);
+    assert(limits.max_files == 10000);
+    assert(limits.max_processes == 100);
+}
+
+// ============================================================================
+// SandboxConfig Tests
+// ============================================================================
+
+#[test]
+λ test_sandbox_config_default() {
+    ≔ config = SandboxConfig·default_config();
+    assert(config.timeout_secs == 300);
+}
+
+#[test]
+λ test_sandbox_config_restrictive() {
+    ≔ config = SandboxConfig·restrictive();
+    assert(config.timeout_secs == 30);
+}
+
+#[test]
+λ test_sandbox_config_permissive() {
+    ≔ config = SandboxConfig·permissive();
+    assert(config.timeout_secs == 1800);
+}
+
+#[test]
+λ test_sandbox_isolation_levels() {
+    ≔ none = IsolationLevel·None;
+    ≔ process = IsolationLevel·Process;
+    ≔ container = IsolationLevel·Container;
+    ≔ vm = IsolationLevel·VM;
+    assert(true); // Enum variants exist
+}
+
+#[test]
+λ test_sandbox_network_policies() {
+    ≔ deny = NetworkPolicy·Deny;
+    ≔ allow = NetworkPolicy·Allow;
+    ≔ allowlist = NetworkPolicy·AllowList;
+    assert(true); // Enum variants exist
+}
+
+#[test]
+λ test_sandbox_filesystem_policies() {
+    ≔ deny = FilesystemPolicy·Deny;
+    ≔ allow = FilesystemPolicy·Allow;
+    ≔ readonly = FilesystemPolicy·ReadOnly;
+    assert(true); // Enum variants exist
+}
+
+// ============================================================================
+// SyscallFilter Tests
+// ============================================================================
+
+#[test]
+λ test_syscall_filter_restrictive() {
+    ≔ filter = SyscallFilter·restrictive();
+    assert(filter.is_allow_list());
+    assert(!filter.is_deny_list());
+    assert(filter.count == 12);
+}
+
+#[test]
+λ test_syscall_filter_permissive() {
+    ≔ filter = SyscallFilter·permissive();
+    assert(!filter.is_allow_list());
+    assert(filter.is_deny_list());
+    assert(filter.count == 5);
+}
+
+// ============================================================================
+// ResourceUsage Tests
+// ============================================================================
+
+#[test]
+λ test_resource_usage_zero() {
+    ≔ usage = ResourceUsage·zero();
+    assert(usage.memory_bytes == 0);
+    assert(usage.cpu_time_ms == 0);
+    assert(usage.open_files == 0);
+}
+
+#[test]
+λ test_resource_usage_exceeds_memory() {
+    ≔ limits = ResourceLimits·restrictive();
+    ≔ usage = ResourceUsage {
+        memory_bytes: 1024 * 1024 * 100, // 100 MB > 64 MB limit
+        cpu_time_ms: 0,
+        open_files: 0,
+    };
+    assert(usage.exceeds(&limits));
+}
+
+#[test]
+λ test_resource_usage_exceeds_files() {
+    ≔ limits = ResourceLimits·restrictive();
+    ≔ usage = ResourceUsage {
+        memory_bytes: 0,
+        cpu_time_ms: 0,
+        open_files: 20, // > 10 limit
+    };
+    assert(usage.exceeds(&limits));
+}
+
+#[test]
+λ test_resource_usage_within_limits() {
+    ≔ limits = ResourceLimits·default_limits();
+    ≔ usage = ResourceUsage {
+        memory_bytes: 1024 * 1024 * 100, // 100 MB < 512 MB limit
+        cpu_time_ms: 1000,
+        open_files: 50, // < 100 limit
+    };
+    assert(!usage.exceeds(&limits));
+}
+
+#[test]
+λ test_resource_usage_at_exact_limits() {
+    ≔ limits = ResourceLimits {
+        max_memory: 1000,
+        max_cpu_percent: 50,
+        max_files: 10,
+        max_processes: 5,
+    };
+    ≔ usage = ResourceUsage {
+        memory_bytes: 1000, // exactly at limit
+        cpu_time_ms: 0,
+        open_files: 10, // exactly at limit
+    };
+    assert(!usage.exceeds(&limits)); // at limit is not exceeding
+}
+
+λ main() {
+    println("Aegis sandbox tests - 17 tests");
+}

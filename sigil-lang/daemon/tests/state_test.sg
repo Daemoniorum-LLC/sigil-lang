@@ -1,0 +1,386 @@
+//! Daemon State Tests - 25 tests
+
+// ============================================================================
+// Lifecycle State
+// ============================================================================
+
+ᛈ LifecycleState {
+    Initializing,
+    Ready,
+    Running,
+    Suspended { reason: String },
+    Terminating { reason: String },
+    Terminated,
+}
+
+⊢ LifecycleState {
+    ☉ λ is_operational(&self) -> !bool {
+        ⌥ self {
+            LifecycleState·Ready => true,
+            LifecycleState·Running => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_running(&self) -> !bool {
+        ⌥ self {
+            LifecycleState·Running => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_terminated(&self) -> !bool {
+        ⌥ self {
+            LifecycleState·Terminated => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ can_accept_work(&self) -> !bool {
+        ⌥ self {
+            LifecycleState·Running => true,
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// Terminate Reason
+// ============================================================================
+
+ᛈ TerminateReason {
+    GoalsComplete,
+    Shutdown,
+    Fatal { error: String },
+    ResourceExhaustion,
+    Manual,
+}
+
+⊢ TerminateReason {
+    ☉ λ is_error(&self) -> !bool {
+        ⌥ self {
+            TerminateReason·Fatal { .. } => true,
+            TerminateReason·ResourceExhaustion => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_graceful(&self) -> !bool {
+        ⌥ self {
+            TerminateReason·GoalsComplete => true,
+            TerminateReason·Shutdown => true,
+            TerminateReason·Manual => true,
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// Operational Metrics
+// ============================================================================
+
+Σ OperationalMetrics {
+    uptime_secs: !u64,
+    heartbeats: !u64,
+    actions_taken: !u64,
+    goals_completed: !u64,
+    goals_failed: !u64,
+    errors: !u64,
+}
+
+⊢ OperationalMetrics {
+    ☉ λ new() -> Self {
+        OperationalMetrics {
+            uptime_secs: 0,
+            heartbeats: 0,
+            actions_taken: 0,
+            goals_completed: 0,
+            goals_failed: 0,
+            errors: 0,
+        }
+    }
+
+    ☉ λ record_heartbeat(&Δ self) {
+        self.heartbeats = self.heartbeats + 1;
+    }
+
+    ☉ λ record_action(&Δ self) {
+        self.actions_taken = self.actions_taken + 1;
+    }
+
+    ☉ λ record_goal_completed(&Δ self) {
+        self.goals_completed = self.goals_completed + 1;
+    }
+
+    ☉ λ record_goal_failed(&Δ self) {
+        self.goals_failed = self.goals_failed + 1;
+    }
+
+    ☉ λ record_error(&Δ self) {
+        self.errors = self.errors + 1;
+    }
+
+    ☉ λ success_rate(&self) -> !f32 {
+        ≔ total = self.goals_completed + self.goals_failed;
+        ⎇ total == 0 {
+            ⤺ 1.0;
+        }
+        self.goals_completed as !f32 / total as !f32
+    }
+
+    ☉ λ error_rate(&self) -> !f32 {
+        ⎇ self.heartbeats == 0 {
+            ⤺ 0.0;
+        }
+        self.errors as !f32 / self.heartbeats as !f32
+    }
+}
+
+// ============================================================================
+// Resource Usage
+// ============================================================================
+
+Σ ResourceUsage {
+    memory_bytes: !usize,
+    cpu_time_ms: !u64,
+    tokens_used: !u64,
+    api_calls: !u64,
+}
+
+⊢ ResourceUsage {
+    ☉ λ new() -> Self {
+        ResourceUsage {
+            memory_bytes: 0,
+            cpu_time_ms: 0,
+            tokens_used: 0,
+            api_calls: 0,
+        }
+    }
+
+    ☉ λ record_memory(&Δ self, bytes: !usize) {
+        self.memory_bytes = bytes;
+    }
+
+    ☉ λ record_tokens(&Δ self, tokens: !u64) {
+        self.tokens_used = self.tokens_used + tokens;
+    }
+
+    ☉ λ record_api_call(&Δ self) {
+        self.api_calls = self.api_calls + 1;
+    }
+
+    ☉ λ exceeds_memory(&self, limit: !usize) -> !bool {
+        self.memory_bytes > limit
+    }
+
+    ☉ λ exceeds_tokens(&self, limit: !u64) -> !bool {
+        self.tokens_used > limit
+    }
+}
+
+// ============================================================================
+// Agent State
+// ============================================================================
+
+Σ AgentState {
+    lifecycle: LifecycleState,
+    metrics: OperationalMetrics,
+    resources: ResourceUsage,
+}
+
+⊢ AgentState {
+    ☉ λ new() -> Self {
+        AgentState {
+            lifecycle: LifecycleState·Initializing,
+            metrics: OperationalMetrics·new(),
+            resources: ResourceUsage·new(),
+        }
+    }
+
+    ☉ λ initialize(&Δ self) {
+        self.lifecycle = LifecycleState·Ready;
+    }
+
+    ☉ λ start(&Δ self) {
+        self.lifecycle = LifecycleState·Running;
+    }
+
+    ☉ λ suspend(&Δ self, reason: String) {
+        self.lifecycle = LifecycleState·Suspended { reason };
+    }
+
+    ☉ λ terminate(&Δ self, reason: String) {
+        self.lifecycle = LifecycleState·Terminating { reason };
+    }
+
+    ☉ λ is_healthy(&self) -> !bool {
+        self.lifecycle.is_operational() && self.metrics.error_rate() < 0.1
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[test]
+λ test_lifecycle_initializing() {
+    ≔ state = LifecycleState·Initializing;
+    assert(!state.is_operational());
+    assert(!state.can_accept_work());
+}
+
+#[test]
+λ test_lifecycle_ready() {
+    ≔ state = LifecycleState·Ready;
+    assert(state.is_operational());
+    assert(!state.is_running());
+}
+
+#[test]
+λ test_lifecycle_running() {
+    ≔ state = LifecycleState·Running;
+    assert(state.is_operational());
+    assert(state.is_running());
+    assert(state.can_accept_work());
+}
+
+#[test]
+λ test_lifecycle_suspended() {
+    ≔ state = LifecycleState·Suspended { reason: "Maintenance".to_string() };
+    assert(!state.is_operational());
+    assert(!state.can_accept_work());
+}
+
+#[test]
+λ test_lifecycle_terminated() {
+    ≔ state = LifecycleState·Terminated;
+    assert(state.is_terminated());
+    assert(!state.is_operational());
+}
+
+#[test]
+λ test_terminate_reason_graceful() {
+    ≔ reason = TerminateReason·GoalsComplete;
+    assert(reason.is_graceful());
+    assert(!reason.is_error());
+}
+
+#[test]
+λ test_terminate_reason_fatal() {
+    ≔ reason = TerminateReason·Fatal { error: "Crash".to_string() };
+    assert(reason.is_error());
+    assert(!reason.is_graceful());
+}
+
+#[test]
+λ test_terminate_reason_resource() {
+    ≔ reason = TerminateReason·ResourceExhaustion;
+    assert(reason.is_error());
+}
+
+#[test]
+λ test_metrics_creation() {
+    ≔ metrics = OperationalMetrics·new();
+    assert(metrics.heartbeats == 0);
+    assert(metrics.errors == 0);
+}
+
+#[test]
+λ test_metrics_heartbeat() {
+    ≔ Δ metrics = OperationalMetrics·new();
+    metrics.record_heartbeat();
+    metrics.record_heartbeat();
+    assert(metrics.heartbeats == 2);
+}
+
+#[test]
+λ test_metrics_actions() {
+    ≔ Δ metrics = OperationalMetrics·new();
+    metrics.record_action();
+    metrics.record_action();
+    metrics.record_action();
+    assert(metrics.actions_taken == 3);
+}
+
+#[test]
+λ test_metrics_success_rate_perfect() {
+    ≔ Δ metrics = OperationalMetrics·new();
+    metrics.record_goal_completed();
+    metrics.record_goal_completed();
+    assert(metrics.success_rate() == 1.0);
+}
+
+#[test]
+λ test_metrics_success_rate_mixed() {
+    ≔ Δ metrics = OperationalMetrics·new();
+    metrics.record_goal_completed();
+    metrics.record_goal_failed();
+    assert(metrics.success_rate() == 0.5);
+}
+
+#[test]
+λ test_metrics_error_rate() {
+    ≔ Δ metrics = OperationalMetrics·new();
+    metrics.record_heartbeat();
+    metrics.record_heartbeat();
+    metrics.record_heartbeat();
+    metrics.record_heartbeat();
+    metrics.record_error();
+    assert(metrics.error_rate() == 0.25);
+}
+
+#[test]
+λ test_resource_usage_creation() {
+    ≔ usage = ResourceUsage·new();
+    assert(usage.memory_bytes == 0);
+    assert(usage.tokens_used == 0);
+}
+
+#[test]
+λ test_resource_usage_memory() {
+    ≔ Δ usage = ResourceUsage·new();
+    usage.record_memory(1024 * 1024);
+    assert(usage.memory_bytes == 1024 * 1024);
+}
+
+#[test]
+λ test_resource_usage_tokens() {
+    ≔ Δ usage = ResourceUsage·new();
+    usage.record_tokens(100);
+    usage.record_tokens(200);
+    assert(usage.tokens_used == 300);
+}
+
+#[test]
+λ test_resource_exceeds_memory() {
+    ≔ Δ usage = ResourceUsage·new();
+    usage.record_memory(1000);
+    assert(usage.exceeds_memory(500));
+    assert(!usage.exceeds_memory(2000));
+}
+
+#[test]
+λ test_agent_state_creation() {
+    ≔ state = AgentState·new();
+    assert(!state.lifecycle.is_operational());
+}
+
+#[test]
+λ test_agent_state_lifecycle() {
+    ≔ Δ state = AgentState·new();
+    state.initialize();
+    assert(state.lifecycle.is_operational());
+    state.start();
+    assert(state.lifecycle.is_running());
+}
+
+#[test]
+λ test_agent_state_healthy() {
+    ≔ Δ state = AgentState·new();
+    state.start();
+    assert(state.is_healthy());
+}
+
+λ main() {
+    println("Daemon state tests - 21 tests");
+}

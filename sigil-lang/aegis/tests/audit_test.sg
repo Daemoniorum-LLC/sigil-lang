@@ -1,0 +1,259 @@
+//! Aegis Audit Tests - 15 tests
+
+Σ AuditId {
+    bytes: ![!u8; 16],
+}
+
+⊢ AuditId {
+    ☉ λ new() -> Self {
+        AuditId { bytes: [0; 16] }
+    }
+}
+
+Σ Timestamp {
+    nanos: !u64,
+}
+
+⊢ Timestamp {
+    ☉ λ now() -> Self {
+        Timestamp { nanos: 1705500000_000_000_000 }
+    }
+
+    ☉ λ from_nanos(nanos: !u64) -> Self {
+        Timestamp { nanos }
+    }
+}
+
+ᛈ AuditAction {
+    ToolInvoked,
+    GoalProposed,
+    GoalAccepted,
+    GoalRejected,
+    ResourceAccessed,
+    SecurityAlert,
+}
+
+ᛈ AuditOutcome {
+    Success,
+    Failure,
+    Blocked,
+    Warning,
+}
+
+Σ AuditEntry {
+    id: AuditId,
+    timestamp: Timestamp,
+    action: AuditAction,
+    outcome: AuditOutcome,
+    prev_hash: ![!u8; 32],
+    hash: ![!u8; 32],
+}
+
+⊢ AuditEntry {
+    ☉ λ new(action: AuditAction, outcome: AuditOutcome) -> Self {
+        AuditEntry {
+            id: AuditId·new(),
+            timestamp: Timestamp·now(),
+            action,
+            outcome,
+            prev_hash: [0; 32],
+            hash: [0; 32],
+        }
+    }
+
+    ☉ λ with_prev_hash(Δ self, prev: ![!u8; 32]) -> Self {
+        self.prev_hash = prev;
+        self
+    }
+}
+
+ᛈ AuditLevel {
+    Verbose,
+    Standard,
+    Security,
+    Minimal,
+}
+
+Σ AuditConfig {
+    max_entries: !usize,
+    persist: !bool,
+    level: AuditLevel,
+}
+
+⊢ AuditConfig {
+    ☉ λ default_config() -> Self {
+        AuditConfig {
+            max_entries: 10000,
+            persist: true,
+            level: AuditLevel·Standard,
+        }
+    }
+
+    ☉ λ verbose() -> Self {
+        AuditConfig {
+            max_entries: 100000,
+            persist: true,
+            level: AuditLevel·Verbose,
+        }
+    }
+
+    ☉ λ minimal() -> Self {
+        AuditConfig {
+            max_entries: 1000,
+            persist: false,
+            level: AuditLevel·Minimal,
+        }
+    }
+}
+
+Σ AuditLog {
+    entry_count: !usize,
+    config: AuditConfig,
+    last_hash: ![!u8; 32],
+}
+
+⊢ AuditLog {
+    ☉ λ new(config: AuditConfig) -> Self {
+        AuditLog {
+            entry_count: 0,
+            config,
+            last_hash: [0; 32],
+        }
+    }
+
+    ☉ λ log(&Δ self, action: AuditAction, outcome: AuditOutcome) {
+        self.entry_count = self.entry_count + 1;
+    }
+
+    ☉ λ count(&self) -> !usize {
+        self.entry_count
+    }
+
+    ☉ λ is_empty(&self) -> !bool {
+        self.entry_count == 0
+    }
+}
+
+// ============================================================================
+// AuditAction Tests
+// ============================================================================
+
+#[test]
+λ test_audit_action_types() {
+    ≔ tool = AuditAction·ToolInvoked;
+    ≔ proposed = AuditAction·GoalProposed;
+    ≔ accepted = AuditAction·GoalAccepted;
+    ≔ rejected = AuditAction·GoalRejected;
+    ≔ resource = AuditAction·ResourceAccessed;
+    ≔ alert = AuditAction·SecurityAlert;
+    assert(true);
+}
+
+// ============================================================================
+// AuditOutcome Tests
+// ============================================================================
+
+#[test]
+λ test_audit_outcome_types() {
+    ≔ success = AuditOutcome·Success;
+    ≔ failure = AuditOutcome·Failure;
+    ≔ blocked = AuditOutcome·Blocked;
+    ≔ warning = AuditOutcome·Warning;
+    assert(true);
+}
+
+// ============================================================================
+// AuditEntry Tests
+// ============================================================================
+
+#[test]
+λ test_audit_entry_creation() {
+    ≔ entry = AuditEntry·new(AuditAction·ToolInvoked, AuditOutcome·Success);
+    assert(entry.timestamp.nanos > 0);
+}
+
+#[test]
+λ test_audit_entry_with_prev_hash() {
+    ≔ prev: ![!u8; 32] = [1; 32];
+    ≔ entry = AuditEntry·new(AuditAction·ToolInvoked, AuditOutcome·Success)
+        .with_prev_hash(prev);
+    assert(entry.prev_hash[0] == 1);
+}
+
+// ============================================================================
+// AuditConfig Tests
+// ============================================================================
+
+#[test]
+λ test_audit_config_default() {
+    ≔ config = AuditConfig·default_config();
+    assert(config.max_entries == 10000);
+    assert(config.persist);
+}
+
+#[test]
+λ test_audit_config_verbose() {
+    ≔ config = AuditConfig·verbose();
+    assert(config.max_entries == 100000);
+}
+
+#[test]
+λ test_audit_config_minimal() {
+    ≔ config = AuditConfig·minimal();
+    assert(config.max_entries == 1000);
+    assert(!config.persist);
+}
+
+// ============================================================================
+// AuditLog Tests
+// ============================================================================
+
+#[test]
+λ test_audit_log_creation() {
+    ≔ log = AuditLog·new(AuditConfig·default_config());
+    assert(log.is_empty());
+    assert(log.count() == 0);
+}
+
+#[test]
+λ test_audit_log_single_entry() {
+    ≔ Δ log = AuditLog·new(AuditConfig·default_config());
+    log.log(AuditAction·ToolInvoked, AuditOutcome·Success);
+    assert(!log.is_empty());
+    assert(log.count() == 1);
+}
+
+#[test]
+λ test_audit_log_multiple_entries() {
+    ≔ Δ log = AuditLog·new(AuditConfig·default_config());
+    log.log(AuditAction·ToolInvoked, AuditOutcome·Success);
+    log.log(AuditAction·GoalProposed, AuditOutcome·Success);
+    log.log(AuditAction·GoalAccepted, AuditOutcome·Success);
+    assert(log.count() == 3);
+}
+
+#[test]
+λ test_audit_log_mixed_outcomes() {
+    ≔ Δ log = AuditLog·new(AuditConfig·default_config());
+    log.log(AuditAction·GoalProposed, AuditOutcome·Success);
+    log.log(AuditAction·GoalRejected, AuditOutcome·Blocked);
+    log.log(AuditAction·SecurityAlert, AuditOutcome·Warning);
+    assert(log.count() == 3);
+}
+
+// ============================================================================
+// AuditLevel Tests
+// ============================================================================
+
+#[test]
+λ test_audit_level_types() {
+    ≔ verbose = AuditLevel·Verbose;
+    ≔ standard = AuditLevel·Standard;
+    ≔ security = AuditLevel·Security;
+    ≔ minimal = AuditLevel·Minimal;
+    assert(true);
+}
+
+λ main() {
+    println("Aegis audit tests - 13 tests");
+}

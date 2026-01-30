@@ -1,0 +1,758 @@
+//! Tests ∀ Gnosis Learning Engine
+//!
+//! Verifies LearningEngine, Pattern, Lesson, and learning mechanics.
+
+invoke std·collections·HashMap;
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+☉ Σ Duration { nanos: u64 }
+⊢ Duration { ☉ λ zero() -> Self { Self { nanos: 0 } } }
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+
+☉ Σ Timestamp { nanos: u64 }
+⊢ Timestamp {
+    ☉ λ now() -> Self { Self { nanos: 1000 } }
+    ☉ λ from_nanos(n: u64) -> Self { Self { nanos: n } }
+}
+
+⊢ PartialOrd ∀ Timestamp {
+    λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+        self.nanos.partial_cmp(&other.nanos)
+    }
+}
+
+⊢ PartialEq ∀ Timestamp {
+    λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+}
+
+☉ Σ ExperienceId { id: String }
+⊢ ExperienceId { ☉ λ generate() -> Self { Self { id: "exp".to_string() } } }
+⊢ Clone ∀ ExperienceId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+
+☉ Σ HumanId { id: String }
+⊢ HumanId { ☉ λ new(id: &str) -> Self { Self { id: id.to_string() } } }
+⊢ Clone ∀ HumanId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+
+☉ Σ Confidence { value: f64 }
+⊢ Confidence {
+    ☉ λ new(v: f64) -> Self { Self { value: v.clamp(0.0, 1.0) } }
+    ☉ λ zero() -> Self { Self { value: 0.0 } }
+    ☉ λ value(&self) -> f64 { self.value }
+}
+
+#[derive(Clone)]
+☉ Σ Context {
+    ☉ task_type: String,
+    ☉ domain: Option<String>,
+}
+
+⊢ Context {
+    ☉ λ new(task_type: &str) -> Self {
+        Self { task_type: task_type.to_string(), domain: None }
+    }
+
+    ☉ λ with_domain(Δ self, domain: &str) -> Self {
+        self.domain = Some(domain.to_string());
+        self
+    }
+
+    ☉ λ similar_to(&self, other: &Context) -> bool {
+        self.task_type == other.task_type
+    }
+
+    ☉ λ matches(&self, other: &Context) -> bool {
+        self.task_type == other.task_type && self.domain == other.domain
+    }
+}
+
+#[derive(Clone)]
+☉ Σ Action {
+    ☉ approach: String,
+    ☉ skills: Vec<String>,
+}
+
+⊢ Action {
+    ☉ λ new(approach: &str) -> Self {
+        Self { approach: approach.to_string(), skills: vec![] }
+    }
+
+    ☉ λ with_skill(Δ self, skill: &str) -> Self {
+        self.skills.push(skill.to_string());
+        self
+    }
+}
+
+#[derive(Clone)]
+☉ Σ ExperienceOutcome {
+    ☉ success: bool,
+    ☉ quality: f32,
+    ☉ unexpected: bool,
+}
+
+⊢ ExperienceOutcome {
+    ☉ λ success(quality: f32) -> Self {
+        Self { success: true, quality: quality.clamp(0.0, 1.0), unexpected: false }
+    }
+
+    ☉ λ failure() -> Self {
+        Self { success: false, quality: 0.0, unexpected: false }
+    }
+
+    ☉ λ unexpected(quality: f32) -> Self {
+        Self { success: true, quality, unexpected: true }
+    }
+}
+
+#[derive(Clone)]
+☉ Σ Experience {
+    ☉ id: ExperienceId,
+    ☉ context: Context,
+    ☉ action: Action,
+    ☉ outcome: ExperienceOutcome,
+    ☉ timestamp: Timestamp,
+}
+
+⊢ Experience {
+    ☉ λ new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
+        Self {
+            id: ExperienceId·generate(),
+            context,
+            action,
+            outcome,
+            timestamp: Timestamp·now(),
+        }
+    }
+}
+
+#[derive(Clone)]
+☉ ᛈ LessonType {
+    EffectiveApproach,
+    IneffectiveApproach,
+    SurprisingOutcome,
+    FeedbackLearning,
+}
+
+☉ Σ Lesson {
+    ☉ context: Context,
+    ☉ approach: String,
+    ☉ effectiveness: f32,
+    ☉ lesson_type: LessonType,
+}
+
+⊢ Lesson {
+    ☉ λ effective(context: Context, approach: &str, effectiveness: f32) -> Self {
+        Self {
+            context,
+            approach: approach.to_string(),
+            effectiveness,
+            lesson_type: LessonType·EffectiveApproach,
+        }
+    }
+
+    ☉ λ ineffective(context: Context, approach: &str) -> Self {
+        Self {
+            context,
+            approach: approach.to_string(),
+            effectiveness: 0.0,
+            lesson_type: LessonType·IneffectiveApproach,
+        }
+    }
+
+    ☉ λ is_positive(&self) -> bool {
+        ⌥ self.lesson_type {
+            LessonType·EffectiveApproach => true,
+            _ => false,
+        }
+    }
+}
+
+☉ Σ Pattern {
+    ☉ context: Context,
+    ☉ approach: String,
+    ☉ success_rate: f32,
+    ☉ confidence: Confidence,
+    ☉ occurrences: usize,
+}
+
+⊢ Pattern {
+    ☉ λ new(context: Context, approach: &str) -> Self {
+        Self {
+            context,
+            approach: approach.to_string(),
+            success_rate: 0.0,
+            confidence: Confidence·zero(),
+            occurrences: 0,
+        }
+    }
+
+    ☉ λ is_reliable(&self) -> bool {
+        self.success_rate >= 0.7 && self.confidence.value() >= 0.5
+    }
+
+    ☉ λ record_outcome(&Δ self, success: bool) {
+        self.occurrences += 1;
+        ≔ outcome_val = ⎇ success { 1.0 } ⎉ { 0.0 };
+        // Rolling average
+        self.success_rate = (self.success_rate * (self.occurrences - 1) as f32 + outcome_val)
+            / self.occurrences as f32;
+        self.confidence = Confidence·new((self.occurrences as f64 / 10.0).min(1.0));
+    }
+}
+
+☉ Σ LessonStore {
+    lessons: Vec<Lesson>,
+}
+
+⊢ LessonStore {
+    ☉ λ new() -> Self { Self { lessons: vec![] } }
+
+    ☉ λ add(&Δ self, lesson: Lesson) {
+        self.lessons.push(lesson);
+    }
+
+    ☉ λ count(&self) -> usize { self.lessons.len() }
+
+    ☉ λ lessons(&self) -> &[Lesson] { &self.lessons }
+
+    ☉ λ for_context(&self, ctx: &Context) -> Vec<&Lesson> {
+        self.lessons.iter().filter(|l| l.context.similar_to(ctx)).collect()
+    }
+
+    ☉ λ positive_lessons(&self) -> Vec<&Lesson> {
+        self.lessons.iter().filter(|l| l.is_positive()).collect()
+    }
+}
+
+☉ Σ PatternStore {
+    patterns: Vec<Pattern>,
+}
+
+⊢ PatternStore {
+    ☉ λ new() -> Self { Self { patterns: vec![] } }
+
+    ☉ λ add(&Δ self, pattern: Pattern) {
+        self.patterns.push(pattern);
+    }
+
+    ☉ λ count(&self) -> usize { self.patterns.len() }
+
+    ☉ λ get(&self, context: &Context, approach: &str) -> Option<&Pattern> {
+        self.patterns.iter().find(|p|
+            p.context.similar_to(context) && p.approach == approach
+        )
+    }
+
+    ☉ λ get_mut(&Δ self, context: &Context, approach: &str) -> Option<&Δ Pattern> {
+        self.patterns.iter_mut().find(|p|
+            p.context.similar_to(context) && p.approach == approach
+        )
+    }
+
+    ☉ λ reliable_patterns(&self) -> Vec<&Pattern> {
+        self.patterns.iter().filter(|p| p.is_reliable()).collect()
+    }
+
+    ☉ λ for_context(&self, ctx: &Context) -> Vec<&Pattern> {
+        self.patterns.iter().filter(|p| p.context.similar_to(ctx)).collect()
+    }
+}
+
+☉ Σ LearningConfig {
+    ☉ max_experiences: usize,
+    ☉ pattern_threshold: usize,
+    ☉ generalization_threshold: f32,
+}
+
+⊢ LearningConfig {
+    ☉ λ default_config() -> Self {
+        Self {
+            max_experiences: 1000,
+            pattern_threshold: 3,
+            generalization_threshold: 0.7,
+        }
+    }
+
+    ☉ λ with_pattern_threshold(Δ self, threshold: usize) -> Self {
+        self.pattern_threshold = threshold;
+        self
+    }
+}
+
+☉ Σ LearningEngine {
+    experiences: Vec<Experience>,
+    ☉ patterns: PatternStore,
+    ☉ lessons: LessonStore,
+    config: LearningConfig,
+}
+
+⊢ LearningEngine {
+    ☉ λ new() -> Self {
+        Self {
+            experiences: vec![],
+            patterns: PatternStore·new(),
+            lessons: LessonStore·new(),
+            config: LearningConfig·default_config(),
+        }
+    }
+
+    ☉ λ with_config(config: LearningConfig) -> Self {
+        Self {
+            experiences: vec![],
+            patterns: PatternStore·new(),
+            lessons: LessonStore·new(),
+            config,
+        }
+    }
+
+    ☉ λ record_experience(&Δ self, exp: Experience) {
+        // Check ∀ pattern or update existing
+        ⎇ ≔ Some(pattern) = self.patterns.get_mut(&exp.context, &exp.action.approach) {
+            pattern.record_outcome(exp.outcome.success);
+        } ⎉ {
+            // Check ⎇ we should create new pattern
+            ≔ similar_count = self.experiences.iter()
+                .filter(|e| e.context.similar_to(&exp.context) && e.action.approach == exp.action.approach)
+                .count();
+
+            ⎇ similar_count >= self.config.pattern_threshold - 1 {
+                ≔ Δ pattern = Pattern·new(exp.context.clone(), &exp.action.approach);
+                // Calculate success rate from similar experiences
+                ≔ similar: Vec<_> = self.experiences.iter()
+                    .filter(|e| e.context.similar_to(&exp.context) && e.action.approach == exp.action.approach)
+                    .collect();
+                ≔ successes = similar.iter().filter(|e| e.outcome.success).count() + ⎇ exp.outcome.success { 1 } ⎉ { 0 };
+                ≔ total = similar.len() + 1;
+                pattern.success_rate = successes as f32 / total as f32;
+                pattern.occurrences = total;
+                pattern.confidence = Confidence·new((total as f64 / 10.0).min(1.0));
+                self.patterns.add(pattern);
+            }
+        }
+
+        self.experiences.push(exp);
+
+        // Trim ⎇ over capacity
+        ⟳ self.experiences.len() > self.config.max_experiences {
+            self.experiences.remove(0);
+        }
+    }
+
+    ☉ λ extract_lessons(&self, exp: &Experience) -> Vec<Lesson> {
+        ≔ Δ lessons = Vec·new();
+
+        ⎇ exp.outcome.success {
+            lessons.push(Lesson·effective(
+                exp.context.clone(),
+                &exp.action.approach,
+                exp.outcome.quality
+            ));
+        } ⎉ {
+            lessons.push(Lesson·ineffective(
+                exp.context.clone(),
+                &exp.action.approach
+            ));
+        }
+
+        ⎇ exp.outcome.unexpected {
+            lessons.push(Lesson {
+                context: exp.context.clone(),
+                approach: exp.action.approach.clone(),
+                effectiveness: 0.5,
+                lesson_type: LessonType·SurprisingOutcome,
+            });
+        }
+
+        lessons
+    }
+
+    ☉ λ experience_count(&self) -> usize {
+        self.experiences.len()
+    }
+
+    ☉ λ pattern_count(&self) -> usize {
+        self.patterns.count()
+    }
+
+    ☉ λ lesson_count(&self) -> usize {
+        self.lessons.count()
+    }
+
+    ☉ λ find_similar(&self, context: &Context) -> Vec<&Experience> {
+        self.experiences.iter().filter(|e| e.context.similar_to(context)).collect()
+    }
+
+    ☉ λ success_rate_for(&self, context: &Context, approach: &str) -> Option<f32> {
+        self.patterns.get(context, approach).map(|p| p.success_rate)
+    }
+}
+
+// ============================================================================
+// Tests: Lesson
+// ============================================================================
+
+#[test]
+λ test_lesson_effective() {
+    ≔ lesson = Lesson·effective(Context·new("coding"), "tdd", 0.9);
+    assert(lesson.is_positive());
+    assert_eq(lesson.effectiveness, 0.9);
+}
+
+#[test]
+λ test_lesson_ineffective() {
+    ≔ lesson = Lesson·ineffective(Context·new("coding"), "cowboy_coding");
+    assert(!lesson.is_positive());
+    assert_eq(lesson.effectiveness, 0.0);
+}
+
+// ============================================================================
+// Tests: Pattern
+// ============================================================================
+
+#[test]
+λ test_pattern_new() {
+    ≔ pattern = Pattern·new(Context·new("testing"), "unit_tests");
+    assert_eq(pattern.approach, "unit_tests");
+    assert_eq(pattern.occurrences, 0);
+}
+
+#[test]
+λ test_pattern_record_outcome_success() {
+    ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
+    pattern.record_outcome(true);
+    assert_eq(pattern.occurrences, 1);
+    assert_eq(pattern.success_rate, 1.0);
+}
+
+#[test]
+λ test_pattern_record_outcome_failure() {
+    ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
+    pattern.record_outcome(false);
+    assert_eq(pattern.success_rate, 0.0);
+}
+
+#[test]
+λ test_pattern_record_multiple_outcomes() {
+    ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
+    pattern.record_outcome(true);
+    pattern.record_outcome(true);
+    pattern.record_outcome(false);
+    // 2/3 ≈ 0.667
+    ≔ diff = (pattern.success_rate - 0.667).abs();
+    assert(diff < 0.01);
+}
+
+#[test]
+λ test_pattern_is_reliable() {
+    ≔ Δ pattern = Pattern·new(Context·new("testing"), "reliable");
+    ∀ _ ∈ 0..10 {
+        pattern.record_outcome(true);
+    }
+    assert(pattern.is_reliable());
+}
+
+#[test]
+λ test_pattern_not_reliable_low_success() {
+    ≔ Δ pattern = Pattern·new(Context·new("testing"), "unreliable");
+    ∀ _ ∈ 0..10 {
+        pattern.record_outcome(false);
+    }
+    assert(!pattern.is_reliable());
+}
+
+// ============================================================================
+// Tests: LessonStore
+// ============================================================================
+
+#[test]
+λ test_lesson_store_new() {
+    ≔ store = LessonStore·new();
+    assert_eq(store.count(), 0);
+}
+
+#[test]
+λ test_lesson_store_add() {
+    ≔ Δ store = LessonStore·new();
+    store.add(Lesson·effective(Context·new("task"), "approach", 0.8));
+    assert_eq(store.count(), 1);
+}
+
+#[test]
+λ test_lesson_store_for_context() {
+    ≔ Δ store = LessonStore·new();
+    store.add(Lesson·effective(Context·new("coding"), "tdd", 0.9));
+    store.add(Lesson·effective(Context·new("coding"), "pair", 0.8));
+    store.add(Lesson·effective(Context·new("testing"), "unit", 0.7));
+
+    ≔ coding_lessons = store.for_context(&Context·new("coding"));
+    assert_eq(coding_lessons.len(), 2);
+}
+
+#[test]
+λ test_lesson_store_positive_lessons() {
+    ≔ Δ store = LessonStore·new();
+    store.add(Lesson·effective(Context·new("task"), "good", 0.9));
+    store.add(Lesson·ineffective(Context·new("task"), "bad"));
+
+    ≔ positive = store.positive_lessons();
+    assert_eq(positive.len(), 1);
+}
+
+// ============================================================================
+// Tests: PatternStore
+// ============================================================================
+
+#[test]
+λ test_pattern_store_new() {
+    ≔ store = PatternStore·new();
+    assert_eq(store.count(), 0);
+}
+
+#[test]
+λ test_pattern_store_add() {
+    ≔ Δ store = PatternStore·new();
+    store.add(Pattern·new(Context·new("coding"), "tdd"));
+    assert_eq(store.count(), 1);
+}
+
+#[test]
+λ test_pattern_store_get() {
+    ≔ Δ store = PatternStore·new();
+    store.add(Pattern·new(Context·new("coding"), "tdd"));
+
+    ≔ pattern = store.get(&Context·new("coding"), "tdd");
+    assert(pattern.is_some());
+}
+
+#[test]
+λ test_pattern_store_get_missing() {
+    ≔ store = PatternStore·new();
+    ≔ pattern = store.get(&Context·new("coding"), "nonexistent");
+    assert(pattern.is_none());
+}
+
+#[test]
+λ test_pattern_store_reliable_patterns() {
+    ≔ Δ store = PatternStore·new();
+
+    ≔ Δ reliable = Pattern·new(Context·new("good"), "approach");
+    ∀ _ ∈ 0..10 {
+        reliable.record_outcome(true);
+    }
+    store.add(reliable);
+
+    ≔ Δ unreliable = Pattern·new(Context·new("bad"), "approach");
+    unreliable.record_outcome(false);
+    store.add(unreliable);
+
+    ≔ reliable_patterns = store.reliable_patterns();
+    assert_eq(reliable_patterns.len(), 1);
+}
+
+#[test]
+λ test_pattern_store_for_context() {
+    ≔ Δ store = PatternStore·new();
+    store.add(Pattern·new(Context·new("coding"), "tdd"));
+    store.add(Pattern·new(Context·new("coding"), "pair"));
+    store.add(Pattern·new(Context·new("testing"), "unit"));
+
+    ≔ coding = store.for_context(&Context·new("coding"));
+    assert_eq(coding.len(), 2);
+}
+
+// ============================================================================
+// Tests: LearningConfig
+// ============================================================================
+
+#[test]
+λ test_learning_config_default() {
+    ≔ config = LearningConfig·default_config();
+    assert_eq(config.max_experiences, 1000);
+    assert_eq(config.pattern_threshold, 3);
+}
+
+#[test]
+λ test_learning_config_with_pattern_threshold() {
+    ≔ config = LearningConfig·default_config().with_pattern_threshold(5);
+    assert_eq(config.pattern_threshold, 5);
+}
+
+// ============================================================================
+// Tests: LearningEngine
+// ============================================================================
+
+#[test]
+λ test_learning_engine_new() {
+    ≔ engine = LearningEngine·new();
+    assert_eq(engine.experience_count(), 0);
+    assert_eq(engine.pattern_count(), 0);
+}
+
+#[test]
+λ test_learning_engine_record_experience() {
+    ≔ Δ engine = LearningEngine·new();
+    engine.record_experience(Experience·new(
+        Context·new("coding"),
+        Action·new("write_tests"),
+        ExperienceOutcome·success(0.9)
+    ));
+    assert_eq(engine.experience_count(), 1);
+}
+
+#[test]
+λ test_learning_engine_extract_lessons_success() {
+    ≔ engine = LearningEngine·new();
+    ≔ exp = Experience·new(
+        Context·new("coding"),
+        Action·new("tdd"),
+        ExperienceOutcome·success(0.9)
+    );
+
+    ≔ lessons = engine.extract_lessons(&exp);
+    assert_eq(lessons.len(), 1);
+    assert(lessons[0].is_positive());
+}
+
+#[test]
+λ test_learning_engine_extract_lessons_failure() {
+    ≔ engine = LearningEngine·new();
+    ≔ exp = Experience·new(
+        Context·new("coding"),
+        Action·new("skip_tests"),
+        ExperienceOutcome·failure()
+    );
+
+    ≔ lessons = engine.extract_lessons(&exp);
+    assert_eq(lessons.len(), 1);
+    assert(!lessons[0].is_positive());
+}
+
+#[test]
+λ test_learning_engine_extract_lessons_unexpected() {
+    ≔ engine = LearningEngine·new();
+    ≔ exp = Experience·new(
+        Context·new("experiment"),
+        Action·new("try_something"),
+        ExperienceOutcome·unexpected(0.7)
+    );
+
+    ≔ lessons = engine.extract_lessons(&exp);
+    assert_eq(lessons.len(), 2);  // success + surprising
+}
+
+#[test]
+λ test_learning_engine_pattern_detection() {
+    ≔ Δ engine = LearningEngine·with_config(
+        LearningConfig·default_config().with_pattern_threshold(2)
+    );
+
+    // Record enough similar experiences to trigger pattern detection
+    engine.record_experience(Experience·new(
+        Context·new("coding"),
+        Action·new("tdd"),
+        ExperienceOutcome·success(0.9)
+    ));
+    engine.record_experience(Experience·new(
+        Context·new("coding"),
+        Action·new("tdd"),
+        ExperienceOutcome·success(0.8)
+    ));
+
+    assert_eq(engine.pattern_count(), 1);
+}
+
+#[test]
+λ test_learning_engine_find_similar() {
+    ≔ Δ engine = LearningEngine·new();
+    engine.record_experience(Experience·new(
+        Context·new("coding"),
+        Action·new("approach1"),
+        ExperienceOutcome·success(0.9)
+    ));
+    engine.record_experience(Experience·new(
+        Context·new("testing"),
+        Action·new("approach2"),
+        ExperienceOutcome·success(0.8)
+    ));
+    engine.record_experience(Experience·new(
+        Context·new("coding"),
+        Action·new("approach3"),
+        ExperienceOutcome·success(0.7)
+    ));
+
+    ≔ similar = engine.find_similar(&Context·new("coding"));
+    assert_eq(similar.len(), 2);
+}
+
+#[test]
+λ test_learning_engine_success_rate_for() {
+    ≔ Δ engine = LearningEngine·with_config(
+        LearningConfig·default_config().with_pattern_threshold(2)
+    );
+
+    engine.record_experience(Experience·new(
+        Context·new("task"),
+        Action·new("approach"),
+        ExperienceOutcome·success(0.9)
+    ));
+    engine.record_experience(Experience·new(
+        Context·new("task"),
+        Action·new("approach"),
+        ExperienceOutcome·success(0.8)
+    ));
+
+    ≔ rate = engine.success_rate_for(&Context·new("task"), "approach");
+    assert(rate.is_some());
+    assert_eq(rate.unwrap(), 1.0);
+}
+
+#[test]
+λ test_learning_engine_max_experiences() {
+    ≔ Δ engine = LearningEngine·with_config(LearningConfig {
+        max_experiences: 3,
+        pattern_threshold: 5,
+        generalization_threshold: 0.7,
+    });
+
+    ∀ i ∈ 0..5 {
+        engine.record_experience(Experience·new(
+            Context·new(&format!("task_{}", i)),
+            Action·new("approach"),
+            ExperienceOutcome·success(0.8)
+        ));
+    }
+
+    assert_eq(engine.experience_count(), 3);
+}
+
+#[test]
+λ test_learning_engine_multiple_patterns() {
+    ≔ Δ engine = LearningEngine·with_config(
+        LearningConfig·default_config().with_pattern_threshold(2)
+    );
+
+    // Pattern 1
+    engine.record_experience(Experience·new(
+        Context·new("coding"), Action·new("tdd"), ExperienceOutcome·success(0.9)
+    ));
+    engine.record_experience(Experience·new(
+        Context·new("coding"), Action·new("tdd"), ExperienceOutcome·success(0.9)
+    ));
+
+    // Pattern 2
+    engine.record_experience(Experience·new(
+        Context·new("testing"), Action·new("unit"), ExperienceOutcome·success(0.8)
+    ));
+    engine.record_experience(Experience·new(
+        Context·new("testing"), Action·new("unit"), ExperienceOutcome·success(0.8)
+    ));
+
+    assert_eq(engine.pattern_count(), 2);
+}
+
+λ main() {
+    print("Gnosis learning tests");
+}

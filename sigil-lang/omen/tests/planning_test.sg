@@ -1,0 +1,987 @@
+//! Tests ∀ Omen Planning System
+//!
+//! Verifies Plan, PlanStep, Action, Effect, ResourceCost, Risk, and strategies.
+
+invoke std·collections·HashMap;
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+☉ Σ PlanId { bytes: [u8; 16] }
+☉ Σ StepId { bytes: [u8; 16] }
+☉ Σ GoalId { bytes: [u8; 16] }
+☉ Σ RiskId { bytes: [u8; 16] }
+
+λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+
+⊢ PlanId {
+    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+}
+
+⊢ StepId {
+    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+}
+
+⊢ GoalId {
+    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+}
+
+⊢ RiskId {
+    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+}
+
+⊢ Clone ∀ PlanId {
+    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+}
+
+⊢ Clone ∀ StepId {
+    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+}
+
+⊢ Clone ∀ GoalId {
+    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+}
+
+⊢ Clone ∀ RiskId {
+    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+}
+
+☉ Σ Duration { nanos: u64 }
+
+⊢ Duration {
+    ☉ λ zero() -> Self { Self { nanos: 0 } }
+    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ λ as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
+}
+
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration {
+    λ clone(&self) -> Self { *self }
+}
+
+⊢ std·ops·Add ∀ Duration {
+    type Output = Self;
+    λ add(self, other: Self) -> Self {
+        Self { nanos: self.nanos + other.nanos }
+    }
+}
+
+☉ Σ Effect {
+    ☉ description: String,
+    ☉ probability: f32,
+}
+
+⊢ Effect {
+    ☉ λ certain(description: &str) -> Self {
+        Self {
+            description: description.to_string(),
+            probability: 1.0,
+        }
+    }
+
+    ☉ λ probable(description: &str, probability: f32) -> Self {
+        Self {
+            description: description.to_string(),
+            probability: probability.clamp(0.0, 1.0),
+        }
+    }
+
+    ☉ λ unlikely(description: &str) -> Self {
+        Self·probable(description, 0.2)
+    }
+
+    ☉ λ is_likely(&self) -> bool {
+        self.probability >= 0.5
+    }
+}
+
+⊢ Clone ∀ Effect {
+    λ clone(&self) -> Self {
+        Self {
+            description: self.description.clone(),
+            probability: self.probability,
+        }
+    }
+}
+
+☉ Σ ResourceCost {
+    ☉ time: Duration,
+    ☉ compute: f32,
+    ☉ api_calls: u32,
+    ☉ custom: HashMap<String, f32>,
+}
+
+⊢ ResourceCost {
+    ☉ λ zero() -> Self {
+        Self {
+            time: Duration·zero(),
+            compute: 0.0,
+            api_calls: 0,
+            custom: HashMap·new(),
+        }
+    }
+
+    ☉ λ time_only(duration: Duration) -> Self {
+        Self {
+            time: duration,
+            compute: 0.0,
+            api_calls: 0,
+            custom: HashMap·new(),
+        }
+    }
+
+    ☉ λ with_compute(Δ self, compute: f32) -> Self {
+        self.compute = compute;
+        self
+    }
+
+    ☉ λ with_api_calls(Δ self, calls: u32) -> Self {
+        self.api_calls = calls;
+        self
+    }
+
+    ☉ λ with_custom(Δ self, name: &str, value: f32) -> Self {
+        self.custom.insert(name.to_string(), value);
+        self
+    }
+
+    ☉ λ total_time_secs(&self) -> u64 {
+        self.time.as_secs()
+    }
+
+    ☉ λ is_free(&self) -> bool {
+        self.time.nanos == 0 && self.compute == 0.0 && self.api_calls == 0
+    }
+
+    ☉ λ add(&self, other: &ResourceCost) -> Self {
+        ≔ Δ custom = self.custom.clone();
+        ∀ (k, v) ∈ &other.custom {
+            *custom.entry(k.clone()).or_insert(0.0) += v;
+        }
+        Self {
+            time: self.time + other.time,
+            compute: self.compute + other.compute,
+            api_calls: self.api_calls + other.api_calls,
+            custom,
+        }
+    }
+}
+
+⊢ Default ∀ ResourceCost {
+    λ default() -> Self { Self·zero() }
+}
+
+⊢ Clone ∀ ResourceCost {
+    λ clone(&self) -> Self {
+        Self {
+            time: self.time,
+            compute: self.compute,
+            api_calls: self.api_calls,
+            custom: self.custom.clone(),
+        }
+    }
+}
+
+☉ Σ Action {
+    ☉ name: String,
+    ☉ params: HashMap<String, String>,
+    ☉ effects: Vec<Effect>,
+    ☉ success_rate: f32,
+    ☉ expected_duration: Duration,
+    ☉ expected_cost: ResourceCost,
+}
+
+⊢ Action {
+    ☉ λ new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            params: HashMap·new(),
+            effects: vec![],
+            success_rate: 0.9,
+            expected_duration: Duration·seconds(1),
+            expected_cost: ResourceCost·default(),
+        }
+    }
+
+    ☉ λ with_param(Δ self, key: &str, value: &str) -> Self {
+        self.params.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    ☉ λ with_effect(Δ self, effect: Effect) -> Self {
+        self.effects.push(effect);
+        self
+    }
+
+    ☉ λ with_success_rate(Δ self, rate: f32) -> Self {
+        self.success_rate = rate.clamp(0.0, 1.0);
+        self
+    }
+
+    ☉ λ with_duration(Δ self, duration: Duration) -> Self {
+        self.expected_duration = duration;
+        self
+    }
+
+    ☉ λ with_cost(Δ self, cost: ResourceCost) -> Self {
+        self.expected_cost = cost;
+        self
+    }
+
+    ☉ λ name(&self) -> &str {
+        &self.name
+    }
+
+    ☉ λ is_reliable(&self) -> bool {
+        self.success_rate >= 0.8
+    }
+
+    ☉ λ expected_effects(&self) -> Vec<&Effect> {
+        self.effects.iter().filter(|e| e.is_likely()).collect()
+    }
+}
+
+⊢ Clone ∀ Action {
+    λ clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            params: self.params.clone(),
+            effects: self.effects.clone(),
+            success_rate: self.success_rate,
+            expected_duration: self.expected_duration,
+            expected_cost: self.expected_cost.clone(),
+        }
+    }
+}
+
+☉ Σ PlanStep {
+    ☉ id: StepId,
+    ☉ action: Action,
+    ☉ confidence: f32,
+    ☉ duration: Duration,
+    ☉ cost: ResourceCost,
+    ☉ contingency: Option<PlanId>,
+}
+
+⊢ PlanStep {
+    ☉ λ from_action(action: Action) -> Self {
+        Self {
+            id: StepId·new(),
+            confidence: action.success_rate,
+            duration: action.expected_duration,
+            cost: action.expected_cost.clone(),
+            action,
+            contingency: None,
+        }
+    }
+
+    ☉ λ with_confidence(Δ self, confidence: f32) -> Self {
+        self.confidence = confidence.clamp(0.0, 1.0);
+        self
+    }
+
+    ☉ λ with_contingency(Δ self, plan: PlanId) -> Self {
+        self.contingency = Some(plan);
+        self
+    }
+
+    ☉ λ is_risky(&self) -> bool {
+        self.confidence < 0.7
+    }
+
+    ☉ λ has_contingency(&self) -> bool {
+        self.contingency.is_some()
+    }
+}
+
+☉ ᛈ Impact {
+    PlanFailure,
+    PartialSuccess { degree: f32 },
+    IncreasedCost { factor: f32 },
+    Delay { duration: Duration },
+}
+
+⊢ Impact {
+    ☉ λ is_catastrophic(&self) -> bool {
+        ⌥ self {
+            Impact·PlanFailure => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ severity(&self) -> f32 {
+        ⌥ self {
+            Impact·PlanFailure => 1.0,
+            Impact·PartialSuccess { degree } => 1.0 - degree,
+            Impact·IncreasedCost { factor } => (*factor - 1.0).min(1.0),
+            Impact·Delay { duration } => (duration.as_secs() as f32 / 3600.0).min(1.0),
+        }
+    }
+}
+
+☉ Σ Mitigation {
+    ☉ description: String,
+    ☉ effectiveness: f32,
+    ☉ cost: ResourceCost,
+}
+
+⊢ Mitigation {
+    ☉ λ new(description: &str, effectiveness: f32) -> Self {
+        Self {
+            description: description.to_string(),
+            effectiveness: effectiveness.clamp(0.0, 1.0),
+            cost: ResourceCost·zero(),
+        }
+    }
+
+    ☉ λ with_cost(Δ self, cost: ResourceCost) -> Self {
+        self.cost = cost;
+        self
+    }
+
+    ☉ λ is_effective(&self) -> bool {
+        self.effectiveness >= 0.5
+    }
+}
+
+☉ Σ Risk {
+    ☉ id: RiskId,
+    ☉ description: String,
+    ☉ probability: f32,
+    ☉ impact: Impact,
+    ☉ affected_steps: Vec<StepId>,
+    ☉ mitigations: Vec<Mitigation>,
+}
+
+⊢ Risk {
+    ☉ λ new(description: &str, probability: f32, impact: Impact) -> Self {
+        Self {
+            id: RiskId·new(),
+            description: description.to_string(),
+            probability: probability.clamp(0.0, 1.0),
+            impact,
+            affected_steps: vec![],
+            mitigations: vec![],
+        }
+    }
+
+    ☉ λ with_affected_step(Δ self, step: StepId) -> Self {
+        self.affected_steps.push(step);
+        self
+    }
+
+    ☉ λ with_mitigation(Δ self, mitigation: Mitigation) -> Self {
+        self.mitigations.push(mitigation);
+        self
+    }
+
+    ☉ λ expected_impact(&self) -> f32 {
+        self.probability * self.impact.severity()
+    }
+
+    ☉ λ is_high_risk(&self) -> bool {
+        self.expected_impact() >= 0.5
+    }
+
+    ☉ λ is_mitigated(&self) -> bool {
+        self.mitigations.iter().any(|m| m.is_effective())
+    }
+
+    ☉ λ residual_risk(&self) -> f32 {
+        ⎇ ≔ Some(best) = self.mitigations.iter()
+            .max_by(|a, b| a.effectiveness.partial_cmp(&b.effectiveness).unwrap())
+        {
+            self.expected_impact() * (1.0 - best.effectiveness)
+        } ⎉ {
+            self.expected_impact()
+        }
+    }
+}
+
+☉ Σ Plan {
+    ☉ id: PlanId,
+    ☉ goal: GoalId,
+    ☉ steps: Vec<PlanStep>,
+    ☉ success_probability: f32,
+    ☉ expected_cost: ResourceCost,
+    ☉ risks: Vec<Risk>,
+    ☉ strategy: String,
+}
+
+⊢ Plan {
+    ☉ λ new(goal: GoalId) -> Self {
+        Self {
+            id: PlanId·new(),
+            goal,
+            steps: vec![],
+            success_probability: 1.0,
+            expected_cost: ResourceCost·zero(),
+            risks: vec![],
+            strategy: "manual".to_string(),
+        }
+    }
+
+    ☉ λ with_step(Δ self, step: PlanStep) -> Self {
+        self.expected_cost = self.expected_cost.add(&step.cost);
+        self.success_probability *= step.confidence;
+        self.steps.push(step);
+        self
+    }
+
+    ☉ λ with_strategy(Δ self, strategy: &str) -> Self {
+        self.strategy = strategy.to_string();
+        self
+    }
+
+    ☉ λ with_risk(Δ self, risk: Risk) -> Self {
+        self.risks.push(risk);
+        self
+    }
+
+    ☉ λ step_count(&self) -> usize {
+        self.steps.len()
+    }
+
+    ☉ λ is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+
+    ☉ λ total_duration(&self) -> Duration {
+        ≔ Δ total = Duration·zero();
+        ∀ step ∈ &self.steps {
+            total = total + step.duration;
+        }
+        total
+    }
+
+    ☉ λ risky_steps(&self) -> Vec<&PlanStep> {
+        self.steps.iter().filter(|s| s.is_risky()).collect()
+    }
+
+    ☉ λ is_viable(&self) -> bool {
+        self.success_probability >= 0.5
+    }
+
+    ☉ λ high_risks(&self) -> Vec<&Risk> {
+        self.risks.iter().filter(|r| r.is_high_risk()).collect()
+    }
+
+    ☉ λ recalculate_probability(&Δ self) {
+        self.success_probability = 1.0;
+        ∀ step ∈ &self.steps {
+            self.success_probability *= step.confidence;
+        }
+    }
+}
+
+☉ Σ ActionLibrary {
+    actions: HashMap<String, Action>,
+    success_counts: HashMap<String, (u32, u32)>,
+}
+
+⊢ ActionLibrary {
+    ☉ λ new() -> Self {
+        Self {
+            actions: HashMap·new(),
+            success_counts: HashMap·new(),
+        }
+    }
+
+    ☉ λ register(&Δ self, action: Action) {
+        self.actions.insert(action.name.clone(), action);
+    }
+
+    ☉ λ get(&self, name: &str) -> Option<&Action> {
+        self.actions.get(name)
+    }
+
+    ☉ λ count(&self) -> usize {
+        self.actions.len()
+    }
+
+    ☉ λ update_success_rate(&Δ self, name: &str, succeeded: bool) {
+        ≔ counts = self.success_counts.entry(name.to_string())
+            .or_insert((0, 0));
+
+        ⎇ succeeded {
+            counts.0 += 1;
+        }
+        counts.1 += 1;
+
+        ⎇ ≔ Some(action) = self.actions.get_mut(name) {
+            action.success_rate = counts.0 as f32 / counts.1 as f32;
+        }
+    }
+
+    ☉ λ success_rate(&self, name: &str) -> Option<f32> {
+        self.success_counts.get(name).map(|(s, t)| *s as f32 / *t as f32)
+    }
+}
+
+// ============================================================================
+// Tests: Effect
+// ============================================================================
+
+#[test]
+λ test_effect_certain() {
+    ≔ e = Effect·certain("file created");
+    assert_eq(e.probability, 1.0);
+    assert(e.is_likely());
+}
+
+#[test]
+λ test_effect_probable() {
+    ≔ e = Effect·probable("might succeed", 0.7);
+    assert_eq(e.probability, 0.7);
+    assert(e.is_likely());
+}
+
+#[test]
+λ test_effect_unlikely() {
+    ≔ e = Effect·unlikely("rare event");
+    assert_eq(e.probability, 0.2);
+    assert(!e.is_likely());
+}
+
+#[test]
+λ test_effect_probability_clamped() {
+    ≔ e = Effect·probable("test", 1.5);
+    assert_eq(e.probability, 1.0);
+}
+
+#[test]
+λ test_effect_clone() {
+    ≔ e1 = Effect·certain("test");
+    ≔ e2 = e1.clone();
+    assert_eq(e1.probability, e2.probability);
+}
+
+// ============================================================================
+// Tests: ResourceCost
+// ============================================================================
+
+#[test]
+λ test_resource_cost_zero() {
+    ≔ c = ResourceCost·zero();
+    assert(c.is_free());
+}
+
+#[test]
+λ test_resource_cost_time_only() {
+    ≔ c = ResourceCost·time_only(Duration·minutes(5));
+    assert(!c.is_free());
+    assert_eq(c.total_time_secs(), 300);
+}
+
+#[test]
+λ test_resource_cost_with_compute() {
+    ≔ c = ResourceCost·zero().with_compute(50.0);
+    assert_eq(c.compute, 50.0);
+}
+
+#[test]
+λ test_resource_cost_with_api_calls() {
+    ≔ c = ResourceCost·zero().with_api_calls(10);
+    assert_eq(c.api_calls, 10);
+}
+
+#[test]
+λ test_resource_cost_with_custom() {
+    ≔ c = ResourceCost·zero().with_custom("tokens", 1000.0);
+    assert_eq(*c.custom.get("tokens").unwrap(), 1000.0);
+}
+
+#[test]
+λ test_resource_cost_add() {
+    ≔ c1 = ResourceCost·time_only(Duration·seconds(60))
+        .with_api_calls(5);
+    ≔ c2 = ResourceCost·time_only(Duration·seconds(30))
+        .with_api_calls(3);
+    ≔ total = c1.add(&c2);
+    assert_eq(total.total_time_secs(), 90);
+    assert_eq(total.api_calls, 8);
+}
+
+#[test]
+λ test_resource_cost_clone() {
+    ≔ c1 = ResourceCost·time_only(Duration·minutes(1));
+    ≔ c2 = c1.clone();
+    assert_eq(c1.total_time_secs(), c2.total_time_secs());
+}
+
+// ============================================================================
+// Tests: Action
+// ============================================================================
+
+#[test]
+λ test_action_new() {
+    ≔ a = Action·new("fetch_data");
+    assert_eq(a.name(), "fetch_data");
+    assert_eq(a.success_rate, 0.9);
+}
+
+#[test]
+λ test_action_with_param() {
+    ≔ a = Action·new("query")
+        .with_param("table", "users");
+    assert_eq(*a.params.get("table").unwrap(), "users");
+}
+
+#[test]
+λ test_action_with_effect() {
+    ≔ a = Action·new("write")
+        .with_effect(Effect·certain("file written"));
+    assert_eq(a.effects.len(), 1);
+}
+
+#[test]
+λ test_action_with_success_rate() {
+    ≔ a = Action·new("risky").with_success_rate(0.5);
+    assert_eq(a.success_rate, 0.5);
+}
+
+#[test]
+λ test_action_success_rate_clamped() {
+    ≔ a = Action·new("test").with_success_rate(1.5);
+    assert_eq(a.success_rate, 1.0);
+}
+
+#[test]
+λ test_action_with_duration() {
+    ≔ a = Action·new("slow").with_duration(Duration·hours(1));
+    assert_eq(a.expected_duration.as_secs(), 3600);
+}
+
+#[test]
+λ test_action_with_cost() {
+    ≔ a = Action·new("expensive")
+        .with_cost(ResourceCost·time_only(Duration·minutes(5)));
+    assert_eq(a.expected_cost.total_time_secs(), 300);
+}
+
+#[test]
+λ test_action_is_reliable() {
+    ≔ reliable = Action·new("solid").with_success_rate(0.9);
+    ≔ unreliable = Action·new("flaky").with_success_rate(0.5);
+    assert(reliable.is_reliable());
+    assert(!unreliable.is_reliable());
+}
+
+#[test]
+λ test_action_expected_effects() {
+    ≔ a = Action·new("mixed")
+        .with_effect(Effect·certain("main effect"))
+        .with_effect(Effect·unlikely("side effect"));
+    ≔ expected = a.expected_effects();
+    assert_eq(expected.len(), 1);
+}
+
+#[test]
+λ test_action_clone() {
+    ≔ a1 = Action·new("test");
+    ≔ a2 = a1.clone();
+    assert_eq(a1.name, a2.name);
+}
+
+// ============================================================================
+// Tests: PlanStep
+// ============================================================================
+
+#[test]
+λ test_plan_step_from_action() {
+    ≔ action = Action·new("do_thing").with_success_rate(0.8);
+    ≔ step = PlanStep·from_action(action);
+    assert_eq(step.confidence, 0.8);
+}
+
+#[test]
+λ test_plan_step_with_confidence() {
+    ≔ step = PlanStep·from_action(Action·new("test"))
+        .with_confidence(0.6);
+    assert_eq(step.confidence, 0.6);
+}
+
+#[test]
+λ test_plan_step_with_contingency() {
+    ≔ contingency = PlanId·new();
+    ≔ step = PlanStep·from_action(Action·new("risky"))
+        .with_contingency(contingency);
+    assert(step.has_contingency());
+}
+
+#[test]
+λ test_plan_step_is_risky() {
+    ≔ risky = PlanStep·from_action(Action·new("test"))
+        .with_confidence(0.5);
+    ≔ safe = PlanStep·from_action(Action·new("test"))
+        .with_confidence(0.9);
+    assert(risky.is_risky());
+    assert(!safe.is_risky());
+}
+
+#[test]
+λ test_plan_step_no_contingency() {
+    ≔ step = PlanStep·from_action(Action·new("test"));
+    assert(!step.has_contingency());
+}
+
+// ============================================================================
+// Tests: Impact
+// ============================================================================
+
+#[test]
+λ test_impact_plan_failure_catastrophic() {
+    ≔ impact = Impact·PlanFailure;
+    assert(impact.is_catastrophic());
+    assert_eq(impact.severity(), 1.0);
+}
+
+#[test]
+λ test_impact_partial_success() {
+    ≔ impact = Impact·PartialSuccess { degree: 0.7 };
+    assert(!impact.is_catastrophic());
+    assert_eq(impact.severity(), 0.3);
+}
+
+#[test]
+λ test_impact_increased_cost() {
+    ≔ impact = Impact·IncreasedCost { factor: 1.5 };
+    assert(!impact.is_catastrophic());
+    assert_eq(impact.severity(), 0.5);
+}
+
+#[test]
+λ test_impact_delay() {
+    ≔ impact = Impact·Delay { duration: Duration·hours(1) };
+    assert(!impact.is_catastrophic());
+}
+
+// ============================================================================
+// Tests: Mitigation
+// ============================================================================
+
+#[test]
+λ test_mitigation_new() {
+    ≔ m = Mitigation·new("retry logic", 0.8);
+    assert_eq(m.effectiveness, 0.8);
+    assert(m.is_effective());
+}
+
+#[test]
+λ test_mitigation_with_cost() {
+    ≔ m = Mitigation·new("backup", 0.9)
+        .with_cost(ResourceCost·time_only(Duration·minutes(10)));
+    assert_eq(m.cost.total_time_secs(), 600);
+}
+
+#[test]
+λ test_mitigation_not_effective() {
+    ≔ m = Mitigation·new("weak fix", 0.3);
+    assert(!m.is_effective());
+}
+
+// ============================================================================
+// Tests: Risk
+// ============================================================================
+
+#[test]
+λ test_risk_new() {
+    ≔ r = Risk·new("network failure", 0.2, Impact·PlanFailure);
+    assert_eq(r.probability, 0.2);
+}
+
+#[test]
+λ test_risk_with_affected_step() {
+    ≔ step_id = StepId·new();
+    ≔ r = Risk·new("test", 0.3, Impact·PlanFailure)
+        .with_affected_step(step_id);
+    assert_eq(r.affected_steps.len(), 1);
+}
+
+#[test]
+λ test_risk_with_mitigation() {
+    ≔ r = Risk·new("test", 0.5, Impact·PlanFailure)
+        .with_mitigation(Mitigation·new("retry", 0.7));
+    assert_eq(r.mitigations.len(), 1);
+}
+
+#[test]
+λ test_risk_expected_impact() {
+    ≔ r = Risk·new("test", 0.5, Impact·PlanFailure);
+    assert_eq(r.expected_impact(), 0.5);
+}
+
+#[test]
+λ test_risk_is_high_risk() {
+    ≔ high = Risk·new("bad", 0.8, Impact·PlanFailure);
+    ≔ low = Risk·new("minor", 0.1, Impact·Delay { duration: Duration·minutes(5) });
+    assert(high.is_high_risk());
+    assert(!low.is_high_risk());
+}
+
+#[test]
+λ test_risk_is_mitigated() {
+    ≔ mitigated = Risk·new("test", 0.5, Impact·PlanFailure)
+        .with_mitigation(Mitigation·new("fix", 0.8));
+    ≔ unmitigated = Risk·new("test", 0.5, Impact·PlanFailure);
+    assert(mitigated.is_mitigated());
+    assert(!unmitigated.is_mitigated());
+}
+
+#[test]
+λ test_risk_residual_risk() {
+    ≔ r = Risk·new("test", 0.5, Impact·PlanFailure)
+        .with_mitigation(Mitigation·new("fix", 0.5));
+    // expected_impact = 0.5, effectiveness = 0.5
+    // residual = 0.5 * (1 - 0.5) = 0.25
+    assert_eq(r.residual_risk(), 0.25);
+}
+
+// ============================================================================
+// Tests: Plan
+// ============================================================================
+
+#[test]
+λ test_plan_new() {
+    ≔ goal = GoalId·new();
+    ≔ plan = Plan·new(goal);
+    assert(plan.is_empty());
+    assert_eq(plan.success_probability, 1.0);
+}
+
+#[test]
+λ test_plan_with_step() {
+    ≔ plan = Plan·new(GoalId·new())
+        .with_step(PlanStep·from_action(Action·new("step1")));
+    assert_eq(plan.step_count(), 1);
+}
+
+#[test]
+λ test_plan_with_strategy() {
+    ≔ plan = Plan·new(GoalId·new())
+        .with_strategy("HTN");
+    assert_eq(plan.strategy, "HTN");
+}
+
+#[test]
+λ test_plan_with_risk() {
+    ≔ plan = Plan·new(GoalId·new())
+        .with_risk(Risk·new("test", 0.3, Impact·PlanFailure));
+    assert_eq(plan.risks.len(), 1);
+}
+
+#[test]
+λ test_plan_success_probability_computed() {
+    ≔ plan = Plan·new(GoalId·new())
+        .with_step(PlanStep·from_action(Action·new("s1")).with_confidence(0.9))
+        .with_step(PlanStep·from_action(Action·new("s2")).with_confidence(0.9));
+    // 0.9 * 0.9 = 0.81
+    ≔ diff = (plan.success_probability - 0.81).abs();
+    assert(diff < 0.01);
+}
+
+#[test]
+λ test_plan_total_duration() {
+    ≔ plan = Plan·new(GoalId·new())
+        .with_step(PlanStep·from_action(Action·new("s1").with_duration(Duration·seconds(30))))
+        .with_step(PlanStep·from_action(Action·new("s2").with_duration(Duration·seconds(30))));
+    assert_eq(plan.total_duration().as_secs(), 60);
+}
+
+#[test]
+λ test_plan_risky_steps() {
+    ≔ plan = Plan·new(GoalId·new())
+        .with_step(PlanStep·from_action(Action·new("safe")).with_confidence(0.9))
+        .with_step(PlanStep·from_action(Action·new("risky")).with_confidence(0.5));
+    assert_eq(plan.risky_steps().len(), 1);
+}
+
+#[test]
+λ test_plan_is_viable() {
+    ≔ viable = Plan·new(GoalId·new())
+        .with_step(PlanStep·from_action(Action·new("s")).with_confidence(0.9));
+    ≔ not_viable = Plan·new(GoalId·new())
+        .with_step(PlanStep·from_action(Action·new("s")).with_confidence(0.4));
+    assert(viable.is_viable());
+    assert(!not_viable.is_viable());
+}
+
+#[test]
+λ test_plan_high_risks() {
+    ≔ plan = Plan·new(GoalId·new())
+        .with_risk(Risk·new("high", 0.8, Impact·PlanFailure))
+        .with_risk(Risk·new("low", 0.1, Impact·Delay { duration: Duration·minutes(5) }));
+    assert_eq(plan.high_risks().len(), 1);
+}
+
+#[test]
+λ test_plan_recalculate_probability() {
+    ≔ Δ plan = Plan·new(GoalId·new())
+        .with_step(PlanStep·from_action(Action·new("s")).with_confidence(0.8));
+    plan.steps[0].confidence = 0.5;
+    plan.recalculate_probability();
+    assert_eq(plan.success_probability, 0.5);
+}
+
+// ============================================================================
+// Tests: ActionLibrary
+// ============================================================================
+
+#[test]
+λ test_action_library_new() {
+    ≔ lib = ActionLibrary·new();
+    assert_eq(lib.count(), 0);
+}
+
+#[test]
+λ test_action_library_register() {
+    ≔ Δ lib = ActionLibrary·new();
+    lib.register(Action·new("fetch"));
+    assert_eq(lib.count(), 1);
+}
+
+#[test]
+λ test_action_library_get() {
+    ≔ Δ lib = ActionLibrary·new();
+    lib.register(Action·new("process"));
+    ≔ a = lib.get("process");
+    assert(a.is_some());
+}
+
+#[test]
+λ test_action_library_get_missing() {
+    ≔ lib = ActionLibrary·new();
+    ≔ a = lib.get("nonexistent");
+    assert(a.is_none());
+}
+
+#[test]
+λ test_action_library_update_success_rate() {
+    ≔ Δ lib = ActionLibrary·new();
+    lib.register(Action·new("test"));
+    lib.update_success_rate("test", true);
+    lib.update_success_rate("test", false);
+    // 1 success out of 2 = 0.5
+    assert_eq(lib.get("test").unwrap().success_rate, 0.5);
+}
+
+#[test]
+λ test_action_library_success_rate_tracking() {
+    ≔ Δ lib = ActionLibrary·new();
+    lib.register(Action·new("tracked"));
+    lib.update_success_rate("tracked", true);
+    lib.update_success_rate("tracked", true);
+    lib.update_success_rate("tracked", false);
+    ≔ rate = lib.success_rate("tracked");
+    assert(rate.is_some());
+    // 2/3 ≈ 0.667
+    ≔ diff = (rate.unwrap() - 0.667).abs();
+    assert(diff < 0.01);
+}
+
+λ main() {
+    print("Omen planning tests");
+}

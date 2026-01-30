@@ -1,0 +1,638 @@
+//! Tests ∀ Gnosis Reflection System
+//!
+//! Verifies ReflectionSystem, Reflection, insights, and growth measurement.
+
+invoke std·collections·HashMap;
+
+// ============================================================================
+// Self-contained Test Types
+// ============================================================================
+
+☉ Σ Duration { nanos: u64 }
+⊢ Duration {
+    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ λ as_nanos(&self) -> u64 { self.nanos }
+}
+⊢ Copy ∀ Duration {}
+⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+
+☉ Σ Timestamp { ☉ nanos: u64 }
+⊢ Timestamp {
+    ☉ λ now() -> Self { Self { nanos: 10_000_000_000 } }
+    ☉ λ from_nanos(n: u64) -> Self { Self { nanos: n } }
+}
+⊢ PartialOrd ∀ Timestamp {
+    λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+        self.nanos.partial_cmp(&other.nanos)
+    }
+}
+⊢ PartialEq ∀ Timestamp {
+    λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+☉ ᛈ SkillLevel {
+    Novice,
+    AdvancedBeginner,
+    Competent,
+    Proficient,
+    Expert,
+}
+
+⊢ SkillLevel {
+    ☉ λ from_proficiency(p: f32) -> Self {
+        ⎇ p >= 0.9 { SkillLevel·Expert }
+        ⎉ ⎇ p >= 0.7 { SkillLevel·Proficient }
+        ⎉ ⎇ p >= 0.5 { SkillLevel·Competent }
+        ⎉ ⎇ p >= 0.3 { SkillLevel·AdvancedBeginner }
+        ⎉ { SkillLevel·Novice }
+    }
+}
+
+#[derive(Copy, Clone)]
+☉ ᛈ Priority {
+    Critical,
+    High,
+    Normal,
+    Low,
+}
+
+#[derive(Copy, Clone)]
+☉ ᛈ ReflectionPeriod {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+⊢ ReflectionPeriod {
+    ☉ λ start_time(&self) -> Timestamp {
+        ≔ now = Timestamp·now();
+        ≔ offset = ⌥ self {
+            ReflectionPeriod·Daily => Duration·hours(24),
+            ReflectionPeriod·Weekly => Duration·hours(168),
+            ReflectionPeriod·Monthly => Duration·hours(720),
+        };
+        Timestamp·from_nanos(now.nanos.saturating_sub(offset.as_nanos()))
+    }
+
+    ☉ λ hours(&self) -> u64 {
+        ⌥ self {
+            ReflectionPeriod·Daily => 24,
+            ReflectionPeriod·Weekly => 168,
+            ReflectionPeriod·Monthly => 720,
+        }
+    }
+}
+
+☉ Σ Success {
+    ☉ description: String,
+    ☉ factors: Vec<String>,
+}
+
+⊢ Success {
+    ☉ λ new(description: &str) -> Self {
+        Self {
+            description: description.to_string(),
+            factors: vec![],
+        }
+    }
+
+    ☉ λ with_factor(Δ self, factor: &str) -> Self {
+        self.factors.push(factor.to_string());
+        self
+    }
+
+    ☉ λ factor_count(&self) -> usize {
+        self.factors.len()
+    }
+}
+
+☉ Σ ImprovementArea {
+    ☉ skill: String,
+    ☉ suggestion: String,
+    ☉ priority: Priority,
+}
+
+⊢ ImprovementArea {
+    ☉ λ new(skill: &str, suggestion: &str) -> Self {
+        Self {
+            skill: skill.to_string(),
+            suggestion: suggestion.to_string(),
+            priority: Priority·Normal,
+        }
+    }
+
+    ☉ λ with_priority(Δ self, priority: Priority) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    ☉ λ is_critical(&self) -> bool {
+        ⌥ self.priority {
+            Priority·Critical => true,
+            _ => false,
+        }
+    }
+
+    ☉ λ is_high_priority(&self) -> bool {
+        ⌥ self.priority {
+            Priority·Critical | Priority·High => true,
+            _ => false,
+        }
+    }
+}
+
+☉ Σ Insight {
+    ☉ observation: String,
+    ☉ implication: String,
+    ☉ action: Option<String>,
+}
+
+⊢ Insight {
+    ☉ λ new(observation: &str, implication: &str) -> Self {
+        Self {
+            observation: observation.to_string(),
+            implication: implication.to_string(),
+            action: None,
+        }
+    }
+
+    ☉ λ with_action(Δ self, action: &str) -> Self {
+        self.action = Some(action.to_string());
+        self
+    }
+
+    ☉ λ is_actionable(&self) -> bool {
+        self.action.is_some()
+    }
+}
+
+☉ Σ SkillSnapshot {
+    ☉ name: String,
+    ☉ level: SkillLevel,
+    ☉ proficiency: f32,
+    ☉ recent_exercises: usize,
+}
+
+⊢ SkillSnapshot {
+    ☉ λ new(name: &str, proficiency: f32, recent: usize) -> Self {
+        Self {
+            name: name.to_string(),
+            level: SkillLevel·from_proficiency(proficiency),
+            proficiency,
+            recent_exercises: recent,
+        }
+    }
+
+    ☉ λ is_active(&self) -> bool {
+        self.recent_exercises > 0
+    }
+
+    ☉ λ is_expert(&self) -> bool {
+        self.level >= SkillLevel·Proficient
+    }
+
+    ☉ λ is_novice(&self) -> bool {
+        self.level == SkillLevel·Novice
+    }
+}
+
+☉ Σ GrowthMeasurement {
+    ☉ overall: f32,
+    ☉ by_skill: Vec<(String, f32)>,
+}
+
+⊢ GrowthMeasurement {
+    ☉ λ new(overall: f32) -> Self {
+        Self {
+            overall,
+            by_skill: vec![],
+        }
+    }
+
+    ☉ λ with_skill(Δ self, name: &str, growth: f32) -> Self {
+        self.by_skill.push((name.to_string(), growth));
+        self
+    }
+
+    ☉ λ overall_growth(&self) -> f32 {
+        self.overall
+    }
+
+    ☉ λ skill_count(&self) -> usize {
+        self.by_skill.len()
+    }
+
+    ☉ λ has_growth(&self) -> bool {
+        self.overall > 0.0
+    }
+
+    ☉ λ top_skill(&self) -> Option<(&String, f32)> {
+        self.by_skill.iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .map(|(name, growth)| (name, *growth))
+    }
+}
+
+☉ Σ Reflection {
+    ☉ period: ReflectionPeriod,
+    ☉ successes: Vec<Success>,
+    ☉ improvements: Vec<ImprovementArea>,
+    ☉ patterns: Vec<String>,
+    ☉ insights: Vec<Insight>,
+    ☉ growth: GrowthMeasurement,
+    ☉ timestamp: Timestamp,
+}
+
+⊢ Reflection {
+    ☉ λ new(period: ReflectionPeriod) -> Self {
+        Self {
+            period,
+            successes: vec![],
+            improvements: vec![],
+            patterns: vec![],
+            insights: vec![],
+            growth: GrowthMeasurement·new(0.0),
+            timestamp: Timestamp·now(),
+        }
+    }
+
+    ☉ λ with_success(Δ self, success: Success) -> Self {
+        self.successes.push(success);
+        self
+    }
+
+    ☉ λ with_improvement(Δ self, improvement: ImprovementArea) -> Self {
+        self.improvements.push(improvement);
+        self
+    }
+
+    ☉ λ with_pattern(Δ self, pattern: &str) -> Self {
+        self.patterns.push(pattern.to_string());
+        self
+    }
+
+    ☉ λ with_insight(Δ self, insight: Insight) -> Self {
+        self.insights.push(insight);
+        self
+    }
+
+    ☉ λ with_growth(Δ self, growth: GrowthMeasurement) -> Self {
+        self.growth = growth;
+        self
+    }
+
+    ☉ λ success_count(&self) -> usize { self.successes.len() }
+    ☉ λ improvement_count(&self) -> usize { self.improvements.len() }
+    ☉ λ pattern_count(&self) -> usize { self.patterns.len() }
+    ☉ λ insight_count(&self) -> usize { self.insights.len() }
+
+    ☉ λ has_successes(&self) -> bool { !self.successes.is_empty() }
+    ☉ λ has_improvements(&self) -> bool { !self.improvements.is_empty() }
+    ☉ λ has_patterns(&self) -> bool { !self.patterns.is_empty() }
+    ☉ λ has_insights(&self) -> bool { !self.insights.is_empty() }
+
+    ☉ λ actionable_insights(&self) -> Vec<&Insight> {
+        self.insights.iter().filter(|i| i.is_actionable()).collect()
+    }
+
+    ☉ λ critical_improvements(&self) -> Vec<&ImprovementArea> {
+        self.improvements.iter().filter(|i| i.is_critical()).collect()
+    }
+
+    ☉ λ to_summary(&self) -> String {
+        ≔ Δ output = String·new();
+        output.push_str("=== Reflection Summary ===\n");
+
+        ⎇ self.has_successes() {
+            output.push_str(&format!("Successes: {}\n", self.success_count()));
+        }
+        ⎇ self.has_improvements() {
+            output.push_str(&format!("Areas ∀ Improvement: {}\n", self.improvement_count()));
+        }
+        ⎇ self.has_patterns() {
+            output.push_str(&format!("Patterns: {}\n", self.pattern_count()));
+        }
+        ⎇ self.has_insights() {
+            output.push_str(&format!("Insights: {}\n", self.insight_count()));
+        }
+
+        output.push_str(&format!("Overall Growth: {:.0}%\n", self.growth.overall * 100.0));
+        output
+    }
+}
+
+☉ Σ ReflectionConfig {
+    ☉ min_experiences: usize,
+    ☉ pattern_significance: f32,
+}
+
+⊢ ReflectionConfig {
+    ☉ λ default_config() -> Self {
+        Self {
+            min_experiences: 5,
+            pattern_significance: 0.7,
+        }
+    }
+
+    ☉ λ with_min_experiences(Δ self, min: usize) -> Self {
+        self.min_experiences = min;
+        self
+    }
+}
+
+// ============================================================================
+// Tests: ReflectionPeriod
+// ============================================================================
+
+#[test]
+λ test_reflection_period_daily() {
+    ≔ period = ReflectionPeriod·Daily;
+    assert_eq(period.hours(), 24);
+}
+
+#[test]
+λ test_reflection_period_weekly() {
+    ≔ period = ReflectionPeriod·Weekly;
+    assert_eq(period.hours(), 168);
+}
+
+#[test]
+λ test_reflection_period_monthly() {
+    ≔ period = ReflectionPeriod·Monthly;
+    assert_eq(period.hours(), 720);
+}
+
+#[test]
+λ test_reflection_period_start_time() {
+    ≔ period = ReflectionPeriod·Daily;
+    ≔ start = period.start_time();
+    assert(start.nanos < Timestamp·now().nanos);
+}
+
+// ============================================================================
+// Tests: Success
+// ============================================================================
+
+#[test]
+λ test_success_new() {
+    ≔ s = Success·new("Completed project on time");
+    assert_eq(s.description, "Completed project on time");
+    assert_eq(s.factor_count(), 0);
+}
+
+#[test]
+λ test_success_with_factor() {
+    ≔ s = Success·new("Success")
+        .with_factor("good planning")
+        .with_factor("team collaboration");
+    assert_eq(s.factor_count(), 2);
+}
+
+// ============================================================================
+// Tests: ImprovementArea
+// ============================================================================
+
+#[test]
+λ test_improvement_area_new() {
+    ≔ area = ImprovementArea·new("testing", "Add more unit tests");
+    assert_eq(area.skill, "testing");
+    assert_eq(area.suggestion, "Add more unit tests");
+}
+
+#[test]
+λ test_improvement_area_with_priority() {
+    ≔ area = ImprovementArea·new("security", "Review auth flow")
+        .with_priority(Priority·Critical);
+    assert(area.is_critical());
+    assert(area.is_high_priority());
+}
+
+#[test]
+λ test_improvement_area_high_priority() {
+    ≔ area = ImprovementArea·new("perf", "Optimize queries")
+        .with_priority(Priority·High);
+    assert(!area.is_critical());
+    assert(area.is_high_priority());
+}
+
+#[test]
+λ test_improvement_area_normal_priority() {
+    ≔ area = ImprovementArea·new("docs", "Add examples");
+    assert(!area.is_critical());
+    assert(!area.is_high_priority());
+}
+
+// ============================================================================
+// Tests: Insight
+// ============================================================================
+
+#[test]
+λ test_insight_new() {
+    ≔ insight = Insight·new("High error rate on Mondays", "Team needs ramp-up time");
+    assert_eq(insight.observation, "High error rate on Mondays");
+    assert(!insight.is_actionable());
+}
+
+#[test]
+λ test_insight_with_action() {
+    ≔ insight = Insight·new("Slow builds", "Blocking development")
+        .with_action("Upgrade CI infrastructure");
+    assert(insight.is_actionable());
+    assert_eq(insight.action.unwrap(), "Upgrade CI infrastructure");
+}
+
+// ============================================================================
+// Tests: SkillSnapshot
+// ============================================================================
+
+#[test]
+λ test_skill_snapshot_new() {
+    ≔ snap = SkillSnapshot·new("rust", 0.8, 10);
+    assert_eq(snap.name, "rust");
+    assert_eq(snap.proficiency, 0.8);
+    assert_eq(snap.recent_exercises, 10);
+}
+
+#[test]
+λ test_skill_snapshot_is_active() {
+    ≔ active = SkillSnapshot·new("coding", 0.5, 5);
+    ≔ inactive = SkillSnapshot·new("unused", 0.5, 0);
+    assert(active.is_active());
+    assert(!inactive.is_active());
+}
+
+#[test]
+λ test_skill_snapshot_is_expert() {
+    ≔ expert = SkillSnapshot·new("mastered", 0.9, 100);
+    ≔ novice = SkillSnapshot·new("learning", 0.2, 5);
+    assert(expert.is_expert());
+    assert(!novice.is_expert());
+}
+
+#[test]
+λ test_skill_snapshot_is_novice() {
+    ≔ novice = SkillSnapshot·new("new", 0.1, 2);
+    ≔ competent = SkillSnapshot·new("practiced", 0.6, 20);
+    assert(novice.is_novice());
+    assert(!competent.is_novice());
+}
+
+// ============================================================================
+// Tests: GrowthMeasurement
+// ============================================================================
+
+#[test]
+λ test_growth_measurement_new() {
+    ≔ growth = GrowthMeasurement·new(0.5);
+    assert_eq(growth.overall_growth(), 0.5);
+    assert_eq(growth.skill_count(), 0);
+}
+
+#[test]
+λ test_growth_measurement_with_skill() {
+    ≔ growth = GrowthMeasurement·new(0.6)
+        .with_skill("rust", 0.8)
+        .with_skill("testing", 0.4);
+    assert_eq(growth.skill_count(), 2);
+}
+
+#[test]
+λ test_growth_measurement_has_growth() {
+    ≔ positive = GrowthMeasurement·new(0.3);
+    ≔ zero = GrowthMeasurement·new(0.0);
+    assert(positive.has_growth());
+    assert(!zero.has_growth());
+}
+
+#[test]
+λ test_growth_measurement_top_skill() {
+    ≔ growth = GrowthMeasurement·new(0.5)
+        .with_skill("low", 0.2)
+        .with_skill("high", 0.9)
+        .with_skill("mid", 0.5);
+    ≔ top = growth.top_skill();
+    assert(top.is_some());
+    assert_eq(*top.unwrap().0, "high");
+}
+
+// ============================================================================
+// Tests: Reflection
+// ============================================================================
+
+#[test]
+λ test_reflection_new() {
+    ≔ r = Reflection·new(ReflectionPeriod·Weekly);
+    assert_eq(r.success_count(), 0);
+    assert_eq(r.improvement_count(), 0);
+}
+
+#[test]
+λ test_reflection_with_success() {
+    ≔ r = Reflection·new(ReflectionPeriod·Daily)
+        .with_success(Success·new("Shipped feature"));
+    assert(r.has_successes());
+    assert_eq(r.success_count(), 1);
+}
+
+#[test]
+λ test_reflection_with_improvement() {
+    ≔ r = Reflection·new(ReflectionPeriod·Daily)
+        .with_improvement(ImprovementArea·new("testing", "Add coverage"));
+    assert(r.has_improvements());
+    assert_eq(r.improvement_count(), 1);
+}
+
+#[test]
+λ test_reflection_with_pattern() {
+    ≔ r = Reflection·new(ReflectionPeriod·Weekly)
+        .with_pattern("Strong debugging skills");
+    assert(r.has_patterns());
+    assert_eq(r.pattern_count(), 1);
+}
+
+#[test]
+λ test_reflection_with_insight() {
+    ≔ r = Reflection·new(ReflectionPeriod·Monthly)
+        .with_insight(Insight·new("Observation", "Implication"));
+    assert(r.has_insights());
+    assert_eq(r.insight_count(), 1);
+}
+
+#[test]
+λ test_reflection_with_growth() {
+    ≔ r = Reflection·new(ReflectionPeriod·Weekly)
+        .with_growth(GrowthMeasurement·new(0.75));
+    assert_eq(r.growth.overall_growth(), 0.75);
+}
+
+#[test]
+λ test_reflection_actionable_insights() {
+    ≔ r = Reflection·new(ReflectionPeriod·Daily)
+        .with_insight(Insight·new("O1", "I1").with_action("A1"))
+        .with_insight(Insight·new("O2", "I2"))
+        .with_insight(Insight·new("O3", "I3").with_action("A3"));
+    ≔ actionable = r.actionable_insights();
+    assert_eq(actionable.len(), 2);
+}
+
+#[test]
+λ test_reflection_critical_improvements() {
+    ≔ r = Reflection·new(ReflectionPeriod·Weekly)
+        .with_improvement(ImprovementArea·new("sec", "Fix").with_priority(Priority·Critical))
+        .with_improvement(ImprovementArea·new("docs", "Add"))
+        .with_improvement(ImprovementArea·new("bug", "Fix").with_priority(Priority·Critical));
+    ≔ critical = r.critical_improvements();
+    assert_eq(critical.len(), 2);
+}
+
+#[test]
+λ test_reflection_to_summary() {
+    ≔ r = Reflection·new(ReflectionPeriod·Daily)
+        .with_success(Success·new("Done"))
+        .with_growth(GrowthMeasurement·new(0.5));
+    ≔ summary = r.to_summary();
+    assert(summary.contains("Successes: 1"));
+    assert(summary.contains("Overall Growth: 50%"));
+}
+
+#[test]
+λ test_reflection_comprehensive() {
+    ≔ r = Reflection·new(ReflectionPeriod·Monthly)
+        .with_success(Success·new("Launched product").with_factor("teamwork"))
+        .with_success(Success·new("Zero downtime"))
+        .with_improvement(ImprovementArea·new("monitoring", "Add alerts"))
+        .with_pattern("Strong on deadlines")
+        .with_pattern("Weak on documentation")
+        .with_insight(Insight·new("Sprint velocity stable", "Sustainable pace"))
+        .with_growth(GrowthMeasurement·new(0.65)
+            .with_skill("rust", 0.8)
+            .with_skill("deployment", 0.5));
+
+    assert_eq(r.success_count(), 2);
+    assert_eq(r.improvement_count(), 1);
+    assert_eq(r.pattern_count(), 2);
+    assert_eq(r.insight_count(), 1);
+    assert(r.growth.has_growth());
+}
+
+// ============================================================================
+// Tests: ReflectionConfig
+// ============================================================================
+
+#[test]
+λ test_reflection_config_default() {
+    ≔ config = ReflectionConfig·default_config();
+    assert_eq(config.min_experiences, 5);
+    assert_eq(config.pattern_significance, 0.7);
+}
+
+#[test]
+λ test_reflection_config_with_min_experiences() {
+    ≔ config = ReflectionConfig·default_config().with_min_experiences(10);
+    assert_eq(config.min_experiences, 10);
+}
+
+λ main() {
+    print("Gnosis reflection tests");
+}
