@@ -1,0 +1,44 @@
+// FFI Test 42: GTK Button with label
+// Tests: Widget creation, casting between opaque types, and as_ptr()
+// Expected: 0 (button created successfully)
+// Requires: GTK4 installed
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    // Opaque GTK types
+    type GtkWidget;
+    type GtkButton;
+    type GtkWindow;
+
+    rite gtk_init();
+    rite gtk_window_new() → *GtkWindow;
+    rite gtk_window_set_title(window: *GtkWindow, title: *c_char);
+    rite gtk_button_new_with_label(label: *c_char) → *GtkButton;
+    rite gtk_window_set_child(window: *GtkWindow, child: *GtkWidget);
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+
+    // Create window with title
+    ≔ window = gtk_window_new();
+    gtk_window_set_title(window, "Button Test\0".as_ptr());
+
+    // Create button with label using as_ptr()
+    ≔ button = gtk_button_new_with_label("Click Me!\0".as_ptr());
+
+    // Add button to window - cast GtkButton* to GtkWidget*
+    gtk_window_set_child(window, button as *GtkWidget);
+
+    // Return success
+    0
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    0
+}

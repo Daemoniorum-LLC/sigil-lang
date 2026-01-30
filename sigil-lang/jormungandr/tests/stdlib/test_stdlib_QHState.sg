@@ -1,0 +1,20 @@
+// Stdlib Tests: QHState
+// Quantum hypergraph state with REAL assertions
+
+rite main() {
+    println("=== Testing QHState ===");
+
+    // QHState·new - creates quantum hypergraph state
+    ≔ qh = QHState·new(4);
+    assert_eq(type_of(qh), "struct:QHState");
+
+    // QHState·superpose - creates superposition
+    ≔ qhs = QHState·superpose([1, 2, 3]);
+    assert_eq(type_of(qhs), "struct:QHState");
+
+    // QHState·encode - encodes amplitudes
+    ≔ qhe = QHState·encode([0.5, 0.5]);
+    assert_eq(type_of(qhe), "struct:QHState");
+
+    println("ALL QHSTATE TESTS PASSED!");
+}

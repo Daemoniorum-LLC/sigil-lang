@@ -1,0 +1,241 @@
+// Test: Daemoniorum Testimonial Component
+// TDD: RED - Tests the testimonial/quote display
+//
+// Testimonial displays customer quotes and social proof
+
+invoke daemoniorum·components·Testimonial;
+invoke daemoniorum·components·TestimonialSlider;
+invoke qliphoth·core·VNode;
+
+// Test basic testimonial rendering
+rite test_testimonial_basic() {
+    ≔ testimonial = Testimonial {
+        quote: "Daemoniorum has transformed how we build AI applications.",
+        author: "Jane Smith",
+        title: "CTO",
+        company: "TechCorp",
+    };
+
+    ≔ vnode = testimonial.render();
+
+    assert!(vnode.has_class("testimonial"));
+    assert!(vnode.has_child_with_class("testimonial-quote"));
+    assert!(vnode.has_child_with_class("testimonial-author"));
+
+    ≔ quote = vnode.find_child_by_class("testimonial-quote");
+    assert!(quote.text_content().contains("transformed"));
+}
+
+// Test testimonial with avatar
+rite test_testimonial_avatar() {
+    ≔ testimonial = Testimonial {
+        quote: "Great product!",
+        author: "John Doe",
+        avatar: "/images/john.jpg",
+    };
+
+    ≔ vnode = testimonial.render();
+    assert!(vnode.has_child_with_class("testimonial-avatar"));
+
+    ≔ avatar = vnode.find_child_by_class("testimonial-avatar");
+    ≔ img = avatar.find_child_by_tag("img");
+    assert_eq!(img.attr("alt"), "John Doe");
+}
+
+// Test testimonial with company logo
+rite test_testimonial_logo() {
+    ≔ testimonial = Testimonial {
+        quote: "Amazing.",
+        author: "Alice",
+        company: "Google",
+        company_logo: "/logos/google.svg",
+    };
+
+    ≔ vnode = testimonial.render();
+    assert!(vnode.has_child_with_class("testimonial-logo"));
+}
+
+// Test testimonial with rating
+rite test_testimonial_rating() {
+    ≔ testimonial = Testimonial {
+        quote: "5 star experience!",
+        author: "Bob",
+        rating: 5,
+    };
+
+    ≔ vnode = testimonial.render();
+    assert!(vnode.has_child_with_class("testimonial-rating"));
+
+    ≔ rating = vnode.find_child_by_class("testimonial-rating");
+    ≔ stars = rating.find_children_by_class("testimonial-star-filled");
+    assert_eq!(stars.len(), 5);
+}
+
+// Test testimonial variants
+rite test_testimonial_variants() {
+    // Default
+    ≔ default_t = Testimonial { quote: "Q", author: "A", variant: "default" };
+    assert!(default_t.render().has_class("testimonial-default"));
+
+    // Card
+    ≔ card = Testimonial { quote: "Q", author: "A", variant: "card" };
+    assert!(card.render().has_class("testimonial-card"));
+
+    // Minimal
+    ≔ minimal = Testimonial { quote: "Q", author: "A", variant: "minimal" };
+    assert!(minimal.render().has_class("testimonial-minimal"));
+
+    // Featured (large)
+    ≔ featured = Testimonial { quote: "Q", author: "A", variant: "featured" };
+    assert!(featured.render().has_class("testimonial-featured"));
+}
+
+// Test testimonial slider
+rite test_testimonial_slider() {
+    ≔ slider = TestimonialSlider {
+        autoplay: yay,
+        interval: 5000,
+        children: [
+            Testimonial { quote: "Quote 1", author: "Author 1" },
+            Testimonial { quote: "Quote 2", author: "Author 2" },
+            Testimonial { quote: "Quote 3", author: "Author 3" },
+        ]
+    };
+
+    ≔ vnode = slider.render();
+
+    assert!(vnode.has_class("testimonial-slider"));
+    assert!(vnode.has_child_with_class("testimonial-slider-track"));
+    assert!(vnode.has_child_with_class("testimonial-slider-dots"));
+
+    // Should have navigation dots
+    ≔ dots = vnode.find_child_by_class("testimonial-slider-dots");
+    ≔ dot_buttons = dots.children();
+    assert_eq!(dot_buttons.len(), 3);
+}
+
+// Test testimonial slider navigation
+rite test_testimonial_slider_nav() {
+    ≔ slider = TestimonialSlider {
+        show_arrows: yay,
+        children: [
+            Testimonial { quote: "1", author: "A" },
+            Testimonial { quote: "2", author: "B" },
+        ]
+    };
+
+    ≔ vnode = slider.render();
+    assert!(vnode.has_child_with_class("testimonial-slider-prev"));
+    assert!(vnode.has_child_with_class("testimonial-slider-next"));
+}
+
+// Test testimonial with source link
+rite test_testimonial_source() {
+    ≔ testimonial = Testimonial {
+        quote: "Great platform!",
+        author: "Developer",
+        source: "Twitter",
+        source_url: "https://twitter.com/dev/status/123",
+    };
+
+    ≔ vnode = testimonial.render();
+    assert!(vnode.has_child_with_class("testimonial-source"));
+
+    ≔ source = vnode.find_child_by_class("testimonial-source");
+    assert_eq!(source.attr("href"), "https://twitter.com/dev/status/123");
+}
+
+// Test testimonial date
+rite test_testimonial_date() {
+    ≔ testimonial = Testimonial {
+        quote: "Been using for a year!",
+        author: "User",
+        date: "2025-06-15",
+    };
+
+    ≔ vnode = testimonial.render();
+    assert!(vnode.has_child_with_class("testimonial-date"));
+}
+
+// Test testimonial alignment
+rite test_testimonial_alignment() {
+    // Left
+    ≔ left = Testimonial { quote: "Q", author: "A", alignment: "left" };
+    assert!(left.render().has_class("testimonial-align-left"));
+
+    // Center (default)
+    ≔ center = Testimonial { quote: "Q", author: "A", alignment: "center" };
+    assert!(center.render().has_class("testimonial-align-center"));
+
+    // Right
+    ≔ right = Testimonial { quote: "Q", author: "A", alignment: "right" };
+    assert!(right.render().has_class("testimonial-align-right"));
+}
+
+// Test testimonial with video
+rite test_testimonial_video() {
+    ≔ testimonial = Testimonial {
+        quote: "Watch our story",
+        author: "Customer",
+        video_url: "/videos/testimonial.mp4",
+        video_thumbnail: "/images/thumb.jpg",
+    };
+
+    ≔ vnode = testimonial.render();
+    assert!(vnode.has_child_with_class("testimonial-video"));
+}
+
+// Test testimonial accessibility
+rite test_testimonial_accessibility() {
+    ≔ testimonial = Testimonial {
+        quote: "Excellent product!",
+        author: "John Smith",
+        company: "Company Inc",
+    };
+
+    ≔ vnode = testimonial.render();
+
+    // Should use blockquote for semantic markup
+    ≔ quote = vnode.find_child_by_class("testimonial-quote");
+    assert_eq!(quote.tag(), "blockquote");
+
+    // Author should use cite element
+    ≔ author = vnode.find_child_by_class("testimonial-author");
+    assert!(author.has_child_with_tag("cite"));
+}
+
+// Test testimonial grid
+rite test_testimonial_grid() {
+    ≔ grid = TestimonialGrid {
+        columns: 3,
+        children: [
+            Testimonial { quote: "1", author: "A" },
+            Testimonial { quote: "2", author: "B" },
+            Testimonial { quote: "3", author: "C" },
+        ]
+    };
+
+    ≔ vnode = grid.render();
+    assert!(vnode.has_class("testimonial-grid"));
+    assert!(vnode.has_class("testimonial-grid-cols-3"));
+}
+
+rite main() {
+    test_testimonial_basic();
+    test_testimonial_avatar();
+    test_testimonial_logo();
+    test_testimonial_rating();
+    test_testimonial_variants();
+    test_testimonial_slider();
+    test_testimonial_slider_nav();
+    test_testimonial_source();
+    test_testimonial_date();
+    test_testimonial_alignment();
+    test_testimonial_video();
+    test_testimonial_accessibility();
+    test_testimonial_grid();
+
+    print("✓ All Testimonial component tests passed");
+}
+
+// Expected output: ✓ All Testimonial component tests passed

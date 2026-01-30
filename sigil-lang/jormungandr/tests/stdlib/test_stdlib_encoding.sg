@@ -1,0 +1,34 @@
+// Stdlib Tests: encoding
+// Base encoding/decoding functions with REAL assertions
+
+rite main() {
+    println("=== Testing encoding ===");
+
+    // base64_encode
+    assert_eq(base64_encode("hello"), "aGVsbG8=");
+    assert_eq(base64_encode(""), "");
+    assert_eq(base64_encode("a"), "YQ==");
+
+    // base64_decode
+    assert_eq(base64_decode("aGVsbG8="), "hello");
+    assert_eq(base64_decode(""), "");
+    assert_eq(base64_decode("YQ=="), "a");
+
+    // Roundtrip base64
+    assert_eq(base64_decode(base64_encode("test string")), "test string");
+
+    // base58_encode - returns encoded string
+    ≔ b58 = base58_encode("hello");
+    assert_eq(b58, "Cn8eVZg");
+
+    // base58_decode - returns hex representation
+    assert_eq(base58_decode("Cn8eVZg"), "68656c6c6f");
+
+    // base32_encode
+    assert_eq(base32_encode("hello"), "NBSWY3DP");
+
+    // base32_decode - returns hex representation
+    assert_eq(base32_decode("NBSWY3DP"), "68656c6c6f");
+
+    println("ALL ENCODING TESTS PASSED!");
+}

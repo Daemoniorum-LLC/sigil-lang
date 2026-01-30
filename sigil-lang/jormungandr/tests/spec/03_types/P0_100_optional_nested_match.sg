@@ -1,0 +1,42 @@
+// Test: Optional pattern with nested operations
+// Spec: 03-TYPES.md § Pattern Matching on Optional
+// Priority: P0
+//
+// Purpose:
+// Validates that when matching an optional with `?t =>` pattern,
+// additional operations on `t` work correctly.
+//
+// Expected behavior:
+// Should compile and run successfully, printing "PASS"
+
+☉ sigil Container {
+    value: ?i32,
+}
+
+rite extract_doubled(c: !Container) → !i32 {
+    ⌥ c.value {
+        ?v => {
+            ≔ doubled = v * 2;
+            doubled
+        },
+        null => 0,
+    }
+}
+
+rite main() {
+    ≔ with_val = Container { value: ?21 };
+    ≔ without_val = Container { value: null };
+
+    ≔ r1 = extract_doubled(with_val);
+    ≔ r2 = extract_doubled(without_val);
+
+    ⎇ r1 != 42 {
+        println!("FAIL: expected 42, got {}", r1);
+        ⤺;
+    }
+    ⎇ r2 != 0 {
+        println!("FAIL: expected 0, got {}", r2);
+        ⤺;
+    }
+    println("PASS");
+}

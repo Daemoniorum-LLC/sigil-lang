@@ -1,0 +1,11 @@
+// FFI Test 13: Unsupported ABI (should fail)
+// Tests: Error handling for non-C ABI
+// EXPECTED: Compilation error
+
+extern "Rust" {
+    rite some_fn() → i64;
+}
+
+rite main() → i64 {
+    0
+}

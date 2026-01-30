@@ -1,0 +1,16 @@
+// Stdlib Tests: Qubit
+// Qubit type with REAL assertions
+
+rite main() {
+    println("=== Testing Qubit ===");
+
+    // Qubit·zero - creates |0⟩ state
+    ≔ q0 = Qubit·zero();
+    assert_eq(type_of(q0), "struct:Qubit");
+
+    // Qubit·one - creates |1⟩ state
+    ≔ q1 = Qubit·one();
+    assert_eq(type_of(q1), "struct:Qubit");
+
+    println("ALL QUBIT TESTS PASSED!");
+}

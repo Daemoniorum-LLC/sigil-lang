@@ -1,0 +1,1586 @@
+//! Lexer ∀ the Sigil programming language.
+//!
+//! This is a hand-written lexer ∀ bootstrapping - no external dependencies.
+//! Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.
+//!
+//! Self-hosted conversion: lexer.rs -> lexer.sg
+//! Original: 1355 lines of Rust (using logos crate)
+//! Status: Complete (hand-written ∀ bootstrap)
+
+invoke crate·span·Span;
+invoke crate·token·Token;
+
+/// A lexer ∀ Sigil source code.
+/// Produces a stream of tokens with source spans.
+☉ Σ Lexer {
+    /// The source code being lexed
+    source: !String,
+    /// Current byte position ∈ the source
+    pos: !u64,
+    /// Start position of the current token
+    start: !u64,
+    /// Peeked token (∀ lookahead)
+    peeked: ?Token,
+    /// Peeked span
+    peeked_span: ?Span,
+}
+
+⊢ Lexer {
+    /// Create a new lexer ∀ the given source code.
+    ☉ λ new(source: !String) -> !Self {
+        Self {
+            source,
+            pos: 0,
+            start: 0,
+            peeked: null,
+            peeked_span: null,
+        }
+    }
+
+    /// Get the next token and its span.
+    ☉ λ next_token(Δ self) -> ?(Token, Span) {
+        // Return peeked token ⎇ available
+        // Use ⌥ instead of ⎇ != null to work around codegen issue
+        ⌥ self.peeked {
+            ?token => {
+                ≔ span = self.peeked_span!;
+                self.peeked = null;
+                self.peeked_span = null;
+                ⤺ (token, span);
+            },
+            null => {},
+        }
+
+        self.skip_whitespace_and_comments();
+
+        ⎇ self.is_eof() {
+            ⤺ null;
+        }
+
+        self.start = self.pos;
+        ≔ c = self.advance()!;
+
+        // Handle null character (unexpected EOF or invalid UTF-8)
+        ⎇ c == null {
+            ⤺ null;
+        }
+
+        ≔ token = ⌥ c {
+            // Single-character tokens
+            '(' => Token·LParen,
+            ')' => Token·RParen,
+            '{' => Token·LBrace,
+            '}' => Token·RBrace,
+            '[' => Token·LBracket,
+            ']' => Token·RBracket,
+            ';' => Token·Semi,
+            ',' => Token·Comma,
+            '@' => Token·At,
+            '_' => self.lex_underscore_or_ident(),
+
+            // Operators that might be multi-character
+            '+' => self.lex_plus(),
+            '-' => self.lex_minus(),
+            '*' => self.lex_star(),
+            '/' => self.lex_slash(),
+            '%' => self.lex_percent(),
+            '=' => self.lex_eq(),
+            '!' => self.lex_bang(),
+            '?' => Token·Question,
+            '~' => Token·Tilde,
+            '◊' => Token·Lozenge,
+            '<' => self.lex_lt(),
+            '>' => self.lex_gt(),
+            '&' => self.lex_amp(),
+            '|' => self.lex_pipe(),
+            '^' => self.lex_caret(),
+            ':' => self.lex_colon(),
+            '.' => self.lex_dot(),
+            '#' => self.lex_hash(),
+
+            // String literals
+            '"' => self.lex_string(),
+            '\'' => self.lex_quote_or_char(),
+
+            // Numbers
+            '0'..='9' => self.lex_number(c),
+
+            // Identifiers and keywords
+            'a'..='z' | 'A'..='Z' => self.lex_ident_or_keyword(c),
+
+            // Handle null (EOF or invalid) - must be before wildcard
+            null => { ⤺ null; },
+
+            // Unicode morphemes and symbols
+            _ => self.lex_unicode(c),
+        };
+
+        ≔ span = Span·new(self.start, self.pos);
+        (token, span)
+    }
+
+    /// Peek at the next token without consuming it.
+    ☉ λ peek(Δ self) -> ?(Token, Span) {
+        ⌥ self.peeked {
+            null => {
+                ⌥ self.next_token() {
+                    ?(token, span) => {
+                        self.peeked = token;
+                        self.peeked_span = span;
+                    },
+                    null => ⤺ null,
+                }
+            },
+            _ => {},
+        }
+        // Return by value instead of reference ∀ bootstrap compatibility
+        (self.peeked!, self.peeked_span!)
+    }
+
+    /// Check ⎇ peeked token indicates start of a closure (=>, comma, or colon).
+    ☉ λ peek_is_closure_indicator(Δ self) -> !bool {
+        // Use ⌥ instead of ⎇ == null ∀ bootstrap compatibility
+        ⌥ self.peeked {
+            null => {
+                ⌥ self.next_token() {
+                    ?(token, span) => {
+                        self.peeked = token;
+                        self.peeked_span = span;
+                    },
+                    null => ⤺ false,
+                }
+            },
+            _ => {},
+        }
+        ⌥ self.peeked {
+            ?Token·FatArrow => true,
+            ?Token·Comma => true,
+            // Don't treat : as closure indicator - it conflicts with Σ init { field: value }
+            // Closures with typed params invoke => not | anyway
+            _ => false,
+        }
+    }
+
+    /// Check ⎇ peeked token is a macro delimiter (paren, bracket, brace).
+    ☉ λ peek_is_macro_delimiter(Δ self) -> !bool {
+        // Use ⌥ instead of ⎇ == null ∀ bootstrap compatibility
+        ⌥ self.peeked {
+            null => {
+                ⌥ self.next_token() {
+                    ?(token, span) => {
+                        self.peeked = token;
+                        self.peeked_span = span;
+                    },
+                    null => ⤺ false,
+                }
+            },
+            _ => {},
+        }
+        ⌥ self.peeked {
+            ?Token·LParen => true,
+            ?Token·LBracket => true,
+            ?Token·LBrace => true,
+            _ => false,
+        }
+    }
+
+    /// Get the current span (∀ error reporting).
+    ☉ λ span(self) -> !Span {
+        Span·new(self.start, self.pos)
+    }
+
+    // ========================================
+    // Helper Methods
+    // ========================================
+
+    /// Check ⎇ we've reached end of file.
+    λ is_eof(self) -> !bool {
+        self.pos >= self.source.len()
+    }
+
+    /// Get current character without advancing.
+    λ current(self) -> ?char {
+        ⎇ self.is_eof() {
+            null
+        } ⎉ {
+            self.source.char_at(self.pos)
+        }
+    }
+
+    /// Peek at the character after the current one.
+    λ peek_ahead(self) -> ?char {
+        ⎇ self.is_eof() {
+            ⤺ null;
+        }
+        // Skip current character
+        ≔ curr_char = self.source.char_at(self.pos)?;
+        ≔ next_pos = self.pos + curr_char.len_utf8();
+        ⎇ next_pos >= self.source.len() {
+            null
+        } ⎉ {
+            self.source.char_at(next_pos)
+        }
+    }
+
+    /// Advance and ⤺ the current character.
+    λ advance(Δ self) -> ?char {
+        ⎇ self.is_eof() {
+            ⤺ null;
+        }
+        ≔ c = self.source.char_at(self.pos)!;
+        self.pos += c.len_utf8();
+        c
+    }
+
+    /// Check ⎇ current char matches, and ⎇ so advance.
+    λ match_char(Δ self, expected: !char) -> !bool {
+        ⌥ self.current() {
+            ?c => {
+                ⎇ c == expected {
+                    self.advance();
+                    true
+                } ⎉ {
+                    false
+                }
+            },
+            null => false,
+        }
+    }
+
+    /// Skip whitespace and comments.
+    λ skip_whitespace_and_comments(Δ self) {
+        loop {
+            ⌥ self.current() {
+                // Whitespace
+                ' ' | '\t' | '\n' | '\r' => {
+                    self.advance();
+                }
+                // Line comment
+                '/' => {
+                    ⎇ self.peek_char(1) == '/' {
+                        self.skip_line_comment();
+                    } ⎉ {
+                        ⊗;
+                    }
+                }
+                _ => break,
+            }
+        }
+    }
+
+    /// Skip a line comment (// ...)
+    λ skip_line_comment(Δ self) {
+        // Skip the //
+        self.advance();
+        self.advance();
+        // Skip until newline (invoke loop with ⊗ to avoid != comparison bug)
+        loop {
+            ⎇ self.is_eof() {
+                ⊗;
+            }
+            ≔ c = self.current();
+            ⎇ c == '\n' {
+                ⊗;
+            }
+            self.advance();
+        }
+    }
+
+    /// Peek at a character at offset from current position.
+    λ peek_char(self, offset: !u64) -> ?char {
+        ≔ Δ pos = self.pos;
+        ∀ _ ∈ 0..offset {
+            ⎇ pos >= self.source.len() {
+                ⤺ null;
+            }
+            ≔ c = self.source.char_at(pos)?;
+            pos += c.len_utf8();
+        }
+        ⎇ pos >= self.source.len() {
+            null
+        } ⎉ {
+            self.source.char_at(pos)
+        }
+    }
+
+    // ========================================
+    // Token Lexers
+    // ========================================
+
+    /// Lex + or += or ++
+    λ lex_plus(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·PlusEq
+        } ⎉ ⎇ self.match_char('+') {
+            Token·PlusPlus
+        } ⎉ {
+            Token·Plus
+        }
+    }
+
+    /// Lex - or -= or ->
+    λ lex_minus(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·MinusEq
+        } ⎉ ⎇ self.match_char('>') {
+            Token·Arrow
+        } ⎉ {
+            Token·Minus
+        }
+    }
+
+    /// Lex * or *= or **
+    λ lex_star(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·StarEq
+        } ⎉ ⎇ self.match_char('*') {
+            Token·StarStar
+        } ⎉ {
+            Token·Star
+        }
+    }
+
+    /// Lex / or /= (comments handled ∈ skip_whitespace)
+    λ lex_slash(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·SlashEq
+        } ⎉ {
+            Token·Slash
+        }
+    }
+
+    /// Lex = or == or =>
+    λ lex_eq(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·EqEq
+        } ⎉ ⎇ self.match_char('>') {
+            Token·FatArrow
+        } ⎉ {
+            Token·Eq
+        }
+    }
+
+    /// Lex ! or !=
+    λ lex_bang(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·NotEq
+        } ⎉ {
+            Token·Bang
+        }
+    }
+
+    /// Lex < or <= or << or <<= or <-
+    λ lex_lt(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·LtEq
+        } ⎉ ⎇ self.match_char('<') {
+            ⎇ self.match_char('=') {
+                Token·ShlEq
+            } ⎉ {
+                Token·Shl
+            }
+        } ⎉ ⎇ self.match_char('-') {
+            Token·LeftArrow
+        } ⎉ {
+            Token·Lt
+        }
+    }
+
+    /// Lex > or >= or >> or >>=
+    λ lex_gt(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·GtEq
+        } ⎉ ⎇ self.match_char('>') {
+            ⎇ self.match_char('=') {
+                Token·ShrEq
+            } ⎉ {
+                Token·Shr
+            }
+        } ⎉ {
+            Token·Gt
+        }
+    }
+
+    /// Lex & or &&
+    λ lex_amp(Δ self) -> !Token {
+        ⎇ self.match_char('&') {
+            Token·AndAnd
+        } ⎉ ⎇ self.match_char('=') {
+            Token·AmpEq
+        } ⎉ {
+            Token·Amp
+        }
+    }
+
+    /// Lex | or || or |=
+    λ lex_pipe(Δ self) -> !Token {
+        ⎇ self.match_char('|') {
+            Token·OrOr
+        } ⎉ ⎇ self.match_char('=') {
+            Token·PipeEq
+        } ⎉ {
+            Token·Pipe
+        }
+    }
+
+    /// Lex ^ or ^=
+    λ lex_caret(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·CaretEq
+        } ⎉ {
+            Token·Caret
+        }
+    }
+
+    /// Lex % or %=
+    λ lex_percent(Δ self) -> !Token {
+        ⎇ self.match_char('=') {
+            Token·PercentEq
+        } ⎉ {
+            Token·Percent
+        }
+    }
+
+    /// Lex : or ·
+    λ lex_colon(Δ self) -> !Token {
+        ⎇ self.match_char(':') {
+            Token·ColonColon
+        } ⎉ {
+            Token·Colon
+        }
+    }
+
+    /// Lex . or .. or ..=
+    λ lex_dot(Δ self) -> !Token {
+        ⎇ self.match_char('.') {
+            ⎇ self.match_char('=') {
+                Token·DotDotEq
+            } ⎉ {
+                Token·DotDot
+            }
+        } ⎉ {
+            Token·Dot
+        }
+    }
+
+    /// Lex # or #!
+    λ lex_hash(Δ self) -> !Token {
+        ⎇ self.match_char('!') {
+            Token·HashBang
+        } ⎉ {
+            Token·Hash
+        }
+    }
+
+    /// Lex _ as underscore or as identifier
+    λ lex_underscore_or_ident(Δ self) -> !Token {
+        // Check ⎇ followed by alphanumeric (making it an identifier)
+        ⌥ self.current() {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
+                self.lex_ident_rest()
+            }
+            _ => Token·Underscore,
+        }
+    }
+
+    /// Lex a string literal.
+    λ lex_string(Δ self) -> !Token {
+        ≔ Δ value = String·new();
+
+        // Check ∀ multi-line string (""")
+        ⎇ self.match_char('"') {
+            ⎇ self.match_char('"') {
+                // Multi-line string
+                ⤺ self.lex_multiline_string();
+            } ⎉ {
+                // Empty string
+                ⤺ Token·StringLit("".to_string());
+            }
+        }
+
+        // Regular string - invoke explicit loop ∀ nullable char handling
+        loop {
+            ⎇ self.is_eof() {
+                ⊗;
+            }
+            ≔ curr = self.current();
+            // Check ∀ closing quote - invoke explicit nullable check
+            ⌥ curr {
+                ?c => {
+                    ⎇ c == '"' {
+                        ⊗;
+                    }
+                    self.advance();
+                    ⎇ c == '\\' {
+                        // Escape sequence
+                        value.push(self.lex_escape_sequence());
+                    } ⎉ {
+                        value.push(c);
+                    }
+                },
+                null => break,
+            }
+        }
+
+        // Consume closing quote
+        self.advance();
+
+        Token·StringLit(value)
+    }
+
+    /// Lex a multi-line string (""" ... """).
+    λ lex_multiline_string(Δ self) -> !Token {
+        ≔ Δ value = String·new();
+
+        loop {
+            ⎇ self.is_eof() {
+                ⊗;
+            }
+
+            // Check ∀ closing """
+            ⎇ self.current() == '"' {
+                ⎇ self.peek_char(1) == '"' && self.peek_char(2) == '"' {
+                    self.advance();
+                    self.advance();
+                    self.advance();
+                    ⊗;
+                }
+            }
+
+            ≔ c = self.advance()!;
+            ⎇ c == '\\' {
+                value.push(self.lex_escape_sequence());
+            } ⎉ {
+                value.push(c);
+            }
+        }
+
+        Token·MultiLineStringLit(value)
+    }
+
+    /// Lex an escape sequence.
+    λ lex_escape_sequence(Δ self) -> !char {
+        ⌥ self.advance() {
+            'n' => '\n',
+            't' => '\t',
+            'r' => '\r',
+            '\\' => '\\',
+            '"' => '"',
+            '\'' => '\'',
+            '0' => '\0',
+            'x' => self.lex_hex_escape(2),
+            'u' => self.lex_unicode_escape(),
+            c => c?, // Unknown escape, ⤺ as-is
+        }
+    }
+
+    /// Lex \xNN hex escape.
+    λ lex_hex_escape(Δ self, digits: !u64) -> !char {
+        ≔ Δ value: u32 = 0;
+        ∀ _ ∈ 0..digits {
+            ⌥ self.current() {
+                '0'..='9' => {
+                    value = value * 16 + (self.advance()! as u32 - '0' as u32);
+                }
+                'a'..='f' => {
+                    value = value * 16 + (self.advance()! as u32 - 'a' as u32 + 10);
+                }
+                'A'..='F' => {
+                    value = value * 16 + (self.advance()! as u32 - 'A' as u32 + 10);
+                }
+                _ => break,
+            }
+        }
+        char·from_u32(value) ?? '?'
+    }
+
+    /// Lex \u{NNNN} unicode escape.
+    λ lex_unicode_escape(Δ self) -> !char {
+        ⎇ !self.match_char('{') {
+            ⤺ '?';
+        }
+
+        ≔ Δ value: u32 = 0;
+        // Use loop with ⊗ instead of ⟳ != to avoid codegen bug
+        loop {
+            ⎇ self.is_eof() {
+                ⊗;
+            }
+            ⌥ self.current() {
+                '}' => break,
+                '0'..='9' => {
+                    value = value * 16 + (self.advance()! as u32 - '0' as u32);
+                }
+                'a'..='f' => {
+                    value = value * 16 + (self.advance()! as u32 - 'a' as u32 + 10);
+                }
+                'A'..='F' => {
+                    value = value * 16 + (self.advance()! as u32 - 'A' as u32 + 10);
+                }
+                _ => break,
+            }
+        }
+
+        self.match_char('}');
+        char·from_u32(value) ?? '?'
+    }
+
+    /// Lex a quote (') which could be a char literal or lifetime marker.
+    λ lex_quote_or_char(Δ self) -> !Token {
+        // Check what follows the opening quote
+        ⌥ self.current() {
+            // If followed by identifier start, check ⎇ it's a lifetime
+            'a'..='z' | 'A'..='Z' | '_' => {
+                // Peek one ahead: ⎇ next char after the letter is a closing quote,
+                // it's a char literal like 'a'; otherwise it's a lifetime
+                ⌥ self.peek_char(1) {
+                    '\'' => {
+                        // It's a char literal like 'a'
+                        self.lex_char()
+                    }
+                    _ => {
+                        // It's a lifetime like 'static or 'a
+                        self.lex_lifetime()
+                    }
+                }
+            }
+            // Escaped char is always a char literal
+            '\\' => self.lex_char(),
+            // Any other single char followed by ' is a char literal
+            _ => self.lex_char(),
+        }
+    }
+
+    /// Lex a lifetime identifier ('static, 'a, etc.)
+    λ lex_lifetime(Δ self) -> !Token {
+        // Collect the lifetime name (we're positioned after the ')
+        ≔ Δ name = String·new();
+        ⟳ Lexer·is_alnum_or_underscore(self.current()) {
+            name.push(self.advance()!);
+        }
+        Token·Lifetime(name)
+    }
+
+    /// Lex a character literal.
+    λ lex_char(Δ self) -> !Token {
+        ≔ c = ⎇ self.current() == '\\' {
+            self.advance();
+            self.lex_escape_sequence()
+        } ⎉ {
+            self.advance()!
+        };
+
+        // Consume closing quote
+        self.match_char('\'');
+
+        Token·CharLit(c)
+    }
+
+    /// Helper to check ⎇ a char is an ASCII digit
+    λ is_digit(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ a char is digit or underscore
+    λ is_digit_or_underscore(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ char is hex digit
+    λ is_hex_digit(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' | 'a'..='f' | 'A'..='F' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ char is hex digit or underscore
+    λ is_hex_or_underscore(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' | 'a'..='f' | 'A'..='F' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ char is vigesimal digit (0-9, a-j)
+    λ is_vigesimal_or_underscore(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' | 'a'..='j' | 'A'..='J' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ char is alphanumeric or underscore
+    λ is_alnum_or_underscore(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ char is duodecimal digit (0-9, a-b)
+    λ is_duodecimal_or_underscore(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' | 'a'..='b' | 'A'..='B' | '_' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ char is alphabetic (basic ASCII + common Unicode letters ∀ bootstrap)
+    λ is_alpha(c: !char) -> !bool {
+        ⌥ c {
+            'a'..='z' | 'A'..='Z' => true,
+            // Greek letters used ∈ Sigil morphemes
+            'α'..='ω' | 'Α'..='Ω' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ char is alphanumeric
+    λ is_alphanumeric(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' | 'a'..='z' | 'A'..='Z' => true,
+            _ => false,
+        }
+    }
+
+    /// Helper to check ⎇ char is alphanumeric or underscore (includes common Unicode)
+    λ is_unicode_alnum_or_underscore(c: ?char) -> !bool {
+        ⌥ c {
+            '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => true,
+            // Greek letters
+            'α'..='ω' | 'Α'..='Ω' => true,
+            _ => false,
+        }
+    }
+
+    /// Lex a number (integer or float, various bases).
+    λ lex_number(Δ self, first: !char) -> !Token {
+        // Check ∀ base prefix
+        ⎇ first == '0' {
+            ⌥ self.current() {
+                'b' | 'B' => ⤺ self.lex_binary(),
+                'o' | 'O' => ⤺ self.lex_octal(),
+                'x' | 'X' => ⤺ self.lex_hex(),
+                'v' | 'V' => ⤺ self.lex_vigesimal(),
+                's' | 'S' => ⤺ self.lex_sexagesimal(),
+                'z' | 'Z' => ⤺ self.lex_duodecimal(),
+                _ => {}
+            }
+        }
+
+        // Decimal integer or float
+        ≔ Δ value = String·new();
+        value.push(first);
+
+        // Integer part - invoke loop to avoid is_ascii_digit() method call
+        loop {
+            ⎇ !Lexer·is_digit_or_underscore(self.current()) {
+                ⊗;
+            }
+            ≔ c = self.advance()!;
+            // Skip underscores ∈ output
+            ⌥ c {
+                '_' => {},
+                _ => value.push(c),
+            }
+        }
+
+        // Check ∀ float
+        ⎇ self.current() == '.' && Lexer·is_digit(self.peek_char(1)) {
+            value.push(self.advance()!); // '.'
+
+            // Fractional part
+            loop {
+                ⎇ !Lexer·is_digit_or_underscore(self.current()) {
+                    ⊗;
+                }
+                ≔ c = self.advance()!;
+                ⌥ c {
+                    '_' => {},
+                    _ => value.push(c),
+                }
+            }
+
+            // Exponent
+            ⎇ self.current() == 'e' || self.current() == 'E' {
+                value.push(self.advance()!);
+                ⎇ self.current() == '+' || self.current() == '-' {
+                    value.push(self.advance()!);
+                }
+                loop {
+                    ⎇ !Lexer·is_digit_or_underscore(self.current()) {
+                        ⊗;
+                    }
+                    ≔ c = self.advance()!;
+                    ⌥ c {
+                        '_' => {},
+                        _ => value.push(c),
+                    }
+                }
+            }
+
+            Token·FloatLit(value)
+        } ⎉ ⎇ self.current() == 'e' || self.current() == 'E' {
+            // Integer with exponent (e.g., 1e9) - also a float
+            value.push(self.advance()!);
+            ⎇ self.current() == '+' || self.current() == '-' {
+                value.push(self.advance()!);
+            }
+            loop {
+                ⎇ !Lexer·is_digit_or_underscore(self.current()) {
+                    ⊗;
+                }
+                ≔ c = self.advance()!;
+                ⌥ c {
+                    '_' => {},
+                    _ => value.push(c),
+                }
+            }
+            Token·FloatLit(value)
+        } ⎉ {
+            // Check ∀ integer type suffix: u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+            ⎇ self.current() == 'u' || self.current() == 'i' {
+                ≔ suffix_start = self.current();
+                self.advance();
+                // Consume the rest of the suffix
+                ⟳ Lexer·is_alphanumeric(self.current()) {
+                    self.advance();
+                }
+                // We don't need to track the suffix ∀ parsing, just consume it
+            }
+            Token·IntLit(value)
+        }
+    }
+
+    /// Lex binary literal (0b...).
+    λ lex_binary(Δ self) -> !Token {
+        self.advance(); // Skip 'b'
+        ≔ Δ value = "0b".to_string();
+
+        ⟳ self.current() == '0' || self.current() == '1' || self.current() == '_' {
+            ≔ c = self.advance()!;
+            value.push(c);
+        }
+
+        Token·BinaryLit(value)
+    }
+
+    /// Lex octal literal (0o...).
+    λ lex_octal(Δ self) -> !Token {
+        self.advance(); // Skip 'o'
+        ≔ Δ value = "0o".to_string();
+
+        ⟳ self.current() >= '0' && self.current() <= '7' || self.current() == '_' {
+            ≔ c = self.advance()!;
+            value.push(c);
+        }
+
+        Token·OctalLit(value)
+    }
+
+    /// Lex hexadecimal literal (0x...).
+    λ lex_hex(Δ self) -> !Token {
+        self.advance(); // Skip 'x'
+        ≔ Δ value = "0x".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            ⎇ !Lexer·is_hex_or_underscore(self.current()) {
+                ⊗;
+            }
+            ≔ c = self.advance()!;
+            value.push(c);
+        }
+
+        Token·HexLit(value)
+    }
+
+    /// Lex vigesimal literal (0v..., base 20).
+    λ lex_vigesimal(Δ self) -> !Token {
+        self.advance(); // Skip 'v'
+        ≔ Δ value = "0v".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            ⎇ !Lexer·is_vigesimal_or_underscore(self.current()) {
+                ⊗;
+            }
+            ≔ c = self.advance()!;
+            value.push(c);
+        }
+
+        Token·VigesimalLit(value)
+    }
+
+    /// Lex sexagesimal literal (0s..., base 60).
+    λ lex_sexagesimal(Δ self) -> !Token {
+        self.advance(); // Skip 's'
+        ≔ Δ value = "0s".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            ⎇ !Lexer·is_alnum_or_underscore(self.current()) {
+                ⊗;
+            }
+            ≔ c = self.advance()!;
+            value.push(c);
+        }
+
+        Token·SexagesimalLit(value)
+    }
+
+    /// Lex duodecimal literal (0z..., base 12).
+    λ lex_duodecimal(Δ self) -> !Token {
+        self.advance(); // Skip 'z'
+        ≔ Δ value = "0z".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            ⎇ !Lexer·is_duodecimal_or_underscore(self.current()) {
+                ⊗;
+            }
+            ≔ c = self.advance()!;
+            value.push(c);
+        }
+
+        Token·DuodecimalLit(value)
+    }
+
+    /// Lex an identifier or keyword.
+    λ lex_ident_or_keyword(Δ self, first: !char) -> !Token {
+        // Check ∀ raw string literal (r#"..."# or r"...")
+        ⎇ first == 'r' && (self.current() == '#' || self.current() == '"') {
+            ⤺ self.lex_raw_string();
+        }
+
+        // Check ∀ byte string literal (b"...")
+        ⎇ first == 'b' && self.current() == '"' {
+            ⤺ self.lex_byte_string();
+        }
+
+        // Check ∀ byte literal (b'...')
+        ⎇ first == 'b' && self.current() == '\'' {
+            ⤺ self.lex_byte_literal();
+        }
+
+        ≔ Δ name = String·new();
+        name.push(first);
+
+        // Continue with alphanumeric and underscore
+        // Use loop with helper to avoid method call issues
+        loop {
+            ⎇ !Lexer·is_alnum_or_underscore(self.current()) {
+                ⊗;
+            }
+            name.push(self.advance()!);
+        }
+
+        // Check ∀ prime suffix: x', y', S' (mathematical notation)
+        // Only ⎇ followed by non-alphanumeric (to not confinvoke with char literals)
+        ⎇ self.current() == '\'' {
+            ≔ next = self.peek_ahead();
+            // Prime ⎇ followed by non-alphabetic (like comma, bracket, space)
+            ⎇ !Lexer·is_alnum_or_underscore(next) {
+                name.push(self.advance()!);
+            }
+        }
+
+        // Check ∀ keywords
+        self.keyword_or_ident(name)
+    }
+
+    /// Lex a raw string literal (r"..." or r#"..."#).
+    λ lex_raw_string(Δ self) -> !Token {
+        // Count the number of # characters
+        ≔ Δ hash_count = 0;
+        ⟳ self.current() == '#' {
+            self.advance();
+            hash_count = hash_count + 1;
+        }
+
+        // Expect opening quote - invoke ⌥ to avoid != codegen bug
+        ⌥ self.current() {
+            '"' => {},
+            _ => {
+                // Not a valid raw string, ⤺ as identifier 'r' followed by hashes
+                // This shouldn't normally happen ∈ valid Sigil code
+                ⤺ Token·Ident("r".to_string());
+            }
+        }
+        self.advance(); // consume opening quote
+
+        ≔ Δ value = String·new();
+
+        // Read until we find closing quote followed by same number of #
+        loop {
+            ⎇ self.is_eof() {
+                ⊗;
+            }
+
+            ≔ c = self.advance()!;
+            ⎇ c == '"' {
+                // Check ∀ closing # sequence
+                ≔ Δ closing_hashes = 0;
+                ⟳ closing_hashes < hash_count && self.current() == '#' {
+                    self.advance();
+                    closing_hashes = closing_hashes + 1;
+                }
+                ⎇ closing_hashes == hash_count {
+                    // Found the closing sequence
+                    ⊗;
+                } ⎉ {
+                    // Not the closing sequence, add the quote and hashes to value
+                    value.push('"');
+                    ≔ Δ i = 0;
+                    ⟳ i < closing_hashes {
+                        value.push('#');
+                        i = i + 1;
+                    }
+                }
+            } ⎉ {
+                value.push(c);
+            }
+        }
+
+        Token·RawStringLit(value)
+    }
+
+    /// Lex a byte string literal (b"...").
+    λ lex_byte_string(Δ self) -> !Token {
+        // Consume the opening quote
+        self.advance();  // consume "
+
+        ≔ Δ bytes: ![u8] = [];
+
+        loop {
+            ⌥ self.current() {
+                '"' => {
+                    self.advance();
+                    ⊗;
+                }
+                '\\' => {
+                    self.advance();
+                    ≔ escaped = self.lex_escape_sequence();
+                    bytes.push(escaped as u8);
+                }
+                null => break,  // EOF
+                c => {
+                    bytes.push(c! as u8);
+                    self.advance();
+                }
+            }
+        }
+
+        Token·ByteStringLit(bytes)
+    }
+
+    /// Lex a byte literal (b'a').
+    λ lex_byte_literal(Δ self) -> !Token {
+        self.advance();  // consume '
+
+        ≔ byte = ⎇ self.current() == '\\' {
+            self.advance();
+            self.lex_escape_sequence() as u8
+        } ⎉ {
+            ≔ c = self.advance()!;
+            c as u8
+        };
+
+        self.match_char('\'');
+
+        Token·ByteLit(byte)
+    }
+
+    /// Continue lexing identifier after initial character.
+    λ lex_ident_rest(Δ self) -> !Token {
+        ≔ Δ name = "_".to_string();
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            ⎇ !Lexer·is_alnum_or_underscore(self.current()) {
+                ⊗;
+            }
+            name.push(self.advance()!);
+        }
+
+        self.keyword_or_ident(name)
+    }
+
+    /// Check ⎇ name is a keyword, otherwise ⤺ as identifier.
+    λ keyword_or_ident(self, name: !String) -> !Token {
+        ⌥ name.as_str() {
+            // Definition keywords
+            "fn" => Token·Fn,
+            "async" => Token·Async,
+            "let" => Token·Let,
+            "mut" => Token·Mut,
+            "const" => Token·Const,
+            "type" => Token·Type,
+            "struct" => Token·Struct,
+            "enum" => Token·Enum,
+            "trait" => Token·Trait,
+            "impl" => Token·Impl,
+            "mod" => Token·Mod,
+            "scroll" => Token·Mod,      // Sigil-native: scroll = scroll (subdivision of a tome)
+            "use" => Token·Use,
+            "invoke" => Token·Use,      // Sigil-native: invoke = invoke (bring symbols into scope)
+            "pub" => Token·Pub,
+            "actor" => Token·Actor,
+            "saga" => Token·Saga,
+            // "scope" unreserved - not used by parser, field names need it
+            "rune" => Token·Rune,
+
+            // Control flow
+            "if" => Token·If,
+            "else" => Token·Else,
+            "match" => Token·Match,
+            "loop" => Token·Loop,
+            "while" => Token·While,
+            "for" => Token·For,
+            "in" => Token·In,
+            "break" => Token·Break,
+            "continue" => Token·Continue,
+            "return" => Token·Return,
+            "yield" => Token·Yield,
+            "await" => Token·Await,
+
+            // Other keywords
+            "self" => Token·SelfLower,
+            "Self" => Token·SelfUpper,
+            "super" => Token·Super,
+            "crate" => Token·Crate,
+            "where" => Token·Where,
+            "as" => Token·As,
+            "dyn" => Token·Dyn,
+            "move" => Token·Move,
+            "ref" => Token·Ref,
+            "static" => Token·Static,
+            "unsafe" => Token·Unsafe,
+            "extern" => Token·Extern,
+            "asm" => Token·Asm,
+            "volatile" => Token·Volatile,
+            "naked" => Token·Naked,
+            "packed" => Token·Packed,
+            "simd" => Token·Simd,
+            "atomic" => Token·Atomic,
+            "derive" => Token·Derive,
+            "on" => Token·On,
+
+            // Literals
+            "true" => Token·True,
+            "false" => Token·False,
+            "null" => Token·Null,
+
+            // Parallel/concurrency keywords
+            "parallel" => Token·Parallel,
+            "gpu" => Token·Gpu,
+
+            // Protocol keywords
+            // Note: "stream" removed - invoke ≋ (ProtoStream) morpheme instead
+            "send" => Token·Send,
+            "recv" => Token·Recv,
+            // "connect" unreserved - method/field names invoke it
+            "close" => Token·Close,
+            "timeout" => Token·Timeout,
+            "retry" => Token·Retry,
+            "header" => Token·Header,
+            "body" => Token·Body,
+            "http" => Token·Http,
+            "https" => Token·Https,
+            "ws" => Token·Ws,
+            "wss" => Token·Wss,
+            "grpc" => Token·Grpc,
+            "kafka" => Token·Kafka,
+            "amqp" => Token·Amqp,
+            "graphql" => Token·GraphQL,
+
+            // Identifier
+            _ => Token·Ident(name),
+        }
+    }
+
+    /// Lex Unicode symbols (morphemes, operators, etc.).
+    λ lex_unicode(Δ self, c: !char) -> !Token {
+        ⌥ c {
+            // Morphemes (Greek letters)
+            'τ' | 'Τ' => Token·Tau,
+            'φ' | 'Φ' => Token·Phi,
+            'σ' | 'Σ' => Token·Sigma,
+            'ρ' | 'Ρ' => Token·Rho,
+            'λ' | 'Λ' => Token·Lambda,
+            'Π' => Token·Pi,
+            'δ' | 'Δ' => Token·Delta,
+            'ε' => Token·Epsilon,
+            'ω' | 'Ω' => Token·Omega,
+            'α' => Token·Alpha,
+            // Note: Using Combiner to avoid codegen bug with variant names containing 'Z'
+            'ζ' => Token·Combiner,
+            'μ' | 'Μ' => Token·Mu,
+            'χ' | 'Χ' => Token·Chi,
+            'ν' | 'Ν' => Token·Nu,
+            'ξ' | 'Ξ' => Token·Xi,
+
+            // Special symbols
+            '⌛' => Token·Hourglass,
+            '∥' => Token·Parallel,
+            '⊛' => Token·Gpu,
+
+            // Quantifiers
+            '∀' => Token·ForAll,
+            '∃' => Token·Exists,
+            '∈' => Token·ElementOf,
+            '∉' => Token·NotElementOf,
+
+            // Set operations
+            '∪' => Token·Union,
+            '∩' => Token·Intersection,
+            '∖' => Token·SetMinus,
+            '⊂' => Token·Subset,
+            '⊆' => Token·SubsetEq,
+            '⊃' => Token·Superset,
+            '⊇' => Token·SupersetEq,
+
+            // Logic operators
+            '∧' => Token·LogicAnd,
+            '∨' => Token·LogicOr,
+            '¬' => Token·LogicNot,
+            '⊻' => Token·LogicXor,
+            '⊤' => Token·Top,
+            '⊥' => Token·Bottom,
+
+            // Bitwise (Unicode)
+            '⋏' => Token·BitwiseAndSymbol,
+            '⋎' => Token·BitwiseOrSymbol,
+
+            // Type theory
+            '∷' => Token·TypeAnnotation,
+
+            // Analysis/Calculus
+            '∫' => Token·Integral,
+            '∂' => Token·Partial,
+            '√' => self.lex_sqrt_or_ident('√'),
+            '∛' => self.lex_sqrt_or_ident('∛'),
+            '∇' => Token·Nabla,
+
+            // APL-inspired
+            '⍋' => Token·GradeUp,
+            '⍒' => Token·GradeDown,
+            '⌽' => Token·Rotate,
+            '↻' => Token·CycleArrow,
+            '⌺' => Token·QuadDiamond,
+            '⊞' => Token·SquaredPlus,
+            '⍳' => Token·Iota,
+
+            // Category theory
+            '∘' => Token·Compose,
+            '⊗' => Token·Tensor,
+            '⊕' => Token·DirectSum,
+
+            // Data operations
+            '⋈' => Token·Bowtie,
+            '⋳' => Token·ElementSmallVerticalBar,
+            '⊔' => Token·SquareCup,
+            '⊓' => Token·SquareCap,
+
+            // Evidentiality
+            '‽' => Token·Interrobang,
+
+            // Affective markers
+            '⊖' => Token·AffectNegative,
+            '⊜' => Token·AffectNeutral,
+            '⸮' => Token·IronyMark,
+            '↑' => Token·IntensityUp,
+            '↓' => Token·IntensityDown,
+            '⇈' => Token·IntensityMax,
+            '♔' => Token·FormalRegister,
+            '♟' => Token·InformalRegister,
+            '☺' => Token·EmotionJoy,
+            '☹' => Token·EmotionSadness,
+            '⚡' => Token·EmotionAnger,
+            '❄' => Token·EmotionFear,
+            '✦' => Token·EmotionSurprise,
+            '♡' => Token·EmotionLove,
+            '◉' => Token·ConfidenceHigh,
+            '◎' => Token·ConfidenceMedium,
+            '○' => Token·ConfidenceLow,
+
+            // Special symbols
+            '∅' => Token·Empty,
+            '◯' => Token·Circle,
+            '∞' => Token·Infinity,
+
+            // Protocol operations
+            '⇒' => Token·ProtoSend,
+            '⇐' => Token·ProtoRecv,
+            '≋' => Token·ProtoStream,
+            '⊸' => Token·ProtoConnect,
+            '⏱' => Token·ProtoTimeout,
+
+            // Middle dot (incorporation)
+            '·' => self.lex_middle_dot(),
+
+            // Unknown - try as identifier
+            _ => {
+                // Use helper instead of method call ∀ bootstrap compatibility
+                ⎇ Lexer·is_alpha(c) {
+                    self.lex_unicode_ident(c)
+                } ⎉ {
+                    // Skip unknown character
+                    Token·Ident(c.to_string())
+                }
+            }
+        }
+    }
+
+    /// Lex middle dot or aspect morpheme.
+    λ lex_middle_dot(Δ self) -> !Token {
+        // Check ∀ aspect markers: ·ing, ·ed, ·able, ·ive
+        ≔ start = self.pos;
+
+        ⎇ self.match_str("ing") {
+            Token·AspectProgressive
+        } ⎉ ⎇ self.match_str("ed") {
+            Token·AspectPerfective
+        } ⎉ ⎇ self.match_str("able") {
+            Token·AspectPotential
+        } ⎉ ⎇ self.match_str("ive") {
+            Token·AspectResultative
+        } ⎉ {
+            Token·MiddleDot
+        }
+    }
+
+    /// Check ⎇ the next characters ⌥ a string.
+    λ match_str(Δ self, s: !&str) -> !bool {
+        ≔ start = self.pos;
+        ∀ expected ∈ s.chars() {
+            // Use == with negated result to avoid != codegen bug
+            ⎇ self.current() == expected {
+                self.advance();
+            } ⎉ {
+                self.pos = start;
+                ⤺ false;
+            }
+        }
+        true
+    }
+
+    /// Lex a Unicode identifier.
+    λ lex_unicode_ident(Δ self, first: !char) -> !Token {
+        ≔ Δ name = String·new();
+        name.push(first);
+
+        // Use loop with helper to avoid method call issues
+        loop {
+            ⎇ !Lexer·is_unicode_alnum_or_underscore(self.current()) {
+                ⊗;
+            }
+            name.push(self.advance()!);
+        }
+
+        Token·Ident(name)
+    }
+
+    /// Lex sqrt symbol (√ or ∛) - ⎇ followed by digits, combine into identifier (e.g., √2)
+    λ lex_sqrt_or_ident(Δ self, root_char: !char) -> !Token {
+        // Check ⎇ followed by a digit
+        ⌥ Lexer·is_digit(self.current()) {
+            true => {
+                // Combine root symbol with following digits to form identifier like √2
+                ⤺ self.lex_sqrt_with_digits(root_char);
+            }
+            false => {}
+        }
+        // Just the root symbol as operator
+        ⌥ root_char {
+            '√' => Token·Sqrt,
+            '∛' => Token·Cbrt,
+            _ => Token·Ident(root_char.to_string()),
+        }
+    }
+
+    /// Helper: lex √ followed by digits into identifier
+    λ lex_sqrt_with_digits(Δ self, root_char: !char) -> !Token {
+        ≔ Δ name = String·new();
+        name.push(root_char);
+        // Use loop with helper to avoid method call issues (matching lex_unicode_ident pattern)
+        loop {
+            ⎇ !Lexer·is_digit(self.current()) {
+                ⊗;
+            }
+            name.push(self.advance()!);
+        }
+        Token·Ident(name)
+    }
+}
+
+// ========================================
+// Character Classification Extensions
+// ========================================
+
+/// Extension Θ ∀ character classification.
+Θ CharExt {
+    /// Check ⎇ character is a vigesimal digit (0-9, a-j).
+    λ is_vigesimal_digit(self) -> !bool;
+
+    /// Check ⎇ character is a duodecimal digit (0-9, a-b).
+    λ is_duodecimal_digit(self) -> !bool;
+}
+
+⊢ CharExt ∀ char {
+    λ is_vigesimal_digit(self) -> !bool {
+        ⌥ self {
+            '0'..='9' | 'a'..='j' | 'A'..='J' => true,
+            _ => false,
+        }
+    }
+
+    λ is_duodecimal_digit(self) -> !bool {
+        ⌥ self {
+            '0'..='9' | 'a'..='b' | 'A'..='B' => true,
+            _ => false,
+        }
+    }
+}
+
+⊢ CharExt ∀ ?char {
+    λ is_vigesimal_digit(self) -> !bool {
+        ⌥ self {
+            c => c.is_vigesimal_digit(),
+            null => false,
+        }
+    }
+
+    λ is_duodecimal_digit(self) -> !bool {
+        ⌥ self {
+            c => c.is_duodecimal_digit(),
+            null => false,
+        }
+    }
+}
+
+// ========================================
+// Tests
+// ========================================
+
+#[test]
+λ test_lexer_basic_tokens() {
+    ≔ Δ lexer = Lexer·new("λ main() { }".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Fn);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("main".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·LParen);
+    assert_eq!(lexer.next_token()?.0, Token·RParen);
+    assert_eq!(lexer.next_token()?.0, Token·LBrace);
+    assert_eq!(lexer.next_token()?.0, Token·RBrace);
+    assert_eq!(lexer.next_token(), null);
+}
+
+#[test]
+λ test_lexer_morphemes() {
+    ≔ Δ lexer = Lexer·new("τ φ σ ρ".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Tau);
+    assert_eq!(lexer.next_token()?.0, Token·Phi);
+    assert_eq!(lexer.next_token()?.0, Token·Sigma);
+    assert_eq!(lexer.next_token()?.0, Token·Rho);
+}
+
+#[test]
+λ test_lexer_numbers() {
+    ≔ Δ lexer = Lexer·new("42 0b1010 0xDEAD 3.14".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·IntLit("42".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·BinaryLit("0b1010".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·HexLit("0xDEAD".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·FloatLit("3.14".to_string()));
+}
+
+#[test]
+λ test_lexer_strings() {
+    ≔ Δ lexer = Lexer·new(r#""hello" "world\n""#.to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·StringLit("hello".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·StringLit("world\n".to_string()));
+}
+
+#[test]
+λ test_lexer_operators() {
+    ≔ Δ lexer = Lexer·new("+ += ++ -> => == !=".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Plus);
+    assert_eq!(lexer.next_token()?.0, Token·PlusEq);
+    assert_eq!(lexer.next_token()?.0, Token·PlusPlus);
+    assert_eq!(lexer.next_token()?.0, Token·Arrow);
+    assert_eq!(lexer.next_token()?.0, Token·FatArrow);
+    assert_eq!(lexer.next_token()?.0, Token·EqEq);
+    assert_eq!(lexer.next_token()?.0, Token·NotEq);
+}
+
+#[test]
+λ test_lexer_evidentiality() {
+    ≔ Δ lexer = Lexer·new("value! uncertain? reported~ paradox‽".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("value".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Bang);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("uncertain".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Question);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("reported".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Tilde);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("paradox".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Interrobang);
+}
+
+#[test]
+λ test_lexer_incorporation() {
+    ≔ Δ lexer = Lexer·new("file·open·read".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("file".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·MiddleDot);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("open".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·MiddleDot);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("read".to_string()));
+}
+
+#[test]
+λ test_lexer_pipe_chain() {
+    ≔ Δ lexer = Lexer·new("data|τ{f}|φ{p}".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("data".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Pipe);
+    assert_eq!(lexer.next_token()?.0, Token·Tau);
+    assert_eq!(lexer.next_token()?.0, Token·LBrace);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("f".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·RBrace);
+    assert_eq!(lexer.next_token()?.0, Token·Pipe);
+    assert_eq!(lexer.next_token()?.0, Token·Phi);
+}
+
+#[test]
+λ test_lexer_aspects() {
+    ≔ Δ lexer = Lexer·new("process·ing complete·ed parse·able result·ive".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("process".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·AspectProgressive);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("complete".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·AspectPerfective);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("parse".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·AspectPotential);
+    assert_eq!(lexer.next_token()?.0, Token·Ident("result".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·AspectResultative);
+}
+
+#[test]
+λ test_lexer_comments() {
+    ≔ Δ lexer = Lexer·new("a // comment\nb".to_string());
+
+    assert_eq!(lexer.next_token()?.0, Token·Ident("a".to_string()));
+    assert_eq!(lexer.next_token()?.0, Token·Ident("b".to_string()));
+}

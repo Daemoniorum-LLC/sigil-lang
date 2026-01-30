@@ -1,0 +1,25 @@
+// Test: Pattern binding with @
+// Spec: 02-SYNTAX.md § Patterns
+// Priority: P0
+//
+// Purpose:
+// Validates pattern binding ⟳ matching.
+//
+// Expected behavior:
+// Should bind values ⟳ matching
+
+rite describe(opt: Option<i32>) {
+    ⌥ opt {
+        Some(n) ⎇ n > 100 => println("large"),
+        Some(n) ⎇ n < 0 => println("negative"),
+        Some(n) => println(n),
+        None => println("none"),
+    }
+}
+
+rite main() {
+    describe(Some(200));
+    describe(Some(-5));
+    describe(Some(42));
+    describe(None);
+}

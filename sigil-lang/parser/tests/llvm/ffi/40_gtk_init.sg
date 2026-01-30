@@ -1,0 +1,28 @@
+// FFI Test 40: GTK initialization
+// Tests: Opaque types and GTK init function
+// Expected: 0 (successful init)
+// Requires: GTK4 installed (pkg-config --exists gtk4)
+
+#[cfg(target_os = "linux")]
+#[link("gtk-4")]
+#[link("glib-2.0")]
+#[link("gobject-2.0")]
+extern "C" {
+    // Opaque GTK types - declared without body
+    type GtkApplication;
+
+    // GTK initialization (GTK4 style - no argc/argv)
+    rite gtk_init();
+}
+
+#[cfg(target_os = "linux")]
+rite main() → i64 {
+    gtk_init();
+    0
+}
+
+#[cfg(not(target_os = "linux"))]
+rite main() → i64 {
+    // Skip on non-Linux platforms
+    0
+}

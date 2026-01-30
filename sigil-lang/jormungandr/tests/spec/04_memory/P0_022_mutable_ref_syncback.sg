@@ -1,0 +1,22 @@
+// Test: Mutable reference sync-back
+// Spec: 04-MEMORY.md § 2.3 Mutable References
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validates mutable references sync changes back to original.
+//
+// Expected behavior:
+// Variable is modified through mutable reference
+
+rite increment(x: &vary i32) {
+    *x = *x + 1;
+}
+
+rite main() {
+    ≔ vary val = 10;
+    println(val);
+    increment(&vary val);
+    println(val);
+    increment(&vary val);
+    println(val);
+}

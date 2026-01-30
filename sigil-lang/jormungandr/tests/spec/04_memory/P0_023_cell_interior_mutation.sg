@@ -1,0 +1,18 @@
+// Test: Cell interior mutability
+// Spec: 04-MEMORY.md § 5.3 Interior Mutability
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validates Cell allows mutation through shared reference.
+//
+// Expected behavior:
+// Value changes via Cell get/set
+
+rite main() {
+    ≔ cell = Cell·new(5);
+    println(cell.get());
+    cell.set(10);
+    println(cell.get());
+    cell.set(cell.get() + 5);
+    println(cell.get());
+}

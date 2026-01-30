@@ -1,0 +1,273 @@
+// Test: Qliphoth Dialog Component
+// TDD: RED - Tests the Dialog modal component
+//
+// Dialog is an accessible modal overlay for important content
+
+invoke qliphoth·components·Dialog;
+invoke qliphoth·components·DialogHeader;
+invoke qliphoth·components·DialogBody;
+invoke qliphoth·components·DialogFooter;
+invoke qliphoth·components·Button;
+invoke qliphoth·core·VNode;
+
+// Test basic dialog rendering
+rite test_dialog_basic() {
+    ≔ dialog = Dialog {
+        open: yay,
+        children: [
+            DialogBody {
+                children: [text("Dialog content")]
+            }
+        ]
+    };
+
+    ≔ vnode = dialog.render();
+
+    assert!(vnode.has_class("dialog"));
+    assert_eq!(vnode.attr("role"), "dialog");
+    assert_eq!(vnode.attr("aria-modal"), "true");
+}
+
+// Test dialog with title
+rite test_dialog_with_header() {
+    ≔ dialog = Dialog {
+        open: yay,
+        children: [
+            DialogHeader {
+                title: "Confirm Action",
+                subtitle: "Please review before proceeding",
+            },
+            DialogBody {
+                children: [text("Are you sure?")]
+            }
+        ]
+    };
+
+    ≔ vnode = dialog.render();
+
+    // Should have header
+    assert!(vnode.has_child_with_class("dialog-header"));
+
+    // Title should be associated with dialog via aria-labelledby
+    ≔ header = vnode.find_child_by_class("dialog-header");
+    ≔ title_id = header.find_child_by_class("dialog-title").attr("id");
+    assert_eq!(vnode.attr("aria-labelledby"), title_id);
+}
+
+// Test dialog with footer actions
+rite test_dialog_with_footer() {
+    ≔ dialog = Dialog {
+        open: yay,
+        children: [
+            DialogHeader { title: "Confirm" },
+            DialogBody { children: [text("Proceed?")] },
+            DialogFooter {
+                children: [
+                    Button { label: "Cancel", variant: "ghost", onclick: || {} },
+                    Button { label: "Confirm", variant: "primary", onclick: || {} },
+                ]
+            }
+        ]
+    };
+
+    ≔ vnode = dialog.render();
+    assert!(vnode.has_child_with_class("dialog-footer"));
+}
+
+// Test dialog close functionality
+rite test_dialog_close() {
+    ≔ is_open = yay;
+
+    ≔ dialog = Dialog {
+        open: is_open,
+        onclose: || { is_open = nay; },
+        children: [DialogBody { children: [text("Content")] }]
+    };
+
+    ≔ vnode = dialog.render();
+
+    // Should have close button by default
+    assert!(vnode.has_child_with_class("dialog-close"));
+
+    // Close button should be accessible
+    ≔ close_btn = vnode.find_child_by_class("dialog-close");
+    assert_eq!(close_btn.attr("aria-label"), "Close");
+}
+
+// Test dialog without close button
+rite test_dialog_no_close_button() {
+    ≔ dialog = Dialog {
+        open: yay,
+        hide_close: yay,
+        children: [DialogBody { children: [text("Must choose an action")] }]
+    };
+
+    ≔ vnode = dialog.render();
+    assert_eq!(vnode.has_child_with_class("dialog-close"), nay);
+}
+
+// Test dialog sizes
+rite test_dialog_sizes() {
+    ≔ sm = Dialog { open: yay, size: "sm", children: [] };
+    assert!(sm.render().has_class("dialog-sm"));
+
+    ≔ md = Dialog { open: yay, size: "md", children: [] };
+    assert!(md.render().has_class("dialog-md"));
+
+    ≔ lg = Dialog { open: yay, size: "lg", children: [] };
+    assert!(lg.render().has_class("dialog-lg"));
+
+    ≔ xl = Dialog { open: yay, size: "xl", children: [] };
+    assert!(xl.render().has_class("dialog-xl"));
+
+    ≔ full = Dialog { open: yay, size: "full", children: [] };
+    assert!(full.render().has_class("dialog-full"));
+}
+
+// Test dialog backdrop
+rite test_dialog_backdrop() {
+    // Default: clickable backdrop that closes dialog
+    ≔ default_dialog = Dialog {
+        open: yay,
+        onclose: || {},
+        children: []
+    };
+    ≔ vnode = default_dialog.render();
+    assert!(vnode.has_child_with_class("dialog-backdrop"));
+
+    // Static backdrop (doesn't close on click)
+    ≔ static_dialog = Dialog {
+        open: yay,
+        static_backdrop: yay,
+        children: []
+    };
+    ≔ static_vnode = static_dialog.render();
+    ≔ backdrop = static_vnode.find_child_by_class("dialog-backdrop");
+    assert!(backdrop.has_class("dialog-backdrop-static"));
+}
+
+// Test dialog escape key handling
+rite test_dialog_escape() {
+    // Default: closes on Escape
+    ≔ dialog = Dialog {
+        open: yay,
+        close_on_escape: yay,
+        onclose: || {},
+        children: []
+    };
+
+    ≔ vnode = dialog.render();
+    assert_eq!(vnode.attr("data-close-on-escape"), "true");
+
+    // Disable Escape key
+    ≔ no_escape = Dialog {
+        open: yay,
+        close_on_escape: nay,
+        children: []
+    };
+    assert_eq!(no_escape.render().attr("data-close-on-escape"), "false");
+}
+
+// Test dialog positioning
+rite test_dialog_position() {
+    // Centered (default)
+    ≔ center = Dialog { open: yay, position: "center", children: [] };
+    assert!(center.render().has_class("dialog-center"));
+
+    // Top
+    ≔ top = Dialog { open: yay, position: "top", children: [] };
+    assert!(top.render().has_class("dialog-top"));
+
+    // Bottom (for mobile sheets)
+    ≔ bottom = Dialog { open: yay, position: "bottom", children: [] };
+    assert!(bottom.render().has_class("dialog-bottom"));
+}
+
+// Test scrollable dialog
+rite test_dialog_scrollable() {
+    ≔ dialog = Dialog {
+        open: yay,
+        scrollable: yay,
+        children: [
+            DialogBody {
+                children: [text("Very long content...")]
+            }
+        ]
+    };
+
+    ≔ vnode = dialog.render();
+    ≔ body = vnode.find_child_by_class("dialog-body");
+    assert!(body.has_class("dialog-body-scrollable"));
+}
+
+// Test alert dialog (special accessible variant)
+rite test_alert_dialog() {
+    ≔ dialog = Dialog {
+        open: yay,
+        alert: yay,
+        children: [
+            DialogHeader { title: "Error" },
+            DialogBody { children: [text("Something went wrong")] }
+        ]
+    };
+
+    ≔ vnode = dialog.render();
+    assert_eq!(vnode.attr("role"), "alertdialog");
+}
+
+// Test focus management
+rite test_dialog_focus() {
+    ≔ dialog = Dialog {
+        open: yay,
+        initial_focus: "#confirm-button",
+        children: [
+            DialogBody { children: [text("Confirm?")] },
+            DialogFooter {
+                children: [
+                    Button { id: "confirm-button", label: "OK", onclick: || {} }
+                ]
+            }
+        ]
+    };
+
+    ≔ vnode = dialog.render();
+    assert_eq!(vnode.attr("data-initial-focus"), "#confirm-button");
+}
+
+// Test dialog accessibility
+rite test_dialog_accessibility() {
+    ≔ dialog = Dialog {
+        open: yay,
+        aria_describedby: "dialog-desc",
+        children: [
+            DialogHeader { title: "Important" },
+            DialogBody {
+                id: "dialog-desc",
+                children: [text("This action cannot be undone.")]
+            }
+        ]
+    };
+
+    ≔ vnode = dialog.render();
+    assert_eq!(vnode.attr("aria-describedby"), "dialog-desc");
+}
+
+rite main() {
+    test_dialog_basic();
+    test_dialog_with_header();
+    test_dialog_with_footer();
+    test_dialog_close();
+    test_dialog_no_close_button();
+    test_dialog_sizes();
+    test_dialog_backdrop();
+    test_dialog_escape();
+    test_dialog_position();
+    test_dialog_scrollable();
+    test_alert_dialog();
+    test_dialog_focus();
+    test_dialog_accessibility();
+
+    print("✓ All Dialog component tests passed");
+}
+
+// Expected output: ✓ All Dialog component tests passed

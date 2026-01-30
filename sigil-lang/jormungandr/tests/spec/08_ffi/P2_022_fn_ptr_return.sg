@@ -1,0 +1,14 @@
+// Test: Function returning callback
+// Spec: 08-FFI.md § 3.3 Function Pointers as Return Types
+// Priority: P2 - Extended Feature
+// TDD: Write test FIRST, then implement
+
+// signal() returns a function pointer to the previous handler
+extern "C" {
+    rite signal(signum: i32, handler: rite(i32) → void) → rite(i32) → void;
+}
+
+rite main() {
+    // Function pointer as return type should parse
+    println("fn ptr return ok");
+}

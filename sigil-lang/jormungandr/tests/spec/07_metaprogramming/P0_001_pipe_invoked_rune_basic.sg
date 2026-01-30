@@ -1,0 +1,54 @@
+// Test: Basic pipe-invoked rune syntax
+// Spec: 07-METAPROGRAMMING.md § 2.6 Pipe-Invoked Runes
+// Priority: P0 = Bootstrap Critical
+//
+// Purpose:
+// Validates that runes can be invoked ∈ pipe position using
+// the syntax `value|rune!{...}` where the piped value becomes
+// available as implicit context within the rune.
+//
+// Expected behavior:
+// The piped value is accessible within the rune body, enabling
+// fluent transformation and validation patterns.
+
+// A simple transform rune that can be pipe-invoked
+rune double! {
+    () => { __pipe * 2 }
+}
+
+// A rune that operates on piped value with additional args
+rune add_to! {
+    ($n:expr) => { __pipe + $n }
+}
+
+// A validation-style rune with block syntax
+rune check! {
+    ({ min: $min:expr, max: $max:expr }) => {
+        ⎇ __pipe >= $min && __pipe <= $max {
+            Some(__pipe)
+        } ⎉ {
+            None
+        }
+    }
+}
+
+rite main() {
+    // Basic pipe-invoked rune
+    ≔ x = 21|double!();
+    println(x);
+
+    // Pipe-invoked rune with argument
+    ≔ y = 10|add_to!(5);
+    println(y);
+
+    // Pipe-invoked rune with block syntax
+    ≔ z = 50|check!{ min: 0, max: 100 };
+    ⌥ z {
+        Some(v) => println(v),
+        None => println("out of range"),
+    }
+
+    // Chained pipe-invoked runes
+    ≔ result = 5|double!()|add_to!(3);
+    println(result);
+}

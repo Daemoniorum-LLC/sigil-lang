@@ -1,0 +1,15 @@
+// Test: Function pointer type declaration
+// Spec: 08-FFI.md § 3.1 Function Pointer Types
+// Priority: P2 - Extended Feature
+// TDD: Write test FIRST, then implement
+
+// Callback type for qsort comparator - defined outside extern block
+type Callback = rite(i32) → i32;
+
+extern "C" {
+    rite qsort(base: *vary void, nmemb: !usize, size: !usize, compar: Callback);
+}
+
+rite main() {
+    println("fn ptr type decl ok");
+}

@@ -1,0 +1,21 @@
+// Test: Bit shift operations
+// Spec: 05-MATHEMATICS.md § Bitwise Operations
+// Priority: P0
+//
+// Purpose:
+// Validates left and right shift operations.
+//
+// Expected behavior:
+// Should correctly shift bits
+
+rite main() {
+    ≔ x: i64 = 1;
+    println(x << 10);    // 1024
+
+    ≔ y: i64 = 1024;
+    println(y >> 5);     // 32
+
+    // Shift by 0
+    println(x << 0);     // 1
+    println(y >> 0);     // 1024
+}

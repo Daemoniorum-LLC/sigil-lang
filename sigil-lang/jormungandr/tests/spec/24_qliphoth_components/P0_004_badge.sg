@@ -1,0 +1,212 @@
+// Test: Qliphoth Badge Component
+// TDD: RED - Tests the Badge status indicator component
+//
+// Badge displays status, counts, or labels
+
+invoke qliphoth·components·Badge;
+invoke qliphoth·core·VNode;
+
+// Test basic badge rendering
+rite test_badge_basic() {
+    ≔ badge = Badge {
+        label: "New",
+    };
+
+    ≔ vnode = badge.render();
+
+    assert_eq!(vnode.tag(), "span");
+    assert_eq!(vnode.text_content(), "New");
+    assert!(vnode.has_class("badge"));
+}
+
+// Test badge variants (colors)
+rite test_badge_variants() {
+    // Default/neutral
+    ≔ neutral = Badge { label: "Default", variant: "neutral" };
+    assert!(neutral.render().has_class("badge-neutral"));
+
+    // Primary
+    ≔ primary = Badge { label: "Primary", variant: "primary" };
+    assert!(primary.render().has_class("badge-primary"));
+
+    // Success
+    ≔ success = Badge { label: "Active", variant: "success" };
+    assert!(success.render().has_class("badge-success"));
+
+    // Warning
+    ≔ warning = Badge { label: "Pending", variant: "warning" };
+    assert!(warning.render().has_class("badge-warning"));
+
+    // Danger
+    ≔ danger = Badge { label: "Error", variant: "danger" };
+    assert!(danger.render().has_class("badge-danger"));
+
+    // Info
+    ≔ info = Badge { label: "Info", variant: "info" };
+    assert!(info.render().has_class("badge-info"));
+}
+
+// Test badge sizes
+rite test_badge_sizes() {
+    ≔ sm = Badge { label: "Small", size: "sm" };
+    assert!(sm.render().has_class("badge-sm"));
+
+    ≔ md = Badge { label: "Medium", size: "md" };
+    assert!(md.render().has_class("badge-md"));
+
+    ≔ lg = Badge { label: "Large", size: "lg" };
+    assert!(lg.render().has_class("badge-lg"));
+}
+
+// Test badge appearances
+rite test_badge_appearances() {
+    // Filled (default)
+    ≔ filled = Badge { label: "Filled", appearance: "filled" };
+    assert!(filled.render().has_class("badge-filled"));
+
+    // Outline
+    ≔ outline = Badge { label: "Outline", appearance: "outline" };
+    assert!(outline.render().has_class("badge-outline"));
+
+    // Subtle
+    ≔ subtle = Badge { label: "Subtle", appearance: "subtle" };
+    assert!(subtle.render().has_class("badge-subtle"));
+
+    // Ghost
+    ≔ ghost = Badge { label: "Ghost", appearance: "ghost" };
+    assert!(ghost.render().has_class("badge-ghost"));
+}
+
+// Test badge with icon
+rite test_badge_with_icon() {
+    // Icon only
+    ≔ icon_badge = Badge {
+        icon: "check",
+        variant: "success",
+        aria_label: "Verified",
+    };
+
+    ≔ vnode = icon_badge.render();
+    assert!(vnode.has_child_with_class("badge-icon"));
+    assert_eq!(vnode.attr("aria-label"), "Verified");
+
+    // Icon with label
+    ≔ icon_label = Badge {
+        label: "Verified",
+        icon: "check",
+        icon_position: "left",
+    };
+
+    ≔ vnode2 = icon_label.render();
+    assert!(vnode2.has_child_with_class("badge-icon"));
+    assert!(vnode2.text_content().contains("Verified"));
+}
+
+// Test badge as count indicator
+rite test_badge_count() {
+    // Simple count
+    ≔ count = Badge {
+        count: 5,
+        max: 99,
+    };
+
+    ≔ vnode = count.render();
+    assert_eq!(vnode.text_content(), "5");
+
+    // Count exceeding max
+    ≔ overflow = Badge {
+        count: 150,
+        max: 99,
+    };
+
+    assert_eq!(overflow.render().text_content(), "99+");
+
+    // Zero count (hidden by default)
+    ≔ zero = Badge {
+        count: 0,
+        hide_zero: yay,
+    };
+
+    assert_eq!(zero.render().attr("hidden"), yay);
+}
+
+// Test badge dot indicator
+rite test_badge_dot() {
+    ≔ dot = Badge {
+        dot: yay,
+        variant: "danger",
+    };
+
+    ≔ vnode = dot.render();
+    assert!(vnode.has_class("badge-dot"));
+    // Dot badge should be small and circular
+    assert!(vnode.has_class("badge-circular"));
+}
+
+// Test badge pill shape
+rite test_badge_pill() {
+    ≔ pill = Badge {
+        label: "Status",
+        pill: yay,
+    };
+
+    assert!(pill.render().has_class("badge-pill"));
+}
+
+// Test badge in button context
+rite test_badge_dismissible() {
+    ≔ dismissed = nay;
+
+    ≔ badge = Badge {
+        label: "Tag",
+        dismissible: yay,
+        ondismiss: || { dismissed = yay; },
+    };
+
+    ≔ vnode = badge.render();
+
+    // Should have dismiss button
+    assert!(vnode.has_child_with_class("badge-dismiss"));
+
+    // Dismiss button should be accessible
+    ≔ dismiss_btn = vnode.find_child_by_class("badge-dismiss");
+    assert_eq!(dismiss_btn.attr("aria-label"), "Remove");
+}
+
+// Test badge accessibility
+rite test_badge_accessibility() {
+    // Status badge should announce to screen readers
+    ≔ status = Badge {
+        label: "Online",
+        variant: "success",
+        role: "status",
+    };
+
+    ≔ vnode = status.render();
+    assert_eq!(vnode.attr("role"), "status");
+
+    // Count badge for notifications
+    ≔ notif = Badge {
+        count: 3,
+        aria_label: "3 unread notifications",
+    };
+
+    assert_eq!(notif.render().attr("aria-label"), "3 unread notifications");
+}
+
+rite main() {
+    test_badge_basic();
+    test_badge_variants();
+    test_badge_sizes();
+    test_badge_appearances();
+    test_badge_with_icon();
+    test_badge_count();
+    test_badge_dot();
+    test_badge_pill();
+    test_badge_dismissible();
+    test_badge_accessibility();
+
+    print("✓ All Badge component tests passed");
+}
+
+// Expected output: ✓ All Badge component tests passed

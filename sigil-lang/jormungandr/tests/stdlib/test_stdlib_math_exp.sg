@@ -1,0 +1,62 @@
+// Stdlib Tests: math_exp
+// Exponential and logarithmic functions with REAL assertions
+
+rite main() {
+    println("=== Testing math_exp ===");
+
+    // sqrt - square root
+    assert_eq(sqrt(4.0), 2.0);
+    assert_eq(sqrt(9.0), 3.0);
+    assert_eq(sqrt(1.0), 1.0);
+    assert_eq(sqrt(0.0), 0.0);
+
+    // cbrt - cube root
+    assert_eq(cbrt(8.0), 2.0);
+    assert_eq(cbrt(27.0), 3.0);
+    assert_eq(cbrt(1.0), 1.0);
+
+    // pow - power
+    assert_eq(pow(2, 8), 256);
+    assert_eq(pow(2, 0), 1);
+    assert_eq(pow(3, 3), 27);
+    assert_eq(pow(10, 2), 100);
+
+    // exp - e^x
+    ≔ e1 = exp(1.0);
+    assert_true(e1 > 2.71 ∧ e1 < 2.72);
+    assert_eq(exp(0.0), 1.0);
+
+    // ln - natural log
+    ≔ ln_e = ln(E());
+    assert_true(ln_e > 0.99 ∧ ln_e < 1.01);
+
+    // log10 - base 10 log
+    assert_eq(log10(100.0), 2.0);
+    assert_eq(log10(1000.0), 3.0);
+    assert_eq(log10(1.0), 0.0);
+
+    // log2 - base 2 log
+    assert_eq(log2(8.0), 3.0);
+    assert_eq(log2(16.0), 4.0);
+    assert_eq(log2(1.0), 0.0);
+
+    // logspace - generate logarithmically spaced values
+    ≔ ls = logspace(0, 2, 3);
+    assert_eq(len(ls), 3);
+    assert_eq(ls[0], 1.0);   // 10^0
+    assert_eq(ls[2], 100.0); // 10^2
+
+    // linspace - generate linearly spaced values
+    ≔ lin = linspace(0.0, 10.0, 5);
+    assert_eq(len(lin), 5);
+    assert_eq(lin[0], 0.0);
+    assert_eq(lin[4], 10.0);
+
+    // geomspace - generate geometrically spaced values
+    ≔ geo = geomspace(1.0, 100.0, 3);
+    assert_eq(len(geo), 3);
+    assert_eq(geo[0], 1.0);
+    assert_eq(geo[2], 100.0);
+
+    println("ALL MATH_EXP TESTS PASSED!");
+}

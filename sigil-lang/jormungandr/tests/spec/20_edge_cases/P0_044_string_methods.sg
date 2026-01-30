@@ -1,0 +1,17 @@
+// Test: String methods
+// Spec: 09-STDLIB.md § String
+// Priority: P0
+//
+// Purpose:
+// Validates string methods.
+//
+// Expected behavior:
+// Should call string methods correctly
+
+rite main() {
+    ≔ s = "Hello World";
+    println(len(s));
+    
+    ≔ empty = "";
+    println(len(empty));
+}

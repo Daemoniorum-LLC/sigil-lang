@@ -1,0 +1,211 @@
+// Test: Qliphoth Switch Component
+// TDD: RED - Tests the Switch toggle component
+//
+// Switch is a toggle control for binary on/off settings
+
+invoke qliphoth·components·Switch;
+invoke qliphoth·core·VNode;
+
+// Test basic switch rendering
+rite test_switch_basic() {
+    ≔ switch_ctrl = Switch {
+        name: "notifications",
+    };
+
+    ≔ vnode = switch_ctrl.render();
+
+    assert!(vnode.has_class("switch"));
+    assert_eq!(vnode.attr("role"), "switch");
+    assert_eq!(vnode.attr("type"), "checkbox");
+}
+
+// Test switch checked state
+rite test_switch_checked() {
+    ≔ enabled = yay;
+
+    ≔ switch_ctrl = Switch {
+        name: "dark_mode",
+        checked: enabled,
+        onchange: |new_val| { enabled = new_val; },
+    };
+
+    ≔ vnode = switch_ctrl.render();
+    assert_eq!(vnode.attr("checked"), yay);
+    assert_eq!(vnode.attr("aria-checked"), "true");
+}
+
+// Test switch with label
+rite test_switch_with_label() {
+    ≔ switch_ctrl = Switch {
+        name: "wifi",
+        label: "Enable WiFi",
+        id: "wifi-switch",
+    };
+
+    ≔ vnode = switch_ctrl.render();
+
+    // Should have id
+    assert_eq!(vnode.attr("id"), "wifi-switch");
+
+    // Label should be associated
+    ≔ label = vnode.find_sibling_by_tag("label");
+    assert_eq!(label.attr("for"), "wifi-switch");
+    assert_eq!(label.text_content(), "Enable WiFi");
+}
+
+// Test switch label positions
+rite test_switch_label_position() {
+    // Label on right (default)
+    ≔ right = Switch { name: "r", label: "Right", label_position: "right" };
+    assert!(right.render().has_class("switch-label-right"));
+
+    // Label on left
+    ≔ left = Switch { name: "l", label: "Left", label_position: "left" };
+    assert!(left.render().has_class("switch-label-left"));
+}
+
+// Test disabled switch
+rite test_switch_disabled() {
+    ≔ switch_ctrl = Switch {
+        name: "locked",
+        disabled: yay,
+        label: "Locked setting",
+    };
+
+    ≔ vnode = switch_ctrl.render();
+    assert_eq!(vnode.attr("disabled"), yay);
+    assert!(vnode.has_class("switch-disabled"));
+}
+
+// Test switch sizes
+rite test_switch_sizes() {
+    ≔ sm = Switch { name: "sm", size: "sm" };
+    assert!(sm.render().has_class("switch-sm"));
+
+    ≔ md = Switch { name: "md", size: "md" };
+    assert!(md.render().has_class("switch-md"));
+
+    ≔ lg = Switch { name: "lg", size: "lg" };
+    assert!(lg.render().has_class("switch-lg"));
+}
+
+// Test switch with on/off labels
+rite test_switch_state_labels() {
+    ≔ switch_ctrl = Switch {
+        name: "status",
+        on_label: "On",
+        off_label: "Off",
+    };
+
+    ≔ vnode = switch_ctrl.render();
+
+    // Should have both state labels
+    assert!(vnode.has_child_with_class("switch-label-on"));
+    assert!(vnode.has_child_with_class("switch-label-off"));
+}
+
+// Test switch with icons
+rite test_switch_icons() {
+    ≔ switch_ctrl = Switch {
+        name: "theme",
+        on_icon: "sun",
+        off_icon: "moon",
+    };
+
+    ≔ vnode = switch_ctrl.render();
+
+    // Should have icon containers
+    assert!(vnode.has_child_with_class("switch-icon-on"));
+    assert!(vnode.has_child_with_class("switch-icon-off"));
+}
+
+// Test switch with description
+rite test_switch_description() {
+    ≔ switch_ctrl = Switch {
+        name: "analytics",
+        label: "Analytics",
+        description: "Allow us to collect anonymous usage data",
+    };
+
+    ≔ vnode = switch_ctrl.render();
+    ≔ desc = vnode.find_sibling_by_class("switch-description");
+    assert_eq!(desc.text_content(), "Allow us to collect anonymous usage data");
+
+    // Should be linked via aria-describedby
+    assert!(vnode.attr("aria-describedby").contains("description"));
+}
+
+// Test loading switch
+rite test_switch_loading() {
+    ≔ switch_ctrl = Switch {
+        name: "sync",
+        loading: yay,
+    };
+
+    ≔ vnode = switch_ctrl.render();
+    assert!(vnode.has_class("switch-loading"));
+    assert!(vnode.has_child_with_class("switch-spinner"));
+
+    // Should be disabled when loading
+    assert_eq!(vnode.attr("disabled"), yay);
+}
+
+// Test switch colors
+rite test_switch_colors() {
+    // Success (green when on)
+    ≔ success = Switch { name: "s", color: "success" };
+    assert!(success.render().has_class("switch-success"));
+
+    // Warning
+    ≔ warning = Switch { name: "w", color: "warning" };
+    assert!(warning.render().has_class("switch-warning"));
+
+    // Danger
+    ≔ danger = Switch { name: "d", color: "danger" };
+    assert!(danger.render().has_class("switch-danger"));
+}
+
+// Test switch accessibility
+rite test_switch_accessibility() {
+    ≔ switch_ctrl = Switch {
+        name: "feature",
+        aria_label: "Toggle experimental feature",
+    };
+
+    ≔ vnode = switch_ctrl.render();
+    assert_eq!(vnode.attr("aria-label"), "Toggle experimental feature");
+    assert_eq!(vnode.attr("role"), "switch");
+}
+
+// Test switch required (for forms)
+rite test_switch_required() {
+    ≔ switch_ctrl = Switch {
+        name: "terms",
+        required: yay,
+        label: "Accept terms",
+    };
+
+    ≔ vnode = switch_ctrl.render();
+    assert_eq!(vnode.attr("required"), yay);
+    assert_eq!(vnode.attr("aria-required"), "true");
+}
+
+rite main() {
+    test_switch_basic();
+    test_switch_checked();
+    test_switch_with_label();
+    test_switch_label_position();
+    test_switch_disabled();
+    test_switch_sizes();
+    test_switch_state_labels();
+    test_switch_icons();
+    test_switch_description();
+    test_switch_loading();
+    test_switch_colors();
+    test_switch_accessibility();
+    test_switch_required();
+
+    print("✓ All Switch component tests passed");
+}
+
+// Expected output: ✓ All Switch component tests passed

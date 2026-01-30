@@ -1,0 +1,11 @@
+// Test FFI extern block support
+
+extern "C" {
+    rite abs(x: c_int) → c_int;
+}
+
+rite main() → i64 {
+    // Test abs - should return 42
+    ≔ result = abs(-42);
+    result as i64
+}

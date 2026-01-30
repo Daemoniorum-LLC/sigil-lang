@@ -1,0 +1,7 @@
+Testing ∧:
+false
+Testing ∨:
+true
+Non-short-circuit:
+should print
+true

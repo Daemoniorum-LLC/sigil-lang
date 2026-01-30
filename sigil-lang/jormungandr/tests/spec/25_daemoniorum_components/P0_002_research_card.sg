@@ -1,0 +1,242 @@
+// Test: Daemoniorum Research Card Component
+// TDD: RED - Tests the research/paper showcase card
+//
+// ResearchCard displays research publications and whitepapers
+
+invoke daemoniorum·components·ResearchCard;
+invoke qliphoth·core·VNode;
+
+// Test basic research card rendering
+rite test_research_card_basic() {
+    ≔ card = ResearchCard {
+        title: "Sigil: A Memory-Safe Systems Language with Evidentiality",
+        abstract: "We present Sigil, a novel systems programming language...",
+        date: "2026-01-15",
+        href: "/research/sigil-language",
+    };
+
+    ≔ vnode = card.render();
+
+    assert!(vnode.has_class("research-card"));
+    assert!(vnode.has_child_with_class("research-card-title"));
+    assert!(vnode.has_child_with_class("research-card-abstract"));
+    assert!(vnode.has_child_with_class("research-card-date"));
+
+    ≔ title = vnode.find_child_by_class("research-card-title");
+    assert!(title.text_content().contains("Sigil"));
+}
+
+// Test research card with authors
+rite test_research_card_authors() {
+    ≔ card = ResearchCard {
+        title: "Research Paper",
+        authors: [
+            { name: "Dr. Alice Smith", affiliation: "Daemoniorum Research" },
+            { name: "Dr. Bob Jones", affiliation: "MIT" },
+        ],
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-authors"));
+
+    ≔ authors = vnode.find_child_by_class("research-card-authors");
+    ≔ names = authors.find_children_by_class("research-card-author");
+    assert_eq!(names.len(), 2);
+}
+
+// Test research card categories/tags
+rite test_research_card_tags() {
+    ≔ card = ResearchCard {
+        title: "Paper",
+        tags: ["Machine Learning", "Natural Language", "AI Safety"],
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-tags"));
+
+    ≔ tags = vnode.find_child_by_class("research-card-tags");
+    ≔ tag_list = tags.find_children_by_class("research-card-tag");
+    assert_eq!(tag_list.len(), 3);
+}
+
+// Test research card with PDF link
+rite test_research_card_pdf() {
+    ≔ card = ResearchCard {
+        title: "Paper",
+        pdf_url: "/papers/sigil-2026.pdf",
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-pdf"));
+
+    ≔ pdf = vnode.find_child_by_class("research-card-pdf");
+    assert_eq!(pdf.attr("href"), "/papers/sigil-2026.pdf");
+    assert_eq!(pdf.attr("download"), yay);
+}
+
+// Test research card with arxiv link
+rite test_research_card_arxiv() {
+    ≔ card = ResearchCard {
+        title: "Paper",
+        arxiv_id: "2601.12345",
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-arxiv"));
+
+    ≔ arxiv = vnode.find_child_by_class("research-card-arxiv");
+    assert!(arxiv.attr("href").contains("arxiv.org"));
+}
+
+// Test research card with citation count
+rite test_research_card_citations() {
+    ≔ card = ResearchCard {
+        title: "Paper",
+        citations: 42,
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-citations"));
+
+    ≔ cites = vnode.find_child_by_class("research-card-citations");
+    assert!(cites.text_content().contains("42"));
+}
+
+// Test research card status
+rite test_research_card_status() {
+    // Published
+    ≔ published = ResearchCard {
+        title: "P",
+        status: "published",
+        date: "2026-01-01",
+    };
+    assert!(published.render().has_child_with_class("research-card-status-published"));
+
+    // Preprint
+    ≔ preprint = ResearchCard {
+        title: "P",
+        status: "preprint",
+        date: "2026-01-01",
+    };
+    assert!(preprint.render().has_child_with_class("research-card-status-preprint"));
+
+    // Under Review
+    ≔ review = ResearchCard {
+        title: "P",
+        status: "under-review",
+        date: "2026-01-01",
+    };
+    assert!(review.render().has_child_with_class("research-card-status-under-review"));
+}
+
+// Test research card with venue
+rite test_research_card_venue() {
+    ≔ card = ResearchCard {
+        title: "Paper",
+        venue: "NeurIPS 2026",
+        venue_type: "conference",
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-venue"));
+
+    ≔ venue = vnode.find_child_by_class("research-card-venue");
+    assert_eq!(venue.text_content(), "NeurIPS 2026");
+}
+
+// Test research card with code repository
+rite test_research_card_code() {
+    ≔ card = ResearchCard {
+        title: "Paper",
+        code_url: "https://github.com/daemoniorum/paper-code",
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-code"));
+}
+
+// Test research card variants
+rite test_research_card_variants() {
+    // Full (default)
+    ≔ full = ResearchCard { title: "P", variant: "full", date: "2026-01-01" };
+    assert!(full.render().has_class("research-card-full"));
+
+    // Compact
+    ≔ compact = ResearchCard { title: "P", variant: "compact", date: "2026-01-01" };
+    assert!(compact.render().has_class("research-card-compact"));
+
+    // Featured
+    ≔ featured = ResearchCard { title: "P", variant: "featured", date: "2026-01-01" };
+    assert!(featured.render().has_class("research-card-featured"));
+}
+
+// Test research card with thumbnail
+rite test_research_card_thumbnail() {
+    ≔ card = ResearchCard {
+        title: "Paper",
+        thumbnail: "/images/paper-figure.png",
+        thumbnail_alt: "Main result figure",
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-thumbnail"));
+
+    ≔ img = vnode.find_child_by_class("research-card-thumbnail").find_child_by_tag("img");
+    assert_eq!(img.attr("alt"), "Main result figure");
+}
+
+// Test research card read time
+rite test_research_card_read_time() {
+    ≔ card = ResearchCard {
+        title: "Paper",
+        read_time_minutes: 15,
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert!(vnode.has_child_with_class("research-card-read-time"));
+
+    ≔ time = vnode.find_child_by_class("research-card-read-time");
+    assert!(time.text_content().contains("15"));
+}
+
+// Test research card accessibility
+rite test_research_card_accessibility() {
+    ≔ card = ResearchCard {
+        title: "Important Research",
+        abstract: "Abstract text",
+        aria_label: "Read the paper: Important Research",
+        date: "2026-01-01",
+    };
+
+    ≔ vnode = card.render();
+    assert_eq!(vnode.attr("aria-label"), "Read the paper: Important Research");
+}
+
+rite main() {
+    test_research_card_basic();
+    test_research_card_authors();
+    test_research_card_tags();
+    test_research_card_pdf();
+    test_research_card_arxiv();
+    test_research_card_citations();
+    test_research_card_status();
+    test_research_card_venue();
+    test_research_card_code();
+    test_research_card_variants();
+    test_research_card_thumbnail();
+    test_research_card_read_time();
+    test_research_card_accessibility();
+
+    print("✓ All ResearchCard component tests passed");
+}
+
+// Expected output: ✓ All ResearchCard component tests passed

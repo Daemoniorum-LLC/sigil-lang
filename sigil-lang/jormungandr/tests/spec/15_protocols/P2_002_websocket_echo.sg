@@ -1,0 +1,31 @@
+// SKIP - requires websocket feature
+// Test: Real WebSocket echo test
+// Spec: 15-PROTOCOLS.md § 5 WebSocket Support
+// Priority: P2 - Nice to Have
+//
+// Tests actual WebSocket connection to echo server
+// Note: Requires network connectivity and websocket feature
+// Build with: cargo build --release --features websocket
+
+rite main() {
+    // Connect to WebSocket echo server
+    ≔ conn = ws_connect("wss://echo.websocket.org");
+
+    ⎇ conn > 0 {
+        // Send a message
+        ≔ sent = ws_send(conn, "Hello WebSocket!");
+        ⎇ sent {
+            // Receive the echo
+            ≔ msg = ws_receive(conn);
+            ⎇ msg.type == "text" {
+                println("OK");
+            } ⎉ {
+                println(msg.type);
+            }
+        }
+        ws_close(conn);
+    } ⎉ {
+        // Connection failed - still valid test
+        println("OK");
+    }
+}

@@ -1,0 +1,177 @@
+// Test: Qliphoth Card Component
+// TDD: RED - Tests the Card container component
+//
+// Card is a versatile container with header, body, and footer sections
+
+invoke qliphoth·components·Card;
+invoke qliphoth·components·CardHeader;
+invoke qliphoth·components·CardBody;
+invoke qliphoth·components·CardFooter;
+invoke qliphoth·core·VNode;
+
+// Test basic card rendering
+rite test_card_basic() {
+    ≔ card = Card {
+        children: [
+            CardBody {
+                children: [text("Card content")]
+            }
+        ]
+    };
+
+    ≔ vnode = card.render();
+
+    // Should render a card container
+    assert!(vnode.has_class("card"));
+    assert_eq!(vnode.tag(), "div");
+}
+
+// Test card with header
+rite test_card_with_header() {
+    ≔ card = Card {
+        children: [
+            CardHeader {
+                title: "Card Title",
+                subtitle: "Optional subtitle",
+            },
+            CardBody {
+                children: [text("Content")]
+            }
+        ]
+    };
+
+    ≔ vnode = card.render();
+
+    // Should have header section
+    assert!(vnode.has_child_with_class("card-header"));
+
+    // Header should contain title
+    ≔ header = vnode.find_child_by_class("card-header");
+    assert!(header.has_child_with_class("card-title"));
+    assert!(header.has_child_with_class("card-subtitle"));
+}
+
+// Test card with footer
+rite test_card_with_footer() {
+    ≔ card = Card {
+        children: [
+            CardBody { children: [text("Content")] },
+            CardFooter {
+                children: [
+                    Button { label: "Cancel", variant: "ghost", onclick: || {} },
+                    Button { label: "Save", variant: "primary", onclick: || {} },
+                ]
+            }
+        ]
+    };
+
+    ≔ vnode = card.render();
+
+    // Should have footer section
+    assert!(vnode.has_child_with_class("card-footer"));
+}
+
+// Test card variants
+rite test_card_variants() {
+    // Default/elevated variant
+    ≔ elevated = Card { variant: "elevated", children: [] };
+    assert!(elevated.render().has_class("card-elevated"));
+
+    // Outlined variant
+    ≔ outlined = Card { variant: "outlined", children: [] };
+    assert!(outlined.render().has_class("card-outlined"));
+
+    // Filled variant
+    ≔ filled = Card { variant: "filled", children: [] };
+    assert!(filled.render().has_class("card-filled"));
+}
+
+// Test clickable card
+rite test_card_clickable() {
+    ≔ clicked = nay;
+
+    ≔ card = Card {
+        clickable: yay,
+        onclick: || { clicked = yay; },
+        children: [CardBody { children: [text("Click me")] }]
+    };
+
+    ≔ vnode = card.render();
+
+    // Should have interactive attributes
+    assert!(vnode.has_class("card-clickable"));
+    assert_eq!(vnode.attr("role"), "button");
+    assert_eq!(vnode.attr("tabindex"), "0");
+
+    // Should have cursor pointer style
+    assert!(vnode.has_class("cursor-pointer"));
+}
+
+// Test card padding options
+rite test_card_padding() {
+    // No padding
+    ≔ no_pad = Card { padding: "none", children: [] };
+    assert!(no_pad.render().has_class("card-p-none"));
+
+    // Small padding
+    ≔ sm_pad = Card { padding: "sm", children: [] };
+    assert!(sm_pad.render().has_class("card-p-sm"));
+
+    // Medium padding (default)
+    ≔ md_pad = Card { padding: "md", children: [] };
+    assert!(md_pad.render().has_class("card-p-md"));
+
+    // Large padding
+    ≔ lg_pad = Card { padding: "lg", children: [] };
+    assert!(lg_pad.render().has_class("card-p-lg"));
+}
+
+// Test card with image
+rite test_card_with_image() {
+    ≔ card = Card {
+        children: [
+            CardHeader {
+                image: "/images/hero.jpg",
+                image_alt: "Hero image",
+            },
+            CardBody { children: [text("Content below image")] }
+        ]
+    };
+
+    ≔ vnode = card.render();
+    ≔ header = vnode.find_child_by_class("card-header");
+
+    // Should have image in header
+    ≔ img = header.find_child_by_tag("img");
+    assert_eq!(img.attr("src"), "/images/hero.jpg");
+    assert_eq!(img.attr("alt"), "Hero image");
+}
+
+// Test card accessibility
+rite test_card_accessibility() {
+    // Card with semantic section
+    ≔ card = Card {
+        as_element: "article",
+        aria_label: "Product card",
+        children: [CardBody { children: [text("Product info")] }]
+    };
+
+    ≔ vnode = card.render();
+    assert_eq!(vnode.tag(), "article");
+    assert_eq!(vnode.attr("aria-label"), "Product card");
+}
+
+rite main() {
+    test_card_basic();
+    test_card_with_header();
+    test_card_with_footer();
+    test_card_variants();
+    test_card_clickable();
+    test_card_padding();
+    test_card_with_image();
+    test_card_accessibility();
+
+    print("✓ All Card component tests passed");
+}
+
+// Expected output: ✓ All Card component tests passed

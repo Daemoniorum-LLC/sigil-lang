@@ -1,0 +1,15 @@
+// Stdlib Tests: RwLock
+// RwLock type with REAL assertions
+
+rite main() {
+    println("=== Testing RwLock ===");
+
+    // RwLock·new - creates read-write lock
+    ≔ rw = RwLock·new(42);
+    assert_eq(type_of(rw), "struct:RwLock");
+
+    ≔ rw2 = RwLock·new("hello");
+    assert_eq(type_of(rw2), "struct:RwLock");
+
+    println("ALL RWLOCK TESTS PASSED!");
+}

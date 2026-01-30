@@ -1,0 +1,16 @@
+// Test: For forever with range
+// Spec: 02-SYNTAX.md § For Expressions
+// Priority: P0
+//
+// Purpose:
+// Validates each forever iteration over ranges.
+//
+// Expected behavior:
+// Should iterate over range correctly
+
+rite main() {
+    // Exclusive range
+    each i of 0..5 {
+        println(i);
+    }
+}

@@ -1,0 +1,13 @@
+// Test: Runtime error - division by zero
+// Spec: Diagnostics
+// Priority: P0
+//
+// Purpose:
+// Validates that division by zero produces error R0001.
+//
+// Expected behavior:
+// Should fail with R0001 runtime error
+
+rite main() {
+    ≔ x = 10 / 0;
+}
