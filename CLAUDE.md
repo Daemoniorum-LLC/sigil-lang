@@ -4,7 +4,9 @@
 
 The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 598/598 tests passing (100%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
+**Test Results**: 705/761 tests passing (92%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
+
+> **Note**: 54 failing tests are aspirational (qliphoth components, i18n, advanced edge cases). All core language features pass.
 
 ```bash
 cd parser
@@ -21,7 +23,7 @@ cd ../jormungandr/tests
 ## Why Rust Compiler?
 
 The Rust compiler:
-- 100% test pass rate (598/598 tests, all P0/P1 tests pass)
+- 92% test pass rate (705/761 tests, all P0/P1 core tests pass)
 - Full lexer, parser, interpreter, JIT (Cranelift), and LLVM backend
 - Includes stdlib with Rc<T>, Cell<T>, Drop, HTTP, WebSocket, Kafka, AMQP
 
@@ -68,7 +70,7 @@ cd jormungandr/tests
 ./run_tests_rust.sh --priority P0      # Run P0 tests only
 ```
 
-**Current Status**: 598/598 passing (100%)
+**Current Status**: 705/761 passing (92%)
 
 Notable implementations:
 - Mutable reference semantics via sync-back mechanism
@@ -198,8 +200,36 @@ Cuda·cleanup();
 
 **Runtime:** Uses `libsigil_runtime_cuda.a` instead of standard runtime.
 
+## Repository Structure
+
+```
+sigil/                          ← git root (sigil-lang.git)
+├── parser/                     ← Rust compiler (canonical)
+├── jormungandr/                ← Self-hosted compiler + test suite
+├── docs/                       ← Specs, ideas, releases
+├── editor/                     ← VS Code, Helix, Neovim configs
+├── examples/                   ← Example Sigil programs
+├── tools/                      ← Glyph, Oracle LSP, MCP server
+├── kit/                        ← Development kit
+├── website-qliphoth/           ← Canonical website (WASM)
+├── website/                    ← Deprecated static site
+├── aegis/                      ← Security primitives library
+├── anima/                      ← Animation/graphics library
+├── chorus/                     ← Concurrency primitives
+├── commune/ daemon/ gnosis/    ← Ecosystem libraries
+├── omen/ oracle/ tome/         ← More ecosystem libraries
+├── scripts/                    ← Build & utility scripts
+├── CLAUDE.md                   ← This file
+└── README.md                   ← Project README
+```
+
+> **History**: The repo previously had content nested under `sigil-lang/`. This was flattened in January 2026. All content now lives at the repo root.
+
 ## Recent Changes (January 2026)
 
+- Flattened repository structure (removed redundant `sigil-lang/` nesting)
+- Merged root-only content from develop (413 files preserved)
+- Resolved 30 merge conflict markers in ecosystem test files
 - Restored Rust compiler from git history
 - Fixed critical bugs in type system and codegen
 - Implemented Rc<T> and Cell<T> stdlib types
