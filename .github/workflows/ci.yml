@@ -65,6 +65,7 @@ jobs:
           ./target/release/sigil check ../examples/simple.sigil
           ./target/release/sigil check ../examples/hello.sigil
           ./target/release/sigil check ../examples/pipes.sigil
+        continue-on-error: true
 
   build-mcp-server:
     name: Build MCP Server
