@@ -23,7 +23,7 @@ rite test_footer_basic() {
 // Test footer with copyright
 rite test_footer_copyright() {
     ≔ footer = Footer {
-        copyright: "© 2026 Daemoniorum LLC",
+        copyright: "© 2026 Acme Inc",
         children: []
     };
 
@@ -31,7 +31,7 @@ rite test_footer_copyright() {
     assert!(vnode.has_child_with_class("footer-copyright"));
 
     ≔ copyright = vnode.find_child_by_class("footer-copyright");
-    assert_eq!(copyright.text_content(), "© 2026 Daemoniorum LLC");
+    assert_eq!(copyright.text_content(), "© 2026 Acme Inc");
 }
 
 // Test footer with link sections

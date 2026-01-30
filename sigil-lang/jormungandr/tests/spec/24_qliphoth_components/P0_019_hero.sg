@@ -10,7 +10,7 @@ invoke qliphoth·core·VNode;
 // Test basic hero rendering
 rite test_hero_basic() {
     ≔ hero = Hero {
-        title: "Welcome to Daemoniorum",
+        title: "Welcome to Acme",
         subtitle: "Building the future of AI",
     };
 
@@ -21,7 +21,7 @@ rite test_hero_basic() {
     assert!(vnode.has_child_with_class("hero-subtitle"));
 
     ≔ title = vnode.find_child_by_class("hero-title");
-    assert_eq!(title.text_content(), "Welcome to Daemoniorum");
+    assert_eq!(title.text_content(), "Welcome to Acme");
 }
 
 // Test hero with call-to-action buttons

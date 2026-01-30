@@ -309,6 +309,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_sys(interp);
     // Phase 25: SGDOC - Agent-optimized documentation with evidentiality
     register_sgdoc(interp);
+    // Phase 26: Qliphoth - Component framework VNode system
+    register_qliphoth(interp);
 }
 
 // Helper to define a builtin
@@ -39481,6 +39483,2536 @@ fn register_sgdoc(interp: &mut Interpreter) {
             fields: Rc::new(RefCell::new(doc_fields)),
         })
     });
+}
+
+// ============================================
+// Phase 26: Qliphoth Component Framework
+// ============================================
+
+/// Create a VNode Value::Struct with standard fields
+fn create_vnode(
+    tag: &str,
+    classes: Vec<String>,
+    attrs: HashMap<String, Value>,
+    children: Vec<Value>,
+    text: Option<String>,
+    siblings: Vec<Value>,
+) -> Value {
+    let mut fields = HashMap::new();
+    fields.insert("tag".to_string(), Value::String(Rc::new(tag.to_string())));
+    fields.insert(
+        "classes".to_string(),
+        Value::Array(Rc::new(RefCell::new(
+            classes
+                .into_iter()
+                .map(|c| Value::String(Rc::new(c)))
+                .collect(),
+        ))),
+    );
+    // attrs stored as a struct with name "__attrs__"
+    let mut attr_fields = HashMap::new();
+    for (k, v) in attrs {
+        attr_fields.insert(k, v);
+    }
+    fields.insert(
+        "attrs".to_string(),
+        Value::Struct {
+            name: "__attrs__".to_string(),
+            fields: Rc::new(RefCell::new(attr_fields)),
+        },
+    );
+    fields.insert(
+        "children".to_string(),
+        Value::Array(Rc::new(RefCell::new(children))),
+    );
+    fields.insert(
+        "text".to_string(),
+        text.map(|t| Value::String(Rc::new(t)))
+            .unwrap_or(Value::Null),
+    );
+    fields.insert(
+        "siblings".to_string(),
+        Value::Array(Rc::new(RefCell::new(siblings))),
+    );
+    Value::Struct {
+        name: "VNode".to_string(),
+        fields: Rc::new(RefCell::new(fields)),
+    }
+}
+
+/// Extract a string field from a struct Value, with default
+fn get_field_str(val: &Value, name: &str, default: &str) -> String {
+    if let Value::Struct { fields, .. } = val {
+        let fields = fields.borrow();
+        match fields.get(name) {
+            Some(Value::String(s)) => s.to_string(),
+            _ => default.to_string(),
+        }
+    } else {
+        default.to_string()
+    }
+}
+
+/// Extract a bool field from a struct Value
+fn get_field_bool(val: &Value, name: &str) -> bool {
+    if let Value::Struct { fields, .. } = val {
+        let fields = fields.borrow();
+        match fields.get(name) {
+            Some(Value::Bool(b)) => *b,
+            _ => false,
+        }
+    } else {
+        false
+    }
+}
+
+/// Extract an optional string field from a struct Value
+fn get_field_opt_str(val: &Value, name: &str) -> Option<String> {
+    if let Value::Struct { fields, .. } = val {
+        let fields = fields.borrow();
+        match fields.get(name) {
+            Some(Value::String(s)) => Some(s.to_string()),
+            Some(Value::Int(n)) => Some(n.to_string()),
+            Some(Value::Float(f)) => Some(f.to_string()),
+            Some(Value::Bool(b)) => Some(b.to_string()),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+/// Extract an integer field from a struct Value
+fn get_field_int(val: &Value, name: &str, default: i64) -> i64 {
+    if let Value::Struct { fields, .. } = val {
+        let fields = fields.borrow();
+        match fields.get(name) {
+            Some(Value::Int(i)) => *i,
+            Some(Value::Float(f)) => *f as i64,
+            _ => default,
+        }
+    } else {
+        default
+    }
+}
+
+/// Extract an array field from a struct Value
+fn get_field_array(val: &Value) -> Vec<Value> {
+    if let Value::Array(arr) = val {
+        arr.borrow().clone()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Extract the children field from a struct (component)
+fn get_children(val: &Value) -> Vec<Value> {
+    if let Value::Struct { fields, .. } = val {
+        let fields = fields.borrow();
+        match fields.get("children") {
+            Some(Value::Array(arr)) => arr.borrow().clone(),
+            _ => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    }
+}
+
+/// Check if a VNode has a specific CSS class
+fn vnode_has_class(val: &Value, class_name: &str) -> bool {
+    if let Value::Struct { fields, .. } = val {
+        let fields = fields.borrow();
+        if let Some(Value::Array(classes)) = fields.get("classes") {
+            for c in classes.borrow().iter() {
+                if let Value::String(s) = c {
+                    if s.as_str() == class_name {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Get text content from a VNode, recursing into children
+fn vnode_text_content(val: &Value) -> String {
+    if let Value::Struct { name, fields, .. } = val {
+        if name == "VNode" {
+            let fields = fields.borrow();
+            // Direct text
+            if let Some(Value::String(t)) = fields.get("text") {
+                if !t.is_empty() {
+                    return t.to_string();
+                }
+            }
+            // Recurse into children
+            if let Some(Value::Array(children)) = fields.get("children") {
+                let mut result = String::new();
+                for child in children.borrow().iter() {
+                    let child_text = vnode_text_content(child);
+                    if !child_text.is_empty() {
+                        if !result.is_empty() {
+                            result.push(' ');
+                        }
+                        result.push_str(&child_text);
+                    }
+                }
+                return result;
+            }
+        }
+    }
+    String::new()
+}
+
+/// Find first child VNode with a specific class (recursive)
+fn find_child_by_class(val: &Value, class_name: &str) -> Value {
+    if let Value::Struct { name, fields, .. } = val {
+        if name == "VNode" {
+            let fields = fields.borrow();
+            if let Some(Value::Array(children)) = fields.get("children") {
+                for child in children.borrow().iter() {
+                    if vnode_has_class(child, class_name) {
+                        return child.clone();
+                    }
+                    let found = find_child_by_class(child, class_name);
+                    if !matches!(found, Value::Null) {
+                        return found;
+                    }
+                }
+            }
+        }
+    }
+    Value::Null
+}
+
+/// Find all children VNodes with a specific class (recursive)
+fn find_children_by_class(val: &Value, class_name: &str) -> Vec<Value> {
+    let mut results = Vec::new();
+    if let Value::Struct { name, fields, .. } = val {
+        if name == "VNode" {
+            let fields = fields.borrow();
+            if let Some(Value::Array(children)) = fields.get("children") {
+                for child in children.borrow().iter() {
+                    if vnode_has_class(child, class_name) {
+                        results.push(child.clone());
+                    }
+                    results.extend(find_children_by_class(child, class_name));
+                }
+            }
+        }
+    }
+    results
+}
+
+/// Find first child VNode with a specific tag
+fn find_child_by_tag(val: &Value, tag_name: &str) -> Value {
+    if let Value::Struct { name, fields, .. } = val {
+        if name == "VNode" {
+            let fields = fields.borrow();
+            if let Some(Value::Array(children)) = fields.get("children") {
+                for child in children.borrow().iter() {
+                    if let Value::Struct {
+                        name: cn,
+                        fields: cf,
+                        ..
+                    } = child
+                    {
+                        if cn == "VNode" {
+                            let cf = cf.borrow();
+                            if let Some(Value::String(t)) = cf.get("tag") {
+                                if t.as_str() == tag_name {
+                                    return child.clone();
+                                }
+                            }
+                        }
+                    }
+                    let found = find_child_by_tag(child, tag_name);
+                    if !matches!(found, Value::Null) {
+                        return found;
+                    }
+                }
+            }
+        }
+    }
+    Value::Null
+}
+
+/// Find all children VNodes with a specific tag
+fn find_children_by_tag(val: &Value, tag_name: &str) -> Vec<Value> {
+    let mut results = Vec::new();
+    if let Value::Struct { name, fields, .. } = val {
+        if name == "VNode" {
+            let fields = fields.borrow();
+            if let Some(Value::Array(children)) = fields.get("children") {
+                for child in children.borrow().iter() {
+                    if let Value::Struct {
+                        name: cn,
+                        fields: cf,
+                        ..
+                    } = child
+                    {
+                        if cn == "VNode" {
+                            let cf = cf.borrow();
+                            if let Some(Value::String(t)) = cf.get("tag") {
+                                if t.as_str() == tag_name {
+                                    results.push(child.clone());
+                                }
+                            }
+                        }
+                    }
+                    results.extend(find_children_by_tag(child, tag_name));
+                }
+            }
+        }
+    }
+    results
+}
+
+/// Get VNode attribute value
+fn vnode_attr(val: &Value, attr_name: &str) -> Value {
+    if let Value::Struct { name, fields, .. } = val {
+        if name == "VNode" {
+            let fields = fields.borrow();
+            if let Some(Value::Struct {
+                fields: attr_fields, ..
+            }) = fields.get("attrs")
+            {
+                let af = attr_fields.borrow();
+                if let Some(v) = af.get(attr_name) {
+                    return v.clone();
+                }
+            }
+        }
+    }
+    Value::Bool(false)
+}
+
+fn register_qliphoth(interp: &mut Interpreter) {
+    // text() function - creates a text-only VNode
+    define(interp, "text", Some(1), |_, args| {
+        let content = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Int(i) => i.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            _ => format!("{:?}", args[0]),
+        };
+        Ok(create_vnode(
+            "span",
+            vec!["text-node".to_string()],
+            HashMap::new(),
+            vec![],
+            Some(content),
+            vec![],
+        ))
+    });
+
+    // =============================================
+    // VNode methods (registered as VNode·method)
+    // =============================================
+
+    define(interp, "VNode·tag", Some(1), |_, args| {
+        Ok(Value::String(Rc::new(get_field_str(&args[0], "tag", ""))))
+    });
+
+    define(interp, "VNode·text_content", Some(1), |_, args| {
+        Ok(Value::String(Rc::new(vnode_text_content(&args[0]))))
+    });
+
+    define(interp, "VNode·has_class", Some(2), |_, args| {
+        let class = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Bool(false)),
+        };
+        Ok(Value::Bool(vnode_has_class(&args[0], &class)))
+    });
+
+    define(interp, "VNode·attr", Some(2), |_, args| {
+        let name = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Null),
+        };
+        Ok(vnode_attr(&args[0], &name))
+    });
+
+    define(interp, "VNode·children", Some(1), |_, args| {
+        if let Value::Struct { fields, .. } = &args[0] {
+            let fields = fields.borrow();
+            if let Some(val) = fields.get("children") {
+                return Ok(val.clone());
+            }
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(vec![]))))
+    });
+
+    define(interp, "VNode·has_child_with_class", Some(2), |_, args| {
+        let class = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Bool(false)),
+        };
+        let found = find_child_by_class(&args[0], &class);
+        Ok(Value::Bool(!matches!(found, Value::Null)))
+    });
+
+    define(interp, "VNode·find_child_by_class", Some(2), |_, args| {
+        let class = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Null),
+        };
+        Ok(find_child_by_class(&args[0], &class))
+    });
+
+    define(interp, "VNode·find_children_by_class", Some(2), |_, args| {
+        let class = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+        };
+        let results = find_children_by_class(&args[0], &class);
+        Ok(Value::Array(Rc::new(RefCell::new(results))))
+    });
+
+    define(interp, "VNode·find_child_by_tag", Some(2), |_, args| {
+        let tag = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Null),
+        };
+        Ok(find_child_by_tag(&args[0], &tag))
+    });
+
+    define(interp, "VNode·find_children_by_tag", Some(2), |_, args| {
+        let tag = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+        };
+        let results = find_children_by_tag(&args[0], &tag);
+        Ok(Value::Array(Rc::new(RefCell::new(results))))
+    });
+
+    define(interp, "VNode·has_child_with_tag", Some(2), |_, args| {
+        let tag = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Bool(false)),
+        };
+        let found = find_child_by_tag(&args[0], &tag);
+        Ok(Value::Bool(!matches!(found, Value::Null)))
+    });
+
+    define(interp, "VNode·find_sibling_by_tag", Some(2), |_, args| {
+        let tag = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Null),
+        };
+        if let Value::Struct { fields, .. } = &args[0] {
+            let fields = fields.borrow();
+            if let Some(Value::Array(siblings)) = fields.get("siblings") {
+                for sib in siblings.borrow().iter() {
+                    if let Value::Struct {
+                        name: sn,
+                        fields: sf,
+                        ..
+                    } = sib
+                    {
+                        if sn == "VNode" {
+                            let sf = sf.borrow();
+                            if let Some(Value::String(t)) = sf.get("tag") {
+                                if t.as_str() == tag.as_str() {
+                                    return Ok(sib.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    define(interp, "VNode·find_sibling_by_class", Some(2), |_, args| {
+        let class = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Ok(Value::Null),
+        };
+        if let Value::Struct { fields, .. } = &args[0] {
+            let fields = fields.borrow();
+            if let Some(Value::Array(siblings)) = fields.get("siblings") {
+                for sib in siblings.borrow().iter() {
+                    if vnode_has_class(sib, &class) {
+                        return Ok(sib.clone());
+                    }
+                }
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    define(interp, "VNode·inner_html", Some(1), |_, args| {
+        // Return text content or concatenated children text
+        Ok(Value::String(Rc::new(vnode_text_content(&args[0]))))
+    });
+
+    // =============================================
+    // Component render functions
+    // =============================================
+
+    // --- Button ---
+    define(interp, "Button·render", Some(1), |_, args| {
+        let s = &args[0];
+        let label = get_field_str(s, "label", "");
+        let variant = get_field_str(s, "variant", "primary");
+        let size = get_field_str(s, "size", "md");
+        let disabled = get_field_bool(s, "disabled");
+        let loading = get_field_bool(s, "loading");
+        let icon = get_field_opt_str(s, "icon");
+        let icon_position = get_field_str(s, "icon_position", "left");
+        let aria_label = get_field_opt_str(s, "aria_label");
+        let button_type = get_field_str(s, "button_type", "button");
+
+        let mut classes = vec![
+            format!("btn-{}", variant),
+            format!("btn-{}", size),
+        ];
+        if disabled || loading {
+            classes.push("btn-disabled".to_string());
+        }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("type".to_string(), Value::String(Rc::new(button_type)));
+        if disabled || loading {
+            attrs.insert("disabled".to_string(), Value::Bool(true));
+            attrs.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+        } else {
+            attrs.insert("disabled".to_string(), Value::Bool(false));
+        }
+        if loading {
+            attrs.insert("aria-busy".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if let Some(al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+        }
+
+        let mut children = Vec::new();
+        // Icon on left
+        if let Some(ref ic) = icon {
+            if icon_position == "left" {
+                children.push(create_vnode("span", vec!["btn-icon".to_string()], HashMap::new(), vec![], Some(ic.clone()), vec![]));
+            }
+        }
+        // Loading spinner
+        if loading {
+            children.push(create_vnode("span", vec!["btn-spinner".to_string()], HashMap::new(), vec![], None, vec![]));
+        }
+        // Label text
+        if !label.is_empty() {
+            children.push(create_vnode("span", vec!["btn-label".to_string()], HashMap::new(), vec![], Some(label.clone()), vec![]));
+        }
+        // Icon on right
+        if let Some(ref ic) = icon {
+            if icon_position == "right" {
+                children.push(create_vnode("span", vec!["btn-icon".to_string()], HashMap::new(), vec![], Some(ic.clone()), vec![]));
+            }
+        }
+
+        Ok(create_vnode("button", classes, attrs, children, Some(label), vec![]))
+    });
+
+    // --- Badge ---
+    define(interp, "Badge·render", Some(1), |_, args| {
+        let s = &args[0];
+        let label = get_field_opt_str(s, "label");
+        let variant = get_field_str(s, "variant", "neutral");
+        let size = get_field_str(s, "size", "md");
+        let appearance = get_field_str(s, "appearance", "filled");
+        let icon = get_field_opt_str(s, "icon");
+        let icon_position = get_field_str(s, "icon_position", "left");
+        let aria_label = get_field_opt_str(s, "aria_label");
+        let dot = get_field_bool(s, "dot");
+        let pill = get_field_bool(s, "pill");
+        let dismissible = get_field_bool(s, "dismissible");
+        let hide_zero = get_field_bool(s, "hide_zero");
+        let role = get_field_opt_str(s, "role");
+
+        // count field
+        let count = if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            match f.get("count") {
+                Some(Value::Int(i)) => Some(*i),
+                _ => None,
+            }
+        } else { None };
+
+        let max_val = get_field_int(s, "max", 99);
+
+        let mut classes = vec![
+            "badge".to_string(),
+            format!("badge-{}", variant),
+            format!("badge-{}", size),
+            format!("badge-{}", appearance),
+        ];
+        if dot {
+            classes.push("badge-dot".to_string());
+            classes.push("badge-circular".to_string());
+        }
+        if pill { classes.push("badge-pill".to_string()); }
+        if count.is_some() && !dot { classes.push("badge-circular".to_string()); }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        if let Some(al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+        }
+        if let Some(r) = role {
+            attrs.insert("role".to_string(), Value::String(Rc::new(r)));
+        }
+        if hide_zero && count == Some(0) {
+            attrs.insert("hidden".to_string(), Value::Bool(true));
+        }
+
+        let mut children = Vec::new();
+        if let Some(ref ic) = icon {
+            if icon_position == "left" {
+                children.push(create_vnode("span", vec!["badge-icon".to_string()], HashMap::new(), vec![], Some(ic.clone()), vec![]));
+            }
+        }
+
+        let display_text = if let Some(c) = count {
+            if c > max_val {
+                format!("{}+", max_val)
+            } else {
+                c.to_string()
+            }
+        } else {
+            label.unwrap_or_default()
+        };
+
+        if dismissible {
+            let mut dismiss_attrs: HashMap<String, Value> = HashMap::new();
+            dismiss_attrs.insert("aria-label".to_string(), Value::String(Rc::new("Remove".to_string())));
+            children.push(create_vnode("button", vec!["badge-dismiss".to_string()], dismiss_attrs, vec![], Some("×".to_string()), vec![]));
+        }
+
+        if let Some(ref ic) = icon {
+            if icon_position == "right" {
+                children.push(create_vnode("span", vec!["badge-icon".to_string()], HashMap::new(), vec![], Some(ic.clone()), vec![]));
+            }
+        }
+
+        Ok(create_vnode("span", classes, attrs, children, Some(display_text), vec![]))
+    });
+
+    // --- Spinner ---
+    define(interp, "Spinner·render", Some(1), |_, args| {
+        let s = &args[0];
+        let size = get_field_str(s, "size", "md");
+        let variant = get_field_str(s, "variant", "primary");
+        let label = get_field_opt_str(s, "label");
+        let label_position = get_field_str(s, "label_position", "below");
+        let appearance = get_field_str(s, "appearance", "circular");
+        let delay = get_field_int(s, "delay", 0);
+        let overlay = get_field_bool(s, "overlay");
+        let inline = get_field_bool(s, "inline");
+        let aria_label = get_field_opt_str(s, "aria_label");
+        let label_hidden = get_field_bool(s, "label_hidden");
+
+        let mut classes = vec![
+            "spinner".to_string(),
+            format!("spinner-{}", size),
+            format!("spinner-{}", variant),
+            format!("spinner-{}", appearance),
+        ];
+        if overlay {
+            classes.push("spinner-overlay".to_string());
+            classes.push("spinner-blocking".to_string());
+        }
+        if inline {
+            classes.push("spinner-inline".to_string());
+        }
+        if label.is_some() {
+            classes.push(format!("spinner-label-{}", label_position));
+        }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("role".to_string(), Value::String(Rc::new("status".to_string())));
+        attrs.insert("aria-live".to_string(), Value::String(Rc::new("polite".to_string())));
+        if delay > 0 {
+            attrs.insert("data-delay".to_string(), Value::String(Rc::new(delay.to_string())));
+        }
+
+        let mut children = Vec::new();
+        // Create label child: from explicit label, or from aria_label when label_hidden
+        let label_text = if label.is_some() {
+            label.clone()
+        } else if label_hidden {
+            aria_label.clone()
+        } else {
+            None
+        };
+        if let Some(ref lbl) = label_text {
+            let mut label_classes = vec!["spinner-label".to_string()];
+            if label_hidden {
+                label_classes.push("sr-only".to_string());
+            }
+            children.push(create_vnode("span", label_classes, HashMap::new(), vec![], Some(lbl.clone()), vec![]));
+        }
+        let al = aria_label.or_else(|| label.clone()).unwrap_or_else(|| "Loading".to_string());
+        attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+
+        Ok(create_vnode("div", classes, attrs, children, None, vec![]))
+    });
+
+    // --- Icon ---
+    define(interp, "Icon·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let size = get_field_str(s, "size", "md");
+        let color = get_field_str(s, "color", "currentColor");
+        let variant = get_field_str(s, "variant", "filled");
+        let rotate = get_field_int(s, "rotate", 0);
+        let flip = get_field_opt_str(s, "flip");
+        let animation = get_field_opt_str(s, "animation");
+        let aria_label = get_field_opt_str(s, "aria_label");
+        let display = get_field_str(s, "display", "inline");
+        let stroke_width = get_field_int(s, "stroke_width", 2);
+        let svg = get_field_opt_str(s, "svg");
+        let view_box = get_field_str(s, "viewBox", "0 0 24 24");
+
+        // Check for custom size (number)
+        let custom_size = if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            match f.get("size") {
+                Some(Value::Int(i)) => Some(*i),
+                _ => None,
+            }
+        } else { None };
+
+        let mut classes = vec!["icon".to_string()];
+        if custom_size.is_none() {
+            classes.push(format!("icon-{}", size));
+        }
+        // Color classes
+        match color.as_str() {
+            "currentColor" => {}
+            c if c.starts_with('#') => {}
+            c => classes.push(format!("icon-{}", c)),
+        }
+        classes.push(format!("icon-{}", variant));
+        if rotate != 0 {
+            classes.push(format!("icon-rotate-{}", rotate));
+        }
+        if let Some(ref f) = flip {
+            classes.push(format!("icon-flip-{}", f));
+        }
+        if let Some(ref a) = animation {
+            classes.push(format!("icon-{}", a));
+        }
+        classes.push(format!("icon-{}", display));
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("viewBox".to_string(), Value::String(Rc::new(view_box)));
+        if let Some(ref al) = aria_label {
+            attrs.insert("aria-hidden".to_string(), Value::String(Rc::new("false".to_string())));
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al.clone())));
+            attrs.insert("role".to_string(), Value::String(Rc::new("img".to_string())));
+        } else {
+            attrs.insert("aria-hidden".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if let Some(cs) = custom_size {
+            attrs.insert("width".to_string(), Value::String(Rc::new(cs.to_string())));
+            attrs.insert("height".to_string(), Value::String(Rc::new(cs.to_string())));
+        }
+        // fill attribute - set for currentColor and hex colors
+        match color.as_str() {
+            "currentColor" => { attrs.insert("fill".to_string(), Value::String(Rc::new("currentColor".to_string()))); }
+            c if c.starts_with('#') => { attrs.insert("fill".to_string(), Value::String(Rc::new(color.clone()))); }
+            _ => {}
+        }
+        if stroke_width != 2 || variant == "outlined" {
+            attrs.insert("stroke-width".to_string(), Value::String(Rc::new(stroke_width.to_string())));
+        }
+        // data-icon and data-library
+        let library = get_field_opt_str(s, "library");
+        if !name.is_empty() {
+            attrs.insert("data-icon".to_string(), Value::String(Rc::new(name.clone())));
+        }
+        if let Some(ref lib) = library {
+            attrs.insert("data-library".to_string(), Value::String(Rc::new(lib.clone())));
+        }
+
+        let text = svg.unwrap_or_else(|| name.clone());
+        Ok(create_vnode("svg", classes, attrs, vec![], Some(text), vec![]))
+    });
+
+    // --- Link ---
+    define(interp, "Link·render", Some(1), |_, args| {
+        let s = &args[0];
+        let href = get_field_str(s, "href", "#");
+        let external = get_field_bool(s, "external");
+        let variant = get_field_str(s, "variant", "default");
+        let size = get_field_str(s, "size", "md");
+        let icon = get_field_opt_str(s, "icon");
+        let disabled = get_field_bool(s, "disabled");
+        let underline = get_field_str(s, "underline", "hover");
+        let as_button = get_field_bool(s, "as_button");
+        let download = get_field_opt_str(s, "download");
+        let active = get_field_bool(s, "active");
+        let aria_label = get_field_opt_str(s, "aria_label");
+        let color = get_field_str(s, "color", "primary");
+
+        let mut classes = vec![
+            "link".to_string(),
+            format!("link-{}", variant),
+            format!("link-{}", size),
+            format!("link-underline-{}", underline),
+            format!("link-{}", color),
+        ];
+        if disabled { classes.push("link-disabled".to_string()); }
+        if active { classes.push("link-active".to_string()); }
+
+        let tag = if as_button { "button" } else { "a" };
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        if as_button {
+            attrs.insert("type".to_string(), Value::String(Rc::new("button".to_string())));
+        } else if !disabled {
+            attrs.insert("href".to_string(), Value::String(Rc::new(href)));
+        }
+        if external {
+            attrs.insert("target".to_string(), Value::String(Rc::new("_blank".to_string())));
+            attrs.insert("rel".to_string(), Value::String(Rc::new("noopener noreferrer".to_string())));
+        }
+        if disabled {
+            attrs.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+            attrs.insert("tabindex".to_string(), Value::String(Rc::new("0".to_string())));
+        }
+        if active {
+            attrs.insert("aria-current".to_string(), Value::String(Rc::new("page".to_string())));
+        }
+        if let Some(al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+        }
+        if let Some(dl) = download {
+            attrs.insert("download".to_string(), Value::String(Rc::new(dl)));
+        }
+
+        let mut children_list = Vec::new();
+        let component_children = get_children(s);
+        for ch in component_children {
+            children_list.push(ch);
+        }
+        if let Some(ref ic) = icon {
+            children_list.push(create_vnode("span", vec!["link-icon".to_string()], HashMap::new(), vec![], Some(ic.clone()), vec![]));
+        }
+
+        Ok(create_vnode(tag, classes, attrs, children_list, None, vec![]))
+    });
+
+    // --- Input ---
+    define(interp, "Input·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let placeholder = get_field_str(s, "placeholder", "");
+        let input_type = get_field_str(s, "input_type", "text");
+        let value = get_field_str(s, "value", "");
+        let label = get_field_opt_str(s, "label");
+        let id = get_field_str(s, "id", &name);
+        let required = get_field_bool(s, "required");
+        let disabled = get_field_bool(s, "disabled");
+        let error = get_field_opt_str(s, "error");
+        let helper = get_field_opt_str(s, "helper");
+        let size = get_field_str(s, "size", "md");
+        let prefix = get_field_opt_str(s, "prefix");
+        let suffix = get_field_opt_str(s, "suffix");
+        let prefix_icon = get_field_opt_str(s, "prefix_icon");
+        let min_length = get_field_int(s, "min_length", 0);
+        let max_length = get_field_int(s, "max_length", 0);
+        let pattern = get_field_opt_str(s, "pattern");
+        let title = get_field_opt_str(s, "title");
+        let autocomplete = get_field_opt_str(s, "autocomplete");
+
+        let mut classes = vec![
+            "input".to_string(),
+            format!("input-{}", size),
+        ];
+        if disabled { classes.push("input-disabled".to_string()); }
+        if error.is_some() { classes.push("input-error".to_string()); }
+        if prefix.is_some() || prefix_icon.is_some() { classes.push("input-prefix".to_string()); }
+        if suffix.is_some() { classes.push("input-suffix".to_string()); }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("type".to_string(), Value::String(Rc::new(input_type)));
+        attrs.insert("name".to_string(), Value::String(Rc::new(name)));
+        attrs.insert("id".to_string(), Value::String(Rc::new(id.clone())));
+        attrs.insert("placeholder".to_string(), Value::String(Rc::new(placeholder)));
+        if !value.is_empty() {
+            attrs.insert("value".to_string(), Value::String(Rc::new(value)));
+        }
+        if required {
+            attrs.insert("required".to_string(), Value::Bool(true));
+            attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if disabled {
+            attrs.insert("disabled".to_string(), Value::Bool(true));
+        }
+        if error.is_some() {
+            attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+            attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-error", id))));
+        } else if helper.is_some() {
+            attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-helper", id))));
+        }
+        if min_length > 0 {
+            attrs.insert("minlength".to_string(), Value::String(Rc::new(min_length.to_string())));
+        }
+        if max_length > 0 {
+            attrs.insert("maxlength".to_string(), Value::String(Rc::new(max_length.to_string())));
+        }
+        if let Some(ref p) = pattern {
+            attrs.insert("pattern".to_string(), Value::String(Rc::new(p.clone())));
+        }
+        if let Some(ref t) = title {
+            attrs.insert("title".to_string(), Value::String(Rc::new(t.clone())));
+        }
+        if let Some(ref ac) = autocomplete {
+            attrs.insert("autocomplete".to_string(), Value::String(Rc::new(ac.clone())));
+        }
+
+        // Siblings: label, error, helper
+        let mut siblings = Vec::new();
+        if let Some(ref lbl) = label {
+            let mut label_children = vec![];
+            if required {
+                label_children.push(create_vnode("span", vec!["required-indicator".to_string()], HashMap::new(), vec![], Some("*".to_string()), vec![]));
+            }
+            let mut label_attrs: HashMap<String, Value> = HashMap::new();
+            label_attrs.insert("for".to_string(), Value::String(Rc::new(id.clone())));
+            siblings.push(create_vnode("label", vec!["input-label".to_string()], label_attrs, label_children, Some(lbl.clone()), vec![]));
+        }
+        if let Some(ref err) = error {
+            siblings.push(create_vnode("span", vec!["input-error-message".to_string()], HashMap::new(), vec![], Some(err.clone()), vec![]));
+        }
+        if let Some(ref h) = helper {
+            siblings.push(create_vnode("span", vec!["input-helper".to_string()], HashMap::new(), vec![], Some(h.clone()), vec![]));
+        }
+
+        // Prefix/suffix children
+        let mut input_children = vec![];
+        if let Some(ref pi) = prefix_icon {
+            input_children.push(create_vnode("span", vec!["input-icon".to_string()], HashMap::new(), vec![], Some(pi.clone()), vec![]));
+        }
+        if let Some(ref p) = prefix {
+            input_children.push(create_vnode("span", vec!["input-prefix".to_string()], HashMap::new(), vec![], Some(p.clone()), vec![]));
+        }
+        if let Some(ref sf) = suffix {
+            input_children.push(create_vnode("span", vec!["input-suffix".to_string()], HashMap::new(), vec![], Some(sf.clone()), vec![]));
+        }
+
+        Ok(create_vnode("input", classes, attrs, input_children, None, siblings))
+    });
+
+    // --- Checkbox ---
+    define(interp, "Checkbox·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let label = get_field_opt_str(s, "label");
+        let id = get_field_str(s, "id", &name);
+        let checked = get_field_bool(s, "checked");
+        let label_position = get_field_str(s, "label_position", "right");
+        let disabled = get_field_bool(s, "disabled");
+        let indeterminate = get_field_bool(s, "indeterminate");
+        let size = get_field_str(s, "size", "md");
+        let error = get_field_opt_str(s, "error");
+        let required = get_field_bool(s, "required");
+        let description = get_field_opt_str(s, "description");
+        let value_str = get_field_opt_str(s, "value");
+        let aria_label = get_field_opt_str(s, "aria_label");
+
+        let mut classes = vec![
+            "checkbox".to_string(),
+            format!("checkbox-{}", size),
+            format!("checkbox-label-{}", label_position),
+        ];
+        if disabled { classes.push("checkbox-disabled".to_string()); }
+        if error.is_some() { classes.push("checkbox-error".to_string()); }
+        if indeterminate { classes.push("checkbox-indeterminate".to_string()); }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("type".to_string(), Value::String(Rc::new("checkbox".to_string())));
+        attrs.insert("name".to_string(), Value::String(Rc::new(name)));
+        attrs.insert("id".to_string(), Value::String(Rc::new(id.clone())));
+        if checked {
+            attrs.insert("checked".to_string(), Value::Bool(true));
+        }
+        if disabled {
+            attrs.insert("disabled".to_string(), Value::Bool(true));
+        }
+        if error.is_some() {
+            attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if indeterminate {
+            attrs.insert("data-indeterminate".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if required {
+            attrs.insert("required".to_string(), Value::Bool(true));
+            attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if let Some(ref v) = value_str {
+            attrs.insert("value".to_string(), Value::String(Rc::new(v.clone())));
+        }
+        if let Some(ref al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al.clone())));
+        }
+        if description.is_some() {
+            attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+        }
+
+        let mut siblings = Vec::new();
+        if let Some(ref lbl) = label {
+            let mut la: HashMap<String, Value> = HashMap::new();
+            la.insert("for".to_string(), Value::String(Rc::new(id.clone())));
+            siblings.push(create_vnode("label", vec!["checkbox-label".to_string()], la, vec![], Some(lbl.clone()), vec![]));
+        }
+        if let Some(ref desc) = description {
+            siblings.push(create_vnode("span", vec!["checkbox-description".to_string()], HashMap::new(), vec![], Some(desc.clone()), vec![]));
+        }
+        if let Some(ref err) = error {
+            siblings.push(create_vnode("span", vec!["checkbox-error-message".to_string()], HashMap::new(), vec![], Some(err.clone()), vec![]));
+        }
+
+        Ok(create_vnode("input", classes, attrs, vec![], None, siblings))
+    });
+
+    // --- CheckboxGroup ---
+    define(interp, "CheckboxGroup·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let label = get_field_opt_str(s, "label");
+
+        let mut classes = vec!["checkbox-group".to_string()];
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("role".to_string(), Value::String(Rc::new("group".to_string())));
+        if let Some(ref lbl) = label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(lbl.clone())));
+        }
+
+        // Collect selected values from the value array
+        let mut selected_values: Vec<String> = Vec::new();
+        if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            if let Some(Value::Array(vals)) = f.get("value") {
+                for v in vals.borrow().iter() {
+                    if let Value::String(sv) = v {
+                        selected_values.push(sv.to_string());
+                    }
+                }
+            }
+        }
+
+        // Build children from options
+        let mut children = Vec::new();
+        if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            if let Some(Value::Array(opts)) = f.get("options") {
+                for opt in opts.borrow().iter() {
+                    let opt_value = get_field_str(opt, "value", "");
+                    let opt_label = get_field_str(opt, "label", "");
+                    let is_checked = selected_values.contains(&opt_value);
+                    let mut cb_attrs: HashMap<String, Value> = HashMap::new();
+                    cb_attrs.insert("type".to_string(), Value::String(Rc::new("checkbox".to_string())));
+                    cb_attrs.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+                    cb_attrs.insert("value".to_string(), Value::String(Rc::new(opt_value)));
+                    cb_attrs.insert("checked".to_string(), Value::Bool(is_checked));
+                    children.push(create_vnode("input", vec!["checkbox".to_string()], cb_attrs, vec![], Some(opt_label), vec![]));
+                }
+            }
+        }
+
+        Ok(create_vnode("div", classes, attrs, children, None, vec![]))
+    });
+
+    // --- Radio ---
+    define(interp, "Radio·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let value = get_field_str(s, "value", "");
+        let label = get_field_opt_str(s, "label");
+        let id = get_field_str(s, "id", &name);
+        let checked = get_field_bool(s, "checked");
+        let disabled = get_field_bool(s, "disabled");
+        let size = get_field_str(s, "size", "md");
+        let description = get_field_opt_str(s, "description");
+        let aria_label = get_field_opt_str(s, "aria_label");
+
+        let mut classes = vec![
+            "radio".to_string(),
+            format!("radio-{}", size),
+        ];
+        if disabled { classes.push("radio-disabled".to_string()); }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("type".to_string(), Value::String(Rc::new("radio".to_string())));
+        attrs.insert("name".to_string(), Value::String(Rc::new(name)));
+        attrs.insert("value".to_string(), Value::String(Rc::new(value)));
+        attrs.insert("id".to_string(), Value::String(Rc::new(id.clone())));
+        if checked { attrs.insert("checked".to_string(), Value::Bool(true)); }
+        if disabled { attrs.insert("disabled".to_string(), Value::Bool(true)); }
+        if let Some(ref al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al.clone())));
+        }
+
+        let mut siblings = Vec::new();
+        if let Some(ref lbl) = label {
+            let mut la: HashMap<String, Value> = HashMap::new();
+            la.insert("for".to_string(), Value::String(Rc::new(id.clone())));
+            siblings.push(create_vnode("label", vec!["radio-label".to_string()], la, vec![], Some(lbl.clone()), vec![]));
+        }
+        if let Some(ref desc) = description {
+            siblings.push(create_vnode("span", vec!["radio-description".to_string()], HashMap::new(), vec![], Some(desc.clone()), vec![]));
+        }
+
+        Ok(create_vnode("input", classes, attrs, vec![], None, siblings))
+    });
+
+    // --- RadioGroup ---
+    define(interp, "RadioGroup·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let label = get_field_opt_str(s, "label");
+        let orientation = get_field_str(s, "orientation", "vertical");
+        let required = get_field_bool(s, "required");
+        let error = get_field_opt_str(s, "error");
+        let variant = get_field_str(s, "variant", "default");
+        let selected_value = get_field_str(s, "value", "");
+
+        let mut classes = vec![
+            "radio-group".to_string(),
+            format!("radio-group-{}", orientation),
+        ];
+        if error.is_some() { classes.push("radio-group-error".to_string()); }
+        if variant == "card" { classes.push("radio-group-card".to_string()); }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("role".to_string(), Value::String(Rc::new("radiogroup".to_string())));
+        if let Some(ref lbl) = label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(lbl.clone())));
+        }
+        if required {
+            attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if error.is_some() {
+            attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+
+        let mut children = Vec::new();
+        if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            if let Some(Value::Array(opts)) = f.get("options") {
+                for opt in opts.borrow().iter() {
+                    let opt_value = get_field_str(opt, "value", "");
+                    let opt_label = get_field_str(opt, "label", "");
+                    let opt_disabled = get_field_bool(opt, "disabled");
+                    let checked = opt_value == selected_value;
+                    let mut radio_classes = vec!["radio".to_string()];
+                    if opt_disabled { radio_classes.push("radio-disabled".to_string()); }
+                    if variant == "card" { radio_classes.push("radio-card".to_string()); }
+                    let mut ra: HashMap<String, Value> = HashMap::new();
+                    ra.insert("type".to_string(), Value::String(Rc::new("radio".to_string())));
+                    ra.insert("name".to_string(), Value::String(Rc::new(name.clone())));
+                    ra.insert("value".to_string(), Value::String(Rc::new(opt_value)));
+                    if checked { ra.insert("checked".to_string(), Value::Bool(true)); }
+                    if opt_disabled { ra.insert("disabled".to_string(), Value::Bool(true)); }
+                    if required { ra.insert("required".to_string(), Value::Bool(true)); }
+                    children.push(create_vnode("input", radio_classes, ra, vec![], Some(opt_label), vec![]));
+                }
+            }
+        }
+
+        let mut all_children = children;
+        if let Some(ref err) = error {
+            all_children.push(create_vnode("span", vec!["radio-group-error-message".to_string()], HashMap::new(), vec![], Some(err.clone()), vec![]));
+        }
+
+        Ok(create_vnode("div", classes, attrs, all_children, None, vec![]))
+    });
+
+    // --- Switch ---
+    define(interp, "Switch·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let checked = get_field_bool(s, "checked");
+        let label = get_field_opt_str(s, "label");
+        let id = get_field_str(s, "id", &name);
+        let label_position = get_field_str(s, "label_position", "right");
+        let disabled = get_field_bool(s, "disabled");
+        let size = get_field_str(s, "size", "md");
+        let on_label = get_field_opt_str(s, "on_label");
+        let off_label = get_field_opt_str(s, "off_label");
+        let on_icon = get_field_opt_str(s, "on_icon");
+        let off_icon = get_field_opt_str(s, "off_icon");
+        let description = get_field_opt_str(s, "description");
+        let loading = get_field_bool(s, "loading");
+        let color = get_field_opt_str(s, "color");
+        let required = get_field_bool(s, "required");
+
+        let mut classes = vec![
+            "switch".to_string(),
+            format!("switch-{}", size),
+            format!("switch-label-{}", label_position),
+        ];
+        if disabled { classes.push("switch-disabled".to_string()); }
+        if loading { classes.push("switch-loading".to_string()); }
+        if let Some(ref c) = color { classes.push(format!("switch-{}", c)); }
+
+        let aria_label = get_field_opt_str(s, "aria_label");
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("role".to_string(), Value::String(Rc::new("switch".to_string())));
+        attrs.insert("type".to_string(), Value::String(Rc::new("checkbox".to_string())));
+        attrs.insert("id".to_string(), Value::String(Rc::new(id.clone())));
+        attrs.insert("aria-checked".to_string(), Value::String(Rc::new(if checked { "true" } else { "false" }.to_string())));
+        if checked {
+            attrs.insert("checked".to_string(), Value::Bool(true));
+        }
+        if disabled || loading {
+            attrs.insert("disabled".to_string(), Value::Bool(true));
+        }
+        if required {
+            attrs.insert("required".to_string(), Value::Bool(true));
+            attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if let Some(ref al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al.clone())));
+        }
+        if description.is_some() {
+            attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(format!("{}-description", id))));
+        }
+
+        let mut children = Vec::new();
+        if let Some(ref ol) = on_label {
+            children.push(create_vnode("span", vec!["switch-label-on".to_string()], HashMap::new(), vec![], Some(ol.clone()), vec![]));
+        }
+        if let Some(ref ofl) = off_label {
+            children.push(create_vnode("span", vec!["switch-label-off".to_string()], HashMap::new(), vec![], Some(ofl.clone()), vec![]));
+        }
+        if let Some(ref oi) = on_icon {
+            children.push(create_vnode("span", vec!["switch-icon-on".to_string()], HashMap::new(), vec![], Some(oi.clone()), vec![]));
+        }
+        if let Some(ref ofi) = off_icon {
+            children.push(create_vnode("span", vec!["switch-icon-off".to_string()], HashMap::new(), vec![], Some(ofi.clone()), vec![]));
+        }
+        if loading {
+            children.push(create_vnode("span", vec!["switch-spinner".to_string()], HashMap::new(), vec![], None, vec![]));
+        }
+
+        let mut siblings = Vec::new();
+        if let Some(ref lbl) = label {
+            let mut la: HashMap<String, Value> = HashMap::new();
+            la.insert("for".to_string(), Value::String(Rc::new(id.clone())));
+            siblings.push(create_vnode("label", vec!["switch-label".to_string()], la, vec![], Some(lbl.clone()), vec![]));
+        }
+        if let Some(ref desc) = description {
+            siblings.push(create_vnode("span", vec!["switch-description".to_string()], HashMap::new(), vec![], Some(desc.clone()), vec![]));
+        }
+
+        Ok(create_vnode("input", classes, attrs, children, None, siblings))
+    });
+
+    // --- Textarea ---
+    define(interp, "Textarea·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let placeholder = get_field_str(s, "placeholder", "");
+        let value = get_field_str(s, "value", "");
+        let label = get_field_opt_str(s, "label");
+        let id = get_field_str(s, "id", &name);
+        let rows = get_field_int(s, "rows", 3);
+        let auto_resize = get_field_bool(s, "auto_resize");
+        let min_rows = get_field_int(s, "min_rows", 0);
+        let max_rows = get_field_int(s, "max_rows", 0);
+        let required = get_field_bool(s, "required");
+        let disabled = get_field_bool(s, "disabled");
+        let error = get_field_opt_str(s, "error");
+        let helper = get_field_opt_str(s, "helper");
+        let max_length = get_field_int(s, "max_length", 0);
+        let show_counter = get_field_bool(s, "show_counter");
+        let size = get_field_str(s, "size", "md");
+        let resize = get_field_str(s, "resize", "vertical");
+        let readonly = get_field_bool(s, "readonly");
+
+        let mut classes = vec![
+            "textarea".to_string(),
+            format!("textarea-{}", size),
+            format!("textarea-resize-{}", resize),
+        ];
+        if disabled { classes.push("textarea-disabled".to_string()); }
+        if error.is_some() { classes.push("textarea-error".to_string()); }
+        if auto_resize { classes.push("textarea-auto-resize".to_string()); }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("name".to_string(), Value::String(Rc::new(name)));
+        attrs.insert("id".to_string(), Value::String(Rc::new(id.clone())));
+        attrs.insert("placeholder".to_string(), Value::String(Rc::new(placeholder)));
+        attrs.insert("rows".to_string(), Value::String(Rc::new(rows.to_string())));
+        let aria_label = get_field_opt_str(s, "aria_label");
+        if required {
+            attrs.insert("required".to_string(), Value::Bool(true));
+            attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if disabled {
+            attrs.insert("disabled".to_string(), Value::Bool(true));
+        }
+        if readonly {
+            attrs.insert("readonly".to_string(), Value::Bool(true));
+        }
+        if error.is_some() {
+            attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if auto_resize {
+            if min_rows > 0 { attrs.insert("data-min-rows".to_string(), Value::String(Rc::new(min_rows.to_string()))); }
+            if max_rows > 0 { attrs.insert("data-max-rows".to_string(), Value::String(Rc::new(max_rows.to_string()))); }
+        }
+        if max_length > 0 {
+            attrs.insert("maxlength".to_string(), Value::String(Rc::new(max_length.to_string())));
+        }
+        if let Some(ref al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al.clone())));
+        }
+
+        let mut siblings = Vec::new();
+        if let Some(ref lbl) = label {
+            let mut la: HashMap<String, Value> = HashMap::new();
+            la.insert("for".to_string(), Value::String(Rc::new(id.clone())));
+            siblings.push(create_vnode("label", vec!["textarea-label".to_string()], la, vec![], Some(lbl.clone()), vec![]));
+        }
+        if let Some(ref err) = error {
+            siblings.push(create_vnode("span", vec!["textarea-error-message".to_string()], HashMap::new(), vec![], Some(err.clone()), vec![]));
+        }
+        if let Some(ref h) = helper {
+            siblings.push(create_vnode("span", vec!["textarea-helper".to_string()], HashMap::new(), vec![], Some(h.clone()), vec![]));
+        }
+        if show_counter && max_length > 0 {
+            let val_len = value.len();
+            siblings.push(create_vnode("span", vec!["textarea-counter".to_string()], HashMap::new(), vec![], Some(format!("{}/{}", val_len, max_length)), vec![]));
+        }
+
+        Ok(create_vnode("textarea", classes, attrs, vec![], Some(value), siblings))
+    });
+
+    // --- Select ---
+    define(interp, "Select·render", Some(1), |_, args| {
+        let s = &args[0];
+        let name = get_field_str(s, "name", "");
+        let placeholder = get_field_opt_str(s, "placeholder");
+        let label = get_field_opt_str(s, "label");
+        let id = get_field_str(s, "id", &name);
+        let disabled = get_field_bool(s, "disabled");
+        let error = get_field_opt_str(s, "error");
+        let size = get_field_str(s, "size", "md");
+        let multiple = get_field_bool(s, "multiple");
+        let helper = get_field_opt_str(s, "helper");
+        let required = get_field_bool(s, "required");
+        let native = get_field_bool(s, "native");
+
+        let mut classes = vec![
+            "select".to_string(),
+            format!("select-{}", size),
+        ];
+        if disabled { classes.push("select-disabled".to_string()); }
+        if error.is_some() { classes.push("select-error".to_string()); }
+        if native { classes.push("select-native".to_string()); } else { classes.push("select-custom".to_string()); }
+
+        let value = get_field_opt_str(s, "value");
+        let aria_label = get_field_opt_str(s, "aria_label");
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("name".to_string(), Value::String(Rc::new(name)));
+        attrs.insert("id".to_string(), Value::String(Rc::new(id.clone())));
+        if let Some(ref v) = value {
+            attrs.insert("value".to_string(), Value::String(Rc::new(v.clone())));
+        }
+        if disabled {
+            attrs.insert("disabled".to_string(), Value::Bool(true));
+        }
+        if required {
+            attrs.insert("required".to_string(), Value::Bool(true));
+            attrs.insert("aria-required".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if multiple {
+            attrs.insert("multiple".to_string(), Value::Bool(true));
+        }
+        if error.is_some() {
+            attrs.insert("aria-invalid".to_string(), Value::String(Rc::new("true".to_string())));
+        }
+        if let Some(ref al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al.clone())));
+        }
+
+        // Build option children
+        let mut children = Vec::new();
+        if let Some(ref ph) = placeholder {
+            let mut oa: HashMap<String, Value> = HashMap::new();
+            oa.insert("value".to_string(), Value::String(Rc::new("".to_string())));
+            children.push(create_vnode("option", vec![], oa, vec![], Some(ph.clone()), vec![]));
+        }
+        if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            if let Some(Value::Array(opts)) = f.get("options") {
+                // Check if any options have a group field
+                let has_groups = opts.borrow().iter().any(|opt| get_field_opt_str(opt, "group").is_some());
+                if has_groups {
+                    // Collect options into ordered groups
+                    let mut group_order: Vec<String> = Vec::new();
+                    let mut groups: HashMap<String, Vec<Value>> = HashMap::new();
+                    let mut ungrouped: Vec<Value> = Vec::new();
+                    for opt in opts.borrow().iter() {
+                        let ov = get_field_str(opt, "value", "");
+                        let ol = get_field_str(opt, "label", "");
+                        let od = get_field_bool(opt, "disabled");
+                        let group = get_field_opt_str(opt, "group");
+                        let mut oa: HashMap<String, Value> = HashMap::new();
+                        oa.insert("value".to_string(), Value::String(Rc::new(ov)));
+                        if od { oa.insert("disabled".to_string(), Value::Bool(true)); }
+                        let option_vnode = create_vnode("option", vec![], oa, vec![], Some(ol), vec![]);
+                        if let Some(g) = group {
+                            if !groups.contains_key(&g) {
+                                group_order.push(g.clone());
+                            }
+                            groups.entry(g).or_insert_with(Vec::new).push(option_vnode);
+                        } else {
+                            ungrouped.push(option_vnode);
+                        }
+                    }
+                    // Emit ungrouped options first
+                    children.extend(ungrouped);
+                    // Then emit optgroups in order
+                    for g in group_order {
+                        let mut ga: HashMap<String, Value> = HashMap::new();
+                        let group_opts = groups.remove(&g).unwrap_or_default();
+                        ga.insert("label".to_string(), Value::String(Rc::new(g)));
+                        children.push(create_vnode("optgroup", vec![], ga, group_opts, None, vec![]));
+                    }
+                } else {
+                    for opt in opts.borrow().iter() {
+                        let ov = get_field_str(opt, "value", "");
+                        let ol = get_field_str(opt, "label", "");
+                        let od = get_field_bool(opt, "disabled");
+                        let mut oa: HashMap<String, Value> = HashMap::new();
+                        oa.insert("value".to_string(), Value::String(Rc::new(ov)));
+                        if od { oa.insert("disabled".to_string(), Value::Bool(true)); }
+                        children.push(create_vnode("option", vec![], oa, vec![], Some(ol), vec![]));
+                    }
+                }
+            }
+        }
+
+        let mut siblings = Vec::new();
+        if let Some(ref lbl) = label {
+            let mut la: HashMap<String, Value> = HashMap::new();
+            la.insert("for".to_string(), Value::String(Rc::new(id.clone())));
+            siblings.push(create_vnode("label", vec!["select-label".to_string()], la, vec![], Some(lbl.clone()), vec![]));
+        }
+        if let Some(ref err) = error {
+            siblings.push(create_vnode("span", vec!["select-error-message".to_string()], HashMap::new(), vec![], Some(err.clone()), vec![]));
+        }
+        if let Some(ref h) = helper {
+            siblings.push(create_vnode("span", vec!["select-helper".to_string()], HashMap::new(), vec![], Some(h.clone()), vec![]));
+        }
+
+        Ok(create_vnode("select", classes, attrs, children, None, siblings))
+    });
+
+    // --- SelectOption (helper) ---
+    define(interp, "SelectOption·new", Some(1), |_, args| {
+        Ok(args[0].clone())
+    });
+
+    // --- Card ---
+    define(interp, "Card·render", Some(1), |_, args| {
+        let s = &args[0];
+        let variant = get_field_str(s, "variant", "elevated");
+        let clickable = get_field_bool(s, "clickable");
+        let padding = get_field_str(s, "padding", "md");
+        let as_element = get_field_str(s, "as_element", "div");
+        let aria_label = get_field_opt_str(s, "aria_label");
+
+        let mut classes = vec![
+            "card".to_string(),
+            format!("card-{}", variant),
+            format!("card-p-{}", padding),
+        ];
+        if clickable {
+            classes.push("card-clickable".to_string());
+            classes.push("cursor-pointer".to_string());
+        }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        if let Some(al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+        }
+        if clickable {
+            attrs.insert("role".to_string(), Value::String(Rc::new("button".to_string())));
+            attrs.insert("tabindex".to_string(), Value::String(Rc::new("0".to_string())));
+        }
+
+        // Process children components
+        let mut children = Vec::new();
+        let component_children = get_children(s);
+        for child in component_children {
+            if let Value::Struct { name: cn, .. } = &child {
+                match cn.as_str() {
+                    "CardHeader" => {
+                        let title = get_field_opt_str(&child, "title");
+                        let subtitle = get_field_opt_str(&child, "subtitle");
+                        let image = get_field_opt_str(&child, "image");
+                        let image_alt = get_field_str(&child, "image_alt", "");
+                        let mut hdr_children = Vec::new();
+                        if let Some(ref img) = image {
+                            let mut ia: HashMap<String, Value> = HashMap::new();
+                            ia.insert("src".to_string(), Value::String(Rc::new(img.clone())));
+                            ia.insert("alt".to_string(), Value::String(Rc::new(image_alt.clone())));
+                            hdr_children.push(create_vnode("img", vec!["card-image".to_string()], ia, vec![], None, vec![]));
+                        }
+                        if let Some(ref t) = title {
+                            hdr_children.push(create_vnode("h3", vec!["card-title".to_string()], HashMap::new(), vec![], Some(t.clone()), vec![]));
+                        }
+                        if let Some(ref st) = subtitle {
+                            hdr_children.push(create_vnode("p", vec!["card-subtitle".to_string()], HashMap::new(), vec![], Some(st.clone()), vec![]));
+                        }
+                        children.push(create_vnode("div", vec!["card-header".to_string()], HashMap::new(), hdr_children, None, vec![]));
+                    }
+                    "CardBody" => {
+                        let body_children = get_children(&child);
+                        let mut bc = Vec::new();
+                        for bch in body_children {
+                            bc.push(bch);
+                        }
+                        children.push(create_vnode("div", vec!["card-body".to_string()], HashMap::new(), bc, None, vec![]));
+                    }
+                    "CardFooter" => {
+                        let footer_children = get_children(&child);
+                        let mut fc = Vec::new();
+                        for fch in footer_children {
+                            fc.push(fch);
+                        }
+                        children.push(create_vnode("div", vec!["card-footer".to_string()], HashMap::new(), fc, None, vec![]));
+                    }
+                    _ => children.push(child),
+                }
+            } else {
+                children.push(child);
+            }
+        }
+
+        Ok(create_vnode(&as_element, classes, attrs, children, None, vec![]))
+    });
+
+    // Sub-component constructors (return identity - used for struct initialization)
+    define(interp, "CardHeader·render", Some(1), |_, args| { Ok(args[0].clone()) });
+    define(interp, "CardBody·render", Some(1), |_, args| { Ok(args[0].clone()) });
+    define(interp, "CardFooter·render", Some(1), |_, args| { Ok(args[0].clone()) });
+
+    // --- Dialog ---
+    define(interp, "Dialog·render", Some(1), |_, args| {
+        let s = &args[0];
+        let open = get_field_bool(s, "open");
+        let hide_close = get_field_bool(s, "hide_close");
+        let size = get_field_str(s, "size", "md");
+        let static_backdrop = get_field_bool(s, "static_backdrop");
+        let close_on_escape = get_field_bool(s, "close_on_escape");
+        let position = get_field_str(s, "position", "center");
+        let scrollable = get_field_bool(s, "scrollable");
+        let alert = get_field_bool(s, "alert");
+        let initial_focus = get_field_opt_str(s, "initial_focus");
+        let aria_describedby = get_field_opt_str(s, "aria_describedby");
+
+        let mut classes = vec![
+            "dialog".to_string(),
+            format!("dialog-{}", size),
+            format!("dialog-{}", position),
+        ];
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("role".to_string(), Value::String(Rc::new(
+            if alert { "alertdialog" } else { "dialog" }.to_string()
+        )));
+        attrs.insert("aria-modal".to_string(), Value::String(Rc::new("true".to_string())));
+        attrs.insert("data-close-on-escape".to_string(), Value::String(Rc::new(
+            if close_on_escape { "true" } else { "false" }.to_string()
+        )));
+        if let Some(ref focus) = initial_focus {
+            attrs.insert("data-initial-focus".to_string(), Value::String(Rc::new(focus.clone())));
+        }
+        if let Some(ref desc) = aria_describedby {
+            attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(desc.clone())));
+        }
+
+        // Process children
+        let mut children = Vec::new();
+        let component_children = get_children(s);
+        let mut title_id = None;
+        for child in component_children {
+            if let Value::Struct { name: cn, .. } = &child {
+                match cn.as_str() {
+                    "DialogHeader" => {
+                        let title = get_field_opt_str(&child, "title");
+                        let mut hdr_children = Vec::new();
+                        if let Some(ref t) = title {
+                            let tid = "dialog-title".to_string();
+                            title_id = Some(tid.clone());
+                            let mut ta: HashMap<String, Value> = HashMap::new();
+                            ta.insert("id".to_string(), Value::String(Rc::new(tid)));
+                            hdr_children.push(create_vnode("h2", vec!["dialog-title".to_string()], ta, vec![], Some(t.clone()), vec![]));
+                        }
+                        children.push(create_vnode("div", vec!["dialog-header".to_string()], HashMap::new(), hdr_children, None, vec![]));
+                    }
+                    "DialogBody" => {
+                        let body_id = get_field_opt_str(&child, "id");
+                        let body_children_val = get_children(&child);
+                        let mut bc: Vec<Value> = body_children_val;
+                        let mut body_classes = vec!["dialog-body".to_string()];
+                        if scrollable { body_classes.push("dialog-body-scrollable".to_string()); }
+                        let mut ba: HashMap<String, Value> = HashMap::new();
+                        if let Some(ref bid) = body_id {
+                            ba.insert("id".to_string(), Value::String(Rc::new(bid.clone())));
+                        }
+                        children.push(create_vnode("div", body_classes, ba, bc, None, vec![]));
+                    }
+                    "DialogFooter" => {
+                        let footer_children = get_children(&child);
+                        children.push(create_vnode("div", vec!["dialog-footer".to_string()], HashMap::new(), footer_children, None, vec![]));
+                    }
+                    _ => children.push(child),
+                }
+            } else {
+                children.push(child);
+            }
+        }
+
+        // Add close button unless hidden
+        if !hide_close {
+            let mut close_attrs: HashMap<String, Value> = HashMap::new();
+            close_attrs.insert("aria-label".to_string(), Value::String(Rc::new("Close".to_string())));
+            children.push(create_vnode("button", vec!["dialog-close".to_string()], close_attrs, vec![], Some("×".to_string()), vec![]));
+        }
+
+        // Add backdrop
+        let mut backdrop_classes = vec!["dialog-backdrop".to_string()];
+        if static_backdrop { backdrop_classes.push("dialog-backdrop-static".to_string()); }
+        children.push(create_vnode("div", backdrop_classes, HashMap::new(), vec![], None, vec![]));
+
+        if let Some(tid) = title_id {
+            attrs.insert("aria-labelledby".to_string(), Value::String(Rc::new(tid)));
+        }
+
+        Ok(create_vnode("div", classes, attrs, children, None, vec![]))
+    });
+
+    define(interp, "DialogHeader·render", Some(1), |_, args| { Ok(args[0].clone()) });
+    define(interp, "DialogBody·render", Some(1), |_, args| { Ok(args[0].clone()) });
+    define(interp, "DialogFooter·render", Some(1), |_, args| { Ok(args[0].clone()) });
+
+    // --- Tooltip ---
+    define(interp, "Tooltip·render", Some(1), |_, args| {
+        let s = &args[0];
+        let content = get_field_str(s, "content", "");
+        let position = get_field_str(s, "position", "top");
+        let alignment = get_field_str(s, "alignment", "center");
+        let trigger = get_field_str(s, "trigger", "hover");
+        let delay = get_field_int(s, "delay", 0);
+        let arrow = get_field_bool(s, "arrow");
+        let variant = get_field_str(s, "variant", "dark");
+        let title = get_field_opt_str(s, "title");
+        let max_width = get_field_int(s, "max_width", 0);
+        let disabled = get_field_bool(s, "disabled");
+        let id = get_field_opt_str(s, "id");
+        let open = get_field_bool(s, "open");
+        let touch_trigger = get_field_opt_str(s, "touch_trigger");
+        let animation = get_field_str(s, "animation", "fade");
+
+        let mut wrapper_classes = vec![
+            "tooltip-wrapper".to_string(),
+            format!("tooltip-animation-{}", animation),
+        ];
+
+        // Wrapper attrs (data-trigger, data-delay, data-touch-trigger)
+        let mut wrapper_attrs: HashMap<String, Value> = HashMap::new();
+        wrapper_attrs.insert("data-trigger".to_string(), Value::String(Rc::new(trigger)));
+        if delay > 0 {
+            wrapper_attrs.insert("data-delay".to_string(), Value::String(Rc::new(delay.to_string())));
+        }
+        if let Some(ref tt) = touch_trigger {
+            wrapper_attrs.insert("data-touch-trigger".to_string(), Value::String(Rc::new(tt.clone())));
+        }
+
+        // Trigger element with aria-describedby
+        let trigger_children = get_children(s);
+        let mut wrapper_children = Vec::new();
+        for ch in trigger_children {
+            let mut trigger_attrs: HashMap<String, Value> = HashMap::new();
+            if let Some(ref tid) = id {
+                trigger_attrs.insert("aria-describedby".to_string(), Value::String(Rc::new(tid.clone())));
+            }
+            wrapper_children.push(create_vnode("div", vec!["tooltip-trigger".to_string()], trigger_attrs, vec![ch], None, vec![]));
+        }
+
+        // Only render tooltip content if not disabled
+        if !disabled {
+            let mut content_classes = vec![
+                "tooltip-content".to_string(),
+                format!("tooltip-{}", position),
+                format!("tooltip-align-{}", alignment),
+                format!("tooltip-{}", variant),
+            ];
+            if arrow { content_classes.push("tooltip-arrow".to_string()); }
+
+            // Content attrs (role, id, style)
+            let mut content_attrs: HashMap<String, Value> = HashMap::new();
+            content_attrs.insert("role".to_string(), Value::String(Rc::new("tooltip".to_string())));
+            if let Some(ref tid) = id {
+                content_attrs.insert("id".to_string(), Value::String(Rc::new(tid.clone())));
+            }
+            if max_width > 0 {
+                content_attrs.insert("style".to_string(), Value::String(Rc::new(format!("max-width: {}px", max_width))));
+            }
+
+            let mut content_children = Vec::new();
+            if let Some(ref t) = title {
+                content_children.push(create_vnode("div", vec!["tooltip-title".to_string()], HashMap::new(), vec![], Some(t.clone()), vec![]));
+                content_children.push(create_vnode("div", vec!["tooltip-body".to_string()], HashMap::new(), vec![], Some(content.clone()), vec![]));
+            }
+
+            let tooltip_content = create_vnode("div", content_classes, content_attrs, content_children, Some(content), vec![]);
+            wrapper_children.push(tooltip_content);
+        }
+
+        Ok(create_vnode("div", wrapper_classes, wrapper_attrs, wrapper_children, None, vec![]))
+    });
+
+    // --- Tabs ---
+    define(interp, "Tabs·render", Some(1), |_, args| {
+        let s = &args[0];
+        let index = get_field_int(s, "index", 0) as usize;
+        let variant = get_field_str(s, "variant", "line");
+        let size = get_field_str(s, "size", "md");
+        let orientation = get_field_str(s, "orientation", "horizontal");
+        let alignment = get_field_str(s, "alignment", "start");
+        let lazy = get_field_bool(s, "lazy");
+        let id = get_field_opt_str(s, "id");
+        let keyboard_activation = get_field_str(s, "keyboard_activation", "automatic");
+
+        let mut classes = vec![
+            "tabs".to_string(),
+            format!("tabs-{}", variant),
+            format!("tabs-{}", size),
+            format!("tabs-{}", orientation),
+            format!("tabs-align-{}", alignment),
+        ];
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        if let Some(ref tid) = id {
+            attrs.insert("id".to_string(), Value::String(Rc::new(tid.clone())));
+        }
+        if keyboard_activation != "automatic" {
+            attrs.insert("data-keyboard-activation".to_string(), Value::String(Rc::new(keyboard_activation)));
+        }
+
+        // Two-pass: collect tab IDs and panel IDs first for cross-referencing
+        let component_children = get_children(s);
+        let mut tab_ids: Vec<Option<String>> = Vec::new();
+        let mut panel_ids: Vec<Option<String>> = Vec::new();
+        for child in &component_children {
+            if let Value::Struct { name: cn, .. } = child {
+                match cn.as_str() {
+                    "TabList" => {
+                        let tab_children = get_children(child);
+                        for tab in &tab_children {
+                            tab_ids.push(get_field_opt_str(tab, "id"));
+                        }
+                    }
+                    "TabPanels" => {
+                        let panel_children = get_children(child);
+                        for panel in &panel_children {
+                            panel_ids.push(get_field_opt_str(panel, "id"));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Second pass: render
+        let mut children = Vec::new();
+        for child in component_children {
+            if let Value::Struct { name: cn, .. } = &child {
+                match cn.as_str() {
+                    "TabList" => {
+                        let tl_aria_label = get_field_opt_str(&child, "aria_label");
+                        let tab_children = get_children(&child);
+                        let mut rendered_tabs = Vec::new();
+                        for (i, tab) in tab_children.iter().enumerate() {
+                            let tab_label = get_field_str(tab, "label", "");
+                            let tab_icon = get_field_opt_str(tab, "icon");
+                            let tab_badge = get_field_opt_str(tab, "badge");
+                            let tab_disabled = get_field_bool(tab, "disabled");
+                            let tab_id = get_field_opt_str(tab, "id");
+                            let is_active = i == index;
+
+                            let mut tc = vec!["tab".to_string()];
+                            if is_active { tc.push("nav-item-active".to_string()); }
+                            if tab_disabled { tc.push("tab-disabled".to_string()); }
+
+                            let mut ta: HashMap<String, Value> = HashMap::new();
+                            ta.insert("role".to_string(), Value::String(Rc::new("tab".to_string())));
+                            ta.insert("aria-selected".to_string(), Value::String(Rc::new(is_active.to_string())));
+                            if tab_disabled {
+                                ta.insert("disabled".to_string(), Value::Bool(true));
+                                ta.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+                            }
+                            if let Some(ref tid) = tab_id {
+                                ta.insert("id".to_string(), Value::String(Rc::new(tid.clone())));
+                            }
+                            // aria-controls: reference panel by index
+                            if let Some(Some(ref pid)) = panel_ids.get(i) {
+                                ta.insert("aria-controls".to_string(), Value::String(Rc::new(pid.clone())));
+                            }
+
+                            let mut tab_ch = Vec::new();
+                            if let Some(ref ic) = tab_icon {
+                                tab_ch.push(create_vnode("span", vec!["tab-icon".to_string()], HashMap::new(), vec![], Some(ic.clone()), vec![]));
+                            }
+                            if let Some(ref bdg) = tab_badge {
+                                tab_ch.push(create_vnode("span", vec!["tab-badge".to_string()], HashMap::new(), vec![], Some(bdg.clone()), vec![]));
+                            }
+
+                            rendered_tabs.push(create_vnode("button", tc, ta, tab_ch, Some(tab_label), vec![]));
+                        }
+                        let mut tl_attrs: HashMap<String, Value> = HashMap::new();
+                        tl_attrs.insert("role".to_string(), Value::String(Rc::new("tablist".to_string())));
+                        if let Some(al) = tl_aria_label {
+                            tl_attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+                        }
+                        children.push(create_vnode("div", vec!["tab-list".to_string()], tl_attrs, rendered_tabs, None, vec![]));
+                    }
+                    "TabPanels" => {
+                        let panel_children = get_children(&child);
+                        let mut rendered_panels = Vec::new();
+                        for (i, panel) in panel_children.iter().enumerate() {
+                            let panel_id = get_field_opt_str(panel, "id");
+                            let is_active = i == index;
+                            let panel_content = get_children(panel);
+                            let mut pc = vec!["tab-panel".to_string()];
+                            if is_active { pc.push("nav-item-active".to_string()); }
+                            let mut pa: HashMap<String, Value> = HashMap::new();
+                            pa.insert("role".to_string(), Value::String(Rc::new("tabpanel".to_string())));
+                            if let Some(ref pid) = panel_id {
+                                pa.insert("id".to_string(), Value::String(Rc::new(pid.clone())));
+                            }
+                            // aria-labelledby: reference tab by index
+                            if let Some(Some(ref tid)) = tab_ids.get(i) {
+                                pa.insert("aria-labelledby".to_string(), Value::String(Rc::new(tid.clone())));
+                            }
+                            if !lazy || is_active {
+                                rendered_panels.push(create_vnode("div", pc, pa, panel_content, None, vec![]));
+                            }
+                        }
+                        children.push(create_vnode("div", vec!["tab-panels".to_string()], HashMap::new(), rendered_panels, None, vec![]));
+                    }
+                    _ => children.push(child),
+                }
+            } else {
+                children.push(child);
+            }
+        }
+
+        Ok(create_vnode("div", classes, attrs, children, None, vec![]))
+    });
+
+    define(interp, "TabList·render", Some(1), |_, args| { Ok(args[0].clone()) });
+    define(interp, "Tab·render", Some(1), |_, args| { Ok(args[0].clone()) });
+    define(interp, "TabPanels·render", Some(1), |_, args| { Ok(args[0].clone()) });
+    define(interp, "TabPanel·render", Some(1), |_, args| { Ok(args[0].clone()) });
+
+    // --- Avatar ---
+    define(interp, "Avatar·render", Some(1), |_, args| {
+        let s = &args[0];
+        let src = get_field_opt_str(s, "src");
+        let alt = get_field_str(s, "alt", "");
+        let name = get_field_opt_str(s, "name");
+        let icon = get_field_opt_str(s, "icon");
+        let size = get_field_str(s, "size", "md");
+        let shape = get_field_str(s, "shape", "circle");
+        let status = get_field_opt_str(s, "status");
+        let status_position = get_field_str(s, "status_position", "bottom-right");
+        let badge_num = get_field_int(s, "badge", 0);
+        let color = get_field_str(s, "color", "auto");
+        let loading = get_field_bool(s, "loading");
+
+        let custom_size = if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            match f.get("size") { Some(Value::Int(i)) => Some(*i), _ => None }
+        } else { None };
+
+        let mut classes = vec![
+            "avatar".to_string(),
+            format!("avatar-{}", shape),
+        ];
+        if custom_size.is_none() { classes.push(format!("avatar-{}", size)); }
+        if loading {
+            classes.push("avatar-loading".to_string());
+        }
+        if color != "auto" {
+            classes.push(format!("avatar-{}", color));
+        } else {
+            classes.push("avatar-color-auto".to_string());
+        }
+
+        // Fallback type
+        let mut fallback = "image";
+        if src.is_none() {
+            if name.is_some() {
+                fallback = "initials";
+                classes.push("avatar-initials".to_string());
+            } else if icon.is_some() {
+                fallback = "icon";
+                classes.push("avatar-icon".to_string());
+            }
+        }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        if name.is_some() {
+            attrs.insert("data-fallback".to_string(), Value::String(Rc::new("initials".to_string())));
+        } else if icon.is_some() {
+            attrs.insert("data-fallback".to_string(), Value::String(Rc::new("icon".to_string())));
+        }
+        if let Some(cs) = custom_size {
+            attrs.insert("style".to_string(), Value::String(Rc::new(format!("width: {}px; height: {}px;", cs, cs))));
+        }
+
+        let mut children = Vec::new();
+        if let Some(ref img_src) = src {
+            let mut ia: HashMap<String, Value> = HashMap::new();
+            ia.insert("src".to_string(), Value::String(Rc::new(img_src.clone())));
+            ia.insert("alt".to_string(), Value::String(Rc::new(alt.clone())));
+            children.push(create_vnode("img", vec!["avatar-image".to_string()], ia, vec![], None, vec![]));
+        } else if let Some(ref n) = name {
+            // Generate initials
+            let initials: String = n.split_whitespace().filter_map(|w| w.chars().next()).collect();
+            children.push(create_vnode("span", vec!["avatar-initials".to_string()], HashMap::new(), vec![], Some(initials), vec![]));
+        } else if let Some(ref ic) = icon {
+            children.push(create_vnode("span", vec!["avatar-icon".to_string()], HashMap::new(), vec![], Some(ic.clone()), vec![]));
+        }
+
+        if let Some(ref st) = status {
+            let status_classes = vec![
+                "avatar-status".to_string(),
+                format!("avatar-status-{}", st),
+                format!("avatar-status-{}", status_position),
+            ];
+            children.push(create_vnode("span", status_classes, HashMap::new(), vec![], None, vec![]));
+        }
+
+        if badge_num > 0 {
+            children.push(create_vnode("span", vec!["avatar-badge".to_string()], HashMap::new(), vec![], Some(badge_num.to_string()), vec![]));
+        }
+
+        if loading {
+            children.push(create_vnode("div", vec!["avatar-skeleton".to_string()], HashMap::new(), vec![], None, vec![]));
+        }
+
+        Ok(create_vnode("div", classes, attrs, children, None, vec![]))
+    });
+
+    // --- AvatarGroup ---
+    define(interp, "AvatarGroup·render", Some(1), |_, args| {
+        let s = &args[0];
+        let max = get_field_int(s, "max", 99) as usize;
+        let spacing = get_field_str(s, "spacing", "normal");
+
+        let mut classes = vec![
+            "avatar-group".to_string(),
+            format!("avatar-group-{}", spacing),
+        ];
+
+        let component_children = get_children(s);
+        let mut children = Vec::new();
+        let total = component_children.len();
+        for (i, child) in component_children.into_iter().enumerate() {
+            if i < max {
+                // Render each Avatar struct child as a minimal VNode with "avatar" class
+                if let Value::Struct { name: ref cn, .. } = child {
+                    if cn == "Avatar" {
+                        let child_src = get_field_opt_str(&child, "src");
+                        let child_alt = get_field_str(&child, "alt", "");
+                        let child_name = get_field_opt_str(&child, "name");
+                        let mut ac = vec!["avatar".to_string()];
+                        let mut avatar_children = Vec::new();
+                        if let Some(ref src) = child_src {
+                            let mut ia: HashMap<String, Value> = HashMap::new();
+                            ia.insert("src".to_string(), Value::String(Rc::new(src.clone())));
+                            ia.insert("alt".to_string(), Value::String(Rc::new(child_alt)));
+                            avatar_children.push(create_vnode("img", vec![], ia, vec![], None, vec![]));
+                        }
+                        if let Some(ref nm) = child_name {
+                            let initials: String = nm.split_whitespace().filter_map(|w| w.chars().next()).map(|c| c.to_uppercase().to_string()).collect();
+                            avatar_children.push(create_vnode("span", vec!["avatar-initials".to_string()], HashMap::new(), vec![], Some(initials), vec![]));
+                        }
+                        children.push(create_vnode("div", ac, HashMap::new(), avatar_children, None, vec![]));
+                        continue;
+                    }
+                }
+                children.push(child);
+            }
+        }
+        if total > max {
+            let overflow = total - max;
+            children.push(create_vnode("div", vec!["avatar".to_string(), "avatar-overflow".to_string()], HashMap::new(), vec![], Some(format!("+{}", overflow)), vec![]));
+        }
+
+        Ok(create_vnode("div", classes, HashMap::new(), children, None, vec![]))
+    });
+
+    // --- Header ---
+    define(interp, "Header·render", Some(1), |_, args| {
+        let s = &args[0];
+        let logo = get_field_opt_str(s, "logo");
+        let logo_alt = get_field_str(s, "logo_alt", "");
+        let logo_href = get_field_str(s, "logo_href", "/");
+        let brand = get_field_opt_str(s, "brand");
+        let brand_href = get_field_str(s, "brand_href", "/");
+        let variant = get_field_str(s, "variant", "solid");
+        let size = get_field_str(s, "size", "md");
+        let sticky = get_field_bool(s, "sticky");
+        let mobile_menu = get_field_bool(s, "mobile_menu");
+        let search = get_field_bool(s, "search");
+        let search_placeholder = get_field_str(s, "search_placeholder", "Search...");
+        let position = get_field_str(s, "position", "static");
+        let theme = get_field_opt_str(s, "theme");
+        let aria_label = get_field_opt_str(s, "aria_label");
+
+        let mut classes = vec![
+            "header".to_string(),
+            format!("header-{}", variant),
+            format!("header-{}", size),
+        ];
+        if sticky { classes.push("header-sticky".to_string()); }
+        classes.push(format!("header-{}", position));
+        if let Some(ref t) = theme { classes.push(format!("header-{}", t)); }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        if let Some(al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+        }
+
+        let mut children = Vec::new();
+
+        // Logo
+        if let Some(ref lg) = logo {
+            let mut la: HashMap<String, Value> = HashMap::new();
+            la.insert("src".to_string(), Value::String(Rc::new(lg.clone())));
+            la.insert("alt".to_string(), Value::String(Rc::new(logo_alt.clone())));
+            let mut link_attrs: HashMap<String, Value> = HashMap::new();
+            link_attrs.insert("href".to_string(), Value::String(Rc::new(logo_href)));
+            children.push(create_vnode("a", vec!["header-logo".to_string()], link_attrs, vec![
+                create_vnode("img", vec![], la, vec![], None, vec![])
+            ], None, vec![]));
+        }
+
+        // Brand
+        if let Some(ref br) = brand {
+            let mut ba: HashMap<String, Value> = HashMap::new();
+            ba.insert("href".to_string(), Value::String(Rc::new(brand_href)));
+            children.push(create_vnode("a", vec!["header-brand".to_string()], ba, vec![], Some(br.clone()), vec![]));
+        }
+
+        // Navigation from children - wrap Nav structs in header-nav
+        let component_children = get_children(s);
+        for child in component_children {
+            if let Value::Struct { name: cn, .. } = &child {
+                if cn.as_str() == "Nav" {
+                    children.push(create_vnode("div", vec!["header-nav".to_string()], HashMap::new(), vec![child], None, vec![]));
+                    continue;
+                }
+            }
+            children.push(child);
+        }
+
+        // Search
+        if search {
+            let mut sa: HashMap<String, Value> = HashMap::new();
+            sa.insert("type".to_string(), Value::String(Rc::new("search".to_string())));
+            sa.insert("placeholder".to_string(), Value::String(Rc::new(search_placeholder)));
+            children.push(create_vnode("div", vec!["header-search".to_string()], HashMap::new(), vec![
+                create_vnode("input", vec![], sa, vec![], None, vec![])
+            ], None, vec![]));
+        }
+
+        // Actions
+        if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            if let Some(Value::Array(actions)) = f.get("actions") {
+                let mut action_children = Vec::new();
+                for act in actions.borrow().iter() {
+                    action_children.push(act.clone());
+                }
+                if !action_children.is_empty() {
+                    children.push(create_vnode("div", vec!["header-actions".to_string()], HashMap::new(), action_children, None, vec![]));
+                }
+            }
+            if let Some(user) = f.get("user") {
+                children.push(create_vnode("div", vec!["header-user-menu".to_string()], HashMap::new(), vec![user.clone()], None, vec![]));
+            }
+        }
+
+        // Mobile toggle
+        if mobile_menu {
+            let mut ma: HashMap<String, Value> = HashMap::new();
+            ma.insert("aria-expanded".to_string(), Value::String(Rc::new("false".to_string())));
+            ma.insert("aria-label".to_string(), Value::String(Rc::new("Toggle navigation menu".to_string())));
+            children.push(create_vnode("button", vec!["header-mobile-toggle".to_string()], ma, vec![], Some("☰".to_string()), vec![]));
+        }
+
+        Ok(create_vnode("header", classes, attrs, children, None, vec![]))
+    });
+
+    // --- Footer ---
+    define(interp, "Footer·render", Some(1), |_, args| {
+        let s = &args[0];
+        let copyright = get_field_opt_str(s, "copyright");
+        let variant = get_field_str(s, "variant", "simple");
+        let logo = get_field_opt_str(s, "logo");
+        let logo_alt = get_field_str(s, "logo_alt", "");
+        let tagline = get_field_opt_str(s, "tagline");
+        let theme = get_field_str(s, "theme", "light");
+        let newsletter = get_field_bool(s, "newsletter");
+        let newsletter_title = get_field_opt_str(s, "newsletter_title");
+        let newsletter_description = get_field_opt_str(s, "newsletter_description");
+        let language_selector = get_field_bool(s, "language_selector");
+        let aria_label = get_field_opt_str(s, "aria_label");
+
+        let mut classes = vec![
+            "footer".to_string(),
+            format!("footer-{}", variant),
+            format!("footer-{}", theme),
+        ];
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        if let Some(al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+        }
+
+        let mut children = Vec::new();
+
+        if let Some(ref lg) = logo {
+            let mut la: HashMap<String, Value> = HashMap::new();
+            la.insert("src".to_string(), Value::String(Rc::new(lg.clone())));
+            la.insert("alt".to_string(), Value::String(Rc::new(logo_alt.clone())));
+            children.push(create_vnode("div", vec!["footer-logo".to_string()], HashMap::new(), vec![
+                create_vnode("img", vec![], la, vec![], None, vec![])
+            ], None, vec![]));
+        }
+        if let Some(ref tg) = tagline {
+            children.push(create_vnode("p", vec!["footer-tagline".to_string()], HashMap::new(), vec![], Some(tg.clone()), vec![]));
+        }
+
+        // Process children (FooterSection, FooterLinks)
+        let component_children = get_children(s);
+        for child in component_children {
+            if let Value::Struct { name: cn, .. } = &child {
+                match cn.as_str() {
+                    "FooterSection" => {
+                        let sec_title = get_field_opt_str(&child, "title");
+                        let sec_children = get_children(&child);
+                        let mut sc = Vec::new();
+                        if let Some(ref t) = sec_title {
+                            sc.push(create_vnode("h4", vec!["footer-section-title".to_string()], HashMap::new(), vec![], Some(t.clone()), vec![]));
+                        }
+                        for sch in sec_children {
+                            // Render FooterLinks inside FooterSection
+                            if let Value::Struct { name: scn, fields: scf, .. } = &sch {
+                                if scn.as_str() == "FooterLinks" {
+                                    let sf = scf.borrow();
+                                    let mut link_children = Vec::new();
+                                    if let Some(Value::Array(items)) = sf.get("items") {
+                                        for item in items.borrow().iter() {
+                                            let il = get_field_str(item, "label", "");
+                                            let ih = get_field_str(item, "href", "#");
+                                            let mut la: HashMap<String, Value> = HashMap::new();
+                                            la.insert("href".to_string(), Value::String(Rc::new(ih)));
+                                            link_children.push(create_vnode("a", vec!["footer-link".to_string()], la, vec![], Some(il), vec![]));
+                                        }
+                                    }
+                                    sc.push(create_vnode("nav", vec!["footer-links".to_string()], HashMap::new(), link_children, None, vec![]));
+                                    continue;
+                                }
+                            }
+                            sc.push(sch);
+                        }
+                        children.push(create_vnode("div", vec!["footer-section".to_string()], HashMap::new(), sc, None, vec![]));
+                    }
+                    "FooterLinks" => {
+                        if let Value::Struct { fields, .. } = &child {
+                            let f = fields.borrow();
+                            let mut link_children = Vec::new();
+                            if let Some(Value::Array(items)) = f.get("items") {
+                                for item in items.borrow().iter() {
+                                    let il = get_field_str(item, "label", "");
+                                    let ih = get_field_str(item, "href", "#");
+                                    let mut la: HashMap<String, Value> = HashMap::new();
+                                    la.insert("href".to_string(), Value::String(Rc::new(ih)));
+                                    link_children.push(create_vnode("a", vec!["footer-link".to_string()], la, vec![], Some(il), vec![]));
+                                }
+                            }
+                            children.push(create_vnode("nav", vec!["footer-links".to_string()], HashMap::new(), link_children, None, vec![]));
+                        }
+                    }
+                    _ => children.push(child),
+                }
+            } else {
+                children.push(child);
+            }
+        }
+
+        // Social links
+        if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            if let Some(Value::Array(social)) = f.get("social") {
+                let mut social_children = Vec::new();
+                for sl in social.borrow().iter() {
+                    let si = get_field_str(sl, "icon", "");
+                    let sh = get_field_str(sl, "href", "#");
+                    let sla = get_field_str(sl, "label", "");
+                    let mut sa: HashMap<String, Value> = HashMap::new();
+                    sa.insert("href".to_string(), Value::String(Rc::new(sh)));
+                    sa.insert("aria-label".to_string(), Value::String(Rc::new(sla)));
+                    social_children.push(create_vnode("a", vec!["footer-social-link".to_string()], sa, vec![], Some(si), vec![]));
+                }
+                children.push(create_vnode("div", vec!["footer-social".to_string()], HashMap::new(), social_children, None, vec![]));
+            }
+
+            // Legal links
+            if let Some(Value::Array(legal)) = f.get("legal") {
+                let mut legal_children = Vec::new();
+                for ll in legal.borrow().iter() {
+                    let label = get_field_str(ll, "label", "");
+                    let href = get_field_str(ll, "href", "#");
+                    let mut la: HashMap<String, Value> = HashMap::new();
+                    la.insert("href".to_string(), Value::String(Rc::new(href)));
+                    legal_children.push(create_vnode("a", vec!["footer-legal-link".to_string()], la, vec![], Some(label), vec![]));
+                }
+                children.push(create_vnode("div", vec!["footer-legal".to_string()], HashMap::new(), legal_children, None, vec![]));
+            }
+
+            // App badges
+            if let Some(Value::Array(badges)) = f.get("app_badges") {
+                let mut badge_children = Vec::new();
+                for b in badges.borrow().iter() {
+                    badge_children.push(b.clone());
+                }
+                children.push(create_vnode("div", vec!["footer-app-badges".to_string()], HashMap::new(), badge_children, None, vec![]));
+            }
+        }
+
+        // Newsletter
+        if newsletter {
+            let mut nl_children = Vec::new();
+            if let Some(ref t) = newsletter_title {
+                nl_children.push(create_vnode("h4", vec![], HashMap::new(), vec![], Some(t.clone()), vec![]));
+            }
+            if let Some(ref d) = newsletter_description {
+                nl_children.push(create_vnode("p", vec![], HashMap::new(), vec![], Some(d.clone()), vec![]));
+            }
+            nl_children.push(create_vnode("form", vec![], HashMap::new(), vec![], None, vec![]));
+            children.push(create_vnode("div", vec!["footer-newsletter".to_string()], HashMap::new(), nl_children, None, vec![]));
+        }
+
+        // Language selector
+        if language_selector {
+            children.push(create_vnode("div", vec!["footer-language".to_string()], HashMap::new(), vec![], None, vec![]));
+        }
+
+        // Copyright
+        if let Some(ref cr) = copyright {
+            children.push(create_vnode("p", vec!["footer-copyright".to_string()], HashMap::new(), vec![], Some(cr.clone()), vec![]));
+        }
+
+        Ok(create_vnode("footer", classes, attrs, children, None, vec![]))
+    });
+
+    define(interp, "FooterSection·render", Some(1), |_, args| { Ok(args[0].clone()) });
+    define(interp, "FooterLinks·render", Some(1), |_, args| { Ok(args[0].clone()) });
+
+    // --- Hero ---
+    define(interp, "Hero·render", Some(1), |_, args| {
+        let s = &args[0];
+        let title = get_field_str(s, "title", "");
+        let subtitle = get_field_opt_str(s, "subtitle");
+        let variant = get_field_str(s, "variant", "centered");
+        let size = get_field_str(s, "size", "md");
+        let background_image = get_field_opt_str(s, "background_image");
+        let background_overlay = get_field_opt_str(s, "background_overlay");
+        let background_video = get_field_opt_str(s, "background_video");
+        let video_poster = get_field_opt_str(s, "video_poster");
+        let gradient = get_field_opt_str(s, "gradient");
+        let image = get_field_opt_str(s, "image");
+        let image_alt = get_field_str(s, "image_alt", "");
+        let image_position = get_field_str(s, "image_position", "right");
+        let alignment = get_field_str(s, "alignment", "center");
+        let theme = get_field_str(s, "theme", "light");
+        let scroll_indicator = get_field_bool(s, "scroll_indicator");
+        let title_level = get_field_int(s, "title_level", 1);
+
+        let mut classes = vec![
+            "hero".to_string(),
+            format!("hero-{}", variant),
+            format!("hero-{}", size),
+            format!("hero-{}", theme),
+            format!("hero-align-{}", alignment),
+        ];
+        if background_image.is_some() || gradient.is_some() {
+            classes.push("hero-with-background".to_string());
+        }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        let mut style_parts = Vec::new();
+        if let Some(ref bg) = background_image {
+            style_parts.push(format!("background-image: url('{}')", bg));
+        }
+        if let Some(ref gr) = gradient {
+            style_parts.push(format!("background: {}", gr));
+        }
+        if !style_parts.is_empty() {
+            attrs.insert("style".to_string(), Value::String(Rc::new(style_parts.join("; "))));
+        }
+
+        let mut children = Vec::new();
+
+        // Background overlay
+        if background_overlay.is_some() {
+            children.push(create_vnode("div", vec!["hero-overlay".to_string()], HashMap::new(), vec![], None, vec![]));
+        }
+
+        // Background video
+        if let Some(ref vid) = background_video {
+            let mut va: HashMap<String, Value> = HashMap::new();
+            va.insert("src".to_string(), Value::String(Rc::new(vid.clone())));
+            va.insert("autoplay".to_string(), Value::Bool(true));
+            va.insert("muted".to_string(), Value::Bool(true));
+            va.insert("loop".to_string(), Value::Bool(true));
+            if let Some(ref poster) = video_poster {
+                va.insert("poster".to_string(), Value::String(Rc::new(poster.clone())));
+            }
+            children.push(create_vnode("div", vec!["hero-video".to_string()], HashMap::new(), vec![
+                create_vnode("video", vec![], va, vec![], None, vec![])
+            ], None, vec![]));
+        }
+
+        // Announcement
+        if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            if let Some(ann) = f.get("announcement") {
+                let ann_text = get_field_str(ann, "text", "");
+                children.push(create_vnode("div", vec!["hero-announcement".to_string()], HashMap::new(), vec![], Some(ann_text), vec![]));
+            }
+            // CTA buttons
+            let mut cta_children = Vec::new();
+            if let Some(cta) = f.get("cta_primary") {
+                let cl = get_field_str(cta, "label", "");
+                let ch = get_field_str(cta, "href", "#");
+                let mut ca: HashMap<String, Value> = HashMap::new();
+                ca.insert("href".to_string(), Value::String(Rc::new(ch)));
+                cta_children.push(create_vnode("a", vec!["hero-cta-primary".to_string(), "btn-primary".to_string()], ca, vec![], Some(cl), vec![]));
+            }
+            if let Some(cta) = f.get("cta_secondary") {
+                let cl = get_field_str(cta, "label", "");
+                let ch = get_field_str(cta, "href", "#");
+                let mut ca: HashMap<String, Value> = HashMap::new();
+                ca.insert("href".to_string(), Value::String(Rc::new(ch)));
+                cta_children.push(create_vnode("a", vec!["hero-cta-secondary".to_string(), "btn-secondary".to_string()], ca, vec![], Some(cl), vec![]));
+            }
+            if !cta_children.is_empty() {
+                children.push(create_vnode("div", vec!["hero-cta".to_string()], HashMap::new(), cta_children, None, vec![]));
+            }
+            // Social proof
+            if let Some(sp) = f.get("social_proof") {
+                children.push(create_vnode("div", vec!["hero-social-proof".to_string()], HashMap::new(), vec![], None, vec![]));
+            }
+        }
+
+        // Title
+        let title_tag = format!("h{}", title_level);
+        children.push(create_vnode(&title_tag, vec!["hero-title".to_string()], HashMap::new(), vec![], Some(title.clone()), vec![]));
+
+        // Subtitle
+        if let Some(ref st) = subtitle {
+            children.push(create_vnode("p", vec!["hero-subtitle".to_string()], HashMap::new(), vec![], Some(st.clone()), vec![]));
+        }
+
+        // Image
+        if let Some(ref img) = image {
+            let mut ia: HashMap<String, Value> = HashMap::new();
+            ia.insert("src".to_string(), Value::String(Rc::new(img.clone())));
+            ia.insert("alt".to_string(), Value::String(Rc::new(image_alt)));
+            children.push(create_vnode("div", vec!["hero-image".to_string()], HashMap::new(), vec![
+                create_vnode("img", vec![], ia, vec![], None, vec![])
+            ], None, vec![]));
+        }
+
+        // Scroll indicator
+        if scroll_indicator {
+            children.push(create_vnode("div", vec!["hero-scroll-indicator".to_string()], HashMap::new(), vec![], None, vec![]));
+        }
+
+        Ok(create_vnode("section", classes, attrs, children, None, vec![]))
+    });
+
+    // --- Nav ---
+    define(interp, "Nav·render", Some(1), |_, args| {
+        let s = &args[0];
+        let variant = get_field_str(s, "variant", "horizontal");
+        let size = get_field_str(s, "size", "md");
+        let alignment = get_field_str(s, "alignment", "start");
+        let collapsible = get_field_bool(s, "collapsible");
+        let collapsed = get_field_bool(s, "collapsed");
+        let aria_label = get_field_opt_str(s, "aria_label");
+
+        let mut classes = vec![
+            "nav".to_string(),
+            format!("nav-{}", variant),
+            format!("nav-{}", size),
+            format!("nav-align-{}", alignment),
+        ];
+        if collapsible { classes.push("nav-collapsible".to_string()); }
+        if collapsed { classes.push("nav-collapsed".to_string()); }
+
+        let mut attrs: HashMap<String, Value> = HashMap::new();
+        attrs.insert("role".to_string(), Value::String(Rc::new("navigation".to_string())));
+        if let Some(al) = aria_label {
+            attrs.insert("aria-label".to_string(), Value::String(Rc::new(al)));
+        }
+
+        // Render nav items
+        let mut children = Vec::new();
+        if let Value::Struct { fields, .. } = s {
+            let f = fields.borrow();
+            if let Some(Value::Array(items)) = f.get("items") {
+                for item in items.borrow().iter() {
+                    if let Value::Struct { name: iname, .. } = item {
+                        match iname.as_str() {
+                            "NavDropdown" => {
+                                children.push(render_nav_dropdown(item));
+                            }
+                            _ => {
+                                children.push(render_nav_item(item));
+                            }
+                        }
+                    } else {
+                        children.push(render_nav_item(item));
+                    }
+                }
+            }
+        }
+
+        Ok(create_vnode("nav", classes, attrs, children, None, vec![]))
+    });
+
+    define(interp, "NavItem·render", Some(1), |_, args| {
+        Ok(render_nav_item(&args[0]))
+    });
+
+    define(interp, "NavDropdown·render", Some(1), |_, args| {
+        Ok(render_nav_dropdown(&args[0]))
+    });
+}
+
+fn render_nav_item(item: &Value) -> Value {
+    let label = get_field_str(item, "label", "");
+    let href = get_field_str(item, "href", "#");
+    let active = get_field_bool(item, "active");
+    let disabled = get_field_bool(item, "disabled");
+    let icon = get_field_opt_str(item, "icon");
+    let divider = get_field_bool(item, "divider");
+    let section = get_field_opt_str(item, "section");
+
+    if divider {
+        return create_vnode("hr", vec!["nav-divider".to_string()], HashMap::new(), vec![], None, vec![]);
+    }
+    if let Some(ref sec) = section {
+        return create_vnode("span", vec!["nav-section-label".to_string()], HashMap::new(), vec![], Some(sec.clone()), vec![]);
+    }
+
+    let badge_num = get_field_int(item, "badge", 0);
+
+    let mut classes = vec!["nav-item".to_string()];
+    if active { classes.push("nav-item-active".to_string()); }
+    if disabled { classes.push("nav-item-disabled".to_string()); }
+
+    let mut attrs: HashMap<String, Value> = HashMap::new();
+    attrs.insert("href".to_string(), Value::String(Rc::new(href)));
+    if active {
+        attrs.insert("aria-current".to_string(), Value::String(Rc::new("page".to_string())));
+    }
+    if disabled {
+        attrs.insert("aria-disabled".to_string(), Value::String(Rc::new("true".to_string())));
+    }
+
+    let mut item_children = Vec::new();
+    if let Some(ref ic) = icon {
+        item_children.push(create_vnode("span", vec!["nav-item-icon".to_string()], HashMap::new(), vec![], Some(ic.clone()), vec![]));
+    }
+    if badge_num > 0 {
+        item_children.push(create_vnode("span", vec!["nav-item-badge".to_string()], HashMap::new(), vec![], Some(badge_num.to_string()), vec![]));
+    }
+
+    // Nested items
+    let nested_children = get_children(item);
+    if !nested_children.is_empty() {
+        let mut nested = Vec::new();
+        for nc in nested_children {
+            nested.push(render_nav_item(&nc));
+        }
+        item_children.push(create_vnode("ul", vec!["nav-nested".to_string()], HashMap::new(), nested, None, vec![]));
+    }
+
+    create_vnode("a", classes, attrs, item_children, Some(label), vec![])
+}
+
+fn render_nav_dropdown(item: &Value) -> Value {
+    let label = get_field_str(item, "label", "");
+    let mega = get_field_bool(item, "mega");
+
+    let mut classes = vec!["nav-dropdown".to_string()];
+    if mega { classes.push("nav-dropdown-mega".to_string()); }
+
+    // Trigger
+    let mut trigger_attrs: HashMap<String, Value> = HashMap::new();
+    trigger_attrs.insert("aria-haspopup".to_string(), Value::String(Rc::new("true".to_string())));
+    trigger_attrs.insert("aria-expanded".to_string(), Value::String(Rc::new("false".to_string())));
+    let trigger = create_vnode("button", vec!["nav-dropdown-trigger".to_string()], trigger_attrs, vec![], Some(label), vec![]);
+
+    // Menu items
+    let mut menu_children = Vec::new();
+    if let Value::Struct { fields, .. } = item {
+        let f = fields.borrow();
+        if let Some(Value::Array(items)) = f.get("items") {
+            for mi in items.borrow().iter() {
+                menu_children.push(render_nav_item(mi));
+            }
+        }
+        // Mega menu columns
+        if let Some(Value::Array(cols)) = f.get("columns") {
+            for col in cols.borrow().iter() {
+                let col_title = get_field_opt_str(col, "title");
+                let col_items = get_children(col);
+                let mut cc = Vec::new();
+                if let Some(ref t) = col_title {
+                    cc.push(create_vnode("h4", vec!["nav-column-title".to_string()], HashMap::new(), vec![], Some(t.clone()), vec![]));
+                }
+                for ci in col_items {
+                    cc.push(render_nav_item(&ci));
+                }
+                menu_children.push(create_vnode("div", vec!["nav-column".to_string()], HashMap::new(), cc, None, vec![]));
+            }
+        }
+    }
+    let menu = create_vnode("div", vec!["nav-dropdown-menu".to_string()], HashMap::new(), menu_children, None, vec![]);
+
+    create_vnode("div", classes, HashMap::new(), vec![trigger, menu], None, vec![])
 }
 
 #[cfg(test)]

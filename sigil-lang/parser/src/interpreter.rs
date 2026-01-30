@@ -3694,12 +3694,72 @@ impl Interpreter {
                         Err(RuntimeError::new(format!("panic: {}", msg)))
                     }
                     "assert" => {
-                        // Simple assert - just evaluate the expression
-                        let condition = self.eval_format_macro(tokens)?;
-                        if self.is_truthy(&condition) {
-                            Ok(Value::Null)
+                        // Parse and evaluate the expression in tokens
+                        let trimmed = tokens.trim();
+                        let mut parser = crate::parser::Parser::new(trimmed);
+                        match parser.parse_expr() {
+                            Ok(expr) => {
+                                let condition = self.evaluate(&expr)?;
+                                if self.is_truthy(&condition) {
+                                    Ok(Value::Null)
+                                } else {
+                                    Err(RuntimeError::new(format!(
+                                        "assertion failed: `{}`",
+                                        trimmed
+                                    )))
+                                }
+                            }
+                            Err(_) => Err(RuntimeError::new(format!(
+                                "assert!: failed to parse expression: {}",
+                                trimmed
+                            ))),
+                        }
+                    }
+                    "assert_eq" => {
+                        // Parse two comma-separated expressions and compare
+                        let trimmed = tokens.trim();
+                        // Split by top-level comma
+                        let mut depth = 0;
+                        let mut split_pos = None;
+                        for (i, c) in trimmed.char_indices() {
+                            match c {
+                                '(' | '[' | '{' => depth += 1,
+                                ')' | ']' | '}' => depth -= 1,
+                                ',' if depth == 0 => {
+                                    split_pos = Some(i);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        if let Some(pos) = split_pos {
+                            let left_str = trimmed[..pos].trim();
+                            let right_str = trimmed[pos + 1..].trim();
+                            let mut p1 = crate::parser::Parser::new(left_str);
+                            let mut p2 = crate::parser::Parser::new(right_str);
+                            match (p1.parse_expr(), p2.parse_expr()) {
+                                (Ok(left_expr), Ok(right_expr)) => {
+                                    let left = self.evaluate(&left_expr)?;
+                                    let right = self.evaluate(&right_expr)?;
+                                    if self.values_equal(&left, &right) {
+                                        Ok(Value::Null)
+                                    } else {
+                                        Err(RuntimeError::new(format!(
+                                            "assertion failed: `assert_eq!({}, {})` - left: {:?}, right: {:?}",
+                                            left_str, right_str, left, right
+                                        )))
+                                    }
+                                }
+                                _ => Err(RuntimeError::new(format!(
+                                    "assert_eq!: failed to parse expressions: {}",
+                                    trimmed
+                                ))),
+                            }
                         } else {
-                            Err(RuntimeError::new("assertion failed"))
+                            Err(RuntimeError::new(format!(
+                                "assert_eq! requires two arguments separated by comma: {}",
+                                trimmed
+                            )))
                         }
                     }
                     _ => {

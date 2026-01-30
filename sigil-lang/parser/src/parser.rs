@@ -4748,7 +4748,14 @@ impl<'a> Parser<'a> {
                     Token::ElementOf => "∈".to_string(), // Membership test
                     Token::Union => "∪".to_string(),     // Set union
                     Token::Intersection => "∩".to_string(), // Set intersection
-                    _ => format!("{:?}", token),
+                    _ => {
+                        // Try contextual keywords that can be used as identifiers
+                        if let Some(ident) = Self::keyword_as_ident(token) {
+                            ident.to_string()
+                        } else {
+                            format!("{:?}", token)
+                        }
+                    }
                 };
                 // Don't add space before . · :: ( [ { ) ] } , ;
                 let suppress_space_before = matches!(token,
@@ -7532,6 +7539,32 @@ impl<'a> Parser<'a> {
     fn parse_block_or_closure(&mut self) -> ParseResult<Expr> {
         self.expect(Token::LBrace)?;
         self.skip_comments();
+
+        // Check for anonymous struct literal: `{ ident: expr, ... }`
+        // Disambiguate from block by checking if current token is Ident followed by Colon
+        let is_anon_struct = matches!(self.current_token(), Some(Token::Ident(_)))
+            && matches!(self.peek_next(), Some(Token::Colon));
+
+        if is_anon_struct {
+            let (fields, rest) = self.parse_struct_fields()?;
+            self.expect(Token::RBrace)?;
+            let anon_path = TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident {
+                        name: "__anonymous__".to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: Span::new(0, 0),
+                    },
+                    generics: None,
+                }],
+            };
+            return Ok(Expr::Struct {
+                path: anon_path,
+                fields,
+                rest,
+            });
+        }
 
         // Try to detect closure pattern: `{x => ...}` using lookahead
         // We check if current is Ident and next is FatArrow without consuming tokens

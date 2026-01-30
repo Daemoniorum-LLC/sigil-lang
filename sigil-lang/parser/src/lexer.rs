@@ -517,8 +517,10 @@ pub enum Token {
 
     // Boolean literals
     #[token("true")]
+    #[token("yay")]
     True,
     #[token("false")]
+    #[token("nay")]
     False,
 
     // Null literal
