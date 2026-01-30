@@ -101,12 +101,32 @@ The repo contains many Sigil libraries in subdirectories:
 
 These can be used for testing the compiler with real-world code.
 
+## Git Workflow
+
+**Branch Strategy:**
+- `main` - Production releases only
+- `develop` - Staging branch (all feature branches merge here first)
+- `feature/*` - Feature branches (always branch from `develop`)
+
+**All branches must be created from `develop`:**
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feature/my-feature
+```
+
+**Pull Requests:**
+- Target `develop` for all feature work
+- Target `main` only for release PRs from `develop`
+
 ## Development Workflow
 
-1. **Build the compiler**: `cd parser && cargo build --release`
-2. **Run tests**: `cd ../jormungandr/tests && ./run_tests_rust.sh`
-3. **Test your changes**: `../../parser/target/release/sigil run your_test.sg`
-4. **Check coverage**: Test results show which features work
+1. **Branch from develop**: `git checkout develop && git checkout -b feature/my-feature`
+2. **Build the compiler**: `cd parser && cargo build --release`
+3. **Run tests**: `cd ../jormungandr/tests && ./run_tests_rust.sh`
+4. **Test your changes**: `../../parser/target/release/sigil run your_test.sg`
+5. **Check coverage**: Test results show which features work
+6. **Create PR to develop**: All PRs target `develop` branch
 
 ## Compute Backends
 
