@@ -61,11 +61,12 @@ jobs:
       - name: Build
         working-directory: sigil-lang/parser
         run: |
+          FEATURES="--no-default-features --features jit,protocols"
           if [ "${{ matrix.cross }}" = "true" ]; then
             cargo install cross --git https://github.com/cross-rs/cross
-            cross build --release --target ${{ matrix.target }}
+            cross build --release --target ${{ matrix.target }} $FEATURES
           else
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release --target ${{ matrix.target }} $FEATURES
           fi
         shell: bash
 
