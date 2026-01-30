@@ -10,7 +10,7 @@
 
 rite main() {
     // Exclusive range
-    each i of 0..5 {
+    each i ∈ 0..5 {
         println(i);
     }
 }

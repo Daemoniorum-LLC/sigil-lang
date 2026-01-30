@@ -34248,6 +34248,17 @@ fn register_quantum(interp: &mut Interpreter) {
         Ok(create_qubit_value(state_id, 0))
     });
 
+    // Cbit·new(value) - Create classical bit from any value (non-zero → 1, zero → 0)
+    define(interp, "Cbit·new", Some(1), |_, args| {
+        let is_nonzero = match &args[0] {
+            Value::Int(n) => *n != 0,
+            Value::Float(f) => *f != 0.0,
+            Value::Bool(b) => *b,
+            _ => true,
+        };
+        Ok(create_cbit(is_nonzero))
+    });
+
     // Cbit·from(bool) - Create classical bit from boolean
     define(interp, "Cbit·from", Some(1), |_, args| {
         match &args[0] {

@@ -129,7 +129,16 @@ impl<'a> Parser<'a> {
             if self.is_eof() {
                 break;
             }
-            items.push(self.parse_item()?);
+            let item = self.parse_item()?;
+            // Filter out cfg-disabled items by checking their outer attributes
+            let should_include = match &item.node {
+                Item::Function(f) => self.evaluate_cfg_condition(&f.attrs.outer_attrs),
+                Item::Struct(s) => self.evaluate_cfg_condition(&s.attrs.outer_attrs),
+                _ => true,
+            };
+            if should_include {
+                items.push(item);
+            }
         }
         Ok(SourceFile {
             attrs,
@@ -225,22 +234,45 @@ impl<'a> Parser<'a> {
                                 // Unknown cfg - default to true
                                 return true;
                             }
+                            AttrArg::KeyValue { key, value } => {
+                                // Key-value cfg like #[cfg(target_os = "linux")]
+                                return self.evaluate_cfg_key_value(&key.name, value);
+                            }
                             AttrArg::Nested(nested_attr) => {
                                 // cfg(not(...)) or cfg(all(...)) or cfg(any(...))
                                 if nested_attr.name.name == "not" {
                                     // Evaluate the negated condition
                                     if let Some(AttrArgs::Paren(inner_args)) = &nested_attr.args {
                                         for inner_arg in inner_args {
-                                            if let AttrArg::Ident(inner_ident) = inner_arg {
-                                                if inner_ident.name == "debug_assertions" {
-                                                    // not(debug_assertions) = false in interpreter
-                                                    return false;
+                                            match inner_arg {
+                                                AttrArg::Ident(inner_ident) => {
+                                                    if inner_ident.name == "debug_assertions" {
+                                                        // not(debug_assertions) = false in interpreter
+                                                        return false;
+                                                    }
                                                 }
+                                                AttrArg::KeyValue { key, value } => {
+                                                    return !self.evaluate_cfg_key_value(&key.name, value);
+                                                }
+                                                _ => {}
                                             }
                                         }
                                     }
                                     // Unknown negated condition - default to false (skip)
                                     return false;
+                                }
+                                if nested_attr.name.name == "any" {
+                                    // cfg(any(cond1, cond2, ...)) - true if ANY condition matches
+                                    if let Some(AttrArgs::Paren(inner_args)) = &nested_attr.args {
+                                        for inner_arg in inner_args {
+                                            if let AttrArg::KeyValue { key, value } = inner_arg {
+                                                if self.evaluate_cfg_key_value(&key.name, value) {
+                                                    return true;
+                                                }
+                                            }
+                                        }
+                                        return false;
+                                    }
                                 }
                                 // Unknown nested cfg - default to true
                                 return true;
@@ -253,6 +285,38 @@ impl<'a> Parser<'a> {
         }
         // No cfg attribute or couldn't evaluate - include the item
         true
+    }
+
+    /// Evaluate a cfg key-value pair like `target_os = "linux"`.
+    fn evaluate_cfg_key_value(&self, key: &str, value: &Expr) -> bool {
+        let value_str = match value {
+            Expr::Literal(Literal::String(s)) => s.as_str(),
+            _ => return false,
+        };
+        match key {
+            "target_os" => {
+                // Detect current OS
+                if cfg!(target_os = "linux") {
+                    value_str == "linux"
+                } else if cfg!(target_os = "macos") {
+                    value_str == "macos"
+                } else if cfg!(target_os = "windows") {
+                    value_str == "windows"
+                } else {
+                    false
+                }
+            }
+            "target_arch" => {
+                if cfg!(target_arch = "x86_64") {
+                    value_str == "x86_64"
+                } else if cfg!(target_arch = "aarch64") {
+                    value_str == "aarch64"
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
     }
 
     /// Parse an attribute name (identifier, keyword, or path like async_trait::async_trait).
@@ -4323,6 +4387,7 @@ impl<'a> Parser<'a> {
                 Some(Token::BitwiseOrSymbol) => BinOp::BitOr,   // ⋎
                 // Logical/geometric algebra operators
                 Some(Token::LogicAnd) => BinOp::And, // ∧ (wedge/outer product, parsed as And)
+                Some(Token::LogicOr) => BinOp::Or,   // ∨ (vee/logical disjunction, parsed as Or)
                 // Tensor/array operators
                 Some(Token::CircledDot) => BinOp::Hadamard,     // ⊙ element-wise multiply
                 Some(Token::Tensor) => BinOp::TensorProd,       // ⊗ tensor product
@@ -4400,7 +4465,7 @@ impl<'a> Parser<'a> {
                     expr: Box::new(expr),
                 })
             }
-            Some(Token::Bang) => {
+            Some(Token::Bang) | Some(Token::LogicNot) => {
                 self.advance();
                 let expr = self.parse_prefix_expr()?;
                 Ok(Expr::Unary {
@@ -4857,8 +4922,8 @@ impl<'a> Parser<'a> {
                     self.advance();
                     expr = Expr::Try(Box::new(expr));
                 }
-                // Cast expression: expr as Type
-                Some(Token::As) => {
+                // Cast expression: expr as Type  OR  expr → Type
+                Some(Token::As) | Some(Token::Arrow) => {
                     self.advance();
                     let ty = self.parse_type()?;
                     expr = Expr::Cast {
@@ -5183,11 +5248,11 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Expr::Literal(Literal::ByteChar(b)))
             }
-            Some(Token::True) => {
+            Some(Token::True) | Some(Token::Top) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Bool(true)))
             }
-            Some(Token::False) => {
+            Some(Token::False) | Some(Token::Bottom) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Bool(false)))
             }

@@ -10,22 +10,22 @@
 
 rite side_effect(msg: &str) → bool {
     println(msg);
-    yea
+    true
 }
 
 rite main() {
-    // ∧ should short-circuit on nay
+    // ∧ should short-circuit on false
     println("Testing ∧:");
-    ≔ r1 = nay ∧ side_effect("should not print");
+    ≔ r1 = false ∧ side_effect("should not print");
     println(r1);
 
-    // ∨ should short-circuit on yea
+    // ∨ should short-circuit on true
     println("Testing ∨:");
-    ≔ r2 = yea ∨ side_effect("should not print");
+    ≔ r2 = true ∨ side_effect("should not print");
     println(r2);
 
     // Non-short-circuit cases
     println("Non-short-circuit:");
-    ≔ r3 = yea ∧ side_effect("should print");
+    ≔ r3 = true ∧ side_effect("should print");
     println(r3);
 }

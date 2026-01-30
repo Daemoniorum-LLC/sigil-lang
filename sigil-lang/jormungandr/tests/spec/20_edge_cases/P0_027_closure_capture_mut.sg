@@ -11,7 +11,7 @@
 rite main() {
     ≔ vary counter = 0;
 
-    ≔ vary increment = ∨ {
+    ≔ vary increment = || {
         counter = counter + 1;
         counter
     };
