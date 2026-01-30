@@ -2985,6 +2985,8 @@ impl TypeChecker {
             }
             PipeOp::Possibility { .. } => self.fresh_var(), // |◊method - approximate query result
             PipeOp::Necessity { .. } => self.fresh_var(),   // |□method - verified result
+            PipeOp::PossibilityExtract => self.fresh_var(), // |◊ - extract from Option/Array
+            PipeOp::NecessityVerify => inner,               // |□ - verify non-empty, pass through
         };
 
         // Preserve evidence through pipe
@@ -3153,6 +3155,10 @@ impl TypeChecker {
             // Never (bottom type) unifies with anything
             (Type::Never, _) |
             (_, Type::Never) => true,
+
+            // Linear type wrapper: Linear(T) unifies with T (linear is a usage qualifier)
+            (Type::Linear(inner), other) => self.unify(inner, other),
+            (other, Type::Linear(inner)) => self.unify(other, inner),
 
             // For bootstrapping: allow integer literals to coerce to any integer type
             // This is lenient - a proper type system would have more precise rules

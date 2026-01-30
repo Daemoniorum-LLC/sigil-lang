@@ -1553,6 +1553,14 @@ pub enum PipeOp {
     /// Example: `data|assert_evidence!{!}` - assert data is known
     AssertEvidence(Evidentiality),
 
+    /// Possibility extract operator: `|◊` - extract with Predicted evidentiality
+    /// For arrays: extracts first element. For Option/Some: unwraps.
+    PossibilityExtract,
+
+    /// Necessity verify operator: `|□` - verify and promote to Known evidentiality
+    /// For arrays: verifies non-empty, returns value. For Option/Some: unwraps.
+    NecessityVerify,
+
     // ==========================================
     // Scope Functions (Kotlin-inspired)
     // ==========================================

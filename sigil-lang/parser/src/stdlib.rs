@@ -979,6 +979,35 @@ fn register_math(interp: &mut Interpreter) {
         _ => Err(RuntimeError::new("tanh() requires number")),
     });
 
+    // Floating-point utilities
+    define(interp, "fabs", Some(1), |_, args| match &args[0] {
+        Value::Int(n) => Ok(Value::Float((*n as f64).abs())),
+        Value::Float(n) => Ok(Value::Float(n.abs())),
+        _ => Err(RuntimeError::new("fabs() requires number")),
+    });
+
+    define(interp, "fmod", Some(2), |_, args| {
+        let (a, b) = match (&args[0], &args[1]) {
+            (Value::Int(a), Value::Int(b)) => (*a as f64, *b as f64),
+            (Value::Float(a), Value::Int(b)) => (*a, *b as f64),
+            (Value::Int(a), Value::Float(b)) => (*a as f64, *b),
+            (Value::Float(a), Value::Float(b)) => (*a, *b),
+            _ => return Err(RuntimeError::new("fmod() requires numbers")),
+        };
+        Ok(Value::Float(a % b))
+    });
+
+    define(interp, "hypot", Some(2), |_, args| {
+        let (a, b) = match (&args[0], &args[1]) {
+            (Value::Int(a), Value::Int(b)) => (*a as f64, *b as f64),
+            (Value::Float(a), Value::Int(b)) => (*a, *b as f64),
+            (Value::Int(a), Value::Float(b)) => (*a as f64, *b),
+            (Value::Float(a), Value::Float(b)) => (*a, *b),
+            _ => return Err(RuntimeError::new("hypot() requires numbers")),
+        };
+        Ok(Value::Float(a.hypot(b)))
+    });
+
     // Rounding
     define(interp, "floor", Some(1), |_, args| match &args[0] {
         Value::Int(n) => Ok(Value::Int(*n)),
@@ -1056,7 +1085,8 @@ fn register_math(interp: &mut Interpreter) {
         _ => Err(RuntimeError::new("sign() requires number")),
     });
 
-    // Constants
+    // Constants - register as zero-arg functions that also work as bare values
+    // The interpreter auto-resolves these in binary/comparison contexts
     define(interp, "PI", Some(0), |_, _| {
         Ok(Value::Float(std::f64::consts::PI))
     });
@@ -1067,8 +1097,8 @@ fn register_math(interp: &mut Interpreter) {
         Ok(Value::Float(std::f64::consts::TAU))
     });
     define(interp, "PHI", Some(0), |_, _| {
-        Ok(Value::Float(1.618033988749895))
-    }); // Golden ratio
+        Ok(Value::Float(1.618033988749895)) // Golden ratio
+    });
 
     // GCD/LCM
     define(interp, "gcd", Some(2), |_, args| {

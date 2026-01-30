@@ -1309,7 +1309,7 @@ impl<'a> Parser<'a> {
             Some(Token::Static) => Item::Static(self.parse_static_with_doc_comments(visibility, doc_comments)?),
             Some(Token::Actor) => Item::Actor(self.parse_actor(visibility)?),
             Some(Token::Extern) => Item::ExternBlock(self.parse_extern_block()?),
-            Some(Token::Macro) | Some(Token::MacroRules) => Item::Macro(self.parse_macro_def(visibility)?),
+            Some(Token::Macro) | Some(Token::MacroRules) | Some(Token::Rune) => Item::Macro(self.parse_macro_def(visibility)?),
             Some(Token::Naked) => {
                 // naked fn -> function with naked attribute
                 Item::Function(self.parse_function_with_doc_comments(visibility, outer_attrs, doc_comments)?)
@@ -2319,16 +2319,24 @@ impl<'a> Parser<'a> {
     /// Parse a macro definition: `macro name { ... }` or `macro name(...) { ... }`
     /// Also supports Rust-style: `macro_rules! name { ... }`
     fn parse_macro_def(&mut self, visibility: Visibility) -> ParseResult<MacroDef> {
-        // Handle both `macro` and `macro_rules` keywords
+        // Handle `macro`, `macro_rules`, and `rune` keywords
         let is_macro_rules = self.check(&Token::MacroRules);
+        let is_rune = self.check(&Token::Rune);
         if is_macro_rules {
             self.advance(); // consume 'macro_rules'
             self.expect(Token::Bang)?; // consume '!'
+        } else if is_rune {
+            self.advance(); // consume 'rune'
         } else {
             self.expect(Token::Macro)?;
         }
 
         let name = self.parse_ident()?;
+
+        // For rune definitions, consume the trailing `!` after the name: `rune double! { ... }`
+        if is_rune {
+            let _ = self.consume_if(&Token::Bang);
+        }
 
         // Collect the entire macro body as a string (we don't interpret macros)
         // Could be: macro name { ... } or macro name(...) { ... } or macro name($arg:ty) { ... }
@@ -2383,7 +2391,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Some(Token::LineComment(s)) => {
-                    body.push_str(&format!("//{}", s));
+                    body.push_str(&format!("//{}\n", s));
                 }
                 Some(tok) => {
                     body.push_str(&Self::token_to_source(tok));
@@ -2437,29 +2445,30 @@ impl<'a> Parser<'a> {
     fn token_to_source(tok: &Token) -> String {
         match tok {
             // Keywords (Sigil uses different keyword names internally)
-            Token::Pub => "pub".to_string(),
+            // Native Sigil keywords (must use native forms for macro re-parsing)
+            Token::Pub => "☉".to_string(),
             Token::Static => "static".to_string(),
-            Token::Mut => "mut".to_string(),
+            Token::Mut => "Δ".to_string(),
             Token::Const => "const".to_string(),
-            Token::Let => "let".to_string(),
-            Token::Fn => "fn".to_string(),
-            Token::Struct => "sigil".to_string(), // Sigil keyword for struct
-            Token::Enum => "enum".to_string(),
-            Token::Impl => "impl".to_string(),
-            Token::Trait => "trait".to_string(),
+            Token::Let => "≔".to_string(),
+            Token::Fn => "rite".to_string(),
+            Token::Struct => "sigil".to_string(),
+            Token::Enum => "ᛈ".to_string(),
+            Token::Impl => "⊢".to_string(),
+            Token::Trait => "aspect".to_string(),
             Token::Type => "type".to_string(),
-            Token::Mod => "scroll".to_string(), // Sigil keyword for mod
-            Token::Use => "invoke".to_string(), // Sigil keyword for use
-            Token::ForAll => "for".to_string(),
-            Token::ElementOf => "in".to_string(),
-            Token::If => "if".to_string(),
-            Token::Else => "else".to_string(),
-            Token::Match => "match".to_string(),
-            Token::While => "while".to_string(),
+            Token::Mod => "scroll".to_string(),
+            Token::Use => "invoke".to_string(),
+            Token::ForAll => "∀".to_string(),
+            Token::ElementOf => "∈".to_string(),
+            Token::If => "⎇".to_string(),
+            Token::Else => "⎉".to_string(),
+            Token::Match => "⌥".to_string(),
+            Token::While => "⟳".to_string(),
             Token::Loop => "loop".to_string(),
-            Token::Tensor => "break".to_string(),
-            Token::CycleArrow => "continue".to_string(),
-            Token::Return => "return".to_string(),
+            Token::Tensor => "⊗".to_string(),
+            Token::CycleArrow => "↻".to_string(),
+            Token::Return => "⤺".to_string(),
             Token::Yield => "yield".to_string(),
             Token::True => "true".to_string(),
             Token::False => "false".to_string(),
@@ -2501,7 +2510,7 @@ impl<'a> Parser<'a> {
             Token::InterpolatedStringLit(s) => format!("f\"{}\"", s),
             // Punctuation
             Token::Colon => ":".to_string(),
-            Token::MiddleDot => "::".to_string(),
+            Token::MiddleDot => "·".to_string(),
             Token::Semi => ";".to_string(),
             Token::Comma => ",".to_string(),
             Token::Dot => ".".to_string(),
@@ -4630,7 +4639,7 @@ impl<'a> Parser<'a> {
                     Token::CharLit(c) => format!("'{}'", c),
                     Token::Comma => ",".to_string(),
                     Token::Colon => ":".to_string(),
-                    Token::MiddleDot => "::".to_string(),
+                    Token::MiddleDot => "·".to_string(),
                     Token::Dot => ".".to_string(),
                     Token::DotDot => "..".to_string(),
                     Token::Semi => ";".to_string(),
@@ -6848,6 +6857,46 @@ impl<'a> Parser<'a> {
                 };
                 Ok(PipeOp::Method { name, type_args: None, args })
             }
+            // Possibility operator: |◊method(args) or bare |◊
+            Some(Token::Lozenge) => {
+                self.advance();
+                if let Some(Token::Ident(_)) = self.current_token() {
+                    // |◊method or |◊method(args) - holographic possibility query
+                    let method = self.parse_ident()?;
+                    let args = if self.check(&Token::LParen) {
+                        self.advance();
+                        let args = self.parse_expr_list()?;
+                        self.expect(Token::RParen)?;
+                        args
+                    } else {
+                        vec![]
+                    };
+                    Ok(PipeOp::Possibility { method, args })
+                } else {
+                    // Bare |◊ - extract with Predicted evidentiality
+                    Ok(PipeOp::PossibilityExtract)
+                }
+            }
+            // Necessity operator: |□method(args) or bare |□
+            Some(Token::BoxSquare) => {
+                self.advance();
+                if let Some(Token::Ident(_)) = self.current_token() {
+                    // |□method or |□method(args) - holographic necessity verification
+                    let method = self.parse_ident()?;
+                    let args = if self.check(&Token::LParen) {
+                        self.advance();
+                        let args = self.parse_expr_list()?;
+                        self.expect(Token::RParen)?;
+                        args
+                    } else {
+                        vec![]
+                    };
+                    Ok(PipeOp::Necessity { method, args })
+                } else {
+                    // Bare |□ - verify and promote to Known evidentiality
+                    Ok(PipeOp::NecessityVerify)
+                }
+            }
             Some(Token::Ident(_)) => {
                 let name = self.parse_ident()?;
 
@@ -6858,15 +6907,10 @@ impl<'a> Parser<'a> {
                 // |assume!("reason") - assume evidence level
                 if name.name == "validate" || name.name == "assume" {
                     // Check for evidentiality marker followed by { or (
-                    let (has_marker, target_evidence) = if self.check(&Token::Bang) {
-                        let peek = self.peek_next();
-                        if matches!(peek, Some(Token::LBrace) | Some(Token::LParen)) {
-                            self.advance(); // consume !
-                            (true, Evidentiality::Known)
-                        } else {
-                            (false, Evidentiality::Known)
-                        }
-                    } else if self.check(&Token::Question) {
+                    // NOTE: ! (Bang) is NOT treated as evidence marker here because
+                    // |validate!{...} should be parsed as a macro invocation (line 6980+).
+                    // Only ? and ~ are evidence markers for built-in validate.
+                    let (has_marker, target_evidence) = if self.check(&Token::Question) {
                         let peek = self.peek_next();
                         if matches!(peek, Some(Token::LBrace) | Some(Token::LParen)) {
                             self.advance(); // consume ?
@@ -7285,43 +7329,8 @@ impl<'a> Parser<'a> {
                 Ok(PipeOp::Enumerate)
             }
 
-            // ==========================================
-            // Holographic Operations (Spec 11-HOLOGRAPHIC.md)
-            // ==========================================
-
-            // Possibility: |◊method or |◊method(args) - approximate query
-            Some(Token::Lozenge) => {
-                self.advance();
-                // Expect an identifier for the method name
-                let method = self.parse_ident()?;
-                // Check for optional arguments in parentheses
-                let args = if self.check(&Token::LParen) {
-                    self.advance();
-                    let args = self.parse_expr_list()?;
-                    self.expect(Token::RParen)?;
-                    args
-                } else {
-                    vec![]
-                };
-                Ok(PipeOp::Possibility { method, args })
-            }
-
-            // Necessity: |□method or |□method(args) - verification/exactness
-            Some(Token::BoxSquare) => {
-                self.advance();
-                // Expect an identifier for the method name
-                let method = self.parse_ident()?;
-                // Check for optional arguments in parentheses
-                let args = if self.check(&Token::LParen) {
-                    self.advance();
-                    let args = self.parse_expr_list()?;
-                    self.expect(Token::RParen)?;
-                    args
-                } else {
-                    vec![]
-                };
-                Ok(PipeOp::Necessity { method, args })
-            }
+            // NOTE: Holographic |◊method and |□method ops are handled earlier
+            // in the Lozenge/BoxSquare arms (with identifier lookahead).
 
             // Reference expression: |&self.field or |&expr
             Some(Token::Amp) => {

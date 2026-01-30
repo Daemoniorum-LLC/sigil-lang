@@ -1285,7 +1285,8 @@ pub struct Interpreter {
     /// User-defined macro registry: name -> (params, body_tokens)
     /// params is a Vec<String> of parameter names (e.g., ["n"] for macro foo($n) {...})
     /// body_tokens is the raw body string to be parsed and evaluated
-    pub user_macros: RefCell<HashMap<String, (Vec<String>, String)>>,
+    /// field_map maps struct field names to param names for named patterns (e.g., { key: $param:expr })
+    pub user_macros: RefCell<HashMap<String, (Vec<String>, String, HashMap<String, String>)>>,
     // === AI IR Export Fields (Phase 8) ===
     /// Source text for span-to-line conversion (used by __export_ir)
     pub source_text: Option<String>,
@@ -3233,14 +3234,101 @@ impl Interpreter {
             Item::Macro(m) => {
                 // Parse macro definition and register in user_macros
                 // Format: "($param1, $param2) { body }" or "{ body }" for parameterless macros
+                // Also supports rune-style: "{ (...) => { body } }" or "{ ({ key: $val:expr }) => { body } }"
                 let rules = m.rules.trim();
 
-                // Parse parameters and body from rules
-                let (params, body) = if rules.starts_with('(') {
-                    // Find closing paren
+                // Helper: strip outer braces if present
+                let inner = if rules.starts_with('{') && rules.ends_with('}') {
+                    rules[1..rules.len() - 1].trim()
+                } else {
+                    rules
+                };
+
+                // Check for rune-style pattern with => separator
+                // Look for ") =>" which indicates rune-style pattern matching
+                let (params, body, field_map) = if let Some(arrow_pos) = inner.find("=>") {
+                    // Check if there's a pattern before =>
+                    let pattern_part = inner[..arrow_pos].trim();
+                    let body_part = inner[arrow_pos + 2..].trim();
+
+                    // Extract params from pattern: ($n:expr) → ["n"]
+                    // Pattern can be (), ($n:expr), ({ key: $val:expr, ... })
+                    let mut field_map: HashMap<String, String> = HashMap::new();
+                    let params = if pattern_part.starts_with('(') {
+                        let inner_pat = if pattern_part.ends_with(')') {
+                            &pattern_part[1..pattern_part.len()-1]
+                        } else {
+                            &pattern_part[1..]
+                        };
+                        // Find $param patterns (possibly with :expr/:ty suffixes)
+                        let mut extracted = Vec::new();
+                        let mut i = 0;
+                        let chars: Vec<char> = inner_pat.chars().collect();
+                        while i < chars.len() {
+                            if chars[i] == '$' {
+                                let dollar_pos = i;
+                                i += 1;
+                                // Collect param name until : or , or ) or space or }
+                                let mut name = String::new();
+                                while i < chars.len() && chars[i].is_alphanumeric() || (i < chars.len() && chars[i] == '_') {
+                                    name.push(chars[i]);
+                                    i += 1;
+                                }
+                                // Skip :expr, :ty, etc.
+                                if i < chars.len() && chars[i] == ':' {
+                                    while i < chars.len() && !matches!(chars[i], ',' | ')' | '}') {
+                                        i += 1;
+                                    }
+                                }
+                                if !name.is_empty() {
+                                    // Look backwards from $ for a field name: "field_name: $param"
+                                    // Skip whitespace, then expect ':', then skip whitespace, then read field name
+                                    let mut j = dollar_pos;
+                                    // Skip whitespace before $
+                                    while j > 0 && chars[j - 1] == ' ' {
+                                        j -= 1;
+                                    }
+                                    // Check for colon
+                                    if j > 0 && chars[j - 1] == ':' {
+                                        j -= 1;
+                                        // Skip whitespace before colon
+                                        while j > 0 && chars[j - 1] == ' ' {
+                                            j -= 1;
+                                        }
+                                        // Read field name backwards
+                                        let field_end = j;
+                                        while j > 0 && (chars[j - 1].is_alphanumeric() || chars[j - 1] == '_') {
+                                            j -= 1;
+                                        }
+                                        if field_end > j {
+                                            let field_name: String = chars[j..field_end].iter().collect();
+                                            field_map.insert(field_name, name.clone());
+                                        }
+                                    }
+                                    extracted.push(name);
+                                }
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        extracted
+                    } else {
+                        Vec::new()
+                    };
+
+                    // Extract body: strip outer braces if present
+                    let body = if body_part.starts_with('{') && body_part.ends_with('}') {
+                        body_part[1..body_part.len()-1].trim().to_string()
+                    } else {
+                        body_part.to_string()
+                    };
+
+                    (params, body, field_map)
+                } else if inner.starts_with('(') {
+                    // Original format: ($param1, $param2) { body }
                     let mut depth = 0;
                     let mut paren_end = 0;
-                    for (i, c) in rules.chars().enumerate() {
+                    for (i, c) in inner.chars().enumerate() {
                         match c {
                             '(' => depth += 1,
                             ')' => {
@@ -3254,36 +3342,30 @@ impl Interpreter {
                         }
                     }
 
-                    // Extract parameter list (e.g., "$n" or "$x, $y")
-                    let param_str = &rules[1..paren_end];
+                    let param_str = &inner[1..paren_end];
                     let params: Vec<String> = param_str
                         .split(',')
                         .map(|p| p.trim().trim_start_matches('$').to_string())
                         .filter(|p| !p.is_empty())
                         .collect();
 
-                    // Extract body (everything after the params and opening brace)
-                    let rest = rules[paren_end + 1..].trim();
+                    let rest = inner[paren_end + 1..].trim();
                     let body = if rest.starts_with('{') && rest.ends_with('}') {
                         rest[1..rest.len() - 1].trim().to_string()
                     } else {
                         rest.to_string()
                     };
 
-                    (params, body)
-                } else if rules.starts_with('{') && rules.ends_with('}') {
-                    // Parameterless macro: "{ body }"
-                    let body = rules[1..rules.len() - 1].trim().to_string();
-                    (Vec::new(), body)
+                    (params, body, HashMap::new())
                 } else {
-                    // Fallback: treat entire rules as body
-                    (Vec::new(), rules.to_string())
+                    // Fallback: treat entire inner as body
+                    (Vec::new(), inner.to_string(), HashMap::new())
                 };
 
                 // Register the macro
                 self.user_macros
                     .borrow_mut()
-                    .insert(m.name.name.clone(), (params, body));
+                    .insert(m.name.name.clone(), (params, body, field_map));
 
                 Ok(Value::Null)
             }
@@ -3766,9 +3848,9 @@ impl Interpreter {
                         // Check for user-defined macro
                         // Clone the macro definition out of the borrow to avoid lifetime issues
                         let macro_def = self.user_macros.borrow().get(macro_name).cloned();
-                        if let Some((params, body)) = macro_def {
+                        if let Some((params, body, field_map)) = macro_def {
                             // Expand user-defined macro
-                            self.expand_user_macro(&params, &body, tokens, None)
+                            self.expand_user_macro(&params, &body, tokens, None, &field_map)
                         } else {
                             // Unknown macro - return tokens as string for debugging
                             Ok(Value::String(Rc::new(tokens.clone())))
@@ -4486,6 +4568,10 @@ impl Interpreter {
         let lhs = Self::unwrap_all(&lhs);
         let rhs = Self::unwrap_all(&rhs);
 
+        // Auto-resolve zero-arg BuiltIn constants (PI, E, TAU, PHI) in binary context
+        let lhs = self.resolve_constant(lhs);
+        let rhs = self.resolve_constant(rhs);
+
         // Debug Mul operations involving potential null
         if matches!(op, BinOp::Mul)
             && (matches!(lhs, Value::Null)
@@ -5056,6 +5142,8 @@ impl Interpreter {
 
     fn eval_unary(&mut self, op: &UnaryOp, expr: &Expr) -> Result<Value, RuntimeError> {
         let val = self.evaluate(expr)?;
+        // Auto-resolve zero-arg BuiltIn constants (PI, E, TAU, PHI) for unary ops
+        let val = self.resolve_constant(val);
         match (op, &val) {
             (UnaryOp::Neg, Value::Int(n)) => Ok(Value::Int(-n)),
             (UnaryOp::Neg, Value::Float(n)) => Ok(Value::Float(-n)),
@@ -5858,8 +5946,9 @@ impl Interpreter {
         // Create new environment for function
         let env = Rc::new(RefCell::new(Environment::with_parent(func.closure.clone())));
 
-        // Bind parameters
+        // Bind parameters, auto-resolving zero-arg BuiltIn constants
         for (param, value) in func.params.iter().zip(args) {
+            let value = self.resolve_constant(value);
             // Debug: trace path parameter binding
             if param == "path" {
                 crate::sigil_debug!(
@@ -5889,6 +5978,26 @@ impl Interpreter {
             Err(e) => Err(e),
         };
 
+        // Check for unused linear variables before restoring state
+        if result.is_ok() {
+            let unused_var = {
+                let vars = self.linear_state.vars.borrow();
+                let consumed = self.linear_state.consumed.borrow();
+                vars.iter()
+                    .find(|v| !consumed.contains(*v))
+                    .cloned()
+            };
+            if let Some(var_name) = unused_var {
+                *self.linear_state.consumed.borrow_mut() = prev_linear_consumed;
+                *self.linear_state.vars.borrow_mut() = prev_linear_vars;
+                self.environment = prev_env;
+                return Err(RuntimeError::new(format!(
+                    "linear variable '{}' was declared but never used (linear types must be consumed exactly once)",
+                    var_name
+                )));
+            }
+        }
+
         // Restore previous linear state
         *self.linear_state.consumed.borrow_mut() = prev_linear_consumed;
         *self.linear_state.vars.borrow_mut() = prev_linear_vars;
@@ -5912,7 +6021,20 @@ impl Interpreter {
                 )));
             }
         }
+        // Auto-resolve zero-arg BuiltIn constants (PI, E, TAU, PHI) passed as arguments
+        let args: Vec<Value> = args.into_iter().map(|v| self.resolve_constant(v)).collect();
         (builtin.func)(self, args)
+    }
+
+    /// Auto-call zero-arg BuiltIn functions to resolve them to their constant values.
+    /// This allows PI, E, TAU, PHI to work as bare values in any context.
+    fn resolve_constant(&mut self, val: Value) -> Value {
+        match &val {
+            Value::BuiltIn(b) if b.arity == Some(0) => {
+                (b.func)(self, vec![]).unwrap_or(val)
+            }
+            _ => val,
+        }
     }
 
     /// Reorder arguments based on named parameters to match function signature
@@ -8910,6 +9032,7 @@ impl Interpreter {
                 }
             }
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
+            (Value::String(s), "capacity") => Ok(Value::Int(s.capacity() as i64)),
             (Value::String(s), "find") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("find expects 1 argument"));
@@ -9089,6 +9212,7 @@ impl Interpreter {
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
             (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
+            (Value::String(s), "capacity") => Ok(Value::Int(s.capacity() as i64)),
             // Path-like methods for strings (treat string as file path)
             (Value::String(s), "exists") => {
                 Ok(Value::Bool(std::path::Path::new(s.as_str()).exists()))
@@ -9432,6 +9556,7 @@ impl Interpreter {
                         "to_string" => return Ok(Value::String(s.clone())),
                         "len" => return Ok(Value::Int(s.len() as i64)),
                         "is_empty" => return Ok(Value::Bool(s.is_empty())),
+                        "capacity" => return Ok(Value::Int(s.capacity() as i64)),
                         "as_str" => return Ok(Value::String(s.clone())),
                         "starts_with" => {
                             let prefix = match arg_values.first() {
@@ -12341,6 +12466,7 @@ impl Interpreter {
                 }
             }
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
+            (Value::String(s), "capacity") => Ok(Value::Int(s.capacity() as i64)),
             (Value::String(s), "clone") => Ok(Value::String(Rc::new((**s).clone()))),
             (Value::String(s), "first") => s
                 .chars()
@@ -12759,8 +12885,8 @@ impl Interpreter {
                     // Check for user-defined macro
                     // Clone the macro definition out of the borrow to avoid lifetime issues
                     let macro_def = self.user_macros.borrow().get(macro_name).cloned();
-                    if let Some((params, body)) = macro_def {
-                        return self.expand_user_macro(&params, &body, tokens, Some(value));
+                    if let Some((params, body, field_map)) = macro_def {
+                        return self.expand_user_macro(&params, &body, tokens, Some(value), &field_map);
                     }
                     // Built-in macros don't use $__pipe, so fall through
                 }
@@ -14869,6 +14995,48 @@ impl Interpreter {
                 }
             }
 
+            PipeOp::PossibilityExtract => {
+                // |◊ - extract with Predicted evidentiality
+                // Arrays: extract first element, Options: unwrap
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        arr.first()
+                            .cloned()
+                            .ok_or_else(|| RuntimeError::new("possibility (◊) on empty array"))
+                    }
+                    Value::Variant { variant_name, fields, .. } if variant_name == "Some" => {
+                        Ok(fields.as_ref()
+                            .and_then(|f| f.first().cloned())
+                            .unwrap_or(Value::Null))
+                    }
+                    _ => Ok(value),
+                }
+            }
+
+            PipeOp::NecessityVerify => {
+                // |□ - verify and promote to Known evidentiality
+                // Arrays: verify non-empty, Options: unwrap (error if None)
+                match &value {
+                    Value::Array(arr) => {
+                        let arr = arr.borrow();
+                        if arr.is_empty() {
+                            return Err(RuntimeError::new("necessity (□) verification failed: empty array"));
+                        }
+                        Ok(value.clone())
+                    }
+                    Value::Variant { variant_name, fields, .. } if variant_name == "Some" => {
+                        Ok(fields.as_ref()
+                            .and_then(|f| f.first().cloned())
+                            .unwrap_or(Value::Null))
+                    }
+                    Value::Variant { variant_name, .. } if variant_name == "None" => {
+                        Err(RuntimeError::new("necessity (□) verification failed: None"))
+                    }
+                    _ => Ok(value),
+                }
+            }
+
             // ==========================================
             // Scope Functions (Kotlin-inspired)
             // ==========================================
@@ -16577,6 +16745,7 @@ impl Interpreter {
         body: &str,
         tokens: &str,
         pipe_value: Option<Value>,
+        field_map: &HashMap<String, String>,
     ) -> Result<Value, RuntimeError> {
         // Build substitution map
         let mut substitutions: HashMap<String, String> = HashMap::new();
@@ -16597,9 +16766,35 @@ impl Interpreter {
         if !params.is_empty() && !tokens.is_empty() {
             // Split tokens by comma, respecting nesting
             let args = self.split_macro_args(tokens);
-            for (i, param) in params.iter().enumerate() {
-                if i < args.len() {
-                    substitutions.insert(param.clone(), args[i].trim().to_string());
+
+            // Try named argument matching first: "key: value" pairs
+            // This handles rune patterns like ({ min: $min:expr, max: $max:expr })
+            // Uses field_map to resolve field names → param names when they differ
+            // e.g., pattern "{ prompt: $prompt_check:expr }" → field_map {"prompt" → "prompt_check"}
+            let mut named_matched = false;
+            for arg in &args {
+                let trimmed = arg.trim();
+                if let Some(colon_pos) = trimmed.find(':') {
+                    let key = trimmed[..colon_pos].trim();
+                    let value = trimmed[colon_pos + 1..].trim();
+                    // First check field_map: field name → param name
+                    if let Some(param_name) = field_map.get(key) {
+                        substitutions.insert(param_name.clone(), value.to_string());
+                        named_matched = true;
+                    } else if params.contains(&key.to_string()) {
+                        // Direct match: field name == param name
+                        substitutions.insert(key.to_string(), value.to_string());
+                        named_matched = true;
+                    }
+                }
+            }
+
+            // Fall back to positional matching if no named args matched
+            if !named_matched {
+                for (i, param) in params.iter().enumerate() {
+                    if i < args.len() {
+                        substitutions.insert(param.clone(), args[i].trim().to_string());
+                    }
                 }
             }
         }
@@ -16607,9 +16802,18 @@ impl Interpreter {
         // Substitute $param with their values in the body
         let mut expanded = body.to_string();
         for (param, value) in &substitutions {
-            // Replace $param with value
+            // Replace $param with value (dollar-prefixed substitution)
             let pattern = format!("${}", param);
             expanded = expanded.replace(&pattern, value);
+        }
+
+        // For rune-style macros: also replace bare __pipe references (without $)
+        // This allows rune bodies to use `__pipe` directly instead of `$__pipe`
+        if let Some(ref val) = pipe_value {
+            let pipe_source = self.value_to_source(val);
+            // Replace bare __pipe that aren't already part of $__pipe
+            // Since we already replaced $__pipe above, bare __pipe is what remains
+            expanded = expanded.replace("__pipe", &pipe_source);
         }
 
         // Parse and evaluate the expanded expression
@@ -16647,6 +16851,27 @@ impl Interpreter {
             Value::Bool(b) => b.to_string(),
             Value::String(s) => format!("\"{}\"", s),
             Value::Null => "null".to_string(),
+            Value::Char(c) => format!("'{}'", c),
+            Value::Array(arr) => {
+                let arr = arr.borrow();
+                let items: Vec<String> = arr.iter().map(|v| self.value_to_source(v)).collect();
+                format!("[{}]", items.join(", "))
+            }
+            Value::Struct { name, fields } => {
+                let fields = fields.borrow();
+                let field_strs: Vec<String> = fields.iter()
+                    .map(|(k, v)| format!("{}: {}", k, self.value_to_source(v)))
+                    .collect();
+                format!("{} {{ {} }}", name, field_strs.join(", "))
+            }
+            Value::Variant { enum_name, variant_name, fields } => {
+                if let Some(f) = fields {
+                    let args: Vec<String> = f.iter().map(|v| self.value_to_source(v)).collect();
+                    format!("{}·{}({})", enum_name, variant_name, args.join(", "))
+                } else {
+                    format!("{}·{}", enum_name, variant_name)
+                }
+            }
             _ => format!("{}", val),
         }
     }

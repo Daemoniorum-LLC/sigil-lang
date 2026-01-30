@@ -1993,7 +1993,9 @@ pub mod jit {
                         // Holographic operations (Spec 11)
                         | PipeOp::Universal
                         | PipeOp::Possibility { .. }
-                        | PipeOp::Necessity { .. } => {
+                        | PipeOp::Necessity { .. }
+                        | PipeOp::PossibilityExtract
+                        | PipeOp::NecessityVerify => {
                             // Fallback to interpreter for these complex operations
                             result
                         }

@@ -160,6 +160,8 @@ impl WasmCompiler {
             PipeOp::Universal => Err(WasmError::unsupported("universal reconstruction")),
             PipeOp::Possibility { .. } => Err(WasmError::unsupported("possibility operation")),
             PipeOp::Necessity { .. } => Err(WasmError::unsupported("necessity operation")),
+            PipeOp::PossibilityExtract => Err(WasmError::unsupported("possibility extract")),
+            PipeOp::NecessityVerify => Err(WasmError::unsupported("necessity verify")),
 
             // Function call in pipe context
             PipeOp::Call(_) => Err(WasmError::unsupported("call in pipe context")),
