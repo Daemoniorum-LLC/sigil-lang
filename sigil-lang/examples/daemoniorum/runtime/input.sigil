@@ -1,0 +1,582 @@
+//! Input Handling for DAEMONIORUM
+//!
+//! Provides unified input handling across platforms:
+//! - Keyboard input with customizable bindings
+//! - Mouse input with position tracking
+//! - Touch input for mobile
+//! - Gamepad support (future)
+//!
+//! ## Binding System
+//!
+//! Actions are bound to inputs, allowing remapping:
+//! ```sigil
+//! input.bind(KeyCode::Tab, InputAction::SwitchAlter);
+//! input.bind(KeyCode::Space, InputAction::Interact);
+//! ```
+
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
+
+// ============================================================================
+// KEY CODES
+// ============================================================================
+
+/// Keyboard key codes (web-compatible)
+type KeyCode = enum {
+    // Letters
+    A, B, C, D, E, F, G, H, I, J, K, L, M,
+    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+
+    // Numbers
+    Key0, Key1, Key2, Key3, Key4, Key5, Key6, Key7, Key8, Key9,
+
+    // Function keys
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+
+    // Navigation
+    Up, Down, Left, Right,
+    Home, End, PageUp, PageDown,
+
+    // Editing
+    Backspace, Delete, Insert,
+    Enter, Tab, Escape,
+    Space,
+
+    // Modifiers
+    Shift, Control, Alt, Meta,
+    ShiftLeft, ShiftRight,
+    ControlLeft, ControlRight,
+    AltLeft, AltRight,
+
+    // Punctuation
+    Comma, Period, Slash, Backslash,
+    Semicolon, Quote, BracketLeft, BracketRight,
+    Minus, Equal, Backquote,
+
+    // Unknown
+    Unknown(String),
+};
+
+impl KeyCode {
+    /// Parse from web key code string
+    pub fn from_web_code(code: &str) -> Self! {
+        match code {
+            "KeyA" => KeyCode::A,
+            "KeyB" => KeyCode::B,
+            "KeyC" => KeyCode::C,
+            "KeyD" => KeyCode::D,
+            "KeyE" => KeyCode::E,
+            "KeyF" => KeyCode::F,
+            "KeyG" => KeyCode::G,
+            "KeyH" => KeyCode::H,
+            "KeyI" => KeyCode::I,
+            "KeyJ" => KeyCode::J,
+            "KeyK" => KeyCode::K,
+            "KeyL" => KeyCode::L,
+            "KeyM" => KeyCode::M,
+            "KeyN" => KeyCode::N,
+            "KeyO" => KeyCode::O,
+            "KeyP" => KeyCode::P,
+            "KeyQ" => KeyCode::Q,
+            "KeyR" => KeyCode::R,
+            "KeyS" => KeyCode::S,
+            "KeyT" => KeyCode::T,
+            "KeyU" => KeyCode::U,
+            "KeyV" => KeyCode::V,
+            "KeyW" => KeyCode::W,
+            "KeyX" => KeyCode::X,
+            "KeyY" => KeyCode::Y,
+            "KeyZ" => KeyCode::Z,
+            "Digit0" => KeyCode::Key0,
+            "Digit1" => KeyCode::Key1,
+            "Digit2" => KeyCode::Key2,
+            "Digit3" => KeyCode::Key3,
+            "Digit4" => KeyCode::Key4,
+            "Digit5" => KeyCode::Key5,
+            "Digit6" => KeyCode::Key6,
+            "Digit7" => KeyCode::Key7,
+            "Digit8" => KeyCode::Key8,
+            "Digit9" => KeyCode::Key9,
+            "ArrowUp" => KeyCode::Up,
+            "ArrowDown" => KeyCode::Down,
+            "ArrowLeft" => KeyCode::Left,
+            "ArrowRight" => KeyCode::Right,
+            "Space" => KeyCode::Space,
+            "Enter" => KeyCode::Enter,
+            "Escape" => KeyCode::Escape,
+            "Tab" => KeyCode::Tab,
+            "Backspace" => KeyCode::Backspace,
+            "Delete" => KeyCode::Delete,
+            "ShiftLeft" => KeyCode::ShiftLeft,
+            "ShiftRight" => KeyCode::ShiftRight,
+            "ControlLeft" => KeyCode::ControlLeft,
+            "ControlRight" => KeyCode::ControlRight,
+            "AltLeft" => KeyCode::AltLeft,
+            "AltRight" => KeyCode::AltRight,
+            "MetaLeft" | "MetaRight" => KeyCode::Meta,
+            _ => KeyCode::Unknown(code·to_string()),
+        }
+    }
+}
+
+// ============================================================================
+// MOUSE BUTTONS
+// ============================================================================
+
+/// Mouse button codes
+type MouseButton = enum {
+    Left,
+    Right,
+    Middle,
+    Back,
+    Forward,
+    Unknown(u8),
+};
+
+impl MouseButton {
+    pub fn from_button(button: u8) -> Self! {
+        match button {
+            0 => MouseButton::Left,
+            1 => MouseButton::Middle,
+            2 => MouseButton::Right,
+            3 => MouseButton::Back,
+            4 => MouseButton::Forward,
+            n => MouseButton::Unknown(n),
+        }
+    }
+}
+
+// ============================================================================
+// INPUT EVENTS
+// ============================================================================
+
+/// Raw input events from the platform
+type InputEvent = enum {
+    // Keyboard
+    KeyDown { code: KeyCode, repeat: bool },
+    KeyUp { code: KeyCode },
+
+    // Mouse
+    MouseDown { button: MouseButton, x: f32, y: f32 },
+    MouseUp { button: MouseButton, x: f32, y: f32 },
+    MouseMove { x: f32, y: f32, dx: f32, dy: f32 },
+    MouseWheel { delta_x: f32, delta_y: f32 },
+
+    // Touch
+    TouchStart { id: u32, x: f32, y: f32 },
+    TouchMove { id: u32, x: f32, y: f32 },
+    TouchEnd { id: u32, x: f32, y: f32 },
+    TouchCancel { id: u32 },
+
+    // Focus
+    FocusGained,
+    FocusLost,
+};
+
+// ============================================================================
+// INPUT ACTIONS
+// ============================================================================
+
+/// High-level game actions that can be bound to inputs
+type InputAction = enum {
+    // Movement
+    MoveUp,
+    MoveDown,
+    MoveLeft,
+    MoveRight,
+
+    // Interaction
+    Interact,
+    Cancel,
+    Confirm,
+
+    // System
+    Pause,
+    OpenMenu,
+    OpenInventory,
+    OpenJournal,
+    OpenMap,
+
+    // Alter
+    SwitchAlter,
+    Ground,
+    NextAlter,
+    PrevAlter,
+
+    // Combat
+    Attack,
+    Defend,
+    UseAbility(u8),
+    UseItem,
+    Flee,
+
+    // Dialogue
+    DialogueNext,
+    DialogueChoice(u8),
+    DialogueSkip,
+
+    // Debug
+    DebugToggle,
+    DebugReload,
+};
+
+// ============================================================================
+// INPUT CONTEXT
+// ============================================================================
+
+/// Context-sensitive input modes
+type InputContext = enum {
+    /// General exploration mode
+    Exploration,
+    /// In dialogue
+    Dialogue,
+    /// In combat
+    Combat,
+    /// Menu/UI focused
+    Menu,
+    /// Cutscene (limited input)
+    Cutscene,
+    /// Text input mode
+    TextInput,
+};
+
+// ============================================================================
+// INPUT BINDING
+// ============================================================================
+
+/// A binding from input to action
+type InputBinding = struct {
+    /// Primary key/button
+    primary: BindingSource!,
+    /// Optional modifier (shift, ctrl, etc.)
+    modifier: Option<KeyCode>?,
+    /// Which contexts this binding is active in
+    contexts: HashSet<InputContext>!,
+};
+
+type BindingSource = enum {
+    Key(KeyCode),
+    Mouse(MouseButton),
+    Scroll { direction: ScrollDirection },
+};
+
+type ScrollDirection = enum {
+    Up,
+    Down,
+    Left,
+    Right,
+};
+
+// ============================================================================
+// INPUT MANAGER
+// ============================================================================
+
+/// Central input manager
+type InputManager = struct {
+    /// Current input context
+    context: InputContext!,
+
+    /// Key bindings
+    bindings: HashMap<InputAction, InputBinding>!,
+
+    /// Currently pressed keys
+    pressed_keys: HashSet<KeyCode>!,
+
+    /// Currently pressed mouse buttons
+    pressed_buttons: HashSet<MouseButton>!,
+
+    /// Mouse position
+    mouse_x: f32!,
+    mouse_y: f32!,
+
+    /// Pending actions this frame
+    pending_actions: Vec<InputAction>!,
+
+    /// Last key press times (for repeat detection)
+    key_press_times: HashMap<KeyCode, Instant>!,
+
+    /// Input enabled flag
+    enabled: bool!,
+};
+
+impl InputManager {
+    /// Create new input manager with default bindings
+    pub fn new() -> Self! {
+        let mut manager = Self {
+            context: InputContext::Exploration,
+            bindings: HashMap::new(),
+            pressed_keys: HashSet::new(),
+            pressed_buttons: HashSet::new(),
+            mouse_x: 0.0,
+            mouse_y: 0.0,
+            pending_actions: Vec::new(),
+            key_press_times: HashMap::new(),
+            enabled: true,
+        };
+
+        // Set up default bindings
+        manager·setup_default_bindings();
+
+        manager
+    }
+
+    /// Set up default key bindings
+    fn setup_default_bindings(mut self) {
+        // Movement - WASD and arrows
+        self·bind_key(KeyCode::W, InputAction::MoveUp, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::S, InputAction::MoveDown, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::A, InputAction::MoveLeft, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::D, InputAction::MoveRight, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::Up, InputAction::MoveUp, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::Down, InputAction::MoveDown, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::Left, InputAction::MoveLeft, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::Right, InputAction::MoveRight, &[InputContext::Exploration]);
+
+        // Interaction
+        self·bind_key(KeyCode::E, InputAction::Interact, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::Space, InputAction::Interact, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::Escape, InputAction::Cancel, &[InputContext::Exploration, InputContext::Menu, InputContext::Dialogue]);
+        self·bind_key(KeyCode::Enter, InputAction::Confirm, &[InputContext::Menu, InputContext::Dialogue]);
+
+        // System
+        self·bind_key(KeyCode::Escape, InputAction::Pause, &[InputContext::Exploration, InputContext::Combat]);
+        self·bind_key(KeyCode::I, InputAction::OpenInventory, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::J, InputAction::OpenJournal, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::M, InputAction::OpenMap, &[InputContext::Exploration]);
+
+        // Alter controls
+        self·bind_key(KeyCode::Tab, InputAction::SwitchAlter, &[InputContext::Exploration, InputContext::Combat]);
+        self·bind_key(KeyCode::G, InputAction::Ground, &[InputContext::Exploration, InputContext::Combat]);
+        self·bind_key(KeyCode::Q, InputAction::PrevAlter, &[InputContext::Exploration]);
+        self·bind_key(KeyCode::R, InputAction::NextAlter, &[InputContext::Exploration]);
+
+        // Combat
+        self·bind_key(KeyCode::Key1, InputAction::UseAbility(0), &[InputContext::Combat]);
+        self·bind_key(KeyCode::Key2, InputAction::UseAbility(1), &[InputContext::Combat]);
+        self·bind_key(KeyCode::Key3, InputAction::UseAbility(2), &[InputContext::Combat]);
+        self·bind_key(KeyCode::Key4, InputAction::UseAbility(3), &[InputContext::Combat]);
+        self·bind_key(KeyCode::F, InputAction::Flee, &[InputContext::Combat]);
+
+        // Dialogue
+        self·bind_key(KeyCode::Space, InputAction::DialogueNext, &[InputContext::Dialogue]);
+        self·bind_key(KeyCode::Enter, InputAction::DialogueNext, &[InputContext::Dialogue]);
+        self·bind_key(KeyCode::Key1, InputAction::DialogueChoice(0), &[InputContext::Dialogue]);
+        self·bind_key(KeyCode::Key2, InputAction::DialogueChoice(1), &[InputContext::Dialogue]);
+        self·bind_key(KeyCode::Key3, InputAction::DialogueChoice(2), &[InputContext::Dialogue]);
+        self·bind_key(KeyCode::Key4, InputAction::DialogueChoice(3), &[InputContext::Dialogue]);
+
+        // Debug
+        self·bind_key(KeyCode::F12, InputAction::DebugToggle, &[InputContext::Exploration]);
+    }
+
+    /// Bind a key to an action
+    fn bind_key(mut self, key: KeyCode, action: InputAction, contexts: &[InputContext]) {
+        self.bindings·insert(action, InputBinding {
+            primary: BindingSource::Key(key),
+            modifier: None,
+            contexts: contexts·iter()·cloned()·collect(),
+        });
+    }
+
+    /// Set input context
+    pub fn set_context(mut self, context: InputContext) {
+        self.context = context;
+    }
+
+    /// Process an input event
+    pub fn process_event(mut self, event: InputEvent) {
+        if !self.enabled {
+            return;
+        }
+
+        match event {
+            InputEvent::KeyDown { code, repeat } => {
+                if !repeat {
+                    self.pressed_keys·insert(code·clone());
+                    self.key_press_times·insert(code·clone(), Instant::now());
+                    self·check_key_action(code, true);
+                }
+            },
+            InputEvent::KeyUp { code } => {
+                self.pressed_keys·remove(&code);
+                self.key_press_times·remove(&code);
+            },
+            InputEvent::MouseDown { button, x, y } => {
+                self.pressed_buttons·insert(button·clone());
+                self.mouse_x = x;
+                self.mouse_y = y;
+                self·check_mouse_action(button, true);
+            },
+            InputEvent::MouseUp { button, x, y } => {
+                self.pressed_buttons·remove(&button);
+                self.mouse_x = x;
+                self.mouse_y = y;
+            },
+            InputEvent::MouseMove { x, y, .. } => {
+                self.mouse_x = x;
+                self.mouse_y = y;
+            },
+            InputEvent::FocusLost => {
+                // Clear all pressed state on focus loss
+                self.pressed_keys·clear();
+                self.pressed_buttons·clear();
+            },
+            _ => {},
+        }
+    }
+
+    /// Check if a key triggers an action
+    fn check_key_action(mut self, key: KeyCode, pressed: bool) {
+        if !pressed { return; }
+
+        for (action, binding) in &self.bindings {
+            // Check context
+            if !binding.contexts·contains(&self.context) {
+                continue;
+            }
+
+            // Check key match
+            if let BindingSource::Key(bound_key) = &binding.primary {
+                if *bound_key == key {
+                    // Check modifier if required
+                    let modifier_ok = match &binding.modifier {
+                        None => true,
+                        Some(mod_key) => self.pressed_keys·contains(mod_key),
+                    };
+
+                    if modifier_ok {
+                        self.pending_actions·push(action·clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if a mouse button triggers an action
+    fn check_mouse_action(mut self, button: MouseButton, pressed: bool) {
+        if !pressed { return; }
+
+        for (action, binding) in &self.bindings {
+            if !binding.contexts·contains(&self.context) {
+                continue;
+            }
+
+            if let BindingSource::Mouse(bound_button) = &binding.primary {
+                if *bound_button == button {
+                    self.pending_actions·push(action·clone());
+                }
+            }
+        }
+    }
+
+    /// Drain pending actions for this frame
+    pub fn drain_actions(mut self) -> Vec<InputAction>! {
+        self.pending_actions·drain(..)·collect()
+    }
+
+    /// Check if a key is currently pressed
+    pub fn is_key_pressed(self, key: &KeyCode) -> bool! {
+        self.pressed_keys·contains(key)
+    }
+
+    /// Check if a mouse button is currently pressed
+    pub fn is_button_pressed(self, button: &MouseButton) -> bool! {
+        self.pressed_buttons·contains(button)
+    }
+
+    /// Get mouse position
+    pub fn mouse_position(self) -> (f32, f32)! {
+        (self.mouse_x, self.mouse_y)
+    }
+
+    /// Check if any movement key is pressed
+    pub fn is_moving(self) -> bool! {
+        self.pressed_keys·contains(&KeyCode::W) ||
+        self.pressed_keys·contains(&KeyCode::A) ||
+        self.pressed_keys·contains(&KeyCode::S) ||
+        self.pressed_keys·contains(&KeyCode::D) ||
+        self.pressed_keys·contains(&KeyCode::Up) ||
+        self.pressed_keys·contains(&KeyCode::Down) ||
+        self.pressed_keys·contains(&KeyCode::Left) ||
+        self.pressed_keys·contains(&KeyCode::Right)
+    }
+
+    /// Get movement direction as normalized vector
+    pub fn movement_vector(self) -> (f32, f32)! {
+        let mut x = 0.0_f32;
+        let mut y = 0.0_f32;
+
+        if self.pressed_keys·contains(&KeyCode::W) || self.pressed_keys·contains(&KeyCode::Up) {
+            y -= 1.0;
+        }
+        if self.pressed_keys·contains(&KeyCode::S) || self.pressed_keys·contains(&KeyCode::Down) {
+            y += 1.0;
+        }
+        if self.pressed_keys·contains(&KeyCode::A) || self.pressed_keys·contains(&KeyCode::Left) {
+            x -= 1.0;
+        }
+        if self.pressed_keys·contains(&KeyCode::D) || self.pressed_keys·contains(&KeyCode::Right) {
+            x += 1.0;
+        }
+
+        // Normalize diagonal movement
+        let len = (x * x + y * y)·sqrt();
+        if len > 0.0 {
+            (x / len, y / len)
+        } else {
+            (0.0, 0.0)
+        }
+    }
+
+    /// Enable/disable input processing
+    pub fn set_enabled(mut self, enabled: bool) {
+        self.enabled = enabled;
+        if !enabled {
+            self.pressed_keys·clear();
+            self.pressed_buttons·clear();
+            self.pending_actions·clear();
+        }
+    }
+}
+
+// ============================================================================
+// INPUT RECORDING (for replays/testing)
+// ============================================================================
+
+/// Records input for replay
+type InputRecorder = struct {
+    events: Vec<(u64, InputEvent)>!,
+    start_time: Instant!,
+    recording: bool!,
+};
+
+impl InputRecorder {
+    pub fn new() -> Self! {
+        Self {
+            events: Vec::new(),
+            start_time: Instant::now(),
+            recording: false,
+        }
+    }
+
+    pub fn start(mut self) {
+        self.events·clear();
+        self.start_time = Instant::now();
+        self.recording = true;
+    }
+
+    pub fn stop(mut self) {
+        self.recording = false;
+    }
+
+    pub fn record(mut self, event: InputEvent) {
+        if self.recording {
+            let elapsed = (Instant::now() - self.start_time).as_millis() as u64;
+            self.events·push((elapsed, event));
+        }
+    }
+
+    pub fn get_events(self) -> &[(u64, InputEvent)]! {
+        &self.events
+    }
+}

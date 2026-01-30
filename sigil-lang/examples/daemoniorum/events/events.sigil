@@ -1,0 +1,861 @@
+//! # DAEMONIORUM Event System
+//!
+//! Manages game events, triggers, and reactive systems.
+//! Events connect all game systems - plurality, combat, dialogue, scenes.
+
+use super·super·system·*
+use super·super·combat·*
+use super·super·dialogue·*
+use super·super·scenes·*
+use std·collections·HashMap
+
+// ============================================================================
+// EVENT TYPES
+// ============================================================================
+
+//! Categories of events
+enum EventCategory {
+    System,         // Plurality system events
+    Combat,         // Battle events
+    Dialogue,       // Conversation events
+    Scene,          // Location events
+    Reality,        // Reality layer events
+    Trigger,        // Emotional triggers
+    Story,          // Narrative events
+    Achievement,    // Unlocks/milestones
+}
+
+//! Priority levels for event processing
+enum EventPriority {
+    Critical,   // Process immediately (system emergencies)
+    High,       // Process before normal events
+    Normal,     // Standard processing
+    Low,        // Process after normal events
+    Deferred,   // Process at end of frame
+}
+
+// ============================================================================
+// EVENT DEFINITION
+// ============================================================================
+
+//! A game event
+struct GameEvent {
+    id: String!,
+    category: EventCategory!,
+    priority: EventPriority!,
+    timestamp: u64!,
+    data: EventData!,
+    source: EventSource~,        // REPORTED - may be uncertain
+    consumed: bool!,
+}
+
+//! Source of an event
+enum EventSource {
+    System,                      // Internal system event
+    Alter(String),               // Triggered by specific alter
+    Combat(String),              // Combat encounter
+    Dialogue(String),            // Dialogue tree
+    Scene(String),               // Scene interaction
+    Player,                      // Direct player action
+    Trigger(String),             // Emotional trigger
+    Unknown?,                    // Uncertain source
+}
+
+//! Event payload data
+enum EventData {
+    // Plurality events
+    AlterStateChange {
+        alter_id: String,
+        old_state: AlterPresenceState,
+        new_state: AlterPresenceState,
+    },
+    SwitchRequested {
+        alter_id: String,
+        urgency: f32,
+        forced: bool,
+    },
+    SwitchCompleted {
+        from_alter: Option<String>,
+        to_alter: String,
+    },
+    CoConActivated {
+        alters: Vec<String>,
+    },
+    TriggerActivated {
+        trigger_id: String,
+        intensity: f32,
+        triggered_alter: Option<String>,
+    },
+    StabilityChanged {
+        old_value: f32,
+        new_value: f32,
+        cause: String,
+    },
+    DissociationChanged {
+        old_value: f32,
+        new_value: f32,
+        cause: String,
+    },
+
+    // Reality events
+    RealityShift {
+        from_layer: RealityLayer,
+        to_layer: RealityLayer,
+        rate: f32,
+    },
+    RealityBreak {
+        intensity: f32,
+        cause: String,
+    },
+
+    // Combat events
+    CombatStarted {
+        encounter_id: String,
+        enemies: Vec<String>,
+    },
+    CombatEnded {
+        encounter_id: String,
+        result: CombatResult,
+    },
+    DamageDealt {
+        source: String,
+        target: String,
+        amount: f32,
+        ability: Option<String>,
+    },
+    DamageTaken {
+        source: String,
+        amount: f32,
+        blocked: f32,
+    },
+
+    // Dialogue events
+    DialogueStarted {
+        tree_id: String,
+        speaker: String,
+    },
+    DialogueEnded {
+        tree_id: String,
+        final_node: String,
+    },
+    ResponseChosen {
+        tree_id: String,
+        response_id: String,
+    },
+
+    // Scene events
+    SceneEntered {
+        scene_id: String,
+        from_scene: Option<String>,
+    },
+    ElementInteracted {
+        scene_id: String,
+        element_id: String,
+        verb: String,
+    },
+    ItemObtained {
+        item_id: String,
+        source: String,
+    },
+    SecretDiscovered {
+        secret_id: String,
+        discoverer: Option<String>,
+    },
+
+    // Story events
+    ChapterStarted {
+        chapter_id: String,
+    },
+    ChapterCompleted {
+        chapter_id: String,
+    },
+    FlagSet {
+        flag_id: String,
+    },
+    InsightGained {
+        insight_id: String,
+        amount: f32,
+    },
+
+    // Achievement events
+    AchievementUnlocked {
+        achievement_id: String,
+    },
+    MilestoneReached {
+        milestone_id: String,
+    },
+
+    // Generic
+    Custom {
+        type_name: String,
+        payload: HashMap<String, String>,
+    },
+}
+
+// ============================================================================
+// EVENT HANDLERS
+// ============================================================================
+
+//! Function signature for event handlers
+type EventHandler = fn(&GameEvent, &mut GameContext) -> Vec<GameEvent>;
+
+//! Event handler registration
+struct HandlerRegistration {
+    id: String!,
+    category: Option<EventCategory>?,  // None = handle all
+    priority: EventPriority!,
+    handler: EventHandler!,
+    one_shot: bool!,                   // Remove after first execution
+}
+
+// ============================================================================
+// TRIGGER SYSTEM
+// ============================================================================
+
+//! Definition of an emotional trigger
+struct TriggerDefinition {
+    id: String!,
+    name: String!,
+    description: String~,              // REPORTED - subjective
+    category: TriggerCategory!,
+    base_intensity: f32!,
+    affected_alters: Vec<String>!,     // Which alters react
+    activation_conditions: Vec<TriggerCondition>!,
+    effects: Vec<TriggerEffect>!,
+    cooldown_ms: u64!,                 // Prevent rapid re-triggering
+    last_activated: Option<u64>?,
+}
+
+//! Categories of triggers
+enum TriggerCategory {
+    Trauma,         // Traumatic memories
+    Safety,         // Safe/grounding
+    Emotional,      // Strong emotion
+    Sensory,        // Sensory overload
+    Social,         // Social situations
+    Environmental,  // Location-based
+}
+
+//! Conditions for trigger activation
+enum TriggerCondition {
+    //! Keyword in dialogue or scene
+    KeywordPresent(String),
+
+    //! Specific scene
+    InScene(String),
+
+    //! NPC present
+    NpcPresent(String),
+
+    //! Reality layer
+    RealityLayer(RealityLayer),
+
+    //! Stability below threshold
+    StabilityBelow(f32),
+
+    //! Dissociation above threshold
+    DissociationAbove(f32),
+
+    //! Specific alter fronting
+    AlterFronting(String),
+
+    //! Anima state in range
+    AnimaInRange {
+        pleasure: (f32, f32),
+        arousal: (f32, f32),
+        dominance: (f32, f32),
+    },
+
+    //! Flag is set
+    FlagSet(String),
+
+    //! Composite conditions
+    All(Vec<TriggerCondition>),
+    Any(Vec<TriggerCondition>),
+    Not(Box<TriggerCondition>),
+}
+
+//! Effects when a trigger activates
+enum TriggerEffect {
+    ModifyAnima {
+        pleasure: f32,
+        arousal: f32,
+        dominance: f32,
+    },
+    ModifyStability(f32),
+    ModifyDissociation(f32),
+    RequestSwitch {
+        alter_id: String,
+        urgency: f32,
+    },
+    ForceSwitch(String),
+    ShiftReality {
+        target: RealityLayer,
+        rate: f32,
+    },
+    PlayMemory(String),          // Flashback
+    TriggerDialogue(String),
+    SetFlag(String),
+    GrantInsight {
+        id: String,
+        amount: f32,
+    },
+    PlaySound(String),
+    VisualEffect(String),
+}
+
+// ============================================================================
+// GAME CONTEXT
+// ============================================================================
+
+//! Central game state accessible to event handlers
+struct GameContext {
+    system: PluralSystem!,
+    scene_manager: SceneManager!,
+    dialogue_manager: DialogueManager!,
+    combat_state: Option<CombatState>?,
+    flags: HashMap<String, bool>!,
+    variables: HashMap<String, EventValue>!,
+    current_time: u64!,
+    frame_events: Vec<GameEvent>!,     // Events to process this frame
+}
+
+//! Values for variables
+enum EventValue {
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(String),
+    List(Vec<EventValue>),
+}
+
+impl GameContext {
+    fn new(system: PluralSystem, scene_manager: SceneManager, dialogue_manager: DialogueManager) -> Self! {
+        Self {
+            system,
+            scene_manager,
+            dialogue_manager,
+            combat_state: None,
+            flags: HashMap·new(),
+            variables: HashMap·new(),
+            current_time: 0,
+            frame_events: [],
+        }
+    }
+
+    //! Set a flag
+    fn set_flag(mut self, flag: &str, value: bool) {
+        self.flags·insert(flag·to_string(), value);
+    }
+
+    //! Check a flag
+    fn check_flag(self, flag: &str) -> bool! {
+        self.flags·get(flag)·copied()·unwrap_or(false)
+    }
+
+    //! Set a variable
+    fn set_variable(mut self, name: &str, value: EventValue) {
+        self.variables·insert(name·to_string(), value);
+    }
+
+    //! Get a variable
+    fn get_variable(self, name: &str) -> Option<&EventValue>? {
+        self.variables·get(name)
+    }
+}
+
+// ============================================================================
+// EVENT MANAGER
+// ============================================================================
+
+//! Central event processing system
+struct EventManager {
+    event_queue: Vec<GameEvent>!,
+    handlers: Vec<HandlerRegistration>!,
+    triggers: HashMap<String, TriggerDefinition>!,
+    event_history: Vec<GameEvent>!,
+    next_event_id: u64!,
+}
+
+impl EventManager {
+    fn new() -> Self! {
+        Self {
+            event_queue: [],
+            handlers: [],
+            triggers: HashMap·new(),
+            event_history: [],
+            next_event_id: 0,
+        }
+    }
+
+    //! Register an event handler
+    fn register_handler(mut self, registration: HandlerRegistration) {
+        self.handlers·push(registration);
+        // Sort by priority
+        self.handlers·sort_by(|a, b| {
+            let priority_order = |p: &EventPriority| -> i32 {
+                match p {
+                    EventPriority·Critical => 0,
+                    EventPriority·High => 1,
+                    EventPriority·Normal => 2,
+                    EventPriority·Low => 3,
+                    EventPriority·Deferred => 4,
+                }
+            };
+            priority_order(&a.priority)·cmp(&priority_order(&b.priority))
+        });
+    }
+
+    //! Register a trigger definition
+    fn register_trigger(mut self, trigger: TriggerDefinition) {
+        self.triggers·insert(trigger.id·clone(), trigger);
+    }
+
+    //! Queue an event for processing
+    fn queue_event(mut self, data: EventData, category: EventCategory, source: EventSource) {
+        let event = GameEvent {
+            id: format!("evt_{}~", self.next_event_id),
+            category,
+            priority: EventPriority·Normal,
+            timestamp: 0,  // Set by process loop
+            data,
+            source: source~,
+            consumed: false,
+        };
+        self.next_event_id += 1;
+        self.event_queue·push(event);
+    }
+
+    //! Queue a high-priority event
+    fn queue_critical(mut self, data: EventData, category: EventCategory, source: EventSource) {
+        let event = GameEvent {
+            id: format!("evt_{}~", self.next_event_id),
+            category,
+            priority: EventPriority·Critical,
+            timestamp: 0,
+            data,
+            source: source~,
+            consumed: false,
+        };
+        self.next_event_id += 1;
+        // Insert at front
+        self.event_queue·insert(0, event);
+    }
+
+    //! Process all queued events
+    fn process_events(mut self, context: &mut GameContext) -> Vec<GameEvent>! {
+        let mut processed = Vec·new();
+        let mut new_events = Vec·new();
+
+        // Sort queue by priority
+        self.event_queue·sort_by(|a, b| {
+            let priority_order = |p: &EventPriority| -> i32 {
+                match p {
+                    EventPriority·Critical => 0,
+                    EventPriority·High => 1,
+                    EventPriority·Normal => 2,
+                    EventPriority·Low => 3,
+                    EventPriority·Deferred => 4,
+                }
+            };
+            priority_order(&a.priority)·cmp(&priority_order(&b.priority))
+        });
+
+        // Process each event
+        while let Some(mut event) = self.event_queue·pop() {
+            event.timestamp = context.current_time;
+
+            // Find matching handlers
+            let mut handlers_to_remove = Vec·new();
+
+            for (idx, handler) in self.handlers·iter()·enumerate() {
+                // Check category filter
+                let category_match = match &handler.category {
+                    None => true,
+                    Some(cat) => &event.category == cat,
+                };
+
+                if category_match && !event.consumed {
+                    // Execute handler
+                    let spawned = (handler.handler)(&event, context);
+                    new_events·extend(spawned);
+
+                    if handler.one_shot {
+                        handlers_to_remove·push(idx);
+                    }
+                }
+            }
+
+            // Remove one-shot handlers (in reverse to preserve indices)
+            handlers_to_remove·reverse();
+            for idx in handlers_to_remove {
+                self.handlers·remove(idx);
+            }
+
+            // Store in history
+            self.event_history·push(event·clone());
+            processed·push(event);
+        }
+
+        // Add newly spawned events to queue
+        self.event_queue·extend(new_events);
+
+        processed
+    }
+
+    //! Check all triggers against current state
+    fn check_triggers(mut self, context: &mut GameContext, keywords: &[String]) {
+        let current_time = context.current_time;
+
+        for trigger in self.triggers·values_mut() {
+            // Check cooldown
+            if let Some(last) = trigger.last_activated {
+                if current_time - last < trigger.cooldown_ms {
+                    continue;
+                }
+            }
+
+            // Check conditions
+            let activated = self·check_trigger_conditions(&trigger.activation_conditions, context, keywords);
+
+            if activated {
+                trigger.last_activated = Some(current_time);
+
+                // Queue trigger event
+                self·queue_event(
+                    EventData·TriggerActivated {
+                        trigger_id: trigger.id·clone(),
+                        intensity: trigger.base_intensity,
+                        triggered_alter: None,
+                    },
+                    EventCategory·Trigger,
+                    EventSource·Trigger(trigger.id·clone())~,
+                );
+
+                // Apply effects
+                for effect in &trigger.effects {
+                    self·apply_trigger_effect(effect, context);
+                }
+            }
+        }
+    }
+
+    //! Check trigger conditions
+    fn check_trigger_conditions(self, conditions: &[TriggerCondition], context: &GameContext, keywords: &[String]) -> bool! {
+        conditions |∀{c => self·check_trigger_condition(c, context, keywords)}
+    }
+
+    //! Check a single trigger condition
+    fn check_trigger_condition(self, condition: &TriggerCondition, context: &GameContext, keywords: &[String]) -> bool! {
+        match condition {
+            TriggerCondition·KeywordPresent(keyword) => {
+                keywords |∃{k => k·contains(keyword)}
+            },
+
+            TriggerCondition·InScene(scene_id) => {
+                context.scene_manager.current_scene·as_ref() == Some(scene_id)
+            },
+
+            TriggerCondition·NpcPresent(_npc_id) => {
+                true  // Would check scene NPCs
+            },
+
+            TriggerCondition·RealityLayer(layer) => {
+                &context.system.reality_layer == layer
+            },
+
+            TriggerCondition·StabilityBelow(threshold) => {
+                context.system.stability < *threshold
+            },
+
+            TriggerCondition·DissociationAbove(threshold) => {
+                context.system.dissociation > *threshold
+            },
+
+            TriggerCondition·AlterFronting(alter_id) => {
+                match &context.system.fronting {
+                    FrontingState·Single(id) => id == alter_id,
+                    FrontingState·Blended(ids) => ids·contains(alter_id),
+                    _ => false,
+                }
+            },
+
+            TriggerCondition·AnimaInRange { pleasure, arousal, dominance } => {
+                let anima = &context.system.anima;
+                anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
+                anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
+                anima.dominance >= dominance.0 && anima.dominance <= dominance.1
+            },
+
+            TriggerCondition·FlagSet(flag) => {
+                context·check_flag(flag)
+            },
+
+            TriggerCondition·All(conditions) => {
+                conditions |∀{c => self·check_trigger_condition(c, context, keywords)}
+            },
+
+            TriggerCondition·Any(conditions) => {
+                conditions |∃{c => self·check_trigger_condition(c, context, keywords)}
+            },
+
+            TriggerCondition·Not(condition) => {
+                !self·check_trigger_condition(condition, context, keywords)
+            },
+        }
+    }
+
+    //! Apply a trigger effect
+    fn apply_trigger_effect(mut self, effect: &TriggerEffect, context: &mut GameContext) {
+        match effect {
+            TriggerEffect·ModifyAnima { pleasure, arousal, dominance } => {
+                context.system.anima.pleasure = (context.system.anima.pleasure + pleasure)·clamp(-1.0, 1.0);
+                context.system.anima.arousal = (context.system.anima.arousal + arousal)·clamp(-1.0, 1.0);
+                context.system.anima.dominance = (context.system.anima.dominance + dominance)·clamp(-1.0, 1.0);
+            },
+
+            TriggerEffect·ModifyStability(delta) => {
+                let old = context.system.stability;
+                context.system.stability = (old + delta)·clamp(0.0, 1.0);
+                self·queue_event(
+                    EventData·StabilityChanged {
+                        old_value: old,
+                        new_value: context.system.stability,
+                        cause: "trigger"·to_string(),
+                    },
+                    EventCategory·System,
+                    EventSource·System~,
+                );
+            },
+
+            TriggerEffect·ModifyDissociation(delta) => {
+                let old = context.system.dissociation;
+                context.system.dissociation = (old + delta)·clamp(0.0, 1.0);
+                self·queue_event(
+                    EventData·DissociationChanged {
+                        old_value: old,
+                        new_value: context.system.dissociation,
+                        cause: "trigger"·to_string(),
+                    },
+                    EventCategory·System,
+                    EventSource·System~,
+                );
+            },
+
+            TriggerEffect·RequestSwitch { alter_id, urgency } => {
+                context.system·request_switch(alter_id, *urgency, false);
+                self·queue_event(
+                    EventData·SwitchRequested {
+                        alter_id: alter_id·clone(),
+                        urgency: *urgency,
+                        forced: false,
+                    },
+                    EventCategory·System,
+                    EventSource·Trigger("switch_request"·to_string())~,
+                );
+            },
+
+            TriggerEffect·ForceSwitch(alter_id) => {
+                context.system·request_switch(alter_id, 1.0, true);
+                self·queue_event(
+                    EventData·SwitchRequested {
+                        alter_id: alter_id·clone(),
+                        urgency: 1.0,
+                        forced: true,
+                    },
+                    EventCategory·System,
+                    EventSource·Trigger("forced_switch"·to_string())~,
+                );
+            },
+
+            TriggerEffect·ShiftReality { target, rate: _ } => {
+                let old_layer = context.system.reality_layer·clone();
+                context.system.reality_layer = target·clone();
+                self·queue_event(
+                    EventData·RealityShift {
+                        from_layer: old_layer,
+                        to_layer: target·clone(),
+                        rate: 1.0,
+                    },
+                    EventCategory·Reality,
+                    EventSource·Trigger("reality_shift"·to_string())~,
+                );
+            },
+
+            TriggerEffect·PlayMemory(memory_id) => {
+                self·queue_event(
+                    EventData·Custom {
+                        type_name: "memory_flashback"·to_string(),
+                        payload: {
+                            "memory_id" => memory_id·clone(),
+                        },
+                    },
+                    EventCategory·Story,
+                    EventSource·Trigger("flashback"·to_string())~,
+                );
+            },
+
+            TriggerEffect·TriggerDialogue(dialogue_id) => {
+                self·queue_event(
+                    EventData·DialogueStarted {
+                        tree_id: dialogue_id·clone(),
+                        speaker: "trigger"·to_string(),
+                    },
+                    EventCategory·Dialogue,
+                    EventSource·Trigger("dialogue_trigger"·to_string())~,
+                );
+            },
+
+            TriggerEffect·SetFlag(flag) => {
+                context·set_flag(flag, true);
+                self·queue_event(
+                    EventData·FlagSet {
+                        flag_id: flag·clone(),
+                    },
+                    EventCategory·Story,
+                    EventSource·System~,
+                );
+            },
+
+            TriggerEffect·GrantInsight { id, amount } => {
+                self·queue_event(
+                    EventData·InsightGained {
+                        insight_id: id·clone(),
+                        amount: *amount,
+                    },
+                    EventCategory·Story,
+                    EventSource·Trigger("insight"·to_string())~,
+                );
+            },
+
+            TriggerEffect·PlaySound(_sound_id) => {
+                // Audio system integration
+            },
+
+            TriggerEffect·VisualEffect(_effect_id) => {
+                // Visual effects integration
+            },
+        }
+    }
+
+    //! Get event history for a category
+    fn get_history(self, category: EventCategory) -> Vec<&GameEvent>! {
+        self.event_history
+            |φ{e => e.category == category}
+            |> Vec·collect
+    }
+
+    //! Check if an event occurred
+    fn event_occurred(self, event_id: &str) -> bool! {
+        self.event_history |∃{e => e.id == event_id}
+    }
+}
+
+// ============================================================================
+// BUILT-IN HANDLERS
+// ============================================================================
+
+//! Handler for stability changes - may trigger emergency protocols
+fn handle_stability_change(event: &GameEvent, context: &mut GameContext) -> Vec<GameEvent>! {
+    let mut spawned = Vec·new();
+
+    if let EventData·StabilityChanged { old_value: _, new_value, cause: _ } = &event.data {
+        // Emergency warden activation
+        if *new_value < 0.2 {
+            spawned·push(GameEvent {
+                id: "warden_emergency"·to_string(),
+                category: EventCategory·System,
+                priority: EventPriority·Critical,
+                timestamp: context.current_time,
+                data: EventData·SwitchRequested {
+                    alter_id: "warden"·to_string(),
+                    urgency: 0.9,
+                    forced: false,
+                },
+                source: EventSource·System~,
+                consumed: false,
+            });
+        }
+    }
+
+    spawned
+}
+
+//! Handler for dissociation changes - may shift reality
+fn handle_dissociation_change(event: &GameEvent, context: &mut GameContext) -> Vec<GameEvent>! {
+    let mut spawned = Vec·new();
+
+    if let EventData·DissociationChanged { old_value: _, new_value, cause: _ } = &event.data {
+        // Reality breakdown at high dissociation
+        if *new_value > 0.8 && context.system.reality_layer != RealityLayer·Shattered {
+            spawned·push(GameEvent {
+                id: "reality_break"·to_string(),
+                category: EventCategory·Reality,
+                priority: EventPriority·High,
+                timestamp: context.current_time,
+                data: EventData·RealityShift {
+                    from_layer: context.system.reality_layer·clone(),
+                    to_layer: RealityLayer·Shattered,
+                    rate: 1.0,
+                },
+                source: EventSource·System~,
+                consumed: false,
+            });
+        }
+    }
+
+    spawned
+}
+
+//! Handler for combat start - may activate combat co-consciousness
+fn handle_combat_start(event: &GameEvent, context: &mut GameContext) -> Vec<GameEvent>! {
+    let mut spawned = Vec·new();
+
+    if let EventData·CombatStarted { encounter_id: _, enemies: _ } = &event.data {
+        // Request combat-ready alters
+        spawned·push(GameEvent {
+            id: "combat_cocon_request"·to_string(),
+            category: EventCategory·System,
+            priority: EventPriority·High,
+            timestamp: context.current_time,
+            data: EventData·CoConActivated {
+                alters: ["abaddon"·to_string(), "warden"·to_string()],
+            },
+            source: EventSource·Combat("combat_init"·to_string())~,
+            consumed: false,
+        });
+    }
+
+    spawned
+}
+
+// ============================================================================
+// REGISTRATION
+// ============================================================================
+
+//! Register all built-in handlers
+fn register_builtin_handlers(manager: &mut EventManager) {
+    manager·register_handler(HandlerRegistration {
+        id: "stability_handler"·to_string(),
+        category: Some(EventCategory·System)?,
+        priority: EventPriority·High,
+        handler: handle_stability_change,
+        one_shot: false,
+    });
+
+    manager·register_handler(HandlerRegistration {
+        id: "dissociation_handler"·to_string(),
+        category: Some(EventCategory·System)?,
+        priority: EventPriority·High,
+        handler: handle_dissociation_change,
+        one_shot: false,
+    });
+
+    manager·register_handler(HandlerRegistration {
+        id: "combat_handler"·to_string(),
+        category: Some(EventCategory·Combat)?,
+        priority: EventPriority·Normal,
+        handler: handle_combat_start,
+        one_shot: false,
+    });
+}

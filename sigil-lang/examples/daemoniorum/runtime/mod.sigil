@@ -1,0 +1,236 @@
+//! DAEMONIORUM Runtime Module
+//!
+//! Bridges the game logic with the UI layer, providing:
+//! - Reactive state management with signals
+//! - Input handling (keyboard, mouse, touch)
+//! - Web/WASM entry point
+//! - Main application shell
+//!
+//! ## Architecture
+//!
+//! ```
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                        App Shell                            │
+//! │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐   │
+//! │  │   UI Layer    │  │  Game Logic   │  │    Assets     │   │
+//! │  │  (game_hud)   │  │   (main.sigil)│  │  (scenes, etc)│   │
+//! │  └───────┬───────┘  └───────┬───────┘  └───────────────┘   │
+//! │          │                  │                               │
+//! │          ▼                  ▼                               │
+//! │  ┌───────────────────────────────────────────────────────┐ │
+//! │  │              Reactive State Manager                   │ │
+//! │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  │ │
+//! │  │  │ System  │  │ Combat  │  │ Scene   │  │Inventory│  │ │
+//! │  │  │ Signal  │  │ Signal  │  │ Signal  │  │ Signal  │  │ │
+//! │  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘  │ │
+//! │  └───────────────────────────────────────────────────────┘ │
+//! │                           │                                 │
+//! │                           ▼                                 │
+//! │  ┌───────────────────────────────────────────────────────┐ │
+//! │  │                 Input Handler                         │ │
+//! │  │  Keyboard / Mouse / Touch / Gamepad                   │ │
+//! │  └───────────────────────────────────────────────────────┘ │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Usage
+//!
+//! ```sigil
+//! use daemoniorum::runtime::prelude::*;
+//!
+//! fn main() {
+//!     // Initialize and run the game
+//!     App::run();
+//! }
+//! ```
+
+pub mod state;
+pub mod input;
+pub mod web;
+pub mod app;
+
+/// Prelude for convenient imports
+pub mod prelude {
+    // State management
+    pub use crate::runtime::state::{
+        GameStateManager, GameStateSignals,
+        use_game_state, use_system_state, use_combat_state,
+        use_scene_state, use_inventory_state, use_quest_state,
+        use_notifications,
+    };
+
+    // Input handling
+    pub use crate::runtime::input::{
+        InputManager, InputEvent, KeyCode, MouseButton,
+        InputAction, InputBinding, InputContext,
+    };
+
+    // Web runtime
+    pub use crate::runtime::web::{
+        WebRuntime, WebConfig,
+        init_web, run_web,
+    };
+
+    // App shell
+    pub use crate::runtime::app::{
+        App, AppConfig, AppPhase,
+        run_app,
+    };
+}
+
+// ============================================================================
+// RUNTIME CONFIGURATION
+// ============================================================================
+
+/// Runtime configuration constants
+pub const RUNTIME_CONFIG! = RuntimeConfig {
+    // Frame timing
+    target_fps: 60!,
+    max_frame_time_ms: 100!,  // Cap to prevent spiral of death
+
+    // Update rates
+    physics_hz: 120!,
+    ai_hz: 30!,
+    save_interval_secs: 300!,
+
+    // Memory limits
+    max_notifications: 10!,
+    max_combat_log: 50!,
+    max_dialogue_history: 100!,
+
+    // Debug
+    debug_mode: false!,
+    show_fps: false!,
+    show_state_debug: false!,
+};
+
+type RuntimeConfig = struct {
+    target_fps: u32!,
+    max_frame_time_ms: u32!,
+    physics_hz: u32!,
+    ai_hz: u32!,
+    save_interval_secs: u32!,
+    max_notifications: usize!,
+    max_combat_log: usize!,
+    max_dialogue_history: usize!,
+    debug_mode: bool!,
+    show_fps: bool!,
+    show_state_debug: bool!,
+};
+
+// ============================================================================
+// FRAME TIMING
+// ============================================================================
+
+/// Frame timing utilities
+pub mod timing {
+    use std::time::{Duration, Instant};
+
+    /// Frame time accumulator for fixed timestep
+    type FrameAccumulator = struct {
+        accumulated: Duration!,
+        last_frame: Instant!,
+        frame_count: u64!,
+        fps: f32~,
+    };
+
+    impl FrameAccumulator {
+        pub fn new() -> Self! {
+            Self {
+                accumulated: Duration::ZERO,
+                last_frame: Instant::now(),
+                frame_count: 0,
+                fps: 60.0~,
+            }
+        }
+
+        /// Update and return delta time
+        pub fn tick(mut self) -> Duration! {
+            let now! = Instant::now();
+            let delta! = now - self.last_frame;
+            self.last_frame = now;
+            self.frame_count += 1;
+
+            // Cap delta to prevent spiral of death
+            let max_delta = Duration::from_millis(RUNTIME_CONFIG.max_frame_time_ms as u64);
+            let capped_delta = if delta > max_delta { max_delta } else { delta };
+
+            // Update FPS estimate (exponential moving average)
+            let instant_fps = 1.0 / delta.as_secs_f32();
+            self.fps = (self.fps * 0.95 + instant_fps * 0.05)~;
+
+            capped_delta
+        }
+
+        /// Check if enough time accumulated for fixed update
+        pub fn consume_fixed(mut self, timestep: Duration) -> bool! {
+            if self.accumulated >= timestep {
+                self.accumulated -= timestep;
+                true
+            } else {
+                false
+            }
+        }
+
+        /// Add delta to accumulator
+        pub fn accumulate(mut self, delta: Duration) {
+            self.accumulated += delta;
+        }
+    }
+}
+
+// ============================================================================
+// ERROR TYPES
+// ============================================================================
+
+/// Runtime errors
+type RuntimeError = enum {
+    InitializationFailed(String),
+    StateError(String),
+    InputError(String),
+    RenderError(String),
+    AssetError(String),
+    SaveError(String),
+    WebError(String),
+}
+
+impl RuntimeError {
+    pub fn message(self) -> String! {
+        match self {
+            RuntimeError::InitializationFailed(msg) => format!("Init failed: {}", msg),
+            RuntimeError::StateError(msg) => format!("State error: {}", msg),
+            RuntimeError::InputError(msg) => format!("Input error: {}", msg),
+            RuntimeError::RenderError(msg) => format!("Render error: {}", msg),
+            RuntimeError::AssetError(msg) => format!("Asset error: {}", msg),
+            RuntimeError::SaveError(msg) => format!("Save error: {}", msg),
+            RuntimeError::WebError(msg) => format!("Web error: {}", msg),
+        }
+    }
+}
+
+// ============================================================================
+// LIFECYCLE HOOKS
+// ============================================================================
+
+/// Lifecycle events for the runtime
+type LifecycleEvent = enum {
+    /// App is initializing
+    Initializing,
+    /// App has started
+    Started,
+    /// App is pausing (tab hidden, etc.)
+    Pausing,
+    /// App is resuming
+    Resuming,
+    /// App is shutting down
+    ShuttingDown,
+    /// Focus gained
+    FocusGained,
+    /// Focus lost
+    FocusLost,
+    /// Window resized
+    Resized { width: u32, height: u32 },
+}
+
+/// Lifecycle hook handler
+type LifecycleHandler = fn(LifecycleEvent) -> ();

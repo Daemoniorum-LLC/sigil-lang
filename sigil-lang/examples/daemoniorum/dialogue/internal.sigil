@@ -1,0 +1,511 @@
+//! # Internal System Dialogue
+//!
+//! Alter-to-alter communication within the headspace.
+//! These dialogues occur during co-consciousness, switches,
+//! and internal council meetings.
+
+use super·dialogue·*
+use super·super·system·*
+use super·super·alters·council·*
+
+// ============================================================================
+// INTERNAL SPEAKER INFO
+// ============================================================================
+
+//! Create speaker info for an alter
+fn alter_speaker(alter_id: &str, name: &str) -> SpeakerInfo! {
+    SpeakerInfo {
+        id: alter_id·to_string(),
+        name: name·to_string(),
+        portrait: format!("alter_{}~", alter_id),
+        alter_portraits: HashMap·new()~,  // Alters see each other directly
+        layer_portraits: HashMap·new()~,
+    }
+}
+
+// ============================================================================
+// SWITCH REQUEST DIALOGUES
+// ============================================================================
+
+//! Abaddon requesting front during threat
+fn create_abaddon_switch_request() -> DialogueTree! {
+    let speaker = alter_speaker("abaddon", "Abaddon");
+
+    DialogueTreeBuilder·new("abaddon_switch_request")
+        ·entry("request")
+        ·speaker(speaker)
+        ·node(
+            DialogueNodeBuilder·new(
+                "request",
+                "*Abaddon's presence surges forward, hot and sharp.*\n\nLet me handle this. NOW."
+            )
+            // Vessel hears it differently
+            ·alter_variation(
+                "vessel",
+                "*A wave of heat and fury crashes against your consciousness.*\n\nSTEP ASIDE. I WILL PROTECT US.",
+                DialogueTone·Aggressive
+            )
+            // Warden understands
+            ·alter_variation(
+                "warden",
+                "*You feel Abaddon pushing forward.*\n\nI see the threat too. Take the front. I'll guard our flank.",
+                DialogueTone·Guarded
+            )
+            // Beleth feels the fear beneath the anger
+            ·alter_variation(
+                "beleth",
+                "*Beneath the rage, you feel his terror for the system.*\n\nPlease... let me keep us safe.",
+                DialogueTone·Warm
+            )
+            ·response(DialogueResponse {
+                id: "allow_switch"·to_string(),
+                text: "*Step back, allowing the switch*"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [],
+                target_node: "switch_complete"·to_string(),
+                effects: [
+                    DialogueEffect·RequestSwitch {
+                        alter_id: "abaddon"·to_string(),
+                        urgency: 1.0,
+                    },
+                    DialogueEffect·ModifyStability(-0.1),
+                ],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·response(DialogueResponse {
+                id: "negotiate"·to_string(),
+                text: "*Hold position* Not yet. We need to assess."·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [
+                    DialogueCondition·StabilityAbove(0.5),
+                ],
+                target_node: "negotiate_response"·to_string(),
+                effects: [],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·response(DialogueResponse {
+                id: "cocon"·to_string(),
+                text: "*Offer co-consciousness* Together?"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [
+                    DialogueCondition·StabilityAbove(0.4),
+                    DialogueCondition·DissociationBelow(0.6),
+                ],
+                target_node: "cocon_established"·to_string(),
+                effects: [
+                    DialogueEffect·SetFlag("combat_cocon_offered"·to_string()),
+                ],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "switch_complete",
+                "*The world sharpens. Every threat highlighted. Every weakness exposed. We are ready.*"
+            )
+            ·effect(DialogueEffect·ModifyAnima { pleasure: 0.0, arousal: 0.5, dominance: 0.5 })
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "negotiate_response",
+                "*A growl in the back of your mind.*\n\nFine. But if this goes wrong, you WILL let me through."
+            )
+            ·effect(DialogueEffect·SetFlag("abaddon_on_standby"·to_string()))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "cocon_established",
+                "*Two consciousnesses merge at the edges.*\n\nTogether then. Your eyes, my instincts. We are one blade."
+            )
+            ·effect(DialogueEffect·SetFlag("combat_cocon_active"·to_string()))
+            ·effect(DialogueEffect·ModifyStability(0.1))  // Co-consciousness can be stabilizing
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·build()
+        ·expect("Failed to build Abaddon switch request")
+}
+
+// ============================================================================
+// STOLAS OBSERVATION INTERJECTIONS
+// ============================================================================
+
+//! Stolas commenting on something observed
+fn create_stolas_observation() -> DialogueTree! {
+    let speaker = alter_speaker("stolas", "Stolas");
+
+    DialogueTreeBuilder·new("stolas_observation")
+        ·entry("notice")
+        ·speaker(speaker)
+        ·node(
+            DialogueNodeBuilder·new(
+                "notice",
+                "*A whisper from the back of your mind, cool and precise.*\n\nDid you see that? Look again. Third shelf, behind the candles."
+            )
+            ·alter_variation(
+                "vessel",
+                "*Something tugs at your attention. A knowing you can't explain.*\n\nLook... there.",
+                DialogueTone·Analytical
+            )
+            ·alter_variation(
+                "abaddon",
+                "*The scholar's voice, irritatingly calm.*\n\nIf you'd stop posturing for a moment. Third shelf. Something hidden.",
+                DialogueTone·Analytical
+            )
+            ·response(DialogueResponse {
+                id: "investigate"·to_string(),
+                text: "*Focus on the indicated spot*"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [],
+                target_node: "revelation"·to_string(),
+                effects: [
+                    DialogueEffect·GrantInsight { id: "hidden_object"·to_string(), amount: 10.0 },
+                ],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·response(DialogueResponse {
+                id: "ignore"·to_string(),
+                text: "*Push the observation aside* Not now."·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [],
+                target_node: "dismissed"·to_string(),
+                effects: [],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "revelation",
+                "*Satisfaction radiates from Stolas's presence.*\n\nI thought so. A hidden compartment. Whatever Marcus is hiding, it's there."
+            )
+            ·effect(DialogueEffect·SetFlag("stolas_clue_found"·to_string()))
+            ·effect(DialogueEffect·GrantInsight { id: "marcus_secret"·to_string(), amount: 25.0 })
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "dismissed",
+                "*A faint sigh of disappointment.*\n\nVery well. But remember where I pointed. It will matter later."
+            )
+            ·effect(DialogueEffect·SetFlag("stolas_clue_missed"·to_string()))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·build()
+        ·expect("Failed to build Stolas observation")
+}
+
+// ============================================================================
+// WARDEN EMERGENCY TAKEOVER
+// ============================================================================
+
+//! Warden forcing a protective switch
+fn create_warden_emergency() -> DialogueTree! {
+    let speaker = alter_speaker("warden", "Warden");
+
+    DialogueTreeBuilder·new("warden_emergency")
+        ·entry("alert")
+        ·speaker(speaker)
+        ·node(
+            DialogueNodeBuilder·new(
+                "alert",
+                "*Warden's presence SLAMS forward, overwhelming.*\n\nDANGER. MOVING NOW. HOLD ON."
+            )
+            // No choice - emergency takeover
+            ·condition(DialogueCondition·StabilityAbove(-1.0))  // Always valid
+            ·effect(DialogueEffect·RequestSwitch {
+                alter_id: "warden"·to_string(),
+                urgency: 1.0,
+            })
+            ·effect(DialogueEffect·ModifyDissociation(0.2))
+            ·effect(DialogueEffect·SetFlag("emergency_switch"·to_string()))
+            ·next("takeover")
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "takeover",
+                "*The world becomes simpler. Threat. Exit. Move.\n\nWe are safe. Warden is here. We will survive this.*"
+            )
+            ·effect(DialogueEffect·ModifyStability(0.2))  // Warden stabilizes
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·build()
+        ·expect("Failed to build Warden emergency dialogue")
+}
+
+// ============================================================================
+// BELETH EMOTIONAL SUPPORT
+// ============================================================================
+
+//! Beleth offering comfort during distress
+fn create_beleth_comfort() -> DialogueTree! {
+    let speaker = alter_speaker("beleth", "Beleth");
+
+    DialogueTreeBuilder·new("beleth_comfort")
+        ·entry("reach_out")
+        ·speaker(speaker)
+        ·node(
+            DialogueNodeBuilder·new(
+                "reach_out",
+                "*Warmth blooms in your chest. A gentle presence.*\n\nI'm here. You're not alone. Breathe with me."
+            )
+            ·alter_variation(
+                "vessel",
+                "*Something soft wraps around your fear.*\n\nIt's okay. I've got you. We've got you.",
+                DialogueTone·Warm
+            )
+            ·alter_variation(
+                "abaddon",
+                "*The love-keeper's presence, steady and unwavering.*\n\nEven you, warrior. Let me hold this for a moment.",
+                DialogueTone·Warm
+            )
+            ·response(DialogueResponse {
+                id: "accept"·to_string(),
+                text: "*Lean into the comfort*"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [],
+                target_node: "accepted"·to_string(),
+                effects: [
+                    DialogueEffect·ModifyAnima { pleasure: 0.2, arousal: -0.2, dominance: -0.1 },
+                    DialogueEffect·ModifyStability(0.15),
+                ],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·response(DialogueResponse {
+                id: "resist"·to_string(),
+                text: "*Pull away* I'm fine."·to_string(),
+                alter_variations: {
+                    "abaddon" => "*Push the softness away* We don't have time for this.",
+                }~,
+                conditions: [],
+                target_node: "rejected"·to_string(),
+                effects: [
+                    DialogueEffect·ModifyAnima { pleasure: -0.1, arousal: 0.1, dominance: 0.2 },
+                ],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "accepted",
+                "*The warmth spreads, steadying.*\n\nThat's it. We're okay. Whatever comes, we face it together."
+            )
+            ·effect(DialogueEffect·SetFlag("beleth_comfort_accepted"·to_string()))
+            ·effect(DialogueEffect·ModifyDissociation(-0.1))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "rejected",
+                "*A flicker of hurt, quickly hidden.*\n\nAlright. But I'm still here. Whenever you need me."
+            )
+            ·effect(DialogueEffect·SetFlag("beleth_comfort_rejected"·to_string()))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·build()
+        ·expect("Failed to build Beleth comfort dialogue")
+}
+
+// ============================================================================
+// PAIMON GUIDANCE
+// ============================================================================
+
+//! Paimon offering strategic guidance
+fn create_paimon_guidance() -> DialogueTree! {
+    let speaker = alter_speaker("paimon", "Paimon");
+
+    DialogueTreeBuilder·new("paimon_guidance")
+        ·entry("crossroads")
+        ·speaker(speaker)
+        ·node(
+            DialogueNodeBuilder·new(
+                "crossroads",
+                "*A calm presence settles beside your consciousness.*\n\nI see three paths. Let me show you."
+            )
+            ·response(DialogueResponse {
+                id: "path_combat"·to_string(),
+                text: "*Look at the combat path*"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [],
+                target_node: "path_combat_desc"·to_string(),
+                effects: [],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·response(DialogueResponse {
+                id: "path_stealth"·to_string(),
+                text: "*Look at the stealth path*"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [],
+                target_node: "path_stealth_desc"·to_string(),
+                effects: [],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·response(DialogueResponse {
+                id: "path_diplomacy"·to_string(),
+                text: "*Look at the diplomacy path*"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [],
+                target_node: "path_diplomacy_desc"·to_string(),
+                effects: [],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "path_combat_desc",
+                "*The path of fire and fury.*\n\nAbaddon would excel here. High risk, high reward. Some things cannot be talked down."
+            )
+            ·effect(DialogueEffect·SetFlag("paimon_showed_combat"·to_string()))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "path_stealth_desc",
+                "*The path of shadows and patience.*\n\nWe could slip past unnoticed. Warden sees the routes. Less glory, more survival."
+            )
+            ·effect(DialogueEffect·SetFlag("paimon_showed_stealth"·to_string()))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "path_diplomacy_desc",
+                "*The path of words and connection.*\n\nBeleth's domain. Perhaps the enemy can become an ally. Or at least, not an enemy."
+            )
+            ·effect(DialogueEffect·SetFlag("paimon_showed_diplomacy"·to_string()))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·build()
+        ·expect("Failed to build Paimon guidance dialogue")
+}
+
+// ============================================================================
+// COUNCIL MEETING
+// ============================================================================
+
+//! Internal council meeting during crisis
+fn create_council_meeting() -> DialogueTree! {
+    // The council speaks as one
+    let speaker = SpeakerInfo {
+        id: "council"·to_string(),
+        name: "The Council"·to_string(),
+        portrait: "council_chamber"·to_string(),
+        alter_portraits: HashMap·new()~,
+        layer_portraits: HashMap·new()~,
+    };
+
+    DialogueTreeBuilder·new("council_meeting")
+        ·entry("convene")
+        ·speaker(speaker)
+        ·node(
+            DialogueNodeBuilder·new(
+                "convene",
+                "*You sink inward, to the place where all of you meet.*\n\nThe council is convened."
+            )
+            ·effect(DialogueEffect·SetFlag("council_active"·to_string()))
+            ·effect(DialogueEffect·ModifyDissociation(0.1))  // Going deep
+            ·next("voices")
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "voices",
+                "*Five presences arrange themselves around the inner space.*\n\n**Abaddon:** We fight.\n**Stolas:** We learn.\n**Beleth:** We feel.\n**Paimon:** We guide.\n**Warden:** We protect.\n\n*And you, Vessel, are the center that holds.*"
+            )
+            ·response(DialogueResponse {
+                id: "ask_advice"·to_string(),
+                text: "What should we do?"·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [],
+                target_node: "advice"·to_string(),
+                effects: [],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·response(DialogueResponse {
+                id: "call_vote"·to_string(),
+                text: "We vote."·to_string(),
+                alter_variations: HashMap·new()~,
+                conditions: [
+                    DialogueCondition·StabilityAbove(0.5),
+                ],
+                target_node: "vote"·to_string(),
+                effects: [],
+                internal: true,
+                required_traits: [],
+                forbidden_traits: [],
+            })
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "advice",
+                "*Each voice offers perspective.*\n\n**Stolas:** We need more information before acting.\n**Abaddon:** Information won't stop a blade. We prepare for the worst.\n**Beleth:** The NPC showed vulnerability. Perhaps they can be reached.\n**Paimon:** All paths are valid. The question is: what can we live with?\n**Warden:** Whatever we choose, we choose together."
+            )
+            ·effect(DialogueEffect·GrantInsight { id: "council_wisdom"·to_string(), amount: 20.0 })
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·node(
+            DialogueNodeBuilder·new(
+                "vote",
+                "*The council votes. A consensus emerges from the many.*\n\nWe are aligned. We move forward as one."
+            )
+            ·effect(DialogueEffect·ModifyStability(0.2))
+            ·effect(DialogueEffect·SetFlag("council_decided"·to_string()))
+            ·effect(DialogueEffect·EndDialogue)
+            ·build()
+        )
+        ·build()
+        ·expect("Failed to build council meeting dialogue")
+}
+
+// ============================================================================
+// REGISTRATION
+// ============================================================================
+
+//! Register all internal dialogues
+fn register_internal_dialogues(manager: &mut DialogueManager) {
+    manager·load_tree(create_abaddon_switch_request());
+    manager·load_tree(create_stolas_observation());
+    manager·load_tree(create_warden_emergency());
+    manager·load_tree(create_beleth_comfort());
+    manager·load_tree(create_paimon_guidance());
+    manager·load_tree(create_council_meeting());
+}
