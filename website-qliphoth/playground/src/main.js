@@ -544,11 +544,17 @@ class SigilRuntime {
   }
 
   async initWasm() {
-    // Load the Rust WASM interpreter module
-    const module = await import('./wasm/sigil_wasm_playground.js');
-    // Initialize the WASM module
-    await module.default();
-    this.wasmModule = module;
+    // Load the Rust WASM interpreter module with a timeout to prevent
+    // indefinite hangs when the binary can't be loaded or instantiated
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('WASM load timed out after 10s')), 10000)
+    );
+    const load = async () => {
+      const module = await import('./wasm/sigil_wasm_playground.js');
+      await module.default();
+      this.wasmModule = module;
+    };
+    await Promise.race([load(), timeout]);
   }
 
   wasmCheck(code) {
@@ -878,14 +884,16 @@ async function init() {
     parent: document.getElementById('editor'),
   });
 
-  // Initialize runtime
-  await runtime.init();
-  const mode = runtime.useBackend ? 'Backend' : runtime.useWasm ? 'WASM' : 'Mock';
-  const modeColor = runtime.useBackend ? '#22c55e' : runtime.useWasm ? '#14A088' : '#f59e0b';
-  output.innerHTML = `<span style="color: ${modeColor};">✓ Sigil runtime ready (${mode} mode)</span>\n\nClick "Run" to execute your code.`;
+  // Register all event handlers FIRST so the UI is interactive immediately,
+  // then initialize the runtime in the background. This prevents the UI from
+  // being completely unresponsive if WASM loading is slow or fails.
 
   // Run button
   document.getElementById('run').addEventListener('click', async () => {
+    if (!runtime.ready) {
+      output.innerHTML = '<span style="color: #f59e0b;">Runtime still loading, please wait...</span>';
+      return;
+    }
     const code = editor.state.doc.toString();
     output.innerHTML = '<span style="color: #a1a1aa;">Running...</span>';
 
@@ -1035,6 +1043,13 @@ async function init() {
       document.getElementById('check').click();
     }
   });
+
+  // Initialize runtime in background (after event handlers are registered)
+  output.innerHTML = '<span style="color: #a1a1aa;">Initializing Sigil runtime...</span>';
+  await runtime.init();
+  const mode = runtime.useBackend ? 'Backend' : runtime.useWasm ? 'WASM' : 'Mock';
+  const modeColor = runtime.useBackend ? '#22c55e' : runtime.useWasm ? '#14A088' : '#f59e0b';
+  output.innerHTML = `<span style="color: ${modeColor};">✓ Sigil runtime ready (${mode} mode)</span>\n\nClick "Run" to execute your code.`;
 
   // Update status
   status.textContent = 'Ready';
