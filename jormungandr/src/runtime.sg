@@ -31,7 +31,7 @@ invoke tome·ir·IrEvidence;
 // ============================================================================
 
 /// Memory arena ∀ temporary allocations
-☉ sigil Arena {
+☉ Σ Arena {
     /// Current chunk of memory
     chunk: ![u8],
     /// Current offset ∈ chunk
@@ -44,12 +44,12 @@ invoke tome·ir·IrEvidence;
 
 ⊢ Arena {
     /// Create a new arena with default chunk capacity (64KB)
-    ☉ rite new() → !Arena {
+    ☉ λ new() -> !Arena {
         Arena·with_capacity(65536)
     }
 
     /// Create arena with custom chunk capacity
-    ☉ rite with_capacity(cap: !u64) → !Arena {
+    ☉ λ with_capacity(cap: !u64) -> !Arena {
         ≔ chunk = Vec·with_capacity(cap);
         Arena {
             chunk,
@@ -60,32 +60,32 @@ invoke tome·ir·IrEvidence;
     }
 
     /// Allocate bytes ∈ the arena
-    ☉ rite alloc(vary this, nbytes: !u64) → !*vary u8 {
-        // Ensure alignment (round up to 8-byte boundary)
-        ≔ aligned_offset = (this.offset + 7) & 0xFFFFFFFFFFFFFFF8u64;
+    ☉ λ alloc(Δ self, nbytes: !u64) -> !*Δ u8 {
+        // Ensure 8-byte alignment: round up to nearest multiple of 8
+        ≔ aligned_offset = ((self.offset + 7) / 8) * 8;
 
-        ⎇ aligned_offset + nbytes > this.chunk.capacity() {
+        ⎇ aligned_offset + nbytes > self.chunk.capacity() {
             // Need new chunk
-            this.chunks.push(this.chunk);
-            this.chunk = Vec·with_capacity(max(this.chunk_cap, nbytes));
-            this.offset = 0;
+            self.chunks.push(self.chunk);
+            self.chunk = Vec·with_capacity(max(self.chunk_cap, nbytes));
+            self.offset = 0;
         }
 
-        ≔ ptr = this.chunk.as_mut_ptr().add(this.offset);
-        this.offset += nbytes;
+        ≔ ptr = self.chunk.as_mut_ptr().add(self.offset);
+        self.offset += nbytes;
         ptr
     }
 
     /// Reset arena, keeping allocated memory ∀ reuse
-    ☉ rite reset(vary this) {
-        this.offset = 0;
+    ☉ λ reset(Δ self) {
+        self.offset = 0;
         // Keep chunks ∀ reuse
     }
 
     /// Total bytes allocated
-    ☉ rite bytes_allocated(this) → !u64 {
-        ≔ vary total = this.offset;
-        each chunk ∈ this.chunks {
+    ☉ λ bytes_allocated(self) -> !u64 {
+        ≔ Δ total = self.offset;
+        ∀ chunk ∈ self.chunks {
             total += chunk.len();
         }
         total
@@ -97,19 +97,19 @@ invoke tome·ir·IrEvidence;
 // ============================================================================
 
 /// Reference-counted pointer
-☉ sigil Rc<T> {
-    ptr: !*vary RcInner<T>,
+☉ Σ Rc<T> {
+    ptr: !*Δ RcInner<T>,
 }
 
-sigil RcInner<T> {
+Σ RcInner<T> {
     value: !T,
     count: !u64,
     evidence: !IrEvidence,
 }
 
-⊢ Rc<T> {
+⊢<T> Rc<T> {
     /// Create a new reference-counted value
-    ☉ rite new(value: !T) → !Rc<T> {
+    ☉ λ new(value: !T) -> !Rc<T> {
         ≔ inner = Box·new(RcInner {
             value,
             count: 1,
@@ -119,7 +119,7 @@ sigil RcInner<T> {
     }
 
     /// Create with evidence annotation
-    ☉ rite with_evidence(value: !T, evidence: !IrEvidence) → !Rc<T> {
+    ☉ λ with_evidence(value: !T, evidence: !IrEvidence) -> !Rc<T> {
         ≔ inner = Box·new(RcInner {
             value,
             count: 1,
@@ -129,23 +129,23 @@ sigil RcInner<T> {
     }
 
     /// Clone the reference (increment count)
-    ☉ rite clone(this) → !Rc<T> {
+    ☉ λ clone(self) -> !Rc<T> {
         unsafe {
-            (*this.ptr).count += 1;
+            (*self.ptr).count += 1;
         }
-        Rc { ptr: this.ptr }
+        Rc { ptr: self.ptr }
     }
 
     /// Get reference to inner value
-    ☉ rite get(this) → !&T {
-        unsafe { &(*this.ptr).value }
+    ☉ λ get(self) -> !&T {
+        unsafe { &(*self.ptr).value }
     }
 
     /// Get mutable reference (only ⎇ unique)
-    ☉ rite get_mut(vary this) → ?&vary T {
+    ☉ λ get_mut(Δ self) -> ?&Δ T {
         unsafe {
-            ⎇ (*this.ptr).count == 1 {
-                ?&vary (*this.ptr).value
+            ⎇ (*self.ptr).count == 1 {
+                ?&Δ (*self.ptr).value
             } ⎉ {
                 null
             }
@@ -153,22 +153,22 @@ sigil RcInner<T> {
     }
 
     /// Get evidence level
-    ☉ rite evidence(this) → !IrEvidence {
-        unsafe { (*this.ptr).evidence }
+    ☉ λ evidence(self) -> !IrEvidence {
+        unsafe { (*self.ptr).evidence }
     }
 
     /// Reference count
-    ☉ rite count(this) → !u64 {
-        unsafe { (*this.ptr).count }
+    ☉ λ count(self) -> !u64 {
+        unsafe { (*self.ptr).count }
     }
 }
 
-⊢ Rc<T> : Drop {
-    rite drop(vary this) {
+⊢<T> Drop ∀ Rc<T> {
+    λ drop(Δ self) {
         unsafe {
-            (*this.ptr).count -= 1;
-            ⎇ (*this.ptr).count == 0 {
-                drop(Box·from_raw(this.ptr));
+            (*self.ptr).count -= 1;
+            ⎇ (*self.ptr).count == 0 {
+                drop(Box·from_raw(self.ptr));
             }
         }
     }
@@ -179,7 +179,7 @@ sigil RcInner<T> {
 // ============================================================================
 
 /// String interner ∀ deduplicating strings
-☉ sigil StringInterner {
+☉ Σ StringInterner {
     /// Interned strings
     strings: !Map<String, u32>,
     /// Reverse lookup
@@ -187,7 +187,7 @@ sigil RcInner<T> {
 }
 
 ⊢ StringInterner {
-    ☉ rite new() → !StringInterner {
+    ☉ λ new() -> !StringInterner {
         StringInterner {
             strings: Map·new(),
             by_id: [],
@@ -195,29 +195,29 @@ sigil RcInner<T> {
     }
 
     /// Intern a string, returning its ID
-    ☉ rite intern(vary this, s: !&str) → !u32 {
-        ⎇ ≔ ?id = this.strings.get(s) {
+    ☉ λ intern(Δ self, s: !&str) -> !u32 {
+        ⎇ ≔ ?id = self.strings.get(s) {
             ⤺ id;
         }
 
-        ≔ id = this.by_id.len() as u32;
-        this.strings.insert(s.to_string(), id);
-        this.by_id.push(s.to_string());
+        ≔ id = self.by_id.len() as u32;
+        self.strings.insert(s.to_string(), id);
+        self.by_id.push(s.to_string());
         id
     }
 
     /// Look up string by ID
-    ☉ rite get(this, id: !u32) → ?&str {
-        ⎇ (id as u64) < this.by_id.len() {
-            ?this.by_id[id as u64].as_str()
+    ☉ λ get(self, id: !u32) -> ?&str {
+        ⎇ (id as u64) < self.by_id.len() {
+            ?self.by_id[id as u64].as_str()
         } ⎉ {
             null
         }
     }
 
     /// Number of interned strings
-    ☉ rite len(this) → !u64 {
-        this.by_id.len()
+    ☉ λ len(self) -> !u64 {
+        self.by_id.len()
     }
 }
 
@@ -226,7 +226,7 @@ sigil RcInner<T> {
 // ============================================================================
 
 /// Runtime evidence context
-☉ sigil EvidenceContext {
+☉ Σ EvidenceContext {
     /// Current evidence floor (minimum level allowed)
     floor: !IrEvidence,
     /// Evidence violations collected
@@ -236,7 +236,7 @@ sigil RcInner<T> {
 }
 
 /// An evidence violation
-☉ sigil EvidenceViolation {
+☉ Σ EvidenceViolation {
     ☉ expected: !IrEvidence,
     ☉ actual: !IrEvidence,
     ☉ location: !String,
@@ -245,64 +245,64 @@ sigil RcInner<T> {
 
 ⊢ EvidenceContext {
     /// Create a new permissive context
-    ☉ rite new() → !EvidenceContext {
+    ☉ λ new() -> !EvidenceContext {
         EvidenceContext {
             floor: IrEvidence·Paradox,
             violations: [],
-            strict: nay,
+            strict: false,
         }
     }
 
     /// Create a strict context that panics on violations
-    ☉ rite strict() → !EvidenceContext {
+    ☉ λ strict() -> !EvidenceContext {
         EvidenceContext {
             floor: IrEvidence·Known,
             violations: [],
-            strict: yea,
+            strict: true,
         }
     }
 
     /// Check evidence and record any violation
-    ☉ rite check(vary this, expected: !IrEvidence, actual: !IrEvidence, location: !&str) → !bool {
+    ☉ λ check(Δ self, expected: !IrEvidence, actual: !IrEvidence, location: !&str) -> !bool {
         ⎇ !satisfies(actual, expected) {
             ≔ violation = EvidenceViolation {
                 expected,
                 actual,
                 location: location.to_string(),
-                context: this.current_context(),
+                context: self.current_context(),
             };
 
-            ⎇ this.strict {
+            ⎇ self.strict {
                 panic!("Evidence violation at {}: expected {} ({}), got {} ({})",
                     location, expected.name(), expected.symbol(),
                     actual.name(), actual.symbol());
             }
 
-            this.violations.push(violation);
-            nay
+            self.violations.push(violation);
+            false
         } ⎉ {
-            yea
+            true
         }
     }
 
     /// Get current context description
-    rite current_context(this) → !String {
+    λ current_context(self) -> !String {
         "runtime check".to_string()
     }
 
     /// Get all violations
-    ☉ rite violations(this) → ![EvidenceViolation] {
-        this.violations.clone()
+    ☉ λ violations(self) -> ![EvidenceViolation] {
+        self.violations.clone()
     }
 
     /// Clear violations
-    ☉ rite clear(vary this) {
-        this.violations.clear();
+    ☉ λ clear(Δ self) {
+        self.violations.clear();
     }
 }
 
 /// Check ⎇ actual evidence satisfies required evidence
-rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
+λ satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
     ≔ rank = |ev: !IrEvidence| {
         ⌥ ev {
             IrEvidence·Known => 0,
@@ -321,10 +321,10 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 /// Standard input/output
 ☉ scroll io {
     /// Print to stdout (no newline)
-    ☉ rite print(s: !&str) {
+    ☉ λ print(s: !&str) {
         // Platform-specific implementation
         extern "C" {
-            rite write(fd: i32, buf: *◆ u8, count: u64) → i64;
+            λ write(fd: i32, buf: *const u8, count: u64) -> i64;
         }
         unsafe {
             write(1, s.as_ptr(), s.len());
@@ -332,24 +332,24 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Print line to stdout
-    ☉ rite println(s: !&str) {
+    ☉ λ println(s: !&str) {
         print(s);
         print("\n");
     }
 
     /// Read line from stdin
-    ☉ rite read_line() → ~String {
+    ☉ λ read_line() -> ~String {
         // Returns Reported evidence since it's external input
-        ≔ vary buffer = String·new();
+        ≔ Δ buffer = String·new();
         extern "C" {
-            rite read(fd: i32, buf: *vary u8, count: u64) → i64;
+            λ read(fd: i32, buf: *Δ u8, count: u64) -> i64;
         }
         unsafe {
-            ≔ vary byte: [u8; 1] = [0];
-            forever {
+            ≔ Δ byte: [u8; 1] = [0];
+            loop {
                 ≔ n = read(0, byte.as_mut_ptr(), 1);
-                ⎇ n <= 0 ∨ byte[0] == 10 {  // 10 = ASCII newline
-                    ⊲;
+                ⎇ n <= 0 || byte[0] == 10 {  // 10 = ASCII newline
+                    ⊗;
                 }
                 buffer.push(byte[0] as char);
             }
@@ -360,17 +360,17 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 
 /// Math functions
 ☉ scroll math {
-    ☉ ◆ PI: !f64 = 3.141592653589793;
-    ☉ ◆ E: !f64 = 2.718281828459045;
-    ☉ ◆ TAU: !f64 = 6.283185307179586;
+    ☉ const PI: !f64 = 3.141592653589793;
+    ☉ const E: !f64 = 2.718281828459045;
+    ☉ const TAU: !f64 = 6.283185307179586;
 
     /// Absolute value
-    ☉ rite abs(x: !f64) → !f64 {
+    ☉ λ abs(x: !f64) -> !f64 {
         ⎇ x < 0.0 { -x } ⎉ { x }
     }
 
     /// Square root (using Newton-Raphson)
-    ☉ rite sqrt(x: !f64) → !f64 {
+    ☉ λ sqrt(x: !f64) -> !f64 {
         ⎇ x < 0.0 {
             ⤺ f64·NAN;
         }
@@ -378,11 +378,11 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
             ⤺ 0.0;
         }
 
-        ≔ vary guess = x / 2.0;
-        each _ ∈ 0..50 {
+        ≔ Δ guess = x / 2.0;
+        ∀ _ ∈ 0..50 {
             ≔ next = (guess + x / guess) / 2.0;
             ⎇ abs(next - guess) < 0.000000000000001 {
-                ⊲;
+                ⊗;
             }
             guess = next;
         }
@@ -390,13 +390,13 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Power function
-    ☉ rite pow(base: !f64, exp: !f64) → !f64 {
+    ☉ λ pow(base: !f64, exp: !f64) -> !f64 {
         // For integer exponents, invoke repeated multiplication
-        ⎇ exp == exp.floor() ∧ exp >= 0.0 {
+        ⎇ exp == exp.floor() && exp >= 0.0 {
             ≔ n = exp as i64;
-            ≔ vary result = 1.0;
-            ≔ vary b = base;
-            ≔ vary e = n;
+            ≔ Δ result = 1.0;
+            ≔ Δ b = base;
+            ≔ Δ e = n;
             ⟳ e > 0 {
                 ⎇ e & 1 == 1 {
                     result *= b;
@@ -412,103 +412,103 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Natural logarithm
-    ☉ rite ln(x: !f64) → !f64 {
+    ☉ λ ln(x: !f64) -> !f64 {
         ⎇ x <= 0.0 {
             ⤺ f64·NAN;
         }
 
         // Use series expansion around 1
-        ≔ vary y = (x - 1.0) / (x + 1.0);
+        ≔ Δ y = (x - 1.0) / (x + 1.0);
         ≔ y2 = y * y;
-        ≔ vary result = 0.0;
-        ≔ vary term = y;
-        each i ∈ 0..100 {
+        ≔ Δ result = 0.0;
+        ≔ Δ term = y;
+        ∀ i ∈ 0..100 {
             result += term / (2 * i + 1) as f64;
             term *= y2;
             ⎇ abs(term) < 0.000000000000001 {
-                ⊲;
+                ⊗;
             }
         }
         2.0 * result
     }
 
     /// Exponential function
-    rite exp_impl(x: !f64) → !f64 {
+    λ exp_impl(x: !f64) -> !f64 {
         // Taylor series: e^x = sum(x^n / n!)
-        ≔ vary result = 1.0;
-        ≔ vary term = 1.0;
-        each n ∈ 1..100 {
+        ≔ Δ result = 1.0;
+        ≔ Δ term = 1.0;
+        ∀ n ∈ 1..100 {
             term *= x / n as f64;
             result += term;
             ⎇ abs(term) < 0.000000000000001 {
-                ⊲;
+                ⊗;
             }
         }
         result
     }
 
-    ☉ rite exp(x: !f64) → !f64 {
+    ☉ λ exp(x: !f64) -> !f64 {
         exp_impl(x)
     }
 
     /// Sine (Taylor series)
-    ☉ rite sin(x: !f64) → !f64 {
+    ☉ λ sin(x: !f64) -> !f64 {
         // Reduce to [-π, π]
         ≔ x = x % TAU;
         ≔ x = ⎇ x > PI { x - TAU } ⎉ ⎇ x < -PI { x + TAU } ⎉ { x };
 
         // Taylor series
-        ≔ vary result = 0.0;
-        ≔ vary term = x;
+        ≔ Δ result = 0.0;
+        ≔ Δ term = x;
         ≔ x2 = x * x;
-        each n ∈ 0..50 {
+        ∀ n ∈ 0..50 {
             result += term;
             term *= -x2 / ((2 * n + 2) * (2 * n + 3)) as f64;
             ⎇ abs(term) < 0.000000000000001 {
-                ⊲;
+                ⊗;
             }
         }
         result
     }
 
     /// Cosine
-    ☉ rite cos(x: !f64) → !f64 {
+    ☉ λ cos(x: !f64) -> !f64 {
         sin(x + PI / 2.0)
     }
 
     /// Tangent
-    ☉ rite tan(x: !f64) → !f64 {
+    ☉ λ tan(x: !f64) -> !f64 {
         sin(x) / cos(x)
     }
 
     /// Floor
-    ☉ rite floor(x: !f64) → !f64 {
+    ☉ λ floor(x: !f64) -> !f64 {
         x as i64 as f64
     }
 
     /// Ceiling
-    ☉ rite ceil(x: !f64) → !f64 {
+    ☉ λ ceil(x: !f64) -> !f64 {
         ≔ f = floor(x);
         ⎇ x > f { f + 1.0 } ⎉ { f }
     }
 
     /// Round to nearest integer
-    ☉ rite round(x: !f64) → !f64 {
+    ☉ λ round(x: !f64) -> !f64 {
         floor(x + 0.5)
     }
 
     /// Minimum
-    ☉ rite min(a: !f64, b: !f64) → !f64 {
+    ☉ λ min(a: !f64, b: !f64) -> !f64 {
         ⎇ a < b { a } ⎉ { b }
     }
 
     /// Maximum
-    ☉ rite max(a: !f64, b: !f64) → !f64 {
+    ☉ λ max(a: !f64, b: !f64) -> !f64 {
         ⎇ a > b { a } ⎉ { b }
     }
 
     /// Clamp value to range
-    ☉ rite clamp(x: !f64, lo: !f64, hi: !f64) → !f64 {
+    ☉ λ clamp(x: !f64, lo: !f64, hi: !f64) -> !f64 {
         max(lo, min(hi, x))
     }
 }
@@ -516,11 +516,11 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 /// String operations
 ☉ scroll string {
     /// Split string by delimiter
-    ☉ rite split(s: !&str, delim: !&str) → ![String] {
-        ≔ vary result: ![String] = Vec·new();
-        ≔ vary current = String·new();
+    ☉ λ split(s: !&str, delim: !&str) -> ![String] {
+        ≔ Δ result: ![String] = [];
+        ≔ Δ current = String·new();
 
-        each c ∈ s.chars() {
+        ∀ c ∈ s.chars() {
             ⎇ delim.contains(c) {
                 ⎇ !current.is_empty() {
                     result.push(current);
@@ -539,13 +539,13 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Join strings with separator
-    ☉ rite join(parts: ![&str], sep: !&str) → !String {
+    ☉ λ join(parts: ![&str], sep: !&str) -> !String {
         ⎇ parts.is_empty() {
             ⤺ String·new();
         }
 
-        ≔ vary result = parts[0].to_string();
-        ≔ vary idx: usize = 1;
+        ≔ Δ result = parts[0].to_string();
+        ≔ Δ idx: usize = 1;
         ⟳ idx < parts.len() {
             result.push_str(sep);
             result.push_str(parts[idx]);
@@ -555,37 +555,37 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Trim whitespace
-    ☉ rite trim(s: !&str) → !String {
+    ☉ λ trim(s: !&str) -> !String {
         s.trim().to_string()
     }
 
     /// Convert to uppercase
-    ☉ rite upper(s: !&str) → !String {
+    ☉ λ upper(s: !&str) -> !String {
         s.to_uppercase()
     }
 
     /// Convert to lowercase
-    ☉ rite lower(s: !&str) → !String {
+    ☉ λ lower(s: !&str) -> !String {
         s.to_lowercase()
     }
 
     /// Check ⎇ string contains substring
-    ☉ rite contains(s: !&str, needle: !&str) → !bool {
+    ☉ λ contains(s: !&str, needle: !&str) -> !bool {
         s.contains(needle)
     }
 
     /// Check ⎇ starts with prefix
-    ☉ rite starts_with(s: !&str, prefix: !&str) → !bool {
+    ☉ λ starts_with(s: !&str, prefix: !&str) -> !bool {
         s.starts_with(prefix)
     }
 
     /// Check ⎇ ends with suffix
-    ☉ rite ends_with(s: !&str, suffix: !&str) → !bool {
+    ☉ λ ends_with(s: !&str, suffix: !&str) -> !bool {
         s.ends_with(suffix)
     }
 
     /// Replace all occurrences
-    ☉ rite replace(s: !&str, from: !&str, to: !&str) → !String {
+    ☉ λ replace(s: !&str, from: !&str, to: !&str) -> !String {
         s.replace(from, to)
     }
 }
@@ -593,18 +593,18 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 /// Array/collection operations
 ☉ scroll collections {
     /// Create range [start, end)
-    ☉ rite range(start: !i64, end: !i64) → ![i64] {
-        ≔ vary result: ![i64] = Vec·new();
-        each i ∈ start..end {
+    ☉ λ range(start: !i64, end: !i64) -> ![i64] {
+        ≔ Δ result: ![i64] = [];
+        ∀ i ∈ start..end {
             result.push(i);
         }
         result
     }
 
     /// Create range with step
-    ☉ rite range_step(start: !i64, end: !i64, step: !i64) → ![i64] {
-        ≔ vary result: ![i64] = Vec·new();
-        ≔ vary i = start;
+    ☉ λ range_step(start: !i64, end: !i64, step: !i64) -> ![i64] {
+        ≔ Δ result: ![i64] = [];
+        ≔ Δ i = start;
         ⎇ step > 0 {
             ⟳ i < end {
                 result.push(i);
@@ -620,48 +620,48 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Repeat value n times
-    ☉ rite repeat<T>(value: !T, n: !u64) → ![T] {
-        ≔ vary result: ![T] = Vec·new();
-        each _ ∈ 0..n {
+    ☉ λ repeat<T>(value: !T, n: !u64) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ _ ∈ 0..n {
             result.push(value.clone());
         }
         result
     }
 
     /// Zip two arrays
-    ☉ rite combineTwo<A, B>(a: ![A], b: ![B]) → ![(A, B)] {
+    ☉ λ combineTwo<A, B>(a: ![A], b: ![B]) -> ![(A, B)] {
         ≔ len = math·min(a.len() as f64, b.len() as f64) as u64;
-        ≔ vary result: ![(A, B)] = Vec·new();
-        each i ∈ 0..len {
+        ≔ Δ result: ![(A, B)] = [];
+        ∀ i ∈ 0..len {
             result.push((a[i].clone(), b[i].clone()));
         }
         result
     }
 
     /// Enumerate array with indices
-    ☉ rite enumerate<T>(arr: ![T]) → ![(u64, T)] {
-        ≔ vary result: ![(u64, T)] = Vec·new();
-        each (i, item) ∈ arr.iter().enumerate() {
+    ☉ λ enumerate<T>(arr: ![T]) -> ![(u64, T)] {
+        ≔ Δ result: ![(u64, T)] = [];
+        ∀ (i, item) ∈ arr.iter().enumerate() {
             result.push((i, item.clone()));
         }
         result
     }
 
     /// Reverse array
-    ☉ rite reverse<T>(arr: ![T]) → ![T] {
-        ≔ vary result: ![T] = Vec·new();
-        each i ∈ (0..arr.len()).rev() {
+    ☉ λ reverse<T>(arr: ![T]) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ i ∈ (0..arr.len()).rev() {
             result.push(arr[i].clone());
         }
         result
     }
 
     /// Sort array (simple insertion sort ∀ bootstrap)
-    ☉ rite sort<T: Ord>(arr: ![T]) → ![T] {
-        ≔ vary result = arr.clone();
-        each i ∈ 1..result.len() {
-            ≔ vary j = i;
-            ⟳ j > 0 ∧ result[j - 1] > result[j] {
+    ☉ λ sort<T: Ord>(arr: ![T]) -> ![T] {
+        ≔ Δ result = arr.clone();
+        ∀ i ∈ 1..result.len() {
+            ≔ Δ j = i;
+            ⟳ j > 0 && result[j - 1] > result[j] {
                 result.swap(j - 1, j);
                 j -= 1;
             }
@@ -670,9 +670,9 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Remove duplicates (preserving order)
-    ☉ rite unique<T: Eq>(arr: ![T]) → ![T] {
-        ≔ vary result: ![T] = Vec·new();
-        each item ∈ arr {
+    ☉ λ unique<T: Eq>(arr: ![T]) -> ![T] {
+        ≔ Δ result: ![T] = [];
+        ∀ item ∈ arr {
             ⎇ !result.contains(&item) {
                 result.push(item);
             }
@@ -684,18 +684,18 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 /// Time operations
 ☉ scroll time {
     /// Get current time ∈ seconds since epoch
-    ☉ rite now() → ~f64 {
+    ☉ λ now() -> ~f64 {
         // Returns Reported since it's external state
         extern "C" {
-            rite time(t: *vary i64) → i64;
+            λ time(t: *Δ i64) -> i64;
         }
         unsafe { time(null) as f64 }
     }
 
     /// Sleep ∀ given seconds
-    ☉ rite sleep(seconds: !f64) {
+    ☉ λ sleep(seconds: !f64) {
         extern "C" {
-            rite usleep(usec: u32) → i32;
+            λ usleep(usec: u32) -> i32;
         }
         ≔ usec = (seconds * 1_000_000.0) as u32;
         unsafe { usleep(usec); }
@@ -705,15 +705,15 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 /// Random number generation
 ☉ scroll random {
     /// Simple LCG random state
-    static vary SEED: u64 = 12345;
+    static Δ SEED: u64 = 12345;
 
     /// Set random seed
-    ☉ rite seed(s: !u64) {
+    ☉ λ seed(s: !u64) {
         unsafe { SEED = s; }
     }
 
     /// Generate random u64
-    ☉ rite next_u64() → !u64 {
+    ☉ λ next_u64() -> !u64 {
         unsafe {
             SEED = SEED.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
             SEED
@@ -721,26 +721,26 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Generate random f64 ∈ [0, 1)
-    ☉ rite random() → !f64 {
+    ☉ λ random() -> !f64 {
         (next_u64() as f64) / (u64·MAX as f64)
     }
 
     /// Generate random integer ∈ [min, max]
-    ☉ rite randint(min: !i64, max: !i64) → !i64 {
+    ☉ λ randint(min: !i64, max: !i64) -> !i64 {
         ≔ range = (max - min + 1) as u64;
         min + (next_u64() % range) as i64
     }
 
     /// Shuffle array ∈ place
-    ☉ rite shuffle<T>(vary arr: ![T]) {
-        each i ∈ (1..arr.len()).rev() {
+    ☉ λ shuffle<T>(Δ arr: ![T]) {
+        ∀ i ∈ (1..arr.len()).rev() {
             ≔ j = randint(0, i as i64) as u64;
             arr.swap(i, j);
         }
     }
 
     /// Choose random element
-    ☉ rite choice<T>(arr: ![T]) → ?T {
+    ☉ λ choice<T>(arr: ![T]) -> ?T {
         ⎇ arr.is_empty() {
             null
         } ⎉ {
@@ -757,192 +757,192 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 ☉ scroll sync {
     ☉ scroll atomic {
         /// Atomic u64 ∀ counters, IDs, and flags
-        ☉ sigil AtomicU64 {
-            value: !*vary u64,
+        ☉ Σ AtomicU64 {
+            value: !*Δ u64,
         }
 
         ⊢ AtomicU64 {
             /// Create a new atomic with initial value
-            ☉ rite new(initial: !u64) → !AtomicU64 {
+            ☉ λ new(initial: !u64) -> !AtomicU64 {
                 ≔ ptr = Box·into_raw(Box·new(initial));
                 AtomicU64 { value: ptr }
             }
 
             /// Load the current value (acquire ordering)
-            ☉ rite load(this) → !u64 {
-                unsafe { *this.value }
+            ☉ λ load(self) -> !u64 {
+                unsafe { *self.value }
             }
 
             /// Store a new value (release ordering)
-            ☉ rite store(vary this, val: !u64) {
-                unsafe { *this.value = val; }
+            ☉ λ store(Δ self, val: !u64) {
+                unsafe { *self.value = val; }
             }
 
             /// Add to the current value, returning the previous value
-            ☉ rite fetch_add(vary this, val: !u64) → !u64 {
+            ☉ λ fetch_add(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = prev + val;
+                    ≔ prev = *self.value;
+                    *self.value = prev + val;
                     prev
                 }
             }
 
             /// Subtract from current value, returning previous value
-            ☉ rite fetch_sub(vary this, val: !u64) → !u64 {
+            ☉ λ fetch_sub(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = prev - val;
+                    ≔ prev = *self.value;
+                    *self.value = prev - val;
                     prev
                 }
             }
 
             /// Bitwise OR with current value
-            ☉ rite fetch_or(vary this, val: !u64) → !u64 {
+            ☉ λ fetch_or(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = prev ⋎ val;
+                    ≔ prev = *self.value;
+                    *self.value = prev ⋎ val;
                     prev
                 }
             }
 
             /// Bitwise AND with current value
-            ☉ rite fetch_and(vary this, val: !u64) → !u64 {
+            ☉ λ fetch_and(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = prev & val;
+                    ≔ prev = *self.value;
+                    *self.value = prev & val;
                     prev
                 }
             }
 
             /// Bitwise XOR with current value
-            ☉ rite fetch_xor(vary this, val: !u64) → !u64 {
+            ☉ λ fetch_xor(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = prev ^ val;
+                    ≔ prev = *self.value;
+                    *self.value = prev ^ val;
                     prev
                 }
             }
 
             /// Swap with a new value, returning the old value
-            ☉ rite swap(vary this, val: !u64) → !u64 {
+            ☉ λ swap(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = val;
+                    ≔ prev = *self.value;
+                    *self.value = val;
                     prev
                 }
             }
 
-            /// Compare and swap: ⎇ current == expected, set to new and ⤺ yea
-            ☉ rite compare_exchange(vary this, expected: !u64, new: !u64) → !bool {
+            /// Compare and swap: ⎇ current == expected, set to new and ⤺ true
+            ☉ λ compare_exchange(Δ self, expected: !u64, new: !u64) -> !bool {
                 unsafe {
-                    ⎇ *this.value == expected {
-                        *this.value = new;
-                        yea
+                    ⎇ *self.value == expected {
+                        *self.value = new;
+                        true
                     } ⎉ {
-                        nay
+                        false
                     }
                 }
             }
         }
 
         /// Atomic i64 ∀ signed counters
-        ☉ sigil AtomicI64 {
-            value: !*vary i64,
+        ☉ Σ AtomicI64 {
+            value: !*Δ i64,
         }
 
         ⊢ AtomicI64 {
-            ☉ rite new(initial: !i64) → !AtomicI64 {
+            ☉ λ new(initial: !i64) -> !AtomicI64 {
                 ≔ ptr = Box·into_raw(Box·new(initial));
                 AtomicI64 { value: ptr }
             }
 
-            ☉ rite load(this) → !i64 {
-                unsafe { *this.value }
+            ☉ λ load(self) -> !i64 {
+                unsafe { *self.value }
             }
 
-            ☉ rite store(vary this, val: !i64) {
-                unsafe { *this.value = val; }
+            ☉ λ store(Δ self, val: !i64) {
+                unsafe { *self.value = val; }
             }
 
-            ☉ rite fetch_add(vary this, val: !i64) → !i64 {
+            ☉ λ fetch_add(Δ self, val: !i64) -> !i64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = prev + val;
+                    ≔ prev = *self.value;
+                    *self.value = prev + val;
                     prev
                 }
             }
 
-            ☉ rite fetch_sub(vary this, val: !i64) → !i64 {
+            ☉ λ fetch_sub(Δ self, val: !i64) -> !i64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = prev - val;
+                    ≔ prev = *self.value;
+                    *self.value = prev - val;
                     prev
                 }
             }
         }
 
         /// Atomic bool ∀ flags
-        ☉ sigil AtomicBool {
-            value: !*vary bool,
+        ☉ Σ AtomicBool {
+            value: !*Δ bool,
         }
 
         ⊢ AtomicBool {
-            ☉ rite new(initial: !bool) → !AtomicBool {
+            ☉ λ new(initial: !bool) -> !AtomicBool {
                 ≔ ptr = Box·into_raw(Box·new(initial));
                 AtomicBool { value: ptr }
             }
 
-            ☉ rite load(this) → !bool {
-                unsafe { *this.value }
+            ☉ λ load(self) -> !bool {
+                unsafe { *self.value }
             }
 
-            ☉ rite store(vary this, val: !bool) {
-                unsafe { *this.value = val; }
+            ☉ λ store(Δ self, val: !bool) {
+                unsafe { *self.value = val; }
             }
 
-            ☉ rite swap(vary this, val: !bool) → !bool {
+            ☉ λ swap(Δ self, val: !bool) -> !bool {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = val;
+                    ≔ prev = *self.value;
+                    *self.value = val;
                     prev
                 }
             }
 
-            ☉ rite compare_exchange(vary this, expected: !bool, new: !bool) → !bool {
+            ☉ λ compare_exchange(Δ self, expected: !bool, new: !bool) -> !bool {
                 unsafe {
-                    ⎇ *this.value == expected {
-                        *this.value = new;
-                        yea
+                    ⎇ *self.value == expected {
+                        *self.value = new;
+                        true
                     } ⎉ {
-                        nay
+                        false
                     }
                 }
             }
         }
 
         /// Atomic usize ∀ indices and lengths
-        ☉ sigil AtomicUsize {
-            value: !*vary u64,
+        ☉ Σ AtomicUsize {
+            value: !*Δ u64,
         }
 
         ⊢ AtomicUsize {
-            ☉ rite new(initial: !u64) → !AtomicUsize {
+            ☉ λ new(initial: !u64) -> !AtomicUsize {
                 ≔ ptr = Box·into_raw(Box·new(initial));
                 AtomicUsize { value: ptr }
             }
 
-            ☉ rite load(this) → !u64 {
-                unsafe { *this.value }
+            ☉ λ load(self) -> !u64 {
+                unsafe { *self.value }
             }
 
-            ☉ rite store(vary this, val: !u64) {
-                unsafe { *this.value = val; }
+            ☉ λ store(Δ self, val: !u64) {
+                unsafe { *self.value = val; }
             }
 
-            ☉ rite fetch_add(vary this, val: !u64) → !u64 {
+            ☉ λ fetch_add(Δ self, val: !u64) -> !u64 {
                 unsafe {
-                    ≔ prev = *this.value;
-                    *this.value = prev + val;
+                    ≔ prev = *self.value;
+                    *self.value = prev + val;
                     prev
                 }
             }
@@ -957,11 +957,11 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 /// Cryptographic hash functions
 ☉ scroll crypto {
     /// CRC32 checksum (IEEE polynomial)
-    ☉ rite crc32(data: !&[u8]) → !u32 {
-        ≔ vary crc = 0xFFFFFFFFu32;
-        each byte ∈ data {
+    ☉ λ crc32(data: !&[u8]) -> !u32 {
+        ≔ Δ crc = 0xFFFFFFFFu32;
+        ∀ byte ∈ data {
             crc = crc ^ (*byte as u32);
-            each _ ∈ 0..8 {
+            ∀ _ ∈ 0..8 {
                 crc = ⎇ crc & 1 != 0 {
                     (crc >> 1) ^ 0xEDB88320u32
                 } ⎉ {
@@ -969,15 +969,15 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
                 };
             }
         }
-        !crc
+        crc ^ 0xFFFFFFFFu32  // Final XOR
     }
 
     /// CRC32C (Castagnoli polynomial, used ∈ iSCSI, Btrfs)
-    ☉ rite crc32c(data: !&[u8]) → !u32 {
-        ≔ vary crc = 0xFFFFFFFFu32;
-        each byte ∈ data {
+    ☉ λ crc32c(data: !&[u8]) -> !u32 {
+        ≔ Δ crc = 0xFFFFFFFFu32;
+        ∀ byte ∈ data {
             crc = crc ^ (*byte as u32);
-            each _ ∈ 0..8 {
+            ∀ _ ∈ 0..8 {
                 crc = ⎇ crc & 1 != 0 {
                     (crc >> 1) ^ 0x82F63B78u32
                 } ⎉ {
@@ -985,16 +985,16 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
                 };
             }
         }
-        !crc
+        crc ^ 0xFFFFFFFFu32  // Final XOR
     }
 
     /// Adler32 checksum (faster than CRC32, used ∈ zlib)
-    ☉ rite adler32(data: !&[u8]) → !u32 {
+    ☉ λ adler32(data: !&[u8]) -> !u32 {
         ≔ mod_adler = 65521u32;
-        ≔ vary a = 1u32;
-        ≔ vary b = 0u32;
+        ≔ Δ a = 1u32;
+        ≔ Δ b = 0u32;
 
-        each byte ∈ data {
+        ∀ byte ∈ data {
             a = (a + (*byte as u32)) % mod_adler;
             b = (b + a) % mod_adler;
         }
@@ -1003,12 +1003,12 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// FNV-1a hash (fast, good distribution)
-    ☉ rite fnv1a(data: !&[u8]) → !u64 {
+    ☉ λ fnv1a(data: !&[u8]) -> !u64 {
         ≔ fnv_offset = 14695981039346656037u64;
         ≔ fnv_prime = 1099511628211u64;
 
-        ≔ vary hash = fnv_offset;
-        each byte ∈ data {
+        ≔ Δ hash = fnv_offset;
+        ∀ byte ∈ data {
             hash = hash ^ (*byte as u64);
             hash = hash.wrapping_mul(fnv_prime);
         }
@@ -1016,9 +1016,9 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Simple hash ∀ strings (djb2)
-    ☉ rite hash_string(s: !&str) → !u64 {
-        ≔ vary hash = 5381u64;
-        each c ∈ s.bytes() {
+    ☉ λ hash_string(s: !&str) -> !u64 {
+        ≔ Δ hash = 5381u64;
+        ∀ c ∈ s.bytes() {
             hash = ((hash << 5) + hash) + (c as u64);
         }
         hash
@@ -1032,21 +1032,21 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 /// Byte manipulation and binary data utilities
 ☉ scroll bytes {
     /// Read u16 from bytes (little-endian)
-    ☉ rite read_u16_le(data: !&[u8], offset: !u64) → !u16 {
+    ☉ λ read_u16_le(data: !&[u8], offset: !u64) -> !u16 {
         ≔ lo = data[offset] as u16;
         ≔ hi = data[offset + 1] as u16;
         lo ⋎ (hi << 8)
     }
 
     /// Read u16 from bytes (big-endian)
-    ☉ rite read_u16_be(data: !&[u8], offset: !u64) → !u16 {
+    ☉ λ read_u16_be(data: !&[u8], offset: !u64) -> !u16 {
         ≔ hi = data[offset] as u16;
         ≔ lo = data[offset + 1] as u16;
         lo ⋎ (hi << 8)
     }
 
     /// Read u32 from bytes (little-endian)
-    ☉ rite read_u32_le(data: !&[u8], offset: !u64) → !u32 {
+    ☉ λ read_u32_le(data: !&[u8], offset: !u64) -> !u32 {
         ≔ b0 = data[offset] as u32;
         ≔ b1 = data[offset + 1] as u32;
         ≔ b2 = data[offset + 2] as u32;
@@ -1055,7 +1055,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Read u32 from bytes (big-endian)
-    ☉ rite read_u32_be(data: !&[u8], offset: !u64) → !u32 {
+    ☉ λ read_u32_be(data: !&[u8], offset: !u64) -> !u32 {
         ≔ b3 = data[offset] as u32;
         ≔ b2 = data[offset + 1] as u32;
         ≔ b1 = data[offset + 2] as u32;
@@ -1064,27 +1064,27 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Read u64 from bytes (little-endian)
-    ☉ rite read_u64_le(data: !&[u8], offset: !u64) → !u64 {
+    ☉ λ read_u64_le(data: !&[u8], offset: !u64) -> !u64 {
         ≔ lo = read_u32_le(data, offset) as u64;
         ≔ hi = read_u32_le(data, offset + 4) as u64;
         lo ⋎ (hi << 32)
     }
 
     /// Read u64 from bytes (big-endian)
-    ☉ rite read_u64_be(data: !&[u8], offset: !u64) → !u64 {
+    ☉ λ read_u64_be(data: !&[u8], offset: !u64) -> !u64 {
         ≔ hi = read_u32_be(data, offset) as u64;
         ≔ lo = read_u32_be(data, offset + 4) as u64;
         lo ⋎ (hi << 32)
     }
 
     /// Write u16 to bytes (little-endian)
-    ☉ rite write_u16_le(data: !&vary [u8], offset: !u64, value: !u16) {
+    ☉ λ write_u16_le(data: !&Δ [u8], offset: !u64, value: !u16) {
         data[offset] = (value & 0xFF) as u8;
         data[offset + 1] = ((value >> 8) & 0xFF) as u8;
     }
 
     /// Write u32 to bytes (little-endian)
-    ☉ rite write_u32_le(data: !&vary [u8], offset: !u64, value: !u32) {
+    ☉ λ write_u32_le(data: !&Δ [u8], offset: !u64, value: !u32) {
         data[offset] = (value & 0xFF) as u8;
         data[offset + 1] = ((value >> 8) & 0xFF) as u8;
         data[offset + 2] = ((value >> 16) & 0xFF) as u8;
@@ -1092,43 +1092,43 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Write u64 to bytes (little-endian)
-    ☉ rite write_u64_le(data: !&vary [u8], offset: !u64, value: !u64) {
+    ☉ λ write_u64_le(data: !&Δ [u8], offset: !u64, value: !u64) {
         write_u32_le(data, offset, (value & 0xFFFFFFFF) as u32);
         write_u32_le(data, offset + 4, ((value >> 32) & 0xFFFFFFFF) as u32);
     }
 
     /// Compare byte slices
-    ☉ rite equals(a: !&[u8], b: !&[u8]) → !bool {
+    ☉ λ equals(a: !&[u8], b: !&[u8]) -> !bool {
         ⎇ a.len() != b.len() {
-            ⤺ nay;
+            ⤺ false;
         }
-        each i ∈ 0..a.len() {
+        ∀ i ∈ 0..a.len() {
             ⎇ a[i] != b[i] {
-                ⤺ nay;
+                ⤺ false;
             }
         }
-        yea
+        true
     }
 
     /// Copy bytes from src to dst
-    ☉ rite copy(dst: !&vary [u8], dst_offset: !u64, src: !&[u8], src_offset: !u64, count: !u64) {
-        each i ∈ 0..count {
+    ☉ λ copy(dst: !&Δ [u8], dst_offset: !u64, src: !&[u8], src_offset: !u64, count: !u64) {
+        ∀ i ∈ 0..count {
             dst[dst_offset + i] = src[src_offset + i];
         }
     }
 
     /// Fill bytes with a value
-    ☉ rite fill(data: !&vary [u8], offset: !u64, count: !u64, value: !u8) {
-        each i ∈ 0..count {
+    ☉ λ fill(data: !&Δ [u8], offset: !u64, count: !u64, value: !u8) {
+        ∀ i ∈ 0..count {
             data[offset + i] = value;
         }
     }
 
     /// Hex encode bytes to string
-    ☉ rite to_hex(data: !&[u8]) → !String {
+    ☉ λ to_hex(data: !&[u8]) -> !String {
         ≔ hex_chars = "0123456789abcdef";
-        ≔ vary result = String·new();
-        each byte ∈ data {
+        ≔ Δ result = String·new();
+        ∀ byte ∈ data {
             ≔ hi = ((*byte >> 4) & 0x0F) as u64;
             ≔ lo = (*byte & 0x0F) as u64;
             result.push(hex_chars.chars().nth(hi).unwrap());
@@ -1138,7 +1138,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
     }
 
     /// Hex decode string to bytes
-    ☉ rite from_hex(s: !&str) → ?[u8] {
+    ☉ λ from_hex(s: !&str) -> ?[u8] {
         ⎇ s.len() % 2 != 0 {
             ⤺ null;
         }
@@ -1165,13 +1165,13 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
             }
         };
 
-        ≔ vary result: ![u8] = Vec·new();
+        ≔ Δ result: ![u8] = [];
         ≔ chars: ![char] = s.chars().collect();
-        ≔ vary i: u64 = 0;
+        ≔ Δ i: u64 = 0;
         ⟳ i < chars.len() {
             ≔ hi = hex_value(chars[i]);
             ≔ lo = hex_value(chars[i + 1]);
-            ⎇ hi.is_none() ∨ lo.is_none() {
+            ⎇ hi.is_none() || lo.is_none() {
                 ⤺ null;
             }
             result.push((hi.unwrap() << 4) ⋎ lo.unwrap());
@@ -1186,13 +1186,13 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) → !bool {
 // ============================================================================
 
 /// Initialize runtime system
-☉ rite init() {
+☉ λ init() {
     // Initialize random seed from time
     random·seed(time·now() as u64);
 }
 
 /// Shutdown runtime system
-☉ rite shutdown() {
+☉ λ shutdown() {
     // Cleanup resources
 }
 
@@ -1205,8 +1205,8 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    rite test_arena_alloc() {
-        ≔ vary arena = Arena·new();
+    λ test_arena_alloc() {
+        ≔ Δ arena = Arena·new();
         ≔ ptr1 = arena.alloc(100 as u64);
         ≔ ptr2 = arena.alloc(200 as u64);
         assert!(ptr1 != ptr2);
@@ -1214,8 +1214,8 @@ scroll tests {
     }
 
     #[test]
-    rite test_string_interner() {
-        ≔ vary interner = StringInterner·new();
+    λ test_string_interner() {
+        ≔ Δ interner = StringInterner·new();
         ≔ id1 = interner.intern("hello");
         ≔ id2 = interner.intern("world");
         ≔ id3 = interner.intern("hello");
@@ -1225,39 +1225,39 @@ scroll tests {
     }
 
     #[test]
-    rite test_evidence_check() {
-        ≔ vary ctx = EvidenceContext·new();
+    λ test_evidence_check() {
+        ≔ Δ ctx = EvidenceContext·new();
         assert!(ctx.check(IrEvidence·Reported, IrEvidence·Known, "test"));
         assert!(!ctx.check(IrEvidence·Known, IrEvidence·Reported, "test"));
         assert_eq!(ctx.violations().len(), 1);
     }
 
     #[test]
-    rite test_math_sqrt() {
+    λ test_math_sqrt() {
         assert!((math·sqrt(4.0) - 2.0).abs() < 0.0000000001);
         assert!((math·sqrt(2.0) - 1.41421356).abs() < 0.000001);
     }
 
     #[test]
-    rite test_math_trig() {
+    λ test_math_trig() {
         assert!((math·sin(0.0)).abs() < 0.0000000001);
         assert!((math·cos(0.0) - 1.0).abs() < 0.0000000001);
         assert!((math·sin(math·PI / 2.0) - 1.0).abs() < 0.0000000001);
     }
 
     #[test]
-    rite test_collections_range() {
+    λ test_collections_range() {
         assert_eq!(collections·range(0, 5), [0, 1, 2, 3, 4]);
         assert_eq!(collections·range(5, 5), []);
     }
 
     #[test]
-    rite test_string_split() {
+    λ test_string_split() {
         assert_eq!(string·split("a,b,c", ","), ["a", "b", "c"]);
     }
 
     #[test]
-    rite test_atomic_u64() {
+    λ test_atomic_u64() {
         ≔ counter = sync·atomic·AtomicU64·new(0);
         assert_eq!(counter.load(), 0);
         counter.store(42);
@@ -1267,15 +1267,15 @@ scroll tests {
     }
 
     #[test]
-    rite test_atomic_bool() {
-        ≔ flag = sync·atomic·AtomicBool·new(nay);
-        assert_eq!(flag.load(), nay);
-        assert_eq!(flag.swap(yea), nay);
-        assert_eq!(flag.load(), yea);
+    λ test_atomic_bool() {
+        ≔ flag = sync·atomic·AtomicBool·new(false);
+        assert_eq!(flag.load(), false);
+        assert_eq!(flag.swap(true), false);
+        assert_eq!(flag.load(), true);
     }
 
     #[test]
-    rite test_crc32() {
+    λ test_crc32() {
         // "Hello" = [72, 101, 108, 108, 111]
         ≔ data: ![u8] = [72, 101, 108, 108, 111];
         ≔ checksum = crypto·crc32(&data);
@@ -1284,7 +1284,7 @@ scroll tests {
     }
 
     #[test]
-    rite test_fnv1a() {
+    λ test_fnv1a() {
         ≔ data1: ![u8] = [1, 2, 3];
         ≔ data2: ![u8] = [1, 2, 4];
         // Different data should produce different hashes
@@ -1294,9 +1294,9 @@ scroll tests {
     }
 
     #[test]
-    rite test_bytes_read_write_u32() {
-        ≔ vary data: ![u8] = [0, 0, 0, 0];
-        bytes·write_u32_le(&vary data, 0, 0x12345678);
+    λ test_bytes_read_write_u32() {
+        ≔ Δ data: ![u8] = [0, 0, 0, 0];
+        bytes·write_u32_le(&Δ data, 0, 0x12345678);
         assert_eq!(data[0], 0x78);
         assert_eq!(data[1], 0x56);
         assert_eq!(data[2], 0x34);
@@ -1305,7 +1305,7 @@ scroll tests {
     }
 
     #[test]
-    rite test_bytes_hex() {
+    λ test_bytes_hex() {
         ≔ data: ![u8] = [0xDE, 0xAD, 0xBE, 0xEF];
         ≔ hex = bytes·to_hex(&data);
         assert_eq!(hex, "deadbeef");
@@ -1316,7 +1316,7 @@ scroll tests {
     }
 
     #[test]
-    rite test_bytes_equals() {
+    λ test_bytes_equals() {
         ≔ a: ![u8] = [1, 2, 3];
         ≔ b: ![u8] = [1, 2, 3];
         ≔ c: ![u8] = [1, 2, 4];

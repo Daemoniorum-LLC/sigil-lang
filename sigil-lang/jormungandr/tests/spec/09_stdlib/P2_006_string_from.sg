@@ -1,9 +1,0 @@
-// Test: String·from conversion
-// Spec: 09-STDLIB.md § 4.2 String
-// Priority: P2 - Enhancement
-
-λ main() {
-    ≔ s = String·from("hello");
-    println(s);
-    println(s.len());
-}

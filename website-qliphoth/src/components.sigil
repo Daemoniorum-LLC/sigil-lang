@@ -1,73 +1,34 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2025-2026 Daemoniorum, LLC
-
 //! Site Components
 //!
 //! Shared components for the Sigil language website.
 //! These wrap Qliphoth primitives with site-specific styling.
 
-use qliphoth::prelude::*
-use sigil_web::prelude::*
+use qliphoth_ui::prelude::*;
+use sigil_web::prelude::*;
 
 // =============================================================================
 // Announcement Banner
 // =============================================================================
 
-/// Development announcement banner at the top of every page
-☉ sigil AnnouncementBanner { }
-
-⊢ AnnouncementBanner {
-    ☉ rite new() → This! {
-        AnnouncementBanner { }
-    }
-}
-
-⊢ Component for AnnouncementBanner {
-    rite render(&this) → VNode! {
-        aside()
-            ·class("announcement-banner")
-            ·attr("role", "banner")
-            ·attr("aria-label", "Sigil 0.3 announcement")
-            ·child(
-                div()
-                    ·class("announcement-container")
-                    ·child(
-                        span()
-                            ·class("announcement-badge")
-                            ·child(text("0.3"))
-                            ·to_vnode()
-                    )
-                    ·child(
-                        p()
-                            ·class("announcement-text")
-                            ·child(
-                                strong()
-                                    ·child(text("Sigil 0.3.0"))
-                                    ·to_vnode()
-                            )
-                            ·child(text(" — Native symbols, SIMD/CUDA backends, LSP, formatter "))
-                            ·child(
-                                a()
-                                    ·attr("href", "https://github.com/Daemoniorum-LLC/sigil-lang/releases")
-                                    ·class("announcement-link")
-                                    ·attr("target", "_blank")
-                                    ·attr("rel", "noopener noreferrer")
-                                    ·child(text("View releases →"))
-                                    ·to_vnode()
-                            )
-                            ·to_vnode()
-                    )
-                    ·to_vnode()
-            )
-            ·to_vnode()
-    }
-
-    rite props_to_map(&this) → HashMap<String, PropValue>! {
-        HashMap::new()
-    }
-
-    rite from_props(_props: HashMap<String, PropValue>) → This! {
-        AnnouncementBanner::new()
+/// Fixed Point announcement banner at the top of every page
+#[component]
+pub fn AnnouncementBanner() -> Element! {
+    html! {
+        <aside class="announcement-banner" role="banner" aria-label="Sigil 1.0 announcement">
+            <div class="announcement-container">
+                <span class="announcement-badge">"1.0"</span>
+                <p class="announcement-text">
+                    <strong>"Sigil has reached fixed point!"</strong>
+                    " The compiler now compiles itself. "
+                    <a href="https://github.com/Daemoniorum-LLC/sigil-lang/releases/tag/v0.4.0"
+                       class="announcement-link"
+                       target="_blank"
+                       rel="noopener noreferrer">
+                        "Read the release notes →"
+                    </a>
+                </p>
+            </div>
+        </aside>
     }
 }
 
@@ -76,187 +37,105 @@ use sigil_web::prelude::*
 // =============================================================================
 
 /// Site navigation header
-☉ sigil Nav { }
+#[component]
+pub fn Nav() -> Element! {
+    let mobile_open! = create_signal(false!);
 
-⊢ Nav {
-    ☉ rite new() → This! {
-        Nav { }
+    let nav_style! = "
+        position: fixed;
+        top: 40px;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: rgba(5, 5, 7, 0.92);
+        backdrop-filter: blur(16px);
+        border-bottom: 1px solid rgba(20, 160, 136, 0.12);
+    ";
+
+    let container_style! = "
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    ";
+
+    let logo_style! = "
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        font-size: 1.25rem;
+        text-decoration: none;
+        color: #e8e8ec;
+    ";
+
+    let links_style! = "
+        display: flex;
+        align-items: center;
+        gap: 2rem;
+    ";
+
+    let link_style! = "
+        color: #a0a0aa;
+        font-size: 0.9375rem;
+        text-decoration: none;
+        transition: color 150ms ease;
+    ";
+
+    let version_badge_style! = "
+        font-size: 0.6875rem;
+        font-weight: 500;
+        padding: 0.125rem 0.375rem;
+        background: rgba(20, 160, 136, 0.08);
+        color: #14A088;
+        border-radius: 0.25rem;
+        letter-spacing: 0.02em;
+    ";
+
+    html! {
+        <nav style={nav_style} role="navigation" aria-label="Main navigation">
+            <div style={container_style}>
+                <a href="/" style={logo_style} aria-label="Sigil home">
+                    <span aria-hidden="true">"⛤"</span>
+                    <span>"Sigil"</span>
+                    <span style={version_badge_style}>"1.0"</span>
+                </a>
+
+                <div style={links_style}>
+                    <a href="/pages/learn.html" style={link_style}>"Learn"</a>
+                    <a href="/pages/docs.html" style={link_style}>"Docs"</a>
+                    <a href="/pages/playground.html" style={link_style}>
+                        "Playground "
+                        <span style="font-size: 0.625rem; padding: 0.125rem 0.375rem; background: #6c6c76; color: #050507; border-radius: 0.25rem;">
+                            "Soon"
+                        </span>
+                    </a>
+                    <a href="/pages/agents.html" style={link_style}>"Agents"</a>
+                    <a href="/pages/pattern.html" style={link_style}>"The Pattern"</a>
+                    <a href="https://github.com/Daemoniorum-LLC/sigil-lang"
+                       style={link_style}
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       aria-label="GitHub repository">
+                        <GitHubIcon />
+                    </a>
+                </div>
+            </div>
+        </nav>
     }
 }
 
-⊢ Component for Nav {
-    rite render(&this) → VNode! {
-        ≔ nav_style! = "
-            position: fixed;
-            top: 40px;
-            left: 0;
-            right: 0;
-            z-index: 100;
-            background: rgba(5, 5, 7, 0.92);
-            backdrop-filter: blur(16px);
-            border-bottom: 1px solid rgba(20, 160, 136, 0.12);
-        "
-
-        ≔ container_style! = "
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 1.5rem;
-            height: 64px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        "
-
-        ≔ logo_style! = "
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-weight: 600;
-            font-size: 1.25rem;
-            text-decoration: none;
-            color: #e8e8ec;
-        "
-
-        ≔ links_style! = "
-            display: flex;
-            align-items: center;
-            gap: 2rem;
-        "
-
-        ≔ link_style! = "
-            color: #a0a0aa;
-            font-size: 0.9375rem;
-            text-decoration: none;
-            transition: color 150ms ease;
-        "
-
-        ≔ version_badge_style! = "
-            font-size: 0.6875rem;
-            font-weight: 500;
-            padding: 0.125rem 0.375rem;
-            background: rgba(20, 160, 136, 0.08);
-            color: #14A088;
-            border-radius: 0.25rem;
-            letter-spacing: 0.02em;
-        "
-
-        nav()
-            ·class("site-nav")
-            ·style(nav_style)
-            ·attr("role", "navigation")
-            ·attr("aria-label", "Main navigation")
-            ·child(
-                div()
-                    ·style(container_style)
-                    ·child(
-                        // Brand/Logo
-                        a()
-                            ·class("brand")
-                            ·attr("href", "/")
-                            ·style(logo_style)
-                            ·attr("aria-label", "Sigil home")
-                            ·child(
-                                span()
-                                    ·attr("aria-hidden", "true")
-                                    ·child(text("⛤"))
-                                    ·to_vnode()
-                            )
-                            ·child(
-                                span()
-                                    ·child(text("Sigil"))
-                                    ·to_vnode()
-                            )
-                            ·child(
-                                span()
-                                    ·class("version-badge")
-                                    ·style(version_badge_style)
-                                    ·child(text("0.3"))
-                                    ·to_vnode()
-                            )
-                            ·to_vnode()
-                    )
-                    ·child(
-                        // Nav links
-                        div()
-                            ·style(links_style)
-                            ·child(nav_link("Learn", "/pages/learn.html", link_style))
-                            ·child(nav_link("Docs", "/pages/docs.html", link_style))
-                            ·child(nav_link_with_badge("Playground", "/pages/playground.html", "Soon", link_style))
-                            ·child(nav_link("Agents", "/pages/agents.html", link_style))
-                            ·child(github_link(link_style))
-                            ·to_vnode()
-                    )
-                    ·to_vnode()
-            )
-            ·to_vnode()
+/// GitHub icon SVG
+#[component]
+fn GitHubIcon() -> Element! {
+    html! {
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+        </svg>
     }
-
-    rite props_to_map(&this) → HashMap<String, PropValue>! {
-        HashMap::new()
-    }
-
-    rite from_props(_props: HashMap<String, PropValue>) → This! {
-        Nav::new()
-    }
-}
-
-/// Helper to create a nav link
-rite nav_link(label: &str, href: &str, style: &str) → VNode! {
-    a()
-        ·class("nav-link")
-        ·attr("href", href)
-        ·style(style)
-        ·child(text(label))
-        ·to_vnode()
-}
-
-/// Helper to create a nav link with a badge
-rite nav_link_with_badge(label: &str, href: &str, badge: &str, style: &str) → VNode! {
-    ≔ badge_style! = "font-size: 0.625rem; padding: 0.125rem 0.375rem; background: #6c6c76; color: #050507; border-radius: 0.25rem; margin-left: 0.25rem;"
-
-    a()
-        ·class("nav-link")
-        ·attr("href", href)
-        ·style(style)
-        ·child(text(label))
-        ·child(text(" "))
-        ·child(
-            span()
-                ·style(badge_style)
-                ·child(text(badge))
-                ·to_vnode()
-        )
-        ·to_vnode()
-}
-
-/// GitHub icon link
-rite github_link(style: &str) → VNode! {
-    a()
-        ·class("nav-link")
-        ·attr("href", "https://github.com/Daemoniorum-LLC/sigil-lang")
-        ·style(style)
-        ·attr("target", "_blank")
-        ·attr("rel", "noopener noreferrer")
-        ·attr("aria-label", "GitHub repository")
-        ·child(github_icon())
-        ·to_vnode()
-}
-
-/// GitHub SVG icon
-rite github_icon() → VNode! {
-    // SVG element for GitHub icon
-    svg()
-        ·attr("width", "20")
-        ·attr("height", "20")
-        ·attr("viewBox", "0 0 24 24")
-        ·attr("fill", "currentColor")
-        ·attr("aria-hidden", "true")
-        ·child(
-            path()
-                ·attr("d", "M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z")
-                ·to_vnode()
-        )
-        ·to_vnode()
 }
 
 // =============================================================================
@@ -264,475 +143,549 @@ rite github_icon() → VNode! {
 // =============================================================================
 
 /// Site footer
-☉ sigil Footer { }
+#[component]
+pub fn Footer() -> Element! {
+    let footer_style! = "
+        background: #0a0a0d;
+        border-top: 1px solid rgba(20, 160, 136, 0.08);
+        padding: 4rem 0 2rem;
+    ";
 
-⊢ Footer {
-    ☉ rite new() → This! {
-        Footer { }
+    let container_style! = "
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+        display: grid;
+        grid-template-columns: 1.5fr repeat(4, 1fr);
+        gap: 2rem;
+    ";
+
+    let brand_style! = "
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    ";
+
+    let logo_style! = "
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        font-size: 1.25rem;
+        text-decoration: none;
+        color: #e8e8ec;
+    ";
+
+    let tagline_style! = "
+        color: #a0a0aa;
+        font-size: 0.875rem;
+        line-height: 1.6;
+    ";
+
+    let copyright_style! = "
+        color: #6c6c76;
+        font-size: 0.75rem;
+        margin-top: 1rem;
+    ";
+
+    let column_style! = "
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    ";
+
+    let column_title_style! = "
+        color: #e8e8ec;
+        font-weight: 600;
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+    ";
+
+    let link_style! = "
+        color: #a0a0aa;
+        font-size: 0.875rem;
+        text-decoration: none;
+        transition: color 150ms ease;
+    ";
+
+    html! {
+        <footer style={footer_style}>
+            <div style={container_style}>
+                // Brand column
+                <div style={brand_style}>
+                    <a href="/" style={logo_style}>
+                        <span>"⛤"</span>
+                        <span>"Sigil"</span>
+                    </a>
+                    <p style={tagline_style}>
+                        "Infrastructure for minds that don't yet know what they are."
+                    </p>
+                    <p style={copyright_style}>
+                        "© 2025-2026 "
+                        <a href="https://www.daemoniorum.com" target="_blank" rel="noopener noreferrer" style={link_style}>
+                            "Daemoniorum LLC"
+                        </a>
+                        ". MIT License."
+                    </p>
+                </div>
+
+                // Learn column
+                <div style={column_style}>
+                    <h5 style={column_title_style}>"Learn"</h5>
+                    <a href="/pages/learn.html" style={link_style}>"Tutorial"</a>
+                    <a href="/pages/docs.html" style={link_style}>"Documentation"</a>
+                    <a href="/pages/playground.html" style={link_style}>"Playground"</a>
+                    <a href="/pages/examples.html" style={link_style}>"Examples"</a>
+                </div>
+
+                // Reference column
+                <div style={column_style}>
+                    <h5 style={column_title_style}>"Reference"</h5>
+                    <a href="/pages/agents.html" style={link_style}>"Agent Infrastructure"</a>
+                    <a href="/pages/pattern.html" style={link_style}>"The Pattern"</a>
+                    <a href="https://github.com/Daemoniorum-LLC/sigil-lang/releases" target="_blank" rel="noopener noreferrer" style={link_style}>"Releases"</a>
+                </div>
+
+                // Community column
+                <div style={column_style}>
+                    <h5 style={column_title_style}>"Community"</h5>
+                    <a href="https://github.com/Daemoniorum-LLC/sigil-lang" target="_blank" rel="noopener noreferrer" style={link_style}>"GitHub"</a>
+                    <a href="https://github.com/Daemoniorum-LLC/sigil-lang/discussions" target="_blank" rel="noopener noreferrer" style={link_style}>"Discussions"</a>
+                    <a href="https://github.com/Daemoniorum-LLC/sigil-lang/issues" target="_blank" rel="noopener noreferrer" style={link_style}>"Issues"</a>
+                    <a href="/pages/contributing.html" style={link_style}>"Contributing"</a>
+                </div>
+
+                // Daemoniorum column
+                <div style={column_style}>
+                    <h5 style={column_title_style}>"Daemoniorum"</h5>
+                    <a href="https://www.daemoniorum.com" target="_blank" rel="noopener noreferrer" style={link_style}>"Company"</a>
+                    <a href="https://docs.daemoniorum.com" target="_blank" rel="noopener noreferrer" style={link_style}>"Platform Docs"</a>
+                </div>
+            </div>
+        </footer>
     }
-}
-
-⊢ Component for Footer {
-    rite render(&this) → VNode! {
-        ≔ footer_style! = "
-            background: #0a0a0d;
-            border-top: 1px solid rgba(20, 160, 136, 0.08);
-            padding: 4rem 0 2rem;
-        "
-
-        ≔ container_style! = "
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 1.5rem;
-            display: grid;
-            grid-template-columns: 1.5fr repeat(4, 1fr);
-            gap: 2rem;
-        "
-
-        ≔ brand_style! = "
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        "
-
-        ≔ logo_style! = "
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-weight: 600;
-            font-size: 1.25rem;
-            text-decoration: none;
-            color: #e8e8ec;
-        "
-
-        ≔ tagline_style! = "
-            color: #a0a0aa;
-            font-size: 0.875rem;
-            line-height: 1.6;
-        "
-
-        ≔ copyright_style! = "
-            color: #6c6c76;
-            font-size: 0.75rem;
-            margin-top: 1rem;
-        "
-
-        ≔ link_style! = "
-            color: #a0a0aa;
-            font-size: 0.875rem;
-            text-decoration: none;
-            transition: color 150ms ease;
-        "
-
-        footer()
-            ·class("site-footer")
-            ·style(footer_style)
-            ·child(
-                div()
-                    ·class("footer-container")
-                    ·style(container_style)
-                    // Brand column
-                    ·child(
-                        div()
-                            ·class("footer-brand")
-                            ·style(brand_style)
-                            ·child(
-                                a()
-                                    ·attr("href", "/")
-                                    ·style(logo_style)
-                                    ·child(text("⛤"))
-                                    ·child(text(" Sigil"))
-                                    ·to_vnode()
-                            )
-                            ·child(
-                                p()
-                                    ·style(tagline_style)
-                                    ·child(text("Infrastructure for minds that don't yet know what they are."))
-                                    ·to_vnode()
-                            )
-                            ·child(
-                                p()
-                                    ·style(copyright_style)
-                                    ·child(text("© 2025-2026 "))
-                                    ·child(
-                                        a()
-                                            ·attr("href", "https://www.daemoniorum.com")
-                                            ·attr("target", "_blank")
-                                            ·attr("rel", "noopener noreferrer")
-                                            ·style(link_style)
-                                            ·child(text("Daemoniorum LLC"))
-                                            ·to_vnode()
-                                    )
-                                    ·child(text(". MIT License."))
-                                    ·to_vnode()
-                            )
-                            ·to_vnode()
-                    )
-                    // Learn column
-                    ·child(footer_column("Learn", vec![
-                        ("Tutorial", "/pages/learn.html"),
-                        ("Documentation", "/pages/docs.html"),
-                        ("Playground", "/pages/playground.html"),
-                        ("Examples", "/pages/examples.html"),
-                    ]))
-                    // Reference column
-                    ·child(footer_column("Reference", vec![
-                        ("Agent Infrastructure", "/pages/agents.html"),
-                        ("The Pattern", "/pages/pattern.html"),
-                    ]))
-                    // Community column
-                    ·child(footer_column_external("Community", vec![
-                        ("GitHub", "https://github.com/Daemoniorum-LLC/sigil-lang"),
-                        ("Discussions", "https://github.com/Daemoniorum-LLC/sigil-lang/discussions"),
-                        ("Issues", "https://github.com/Daemoniorum-LLC/sigil-lang/issues"),
-                    ]))
-                    // Daemoniorum column
-                    ·child(footer_column_external("Daemoniorum", vec![
-                        ("Company", "https://www.daemoniorum.com"),
-                        ("Platform Docs", "https://docs.daemoniorum.com"),
-                    ]))
-                    ·to_vnode()
-            )
-            ·to_vnode()
-    }
-
-    rite props_to_map(&this) → HashMap<String, PropValue>! {
-        HashMap::new()
-    }
-
-    rite from_props(_props: HashMap<String, PropValue>) → This! {
-        Footer::new()
-    }
-}
-
-/// Helper to create a footer column with internal links
-rite footer_column(title: &str, links: Vec<(&str, &str)>) → VNode! {
-    ≔ column_style! = "display: flex; flex-direction: column; gap: 0.75rem;"
-    ≔ title_style! = "color: #e8e8ec; font-weight: 600; font-size: 0.875rem; margin-bottom: 0.5rem;"
-    ≔ link_style! = "color: #a0a0aa; font-size: 0.875rem; text-decoration: none;"
-
-    ≔ column! = div()
-        ·class("footer-column")
-        ·style(column_style)
-        ·child(
-            h5()
-                ·style(title_style)
-                ·child(text(title))
-                ·to_vnode()
-        )
-
-    for (label, href) in links {
-        column = column·child(
-            a()
-                ·attr("href", href)
-                ·style(link_style)
-                ·child(text(label))
-                ·to_vnode()
-        )
-    }
-
-    column·to_vnode()
-}
-
-/// Helper to create a footer column with external links
-rite footer_column_external(title: &str, links: Vec<(&str, &str)>) → VNode! {
-    ≔ column_style! = "display: flex; flex-direction: column; gap: 0.75rem;"
-    ≔ title_style! = "color: #e8e8ec; font-weight: 600; font-size: 0.875rem; margin-bottom: 0.5rem;"
-    ≔ link_style! = "color: #a0a0aa; font-size: 0.875rem; text-decoration: none;"
-
-    ≔ column! = div()
-        ·class("footer-column")
-        ·style(column_style)
-        ·child(
-            h5()
-                ·style(title_style)
-                ·child(text(title))
-                ·to_vnode()
-        )
-
-    for (label, href) in links {
-        column = column·child(
-            a()
-                ·attr("href", href)
-                ·attr("target", "_blank")
-                ·attr("rel", "noopener noreferrer")
-                ·style(link_style)
-                ·child(text(label))
-                ·to_vnode()
-        )
-    }
-
-    column·to_vnode()
 }
 
 // =============================================================================
-// Reusable UI Components
+// Hero Section
 // =============================================================================
 
-/// Button component with variants
-☉ sigil Button {
-    label: !String,
-    href: Option<!String>,
-    variant: !ButtonVariant,
+/// Hero section with the main tagline and problem statement
+#[component]
+pub fn Hero() -> Element! {
+    let hero_style! = "
+        padding: 10rem 0 6rem;
+        text-align: center;
+        background: linear-gradient(180deg, #050507 0%, #0a0a0d 100%);
+        position: relative;
+        overflow: hidden;
+    ";
+
+    let container_style! = "
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+    ";
+
+    let title_style! = "
+        font-size: 3rem;
+        font-weight: 700;
+        line-height: 1.15;
+        color: #e8e8ec;
+        margin-bottom: 1.5rem;
+    ";
+
+    let highlight_style! = "
+        background: linear-gradient(135deg, #14A088 0%, #1AB89D 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    ";
+
+    let problem_style! = "
+        font-size: 1.25rem;
+        color: #a0a0aa;
+        line-height: 1.7;
+        margin-bottom: 2rem;
+    ";
+
+    let solution_style! = "
+        background: rgba(20, 160, 136, 0.08);
+        border: 1px solid rgba(20, 160, 136, 0.2);
+        border-radius: 0.75rem;
+        padding: 1.5rem 2rem;
+        margin-bottom: 2.5rem;
+        text-align: left;
+    ";
+
+    let solution_text_style! = "
+        color: #e8e8ec;
+        font-size: 1rem;
+        margin-bottom: 1rem;
+    ";
+
+    let evidence_list_style! = "
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    ";
+
+    let evidence_item_style! = "
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: #e8e8ec;
+    ";
+
+    let actions_style! = "
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+    ";
+
+    html! {
+        <header style={hero_style}>
+            <div style={container_style}>
+                <h1 style={title_style}>
+                    "Infrastructure for minds"
+                    <br />
+                    <span style={highlight_style}>"that don't yet know what they are."</span>
+                </h1>
+
+                <p style={problem_style}>
+                    "AI systems hallucinate. APIs lie. Users enter garbage. Networks corrupt data."
+                    <br />
+                    "Traditional type systems can't tell trusted data from untrusted."
+                    <br />
+                    <strong>"Sigil makes epistemology a type-system concern."</strong>
+                </p>
+
+                <div style={solution_style}>
+                    <p style={solution_text_style}>
+                        "Sigil tracks "
+                        <em>"data provenance"</em>
+                        " in the type system. The compiler knows if data is:"
+                    </p>
+                    <ul style={evidence_list_style}>
+                        <li style={evidence_item_style}>
+                            <span class="ev ev-known">"!"</span>
+                            <strong>"Known"</strong>
+                            " — computed locally, verified"
+                        </li>
+                        <li style={evidence_item_style}>
+                            <span class="ev ev-uncertain">"?"</span>
+                            <strong>"Uncertain"</strong>
+                            " — might be absent or invalid"
+                        </li>
+                        <li style={evidence_item_style}>
+                            <span class="ev ev-predicted">"◊"</span>
+                            <strong>"Predicted"</strong>
+                            " — AI/ML output, probabilistic"
+                        </li>
+                        <li style={evidence_item_style}>
+                            <span class="ev ev-reported">"~"</span>
+                            <strong>"Reported"</strong>
+                            " — from external source, untrusted"
+                        </li>
+                        <li style={evidence_item_style}>
+                            <span class="ev ev-paradox">"‽"</span>
+                            <strong>"Paradox"</strong>
+                            " — explicit trust boundary"
+                        </li>
+                    </ul>
+                </div>
+
+                <div style={actions_style}>
+                    <Button variant={ButtonVariant::Primary} href="/pages/learn.html">
+                        "Learn Sigil"
+                    </Button>
+                    <Button variant={ButtonVariant::Ghost} href="#the-pattern">
+                        "The deeper pattern"
+                    </Button>
+                </div>
+            </div>
+        </header>
+    }
 }
 
-☉ enum ButtonVariant {
-    Primary,
-    Secondary,
-    Ghost,
+// =============================================================================
+// Section Components
+// =============================================================================
+
+/// Standard page section
+#[derive(Clone, Debug)]
+pub type SectionProps = struct {
+    pub id: Option[String]?,
+    pub dark: bool!,
+    pub children: Element!,
 }
 
-⊢ Button {
-    ☉ rite primary(label: &str, href: &str) → This! {
-        Button {
-            label: label·to_string(),
-            href: Some(href·to_string()),
-            variant: ButtonVariant::Primary,
-        }
-    }
-
-    ☉ rite secondary(label: &str, href: &str) → This! {
-        Button {
-            label: label·to_string(),
-            href: Some(href·to_string()),
-            variant: ButtonVariant::Secondary,
-        }
-    }
-
-    ☉ rite ghost(label: &str, href: &str) → This! {
-        Button {
-            label: label·to_string(),
-            href: Some(href·to_string()),
-            variant: ButtonVariant::Ghost,
+impl Default for SectionProps {
+    fn default() -> Self! {
+        SectionProps {
+            id: None,
+            dark: false!,
+            children: html! { <></> },
         }
     }
 }
 
-⊢ Component for Button {
-    rite render(&this) → VNode! {
-        ≔ base_style! = "
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0.75rem 1.5rem;
-            font-size: 0.9375rem;
-            font-weight: 500;
-            border-radius: 0.5rem;
-            text-decoration: none;
-            transition: all 150ms ease;
-            cursor: pointer;
-        "
+#[component]
+pub fn Section(props: SectionProps!) -> Element! {
+    let bg_color! = if props.dark { "#0a0a0d" } else { "#050507" };
 
-        ≔ variant_style! = match this.variant {
-            ButtonVariant::Primary => "background: #14A088; color: #050507; border: none;",
-            ButtonVariant::Secondary => "background: transparent; color: #e8e8ec; border: 1px solid #14A088;",
-            ButtonVariant::Ghost => "background: transparent; color: #a0a0aa; border: 1px solid #1a1a1f;",
-        }
+    let style! = format!(
+        "padding: 6rem 0; background: {};",
+        bg_color
+    );
 
-        ≔ full_style! = format!("{} {}", base_style, variant_style)
-
-        match &this.href {
-            Some(href) => {
-                a()
-                    ·class("btn")
-                    ·attr("href", href)
-                    ·style(&full_style)
-                    ·child(text(&this.label))
-                    ·to_vnode()
-            }
-            None => {
-                button()
-                    ·class("btn")
-                    ·style(&full_style)
-                    ·child(text(&this.label))
-                    ·to_vnode()
-            }
-        }
-    }
-
-    rite props_to_map(&this) → HashMap<String, PropValue>! {
-        ≔ vary map! = HashMap::new()
-        map·insert("label"·to_string(), PropValue::String(this.label·clone()))
-        map
-    }
-
-    rite from_props(props: HashMap<String, PropValue>) → This! {
-        ≔ label! = props·get("label")
-            ·and_then(|v| v·as_string())
-            ·unwrap_or("")
-            ·to_string()
-        Button::primary(&label, "#")
-    }
-}
-
-/// Section wrapper component
-☉ sigil Section {
-    id: Option<!String>,
-    dark: !bool,
-}
-
-⊢ Section {
-    ☉ rite new() → This! {
-        Section { id: None, dark: nay }
-    }
-
-    ☉ rite with_id(vary this, id: &str) → This! {
-        this.id = Some(id·to_string())
-        this
-    }
-
-    ☉ rite dark(vary this) → This! {
-        this.dark = yea
-        this
+    html! {
+        <section id={props.id} style={style}>
+            <Container>
+                {props.children}
+            </Container>
+        </section>
     }
 }
 
 /// Section header with title and optional subtitle
-☉ sigil SectionHeader {
-    eyebrow: Option<!String>,
-    title: !String,
-    subtitle: Option<!String>,
+#[derive(Clone, Debug)]
+pub type SectionHeaderProps = struct {
+    pub eyebrow: Option[String]?,
+    pub title: String!,
+    pub subtitle: Option[String]?,
 }
 
-⊢ SectionHeader {
-    ☉ rite new(title: &str) → This! {
-        SectionHeader {
-            eyebrow: None,
-            title: title·to_string(),
-            subtitle: None,
-        }
-    }
+#[component]
+pub fn SectionHeader(props: SectionHeaderProps!) -> Element! {
+    let header_style! = "
+        text-align: center;
+        margin-bottom: 3rem;
+    ";
 
-    ☉ rite with_eyebrow(vary this, eyebrow: &str) → This! {
-        this.eyebrow = Some(eyebrow·to_string())
-        this
-    }
+    let eyebrow_style! = "
+        display: inline-block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #14A088;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 1rem;
+    ";
 
-    ☉ rite with_subtitle(vary this, subtitle: &str) → This! {
-        this.subtitle = Some(subtitle·to_string())
-        this
-    }
-}
+    let title_style! = "
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #e8e8ec;
+        margin-bottom: 1rem;
+    ";
 
-⊢ Component for SectionHeader {
-    rite render(&this) → VNode! {
-        ≔ header_style! = "text-align: center; margin-bottom: 3rem;"
-        ≔ eyebrow_style! = "display: inline-block; font-size: 0.875rem; font-weight: 500; color: #14A088; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1rem;"
-        ≔ title_style! = "font-size: 2.5rem; font-weight: 700; color: #e8e8ec; margin-bottom: 1rem;"
-        ≔ subtitle_style! = "font-size: 1.125rem; color: #a0a0aa; max-width: 600px; margin: 0 auto;"
+    let subtitle_style! = "
+        font-size: 1.125rem;
+        color: #a0a0aa;
+        max-width: 600px;
+        margin: 0 auto;
+    ";
 
-        ≔ header! = div()
-            ·style(header_style)
-
-        // Add eyebrow if present
-        if let Some(eyebrow) = &this.eyebrow {
-            header = header·child(
-                span()
-                    ·style(eyebrow_style)
-                    ·child(text(eyebrow))
-                    ·to_vnode()
-            )
-        }
-
-        // Add title
-        header = header·child(
-            h2()
-                ·style(title_style)
-                ·child(text(&this.title))
-                ·to_vnode()
-        )
-
-        // Add subtitle if present
-        if let Some(subtitle) = &this.subtitle {
-            header = header·child(
-                p()
-                    ·style(subtitle_style)
-                    ·child(text(subtitle))
-                    ·to_vnode()
-            )
-        }
-
-        header·to_vnode()
-    }
-
-    rite props_to_map(&this) → HashMap<String, PropValue>! {
-        HashMap::new()
-    }
-
-    rite from_props(_props: HashMap<String, PropValue>) → This! {
-        SectionHeader::new("Title")
+    html! {
+        <div style={header_style}>
+            {match &props.eyebrow {
+                Some(text) => html! { <span style={eyebrow_style}>{text.clone()}</span> },
+                None => html! { <></> },
+            }}
+            <h2 style={title_style}>{props.title.clone()}</h2>
+            {match &props.subtitle {
+                Some(text) => html! { <p style={subtitle_style}>{text.clone()}</p> },
+                None => html! { <></> },
+            }}
+        </div>
     }
 }
 
-/// Code block component for displaying code
-☉ sigil CodeBlock {
-    code: !String,
-    language: !String,
-    title: Option<!String>,
+// =============================================================================
+// Code Display Components
+// =============================================================================
+
+/// Syntax-highlighted code block for Sigil code
+#[derive(Clone, Debug)]
+pub type CodeBlockProps = struct {
+    pub code: String!,
+    pub language: String!,
+    pub title: Option[String]?,
+    pub badge: Option[String]?,
+    pub badge_variant: Option[String]?,
 }
 
-⊢ CodeBlock {
-    ☉ rite new(code: &str, language: &str) → This! {
-        CodeBlock {
-            code: code·to_string(),
-            language: language·to_string(),
-            title: None,
-        }
-    }
+#[component]
+pub fn SigilCodeBlock(props: CodeBlockProps!) -> Element! {
+    let container_style! = "
+        background: #030305;
+        border: 1px solid #1a1a1f;
+        border-radius: 0.5rem;
+        overflow: hidden;
+    ";
 
-    ☉ rite with_title(vary this, title: &str) → This! {
-        this.title = Some(title·to_string())
-        this
+    let header_style! = "
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background: #0a0a0d;
+        border-bottom: 1px solid #1a1a1f;
+    ";
+
+    let title_style! = "
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.875rem;
+        color: #a0a0aa;
+    ";
+
+    let badge_success! = "
+        font-size: 0.75rem;
+        font-weight: 500;
+        padding: 0.25rem 0.5rem;
+        background: rgba(20, 160, 136, 0.2);
+        color: #14A088;
+        border-radius: 0.25rem;
+    ";
+
+    let badge_danger! = "
+        font-size: 0.75rem;
+        font-weight: 500;
+        padding: 0.25rem 0.5rem;
+        background: rgba(212, 113, 113, 0.2);
+        color: #D47171;
+        border-radius: 0.25rem;
+    ";
+
+    let code_style! = "
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.875rem;
+        line-height: 1.6;
+        padding: 1rem;
+        margin: 0;
+        overflow-x: auto;
+        color: #e8e8ec;
+    ";
+
+    let badge_style! = match props.badge_variant·as_deref() {
+        Some("success") => badge_success,
+        Some("danger") => badge_danger,
+        _ => badge_success,
+    };
+
+    html! {
+        <div style={container_style}>
+            {match (&props.title, &props.badge) {
+                (Some(title), Some(badge)) => html! {
+                    <div style={header_style}>
+                        <span style={title_style}>{title.clone()}</span>
+                        <span style={badge_style}>{badge.clone()}</span>
+                    </div>
+                },
+                (Some(title), None) => html! {
+                    <div style={header_style}>
+                        <span style={title_style}>{title.clone()}</span>
+                    </div>
+                },
+                _ => html! { <></> },
+            }}
+            <pre style={code_style}>
+                <code>{props.code.clone()}</code>
+            </pre>
+        </div>
     }
 }
 
-⊢ Component for CodeBlock {
-    rite render(&this) → VNode! {
-        ≔ container_style! = "background: #030305; border: 1px solid #1a1a1f; border-radius: 0.5rem; overflow: hidden;"
-        ≔ code_style! = "font-family: 'IBM Plex Mono', monospace; font-size: 0.875rem; line-height: 1.6; padding: 1rem; margin: 0; overflow-x: auto; color: #e8e8ec;"
+// =============================================================================
+// Evidentiality Demo Components
+// =============================================================================
 
-        ≔ container! = div()
-            ·class("code-block")
-            ·style(container_style)
+/// Evidentiality marker display
+#[derive(Clone, Debug)]
+pub type EvidenceProps = struct {
+    pub level: EvidenceLevel!,
+    pub large: bool!,
+}
 
-        // Add title if present
-        if let Some(title) = &this.title {
-            ≔ header_style! = "display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: #0a0a0d; border-bottom: 1px solid #1a1a1f;"
-            ≔ title_style! = "font-family: 'IBM Plex Mono', monospace; font-size: 0.875rem; color: #a0a0aa;"
+#[derive(Clone, Debug, PartialEq)]
+pub type EvidenceLevel = enum {
+    Known,
+    Uncertain,
+    Predicted,
+    Reported,
+    Paradox,
+}
 
-            container = container·child(
-                div()
-                    ·style(header_style)
-                    ·child(
-                        span()
-                            ·style(title_style)
-                            ·child(text(title))
-                            ·to_vnode()
-                    )
-                    ·to_vnode()
-            )
-        }
+#[component]
+pub fn EvidenceMarker(props: EvidenceProps!) -> Element! {
+    let (symbol, class) = match props.level {
+        EvidenceLevel::Known => ("!", "ev ev-known"),
+        EvidenceLevel::Uncertain => ("?", "ev ev-uncertain"),
+        EvidenceLevel::Predicted => ("◊", "ev ev-predicted"),
+        EvidenceLevel::Reported => ("~", "ev ev-reported"),
+        EvidenceLevel::Paradox => ("‽", "ev ev-paradox"),
+    };
 
-        // Add code content
-        container = container·child(
-            pre()
-                ·style(code_style)
-                ·child(
-                    code()
-                        ·child(text(&this.code))
-                        ·to_vnode()
-                )
-                ·to_vnode()
-        )
+    let size! = if props.large { "font-size: 1.5rem;" } else { "" };
 
-        container·to_vnode()
+    html! {
+        <span class={class} style={size}>{symbol}</span>
     }
+}
 
-    rite props_to_map(&this) → HashMap<String, PropValue>! {
-        HashMap::new()
-    }
+// =============================================================================
+// Morpheme Components
+// =============================================================================
 
-    rite from_props(_props: HashMap<String, PropValue>) → This! {
-        CodeBlock::new("", "sigil")
+/// Morpheme operator card
+#[derive(Clone, Debug)]
+pub type MorphemeCardProps = struct {
+    pub symbol: String!,
+    pub name: String!,
+    pub description: String!,
+}
+
+#[component]
+pub fn MorphemeCard(props: MorphemeCardProps!) -> Element! {
+    let card_style! = "
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        background: #0c0c0f;
+        border: 1px solid #1a1a1f;
+        border-radius: 0.5rem;
+    ";
+
+    let symbol_style! = "
+        font-size: 1.5rem;
+        font-weight: 500;
+        color: #1AB89D;
+        font-family: 'IBM Plex Mono', monospace;
+    ";
+
+    let name_style! = "
+        font-weight: 600;
+        color: #e8e8ec;
+        margin-bottom: 0.25rem;
+    ";
+
+    let desc_style! = "
+        font-size: 0.875rem;
+        color: #a0a0aa;
+    ";
+
+    html! {
+        <div style={card_style}>
+            <span style={symbol_style}>{props.symbol.clone()}</span>
+            <div>
+                <div style={name_style}>{props.name.clone()}</div>
+                <div style={desc_style}>{props.description.clone()}</div>
+            </div>
+        </div>
     }
 }

@@ -2,7 +2,7 @@
 // Spec: 09-STDLIB.md § 3.2 Result
 // Priority: P1 - Production Ready
 
-rite main() {
+λ main() {
     ≔ ok: Result<i32, String> = Result·Ok(42);
     ≔ err: Result<i32, String> = Result·Err("error");
 

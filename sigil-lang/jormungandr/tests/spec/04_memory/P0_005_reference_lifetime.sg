@@ -1,9 +1,0 @@
-// Test: Reference lifetime within scope
-// Spec: 04-MEMORY.md § 4.1 Lifetimes
-// Priority: P0
-
-λ main() {
-    ≔ x: !i32 = 42;
-    ≔ r: &!i32 = &x;
-    println(*r);
-}

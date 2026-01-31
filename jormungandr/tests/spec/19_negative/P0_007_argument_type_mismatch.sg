@@ -3,11 +3,11 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-rite add(a: i32, b: i32) → i32 {
+λ add(a: i32, b: i32) -> i32 {
     ⤺ a + b;
 }
 
-rite main() {
+λ main() {
     ≔ result = add("hello", "world");  // ERROR: String instead of i32
     println(result);
 }

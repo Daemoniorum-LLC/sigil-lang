@@ -1,0 +1,297 @@
+// ============================================================================
+// Sigil Playground - Qliphoth Native Implementation
+// An interactive code editor powered by Athame
+// ============================================================================
+
+// === DOM Helpers (using VDOM API) ===
+
+rite create_element(tag: &str) → i64 {
+    vdom_create_vnode(tag)
+}
+
+rite create_text(content: &str) → i64 {
+    vdom_create_text_vnode(content)
+}
+
+rite set_class(element: i64, class_name: &str) {
+    vdom_set_vnode_str_prop(element, "class", class_name)
+}
+
+rite set_attr(element: i64, name: &str, value: &str) {
+    vdom_set_vnode_str_prop(element, name, value)
+}
+
+rite append_child(parent: i64, child: i64) {
+    vdom_append_vnode_child(parent, child)
+}
+
+rite set_inner_html(element: i64, html: &str) {
+    vdom_set_vnode_str_prop(element, "innerHTML", html)
+}
+
+rite mount(element: i64, selector: &str) → i64 {
+    vdom_mount_vnode(element, selector)
+}
+
+// === Component Helpers ===
+
+rite div_with_class(class: &str) → i64 {
+    ≔ el = create_element("div");
+    set_class(el, class);
+    el
+}
+
+rite heading(level: &str, text: &str, class: &str) → i64 {
+    ≔ h = create_element(level);
+    set_class(h, class);
+    append_child(h, create_text(text));
+    h
+}
+
+rite span(text: &str, class: &str) → i64 {
+    ≔ s = create_element("span");
+    set_class(s, class);
+    append_child(s, create_text(text));
+    s
+}
+
+rite para(text: &str, class: &str) → i64 {
+    ≔ p = create_element("p");
+    set_class(p, class);
+    append_child(p, create_text(text));
+    p
+}
+
+rite link(href: &str, text: &str, class: &str) → i64 {
+    ≔ a = create_element("a");
+    set_class(a, class);
+    set_attr(a, "href", href);
+    append_child(a, create_text(text));
+    a
+}
+
+rite image(src: &str, alt: &str, class: &str) → i64 {
+    ≔ img = create_element("img");
+    set_class(img, class);
+    set_attr(img, "src", src);
+    set_attr(img, "alt", alt);
+    img
+}
+
+rite button_el(text: &str, class: &str, id: &str) → i64 {
+    ≔ btn = create_element("button");
+    set_class(btn, class);
+    set_attr(btn, "id", id);
+    append_child(btn, create_text(text));
+    btn
+}
+
+rite theme_toggle_button() → i64 {
+    ≔ btn = create_element("button");
+    set_class(btn, "theme-toggle");
+    set_attr(btn, "id", "theme-toggle");
+    set_attr(btn, "title", "Toggle theme");
+    // Sun icon (shown in dark mode)
+    set_inner_html(btn, "<svg id=\"sun-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"5\"/><line x1=\"12\" y1=\"1\" x2=\"12\" y2=\"3\"/><line x1=\"12\" y1=\"21\" x2=\"12\" y2=\"23\"/><line x1=\"4.22\" y1=\"4.22\" x2=\"5.64\" y2=\"5.64\"/><line x1=\"18.36\" y1=\"18.36\" x2=\"19.78\" y2=\"19.78\"/><line x1=\"1\" y1=\"12\" x2=\"3\" y2=\"12\"/><line x1=\"21\" y1=\"12\" x2=\"23\" y2=\"12\"/><line x1=\"4.22\" y1=\"19.78\" x2=\"5.64\" y2=\"18.36\"/><line x1=\"18.36\" y1=\"5.64\" x2=\"19.78\" y2=\"4.22\"/></svg><svg id=\"moon-icon\" style=\"display:none\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"/></svg>");
+    btn
+}
+
+rite select_el(id: &str, class: &str) → i64 {
+    ≔ sel = create_element("select");
+    set_class(sel, class);
+    set_attr(sel, "id", id);
+    sel
+}
+
+rite option_el(value: &str, text: &str) → i64 {
+    ≔ opt = create_element("option");
+    set_attr(opt, "value", value);
+    append_child(opt, create_text(text));
+    opt
+}
+
+rite textarea_el(id: &str, class: &str) → i64 {
+    ≔ ta = create_element("textarea");
+    set_class(ta, class);
+    set_attr(ta, "id", id);
+    set_attr(ta, "spellcheck", "false");
+    set_attr(ta, "autocomplete", "off");
+    set_attr(ta, "autocorrect", "off");
+    set_attr(ta, "autocapitalize", "off");
+    ta
+}
+
+// === Playground Components ===
+
+rite playground_header() → i64 {
+    ≔ header = div_with_class("playground-header");
+
+    // Left side - branding
+    ≔ brand = div_with_class("playground-brand");
+    ≔ logo_link = create_element("a");
+    set_class(logo_link, "playground-logo-link");
+    set_attr(logo_link, "href", "/");
+    append_child(logo_link, image("../images/sigil-icon.svg", "Sigil", "playground-logo-icon"));
+    append_child(logo_link, span("Sigil Playground", "playground-logo-text"));
+    append_child(brand, logo_link);
+    append_child(header, brand);
+
+    // Right side - actions
+    ≔ actions = div_with_class("playground-actions");
+
+    // Example selector
+    ≔ example_group = div_with_class("example-selector");
+    append_child(example_group, span("Examples:", "example-label"));
+    ≔ example_select = select_el("example-select", "example-dropdown");
+    append_child(example_select, option_el("hello", "Hello World"));
+    append_child(example_select, option_el("counter", "Counter Component"));
+    append_child(example_select, option_el("morphemes", "Morpheme Operators"));
+    append_child(example_select, option_el("evidentiality", "Evidentiality"));
+    append_child(example_select, option_el("async", "Async/Await"));
+    append_child(example_select, option_el("todo", "Todo App"));
+    append_child(example_group, example_select);
+    append_child(actions, example_group);
+
+    // Run button
+    append_child(actions, button_el("▶ Run", "btn btn-primary btn-run", "run-btn"));
+
+    // Share button
+    append_child(actions, button_el("Share", "btn btn-secondary", "share-btn"));
+
+    // Theme toggle
+    append_child(actions, theme_toggle_button());
+
+    append_child(header, actions);
+    header
+}
+
+rite editor_panel() → i64 {
+    ≔ panel = div_with_class("editor-panel");
+    set_attr(panel, "id", "editor-panel");
+
+    // Panel header
+    ≔ panel_header = div_with_class("panel-header");
+    ≔ file_tab = div_with_class("file-tab active");
+    append_child(file_tab, span("main.sigil", "file-name"));
+    append_child(panel_header, file_tab);
+
+    // Status indicator
+    ≔ status = div_with_class("editor-status");
+    ≔ status_dot = create_element("span");
+    set_class(status_dot, "status-dot status-idle");
+    set_attr(status_dot, "id", "status-dot");
+    append_child(status, status_dot);
+    ≔ status_text = span("Ready", "status-text");
+    set_attr(status_text, "id", "status-text");
+    append_child(status, status_text);
+    append_child(panel_header, status);
+
+    append_child(panel, panel_header);
+
+    // Editor container
+    ≔ editor_container = div_with_class("editor-container");
+    set_attr(editor_container, "id", "editor-container");
+
+    // Line numbers gutter
+    ≔ gutter = div_with_class("line-gutter");
+    set_attr(gutter, "id", "line-gutter");
+    append_child(editor_container, gutter);
+
+    // Code wrapper
+    ≔ code_wrapper = div_with_class("code-wrapper");
+
+    // Syntax highlight layer
+    ≔ highlight_layer = create_element("pre");
+    set_class(highlight_layer, "highlight-layer");
+    set_attr(highlight_layer, "id", "highlight-layer");
+    ≔ highlight_code = create_element("code");
+    set_attr(highlight_code, "id", "highlight-code");
+    append_child(highlight_layer, highlight_code);
+    append_child(code_wrapper, highlight_layer);
+
+    // Code textarea
+    ≔ code_input = textarea_el("code-input", "code-input");
+    append_child(code_wrapper, code_input);
+
+    append_child(editor_container, code_wrapper);
+    append_child(panel, editor_container);
+
+    panel
+}
+
+rite output_panel() → i64 {
+    ≔ panel = div_with_class("output-panel");
+
+    // Preview section
+    ≔ preview_section = div_with_class("preview-section");
+    ≔ preview_header = div_with_class("panel-header");
+    append_child(preview_header, span("Preview", "panel-title"));
+    append_child(preview_section, preview_header);
+    ≔ preview_content = div_with_class("preview-content");
+    set_attr(preview_content, "id", "preview-content");
+    ≔ placeholder = div_with_class("preview-placeholder");
+    append_child(placeholder, para("Click 'Run' to see output", ""));
+    append_child(preview_content, placeholder);
+    append_child(preview_section, preview_content);
+    append_child(panel, preview_section);
+
+    // Console section
+    ≔ console_section = div_with_class("console-section");
+    ≔ console_header = div_with_class("panel-header console-header");
+    append_child(console_header, span("Console", "panel-title"));
+    append_child(console_header, button_el("Clear", "btn btn-ghost btn-sm", "clear-console-btn"));
+    append_child(console_section, console_header);
+    ≔ console_output = create_element("pre");
+    set_class(console_output, "console-output");
+    set_attr(console_output, "id", "console-output");
+    append_child(console_section, console_output);
+    append_child(panel, console_section);
+
+    panel
+}
+
+rite playground_footer() → i64 {
+    ≔ footer = div_with_class("playground-footer");
+
+    ≔ info = div_with_class("footer-info");
+    append_child(info, span("Sigil 0.4.0", "version-badge"));
+    append_child(info, span(" | ", "separator"));
+    append_child(info, span("Powered by Qliphoth + Athame", "footer-text"));
+    append_child(footer, info);
+
+    ≔ links = div_with_class("footer-links");
+    append_child(links, link("/docs", "Docs", "footer-link"));
+    append_child(links, link("https://github.com/daemoniorum/sigil", "GitHub", "footer-link"));
+    append_child(footer, links);
+
+    footer
+}
+
+// === Main Entry Point ===
+
+☉ rite main() → i64 {
+    // Create main layout
+    ≔ app = div_with_class("playground-app");
+
+    // Header
+    append_child(app, playground_header());
+
+    // Main content
+    ≔ main_content = div_with_class("playground-main");
+    set_attr(main_content, "id", "playground-main");
+    append_child(main_content, editor_panel());
+
+    // Resize handle between panels
+    ≔ resize_handle = div_with_class("resize-handle");
+    set_attr(resize_handle, "id", "resize-handle");
+    append_child(main_content, resize_handle);
+
+    append_child(main_content, output_panel());
+    append_child(app, main_content);
+
+    // Footer
+    append_child(app, playground_footer());
+
+    // Mount to DOM and return
+    mount(app, "#app")
+}

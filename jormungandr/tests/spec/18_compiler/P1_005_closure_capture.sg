@@ -2,9 +2,9 @@
 // Spec: 18-COMPILER.md § 2.2 Closures
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 10;
-    ≔ add_x = |y: !i32| → !i32 { x + y };
+    ≔ add_x = |y: !i32| -> !i32 { x + y };
 
     println(add_x(5));
     println(add_x(20));

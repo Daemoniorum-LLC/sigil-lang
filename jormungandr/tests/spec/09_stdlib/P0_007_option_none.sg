@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 0
 
-rite main() {
+λ main() {
     ≔ opt: !Option<i32> = Option·None;
     ⌥ opt {
         Option·Some(x) => println(x),

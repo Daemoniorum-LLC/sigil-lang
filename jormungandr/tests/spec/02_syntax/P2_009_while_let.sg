@@ -2,8 +2,8 @@
 // Spec: 02-SYNTAX.md § 5.3 While Let
 // Priority: P2 - Enhancement
 
-rite main() {
-    ≔ vary opt: Option<i32> = Option·Some(3);
+λ main() {
+    ≔ Δ opt: Option<i32> = Option·Some(3);
 
     ⟳ ≔ Option·Some(x) = opt {
         println(x);

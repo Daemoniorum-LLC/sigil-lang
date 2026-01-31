@@ -2,11 +2,11 @@
 // Spec: 04-MEMORY.md § 4.2 Rc
 // Priority: P2 - Enhancement
 
-sigil Node {
+Σ Node {
     value: !i32,
 }
 
-rite main() {
+λ main() {
     ≔ inner = Rc·new(Node { value: 42 });
     ≔ outer = Rc·new(inner.clone());
 

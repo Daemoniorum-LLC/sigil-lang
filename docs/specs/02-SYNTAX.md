@@ -1,5 +1,8 @@
 # Sigil Syntax Specification
 
+> **Status:** ! Stable (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 ## 1. Program Structure
 
 A Sigil program consists of a series of items organized into modules.
@@ -422,65 +425,6 @@ let result = try {
 // Assert evidentiality
 let known! = uncertain?!   // Panic if None
 let trusted! = external~!  // Assert trust
-```
-
-### 3.7 Named Parameters
-
-Function calls support both positional and named arguments. Named parameters
-improve readability, especially for functions with multiple optional arguments
-or boolean flags.
-
-```sigil
-// Positional arguments (traditional)
-tensor.mean(-1, true)
-
-// Named arguments (clearer intent)
-tensor.mean(axis: -1, keepdim: true)
-
-// Mixed: positional first, then named
-model.forward(x, mask: attention_mask, cache: kv_cache)
-
-// Named arguments can be in any order
-config.init(timeout: 30, retries: 3, verbose: true)
-config.init(verbose: true, retries: 3, timeout: 30)  // Same effect
-```
-
-**Semantics:**
-
-```sigil
-// Function definition (parameters are always positional in definition)
-fn reduce(tensor: Tensor, axis: i32, keepdim: bool) -> Tensor { ... }
-
-// Call with named arguments
-let result = reduce(x, axis: -1, keepdim: true)
-
-// Desugars to positional call (compiler reorders based on names)
-let result = reduce(x, -1, true)
-```
-
-**Rules:**
-1. Positional arguments must come before named arguments
-2. Named arguments can appear in any order
-3. Cannot mix positional and named for the same parameter
-4. All required parameters must be provided (positional or named)
-
-**With pipe expressions:**
-
-```sigil
-// Pipe provides first argument, remaining can be named
-data|reduce(axis: 0, keepdim: false)
-
-// Equivalent to
-reduce(data, axis: 0, keepdim: false)
-```
-
-**With default values:**
-
-```sigil
-fn softmax(x: Tensor, axis: i32 = -1, stable: bool = true) -> Tensor { ... }
-
-// Named args allow skipping to later defaults
-x|softmax(stable: false)  // axis uses default -1
 ```
 
 ---

@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-//! Tests for Engram Semantic Memory (Knowledge Graph)
-=======
 //! Tests ∀ Engram Semantic Memory (Knowledge Graph)
->>>>>>> origin/main
 //!
 //! Verifies fact storage, graph traversal, and semantic search.
 
@@ -10,16 +6,6 @@
 // Self-contained Test Types (matching semantic.sg API)
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct NodeId(usize);
-
-impl NodeId {
-    fn new(id: usize) -> Self { Self(id) }
-}
-
-impl PartialEq for NodeId {
-    fn eq(&self, other: &Self) -> bool {
-=======
 ☉ Σ NodeId(usize);
 
 ⊢ NodeId {
@@ -28,29 +14,10 @@ impl PartialEq for NodeId {
 
 ⊢ PartialEq ∀ NodeId {
     λ eq(&self, other: &Self) -> bool {
->>>>>>> origin/main
         self.0 == other.0
     }
 }
 
-<<<<<<< HEAD
-impl Clone for NodeId {
-    fn clone(&self) -> Self { NodeId(self.0) }
-}
-
-impl Hash for NodeId {
-    fn hash(&self) -> usize { self.0 }
-}
-
-pub struct EdgeId(usize);
-
-impl EdgeId {
-    fn new(id: usize) -> Self { Self(id) }
-}
-
-impl PartialEq for EdgeId {
-    fn eq(&self, other: &Self) -> bool {
-=======
 ⊢ Clone ∀ NodeId {
     λ clone(&self) -> Self { NodeId(self.0) }
 }
@@ -67,24 +34,15 @@ impl PartialEq for EdgeId {
 
 ⊢ PartialEq ∀ EdgeId {
     λ eq(&self, other: &Self) -> bool {
->>>>>>> origin/main
         self.0 == other.0
     }
 }
 
-<<<<<<< HEAD
-impl Clone for EdgeId {
-    fn clone(&self) -> Self { EdgeId(self.0) }
-}
-
-pub enum NodeType {
-=======
 ⊢ Clone ∀ EdgeId {
     λ clone(&self) -> Self { EdgeId(self.0) }
 }
 
 ☉ ᛈ NodeType {
->>>>>>> origin/main
     Concept,
     Entity,
     Attribute,
@@ -93,17 +51,6 @@ pub enum NodeType {
     Category,
 }
 
-<<<<<<< HEAD
-impl Clone for NodeType {
-    fn clone(&self) -> Self {
-        match self {
-            NodeType::Concept => NodeType::Concept,
-            NodeType::Entity => NodeType::Entity,
-            NodeType::Attribute => NodeType::Attribute,
-            NodeType::Action => NodeType::Action,
-            NodeType::Event => NodeType::Event,
-            NodeType::Category => NodeType::Category,
-=======
 ⊢ Clone ∀ NodeType {
     λ clone(&self) -> Self {
         ⌥ self {
@@ -113,22 +60,10 @@ impl Clone for NodeType {
             NodeType·Action => NodeType·Action,
             NodeType·Event => NodeType·Event,
             NodeType·Category => NodeType·Category,
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-impl PartialEq for NodeType {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (NodeType::Concept, NodeType::Concept) => true,
-            (NodeType::Entity, NodeType::Entity) => true,
-            (NodeType::Attribute, NodeType::Attribute) => true,
-            (NodeType::Action, NodeType::Action) => true,
-            (NodeType::Event, NodeType::Event) => true,
-            (NodeType::Category, NodeType::Category) => true,
-=======
 ⊢ PartialEq ∀ NodeType {
     λ eq(&self, other: &Self) -> bool {
         ⌥ (self, other) {
@@ -138,17 +73,12 @@ impl PartialEq for NodeType {
             (NodeType·Action, NodeType·Action) => true,
             (NodeType·Event, NodeType·Event) => true,
             (NodeType·Category, NodeType·Category) => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 }
 
-<<<<<<< HEAD
-pub enum Relation {
-=======
 ☉ ᛈ Relation {
->>>>>>> origin/main
     IsA,
     HasProperty,
     PartOf,
@@ -160,20 +90,6 @@ pub enum Relation {
     Custom(String),
 }
 
-<<<<<<< HEAD
-impl Clone for Relation {
-    fn clone(&self) -> Self {
-        match self {
-            Relation::IsA => Relation::IsA,
-            Relation::HasProperty => Relation::HasProperty,
-            Relation::PartOf => Relation::PartOf,
-            Relation::RelatedTo => Relation::RelatedTo,
-            Relation::Causes => Relation::Causes,
-            Relation::CreatedBy => Relation::CreatedBy,
-            Relation::LocatedIn => Relation::LocatedIn,
-            Relation::OccurredAt => Relation::OccurredAt,
-            Relation::Custom(s) => Relation::Custom(s.clone()),
-=======
 ⊢ Clone ∀ Relation {
     λ clone(&self) -> Self {
         ⌥ self {
@@ -186,25 +102,10 @@ impl Clone for Relation {
             Relation·LocatedIn => Relation·LocatedIn,
             Relation·OccurredAt => Relation·OccurredAt,
             Relation·Custom(s) => Relation·Custom(s.clone()),
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-impl PartialEq for Relation {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Relation::IsA, Relation::IsA) => true,
-            (Relation::HasProperty, Relation::HasProperty) => true,
-            (Relation::PartOf, Relation::PartOf) => true,
-            (Relation::RelatedTo, Relation::RelatedTo) => true,
-            (Relation::Causes, Relation::Causes) => true,
-            (Relation::CreatedBy, Relation::CreatedBy) => true,
-            (Relation::LocatedIn, Relation::LocatedIn) => true,
-            (Relation::OccurredAt, Relation::OccurredAt) => true,
-            (Relation::Custom(a), Relation::Custom(b)) => a == b,
-=======
 ⊢ PartialEq ∀ Relation {
     λ eq(&self, other: &Self) -> bool {
         ⌥ (self, other) {
@@ -217,17 +118,12 @@ impl PartialEq for Relation {
             (Relation·LocatedIn, Relation·LocatedIn) => true,
             (Relation·OccurredAt, Relation·OccurredAt) => true,
             (Relation·Custom(a), Relation·Custom(b)) => a == b,
->>>>>>> origin/main
             _ => false,
         }
     }
 }
 
-<<<<<<< HEAD
-pub enum Epistemic {
-=======
 ☉ ᛈ Epistemic {
->>>>>>> origin/main
     Unknown,
     Axiomatic,
     Observed { observer: String },
@@ -235,16 +131,6 @@ pub enum Epistemic {
     Inferred { basis: String },
 }
 
-<<<<<<< HEAD
-impl Clone for Epistemic {
-    fn clone(&self) -> Self {
-        match self {
-            Epistemic::Unknown => Epistemic::Unknown,
-            Epistemic::Axiomatic => Epistemic::Axiomatic,
-            Epistemic::Observed { observer } => Epistemic::Observed { observer: observer.clone() },
-            Epistemic::Reported { source } => Epistemic::Reported { source: source.clone() },
-            Epistemic::Inferred { basis } => Epistemic::Inferred { basis: basis.clone() },
-=======
 ⊢ Clone ∀ Epistemic {
     λ clone(&self) -> Self {
         ⌥ self {
@@ -253,21 +139,10 @@ impl Clone for Epistemic {
             Epistemic·Observed { observer } => Epistemic·Observed { observer: observer.clone() },
             Epistemic·Reported { source } => Epistemic·Reported { source: source.clone() },
             Epistemic·Inferred { basis } => Epistemic·Inferred { basis: basis.clone() },
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-impl Epistemic {
-    pub fn strength(&self) -> f64 {
-        match self {
-            Epistemic::Unknown => 0.1,
-            Epistemic::Axiomatic => 1.0,
-            Epistemic::Observed { .. } => 0.9,
-            Epistemic::Reported { .. } => 0.6,
-            Epistemic::Inferred { .. } => 0.5,
-=======
 ⊢ Epistemic {
     ☉ λ strength(&self) -> f64 {
         ⌥ self {
@@ -276,32 +151,10 @@ impl Epistemic {
             Epistemic·Observed { .. } => 0.9,
             Epistemic·Reported { .. } => 0.6,
             Epistemic·Inferred { .. } => 0.5,
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-pub struct Node {
-    pub id: NodeId,
-    pub node_type: NodeType,
-    pub label: String,
-    pub aliases: Vec<String>,
-    pub confidence: f64,
-    pub epistemic: Epistemic,
-    pub access_count: u32,
-}
-
-impl Node {
-    pub fn new(id: usize, label: &str, node_type: NodeType) -> Self {
-        Self {
-            id: NodeId::new(id),
-            node_type,
-            label: label.to_string(),
-            aliases: Vec::new(),
-            confidence: 0.5,
-            epistemic: Epistemic::Unknown,
-=======
 ☉ Σ Node {
     ☉ id: NodeId,
     ☉ node_type: NodeType,
@@ -321,45 +174,27 @@ impl Node {
             aliases: Vec·new(),
             confidence: 0.5,
             epistemic: Epistemic·Unknown,
->>>>>>> origin/main
             access_count: 0,
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_confidence(mut self, conf: f64) -> Self {
-=======
     ☉ λ with_confidence(Δ self, conf: f64) -> Self {
->>>>>>> origin/main
         self.confidence = conf;
         self
     }
 
-<<<<<<< HEAD
-    pub fn with_epistemic(mut self, ep: Epistemic) -> Self {
-=======
     ☉ λ with_epistemic(Δ self, ep: Epistemic) -> Self {
->>>>>>> origin/main
         self.epistemic = ep;
         self
     }
 
-<<<<<<< HEAD
-    pub fn add_alias(&mut self, alias: &str) {
-=======
     ☉ λ add_alias(&Δ self, alias: &str) {
->>>>>>> origin/main
         self.aliases.push(alias.to_string());
     }
 }
 
-<<<<<<< HEAD
-impl Clone for Node {
-    fn clone(&self) -> Self {
-=======
 ⊢ Clone ∀ Node {
     λ clone(&self) -> Self {
->>>>>>> origin/main
         Node {
             id: self.id.clone(),
             node_type: self.node_type.clone(),
@@ -372,22 +207,6 @@ impl Clone for Node {
     }
 }
 
-<<<<<<< HEAD
-pub struct Edge {
-    pub id: EdgeId,
-    pub source: NodeId,
-    pub target: NodeId,
-    pub relation: Relation,
-    pub weight: f64,
-    pub confidence: f64,
-    pub epistemic: Epistemic,
-}
-
-impl Edge {
-    pub fn new(id: usize, source: NodeId, target: NodeId, relation: Relation) -> Self {
-        Self {
-            id: EdgeId::new(id),
-=======
 ☉ Σ Edge {
     ☉ id: EdgeId,
     ☉ source: NodeId,
@@ -402,31 +221,16 @@ impl Edge {
     ☉ λ new(id: usize, source: NodeId, target: NodeId, relation: Relation) -> Self {
         Self {
             id: EdgeId·new(id),
->>>>>>> origin/main
             source,
             target,
             relation,
             weight: 1.0,
             confidence: 0.5,
-<<<<<<< HEAD
-            epistemic: Epistemic::Unknown,
-=======
             epistemic: Epistemic·Unknown,
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-pub struct Claim {
-    pub relation: Relation,
-    pub object: String,
-    pub object_type: Option<NodeType>,
-}
-
-impl Claim {
-    pub fn new(relation: Relation, object: &str) -> Self {
-=======
 ☉ Σ Claim {
     ☉ relation: Relation,
     ☉ object: String,
@@ -435,7 +239,6 @@ impl Claim {
 
 ⊢ Claim {
     ☉ λ new(relation: Relation, object: &str) -> Self {
->>>>>>> origin/main
         Self {
             relation,
             object: object.to_string(),
@@ -443,33 +246,12 @@ impl Claim {
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_type(mut self, node_type: NodeType) -> Self {
-=======
     ☉ λ with_type(Δ self, node_type: NodeType) -> Self {
->>>>>>> origin/main
         self.object_type = Some(node_type);
         self
     }
 }
 
-<<<<<<< HEAD
-pub struct Fact {
-    pub subject: String,
-    pub subject_type: Option<NodeType>,
-    pub claims: Vec<Claim>,
-    pub epistemic: Epistemic,
-    pub confidence: f64,
-}
-
-impl Fact {
-    pub fn new(subject: &str) -> Self {
-        Self {
-            subject: subject.to_string(),
-            subject_type: None,
-            claims: Vec::new(),
-            epistemic: Epistemic::Unknown,
-=======
 ☉ Σ Fact {
     ☉ subject: String,
     ☉ subject_type: Option<NodeType>,
@@ -485,29 +267,15 @@ impl Fact {
             subject_type: None,
             claims: Vec·new(),
             epistemic: Epistemic·Unknown,
->>>>>>> origin/main
             confidence: 0.5,
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_type(mut self, node_type: NodeType) -> Self {
-=======
     ☉ λ with_type(Δ self, node_type: NodeType) -> Self {
->>>>>>> origin/main
         self.subject_type = Some(node_type);
         self
     }
 
-<<<<<<< HEAD
-    pub fn claim(mut self, relation: Relation, object: &str) -> Self {
-        self.claims.push(Claim::new(relation, object));
-        self
-    }
-
-    pub fn observed(mut self) -> Self {
-        self.epistemic = Epistemic::Observed { observer: "self".to_string() };
-=======
     ☉ λ claim(Δ self, relation: Relation, object: &str) -> Self {
         self.claims.push(Claim·new(relation, object));
         self
@@ -515,41 +283,21 @@ impl Fact {
 
     ☉ λ observed(Δ self) -> Self {
         self.epistemic = Epistemic·Observed { observer: "self".to_string() };
->>>>>>> origin/main
         self.confidence = 0.95;
         self
     }
 
-<<<<<<< HEAD
-    pub fn reported(mut self, source: &str) -> Self {
-        self.epistemic = Epistemic::Reported { source: source.to_string() };
-=======
     ☉ λ reported(Δ self, source: &str) -> Self {
         self.epistemic = Epistemic·Reported { source: source.to_string() };
->>>>>>> origin/main
         self.confidence = 0.6;
         self
     }
 
-<<<<<<< HEAD
-    pub fn significance(&self) -> f64 {
-=======
     ☉ λ significance(&self) -> f64 {
->>>>>>> origin/main
         self.confidence * self.epistemic.strength()
     }
 }
 
-<<<<<<< HEAD
-pub struct QueryResult {
-    pub node_id: NodeId,
-    pub node: Node,
-    pub relevance: f64,
-    pub confidence: f64,
-}
-
-pub enum Direction {
-=======
 ☉ Σ QueryResult {
     ☉ node_id: NodeId,
     ☉ node: Node,
@@ -558,32 +306,11 @@ pub enum Direction {
 }
 
 ☉ ᛈ Direction {
->>>>>>> origin/main
     Outgoing,
     Incoming,
     Both,
 }
 
-<<<<<<< HEAD
-pub struct PathStep {
-    pub relation: Relation,
-    pub direction: Direction,
-}
-
-pub struct GraphPath {
-    pub steps: Vec<PathStep>,
-}
-
-impl GraphPath {
-    pub fn new() -> Self {
-        Self { steps: Vec::new() }
-    }
-
-    pub fn follow(mut self, relation: Relation) -> Self {
-        self.steps.push(PathStep {
-            relation,
-            direction: Direction::Outgoing,
-=======
 ☉ Σ PathStep {
     ☉ relation: Relation,
     ☉ direction: Direction,
@@ -602,36 +329,19 @@ impl GraphPath {
         self.steps.push(PathStep {
             relation,
             direction: Direction·Outgoing,
->>>>>>> origin/main
         });
         self
     }
 
-<<<<<<< HEAD
-    pub fn follow_incoming(mut self, relation: Relation) -> Self {
-        self.steps.push(PathStep {
-            relation,
-            direction: Direction::Incoming,
-=======
     ☉ λ follow_incoming(Δ self, relation: Relation) -> Self {
         self.steps.push(PathStep {
             relation,
             direction: Direction·Incoming,
->>>>>>> origin/main
         });
         self
     }
 }
 
-<<<<<<< HEAD
-pub struct SemanticConfig {
-    pub max_nodes: Option<usize>,
-    pub default_confidence: f64,
-}
-
-impl SemanticConfig {
-    pub fn default_config() -> Self {
-=======
 ☉ Σ SemanticConfig {
     ☉ max_nodes: Option<usize>,
     ☉ default_confidence: f64,
@@ -639,7 +349,6 @@ impl SemanticConfig {
 
 ⊢ SemanticConfig {
     ☉ λ default_config() -> Self {
->>>>>>> origin/main
         Self {
             max_nodes: Some(10000),
             default_confidence: 0.5,
@@ -647,11 +356,7 @@ impl SemanticConfig {
     }
 }
 
-<<<<<<< HEAD
-pub struct SemanticMemory {
-=======
 ☉ Σ SemanticMemory {
->>>>>>> origin/main
     nodes: Vec<Node>,
     edges: Vec<Edge>,
     next_node_id: usize,
@@ -659,88 +364,17 @@ pub struct SemanticMemory {
     config: SemanticConfig,
 }
 
-<<<<<<< HEAD
-impl SemanticMemory {
-    pub fn new(config: SemanticConfig) -> Self {
-        Self {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-=======
 ⊢ SemanticMemory {
     ☉ λ new(config: SemanticConfig) -> Self {
         Self {
             nodes: Vec·new(),
             edges: Vec·new(),
->>>>>>> origin/main
             next_node_id: 0,
             next_edge_id: 0,
             config,
         }
     }
 
-<<<<<<< HEAD
-    pub fn default_memory() -> Self {
-        Self::new(SemanticConfig::default_config())
-    }
-
-    pub fn node_count(&self) -> usize {
-        self.nodes.len()
-    }
-
-    pub fn edge_count(&self) -> usize {
-        self.edges.len()
-    }
-
-    pub fn get_node(&self, id: &NodeId) -> Option<&Node> {
-        self.nodes.iter().find(|n| n.id == *id)
-    }
-
-    pub fn get_node_by_label(&self, label: &str) -> Option<&Node> {
-        self.nodes.iter().find(|n| n.label == label)
-    }
-
-    pub fn get_edge(&self, id: &EdgeId) -> Option<&Edge> {
-        self.edges.iter().find(|e| e.id == *id)
-    }
-
-    pub fn add_node(&mut self, label: &str, node_type: NodeType) -> NodeId {
-        // Check if exists
-        for node in &self.nodes {
-            if node.label == label {
-                return node.id.clone();
-            }
-        }
-
-        let id = self.next_node_id;
-        self.next_node_id = self.next_node_id + 1;
-
-        let node = Node::new(id, label, node_type);
-        self.nodes.push(node);
-        NodeId::new(id)
-    }
-
-    pub fn add_edge(&mut self, source: NodeId, target: NodeId, relation: Relation) -> EdgeId {
-        let id = self.next_edge_id;
-        self.next_edge_id = self.next_edge_id + 1;
-
-        let edge = Edge::new(id, source, target, relation);
-        self.edges.push(edge);
-        EdgeId::new(id)
-    }
-
-    pub fn learn(&mut self, fact: Fact) -> Vec<NodeId> {
-        let mut created = Vec::new();
-
-        // Get or create subject
-        let subject_type = fact.subject_type.unwrap_or(NodeType::Concept);
-        let subject_id = self.add_node(&fact.subject, subject_type);
-        created.push(subject_id.clone());
-
-        // Process claims
-        for claim in &fact.claims {
-            let object_type = claim.object_type.clone().unwrap_or(NodeType::Concept);
-            let object_id = self.add_node(&claim.object, object_type);
-=======
     ☉ λ default_memory() -> Self {
         Self·new(SemanticConfig·default_config())
     }
@@ -802,43 +436,23 @@ impl SemanticMemory {
         ∀ claim ∈ &fact.claims {
             ≔ object_type = claim.object_type.clone().unwrap_or(NodeType·Concept);
             ≔ object_id = self.add_node(&claim.object, object_type);
->>>>>>> origin/main
             created.push(object_id.clone());
 
             self.add_edge(subject_id.clone(), object_id, claim.relation.clone());
         }
 
         // Update epistemic and confidence on subject
-<<<<<<< HEAD
-        for node in &mut self.nodes {
-            if node.id == subject_id {
-                node.epistemic = fact.epistemic.clone();
-                node.confidence = fact.confidence;
-                break;
-=======
         ∀ node ∈ &Δ self.nodes {
             ⎇ node.id == subject_id {
                 node.epistemic = fact.epistemic.clone();
                 node.confidence = fact.confidence;
                 ⊗;
->>>>>>> origin/main
             }
         }
 
         created
     }
 
-<<<<<<< HEAD
-    pub fn query(&self, text: &str, limit: usize) -> Vec<QueryResult> {
-        let query_lower = text.to_lowercase();
-        let query_words: Vec<&str> = query_lower.split_whitespace().collect();
-
-        let mut scored: Vec<QueryResult> = Vec::new();
-
-        for node in &self.nodes {
-            let relevance = self.compute_relevance(&query_words, node);
-            if relevance > 0.0 {
-=======
     ☉ λ query(&self, text: &str, limit: usize) -> Vec<QueryResult> {
         ≔ query_lower = text.to_lowercase();
         ≔ query_words: Vec<&str> = query_lower.split_whitespace().collect();
@@ -848,7 +462,6 @@ impl SemanticMemory {
         ∀ node ∈ &self.nodes {
             ≔ relevance = self.compute_relevance(&query_words, node);
             ⎇ relevance > 0.0 {
->>>>>>> origin/main
                 scored.push(QueryResult {
                     node_id: node.id.clone(),
                     node: node.clone(),
@@ -859,21 +472,12 @@ impl SemanticMemory {
         }
 
         // Sort by relevance * confidence (bubble sort)
-<<<<<<< HEAD
-        for i in 0..scored.len() {
-            for j in (i + 1)..scored.len() {
-                let score_i = scored[i].relevance * scored[i].confidence.max(0.1);
-                let score_j = scored[j].relevance * scored[j].confidence.max(0.1);
-                if score_j > score_i {
-                    let temp = QueryResult {
-=======
         ∀ i ∈ 0..scored.len() {
             ∀ j ∈ (i + 1)..scored.len() {
                 ≔ score_i = scored[i].relevance * scored[i].confidence.max(0.1);
                 ≔ score_j = scored[j].relevance * scored[j].confidence.max(0.1);
                 ⎇ score_j > score_i {
                     ≔ temp = QueryResult {
->>>>>>> origin/main
                         node_id: scored[i].node_id.clone(),
                         node: scored[i].node.clone(),
                         relevance: scored[i].relevance,
@@ -890,13 +494,8 @@ impl SemanticMemory {
             }
         }
 
-<<<<<<< HEAD
-        let mut result = Vec::new();
-        for i in 0..limit.min(scored.len()) {
-=======
         ≔ Δ result = Vec·new();
         ∀ i ∈ 0..limit.min(scored.len()) {
->>>>>>> origin/main
             result.push(QueryResult {
                 node_id: scored[i].node_id.clone(),
                 node: scored[i].node.clone(),
@@ -907,17 +506,6 @@ impl SemanticMemory {
         result
     }
 
-<<<<<<< HEAD
-    pub fn neighbors(&self, node_id: &NodeId, relation: Option<Relation>) -> Vec<NodeId> {
-        let mut result = Vec::new();
-        for edge in &self.edges {
-            if edge.source == *node_id {
-                let matches = match &relation {
-                    Some(r) => edge.relation == *r,
-                    None => true,
-                };
-                if matches {
-=======
     ☉ λ neighbors(&self, node_id: &NodeId, relation: Option<Relation>) -> Vec<NodeId> {
         ≔ Δ result = Vec·new();
         ∀ edge ∈ &self.edges {
@@ -927,7 +515,6 @@ impl SemanticMemory {
                     None => true,
                 };
                 ⎇ matches {
->>>>>>> origin/main
                     result.push(edge.target.clone());
                 }
             }
@@ -935,17 +522,6 @@ impl SemanticMemory {
         result
     }
 
-<<<<<<< HEAD
-    pub fn incoming_neighbors(&self, node_id: &NodeId, relation: Option<Relation>) -> Vec<NodeId> {
-        let mut result = Vec::new();
-        for edge in &self.edges {
-            if edge.target == *node_id {
-                let matches = match &relation {
-                    Some(r) => edge.relation == *r,
-                    None => true,
-                };
-                if matches {
-=======
     ☉ λ incoming_neighbors(&self, node_id: &NodeId, relation: Option<Relation>) -> Vec<NodeId> {
         ≔ Δ result = Vec·new();
         ∀ edge ∈ &self.edges {
@@ -955,7 +531,6 @@ impl SemanticMemory {
                     None => true,
                 };
                 ⎇ matches {
->>>>>>> origin/main
                     result.push(edge.source.clone());
                 }
             }
@@ -963,20 +538,6 @@ impl SemanticMemory {
         result
     }
 
-<<<<<<< HEAD
-    pub fn traverse(&self, start: &NodeId, path: &GraphPath) -> Vec<NodeId> {
-        let mut current = vec![start.clone()];
-
-        for step in &path.steps {
-            let mut next = Vec::new();
-
-            for node_id in &current {
-                let neighbors = match step.direction {
-                    Direction::Outgoing => self.neighbors(node_id, Some(step.relation.clone())),
-                    Direction::Incoming => self.incoming_neighbors(node_id, Some(step.relation.clone())),
-                    Direction::Both => {
-                        let mut both = self.neighbors(node_id, Some(step.relation.clone()));
-=======
     ☉ λ traverse(&self, start: &NodeId, path: &GraphPath) -> Vec<NodeId> {
         ≔ Δ current = vec![start.clone()];
 
@@ -989,7 +550,6 @@ impl SemanticMemory {
                     Direction·Incoming => self.incoming_neighbors(node_id, Some(step.relation.clone())),
                     Direction·Both => {
                         ≔ Δ both = self.neighbors(node_id, Some(step.relation.clone()));
->>>>>>> origin/main
                         both.extend(self.incoming_neighbors(node_id, Some(step.relation.clone())));
                         both
                     }
@@ -1003,16 +563,6 @@ impl SemanticMemory {
         current
     }
 
-<<<<<<< HEAD
-    fn compute_relevance(&self, query_words: &Vec<&str>, node: &Node) -> f64 {
-        let label_lower = node.label.to_lowercase();
-        let label_words: Vec<&str> = label_lower.split_whitespace().collect();
-
-        // Exact match
-        for word in query_words {
-            if *word == label_lower {
-                return 1.0;
-=======
     λ compute_relevance(&self, query_words: &Vec<&str>, node: &Node) -> f64 {
         ≔ label_lower = node.label.to_lowercase();
         ≔ label_words: Vec<&str> = label_lower.split_whitespace().collect();
@@ -1021,40 +571,20 @@ impl SemanticMemory {
         ∀ word ∈ query_words {
             ⎇ *word == label_lower {
                 ⤺ 1.0;
->>>>>>> origin/main
             }
         }
 
         // Word overlap
-<<<<<<< HEAD
-        let mut matches = 0;
-        for qw in query_words {
-            for lw in &label_words {
-                if *qw == *lw {
-                    matches = matches + 1;
-                    break;
-=======
         ≔ Δ matches = 0;
         ∀ qw ∈ query_words {
             ∀ lw ∈ &label_words {
                 ⎇ *qw == *lw {
                     matches = matches + 1;
                     ⊗;
->>>>>>> origin/main
                 }
             }
         }
 
-<<<<<<< HEAD
-        if matches > 0 {
-            return matches as f64 / query_words.len().max(1) as f64;
-        }
-
-        // Substring match
-        for word in query_words {
-            if label_lower.contains(*word) {
-                return 0.5;
-=======
         ⎇ matches > 0 {
             ⤺ matches as f64 / query_words.len().max(1) as f64;
         }
@@ -1063,7 +593,6 @@ impl SemanticMemory {
         ∀ word ∈ query_words {
             ⎇ label_lower.contains(*word) {
                 ⤺ 0.5;
->>>>>>> origin/main
             }
         }
 
@@ -1076,57 +605,32 @@ impl SemanticMemory {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_node_creation() {
-    let node = Node::new(1, "Test Node", NodeType::Concept);
-=======
 λ test_node_creation() {
     ≔ node = Node·new(1, "Test Node", NodeType·Concept);
->>>>>>> origin/main
     assert_eq(node.label, "Test Node");
     assert_eq(node.access_count, 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_node_with_confidence() {
-    let node = Node::new(1, "Test", NodeType::Concept)
-        .with_confidence(0.9);
-    let diff = (node.confidence - 0.9).abs();
-=======
 λ test_node_with_confidence() {
     ≔ node = Node·new(1, "Test", NodeType·Concept)
         .with_confidence(0.9);
     ≔ diff = (node.confidence - 0.9).abs();
->>>>>>> origin/main
     assert(diff < 0.001);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_node_with_epistemic() {
-    let node = Node::new(1, "Test", NodeType::Concept)
-        .with_epistemic(Epistemic::Observed { observer: "agent".to_string() });
-
-    let strength = node.epistemic.strength();
-=======
 λ test_node_with_epistemic() {
     ≔ node = Node·new(1, "Test", NodeType·Concept)
         .with_epistemic(Epistemic·Observed { observer: "agent".to_string() });
 
     ≔ strength = node.epistemic.strength();
->>>>>>> origin/main
     assert(strength > 0.8);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_node_aliases() {
-    let mut node = Node::new(1, "United States", NodeType::Entity);
-=======
 λ test_node_aliases() {
     ≔ Δ node = Node·new(1, "United States", NodeType·Entity);
->>>>>>> origin/main
     node.add_alias("USA");
     node.add_alias("America");
 
@@ -1138,37 +642,16 @@ fn test_node_aliases() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_edge_creation() {
-    let source = NodeId::new(1);
-    let target = NodeId::new(2);
-    let edge = Edge::new(1, source, target, Relation::IsA);
-=======
 λ test_edge_creation() {
     ≔ source = NodeId·new(1);
     ≔ target = NodeId·new(2);
     ≔ edge = Edge·new(1, source, target, Relation·IsA);
->>>>>>> origin/main
 
     assert_eq(edge.source.0, 1);
     assert_eq(edge.target.0, 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_edge_relation() {
-    let edge = Edge::new(1, NodeId::new(1), NodeId::new(2), Relation::HasProperty);
-    assert(edge.relation == Relation::HasProperty);
-}
-
-#[test]
-fn test_custom_relation() {
-    let edge = Edge::new(1, NodeId::new(1), NodeId::new(2),
-        Relation::Custom("worksAt".to_string()));
-
-    let is_custom = match edge.relation {
-        Relation::Custom(s) => s == "worksAt",
-=======
 λ test_edge_relation() {
     ≔ edge = Edge·new(1, NodeId·new(1), NodeId·new(2), Relation·HasProperty);
     assert(edge.relation == Relation·HasProperty);
@@ -1181,7 +664,6 @@ fn test_custom_relation() {
 
     ≔ is_custom = ⌥ edge.relation {
         Relation·Custom(s) => s == "worksAt",
->>>>>>> origin/main
         _ => false,
     };
     assert(is_custom);
@@ -1192,64 +674,37 @@ fn test_custom_relation() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_fact_creation() {
-    let fact = Fact::new("Python");
-=======
 λ test_fact_creation() {
     ≔ fact = Fact·new("Python");
->>>>>>> origin/main
     assert_eq(fact.subject, "Python");
     assert_eq(fact.claims.len(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_fact_with_claim() {
-    let fact = Fact::new("Python")
-        .claim(Relation::IsA, "Programming Language");
-=======
 λ test_fact_with_claim() {
     ≔ fact = Fact·new("Python")
         .claim(Relation·IsA, "Programming Language");
->>>>>>> origin/main
 
     assert_eq(fact.claims.len(), 1);
     assert_eq(fact.claims[0].object, "Programming Language");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_fact_multiple_claims() {
-    let fact = Fact::new("Python")
-        .claim(Relation::IsA, "Programming Language")
-        .claim(Relation::HasProperty, "Dynamic Typing")
-        .claim(Relation::CreatedBy, "Guido van Rossum");
-=======
 λ test_fact_multiple_claims() {
     ≔ fact = Fact·new("Python")
         .claim(Relation·IsA, "Programming Language")
         .claim(Relation·HasProperty, "Dynamic Typing")
         .claim(Relation·CreatedBy, "Guido van Rossum");
->>>>>>> origin/main
 
     assert_eq(fact.claims.len(), 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_fact_observed() {
-    let fact = Fact::new("Test").observed();
-
-    let is_observed = match fact.epistemic {
-        Epistemic::Observed { .. } => true,
-=======
 λ test_fact_observed() {
     ≔ fact = Fact·new("Test").observed();
 
     ≔ is_observed = ⌥ fact.epistemic {
         Epistemic·Observed { .. } => true,
->>>>>>> origin/main
         _ => false,
     };
     assert(is_observed);
@@ -1257,34 +712,20 @@ fn test_fact_observed() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_fact_reported() {
-    let fact = Fact::new("Test").reported("Wikipedia");
-
-    let source = match &fact.epistemic {
-        Epistemic::Reported { source } => source.clone(),
-=======
 λ test_fact_reported() {
     ≔ fact = Fact·new("Test").reported("Wikipedia");
 
     ≔ source = ⌥ &fact.epistemic {
         Epistemic·Reported { source } => source.clone(),
->>>>>>> origin/main
         _ => "".to_string(),
     };
     assert_eq(source, "Wikipedia");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_fact_significance() {
-    let fact = Fact::new("Test").observed();
-    let sig = fact.significance();
-=======
 λ test_fact_significance() {
     ≔ fact = Fact·new("Test").observed();
     ≔ sig = fact.significance();
->>>>>>> origin/main
 
     // Observed (0.9 strength) * high confidence (0.95) should be high
     assert(sig > 0.8);
@@ -1295,41 +736,21 @@ fn test_fact_significance() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_semantic_memory_creation() {
-    let memory = SemanticMemory::default_memory();
-=======
 λ test_semantic_memory_creation() {
     ≔ memory = SemanticMemory·default_memory();
->>>>>>> origin/main
     assert_eq(memory.node_count(), 0);
     assert_eq(memory.edge_count(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_add_node() {
-    let mut memory = SemanticMemory::default_memory();
-    let id = memory.add_node("Python", NodeType::Concept);
-=======
 λ test_add_node() {
     ≔ Δ memory = SemanticMemory·default_memory();
     ≔ id = memory.add_node("Python", NodeType·Concept);
->>>>>>> origin/main
 
     assert_eq(memory.node_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_add_duplicate_node() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let id1 = memory.add_node("Python", NodeType::Concept);
-    let id2 = memory.add_node("Python", NodeType::Concept);
-
-    // Should return same ID for duplicate
-=======
 λ test_add_duplicate_node() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1337,78 +758,45 @@ fn test_add_duplicate_node() {
     ≔ id2 = memory.add_node("Python", NodeType·Concept);
 
     // Should ⤺ same ID ∀ duplicate
->>>>>>> origin/main
     assert(id1 == id2);
     assert_eq(memory.node_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_add_edge() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let python = memory.add_node("Python", NodeType::Concept);
-    let lang = memory.add_node("Programming Language", NodeType::Category);
-    memory.add_edge(python, lang, Relation::IsA);
-=======
 λ test_add_edge() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ python = memory.add_node("Python", NodeType·Concept);
     ≔ lang = memory.add_node("Programming Language", NodeType·Category);
     memory.add_edge(python, lang, Relation·IsA);
->>>>>>> origin/main
 
     assert_eq(memory.edge_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_get_node_by_id() {
-    let mut memory = SemanticMemory::default_memory();
-    let id = memory.add_node("Test", NodeType::Concept);
-
-    let node = memory.get_node(&id);
-=======
 λ test_get_node_by_id() {
     ≔ Δ memory = SemanticMemory·default_memory();
     ≔ id = memory.add_node("Test", NodeType·Concept);
 
     ≔ node = memory.get_node(&id);
->>>>>>> origin/main
     assert(node.is_some());
     assert_eq(node.unwrap().label, "Test");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_get_node_by_label() {
-    let mut memory = SemanticMemory::default_memory();
-    memory.add_node("Python", NodeType::Concept);
-
-    let node = memory.get_node_by_label("Python");
-=======
 λ test_get_node_by_label() {
     ≔ Δ memory = SemanticMemory·default_memory();
     memory.add_node("Python", NodeType·Concept);
 
     ≔ node = memory.get_node_by_label("Python");
->>>>>>> origin/main
     assert(node.is_some());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_get_nonexistent_node() {
-    let memory = SemanticMemory::default_memory();
-    let fake_id = NodeId::new(999);
-    let node = memory.get_node(&fake_id);
-=======
 λ test_get_nonexistent_node() {
     ≔ memory = SemanticMemory·default_memory();
     ≔ fake_id = NodeId·new(999);
     ≔ node = memory.get_node(&fake_id);
->>>>>>> origin/main
     assert(node.is_none());
 }
 
@@ -1417,15 +805,6 @@ fn test_get_nonexistent_node() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_learn_simple_fact() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let fact = Fact::new("Python")
-        .claim(Relation::IsA, "Language");
-
-    let created = memory.learn(fact);
-=======
 λ test_learn_simple_fact() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1433,7 +812,6 @@ fn test_learn_simple_fact() {
         .claim(Relation·IsA, "Language");
 
     ≔ created = memory.learn(fact);
->>>>>>> origin/main
 
     // Should create 2 nodes (subject + object)
     assert_eq(created.len(), 2);
@@ -1442,15 +820,6 @@ fn test_learn_simple_fact() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learn_fact_with_multiple_claims() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let fact = Fact::new("Python")
-        .claim(Relation::IsA, "Programming Language")
-        .claim(Relation::HasProperty, "Dynamic Typing")
-        .claim(Relation::HasProperty, "Interpreted");
-=======
 λ test_learn_fact_with_multiple_claims() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1458,7 +827,6 @@ fn test_learn_fact_with_multiple_claims() {
         .claim(Relation·IsA, "Programming Language")
         .claim(Relation·HasProperty, "Dynamic Typing")
         .claim(Relation·HasProperty, "Interpreted");
->>>>>>> origin/main
 
     memory.learn(fact);
 
@@ -1468,46 +836,20 @@ fn test_learn_fact_with_multiple_claims() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learn_updates_epistemic() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let fact = Fact::new("Python")
-        .claim(Relation::IsA, "Language")
-=======
 λ test_learn_updates_epistemic() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ fact = Fact·new("Python")
         .claim(Relation·IsA, "Language")
->>>>>>> origin/main
         .observed();
 
     memory.learn(fact);
 
-<<<<<<< HEAD
-    let node = memory.get_node_by_label("Python").unwrap();
-=======
     ≔ node = memory.get_node_by_label("Python").unwrap();
->>>>>>> origin/main
     assert(node.confidence > 0.9);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learn_reuses_existing_nodes() {
-    let mut memory = SemanticMemory::default_memory();
-
-    // First fact
-    memory.learn(Fact::new("Python")
-        .claim(Relation::IsA, "Programming Language"));
-
-    // Second fact with same object
-    memory.learn(Fact::new("Rust")
-        .claim(Relation::IsA, "Programming Language"));
-
-    // Should reuse "Programming Language" node
-=======
 λ test_learn_reuses_existing_nodes() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1520,7 +862,6 @@ fn test_learn_reuses_existing_nodes() {
         .claim(Relation·IsA, "Programming Language"));
 
     // Should reinvoke "Programming Language" node
->>>>>>> origin/main
     assert_eq(memory.node_count(), 3);  // Python, Rust, Programming Language
     assert_eq(memory.edge_count(), 2);
 }
@@ -1530,15 +871,6 @@ fn test_learn_reuses_existing_nodes() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_query_exact_match() {
-    let mut memory = SemanticMemory::default_memory();
-    memory.add_node("Python", NodeType::Concept);
-    memory.add_node("Java", NodeType::Concept);
-    memory.add_node("Rust", NodeType::Concept);
-
-    let results = memory.query("Python", 5);
-=======
 λ test_query_exact_match() {
     ≔ Δ memory = SemanticMemory·default_memory();
     memory.add_node("Python", NodeType·Concept);
@@ -1546,63 +878,34 @@ fn test_query_exact_match() {
     memory.add_node("Rust", NodeType·Concept);
 
     ≔ results = memory.query("Python", 5);
->>>>>>> origin/main
 
     assert(results.len() > 0);
     assert_eq(results[0].node.label, "Python");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_query_partial_match() {
-    let mut memory = SemanticMemory::default_memory();
-    memory.add_node("Python Programming", NodeType::Concept);
-    memory.add_node("Java Development", NodeType::Concept);
-
-    let results = memory.query("Python", 5);
-=======
 λ test_query_partial_match() {
     ≔ Δ memory = SemanticMemory·default_memory();
     memory.add_node("Python Programming", NodeType·Concept);
     memory.add_node("Java Development", NodeType·Concept);
 
     ≔ results = memory.query("Python", 5);
->>>>>>> origin/main
 
     assert(results.len() > 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_query_no_match() {
-    let mut memory = SemanticMemory::default_memory();
-    memory.add_node("Python", NodeType::Concept);
-    memory.add_node("Java", NodeType::Concept);
-
-    let results = memory.query("Haskell", 5);
-=======
 λ test_query_no_match() {
     ≔ Δ memory = SemanticMemory·default_memory();
     memory.add_node("Python", NodeType·Concept);
     memory.add_node("Java", NodeType·Concept);
 
     ≔ results = memory.query("Haskell", 5);
->>>>>>> origin/main
 
     assert_eq(results.len(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_query_respects_limit() {
-    let mut memory = SemanticMemory::default_memory();
-
-    for i in 0..10 {
-        memory.add_node(&format!("Concept {}", i), NodeType::Concept);
-    }
-
-    let results = memory.query("Concept", 3);
-=======
 λ test_query_respects_limit() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1611,26 +914,10 @@ fn test_query_respects_limit() {
     }
 
     ≔ results = memory.query("Concept", 3);
->>>>>>> origin/main
     assert_eq(results.len(), 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_query_ranks_by_relevance_and_confidence() {
-    let mut memory = SemanticMemory::default_memory();
-
-    // Low confidence exact match
-    let id1 = memory.add_node("Python", NodeType::Concept);
-    // High confidence partial match
-    let id2 = memory.add_node("Python Programming", NodeType::Concept);
-
-    // Update confidences
-    for node in &mut memory.nodes {
-        if node.id == id1 {
-            node.confidence = 0.3;
-        } else if node.id == id2 {
-=======
 λ test_query_ranks_by_relevance_and_confidence() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1644,16 +931,11 @@ fn test_query_ranks_by_relevance_and_confidence() {
         ⎇ node.id == id1 {
             node.confidence = 0.3;
         } ⎉ ⎇ node.id == id2 {
->>>>>>> origin/main
             node.confidence = 0.9;
         }
     }
 
-<<<<<<< HEAD
-    let results = memory.query("Python", 5);
-=======
     ≔ results = memory.query("Python", 5);
->>>>>>> origin/main
     // Should have results
     assert(results.len() >= 2);
 }
@@ -1663,19 +945,6 @@ fn test_query_ranks_by_relevance_and_confidence() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_neighbors_outgoing() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let python = memory.add_node("Python", NodeType::Concept);
-    let lang = memory.add_node("Language", NodeType::Category);
-    let dynamic = memory.add_node("Dynamic", NodeType::Attribute);
-
-    memory.add_edge(python.clone(), lang.clone(), Relation::IsA);
-    memory.add_edge(python.clone(), dynamic.clone(), Relation::HasProperty);
-
-    let neighbors = memory.neighbors(&python, None);
-=======
 λ test_neighbors_outgoing() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1687,24 +956,10 @@ fn test_neighbors_outgoing() {
     memory.add_edge(python.clone(), dynamic.clone(), Relation·HasProperty);
 
     ≔ neighbors = memory.neighbors(&python, None);
->>>>>>> origin/main
     assert_eq(neighbors.len(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_neighbors_filtered_by_relation() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let python = memory.add_node("Python", NodeType::Concept);
-    let lang = memory.add_node("Language", NodeType::Category);
-    let dynamic = memory.add_node("Dynamic", NodeType::Attribute);
-
-    memory.add_edge(python.clone(), lang.clone(), Relation::IsA);
-    memory.add_edge(python.clone(), dynamic.clone(), Relation::HasProperty);
-
-    let neighbors = memory.neighbors(&python, Some(Relation::IsA));
-=======
 λ test_neighbors_filtered_by_relation() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1716,24 +971,10 @@ fn test_neighbors_filtered_by_relation() {
     memory.add_edge(python.clone(), dynamic.clone(), Relation·HasProperty);
 
     ≔ neighbors = memory.neighbors(&python, Some(Relation·IsA));
->>>>>>> origin/main
     assert_eq(neighbors.len(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_incoming_neighbors() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let python = memory.add_node("Python", NodeType::Concept);
-    let rust = memory.add_node("Rust", NodeType::Concept);
-    let lang = memory.add_node("Language", NodeType::Category);
-
-    memory.add_edge(python.clone(), lang.clone(), Relation::IsA);
-    memory.add_edge(rust.clone(), lang.clone(), Relation::IsA);
-
-    let incoming = memory.incoming_neighbors(&lang, None);
-=======
 λ test_incoming_neighbors() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1745,22 +986,10 @@ fn test_incoming_neighbors() {
     memory.add_edge(rust.clone(), lang.clone(), Relation·IsA);
 
     ≔ incoming = memory.incoming_neighbors(&lang, None);
->>>>>>> origin/main
     assert_eq(incoming.len(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_traverse_single_hop() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let python = memory.add_node("Python", NodeType::Concept);
-    let lang = memory.add_node("Language", NodeType::Category);
-    memory.add_edge(python.clone(), lang.clone(), Relation::IsA);
-
-    let path = GraphPath::new().follow(Relation::IsA);
-    let results = memory.traverse(&python, &path);
-=======
 λ test_traverse_single_hop() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1770,30 +999,12 @@ fn test_traverse_single_hop() {
 
     ≔ path = GraphPath·new().follow(Relation·IsA);
     ≔ results = memory.traverse(&python, &path);
->>>>>>> origin/main
 
     assert_eq(results.len(), 1);
     assert(results[0] == lang);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_traverse_multi_hop() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let python = memory.add_node("Python", NodeType::Concept);
-    let lang = memory.add_node("Language", NodeType::Category);
-    let tool = memory.add_node("Tool", NodeType::Category);
-
-    memory.add_edge(python.clone(), lang.clone(), Relation::IsA);
-    memory.add_edge(lang.clone(), tool.clone(), Relation::IsA);
-
-    let path = GraphPath::new()
-        .follow(Relation::IsA)
-        .follow(Relation::IsA);
-
-    let results = memory.traverse(&python, &path);
-=======
 λ test_traverse_multi_hop() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1809,25 +1020,12 @@ fn test_traverse_multi_hop() {
         .follow(Relation·IsA);
 
     ≔ results = memory.traverse(&python, &path);
->>>>>>> origin/main
 
     assert_eq(results.len(), 1);
     assert(results[0] == tool);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_traverse_no_path() {
-    let mut memory = SemanticMemory::default_memory();
-
-    let python = memory.add_node("Python", NodeType::Concept);
-    let lang = memory.add_node("Language", NodeType::Category);
-    memory.add_edge(python.clone(), lang.clone(), Relation::IsA);
-
-    // Try to follow HasProperty, but we only have IsA
-    let path = GraphPath::new().follow(Relation::HasProperty);
-    let results = memory.traverse(&python, &path);
-=======
 λ test_traverse_no_path() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
@@ -1838,7 +1036,6 @@ fn test_traverse_no_path() {
     // Try to follow HasProperty, but we only have IsA
     ≔ path = GraphPath·new().follow(Relation·HasProperty);
     ≔ results = memory.traverse(&python, &path);
->>>>>>> origin/main
 
     assert_eq(results.len(), 0);
 }
@@ -1848,70 +1045,39 @@ fn test_traverse_no_path() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_strength_axiomatic() {
-    let ep = Epistemic::Axiomatic;
-    let strength = ep.strength();
-    let diff = (strength - 1.0).abs();
-=======
 λ test_epistemic_strength_axiomatic() {
     ≔ ep = Epistemic·Axiomatic;
     ≔ strength = ep.strength();
     ≔ diff = (strength - 1.0).abs();
->>>>>>> origin/main
     assert(diff < 0.001);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_strength_observed() {
-    let ep = Epistemic::Observed { observer: "self".to_string() };
-    let strength = ep.strength();
-=======
 λ test_epistemic_strength_observed() {
     ≔ ep = Epistemic·Observed { observer: "self".to_string() };
     ≔ strength = ep.strength();
->>>>>>> origin/main
     assert(strength > 0.8);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_strength_reported() {
-    let ep = Epistemic::Reported { source: "wiki".to_string() };
-    let strength = ep.strength();
-=======
 λ test_epistemic_strength_reported() {
     ≔ ep = Epistemic·Reported { source: "wiki".to_string() };
     ≔ strength = ep.strength();
->>>>>>> origin/main
     assert(strength > 0.5);
     assert(strength < 0.8);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_strength_inferred() {
-    let ep = Epistemic::Inferred { basis: "reasoning".to_string() };
-    let strength = ep.strength();
-=======
 λ test_epistemic_strength_inferred() {
     ≔ ep = Epistemic·Inferred { basis: "reasoning".to_string() };
     ≔ strength = ep.strength();
->>>>>>> origin/main
     assert(strength >= 0.5);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_strength_unknown() {
-    let ep = Epistemic::Unknown;
-    let strength = ep.strength();
-=======
 λ test_epistemic_strength_unknown() {
     ≔ ep = Epistemic·Unknown;
     ≔ strength = ep.strength();
->>>>>>> origin/main
     assert(strength < 0.2);
 }
 
@@ -1920,49 +1086,27 @@ fn test_epistemic_strength_unknown() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_graph_path_empty() {
-    let path = GraphPath::new();
-=======
 λ test_graph_path_empty() {
     ≔ path = GraphPath·new();
->>>>>>> origin/main
     assert_eq(path.steps.len(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_graph_path_single_step() {
-    let path = GraphPath::new().follow(Relation::IsA);
-=======
 λ test_graph_path_single_step() {
     ≔ path = GraphPath·new().follow(Relation·IsA);
->>>>>>> origin/main
     assert_eq(path.steps.len(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_graph_path_multiple_steps() {
-    let path = GraphPath::new()
-        .follow(Relation::IsA)
-        .follow(Relation::PartOf)
-        .follow_incoming(Relation::CreatedBy);
-=======
 λ test_graph_path_multiple_steps() {
     ≔ path = GraphPath·new()
         .follow(Relation·IsA)
         .follow(Relation·PartOf)
         .follow_incoming(Relation·CreatedBy);
->>>>>>> origin/main
 
     assert_eq(path.steps.len(), 3);
 }
 
-<<<<<<< HEAD
-fn main() {
-=======
 λ main() {
->>>>>>> origin/main
     print("Engram semantic memory tests");
 }

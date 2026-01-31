@@ -1,0 +1,83 @@
+// 02_structs.sg - Structs, methods, and associated functions
+//
+// Run: sigil run examples/02_structs.sg
+
+// Define a struct with Σ (or 'struct')
+Σ Rectangle {
+    width: f64,
+    height: f64,
+}
+
+// Implementation block with ⊢ (or 'impl')
+⊢ Rectangle {
+    // Associated function (constructor by convention)
+    λ new(width: f64, height: f64) → This {
+        Rectangle { width, height }
+    }
+
+    // Instance method (takes &this)
+    λ area(&this) → f64 {
+        this.width * this.height
+    }
+
+    // Another instance method
+    λ perimeter(&this) → f64 {
+        2.0 * (this.width + this.height)
+    }
+
+    // Method that takes mutable reference
+    λ scale(&Δ this, factor: f64) {
+        this.width = this.width * factor;
+        this.height = this.height * factor;
+    }
+
+    // Method that returns boolean
+    λ is_square(&this) → bool {
+        this.width == this.height
+    }
+}
+
+// Struct with different field types
+Σ Person {
+    name: String,
+    age: i32,
+    active: bool,
+}
+
+⊢ Person {
+    λ new(name: String, age: i32) → This {
+        Person { name, age, active: true }
+    }
+
+    λ describe(&this) → String {
+        this.name + " is " + str(this.age) + " years old"
+    }
+
+    λ birthday(&Δ this) {
+        this.age = this.age + 1;
+    }
+}
+
+λ main() {
+    // Create rectangle using constructor
+    ≔ rect! = Rectangle·new(10.0, 5.0);
+
+    println("Rectangle:");
+    println("  Width: " + str(rect.width));
+    println("  Height: " + str(rect.height));
+    println("  Area: " + str(rect.area()));
+    println("  Perimeter: " + str(rect.perimeter()));
+    println("  Is square: " + str(rect.is_square()));
+
+    // Mutate the rectangle
+    rect.scale(2.0);
+    println("After scaling by 2:");
+    println("  Area: " + str(rect.area()));
+
+    // Create and use Person
+    ≔ person! = Person·new("Alice".to_string(), 30);
+    println("\n" + person.describe());
+
+    person.birthday();
+    println("After birthday: " + person.describe());
+}

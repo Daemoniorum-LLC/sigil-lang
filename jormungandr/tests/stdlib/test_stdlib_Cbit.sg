@@ -6,20 +6,20 @@ rite main() {
 
     // Cbit·new - wraps value as classical bit (non-zero becomes 1, zero stays 0)
     ≔ cb = Cbit·new(42);
-    assert_eq(type_of(cb), "int");
-    assert_eq(cb, 1);  // non-zero value becomes 1
+    assert_eq(type_of(cb), "struct:Cbit");
+    assert_eq(Cbit·value(cb), true);  // non-zero value becomes true
 
     // Cbit with 0
     ≔ cb0 = Cbit·new(0);
-    assert_eq(cb0, 0);  // zero stays 0
+    assert_eq(Cbit·value(cb0), false);  // zero stays false
 
     // Cbit with 1
     ≔ cb1 = Cbit·new(1);
-    assert_eq(cb1, 1);
+    assert_eq(Cbit·value(cb1), true);
 
-    // Cbit with negative - also becomes 1
+    // Cbit with negative - also becomes true
     ≔ cbn = Cbit·new(-5);
-    assert_eq(cbn, 1);
+    assert_eq(Cbit·value(cbn), true);
 
     println("ALL CBIT TESTS PASSED!");
 }

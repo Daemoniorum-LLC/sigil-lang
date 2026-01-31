@@ -1,4 +1,4 @@
-// Test: Enum variants of match
+// Test: Enum variants ∈ ⌥
 // Spec: Feature Interaction - Enum + Match
 // Priority: P0 - Bootstrap Critical
 
@@ -8,7 +8,7 @@
     Write(String),
 }
 
-rite main() {
+λ main() {
     ≔ msg = Message·Move { x: 10, y: 20 };
     ≔ result = ⌥ msg {
         Message·Quit => 0,

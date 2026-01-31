@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Expression Precedence
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     // * before + : 2 + 3*4 = 2 + 12 = 14
     println(2 + 3 * 4);
     // Parentheses override: (2 + 3)*4 = 5*4 = 20

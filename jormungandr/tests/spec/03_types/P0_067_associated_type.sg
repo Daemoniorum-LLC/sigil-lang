@@ -1,31 +1,31 @@
-// Test: Associated type of trait
+// Test: Associated type ∈ Θ
 // Spec: 03-TYPES.md § 11.1 Associated Types
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate associated types work of traits.
+// Validate associated types work ∈ traits.
 //
 // Expected behavior:
 // Should print 42
 
-☉ aspect Container {
+☉ Θ Container {
     type Item;
-    rite get(this) → This·Item;
+    λ get(self) -> Self·Item;
 }
 
-☉ sigil Box {
+☉ Σ Box {
     value: !i32
 }
 
-⊢ Box : Container {
+⊢ Container ∀ Box {
     type Item = !i32;
 
-    rite get(this) → !i32 {
-        this.value
+    λ get(self) -> !i32 {
+        self.value
     }
 }
 
-rite main() {
+λ main() {
     ≔ b: Box = Box { value: 42 };
     println(b.get());
 }

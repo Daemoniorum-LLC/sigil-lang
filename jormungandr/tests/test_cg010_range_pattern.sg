@@ -1,12 +1,12 @@
 //! Test CG-010: Range pattern codegen
 //!
 //! Range patterns like 'a'..='z' should generate proper bounds checks:
-//!   (val >= 'a' ∧ val <= 'z')
+//!   (val >= 'a' && val <= 'z')
 //!
-//! Bug: Currently generates (val >= 'a' ∧ 1) - missing upper bound
+//! Bug: Currently generates (val >= 'a' && 1) - missing upper bound
 
 /// Classify a character using range patterns
-☉ rite classify_char(c: !char) → !i32 {
+☉ λ classify_char(c: !char) -> !i32 {
     ⌥ c {
         'a'..='z' => 1,
         'A'..='Z' => 2,
@@ -16,7 +16,7 @@
 }
 
 /// Test with integer ranges
-☉ rite classify_int(x: !i32) → !i32 {
+☉ λ classify_int(x: !i32) -> !i32 {
     ⌥ x {
         0..=9 => 1,
         10..=99 => 2,
@@ -25,7 +25,7 @@
     }
 }
 
-☉ rite main() → !i32 {
+☉ λ main() -> !i32 {
     // Test lowercase range boundaries
     ⎇ classify_char('a') != 1 { ⤺ 1; }
     ⎇ classify_char('z') != 1 { ⤺ 2; }
@@ -39,9 +39,9 @@
     ⎇ classify_char('0') != 3 { ⤺ 6; }
     ⎇ classify_char('9') != 3 { ⤺ 7; }
 
-    // CRITICAL: character OUTSIDE range should NOT match
+    // CRITICAL: character OUTSIDE range should NOT ⌥
     // '{' is ASCII 123, after 'z'=122
-    // If bug exists (>= 'a' ∧ 1), '{' incorrectly matches 'a'..='z'
+    // If bug exists (>= 'a' && 1), '{' incorrectly matches 'a'..='z'
     ⎇ classify_char('{') != 0 { ⤺ 10; }
 
     // '`' is ASCII 96, before 'a'=97
@@ -53,7 +53,7 @@
     ⎇ classify_int(500) != 3 { ⤺ 22; }
     ⎇ classify_int(5000) != 4 { ⤺ 23; }
 
-    // Boundary tests each integer range
+    // Boundary tests ∀ integer range
     ⎇ classify_int(10) != 2 { ⤺ 24; }
     ⎇ classify_int(99) != 2 { ⤺ 25; }
     ⎇ classify_int(100) != 3 { ⤺ 26; }

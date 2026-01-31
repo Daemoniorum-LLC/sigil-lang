@@ -1,30 +1,30 @@
 // Hello World in Sigil
 
-rite greet(name) {
+fn greet(name) {
     print("Hello, " + name + "!");
 }
 
-rite main() → i64 {
+fn main() {
     print("Welcome to Sigil!");
     greet("World");
 
     // Test arithmetic
-    ≔ x = 2 + 3 * 4;
+    let x = 2 + 3 * 4;
     print("Result:");
     print(x);
 
     // Test arrays and pipes
-    ≔ nums = [1, 2, 3, 4, 5];
-    ≔ doubled = nums|τ{_ * 2};
+    let nums = [1, 2, 3, 4, 5];
+    let doubled = nums|τ{_ * 2};
     print("Doubled:");
     print(doubled);
 
     // Test conditionals
-    ⎇ x > 10 {
+    if x > 10 {
         print("x is greater than 10");
-    } ⎉ {
+    } else {
         print("x is 10 or less");
     }
 
-    ⤺ 0;
+    return 0;
 }

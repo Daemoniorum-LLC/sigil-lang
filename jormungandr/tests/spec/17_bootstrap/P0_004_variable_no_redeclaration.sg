@@ -3,13 +3,13 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that variable assignments don't redeclare of generated C.
+// Validates that variable assignments don't redeclare ∈ generated C.
 //
 // Expected behavior:
 // Should compile and print 10
 
-rite main() {
-    ≔ vary x: !i32 = 0;
+λ main() {
+    ≔ Δ x: !i32 = 0;
     x = 5;
     x = 10;
     println(x);

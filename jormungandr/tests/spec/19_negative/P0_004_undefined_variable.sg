@@ -2,6 +2,6 @@
 // Should fail with undefined variable error
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     println(undefined_var);  // ERROR: undefined variable
 }

@@ -158,20 +158,13 @@ impl WasmCompiler {
             PipeOp::Enumerate => Err(WasmError::unsupported("enumerate operation")),
             // Holographic operations
             PipeOp::Universal => Err(WasmError::unsupported("universal reconstruction")),
-            PipeOp::Possibility => Err(WasmError::unsupported("possibility extraction")),
-            PipeOp::Necessity => Err(WasmError::unsupported("necessity verification")),
-            PipeOp::PossibilityMethod { .. } => {
-                Err(WasmError::unsupported("possibility method call"))
-            }
-            PipeOp::NecessityMethod { .. } => Err(WasmError::unsupported("necessity method call")),
+            PipeOp::Possibility { .. } => Err(WasmError::unsupported("possibility operation")),
+            PipeOp::Necessity { .. } => Err(WasmError::unsupported("necessity operation")),
+            PipeOp::PossibilityExtract => Err(WasmError::unsupported("possibility extract")),
+            PipeOp::NecessityVerify => Err(WasmError::unsupported("necessity verify")),
 
-<<<<<<< HEAD
-            // Call arbitrary expression as function on piped value
-            PipeOp::Call(expr) => self.compile_apply_to_stack(expr),
-=======
             // Function call in pipe context
             PipeOp::Call(_) => Err(WasmError::unsupported("call in pipe context")),
->>>>>>> origin/main
         }
     }
 

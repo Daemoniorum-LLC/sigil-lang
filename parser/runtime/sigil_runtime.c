@@ -89,8 +89,6 @@ void sigil_write_str(const char* str) {
     fflush(stdout);
 }
 
-<<<<<<< HEAD
-=======
 /* Jormungandr-compatible print functions */
 void print(const char* str) {
     printf("%s", str);
@@ -110,7 +108,6 @@ void eprintln(const char* str) {
     fprintf(stderr, "%s\n", str);
 }
 
->>>>>>> origin/main
 /* Get string length */
 int64_t sigil_strlen(const char* str) {
     if (str == NULL) return 0;

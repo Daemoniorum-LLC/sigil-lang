@@ -15,7 +15,7 @@
 // Expected behavior:
 // Should compile and run successfully, printing 13
 
-rite main() {
+λ main() {
     ≔ x: ‽i32 = 13;
     println(x);
 }

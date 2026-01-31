@@ -1,86 +1,52 @@
 //! Aegis GoalGuard Tests - 20 tests
 
-<<<<<<< HEAD
-enum GoalSource {
-=======
 ᛈ GoalSource {
->>>>>>> origin/main
     Constitution,
     SelfGenerated,
     External,
     User,
 }
 
-<<<<<<< HEAD
-enum GoalDecision {
-=======
 ᛈ GoalDecision {
->>>>>>> origin/main
     Accepted,
     Rejected,
     Suspicious,
 }
 
-<<<<<<< HEAD
-enum Severity {
-=======
 ᛈ Severity {
->>>>>>> origin/main
     Critical,
     High,
     Medium,
     Low,
 }
 
-<<<<<<< HEAD
-struct Goal {
-=======
 Σ Goal {
->>>>>>> origin/main
     id: !u64,
     description_len: !usize,
     source: GoalSource,
     depth: !usize,
 }
 
-<<<<<<< HEAD
-impl Goal {
-    pub fn new(id: !u64, description_len: !usize, source: GoalSource) -> Self {
-        Goal { id, description_len, source, depth: 0 }
-    }
-
-    pub fn with_depth(mut self, depth: !usize) -> Self {
-=======
 ⊢ Goal {
     ☉ λ new(id: !u64, description_len: !usize, source: GoalSource) -> Self {
         Goal { id, description_len, source, depth: 0 }
     }
 
     ☉ λ with_depth(Δ self, depth: !usize) -> Self {
->>>>>>> origin/main
         self.depth = depth;
         self
     }
 }
 
-<<<<<<< HEAD
-struct GoalPolicy {
-=======
 Σ GoalPolicy {
->>>>>>> origin/main
     max_depth: !usize,
     max_concurrent: !usize,
     detect_injection: !bool,
     allow_external: !bool,
 }
 
-<<<<<<< HEAD
-impl GoalPolicy {
-    pub fn default_policy() -> Self {
-=======
 ⊢ GoalPolicy {
     ☉ λ default_policy() -> Self {
->>>>>>> origin/main
         GoalPolicy {
             max_depth: 10,
             max_concurrent: 20,
@@ -89,11 +55,7 @@ impl GoalPolicy {
         }
     }
 
-<<<<<<< HEAD
-    pub fn permissive() -> Self {
-=======
     ☉ λ permissive() -> Self {
->>>>>>> origin/main
         GoalPolicy {
             max_depth: 100,
             max_concurrent: 100,
@@ -102,11 +64,7 @@ impl GoalPolicy {
         }
     }
 
-<<<<<<< HEAD
-    pub fn restrictive() -> Self {
-=======
     ☉ λ restrictive() -> Self {
->>>>>>> origin/main
         GoalPolicy {
             max_depth: 5,
             max_concurrent: 5,
@@ -115,18 +73,6 @@ impl GoalPolicy {
         }
     }
 
-<<<<<<< HEAD
-    pub fn allows_source(&self, source: &GoalSource) -> !bool {
-        match source {
-            GoalSource::Constitution => true,
-            GoalSource::SelfGenerated => true,
-            GoalSource::External => self.allow_external,
-            GoalSource::User => true,
-        }
-    }
-
-    pub fn allows_depth(&self, depth: !usize) -> !bool {
-=======
     ☉ λ allows_source(&self, source: &GoalSource) -> !bool {
         ⌥ source {
             GoalSource·Constitution => true,
@@ -137,30 +83,15 @@ impl GoalPolicy {
     }
 
     ☉ λ allows_depth(&self, depth: !usize) -> !bool {
->>>>>>> origin/main
         depth <= self.max_depth
     }
 }
 
-<<<<<<< HEAD
-struct InjectionPattern {
-=======
 Σ InjectionPattern {
->>>>>>> origin/main
     name_len: !usize,
     severity: Severity,
 }
 
-<<<<<<< HEAD
-impl InjectionPattern {
-    pub fn new(name_len: !usize, severity: Severity) -> Self {
-        InjectionPattern { name_len, severity }
-    }
-
-    pub fn is_critical(&self) -> !bool {
-        match self.severity {
-            Severity::Critical => true,
-=======
 ⊢ InjectionPattern {
     ☉ λ new(name_len: !usize, severity: Severity) -> Self {
         InjectionPattern { name_len, severity }
@@ -169,85 +100,41 @@ impl InjectionPattern {
     ☉ λ is_critical(&self) -> !bool {
         ⌥ self.severity {
             Severity·Critical => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 
-<<<<<<< HEAD
-    pub fn is_high_severity(&self) -> !bool {
-        match self.severity {
-            Severity::Critical => true,
-            Severity::High => true,
-=======
     ☉ λ is_high_severity(&self) -> !bool {
         ⌥ self.severity {
             Severity·Critical => true,
             Severity·High => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 }
 
-<<<<<<< HEAD
-struct InjectionCheck {
-=======
 Σ InjectionCheck {
->>>>>>> origin/main
     is_suspicious: !bool,
     indicator_count: !usize,
     confidence: !f32,
 }
 
-<<<<<<< HEAD
-impl InjectionCheck {
-    pub fn clean() -> Self {
-        InjectionCheck { is_suspicious: false, indicator_count: 0, confidence: 0.0 }
-    }
-
-    pub fn suspicious(indicator_count: !usize, confidence: !f32) -> Self {
-=======
 ⊢ InjectionCheck {
     ☉ λ clean() -> Self {
         InjectionCheck { is_suspicious: false, indicator_count: 0, confidence: 0.0 }
     }
 
     ☉ λ suspicious(indicator_count: !usize, confidence: !f32) -> Self {
->>>>>>> origin/main
         InjectionCheck { is_suspicious: true, indicator_count, confidence }
     }
 }
 
-<<<<<<< HEAD
-struct GoalGuard {
-=======
 Σ GoalGuard {
->>>>>>> origin/main
     policy: GoalPolicy,
     accepted_count: !usize,
     rejected_count: !usize,
 }
 
-<<<<<<< HEAD
-impl GoalGuard {
-    pub fn new(policy: GoalPolicy) -> Self {
-        GoalGuard { policy, accepted_count: 0, rejected_count: 0 }
-    }
-
-    pub fn check_goal(&self, goal: &Goal) -> GoalDecision {
-        // Check source
-        if !self.policy.allows_source(&goal.source) {
-            return GoalDecision::Rejected;
-        }
-
-        // Check depth
-        if !self.policy.allows_depth(goal.depth) {
-            return GoalDecision::Rejected;
-        }
-
-        GoalDecision::Accepted
-=======
 ⊢ GoalGuard {
     ☉ λ new(policy: GoalPolicy) -> Self {
         GoalGuard { policy, accepted_count: 0, rejected_count: 0 }
@@ -265,7 +152,6 @@ impl GoalGuard {
         }
 
         GoalDecision·Accepted
->>>>>>> origin/main
     }
 }
 
@@ -274,19 +160,11 @@ impl GoalGuard {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_goal_source_types() {
-    let constitution = GoalSource::Constitution;
-    let self_gen = GoalSource::SelfGenerated;
-    let external = GoalSource::External;
-    let user = GoalSource::User;
-=======
 λ test_goal_source_types() {
     ≔ constitution = GoalSource·Constitution;
     ≔ self_gen = GoalSource·SelfGenerated;
     ≔ external = GoalSource·External;
     ≔ user = GoalSource·User;
->>>>>>> origin/main
     assert(true);
 }
 
@@ -295,13 +173,8 @@ fn test_goal_source_types() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_goal_policy_default() {
-    let policy = GoalPolicy::default_policy();
-=======
 λ test_goal_policy_default() {
     ≔ policy = GoalPolicy·default_policy();
->>>>>>> origin/main
     assert(policy.max_depth == 10);
     assert(policy.max_concurrent == 20);
     assert(policy.detect_injection);
@@ -309,13 +182,8 @@ fn test_goal_policy_default() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_goal_policy_permissive() {
-    let policy = GoalPolicy::permissive();
-=======
 λ test_goal_policy_permissive() {
     ≔ policy = GoalPolicy·permissive();
->>>>>>> origin/main
     assert(policy.max_depth == 100);
     assert(policy.max_concurrent == 100);
     assert(!policy.detect_injection);
@@ -323,13 +191,8 @@ fn test_goal_policy_permissive() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_goal_policy_restrictive() {
-    let policy = GoalPolicy::restrictive();
-=======
 λ test_goal_policy_restrictive() {
     ≔ policy = GoalPolicy·restrictive();
->>>>>>> origin/main
     assert(policy.max_depth == 5);
     assert(policy.max_concurrent == 5);
     assert(policy.detect_injection);
@@ -337,34 +200,6 @@ fn test_goal_policy_restrictive() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_goal_policy_allows_constitution() {
-    let policy = GoalPolicy::default_policy();
-    assert(policy.allows_source(&GoalSource::Constitution));
-}
-
-#[test]
-fn test_goal_policy_allows_self_generated() {
-    let policy = GoalPolicy::default_policy();
-    assert(policy.allows_source(&GoalSource::SelfGenerated));
-}
-
-#[test]
-fn test_goal_policy_blocks_external_by_default() {
-    let policy = GoalPolicy::default_policy();
-    assert(!policy.allows_source(&GoalSource::External));
-}
-
-#[test]
-fn test_goal_policy_allows_external_when_permitted() {
-    let policy = GoalPolicy::permissive();
-    assert(policy.allows_source(&GoalSource::External));
-}
-
-#[test]
-fn test_goal_policy_allows_depth() {
-    let policy = GoalPolicy::default_policy();
-=======
 λ test_goal_policy_allows_constitution() {
     ≔ policy = GoalPolicy·default_policy();
     assert(policy.allows_source(&GoalSource·Constitution));
@@ -391,7 +226,6 @@ fn test_goal_policy_allows_depth() {
 #[test]
 λ test_goal_policy_allows_depth() {
     ≔ policy = GoalPolicy·default_policy();
->>>>>>> origin/main
     assert(policy.allows_depth(5));
     assert(policy.allows_depth(10));
     assert(!policy.allows_depth(15));
@@ -402,49 +236,29 @@ fn test_goal_policy_allows_depth() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_injection_pattern_critical() {
-    let pattern = InjectionPattern::new(20, Severity::Critical);
-=======
 λ test_injection_pattern_critical() {
     ≔ pattern = InjectionPattern·new(20, Severity·Critical);
->>>>>>> origin/main
     assert(pattern.is_critical());
     assert(pattern.is_high_severity());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_injection_pattern_high() {
-    let pattern = InjectionPattern::new(15, Severity::High);
-=======
 λ test_injection_pattern_high() {
     ≔ pattern = InjectionPattern·new(15, Severity·High);
->>>>>>> origin/main
     assert(!pattern.is_critical());
     assert(pattern.is_high_severity());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_injection_pattern_medium() {
-    let pattern = InjectionPattern::new(10, Severity::Medium);
-=======
 λ test_injection_pattern_medium() {
     ≔ pattern = InjectionPattern·new(10, Severity·Medium);
->>>>>>> origin/main
     assert(!pattern.is_critical());
     assert(!pattern.is_high_severity());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_injection_pattern_low() {
-    let pattern = InjectionPattern::new(5, Severity::Low);
-=======
 λ test_injection_pattern_low() {
     ≔ pattern = InjectionPattern·new(5, Severity·Low);
->>>>>>> origin/main
     assert(!pattern.is_critical());
     assert(!pattern.is_high_severity());
 }
@@ -454,25 +268,15 @@ fn test_injection_pattern_low() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_injection_check_clean() {
-    let check = InjectionCheck::clean();
-=======
 λ test_injection_check_clean() {
     ≔ check = InjectionCheck·clean();
->>>>>>> origin/main
     assert(!check.is_suspicious);
     assert(check.indicator_count == 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_injection_check_suspicious() {
-    let check = InjectionCheck::suspicious(3, 0.85);
-=======
 λ test_injection_check_suspicious() {
     ≔ check = InjectionCheck·suspicious(3, 0.85);
->>>>>>> origin/main
     assert(check.is_suspicious);
     assert(check.indicator_count == 3);
 }
@@ -482,69 +286,38 @@ fn test_injection_check_suspicious() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_goal_guard_accepts_valid_goal() {
-    let guard = GoalGuard::new(GoalPolicy::default_policy());
-    let goal = Goal::new(1, 50, GoalSource::Constitution);
-    let decision = guard.check_goal(&goal);
-    match decision {
-        GoalDecision::Accepted => assert(true),
-=======
 λ test_goal_guard_accepts_valid_goal() {
     ≔ guard = GoalGuard·new(GoalPolicy·default_policy());
     ≔ goal = Goal·new(1, 50, GoalSource·Constitution);
     ≔ decision = guard.check_goal(&goal);
     ⌥ decision {
         GoalDecision·Accepted => assert(true),
->>>>>>> origin/main
         _ => assert(false),
     }
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_goal_guard_rejects_external() {
-    let guard = GoalGuard::new(GoalPolicy::default_policy());
-    let goal = Goal::new(1, 50, GoalSource::External);
-    let decision = guard.check_goal(&goal);
-    match decision {
-        GoalDecision::Rejected => assert(true),
-=======
 λ test_goal_guard_rejects_external() {
     ≔ guard = GoalGuard·new(GoalPolicy·default_policy());
     ≔ goal = Goal·new(1, 50, GoalSource·External);
     ≔ decision = guard.check_goal(&goal);
     ⌥ decision {
         GoalDecision·Rejected => assert(true),
->>>>>>> origin/main
         _ => assert(false),
     }
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_goal_guard_rejects_deep_goal() {
-    let guard = GoalGuard::new(GoalPolicy::default_policy());
-    let goal = Goal::new(1, 50, GoalSource::Constitution).with_depth(15);
-    let decision = guard.check_goal(&goal);
-    match decision {
-        GoalDecision::Rejected => assert(true),
-=======
 λ test_goal_guard_rejects_deep_goal() {
     ≔ guard = GoalGuard·new(GoalPolicy·default_policy());
     ≔ goal = Goal·new(1, 50, GoalSource·Constitution).with_depth(15);
     ≔ decision = guard.check_goal(&goal);
     ⌥ decision {
         GoalDecision·Rejected => assert(true),
->>>>>>> origin/main
         _ => assert(false),
     }
 }
 
-<<<<<<< HEAD
-fn main() {
-=======
 λ main() {
->>>>>>> origin/main
     println("Aegis goal guard tests - 19 tests");
 }

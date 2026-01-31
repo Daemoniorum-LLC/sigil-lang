@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 1.3 Square Root
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     // Perfect squares
     println(sqrt(4));
     println(sqrt(9));

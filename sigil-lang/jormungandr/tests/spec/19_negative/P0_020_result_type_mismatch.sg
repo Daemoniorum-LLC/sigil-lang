@@ -1,9 +1,0 @@
-// EXPECTED: Static type checking should catch this error
-// Negative Test: Result type mismatch
-// Should fail with type error
-// Priority: P0 - Bootstrap Critical
-
-λ main() {
-    ≔ res: Result<i32, String> = Ok("hello");  // ERROR: Ok(String) not Ok(i32)
-    println(res.is_ok());
-}

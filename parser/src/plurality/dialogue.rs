@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 
 use super::runtime::{
-    AlterCategory, AlterPresenceState, AnimaState, FrontingState, PluralSystem, RealityLayer,
+    AlterCategory, AlterPresenceState, AnimaState, FrontingState,
+    PluralSystem, RealityLayer,
 };
 
 // ============================================================================
@@ -96,11 +97,7 @@ pub enum EmotionalCondition {
     /// High arousal
     HighArousal(f32),
     /// Specific anima state
-    AnimaState {
-        pleasure: (f32, f32),
-        arousal: (f32, f32),
-        dominance: (f32, f32),
-    },
+    AnimaState { pleasure: (f32, f32), arousal: (f32, f32), dominance: (f32, f32) },
     /// Recently triggered
     RecentTrigger(String),
 }
@@ -193,21 +190,13 @@ pub enum DialogueCondition {
     /// Dissociation threshold
     DissociationBelow(f32),
     /// Dialogue variable check
-    Variable {
-        name: String,
-        op: CompareOp,
-        value: DialogueValue,
-    },
+    Variable { name: String, op: CompareOp, value: DialogueValue },
     /// Flag is set
     FlagSet(String),
     /// Alter has trait
     AlterHasTrait(String),
     /// Anima state in range
-    AnimaInRange {
-        pleasure: (f32, f32),
-        arousal: (f32, f32),
-        dominance: (f32, f32),
-    },
+    AnimaInRange { pleasure: (f32, f32), arousal: (f32, f32), dominance: (f32, f32) },
     /// Item in inventory
     HasItem(String),
     /// Ability unlocked
@@ -252,11 +241,7 @@ pub enum DialogueEffect {
     /// Clear a flag
     ClearFlag(String),
     /// Modify anima state
-    ModifyAnima {
-        pleasure: f32,
-        arousal: f32,
-        dominance: f32,
-    },
+    ModifyAnima { pleasure: f32, arousal: f32, dominance: f32 },
     /// Modify system stability
     ModifyStability(f32),
     /// Modify dissociation
@@ -342,9 +327,7 @@ impl DialogueManager {
 
     /// Start a dialogue
     pub fn start_dialogue(&mut self, tree_id: &str) -> Result<(), DialogueError> {
-        let tree = self
-            .trees
-            .get(tree_id)
+        let tree = self.trees.get(tree_id)
             .ok_or_else(|| DialogueError::TreeNotFound(tree_id.to_string()))?
             .clone();
 
@@ -356,23 +339,14 @@ impl DialogueManager {
     }
 
     /// Get the current dialogue content, adapted for the system state
-    pub fn get_current_content(
-        &self,
-        system: &PluralSystem,
-    ) -> Result<ResolvedDialogue, DialogueError> {
-        let tree = self
-            .current_tree
-            .as_ref()
+    pub fn get_current_content(&self, system: &PluralSystem) -> Result<ResolvedDialogue, DialogueError> {
+        let tree = self.current_tree.as_ref()
             .ok_or(DialogueError::NoActiveDialogue)?;
 
-        let node_id = self
-            .current_node
-            .as_ref()
+        let node_id = self.current_node.as_ref()
             .ok_or(DialogueError::NoActiveDialogue)?;
 
-        let node = tree
-            .nodes
-            .get(node_id)
+        let node = tree.nodes.get(node_id)
             .ok_or_else(|| DialogueError::NodeNotFound(node_id.clone()))?;
 
         // Resolve the content based on system state
@@ -391,32 +365,20 @@ impl DialogueManager {
     }
 
     /// Select a response and advance the dialogue
-    pub fn select_response(
-        &mut self,
-        response_id: &str,
-        system: &mut PluralSystem,
-    ) -> Result<DialogueResult, DialogueError> {
+    pub fn select_response(&mut self, response_id: &str, system: &mut PluralSystem) -> Result<DialogueResult, DialogueError> {
         // Extract data we need before mutable borrow
         let (response_effects, response_conditions, response_target, node_id_clone) = {
-            let tree = self
-                .current_tree
-                .as_ref()
+            let tree = self.current_tree.as_ref()
                 .ok_or(DialogueError::NoActiveDialogue)?;
 
-            let node_id = self
-                .current_node
-                .as_ref()
+            let node_id = self.current_node.as_ref()
                 .ok_or(DialogueError::NoActiveDialogue)?;
 
-            let node = tree
-                .nodes
-                .get(node_id)
+            let node = tree.nodes.get(node_id)
                 .ok_or_else(|| DialogueError::NodeNotFound(node_id.clone()))?;
 
             // Find the response
-            let response = node
-                .responses
-                .iter()
+            let response = node.responses.iter()
                 .find(|r| r.id == response_id)
                 .ok_or_else(|| DialogueError::ResponseNotFound(response_id.to_string()))?;
 
@@ -440,10 +402,7 @@ impl DialogueManager {
         self.visited_nodes.push(node_id_clone);
 
         // Check for dialogue end
-        if effects
-            .iter()
-            .any(|e| matches!(e, AppliedEffect::EndDialogue))
-        {
+        if effects.iter().any(|e| matches!(e, AppliedEffect::EndDialogue)) {
             self.end_dialogue();
             return Ok(DialogueResult::Ended);
         }
@@ -458,19 +417,13 @@ impl DialogueManager {
     pub fn advance(&mut self, system: &mut PluralSystem) -> Result<DialogueResult, DialogueError> {
         // Extract data we need before mutable borrow
         let (node_effects, node_next, has_responses, node_id_clone) = {
-            let tree = self
-                .current_tree
-                .as_ref()
+            let tree = self.current_tree.as_ref()
                 .ok_or(DialogueError::NoActiveDialogue)?;
 
-            let node_id = self
-                .current_node
-                .as_ref()
+            let node_id = self.current_node.as_ref()
                 .ok_or(DialogueError::NoActiveDialogue)?;
 
-            let node = tree
-                .nodes
-                .get(node_id)
+            let node = tree.nodes.get(node_id)
                 .ok_or_else(|| DialogueError::NodeNotFound(node_id.clone()))?;
 
             (
@@ -488,10 +441,7 @@ impl DialogueManager {
         self.visited_nodes.push(node_id_clone);
 
         // Check for dialogue end
-        if effects
-            .iter()
-            .any(|e| matches!(e, AppliedEffect::EndDialogue))
-        {
+        if effects.iter().any(|e| matches!(e, AppliedEffect::EndDialogue)) {
             self.end_dialogue();
             return Ok(DialogueResult::Ended);
         }
@@ -526,12 +476,7 @@ impl DialogueManager {
     // ========================================================================
 
     /// Resolve dialogue content based on system state
-    fn resolve_content(
-        &self,
-        content: &DialogueContent,
-        system: &PluralSystem,
-        _speaker: &SpeakerInfo,
-    ) -> String {
+    fn resolve_content(&self, content: &DialogueContent, system: &PluralSystem, _speaker: &SpeakerInfo) -> String {
         // Check for alter-specific variation
         if let Some(fronter_id) = self.get_fronter_id(system) {
             if let Some(variation) = content.alter_variations.get(&fronter_id) {
@@ -556,21 +501,15 @@ impl DialogueManager {
     }
 
     /// Resolve available responses based on system state
-    fn resolve_responses(
-        &self,
-        responses: &[DialogueResponse],
-        system: &PluralSystem,
-    ) -> Vec<ResolvedResponse> {
+    fn resolve_responses(&self, responses: &[DialogueResponse], system: &PluralSystem) -> Vec<ResolvedResponse> {
         let fronter_id = self.get_fronter_id(system);
 
-        responses
-            .iter()
+        responses.iter()
             .filter(|r| self.check_conditions(&r.conditions, system))
             .filter(|r| self.check_trait_requirements(r, system))
             .map(|r| {
                 // Get alter-specific text if available
-                let text = fronter_id
-                    .as_ref()
+                let text = fronter_id.as_ref()
                     .and_then(|id| r.alter_variations.get(id))
                     .cloned()
                     .unwrap_or_else(|| r.text.clone());
@@ -587,8 +526,7 @@ impl DialogueManager {
     /// Resolve speaker appearance based on system state
     fn resolve_speaker(&self, speaker: &SpeakerInfo, system: &PluralSystem) -> ResolvedSpeaker {
         // Check for alter-specific portrait
-        let portrait = self
-            .get_fronter_id(system)
+        let portrait = self.get_fronter_id(system)
             .and_then(|id| speaker.alter_portraits.get(&id))
             .cloned()
             // Check for reality layer portrait
@@ -619,52 +557,49 @@ impl DialogueManager {
             }
             DialogueCondition::CategoryFronting(category) => {
                 if let Some(fronter_id) = self.get_fronter_id(system) {
-                    system
-                        .alters
-                        .get(&fronter_id)
+                    system.alters.get(&fronter_id)
                         .map(|a| &a.category == category)
                         .unwrap_or(false)
                 } else {
                     false
                 }
             }
-            DialogueCondition::AlterCoConscious(id) => system
-                .alters
-                .get(id)
-                .map(|a| matches!(a.state, AlterPresenceState::CoConscious))
-                .unwrap_or(false),
-            DialogueCondition::RealityLayer(layer) => &system.reality_layer == layer,
-            DialogueCondition::StabilityAbove(threshold) => system.stability >= *threshold,
-            DialogueCondition::DissociationBelow(threshold) => system.dissociation < *threshold,
-            DialogueCondition::Variable { name, op, value } => self
-                .variables
-                .get(name)
-                .map(|v| self.compare_values(v, value, op))
-                .unwrap_or(false),
-            DialogueCondition::FlagSet(flag) => self.flags.get(flag).copied().unwrap_or(false),
+            DialogueCondition::AlterCoConscious(id) => {
+                system.alters.get(id)
+                    .map(|a| matches!(a.state, AlterPresenceState::CoConscious))
+                    .unwrap_or(false)
+            }
+            DialogueCondition::RealityLayer(layer) => {
+                &system.reality_layer == layer
+            }
+            DialogueCondition::StabilityAbove(threshold) => {
+                system.stability >= *threshold
+            }
+            DialogueCondition::DissociationBelow(threshold) => {
+                system.dissociation < *threshold
+            }
+            DialogueCondition::Variable { name, op, value } => {
+                self.variables.get(name)
+                    .map(|v| self.compare_values(v, value, op))
+                    .unwrap_or(false)
+            }
+            DialogueCondition::FlagSet(flag) => {
+                self.flags.get(flag).copied().unwrap_or(false)
+            }
             DialogueCondition::AlterHasTrait(trait_name) => {
                 if let Some(fronter_id) = self.get_fronter_id(system) {
-                    system
-                        .alters
-                        .get(&fronter_id)
+                    system.alters.get(&fronter_id)
                         .map(|a| a.abilities.contains(trait_name))
                         .unwrap_or(false)
                 } else {
                     false
                 }
             }
-            DialogueCondition::AnimaInRange {
-                pleasure,
-                arousal,
-                dominance,
-            } => {
+            DialogueCondition::AnimaInRange { pleasure, arousal, dominance } => {
                 let anima = &system.anima;
-                anima.pleasure >= pleasure.0
-                    && anima.pleasure <= pleasure.1
-                    && anima.arousal >= arousal.0
-                    && anima.arousal <= arousal.1
-                    && anima.dominance >= dominance.0
-                    && anima.dominance <= dominance.1
+                anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
+                anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
+                anima.dominance >= dominance.0 && anima.dominance <= dominance.1
             }
             DialogueCondition::HasItem(_item_id) => {
                 // Would check inventory - simplified for now
@@ -674,14 +609,18 @@ impl DialogueManager {
                 // Would check abilities - simplified for now
                 true
             }
-            DialogueCondition::NodeVisited(node_id) => self.visited_nodes.contains(node_id),
+            DialogueCondition::NodeVisited(node_id) => {
+                self.visited_nodes.contains(node_id)
+            }
             DialogueCondition::All(conditions) => {
                 conditions.iter().all(|c| self.check_condition(c, system))
             }
             DialogueCondition::Any(conditions) => {
                 conditions.iter().any(|c| self.check_condition(c, system))
             }
-            DialogueCondition::Not(condition) => !self.check_condition(condition, system),
+            DialogueCondition::Not(condition) => {
+                !self.check_condition(condition, system)
+            }
         }
     }
 
@@ -698,42 +637,33 @@ impl DialogueManager {
         };
 
         // Check required traits
-        let has_required = response
-            .required_traits
-            .iter()
+        let has_required = response.required_traits.iter()
             .all(|t| alter.abilities.contains(t));
 
         // Check forbidden traits
-        let has_forbidden = response
-            .forbidden_traits
-            .iter()
+        let has_forbidden = response.forbidden_traits.iter()
             .any(|t| alter.abilities.contains(t));
 
         has_required && !has_forbidden
     }
 
     /// Check emotional condition
-    fn check_emotional_condition(
-        &self,
-        condition: &EmotionalCondition,
-        system: &PluralSystem,
-    ) -> bool {
+    fn check_emotional_condition(&self, condition: &EmotionalCondition, system: &PluralSystem) -> bool {
         match condition {
-            EmotionalCondition::HighDissociation(threshold) => system.dissociation >= *threshold,
-            EmotionalCondition::LowStability(threshold) => system.stability < *threshold,
-            EmotionalCondition::HighArousal(threshold) => system.anima.arousal >= *threshold,
-            EmotionalCondition::AnimaState {
-                pleasure,
-                arousal,
-                dominance,
-            } => {
+            EmotionalCondition::HighDissociation(threshold) => {
+                system.dissociation >= *threshold
+            }
+            EmotionalCondition::LowStability(threshold) => {
+                system.stability < *threshold
+            }
+            EmotionalCondition::HighArousal(threshold) => {
+                system.anima.arousal >= *threshold
+            }
+            EmotionalCondition::AnimaState { pleasure, arousal, dominance } => {
                 let anima = &system.anima;
-                anima.pleasure >= pleasure.0
-                    && anima.pleasure <= pleasure.1
-                    && anima.arousal >= arousal.0
-                    && anima.arousal <= arousal.1
-                    && anima.dominance >= dominance.0
-                    && anima.dominance <= dominance.1
+                anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
+                anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
+                anima.dominance >= dominance.0 && anima.dominance <= dominance.1
             }
             EmotionalCondition::RecentTrigger(trigger_id) => {
                 system.active_triggers.iter().any(|t| &t.id == trigger_id)
@@ -779,11 +709,7 @@ impl DialogueManager {
     // ========================================================================
 
     /// Apply dialogue effects
-    fn apply_effects(
-        &mut self,
-        effects: &[DialogueEffect],
-        system: &mut PluralSystem,
-    ) -> Result<Vec<AppliedEffect>, DialogueError> {
+    fn apply_effects(&mut self, effects: &[DialogueEffect], system: &mut PluralSystem) -> Result<Vec<AppliedEffect>, DialogueError> {
         let mut applied = Vec::new();
 
         for effect in effects {
@@ -800,11 +726,7 @@ impl DialogueManager {
                     self.flags.insert(flag.clone(), false);
                     applied.push(AppliedEffect::FlagCleared(flag.clone()));
                 }
-                DialogueEffect::ModifyAnima {
-                    pleasure,
-                    arousal,
-                    dominance,
-                } => {
+                DialogueEffect::ModifyAnima { pleasure, arousal, dominance } => {
                     system.anima.pleasure = (system.anima.pleasure + pleasure).clamp(-1.0, 1.0);
                     system.anima.arousal = (system.anima.arousal + arousal).clamp(-1.0, 1.0);
                     system.anima.dominance = (system.anima.dominance + dominance).clamp(-1.0, 1.0);
@@ -1080,15 +1002,12 @@ impl DialogueNodeBuilder {
 
     /// Add an alter-specific variation
     pub fn alter_variation(mut self, alter_id: &str, text: &str, tone: DialogueTone) -> Self {
-        self.alter_variations.insert(
-            alter_id.to_string(),
-            AlterDialogueVariation {
-                text: text.to_string(),
-                observations: Vec::new(),
-                tone,
-                recognition: None,
-            },
-        );
+        self.alter_variations.insert(alter_id.to_string(), AlterDialogueVariation {
+            text: text.to_string(),
+            observations: Vec::new(),
+            tone,
+            recognition: None,
+        });
         self
     }
 
@@ -1199,11 +1118,7 @@ mod tests {
         };
 
         let node1 = DialogueNodeBuilder::new("start", "Greetings, traveler.")
-            .alter_variation(
-                "host",
-                "Welcome, child. I sense... complexity within you.",
-                DialogueTone::Warm,
-            )
+            .alter_variation("host", "Welcome, child. I sense... complexity within you.", DialogueTone::Warm)
             .response(DialogueResponse {
                 id: "ask_help".to_string(),
                 text: "I need your help.".to_string(),
@@ -1232,19 +1147,11 @@ mod tests {
             .effect(DialogueEffect::EndDialogue)
             .build();
 
-        let node3 =
-            DialogueNodeBuilder::new("analysis_result", "You... you can see it, can't you?")
-                .layer_variation(
-                    RealityLayer::Fractured,
-                    "The priest's form wavers. Behind his smile, shadow teeth.",
-                )
-                .effect(DialogueEffect::ModifyAnima {
-                    pleasure: -0.1,
-                    arousal: 0.2,
-                    dominance: 0.0,
-                })
-                .effect(DialogueEffect::EndDialogue)
-                .build();
+        let node3 = DialogueNodeBuilder::new("analysis_result", "You... you can see it, can't you?")
+            .layer_variation(RealityLayer::Fractured, "The priest's form wavers. Behind his smile, shadow teeth.")
+            .effect(DialogueEffect::ModifyAnima { pleasure: -0.1, arousal: 0.2, dominance: 0.0 })
+            .effect(DialogueEffect::EndDialogue)
+            .build();
 
         DialogueTreeBuilder::new("marcus_greeting")
             .entry("start")

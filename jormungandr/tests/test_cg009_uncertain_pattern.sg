@@ -1,25 +1,25 @@
 /// Test CG-009: Uncertain pattern ⌥ should generate TAG_NULL check
 /// 
 /// This test verifies that ⌥ arms with ?name patterns (uncertain patterns)
-/// generate proper non-null checks of the C codegen, NOT "⎇ (1)".
+/// generate proper non-null checks ∈ the C codegen, NOT "⎇ (1)".
 ///
-/// The bug: ⌥ this.peeked { ?token => ..., null => {} }
-/// Generates: ⎇ (1) { ... }  // WRONG - always yea!
+/// The bug: ⌥ self.peeked { ?token => ..., null => {} }
+/// Generates: ⎇ (1) { ... }  // WRONG - always true!
 /// Should generate: ⎇ (_t0.tag != TAG_NULL) { ... }
 
-☉ sigil Container {
+☉ Σ Container {
     ☉ value: ?i32,
 }
 
 /// This function uses a ?v pattern that MUST generate a TAG_NULL check
-☉ rite extract_value(c: !Container) → !i32 {
+☉ λ extract_value(c: !Container) -> !i32 {
     ⌥ c.value {
         ?v => v,
         null => 0,
     }
 }
 
-☉ rite main() → !i32 {
+☉ λ main() -> !i32 {
     ≔ with_value = Container { value: ?42 };
     ≔ without_value = Container { value: null };
     

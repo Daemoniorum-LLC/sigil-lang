@@ -13,7 +13,7 @@
     Failure
 }
 
-rite main() {
+λ main() {
     ≔ s: !Status = Status·Success;
     println(1);
 }

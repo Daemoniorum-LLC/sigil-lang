@@ -1,5 +1,0 @@
-// Simple hello world ∀ bootstrap testing
-☉ λ main() -> !i32 {
-    println("Hello from Sigil!");
-    ⤺ 0;
-}

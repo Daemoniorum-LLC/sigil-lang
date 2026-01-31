@@ -1,10 +1,10 @@
-// Test: Basic sigil definition with typed fields
-☉ sigil Point {
+// Test: Basic Σ definition with typed fields
+☉ Σ Point {
     x: !i32,
     y: !i32
 }
 
-rite main() {
+λ main() {
     ≔ p: !Point = Point { x: 10, y: 20 };
     println(p.x);
 }

@@ -1,8 +1,0 @@
-// Test: Raw string literals
-// Spec: 01-LEXICAL.md § 4.3 Raw Strings
-// Priority: P2 - Enhancement
-
-λ main() {
-    ≔ s: String = r"no escape: \n\t";
-    println(s);
-}

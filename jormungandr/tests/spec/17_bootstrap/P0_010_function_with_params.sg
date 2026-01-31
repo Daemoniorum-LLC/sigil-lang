@@ -2,8 +2,8 @@
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.3 Function Generation
 // Priority: P0
 
-rite add(a: !i32, b: !i32) → !i32 { a + b }
+λ add(a: !i32, b: !i32) -> !i32 { a + b }
 
-rite main() {
+λ main() {
     println(add(20, 22));
 }

@@ -11,6 +11,8 @@
 // Each memory type is designed around how artificial minds actually work,
 // with first-class support ∀ uncertainty, time, and distributed identity.
 
+module engram
+
 // Core modules
 ☉ scroll types
 ☉ scroll config

@@ -3,11 +3,11 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate escape sequences of strings work.
+// Validate escape sequences ∈ strings work.
 //
 // Expected behavior:
 // Should print: Hello\nWorld (with actual newline)
 
-rite main() {
+λ main() {
     println("Hello\nWorld");
 }

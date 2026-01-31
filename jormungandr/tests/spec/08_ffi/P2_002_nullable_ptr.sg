@@ -2,8 +2,8 @@
 // Spec: 08-FFI.md § 3.2 Pointers
 // Priority: P2 - Enhancement
 
-rite main() {
-    ≔ ptr: *◆ i32 = 0 as *◆ i32;
+λ main() {
+    ≔ ptr: *const i32 = 0 as *const i32;
     ⎇ ptr.is_null() {
         println(1);
     } ⎉ {

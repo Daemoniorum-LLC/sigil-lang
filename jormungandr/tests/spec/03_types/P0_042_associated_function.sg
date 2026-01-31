@@ -1,10 +1,10 @@
-// Test: Associated function (no this)
+// Test: Associated function (no self)
 // Spec: 03-TYPES.md § 4.4 Associated Functions
 // Priority: P0
 
-☉ sigil Math {}
-⊢ Math { ☉ rite answer() → !i32 { 42 } }
+☉ Σ Math {}
+⊢ Math { ☉ λ answer() -> !i32 { 42 } }
 
-rite main() {
+λ main() {
     println(Math·answer());
 }

@@ -2,10 +2,10 @@
 // Spec: 13-QUANTUM-HOLOGRAPHIC.md § 8 Error Correction
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ qh: QHState<i32> = QHState·encode(42);
     ≔ noisy = qh|apply_noise(0.1);  // 10% noise
-    ≔ corrected = error_correct(noisy);
+    ≔ corrected = noisy|error_correct;
     ≔ value = corrected|measure;
     println(value);
 }

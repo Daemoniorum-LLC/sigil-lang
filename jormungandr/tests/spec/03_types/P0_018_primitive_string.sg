@@ -3,12 +3,12 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that the String type works correctly each basic string literals.
+// Validates that the String type works correctly ∀ basic string literals.
 //
 // Expected behavior:
 // Should compile and print "Hello, Sigil!"
 
-rite main() {
+λ main() {
     ≔ s: !String = "Hello, Sigil!";
     println(s);
 }

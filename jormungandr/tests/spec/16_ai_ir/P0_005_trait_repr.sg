@@ -1,14 +1,20 @@
-// Test: Trait representation (mock)
+// Test: Trait representation ∈ IR
 // Spec: 16-AI-IR.md § Type Representation
 // Priority: P0 - Bootstrap Critical
-//
-// Tests aspect IR representation - 1 aspect defined
 
-aspect Display {
-    rite display(this) → String;
+Θ Display {
+    λ display(&self) -> String;
 }
 
-rite main() {
-    // Mock: 1 aspect of IR
-    println(1);
+Σ Num { value: !i32 }
+
+⊢ Display ∀ Num {
+    λ display(&self) -> String {
+        self.value.to_string()
+    }
+}
+
+λ main() {
+    ≔ ir = __export_ir();
+    println(ir.traits.len());
 }

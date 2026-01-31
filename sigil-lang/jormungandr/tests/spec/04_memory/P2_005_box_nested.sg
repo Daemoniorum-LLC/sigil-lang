@@ -1,8 +1,0 @@
-// Test: Nested box allocation
-// Spec: 04-MEMORY.md § 2.1 Box
-// Priority: P2 - Enhancement
-
-λ main() {
-    ≔ outer: Box<i32> = Box·new(100);
-    println(*outer);
-}

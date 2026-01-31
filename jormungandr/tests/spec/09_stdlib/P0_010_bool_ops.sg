@@ -6,11 +6,11 @@
 // Validate boolean operations work correctly.
 //
 // Expected behavior:
-// Should print yea
+// Should print true
 
-rite main() {
-    ≔ a: !bool = yea;
-    ≔ b: !bool = nay;
-    ≔ result: !bool = a ∧ !b;
+λ main() {
+    ≔ a: !bool = true;
+    ≔ b: !bool = false;
+    ≔ result: !bool = a && !b;
     println(result);
 }

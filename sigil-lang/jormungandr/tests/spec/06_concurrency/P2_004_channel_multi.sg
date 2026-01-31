@@ -1,8 +1,0 @@
-// Test: Channel creation
-// Spec: 06-CONCURRENCY.md § 2.1 Channel
-// Priority: P2 - Enhancement
-
-λ main() {
-    ≔ ch: Channel<i32> = channel_new();
-    println(42);
-}

@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 3.1 Mutex
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     // Create a mutex wrapping a value
     ≔ m = Mutex·new(42);
     println("mutex created");

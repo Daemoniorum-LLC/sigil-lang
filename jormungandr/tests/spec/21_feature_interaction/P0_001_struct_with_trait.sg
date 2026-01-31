@@ -1,23 +1,23 @@
-// Test: Struct with aspect implementation
+// Test: Struct with Θ implementation
 // Spec: Feature Interaction - Structs + Traits
 // Priority: P0 - Bootstrap Critical
 
-aspect Displayable {
-    rite display(&this) → String;
+Θ Displayable {
+    λ display(&self) -> String;
 }
 
-sigil Point {
+Σ Point {
     x: i32,
     y: i32,
 }
 
-⊢ Point : Displayable {
-    rite display(&this) → String {
+⊢ Displayable ∀ Point {
+    λ display(&self) -> String {
         ⤺ "Point";
     }
 }
 
-rite main() {
+λ main() {
     ≔ p = Point { x: 3, y: 4 };
     println(p.display());
 }

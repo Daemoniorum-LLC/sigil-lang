@@ -294,11 +294,7 @@ pub enum IrType {
 
     /// Reference &T, &mut T, &'a T, &'static mut T
     #[serde(rename = "reference")]
-    Reference {
-        lifetime: Option<String>,
-        mutable: bool,
-        inner: Box<IrType>,
-    },
+    Reference { lifetime: Option<String>, mutable: bool, inner: Box<IrType> },
 
     /// Pointer *const T or *mut T
     #[serde(rename = "pointer")]
@@ -356,7 +352,9 @@ pub enum IrType {
 
     /// Inline struct type: struct { field: Type, ... }
     #[serde(rename = "inline_struct")]
-    InlineStruct { fields: Vec<(String, IrType)> },
+    InlineStruct {
+        fields: Vec<(String, IrType)>,
+    },
 
     /// Impl trait: impl Trait bounds
     #[serde(rename = "impl_trait")]
@@ -893,7 +891,6 @@ pub enum BinaryOp {
     MatMul,
     Hadamard,
     TensorProd,
-    Convolve,
 }
 
 /// Unary operators

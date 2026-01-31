@@ -452,16 +452,9 @@ pub enum OverlayType {
     /// Weather effect
     Weather { weather_type: String },
     /// Color filter
-    ColorFilter {
-        hue: f32,
-        saturation: f32,
-        brightness: f32,
-    },
+    ColorFilter { hue: f32, saturation: f32, brightness: f32 },
     /// Custom shader effect
-    Shader {
-        shader_id: String,
-        params: HashMap<String, f32>,
-    },
+    Shader { shader_id: String, params: HashMap<String, f32> },
 }
 
 // ============================================================================
@@ -510,8 +503,7 @@ impl PerceptionManager {
     pub fn add_entity(&mut self, entity: PerceivableEntity) {
         let id = entity.id.clone();
         self.entities.insert(id.clone(), entity);
-        self.perception_history
-            .insert(id, PerceptionHistory::default());
+        self.perception_history.insert(id, PerceptionHistory::default());
     }
 
     /// Remove an entity from the scene
@@ -527,10 +519,7 @@ impl PerceptionManager {
         for (id, entity) in &self.entities {
             if self.state.can_see_entity(entity) {
                 let layer = self.state.layer.clone();
-                visible
-                    .entry(layer)
-                    .or_insert_with(Vec::new)
-                    .push(id.clone());
+                visible.entry(layer).or_insert_with(Vec::new).push(id.clone());
 
                 // Update perception history
                 if let Some(history) = self.perception_history.get_mut(id) {
@@ -565,30 +554,34 @@ impl PerceptionManager {
             };
 
             for trigger_def in &entity.perception_triggers {
-                let should_trigger = trigger_def.conditions.iter().all(|cond| match cond {
-                    PerceptionTriggerCondition::OnFirstSight => {
-                        history.times_seen == 1 && history.time_visible == 0
-                    }
-                    PerceptionTriggerCondition::OnEnterView => {
-                        history.currently_visible && history.time_visible == 0
-                    }
-                    PerceptionTriggerCondition::OnLeaveView => {
-                        !history.currently_visible && history.time_visible == 0
-                    }
-                    PerceptionTriggerCondition::AfterDuration(dur) => {
-                        history.currently_visible && history.time_visible >= *dur
-                    }
-                    PerceptionTriggerCondition::AtIntensity(int) => {
-                        self.state.effective_intensity() >= *int
-                    }
-                    PerceptionTriggerCondition::WhenAlterFronting(alter) => {
-                        match &system.fronting {
-                            super::runtime::FrontingState::Single(id) => id == alter,
-                            super::runtime::FrontingState::Blended(ids) => ids.contains(alter),
-                            _ => false,
+                let should_trigger = trigger_def.conditions.iter().all(|cond| {
+                    match cond {
+                        PerceptionTriggerCondition::OnFirstSight => {
+                            history.times_seen == 1 && history.time_visible == 0
+                        }
+                        PerceptionTriggerCondition::OnEnterView => {
+                            history.currently_visible && history.time_visible == 0
+                        }
+                        PerceptionTriggerCondition::OnLeaveView => {
+                            !history.currently_visible && history.time_visible == 0
+                        }
+                        PerceptionTriggerCondition::AfterDuration(dur) => {
+                            history.currently_visible && history.time_visible >= *dur
+                        }
+                        PerceptionTriggerCondition::AtIntensity(int) => {
+                            self.state.effective_intensity() >= *int
+                        }
+                        PerceptionTriggerCondition::WhenAlterFronting(alter) => {
+                            match &system.fronting {
+                                super::runtime::FrontingState::Single(id) => id == alter,
+                                super::runtime::FrontingState::Blended(ids) => ids.contains(alter),
+                                _ => false,
+                            }
+                        }
+                        PerceptionTriggerCondition::AtLayer(layer) => {
+                            &self.state.layer == layer
                         }
                     }
-                    PerceptionTriggerCondition::AtLayer(layer) => &self.state.layer == layer,
                 });
 
                 if should_trigger {
@@ -613,7 +606,11 @@ impl PerceptionManager {
         self.state
             .visible_entities
             .get(layer)
-            .map(|ids| ids.iter().filter_map(|id| self.entities.get(id)).collect())
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.entities.get(id))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -813,23 +810,17 @@ mod tests {
             visible_in: vec![RealityLayer::Grounded, RealityLayer::Fractured],
             min_perception_intensity: None,
             layer_representations: HashMap::from([
-                (
-                    RealityLayer::Grounded,
-                    EntityRepresentation {
-                        description: "A peaceful church".to_string(),
-                        visual_id: "church_normal".to_string(),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    RealityLayer::Fractured,
-                    EntityRepresentation {
-                        description: "The church walls bleed".to_string(),
-                        visual_id: "church_fractured".to_string(),
-                        color_tint: Some((0.8, 0.2, 0.2, 1.0)),
-                        ..Default::default()
-                    },
-                ),
+                (RealityLayer::Grounded, EntityRepresentation {
+                    description: "A peaceful church".to_string(),
+                    visual_id: "church_normal".to_string(),
+                    ..Default::default()
+                }),
+                (RealityLayer::Fractured, EntityRepresentation {
+                    description: "The church walls bleed".to_string(),
+                    visual_id: "church_fractured".to_string(),
+                    color_tint: Some((0.8, 0.2, 0.2, 1.0)),
+                    ..Default::default()
+                }),
             ]),
             perception_triggers: Vec::new(),
             symbolic_meaning: Some("Sanctuary lost to corruption".to_string()),

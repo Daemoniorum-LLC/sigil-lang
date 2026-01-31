@@ -8,10 +8,10 @@
 // Expected behavior:
 // Should print 42
 
-rite print_value(x: !i32) {
+λ print_value(x: !i32) {
     println(x);
 }
 
-rite main() {
+λ main() {
     print_value(42);
 }

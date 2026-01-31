@@ -2,7 +2,7 @@
   "name": "sigil-lang",
   "displayName": "Sigil Language",
   "description": "Language support for Sigil - a polysynthetic programming language with evidentiality types",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "publisher": "daemoniorum",
   "engines": {
     "vscode": "^1.74.0"
@@ -54,7 +54,7 @@
         "sigil.oracle.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable the Oracle language server for diagnostics, hover, completions, go-to-definition, find references, and signature help"
+          "description": "Enable the Oracle language server for diagnostics, hover, and completions"
         },
         "sigil.trace.server": {
           "type": "string",

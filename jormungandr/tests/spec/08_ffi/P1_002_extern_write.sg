@@ -3,11 +3,11 @@
 // Priority: P1 - Standard Feature
 
 extern "C" {
-    rite write(fd: !i32, buf: *◆ !u8, count: !usize) → !isize;
+    λ write(fd: !i32, buf: *const !u8, count: !usize) -> !isize;
 }
 
-rite main() {
-    // fd=1 is stdout of emulated FFI
+λ main() {
+    // fd=1 is stdout ∈ emulated FFI
     write(1, "Hello from FFI", 14);
     println("");
 }

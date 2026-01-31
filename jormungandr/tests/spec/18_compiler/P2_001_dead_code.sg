@@ -2,11 +2,11 @@
 // Spec: 18-COMPILER.md § 6.1 Optimizations
 // Priority: P2 - Enhancement
 
-rite unused() {
+λ unused() {
     println(0);
 }
 
-rite main() {
+λ main() {
     // unused() is never called, but program should still work
     println(1);
 }

@@ -46,7 +46,7 @@ rite main() {
 
     // std·env·var
     ≔ path = std·env·var("PATH");
-    assert_eq(type_of(path), "Result::Ok");
+    assert_eq(type_of(path), "Result·Ok");
 
     println("ALL STD TESTS PASSED!");
 }

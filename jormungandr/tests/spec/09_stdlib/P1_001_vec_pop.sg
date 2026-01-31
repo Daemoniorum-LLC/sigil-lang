@@ -2,17 +2,21 @@
 // Spec: 09-STDLIB.md § 4.1 Vec
 // Priority: P1 - Production Ready
 
-rite main() {
-    ≔ vary v: Vec<i32> = vec![1, 2, 3];
+λ main() {
+    ≔ Δ v: Vec<i32> = vec![1, 2, 3];
 
-    // Pop returns the last element (3)
-    ≔ last = v.pop();
-    println(last);
+    // Pop returns Option·Some(last element)
+    ⌥ v.pop() {
+        Option·Some(val) => println(val),
+        Option·None => println("empty"),
+    }
 
     // Length is now 2
     println(v.len());
 
     // Pop again
-    ≔ second = v.pop();
-    println(second);
+    ⌥ v.pop() {
+        Option·Some(val) => println(val),
+        Option·None => println("empty"),
+    }
 }

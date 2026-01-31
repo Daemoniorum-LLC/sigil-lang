@@ -2,12 +2,12 @@
 // Spec: 03-TYPES.md § 2.1 Struct
 // Priority: P2 - Enhancement
 
-sigil Point {
+Σ Point {
     x: !i32,
     y: !i32
 }
 
-rite main() {
+λ main() {
     ≔ p: Point = Point { x: 0, y: 0 };
     println(p.x + p.y);
 }

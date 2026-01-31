@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print 42
 
-rite main() {
+λ main() {
     ≔ my_var: !i32 = 42;
     println(my_var);
 }

@@ -1,6 +1,6 @@
 //! Sigil Compiler Driver
 //!
-//! This is the main entry point ∀ the Sigil this-hosted compiler.
+//! This is the main entry point ∀ the Sigil self-hosted compiler.
 //! It orchestrates the compilation pipeline:
 //!
 //!   Source → Lexer → Parser → TypeCheck → Lower → IR → (Interp | CodeGen)
@@ -15,26 +15,27 @@
 //! sigil dump-ast input.sg                # Dump AST
 //! ```
 //!
-//! ## This-Hosting
+//! ## Self-Hosting
 //!
 //! This compiler can compile itself:
 //!
 //! ```
-//! sigil compile this-hosted/src/*.sg -o sigil2.c
+//! sigil compile self-hosted/src/*.sg -o sigil2.c
 //! gcc sigil2.c -o sigil2
-//! ./sigil2 compile this-hosted/src/*.sg -o sigil3.c
+//! ./sigil2 compile self-hosted/src/*.sg -o sigil3.c
 //! diff sigil2.c sigil3.c  # Should be identical (fixed point!)
 //! ```
 
-invoke tome·lexer·Lexer;
-invoke tome·parser·{Parser, ParseError};
-invoke tome·typeck·{TypeChecker, TypeError};
-invoke tome·lower·{lower_file, LowerError};
-invoke tome·ir·IrModule;
-invoke tome·interp·{Interpreter, RuntimeError};
-invoke tome·codegen·CodeGen;
-invoke tome·span·Span;
-invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
+// Use local modules from crate, not external tome
+invoke crate·lexer·Lexer;
+invoke crate·parser·{Parser, ParseError};
+invoke crate·typeck·{TypeChecker, TypeError};
+invoke crate·lower·{lower_file, LowerError};
+invoke crate·ir·IrModule;
+invoke crate·interp·{Interpreter, RuntimeError};
+invoke crate·codegen·CodeGen;
+invoke crate·span·Span;
+invoke crate·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 
 // ============================================================================
 // Compiler Configuration
@@ -57,7 +58,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 }
 
 /// Compiler configuration
-☉ sigil Config {
+☉ Σ Config {
     /// Input files
     ☉ input_files: ![String],
     /// Output file
@@ -79,31 +80,32 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 }
 
 ⊢ Config {
-    ☉ rite default() → !Config {
+    ☉ λ default() -> !Config {
         Config {
             input_files: [],
             output_file: null,
             mode: CompileMode·Compile,
-            verbose: nay,
-            debug: nay,
+            verbose: false,
+            debug: false,
             opt_level: 0,
-            evidence_checks: yea,
+            evidence_checks: true,
             tome_paths: [],
-            resolve_tomes: yea,  // Auto-resolve by default
+            resolve_tomes: true,  // Auto-resolve by default
         }
     }
 
     /// Parse command line arguments
-    ☉ rite from_args(argv: ![String]) → !Result<Config, String> {
-        ≔ vary config = Config·default();
-        ≔ vary expect_output = nay;
+    ☉ λ from_args(argv: ![String]) -> !Result<Config, String> {
+        ≔ Δ config = Config·default();
+        ≔ Δ expect_output = false;
 
-        each arg ∈ argv.iter() {
+        // Skip first arg (program name)
+        ∀ arg ∈ argv.iter().skip(1) {
             ≔ s = arg.clone();
 
             ⎇ expect_output {
-                config.output_file = Option·Some(s);
-                expect_output = nay;
+                config.output_file = ?s;
+                expect_output = false;
             } ⎉ ⎇ s == "compile" {
                 config.mode = CompileMode·Compile;
             } ⎉ ⎇ s == "run" {
@@ -116,12 +118,12 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
                 config.mode = CompileMode·DumpAst;
             } ⎉ ⎇ s == "dump-tokens" {
                 config.mode = CompileMode·DumpTokens;
-            } ⎉ ⎇ s == "-o" ∨ s == "--output" {
-                expect_output = yea;
-            } ⎉ ⎇ s == "-v" ∨ s == "--verbose" {
-                config.verbose = yea;
-            } ⎉ ⎇ s == "-g" ∨ s == "--debug" {
-                config.debug = yea;
+            } ⎉ ⎇ s == "-o" || s == "--output" {
+                expect_output = true;
+            } ⎉ ⎇ s == "-v" || s == "--verbose" {
+                config.verbose = true;
+            } ⎉ ⎇ s == "-g" || s == "--debug" {
+                config.debug = true;
             } ⎉ ⎇ s == "-O0" {
                 config.opt_level = 0;
             } ⎉ ⎇ s == "-O1" {
@@ -131,15 +133,15 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
             } ⎉ ⎇ s == "-O3" {
                 config.opt_level = 3;
             } ⎉ ⎇ s == "--no-evidence-checks" {
-                config.evidence_checks = nay;
+                config.evidence_checks = false;
             } ⎉ ⎇ s == "--no-resolve-tomes" {
-                config.resolve_tomes = nay;
+                config.resolve_tomes = false;
             } ⎉ ⎇ s.starts_with("--tome-path=") {
                 // Extract path after '='
-                ≔ path = s.chars().skip(12).collect·<String>();
+                ≔ path: String = s.chars().skip(12).collect();
                 config.tome_paths.push(path);
-            } ⎉ ⎇ s == "-h" ∨ s == "--help" {
-                ⤺ Result·Err(This·help_text());
+            } ⎉ ⎇ s == "-h" || s == "--help" {
+                ⤺ Result·Err(Self·help_text());
             } ⎉ ⎇ s == "--version" {
                 ⤺ Result·Err(format!("Sigil Compiler {}", tome·VERSION));
             } ⎉ ⎇ s.starts_with("-") {
@@ -156,7 +158,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
         Result·Ok(config)
     }
 
-    rite help_text() → !String {
+    λ help_text() -> !String {
         "Sigil Compiler - The Jormungandr Bootstrap\n\n" ++
         "USAGE:\n" ++
         "    sigil <command> [options] <files>\n\n" ++
@@ -180,9 +182,9 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
         "    sigil run hello.sg\n" ++
         "    sigil check src/*.sg\n\n" ++
         "SELF-HOSTING:\n" ++
-        "    sigil compile this-hosted/src/*.sg -o sigil2.c\n" ++
+        "    sigil compile self-hosted/src/*.sg -o sigil2.c\n" ++
         "    gcc sigil2.c -o sigil2\n" ++
-        "    ./sigil2 compile this-hosted/src/*.sg -o sigil3.c\n" ++
+        "    ./sigil2 compile self-hosted/src/*.sg -o sigil3.c\n" ++
         "    diff sigil2.c sigil3.c  # Fixed point!\n"
     }
 }
@@ -192,21 +194,21 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 // ============================================================================
 
 /// Line and column location ∈ source
-☉ sigil SourceLoc {
+☉ Σ SourceLoc {
     ☉ line: !u64,
     ☉ col: !u64,
 }
 
 /// Convert byte offset to line:column given source text
 /// Lines and columns are 1-indexed
-rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
-    ≔ vary line = 1;
-    ≔ vary col = 1;
-    ≔ vary pos = 0;
+λ offset_to_line_col(source: !&str, offset: !u64) -> !SourceLoc {
+    ≔ Δ line = 1;
+    ≔ Δ col = 1;
+    ≔ Δ pos = 0;
 
-    each c ∈ source.chars() {
+    ∀ c ∈ source.chars() {
         ⎇ pos >= offset {
-            ⊲;
+            ⊗;
         }
         ⎇ c == '\n' {
             line = line + 1;
@@ -225,7 +227,7 @@ rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
 // ============================================================================
 
 /// The main compiler driver
-☉ sigil Driver {
+☉ Σ Driver {
     /// Configuration
     config: !Config,
     /// Collected errors
@@ -235,7 +237,7 @@ rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
 }
 
 /// Compile error
-☉ sigil CompileError {
+☉ Σ CompileError {
     ☉ message: !String,
     ☉ span: ?Span,
     ☉ file: ?String,
@@ -245,7 +247,7 @@ rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
 }
 
 ⊢ CompileError {
-    ☉ rite new(message: !String) → !CompileError {
+    ☉ λ new(message: !String) -> !CompileError {
         CompileError {
             message,
             span: null,
@@ -255,41 +257,41 @@ rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
         }
     }
 
-    ☉ rite with_span(vary this, span: !Span) → !CompileError {
-        this.span = ?span;
-        this
+    ☉ λ with_span(Δ self, span: !Span) -> !CompileError {
+        self.span = ?span;
+        self
     }
 
-    ☉ rite with_file(vary this, file: !String) → !CompileError {
-        this.file = ?file;
-        this
+    ☉ λ with_file(Δ self, file: !String) -> !CompileError {
+        self.file = ?file;
+        self
     }
 
-    ☉ rite with_note(vary this, note: !String) → !CompileError {
-        this.notes.push(note);
-        this
+    ☉ λ with_note(Δ self, note: !String) -> !CompileError {
+        self.notes.push(note);
+        self
     }
 
-    ☉ rite with_source(vary this, source: !String) → !CompileError {
-        this.source = ?source;
-        this
+    ☉ λ with_source(Δ self, source: !String) -> !CompileError {
+        self.source = ?source;
+        self
     }
 
-    ☉ rite display(this) → !String {
-        ≔ vary result = String·new();
+    ☉ λ display(self) -> !String {
+        ≔ Δ result = String·new();
 
         // Error header
         result.push_str("error: ");
-        result.push_str(this.message);
+        result.push_str(self.message);
         result.push('\n');
 
         // Location
-        ⎇ ≔ ?file = this.file {
+        ⎇ ≔ ?file = self.file {
             result.push_str("  --> ");
             result.push_str(file);
-            ⎇ ≔ ?span = this.span {
+            ⎇ ≔ ?span = self.span {
                 // Convert byte offset to line:column ⎇ source is available
-                ⎇ ≔ ?src = this.source {
+                ⎇ ≔ ?src = self.source {
                     ≔ loc = offset_to_line_col(src, span.start);
                     result.push_str(format!(":{}:{}", loc.line, loc.col));
                 } ⎉ {
@@ -301,7 +303,7 @@ rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
         }
 
         // Notes
-        each note ∈ this.notes {
+        ∀ note ∈ self.notes {
             result.push_str("  note: ");
             result.push_str(note);
             result.push('\n');
@@ -312,7 +314,7 @@ rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
 }
 
 /// Compile warning
-☉ sigil CompileWarning {
+☉ Σ CompileWarning {
     ☉ message: !String,
     ☉ span: ?Span,
     ☉ file: ?String,
@@ -323,29 +325,29 @@ rite offset_to_line_col(source: !&str, offset: !u64) → !SourceLoc {
 // ============================================================================
 
 /// Extract tome names from a UseTree
-rite extract_tome_names(tree: !UseTree) → ![String] {
-    ≔ vary names: ![String] = Vec·new();
+λ extract_tome_names(tree: !UseTree) -> ![String] {
+    ≔ Δ names = Vec·new();
     ⌥ tree {
         UseTree·Path { prefix, suffix } => {
             // The first segment is the tome name
             ≔ tome_name = prefix.name.clone();
-            // Skip "crate", "this", "super", "tome" - these are local references
-            ⎇ tome_name != "crate" ∧ tome_name != "this" ∧ tome_name != "super" ∧ tome_name != "tome" {
+            // Skip "crate", "self", "super", "tome" - these are local references
+            ⎇ tome_name != "crate" && tome_name != "self" && tome_name != "super" && tome_name != "tome" {
                 names.push(tome_name);
             }
         },
         UseTree·Name(ident) => {
             // Single name import - could be a tome
             ≔ tome_name = ident.name.clone();
-            ⎇ tome_name != "crate" ∧ tome_name != "this" ∧ tome_name != "super" ∧ tome_name != "tome" {
+            ⎇ tome_name != "crate" && tome_name != "self" && tome_name != "super" && tome_name != "tome" {
                 names.push(tome_name);
             }
         },
         UseTree·Group(trees) => {
             // Group import - recurse
-            each t ∈ trees.iter() {
+            ∀ t ∈ trees.iter() {
                 ≔ sub_names = extract_tome_names(t.clone());
-                each n ∈ sub_names.iter() {
+                ∀ n ∈ sub_names.iter() {
                     names.push(n.clone());
                 }
             }
@@ -356,8 +358,8 @@ rite extract_tome_names(tree: !UseTree) → ![String] {
 }
 
 /// Find tome source file by name ∈ search paths
-rite find_tome_source(tome_name: !String, search_paths: ![String]) → ?String {
-    each path ∈ search_paths.iter() {
+λ find_tome_source(tome_name: !String, search_paths: ![String]) -> ?String {
+    ∀ path ∈ search_paths.iter() {
         // Try <path>/<tome_name>/src/lib.sg
         ≔ lib_path = format!("{}/{}/src/lib.sg", path, tome_name);
         // We can't easily check ⎇ file exists ∈ pure Sigil, so just ⤺ the path
@@ -368,33 +370,33 @@ rite find_tome_source(tome_name: !String, search_paths: ![String]) → ?String {
 }
 
 /// Infer tome search path from input file
-rite infer_tome_path(input_file: !String) → ?String {
+λ infer_tome_path(input_file: !String) -> ?String {
     // If input is /path/to/mytome/src/lib.sg, search path is /path/to
     // Look ∀ "/src/" ∈ the path and go two levels up
-    ≔ vary chars: ![char] = Vec·new();
-    each c ∈ input_file.chars() {
+    ≔ Δ chars = Vec·new();
+    ∀ c ∈ input_file.chars() {
         chars.push(c);
     }
 
     // Find last occurrence of "/src/"
-    ≔ vary last_src_pos = null;
-    ≔ vary i = 0;
+    ≔ Δ last_src_pos: Option<i64> = None;
+    ≔ Δ i = 0;
     ⟳ i + 4 < chars.len() {
-        ⎇ chars[i] == '/' ∧ chars[i+1] == 's' ∧ chars[i+2] == 'r' ∧ chars[i+3] == 'c' ∧ chars[i+4] == '/' {
-            last_src_pos = Option·Some(i);
+        ⎇ chars[i] == '/' && chars[i+1] == 's' && chars[i+2] == 'r' && chars[i+3] == 'c' && chars[i+4] == '/' {
+            last_src_pos = Some(i);
         }
         i = i + 1;
     }
 
     ⌥ last_src_pos {
-        Option·Some(pos) => {
+        Some(pos) => {
             // Find the slash before /src/
-            ≔ vary j = pos - 1;
+            ≔ Δ j = pos - 1;
             ⟳ j >= 0 {
                 ⎇ chars[j] == '/' {
                     // Return path up to this point
-                    ≔ vary result = String·new();
-                    ≔ vary k = 0;
+                    ≔ Δ result = String·new();
+                    ≔ Δ k = 0;
                     ⟳ k < j {
                         result.push(chars[k]);
                         k = k + 1;
@@ -405,13 +407,13 @@ rite infer_tome_path(input_file: !String) → ?String {
             }
             null
         },
-        null | Option·None => null,
+        None => null,
     }
 }
 
 ⊢ Driver {
     /// Create a new driver with configuration
-    ☉ rite new(config: !Config) → !Driver {
+    ☉ λ new(config: !Config) -> !Driver {
         Driver {
             config,
             errors: [],
@@ -420,27 +422,27 @@ rite infer_tome_path(input_file: !String) → ?String {
     }
 
     /// Run the compiler
-    ☉ rite run(vary this) → !Result<(), i32> {
-        ⌥ this.config.mode {
-            CompileMode·Compile => this.compile(),
-            CompileMode·Run => this.interpret(),
-            CompileMode·Check => this.check(),
-            CompileMode·DumpIr => this.dump_ir(),
-            CompileMode·DumpAst => this.dump_ast(),
-            CompileMode·DumpTokens => this.dump_tokens(),
+    ☉ λ run(Δ self) -> !Result<(), i32> {
+        ⌥ self.config.mode {
+            CompileMode·Compile => self.compile(),
+            CompileMode·Run => self.interpret(),
+            CompileMode·Check => self.check(),
+            CompileMode·DumpIr => self.dump_ir(),
+            CompileMode·DumpAst => self.dump_ast(),
+            CompileMode·DumpTokens => self.dump_tokens(),
         }
     }
 
     /// Resolve tome imports from AST and ⤺ additional files to compile
-    rite resolve_tome_imports(vary this, asts: ![SourceFile], file_paths: ![String]) → ![String] {
-        ≔ vary additional_files: ![String] = Vec·new();
-        ≔ vary resolved_tomes: ![String] = Vec·new();  // Track which tomes we've already resolved
-        ≔ vary local_modules: ![String] = Vec·new();   // Track locally defined modules
+    λ resolve_tome_imports(Δ self, asts: ![SourceFile], file_paths: ![String]) -> ![String] {
+        ≔ Δ additional_files = Vec·new();
+        ≔ Δ resolved_tomes = Vec·new();  // Track which tomes we've already resolved
+        ≔ Δ local_modules = Vec·new();   // Track locally defined modules
 
         // First pass: collect all locally defined module names
         // This prevents us from trying to resolve `invoke span·...` when `scroll span;` is local
-        each ast ∈ asts.iter() {
-            each item ∈ ast.items.iter() {
+        ∀ ast ∈ asts.iter() {
+            ∀ item ∈ ast.items.iter() {
                 ⌥ item.node {
                     Item·Module(mod_def) => {
                         local_modules.push(mod_def.name.name.clone());
@@ -451,62 +453,62 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
 
         // Build search paths
-        ≔ vary search_paths = this.config.tome_paths.clone();
+        ≔ Δ search_paths = self.config.tome_paths.clone();
 
         // Infer search path from input files
-        each fp ∈ file_paths.iter() {
+        ∀ fp ∈ file_paths.iter() {
             ⌥ infer_tome_path(fp.clone()) {
                 ?path => {
                     // Check ⎇ already ∈ search paths
-                    ≔ vary found = nay;
-                    each sp ∈ search_paths.iter() {
+                    ≔ Δ found = false;
+                    ∀ sp ∈ search_paths.iter() {
                         ⎇ sp == path {
-                            found = yea;
+                            found = true;
                         }
                     }
                     ⎇ !found {
                         search_paths.push(path);
                     }
                 },
-                null | Option·None => {},
+                null => {},
             }
         }
 
-        ⎇ this.config.verbose ∧ search_paths.len() > 0 {
+        ⎇ self.config.verbose && search_paths.len() > 0 {
             println("  Tome search paths:");
-            each sp ∈ search_paths.iter() {
+            ∀ sp ∈ search_paths.iter() {
                 println(format!("    - {}", sp));
             }
         }
 
         // Scan all ASTs ∀ use/invoke declarations
-        each ast ∈ asts.iter() {
-            each item ∈ ast.items.iter() {
+        ∀ ast ∈ asts.iter() {
+            ∀ item ∈ ast.items.iter() {
                 ⌥ item.node {
                     Item·Use(decl) => {
                         ≔ tome_names = extract_tome_names(decl.tree.clone());
-                        each tome_name ∈ tome_names.iter() {
+                        ∀ tome_name ∈ tome_names.iter() {
                             // Skip local modules - they're not external tomes
-                            ≔ vary is_local = nay;
-                            each lm ∈ local_modules.iter() {
+                            ≔ Δ is_local = false;
+                            ∀ lm ∈ local_modules.iter() {
                                 ⎇ lm == tome_name {
-                                    is_local = yea;
+                                    is_local = true;
                                 }
                             }
                             ⎇ is_local {
-                                ⊳;
+                                ↻;
                             }
 
                             // Skip well-known stdlib modules that aren't real tomes
                             ⎇ tome_name == "std" {
-                                ⊳;
+                                ↻;
                             }
 
                             // Check ⎇ already resolved
-                            ≔ vary already_resolved = nay;
-                            each rt ∈ resolved_tomes.iter() {
+                            ≔ Δ already_resolved = false;
+                            ∀ rt ∈ resolved_tomes.iter() {
                                 ⎇ rt == tome_name {
-                                    already_resolved = yea;
+                                    already_resolved = true;
                                 }
                             }
                             ⎇ !already_resolved {
@@ -514,21 +516,21 @@ rite infer_tome_path(input_file: !String) → ?String {
                                 ⌥ find_tome_source(tome_name.clone(), search_paths.clone()) {
                                     ?tome_file => {
                                         // Check ⎇ not already ∈ input files
-                                        ≔ vary in_inputs = nay;
-                                        each fp ∈ file_paths.iter() {
+                                        ≔ Δ in_inputs = false;
+                                        ∀ fp ∈ file_paths.iter() {
                                             ⎇ fp == tome_file {
-                                                in_inputs = yea;
+                                                in_inputs = true;
                                             }
                                         }
                                         ⎇ !in_inputs {
-                                            ⎇ this.config.verbose {
-                                                println(format!("  Resolved tome '{}' → {}", tome_name, tome_file));
+                                            ⎇ self.config.verbose {
+                                                println(format!("  Resolved tome '{}' -> {}", tome_name, tome_file));
                                             }
                                             additional_files.push(tome_file);
                                         }
                                     },
-                                    null | Option·None => {
-                                        ⎇ this.config.verbose {
+                                    null => {
+                                        ⎇ self.config.verbose {
                                             println(format!("  Warning: Could not resolve tome '{}'", tome_name));
                                         }
                                     },
@@ -551,37 +553,37 @@ rite infer_tome_path(input_file: !String) → ?String {
     /// 1. Parse ALL input files first
     /// 2. Build a unified type environment from ALL files
     /// 3. Type check and lower each file using the shared environment
-    rite compile(vary this) → !Result<(), i32> {
-        ⎇ this.config.verbose {
+    λ compile(Δ self) -> !Result<(), i32> {
+        ⎇ self.config.verbose {
             println("Sigil Compiler - Jormungandr Bootstrap");
-            ≔ file_count = this.config.input_files.len();
+            ≔ file_count = self.config.input_files.len();
             println(format!("Compiling {} file(s)...", file_count));
         }
 
         // ================================================================
         // Phase 1: Parse ALL files first (including resolved tomes)
         // ================================================================
-        ≔ vary file_paths: ![String] = Vec·new();
-        ≔ vary asts: ![SourceFile] = Vec·new();
+        ≔ Δ file_paths = Vec·new();
+        ≔ Δ asts = Vec·new();
 
-        ≔ vary i = 0;
-        ⟳ i < this.config.input_files.len() {
-            ≔ file_path = this.config.input_files[i].clone();
-            ⎇ this.config.verbose {
+        ≔ Δ i = 0;
+        ⟳ i < self.config.input_files.len() {
+            ≔ file_path = self.config.input_files[i].clone();
+            ⎇ self.config.verbose {
                 println(format!("  Parsing: {}", file_path));
             }
 
-            ≔ source = ⌥ this.read_file(file_path.clone()) {
+            ≔ source = ⌥ self.read_file(file_path.clone()) {
                 Result·Ok(s) => s,
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
-            ≔ ast = ⌥ this.parse(file_path.clone(), source) {
+            ≔ ast = ⌥ self.parse(file_path.clone(), source) {
                 Result·Ok(a) => a,
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
@@ -593,36 +595,36 @@ rite infer_tome_path(input_file: !String) → ?String {
         // ================================================================
         // Phase 1.5: Resolve external tome imports (iterative)
         // ================================================================
-        ⎇ this.config.resolve_tomes {
-            ≔ vary iteration = 0;
+        ⎇ self.config.resolve_tomes {
+            ≔ Δ iteration = 0;
             ≔ max_iterations = 10;  // Prevent infinite loops
 
             ⟳ iteration < max_iterations {
-                ≔ additional_files = this.resolve_tome_imports(asts.clone(), file_paths.clone());
+                ≔ additional_files = self.resolve_tome_imports(asts.clone(), file_paths.clone());
 
                 ⎇ additional_files.is_empty() {
-                    ⊲;  // No more tomes to resolve
+                    ⊗;  // No more tomes to resolve
                 }
 
                 // Parse additional files
-                each additional_path ∈ additional_files.iter() {
-                    ⎇ this.config.verbose {
+                ∀ additional_path ∈ additional_files.iter() {
+                    ⎇ self.config.verbose {
                         println(format!("  Parsing tome: {}", additional_path));
                     }
 
-                    ≔ source = ⌥ this.read_file(additional_path.clone()) {
+                    ≔ source = ⌥ self.read_file(additional_path.clone()) {
                         Result·Ok(s) => s,
-                        Result·Err(_code) => {
+                        Result·Err(_) => {
                             // File doesn't exist - skip silently ∀ now
                             // This handles the case where tome paths are guessed but don't exist
-                            ⊳;
+                            ↻;
                         },
                     };
 
-                    ≔ ast = ⌥ this.parse(additional_path.clone(), source) {
+                    ≔ ast = ⌥ self.parse(additional_path.clone(), source) {
                         Result·Ok(a) => a,
                         Result·Err(code) => {
-                            this.print_errors();
+                            self.print_errors();
                             ⤺ Result·Err(code);
                         },
                     };
@@ -638,16 +640,16 @@ rite infer_tome_path(input_file: !String) → ?String {
         // ================================================================
         // Phase 2: Build unified type environment from ALL files
         // ================================================================
-        ⎇ this.config.verbose {
+        ⎇ self.config.verbose {
             println("  Building unified type environment...");
         }
 
-        ≔ vary checker = TypeChecker·new();
+        ≔ Δ checker = TypeChecker·new();
 
         // Pass 1: Collect type definitions from ALL files
-        ≔ vary j = 0;
+        ≔ Δ j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.collect_type_def(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -658,7 +660,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         // Pass 2: Collect function signatures from ALL files
         j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.collect_fn_sig(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -669,7 +671,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         // Pass 3: Check items ∈ ALL files (with complete type environment)
         j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.check_item(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -680,14 +682,14 @@ rite infer_tome_path(input_file: !String) → ?String {
         // ================================================================
         // Phase 3: Lower each file using the shared type checker
         // ================================================================
-        ≔ vary modules: ![IrModule] = Vec·new();
+        ≔ Δ modules = Vec·new();
 
         j = 0;
         ⟳ j < asts.len() {
             ≔ file_path = file_paths[j].clone();
             ≔ ast = asts[j].clone();
 
-            ⎇ this.config.verbose {
+            ⎇ self.config.verbose {
                 println(format!("  Lowering: {}", file_path));
             }
 
@@ -695,11 +697,11 @@ rite infer_tome_path(input_file: !String) → ?String {
             ⌥ lower_file(ast, checker.clone(), file_path.clone()) {
                 Result·Ok(ir) => modules.push(ir),
                 Result·Err(errs) => {
-                    each err ∈ errs {
-                        this.errors.push(CompileError·new(err.message)
+                    ∀ err ∈ errs {
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(1);
                 },
             };
@@ -709,21 +711,21 @@ rite infer_tome_path(input_file: !String) → ?String {
         // Merge all modules into one unified module
         // NOTE: Type deduplication happens at codegen time using #ifndef guards
         ≔ main_module = ⎇ !modules.is_empty() {
-            ≔ vary merged = modules[0].clone();
+            ≔ Δ merged = modules[0].clone();
             // Append functions/types from other modules
-            ≔ vary idx = 1;
+            ≔ Δ idx = 1;
             ⟳ idx < modules.len() {
                 ≔ other = modules[idx].clone();
                 // Merge functions (deduplicate by name)
-                ≔ vary fi = 0;
+                ≔ Δ fi = 0;
                 ⟳ fi < other.functions.len() {
                     ≔ func = other.functions[fi].clone();
                     // Check ⎇ function already exists ∈ merged
-                    ≔ vary exists = nay;
-                    ≔ vary check_idx = 0;
+                    ≔ Δ exists = false;
+                    ≔ Δ check_idx = 0;
                     ⟳ check_idx < merged.functions.len() {
                         ⎇ merged.functions[check_idx].name == func.name {
-                            exists = yea;
+                            exists = true;
                         }
                         check_idx = check_idx + 1;
                     }
@@ -733,25 +735,25 @@ rite infer_tome_path(input_file: !String) → ?String {
                     fi = fi + 1;
                 }
                 // Merge types (duplicates will be handled by codegen with #ifndef)
-                ≔ vary ti = 0;
+                ≔ Δ ti = 0;
                 ⟳ ti < other.types.len() {
                     merged.types.push(other.types[ti].clone());
                     ti = ti + 1;
                 }
                 // Merge traits
-                ≔ vary tri = 0;
+                ≔ Δ tri = 0;
                 ⟳ tri < other.traits.len() {
                     merged.traits.push(other.traits[tri].clone());
                     tri = tri + 1;
                 }
                 // Merge impls
-                ≔ vary ii = 0;
+                ≔ Δ ii = 0;
                 ⟳ ii < other.impls.len() {
                     merged.impls.push(other.impls[ii].clone());
                     ii = ii + 1;
                 }
                 // Merge constants
-                ≔ vary ci = 0;
+                ≔ Δ ci = 0;
                 ⟳ ci < other.constants.len() {
                     merged.constants.push(other.constants[ci].clone());
                     ci = ci + 1;
@@ -766,38 +768,38 @@ rite infer_tome_path(input_file: !String) → ?String {
         // ================================================================
         // Phase 4: Generate C code
         // ================================================================
-        ⎇ this.config.verbose {
+        ⎇ self.config.verbose {
             println("  Generating C code...");
         }
 
-        ≔ vary codegen = CodeGen·new();
+        ≔ Δ codegen = CodeGen·new();
         ≔ c_code = codegen.generate(main_module);
 
         // Write output
-        ⎇ this.config.output_file.is_some() {
-            ≔ output = this.config.output_file.unwrap();
-            ⌥ this.write_file(output, c_code) {
+        ⎇ self.config.output_file.is_some() {
+            ≔ output = self.config.output_file.unwrap();
+            ⌥ self.write_file(output, c_code) {
                 Result·Ok(_) => {},
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
-            ⎇ this.config.verbose {
+            ⎇ self.config.verbose {
                 println(format!("  Wrote: {}", output));
             }
         } ⎉ {
             print(c_code);
         }
 
-        ⎇ this.config.verbose {
+        ⎇ self.config.verbose {
             println("Done!");
         }
 
-        ⎇ this.errors.is_empty() {
+        ⎇ self.errors.is_empty() {
             Result·Ok(())
         } ⎉ {
-            this.print_errors();
+            self.print_errors();
             Result·Err(1)
         }
     }
@@ -805,29 +807,29 @@ rite infer_tome_path(input_file: !String) → ?String {
     /// Run with interpreter
     ///
     /// Uses multi-file compilation ∀ cross-module support.
-    rite interpret(vary this) → !Result<(), i32> {
-        ⎇ this.config.verbose {
+    λ interpret(Δ self) -> !Result<(), i32> {
+        ⎇ self.config.verbose {
             println("Sigil Interpreter - Jormungandr Bootstrap");
         }
 
         // Phase 1: Parse ALL files first
-        ≔ vary file_paths: ![String] = Vec·new();
-        ≔ vary asts: ![SourceFile] = Vec·new();
+        ≔ Δ file_paths = Vec·new();
+        ≔ Δ asts = Vec·new();
 
-        ≔ vary i = 0;
-        ⟳ i < this.config.input_files.len() {
-            ≔ file_path = this.config.input_files[i].clone();
-            ≔ source = ⌥ this.read_file(file_path.clone()) {
+        ≔ Δ i = 0;
+        ⟳ i < self.config.input_files.len() {
+            ≔ file_path = self.config.input_files[i].clone();
+            ≔ source = ⌥ self.read_file(file_path.clone()) {
                 Result·Ok(s) => s,
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
-            ≔ ast = ⌥ this.parse(file_path.clone(), source) {
+            ≔ ast = ⌥ self.parse(file_path.clone(), source) {
                 Result·Ok(a) => a,
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
@@ -837,11 +839,11 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
 
         // Phase 2: Build unified type environment
-        ≔ vary checker = TypeChecker·new();
+        ≔ Δ checker = TypeChecker·new();
 
-        ≔ vary j = 0;
+        ≔ Δ j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.collect_type_def(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -850,7 +852,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
         j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.collect_fn_sig(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -859,7 +861,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
         j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.check_item(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -868,7 +870,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
 
         // Phase 3: Lower and load modules
-        ≔ vary interpreter = Interpreter·new();
+        ≔ Δ interpreter = Interpreter·new();
 
         j = 0;
         ⟳ j < asts.len() {
@@ -877,11 +879,11 @@ rite infer_tome_path(input_file: !String) → ?String {
             ⌥ lower_file(ast, checker.clone(), file_path.clone()) {
                 Result·Ok(ir) => interpreter.load_module(ir),
                 Result·Err(errs) => {
-                    each err ∈ errs {
-                        this.errors.push(CompileError·new(err.message)
+                    ∀ err ∈ errs {
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(1);
                 },
             };
@@ -891,14 +893,14 @@ rite infer_tome_path(input_file: !String) → ?String {
         // Run main
         ⌥ interpreter.run() {
             Result·Ok(result) => {
-                ⎇ this.config.verbose {
+                ⎇ self.config.verbose {
                     println(format!("Result: {}", result.value.to_string()));
                 }
                 Result·Ok(())
             },
             Result·Err(err) => {
-                this.errors.push(CompileError·new(format!("runtime error: {}", err.message)));
-                this.print_errors();
+                self.errors.push(CompileError·new(format!("runtime error: {}", err.message)));
+                self.print_errors();
                 Result·Err(1)
             },
         }
@@ -907,29 +909,29 @@ rite infer_tome_path(input_file: !String) → ?String {
     /// Type check only
     ///
     /// Uses multi-file type checking ∀ cross-module support.
-    rite check(vary this) → !Result<(), i32> {
-        ⎇ this.config.verbose {
+    λ check(Δ self) -> !Result<(), i32> {
+        ⎇ self.config.verbose {
             println("Sigil Type Checker");
         }
 
         // Phase 1: Parse ALL files first
-        ≔ vary file_paths: ![String] = Vec·new();
-        ≔ vary asts: ![SourceFile] = Vec·new();
+        ≔ Δ file_paths = Vec·new();
+        ≔ Δ asts = Vec·new();
 
-        ≔ vary i = 0;
-        ⟳ i < this.config.input_files.len() {
-            ≔ file_path = this.config.input_files[i].clone();
-            ≔ source = ⌥ this.read_file(file_path.clone()) {
+        ≔ Δ i = 0;
+        ⟳ i < self.config.input_files.len() {
+            ≔ file_path = self.config.input_files[i].clone();
+            ≔ source = ⌥ self.read_file(file_path.clone()) {
                 Result·Ok(s) => s,
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
-            ≔ ast = ⌥ this.parse(file_path.clone(), source) {
+            ≔ ast = ⌥ self.parse(file_path.clone(), source) {
                 Result·Ok(a) => a,
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
@@ -939,12 +941,12 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
 
         // Phase 2: Build unified type environment and check
-        ≔ vary checker = TypeChecker·new();
+        ≔ Δ checker = TypeChecker·new();
 
         // Pass 1: Collect type definitions from ALL files
-        ≔ vary j = 0;
+        ≔ Δ j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.collect_type_def(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -955,7 +957,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         // Pass 2: Collect function signatures from ALL files
         j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.collect_fn_sig(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -966,11 +968,11 @@ rite infer_tome_path(input_file: !String) → ?String {
         // Pass 3: Check items ∈ ALL files
         j = 0;
         ⟳ j < asts.len() {
-            ⎇ this.config.verbose {
+            ⎇ self.config.verbose {
                 ≔ fp = file_paths[j].clone();
                 println(format!("  Checking: {}", fp));
             }
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.check_item(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -978,11 +980,11 @@ rite infer_tome_path(input_file: !String) → ?String {
             j = j + 1;
         }
 
-        ⎇ this.errors.is_empty() {
+        ⎇ self.errors.is_empty() {
             println("All files type check successfully!");
             Result·Ok(())
         } ⎉ {
-            this.print_errors();
+            self.print_errors();
             Result·Err(1)
         }
     }
@@ -990,25 +992,25 @@ rite infer_tome_path(input_file: !String) → ?String {
     /// Dump IR as JSON
     ///
     /// Uses multi-file compilation ∀ cross-module support.
-    rite dump_ir(vary this) → !Result<(), i32> {
+    λ dump_ir(Δ self) -> !Result<(), i32> {
         // Phase 1: Parse ALL files first
-        ≔ vary file_paths: ![String] = Vec·new();
-        ≔ vary asts: ![SourceFile] = Vec·new();
+        ≔ Δ file_paths = Vec·new();
+        ≔ Δ asts = Vec·new();
 
-        ≔ vary i = 0;
-        ⟳ i < this.config.input_files.len() {
-            ≔ file_path = this.config.input_files[i].clone();
-            ≔ source = ⌥ this.read_file(file_path.clone()) {
+        ≔ Δ i = 0;
+        ⟳ i < self.config.input_files.len() {
+            ≔ file_path = self.config.input_files[i].clone();
+            ≔ source = ⌥ self.read_file(file_path.clone()) {
                 Result·Ok(s) => s,
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
-            ≔ ast = ⌥ this.parse(file_path.clone(), source) {
+            ≔ ast = ⌥ self.parse(file_path.clone(), source) {
                 Result·Ok(a) => a,
                 Result·Err(code) => {
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(code);
                 },
             };
@@ -1018,11 +1020,11 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
 
         // Phase 2: Build unified type environment
-        ≔ vary checker = TypeChecker·new();
+        ≔ Δ checker = TypeChecker·new();
 
-        ≔ vary j = 0;
+        ≔ Δ j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.collect_type_def(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -1031,7 +1033,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
         j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.collect_fn_sig(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -1040,7 +1042,7 @@ rite infer_tome_path(input_file: !String) → ?String {
         }
         j = 0;
         ⟳ j < asts.len() {
-            ≔ vary k = 0;
+            ≔ Δ k = 0;
             ⟳ k < asts[j].items.len() {
                 checker.check_item(asts[j].items[k].node.clone());
                 k = k + 1;
@@ -1055,23 +1057,23 @@ rite infer_tome_path(input_file: !String) → ?String {
             ≔ ast = asts[j].clone();
             ⌥ lower_file(ast, checker.clone(), file_path.clone()) {
                 Result·Ok(ir) => {
-                    ≔ json = ir.to_json(yea);
-                    ⌥ this.config.output_file {
+                    ≔ json = ir.to_json(true);
+                    ⌥ self.config.output_file {
                         ?output => {
-                            ⌥ this.write_file(output, json) {
+                            ⌥ self.write_file(output, json) {
                                 Result·Ok(_) => {},
                                 Result·Err(code) => ⤺ Result·Err(code),
                             };
                         },
-                        null | Option·None => println(json),
+                        null => println(json),
                     }
                 },
                 Result·Err(errs) => {
-                    each err ∈ errs {
-                        this.errors.push(CompileError·new(err.message)
+                    ∀ err ∈ errs {
+                        self.errors.push(CompileError·new(err.message)
                             .with_file(file_path.clone()));
                     }
-                    this.print_errors();
+                    self.print_errors();
                     ⤺ Result·Err(1);
                 },
             };
@@ -1081,14 +1083,14 @@ rite infer_tome_path(input_file: !String) → ?String {
     }
 
     /// Dump AST
-    rite dump_ast(vary this) → !Result<(), i32> {
-        each file_path ∈ this.config.input_files {
-            ≔ source = this.read_file(file_path)?;
-            ≔ ast = this.parse(file_path, source)?;
+    λ dump_ast(Δ self) -> !Result<(), i32> {
+        ∀ file_path ∈ self.config.input_files {
+            ≔ source = self.read_file(file_path)?;
+            ≔ ast = self.parse(file_path, source)?;
 
             println(format!("=== AST ∀ {} ===", file_path));
             println(format!("Items: {}", ast.items.len()));
-            each item ∈ ast.items {
+            ∀ item ∈ ast.items {
                     ≔ name = item.node.kind_name();
                 println(format!("  - {}", name));
             }
@@ -1097,19 +1099,19 @@ rite infer_tome_path(input_file: !String) → ?String {
     }
 
     /// Dump tokens
-    rite dump_tokens(vary this) → !Result<(), i32> {
-        each file_path ∈ this.config.input_files {
-            ≔ source = this.read_file(file_path)?;
+    λ dump_tokens(Δ self) -> !Result<(), i32> {
+        ∀ file_path ∈ self.config.input_files {
+            ≔ source = self.read_file(file_path)?;
 
             println(format!("=== Tokens ∀ {} ===", file_path));
-            ≔ vary lexer = Lexer·new(source);
+            ≔ Δ lexer = Lexer·new(source);
 
-            forever {
+            loop {
                 ⌥ lexer.next_token() {
                     ?(tok, span) => {
                         println(format!("  {:?} @ {:?}", tok, span));
                     },
-                    null | Option·None => ⊲,
+                    null => break,
                 }
             }
         }
@@ -1121,18 +1123,18 @@ rite infer_tome_path(input_file: !String) → ?String {
     // ========================================================================
 
     /// Read a source file
-    rite read_file(vary this, path: !&str) → !Result<String, i32> {
+    λ read_file(Δ self, path: !&str) -> !Result<String, i32> {
         // In a real implementation, this would read from the filesystem
         // For now, we'll invoke a placeholder
         extern "C" {
-            rite sigil_read_file(path: *◆ u8, len: u64) → *vary u8;
-            rite sigil_file_len() → u64;
+            λ sigil_read_file(path: *const u8, len: u64) -> *Δ u8;
+            λ sigil_file_len() -> u64;
         }
 
         unsafe {
             ≔ content_ptr = sigil_read_file(path.as_ptr(), path.len());
             ⎇ content_ptr.is_null() {
-                this.errors.push(CompileError·new(format!("cannot read file: {}", path)));
+                self.errors.push(CompileError·new(format!("cannot read file: {}", path)));
                 ⤺ Result·Err(1);
             }
             ≔ len = sigil_file_len();
@@ -1142,10 +1144,10 @@ rite infer_tome_path(input_file: !String) → ?String {
     }
 
     /// Write output file
-    rite write_file(vary this, path: !&str, content: !String) → !Result<(), i32> {
+    λ write_file(Δ self, path: !&str, content: !String) -> !Result<(), i32> {
         extern "C" {
-            rite sigil_write_file(path: *◆ u8, path_len: u64,
-                               content: *◆ u8, content_len: u64) → bool;
+            λ sigil_write_file(path: *const u8, path_len: u64,
+                               content: *const u8, content_len: u64) -> bool;
         }
 
         unsafe {
@@ -1154,7 +1156,7 @@ rite infer_tome_path(input_file: !String) → ?String {
                 content.as_ptr(), content.len()
             );
             ⎇ !ok {
-                this.errors.push(CompileError·new(format!("cannot write file: {}", path)));
+                self.errors.push(CompileError·new(format!("cannot write file: {}", path)));
                 ⤺ Result·Err(1);
             }
         }
@@ -1162,35 +1164,35 @@ rite infer_tome_path(input_file: !String) → ?String {
     }
 
     /// Parse source code
-    rite parse(vary this, file: !&str, source: !String) → !Result<SourceFile, i32> {
-        ≔ vary parser = Parser·new(source.clone());
+    λ parse(Δ self, file: !&str, source: !String) -> !Result<SourceFile, i32> {
+        ≔ Δ parser = Parser·new(source.clone());
 
         ⌥ parser.parse_file() {
             Result·Ok(ast) => Result·Ok(ast),
             Result·Err(err) => {
-                ≔ vary compile_err = CompileError·new(err.message());
+                ≔ Δ compile_err = CompileError·new(err.message());
                 compile_err = compile_err.with_file(file.to_string());
                 compile_err = compile_err.with_source(source);
                 // Add span ⎇ available
                 ⎇ ≔ ?span = err.span() {
                     compile_err = compile_err.with_span(span);
                 }
-                this.errors.push(compile_err);
+                self.errors.push(compile_err);
                 Result·Err(1)
             },
         }
     }
 
     /// Lower AST to IR
-    rite lower(vary this, file: !&str, ast: !SourceFile) → !Result<IrModule, i32> {
+    λ lower(Δ self, file: !&str, ast: !SourceFile) -> !Result<IrModule, i32> {
         // Type check first
-        ≔ vary checker = TypeChecker·new();
+        ≔ Δ checker = TypeChecker·new();
         ⌥ checker.check_file(ast.clone()) {
             Result·Ok(_) => {},
             Result·Err(errs) => {
-                each err ∈ errs {
+                ∀ err ∈ errs {
                     eprintln(format!("Type error: {}", err.message));
-                    this.errors.push(CompileError·new(err.message)
+                    self.errors.push(CompileError·new(err.message)
                         .with_file(file.to_string()));
                 }
                 ⤺ Result·Err(1);
@@ -1201,8 +1203,8 @@ rite infer_tome_path(input_file: !String) → ?String {
         ⌥ lower_file(ast, checker, file.to_string()) {
             Result·Ok(ir) => Result·Ok(ir),
             Result·Err(errs) => {
-                each err ∈ errs {
-                    this.errors.push(CompileError·new(err.message)
+                ∀ err ∈ errs {
+                    self.errors.push(CompileError·new(err.message)
                         .with_file(file.to_string()));
                 }
                 Result·Err(1)
@@ -1211,12 +1213,12 @@ rite infer_tome_path(input_file: !String) → ?String {
     }
 
     /// Print collected errors
-    rite print_errors(this) {
-        each err ∈ this.errors {
+    λ print_errors(self) {
+        ∀ err ∈ self.errors {
             eprint(err.display());
         }
         eprintln("");
-        ≔ error_count = this.errors.len();
+        ≔ error_count = self.errors.len();
         eprintln(format!("{} error(s) found", error_count));
     }
 }
@@ -1226,8 +1228,7 @@ rite infer_tome_path(input_file: !String) → ?String {
 // ============================================================================
 
 /// Main entry point ∀ the compiler
-☉ rite main(args: ![String]) → !i32 {
-    println("Jormungandr compiler starting...");
+☉ λ main(args: ![String]) -> !i32 {
     // Parse configuration
     ≔ config = ⌥ Config·from_args(args) {
         Result·Ok(c) => c,
@@ -1238,7 +1239,7 @@ rite infer_tome_path(input_file: !String) → ?String {
     };
 
     // Run compiler
-    ≔ vary driver = Driver·new(config);
+    ≔ Δ driver = Driver·new(config);
     ⌥ driver.run() {
         Result·Ok(_) => 0,
         Result·Err(code) => code,
@@ -1251,10 +1252,10 @@ rite infer_tome_path(input_file: !String) → ?String {
 
 /// Print functions - implemented ∈ runtime (build.sh header)
 extern "C" {
-    rite print(s: !&str);
-    rite println(s: !&str);
-    rite eprint(s: !&str);
-    rite eprintln(s: !&str);
+    λ print(s: !&str);
+    λ println(s: !&str);
+    λ eprint(s: !&str);
+    λ eprintln(s: !&str);
 }
 
 // ============================================================================
@@ -1266,32 +1267,32 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    rite test_config_parse_compile() {
+    λ test_config_parse_compile() {
         ≔ args = ["compile", "test.sg", "-o", "test.c"];
         ≔ config = Config·from_args(args).unwrap();
-        ≔ is_compile = ⌥ config.mode { CompileMode·Compile => yea, _ => nay };
+        ≔ is_compile = ⌥ config.mode { CompileMode·Compile => true, _ => false };
         assert!(is_compile);
         assert_eq!(config.input_files, ["test.sg"]);
         assert_eq!(config.output_file, ?"test.c");
     }
 
     #[test]
-    rite test_config_parse_run() {
+    λ test_config_parse_run() {
         ≔ args = ["run", "test.sg"];
         ≔ config = Config·from_args(args).unwrap();
-        ≔ is_run = ⌥ config.mode { CompileMode·Run => yea, _ => nay };
+        ≔ is_run = ⌥ config.mode { CompileMode·Run => true, _ => false };
         assert!(is_run);
     }
 
     #[test]
-    rite test_config_verbose() {
+    λ test_config_verbose() {
         ≔ args = ["check", "-v", "test.sg"];
         ≔ config = Config·from_args(args).unwrap();
         assert!(config.verbose);
     }
 
     #[test]
-    rite test_error_display() {
+    λ test_error_display() {
         ≔ err = CompileError·new("type mismatch")
             .with_file("test.sg")
             .with_note("expected i64, found string");

@@ -1,8 +1,0 @@
-// Test: Parenthesized expressions
-// Spec: 02-SYNTAX.md § 3.6 Parenthesized Expressions
-// Priority: P0
-
-λ main() {
-    ≔ x: !i32 = (40 + 2) * 1;
-    println(x);
-}

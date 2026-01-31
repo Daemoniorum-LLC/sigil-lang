@@ -4,6 +4,9 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Privacy-first: Initialize consent before anything else
+  initPrivacyConsent();
+
   // Core functionality
   initTabs();
   initMobileNav();
@@ -1064,4 +1067,168 @@ function initBreadcrumbs() {
   }
 
   return { created: true, depth: crumbs.length };
+}
+
+/* ============================================
+   PRIVACY CONSENT - GDPR/CCPA Compliant
+   Philosophy: Privacy-first, respect DNT, clear choices
+   ============================================ */
+
+const CONSENT_KEY = 'sigil_analytics_consent';
+const CONSENT_TIMESTAMP_KEY = 'sigil_consent_timestamp';
+const GA_MEASUREMENT_ID = 'G-J7K2SF002F';
+
+/**
+ * Check if Do Not Track is enabled
+ */
+function isDNTEnabled() {
+  if (typeof navigator === 'undefined') return false;
+  return navigator.doNotTrack === '1' ||
+         navigator.doNotTrack === 'yes' ||
+         window.doNotTrack === '1';
+}
+
+/**
+ * Get current consent state
+ * Returns: 'granted' | 'denied' | 'pending'
+ */
+function getConsentState() {
+  // Always respect Do Not Track
+  if (isDNTEnabled()) return 'denied';
+
+  try {
+    const consent = localStorage.getItem(CONSENT_KEY);
+    const timestamp = localStorage.getItem(CONSENT_TIMESTAMP_KEY);
+
+    if (consent && timestamp) {
+      // Consent expires after 12 months (GDPR requirement)
+      const twelveMonths = 365 * 24 * 60 * 60 * 1000;
+      if (Date.now() - parseInt(timestamp, 10) > twelveMonths) {
+        localStorage.removeItem(CONSENT_KEY);
+        localStorage.removeItem(CONSENT_TIMESTAMP_KEY);
+        return 'pending';
+      }
+      return consent;
+    }
+    return 'pending';
+  } catch {
+    return 'pending';
+  }
+}
+
+/**
+ * Set consent state and update GA
+ */
+function setConsentState(granted) {
+  const status = granted ? 'granted' : 'denied';
+
+  try {
+    localStorage.setItem(CONSENT_KEY, status);
+    localStorage.setItem(CONSENT_TIMESTAMP_KEY, Date.now().toString());
+
+    // Update GA consent mode
+    if (window.gtag) {
+      window.gtag('consent', 'update', {
+        analytics_storage: status
+      });
+    }
+
+    // Initialize GA if consent granted
+    if (granted && !isDNTEnabled()) {
+      initGA4();
+    }
+  } catch (e) {
+    console.warn('[Privacy] Failed to save consent:', e);
+  }
+}
+
+/**
+ * Initialize GA4 with privacy-preserving settings
+ */
+function initGA4() {
+  if (typeof window.gtag !== 'function') return;
+
+  window.gtag('config', GA_MEASUREMENT_ID, {
+    anonymize_ip: true,
+    allow_google_signals: false,
+    allow_ad_personalization_signals: false
+  });
+}
+
+/**
+ * Initialize privacy consent banner
+ */
+function initPrivacyConsent() {
+  const consentState = getConsentState();
+
+  // If consent already decided, just initialize GA if granted
+  if (consentState === 'granted') {
+    initGA4();
+    return;
+  }
+
+  // If DNT enabled or already denied, don't show banner
+  if (consentState === 'denied') {
+    return;
+  }
+
+  // Show consent banner after slight delay to avoid flash
+  setTimeout(() => {
+    showConsentBanner();
+  }, 500);
+}
+
+/**
+ * Create and show the consent banner
+ */
+function showConsentBanner() {
+  const banner = document.createElement('div');
+  banner.className = 'privacy-banner';
+  banner.setAttribute('role', 'dialog');
+  banner.setAttribute('aria-labelledby', 'privacy-title');
+  banner.setAttribute('aria-describedby', 'privacy-desc');
+
+  banner.innerHTML = `
+    <div class="privacy-content">
+      <div class="privacy-text">
+        <h2 id="privacy-title" class="privacy-heading">Your Privacy Matters</h2>
+        <p id="privacy-desc" class="privacy-body">
+          We use analytics to understand how visitors interact with our site.
+          This helps us improve your experience. We never sell your data.
+          <a href="/pages/privacy.html" class="privacy-link">Privacy Policy</a>
+        </p>
+      </div>
+      <div class="privacy-actions">
+        <button class="privacy-btn privacy-accept">Accept Analytics</button>
+        <button class="privacy-btn privacy-decline">Decline</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(banner);
+
+  // Animate in
+  requestAnimationFrame(() => {
+    banner.classList.add('visible');
+  });
+
+  // Handle accept
+  banner.querySelector('.privacy-accept').addEventListener('click', () => {
+    setConsentState(true);
+    hideBanner(banner);
+  });
+
+  // Handle decline
+  banner.querySelector('.privacy-decline').addEventListener('click', () => {
+    setConsentState(false);
+    hideBanner(banner);
+  });
+}
+
+/**
+ * Hide and remove the consent banner
+ */
+function hideBanner(banner) {
+  banner.classList.remove('visible');
+  setTimeout(() => banner.remove(), 300);
 }

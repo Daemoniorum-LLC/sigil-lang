@@ -3,12 +3,12 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that logical AND (∧) works correctly.
+// Validates that logical AND (&&) works correctly.
 //
 // Expected behavior:
-// Should compile and print yea
+// Should compile and print true
 
-rite main() {
-    ≔ x: !bool = yea ∧ yea;
+λ main() {
+    ≔ x: !bool = true && true;
     println(x);
 }

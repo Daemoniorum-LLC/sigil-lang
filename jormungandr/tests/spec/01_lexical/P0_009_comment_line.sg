@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print 42
 
-rite main() {
+λ main() {
     // This is a comment
     ≔ x: !i32 = 42; // Another comment
     println(x);

@@ -1,8 +1,8 @@
-// Test: Integer/float type coercion of math
+// Test: Integer/float type coercion ∈ math
 // Spec: 05-MATHEMATICS.md § 5.2 Type Coercion
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     // Int + float
     ≔ a: !f64 = 5 + 2.5;
     println(a);
@@ -19,7 +19,7 @@ rite main() {
     ≔ d: !f64 = 10.0 / 4;
     println(d);
 
-    // Mixed of function
+    // Mixed ∈ function
     ≔ e: !f64 = pow(2, 0.5);
     println(e);
 }

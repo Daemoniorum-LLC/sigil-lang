@@ -2,7 +2,7 @@
 // Spec: 04-MEMORY.md § 4.4 Weak
 // Priority: P1 - Production Ready
 
-rite main() {
+λ main() {
     ≔ rc: Rc<i32> = Rc·new(100);
 
     // Downgrade to weak

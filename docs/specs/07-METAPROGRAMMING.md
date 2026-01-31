@@ -21,10 +21,6 @@ Metaprogramming in Sigil embraces the language's occult aesthetic. Code that wri
 
 Runes are pattern-matching transformations — symbolic recipes that expand into code.
 
-> **Note:** This section documents rune **syntax and usage**. For the algorithmic semantics
-> of how runes are expanded (pattern matching, substitution, hygiene), see
-> [07A-RUNE-EXPANSION.md](./07A-RUNE-EXPANSION.md).
-
 ### 2.1 Basic Rune Definition
 
 ```sigil
@@ -151,83 +147,6 @@ rune define_var! {
 define_var!(x = 42)
 print!(x)  // Works: x is visible
 ```
-
-### 2.6 Pipe-Invoked Runes
-
-Runes can be invoked in pipe position, receiving the piped value as implicit
-first argument. This enables fluent validation, transformation, and assertion
-patterns.
-
-```sigil
-// Define a validation rune
-rune validate! {
-    // Single field validation
-    ($field:ident : $constraint:expr) => {
-        if !($constraint)(&self.$field) {
-            return Err(ValidationError::field(stringify!($field)))
-        }
-    }
-
-    // Multiple field validations in block form
-    ({ $($field:ident : $constraint:expr),+ $(,)? }) => {
-        $(
-            if !($constraint)(&self.$field) {
-                return Err(ValidationError::field(stringify!($field)))
-            }
-        )+
-    }
-}
-
-// Traditional rune invocation
-validate!(name: non_empty)
-
-// Pipe-invoked rune: piped value becomes implicit context
-let validated! = request~|validate!{
-    prompt: non_empty && max_len(100000),
-    max_tokens: range(1, 4096),
-    temperature: range(0.0, 2.0),
-}
-```
-
-**Semantics:**
-
-```sigil
-// Pipe-invoked rune
-value|rune!{ args }
-
-// Desugars to rune invocation with value as implicit first capture
-rune!(__pipe_value: value, { args })
-
-// The rune can access the piped value via $__pipe or contextual binding
-```
-
-**Use cases:**
-
-```sigil
-// Assertion runes
-result|assert!{ is_ok, "operation should succeed" }
-
-// Builder patterns
-config|with!{
-    timeout: 30,
-    retries: 3,
-}
-
-// Evidentiality transitions (~ → !)
-external_data~|verify!{
-    schema: UserSchema,
-    sanitize: true,
-}  // Returns verified data!
-
-// Debugging
-complex_expr|dbg!{ label: "checkpoint" }
-```
-
-**Rules:**
-1. Piped value is available as implicit context within the rune
-2. Block form `|rune!{...}` passes block contents as structured argument
-3. Parenthesis form `|rune!(...)` works like normal pipe with rune
-4. Rune must be defined to accept pipe context (via `$__pipe` or design)
 
 ---
 

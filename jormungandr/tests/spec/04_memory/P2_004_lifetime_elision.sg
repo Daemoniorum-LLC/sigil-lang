@@ -2,12 +2,12 @@
 // Spec: 04-MEMORY.md § 7.1 Lifetime Elision
 // Priority: P2 - Enhancement
 
-rite get_first(s: &String) → &String {
+λ first(s: &String) -> &String {
     s
 }
 
-rite main() {
+λ main() {
     ≔ s = String·from("hello");
-    ≔ r = get_first(&s);
+    ≔ r = first(&s);
     println(r);
 }

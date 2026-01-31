@@ -1,0 +1,24 @@
+// Test: Kafka consumer
+// Spec: 15-PROTOCOLS.md § 7 Kafka Support
+// Priority: P1 - Important Feature
+//
+// REAL IMPLEMENTATION: This test uses the pure Sigil Kafka wire protocol.
+// Requires: ./infrastructure/infra.sh up
+// If Kafka is not running, this test will fail with a connection error.
+
+invoke protocol·kafka·{Producer, Consumer, Topic};
+
+async λ main() {
+    // First, produce a message to consume
+    ≔ producer = Producer·connect("localhost:9092")|await~;
+    ≔ topic = Topic·new("sigil-consumer-test");
+    producer.send(topic, "test-key", "hello from producer")|await;
+
+    // Now consume the message
+    ≔ consumer = Consumer·connect("localhost:9092")|await~;
+    consumer.subscribe(["sigil-consumer-test"]);
+    ≔ records = consumer.poll(5000)|await~;
+
+    // Consumer setup and poll worked
+    println(1);
+}

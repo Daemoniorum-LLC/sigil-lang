@@ -1,9 +1,9 @@
-// Test: For forever with range
+// Test: For loop with range
 // Spec: 02-SYNTAX.md § 5.6 For
 // Priority: P2 - Enhancement
 
-rite main() {
-    each i of 0..5 {
+λ main() {
+    ∀ i ∈ 0..5 {
         println(i);
     }
 }

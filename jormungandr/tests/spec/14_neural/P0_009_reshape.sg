@@ -2,10 +2,11 @@
 // Spec: 14-NEURAL.md § 2.3 Shape Operations
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
-    ≔ a: Tensor<[2, 3, 4]> = randn();
-    ≔ b: Tensor<[6, 4]> = a|reshape([6, 4]);
-    ≔ c: Tensor<[24]> = a|flatten;
+λ main() {
+    // Pass shape explicitly to constructor
+    ≔ a = randn([2, 3, 4]);
+    ≔ b = a|reshape([6, 4]);
+    ≔ c = a|flatten;
     println(b.shape[0]);
     println(c.shape[0]);
 }

@@ -3,17 +3,17 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate sigil update syntax works.
+// Validate Σ update syntax works.
 //
 // Expected behavior:
 // Should print 99 (updated field)
 
-☉ sigil Point {
+☉ Σ Point {
     x: !i32,
     y: !i32
 }
 
-rite main() {
+λ main() {
     ≔ p1: !Point = Point { x: 42, y: 13 };
     ≔ p2: !Point = Point { x: 99, ..p1 };
     println(p2.x);

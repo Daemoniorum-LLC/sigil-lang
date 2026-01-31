@@ -1,6 +1,6 @@
 // Test: String push_str method
-rite main() {
-    ≔ vary s: !String = "Hello";
+λ main() {
+    ≔ Δ s: !String = "Hello";
     s.push_str(", ");
     s.push_str("World");
     s.push_str("!");

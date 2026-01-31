@@ -4,11 +4,7 @@
 // This module integrates nihil-embed to provide:
 // - Semantic search over reasoning steps
 // - Evidence similarity matching
-<<<<<<< HEAD
-// - Code snippet indexing for context retrieval
-=======
 // - Code snippet indexing ∀ context retrieval
->>>>>>> origin/main
 // - "Find similar decisions" functionality
 
 invoke nihil_embed·{
@@ -22,19 +18,6 @@ invoke shared·{Timestamp, Confidence};
 // Semantic Configuration
 // ============================================================================
 
-<<<<<<< HEAD
-/// Configuration for semantic indexing
-☉ sigil SemanticConfig {
-    /// Embedding dimension (384 for small, 768 for base)
-    ☉ embedding_dim: usize,
-    /// Pooling strategy: "cls", "mean", "max"
-    ☉ pooling: String,
-    /// Minimum similarity threshold for results
-    ☉ similarity_threshold: f32,
-    /// Maximum results to return
-    ☉ max_results: usize,
-    /// Vocabulary size for tokenizer
-=======
 /// Configuration ∀ semantic indexing
 ☉ sigil SemanticConfig {
     /// Embedding dimension (384 ∀ small, 768 ∀ base)
@@ -46,7 +29,6 @@ invoke shared·{Timestamp, Confidence};
     /// Maximum results to return
     ☉ max_results: usize,
     /// Vocabulary size ∀ tokenizer
->>>>>>> origin/main
     ☉ vocab_size: usize,
     /// Maximum sequence length
     ☉ max_seq_len: usize,
@@ -65,11 +47,7 @@ invoke shared·{Timestamp, Confidence};
         }
     }
 
-<<<<<<< HEAD
-    /// Configuration for base model
-=======
     /// Configuration ∀ base model
->>>>>>> origin/main
     ☉ rite base() → This {
         This {
             embedding_dim: 768,
@@ -118,11 +96,7 @@ invoke shared·{Timestamp, Confidence};
     ☉ similarity: f32,
     /// Type of result
     ☉ result_type: ResultType,
-<<<<<<< HEAD
-    /// Timestamp when indexed (if available)
-=======
     /// Timestamp when indexed (⎇ available)
->>>>>>> origin/main
     ☉ indexed_at: Option<Timestamp>,
 }
 
@@ -147,30 +121,11 @@ invoke shared·{Timestamp, Confidence};
 // Semantic Index
 // ============================================================================
 
-<<<<<<< HEAD
-/// Semantic index for Oracle's reasoning traces and evidence.
-=======
 /// Semantic index ∀ Oracle's reasoning traces and evidence.
->>>>>>> origin/main
 ///
 /// Maintains three separate indices:
 /// - Reasoning steps from traces
 /// - Evidence items from explanations
-<<<<<<< HEAD
-/// - Code snippets for context retrieval
-☉ sigil SemanticIndex {
-    /// Index for reasoning steps
-    reasoning_index: EmbeddingIndex,
-    /// Index for evidence
-    evidence_index: EmbeddingIndex,
-    /// Index for code snippets
-    code_index: EmbeddingIndex,
-    /// Configuration
-    config: SemanticConfig,
-    /// Tokenizer for text processing
-    tokenizer: CodeTokenizer,
-    /// Pooler for sequence aggregation
-=======
 /// - Code snippets ∀ context retrieval
 ☉ sigil SemanticIndex {
     /// Index ∀ reasoning steps
@@ -184,7 +139,6 @@ invoke shared·{Timestamp, Confidence};
     /// Tokenizer ∀ text processing
     tokenizer: CodeTokenizer,
     /// Pooler ∀ sequence aggregation
->>>>>>> origin/main
     pooler: Pooler,
     /// Content storage (index → content)
     reasoning_content: Vec<String>,
@@ -251,24 +205,15 @@ invoke shared·{Timestamp, Confidence};
     // Embedding Generation (Simplified)
     // ========================================================================
 
-<<<<<<< HEAD
-    /// Generate embedding for text
-    /// Note: In production, this would use a transformer model.
-=======
     /// Generate embedding ∀ text
     /// Note: In production, this would invoke a transformer model.
->>>>>>> origin/main
     /// This simplified version uses token statistics as a proxy.
     rite embed_text(&this, text: &str) → Embedding {
         ≔ tokens = this.tokenizer.tokenize(text);
         ≔ dim = this.config.embedding_dim;
 
         // Create simple embedding from token distribution
-<<<<<<< HEAD
-        // Production would use transformer encoder here
-=======
         // Production would invoke transformer encoder here
->>>>>>> origin/main
         ≔ vary data = vec![0.0; dim];
         each (i, &token) of tokens.iter().enumerate() {
             ≔ idx = (token + i) % dim;
@@ -495,11 +440,7 @@ invoke shared·{Timestamp, Confidence};
 }
 
 // ============================================================================
-<<<<<<< HEAD
-// Tests (inline for now)
-=======
 // Tests (inline ∀ now)
->>>>>>> origin/main
 // ============================================================================
 
 #[cfg(test)]

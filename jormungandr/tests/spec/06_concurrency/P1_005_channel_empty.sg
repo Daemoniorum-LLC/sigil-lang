@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 2.4 Non-blocking Receive
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     ≔ ch = channel_new();
 
     // Try to receive from empty channel - should ⤺ None

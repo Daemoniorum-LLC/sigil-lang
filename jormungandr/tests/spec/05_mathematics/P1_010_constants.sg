@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 4.1 Constants
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     // PI - approximately 3.14159...
     ≔ pi: !f64 = PI();
     ⎇ pi > 3.14 {

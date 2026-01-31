@@ -1,22 +1,22 @@
-// Test: Method returning This each builder pattern
-// Spec: Feature Interaction - Methods + This
+// Test: Method returning Self ∀ builder pattern
+// Spec: Feature Interaction - Methods + Self
 // Priority: P0 - Bootstrap Critical
 
-sigil Builder {
+Σ Builder {
     value: i32,
 }
 
 ⊢ Builder {
-    rite new() → Builder {
+    λ new() -> Builder {
         ⤺ Builder { value: 0 };
     }
 
-    rite with_value(this, v: i32) → Builder {
+    λ with_value(self, v: i32) -> Builder {
         ⤺ Builder { value: v };
     }
 }
 
-rite main() {
+λ main() {
     ≔ b = Builder·new().with_value(42);
     println(b.value);
 }

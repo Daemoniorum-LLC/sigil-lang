@@ -2,7 +2,7 @@
 // Spec: 09-STDLIB.md § 3.2 Result
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ ok: Result<i32, String> = Result·Ok(21);
 
     ≔ doubled = ok.map(|x| x * 2);

@@ -10,7 +10,7 @@
 // When adding a Known value and a Reported value, the result
 // should have Reported evidence. Should print 119 (42 + 77).
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 42;
     ≔ y: ~i32 = 77;
     ≔ z = x + y;  // Should be ~i32

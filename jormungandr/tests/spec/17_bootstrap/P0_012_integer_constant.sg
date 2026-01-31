@@ -1,7 +1,7 @@
-// Test: Integer constant of C code
+// Test: Integer constant ∈ C code
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.4 Constants
 // Priority: P0
 
-rite main() {
+λ main() {
     println(42);
 }

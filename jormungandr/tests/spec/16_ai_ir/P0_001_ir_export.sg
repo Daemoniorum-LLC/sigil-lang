@@ -1,14 +1,12 @@
-// Test: Export IR (mock)
+// Test: Export IR as JSON
 // Spec: 16-AI-IR.md § Top-Level Structure
 // Priority: P0 - Bootstrap Critical
-//
-// Tests IR export concept - expects 2 functions (add + main)
 
-rite add(a: i32, b: i32) → i32 {
+λ add(a: !i32, b: !i32) -> !i32 {
     a + b
 }
 
-rite main() {
-    // Mock: IR would have 2 functions
-    println(2);
+λ main() {
+    ≔ ir = __export_ir();  // Compiler intrinsic
+    println(ir.functions.len());
 }

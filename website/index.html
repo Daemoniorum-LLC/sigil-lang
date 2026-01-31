@@ -5,13 +5,23 @@
   <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
-    gtag('consent', 'default', { 'analytics_storage': 'denied' });
+
+    // Default: deny analytics until user consents
+    gtag('consent', 'default', {
+      'analytics_storage': 'denied'
+    });
+
+    // Initialize GA4 after consent is granted
     function initGA4() {
       gtag('consent', 'update', { 'analytics_storage': 'granted' });
       gtag('js', new Date());
       gtag('config', 'G-J7K2SF002F');
     }
-    if (localStorage.getItem('analytics_consent') === 'granted') { initGA4(); }
+
+    // Check for existing consent
+    if (localStorage.getItem('analytics_consent') === 'granted') {
+      initGA4();
+    }
   </script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-J7K2SF002F"></script>
 
@@ -32,15 +42,9 @@
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Sigil - Infrastructure for AI Minds">
-  <meta name="twitter:description" content="A programming language designed for AI agents. Evidentiality markers track data provenance.">
+  <meta name="twitter:description" content="A programming language designed for AI agents. Evidentiality markers track data provenance. 9-layer infrastructure for memory, planning, and collaboration.">
   <meta name="twitter:image" content="https://sigil-lang.com/images/og-image.png">
 
-<<<<<<< HEAD
-  <!-- Favicons -->
-  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png">
-=======
   <!-- JSON-LD Structured Data -->
   <script type="application/ld+json">
   {
@@ -69,166 +73,21 @@
   <!-- Favicons & PWA -->
   <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
   <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
->>>>>>> origin/main
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#14A088">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <!-- Fonts -->
+  <!-- Fonts & Styles -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-
-  <style>
-    :root {
-      --bg-primary: #050507;
-      --bg-secondary: #0a0a0d;
-      --bg-tertiary: #111115;
-      --text-primary: #e8e8ec;
-      --text-secondary: #a0a0aa;
-      --text-muted: #6c6c76;
-      --accent: #14A088;
-      --accent-light: #1AB89D;
-      --accent-dark: #0E6B5C;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    html, body {
-      height: 100%;
-      font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      line-height: 1.6;
-    }
-
-    #app { min-height: 100vh; }
-
-    #status {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      padding: 0.5rem 1rem;
-      background: var(--bg-secondary);
-      border-top: 1px solid rgba(20, 160, 136, 0.3);
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.75rem;
-      z-index: 1000;
-      text-align: center;
-      color: var(--text-secondary);
-    }
-
-    .app { padding: 2rem; max-width: 1200px; margin: 0 auto; padding-bottom: 4rem; }
-
-    .site-nav {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 0;
-      border-bottom: 1px solid var(--bg-tertiary);
-    }
-
-    .brand { font-size: 1.5rem; font-weight: 700; color: var(--accent); text-decoration: none; }
-    .brand:hover { color: var(--accent-light); }
-
-    .nav-links { display: flex; gap: 1.5rem; align-items: center; }
-    .nav-link { color: var(--text-secondary); text-decoration: none; transition: color 0.2s; }
-    .nav-link:hover { color: var(--accent); }
-    .version-badge {
-      background: var(--accent-dark);
-      color: var(--text-primary);
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.25rem;
-      font-size: 0.75rem;
-    }
-
-    .announcement-banner {
-      background: linear-gradient(90deg, var(--accent-dark), var(--accent));
-      padding: 0.75rem 1rem;
-      text-align: center;
-      margin-bottom: 2rem;
-      border-radius: 0.5rem;
-    }
-    .badge {
-      background: rgba(0,0,0,0.2);
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.25rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      margin-right: 0.5rem;
-    }
-
-    .hero { text-align: center; padding: 4rem 0; }
-    .hero h1 { font-size: 4rem; color: var(--accent); margin-bottom: 1rem; }
-    .tagline { font-size: 1.5rem; color: var(--text-primary); margin-bottom: 0.5rem; }
-    .subtitle { color: var(--text-secondary); margin-bottom: 2rem; }
-
-    .ev-display { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
-    .ev {
-      padding: 0.5rem 1rem;
-      border-radius: 0.5rem;
-      font-family: 'IBM Plex Mono', monospace;
-    }
-    .ev-known { background: rgba(20, 160, 136, 0.15); color: #14A088; }
-    .ev-uncertain { background: rgba(212, 160, 23, 0.15); color: #D4A017; }
-    .ev-reported { background: rgba(107, 155, 209, 0.15); color: #6B9BD1; }
-
-    .features-section { padding: 3rem 0; }
-    .features-section h2 { text-align: center; margin-bottom: 2rem; color: var(--accent); }
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 1.5rem;
-    }
-    .feature-card {
-      background: var(--bg-secondary);
-      padding: 1.5rem;
-      border-radius: 0.5rem;
-      border: 1px solid var(--bg-tertiary);
-    }
-    .feature-card h3 { color: var(--accent); margin-bottom: 0.5rem; }
-    .feature-card p { color: var(--text-secondary); font-size: 0.9rem; }
-
-    .code-section { padding: 3rem 0; }
-    .code-section h2 { text-align: center; margin-bottom: 1rem; color: var(--accent); }
-    .code-desc { text-align: center; color: var(--text-secondary); margin-bottom: 1.5rem; }
-    .code-block {
-      background: var(--bg-secondary);
-      padding: 1.5rem;
-      border-radius: 0.5rem;
-      overflow-x: auto;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.9rem;
-      line-height: 1.8;
-      white-space: pre;
-    }
-
-    .site-footer {
-      text-align: center;
-      padding: 2rem 0;
-      border-top: 1px solid var(--bg-tertiary);
-      color: var(--text-muted);
-      margin-top: 3rem;
-    }
-
-    @media (max-width: 768px) {
-      .hero h1 { font-size: 2.5rem; }
-      .tagline { font-size: 1.2rem; }
-      .nav-links { gap: 0.75rem; }
-      .app { padding: 1rem; }
-    }
-  </style>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <div id="status">Loading WASM...</div>
-  <div id="app"></div>
+  <!-- Skip to content for accessibility -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
 
-<<<<<<< HEAD
-  <script type="module">
-    import { SigilRuntime } from './sigil_runtime.js';
-
-    const status = document.getElementById('status');
-=======
   <!-- Fixed Point Announcement Banner -->
   <aside class="announcement-banner" role="banner" aria-label="Sigil 0.3.0 announcement">
     <div class="announcement-container">
@@ -251,29 +110,35 @@
         <span class="logo-text">Sigil</span>
         <span class="version-badge">0.3</span>
       </a>
->>>>>>> origin/main
 
-    async function run() {
-      try {
-        status.textContent = 'Initializing runtime...';
+      <div class="nav-links" id="nav-links">
+        <a href="/pages/learn.html">Learn</a>
+        <a href="/pages/docs.html">Docs</a>
+        <a href="/playground/">Playground</a>
+        <a href="/pages/agents.html">Agents</a>
+        <a href="/pages/pattern.html">The Pattern</a>
+        <a href="https://github.com/Daemoniorum-LLC/sigil-lang" class="nav-github" aria-label="GitHub repository" rel="noopener noreferrer" target="_blank">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+        </a>
+      </div>
 
-        const runtime = new SigilRuntime();
-        const response = await fetch('./site.wasm');
-        const bytes = await response.arrayBuffer();
+      <button class="nav-toggle" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="nav-links">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </nav>
 
-        status.textContent = 'Instantiating WASM...';
-        const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
-        runtime.init(instance);
+  <main id="main-content">
+    <!-- Hero -->
+    <header class="hero">
+      <div class="hero-container">
+        <h1 class="hero-title">Sigil</h1>
+        <p class="hero-tagline">A programming language that knows which data to trust.</p>
 
-<<<<<<< HEAD
-        status.textContent = 'Rendering...';
-        if (instance.exports.main) {
-          instance.exports.main();
-          status.textContent = 'Rendered via Sigil → WASM (6.3KB)';
-          status.style.borderTopColor = '#14A088';
-        } else {
-          status.textContent = 'No main() export found';
-=======
         <div class="hero-solution">
           <p>Sigil tracks <em>data provenance</em> in the type system:</p>
           <ul class="evidence-list">
@@ -730,18 +595,17 @@
         <span class="keyword">let</span> clean = text.trim();
         <span class="keyword">if</span> clean.is_empty() {
             <span class="keyword">return</span> <span class="type">Err</span>(<span class="type">Error</span>::Empty);
->>>>>>> origin/main
         }
-      } catch (error) {
-        status.textContent = `Error: ${error.message}`;
-        status.style.color = '#D47171';
-        console.error('WASM Error:', error);
-      }
+        <span class="keyword">let</span> todo = <span class="type">Todo</span> {
+            id: self.next_id,
+            text: clean.to_string(),
+            done: <span class="keyword">false</span>,
+        };
+        self.todos.push(todo.clone());
+        self.next_id += <span class="number">1</span>;
+        <span class="type">Ok</span>(todo)
     }
 
-<<<<<<< HEAD
-    run();
-=======
     <span class="keyword">fn</span> <span class="function">toggle</span>(&<span class="keyword">mut</span> self, id: <span class="type">u64</span>) -> <span class="type">Option</span>&lt;&<span class="type">Todo</span>&gt; {
         <span class="keyword">if let</span> <span class="type">Some</span>(todo) = self.todos.iter_mut()
             .find(|t| t.id == id) {
@@ -1122,7 +986,6 @@ Hello, World!</code></pre>
           .catch(err => console.log('SW registration failed:', err));
       });
     }
->>>>>>> origin/main
   </script>
 </body>
 </html>

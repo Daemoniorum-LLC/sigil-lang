@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Integer Limits
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ max: i32 = 2147483647;  // i32·MAX
     println(max);
 }

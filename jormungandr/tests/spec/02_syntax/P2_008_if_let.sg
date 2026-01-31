@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 5.2 If Let
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ opt: Option<i32> = Option·Some(42);
 
     ⎇ ≔ Option·Some(x) = opt {

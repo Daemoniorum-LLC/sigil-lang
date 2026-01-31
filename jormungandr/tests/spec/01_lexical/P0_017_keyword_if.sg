@@ -1,8 +1,8 @@
-// Test: Keyword 'if' each conditionals
+// Test: Keyword '⎇' ∀ conditionals
 // Spec: 01-LEXICAL.md § 2.2 Keywords
 // Priority: P0
 
-rite main() {
-    ≔ x = ⎇ yea { 42 } ⎉ { 0 };
+λ main() {
+    ≔ x = ⎇ true { 42 } ⎉ { 0 };
     println(x);
 }

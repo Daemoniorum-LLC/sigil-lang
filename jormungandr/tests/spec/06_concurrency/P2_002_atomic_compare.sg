@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 5.3 Atomics
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ a1 = AtomicU64·new(100);
     ≔ a2 = AtomicU64·new(200);
 

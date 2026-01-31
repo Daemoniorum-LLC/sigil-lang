@@ -1,36 +1,13 @@
-<<<<<<< HEAD
-//! Tests for Gnosis Learning Engine
-//!
-//! Verifies LearningEngine, Pattern, Lesson, and learning mechanics.
-
-use std::collections::HashMap;
-=======
 //! Tests ∀ Gnosis Learning Engine
 //!
 //! Verifies LearningEngine, Pattern, Lesson, and learning mechanics.
 
 invoke std·collections·HashMap;
->>>>>>> origin/main
 
 // ============================================================================
 // Self-contained Test Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct Duration { nanos: u64 }
-impl Duration { pub fn zero() -> Self { Self { nanos: 0 } } }
-impl Copy for Duration {}
-impl Clone for Duration { fn clone(&self) -> Self { *self } }
-
-pub struct Timestamp { nanos: u64 }
-impl Timestamp {
-    pub fn now() -> Self { Self { nanos: 1000 } }
-    pub fn from_nanos(n: u64) -> Self { Self { nanos: n } }
-}
-
-impl PartialOrd for Timestamp {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-=======
 ☉ Σ Duration { nanos: u64 }
 ⊢ Duration { ☉ λ zero() -> Self { Self { nanos: 0 } } }
 ⊢ Copy ∀ Duration {}
@@ -44,44 +21,10 @@ impl PartialOrd for Timestamp {
 
 ⊢ PartialOrd ∀ Timestamp {
     λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
->>>>>>> origin/main
         self.nanos.partial_cmp(&other.nanos)
     }
 }
 
-<<<<<<< HEAD
-impl PartialEq for Timestamp {
-    fn eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
-}
-
-pub struct ExperienceId { id: String }
-impl ExperienceId { pub fn generate() -> Self { Self { id: "exp".to_string() } } }
-impl Clone for ExperienceId { fn clone(&self) -> Self { Self { id: self.id.clone() } } }
-
-pub struct HumanId { id: String }
-impl HumanId { pub fn new(id: &str) -> Self { Self { id: id.to_string() } } }
-impl Clone for HumanId { fn clone(&self) -> Self { Self { id: self.id.clone() } } }
-
-pub struct Confidence { value: f64 }
-impl Confidence {
-    pub fn new(v: f64) -> Self { Self { value: v.clamp(0.0, 1.0) } }
-    pub fn zero() -> Self { Self { value: 0.0 } }
-    pub fn value(&self) -> f64 { self.value }
-}
-
-#[derive(Clone)]
-pub struct Context {
-    pub task_type: String,
-    pub domain: Option<String>,
-}
-
-impl Context {
-    pub fn new(task_type: &str) -> Self {
-        Self { task_type: task_type.to_string(), domain: None }
-    }
-
-    pub fn with_domain(mut self, domain: &str) -> Self {
-=======
 ⊢ PartialEq ∀ Timestamp {
     λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
 }
@@ -113,42 +56,20 @@ impl Context {
     }
 
     ☉ λ with_domain(Δ self, domain: &str) -> Self {
->>>>>>> origin/main
         self.domain = Some(domain.to_string());
         self
     }
 
-<<<<<<< HEAD
-    pub fn similar_to(&self, other: &Context) -> bool {
-        self.task_type == other.task_type
-    }
-
-    pub fn matches(&self, other: &Context) -> bool {
-=======
     ☉ λ similar_to(&self, other: &Context) -> bool {
         self.task_type == other.task_type
     }
 
     ☉ λ matches(&self, other: &Context) -> bool {
->>>>>>> origin/main
         self.task_type == other.task_type && self.domain == other.domain
     }
 }
 
 #[derive(Clone)]
-<<<<<<< HEAD
-pub struct Action {
-    pub approach: String,
-    pub skills: Vec<String>,
-}
-
-impl Action {
-    pub fn new(approach: &str) -> Self {
-        Self { approach: approach.to_string(), skills: vec![] }
-    }
-
-    pub fn with_skill(mut self, skill: &str) -> Self {
-=======
 ☉ Σ Action {
     ☉ approach: String,
     ☉ skills: Vec<String>,
@@ -160,31 +81,12 @@ impl Action {
     }
 
     ☉ λ with_skill(Δ self, skill: &str) -> Self {
->>>>>>> origin/main
         self.skills.push(skill.to_string());
         self
     }
 }
 
 #[derive(Clone)]
-<<<<<<< HEAD
-pub struct ExperienceOutcome {
-    pub success: bool,
-    pub quality: f32,
-    pub unexpected: bool,
-}
-
-impl ExperienceOutcome {
-    pub fn success(quality: f32) -> Self {
-        Self { success: true, quality: quality.clamp(0.0, 1.0), unexpected: false }
-    }
-
-    pub fn failure() -> Self {
-        Self { success: false, quality: 0.0, unexpected: false }
-    }
-
-    pub fn unexpected(quality: f32) -> Self {
-=======
 ☉ Σ ExperienceOutcome {
     ☉ success: bool,
     ☉ quality: f32,
@@ -201,30 +103,11 @@ impl ExperienceOutcome {
     }
 
     ☉ λ unexpected(quality: f32) -> Self {
->>>>>>> origin/main
         Self { success: true, quality, unexpected: true }
     }
 }
 
 #[derive(Clone)]
-<<<<<<< HEAD
-pub struct Experience {
-    pub id: ExperienceId,
-    pub context: Context,
-    pub action: Action,
-    pub outcome: ExperienceOutcome,
-    pub timestamp: Timestamp,
-}
-
-impl Experience {
-    pub fn new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
-        Self {
-            id: ExperienceId::generate(),
-            context,
-            action,
-            outcome,
-            timestamp: Timestamp::now(),
-=======
 ☉ Σ Experience {
     ☉ id: ExperienceId,
     ☉ context: Context,
@@ -241,34 +124,18 @@ impl Experience {
             action,
             outcome,
             timestamp: Timestamp·now(),
->>>>>>> origin/main
         }
     }
 }
 
 #[derive(Clone)]
-<<<<<<< HEAD
-pub enum LessonType {
-=======
 ☉ ᛈ LessonType {
->>>>>>> origin/main
     EffectiveApproach,
     IneffectiveApproach,
     SurprisingOutcome,
     FeedbackLearning,
 }
 
-<<<<<<< HEAD
-pub struct Lesson {
-    pub context: Context,
-    pub approach: String,
-    pub effectiveness: f32,
-    pub lesson_type: LessonType,
-}
-
-impl Lesson {
-    pub fn effective(context: Context, approach: &str, effectiveness: f32) -> Self {
-=======
 ☉ Σ Lesson {
     ☉ context: Context,
     ☉ approach: String,
@@ -278,37 +145,19 @@ impl Lesson {
 
 ⊢ Lesson {
     ☉ λ effective(context: Context, approach: &str, effectiveness: f32) -> Self {
->>>>>>> origin/main
         Self {
             context,
             approach: approach.to_string(),
             effectiveness,
-<<<<<<< HEAD
-            lesson_type: LessonType::EffectiveApproach,
-        }
-    }
-
-    pub fn ineffective(context: Context, approach: &str) -> Self {
-=======
             lesson_type: LessonType·EffectiveApproach,
         }
     }
 
     ☉ λ ineffective(context: Context, approach: &str) -> Self {
->>>>>>> origin/main
         Self {
             context,
             approach: approach.to_string(),
             effectiveness: 0.0,
-<<<<<<< HEAD
-            lesson_type: LessonType::IneffectiveApproach,
-        }
-    }
-
-    pub fn is_positive(&self) -> bool {
-        match self.lesson_type {
-            LessonType::EffectiveApproach => true,
-=======
             lesson_type: LessonType·IneffectiveApproach,
         }
     }
@@ -316,24 +165,11 @@ impl Lesson {
     ☉ λ is_positive(&self) -> bool {
         ⌥ self.lesson_type {
             LessonType·EffectiveApproach => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 }
 
-<<<<<<< HEAD
-pub struct Pattern {
-    pub context: Context,
-    pub approach: String,
-    pub success_rate: f32,
-    pub confidence: Confidence,
-    pub occurrences: usize,
-}
-
-impl Pattern {
-    pub fn new(context: Context, approach: &str) -> Self {
-=======
 ☉ Σ Pattern {
     ☉ context: Context,
     ☉ approach: String,
@@ -344,56 +180,15 @@ impl Pattern {
 
 ⊢ Pattern {
     ☉ λ new(context: Context, approach: &str) -> Self {
->>>>>>> origin/main
         Self {
             context,
             approach: approach.to_string(),
             success_rate: 0.0,
-<<<<<<< HEAD
-            confidence: Confidence::zero(),
-=======
             confidence: Confidence·zero(),
->>>>>>> origin/main
             occurrences: 0,
         }
     }
 
-<<<<<<< HEAD
-    pub fn is_reliable(&self) -> bool {
-        self.success_rate >= 0.7 && self.confidence.value() >= 0.5
-    }
-
-    pub fn record_outcome(&mut self, success: bool) {
-        self.occurrences += 1;
-        let outcome_val = if success { 1.0 } else { 0.0 };
-        // Rolling average
-        self.success_rate = (self.success_rate * (self.occurrences - 1) as f32 + outcome_val)
-            / self.occurrences as f32;
-        self.confidence = Confidence::new((self.occurrences as f64 / 10.0).min(1.0));
-    }
-}
-
-pub struct LessonStore {
-    lessons: Vec<Lesson>,
-}
-
-impl LessonStore {
-    pub fn new() -> Self { Self { lessons: vec![] } }
-
-    pub fn add(&mut self, lesson: Lesson) {
-        self.lessons.push(lesson);
-    }
-
-    pub fn count(&self) -> usize { self.lessons.len() }
-
-    pub fn lessons(&self) -> &[Lesson] { &self.lessons }
-
-    pub fn for_context(&self, ctx: &Context) -> Vec<&Lesson> {
-        self.lessons.iter().filter(|l| l.context.similar_to(ctx)).collect()
-    }
-
-    pub fn positive_lessons(&self) -> Vec<&Lesson> {
-=======
     ☉ λ is_reliable(&self) -> bool {
         self.success_rate >= 0.7 && self.confidence.value() >= 0.5
     }
@@ -428,27 +223,10 @@ impl LessonStore {
     }
 
     ☉ λ positive_lessons(&self) -> Vec<&Lesson> {
->>>>>>> origin/main
         self.lessons.iter().filter(|l| l.is_positive()).collect()
     }
 }
 
-<<<<<<< HEAD
-pub struct PatternStore {
-    patterns: Vec<Pattern>,
-}
-
-impl PatternStore {
-    pub fn new() -> Self { Self { patterns: vec![] } }
-
-    pub fn add(&mut self, pattern: Pattern) {
-        self.patterns.push(pattern);
-    }
-
-    pub fn count(&self) -> usize { self.patterns.len() }
-
-    pub fn get(&self, context: &Context, approach: &str) -> Option<&Pattern> {
-=======
 ☉ Σ PatternStore {
     patterns: Vec<Pattern>,
 }
@@ -463,49 +241,26 @@ impl PatternStore {
     ☉ λ count(&self) -> usize { self.patterns.len() }
 
     ☉ λ get(&self, context: &Context, approach: &str) -> Option<&Pattern> {
->>>>>>> origin/main
         self.patterns.iter().find(|p|
             p.context.similar_to(context) && p.approach == approach
         )
     }
 
-<<<<<<< HEAD
-    pub fn get_mut(&mut self, context: &Context, approach: &str) -> Option<&mut Pattern> {
-=======
     ☉ λ get_mut(&Δ self, context: &Context, approach: &str) -> Option<&Δ Pattern> {
->>>>>>> origin/main
         self.patterns.iter_mut().find(|p|
             p.context.similar_to(context) && p.approach == approach
         )
     }
 
-<<<<<<< HEAD
-    pub fn reliable_patterns(&self) -> Vec<&Pattern> {
-        self.patterns.iter().filter(|p| p.is_reliable()).collect()
-    }
-
-    pub fn for_context(&self, ctx: &Context) -> Vec<&Pattern> {
-=======
     ☉ λ reliable_patterns(&self) -> Vec<&Pattern> {
         self.patterns.iter().filter(|p| p.is_reliable()).collect()
     }
 
     ☉ λ for_context(&self, ctx: &Context) -> Vec<&Pattern> {
->>>>>>> origin/main
         self.patterns.iter().filter(|p| p.context.similar_to(ctx)).collect()
     }
 }
 
-<<<<<<< HEAD
-pub struct LearningConfig {
-    pub max_experiences: usize,
-    pub pattern_threshold: usize,
-    pub generalization_threshold: f32,
-}
-
-impl LearningConfig {
-    pub fn default_config() -> Self {
-=======
 ☉ Σ LearningConfig {
     ☉ max_experiences: usize,
     ☉ pattern_threshold: usize,
@@ -514,7 +269,6 @@ impl LearningConfig {
 
 ⊢ LearningConfig {
     ☉ λ default_config() -> Self {
->>>>>>> origin/main
         Self {
             max_experiences: 1000,
             pattern_threshold: 3,
@@ -522,40 +276,12 @@ impl LearningConfig {
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_pattern_threshold(mut self, threshold: usize) -> Self {
-=======
     ☉ λ with_pattern_threshold(Δ self, threshold: usize) -> Self {
->>>>>>> origin/main
         self.pattern_threshold = threshold;
         self
     }
 }
 
-<<<<<<< HEAD
-pub struct LearningEngine {
-    experiences: Vec<Experience>,
-    pub patterns: PatternStore,
-    pub lessons: LessonStore,
-    config: LearningConfig,
-}
-
-impl LearningEngine {
-    pub fn new() -> Self {
-        Self {
-            experiences: vec![],
-            patterns: PatternStore::new(),
-            lessons: LessonStore::new(),
-            config: LearningConfig::default_config(),
-        }
-    }
-
-    pub fn with_config(config: LearningConfig) -> Self {
-        Self {
-            experiences: vec![],
-            patterns: PatternStore::new(),
-            lessons: LessonStore::new(),
-=======
 ☉ Σ LearningEngine {
     experiences: Vec<Experience>,
     ☉ patterns: PatternStore,
@@ -578,34 +304,10 @@ impl LearningEngine {
             experiences: vec![],
             patterns: PatternStore·new(),
             lessons: LessonStore·new(),
->>>>>>> origin/main
             config,
         }
     }
 
-<<<<<<< HEAD
-    pub fn record_experience(&mut self, exp: Experience) {
-        // Check for pattern or update existing
-        if let Some(pattern) = self.patterns.get_mut(&exp.context, &exp.action.approach) {
-            pattern.record_outcome(exp.outcome.success);
-        } else {
-            // Check if we should create new pattern
-            let similar_count = self.experiences.iter()
-                .filter(|e| e.context.similar_to(&exp.context) && e.action.approach == exp.action.approach)
-                .count();
-
-            if similar_count >= self.config.pattern_threshold - 1 {
-                let mut pattern = Pattern::new(exp.context.clone(), &exp.action.approach);
-                // Calculate success rate from similar experiences
-                let similar: Vec<_> = self.experiences.iter()
-                    .filter(|e| e.context.similar_to(&exp.context) && e.action.approach == exp.action.approach)
-                    .collect();
-                let successes = similar.iter().filter(|e| e.outcome.success).count() + if exp.outcome.success { 1 } else { 0 };
-                let total = similar.len() + 1;
-                pattern.success_rate = successes as f32 / total as f32;
-                pattern.occurrences = total;
-                pattern.confidence = Confidence::new((total as f64 / 10.0).min(1.0));
-=======
     ☉ λ record_experience(&Δ self, exp: Experience) {
         // Check ∀ pattern or update existing
         ⎇ ≔ Some(pattern) = self.patterns.get_mut(&exp.context, &exp.action.approach) {
@@ -627,92 +329,46 @@ impl LearningEngine {
                 pattern.success_rate = successes as f32 / total as f32;
                 pattern.occurrences = total;
                 pattern.confidence = Confidence·new((total as f64 / 10.0).min(1.0));
->>>>>>> origin/main
                 self.patterns.add(pattern);
             }
         }
 
         self.experiences.push(exp);
 
-<<<<<<< HEAD
-        // Trim if over capacity
-        while self.experiences.len() > self.config.max_experiences {
-=======
         // Trim ⎇ over capacity
         ⟳ self.experiences.len() > self.config.max_experiences {
->>>>>>> origin/main
             self.experiences.remove(0);
         }
     }
 
-<<<<<<< HEAD
-    pub fn extract_lessons(&self, exp: &Experience) -> Vec<Lesson> {
-        let mut lessons = Vec::new();
-
-        if exp.outcome.success {
-            lessons.push(Lesson::effective(
-=======
     ☉ λ extract_lessons(&self, exp: &Experience) -> Vec<Lesson> {
         ≔ Δ lessons = Vec·new();
 
         ⎇ exp.outcome.success {
             lessons.push(Lesson·effective(
->>>>>>> origin/main
                 exp.context.clone(),
                 &exp.action.approach,
                 exp.outcome.quality
             ));
-<<<<<<< HEAD
-        } else {
-            lessons.push(Lesson::ineffective(
-=======
         } ⎉ {
             lessons.push(Lesson·ineffective(
->>>>>>> origin/main
                 exp.context.clone(),
                 &exp.action.approach
             ));
         }
 
-<<<<<<< HEAD
-        if exp.outcome.unexpected {
-=======
         ⎇ exp.outcome.unexpected {
->>>>>>> origin/main
             lessons.push(Lesson {
                 context: exp.context.clone(),
                 approach: exp.action.approach.clone(),
                 effectiveness: 0.5,
-<<<<<<< HEAD
-                lesson_type: LessonType::SurprisingOutcome,
-=======
                 lesson_type: LessonType·SurprisingOutcome,
->>>>>>> origin/main
             });
         }
 
         lessons
     }
 
-<<<<<<< HEAD
-    pub fn experience_count(&self) -> usize {
-        self.experiences.len()
-    }
-
-    pub fn pattern_count(&self) -> usize {
-        self.patterns.count()
-    }
-
-    pub fn lesson_count(&self) -> usize {
-        self.lessons.count()
-    }
-
-    pub fn find_similar(&self, context: &Context) -> Vec<&Experience> {
-        self.experiences.iter().filter(|e| e.context.similar_to(context)).collect()
-    }
-
-    pub fn success_rate_for(&self, context: &Context, approach: &str) -> Option<f32> {
-=======
     ☉ λ experience_count(&self) -> usize {
         self.experiences.len()
     }
@@ -730,7 +386,6 @@ impl LearningEngine {
     }
 
     ☉ λ success_rate_for(&self, context: &Context, approach: &str) -> Option<f32> {
->>>>>>> origin/main
         self.patterns.get(context, approach).map(|p| p.success_rate)
     }
 }
@@ -740,25 +395,15 @@ impl LearningEngine {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_lesson_effective() {
-    let lesson = Lesson::effective(Context::new("coding"), "tdd", 0.9);
-=======
 λ test_lesson_effective() {
     ≔ lesson = Lesson·effective(Context·new("coding"), "tdd", 0.9);
->>>>>>> origin/main
     assert(lesson.is_positive());
     assert_eq(lesson.effectiveness, 0.9);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_lesson_ineffective() {
-    let lesson = Lesson::ineffective(Context::new("coding"), "cowboy_coding");
-=======
 λ test_lesson_ineffective() {
     ≔ lesson = Lesson·ineffective(Context·new("coding"), "cowboy_coding");
->>>>>>> origin/main
     assert(!lesson.is_positive());
     assert_eq(lesson.effectiveness, 0.0);
 }
@@ -768,87 +413,51 @@ fn test_lesson_ineffective() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_new() {
-    let pattern = Pattern::new(Context::new("testing"), "unit_tests");
-=======
 λ test_pattern_new() {
     ≔ pattern = Pattern·new(Context·new("testing"), "unit_tests");
->>>>>>> origin/main
     assert_eq(pattern.approach, "unit_tests");
     assert_eq(pattern.occurrences, 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_record_outcome_success() {
-    let mut pattern = Pattern::new(Context::new("testing"), "approach");
-=======
 λ test_pattern_record_outcome_success() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
->>>>>>> origin/main
     pattern.record_outcome(true);
     assert_eq(pattern.occurrences, 1);
     assert_eq(pattern.success_rate, 1.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_record_outcome_failure() {
-    let mut pattern = Pattern::new(Context::new("testing"), "approach");
-=======
 λ test_pattern_record_outcome_failure() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
->>>>>>> origin/main
     pattern.record_outcome(false);
     assert_eq(pattern.success_rate, 0.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_record_multiple_outcomes() {
-    let mut pattern = Pattern::new(Context::new("testing"), "approach");
-=======
 λ test_pattern_record_multiple_outcomes() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
->>>>>>> origin/main
     pattern.record_outcome(true);
     pattern.record_outcome(true);
     pattern.record_outcome(false);
     // 2/3 ≈ 0.667
-<<<<<<< HEAD
-    let diff = (pattern.success_rate - 0.667).abs();
-=======
     ≔ diff = (pattern.success_rate - 0.667).abs();
->>>>>>> origin/main
     assert(diff < 0.01);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_is_reliable() {
-    let mut pattern = Pattern::new(Context::new("testing"), "reliable");
-    for _ in 0..10 {
-=======
 λ test_pattern_is_reliable() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "reliable");
     ∀ _ ∈ 0..10 {
->>>>>>> origin/main
         pattern.record_outcome(true);
     }
     assert(pattern.is_reliable());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_not_reliable_low_success() {
-    let mut pattern = Pattern::new(Context::new("testing"), "unreliable");
-    for _ in 0..10 {
-=======
 λ test_pattern_not_reliable_low_success() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "unreliable");
     ∀ _ ∈ 0..10 {
->>>>>>> origin/main
         pattern.record_outcome(false);
     }
     assert(!pattern.is_reliable());
@@ -859,39 +468,19 @@ fn test_pattern_not_reliable_low_success() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_lesson_store_new() {
-    let store = LessonStore::new();
-=======
 λ test_lesson_store_new() {
     ≔ store = LessonStore·new();
->>>>>>> origin/main
     assert_eq(store.count(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_lesson_store_add() {
-    let mut store = LessonStore::new();
-    store.add(Lesson::effective(Context::new("task"), "approach", 0.8));
-=======
 λ test_lesson_store_add() {
     ≔ Δ store = LessonStore·new();
     store.add(Lesson·effective(Context·new("task"), "approach", 0.8));
->>>>>>> origin/main
     assert_eq(store.count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_lesson_store_for_context() {
-    let mut store = LessonStore::new();
-    store.add(Lesson::effective(Context::new("coding"), "tdd", 0.9));
-    store.add(Lesson::effective(Context::new("coding"), "pair", 0.8));
-    store.add(Lesson::effective(Context::new("testing"), "unit", 0.7));
-
-    let coding_lessons = store.for_context(&Context::new("coding"));
-=======
 λ test_lesson_store_for_context() {
     ≔ Δ store = LessonStore·new();
     store.add(Lesson·effective(Context·new("coding"), "tdd", 0.9));
@@ -899,26 +488,16 @@ fn test_lesson_store_for_context() {
     store.add(Lesson·effective(Context·new("testing"), "unit", 0.7));
 
     ≔ coding_lessons = store.for_context(&Context·new("coding"));
->>>>>>> origin/main
     assert_eq(coding_lessons.len(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_lesson_store_positive_lessons() {
-    let mut store = LessonStore::new();
-    store.add(Lesson::effective(Context::new("task"), "good", 0.9));
-    store.add(Lesson::ineffective(Context::new("task"), "bad"));
-
-    let positive = store.positive_lessons();
-=======
 λ test_lesson_store_positive_lessons() {
     ≔ Δ store = LessonStore·new();
     store.add(Lesson·effective(Context·new("task"), "good", 0.9));
     store.add(Lesson·ineffective(Context·new("task"), "bad"));
 
     ≔ positive = store.positive_lessons();
->>>>>>> origin/main
     assert_eq(positive.len(), 1);
 }
 
@@ -927,103 +506,53 @@ fn test_lesson_store_positive_lessons() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_store_new() {
-    let store = PatternStore::new();
-=======
 λ test_pattern_store_new() {
     ≔ store = PatternStore·new();
->>>>>>> origin/main
     assert_eq(store.count(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_store_add() {
-    let mut store = PatternStore::new();
-    store.add(Pattern::new(Context::new("coding"), "tdd"));
-=======
 λ test_pattern_store_add() {
     ≔ Δ store = PatternStore·new();
     store.add(Pattern·new(Context·new("coding"), "tdd"));
->>>>>>> origin/main
     assert_eq(store.count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_store_get() {
-    let mut store = PatternStore::new();
-    store.add(Pattern::new(Context::new("coding"), "tdd"));
-
-    let pattern = store.get(&Context::new("coding"), "tdd");
-=======
 λ test_pattern_store_get() {
     ≔ Δ store = PatternStore·new();
     store.add(Pattern·new(Context·new("coding"), "tdd"));
 
     ≔ pattern = store.get(&Context·new("coding"), "tdd");
->>>>>>> origin/main
     assert(pattern.is_some());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_store_get_missing() {
-    let store = PatternStore::new();
-    let pattern = store.get(&Context::new("coding"), "nonexistent");
-=======
 λ test_pattern_store_get_missing() {
     ≔ store = PatternStore·new();
     ≔ pattern = store.get(&Context·new("coding"), "nonexistent");
->>>>>>> origin/main
     assert(pattern.is_none());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_store_reliable_patterns() {
-    let mut store = PatternStore::new();
-
-    let mut reliable = Pattern::new(Context::new("good"), "approach");
-    for _ in 0..10 {
-=======
 λ test_pattern_store_reliable_patterns() {
     ≔ Δ store = PatternStore·new();
 
     ≔ Δ reliable = Pattern·new(Context·new("good"), "approach");
     ∀ _ ∈ 0..10 {
->>>>>>> origin/main
         reliable.record_outcome(true);
     }
     store.add(reliable);
 
-<<<<<<< HEAD
-    let mut unreliable = Pattern::new(Context::new("bad"), "approach");
-    unreliable.record_outcome(false);
-    store.add(unreliable);
-
-    let reliable_patterns = store.reliable_patterns();
-=======
     ≔ Δ unreliable = Pattern·new(Context·new("bad"), "approach");
     unreliable.record_outcome(false);
     store.add(unreliable);
 
     ≔ reliable_patterns = store.reliable_patterns();
->>>>>>> origin/main
     assert_eq(reliable_patterns.len(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_pattern_store_for_context() {
-    let mut store = PatternStore::new();
-    store.add(Pattern::new(Context::new("coding"), "tdd"));
-    store.add(Pattern::new(Context::new("coding"), "pair"));
-    store.add(Pattern::new(Context::new("testing"), "unit"));
-
-    let coding = store.for_context(&Context::new("coding"));
-=======
 λ test_pattern_store_for_context() {
     ≔ Δ store = PatternStore·new();
     store.add(Pattern·new(Context·new("coding"), "tdd"));
@@ -1031,7 +560,6 @@ fn test_pattern_store_for_context() {
     store.add(Pattern·new(Context·new("testing"), "unit"));
 
     ≔ coding = store.for_context(&Context·new("coding"));
->>>>>>> origin/main
     assert_eq(coding.len(), 2);
 }
 
@@ -1040,25 +568,15 @@ fn test_pattern_store_for_context() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_config_default() {
-    let config = LearningConfig::default_config();
-=======
 λ test_learning_config_default() {
     ≔ config = LearningConfig·default_config();
->>>>>>> origin/main
     assert_eq(config.max_experiences, 1000);
     assert_eq(config.pattern_threshold, 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_config_with_pattern_threshold() {
-    let config = LearningConfig::default_config().with_pattern_threshold(5);
-=======
 λ test_learning_config_with_pattern_threshold() {
     ≔ config = LearningConfig·default_config().with_pattern_threshold(5);
->>>>>>> origin/main
     assert_eq(config.pattern_threshold, 5);
 }
 
@@ -1067,49 +585,24 @@ fn test_learning_config_with_pattern_threshold() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_new() {
-    let engine = LearningEngine::new();
-=======
 λ test_learning_engine_new() {
     ≔ engine = LearningEngine·new();
->>>>>>> origin/main
     assert_eq(engine.experience_count(), 0);
     assert_eq(engine.pattern_count(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_record_experience() {
-    let mut engine = LearningEngine::new();
-    engine.record_experience(Experience::new(
-        Context::new("coding"),
-        Action::new("write_tests"),
-        ExperienceOutcome::success(0.9)
-=======
 λ test_learning_engine_record_experience() {
     ≔ Δ engine = LearningEngine·new();
     engine.record_experience(Experience·new(
         Context·new("coding"),
         Action·new("write_tests"),
         ExperienceOutcome·success(0.9)
->>>>>>> origin/main
     ));
     assert_eq(engine.experience_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_extract_lessons_success() {
-    let engine = LearningEngine::new();
-    let exp = Experience::new(
-        Context::new("coding"),
-        Action::new("tdd"),
-        ExperienceOutcome::success(0.9)
-    );
-
-    let lessons = engine.extract_lessons(&exp);
-=======
 λ test_learning_engine_extract_lessons_success() {
     ≔ engine = LearningEngine·new();
     ≔ exp = Experience·new(
@@ -1119,23 +612,11 @@ fn test_learning_engine_extract_lessons_success() {
     );
 
     ≔ lessons = engine.extract_lessons(&exp);
->>>>>>> origin/main
     assert_eq(lessons.len(), 1);
     assert(lessons[0].is_positive());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_extract_lessons_failure() {
-    let engine = LearningEngine::new();
-    let exp = Experience::new(
-        Context::new("coding"),
-        Action::new("skip_tests"),
-        ExperienceOutcome::failure()
-    );
-
-    let lessons = engine.extract_lessons(&exp);
-=======
 λ test_learning_engine_extract_lessons_failure() {
     ≔ engine = LearningEngine·new();
     ≔ exp = Experience·new(
@@ -1145,23 +626,11 @@ fn test_learning_engine_extract_lessons_failure() {
     );
 
     ≔ lessons = engine.extract_lessons(&exp);
->>>>>>> origin/main
     assert_eq(lessons.len(), 1);
     assert(!lessons[0].is_positive());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_extract_lessons_unexpected() {
-    let engine = LearningEngine::new();
-    let exp = Experience::new(
-        Context::new("experiment"),
-        Action::new("try_something"),
-        ExperienceOutcome::unexpected(0.7)
-    );
-
-    let lessons = engine.extract_lessons(&exp);
-=======
 λ test_learning_engine_extract_lessons_unexpected() {
     ≔ engine = LearningEngine·new();
     ≔ exp = Experience·new(
@@ -1171,28 +640,10 @@ fn test_learning_engine_extract_lessons_unexpected() {
     );
 
     ≔ lessons = engine.extract_lessons(&exp);
->>>>>>> origin/main
     assert_eq(lessons.len(), 2);  // success + surprising
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_pattern_detection() {
-    let mut engine = LearningEngine::with_config(
-        LearningConfig::default_config().with_pattern_threshold(2)
-    );
-
-    // Record enough similar experiences to trigger pattern detection
-    engine.record_experience(Experience::new(
-        Context::new("coding"),
-        Action::new("tdd"),
-        ExperienceOutcome::success(0.9)
-    ));
-    engine.record_experience(Experience::new(
-        Context::new("coding"),
-        Action::new("tdd"),
-        ExperienceOutcome::success(0.8)
-=======
 λ test_learning_engine_pattern_detection() {
     ≔ Δ engine = LearningEngine·with_config(
         LearningConfig·default_config().with_pattern_threshold(2)
@@ -1208,34 +659,12 @@ fn test_learning_engine_pattern_detection() {
         Context·new("coding"),
         Action·new("tdd"),
         ExperienceOutcome·success(0.8)
->>>>>>> origin/main
     ));
 
     assert_eq(engine.pattern_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_find_similar() {
-    let mut engine = LearningEngine::new();
-    engine.record_experience(Experience::new(
-        Context::new("coding"),
-        Action::new("approach1"),
-        ExperienceOutcome::success(0.9)
-    ));
-    engine.record_experience(Experience::new(
-        Context::new("testing"),
-        Action::new("approach2"),
-        ExperienceOutcome::success(0.8)
-    ));
-    engine.record_experience(Experience::new(
-        Context::new("coding"),
-        Action::new("approach3"),
-        ExperienceOutcome::success(0.7)
-    ));
-
-    let similar = engine.find_similar(&Context::new("coding"));
-=======
 λ test_learning_engine_find_similar() {
     ≔ Δ engine = LearningEngine·new();
     engine.record_experience(Experience·new(
@@ -1255,30 +684,10 @@ fn test_learning_engine_find_similar() {
     ));
 
     ≔ similar = engine.find_similar(&Context·new("coding"));
->>>>>>> origin/main
     assert_eq(similar.len(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_success_rate_for() {
-    let mut engine = LearningEngine::with_config(
-        LearningConfig::default_config().with_pattern_threshold(2)
-    );
-
-    engine.record_experience(Experience::new(
-        Context::new("task"),
-        Action::new("approach"),
-        ExperienceOutcome::success(0.9)
-    ));
-    engine.record_experience(Experience::new(
-        Context::new("task"),
-        Action::new("approach"),
-        ExperienceOutcome::success(0.8)
-    ));
-
-    let rate = engine.success_rate_for(&Context::new("task"), "approach");
-=======
 λ test_learning_engine_success_rate_for() {
     ≔ Δ engine = LearningEngine·with_config(
         LearningConfig·default_config().with_pattern_threshold(2)
@@ -1296,37 +705,23 @@ fn test_learning_engine_success_rate_for() {
     ));
 
     ≔ rate = engine.success_rate_for(&Context·new("task"), "approach");
->>>>>>> origin/main
     assert(rate.is_some());
     assert_eq(rate.unwrap(), 1.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_max_experiences() {
-    let mut engine = LearningEngine::with_config(LearningConfig {
-=======
 λ test_learning_engine_max_experiences() {
     ≔ Δ engine = LearningEngine·with_config(LearningConfig {
->>>>>>> origin/main
         max_experiences: 3,
         pattern_threshold: 5,
         generalization_threshold: 0.7,
     });
 
-<<<<<<< HEAD
-    for i in 0..5 {
-        engine.record_experience(Experience::new(
-            Context::new(&format!("task_{}", i)),
-            Action::new("approach"),
-            ExperienceOutcome::success(0.8)
-=======
     ∀ i ∈ 0..5 {
         engine.record_experience(Experience·new(
             Context·new(&format!("task_{}", i)),
             Action·new("approach"),
             ExperienceOutcome·success(0.8)
->>>>>>> origin/main
         ));
     }
 
@@ -1334,27 +729,6 @@ fn test_learning_engine_max_experiences() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_learning_engine_multiple_patterns() {
-    let mut engine = LearningEngine::with_config(
-        LearningConfig::default_config().with_pattern_threshold(2)
-    );
-
-    // Pattern 1
-    engine.record_experience(Experience::new(
-        Context::new("coding"), Action::new("tdd"), ExperienceOutcome::success(0.9)
-    ));
-    engine.record_experience(Experience::new(
-        Context::new("coding"), Action::new("tdd"), ExperienceOutcome::success(0.9)
-    ));
-
-    // Pattern 2
-    engine.record_experience(Experience::new(
-        Context::new("testing"), Action::new("unit"), ExperienceOutcome::success(0.8)
-    ));
-    engine.record_experience(Experience::new(
-        Context::new("testing"), Action::new("unit"), ExperienceOutcome::success(0.8)
-=======
 λ test_learning_engine_multiple_patterns() {
     ≔ Δ engine = LearningEngine·with_config(
         LearningConfig·default_config().with_pattern_threshold(2)
@@ -1374,16 +748,11 @@ fn test_learning_engine_multiple_patterns() {
     ));
     engine.record_experience(Experience·new(
         Context·new("testing"), Action·new("unit"), ExperienceOutcome·success(0.8)
->>>>>>> origin/main
     ));
 
     assert_eq(engine.pattern_count(), 2);
 }
 
-<<<<<<< HEAD
-fn main() {
-=======
 λ main() {
->>>>>>> origin/main
     print("Gnosis learning tests");
 }

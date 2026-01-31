@@ -1,5 +1,5 @@
-rite main() → i64 {
-    ≔ x = 2 + 3;
+fn main() {
+    let x = 2 + 3;
     print(x);
-    ⤺ x;
+    return x;
 }

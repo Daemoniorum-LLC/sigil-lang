@@ -8,10 +8,10 @@
 // Expected behavior:
 // Should compile and print 42
 
-rite get_value() → !i32 {
+λ get_value() -> !i32 {
     42
 }
 
-rite main() {
+λ main() {
     println(get_value());
 }

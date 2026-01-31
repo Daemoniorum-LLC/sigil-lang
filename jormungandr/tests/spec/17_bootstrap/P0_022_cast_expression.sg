@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 42 (as f64)
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 42;
     ≔ y: !f64 = x as f64;
     println(y);

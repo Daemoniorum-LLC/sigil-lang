@@ -3,12 +3,12 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate recursive functions work of C codegen.
+// Validate recursive functions work ∈ C codegen.
 //
 // Expected behavior:
 // Should print 120 (5! = 120)
 
-rite factorial(n: !i32) → !i32 {
+λ factorial(n: !i32) -> !i32 {
     ⎇ n <= 1 {
         1
     } ⎉ {
@@ -16,6 +16,6 @@ rite factorial(n: !i32) → !i32 {
     }
 }
 
-rite main() {
+λ main() {
     println(factorial(5));
 }

@@ -1,11 +1,11 @@
-// Test: ⌥ expression on enum
+// Test: ⌥ expression on ᛈ
 ☉ ᛈ Status {
     Active,
     Paused,
     Stopped
 }
 
-rite describe(s: !Status) → !String {
+λ describe(s: !Status) -> !String {
     ⌥ s {
         Status·Active => "running",
         Status·Paused => "paused",
@@ -13,7 +13,7 @@ rite describe(s: !Status) → !String {
     }
 }
 
-rite main() {
+λ main() {
     ≔ s: !Status = Status·Active;
     println(describe(s));
 }

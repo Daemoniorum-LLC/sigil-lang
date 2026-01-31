@@ -1,9 +1,0 @@
-// EXPECTED: Static type checking should catch this error
-// Negative Test: Type mis⌥ - assigning bool to int
-// Should fail with type error
-// Priority: P0 - Bootstrap Critical
-
-λ main() {
-    ≔ x: i32 = true;  // ERROR: cannot assign bool to i32
-    println(x);
-}

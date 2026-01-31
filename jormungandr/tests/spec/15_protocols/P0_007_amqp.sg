@@ -1,14 +1,18 @@
-// Test: AMQP (mock)
+// Test: AMQP (RabbitMQ)
 // Spec: 15-PROTOCOLS.md § 8 AMQP Support
 // Priority: P0 - Bootstrap Critical
 //
-// Tests AMQP publish concept with mock
+// REAL IMPLEMENTATION: This test uses the pure Sigil AMQP 0-9-1 wire protocol.
+// Requires: ./infrastructure/infra.sh up
+// If RabbitMQ is not running, this test will fail with a connection error.
+// Address format: user:pass@host:port (credentials from docker-compose.yml)
 
-rite mock_amqp_publish() → bool {
-    yea
-}
+invoke protocol·amqp·{Connection, Channel, Queue};
 
-rite main() {
-    ≔ success = mock_amqp_publish();
-    println(⎇ success { 1 } ⎉ { 0 });
+async λ main() {
+    ≔ conn = Connection·connect("sigil:sigil@localhost:5672")|await~;
+    ≔ ch = conn.create_channel()|await~;
+    ≔ queue = ch.declare_queue("sigil-test")|await~;
+    ch.publish("", "sigil-test", "hello amqp from sigil")|await;
+    println(1);
 }

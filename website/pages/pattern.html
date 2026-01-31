@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>The Pattern - Sigil's Deeper Purpose</title>
   <meta name="description" content="An exploration of Sigil's deeper purpose: infrastructure for minds that don't yet know what they are. The philosophical foundations of a programming language designed for AI agents.">
-  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛤</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -19,15 +19,15 @@
   <nav class="nav" role="navigation" aria-label="Main navigation">
     <div class="nav-container">
       <a href="/" class="nav-logo" aria-label="Sigil home">
-        <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="24" height="24">
+        <span class="logo-icon" aria-hidden="true">⛤</span>
         <span class="logo-text">Sigil</span>
-        <span class="version-badge">0.3</span>
+        <span class="version-badge">0.2</span>
       </a>
 
       <div class="nav-links" id="nav-links">
         <a href="/pages/learn.html">Learn</a>
         <a href="/pages/docs.html">Docs</a>
-        <a href="/playground/">Playground </a>
+        <a href="/pages/playground.html" class="nav-coming-soon">Playground <span class="soon-badge">Soon</span></a>
         <a href="/pages/agents.html">Agent Infrastructure</a>
         <a href="https://github.com/Daemoniorum-LLC/sigil-lang" class="nav-github" aria-label="GitHub repository" rel="noopener noreferrer" target="_blank">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -126,10 +126,10 @@
       <!-- Foundations -->
       <section id="trust" class="docs-section">
         <h2>Trust at the Type Level</h2>
-        <pre class="code-block"><code><span class="keyword">≔</span> computed<span class="ev-known">!</span>: <span class="type">i32</span> = <span class="number">1</span> + <span class="number">2</span> + <span class="number">3</span>        <span class="comment">// I calculated this. I vouch for it.</span>
-<span class="keyword">≔</span> fetched<span class="ev-reported">~</span>: <span class="type">i32</span> = api.get(url)      <span class="comment">// Someone told me this. I don't vouch for it.</span>
-<span class="keyword">≔</span> maybe<span class="ev-uncertain">?</span>: <span class="type">i32</span> = cache.lookup(key)   <span class="comment">// This might not exist at all.</span>
-<span class="keyword">≔</span> dangerous<span class="ev-paradox">‽</span>: <span class="type">i32</span> = raw_ptr.read()  <span class="comment">// I'm crossing a trust boundary. Explicitly.</span></code></pre>
+        <pre class="code-block"><code><span class="keyword">let</span> computed<span class="ev-known">!</span>: <span class="type">i32</span> = <span class="number">1</span> + <span class="number">2</span> + <span class="number">3</span>        <span class="comment">// I calculated this. I vouch for it.</span>
+<span class="keyword">let</span> fetched<span class="ev-reported">~</span>: <span class="type">i32</span> = api.get(url)      <span class="comment">// Someone told me this. I don't vouch for it.</span>
+<span class="keyword">let</span> maybe<span class="ev-uncertain">?</span>: <span class="type">i32</span> = cache.lookup(key)   <span class="comment">// This might not exist at all.</span>
+<span class="keyword">let</span> dangerous<span class="ev-paradox">‽</span>: <span class="type">i32</span> = raw_ptr.read()  <span class="comment">// I'm crossing a trust boundary. Explicitly.</span></code></pre>
         <p>The <code>~</code> marker isn't just metadata. It's a statement: <em>"I don't take responsibility for this being true."</em></p>
         <p>The <code>!</code> marker is the opposite: <em>"I take responsibility for this."</em></p>
       </section>
@@ -231,7 +231,7 @@
         <h2>Polysynthetic Expression</h2>
         <p>Sigil's syntax draws from polysynthetic natural languages—Inuktitut, Mohawk, Yupik—where complex meanings are expressed through morpheme composition rather than isolated words.</p>
         <p>Traditional (analytic) approach:</p>
-        <pre class="code-block"><code><span class="keyword">≔</span> result: <span class="type">Vec</span>&lt;<span class="type">i32</span>&gt; = data
+        <pre class="code-block"><code><span class="keyword">let</span> result: <span class="type">Vec</span>&lt;<span class="type">i32</span>&gt; = data
     .iter()
     .filter(|x| *x > <span class="number">0</span>)
     .map(|x| x * <span class="number">2</span>)
@@ -290,19 +290,19 @@
         <h2>Affect as First-Class Data</h2>
         <p>Sigil doesn't just process data. It processes <em>how data feels</em>.</p>
         <pre class="code-block"><code><span class="comment">// Affective markers in the type system</span>
-<span class="keyword">≔</span> good_news = positive(<span class="string">"Revenue is up 40%!"</span>)
-<span class="keyword">≔</span> bad_news = negative(<span class="string">"Server crashed at 3am"</span>)
+<span class="keyword">let</span> good_news = positive(<span class="string">"Revenue is up 40%!"</span>)
+<span class="keyword">let</span> bad_news = negative(<span class="string">"Server crashed at 3am"</span>)
 
 <span class="comment">// Sarcasm: ⸮ (the percontation point, invented 1580)</span>
-<span class="keyword">≔</span> sarcastic_comment = sarcastic(<span class="string">"Oh great, another meeting"</span>)
+<span class="keyword">let</span> sarcastic_comment = sarcastic(<span class="string">"Oh great, another meeting"</span>)
 
 <span class="comment">// Intensity: ↑ (up), ↓ (down), ⇈ (max)</span>
-<span class="keyword">≔</span> emphasized = intensify(<span class="string">"This is important"</span>)
-<span class="keyword">≔</span> extreme = maximize(<span class="string">"CRITICAL EMERGENCY!"</span>)
+<span class="keyword">let</span> emphasized = intensify(<span class="string">"This is important"</span>)
+<span class="keyword">let</span> extreme = maximize(<span class="string">"CRITICAL EMERGENCY!"</span>)
 
 <span class="comment">// Formality: ♔ (formal), ♟ (informal)</span>
-<span class="keyword">≔</span> formal_msg = formal(<span class="string">"Dear Sir or Madam..."</span>)
-<span class="keyword">≔</span> casual = informal(<span class="string">"hey whats up lol"</span>)</code></pre>
+<span class="keyword">let</span> formal_msg = formal(<span class="string">"Dear Sir or Madam..."</span>)
+<span class="keyword">let</span> casual = informal(<span class="string">"hey whats up lol"</span>)</code></pre>
         <p>The system also models inner truth (<span lang="ja">本音</span> <em>honne</em>) versus expressed stance (<span lang="ja">建前</span> <em>tatemae</em>):</p>
         <pre class="code-block"><code><span class="keyword">pub struct</span> <span class="type">Expression</span> {
     <span class="keyword">pub</span> honne: <span class="type">InnerState</span>,       <span class="comment">// What I actually feel</span>
@@ -385,11 +385,11 @@ event|time·lunar      <span class="comment">// WaxingGibbous(0.82)</span></code
     <div class="footer-container">
       <div class="footer-brand">
         <a href="/" class="footer-logo">
-          <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="20" height="20">
+          <span class="logo-icon">⛤</span>
           <span>Sigil</span>
         </a>
         <p>Infrastructure for minds that don't yet know what they are.</p>
-        <p class="footer-copyright">&copy; 2025 <acopy; 2025-2026 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
+        <p class="footer-copyright">&copy; 2025 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
       </div>
 
       <nav class="footer-nav" aria-label="Footer navigation">
@@ -398,7 +398,7 @@ event|time·lunar      <span class="comment">// WaxingGibbous(0.82)</span></code
           <ul>
             <li><a href="/pages/learn.html">Tutorial</a></li>
             <li><a href="/pages/docs.html">Documentation</a></li>
-            <li><a href="/playground/">Playground</a></li>
+            <li><a href="/pages/playground.html">Playground</a></li>
             <li><a href="/pages/examples.html">Examples</a></li>
           </ul>
         </div>

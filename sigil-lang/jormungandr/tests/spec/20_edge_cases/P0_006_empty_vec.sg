@@ -1,8 +1,0 @@
-// Test: Empty vector
-// Spec: Edge Cases - Collection Boundaries
-// Priority: P0 - Bootstrap Critical
-
-λ main() {
-    ≔ v: Vec<i32> = Vec·new();
-    println(v.len());
-}

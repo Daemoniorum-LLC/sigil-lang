@@ -1,13 +1,13 @@
-rite main() → i64 {
-    ≔ nums = [1, 2, 3, 4, 5];
-
+fn main() {
+    let nums = [1, 2, 3, 4, 5];
+    
     // Transform with tau
-    ≔ doubled = nums|τ{_ * 2};
+    let doubled = nums|τ{_ * 2};
     print(doubled);
-
+    
     // Sum
-    ≔ total = nums|Σ;
+    let total = nums|Σ;
     print(total);
-
-    ⤺ 0;
+    
+    return 0;
 }

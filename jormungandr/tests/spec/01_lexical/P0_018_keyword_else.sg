@@ -1,8 +1,8 @@
-// Test: Keyword 'else' each alternative branch
+// Test: Keyword '⎉' ∀ alternative branch
 // Spec: 01-LEXICAL.md § 2.2 Keywords
 // Priority: P0
 
-rite main() {
-    ≔ x = ⎇ nay { 0 } ⎉ { 42 };
+λ main() {
+    ≔ x = ⎇ false { 0 } ⎉ { 42 };
     println(x);
 }

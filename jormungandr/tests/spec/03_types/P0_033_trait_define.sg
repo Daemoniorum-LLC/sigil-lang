@@ -8,21 +8,21 @@
 // Expected behavior:
 // Should compile and print 42
 
-☉ aspect Valuable {
-    rite get_value(&this) → !i32;
+☉ Θ Valuable {
+    λ get_value(&self) -> !i32;
 }
 
-☉ sigil Item {
+☉ Σ Item {
     value: !i32
 }
 
-⊢ Item : Valuable {
-    rite get_value(&this) → !i32 {
-        this.value
+⊢ Valuable ∀ Item {
+    λ get_value(&self) -> !i32 {
+        self.value
     }
 }
 
-rite main() {
+λ main() {
     ≔ item: !Item = Item { value: 42 };
     println(item.get_value());
 }

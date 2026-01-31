@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print empty line
 
-rite main() {
+λ main() {
     ≔ s: !String = "";
     println(s);
 }

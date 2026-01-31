@@ -157,10 +157,11 @@ impl AlterContext {
     /// Exit current alter block
     pub fn exit_alter(&mut self) {
         self.current_alter = self.alter_stack.pop();
-        self.current_category = self
-            .current_alter
-            .as_ref()
-            .and_then(|a| self.alter_defs.get(&a.name).map(|def| def.category));
+        self.current_category = self.current_alter.as_ref().and_then(|a| {
+            self.alter_defs
+                .get(&a.name)
+                .map(|def| def.category)
+        });
     }
 
     /// Check if we're currently in an alter block
@@ -328,10 +329,16 @@ pub enum PluralityTypeError {
     },
 
     /// Servant alter cannot front
-    ServantCannotFront { alter: String, span: Span },
+    ServantCannotFront {
+        alter: String,
+        span: Span,
+    },
 
     /// Alter not found in system
-    AlterNotFound { name: String, span: Span },
+    AlterNotFound {
+        name: String,
+        span: Span,
+    },
 
     /// Switch to alter not allowed
     SwitchDenied {
@@ -348,7 +355,10 @@ pub enum PluralityTypeError {
     },
 
     /// Co-con channel participants not co-conscious
-    CoCOnNotActive { alter: String, span: Span },
+    CoCOnNotActive {
+        alter: String,
+        span: Span,
+    },
 
     /// Reality layer mismatch
     RealityLayerMismatch {
@@ -358,18 +368,22 @@ pub enum PluralityTypeError {
     },
 
     /// Cannot split from non-existent alter
-    SplitSourceNotFound { alter: String, span: Span },
+    SplitSourceNotFound {
+        alter: String,
+        span: Span,
+    },
 
     /// Trigger handler without matching trigger
-    TriggerNotDefined { trigger: String, span: Span },
+    TriggerNotDefined {
+        trigger: String,
+        span: Span,
+    },
 }
 
 impl fmt::Display for PluralityTypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PluralityTypeError::DormantAccessWithoutVerification {
-                alter, data_type, ..
-            } => {
+            PluralityTypeError::DormantAccessWithoutVerification { alter, data_type, .. } => {
                 write!(
                     f,
                     "Cannot access dormant alter '{}' data of type '{}' without verification. \
@@ -377,9 +391,7 @@ impl fmt::Display for PluralityTypeError {
                     alter, data_type
                 )
             }
-            PluralityTypeError::UnresolvedBlendedState {
-                alters, data_type, ..
-            } => {
+            PluralityTypeError::UnresolvedBlendedState { alters, data_type, .. } => {
                 write!(
                     f,
                     "Blended state from alters [{}] for type '{}' must be resolved. \
@@ -402,9 +414,7 @@ impl fmt::Display for PluralityTypeError {
             PluralityTypeError::SwitchDenied { target, reason, .. } => {
                 write!(f, "Switch to '{}' denied: {}", target, reason)
             }
-            PluralityTypeError::AlterSourceMismatch {
-                expected, found, ..
-            } => {
+            PluralityTypeError::AlterSourceMismatch { expected, found, .. } => {
                 write!(
                     f,
                     "Alter-source mismatch: expected '{}', found '{}'",
@@ -418,9 +428,7 @@ impl fmt::Display for PluralityTypeError {
                     alter
                 )
             }
-            PluralityTypeError::RealityLayerMismatch {
-                expected, found, ..
-            } => {
+            PluralityTypeError::RealityLayerMismatch { expected, found, .. } => {
                 write!(
                     f,
                     "Reality layer mismatch: expected '{}', found '{}'",
@@ -495,8 +503,7 @@ impl PluralityTypeChecker {
         match self.context.validate_switch(target) {
             SwitchValidation::Allowed => true,
             SwitchValidation::Warning { reason } => {
-                self.warnings
-                    .push(format!("Switch to '{}': {}", target, reason));
+                self.warnings.push(format!("Switch to '{}': {}", target, reason));
                 true
             }
             SwitchValidation::Denied { reason } => {
@@ -518,7 +525,12 @@ impl PluralityTypeChecker {
     }
 
     /// Check type compatibility
-    pub fn check_assignment(&mut self, from: &PluralType, to: &PluralType, span: Span) -> bool {
+    pub fn check_assignment(
+        &mut self,
+        from: &PluralType,
+        to: &PluralType,
+        span: Span,
+    ) -> bool {
         match check_compatibility(from, to) {
             AlterSourceCompatibility::Compatible => true,
             AlterSourceCompatibility::CoercibleWith(coercion) => {
@@ -536,12 +548,16 @@ impl PluralityTypeChecker {
                         ));
                     }
                     AlterSourceCoercion::TransferAlter => {
-                        self.warnings
-                            .push(format!("Cross-alter data transfer at {:?}", span));
+                        self.warnings.push(format!(
+                            "Cross-alter data transfer at {:?}",
+                            span
+                        ));
                     }
                     AlterSourceCoercion::Blend => {
-                        self.warnings
-                            .push(format!("Blending data from multiple alters at {:?}", span));
+                        self.warnings.push(format!(
+                            "Blending data from multiple alters at {:?}",
+                            span
+                        ));
                     }
                 }
                 true
@@ -558,12 +574,11 @@ impl PluralityTypeChecker {
             }
             AlterSourceCompatibility::RequiresResolution => {
                 if let Some(AlterSource::Blended(alters)) = &from.alter_source {
-                    self.errors
-                        .push(PluralityTypeError::UnresolvedBlendedState {
-                            alters: alters.iter().map(|a| a.name.clone()).collect(),
-                            data_type: format!("{:?}", from.base),
-                            span,
-                        });
+                    self.errors.push(PluralityTypeError::UnresolvedBlendedState {
+                        alters: alters.iter().map(|a| a.name.clone()).collect(),
+                        data_type: format!("{:?}", from.base),
+                        span,
+                    });
                 }
                 false
             }
@@ -576,12 +591,11 @@ impl PluralityTypeChecker {
         if self.context.in_alter_block() {
             if let Some(fronter) = self.context.fronter_name() {
                 if fronter != alter {
-                    self.errors
-                        .push(PluralityTypeError::DormantAccessWithoutVerification {
-                            alter: alter.to_string(),
-                            data_type: data_type.to_string(),
-                            span,
-                        });
+                    self.errors.push(PluralityTypeError::DormantAccessWithoutVerification {
+                        alter: alter.to_string(),
+                        data_type: data_type.to_string(),
+                        span,
+                    });
                     return false;
                 }
             }
@@ -682,7 +696,9 @@ mod tests {
     #[test]
     fn test_alter_source_compatibility() {
         let fronting_type = PluralType {
-            base: TypeExpr::Path(crate::ast::TypePath { segments: vec![] }),
+            base: TypeExpr::Path(crate::ast::TypePath {
+                segments: vec![],
+            }),
             evidentiality: None,
             alter_source: Some(AlterSource::Fronting),
             in_alter_context: true,
@@ -690,7 +706,9 @@ mod tests {
         };
 
         let cocon_type = PluralType {
-            base: TypeExpr::Path(crate::ast::TypePath { segments: vec![] }),
+            base: TypeExpr::Path(crate::ast::TypePath {
+                segments: vec![],
+            }),
             evidentiality: None,
             alter_source: Some(AlterSource::CoConscious(None)),
             in_alter_context: true,
@@ -713,7 +731,9 @@ mod tests {
     #[test]
     fn test_blended_requires_resolution() {
         let blended = PluralType {
-            base: TypeExpr::Path(crate::ast::TypePath { segments: vec![] }),
+            base: TypeExpr::Path(crate::ast::TypePath {
+                segments: vec![],
+            }),
             evidentiality: None,
             alter_source: Some(AlterSource::Blended(Vec::new())),
             in_alter_context: true,
@@ -721,7 +741,9 @@ mod tests {
         };
 
         let fronting = PluralType {
-            base: TypeExpr::Path(crate::ast::TypePath { segments: vec![] }),
+            base: TypeExpr::Path(crate::ast::TypePath {
+                segments: vec![],
+            }),
             evidentiality: None,
             alter_source: Some(AlterSource::Fronting),
             in_alter_context: true,

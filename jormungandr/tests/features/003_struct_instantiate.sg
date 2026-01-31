@@ -1,10 +1,10 @@
-// Test: Create sigil instance with field access
-☉ sigil Rectangle {
+// Test: Create Σ instance with field access
+☉ Σ Rectangle {
     width: !i32,
     height: !i32
 }
 
-rite main() {
+λ main() {
     ≔ r: !Rectangle = Rectangle { width: 30, height: 50 };
     ≔ area: !i32 = r.width * r.height;
     println(area);

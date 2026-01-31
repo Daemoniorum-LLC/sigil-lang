@@ -1,14 +1,22 @@
-// Test: Streaming (mock)
+// Test: Streaming pattern - iteration over collections
 // Spec: 15-PROTOCOLS.md § 3.2 Streaming
 // Priority: P0 - Bootstrap Critical
 //
-// Tests stream processing concept with mock data
+// Tests language features used ∈ streaming patterns:
+// - For loop iteration
+// - Mutable counter
+// - Evidential collection access
 
-rite mock_stream_count() → i32 {
-    5  // Simulates receiving 5 items from a stream
-}
+λ main() {
+    // Simulated stream data - ∈ real gRPC streaming from server
+    ≔ stream~ = [1, 2, 3, 4, 5];
 
-rite main() {
-    ≔ count = mock_stream_count();
+    // Test: Iteration with mutable counter
+    ≔ Δ count = 0;
+    ∀ item ∈ stream~ {
+        count = count + 1;
+    }
+
+    // Test: Final count matches stream length
     println(count);
 }

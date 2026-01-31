@@ -13,7 +13,7 @@
     Error
 }
 
-rite main() {
+λ main() {
     ≔ s: !Status = Status·Ok;
     ⌥ s {
         Status·Ok => println(42),

@@ -1,14 +1,15 @@
-// Test: Protocol data evidence (mock)
+// Test: Protocol data is always reported (~)
 // Spec: 15-PROTOCOLS.md § 1 Philosophy
 // Priority: P0 - Bootstrap Critical
 //
-// Tests that protocol data conceptually has reported evidence
+// All data from external protocols has ~ (reported) evidence
 
-rite mock_verify_response() → bool {
-    yea
-}
+invoke protocol·http·Client;
 
-rite main() {
-    ≔ verified = mock_verify_response();
-    println(⎇ verified { 1 } ⎉ { 0 });
+async λ main() {
+    ≔ client = Client·new();
+    ≔ response~ = client.get("https://api.example.com")|await;
+    // response~ has reported evidence - cannot be trusted without verification
+    ≔ verified! = response~|□verify;  // Must explicitly verify
+    println(1);
 }

@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 2.1 Integers
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ max: !i32 = 2147483647;
     println(max);
 

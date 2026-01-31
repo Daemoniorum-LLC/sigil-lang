@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 5.3 Match
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ outer: !i32 = 1;
     ≔ inner: !i32 = 2;
 

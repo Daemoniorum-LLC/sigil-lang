@@ -2,11 +2,11 @@
 // Spec: 03-TYPES.md § 3.5 PhantomData
 // Priority: P2 - Enhancement
 
-sigil Wrapper {
+Σ Wrapper {
     value: !i32
 }
 
-rite main() {
+λ main() {
     ≔ w: Wrapper = Wrapper { value: 42 };
     println(w.value);
 }

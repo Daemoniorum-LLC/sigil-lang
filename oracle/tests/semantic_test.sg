@@ -1,23 +1,12 @@
-<<<<<<< HEAD
-//! Tests for Oracle Semantic Indexing
-=======
 //! Tests ∀ Oracle Semantic Indexing
->>>>>>> origin/main
 //!
 //! Verifies semantic search across reasoning traces, evidence, and code.
 
 // ============================================================================
-<<<<<<< HEAD
-// Test Data Structures (Self-contained for testing)
-// ============================================================================
-
-pub struct SemanticConfig {
-=======
 // Test Data Structures (Self-contained ∀ testing)
 // ============================================================================
 
 ☉ Σ SemanticConfig {
->>>>>>> origin/main
     embedding_dim: usize,
     pooling: String,
     similarity_threshold: f32,
@@ -26,79 +15,30 @@ pub struct SemanticConfig {
     max_seq_len: usize,
 }
 
-<<<<<<< HEAD
-impl SemanticConfig {
-    pub fn default_config() -> Self {
-        Self {
-            embedding_dim: 384,
-            pooling: "cls".to_string(),
-            similarity_threshold: 0.0,  // Low threshold for testing
-=======
 ⊢ SemanticConfig {
     ☉ λ default_config() -> Self {
         Self {
             embedding_dim: 384,
             pooling: "cls".to_string(),
             similarity_threshold: 0.0,  // Low threshold ∀ testing
->>>>>>> origin/main
             max_results: 10,
             vocab_size: 32000,
             max_seq_len: 512,
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_threshold(mut self, threshold: f32) -> Self {
-=======
     ☉ λ with_threshold(Δ self, threshold: f32) -> Self {
->>>>>>> origin/main
         self.similarity_threshold = threshold;
         self
     }
 }
 
-<<<<<<< HEAD
-// Simplified embedding for testing
-pub struct Embedding {
-=======
 // Simplified embedding ∀ testing
 ☉ Σ Embedding {
->>>>>>> origin/main
     data: Vec<f32>,
     dim: usize,
 }
 
-<<<<<<< HEAD
-impl Embedding {
-    pub fn new(data: Vec<f32>, dim: usize) -> Self {
-        Self { data, dim }
-    }
-
-    pub fn zeros(dim: usize) -> Self {
-        Self { data: vec![0.0; dim], dim }
-    }
-
-    pub fn dim(&self) -> usize {
-        self.dim
-    }
-
-    pub fn at(&self, idx: usize) -> f32 {
-        self.data[idx]
-    }
-
-    pub fn normalize(&self) -> Self {
-        let mut sum_sq = 0.0;
-        for i in 0..self.dim {
-            sum_sq = sum_sq + self.data[i] * self.data[i];
-        }
-        let norm = approx_sqrt(sum_sq);
-
-        let mut normalized = Vec::new();
-        for i in 0..self.dim {
-            if norm > 0.0 {
-                normalized.push(self.data[i] / norm);
-            } else {
-=======
 ⊢ Embedding {
     ☉ λ new(data: Vec<f32>, dim: usize) -> Self {
         Self { data, dim }
@@ -128,7 +68,6 @@ impl Embedding {
             ⎇ norm > 0.0 {
                 normalized.push(self.data[i] / norm);
             } ⎉ {
->>>>>>> origin/main
                 normalized.push(0.0);
             }
         }
@@ -136,34 +75,15 @@ impl Embedding {
     }
 }
 
-<<<<<<< HEAD
-fn approx_sqrt(x: f32) -> f32 {
-    if x <= 0.0 { return 0.0; }
-    let mut guess = x / 2.0;
-    for _ in 0..10 {
-=======
 λ approx_sqrt(x: f32) -> f32 {
     ⎇ x <= 0.0 { ⤺ 0.0; }
     ≔ Δ guess = x / 2.0;
     ∀ _ ∈ 0..10 {
->>>>>>> origin/main
         guess = (guess + x / guess) / 2.0;
     }
     guess
 }
 
-<<<<<<< HEAD
-pub fn cosine_similarity(a: &Embedding, b: &Embedding) -> f32 {
-    if a.dim() != b.dim() { return 0.0; }
-
-    let mut dot = 0.0;
-    let mut norm_a = 0.0;
-    let mut norm_b = 0.0;
-
-    for i in 0..a.dim() {
-        let a_val = a.at(i);
-        let b_val = b.at(i);
-=======
 ☉ λ cosine_similarity(a: &Embedding, b: &Embedding) -> f32 {
     ⎇ a.dim() != b.dim() { ⤺ 0.0; }
 
@@ -174,59 +94,31 @@ pub fn cosine_similarity(a: &Embedding, b: &Embedding) -> f32 {
     ∀ i ∈ 0..a.dim() {
         ≔ a_val = a.at(i);
         ≔ b_val = b.at(i);
->>>>>>> origin/main
         dot = dot + a_val * b_val;
         norm_a = norm_a + a_val * a_val;
         norm_b = norm_b + b_val * b_val;
     }
 
-<<<<<<< HEAD
-    let denom = approx_sqrt(norm_a) * approx_sqrt(norm_b);
-    if denom > 0.0 { dot / denom } else { 0.0 }
-}
-
-pub struct EmbeddingIndex {
-=======
     ≔ denom = approx_sqrt(norm_a) * approx_sqrt(norm_b);
     ⎇ denom > 0.0 { dot / denom } ⎉ { 0.0 }
 }
 
 ☉ Σ EmbeddingIndex {
->>>>>>> origin/main
     embeddings: Vec<Embedding>,
     metadata: Vec<String>,
     dim: usize,
 }
 
-<<<<<<< HEAD
-impl EmbeddingIndex {
-    pub fn new(dim: usize) -> Self {
-        Self { embeddings: Vec::new(), metadata: Vec::new(), dim }
-    }
-
-    pub fn add(&mut self, embedding: Embedding, meta: &str) {
-=======
 ⊢ EmbeddingIndex {
     ☉ λ new(dim: usize) -> Self {
         Self { embeddings: Vec·new(), metadata: Vec·new(), dim }
     }
 
     ☉ λ add(&Δ self, embedding: Embedding, meta: &str) {
->>>>>>> origin/main
         self.embeddings.push(embedding);
         self.metadata.push(meta.to_string());
     }
 
-<<<<<<< HEAD
-    pub fn len(&self) -> usize {
-        self.embeddings.len()
-    }
-
-    pub fn search(&self, query: &Embedding, k: usize) -> Vec<(usize, f32)> {
-        let mut scores = Vec::new();
-        for i in 0..self.embeddings.len() {
-            let sim = cosine_similarity(query, &self.embeddings[i]);
-=======
     ☉ λ len(&self) -> usize {
         self.embeddings.len()
     }
@@ -235,69 +127,42 @@ impl EmbeddingIndex {
         ≔ Δ scores = Vec·new();
         ∀ i ∈ 0..self.embeddings.len() {
             ≔ sim = cosine_similarity(query, &self.embeddings[i]);
->>>>>>> origin/main
             scores.push((i, sim));
         }
 
         // Sort descending
-<<<<<<< HEAD
-        for i in 0..scores.len() {
-            for j in (i + 1)..scores.len() {
-                if scores[j].1 > scores[i].1 {
-                    let temp = scores[i];
-=======
         ∀ i ∈ 0..scores.len() {
             ∀ j ∈ (i + 1)..scores.len() {
                 ⎇ scores[j].1 > scores[i].1 {
                     ≔ temp = scores[i];
->>>>>>> origin/main
                     scores[i] = scores[j];
                     scores[j] = temp;
                 }
             }
         }
 
-<<<<<<< HEAD
-        let limit = if k < scores.len() { k } else { scores.len() };
-        let mut result = Vec::new();
-        for i in 0..limit {
-=======
         ≔ limit = ⎇ k < scores.len() { k } ⎉ { scores.len() };
         ≔ Δ result = Vec·new();
         ∀ i ∈ 0..limit {
->>>>>>> origin/main
             result.push(scores[i]);
         }
         result
     }
 
-<<<<<<< HEAD
-    pub fn get_metadata(&self, idx: usize) -> &str {
-=======
     ☉ λ get_metadata(&self, idx: usize) -> &str {
->>>>>>> origin/main
         &self.metadata[idx]
     }
 }
 
-<<<<<<< HEAD
-pub struct CodeTokenizer {
-=======
 ☉ Σ CodeTokenizer {
->>>>>>> origin/main
     vocab_size: usize,
     max_length: usize,
     cls_token_id: usize,
     sep_token_id: usize,
 }
 
-<<<<<<< HEAD
-impl CodeTokenizer {
-    pub fn new(vocab_size: usize, max_length: usize) -> Self {
-=======
 ⊢ CodeTokenizer {
     ☉ λ new(vocab_size: usize, max_length: usize) -> Self {
->>>>>>> origin/main
         Self {
             vocab_size,
             max_length,
@@ -306,21 +171,12 @@ impl CodeTokenizer {
         }
     }
 
-<<<<<<< HEAD
-    pub fn tokenize(&self, text: &str) -> Vec<usize> {
-        let mut tokens = Vec::new();
-        tokens.push(self.cls_token_id);
-        for c in text.chars() {
-            if tokens.len() >= self.max_length - 1 { break; }
-            let token_id = ((c as usize) % (self.vocab_size - 4)) + 4;
-=======
     ☉ λ tokenize(&self, text: &str) -> Vec<usize> {
         ≔ Δ tokens = Vec·new();
         tokens.push(self.cls_token_id);
         ∀ c ∈ text.chars() {
             ⎇ tokens.len() >= self.max_length - 1 { ⊗; }
             ≔ token_id = ((c as usize) % (self.vocab_size - 4)) + 4;
->>>>>>> origin/main
             tokens.push(token_id);
         }
         tokens.push(self.sep_token_id);
@@ -329,27 +185,12 @@ impl CodeTokenizer {
 }
 
 // Semantic result type
-<<<<<<< HEAD
-pub enum ResultType {
-=======
 ☉ ᛈ ResultType {
->>>>>>> origin/main
     ReasoningStep,
     Evidence,
     CodeSnippet,
 }
 
-<<<<<<< HEAD
-pub struct SemanticResult {
-    pub content: String,
-    pub source_id: String,
-    pub similarity: f32,
-    pub result_type: ResultType,
-}
-
-// Simplified SemanticIndex for testing
-pub struct SemanticIndex {
-=======
 ☉ Σ SemanticResult {
     ☉ content: String,
     ☉ source_id: String,
@@ -359,7 +200,6 @@ pub struct SemanticIndex {
 
 // Simplified SemanticIndex ∀ testing
 ☉ Σ SemanticIndex {
->>>>>>> origin/main
     reasoning_index: EmbeddingIndex,
     evidence_index: EmbeddingIndex,
     code_index: EmbeddingIndex,
@@ -370,64 +210,6 @@ pub struct SemanticIndex {
     code_content: Vec<String>,
 }
 
-<<<<<<< HEAD
-impl SemanticIndex {
-    pub fn new(config: SemanticConfig) -> Self {
-        let tokenizer = CodeTokenizer::new(config.vocab_size, config.max_seq_len);
-        Self {
-            reasoning_index: EmbeddingIndex::new(config.embedding_dim),
-            evidence_index: EmbeddingIndex::new(config.embedding_dim),
-            code_index: EmbeddingIndex::new(config.embedding_dim),
-            config,
-            tokenizer,
-            reasoning_content: Vec::new(),
-            evidence_content: Vec::new(),
-            code_content: Vec::new(),
-        }
-    }
-
-    pub fn default_index() -> Self {
-        Self::new(SemanticConfig::default_config())
-    }
-
-    pub fn dim(&self) -> usize {
-        self.config.embedding_dim
-    }
-
-    pub fn len(&self) -> usize {
-        self.reasoning_index.len() + self.evidence_index.len() + self.code_index.len()
-    }
-
-    pub fn reasoning_count(&self) -> usize {
-        self.reasoning_index.len()
-    }
-
-    pub fn evidence_count(&self) -> usize {
-        self.evidence_index.len()
-    }
-
-    pub fn code_count(&self) -> usize {
-        self.code_index.len()
-    }
-
-    fn embed_text(&self, text: &str) -> Embedding {
-        let tokens = self.tokenizer.tokenize(text);
-        let dim = self.config.embedding_dim;
-
-        let mut data = vec![0.0; dim];
-        for (i, &token) in tokens.iter().enumerate() {
-            let idx = (token + i) % dim;
-            data[idx] = data[idx] + 1.0;
-        }
-
-        let embedding = Embedding::new(data, dim);
-        embedding.normalize()
-    }
-
-    pub fn index_reasoning(&mut self, description: &str, reasoning: &str, trace_id: &str) {
-        let combined = format!("{} {}", description, reasoning);
-        let embedding = self.embed_text(&combined);
-=======
 ⊢ SemanticIndex {
     ☉ λ new(config: SemanticConfig) -> Self {
         ≔ tokenizer = CodeTokenizer·new(config.vocab_size, config.max_seq_len);
@@ -484,49 +266,24 @@ impl SemanticIndex {
     ☉ λ index_reasoning(&Δ self, description: &str, reasoning: &str, trace_id: &str) {
         ≔ combined = format!("{} {}", description, reasoning);
         ≔ embedding = self.embed_text(&combined);
->>>>>>> origin/main
         self.reasoning_index.add(embedding, trace_id);
         self.reasoning_content.push(combined);
     }
 
-<<<<<<< HEAD
-    pub fn index_evidence(&mut self, content: &str, source: &str, explanation_id: &str) {
-        let embedding = self.embed_text(content);
-        let meta = format!("{}:{}", explanation_id, source);
-=======
     ☉ λ index_evidence(&Δ self, content: &str, source: &str, explanation_id: &str) {
         ≔ embedding = self.embed_text(content);
         ≔ meta = format!("{}:{}", explanation_id, source);
->>>>>>> origin/main
         self.evidence_index.add(embedding, &meta);
         self.evidence_content.push(content.to_string());
     }
 
-<<<<<<< HEAD
-    pub fn index_code(&mut self, code: &str, file_path: &str, line_start: usize) {
-        let embedding = self.embed_text(code);
-        let meta = format!("{}:{}", file_path, line_start);
-=======
     ☉ λ index_code(&Δ self, code: &str, file_path: &str, line_start: usize) {
         ≔ embedding = self.embed_text(code);
         ≔ meta = format!("{}:{}", file_path, line_start);
->>>>>>> origin/main
         self.code_index.add(embedding, &meta);
         self.code_content.push(code.to_string());
     }
 
-<<<<<<< HEAD
-    pub fn search_reasoning(&self, query: &str, k: usize) -> Vec<SemanticResult> {
-        let query_embedding = self.embed_text(query);
-        let results = self.reasoning_index.search(&query_embedding, k);
-
-        let mut semantic_results = Vec::new();
-        for (idx, sim) in results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.reasoning_content.len() {
-                    self.reasoning_content[idx].clone()
-                } else {
-=======
     ☉ λ search_reasoning(&self, query: &str, k: usize) -> Vec<SemanticResult> {
         ≔ query_embedding = self.embed_text(query);
         ≔ results = self.reasoning_index.search(&query_embedding, k);
@@ -537,36 +294,19 @@ impl SemanticIndex {
                 ≔ content = ⎇ idx < self.reasoning_content.len() {
                     self.reasoning_content[idx].clone()
                 } ⎉ {
->>>>>>> origin/main
                     "".to_string()
                 };
                 semantic_results.push(SemanticResult {
                     content,
                     source_id: self.reasoning_index.get_metadata(idx).to_string(),
                     similarity: sim,
-<<<<<<< HEAD
-                    result_type: ResultType::ReasoningStep,
-=======
                     result_type: ResultType·ReasoningStep,
->>>>>>> origin/main
                 });
             }
         }
         semantic_results
     }
 
-<<<<<<< HEAD
-    pub fn search_evidence(&self, query: &str, k: usize) -> Vec<SemanticResult> {
-        let query_embedding = self.embed_text(query);
-        let results = self.evidence_index.search(&query_embedding, k);
-
-        let mut semantic_results = Vec::new();
-        for (idx, sim) in results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.evidence_content.len() {
-                    self.evidence_content[idx].clone()
-                } else {
-=======
     ☉ λ search_evidence(&self, query: &str, k: usize) -> Vec<SemanticResult> {
         ≔ query_embedding = self.embed_text(query);
         ≔ results = self.evidence_index.search(&query_embedding, k);
@@ -577,36 +317,19 @@ impl SemanticIndex {
                 ≔ content = ⎇ idx < self.evidence_content.len() {
                     self.evidence_content[idx].clone()
                 } ⎉ {
->>>>>>> origin/main
                     "".to_string()
                 };
                 semantic_results.push(SemanticResult {
                     content,
                     source_id: self.evidence_index.get_metadata(idx).to_string(),
                     similarity: sim,
-<<<<<<< HEAD
-                    result_type: ResultType::Evidence,
-=======
                     result_type: ResultType·Evidence,
->>>>>>> origin/main
                 });
             }
         }
         semantic_results
     }
 
-<<<<<<< HEAD
-    pub fn search_code(&self, query: &str, k: usize) -> Vec<SemanticResult> {
-        let query_embedding = self.embed_text(query);
-        let results = self.code_index.search(&query_embedding, k);
-
-        let mut semantic_results = Vec::new();
-        for (idx, sim) in results {
-            if sim >= self.config.similarity_threshold {
-                let content = if idx < self.code_content.len() {
-                    self.code_content[idx].clone()
-                } else {
-=======
     ☉ λ search_code(&self, query: &str, k: usize) -> Vec<SemanticResult> {
         ≔ query_embedding = self.embed_text(query);
         ≔ results = self.code_index.search(&query_embedding, k);
@@ -617,18 +340,13 @@ impl SemanticIndex {
                 ≔ content = ⎇ idx < self.code_content.len() {
                     self.code_content[idx].clone()
                 } ⎉ {
->>>>>>> origin/main
                     "".to_string()
                 };
                 semantic_results.push(SemanticResult {
                     content,
                     source_id: self.code_index.get_metadata(idx).to_string(),
                     similarity: sim,
-<<<<<<< HEAD
-                    result_type: ResultType::CodeSnippet,
-=======
                     result_type: ResultType·CodeSnippet,
->>>>>>> origin/main
                 });
             }
         }
@@ -641,13 +359,8 @@ impl SemanticIndex {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_semantic_config_default() {
-    let config = SemanticConfig::default_config();
-=======
 λ test_semantic_config_default() {
     ≔ config = SemanticConfig·default_config();
->>>>>>> origin/main
     assert_eq(config.embedding_dim, 384);
     assert_eq(config.max_results, 10);
     assert_eq(config.vocab_size, 32000);
@@ -655,13 +368,8 @@ fn test_semantic_config_default() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_semantic_index_creation() {
-    let index = SemanticIndex::default_index();
-=======
 λ test_semantic_index_creation() {
     ≔ index = SemanticIndex·default_index();
->>>>>>> origin/main
     assert_eq(index.dim(), 384);
     assert_eq(index.len(), 0);
     assert_eq(index.reasoning_count(), 0);
@@ -670,13 +378,8 @@ fn test_semantic_index_creation() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_index_reasoning_step() {
-    let mut index = SemanticIndex::default_index();
-=======
 λ test_index_reasoning_step() {
     ≔ Δ index = SemanticIndex·default_index();
->>>>>>> origin/main
 
     index.index_reasoning(
         "Analyzed user request",
@@ -689,13 +392,8 @@ fn test_index_reasoning_step() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_index_evidence() {
-    let mut index = SemanticIndex::default_index();
-=======
 λ test_index_evidence() {
     ≔ Δ index = SemanticIndex·default_index();
->>>>>>> origin/main
 
     index.index_evidence(
         "Market data shows upward trend",
@@ -707,19 +405,11 @@ fn test_index_evidence() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_index_code() {
-    let mut index = SemanticIndex::default_index();
-
-    index.index_code(
-        "fn calculate_roi(investment: f64, returns: f64) -> f64 { returns / investment }",
-=======
 λ test_index_code() {
     ≔ Δ index = SemanticIndex·default_index();
 
     index.index_code(
         "λ calculate_roi(investment: f64, returns: f64) -> f64 { returns / investment }",
->>>>>>> origin/main
         "src/finance.sg",
         42
     );
@@ -728,70 +418,37 @@ fn test_index_code() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_search_reasoning() {
-    let mut index = SemanticIndex::default_index();
-=======
 λ test_search_reasoning() {
     ≔ Δ index = SemanticIndex·default_index();
->>>>>>> origin/main
 
     // Index some reasoning steps
     index.index_reasoning("Investment analysis", "Evaluated stock portfolio", "trace_001");
     index.index_reasoning("Risk assessment", "Calculated risk metrics", "trace_002");
     index.index_reasoning("User greeting", "Said hello to user", "trace_003");
 
-<<<<<<< HEAD
-    // Search for investment-related reasoning
-    let results = index.search_reasoning("investment portfolio", 2);
-
-    assert(results.len() > 0);
-    // First result should be investment-related
-    let first = &results[0];
-=======
     // Search ∀ investment-related reasoning
     ≔ results = index.search_reasoning("investment portfolio", 2);
 
     assert(results.len() > 0);
     // First result should be investment-related
     ≔ first = &results[0];
->>>>>>> origin/main
     assert(first.similarity > 0.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_search_evidence() {
-    let mut index = SemanticIndex::default_index();
-=======
 λ test_search_evidence() {
     ≔ Δ index = SemanticIndex·default_index();
->>>>>>> origin/main
 
     index.index_evidence("Stock price increased 10%", "market_data", "exp_001");
     index.index_evidence("Interest rates are low", "fed_reserve", "exp_002");
     index.index_evidence("Weather is sunny today", "weather_api", "exp_003");
 
-<<<<<<< HEAD
-    let results = index.search_evidence("stock market prices", 2);
-=======
     ≔ results = index.search_evidence("stock market prices", 2);
->>>>>>> origin/main
 
     assert(results.len() > 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_search_code() {
-    let mut index = SemanticIndex::default_index();
-
-    index.index_code("fn add(a: i32, b: i32) -> i32 { a + b }", "src/math.sg", 10);
-    index.index_code("fn multiply(x: f64, y: f64) -> f64 { x * y }", "src/math.sg", 20);
-    index.index_code("fn greet(name: &str) { println(name) }", "src/utils.sg", 5);
-
-    let results = index.search_code("addition function", 2);
-=======
 λ test_search_code() {
     ≔ Δ index = SemanticIndex·default_index();
 
@@ -800,40 +457,11 @@ fn test_search_code() {
     index.index_code("λ greet(name: &str) { println(name) }", "src/utils.sg", 5);
 
     ≔ results = index.search_code("addition function", 2);
->>>>>>> origin/main
 
     assert(results.len() > 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_similarity_threshold() {
-    let config = SemanticConfig::default_config().with_threshold(0.9);
-    let mut index = SemanticIndex::new(config);
-
-    index.index_reasoning("Hello world", "A greeting", "trace_001");
-
-    // Search for something completely different
-    let results = index.search_reasoning("quantum physics equations", 5);
-
-    // With high threshold, dissimilar content should be filtered
-    // (may or may not return results depending on embedding)
-    // Just verify it doesn't crash
-    let _count = results.len();
-}
-
-#[test]
-fn test_empty_index_search() {
-    let index = SemanticIndex::default_index();
-
-    let results = index.search_reasoning("anything", 5);
-    assert_eq(results.len(), 0);
-
-    let results = index.search_evidence("anything", 5);
-    assert_eq(results.len(), 0);
-
-    let results = index.search_code("anything", 5);
-=======
 λ test_similarity_threshold() {
     ≔ config = SemanticConfig·default_config().with_threshold(0.9);
     ≔ Δ index = SemanticIndex·new(config);
@@ -860,25 +488,10 @@ fn test_empty_index_search() {
     assert_eq(results.len(), 0);
 
     ≔ results = index.search_code("anything", 5);
->>>>>>> origin/main
     assert_eq(results.len(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_embedding_normalization() {
-    let data = vec![3.0, 4.0];  // 3-4-5 triangle
-    let embedding = Embedding::new(data, 2);
-    let normalized = embedding.normalize();
-
-    let x = normalized.at(0);
-    let y = normalized.at(1);
-    let length_sq = x * x + y * y;
-
-    // Should be approximately 1.0
-    let diff = length_sq - 1.0;
-    let is_unit = diff < 0.01 && diff > -0.01;
-=======
 λ test_embedding_normalization() {
     ≔ data = vec![3.0, 4.0];  // 3-4-5 triangle
     ≔ embedding = Embedding·new(data, 2);
@@ -891,23 +504,10 @@ fn test_embedding_normalization() {
     // Should be approximately 1.0
     ≔ diff = length_sq - 1.0;
     ≔ is_unit = diff < 0.01 && diff > -0.01;
->>>>>>> origin/main
     assert(is_unit);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_cosine_similarity_identical() {
-    let data = vec![1.0, 2.0, 3.0];
-    let e1 = Embedding::new(data.clone(), 3);
-    let e2 = Embedding::new(data, 3);
-
-    let sim = cosine_similarity(&e1, &e2);
-
-    // Identical vectors should have similarity ~1.0
-    let diff = sim - 1.0;
-    let is_one = diff < 0.001 && diff > -0.001;
-=======
 λ test_cosine_similarity_identical() {
     ≔ data = vec![1.0, 2.0, 3.0];
     ≔ e1 = Embedding·new(data.clone(), 3);
@@ -918,27 +518,17 @@ fn test_cosine_similarity_identical() {
     // Identical vectors should have similarity ~1.0
     ≔ diff = sim - 1.0;
     ≔ is_one = diff < 0.001 && diff > -0.001;
->>>>>>> origin/main
     assert(is_one);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_multiple_index_types() {
-    let mut index = SemanticIndex::default_index();
-=======
 λ test_multiple_index_types() {
     ≔ Δ index = SemanticIndex·default_index();
->>>>>>> origin/main
 
     // Index all three types
     index.index_reasoning("Decision made", "Based on analysis", "trace_001");
     index.index_evidence("Supporting data", "data_source", "exp_001");
-<<<<<<< HEAD
-    index.index_code("fn decide() { }", "src/logic.sg", 1);
-=======
     index.index_code("λ decide() { }", "src/logic.sg", 1);
->>>>>>> origin/main
 
     assert_eq(index.reasoning_count(), 1);
     assert_eq(index.evidence_count(), 1);
@@ -946,10 +536,6 @@ fn test_multiple_index_types() {
     assert_eq(index.len(), 3);
 }
 
-<<<<<<< HEAD
-fn main() {
-=======
 λ main() {
->>>>>>> origin/main
     print("Oracle semantic indexing tests");
 }

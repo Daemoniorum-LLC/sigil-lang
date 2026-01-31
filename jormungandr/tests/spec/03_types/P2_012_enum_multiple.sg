@@ -8,7 +8,7 @@
     Pending
 }
 
-rite main() {
+λ main() {
     ≔ s: Status = Status·Active;
     ⌥ s {
         Status·Active => println(1),

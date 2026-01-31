@@ -6,9 +6,9 @@
 // Validates that greater-than-or-equal comparison works correctly.
 //
 // Expected behavior:
-// Should compile and print yea
+// Should compile and print true
 
-rite main() {
+λ main() {
     ≔ x: !bool = 20 >= 20;
     println(x);
 }

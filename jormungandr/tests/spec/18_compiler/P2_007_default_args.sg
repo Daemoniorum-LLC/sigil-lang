@@ -2,11 +2,11 @@
 // Spec: 18-COMPILER.md § 3.3 Functions
 // Priority: P2 - Enhancement
 
-rite greet(name: String) {
+λ greet(name: String) {
     println(name);
 }
 
-rite main() {
+λ main() {
     greet("Alice");
     greet("Bob");
 }

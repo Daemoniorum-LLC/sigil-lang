@@ -428,7 +428,7 @@ pub enum TimestampType {
 }
 
 /// Topic partition
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TopicPartition {
     /// Topic name
     pub topic: String,
@@ -453,11 +453,18 @@ impl std::fmt::Display for TopicPartition {
 }
 
 /// Kafka producer
-#[derive(Debug)]
 pub struct Producer {
     config: ProducerConfig,
     #[cfg(feature = "rdkafka")]
     inner: Option<rdkafka::producer::FutureProducer>,
+}
+
+impl std::fmt::Debug for Producer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Producer")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Producer {
@@ -593,6 +600,7 @@ impl Producer {
     /// Flush pending messages
     #[cfg(feature = "rdkafka")]
     pub fn flush(&self, timeout: Duration) -> ProtocolResult<()> {
+        use rdkafka::producer::Producer as ProducerTrait;
         if let Some(ref producer) = self.inner {
             producer
                 .flush(timeout)
@@ -611,11 +619,18 @@ impl Producer {
 }
 
 /// Kafka consumer
-#[derive(Debug)]
 pub struct Consumer {
     config: ConsumerConfig,
     #[cfg(feature = "rdkafka")]
     inner: Option<rdkafka::consumer::StreamConsumer>,
+}
+
+impl std::fmt::Debug for Consumer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Consumer")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Consumer {

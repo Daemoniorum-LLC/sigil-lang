@@ -2,7 +2,7 @@
 // Should fail with undefined function error
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ result = undefined_function(42);  // ERROR: undefined function
     println(result);
 }

@@ -1,19 +1,19 @@
-// Test: Define aspect with method signatures
-☉ aspect Displayable {
-    rite display(&this) → !String;
+// Test: Define Θ with method signatures
+☉ Θ Displayable {
+    λ display(&self) -> !String;
 }
 
-☉ sigil Message {
+☉ Σ Message {
     text: !String
 }
 
-⊢ Message : Displayable {
-    rite display(&this) → !String {
-        this.text.clone()
+⊢ Displayable ∀ Message {
+    λ display(&self) -> !String {
+        self.text.clone()
     }
 }
 
-rite main() {
+λ main() {
     ≔ msg: !Message = Message { text: "Hello, Trait!" };
     println(msg.display());
 }

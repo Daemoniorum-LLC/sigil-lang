@@ -9,10 +9,10 @@
 /// ≔ result = add(1, 2);
 /// assert_eq!(result, 3);
 /// ```
-rite add(a: !i32, b: !i32) → !i32 {
+λ add(a: !i32, b: !i32) -> !i32 {
     a + b
 }
 
-rite main() {
+λ main() {
     println(add(2, 3));
 }

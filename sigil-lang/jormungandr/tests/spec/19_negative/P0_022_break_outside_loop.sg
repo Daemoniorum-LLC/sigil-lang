@@ -1,8 +1,0 @@
-// Negative Test: Break outside of loop
-// Should fail with syntax error
-// Priority: P0 - Bootstrap Critical
-
-λ main() {
-    ⊗;  // ERROR: ⊗ outside of loop
-    println("done");
-}

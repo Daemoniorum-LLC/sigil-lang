@@ -1,8 +1,0 @@
-// Test: Floating point precision
-// Spec: Edge Cases - Float Boundaries
-// Priority: P0 - Bootstrap Critical
-
-λ main() {
-    ≔ f: f64 = 3.14159265358979;
-    println(f);
-}

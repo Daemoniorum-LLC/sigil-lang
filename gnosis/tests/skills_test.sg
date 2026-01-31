@@ -1,42 +1,13 @@
-<<<<<<< HEAD
-//! Tests for Gnosis Skill System
-//!
-//! Verifies SkillSystem, SkillProfile, SkillLevel, Exercise, and skill mechanics.
-
-use std::collections::HashMap;
-=======
 //! Tests ∀ Gnosis Skill System
 //!
 //! Verifies SkillSystem, SkillProfile, SkillLevel, Exercise, and skill mechanics.
 
 invoke std·collections·HashMap;
->>>>>>> origin/main
 
 // ============================================================================
 // Self-contained Test Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct Duration { nanos: u64 }
-impl Duration {
-    pub fn zero() -> Self { Self { nanos: 0 } }
-    pub fn minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-}
-impl Copy for Duration {}
-impl Clone for Duration { fn clone(&self) -> Self { *self } }
-
-pub struct Timestamp { nanos: u64 }
-impl Timestamp {
-    pub fn now() -> Self { Self { nanos: 1000 } }
-}
-
-pub struct ExperienceId { id: String }
-impl ExperienceId { pub fn generate() -> Self { Self { id: "exp".to_string() } } }
-impl Clone for ExperienceId { fn clone(&self) -> Self { Self { id: self.id.clone() } } }
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SkillLevel {
-=======
 ☉ Σ Duration { nanos: u64 }
 ⊢ Duration {
     ☉ λ zero() -> Self { Self { nanos: 0 } }
@@ -56,7 +27,6 @@ pub enum SkillLevel {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 ☉ ᛈ SkillLevel {
->>>>>>> origin/main
     Novice,
     AdvancedBeginner,
     Competent,
@@ -64,34 +34,6 @@ pub enum SkillLevel {
     Expert,
 }
 
-<<<<<<< HEAD
-impl SkillLevel {
-    pub fn from_proficiency(p: f32) -> Self {
-        if p >= 0.9 { SkillLevel::Expert }
-        else if p >= 0.7 { SkillLevel::Proficient }
-        else if p >= 0.5 { SkillLevel::Competent }
-        else if p >= 0.3 { SkillLevel::AdvancedBeginner }
-        else { SkillLevel::Novice }
-    }
-
-    pub fn to_string(&self) -> &'static str {
-        match self {
-            SkillLevel::Novice => "Novice",
-            SkillLevel::AdvancedBeginner => "Advanced Beginner",
-            SkillLevel::Competent => "Competent",
-            SkillLevel::Proficient => "Proficient",
-            SkillLevel::Expert => "Expert",
-        }
-    }
-
-    pub fn numeric_level(&self) -> u8 {
-        match self {
-            SkillLevel::Novice => 1,
-            SkillLevel::AdvancedBeginner => 2,
-            SkillLevel::Competent => 3,
-            SkillLevel::Proficient => 4,
-            SkillLevel::Expert => 5,
-=======
 ⊢ SkillLevel {
     ☉ λ from_proficiency(p: f32) -> Self {
         ⎇ p >= 0.9 { SkillLevel·Expert }
@@ -118,17 +60,12 @@ impl SkillLevel {
             SkillLevel·Competent => 3,
             SkillLevel·Proficient => 4,
             SkillLevel·Expert => 5,
->>>>>>> origin/main
         }
     }
 }
 
 #[derive(Copy, Clone)]
-<<<<<<< HEAD
-pub enum Performance {
-=======
 ☉ ᛈ Performance {
->>>>>>> origin/main
     Excellent,
     Good,
     Adequate,
@@ -136,24 +73,6 @@ pub enum Performance {
     Failed,
 }
 
-<<<<<<< HEAD
-impl Performance {
-    pub fn from_quality(quality: f32) -> Self {
-        if quality >= 0.9 { Performance::Excellent }
-        else if quality >= 0.7 { Performance::Good }
-        else if quality >= 0.5 { Performance::Adequate }
-        else if quality > 0.0 { Performance::Poor }
-        else { Performance::Failed }
-    }
-
-    pub fn to_quality(&self) -> f32 {
-        match self {
-            Performance::Excellent => 0.95,
-            Performance::Good => 0.8,
-            Performance::Adequate => 0.6,
-            Performance::Poor => 0.3,
-            Performance::Failed => 0.0,
-=======
 ⊢ Performance {
     ☉ λ from_quality(quality: f32) -> Self {
         ⎇ quality >= 0.9 { Performance·Excellent }
@@ -170,33 +89,10 @@ impl Performance {
             Performance·Adequate => 0.6,
             Performance·Poor => 0.3,
             Performance·Failed => 0.0,
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-pub struct Exercise {
-    pub task_id: ExperienceId,
-    pub performance: Performance,
-    pub duration: Duration,
-    pub quality: f32,
-    pub timestamp: Timestamp,
-}
-
-impl Exercise {
-    pub fn new(quality: f32) -> Self {
-        Self {
-            task_id: ExperienceId::generate(),
-            performance: Performance::from_quality(quality),
-            duration: Duration::zero(),
-            quality: quality.clamp(0.0, 1.0),
-            timestamp: Timestamp::now(),
-        }
-    }
-
-    pub fn with_performance(mut self, performance: Performance) -> Self {
-=======
 ☉ Σ Exercise {
     ☉ task_id: ExperienceId,
     ☉ performance: Performance,
@@ -217,68 +113,21 @@ impl Exercise {
     }
 
     ☉ λ with_performance(Δ self, performance: Performance) -> Self {
->>>>>>> origin/main
         self.performance = performance;
         self.quality = performance.to_quality();
         self
     }
 
-<<<<<<< HEAD
-    pub fn with_duration(mut self, duration: Duration) -> Self {
-=======
     ☉ λ with_duration(Δ self, duration: Duration) -> Self {
->>>>>>> origin/main
         self.duration = duration;
         self
     }
 
-<<<<<<< HEAD
-    pub fn was_successful(&self) -> bool {
-=======
     ☉ λ was_successful(&self) -> bool {
->>>>>>> origin/main
         self.quality >= 0.5
     }
 }
 
-<<<<<<< HEAD
-pub struct SkillProfile {
-    pub name: String,
-    pub level: SkillLevel,
-    pub proficiency: f32,
-    pub experience_count: u32,
-    exercises: Vec<Exercise>,
-    pub last_practiced: Timestamp,
-}
-
-impl SkillProfile {
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            level: SkillLevel::Novice,
-            proficiency: 0.0,
-            experience_count: 0,
-            exercises: vec![],
-            last_practiced: Timestamp::now(),
-        }
-    }
-
-    pub fn proficiency(&self) -> f32 { self.proficiency }
-    pub fn level(&self) -> SkillLevel { self.level }
-    pub fn experience_count(&self) -> u32 { self.experience_count }
-    pub fn exercise_count(&self) -> usize { self.exercises.len() }
-
-    pub fn record_exercise(&mut self, exercise: Exercise) {
-        self.experience_count += 1;
-        self.last_practiced = Timestamp::now();
-
-        // Update proficiency (exponential moving average)
-        let alpha = 0.1;
-        self.proficiency = self.proficiency * (1.0 - alpha) + exercise.quality * alpha;
-
-        // Update level
-        self.level = SkillLevel::from_proficiency(self.proficiency);
-=======
 ☉ Σ SkillProfile {
     ☉ name: String,
     ☉ level: SkillLevel,
@@ -315,48 +164,10 @@ impl SkillProfile {
 
         // Update level
         self.level = SkillLevel·from_proficiency(self.proficiency);
->>>>>>> origin/main
 
         self.exercises.push(exercise);
     }
 
-<<<<<<< HEAD
-    pub fn record_transfer(&mut self, quality: f32) {
-        let alpha = 0.05;
-        self.proficiency = self.proficiency * (1.0 - alpha) + quality * alpha;
-        self.level = SkillLevel::from_proficiency(self.proficiency);
-    }
-
-    pub fn recent_accuracy(&self) -> f32 {
-        let recent: Vec<_> = self.exercises.iter().rev().take(10).collect();
-        if recent.is_empty() { return 0.0; }
-        recent.iter().map(|e| e.quality).sum::<f32>() / recent.len() as f32
-    }
-
-    pub fn success_rate(&self) -> f32 {
-        if self.exercises.is_empty() { return 0.0; }
-        let successes = self.exercises.iter().filter(|e| e.was_successful()).count();
-        successes as f32 / self.exercises.len() as f32
-    }
-
-    pub fn is_expert(&self) -> bool {
-        self.level == SkillLevel::Expert
-    }
-
-    pub fn is_novice(&self) -> bool {
-        self.level == SkillLevel::Novice
-    }
-}
-
-pub struct SkillDefinition {
-    pub name: String,
-    pub subskills: Vec<String>,
-    pub category: Option<String>,
-}
-
-impl SkillDefinition {
-    pub fn new(name: &str) -> Self {
-=======
     ☉ λ record_transfer(&Δ self, quality: f32) {
         ≔ alpha = 0.05;
         self.proficiency = self.proficiency * (1.0 - alpha) + quality * alpha;
@@ -392,7 +203,6 @@ impl SkillDefinition {
 
 ⊢ SkillDefinition {
     ☉ λ new(name: &str) -> Self {
->>>>>>> origin/main
         Self {
             name: name.to_string(),
             subskills: vec![],
@@ -400,44 +210,21 @@ impl SkillDefinition {
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_subskill(mut self, name: &str) -> Self {
-=======
     ☉ λ with_subskill(Δ self, name: &str) -> Self {
->>>>>>> origin/main
         self.subskills.push(name.to_string());
         self
     }
 
-<<<<<<< HEAD
-    pub fn with_category(mut self, category: &str) -> Self {
-=======
     ☉ λ with_category(Δ self, category: &str) -> Self {
->>>>>>> origin/main
         self.category = Some(category.to_string());
         self
     }
 
-<<<<<<< HEAD
-    pub fn has_subskills(&self) -> bool {
-=======
     ☉ λ has_subskills(&self) -> bool {
->>>>>>> origin/main
         !self.subskills.is_empty()
     }
 }
 
-<<<<<<< HEAD
-pub struct SkillTransfer {
-    pub source: String,
-    pub target: String,
-    pub rate: f32,
-    pub aspects: Vec<String>,
-}
-
-impl SkillTransfer {
-    pub fn new(source: &str, target: &str, rate: f32) -> Self {
-=======
 ☉ Σ SkillTransfer {
     ☉ source: String,
     ☉ target: String,
@@ -447,7 +234,6 @@ impl SkillTransfer {
 
 ⊢ SkillTransfer {
     ☉ λ new(source: &str, target: &str, rate: f32) -> Self {
->>>>>>> origin/main
         Self {
             source: source.to_string(),
             target: target.to_string(),
@@ -456,56 +242,17 @@ impl SkillTransfer {
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_aspect(mut self, aspect: &str) -> Self {
-=======
     ☉ λ with_aspect(Δ self, aspect: &str) -> Self {
->>>>>>> origin/main
         self.aspects.push(aspect.to_string());
         self
     }
 }
 
-<<<<<<< HEAD
-pub struct SkillHierarchy {
-=======
 ☉ Σ SkillHierarchy {
->>>>>>> origin/main
     parent: HashMap<String, String>,
     children: HashMap<String, Vec<String>>,
 }
 
-<<<<<<< HEAD
-impl SkillHierarchy {
-    pub fn new() -> Self {
-        Self {
-            parent: HashMap::new(),
-            children: HashMap::new(),
-        }
-    }
-
-    pub fn add_child(&mut self, parent: &str, child: &str) {
-        self.parent.insert(child.to_string(), parent.to_string());
-        self.children
-            .entry(parent.to_string())
-            .or_insert_with(Vec::new)
-            .push(child.to_string());
-    }
-
-    pub fn get_children(&self, skill: &str) -> Option<&Vec<String>> {
-        self.children.get(skill)
-    }
-
-    pub fn get_parent(&self, skill: &str) -> Option<&String> {
-        self.parent.get(skill)
-    }
-
-    pub fn is_child_of(&self, child: &str, parent: &str) -> bool {
-        self.parent.get(child).map(|p| p == parent).unwrap_or(false)
-    }
-
-    pub fn has_children(&self, skill: &str) -> bool {
-=======
 ⊢ SkillHierarchy {
     ☉ λ new() -> Self {
         Self {
@@ -535,21 +282,10 @@ impl SkillHierarchy {
     }
 
     ☉ λ has_children(&self, skill: &str) -> bool {
->>>>>>> origin/main
         self.children.get(skill).map(|c| !c.is_empty()).unwrap_or(false)
     }
 }
 
-<<<<<<< HEAD
-pub struct SkillConfig {
-    pub experience_per_level: u32,
-    pub decay_rate: f32,
-    pub default_transfer_rate: f32,
-}
-
-impl SkillConfig {
-    pub fn default_config() -> Self {
-=======
 ☉ Σ SkillConfig {
     ☉ experience_per_level: u32,
     ☉ decay_rate: f32,
@@ -558,7 +294,6 @@ impl SkillConfig {
 
 ⊢ SkillConfig {
     ☉ λ default_config() -> Self {
->>>>>>> origin/main
         Self {
             experience_per_level: 10,
             decay_rate: 0.01,
@@ -567,50 +302,13 @@ impl SkillConfig {
     }
 }
 
-<<<<<<< HEAD
-pub struct SkillSystem {
-=======
 ☉ Σ SkillSystem {
->>>>>>> origin/main
     skills: HashMap<String, SkillProfile>,
     hierarchy: SkillHierarchy,
     transfers: Vec<SkillTransfer>,
     config: SkillConfig,
 }
 
-<<<<<<< HEAD
-impl SkillSystem {
-    pub fn new() -> Self {
-        Self {
-            skills: HashMap::new(),
-            hierarchy: SkillHierarchy::new(),
-            transfers: vec![],
-            config: SkillConfig::default_config(),
-        }
-    }
-
-    pub fn define(&mut self, skill: SkillDefinition) {
-        let profile = SkillProfile::new(&skill.name);
-        self.skills.insert(skill.name.clone(), profile);
-
-        for sub in skill.subskills {
-            self.hierarchy.add_child(&skill.name, &sub);
-            self.define(SkillDefinition::new(&sub));
-        }
-    }
-
-    pub fn get(&self, name: &str) -> Option<&SkillProfile> {
-        self.skills.get(name)
-    }
-
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut SkillProfile> {
-        self.skills.get_mut(name)
-    }
-
-    pub fn record_exercise(&mut self, skill_name: &str, quality: f32) {
-        // Get transfer targets first
-        let transfer_targets: Vec<(String, f32)> = self.transfers.iter()
-=======
 ⊢ SkillSystem {
     ☉ λ new() -> Self {
         Self {
@@ -642,20 +340,10 @@ impl SkillSystem {
     ☉ λ record_exercise(&Δ self, skill_name: &str, quality: f32) {
         // Get transfer targets first
         ≔ transfer_targets: Vec<(String, f32)> = self.transfers.iter()
->>>>>>> origin/main
             .filter(|t| t.source == skill_name)
             .map(|t| (t.target.clone(), t.rate))
             .collect();
 
-<<<<<<< HEAD
-        if let Some(skill) = self.skills.get_mut(skill_name) {
-            skill.record_exercise(Exercise::new(quality));
-        }
-
-        // Apply transfer learning
-        for (target_name, rate) in transfer_targets {
-            if let Some(target) = self.skills.get_mut(&target_name) {
-=======
         ⎇ ≔ Some(skill) = self.skills.get_mut(skill_name) {
             skill.record_exercise(Exercise·new(quality));
         }
@@ -663,36 +351,11 @@ impl SkillSystem {
         // Apply transfer learning
         ∀ (target_name, rate) ∈ transfer_targets {
             ⎇ ≔ Some(target) = self.skills.get_mut(&target_name) {
->>>>>>> origin/main
                 target.record_transfer(quality * rate);
             }
         }
     }
 
-<<<<<<< HEAD
-    pub fn register_transfer(&mut self, transfer: SkillTransfer) {
-        self.transfers.push(transfer);
-    }
-
-    pub fn skill_count(&self) -> usize {
-        self.skills.len()
-    }
-
-    pub fn all_skills(&self) -> Vec<&SkillProfile> {
-        self.skills.values().collect()
-    }
-
-    pub fn skills_at_level(&self, level: SkillLevel) -> Vec<&SkillProfile> {
-        self.skills.values().filter(|s| s.level == level).collect()
-    }
-
-    pub fn expert_skills(&self) -> Vec<&SkillProfile> {
-        self.skills_at_level(SkillLevel::Expert)
-    }
-
-    pub fn novice_skills(&self) -> Vec<&SkillProfile> {
-        self.skills_at_level(SkillLevel::Novice)
-=======
     ☉ λ register_transfer(&Δ self, transfer: SkillTransfer) {
         self.transfers.push(transfer);
     }
@@ -715,7 +378,6 @@ impl SkillSystem {
 
     ☉ λ novice_skills(&self) -> Vec<&SkillProfile> {
         self.skills_at_level(SkillLevel·Novice)
->>>>>>> origin/main
     }
 }
 
@@ -724,53 +386,6 @@ impl SkillSystem {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_level_from_proficiency_novice() {
-    assert_eq(SkillLevel::from_proficiency(0.1), SkillLevel::Novice);
-    assert_eq(SkillLevel::from_proficiency(0.0), SkillLevel::Novice);
-}
-
-#[test]
-fn test_skill_level_from_proficiency_advanced_beginner() {
-    assert_eq(SkillLevel::from_proficiency(0.3), SkillLevel::AdvancedBeginner);
-    assert_eq(SkillLevel::from_proficiency(0.4), SkillLevel::AdvancedBeginner);
-}
-
-#[test]
-fn test_skill_level_from_proficiency_competent() {
-    assert_eq(SkillLevel::from_proficiency(0.5), SkillLevel::Competent);
-    assert_eq(SkillLevel::from_proficiency(0.6), SkillLevel::Competent);
-}
-
-#[test]
-fn test_skill_level_from_proficiency_proficient() {
-    assert_eq(SkillLevel::from_proficiency(0.7), SkillLevel::Proficient);
-    assert_eq(SkillLevel::from_proficiency(0.8), SkillLevel::Proficient);
-}
-
-#[test]
-fn test_skill_level_from_proficiency_expert() {
-    assert_eq(SkillLevel::from_proficiency(0.9), SkillLevel::Expert);
-    assert_eq(SkillLevel::from_proficiency(1.0), SkillLevel::Expert);
-}
-
-#[test]
-fn test_skill_level_to_string() {
-    assert_eq(SkillLevel::Novice.to_string(), "Novice");
-    assert_eq(SkillLevel::Expert.to_string(), "Expert");
-}
-
-#[test]
-fn test_skill_level_numeric() {
-    assert_eq(SkillLevel::Novice.numeric_level(), 1);
-    assert_eq(SkillLevel::Expert.numeric_level(), 5);
-}
-
-#[test]
-fn test_skill_level_ordering() {
-    assert(SkillLevel::Expert > SkillLevel::Novice);
-    assert(SkillLevel::Proficient > SkillLevel::Competent);
-=======
 λ test_skill_level_from_proficiency_novice() {
     assert_eq(SkillLevel·from_proficiency(0.1), SkillLevel·Novice);
     assert_eq(SkillLevel·from_proficiency(0.0), SkillLevel·Novice);
@@ -816,7 +431,6 @@ fn test_skill_level_ordering() {
 λ test_skill_level_ordering() {
     assert(SkillLevel·Expert > SkillLevel·Novice);
     assert(SkillLevel·Proficient > SkillLevel·Competent);
->>>>>>> origin/main
 }
 
 // ============================================================================
@@ -824,80 +438,44 @@ fn test_skill_level_ordering() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_performance_from_quality_excellent() {
-    let perf = Performance::from_quality(0.95);
-    let is_excellent = match perf { Performance::Excellent => true, _ => false };
-=======
 λ test_performance_from_quality_excellent() {
     ≔ perf = Performance·from_quality(0.95);
     ≔ is_excellent = ⌥ perf { Performance·Excellent => true, _ => false };
->>>>>>> origin/main
     assert(is_excellent);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_performance_from_quality_good() {
-    let perf = Performance::from_quality(0.75);
-    let is_good = match perf { Performance::Good => true, _ => false };
-=======
 λ test_performance_from_quality_good() {
     ≔ perf = Performance·from_quality(0.75);
     ≔ is_good = ⌥ perf { Performance·Good => true, _ => false };
->>>>>>> origin/main
     assert(is_good);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_performance_from_quality_adequate() {
-    let perf = Performance::from_quality(0.55);
-    let is_adequate = match perf { Performance::Adequate => true, _ => false };
-=======
 λ test_performance_from_quality_adequate() {
     ≔ perf = Performance·from_quality(0.55);
     ≔ is_adequate = ⌥ perf { Performance·Adequate => true, _ => false };
->>>>>>> origin/main
     assert(is_adequate);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_performance_from_quality_poor() {
-    let perf = Performance::from_quality(0.2);
-    let is_poor = match perf { Performance::Poor => true, _ => false };
-=======
 λ test_performance_from_quality_poor() {
     ≔ perf = Performance·from_quality(0.2);
     ≔ is_poor = ⌥ perf { Performance·Poor => true, _ => false };
->>>>>>> origin/main
     assert(is_poor);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_performance_from_quality_failed() {
-    let perf = Performance::from_quality(0.0);
-    let is_failed = match perf { Performance::Failed => true, _ => false };
-=======
 λ test_performance_from_quality_failed() {
     ≔ perf = Performance·from_quality(0.0);
     ≔ is_failed = ⌥ perf { Performance·Failed => true, _ => false };
->>>>>>> origin/main
     assert(is_failed);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_performance_to_quality() {
-    assert_eq(Performance::Excellent.to_quality(), 0.95);
-    assert_eq(Performance::Failed.to_quality(), 0.0);
-=======
 λ test_performance_to_quality() {
     assert_eq(Performance·Excellent.to_quality(), 0.95);
     assert_eq(Performance·Failed.to_quality(), 0.0);
->>>>>>> origin/main
 }
 
 // ============================================================================
@@ -905,63 +483,36 @@ fn test_performance_to_quality() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_exercise_new() {
-    let ex = Exercise::new(0.8);
-=======
 λ test_exercise_new() {
     ≔ ex = Exercise·new(0.8);
->>>>>>> origin/main
     assert_eq(ex.quality, 0.8);
     assert(ex.was_successful());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_exercise_quality_clamped() {
-    let ex = Exercise::new(1.5);
-=======
 λ test_exercise_quality_clamped() {
     ≔ ex = Exercise·new(1.5);
->>>>>>> origin/main
     assert_eq(ex.quality, 1.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_exercise_was_successful() {
-    let success = Exercise::new(0.6);
-    let failure = Exercise::new(0.3);
-=======
 λ test_exercise_was_successful() {
     ≔ success = Exercise·new(0.6);
     ≔ failure = Exercise·new(0.3);
->>>>>>> origin/main
     assert(success.was_successful());
     assert(!failure.was_successful());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_exercise_with_performance() {
-    let ex = Exercise::new(0.5).with_performance(Performance::Excellent);
-=======
 λ test_exercise_with_performance() {
     ≔ ex = Exercise·new(0.5).with_performance(Performance·Excellent);
->>>>>>> origin/main
     assert_eq(ex.quality, 0.95);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_exercise_with_duration() {
-    let ex = Exercise::new(0.8).with_duration(Duration::minutes(30));
-    assert_eq(ex.duration.nanos, Duration::minutes(30).nanos);
-=======
 λ test_exercise_with_duration() {
     ≔ ex = Exercise·new(0.8).with_duration(Duration·minutes(30));
     assert_eq(ex.duration.nanos, Duration·minutes(30).nanos);
->>>>>>> origin/main
 }
 
 // ============================================================================
@@ -969,49 +520,22 @@ fn test_exercise_with_duration() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_profile_new() {
-    let profile = SkillProfile::new("rust");
-    assert_eq(profile.name, "rust");
-    assert_eq(profile.level, SkillLevel::Novice);
-=======
 λ test_skill_profile_new() {
     ≔ profile = SkillProfile·new("rust");
     assert_eq(profile.name, "rust");
     assert_eq(profile.level, SkillLevel·Novice);
->>>>>>> origin/main
     assert_eq(profile.proficiency, 0.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_profile_record_exercise() {
-    let mut profile = SkillProfile::new("testing");
-    profile.record_exercise(Exercise::new(0.8));
-=======
 λ test_skill_profile_record_exercise() {
     ≔ Δ profile = SkillProfile·new("testing");
     profile.record_exercise(Exercise·new(0.8));
->>>>>>> origin/main
     assert_eq(profile.experience_count(), 1);
     assert(profile.proficiency() > 0.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_profile_level_progression() {
-    let mut profile = SkillProfile::new("skill");
-    // Many high-quality exercises should increase level
-    for _ in 0..50 {
-        profile.record_exercise(Exercise::new(0.95));
-    }
-    assert(profile.level() >= SkillLevel::Proficient);
-}
-
-#[test]
-fn test_skill_profile_record_transfer() {
-    let mut profile = SkillProfile::new("related");
-=======
 λ test_skill_profile_level_progression() {
     ≔ Δ profile = SkillProfile·new("skill");
     // Many high-quality exercises should increase level
@@ -1024,40 +548,21 @@ fn test_skill_profile_record_transfer() {
 #[test]
 λ test_skill_profile_record_transfer() {
     ≔ Δ profile = SkillProfile·new("related");
->>>>>>> origin/main
     profile.record_transfer(0.8);
     assert(profile.proficiency() > 0.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_profile_recent_accuracy() {
-    let mut profile = SkillProfile::new("skill");
-    profile.record_exercise(Exercise::new(0.8));
-    profile.record_exercise(Exercise::new(0.9));
-    let accuracy = profile.recent_accuracy();
-    let diff = (accuracy - 0.85).abs();
-=======
 λ test_skill_profile_recent_accuracy() {
     ≔ Δ profile = SkillProfile·new("skill");
     profile.record_exercise(Exercise·new(0.8));
     profile.record_exercise(Exercise·new(0.9));
     ≔ accuracy = profile.recent_accuracy();
     ≔ diff = (accuracy - 0.85).abs();
->>>>>>> origin/main
     assert(diff < 0.01);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_profile_success_rate() {
-    let mut profile = SkillProfile::new("skill");
-    profile.record_exercise(Exercise::new(0.8));  // success
-    profile.record_exercise(Exercise::new(0.6));  // success
-    profile.record_exercise(Exercise::new(0.3));  // failure
-    let rate = profile.success_rate();
-    let diff = (rate - 0.667).abs();
-=======
 λ test_skill_profile_success_rate() {
     ≔ Δ profile = SkillProfile·new("skill");
     profile.record_exercise(Exercise·new(0.8));  // success
@@ -1065,34 +570,21 @@ fn test_skill_profile_success_rate() {
     profile.record_exercise(Exercise·new(0.3));  // failure
     ≔ rate = profile.success_rate();
     ≔ diff = (rate - 0.667).abs();
->>>>>>> origin/main
     assert(diff < 0.01);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_profile_is_expert() {
-    let mut profile = SkillProfile::new("mastered");
-    for _ in 0..100 {
-        profile.record_exercise(Exercise::new(0.99));
-=======
 λ test_skill_profile_is_expert() {
     ≔ Δ profile = SkillProfile·new("mastered");
     ∀ _ ∈ 0..100 {
         profile.record_exercise(Exercise·new(0.99));
->>>>>>> origin/main
     }
     assert(profile.is_expert());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_profile_is_novice() {
-    let profile = SkillProfile::new("new_skill");
-=======
 λ test_skill_profile_is_novice() {
     ≔ profile = SkillProfile·new("new_skill");
->>>>>>> origin/main
     assert(profile.is_novice());
 }
 
@@ -1101,25 +593,15 @@ fn test_skill_profile_is_novice() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_definition_new() {
-    let def = SkillDefinition::new("programming");
-=======
 λ test_skill_definition_new() {
     ≔ def = SkillDefinition·new("programming");
->>>>>>> origin/main
     assert_eq(def.name, "programming");
     assert(!def.has_subskills());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_definition_with_subskill() {
-    let def = SkillDefinition::new("programming")
-=======
 λ test_skill_definition_with_subskill() {
     ≔ def = SkillDefinition·new("programming")
->>>>>>> origin/main
         .with_subskill("rust")
         .with_subskill("python");
     assert(def.has_subskills());
@@ -1127,13 +609,8 @@ fn test_skill_definition_with_subskill() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_definition_with_category() {
-    let def = SkillDefinition::new("rust")
-=======
 λ test_skill_definition_with_category() {
     ≔ def = SkillDefinition·new("rust")
->>>>>>> origin/main
         .with_category("programming");
     assert_eq(def.category.unwrap(), "programming");
 }
@@ -1143,37 +620,22 @@ fn test_skill_definition_with_category() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_transfer_new() {
-    let transfer = SkillTransfer::new("python", "ruby", 0.5);
-=======
 λ test_skill_transfer_new() {
     ≔ transfer = SkillTransfer·new("python", "ruby", 0.5);
->>>>>>> origin/main
     assert_eq(transfer.source, "python");
     assert_eq(transfer.target, "ruby");
     assert_eq(transfer.rate, 0.5);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_transfer_rate_clamped() {
-    let transfer = SkillTransfer::new("a", "b", 1.5);
-=======
 λ test_skill_transfer_rate_clamped() {
     ≔ transfer = SkillTransfer·new("a", "b", 1.5);
->>>>>>> origin/main
     assert_eq(transfer.rate, 1.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_transfer_with_aspect() {
-    let transfer = SkillTransfer::new("java", "kotlin", 0.7)
-=======
 λ test_skill_transfer_with_aspect() {
     ≔ transfer = SkillTransfer·new("java", "kotlin", 0.7)
->>>>>>> origin/main
         .with_aspect("syntax")
         .with_aspect("oop");
     assert_eq(transfer.aspects.len(), 2);
@@ -1184,70 +646,40 @@ fn test_skill_transfer_with_aspect() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_hierarchy_new() {
-    let h = SkillHierarchy::new();
-=======
 λ test_skill_hierarchy_new() {
     ≔ h = SkillHierarchy·new();
->>>>>>> origin/main
     assert(h.get_children("anything").is_none());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_hierarchy_add_child() {
-    let mut h = SkillHierarchy::new();
-=======
 λ test_skill_hierarchy_add_child() {
     ≔ Δ h = SkillHierarchy·new();
->>>>>>> origin/main
     h.add_child("programming", "rust");
     assert(h.has_children("programming"));
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_hierarchy_get_children() {
-    let mut h = SkillHierarchy::new();
-    h.add_child("programming", "rust");
-    h.add_child("programming", "python");
-    let children = h.get_children("programming");
-=======
 λ test_skill_hierarchy_get_children() {
     ≔ Δ h = SkillHierarchy·new();
     h.add_child("programming", "rust");
     h.add_child("programming", "python");
     ≔ children = h.get_children("programming");
->>>>>>> origin/main
     assert(children.is_some());
     assert_eq(children.unwrap().len(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_hierarchy_get_parent() {
-    let mut h = SkillHierarchy::new();
-    h.add_child("programming", "rust");
-    let parent = h.get_parent("rust");
-=======
 λ test_skill_hierarchy_get_parent() {
     ≔ Δ h = SkillHierarchy·new();
     h.add_child("programming", "rust");
     ≔ parent = h.get_parent("rust");
->>>>>>> origin/main
     assert(parent.is_some());
     assert_eq(*parent.unwrap(), "programming");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_hierarchy_is_child_of() {
-    let mut h = SkillHierarchy::new();
-=======
 λ test_skill_hierarchy_is_child_of() {
     ≔ Δ h = SkillHierarchy·new();
->>>>>>> origin/main
     h.add_child("programming", "rust");
     assert(h.is_child_of("rust", "programming"));
     assert(!h.is_child_of("python", "programming"));
@@ -1258,89 +690,46 @@ fn test_skill_hierarchy_is_child_of() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_new() {
-    let system = SkillSystem::new();
-=======
 λ test_skill_system_new() {
     ≔ system = SkillSystem·new();
->>>>>>> origin/main
     assert_eq(system.skill_count(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_define() {
-    let mut system = SkillSystem::new();
-    system.define(SkillDefinition::new("rust"));
-=======
 λ test_skill_system_define() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("rust"));
->>>>>>> origin/main
     assert_eq(system.skill_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_define_with_subskills() {
-    let mut system = SkillSystem::new();
-    system.define(SkillDefinition::new("programming")
-=======
 λ test_skill_system_define_with_subskills() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("programming")
->>>>>>> origin/main
         .with_subskill("rust")
         .with_subskill("python"));
     assert_eq(system.skill_count(), 3);  // programming + rust + python
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_get() {
-    let mut system = SkillSystem::new();
-    system.define(SkillDefinition::new("testing"));
-    let skill = system.get("testing");
-=======
 λ test_skill_system_get() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("testing"));
     ≔ skill = system.get("testing");
->>>>>>> origin/main
     assert(skill.is_some());
     assert_eq(skill.unwrap().name, "testing");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_record_exercise() {
-    let mut system = SkillSystem::new();
-    system.define(SkillDefinition::new("coding"));
-    system.record_exercise("coding", 0.8);
-    let skill = system.get("coding").unwrap();
-=======
 λ test_skill_system_record_exercise() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("coding"));
     system.record_exercise("coding", 0.8);
     ≔ skill = system.get("coding").unwrap();
->>>>>>> origin/main
     assert_eq(skill.experience_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_transfer_learning() {
-    let mut system = SkillSystem::new();
-    system.define(SkillDefinition::new("python"));
-    system.define(SkillDefinition::new("ruby"));
-    system.register_transfer(SkillTransfer::new("python", "ruby", 0.5));
-
-    system.record_exercise("python", 0.9);
-
-    let ruby = system.get("ruby").unwrap();
-=======
 λ test_skill_system_transfer_learning() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("python"));
@@ -1350,59 +739,28 @@ fn test_skill_system_transfer_learning() {
     system.record_exercise("python", 0.9);
 
     ≔ ruby = system.get("ruby").unwrap();
->>>>>>> origin/main
     assert(ruby.proficiency() > 0.0);  // Should have transferred
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_all_skills() {
-    let mut system = SkillSystem::new();
-    system.define(SkillDefinition::new("a"));
-    system.define(SkillDefinition::new("b"));
-    system.define(SkillDefinition::new("c"));
-=======
 λ test_skill_system_all_skills() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("a"));
     system.define(SkillDefinition·new("b"));
     system.define(SkillDefinition·new("c"));
->>>>>>> origin/main
     assert_eq(system.all_skills().len(), 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_skills_at_level() {
-    let mut system = SkillSystem::new();
-    system.define(SkillDefinition::new("novice1"));
-    system.define(SkillDefinition::new("novice2"));
-    let novices = system.skills_at_level(SkillLevel::Novice);
-=======
 λ test_skill_system_skills_at_level() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("novice1"));
     system.define(SkillDefinition·new("novice2"));
     ≔ novices = system.skills_at_level(SkillLevel·Novice);
->>>>>>> origin/main
     assert_eq(novices.len(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_skill_system_expert_skills() {
-    let mut system = SkillSystem::new();
-    system.define(SkillDefinition::new("mastered"));
-    // Exercise many times with high quality
-    for _ in 0..100 {
-        system.record_exercise("mastered", 0.99);
-    }
-    let experts = system.expert_skills();
-    assert_eq(experts.len(), 1);
-}
-
-fn main() {
-=======
 λ test_skill_system_expert_skills() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("mastered"));
@@ -1415,6 +773,5 @@ fn main() {
 }
 
 λ main() {
->>>>>>> origin/main
     print("Gnosis skills tests");
 }

@@ -3,7 +3,7 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ x = 42;
     ≔ y = !x;  // ERROR: ! requires bool (logical not)
     println(y);

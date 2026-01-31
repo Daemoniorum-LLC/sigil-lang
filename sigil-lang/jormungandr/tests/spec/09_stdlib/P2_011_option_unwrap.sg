@@ -1,9 +1,0 @@
-// Test: Option unwrap
-// Spec: 09-STDLIB.md § 3.1 Option
-// Priority: P2 - Enhancement
-
-λ main() {
-    ≔ opt: Option<i32> = Option·Some(42);
-    ≔ val: !i32 = opt.unwrap();
-    println(val);
-}

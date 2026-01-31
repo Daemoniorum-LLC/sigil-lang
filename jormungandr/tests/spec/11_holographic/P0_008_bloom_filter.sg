@@ -2,9 +2,9 @@
 // Spec: 11-HOLOGRAPHIC.md § 3.1 Sketch Types
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ bloom: BloomFilter<10000, 7> = BloomFilter·new();
     bloom.insert("hello");
     ≔ maybe◊ = bloom|◊contains("hello");
-    println(maybe◊);  // Should be yea (possibly nay positive)
+    println(maybe◊);  // Should be true (possibly false positive)
 }

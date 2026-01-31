@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 1.1 Arithmetic
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     // Addition
     ≔ a: !i32 = 10 + 5;
     println(a);

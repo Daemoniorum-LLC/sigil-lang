@@ -8,10 +8,10 @@
 // Expected behavior:
 // Should compile and print 84
 
-rite add(x: !i32, y: !i32) → !i32 {
+λ add(x: !i32, y: !i32) -> !i32 {
     x + y
 }
 
-rite main() {
+λ main() {
     println(add(42, 42));
 }

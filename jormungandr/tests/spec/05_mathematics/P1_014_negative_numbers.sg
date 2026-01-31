@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 5.3 Negative Numbers
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     // Negative literals
     ≔ a: !i32 = -42;
     println(a);
@@ -22,7 +22,7 @@ rite main() {
     ≔ d: !i32 = --5;
     println(d);
 
-    // Negative of expressions
+    // Negative ∈ expressions
     println(10 + -3);
     println(10 - -3);
 }

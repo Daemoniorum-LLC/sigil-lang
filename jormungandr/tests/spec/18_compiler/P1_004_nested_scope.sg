@@ -2,7 +2,7 @@
 // Spec: 18-COMPILER.md § 2.1 Scopes
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 1;
     println(x);
 

@@ -1,9 +1,0 @@
-// Test: Method chaining
-// Spec: 02-SYNTAX.md § 3.9 Method Calls
-// Priority: P0
-
-λ main() {
-    ≔ Δ s: !String = "Hello";
-    s.push_str(" ").push_str("World");
-    println(s);
-}

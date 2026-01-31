@@ -1,33 +1,39 @@
 [package]
 name = "sigil-parser"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
-description = "Parser and native compiler for the Sigil programming language - a language that tracks data trust at the type level"
+description = "Parser and native compiler for the Sigil programming language"
 authors = ["Lilith Crook <lilith@daemoniorum.com>"]
-license = "MIT"
+license-file = "LICENSE"
 repository = "https://github.com/Daemoniorum-LLC/sigil-lang"
-homepage = "https://sigil-lang.com"
-documentation = "https://sigil-lang.com/pages/docs.html"
+homepage = "https://www.daemoniorum.com"
+documentation = "https://github.com/Daemoniorum-LLC/sigil-lang/tree/main/docs"
 readme = "README.md"
 keywords = ["parser", "compiler", "programming-language", "jit", "ai"]
 categories = ["compilers", "development-tools"]
 
 [features]
-default = ["jit", "http-client"]
+# Full-featured compiler: JIT for dev, LLVM for native binaries, protocols for networking
+# Note: llvm feature requires LLVM 18+ installed on the system
+default = ["jit", "llvm", "protocols"]
+
+# Minimal build (no LLVM dependency): cargo build --no-default-features --features jit
+minimal = ["jit"]
+
 jit = ["cranelift-codegen", "cranelift-frontend", "cranelift-jit", "cranelift-module", "cranelift-native"]
 llvm = ["inkwell"]
 wasm = ["wasm-encoder"]
 lsp = ["tower-lsp", "tokio"]
-# Browser WASM target - minimal deps for playground execution
-wasm-web = ["wasm-bindgen", "console_error_panic_hook", "getrandom-js"]
-getrandom-js = ["getrandom/js"]
 
 # Protocol support features
-protocols = ["protocol-core", "grpc", "http-client", "websocket", "kafka", "amqp", "graphql"]
+# v0.4.0: HTTP and WebSocket are production-ready (included in default)
+# v0.5.0: gRPC, Kafka, AMQP, GraphQL (deferred - require infrastructure)
+protocols = ["protocol-core", "http-client", "websocket"]
 protocol-core = ["tokio", "url", "async-trait", "futures-util", "tower"]
+http-client = ["protocol-core", "reqwest", "hyper", "hyper-util", "http", "http-body-util", "openssl"]
+websocket = ["protocol-core", "native-tls"]
+# Deferred to v0.5.0 - require external infrastructure for testing
 grpc = ["protocol-core", "tonic", "prost", "prost-types"]
-http-client = ["protocol-core", "reqwest", "hyper", "hyper-util", "http", "http-body-util"]
-websocket = ["protocol-core", "tokio-tungstenite", "tungstenite"]
 kafka = ["protocol-core", "rdkafka"]
 amqp = ["protocol-core", "lapin"]
 graphql = ["protocol-core", "graphql_client"]
@@ -59,6 +65,7 @@ rust-stemmers = "1.2"        # Stemming (Porter, Snowball)
 tiktoken-rs = "0.5"          # OpenAI tokenizer for LLM token counting
 
 # Crypto and encoding - comprehensive cryptography suite
+sha1 = "0.10"                        # SHA-1 (required by WebSocket RFC 6455)
 sha2 = "0.10"
 sha3 = "0.10"                        # SHA-3/Keccak
 blake3 = "1.5"                       # BLAKE3 (fast, secure)
@@ -85,7 +92,7 @@ hmac = "0.12"
 # Secure random
 rand = "0.8"
 rand_core = "0.6"
-getrandom = { version = "0.2", default-features = false }
+getrandom = "0.2"
 
 # Secret sharing (Shamir)
 vsss-rs = "4.0"                      # Verifiable Secret Sharing
@@ -131,7 +138,7 @@ wasm-encoder = { version = "0.219", optional = true }
 tokio = { version = "1.35", features = ["full"], optional = true }
 
 # gRPC support
-tonic = { version = "0.12", optional = true }
+tonic = { version = "0.12", features = ["channel", "tls"], optional = true }
 prost = { version = "0.13", optional = true }
 prost-types = { version = "0.13", optional = true }
 
@@ -142,9 +149,11 @@ hyper-util = { version = "0.1", optional = true }
 http = { version = "1.1", optional = true }
 http-body-util = { version = "0.1", optional = true }
 
-# WebSocket support
-tokio-tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
-tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
+# WebSocket support (native implementation, TLS via native-tls)
+native-tls = { version = "0.2", optional = true }
+
+# Vendored OpenSSL for cross-compilation (avoids system dependency)
+openssl = { version = "0.10", features = ["vendored"], optional = true }
 futures-util = { version = "0.3", optional = true }
 
 # Kafka support
@@ -167,10 +176,6 @@ tower = { version = "0.5", optional = true }
 
 # LSP server support
 tower-lsp = { version = "0.20", optional = true }
-
-# WASM browser target support
-wasm-bindgen = { version = "0.2", optional = true }
-console_error_panic_hook = { version = "0.1", optional = true }
 
 # File watching for linter
 notify = "6.1"

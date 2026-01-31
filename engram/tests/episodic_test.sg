@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-//! Tests for Engram Episodic Memory (Experience Memory)
-=======
 //! Tests ∀ Engram Episodic Memory (Experience Memory)
->>>>>>> origin/main
 //!
 //! Verifies time-bounded experience storage with decay and consolidation.
 
@@ -10,16 +6,6 @@
 // Self-contained Test Types (matching episodic.sg API)
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct EpisodeId(usize);
-
-impl EpisodeId {
-    fn new(id: usize) -> Self { Self(id) }
-}
-
-impl PartialEq for EpisodeId {
-    fn eq(&self, other: &Self) -> bool {
-=======
 ☉ Σ EpisodeId(usize);
 
 ⊢ EpisodeId {
@@ -28,27 +14,17 @@ impl PartialEq for EpisodeId {
 
 ⊢ PartialEq ∀ EpisodeId {
     λ eq(&self, other: &Self) -> bool {
->>>>>>> origin/main
         self.0 == other.0
     }
 }
 
-<<<<<<< HEAD
-impl Clone for EpisodeId {
-    fn clone(&self) -> Self {
-=======
 ⊢ Clone ∀ EpisodeId {
     λ clone(&self) -> Self {
->>>>>>> origin/main
         EpisodeId(self.0)
     }
 }
 
-<<<<<<< HEAD
-pub enum Outcome {
-=======
 ☉ ᛈ Outcome {
->>>>>>> origin/main
     Ongoing,
     Success { goal_alignment: f64, effects: Vec<String> },
     Failure { reason: String, recoverable: bool },
@@ -56,26 +32,6 @@ pub enum Outcome {
     Abandoned { reason: String },
 }
 
-<<<<<<< HEAD
-impl Outcome {
-    pub fn confidence(&self) -> f64 {
-        match self {
-            Outcome::Success { goal_alignment, .. } => *goal_alignment,
-            Outcome::Failure { .. } => 1.0,
-            Outcome::Partial { achieved, .. } => *achieved,
-            Outcome::Ongoing => 0.5,
-            Outcome::Abandoned { .. } => 0.0,
-        }
-    }
-
-    pub fn summarize(&self) -> String {
-        match self {
-            Outcome::Ongoing => "ongoing".to_string(),
-            Outcome::Success { .. } => "success".to_string(),
-            Outcome::Failure { reason, .. } => format!("failed: {}", reason),
-            Outcome::Partial { achieved, .. } => format!("partial: {:.0}%", achieved * 100.0),
-            Outcome::Abandoned { reason } => format!("abandoned: {}", reason),
-=======
 ⊢ Outcome {
     ☉ λ confidence(&self) -> f64 {
         ⌥ self {
@@ -94,16 +50,11 @@ impl Outcome {
             Outcome·Failure { reason, .. } => format!("failed: {}", reason),
             Outcome·Partial { achieved, .. } => format!("partial: {:.0}%", achieved * 100.0),
             Outcome·Abandoned { reason } => format!("abandoned: {}", reason),
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-pub enum EventType {
-=======
 ☉ ᛈ EventType {
->>>>>>> origin/main
     UserMessage,
     AgentResponse,
     SystemMessage,
@@ -114,23 +65,6 @@ pub enum EventType {
     Error,
 }
 
-<<<<<<< HEAD
-pub struct Event {
-    pub timestamp: u64,
-    pub sequence: u32,
-    pub event_type: EventType,
-    pub content: String,
-    pub actor: Option<String>,
-    pub success: Option<bool>,
-}
-
-impl Event {
-    pub fn user_message(content: &str) -> Self {
-        Self {
-            timestamp: 0,
-            sequence: 0,
-            event_type: EventType::UserMessage,
-=======
 ☉ Σ Event {
     ☉ timestamp: u64,
     ☉ sequence: u32,
@@ -146,64 +80,39 @@ impl Event {
             timestamp: 0,
             sequence: 0,
             event_type: EventType·UserMessage,
->>>>>>> origin/main
             content: content.to_string(),
             actor: Some("user".to_string()),
             success: None,
         }
     }
 
-<<<<<<< HEAD
-    pub fn agent_response(content: &str) -> Self {
-        Self {
-            timestamp: 0,
-            sequence: 0,
-            event_type: EventType::AgentResponse,
-=======
     ☉ λ agent_response(content: &str) -> Self {
         Self {
             timestamp: 0,
             sequence: 0,
             event_type: EventType·AgentResponse,
->>>>>>> origin/main
             content: content.to_string(),
             actor: Some("agent".to_string()),
             success: None,
         }
     }
 
-<<<<<<< HEAD
-    pub fn tool_call(tool: &str) -> Self {
-        Self {
-            timestamp: 0,
-            sequence: 0,
-            event_type: EventType::ToolCall,
-=======
     ☉ λ tool_call(tool: &str) -> Self {
         Self {
             timestamp: 0,
             sequence: 0,
             event_type: EventType·ToolCall,
->>>>>>> origin/main
             content: tool.to_string(),
             actor: Some("agent".to_string()),
             success: None,
         }
     }
 
-<<<<<<< HEAD
-    pub fn error_event(error: &str) -> Self {
-        Self {
-            timestamp: 0,
-            sequence: 0,
-            event_type: EventType::Error,
-=======
     ☉ λ error_event(error: &str) -> Self {
         Self {
             timestamp: 0,
             sequence: 0,
             event_type: EventType·Error,
->>>>>>> origin/main
             content: error.to_string(),
             actor: None,
             success: Some(false),
@@ -211,11 +120,7 @@ impl Event {
     }
 }
 
-<<<<<<< HEAD
-pub enum ParticipantRole {
-=======
 ☉ ᛈ ParticipantRole {
->>>>>>> origin/main
     Self_,
     User,
     OtherAgent,
@@ -223,19 +128,6 @@ pub enum ParticipantRole {
     Tool,
 }
 
-<<<<<<< HEAD
-pub struct Participant {
-    pub id: String,
-    pub role: ParticipantRole,
-    pub name: Option<String>,
-}
-
-impl Participant {
-    pub fn user(id: &str) -> Self {
-        Self {
-            id: id.to_string(),
-            role: ParticipantRole::User,
-=======
 ☉ Σ Participant {
     ☉ id: String,
     ☉ role: ParticipantRole,
@@ -247,55 +139,27 @@ impl Participant {
         Self {
             id: id.to_string(),
             role: ParticipantRole·User,
->>>>>>> origin/main
             name: None,
         }
     }
 
-<<<<<<< HEAD
-    pub fn agent(id: &str) -> Self {
-        Self {
-            id: id.to_string(),
-            role: ParticipantRole::Self_,
-=======
     ☉ λ agent(id: &str) -> Self {
         Self {
             id: id.to_string(),
             role: ParticipantRole·Self_,
->>>>>>> origin/main
             name: None,
         }
     }
 
-<<<<<<< HEAD
-    pub fn tool(name: &str) -> Self {
-        Self {
-            id: name.to_string(),
-            role: ParticipantRole::Tool,
-=======
     ☉ λ tool(name: &str) -> Self {
         Self {
             id: name.to_string(),
             role: ParticipantRole·Tool,
->>>>>>> origin/main
             name: Some(name.to_string()),
         }
     }
 }
 
-<<<<<<< HEAD
-pub struct Context {
-    pub goal: Option<String>,
-    pub task: Option<String>,
-}
-
-impl Context {
-    pub fn new() -> Self {
-        Self { goal: None, task: None }
-    }
-
-    pub fn with_goal(goal: &str) -> Self {
-=======
 ☉ Σ Context {
     ☉ goal: Option<String>,
     ☉ task: Option<String>,
@@ -307,35 +171,17 @@ impl Context {
     }
 
     ☉ λ with_goal(goal: &str) -> Self {
->>>>>>> origin/main
         Self {
             goal: Some(goal.to_string()),
             task: None,
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_task(mut self, task: &str) -> Self {
-=======
     ☉ λ with_task(Δ self, task: &str) -> Self {
->>>>>>> origin/main
         self.task = Some(task.to_string());
         self
     }
 
-<<<<<<< HEAD
-    pub fn to_string(&self) -> String {
-        let mut parts = Vec::new();
-        if let Some(goal) = &self.goal {
-            parts.push(format!("Goal: {}", goal));
-        }
-        if let Some(task) = &self.task {
-            parts.push(format!("Task: {}", task));
-        }
-        let mut result = String::new();
-        for (i, part) in parts.iter().enumerate() {
-            if i > 0 { result.push_str(", "); }
-=======
     ☉ λ to_string(&self) -> String {
         ≔ Δ parts = Vec·new();
         ⎇ ≔ Some(goal) = &self.goal {
@@ -347,44 +193,12 @@ impl Context {
         ≔ Δ result = String·new();
         ∀ (i, part) ∈ parts.iter().enumerate() {
             ⎇ i > 0 { result.push_str(", "); }
->>>>>>> origin/main
             result.push_str(part);
         }
         result
     }
 }
 
-<<<<<<< HEAD
-pub struct Episode {
-    pub id: EpisodeId,
-    pub started_at: u64,
-    pub ended_at: Option<u64>,
-    pub context: Context,
-    pub participants: Vec<Participant>,
-    pub events: Vec<Event>,
-    pub outcome: Outcome,
-    pub valence: f64,
-    pub significance: f64,
-    pub surprise: f64,
-    pub strength: f64,
-    pub access_count: u32,
-    pub last_accessed: u64,
-    pub consolidated: bool,
-    pub caused_by: Vec<EpisodeId>,
-    pub leads_to: Vec<EpisodeId>,
-}
-
-impl Episode {
-    pub fn new(id: usize, context: Context) -> Self {
-        Self {
-            id: EpisodeId::new(id),
-            started_at: 0,
-            ended_at: None,
-            context,
-            participants: Vec::new(),
-            events: Vec::new(),
-            outcome: Outcome::Ongoing,
-=======
 ☉ Σ Episode {
     ☉ id: EpisodeId,
     ☉ started_at: u64,
@@ -414,7 +228,6 @@ impl Episode {
             participants: Vec·new(),
             events: Vec·new(),
             outcome: Outcome·Ongoing,
->>>>>>> origin/main
             valence: 0.0,
             significance: 0.0,
             surprise: 0.0,
@@ -422,36 +235,16 @@ impl Episode {
             access_count: 0,
             last_accessed: 0,
             consolidated: false,
-<<<<<<< HEAD
-            caused_by: Vec::new(),
-            leads_to: Vec::new(),
-        }
-    }
-
-    pub fn with_start_time(mut self, time: u64) -> Self {
-=======
             caused_by: Vec·new(),
             leads_to: Vec·new(),
         }
     }
 
     ☉ λ with_start_time(Δ self, time: u64) -> Self {
->>>>>>> origin/main
         self.started_at = time;
         self
     }
 
-<<<<<<< HEAD
-    pub fn add_event(&mut self, event: Event) {
-        self.events.push(event);
-    }
-
-    pub fn add_participant(&mut self, participant: Participant) {
-        self.participants.push(participant);
-    }
-
-    pub fn complete(&mut self, outcome: Outcome, end_time: u64) {
-=======
     ☉ λ add_event(&Δ self, event: Event) {
         self.events.push(event);
     }
@@ -461,24 +254,10 @@ impl Episode {
     }
 
     ☉ λ complete(&Δ self, outcome: Outcome, end_time: u64) {
->>>>>>> origin/main
         self.outcome = outcome;
         self.ended_at = Some(end_time);
     }
 
-<<<<<<< HEAD
-    pub fn duration(&self) -> Option<u64> {
-        self.ended_at.map(|end| end - self.started_at)
-    }
-
-    pub fn is_ongoing(&self) -> bool {
-        self.ended_at.is_none()
-    }
-
-    pub fn summarize(&self) -> String {
-        let outcome_str = self.outcome.summarize();
-        let event_count = self.events.len();
-=======
     ☉ λ duration(&self) -> Option<u64> {
         self.ended_at.map(|end| end - self.started_at)
     }
@@ -490,18 +269,12 @@ impl Episode {
     ☉ λ summarize(&self) -> String {
         ≔ outcome_str = self.outcome.summarize();
         ≔ event_count = self.events.len();
->>>>>>> origin/main
         format!("Episode {}: {} events, {}", self.id.0, event_count, outcome_str)
     }
 }
 
-<<<<<<< HEAD
-impl Clone for Episode {
-    fn clone(&self) -> Self {
-=======
 ⊢ Clone ∀ Episode {
     λ clone(&self) -> Self {
->>>>>>> origin/main
         Episode {
             id: self.id.clone(),
             started_at: self.started_at,
@@ -510,15 +283,9 @@ impl Clone for Episode {
                 goal: self.context.goal.clone(),
                 task: self.context.task.clone(),
             },
-<<<<<<< HEAD
-            participants: Vec::new(),  // Simplified clone
-            events: Vec::new(),  // Simplified clone
-            outcome: Outcome::Ongoing,  // Simplified clone
-=======
             participants: Vec·new(),  // Simplified clone
             events: Vec·new(),  // Simplified clone
             outcome: Outcome·Ongoing,  // Simplified clone
->>>>>>> origin/main
             valence: self.valence,
             significance: self.significance,
             surprise: self.surprise,
@@ -526,28 +293,12 @@ impl Clone for Episode {
             access_count: self.access_count,
             last_accessed: self.last_accessed,
             consolidated: self.consolidated,
-<<<<<<< HEAD
-            caused_by: Vec::new(),
-            leads_to: Vec::new(),
-=======
             caused_by: Vec·new(),
             leads_to: Vec·new(),
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-pub struct EpisodicConfig {
-    pub decay_rate: f64,
-    pub consolidation_threshold: f64,
-    pub max_active_episodes: usize,
-    pub min_significance_for_retention: f64,
-}
-
-impl EpisodicConfig {
-    pub fn default_config() -> Self {
-=======
 ☉ Σ EpisodicConfig {
     ☉ decay_rate: f64,
     ☉ consolidation_threshold: f64,
@@ -557,7 +308,6 @@ impl EpisodicConfig {
 
 ⊢ EpisodicConfig {
     ☉ λ default_config() -> Self {
->>>>>>> origin/main
         Self {
             decay_rate: 0.1,
             consolidation_threshold: 0.3,
@@ -566,60 +316,32 @@ impl EpisodicConfig {
         }
     }
 
-<<<<<<< HEAD
-    pub fn with_decay_rate(mut self, rate: f64) -> Self {
-=======
     ☉ λ with_decay_rate(Δ self, rate: f64) -> Self {
->>>>>>> origin/main
         self.decay_rate = rate;
         self
     }
 
-<<<<<<< HEAD
-    pub fn with_consolidation_threshold(mut self, threshold: f64) -> Self {
-=======
     ☉ λ with_consolidation_threshold(Δ self, threshold: f64) -> Self {
->>>>>>> origin/main
         self.consolidation_threshold = threshold;
         self
     }
 }
 
-<<<<<<< HEAD
-pub struct EpisodicMemory {
-=======
 ☉ Σ EpisodicMemory {
->>>>>>> origin/main
     episodes: Vec<Episode>,
     config: EpisodicConfig,
     next_id: usize,
 }
 
-<<<<<<< HEAD
-impl EpisodicMemory {
-    pub fn new(config: EpisodicConfig) -> Self {
-        Self {
-            episodes: Vec::new(),
-=======
 ⊢ EpisodicMemory {
     ☉ λ new(config: EpisodicConfig) -> Self {
         Self {
             episodes: Vec·new(),
->>>>>>> origin/main
             config,
             next_id: 0,
         }
     }
 
-<<<<<<< HEAD
-    pub fn default_memory() -> Self {
-        Self::new(EpisodicConfig::default_config())
-    }
-
-    pub fn record(&mut self, mut episode: Episode) -> EpisodeId {
-        // Enrich episode
-        if episode.significance == 0.0 {
-=======
     ☉ λ default_memory() -> Self {
         Self·new(EpisodicConfig·default_config())
     }
@@ -627,17 +349,12 @@ impl EpisodicMemory {
     ☉ λ record(&Δ self, Δ episode: Episode) -> EpisodeId {
         // Enrich episode
         ⎇ episode.significance == 0.0 {
->>>>>>> origin/main
             episode.significance = self.compute_significance(&episode);
         }
         episode.strength = 1.0;
         episode.access_count = 0;
 
-<<<<<<< HEAD
-        let id = episode.id.clone();
-=======
         ≔ id = episode.id.clone();
->>>>>>> origin/main
         self.episodes.push(episode);
 
         // Sort by time descending
@@ -646,23 +363,6 @@ impl EpisodicMemory {
         id
     }
 
-<<<<<<< HEAD
-    pub fn get(&self, id: &EpisodeId) -> Option<&Episode> {
-        self.episodes.iter().find(|e| e.id == *id)
-    }
-
-    pub fn len(&self) -> usize {
-        self.episodes.len()
-    }
-
-    pub fn recall_similar(&self, context: &Context, limit: usize) -> Vec<&Episode> {
-        let context_text = context.to_string().to_lowercase();
-
-        let mut scored: Vec<_> = self.episodes.iter()
-            .filter(|e| e.strength > 0.1)
-            .map(|e| {
-                let score = self.compute_similarity(&context_text, e);
-=======
     ☉ λ get(&self, id: &EpisodeId) -> Option<&Episode> {
         self.episodes.iter().find(|e| e.id == *id)
     }
@@ -678,51 +378,29 @@ impl EpisodicMemory {
             .filter(|e| e.strength > 0.1)
             .map(|e| {
                 ≔ score = self.compute_similarity(&context_text, e);
->>>>>>> origin/main
                 (e, score)
             })
             .filter(|(_, score)| *score > 0.0)
             .collect();
 
         // Sort by score descending (bubble sort)
-<<<<<<< HEAD
-        for i in 0..scored.len() {
-            for j in (i + 1)..scored.len() {
-                if scored[j].1 > scored[i].1 {
-                    let temp = scored[i];
-=======
         ∀ i ∈ 0..scored.len() {
             ∀ j ∈ (i + 1)..scored.len() {
                 ⎇ scored[j].1 > scored[i].1 {
                     ≔ temp = scored[i];
->>>>>>> origin/main
                     scored[i] = scored[j];
                     scored[j] = temp;
                 }
             }
         }
 
-<<<<<<< HEAD
-        let mut result = Vec::new();
-        for i in 0..limit.min(scored.len()) {
-=======
         ≔ Δ result = Vec·new();
         ∀ i ∈ 0..limit.min(scored.len()) {
->>>>>>> origin/main
             result.push(scored[i].0);
         }
         result
     }
 
-<<<<<<< HEAD
-    pub fn recall_before(&self, time: u64, limit: usize) -> Vec<&Episode> {
-        let mut result = Vec::new();
-        for episode in &self.episodes {
-            if episode.started_at < time && episode.strength > 0.1 {
-                result.push(episode);
-                if result.len() >= limit {
-                    break;
-=======
     ☉ λ recall_before(&self, time: u64, limit: usize) -> Vec<&Episode> {
         ≔ Δ result = Vec·new();
         ∀ episode ∈ &self.episodes {
@@ -730,57 +408,35 @@ impl EpisodicMemory {
                 result.push(episode);
                 ⎇ result.len() >= limit {
                     ⊗;
->>>>>>> origin/main
                 }
             }
         }
         result
     }
 
-<<<<<<< HEAD
-    pub fn recall_in_range(&self, start: u64, end: u64) -> Vec<&Episode> {
-=======
     ☉ λ recall_in_range(&self, start: u64, end: u64) -> Vec<&Episode> {
->>>>>>> origin/main
         self.episodes.iter()
             .filter(|e| e.started_at >= start && e.started_at <= end)
             .filter(|e| e.strength > 0.1)
             .collect()
     }
 
-<<<<<<< HEAD
-    pub fn apply_decay(&mut self, decay_factor: f64) {
-        for episode in &mut self.episodes {
-            episode.strength = episode.strength * decay_factor;
-
-            // Significant episodes decay slower
-            if episode.significance > 0.7 {
-=======
     ☉ λ apply_decay(&Δ self, decay_factor: f64) {
         ∀ episode ∈ &Δ self.episodes {
             episode.strength = episode.strength * decay_factor;
 
             // Significant episodes decay slower
             ⎇ episode.significance > 0.7 {
->>>>>>> origin/main
                 episode.strength = episode.strength.max(0.3);
             }
         }
 
         // Remove episodes below minimum strength
-<<<<<<< HEAD
-        let threshold = 0.1;
-        self.episodes.retain(|e| e.strength > threshold);
-    }
-
-    pub fn consolidation_candidates(&self) -> Vec<&Episode> {
-=======
         ≔ threshold = 0.1;
         self.episodes.retain(|e| e.strength > threshold);
     }
 
     ☉ λ consolidation_candidates(&self) -> Vec<&Episode> {
->>>>>>> origin/main
         self.episodes.iter()
             .filter(|e| !e.consolidated)
             .filter(|e| e.strength < self.config.consolidation_threshold)
@@ -788,37 +444,15 @@ impl EpisodicMemory {
             .collect()
     }
 
-<<<<<<< HEAD
-    pub fn mark_consolidated(&mut self, id: &EpisodeId) {
-        for episode in &mut self.episodes {
-            if episode.id == *id {
-                episode.consolidated = true;
-                break;
-=======
     ☉ λ mark_consolidated(&Δ self, id: &EpisodeId) {
         ∀ episode ∈ &Δ self.episodes {
             ⎇ episode.id == *id {
                 episode.consolidated = true;
                 ⊗;
->>>>>>> origin/main
             }
         }
     }
 
-<<<<<<< HEAD
-    fn compute_significance(&self, episode: &Episode) -> f64 {
-        let mut score = 0.0;
-
-        // Outcome contributes to significance
-        match &episode.outcome {
-            Outcome::Success { goal_alignment, .. } => {
-                score = score + 0.3 + goal_alignment * 0.2;
-            },
-            Outcome::Failure { .. } => {
-                score = score + 0.4;  // Failures are significant
-            },
-            Outcome::Partial { achieved, .. } => {
-=======
     λ compute_significance(&self, episode: &Episode) -> f64 {
         ≔ Δ score = 0.0;
 
@@ -831,46 +465,22 @@ impl EpisodicMemory {
                 score = score + 0.4;  // Failures are significant
             },
             Outcome·Partial { achieved, .. } => {
->>>>>>> origin/main
                 score = score + 0.2 + achieved * 0.1;
             },
             _ => {}
         }
 
         // More events = more significant
-<<<<<<< HEAD
-        let event_factor = (episode.events.len() as f64 / 20.0).min(0.3);
-        score = score + event_factor;
-
-        // Valence extremes are significant
-        let valence_factor = episode.valence.abs() * 0.2;
-=======
         ≔ event_factor = (episode.events.len() as f64 / 20.0).min(0.3);
         score = score + event_factor;
 
         // Valence extremes are significant
         ≔ valence_factor = episode.valence.abs() * 0.2;
->>>>>>> origin/main
         score = score + valence_factor;
 
         score.min(1.0)
     }
 
-<<<<<<< HEAD
-    fn compute_similarity(&self, context: &str, episode: &Episode) -> f64 {
-        let episode_text = episode.summarize().to_lowercase();
-
-        // Simple word overlap
-        let context_words: Vec<&str> = context.split_whitespace().collect();
-        let episode_words: Vec<&str> = episode_text.split_whitespace().collect();
-
-        let mut matches = 0;
-        for cw in &context_words {
-            for ew in &episode_words {
-                if *cw == *ew {
-                    matches = matches + 1;
-                    break;
-=======
     λ compute_similarity(&self, context: &str, episode: &Episode) -> f64 {
         ≔ episode_text = episode.summarize().to_lowercase();
 
@@ -884,18 +494,12 @@ impl EpisodicMemory {
                 ⎇ *cw == *ew {
                     matches = matches + 1;
                     ⊗;
->>>>>>> origin/main
                 }
             }
         }
 
-<<<<<<< HEAD
-        let total = context_words.len() + episode_words.len();
-        if total == 0 { 0.0 } else { 2.0 * matches as f64 / total as f64 }
-=======
         ≔ total = context_words.len() + episode_words.len();
         ⎇ total == 0 { 0.0 } ⎉ { 2.0 * matches as f64 / total as f64 }
->>>>>>> origin/main
     }
 }
 
@@ -904,15 +508,9 @@ impl EpisodicMemory {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_episode_creation() {
-    let context = Context::with_goal("Complete the task");
-    let episode = Episode::new(1, context);
-=======
 λ test_episode_creation() {
     ≔ context = Context·with_goal("Complete the task");
     ≔ episode = Episode·new(1, context);
->>>>>>> origin/main
 
     assert(episode.is_ongoing());
     assert_eq(episode.events.len(), 0);
@@ -920,79 +518,45 @@ fn test_episode_creation() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_episode_with_context() {
-    let context = Context::with_goal("Help user")
-        .with_task("Answer question");
-    let episode = Episode::new(1, context);
-
-    let ctx_str = episode.context.to_string();
-=======
 λ test_episode_with_context() {
     ≔ context = Context·with_goal("Help user")
         .with_task("Answer question");
     ≔ episode = Episode·new(1, context);
 
     ≔ ctx_str = episode.context.to_string();
->>>>>>> origin/main
     assert(ctx_str.contains("Help user"));
     assert(ctx_str.contains("Answer question"));
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_episode_add_event() {
-    let mut episode = Episode::new(1, Context::new());
-
-    episode.add_event(Event::user_message("Hello"));
-    episode.add_event(Event::agent_response("Hi there!"));
-=======
 λ test_episode_add_event() {
     ≔ Δ episode = Episode·new(1, Context·new());
 
     episode.add_event(Event·user_message("Hello"));
     episode.add_event(Event·agent_response("Hi there!"));
->>>>>>> origin/main
 
     assert_eq(episode.events.len(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_episode_add_participant() {
-    let mut episode = Episode::new(1, Context::new());
-
-    episode.add_participant(Participant::user("user_123"));
-    episode.add_participant(Participant::agent("agent_456"));
-=======
 λ test_episode_add_participant() {
     ≔ Δ episode = Episode·new(1, Context·new());
 
     episode.add_participant(Participant·user("user_123"));
     episode.add_participant(Participant·agent("agent_456"));
->>>>>>> origin/main
 
     assert_eq(episode.participants.len(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_episode_completion() {
-    let mut episode = Episode::new(1, Context::new())
-=======
 λ test_episode_completion() {
     ≔ Δ episode = Episode·new(1, Context·new())
->>>>>>> origin/main
         .with_start_time(100);
 
     assert(episode.is_ongoing());
     assert(episode.duration().is_none());
 
-<<<<<<< HEAD
-    episode.complete(Outcome::Success {
-=======
     episode.complete(Outcome·Success {
->>>>>>> origin/main
         goal_alignment: 0.9,
         effects: vec!["Task completed".to_string()],
     }, 200);
@@ -1002,18 +566,6 @@ fn test_episode_completion() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_episode_summarize() {
-    let mut episode = Episode::new(42, Context::with_goal("Test"));
-    episode.add_event(Event::user_message("Hello"));
-    episode.add_event(Event::agent_response("Hi"));
-    episode.complete(Outcome::Success {
-        goal_alignment: 0.9,
-        effects: Vec::new(),
-    }, 100);
-
-    let summary = episode.summarize();
-=======
 λ test_episode_summarize() {
     ≔ Δ episode = Episode·new(42, Context·with_goal("Test"));
     episode.add_event(Event·user_message("Hello"));
@@ -1024,7 +576,6 @@ fn test_episode_summarize() {
     }, 100);
 
     ≔ summary = episode.summarize();
->>>>>>> origin/main
     assert(summary.contains("42"));
     assert(summary.contains("2 events"));
     assert(summary.contains("success"));
@@ -1035,64 +586,33 @@ fn test_episode_summarize() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_episodic_memory_creation() {
-    let memory = EpisodicMemory::default_memory();
-=======
 λ test_episodic_memory_creation() {
     ≔ memory = EpisodicMemory·default_memory();
->>>>>>> origin/main
     assert_eq(memory.len(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_record_episode() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    let episode = Episode::new(1, Context::with_goal("Test goal"));
-    let id = memory.record(episode);
-=======
 λ test_record_episode() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ episode = Episode·new(1, Context·with_goal("Test goal"));
     ≔ id = memory.record(episode);
->>>>>>> origin/main
 
     assert_eq(memory.len(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_record_multiple_episodes() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    memory.record(Episode::new(1, Context::with_goal("First")));
-    memory.record(Episode::new(2, Context::with_goal("Second")));
-    memory.record(Episode::new(3, Context::with_goal("Third")));
-=======
 λ test_record_multiple_episodes() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     memory.record(Episode·new(1, Context·with_goal("First")));
     memory.record(Episode·new(2, Context·with_goal("Second")));
     memory.record(Episode·new(3, Context·with_goal("Third")));
->>>>>>> origin/main
 
     assert_eq(memory.len(), 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_get_episode_by_id() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    let episode = Episode::new(42, Context::with_goal("Find me"));
-    let id = memory.record(episode);
-
-    let retrieved = memory.get(&id);
-=======
 λ test_get_episode_by_id() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
@@ -1100,25 +620,16 @@ fn test_get_episode_by_id() {
     ≔ id = memory.record(episode);
 
     ≔ retrieved = memory.get(&id);
->>>>>>> origin/main
     assert(retrieved.is_some());
     assert_eq(retrieved.unwrap().id.0, 42);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_get_nonexistent_episode() {
-    let memory = EpisodicMemory::default_memory();
-
-    let fake_id = EpisodeId::new(999);
-    let retrieved = memory.get(&fake_id);
-=======
 λ test_get_nonexistent_episode() {
     ≔ memory = EpisodicMemory·default_memory();
 
     ≔ fake_id = EpisodeId·new(999);
     ≔ retrieved = memory.get(&fake_id);
->>>>>>> origin/main
     assert(retrieved.is_none());
 }
 
@@ -1127,18 +638,6 @@ fn test_get_nonexistent_episode() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_recall_similar_context() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    // Record episodes with different goals
-    memory.record(Episode::new(1, Context::with_goal("Help with coding")));
-    memory.record(Episode::new(2, Context::with_goal("Write documentation")));
-    memory.record(Episode::new(3, Context::with_goal("Debug code error")));
-
-    let query = Context::with_goal("coding help");
-    let results = memory.recall_similar(&query, 5);
-=======
 λ test_recall_similar_context() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
@@ -1149,26 +648,12 @@ fn test_recall_similar_context() {
 
     ≔ query = Context·with_goal("coding help");
     ≔ results = memory.recall_similar(&query, 5);
->>>>>>> origin/main
 
     // Should find some relevant episodes
     assert(results.len() > 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_recall_before_time() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    memory.record(Episode::new(1, Context::new()).with_start_time(100));
-    memory.record(Episode::new(2, Context::new()).with_start_time(200));
-    memory.record(Episode::new(3, Context::new()).with_start_time(300));
-
-    let results = memory.recall_before(250, 10);
-
-    // Should find episodes before time 250
-    for episode in &results {
-=======
 λ test_recall_before_time() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
@@ -1180,26 +665,11 @@ fn test_recall_before_time() {
 
     // Should find episodes before time 250
     ∀ episode ∈ &results {
->>>>>>> origin/main
         assert(episode.started_at < 250);
     }
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_recall_in_range() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    memory.record(Episode::new(1, Context::new()).with_start_time(100));
-    memory.record(Episode::new(2, Context::new()).with_start_time(200));
-    memory.record(Episode::new(3, Context::new()).with_start_time(300));
-    memory.record(Episode::new(4, Context::new()).with_start_time(400));
-
-    let results = memory.recall_in_range(150, 350);
-
-    // Should find episodes in range [150, 350]
-    for episode in &results {
-=======
 λ test_recall_in_range() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
@@ -1212,23 +682,12 @@ fn test_recall_in_range() {
 
     // Should find episodes ∈ range [150, 350]
     ∀ episode ∈ &results {
->>>>>>> origin/main
         assert(episode.started_at >= 150);
         assert(episode.started_at <= 350);
     }
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_recall_respects_strength_threshold() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    let mut episode = Episode::new(1, Context::with_goal("Weak episode"));
-    episode.strength = 0.05;  // Below threshold
-    memory.episodes.push(episode);
-
-    let results = memory.recall_before(1000, 10);
-=======
 λ test_recall_respects_strength_threshold() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
@@ -1237,7 +696,6 @@ fn test_recall_respects_strength_threshold() {
     memory.episodes.push(episode);
 
     ≔ results = memory.recall_before(1000, 10);
->>>>>>> origin/main
 
     // Weak episode should not be returned
     assert_eq(results.len(), 0);
@@ -1248,17 +706,6 @@ fn test_recall_respects_strength_threshold() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_apply_decay_reduces_strength() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    let episode = Episode::new(1, Context::new());
-    memory.record(episode);
-
-    let before = memory.episodes[0].strength;
-    memory.apply_decay(0.8);  // 20% decay
-    let after = memory.episodes[0].strength;
-=======
 λ test_apply_decay_reduces_strength() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
@@ -1268,23 +715,15 @@ fn test_apply_decay_reduces_strength() {
     ≔ before = memory.episodes[0].strength;
     memory.apply_decay(0.8);  // 20% decay
     ≔ after = memory.episodes[0].strength;
->>>>>>> origin/main
 
     assert(after < before);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_decay_preserves_significant_episodes() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    let mut episode = Episode::new(1, Context::new());
-=======
 λ test_decay_preserves_significant_episodes() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ Δ episode = Episode·new(1, Context·new());
->>>>>>> origin/main
     episode.significance = 0.9;  // Very significant
     episode.strength = 1.0;
     memory.episodes.push(episode);
@@ -1297,17 +736,10 @@ fn test_decay_preserves_significant_episodes() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_decay_removes_weak_episodes() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    let mut episode = Episode::new(1, Context::new());
-=======
 λ test_decay_removes_weak_episodes() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ Δ episode = Episode·new(1, Context·new());
->>>>>>> origin/main
     episode.strength = 0.2;  // Already weak
     episode.significance = 0.1;  // Not significant
     memory.episodes.push(episode);
@@ -1319,15 +751,6 @@ fn test_decay_removes_weak_episodes() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_consolidation_candidates() {
-    let mut memory = EpisodicMemory::new(
-        EpisodicConfig::default_config().with_consolidation_threshold(0.5)
-    );
-
-    // Strong episode - not a candidate
-    let mut e1 = Episode::new(1, Context::new());
-=======
 λ test_consolidation_candidates() {
     ≔ Δ memory = EpisodicMemory·new(
         EpisodicConfig·default_config().with_consolidation_threshold(0.5)
@@ -1335,36 +758,23 @@ fn test_consolidation_candidates() {
 
     // Strong episode - not a candidate
     ≔ Δ e1 = Episode·new(1, Context·new());
->>>>>>> origin/main
     e1.strength = 0.8;
     e1.significance = 0.5;
     memory.episodes.push(e1);
 
     // Weak but significant - candidate
-<<<<<<< HEAD
-    let mut e2 = Episode::new(2, Context::new());
-=======
     ≔ Δ e2 = Episode·new(2, Context·new());
->>>>>>> origin/main
     e2.strength = 0.3;
     e2.significance = 0.5;
     memory.episodes.push(e2);
 
     // Weak and insignificant - not a candidate
-<<<<<<< HEAD
-    let mut e3 = Episode::new(3, Context::new());
-=======
     ≔ Δ e3 = Episode·new(3, Context·new());
->>>>>>> origin/main
     e3.strength = 0.2;
     e3.significance = 0.1;
     memory.episodes.push(e3);
 
-<<<<<<< HEAD
-    let candidates = memory.consolidation_candidates();
-=======
     ≔ candidates = memory.consolidation_candidates();
->>>>>>> origin/main
 
     // Only e2 should be a candidate
     assert_eq(candidates.len(), 1);
@@ -1372,19 +782,11 @@ fn test_consolidation_candidates() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_mark_consolidated() {
-    let mut memory = EpisodicMemory::default_memory();
-
-    let episode = Episode::new(1, Context::new());
-    let id = memory.record(episode);
-=======
 λ test_mark_consolidated() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ episode = Episode·new(1, Context·new());
     ≔ id = memory.record(episode);
->>>>>>> origin/main
 
     assert(!memory.episodes[0].consolidated);
 
@@ -1398,15 +800,6 @@ fn test_mark_consolidated() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_success_confidence() {
-    let outcome = Outcome::Success {
-        goal_alignment: 0.85,
-        effects: Vec::new(),
-    };
-    let conf = outcome.confidence();
-    let diff = (conf - 0.85).abs();
-=======
 λ test_outcome_success_confidence() {
     ≔ outcome = Outcome·Success {
         goal_alignment: 0.85,
@@ -1414,42 +807,22 @@ fn test_outcome_success_confidence() {
     };
     ≔ conf = outcome.confidence();
     ≔ diff = (conf - 0.85).abs();
->>>>>>> origin/main
     assert(diff < 0.001);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_failure_confidence() {
-    let outcome = Outcome::Failure {
-=======
 λ test_outcome_failure_confidence() {
     ≔ outcome = Outcome·Failure {
->>>>>>> origin/main
         reason: "Error occurred".to_string(),
         recoverable: true,
     };
     // Failures have high confidence (we know what happened)
-<<<<<<< HEAD
-    let conf = outcome.confidence();
-    let diff = (conf - 1.0).abs();
-=======
     ≔ conf = outcome.confidence();
     ≔ diff = (conf - 1.0).abs();
->>>>>>> origin/main
     assert(diff < 0.001);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_partial_confidence() {
-    let outcome = Outcome::Partial {
-        achieved: 0.6,
-        notes: "Partially done".to_string(),
-    };
-    let conf = outcome.confidence();
-    let diff = (conf - 0.6).abs();
-=======
 λ test_outcome_partial_confidence() {
     ≔ outcome = Outcome·Partial {
         achieved: 0.6,
@@ -1457,21 +830,10 @@ fn test_outcome_partial_confidence() {
     };
     ≔ conf = outcome.confidence();
     ≔ diff = (conf - 0.6).abs();
->>>>>>> origin/main
     assert(diff < 0.001);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_summarize() {
-    let success = Outcome::Success { goal_alignment: 0.9, effects: Vec::new() };
-    assert_eq(success.summarize(), "success");
-
-    let failure = Outcome::Failure { reason: "test".to_string(), recoverable: false };
-    assert(failure.summarize().contains("failed"));
-
-    let ongoing = Outcome::Ongoing;
-=======
 λ test_outcome_summarize() {
     ≔ success = Outcome·Success { goal_alignment: 0.9, effects: Vec·new() };
     assert_eq(success.summarize(), "success");
@@ -1480,7 +842,6 @@ fn test_outcome_summarize() {
     assert(failure.summarize().contains("failed"));
 
     ≔ ongoing = Outcome·Ongoing;
->>>>>>> origin/main
     assert_eq(ongoing.summarize(), "ongoing");
 }
 
@@ -1489,49 +850,29 @@ fn test_outcome_summarize() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_event_user_message() {
-    let event = Event::user_message("Hello world");
-=======
 λ test_event_user_message() {
     ≔ event = Event·user_message("Hello world");
->>>>>>> origin/main
     assert_eq(event.content, "Hello world");
     assert(event.actor.is_some());
     assert_eq(event.actor.unwrap(), "user");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_event_agent_response() {
-    let event = Event::agent_response("I can help");
-=======
 λ test_event_agent_response() {
     ≔ event = Event·agent_response("I can help");
->>>>>>> origin/main
     assert_eq(event.content, "I can help");
     assert_eq(event.actor.unwrap(), "agent");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_event_tool_call() {
-    let event = Event::tool_call("search");
-=======
 λ test_event_tool_call() {
     ≔ event = Event·tool_call("search");
->>>>>>> origin/main
     assert_eq(event.content, "search");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_event_error() {
-    let event = Event::error_event("Connection failed");
-=======
 λ test_event_error() {
     ≔ event = Event·error_event("Connection failed");
->>>>>>> origin/main
     assert_eq(event.content, "Connection failed");
     assert_eq(event.success.unwrap(), false);
 }
@@ -1541,35 +882,20 @@ fn test_event_error() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_participant_user() {
-    let p = Participant::user("user_123");
-=======
 λ test_participant_user() {
     ≔ p = Participant·user("user_123");
->>>>>>> origin/main
     assert_eq(p.id, "user_123");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_participant_agent() {
-    let p = Participant::agent("agent_456");
-=======
 λ test_participant_agent() {
     ≔ p = Participant·agent("agent_456");
->>>>>>> origin/main
     assert_eq(p.id, "agent_456");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_participant_tool() {
-    let p = Participant::tool("web_search");
-=======
 λ test_participant_tool() {
     ≔ p = Participant·tool("web_search");
->>>>>>> origin/main
     assert_eq(p.id, "web_search");
     assert(p.name.is_some());
 }
@@ -1579,50 +905,29 @@ fn test_participant_tool() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_context_empty() {
-    let ctx = Context::new();
-=======
 λ test_context_empty() {
     ≔ ctx = Context·new();
->>>>>>> origin/main
     assert(ctx.goal.is_none());
     assert(ctx.task.is_none());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_context_with_goal() {
-    let ctx = Context::with_goal("Help user");
-=======
 λ test_context_with_goal() {
     ≔ ctx = Context·with_goal("Help user");
->>>>>>> origin/main
     assert_eq(ctx.goal.unwrap(), "Help user");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_context_with_task() {
-    let ctx = Context::with_goal("Main goal").with_task("Subtask");
-=======
 λ test_context_with_task() {
     ≔ ctx = Context·with_goal("Main goal").with_task("Subtask");
->>>>>>> origin/main
     assert_eq(ctx.goal.unwrap(), "Main goal");
     assert_eq(ctx.task.unwrap(), "Subtask");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_context_to_string() {
-    let ctx = Context::with_goal("Goal").with_task("Task");
-    let s = ctx.to_string();
-=======
 λ test_context_to_string() {
     ≔ ctx = Context·with_goal("Goal").with_task("Task");
     ≔ s = ctx.to_string();
->>>>>>> origin/main
     assert(s.contains("Goal"));
     assert(s.contains("Task"));
 }
@@ -1632,17 +937,6 @@ fn test_context_to_string() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_significance_from_success() {
-    let memory = EpisodicMemory::default_memory();
-    let mut episode = Episode::new(1, Context::new());
-    episode.outcome = Outcome::Success {
-        goal_alignment: 0.9,
-        effects: Vec::new(),
-    };
-
-    let sig = memory.compute_significance(&episode);
-=======
 λ test_significance_from_success() {
     ≔ memory = EpisodicMemory·default_memory();
     ≔ Δ episode = Episode·new(1, Context·new());
@@ -1652,48 +946,24 @@ fn test_significance_from_success() {
     };
 
     ≔ sig = memory.compute_significance(&episode);
->>>>>>> origin/main
     assert(sig > 0.3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_significance_from_failure() {
-    let memory = EpisodicMemory::default_memory();
-    let mut episode = Episode::new(1, Context::new());
-    episode.outcome = Outcome::Failure {
-=======
 λ test_significance_from_failure() {
     ≔ memory = EpisodicMemory·default_memory();
     ≔ Δ episode = Episode·new(1, Context·new());
     episode.outcome = Outcome·Failure {
->>>>>>> origin/main
         reason: "test".to_string(),
         recoverable: false,
     };
 
-<<<<<<< HEAD
-    let sig = memory.compute_significance(&episode);
-=======
     ≔ sig = memory.compute_significance(&episode);
->>>>>>> origin/main
     // Failures should be significant (learning opportunity)
     assert(sig >= 0.4);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_significance_from_events() {
-    let memory = EpisodicMemory::default_memory();
-    let mut episode = Episode::new(1, Context::new());
-
-    // Add many events
-    for _ in 0..15 {
-        episode.add_event(Event::user_message("msg"));
-    }
-
-    let sig = memory.compute_significance(&episode);
-=======
 λ test_significance_from_events() {
     ≔ memory = EpisodicMemory·default_memory();
     ≔ Δ episode = Episode·new(1, Context·new());
@@ -1704,23 +974,10 @@ fn test_significance_from_events() {
     }
 
     ≔ sig = memory.compute_significance(&episode);
->>>>>>> origin/main
     assert(sig > 0.2);  // More events = more significance
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_significance_from_valence() {
-    let memory = EpisodicMemory::default_memory();
-    let mut episode = Episode::new(1, Context::new());
-    episode.valence = 0.9;  // Strong positive emotion
-
-    let sig = memory.compute_significance(&episode);
-    assert(sig > 0.1);
-}
-
-fn main() {
-=======
 λ test_significance_from_valence() {
     ≔ memory = EpisodicMemory·default_memory();
     ≔ Δ episode = Episode·new(1, Context·new());
@@ -1731,6 +988,5 @@ fn main() {
 }
 
 λ main() {
->>>>>>> origin/main
     print("Engram episodic memory tests");
 }

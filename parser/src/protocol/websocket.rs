@@ -410,6 +410,7 @@ impl WebSocket {
         }
 
         if let Some(ref mut inner) = self.inner {
+            // Use loop instead of recursion to handle Frame messages
             loop {
                 match inner.next().await {
                     Some(Ok(msg)) => {
@@ -425,7 +426,7 @@ impl WebSocket {
                                     reason: f.reason.to_string(),
                                 }))
                             }
-                            TMessage::Frame(_) => continue, // Skip raw frames
+                            TMessage::Frame(_) => continue, // Skip raw frames, get next message
                         };
                         return Ok(Some(message));
                     }

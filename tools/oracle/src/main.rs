@@ -18,23 +18,6 @@ use tracing::info;
 use sigil_parser::{Lexer, Parser, Token, Span, TypeChecker};
 use std::collections::HashMap;
 
-/// Check if a character can continue a Unicode identifier.
-/// This covers common Unicode letters and combining marks used in identifiers.
-fn is_xid_continue(c: char) -> bool {
-    // Unicode categories that can continue an identifier:
-    // - Lu (uppercase letters), Ll (lowercase letters), Lt (titlecase)
-    // - Lm (modifier letters), Lo (other letters)
-    // - Mn (non-spacing marks), Mc (spacing combining marks)
-    // - Nd (decimal numbers), Pc (connector punctuation like _)
-    // - Nl (letter numbers like Roman numerals)
-    // This is a simplified check - full XID_Continue is more complex
-    c.is_alphabetic() || c.is_numeric() || c == '_' ||
-    matches!(c, '\u{0300}'..='\u{036F}' | // Combining diacritical marks
-             '\u{0370}'..='\u{03FF}' | // Greek (τ, φ, σ, ρ, λ, etc.)
-             '\u{2200}'..='\u{22FF}' | // Mathematical operators (∀, ∃, etc.)
-             '\u{2070}'..='\u{209F}')   // Superscripts and subscripts
-}
-
 /// A symbol definition in the document.
 #[derive(Debug, Clone)]
 struct SymbolDef {
@@ -105,8 +88,6 @@ struct Document {
     symbols: Vec<SymbolDef>,
     /// Symbol references (name -> list of usage spans).
     references: HashMap<String, Vec<Span>>,
-    /// Type information for symbols (name -> type string).
-    types: HashMap<String, String>,
 }
 
 /// The Oracle language server.
@@ -313,31 +294,8 @@ impl OracleServer {
     }
 
     /// Get completion items for a position.
-    fn get_completions(&self, uri: &Url, _content: &str, _position: Position) -> Vec<CompletionItem> {
+    fn get_completions(&self, _content: &str, _position: Position) -> Vec<CompletionItem> {
         let mut items = Vec::new();
-
-        // Add symbols from the current document
-        if let Some(doc) = self.documents.get(uri) {
-            for sym in &doc.symbols {
-                let (kind, detail) = match sym.kind {
-                    SymbolKind::FUNCTION => (CompletionItemKind::FUNCTION, sym.detail.clone()),
-                    SymbolKind::STRUCT => (CompletionItemKind::STRUCT, sym.detail.clone()),
-                    SymbolKind::ENUM => (CompletionItemKind::ENUM, sym.detail.clone()),
-                    SymbolKind::INTERFACE => (CompletionItemKind::INTERFACE, Some("trait".to_string())),
-                    SymbolKind::VARIABLE => (CompletionItemKind::VARIABLE, Some("variable".to_string())),
-                    SymbolKind::CONSTANT => (CompletionItemKind::CONSTANT, Some("constant".to_string())),
-                    SymbolKind::CLASS => (CompletionItemKind::CLASS, Some("actor".to_string())),
-                    _ => (CompletionItemKind::TEXT, None),
-                };
-                items.push(CompletionItem {
-                    label: sym.name.clone(),
-                    kind: Some(kind),
-                    detail,
-                    sort_text: Some(format!("0_{}", sym.name)), // Sort user symbols first
-                    ..Default::default()
-                });
-            }
-        }
 
         // Keywords
         for (label, detail, kind) in [
@@ -459,56 +417,10 @@ impl OracleServer {
         items
     }
 
-    /// Extract symbols and type info from a document.
-    fn extract_symbols(&self, content: &str) -> (Vec<SymbolDef>, HashMap<String, Vec<Span>>, HashMap<String, String>) {
+    /// Extract symbols from a document.
+    fn extract_symbols(&self, content: &str) -> (Vec<SymbolDef>, HashMap<String, Vec<Span>>) {
         let mut symbols = Vec::new();
         let mut references: HashMap<String, Vec<Span>> = HashMap::new();
-        let mut types: HashMap<String, String> = HashMap::new();
-
-        // First, try to parse the AST to extract detailed type info
-        let mut parser = Parser::new(content);
-        if let Ok(ast) = parser.parse_file() {
-            for spanned_item in &ast.items {
-                match &spanned_item.node {
-                    sigil_parser::Item::Function(func) => {
-                        let sig = self.format_ast_function_signature(func);
-                        types.insert(func.name.name.clone(), sig);
-                    }
-                    sigil_parser::Item::Struct(s) => {
-                        let struct_repr = match &s.fields {
-                            sigil_parser::ast::StructFields::Named(fields) => {
-                                let field_strs: Vec<String> = fields.iter()
-                                    .map(|f| format!("{}: {}", f.name.name, self.format_type(&f.ty)))
-                                    .collect();
-                                format!("struct {} {{ {} }}", s.name.name, field_strs.join(", "))
-                            }
-                            sigil_parser::ast::StructFields::Tuple(tys) => {
-                                let ty_strs: Vec<String> = tys.iter()
-                                    .map(|t| self.format_type(t))
-                                    .collect();
-                                format!("struct {}({})", s.name.name, ty_strs.join(", "))
-                            }
-                            sigil_parser::ast::StructFields::Unit => {
-                                format!("struct {}", s.name.name)
-                            }
-                        };
-                        types.insert(s.name.name.clone(), struct_repr);
-                    }
-                    sigil_parser::Item::Enum(e) => {
-                        let variants: Vec<String> = e.variants.iter()
-                            .map(|v| v.name.name.clone())
-                            .collect();
-                        types.insert(e.name.name.clone(), format!("enum {{ {} }}", variants.join(" | ")));
-                    }
-                    sigil_parser::Item::Trait(t) => {
-                        types.insert(t.name.name.clone(), format!("trait {}", t.name.name));
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Then do lexer-based symbol extraction for locations and references
         let mut lexer = Lexer::new(content);
         let mut prev_token: Option<Token> = None;
 
@@ -520,7 +432,7 @@ impl OracleServer {
                         name: name.clone(),
                         kind: SymbolKind::FUNCTION,
                         span,
-                        detail: types.get(name).cloned().or(Some("function".to_string())),
+                        detail: Some("function".to_string()),
                     });
                 }
                 // Struct definitions: struct Name
@@ -529,7 +441,7 @@ impl OracleServer {
                         name: name.clone(),
                         kind: SymbolKind::STRUCT,
                         span,
-                        detail: types.get(name).cloned().or(Some("struct".to_string())),
+                        detail: Some("struct".to_string()),
                     });
                 }
                 // Enum definitions: enum Name
@@ -538,7 +450,7 @@ impl OracleServer {
                         name: name.clone(),
                         kind: SymbolKind::ENUM,
                         span,
-                        detail: types.get(name).cloned().or(Some("enum".to_string())),
+                        detail: Some("enum".to_string()),
                     });
                 }
                 // Trait definitions: trait Name
@@ -547,7 +459,7 @@ impl OracleServer {
                         name: name.clone(),
                         kind: SymbolKind::INTERFACE,
                         span,
-                        detail: types.get(name).cloned().or(Some("trait".to_string())),
+                        detail: Some("trait".to_string()),
                     });
                 }
                 // Variable definitions: let name or let mut name
@@ -586,157 +498,7 @@ impl OracleServer {
             prev_token = Some(token);
         }
 
-        (symbols, references, types)
-    }
-
-    /// Format an AST function signature for display.
-    fn format_ast_function_signature(&self, func: &sigil_parser::ast::Function) -> String {
-        let params: Vec<String> = func.params.iter()
-            .map(|p| {
-                let name = self.format_pattern(&p.pattern);
-                format!("{}: {}", name, self.format_type(&p.ty))
-            })
-            .collect();
-
-        let ret = func.return_type.as_ref()
-            .map(|t| format!(" -> {}", self.format_type(t)))
-            .unwrap_or_default();
-
-        format!("fn {}({}){}", func.name.name, params.join(", "), ret)
-    }
-
-    /// Format a pattern for display (used for parameter names).
-    fn format_pattern(&self, pattern: &sigil_parser::ast::Pattern) -> String {
-        match pattern {
-            sigil_parser::ast::Pattern::Ident { name, .. } => name.name.clone(),
-            sigil_parser::ast::Pattern::Wildcard => "_".to_string(),
-            sigil_parser::ast::Pattern::Tuple(patterns) => {
-                let ps: Vec<String> = patterns.iter().map(|p| self.format_pattern(p)).collect();
-                format!("({})", ps.join(", "))
-            }
-            sigil_parser::ast::Pattern::Ref { mutable, pattern } => {
-                if *mutable {
-                    format!("&mut {}", self.format_pattern(pattern))
-                } else {
-                    format!("&{}", self.format_pattern(pattern))
-                }
-            }
-            _ => "_".to_string(),
-        }
-    }
-
-    /// Format a type expression for display.
-    fn format_type(&self, ty: &sigil_parser::TypeExpr) -> String {
-        match ty {
-            sigil_parser::TypeExpr::Path(path) => self.format_type_path(path),
-            sigil_parser::TypeExpr::Reference { lifetime, mutable, inner } => {
-                let lt = lifetime.as_ref().map(|l| format!("'{} ", l)).unwrap_or_default();
-                if *mutable {
-                    format!("&{}mut {}", lt, self.format_type(inner))
-                } else {
-                    format!("&{}{}", lt, self.format_type(inner))
-                }
-            }
-            sigil_parser::TypeExpr::Pointer { mutable, inner } => {
-                if *mutable {
-                    format!("*mut {}", self.format_type(inner))
-                } else {
-                    format!("*const {}", self.format_type(inner))
-                }
-            }
-            sigil_parser::TypeExpr::Array { element, .. } => {
-                format!("[{}; _]", self.format_type(element))
-            }
-            sigil_parser::TypeExpr::Slice(inner) => {
-                format!("[{}]", self.format_type(inner))
-            }
-            sigil_parser::TypeExpr::Tuple(elements) => {
-                let els: Vec<String> = elements.iter().map(|e| self.format_type(e)).collect();
-                format!("({})", els.join(", "))
-            }
-            sigil_parser::TypeExpr::Function { params, return_type } => {
-                let ps: Vec<String> = params.iter().map(|p| self.format_type(p)).collect();
-                let ret = return_type.as_ref()
-                    .map(|t| format!(" -> {}", self.format_type(t)))
-                    .unwrap_or_default();
-                format!("fn({}){}", ps.join(", "), ret)
-            }
-            sigil_parser::TypeExpr::Evidential { inner, evidentiality, error_type } => {
-                let marker = match evidentiality {
-                    sigil_parser::ast::Evidentiality::Known => "!",
-                    sigil_parser::ast::Evidentiality::Uncertain => "?",
-                    sigil_parser::ast::Evidentiality::Reported => "~",
-                    sigil_parser::ast::Evidentiality::Predicted => "◊",
-                    sigil_parser::ast::Evidentiality::Paradox => "‽",
-                };
-                let base = format!("{}{}", self.format_type(inner), marker);
-                if let Some(err) = error_type {
-                    format!("{}[{}]", base, self.format_type(err))
-                } else {
-                    base
-                }
-            }
-            sigil_parser::TypeExpr::Cycle { .. } => "Cycle<_>".to_string(),
-            sigil_parser::TypeExpr::Simd { element, lanes } => {
-                format!("simd<{}, {}>", self.format_type(element), lanes)
-            }
-            sigil_parser::TypeExpr::Atomic(inner) => {
-                format!("atomic<{}>", self.format_type(inner))
-            }
-            sigil_parser::TypeExpr::Lifetime(lt) => format!("'{}", lt),
-            sigil_parser::TypeExpr::TraitObject(bounds) => {
-                let bound_strs: Vec<String> = bounds.iter().map(|b| self.format_type(b)).collect();
-                format!("dyn {}", bound_strs.join(" + "))
-            }
-            sigil_parser::TypeExpr::Hrtb { lifetimes, bound } => {
-                format!("for<{}> {}", lifetimes.iter().map(|l| format!("'{}", l)).collect::<Vec<_>>().join(", "), self.format_type(bound))
-            }
-            sigil_parser::TypeExpr::InlineStruct { fields } => {
-                let field_strs: Vec<String> = fields.iter()
-                    .map(|f| format!("{}: {}", f.name.name, self.format_type(&f.ty)))
-                    .collect();
-                format!("struct {{ {} }}", field_strs.join(", "))
-            }
-            sigil_parser::TypeExpr::InlineEnum { variants } => {
-                let var_strs: Vec<String> = variants.iter().map(|v| v.name.name.clone()).collect();
-                format!("enum {{ {} }}", var_strs.join(" | "))
-            }
-            sigil_parser::TypeExpr::ImplTrait(bounds) => {
-                let bound_strs: Vec<String> = bounds.iter().map(|b| self.format_type(b)).collect();
-                format!("impl {}", bound_strs.join(" + "))
-            }
-            sigil_parser::TypeExpr::AssocTypeBinding { name, ty } => {
-                format!("{} = {}", name.name, self.format_type(ty))
-            }
-            sigil_parser::TypeExpr::ConstExpr(_) => "<const>".to_string(),
-            sigil_parser::TypeExpr::QualifiedPath { self_type, trait_path, item_path } => {
-                let base = self.format_type(self_type);
-                let item = self.format_type_path(item_path);
-                if let Some(trait_p) = trait_path {
-                    format!("<{} as {}>::{}", base, self.format_type_path(trait_p), item)
-                } else {
-                    format!("<{}>::{}", base, item)
-                }
-            }
-            sigil_parser::TypeExpr::Infer => "_".to_string(),
-            sigil_parser::TypeExpr::Never => "!".to_string(),
-            sigil_parser::TypeExpr::Linear(inner) => format!("linear {}", self.format_type(inner)),
-        }
-    }
-
-    /// Format a type path for display.
-    fn format_type_path(&self, path: &sigil_parser::TypePath) -> String {
-        path.segments.iter()
-            .map(|seg| {
-                if let Some(ref generics) = seg.generics {
-                    let args: Vec<String> = generics.iter().map(|g| self.format_type(g)).collect();
-                    format!("{}<{}>", seg.ident.name, args.join(", "))
-                } else {
-                    seg.ident.name.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("::")
+        (symbols, references)
     }
 
     /// Generate semantic tokens for a document.
@@ -925,13 +687,7 @@ impl LanguageServer for OracleServer {
                     ]),
                     ..Default::default()
                 }),
-                signature_help_provider: Some(SignatureHelpOptions {
-                    trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
-                    retrigger_characters: Some(vec![",".to_string()]),
-                    ..Default::default()
-                }),
                 definition_provider: Some(OneOf::Left(true)),
-                references_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
@@ -981,8 +737,8 @@ impl LanguageServer for OracleServer {
 
         info!("Document opened: {}", uri);
 
-        // Extract symbols and type info
-        let (symbols, references, types) = self.extract_symbols(&content);
+        // Extract symbols
+        let (symbols, references) = self.extract_symbols(&content);
 
         self.documents.insert(
             uri.clone(),
@@ -991,7 +747,6 @@ impl LanguageServer for OracleServer {
                 version,
                 symbols,
                 references,
-                types,
             },
         );
 
@@ -1007,15 +762,14 @@ impl LanguageServer for OracleServer {
         let version = params.text_document.version;
 
         if let Some(change) = params.content_changes.into_iter().last() {
-            // Extract symbols and type info from new content
-            let (symbols, references, types) = self.extract_symbols(&change.text);
+            // Extract symbols from new content
+            let (symbols, references) = self.extract_symbols(&change.text);
 
             if let Some(mut doc) = self.documents.get_mut(&uri) {
                 doc.content = Rope::from_str(&change.text);
                 doc.version = version;
                 doc.symbols = symbols;
                 doc.references = references;
-                doc.types = types;
             }
         }
 
@@ -1041,15 +795,12 @@ impl LanguageServer for OracleServer {
         let uri = &params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
-        let doc = match self.documents.get(uri) {
-            Some(doc) => doc,
+        let content = match self.documents.get(uri) {
+            Some(doc) => doc.content.to_string(),
             None => return Ok(None),
         };
 
-        let content = doc.content.to_string();
-
         if let Some((token, _span)) = self.get_token_at_position(&content, position) {
-            // First check for built-in keyword/morpheme hover info
             if let Some(info) = self.get_hover_info(&token) {
                 return Ok(Some(Hover {
                     contents: HoverContents::Markup(MarkupContent {
@@ -1059,104 +810,6 @@ impl LanguageServer for OracleServer {
                     range: None,
                 }));
             }
-
-            // Check for user-defined symbol type info
-            if let Token::Ident(name) = &token {
-                if let Some(type_info) = doc.types.get(name) {
-                    return Ok(Some(Hover {
-                        contents: HoverContents::Markup(MarkupContent {
-                            kind: MarkupKind::Markdown,
-                            value: format!("```sigil\n{}\n```", type_info),
-                        }),
-                        range: None,
-                    }));
-                }
-            }
-        }
-
-        Ok(None)
-    }
-
-    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
-        let uri = &params.text_document_position_params.text_document.uri;
-        let position = params.text_document_position_params.position;
-
-        let doc = match self.documents.get(uri) {
-            Some(doc) => doc,
-            None => return Ok(None),
-        };
-
-        let content = doc.content.to_string();
-        let offset = match self.position_to_offset(&content, position) {
-            Some(o) => o,
-            None => return Ok(None),
-        };
-
-        // Search backwards for an opening paren to find the function name
-        let before = &content[..offset];
-        let mut paren_depth = 0;
-        let mut func_name_end = None;
-
-        for (i, c) in before.char_indices().rev() {
-            match c {
-                ')' => paren_depth += 1,
-                '(' => {
-                    if paren_depth == 0 {
-                        func_name_end = Some(i);
-                        break;
-                    }
-                    paren_depth -= 1;
-                }
-                _ => {}
-            }
-        }
-
-        let func_name_end = match func_name_end {
-            Some(e) => e,
-            None => return Ok(None),
-        };
-
-        // Extract the function name (scan backwards for identifier)
-        // Support Unicode identifiers (letters, numbers, underscore, and Unicode XID characters)
-        let before_paren = &content[..func_name_end];
-        let func_name: String = before_paren
-            .chars()
-            .rev()
-            .take_while(|c| c.is_alphanumeric() || *c == '_' || is_xid_continue(*c))
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect();
-
-        if func_name.is_empty() {
-            return Ok(None);
-        }
-
-        // Look up the function signature
-        if let Some(sig) = doc.types.get(&func_name) {
-            // Count commas to determine active parameter
-            let inside_parens = &content[func_name_end + 1..offset];
-            let mut active_param = 0u32;
-            let mut depth = 0;
-            for c in inside_parens.chars() {
-                match c {
-                    '(' | '[' | '{' => depth += 1,
-                    ')' | ']' | '}' => depth -= 1,
-                    ',' if depth == 0 => active_param += 1,
-                    _ => {}
-                }
-            }
-
-            return Ok(Some(SignatureHelp {
-                signatures: vec![SignatureInformation {
-                    label: sig.clone(),
-                    documentation: None,
-                    parameters: None, // Could extract parameters for highlighting
-                    active_parameter: Some(active_param),
-                }],
-                active_signature: Some(0),
-                active_parameter: Some(active_param),
-            }));
         }
 
         Ok(None)
@@ -1171,7 +824,7 @@ impl LanguageServer for OracleServer {
             None => return Ok(None),
         };
 
-        let items = self.get_completions(uri, &content, position);
+        let items = self.get_completions(&content, position);
         Ok(Some(CompletionResponse::Array(items)))
     }
 
@@ -1186,69 +839,6 @@ impl LanguageServer for OracleServer {
             Ok(Some(GotoDefinitionResponse::Scalar(location)))
         } else {
             Ok(None)
-        }
-    }
-
-    async fn references(
-        &self,
-        params: ReferenceParams,
-    ) -> Result<Option<Vec<Location>>> {
-        let uri = &params.text_document_position.text_document.uri;
-        let position = params.text_document_position.position;
-
-        let doc = match self.documents.get(uri) {
-            Some(doc) => doc,
-            None => return Ok(None),
-        };
-
-        let content = doc.content.to_string();
-        let offset = match self.position_to_offset(&content, position) {
-            Some(o) => o,
-            None => return Ok(None),
-        };
-
-        // Find the identifier at the cursor position
-        let mut lexer = Lexer::new(&content);
-        let mut target_name: Option<String> = None;
-
-        while let Some((token, span)) = lexer.next_token() {
-            if span.start <= offset && offset < span.end {
-                if let Token::Ident(name) = token {
-                    target_name = Some(name);
-                }
-                break;
-            }
-        }
-
-        let name = match target_name {
-            Some(n) => n,
-            None => return Ok(None),
-        };
-
-        // Get all references to this name
-        let refs = match doc.references.get(&name) {
-            Some(r) => r,
-            None => return Ok(None),
-        };
-
-        let locations: Vec<Location> = refs
-            .iter()
-            .map(|span| {
-                let (line, col, end_col) = self.span_to_position(&content, Some(*span));
-                Location {
-                    uri: uri.clone(),
-                    range: Range {
-                        start: Position { line, character: col },
-                        end: Position { line, character: end_col },
-                    },
-                }
-            })
-            .collect();
-
-        if locations.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(locations))
         }
     }
 

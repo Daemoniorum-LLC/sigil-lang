@@ -8,6 +8,6 @@
 // Expected behavior:
 // Should compile and print Hello
 
-rite main() {
+λ main() {
     println("Hello");
 }

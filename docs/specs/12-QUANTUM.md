@@ -1,5 +1,8 @@
 # Quantum Computing Primitives
 
+> **Status:** ~ Experimental (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 > *"God does not play dice with the universe." — Einstein*
 > *"Stop telling God what to do." — Bohr*
 

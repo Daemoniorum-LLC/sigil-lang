@@ -96,9 +96,7 @@ impl AnimaState {
             arousal: self.arousal * inv + other.arousal * ratio,
             dominance: self.dominance * inv + other.dominance * ratio,
             expressiveness: self.expressiveness * inv + other.expressiveness * ratio,
-            stability: (self.stability * inv + other.stability * ratio)
-                .min(self.stability)
-                .min(other.stability),
+            stability: (self.stability * inv + other.stability * ratio).min(self.stability).min(other.stability),
         }
     }
 
@@ -346,9 +344,7 @@ impl PluralSystem {
         self.active_triggers.push(trigger.clone());
 
         // Find alters that respond to this trigger
-        let responding_alters: Vec<String> = self
-            .alters
-            .values()
+        let responding_alters: Vec<String> = self.alters.values()
             .filter(|a| a.triggers.contains(&trigger.id))
             .map(|a| a.id.clone())
             .collect();
@@ -363,10 +359,7 @@ impl PluralSystem {
         // Update responding alters
         for alter_id in &responding_alters {
             if let Some(alter) = self.alters.get_mut(alter_id) {
-                if matches!(
-                    alter.state,
-                    AlterPresenceState::Dormant | AlterPresenceState::Stirring
-                ) {
+                if matches!(alter.state, AlterPresenceState::Dormant | AlterPresenceState::Stirring) {
                     alter.state = AlterPresenceState::Stirring;
                     alter.anima.apply_trauma_response(intensity);
                 }
@@ -667,9 +660,6 @@ mod tests {
 
         let result = system.request_switch("protector", 0.8, false);
         assert!(matches!(result, SwitchResult::Success));
-        assert_eq!(
-            system.fronting,
-            FrontingState::Single("protector".to_string())
-        );
+        assert_eq!(system.fronting, FrontingState::Single("protector".to_string()));
     }
 }

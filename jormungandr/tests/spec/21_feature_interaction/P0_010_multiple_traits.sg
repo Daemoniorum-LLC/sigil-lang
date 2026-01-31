@@ -2,32 +2,32 @@
 // Spec: Feature Interaction - Multiple Traits
 // Priority: P0 - Bootstrap Critical
 
-aspect HasName {
-    rite name(&this) → String;
+Θ HasName {
+    λ name(&self) -> String;
 }
 
-aspect HasValue {
-    rite value(&this) → i32;
+Θ HasValue {
+    λ value(&self) -> i32;
 }
 
-sigil Item {
+Σ Item {
     n: String,
     v: i32,
 }
 
-⊢ Item : HasName {
-    rite name(&this) → String {
-        ⤺ this.n.clone();
+⊢ HasName ∀ Item {
+    λ name(&self) -> String {
+        ⤺ self.n.clone();
     }
 }
 
-⊢ Item : HasValue {
-    rite value(&this) → i32 {
-        ⤺ this.v;
+⊢ HasValue ∀ Item {
+    λ value(&self) -> i32 {
+        ⤺ self.v;
     }
 }
 
-rite main() {
+λ main() {
     ≔ item = Item { n: "test".to_string(), v: 42 };
     println(item.name());
     println(item.value());

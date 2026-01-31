@@ -74,8 +74,7 @@ impl WasmCompiler {
         let mut frame_offset = 0u32;
 
         // Collect all locals that might need saving - extract names from patterns
-        let saved_locals: Vec<String> = func
-            .params
+        let saved_locals: Vec<String> = func.params
             .iter()
             .filter_map(|p| {
                 if let Pattern::Ident { name, .. } = &p.pattern {
@@ -132,16 +131,10 @@ impl WasmCompiler {
         frame_offset: &mut u32,
     ) {
         match stmt {
-            Stmt::Let {
-                init: Some(expr), ..
-            }
-            | Stmt::Expr(expr)
-            | Stmt::Semi(expr) => {
+            Stmt::Let { init: Some(expr), .. } | Stmt::Expr(expr) | Stmt::Semi(expr) => {
                 self.find_await_in_expr(expr, points, saved_locals, frame_offset);
             }
-            Stmt::LetElse {
-                init, else_branch, ..
-            } => {
+            Stmt::LetElse { init, else_branch, .. } => {
                 self.find_await_in_expr(init, points, saved_locals, frame_offset);
                 self.find_await_in_expr(else_branch, points, saved_locals, frame_offset);
             }
@@ -175,11 +168,7 @@ impl WasmCompiler {
                     self.find_await_in_expr(arg, points, saved_locals, frame_offset);
                 }
             }
-            Expr::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
+            Expr::If { condition, then_branch, else_branch } => {
                 self.find_await_in_expr(condition, points, saved_locals, frame_offset);
                 self.find_await_points(then_branch, points, saved_locals, frame_offset);
                 if let Some(else_expr) = else_branch {
@@ -286,14 +275,18 @@ mod tests {
         }
     }
 
-    fn make_function(name: &str, params: Vec<Param>, body: Block, is_async: bool) -> Function {
+    fn make_function(
+        name: &str,
+        params: Vec<Param>,
+        body: Block,
+        is_async: bool,
+    ) -> Function {
         Function {
             visibility: Visibility::Private,
             is_async,
             is_const: false,
             is_unsafe: false,
             attrs: FunctionAttrs::default(),
-            outer_attrs: Vec::new(),
             name: make_ident(name),
             aspect: None,
             generics: None,

@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 3.7 Operator Precedence
 // Priority: P0
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 2 + 4 * 10;
     println(x);
 }

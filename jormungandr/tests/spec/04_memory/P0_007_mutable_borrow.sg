@@ -2,12 +2,12 @@
 // Spec: 04-MEMORY.md § 3.2 Mutable References
 // Priority: P0
 
-rite increment(x: &vary !i32) {
+λ increment(x: &Δ !i32) {
     *x = *x + 1;
 }
 
-rite main() {
-    ≔ vary val: !i32 = 41;
-    increment(&vary val);
+λ main() {
+    ≔ Δ val: !i32 = 41;
+    increment(&Δ val);
     println(val);
 }

@@ -1,9 +1,0 @@
-// Test: Format with padding
-// Spec: 07-METAPROGRAMMING.md § 3.2 Format Spec
-// Priority: P2 - Enhancement
-
-λ main() {
-    ≔ x: !i32 = 42;
-    ≔ s = format!("value: {}", x);
-    println(s);
-}

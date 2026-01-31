@@ -2,13 +2,13 @@
 // Spec: 04-MEMORY.md § 3.3 Borrow Rules
 // Priority: P1 - Production Ready
 
-rite take_ref(r: &i32) → !i32 {
+λ take_ref(r: &i32) -> !i32 {
     *r
 }
 
-rite main() {
-    ≔ vary x: !i32 = 42;
-    ≔ r: &vary i32 = &vary x;
+λ main() {
+    ≔ Δ x: !i32 = 42;
+    ≔ r: &Δ i32 = &Δ x;
 
     // Reborrow as immutable - should work
     ≔ val = take_ref(r);

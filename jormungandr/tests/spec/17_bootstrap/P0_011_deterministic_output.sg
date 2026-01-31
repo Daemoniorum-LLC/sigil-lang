@@ -5,6 +5,6 @@
 // Purpose:
 // Validates that generated C is deterministic (no timestamps).
 
-rite main() {
+λ main() {
     println(42);
 }

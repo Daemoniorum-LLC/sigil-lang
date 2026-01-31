@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 4.2 Channels
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ ch = channel_new();
 
     channel_send(ch, 1);

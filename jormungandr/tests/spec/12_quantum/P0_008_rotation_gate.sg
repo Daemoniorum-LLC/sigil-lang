@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 3.1 Single-Qubit Gates
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ q: linear Qubit = Qubit·zero();
     ≔ q2 = q|Rx(3.14159);  // Rotate around X-axis by π
     ≔ result: Cbit = q2|measure;

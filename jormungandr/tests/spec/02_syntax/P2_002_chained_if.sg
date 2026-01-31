@@ -1,8 +1,8 @@
-// Test: Chained if-else-⎇ expressions
+// Test: Chained ⎇-⎉-⎇ expressions
 // Spec: 02-SYNTAX.md § 5.1 If
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 15;
 
     ⎇ x < 10 {

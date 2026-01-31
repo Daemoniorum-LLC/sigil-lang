@@ -1,24 +1,24 @@
 // Test: ⊢ block with methods
-☉ sigil Counter {
+☉ Σ Counter {
     value: !i32
 }
 
 ⊢ Counter {
-    rite new() → !Counter {
+    λ new() -> !Counter {
         Counter { value: 0 }
     }
 
-    rite increment(&vary this) {
-        this.value = this.value + 1;
+    λ increment(&Δ self) {
+        self.value = self.value + 1;
     }
 
-    rite get(&this) → !i32 {
-        this.value
+    λ get(&self) -> !i32 {
+        self.value
     }
 }
 
-rite main() {
-    ≔ vary c: !Counter = Counter·new();
+λ main() {
+    ≔ Δ c: !Counter = Counter·new();
     c.increment();
     c.increment();
     println(c.get());

@@ -2,7 +2,7 @@
 // Spec: 07-METAPROGRAMMING.md § 2.1 Format
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 255;
     println(x);
 }

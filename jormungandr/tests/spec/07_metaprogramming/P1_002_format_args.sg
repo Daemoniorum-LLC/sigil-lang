@@ -2,7 +2,7 @@
 // Spec: 07-METAPROGRAMMING.md § 1.2 Format Arguments
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     ≔ name = "Alice";
     ≔ age = 30;
 

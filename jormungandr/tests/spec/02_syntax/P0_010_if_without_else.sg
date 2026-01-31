@@ -3,14 +3,14 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that ⎇ without ⎉ works (unit type return).
+// Validates that ⎇ without ⎉ works (unit type ⤺).
 //
 // Expected behavior:
 // Should compile and print 42
 
-rite main() {
-    ≔ vary x: !i32 = 0;
-    ⎇ yea {
+λ main() {
+    ≔ Δ x: !i32 = 0;
+    ⎇ true {
         x = 42;
     }
     println(x);

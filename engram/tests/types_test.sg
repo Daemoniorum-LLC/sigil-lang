@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-//! Tests for Engram Types Module
-=======
 //! Tests ∀ Engram Types Module
->>>>>>> origin/main
 //!
 //! Tests core type definitions: Epistemic knowledge, vectors, outcomes, scopes.
 
@@ -10,57 +6,25 @@
 // Epistemic Types - How We Know Things
 // ============================================================================
 
-<<<<<<< HEAD
-pub enum InferenceType {
-=======
 ☉ ᛈ InferenceType {
->>>>>>> origin/main
     Deductive,
     Inductive,
     Abductive,
     Analogical,
 }
 
-<<<<<<< HEAD
-pub enum HypothesisStatus {
-=======
 ☉ ᛈ HypothesisStatus {
->>>>>>> origin/main
     Proposed,
     UnderTest,
     Supported,
     Refuted,
 }
 
-<<<<<<< HEAD
-pub struct Source {
-=======
 ☉ Σ Source {
->>>>>>> origin/main
     kind: String,
     name: String,
 }
 
-<<<<<<< HEAD
-impl Source {
-    pub fn agent(name: &str) -> Self {
-        Self { kind: "agent".to_string(), name: name.to_string() }
-    }
-
-    pub fn user(name: &str) -> Self {
-        Self { kind: "user".to_string(), name: name.to_string() }
-    }
-
-    pub fn api(endpoint: &str) -> Self {
-        Self { kind: "api".to_string(), name: endpoint.to_string() }
-    }
-
-    pub fn document(path: &str) -> Self {
-        Self { kind: "document".to_string(), name: path.to_string() }
-    }
-
-    pub fn unknown() -> Self {
-=======
 ⊢ Source {
     ☉ λ agent(name: &str) -> Self {
         Self { kind: "agent".to_string(), name: name.to_string() }
@@ -79,17 +43,12 @@ impl Source {
     }
 
     ☉ λ unknown() -> Self {
->>>>>>> origin/main
         Self { kind: "unknown".to_string(), name: "".to_string() }
     }
 }
 
 /// Epistemic status - tracking how we know what we know
-<<<<<<< HEAD
-pub struct Epistemic {
-=======
 ☉ Σ Epistemic {
->>>>>>> origin/main
     kind: String,
     trust_level: f64,
     confidence: f64,
@@ -97,50 +56,6 @@ pub struct Epistemic {
     agreement_level: f64,
 }
 
-<<<<<<< HEAD
-impl Epistemic {
-    pub fn axiomatic() -> Self {
-        Self { kind: "axiomatic".to_string(), trust_level: 1.0, confidence: 1.0, chain_length: 0, agreement_level: 1.0 }
-    }
-
-    pub fn observed() -> Self {
-        Self { kind: "observed".to_string(), trust_level: 0.95, confidence: 0.95, chain_length: 0, agreement_level: 1.0 }
-    }
-
-    pub fn computed() -> Self {
-        Self { kind: "computed".to_string(), trust_level: 0.9, confidence: 0.9, chain_length: 0, agreement_level: 1.0 }
-    }
-
-    pub fn reported(trust: f64) -> Self {
-        Self { kind: "reported".to_string(), trust_level: trust, confidence: 0.0, chain_length: 0, agreement_level: 0.0 }
-    }
-
-    pub fn inferred(conf: f64) -> Self {
-        Self { kind: "inferred".to_string(), trust_level: 0.0, confidence: conf, chain_length: 0, agreement_level: 0.0 }
-    }
-
-    pub fn consensus(agreement: f64) -> Self {
-        Self { kind: "consensus".to_string(), trust_level: 0.0, confidence: 0.0, chain_length: 0, agreement_level: agreement }
-    }
-
-    pub fn hypothetical() -> Self {
-        Self { kind: "hypothetical".to_string(), trust_level: 0.2, confidence: 0.2, chain_length: 0, agreement_level: 0.0 }
-    }
-
-    pub fn hearsay(chain_len: usize) -> Self {
-        Self { kind: "hearsay".to_string(), trust_level: 0.0, confidence: 0.0, chain_length: chain_len, agreement_level: 0.0 }
-    }
-
-    pub fn contested() -> Self {
-        Self { kind: "contested".to_string(), trust_level: 0.3, confidence: 0.3, chain_length: 0, agreement_level: 0.0 }
-    }
-
-    pub fn unknown() -> Self {
-        Self { kind: "unknown".to_string(), trust_level: 0.0, confidence: 0.0, chain_length: 0, agreement_level: 0.0 }
-    }
-
-    pub fn retracted() -> Self {
-=======
 ⊢ Epistemic {
     ☉ λ axiomatic() -> Self {
         Self { kind: "axiomatic".to_string(), trust_level: 1.0, confidence: 1.0, chain_length: 0, agreement_level: 1.0 }
@@ -183,41 +98,10 @@ impl Epistemic {
     }
 
     ☉ λ retracted() -> Self {
->>>>>>> origin/main
         Self { kind: "retracted".to_string(), trust_level: 0.0, confidence: 0.0, chain_length: 0, agreement_level: 0.0 }
     }
 
     /// Compute epistemic strength (0.0 - 1.0)
-<<<<<<< HEAD
-    pub fn strength(&self) -> f64 {
-        if self.kind == "axiomatic" {
-            1.0
-        } else if self.kind == "observed" {
-            0.95
-        } else if self.kind == "computed" {
-            0.9
-        } else if self.kind == "consensus" {
-            0.7 + self.agreement_level * 0.2
-        } else if self.kind == "reported" {
-            0.4 + self.trust_level * 0.3
-        } else if self.kind == "inferred" {
-            0.3 + self.confidence * 0.4
-        } else if self.kind == "hypothetical" {
-            0.2
-        } else if self.kind == "hearsay" {
-            if self.chain_length == 0 {
-                0.1
-            } else {
-                0.1 / (self.chain_length as f64)
-            }
-        } else if self.kind == "contested" {
-            0.3
-        } else if self.kind == "unknown" {
-            0.0
-        } else if self.kind == "retracted" {
-            0.0
-        } else {
-=======
     ☉ λ strength(&self) -> f64 {
         ⎇ self.kind == "axiomatic" {
             1.0
@@ -246,34 +130,10 @@ impl Epistemic {
         } ⎉ ⎇ self.kind == "retracted" {
             0.0
         } ⎉ {
->>>>>>> origin/main
             0.0
         }
     }
 
-<<<<<<< HEAD
-    pub fn is_observed(&self) -> bool {
-        self.kind == "observed"
-    }
-
-    pub fn is_reported(&self) -> bool {
-        self.kind == "reported" || self.kind == "hearsay"
-    }
-
-    pub fn is_inferred(&self) -> bool {
-        self.kind == "inferred" || self.kind == "computed"
-    }
-
-    pub fn is_contested(&self) -> bool {
-        self.kind == "contested"
-    }
-
-    pub fn is_certain(&self) -> bool {
-        self.strength() > 0.9
-    }
-
-    pub fn is_uncertain(&self) -> bool {
-=======
     ☉ λ is_observed(&self) -> bool {
         self.kind == "observed"
     }
@@ -295,7 +155,6 @@ impl Epistemic {
     }
 
     ☉ λ is_uncertain(&self) -> bool {
->>>>>>> origin/main
         self.strength() < 0.5
     }
 }
@@ -304,40 +163,12 @@ impl Epistemic {
 // Scope Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct Scope {
-=======
 ☉ Σ Scope {
->>>>>>> origin/main
     kind: String,
     instance_id: String,
     agent_id: String,
 }
 
-<<<<<<< HEAD
-impl Scope {
-    pub fn instance(id: &str) -> Self {
-        Self { kind: "instance".to_string(), instance_id: id.to_string(), agent_id: "".to_string() }
-    }
-
-    pub fn agent(id: &str) -> Self {
-        Self { kind: "agent".to_string(), instance_id: "".to_string(), agent_id: id.to_string() }
-    }
-
-    pub fn collective() -> Self {
-        Self { kind: "collective".to_string(), instance_id: "".to_string(), agent_id: "".to_string() }
-    }
-
-    pub fn universal() -> Self {
-        Self { kind: "universal".to_string(), instance_id: "".to_string(), agent_id: "".to_string() }
-    }
-
-    pub fn is_local(&self) -> bool {
-        self.kind == "instance"
-    }
-
-    pub fn is_shared(&self) -> bool {
-=======
 ⊢ Scope {
     ☉ λ instance(id: &str) -> Self {
         Self { kind: "instance".to_string(), instance_id: id.to_string(), agent_id: "".to_string() }
@@ -360,7 +191,6 @@ impl Scope {
     }
 
     ☉ λ is_shared(&self) -> bool {
->>>>>>> origin/main
         self.kind != "instance"
     }
 }
@@ -369,11 +199,7 @@ impl Scope {
 // Outcome Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct Outcome {
-=======
 ☉ Σ Outcome {
->>>>>>> origin/main
     kind: String,
     goal_alignment: f64,
     progress: f64,
@@ -382,13 +208,8 @@ pub struct Outcome {
     recoverable: bool,
 }
 
-<<<<<<< HEAD
-impl Outcome {
-    pub fn success(alignment: f64) -> Self {
-=======
 ⊢ Outcome {
     ☉ λ success(alignment: f64) -> Self {
->>>>>>> origin/main
         Self {
             kind: "success".to_string(),
             goal_alignment: alignment,
@@ -399,11 +220,7 @@ impl Outcome {
         }
     }
 
-<<<<<<< HEAD
-    pub fn failure(recoverable: bool) -> Self {
-=======
     ☉ λ failure(recoverable: bool) -> Self {
->>>>>>> origin/main
         Self {
             kind: "failure".to_string(),
             goal_alignment: 0.0,
@@ -414,11 +231,7 @@ impl Outcome {
         }
     }
 
-<<<<<<< HEAD
-    pub fn partial(completed: usize, total: usize) -> Self {
-=======
     ☉ λ partial(completed: usize, total: usize) -> Self {
->>>>>>> origin/main
         Self {
             kind: "partial".to_string(),
             goal_alignment: 0.0,
@@ -429,11 +242,7 @@ impl Outcome {
         }
     }
 
-<<<<<<< HEAD
-    pub fn abandoned(progress: f64) -> Self {
-=======
     ☉ λ abandoned(progress: f64) -> Self {
->>>>>>> origin/main
         Self {
             kind: "abandoned".to_string(),
             goal_alignment: 0.0,
@@ -444,11 +253,7 @@ impl Outcome {
         }
     }
 
-<<<<<<< HEAD
-    pub fn ongoing() -> Self {
-=======
     ☉ λ ongoing() -> Self {
->>>>>>> origin/main
         Self {
             kind: "ongoing".to_string(),
             goal_alignment: 0.0,
@@ -459,40 +264,6 @@ impl Outcome {
         }
     }
 
-<<<<<<< HEAD
-    pub fn is_success(&self) -> bool {
-        self.kind == "success"
-    }
-
-    pub fn is_failure(&self) -> bool {
-        self.kind == "failure"
-    }
-
-    pub fn is_partial(&self) -> bool {
-        self.kind == "partial"
-    }
-
-    pub fn is_ongoing(&self) -> bool {
-        self.kind == "ongoing"
-    }
-
-    pub fn confidence(&self) -> f64 {
-        if self.kind == "success" {
-            self.goal_alignment
-        } else if self.kind == "failure" {
-            if self.recoverable { 0.2 } else { 0.0 }
-        } else if self.kind == "partial" {
-            if self.total_count == 0 {
-                0.0
-            } else {
-                (self.completed_count as f64) / (self.total_count as f64)
-            }
-        } else if self.kind == "abandoned" {
-            self.progress * 0.3
-        } else if self.kind == "ongoing" {
-            0.5
-        } else {
-=======
     ☉ λ is_success(&self) -> bool {
         self.kind == "success"
     }
@@ -525,7 +296,6 @@ impl Outcome {
         } ⎉ ⎇ self.kind == "ongoing" {
             0.5
         } ⎉ {
->>>>>>> origin/main
             0.0
         }
     }
@@ -535,41 +305,6 @@ impl Outcome {
 // Vector Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct Vector {
-    data: Vec<f32>,
-}
-
-impl Vector {
-    pub fn new(data: Vec<f32>) -> Self {
-        Self { data }
-    }
-
-    pub fn zeros(dimensions: usize) -> Self {
-        Self { data: vec![0.0; dimensions] }
-    }
-
-    pub fn dimensions(&self) -> usize {
-        self.data.len()
-    }
-
-    pub fn at(&self, idx: usize) -> f32 {
-        self.data[idx]
-    }
-
-    pub fn cosine_similarity(&self, other: &Vector) -> f64 {
-        if self.dimensions() != other.dimensions() {
-            return 0.0;
-        }
-
-        let mut dot = 0.0;
-        let mut norm_a = 0.0;
-        let mut norm_b = 0.0;
-
-        for i in 0..self.dimensions() {
-            let a = self.data[i] as f64;
-            let b = other.data[i] as f64;
-=======
 ☉ Σ Vector {
     data: Vec<f32>,
 }
@@ -603,37 +338,19 @@ impl Vector {
         ∀ i ∈ 0..self.dimensions() {
             ≔ a = self.data[i] as f64;
             ≔ b = other.data[i] as f64;
->>>>>>> origin/main
             dot = dot + a * b;
             norm_a = norm_a + a * a;
             norm_b = norm_b + b * b;
         }
 
-<<<<<<< HEAD
-        let denom = approx_sqrt(norm_a) * approx_sqrt(norm_b);
-        if denom > 0.0 {
-            dot / denom
-        } else {
-=======
         ≔ denom = approx_sqrt(norm_a) * approx_sqrt(norm_b);
         ⎇ denom > 0.0 {
             dot / denom
         } ⎉ {
->>>>>>> origin/main
             0.0
         }
     }
 
-<<<<<<< HEAD
-    pub fn euclidean_distance(&self, other: &Vector) -> f64 {
-        if self.dimensions() != other.dimensions() {
-            return 0.0;
-        }
-
-        let mut sum_sq = 0.0;
-        for i in 0..self.dimensions() {
-            let diff = (self.data[i] - other.data[i]) as f64;
-=======
     ☉ λ euclidean_distance(&self, other: &Vector) -> f64 {
         ⎇ self.dimensions() != other.dimensions() {
             ⤺ 0.0;
@@ -642,28 +359,12 @@ impl Vector {
         ≔ Δ sum_sq = 0.0;
         ∀ i ∈ 0..self.dimensions() {
             ≔ diff = (self.data[i] - other.data[i]) as f64;
->>>>>>> origin/main
             sum_sq = sum_sq + diff * diff;
         }
 
         approx_sqrt(sum_sq)
     }
 
-<<<<<<< HEAD
-    pub fn normalize(&self) -> Vector {
-        let mut sum_sq = 0.0;
-        for i in 0..self.dimensions() {
-            let v = self.data[i] as f64;
-            sum_sq = sum_sq + v * v;
-        }
-        let norm = approx_sqrt(sum_sq);
-
-        let mut normalized = Vec::new();
-        for i in 0..self.dimensions() {
-            if norm > 0.0 {
-                normalized.push((self.data[i] as f64 / norm) as f32);
-            } else {
-=======
     ☉ λ normalize(&self) -> Vector {
         ≔ Δ sum_sq = 0.0;
         ∀ i ∈ 0..self.dimensions() {
@@ -677,7 +378,6 @@ impl Vector {
             ⎇ norm > 0.0 {
                 normalized.push((self.data[i] as f64 / norm) as f32);
             } ⎉ {
->>>>>>> origin/main
                 normalized.push(0.0);
             }
         }
@@ -686,17 +386,10 @@ impl Vector {
     }
 }
 
-<<<<<<< HEAD
-fn approx_sqrt(x: f64) -> f64 {
-    if x <= 0.0 { return 0.0; }
-    let mut guess = x / 2.0;
-    for _ in 0..15 {
-=======
 λ approx_sqrt(x: f64) -> f64 {
     ⎇ x <= 0.0 { ⤺ 0.0; }
     ≔ Δ guess = x / 2.0;
     ∀ _ ∈ 0..15 {
->>>>>>> origin/main
         guess = (guess + x / guess) / 2.0;
     }
     guess
@@ -706,22 +399,6 @@ fn approx_sqrt(x: f64) -> f64 {
 // Token Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct TokenCount {
-    count: usize,
-}
-
-impl TokenCount {
-    pub fn new(n: usize) -> Self {
-        Self { count: n }
-    }
-
-    pub fn zero() -> Self {
-        Self { count: 0 }
-    }
-
-    pub fn from_text(text: &str) -> Self {
-=======
 ☉ Σ TokenCount {
     count: usize,
 }
@@ -736,25 +413,10 @@ impl TokenCount {
     }
 
     ☉ λ from_text(text: &str) -> Self {
->>>>>>> origin/main
         // Approximate: ~4 characters per token
         Self { count: text.len() / 4 + 1 }
     }
 
-<<<<<<< HEAD
-    pub fn value(&self) -> usize {
-        self.count
-    }
-
-    pub fn add(&self, other: &TokenCount) -> TokenCount {
-        TokenCount { count: self.count + other.count }
-    }
-
-    pub fn sub(&self, other: &TokenCount) -> TokenCount {
-        if self.count > other.count {
-            TokenCount { count: self.count - other.count }
-        } else {
-=======
     ☉ λ value(&self) -> usize {
         self.count
     }
@@ -767,7 +429,6 @@ impl TokenCount {
         ⎇ self.count > other.count {
             TokenCount { count: self.count - other.count }
         } ⎉ {
->>>>>>> origin/main
             TokenCount { count: 0 }
         }
     }
@@ -777,26 +438,13 @@ impl TokenCount {
 // Memory Source Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub enum MemorySource {
-=======
 ☉ ᛈ MemorySource {
->>>>>>> origin/main
     Instant,
     Episodic,
     Semantic,
     Procedural,
 }
 
-<<<<<<< HEAD
-impl MemorySource {
-    pub fn name(&self) -> &str {
-        match self {
-            MemorySource::Instant => "instant",
-            MemorySource::Episodic => "episodic",
-            MemorySource::Semantic => "semantic",
-            MemorySource::Procedural => "procedural",
-=======
 ⊢ MemorySource {
     ☉ λ name(&self) -> &str {
         ⌥ self {
@@ -804,7 +452,6 @@ impl MemorySource {
             MemorySource·Episodic => "episodic",
             MemorySource·Semantic => "semantic",
             MemorySource·Procedural => "procedural",
->>>>>>> origin/main
         }
     }
 }
@@ -813,35 +460,6 @@ impl MemorySource {
 // Relation Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct Relation {
-    kind: String,
-}
-
-impl Relation {
-    pub fn is_a() -> Self { Self { kind: "IsA".to_string() } }
-    pub fn has_part() -> Self { Self { kind: "HasPart".to_string() } }
-    pub fn related_to() -> Self { Self { kind: "RelatedTo".to_string() } }
-    pub fn causes() -> Self { Self { kind: "Causes".to_string() } }
-    pub fn before() -> Self { Self { kind: "Before".to_string() } }
-    pub fn located_in() -> Self { Self { kind: "LocatedIn".to_string() } }
-    pub fn created_by() -> Self { Self { kind: "CreatedBy".to_string() } }
-    pub fn custom(name: &str) -> Self { Self { kind: name.to_string() } }
-
-    pub fn name(&self) -> &str {
-        &self.kind
-    }
-
-    pub fn is_taxonomic(&self) -> bool {
-        self.kind == "IsA" || self.kind == "InstanceOf" || self.kind == "SubclassOf"
-    }
-
-    pub fn is_causal(&self) -> bool {
-        self.kind == "Causes" || self.kind == "Enables" || self.kind == "Prevents"
-    }
-
-    pub fn is_temporal(&self) -> bool {
-=======
 ☉ Σ Relation {
     kind: String,
 }
@@ -869,7 +487,6 @@ impl Relation {
     }
 
     ☉ λ is_temporal(&self) -> bool {
->>>>>>> origin/main
         self.kind == "Before" || self.kind == "After" || self.kind == "During"
     }
 }
@@ -878,29 +495,6 @@ impl Relation {
 // Node Types
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct NodeType {
-    kind: String,
-}
-
-impl NodeType {
-    pub fn person() -> Self { Self { kind: "Person".to_string() } }
-    pub fn organization() -> Self { Self { kind: "Organization".to_string() } }
-    pub fn concept() -> Self { Self { kind: "Concept".to_string() } }
-    pub fn event() -> Self { Self { kind: "Event".to_string() } }
-    pub fn document() -> Self { Self { kind: "Document".to_string() } }
-    pub fn tool() -> Self { Self { kind: "Tool".to_string() } }
-    pub fn skill() -> Self { Self { kind: "Skill".to_string() } }
-    pub fn goal() -> Self { Self { kind: "Goal".to_string() } }
-    pub fn task() -> Self { Self { kind: "Task".to_string() } }
-    pub fn custom(name: &str) -> Self { Self { kind: name.to_string() } }
-
-    pub fn name(&self) -> &str {
-        &self.kind
-    }
-
-    pub fn is_entity(&self) -> bool {
-=======
 ☉ Σ NodeType {
     kind: String,
 }
@@ -922,16 +516,11 @@ impl NodeType {
     }
 
     ☉ λ is_entity(&self) -> bool {
->>>>>>> origin/main
         self.kind == "Person" || self.kind == "Organization" ||
         self.kind == "Place" || self.kind == "Event"
     }
 
-<<<<<<< HEAD
-    pub fn is_abstract(&self) -> bool {
-=======
     ☉ λ is_abstract(&self) -> bool {
->>>>>>> origin/main
         self.kind == "Concept" || self.kind == "Category" ||
         self.kind == "Skill" || self.kind == "Goal"
     }
@@ -942,95 +531,48 @@ impl NodeType {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_axiomatic_strength() {
-    let e = Epistemic::axiomatic();
-    let strength = e.strength();
-    let diff = strength - 1.0;
-    let is_one = diff < 0.001 && diff > -0.001;
-=======
 λ test_epistemic_axiomatic_strength() {
     ≔ e = Epistemic·axiomatic();
     ≔ strength = e.strength();
     ≔ diff = strength - 1.0;
     ≔ is_one = diff < 0.001 && diff > -0.001;
->>>>>>> origin/main
     assert(is_one);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_observed_strength() {
-    let e = Epistemic::observed();
-    let strength = e.strength();
-=======
 λ test_epistemic_observed_strength() {
     ≔ e = Epistemic·observed();
     ≔ strength = e.strength();
->>>>>>> origin/main
     assert(strength > 0.9);
     assert(e.is_observed());
     assert(e.is_certain());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_computed_strength() {
-    let e = Epistemic::computed();
-    let strength = e.strength();
-    let diff = strength - 0.9;
-    let is_correct = diff < 0.001 && diff > -0.001;
-=======
 λ test_epistemic_computed_strength() {
     ≔ e = Epistemic·computed();
     ≔ strength = e.strength();
     ≔ diff = strength - 0.9;
     ≔ is_correct = diff < 0.001 && diff > -0.001;
->>>>>>> origin/main
     assert(is_correct);
     assert(e.is_inferred());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_reported_strength() {
-    // High trust
-    let high = Epistemic::reported(1.0);
-    let high_strength = high.strength();
-=======
 λ test_epistemic_reported_strength() {
     // High trust
     ≔ high = Epistemic·reported(1.0);
     ≔ high_strength = high.strength();
->>>>>>> origin/main
     assert(high_strength > 0.6);
     assert(high.is_reported());
 
     // Low trust
-<<<<<<< HEAD
-    let low = Epistemic::reported(0.0);
-    let low_strength = low.strength();
-=======
     ≔ low = Epistemic·reported(0.0);
     ≔ low_strength = low.strength();
->>>>>>> origin/main
     assert(low_strength < 0.5);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_inferred_strength() {
-    // High confidence
-    let high = Epistemic::inferred(1.0);
-    let high_strength = high.strength();
-    let diff = high_strength - 0.7;
-    let is_correct = diff < 0.001 && diff > -0.001;
-    assert(is_correct);
-
-    // Low confidence
-    let low = Epistemic::inferred(0.0);
-    let low_strength = low.strength();
-=======
 λ test_epistemic_inferred_strength() {
     // High confidence
     ≔ high = Epistemic·inferred(1.0);
@@ -1042,46 +584,27 @@ fn test_epistemic_inferred_strength() {
     // Low confidence
     ≔ low = Epistemic·inferred(0.0);
     ≔ low_strength = low.strength();
->>>>>>> origin/main
     assert(low_strength < 0.5);
     assert(low.is_inferred());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_consensus_strength() {
-    let e = Epistemic::consensus(0.8);
-    let strength = e.strength();
-    // 0.7 + 0.8 * 0.2 = 0.86
-    let diff = strength - 0.86;
-    let is_correct = diff < 0.01 && diff > -0.01;
-=======
 λ test_epistemic_consensus_strength() {
     ≔ e = Epistemic·consensus(0.8);
     ≔ strength = e.strength();
     // 0.7 + 0.8 * 0.2 = 0.86
     ≔ diff = strength - 0.86;
     ≔ is_correct = diff < 0.01 && diff > -0.01;
->>>>>>> origin/main
     assert(is_correct);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_hearsay_degrades() {
-    let short_chain = Epistemic::hearsay(1);
-    let long_chain = Epistemic::hearsay(5);
-
-    let short_strength = short_chain.strength();
-    let long_strength = long_chain.strength();
-=======
 λ test_epistemic_hearsay_degrades() {
     ≔ short_chain = Epistemic·hearsay(1);
     ≔ long_chain = Epistemic·hearsay(5);
 
     ≔ short_strength = short_chain.strength();
     ≔ long_strength = long_chain.strength();
->>>>>>> origin/main
 
     // Longer chains have lower strength
     assert(short_strength > long_strength);
@@ -1089,143 +612,78 @@ fn test_epistemic_hearsay_degrades() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_unknown_zero() {
-    let e = Epistemic::unknown();
-    let strength = e.strength();
-=======
 λ test_epistemic_unknown_zero() {
     ≔ e = Epistemic·unknown();
     ≔ strength = e.strength();
->>>>>>> origin/main
     assert(strength < 0.001);
     assert(e.is_uncertain());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_retracted_zero() {
-    let e = Epistemic::retracted();
-    let strength = e.strength();
-=======
 λ test_epistemic_retracted_zero() {
     ≔ e = Epistemic·retracted();
     ≔ strength = e.strength();
->>>>>>> origin/main
     assert(strength < 0.001);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_epistemic_contested() {
-    let e = Epistemic::contested();
-    assert(e.is_contested());
-    let strength = e.strength();
-    let diff = strength - 0.3;
-    let is_correct = diff < 0.01 && diff > -0.01;
-=======
 λ test_epistemic_contested() {
     ≔ e = Epistemic·contested();
     assert(e.is_contested());
     ≔ strength = e.strength();
     ≔ diff = strength - 0.3;
     ≔ is_correct = diff < 0.01 && diff > -0.01;
->>>>>>> origin/main
     assert(is_correct);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_scope_instance_is_local() {
-    let s = Scope::instance("session_123");
-    assert(s.is_local());
-    let not_shared = s.is_shared() == false;
-=======
 λ test_scope_instance_is_local() {
     ≔ s = Scope·instance("session_123");
     assert(s.is_local());
     ≔ not_shared = s.is_shared() == false;
->>>>>>> origin/main
     assert(not_shared);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_scope_agent_is_shared() {
-    let s = Scope::agent("agent_001");
-    assert(s.is_shared());
-    let not_local = s.is_local() == false;
-=======
 λ test_scope_agent_is_shared() {
     ≔ s = Scope·agent("agent_001");
     assert(s.is_shared());
     ≔ not_local = s.is_local() == false;
->>>>>>> origin/main
     assert(not_local);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_scope_collective_is_shared() {
-    let s = Scope::collective();
-=======
 λ test_scope_collective_is_shared() {
     ≔ s = Scope·collective();
->>>>>>> origin/main
     assert(s.is_shared());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_scope_universal_is_shared() {
-    let s = Scope::universal();
-=======
 λ test_scope_universal_is_shared() {
     ≔ s = Scope·universal();
->>>>>>> origin/main
     assert(s.is_shared());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_success_confidence() {
-    let o = Outcome::success(0.8);
-    assert(o.is_success());
-    let conf = o.confidence();
-    let diff = conf - 0.8;
-    let is_correct = diff < 0.001 && diff > -0.001;
-=======
 λ test_outcome_success_confidence() {
     ≔ o = Outcome·success(0.8);
     assert(o.is_success());
     ≔ conf = o.confidence();
     ≔ diff = conf - 0.8;
     ≔ is_correct = diff < 0.001 && diff > -0.001;
->>>>>>> origin/main
     assert(is_correct);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_failure_recoverable() {
-    let recoverable = Outcome::failure(true);
-    let non_recoverable = Outcome::failure(false);
-=======
 λ test_outcome_failure_recoverable() {
     ≔ recoverable = Outcome·failure(true);
     ≔ non_recoverable = Outcome·failure(false);
->>>>>>> origin/main
 
     assert(recoverable.is_failure());
     assert(non_recoverable.is_failure());
 
-<<<<<<< HEAD
-    let rec_conf = recoverable.confidence();
-    let non_conf = non_recoverable.confidence();
-=======
     ≔ rec_conf = recoverable.confidence();
     ≔ non_conf = non_recoverable.confidence();
->>>>>>> origin/main
 
     // Recoverable has some confidence (0.2)
     assert(rec_conf > 0.1);
@@ -1234,15 +692,6 @@ fn test_outcome_failure_recoverable() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_partial_confidence() {
-    let o = Outcome::partial(2, 3);  // 2 of 3 complete
-    assert(o.is_partial());
-    let conf = o.confidence();
-    // 2/3 = 0.666...
-    let diff = conf - 0.666;
-    let is_correct = diff < 0.01 && diff > -0.01;
-=======
 λ test_outcome_partial_confidence() {
     ≔ o = Outcome·partial(2, 3);  // 2 of 3 complete
     assert(o.is_partial());
@@ -1250,75 +699,39 @@ fn test_outcome_partial_confidence() {
     // 2/3 = 0.666...
     ≔ diff = conf - 0.666;
     ≔ is_correct = diff < 0.01 && diff > -0.01;
->>>>>>> origin/main
     assert(is_correct);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_abandoned_confidence() {
-    let o = Outcome::abandoned(0.5);  // 50% progress
-    let conf = o.confidence();
-    // 0.5 * 0.3 = 0.15
-    let diff = conf - 0.15;
-    let is_correct = diff < 0.01 && diff > -0.01;
-=======
 λ test_outcome_abandoned_confidence() {
     ≔ o = Outcome·abandoned(0.5);  // 50% progress
     ≔ conf = o.confidence();
     // 0.5 * 0.3 = 0.15
     ≔ diff = conf - 0.15;
     ≔ is_correct = diff < 0.01 && diff > -0.01;
->>>>>>> origin/main
     assert(is_correct);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_outcome_ongoing_confidence() {
-    let o = Outcome::ongoing();
-    assert(o.is_ongoing());
-    let conf = o.confidence();
-    let diff = conf - 0.5;
-    let is_correct = diff < 0.01 && diff > -0.01;
-=======
 λ test_outcome_ongoing_confidence() {
     ≔ o = Outcome·ongoing();
     assert(o.is_ongoing());
     ≔ conf = o.confidence();
     ≔ diff = conf - 0.5;
     ≔ is_correct = diff < 0.01 && diff > -0.01;
->>>>>>> origin/main
     assert(is_correct);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vector_dimensions() {
-    let v = Vector::new(vec![1.0, 2.0, 3.0]);
-    assert_eq(v.dimensions(), 3);
-
-    let z = Vector::zeros(5);
-=======
 λ test_vector_dimensions() {
     ≔ v = Vector·new(vec![1.0, 2.0, 3.0]);
     assert_eq(v.dimensions(), 3);
 
     ≔ z = Vector·zeros(5);
->>>>>>> origin/main
     assert_eq(z.dimensions(), 5);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vector_cosine_identical() {
-    let v1 = Vector::new(vec![1.0, 2.0, 3.0]);
-    let v2 = Vector::new(vec![1.0, 2.0, 3.0]);
-
-    let sim = v1.cosine_similarity(&v2);
-    let diff = sim - 1.0;
-    let is_one = diff < 0.001 && diff > -0.001;
-=======
 λ test_vector_cosine_identical() {
     ≔ v1 = Vector·new(vec![1.0, 2.0, 3.0]);
     ≔ v2 = Vector·new(vec![1.0, 2.0, 3.0]);
@@ -1326,39 +739,20 @@ fn test_vector_cosine_identical() {
     ≔ sim = v1.cosine_similarity(&v2);
     ≔ diff = sim - 1.0;
     ≔ is_one = diff < 0.001 && diff > -0.001;
->>>>>>> origin/main
     assert(is_one);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vector_cosine_orthogonal() {
-    let v1 = Vector::new(vec![1.0, 0.0, 0.0]);
-    let v2 = Vector::new(vec![0.0, 1.0, 0.0]);
-
-    let sim = v1.cosine_similarity(&v2);
-    let is_zero = sim < 0.001 && sim > -0.001;
-=======
 λ test_vector_cosine_orthogonal() {
     ≔ v1 = Vector·new(vec![1.0, 0.0, 0.0]);
     ≔ v2 = Vector·new(vec![0.0, 1.0, 0.0]);
 
     ≔ sim = v1.cosine_similarity(&v2);
     ≔ is_zero = sim < 0.001 && sim > -0.001;
->>>>>>> origin/main
     assert(is_zero);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vector_cosine_opposite() {
-    let v1 = Vector::new(vec![1.0, 0.0]);
-    let v2 = Vector::new(vec![-1.0, 0.0]);
-
-    let sim = v1.cosine_similarity(&v2);
-    let diff = sim + 1.0;  // Should be -1
-    let is_neg_one = diff < 0.001 && diff > -0.001;
-=======
 λ test_vector_cosine_opposite() {
     ≔ v1 = Vector·new(vec![1.0, 0.0]);
     ≔ v2 = Vector·new(vec![-1.0, 0.0]);
@@ -1366,21 +760,10 @@ fn test_vector_cosine_opposite() {
     ≔ sim = v1.cosine_similarity(&v2);
     ≔ diff = sim + 1.0;  // Should be -1
     ≔ is_neg_one = diff < 0.001 && diff > -0.001;
->>>>>>> origin/main
     assert(is_neg_one);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vector_euclidean_distance() {
-    let v1 = Vector::new(vec![0.0, 0.0]);
-    let v2 = Vector::new(vec![3.0, 4.0]);
-
-    let dist = v1.euclidean_distance(&v2);
-    // 3-4-5 triangle
-    let diff = dist - 5.0;
-    let is_five = diff < 0.01 && diff > -0.01;
-=======
 λ test_vector_euclidean_distance() {
     ≔ v1 = Vector·new(vec![0.0, 0.0]);
     ≔ v2 = Vector·new(vec![3.0, 4.0]);
@@ -1389,23 +772,10 @@ fn test_vector_euclidean_distance() {
     // 3-4-5 triangle
     ≔ diff = dist - 5.0;
     ≔ is_five = diff < 0.01 && diff > -0.01;
->>>>>>> origin/main
     assert(is_five);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vector_normalize() {
-    let v = Vector::new(vec![3.0, 4.0]);  // 3-4-5 triangle
-    let normalized = v.normalize();
-
-    // Check unit length
-    let x = normalized.at(0) as f64;
-    let y = normalized.at(1) as f64;
-    let length = approx_sqrt(x * x + y * y);
-    let diff = length - 1.0;
-    let is_unit = diff < 0.01 && diff > -0.01;
-=======
 λ test_vector_normalize() {
     ≔ v = Vector·new(vec![3.0, 4.0]);  // 3-4-5 triangle
     ≔ normalized = v.normalize();
@@ -1416,56 +786,28 @@ fn test_vector_normalize() {
     ≔ length = approx_sqrt(x * x + y * y);
     ≔ diff = length - 1.0;
     ≔ is_unit = diff < 0.01 && diff > -0.01;
->>>>>>> origin/main
     assert(is_unit);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vector_zeros() {
-    let v = Vector::zeros(3);
-    let a = v.at(0);
-    let b = v.at(1);
-    let c = v.at(2);
-=======
 λ test_vector_zeros() {
     ≔ v = Vector·zeros(3);
     ≔ a = v.at(0);
     ≔ b = v.at(1);
     ≔ c = v.at(2);
->>>>>>> origin/main
     assert(a < 0.001);
     assert(b < 0.001);
     assert(c < 0.001);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_token_count_from_text() {
-    let tc = TokenCount::from_text("Hello world");  // 11 chars
-=======
 λ test_token_count_from_text() {
     ≔ tc = TokenCount·from_text("Hello world");  // 11 chars
->>>>>>> origin/main
     // 11 / 4 + 1 = 3
     assert_eq(tc.value(), 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_token_count_arithmetic() {
-    let a = TokenCount::new(10);
-    let b = TokenCount::new(5);
-
-    let sum = a.add(&b);
-    assert_eq(sum.value(), 15);
-
-    let diff = a.sub(&b);
-    assert_eq(diff.value(), 5);
-
-    // Saturating subtraction
-    let underflow = b.sub(&a);
-=======
 λ test_token_count_arithmetic() {
     ≔ a = TokenCount·new(10);
     ≔ b = TokenCount·new(5);
@@ -1478,24 +820,15 @@ fn test_token_count_arithmetic() {
 
     // Saturating subtraction
     ≔ underflow = b.sub(&a);
->>>>>>> origin/main
     assert_eq(underflow.value(), 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_memory_source_names() {
-    let instant = MemorySource::Instant;
-    let episodic = MemorySource::Episodic;
-    let semantic = MemorySource::Semantic;
-    let procedural = MemorySource::Procedural;
-=======
 λ test_memory_source_names() {
     ≔ instant = MemorySource·Instant;
     ≔ episodic = MemorySource·Episodic;
     ≔ semantic = MemorySource·Semantic;
     ≔ procedural = MemorySource·Procedural;
->>>>>>> origin/main
 
     assert_eq(instant.name(), "instant");
     assert_eq(episodic.name(), "episodic");
@@ -1504,56 +837,31 @@ fn test_memory_source_names() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_relation_types() {
-    let is_a = Relation::is_a();
-    let causes = Relation::causes();
-    let before = Relation::before();
-=======
 λ test_relation_types() {
     ≔ is_a = Relation·is_a();
     ≔ causes = Relation·causes();
     ≔ before = Relation·before();
->>>>>>> origin/main
 
     assert(is_a.is_taxonomic());
     assert(causes.is_causal());
     assert(before.is_temporal());
 
-<<<<<<< HEAD
-    let custom = Relation::custom("CustomRelation");
-=======
     ≔ custom = Relation·custom("CustomRelation");
->>>>>>> origin/main
     assert_eq(custom.name(), "CustomRelation");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_node_types() {
-    let person = NodeType::person();
-    let concept = NodeType::concept();
-=======
 λ test_node_types() {
     ≔ person = NodeType·person();
     ≔ concept = NodeType·concept();
->>>>>>> origin/main
 
     assert(person.is_entity());
     assert(concept.is_abstract());
 
-<<<<<<< HEAD
-    let custom = NodeType::custom("CustomType");
-    assert_eq(custom.name(), "CustomType");
-}
-
-fn main() {
-=======
     ≔ custom = NodeType·custom("CustomType");
     assert_eq(custom.name(), "CustomType");
 }
 
 λ main() {
->>>>>>> origin/main
     print("Engram types tests");
 }

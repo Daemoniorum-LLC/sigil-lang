@@ -3,10 +3,10 @@
 // Priority: P0 - Bootstrap Critical
 
 #[test]
-rite test_add() {
+λ test_add() {
     assert_eq!(1 + 1, 2);
 }
 
-rite main() {
+λ main() {
     println(1);
 }

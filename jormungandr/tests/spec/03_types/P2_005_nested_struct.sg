@@ -1,17 +1,17 @@
-// Test: Nested sigil initialization
+// Test: Nested Σ initialization
 // Spec: 03-TYPES.md § 4.1 Structs
 // Priority: P2 - Enhancement
 
-sigil Inner {
+Σ Inner {
     value: !i32,
 }
 
-sigil Outer {
+Σ Outer {
     inner: Inner,
     label: !i32,
 }
 
-rite main() {
+λ main() {
     ≔ o = Outer {
         inner: Inner { value: 42 },
         label: 1,

@@ -16,7 +16,7 @@ sigil Data {
     rite reduce(this, axis: i32, keepdim: bool) → i32 {
         // Simplified: just sum values
         ≔ vary sum: !i32 = 0;
-        each x of this.values {
+        each x ∈ this.values {
             sum = sum + x;
         }
         ⎇ keepdim { sum * 10 } ⎉ { sum }

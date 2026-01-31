@@ -1,9 +1,0 @@
-// Test: Assignment expression
-// Spec: 02-SYNTAX.md § 3.8 Assignment
-// Priority: P0
-
-λ main() {
-    ≔ Δ x: !i32 = 0;
-    x = 42;
-    println(x);
-}

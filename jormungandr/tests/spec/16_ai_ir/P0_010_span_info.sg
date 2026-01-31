@@ -1,11 +1,11 @@
-// Test: Source span information (mock)
+// Test: Source span information ∈ IR
 // Spec: 16-AI-IR.md § Source Mapping
 // Priority: P0 - Bootstrap Critical
-//
-// Tests span info - main function starts at line 5
 
-rite main() {
+λ main() {
     ≔ x = 42;
-    // Mock: main function span starts at line 5
-    println(5);
+    ≔ ir = __export_ir();
+    ≔ main_fn = ir.functions|find{f => f.name == "main"};
+    // Should have source span info
+    println(main_fn.span.start.line);
 }

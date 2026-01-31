@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 5.1 Mutex
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ m: Mutex<i32> = Mutex·new(0);
 
     {

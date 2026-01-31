@@ -2,7 +2,7 @@
 // Spec: 03-TYPES.md § 7.1 Type Inference
 // Priority: P0
 
-rite main() {
+λ main() {
     ≔ x = 42;
     println(x);
 }

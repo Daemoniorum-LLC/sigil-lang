@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use tree_sitter::{Language, Node, Parser, Tree};
+use tree_sitter::{Language, Parser, Tree, Node};
 
 /// Supported languages for tree-sitter parsing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -65,7 +65,7 @@ impl TSLanguage {
             "css" => Some(TSLanguage::Css),
             "bash" | "sh" | "shell" => Some(TSLanguage::Bash),
             // Languages not yet supported - return None
-            "html" | "htm" => None, // tree-sitter-html uses incompatible version
+            "html" | "htm" => None,  // tree-sitter-html uses incompatible version
             "kotlin" | "kt" => None,
             "yaml" | "yml" => None,
             "toml" => None,
@@ -104,8 +104,7 @@ impl TSParser {
     /// Create a new parser for the given language
     pub fn new(language: TSLanguage) -> Result<Self, String> {
         let mut parser = Parser::new();
-        parser
-            .set_language(language.get_language())
+        parser.set_language(language.get_language())
             .map_err(|e| format!("Failed to set language: {:?}", e))?;
 
         Ok(TSParser { parser, language })
@@ -113,8 +112,7 @@ impl TSParser {
 
     /// Parse source code and return a tree
     pub fn parse(&mut self, source: &str) -> Result<TSTree, String> {
-        self.parser
-            .parse(source, None)
+        self.parser.parse(source, None)
             .map(|tree| TSTree {
                 tree,
                 source: source.to_string(),
@@ -170,10 +168,7 @@ pub fn node_to_value(node: &Node) -> HashMap<String, crate::interpreter::Value> 
     let mut fields = HashMap::new();
 
     // Basic node info
-    fields.insert(
-        "kind".to_string(),
-        Value::String(Rc::new(node.kind().to_string())),
-    );
+    fields.insert("kind".to_string(), Value::String(Rc::new(node.kind().to_string())));
     fields.insert("is_named".to_string(), Value::Bool(node.is_named()));
     fields.insert("is_error".to_string(), Value::Bool(node.is_error()));
     fields.insert("is_missing".to_string(), Value::Bool(node.is_missing()));
@@ -185,41 +180,26 @@ pub fn node_to_value(node: &Node) -> HashMap<String, crate::interpreter::Value> 
     let mut start_fields = HashMap::new();
     start_fields.insert("row".to_string(), Value::Int(start.row as i64));
     start_fields.insert("column".to_string(), Value::Int(start.column as i64));
-    fields.insert(
-        "start".to_string(),
-        Value::Struct {
-            name: "Position".to_string(),
-            fields: Rc::new(RefCell::new(start_fields)),
-        },
-    );
+    fields.insert("start".to_string(), Value::Struct {
+        name: "Position".to_string(),
+        fields: Rc::new(RefCell::new(start_fields)),
+    });
 
     let mut end_fields = HashMap::new();
     end_fields.insert("row".to_string(), Value::Int(end.row as i64));
     end_fields.insert("column".to_string(), Value::Int(end.column as i64));
-    fields.insert(
-        "end".to_string(),
-        Value::Struct {
-            name: "Position".to_string(),
-            fields: Rc::new(RefCell::new(end_fields)),
-        },
-    );
+    fields.insert("end".to_string(), Value::Struct {
+        name: "Position".to_string(),
+        fields: Rc::new(RefCell::new(end_fields)),
+    });
 
     // Byte range
-    fields.insert(
-        "start_byte".to_string(),
-        Value::Int(node.start_byte() as i64),
-    );
+    fields.insert("start_byte".to_string(), Value::Int(node.start_byte() as i64));
     fields.insert("end_byte".to_string(), Value::Int(node.end_byte() as i64));
 
     // Child count
-    fields.insert(
-        "child_count".to_string(),
-        Value::Int(node.child_count() as i64),
-    );
-    fields.insert(
-        "named_child_count".to_string(),
-        Value::Int(node.named_child_count() as i64),
-    );
+    fields.insert("child_count".to_string(), Value::Int(node.child_count() as i64));
+    fields.insert("named_child_count".to_string(), Value::Int(node.named_child_count() as i64));
 
     // Children (recursively converted)
     let children: Vec<Value> = (0..node.child_count())
@@ -229,10 +209,7 @@ pub fn node_to_value(node: &Node) -> HashMap<String, crate::interpreter::Value> 
             fields: Rc::new(RefCell::new(node_to_value(&child))),
         })
         .collect();
-    fields.insert(
-        "children".to_string(),
-        Value::Array(Rc::new(RefCell::new(children))),
-    );
+    fields.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
 
     // Named children only
     let named_children: Vec<Value> = (0..node.named_child_count())
@@ -242,10 +219,7 @@ pub fn node_to_value(node: &Node) -> HashMap<String, crate::interpreter::Value> 
             fields: Rc::new(RefCell::new(node_to_value(&child))),
         })
         .collect();
-    fields.insert(
-        "named_children".to_string(),
-        Value::Array(Rc::new(RefCell::new(named_children))),
-    );
+    fields.insert("named_children".to_string(), Value::Array(Rc::new(RefCell::new(named_children))));
 
     fields
 }
@@ -258,18 +232,8 @@ pub fn node_text<'a>(node: &Node, source: &'a str) -> &'a str {
 /// List all supported languages
 pub fn supported_languages() -> Vec<&'static str> {
     vec![
-        "Rust",
-        "Python",
-        "JavaScript",
-        "TypeScript",
-        "TypeScriptTsx",
-        "Go",
-        "C",
-        "Cpp",
-        "Java",
-        "Json",
-        "Css",
-        "Bash",
+        "Rust", "Python", "JavaScript", "TypeScript", "TypeScriptTsx",
+        "Go", "C", "Cpp", "Java", "Json", "Css", "Bash",
     ]
 }
 
@@ -320,10 +284,7 @@ greet("world");
     fn test_language_from_str() {
         assert_eq!(TSLanguage::from_str("rust"), Some(TSLanguage::Rust));
         assert_eq!(TSLanguage::from_str("Rust"), Some(TSLanguage::Rust));
-        assert_eq!(
-            TSLanguage::from_str("Language::Rust"),
-            Some(TSLanguage::Rust)
-        );
+        assert_eq!(TSLanguage::from_str("Language::Rust"), Some(TSLanguage::Rust));
         assert_eq!(TSLanguage::from_str("python"), Some(TSLanguage::Python));
         assert_eq!(TSLanguage::from_str("py"), Some(TSLanguage::Python));
         assert_eq!(TSLanguage::from_str("unknown"), None);

@@ -1,38 +1,13 @@
-<<<<<<< HEAD
-//! Integration Tests for Omen
-//!
-//! Verifies the full Omen system working together.
-
-use std::collections::HashMap;
-=======
 //! Integration Tests ∀ Omen
 //!
 //! Verifies the full Omen system working together.
 
 invoke std·collections·HashMap;
->>>>>>> origin/main
 
 // ============================================================================
 // Self-contained Test Types (Minimal Omen Recreation)
 // ============================================================================
 
-<<<<<<< HEAD
-pub struct Duration { nanos: u64 }
-
-impl Duration {
-    pub fn zero() -> Self { Self { nanos: 0 } }
-    pub fn seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-}
-
-impl Copy for Duration {}
-impl Clone for Duration { fn clone(&self) -> Self { *self } }
-
-pub struct Timestamp { nanos: u64 }
-impl Timestamp { pub fn now() -> Self { Self { nanos: 1000 } } }
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum Epistemic {
-=======
 ☉ Σ Duration { nanos: u64 }
 
 ⊢ Duration {
@@ -48,7 +23,6 @@ pub enum Epistemic {
 
 #[derive(Clone, Copy, PartialEq)]
 ☉ ᛈ Epistemic {
->>>>>>> origin/main
     Axiomatic,
     Observed,
     Reported,
@@ -57,17 +31,6 @@ pub enum Epistemic {
     Unknown,
 }
 
-<<<<<<< HEAD
-impl Epistemic {
-    pub fn rank(&self) -> u8 {
-        match self {
-            Epistemic::Axiomatic => 5,
-            Epistemic::Observed => 4,
-            Epistemic::Reported => 3,
-            Epistemic::Inferred => 2,
-            Epistemic::Contested => 1,
-            Epistemic::Unknown => 0,
-=======
 ⊢ Epistemic {
     ☉ λ rank(&self) -> u8 {
         ⌥ self {
@@ -77,24 +40,10 @@ impl Epistemic {
             Epistemic·Inferred => 2,
             Epistemic·Contested => 1,
             Epistemic·Unknown => 0,
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-pub struct Proposition {
-    pub subject: String,
-    pub negated: bool,
-}
-
-impl Proposition {
-    pub fn simple(text: &str) -> Self {
-        Self { subject: text.to_string(), negated: false }
-    }
-
-    pub fn negate(mut self) -> Self {
-=======
 ☉ Σ Proposition {
     ☉ subject: String,
     ☉ negated: bool,
@@ -106,44 +55,21 @@ impl Proposition {
     }
 
     ☉ λ negate(Δ self) -> Self {
->>>>>>> origin/main
         self.negated = !self.negated;
         self
     }
 
-<<<<<<< HEAD
-    pub fn negates(&self, other: &Proposition) -> bool {
-=======
     ☉ λ negates(&self, other: &Proposition) -> bool {
->>>>>>> origin/main
         self.subject == other.subject && self.negated != other.negated
     }
 }
 
-<<<<<<< HEAD
-impl Clone for Proposition {
-    fn clone(&self) -> Self {
-=======
 ⊢ Clone ∀ Proposition {
     λ clone(&self) -> Self {
->>>>>>> origin/main
         Self { subject: self.subject.clone(), negated: self.negated }
     }
 }
 
-<<<<<<< HEAD
-pub struct Belief {
-    pub proposition: Proposition,
-    pub epistemic: Epistemic,
-    pub confidence: f32,
-}
-
-impl Belief {
-    pub fn observed(prop: &str) -> Self {
-        Self {
-            proposition: Proposition::simple(prop),
-            epistemic: Epistemic::Observed,
-=======
 ☉ Σ Belief {
     ☉ proposition: Proposition,
     ☉ epistemic: Epistemic,
@@ -155,57 +81,33 @@ impl Belief {
         Self {
             proposition: Proposition·simple(prop),
             epistemic: Epistemic·Observed,
->>>>>>> origin/main
             confidence: 0.95,
         }
     }
 
-<<<<<<< HEAD
-    pub fn inferred(prop: &str, confidence: f32) -> Self {
-        Self {
-            proposition: Proposition::simple(prop),
-            epistemic: Epistemic::Inferred,
-=======
     ☉ λ inferred(prop: &str, confidence: f32) -> Self {
         Self {
             proposition: Proposition·simple(prop),
             epistemic: Epistemic·Inferred,
->>>>>>> origin/main
             confidence,
         }
     }
 
-<<<<<<< HEAD
-    pub fn axiom(prop: &str) -> Self {
-        Self {
-            proposition: Proposition::simple(prop),
-            epistemic: Epistemic::Axiomatic,
-=======
     ☉ λ axiom(prop: &str) -> Self {
         Self {
             proposition: Proposition·simple(prop),
             epistemic: Epistemic·Axiomatic,
->>>>>>> origin/main
             confidence: 1.0,
         }
     }
 
-<<<<<<< HEAD
-    pub fn contradicts(&self, other: &Belief) -> bool {
-=======
     ☉ λ contradicts(&self, other: &Belief) -> bool {
->>>>>>> origin/main
         self.proposition.negates(&other.proposition)
     }
 }
 
-<<<<<<< HEAD
-impl Clone for Belief {
-    fn clone(&self) -> Self {
-=======
 ⊢ Clone ∀ Belief {
     λ clone(&self) -> Self {
->>>>>>> origin/main
         Self {
             proposition: self.proposition.clone(),
             epistemic: self.epistemic,
@@ -214,11 +116,7 @@ impl Clone for Belief {
     }
 }
 
-<<<<<<< HEAD
-pub enum GoalStatus {
-=======
 ☉ ᛈ GoalStatus {
->>>>>>> origin/main
     Pending,
     Active,
     Blocked { reason: String },
@@ -226,24 +124,6 @@ pub enum GoalStatus {
     Failed { reason: String },
 }
 
-<<<<<<< HEAD
-pub struct Goal {
-    pub description: String,
-    pub priority: f32,
-    pub status: GoalStatus,
-}
-
-impl Goal {
-    pub fn new(description: &str) -> Self {
-        Self {
-            description: description.to_string(),
-            priority: 0.5,
-            status: GoalStatus::Pending,
-        }
-    }
-
-    pub fn with_priority(mut self, priority: f32) -> Self {
-=======
 ☉ Σ Goal {
     ☉ description: String,
     ☉ priority: f32,
@@ -260,31 +140,10 @@ impl Goal {
     }
 
     ☉ λ with_priority(Δ self, priority: f32) -> Self {
->>>>>>> origin/main
         self.priority = priority.clamp(0.0, 1.0);
         self
     }
 
-<<<<<<< HEAD
-    pub fn activate(&mut self) { self.status = GoalStatus::Active; }
-    pub fn achieve(&mut self) { self.status = GoalStatus::Achieved; }
-    pub fn fail(&mut self, reason: &str) { self.status = GoalStatus::Failed { reason: reason.to_string() }; }
-    pub fn is_active(&self) -> bool { matches!(self.status, GoalStatus::Active) }
-    pub fn is_achieved(&self) -> bool { matches!(self.status, GoalStatus::Achieved) }
-}
-
-pub struct Action {
-    pub name: String,
-    pub success_rate: f32,
-}
-
-impl Action {
-    pub fn new(name: &str) -> Self {
-        Self { name: name.to_string(), success_rate: 0.9 }
-    }
-
-    pub fn with_success_rate(mut self, rate: f32) -> Self {
-=======
     ☉ λ activate(&Δ self) { self.status = GoalStatus·Active; }
     ☉ λ achieve(&Δ self) { self.status = GoalStatus·Achieved; }
     ☉ λ fail(&Δ self, reason: &str) { self.status = GoalStatus·Failed { reason: reason.to_string() }; }
@@ -303,32 +162,17 @@ impl Action {
     }
 
     ☉ λ with_success_rate(Δ self, rate: f32) -> Self {
->>>>>>> origin/main
         self.success_rate = rate.clamp(0.0, 1.0);
         self
     }
 }
 
-<<<<<<< HEAD
-impl Clone for Action {
-    fn clone(&self) -> Self {
-=======
 ⊢ Clone ∀ Action {
     λ clone(&self) -> Self {
->>>>>>> origin/main
         Self { name: self.name.clone(), success_rate: self.success_rate }
     }
 }
 
-<<<<<<< HEAD
-pub struct PlanStep {
-    pub action: Action,
-    pub confidence: f32,
-}
-
-impl PlanStep {
-    pub fn from_action(action: Action) -> Self {
-=======
 ☉ Σ PlanStep {
     ☉ action: Action,
     ☉ confidence: f32,
@@ -336,25 +180,10 @@ impl PlanStep {
 
 ⊢ PlanStep {
     ☉ λ from_action(action: Action) -> Self {
->>>>>>> origin/main
         Self { confidence: action.success_rate, action }
     }
 }
 
-<<<<<<< HEAD
-pub struct Plan {
-    pub steps: Vec<PlanStep>,
-    pub success_probability: f32,
-    pub strategy: String,
-}
-
-impl Plan {
-    pub fn new() -> Self {
-        Self { steps: vec![], success_probability: 1.0, strategy: "manual".to_string() }
-    }
-
-    pub fn with_step(mut self, step: PlanStep) -> Self {
-=======
 ☉ Σ Plan {
     ☉ steps: Vec<PlanStep>,
     ☉ success_probability: f32,
@@ -367,50 +196,26 @@ impl Plan {
     }
 
     ☉ λ with_step(Δ self, step: PlanStep) -> Self {
->>>>>>> origin/main
         self.success_probability *= step.confidence;
         self.steps.push(step);
         self
     }
 
-<<<<<<< HEAD
-    pub fn with_strategy(mut self, strategy: &str) -> Self {
-=======
     ☉ λ with_strategy(Δ self, strategy: &str) -> Self {
->>>>>>> origin/main
         self.strategy = strategy.to_string();
         self
     }
 
-<<<<<<< HEAD
-    pub fn step_count(&self) -> usize { self.steps.len() }
-    pub fn is_viable(&self) -> bool { self.success_probability >= 0.5 }
-}
-
-pub enum PlanOutcome {
-=======
     ☉ λ step_count(&self) -> usize { self.steps.len() }
     ☉ λ is_viable(&self) -> bool { self.success_probability >= 0.5 }
 }
 
 ☉ ᛈ PlanOutcome {
->>>>>>> origin/main
     Success,
     PartialSuccess { degree: f32 },
     Failure { reason: String },
 }
 
-<<<<<<< HEAD
-pub struct OmenConfig {
-    pub horizon: usize,
-    pub uncertainty_tolerance: f32,
-    pub risk_tolerance: f32,
-    pub enable_learning: bool,
-}
-
-impl OmenConfig {
-    pub fn default_config() -> Self {
-=======
 ☉ Σ OmenConfig {
     ☉ horizon: usize,
     ☉ uncertainty_tolerance: f32,
@@ -420,7 +225,6 @@ impl OmenConfig {
 
 ⊢ OmenConfig {
     ☉ λ default_config() -> Self {
->>>>>>> origin/main
         Self {
             horizon: 10,
             uncertainty_tolerance: 0.3,
@@ -430,21 +234,12 @@ impl OmenConfig {
     }
 }
 
-<<<<<<< HEAD
-impl Default for OmenConfig {
-    fn default() -> Self { Self::default_config() }
-}
-
-/// The main Omen planner (simplified for testing)
-pub struct Omen {
-=======
 ⊢ Default ∀ OmenConfig {
     λ default() -> Self { Self·default_config() }
 }
 
 /// The main Omen planner (simplified ∀ testing)
 ☉ Σ Omen {
->>>>>>> origin/main
     config: OmenConfig,
     beliefs: Vec<Belief>,
     goals: Vec<Goal>,
@@ -452,155 +247,83 @@ pub struct Omen {
     plan_history: Vec<(Plan, PlanOutcome)>,
 }
 
-<<<<<<< HEAD
-impl Omen {
-    pub fn new(config: OmenConfig) -> Self {
-=======
 ⊢ Omen {
     ☉ λ new(config: OmenConfig) -> Self {
->>>>>>> origin/main
         Self {
             config,
             beliefs: vec![],
             goals: vec![],
-<<<<<<< HEAD
-            actions: HashMap::new(),
-=======
             actions: HashMap·new(),
->>>>>>> origin/main
             plan_history: vec![],
         }
     }
 
     // Belief management
-<<<<<<< HEAD
-    pub fn believe(&mut self, belief: Belief) {
-        // Check for contradictions
-        let dominated = self.beliefs.iter().any(|b| {
-=======
     ☉ λ believe(&Δ self, belief: Belief) {
         // Check ∀ contradictions
         ≔ dominated = self.beliefs.iter().any(|b| {
->>>>>>> origin/main
             b.contradicts(&belief) &&
             (b.epistemic.rank() > belief.epistemic.rank() ||
              (b.epistemic.rank() == belief.epistemic.rank() && b.confidence >= belief.confidence))
         });
 
-<<<<<<< HEAD
-        if !dominated {
-=======
         ⎇ !dominated {
->>>>>>> origin/main
             // Remove contradicted beliefs
             self.beliefs.retain(|b| !belief.contradicts(b));
             self.beliefs.push(belief);
         }
     }
 
-<<<<<<< HEAD
-    pub fn observe(&mut self, observation: &str) {
-        self.believe(Belief::observed(observation));
-    }
-
-    pub fn believes(&self, proposition: &str) -> bool {
-=======
     ☉ λ observe(&Δ self, observation: &str) {
         self.believe(Belief·observed(observation));
     }
 
     ☉ λ believes(&self, proposition: &str) -> bool {
->>>>>>> origin/main
         self.beliefs.iter()
             .any(|b| b.proposition.subject == proposition && b.confidence > 0.5)
     }
 
-<<<<<<< HEAD
-    pub fn belief_count(&self) -> usize {
-        self.beliefs.len()
-    }
-
-    pub fn get_belief(&self, proposition: &str) -> Option<&Belief> {
-=======
     ☉ λ belief_count(&self) -> usize {
         self.beliefs.len()
     }
 
     ☉ λ get_belief(&self, proposition: &str) -> Option<&Belief> {
->>>>>>> origin/main
         self.beliefs.iter()
             .find(|b| b.proposition.subject == proposition)
     }
 
     // Goal management
-<<<<<<< HEAD
-    pub fn add_goal(&mut self, goal: Goal) {
-        self.goals.push(goal);
-    }
-
-    pub fn current_goal(&self) -> Option<&Goal> {
-=======
     ☉ λ add_goal(&Δ self, goal: Goal) {
         self.goals.push(goal);
     }
 
     ☉ λ current_goal(&self) -> Option<&Goal> {
->>>>>>> origin/main
         self.goals.iter()
             .filter(|g| g.is_active())
             .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
     }
 
-<<<<<<< HEAD
-    pub fn activate_goal(&mut self, index: usize) {
-        if index < self.goals.len() {
-=======
     ☉ λ activate_goal(&Δ self, index: usize) {
         ⎇ index < self.goals.len() {
->>>>>>> origin/main
             self.goals[index].activate();
         }
     }
 
-<<<<<<< HEAD
-    pub fn achieve_goal(&mut self, index: usize) {
-        if index < self.goals.len() {
-=======
     ☉ λ achieve_goal(&Δ self, index: usize) {
         ⎇ index < self.goals.len() {
->>>>>>> origin/main
             self.goals[index].achieve();
         }
     }
 
-<<<<<<< HEAD
-    pub fn goal_count(&self) -> usize {
-        self.goals.len()
-    }
-
-    pub fn active_goal_count(&self) -> usize {
-=======
     ☉ λ goal_count(&self) -> usize {
         self.goals.len()
     }
 
     ☉ λ active_goal_count(&self) -> usize {
->>>>>>> origin/main
         self.goals.iter().filter(|g| g.is_active()).count()
     }
 
     // Action library
-<<<<<<< HEAD
-    pub fn register_action(&mut self, action: Action) {
-        self.actions.insert(action.name.clone(), action);
-    }
-
-    pub fn get_action(&self, name: &str) -> Option<&Action> {
-        self.actions.get(name)
-    }
-
-    pub fn action_count(&self) -> usize {
-=======
     ☉ λ register_action(&Δ self, action: Action) {
         self.actions.insert(action.name.clone(), action);
     }
@@ -610,26 +333,10 @@ impl Omen {
     }
 
     ☉ λ action_count(&self) -> usize {
->>>>>>> origin/main
         self.actions.len()
     }
 
     // Planning
-<<<<<<< HEAD
-    pub fn plan_for_goal(&self, goal: &Goal) -> Plan {
-        // Simple planning: create a step for the goal
-        let action = Action::new(&format!("achieve_{}", goal.description));
-        Plan::new()
-            .with_step(PlanStep::from_action(action))
-            .with_strategy("HTN")
-    }
-
-    pub fn plan_with_actions(&self, action_names: &[&str]) -> Plan {
-        let mut plan = Plan::new();
-        for name in action_names {
-            if let Some(action) = self.actions.get(*name) {
-                plan = plan.with_step(PlanStep::from_action(action.clone()));
-=======
     ☉ λ plan_for_goal(&self, goal: &Goal) -> Plan {
         // Simple planning: create a step ∀ the goal
         ≔ action = Action·new(&format!("achieve_{}", goal.description));
@@ -643,24 +350,12 @@ impl Omen {
         ∀ name ∈ action_names {
             ⎇ ≔ Some(action) = self.actions.get(*name) {
                 plan = plan.with_step(PlanStep·from_action(action.clone()));
->>>>>>> origin/main
             }
         }
         plan
     }
 
     // Learning
-<<<<<<< HEAD
-    pub fn learn_from_execution(&mut self, plan: Plan, outcome: PlanOutcome) {
-        if self.config.enable_learning {
-            // Update action success rates
-            let succeeded = matches!(outcome, PlanOutcome::Success);
-            for step in &plan.steps {
-                if let Some(action) = self.actions.get_mut(&step.action.name) {
-                    // Simple exponential moving average
-                    let current = action.success_rate;
-                    let update = if succeeded { 1.0 } else { 0.0 };
-=======
     ☉ λ learn_from_execution(&Δ self, plan: Plan, outcome: PlanOutcome) {
         ⎇ self.config.enable_learning {
             // Update action success rates
@@ -670,7 +365,6 @@ impl Omen {
                     // Simple exponential moving average
                     ≔ current = action.success_rate;
                     ≔ update = ⎇ succeeded { 1.0 } ⎉ { 0.0 };
->>>>>>> origin/main
                     action.success_rate = current * 0.9 + update * 0.1;
                 }
             }
@@ -678,28 +372,16 @@ impl Omen {
         }
     }
 
-<<<<<<< HEAD
-    pub fn history_count(&self) -> usize {
-        self.plan_history.len()
-    }
-
-    pub fn success_rate(&self, action_name: &str) -> Option<f32> {
-=======
     ☉ λ history_count(&self) -> usize {
         self.plan_history.len()
     }
 
     ☉ λ success_rate(&self, action_name: &str) -> Option<f32> {
->>>>>>> origin/main
         self.actions.get(action_name).map(|a| a.success_rate)
     }
 
     // Decision making
-<<<<<<< HEAD
-    pub fn should_proceed(&self, plan: &Plan) -> bool {
-=======
     ☉ λ should_proceed(&self, plan: &Plan) -> bool {
->>>>>>> origin/main
         plan.success_probability >= (1.0 - self.config.risk_tolerance)
     }
 }
@@ -709,73 +391,38 @@ impl Omen {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_observe_creates_belief() {
-    let mut omen = Omen::new(OmenConfig::default());
-=======
 λ test_omen_observe_creates_belief() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
->>>>>>> origin/main
     omen.observe("the sky is blue");
     assert(omen.believes("the sky is blue"));
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_multiple_beliefs() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.observe("fact1");
-    omen.observe("fact2");
-    omen.believe(Belief::axiom("truth"));
-=======
 λ test_omen_multiple_beliefs() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.observe("fact1");
     omen.observe("fact2");
     omen.believe(Belief·axiom("truth"));
->>>>>>> origin/main
     assert_eq(omen.belief_count(), 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_belief_contradiction_resolution() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.observe("door is open");
-
-    let mut closed = Belief::observed("door is open");
-=======
 λ test_omen_belief_contradiction_resolution() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.observe("door is open");
 
     ≔ Δ closed = Belief·observed("door is open");
->>>>>>> origin/main
     closed.proposition = closed.proposition.negate();
     closed.confidence = 0.5;  // Lower confidence
 
     omen.believe(closed);
     // Original belief should win (higher confidence)
-<<<<<<< HEAD
-    let belief = omen.get_belief("door is open");
-=======
     ≔ belief = omen.get_belief("door is open");
->>>>>>> origin/main
     assert(belief.is_some());
     assert(!belief.unwrap().proposition.negated);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_stronger_belief_wins() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.believe(Belief::inferred("maybe true", 0.6));
-    omen.observe("maybe true");  // Observed > Inferred
-
-    let belief = omen.get_belief("maybe true");
-    assert(belief.is_some());
-    assert_eq(belief.unwrap().epistemic, Epistemic::Observed);
-=======
 λ test_omen_stronger_belief_wins() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.believe(Belief·inferred("maybe true", 0.6));
@@ -784,7 +431,6 @@ fn test_omen_stronger_belief_wins() {
     ≔ belief = omen.get_belief("maybe true");
     assert(belief.is_some());
     assert_eq(belief.unwrap().epistemic, Epistemic·Observed);
->>>>>>> origin/main
 }
 
 // ============================================================================
@@ -792,59 +438,30 @@ fn test_omen_stronger_belief_wins() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_add_goal() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.add_goal(Goal::new("complete task"));
-=======
 λ test_omen_add_goal() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.add_goal(Goal·new("complete task"));
->>>>>>> origin/main
     assert_eq(omen.goal_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_multiple_goals() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.add_goal(Goal::new("goal1").with_priority(0.3));
-    omen.add_goal(Goal::new("goal2").with_priority(0.8));
-    omen.add_goal(Goal::new("goal3").with_priority(0.5));
-=======
 λ test_omen_multiple_goals() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.add_goal(Goal·new("goal1").with_priority(0.3));
     omen.add_goal(Goal·new("goal2").with_priority(0.8));
     omen.add_goal(Goal·new("goal3").with_priority(0.5));
->>>>>>> origin/main
     assert_eq(omen.goal_count(), 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_activate_goal() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.add_goal(Goal::new("task"));
-=======
 λ test_omen_activate_goal() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.add_goal(Goal·new("task"));
->>>>>>> origin/main
     omen.activate_goal(0);
     assert_eq(omen.active_goal_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_current_goal_highest_priority() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.add_goal(Goal::new("low").with_priority(0.2));
-    omen.add_goal(Goal::new("high").with_priority(0.9));
-    omen.activate_goal(0);
-    omen.activate_goal(1);
-    let current = omen.current_goal();
-=======
 λ test_omen_current_goal_highest_priority() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.add_goal(Goal·new("low").with_priority(0.2));
@@ -852,21 +469,14 @@ fn test_omen_current_goal_highest_priority() {
     omen.activate_goal(0);
     omen.activate_goal(1);
     ≔ current = omen.current_goal();
->>>>>>> origin/main
     assert(current.is_some());
     assert_eq(current.unwrap().description, "high");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_achieve_goal() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.add_goal(Goal::new("achievable"));
-=======
 λ test_omen_achieve_goal() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.add_goal(Goal·new("achievable"));
->>>>>>> origin/main
     omen.activate_goal(0);
     omen.achieve_goal(0);
     assert_eq(omen.active_goal_count(), 0);
@@ -877,48 +487,27 @@ fn test_omen_achieve_goal() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_register_action() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.register_action(Action::new("fetch_data"));
-=======
 λ test_omen_register_action() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.register_action(Action·new("fetch_data"));
->>>>>>> origin/main
     assert_eq(omen.action_count(), 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_get_action() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.register_action(Action::new("process").with_success_rate(0.85));
-    let action = omen.get_action("process");
-=======
 λ test_omen_get_action() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.register_action(Action·new("process").with_success_rate(0.85));
     ≔ action = omen.get_action("process");
->>>>>>> origin/main
     assert(action.is_some());
     assert_eq(action.unwrap().success_rate, 0.85);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_multiple_actions() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.register_action(Action::new("step1"));
-    omen.register_action(Action::new("step2"));
-    omen.register_action(Action::new("step3"));
-=======
 λ test_omen_multiple_actions() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.register_action(Action·new("step1"));
     omen.register_action(Action·new("step2"));
     omen.register_action(Action·new("step3"));
->>>>>>> origin/main
     assert_eq(omen.action_count(), 3);
 }
 
@@ -927,48 +516,24 @@ fn test_omen_multiple_actions() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_plan_for_goal() {
-    let omen = Omen::new(OmenConfig::default());
-    let goal = Goal::new("test goal");
-    let plan = omen.plan_for_goal(&goal);
-=======
 λ test_omen_plan_for_goal() {
     ≔ omen = Omen·new(OmenConfig·default());
     ≔ goal = Goal·new("test goal");
     ≔ plan = omen.plan_for_goal(&goal);
->>>>>>> origin/main
     assert_eq(plan.step_count(), 1);
     assert_eq(plan.strategy, "HTN");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_plan_with_actions() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.register_action(Action::new("a1").with_success_rate(0.9));
-    omen.register_action(Action::new("a2").with_success_rate(0.9));
-    let plan = omen.plan_with_actions(&["a1", "a2"]);
-=======
 λ test_omen_plan_with_actions() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.register_action(Action·new("a1").with_success_rate(0.9));
     omen.register_action(Action·new("a2").with_success_rate(0.9));
     ≔ plan = omen.plan_with_actions(&["a1", "a2"]);
->>>>>>> origin/main
     assert_eq(plan.step_count(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_plan_success_probability() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.register_action(Action::new("reliable").with_success_rate(0.9));
-    omen.register_action(Action::new("also_reliable").with_success_rate(0.9));
-    let plan = omen.plan_with_actions(&["reliable", "also_reliable"]);
-    // 0.9 * 0.9 = 0.81
-    let diff = (plan.success_probability - 0.81).abs();
-=======
 λ test_omen_plan_success_probability() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.register_action(Action·new("reliable").with_success_rate(0.9));
@@ -976,42 +541,25 @@ fn test_omen_plan_success_probability() {
     ≔ plan = omen.plan_with_actions(&["reliable", "also_reliable"]);
     // 0.9 * 0.9 = 0.81
     ≔ diff = (plan.success_probability - 0.81).abs();
->>>>>>> origin/main
     assert(diff < 0.01);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_should_proceed_viable_plan() {
-    let omen = Omen::new(OmenConfig::default());  // risk_tolerance = 0.5
-    let plan = Plan::new()
-        .with_step(PlanStep::from_action(Action::new("safe").with_success_rate(0.8)));
-=======
 λ test_omen_should_proceed_viable_plan() {
     ≔ omen = Omen·new(OmenConfig·default());  // risk_tolerance = 0.5
     ≔ plan = Plan·new()
         .with_step(PlanStep·from_action(Action·new("safe").with_success_rate(0.8)));
->>>>>>> origin/main
     // 0.8 >= 0.5 (1.0 - 0.5)
     assert(omen.should_proceed(&plan));
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_should_not_proceed_risky_plan() {
-    let mut config = OmenConfig::default();
-    config.risk_tolerance = 0.2;  // Very conservative
-    let omen = Omen::new(config);
-    let plan = Plan::new()
-        .with_step(PlanStep::from_action(Action::new("risky").with_success_rate(0.5)));
-=======
 λ test_omen_should_not_proceed_risky_plan() {
     ≔ Δ config = OmenConfig·default();
     config.risk_tolerance = 0.2;  // Very conservative
     ≔ omen = Omen·new(config);
     ≔ plan = Plan·new()
         .with_step(PlanStep·from_action(Action·new("risky").with_success_rate(0.5)));
->>>>>>> origin/main
     // 0.5 < 0.8 (1.0 - 0.2)
     assert(!omen.should_proceed(&plan));
 }
@@ -1021,17 +569,6 @@ fn test_omen_should_not_proceed_risky_plan() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_learn_from_success() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.register_action(Action::new("tested").with_success_rate(0.5));
-
-    let plan = omen.plan_with_actions(&["tested"]);
-    omen.learn_from_execution(plan, PlanOutcome::Success);
-
-    // Success should increase rate
-    let new_rate = omen.success_rate("tested").unwrap();
-=======
 λ test_omen_learn_from_success() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.register_action(Action·new("tested").with_success_rate(0.5));
@@ -1041,22 +578,10 @@ fn test_omen_learn_from_success() {
 
     // Success should increase rate
     ≔ new_rate = omen.success_rate("tested").unwrap();
->>>>>>> origin/main
     assert(new_rate > 0.5);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_learn_from_failure() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.register_action(Action::new("tested").with_success_rate(0.5));
-
-    let plan = omen.plan_with_actions(&["tested"]);
-    omen.learn_from_execution(plan, PlanOutcome::Failure { reason: "test".to_string() });
-
-    // Failure should decrease rate
-    let new_rate = omen.success_rate("tested").unwrap();
-=======
 λ test_omen_learn_from_failure() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.register_action(Action·new("tested").with_success_rate(0.5));
@@ -1066,22 +591,10 @@ fn test_omen_learn_from_failure() {
 
     // Failure should decrease rate
     ≔ new_rate = omen.success_rate("tested").unwrap();
->>>>>>> origin/main
     assert(new_rate < 0.5);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_history_tracking() {
-    let mut omen = Omen::new(OmenConfig::default());
-    omen.register_action(Action::new("action"));
-
-    let plan1 = omen.plan_with_actions(&["action"]);
-    let plan2 = omen.plan_with_actions(&["action"]);
-
-    omen.learn_from_execution(plan1, PlanOutcome::Success);
-    omen.learn_from_execution(plan2, PlanOutcome::Failure { reason: "test".to_string() });
-=======
 λ test_omen_history_tracking() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
     omen.register_action(Action·new("action"));
@@ -1091,22 +604,11 @@ fn test_omen_history_tracking() {
 
     omen.learn_from_execution(plan1, PlanOutcome·Success);
     omen.learn_from_execution(plan2, PlanOutcome·Failure { reason: "test".to_string() });
->>>>>>> origin/main
 
     assert_eq(omen.history_count(), 2);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_learning_disabled() {
-    let mut config = OmenConfig::default();
-    config.enable_learning = false;
-    let mut omen = Omen::new(config);
-    omen.register_action(Action::new("action").with_success_rate(0.5));
-
-    let plan = omen.plan_with_actions(&["action"]);
-    omen.learn_from_execution(plan, PlanOutcome::Success);
-=======
 λ test_omen_learning_disabled() {
     ≔ Δ config = OmenConfig·default();
     config.enable_learning = false;
@@ -1115,7 +617,6 @@ fn test_omen_learning_disabled() {
 
     ≔ plan = omen.plan_with_actions(&["action"]);
     omen.learn_from_execution(plan, PlanOutcome·Success);
->>>>>>> origin/main
 
     // Rate should not change
     assert_eq(omen.success_rate("action").unwrap(), 0.5);
@@ -1127,26 +628,6 @@ fn test_omen_learning_disabled() {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_complete_workflow() {
-    let mut omen = Omen::new(OmenConfig::default());
-
-    // 1. Establish beliefs
-    omen.observe("task is pending");
-    omen.believe(Belief::axiom("resources available"));
-
-    // 2. Set goals
-    omen.add_goal(Goal::new("complete task").with_priority(0.8));
-    omen.activate_goal(0);
-
-    // 3. Register actions
-    omen.register_action(Action::new("prepare").with_success_rate(0.95));
-    omen.register_action(Action::new("execute").with_success_rate(0.9));
-    omen.register_action(Action::new("verify").with_success_rate(0.95));
-
-    // 4. Create plan
-    let plan = omen.plan_with_actions(&["prepare", "execute", "verify"]);
-=======
 λ test_omen_complete_workflow() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
 
@@ -1165,18 +646,13 @@ fn test_omen_complete_workflow() {
 
     // 4. Create plan
     ≔ plan = omen.plan_with_actions(&["prepare", "execute", "verify"]);
->>>>>>> origin/main
 
     // 5. Check viability
     assert(plan.is_viable());
     assert(omen.should_proceed(&plan));
 
     // 6. Execute and learn (simulated success)
-<<<<<<< HEAD
-    omen.learn_from_execution(plan, PlanOutcome::Success);
-=======
     omen.learn_from_execution(plan, PlanOutcome·Success);
->>>>>>> origin/main
 
     // 7. Complete goal
     omen.achieve_goal(0);
@@ -1188,17 +664,6 @@ fn test_omen_complete_workflow() {
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_belief_driven_planning() {
-    let mut omen = Omen::new(OmenConfig::default());
-
-    // Belief about current state
-    omen.observe("user needs help");
-    omen.believe(Belief::inferred("user is frustrated", 0.7));
-
-    // Goal based on beliefs
-    omen.add_goal(Goal::new("assist user").with_priority(0.9));
-=======
 λ test_omen_belief_driven_planning() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
 
@@ -1208,41 +673,16 @@ fn test_omen_belief_driven_planning() {
 
     // Goal based on beliefs
     omen.add_goal(Goal·new("assist user").with_priority(0.9));
->>>>>>> origin/main
     omen.activate_goal(0);
 
     // Planning considers beliefs
     assert(omen.believes("user needs help"));
-<<<<<<< HEAD
-    let current = omen.current_goal();
-=======
     ≔ current = omen.current_goal();
->>>>>>> origin/main
     assert(current.is_some());
     assert_eq(current.unwrap().description, "assist user");
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_omen_adaptive_behavior() {
-    let mut omen = Omen::new(OmenConfig::default());
-
-    // Register an initially unreliable action
-    omen.register_action(Action::new("flaky_action").with_success_rate(0.5));
-
-    // Simulate multiple successes
-    for _ in 0..5 {
-        let plan = omen.plan_with_actions(&["flaky_action"]);
-        omen.learn_from_execution(plan, PlanOutcome::Success);
-    }
-
-    // Action should now be more trusted
-    let rate = omen.success_rate("flaky_action").unwrap();
-    assert(rate > 0.5);
-}
-
-fn main() {
-=======
 λ test_omen_adaptive_behavior() {
     ≔ Δ omen = Omen·new(OmenConfig·default());
 
@@ -1261,6 +701,5 @@ fn main() {
 }
 
 λ main() {
->>>>>>> origin/main
     print("Omen integration tests");
 }

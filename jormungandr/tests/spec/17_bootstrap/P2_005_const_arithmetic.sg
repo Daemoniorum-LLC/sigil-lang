@@ -2,9 +2,9 @@
 // Spec: 17-BOOTSTRAP.md § 1.2 Const
 // Priority: P2 - Enhancement
 
-◆ VALUE: i32 = 10;
+const VALUE: i32 = 10;
 
-rite main() {
+λ main() {
     ≔ result: !i32 = VALUE * 2 + 5;
     println(result);
 }

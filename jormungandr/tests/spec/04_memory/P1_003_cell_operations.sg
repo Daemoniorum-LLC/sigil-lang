@@ -2,7 +2,7 @@
 // Spec: 04-MEMORY.md § 5.1 Cell
 // Priority: P1 - Production Ready
 
-rite main() {
+λ main() {
     ≔ cell: Cell<i32> = Cell·new(10);
 
     // Get initial value

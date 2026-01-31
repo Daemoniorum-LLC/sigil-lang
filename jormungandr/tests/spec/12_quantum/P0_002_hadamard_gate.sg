@@ -1,10 +1,13 @@
 // Test: Hadamard gate
 // Spec: 12-QUANTUM.md § 3.1 Single-Qubit Gates
 // Priority: P0 - Bootstrap Critical
+// Verifies H·H = I (Hadamard is self-inverse)
 
-rite main() {
+λ main() {
+    // H applied twice returns qubit to original state
     ≔ q: linear Qubit = Qubit·zero();
-    ≔ q2: linear Qubit = q|H;  // Hadamard creates superposition
-    ≔ result: Cbit = q2|measure;
-    println(result);  // 0 or 1 with equal probability
+    ≔ q2: linear Qubit = q|H;     // |0⟩ → |+⟩
+    ≔ q3: linear Qubit = q2|H;    // |+⟩ → |0⟩
+    ≔ result: Cbit = q3|measure;
+    println(result);  // Always 0 (H² = I)
 }

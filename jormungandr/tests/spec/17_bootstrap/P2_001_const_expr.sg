@@ -2,10 +2,10 @@
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 4.1 Constants
 // Priority: P2 - Enhancement
 
-◆ SIZE: !i32 = 10;
-◆ DOUBLE: !i32 = SIZE * 2;
+const SIZE: !i32 = 10;
+const DOUBLE: !i32 = SIZE * 2;
 
-rite main() {
+λ main() {
     println(SIZE);
     println(DOUBLE);
 }

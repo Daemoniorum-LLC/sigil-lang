@@ -10,7 +10,7 @@
 
 type MyInt = !i32;
 
-rite main() {
+λ main() {
     ≔ x: MyInt = 42;
     println(x);
 }

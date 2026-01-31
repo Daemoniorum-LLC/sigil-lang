@@ -1,8 +1,8 @@
-// Test: Never type of match
+// Test: Never type ∈ ⌥
 // Spec: 03-TYPES.md § 3.2 Never
 // Priority: P2 - Enhancement
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 1;
 
     ≔ y = ⌥ x {

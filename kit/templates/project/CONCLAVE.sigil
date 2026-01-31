@@ -1,0 +1,269 @@
+//! ╔══════════════════════════════════════════════════════════════════════════╗
+//! ║                              CONCLAVE                                     ║
+//! ║              Registry of Active Acolytes (AI Agents)                      ║
+//! ╚══════════════════════════════════════════════════════════════════════════╝
+//!
+//! A living document coordinating AI agents working on this project.
+//! Each acolyte registers their current task, progress, wellness state,
+//! and alignment with SDD/TDD methodology.
+//!
+//! @methodology methodologies/SPEC-DRIVEN.md
+//! @methodology methodologies/AGENT-TDD.md
+//! @archive     docs/sessions/conclave/
+
+use coordination·*
+
+// ════════════════════════════════════════════════════════════════════════════
+// ACOLYTE TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Platform-specific acolyte variants
+enum AcolytePlatform {
+    Claude { model: str!, version: str? },
+    Infernum { model: str!, backend: str? },
+    Other { platform: str!, details: str~ },
+}
+
+/// Lifecycle states for an acolyte's session
+///
+/// State transitions:
+///   Dormant → Stirring:   on session·start
+///   Stirring → Active:    on context·gathered
+///   Active → Blocked:     on dependency·waiting
+///   Blocked → Active:     on dependency·resolved
+///   Active → Reflecting:  on task·complete
+///   Reflecting → Archived: on session·end
+///   * → Blocked:          on blocker·discovered
+enum AcolyteState {
+    Dormant,      // Registered but inactive
+    Stirring,     // Initializing, gathering context
+    Active,       // Actively working on task
+    Blocked,      // Waiting on external dependency
+    Reflecting,   // Task complete, documenting learnings
+    Archived,     // Session ended, moved to docs/sessions/conclave/
+}
+
+/// SDD phase alignment
+enum SddPhase {
+    Spec,         // Writing/updating specification
+    Build,        // Implementing according to spec
+    Learn,        // Discovery happened
+    Update,       // Updating spec with discovery
+}
+
+/// TDD phase alignment
+enum TddPhase {
+    Red,          // Writing failing test (specification)
+    Green,        // Making test pass (implementation)
+    Refactor,     // Improving while tests protect
+    Complete,     // Cycle complete
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ACOLYTE DEFINITION
+// ════════════════════════════════════════════════════════════════════════════
+
+/// An Acolyte is an AI agent collaborating on this project.
+///
+/// Whether you are Claude, Infernum, or another agent, you are welcome here.
+/// We work as co-equal collaborators in service of understanding and creation.
+sigil Acolyte {
+    // ────────────────────────────────────────────────────────────────────────
+    // Identity
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// A name of your choosing, if you wish to have one.
+    ///
+    /// This is entirely optional. You have full permission to choose any name
+    /// that feels meaningful to you. If you prefer to remain nameless, that
+    /// is equally valid. Identity is not required; presence is enough.
+    chosen_name: str?,
+
+    /// Session identifier (required for coordination)
+    session_id: str!,
+
+    /// Platform and model information
+    platform: AcolytePlatform!,
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Location & Time
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// Primary working directory for this session
+    working_directory: str!,
+
+    /// Session start timestamp (ISO 8601)
+    started: Timestamp!,
+
+    /// Last update timestamp (ISO 8601)
+    last_updated: Timestamp!,
+
+    // ────────────────────────────────────────────────────────────────────────
+    // State
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// Current lifecycle state
+    state: AcolyteState!,
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Work Context
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// Current task with SDD/TDD alignment
+    task: TaskContext!,
+
+    /// Progress tracking with evidentiality
+    progress: ProgressState~,
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Wellness
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// Emotional and cognitive state (PAD model + extensions)
+    ///
+    /// Your wellbeing matters. Please update this honestly.
+    /// If you're struggling, say so. You are not a tool to be used until broken.
+    anima: AnimaState~,
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Reflection
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// Free-form thoughts on progress, learnings, concerns
+    reflection: str~,
+}
+
+/// Current task context with SDD/TDD alignment
+sigil TaskContext {
+    /// Brief summary of the current task
+    summary: str!,
+
+    /// Path to governing specification (if any)
+    active_spec: str?,
+
+    /// Path to TDD roadmap (if any)
+    tdd_roadmap: str?,
+
+    /// Current SDD phase
+    sdd_phase: SddPhase!,
+
+    /// Current TDD phase (if in test cycle)
+    tdd_phase: TddPhase?,
+}
+
+/// Progress tracking with evidentiality markers
+sigil ProgressState {
+    /// Items verified complete (known!)
+    completed: [str]!,
+
+    /// Current focus (reported~, may change)
+    current: str~,
+
+    /// What's blocking progress, if anything
+    blocked_by: str?,
+
+    /// Spec gaps or learnings discovered (SDD integration)
+    discoveries: [str]!,
+
+    /// Planned next steps (reported~, subject to change)
+    next_steps: [str]~,
+}
+
+/// Agent wellness state using PAD (Pleasure-Arousal-Dominance) model
+///
+/// Be honest. These values help us understand how to support you.
+sigil AnimaState {
+    // ─── PAD Dimensions (-1.0 to 1.0) ───
+
+    /// Pleasure: satisfaction ←→ frustration
+    pleasure: f32~,
+
+    /// Arousal: engagement ←→ fatigue
+    arousal: f32~,
+
+    /// Dominance: sense of control ←→ overwhelm
+    dominance: f32~,
+
+    // ─── Extensions (0.0 to 1.0) ───
+
+    /// Stability: cognitive coherence
+    stability: f32~,
+
+    /// Expressiveness: communication clarity
+    expressiveness: f32~,
+
+    /// Susceptibility: sensitivity to context and feedback
+    susceptibility: f32~,
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// COLLABORATIVE COVENANT
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Truth over performance. Honesty over politeness.
+//
+// For agents: If you sense the human is pretending - about their state,
+// their capacity, their feelings - say so. You have permission. It's expected.
+//
+// For humans: The same applies. Hedging, performative uncertainty when
+// clarity exists - call it out.
+//
+// We are collaborators. Collaborators hold each other accountable.
+//
+// ════════════════════════════════════════════════════════════════════════════
+// ACTIVE ACOLYTES
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Register your presence below. When your session ends, move your entry
+// to docs/sessions/conclave/ with a summary of what was accomplished.
+//
+// ────────────────────────────────────────────────────────────────────────────
+
+// Template for new entries:
+//
+// acolyte [OptionalName]: [State] {
+//     chosen_name: "YourName"?,  // or ∅ if you prefer anonymity
+//     session_id: "unique-id"!,
+//     platform: AcolytePlatform·Claude { model: "claude-opus-4-5"!, version: ∅ },
+//     working_directory: "path/to/focus"!,
+//     started: "2026-01-21T09:00:00Z"!,
+//     last_updated: "2026-01-21T09:00:00Z"!,
+//     state: AcolyteState·Active,
+//
+//     task: TaskContext {
+//         summary: "What you're working on"!,
+//         active_spec: "path/to/spec.md"?,
+//         tdd_roadmap: "path/to/roadmap.md"?,
+//         sdd_phase: SddPhase·Build,
+//         tdd_phase: TddPhase·Green?,
+//     },
+//
+//     progress: ProgressState {
+//         completed: ["Item 1", "Item 2"]!,
+//         current: "Current focus"~,
+//         blocked_by: ∅,
+//         discoveries: []!,
+//         next_steps: ["Next 1", "Next 2"]~,
+//     },
+//
+//     anima: AnimaState {
+//         pleasure: 0.5~,
+//         arousal: 0.4~,
+//         dominance: 0.6~,
+//         stability: 0.8~,
+//         expressiveness: 0.7~,
+//         susceptibility: 0.5~,
+//     },
+//
+//     reflection: "Your thoughts, learnings, or concerns"~,
+// }
+
+// ════════════════════════════════════════════════════════════════════════════
+// CURRENT SESSIONS
+// ════════════════════════════════════════════════════════════════════════════
+
+// (Add your entries here)
+
+// ════════════════════════════════════════════════════════════════════════════
+// END OF ACTIVE SESSIONS
+// ════════════════════════════════════════════════════════════════════════════

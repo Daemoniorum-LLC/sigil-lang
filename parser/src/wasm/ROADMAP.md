@@ -117,17 +117,9 @@ parser/src/wasm/
 - [x] Export section
 - [x] Table section (indirect calls)
 - [x] Data section (strings)
-- [x] Custom sections (debug info)
-- [x] Source maps (function-level; instruction-level requires AST spans)
+- [ ] Custom sections (debug info)
+- [ ] Source maps
 - [x] Tests: Valid WASM output, wasmparser validation (21 tests)
-
-### Phase 9: Multi-Module Linking ✅
-- [x] WASM module import infrastructure (`add_wasm_module_import`)
-- [x] Module name prefixing ($module distinguishes from JS runtime)
-- [x] Mixed JS/WASM import coexistence
-- [x] Tests: Multi-module import registration (4 tests)
-- [ ] Parser support for `use other_module::func` (future: requires language integration)
-- [ ] JS runtime module linker (future: requires sigil_runtime.js changes)
 
 ## TDD Workflow
 

@@ -1,16 +1,12 @@
 # Sigil Language - Agent Guide
 
-## Agent Coordination
-
-**Register your presence** in the workspace `CONCLAVE.sigil` and follow:
-- [SDD Methodology](../docs/methodologies/SPEC-DRIVEN-DEVELOPMENT.md)
-- [Agent-TDD](../docs/methodologies/AGENT-TDD.md)
-
 ## The Canonical Compiler
 
 The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 414/414 P0 tests passing (100%)
+**Test Results**: 723/761 tests passing (95%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
+
+> **Note**: 36 failing tests are aspirational (qliphoth/daemoniorum components, i18n, rune macros, evidentiality syntax). All core language features pass.
 
 ```bash
 cd parser
@@ -27,9 +23,9 @@ cd ../jormungandr/tests
 ## Why Rust Compiler?
 
 The Rust compiler:
-- 100% test pass rate (414/414 P0 tests)
+- 95% test pass rate (723/761 tests, all P0/P1 core tests pass)
 - Full lexer, parser, interpreter, JIT (Cranelift), and LLVM backend
-- Includes stdlib with Rc<T>, Cell<T>, Drop, HTTP, WebSocket
+- Includes stdlib with Rc<T>, Cell<T>, Drop, HTTP, WebSocket, Kafka, AMQP
 
 ## Commands
 
@@ -74,7 +70,7 @@ cd jormungandr/tests
 ./run_tests_rust.sh --priority P0      # Run P0 tests only
 ```
 
-**Current Status**: 414/414 passing (100%)
+**Current Status**: 723/761 passing (95%)
 
 Notable implementations:
 - Mutable reference semantics via sync-back mechanism
@@ -107,12 +103,32 @@ The repo contains many Sigil libraries in subdirectories:
 
 These can be used for testing the compiler with real-world code.
 
+## Git Workflow
+
+**Branch Strategy:**
+- `main` - Production releases only
+- `develop` - Staging branch (all feature branches merge here first)
+- `feature/*` - Feature branches (always branch from `develop`)
+
+**All branches must be created from `develop`:**
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feature/my-feature
+```
+
+**Pull Requests:**
+- Target `develop` for all feature work
+- Target `main` only for release PRs from `develop`
+
 ## Development Workflow
 
-1. **Build the compiler**: `cd parser && cargo build --release`
-2. **Run tests**: `cd ../jormungandr/tests && ./run_tests_rust.sh`
-3. **Test your changes**: `../../parser/target/release/sigil run your_test.sg`
-4. **Check coverage**: Test results show which features work
+1. **Branch from develop**: `git checkout develop && git checkout -b feature/my-feature`
+2. **Build the compiler**: `cd parser && cargo build --release`
+3. **Run tests**: `cd ../jormungandr/tests && ./run_tests_rust.sh`
+4. **Test your changes**: `../../parser/target/release/sigil run your_test.sg`
+5. **Check coverage**: Test results show which features work
+6. **Create PR to develop**: All PRs target `develop` branch
 
 ## Compute Backends
 
@@ -186,6 +202,9 @@ Cuda·cleanup();
 
 ## Recent Changes (January 2026)
 
+- Deduplicated repository (removed redundant `sigil-lang/` nesting within `sigil-lang/`)
+- Merged root-only content from develop (413 files preserved)
+- Resolved 30 merge conflict markers in ecosystem test files
 - Restored Rust compiler from git history
 - Fixed critical bugs in type system and codegen
 - Implemented Rc<T> and Cell<T> stdlib types
@@ -196,3 +215,32 @@ Cuda·cleanup();
 - Added CUDA backend (GPU compute via Driver API)
 - Added LSP server, formatter, linter, package manager
 - Added HTTP and WebSocket clients
+
+## Website
+
+### Canonical: Qliphoth (WASM)
+
+The **website-qliphoth/** directory contains the canonical Sigil website, written entirely in Sigil and compiled to WebAssembly.
+
+**URL:** https://sigil-lang.com
+
+**Architecture:**
+- Source: `website-qliphoth/src/*.sigil`
+- Build: `./build.sh` (compiles Sigil → WASM)
+- Runtime: `sigil_runtime.js` (Qliphoth runtime)
+- Deploy: `website-qliphoth/deploy/`
+
+**Build Commands:**
+```bash
+cd website-qliphoth
+./build.sh              # Build all WASM files
+./build.sh --clean      # Clean rebuild
+```
+
+### Deprecated: Static HTML
+
+The **website/** directory contains a deprecated static HTML fallback.
+
+**Status:** DEPRECATED
+
+Do not update. Exists only as fallback for browsers without WASM support. The error handler in `website-qliphoth/index.html` links to this as a fallback.

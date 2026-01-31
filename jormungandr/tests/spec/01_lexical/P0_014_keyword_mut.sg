@@ -1,9 +1,9 @@
-// Test: Keyword 'mut' each mutability
+// Test: Keyword 'Δ' ∀ mutability
 // Spec: 01-LEXICAL.md § 2.2 Keywords
 // Priority: P0
 
-rite main() {
-    ≔ vary x: !i32 = 0;
+λ main() {
+    ≔ Δ x: !i32 = 0;
     x = 42;
     println(x);
 }

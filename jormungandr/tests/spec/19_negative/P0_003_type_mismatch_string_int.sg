@@ -3,7 +3,7 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ x: i32 = "hello";  // ERROR: cannot assign String to i32
     println(x);
 }

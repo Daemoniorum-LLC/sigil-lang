@@ -3,7 +3,7 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ x = 5;
     ≔ result = ⌥ x {
         1 => 10,

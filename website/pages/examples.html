@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Examples - Sigil</title>
   <meta name="description" content="Real-world Sigil code examples: data validation, API clients, agent systems, and more.">
-  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛤</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -18,15 +18,15 @@
   <nav class="nav" role="navigation" aria-label="Main navigation">
     <div class="nav-container">
       <a href="/" class="nav-logo" aria-label="Sigil home">
-        <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="24" height="24">
+        <span class="logo-icon" aria-hidden="true">⛤</span>
         <span class="logo-text">Sigil</span>
-        <span class="version-badge">0.3</span>
+        <span class="version-badge">0.2</span>
       </a>
 
       <div class="nav-links" id="nav-links">
         <a href="/pages/learn.html">Learn</a>
         <a href="/pages/docs.html">Docs</a>
-        <a href="/playground/">Playground </a>
+        <a href="/pages/playground.html" class="nav-coming-soon">Playground <span class="soon-badge">Soon</span></a>
         <a href="/pages/agents.html">Agent Infrastructure</a>
         <a href="https://github.com/Daemoniorum-LLC/sigil-lang" class="nav-github" aria-label="GitHub repository" rel="noopener noreferrer" target="_blank">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -92,8 +92,8 @@
 
         <p>The simplest Sigil program:</p>
 
-        <pre class="code-block"><code><span class="keyword">rite</span> <span class="function">main</span>() {
-    <span class="keyword">≔</span> message<span class="ev-known">!</span> = <span class="string">"Hello, World!"</span>
+        <pre class="code-block"><code><span class="keyword">fn</span> <span class="function">main</span>() {
+    <span class="keyword">let</span> message<span class="ev-known">!</span> = <span class="string">"Hello, World!"</span>
     <span class="function">println</span>(message)
 }
 </code></pre>
@@ -105,39 +105,39 @@
         <p>Sigil tracks where data comes from. Here's how evidence markers propagate:</p>
 
         <pre class="code-block"><code><span class="comment">// Known: computed locally</span>
-<span class="keyword">≔</span> local<span class="ev-known">!</span> = <span class="number">42</span>
+<span class="keyword">let</span> local<span class="ev-known">!</span> = <span class="number">42</span>
 
 <span class="comment">// Reported: from external source</span>
-<span class="keyword">≔</span> external<span class="ev-reported">~</span> = api.fetch(<span class="string">"/data"</span>)
+<span class="keyword">let</span> external<span class="ev-reported">~</span> = api.fetch(<span class="string">"/data"</span>)
 
 <span class="comment">// Uncertain: might be absent</span>
-<span class="keyword">≔</span> maybe<span class="ev-uncertain">?</span> = database.find(id)
+<span class="keyword">let</span> maybe<span class="ev-uncertain">?</span> = database.find(id)
 
 <span class="comment">// Combining evidence levels</span>
-<span class="keyword">≔</span> result<span class="ev-reported">~</span> = local + external  <span class="comment">// ! + ~ = ~</span>
+<span class="keyword">let</span> result<span class="ev-reported">~</span> = local + external  <span class="comment">// ! + ~ = ~</span>
 
 <span class="comment">// Validation promotes evidence</span>
-<span class="keyword">≔</span> trusted<span class="ev-known">!</span> = external |<span class="keyword">validate</span><span class="ev-known">!</span>{ verify_signature() }
+<span class="keyword">let</span> trusted<span class="ev-known">!</span> = external |<span class="keyword">validate</span><span class="ev-known">!</span>{ verify_signature() }
 </code></pre>
 
         <h2 id="morphemes">Morpheme Operators</h2>
 
         <p>Greek letter operators for data transformation:</p>
 
-        <pre class="code-block"><code><span class="keyword">≔</span> numbers = [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>]
+        <pre class="code-block"><code><span class="keyword">let</span> numbers = [<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>]
 
 <span class="comment">// Filter (φ), transform (τ), reduce</span>
-<span class="keyword">≔</span> result = numbers
+<span class="keyword">let</span> result = numbers
     |<span class="morpheme">φ</span>{. % <span class="number">2</span> == <span class="number">0</span>}     <span class="comment">// keep even: [2, 4, 6, 8, 10]</span>
     |<span class="morpheme">τ</span>{. * <span class="number">2</span>}           <span class="comment">// double:    [4, 8, 12, 16, 20]</span>
     |<span class="morpheme">Σ</span>                   <span class="comment">// sum:       60</span>
 
 <span class="comment">// Sort (σ)</span>
-<span class="keyword">≔</span> sorted = users |<span class="morpheme">σ</span>·by{.name}
+<span class="keyword">let</span> sorted = users |<span class="morpheme">σ</span>·by{.name}
 
 <span class="comment">// First (α) and last (ω)</span>
-<span class="keyword">≔</span> first<span class="ev-uncertain">?</span> = users |<span class="morpheme">α</span>
-<span class="keyword">≔</span> last<span class="ev-uncertain">?</span> = users |<span class="morpheme">ω</span>
+<span class="keyword">let</span> first<span class="ev-uncertain">?</span> = users |<span class="morpheme">α</span>
+<span class="keyword">let</span> last<span class="ev-uncertain">?</span> = users |<span class="morpheme">ω</span>
 </code></pre>
 
         <hr>
@@ -146,35 +146,35 @@
 
         <p>A type-safe HTTP client that enforces validation of external data:</p>
 
-        <pre class="code-block"><code><span class="keyword">sigil</span> <span class="type">User</span> {
+        <pre class="code-block"><code><span class="keyword">struct</span> <span class="type">User</span> {
     id: <span class="type">Uuid</span>,
     name: <span class="type">Str</span>,
     email: <span class="type">Email</span>,
     role: <span class="type">Role</span>,
 }
 
-<span class="keyword">sigil</span> <span class="type">ApiClient</span> {
+<span class="keyword">struct</span> <span class="type">ApiClient</span> {
     base_url: <span class="type">Url</span><span class="ev-known">!</span>,
     auth_token: <span class="type">Str</span><span class="ev-known">!</span>,
 }
 
-<span class="keyword">⊢</span> <span class="type">ApiClient</span> {
+<span class="keyword">impl</span> <span class="type">ApiClient</span> {
     <span class="comment">// Returns reported data - caller must validate</span>
-    <span class="keyword">async rite</span> <span class="function">get_user</span>(this, id: <span class="type">Uuid</span>) → <span class="type">Result</span><<span class="type">User</span><span class="ev-reported">~</span>> {
-        <span class="keyword">≔</span> response<span class="ev-reported">~</span> = http::get(<span class="string">"{self.base_url}/users/{id}"</span>)
+    <span class="keyword">async fn</span> <span class="function">get_user</span>(&self, id: <span class="type">Uuid</span>) -> <span class="type">Result</span><<span class="type">User</span><span class="ev-reported">~</span>> {
+        <span class="keyword">let</span> response<span class="ev-reported">~</span> = http::get(<span class="string">"{self.base_url}/users/{id}"</span>)
             .header(<span class="string">"Authorization"</span>, <span class="string">"Bearer {self.auth_token}"</span>)
             .<span class="keyword">await</span>?;
 
-        <span class="keyword">≔</span> user<span class="ev-reported">~</span>: <span class="type">User</span><span class="ev-reported">~</span> = response.json()?;
+        <span class="keyword">let</span> user<span class="ev-reported">~</span>: <span class="type">User</span><span class="ev-reported">~</span> = response.json()?;
         <span class="type">Ok</span>(user)
     }
 
     <span class="comment">// Returns validated data - safe to use</span>
-    <span class="keyword">async rite</span> <span class="function">get_verified_user</span>(this, id: <span class="type">Uuid</span>) → <span class="type">Result</span><<span class="type">User</span><span class="ev-known">!</span>> {
-        <span class="keyword">≔</span> user<span class="ev-reported">~</span> = self.get_user(id).<span class="keyword">await</span>?;
+    <span class="keyword">async fn</span> <span class="function">get_verified_user</span>(&self, id: <span class="type">Uuid</span>) -> <span class="type">Result</span><<span class="type">User</span><span class="ev-known">!</span>> {
+        <span class="keyword">let</span> user<span class="ev-reported">~</span> = self.get_user(id).<span class="keyword">await</span>?;
 
         <span class="comment">// Validate all fields</span>
-        <span class="keyword">≔</span> verified<span class="ev-known">!</span> = user |<span class="keyword">validate</span><span class="ev-known">!</span>{
+        <span class="keyword">let</span> verified<span class="ev-known">!</span> = user |<span class="keyword">validate</span><span class="ev-known">!</span>{
             .id.is_valid() &&
             .name.len() > <span class="number">0</span> &&
             .email.is_valid() &&
@@ -186,13 +186,13 @@
 }
 
 <span class="comment">// Usage</span>
-<span class="keyword">async rite</span> <span class="function">process_user</span>(client: &<span class="type">ApiClient</span>, id: <span class="type">Uuid</span>) {
+<span class="keyword">async fn</span> <span class="function">process_user</span>(client: &<span class="type">ApiClient</span>, id: <span class="type">Uuid</span>) {
     <span class="comment">// This won't compile - can't use reported data directly</span>
     <span class="comment">// let user~ = client.get_user(id).await?;</span>
     <span class="comment">// database.insert(user);  // ERROR: expected User!, got User~</span>
 
     <span class="comment">// This works - data is verified</span>
-    <span class="keyword">≔</span> user<span class="ev-known">!</span> = client.get_verified_user(id).<span class="keyword">await</span>?;
+    <span class="keyword">let</span> user<span class="ev-known">!</span> = client.get_verified_user(id).<span class="keyword">await</span>?;
     database.insert(user);  <span class="comment">// OK: User!</span>
 }
 </code></pre>
@@ -201,37 +201,37 @@
 
         <p>Safe handling of user input with progressive validation:</p>
 
-        <pre class="code-block"><code><span class="keyword">sigil</span> <span class="type">RegistrationForm</span> {
+        <pre class="code-block"><code><span class="keyword">struct</span> <span class="type">RegistrationForm</span> {
     email: <span class="type">Str</span>,
     password: <span class="type">Str</span>,
     confirm_password: <span class="type">Str</span>,
 }
 
-<span class="keyword">sigil</span> <span class="type">ValidatedRegistration</span> {
+<span class="keyword">struct</span> <span class="type">ValidatedRegistration</span> {
     email: <span class="type">Email</span><span class="ev-known">!</span>,
     password_hash: <span class="type">Hash</span><span class="ev-known">!</span>,
 }
 
-<span class="keyword">rite</span> <span class="function">validate_registration</span>(form: <span class="type">RegistrationForm</span><span class="ev-reported">~</span>) → <span class="type">Result</span><<span class="type">ValidatedRegistration</span>> {
+<span class="keyword">fn</span> <span class="function">validate_registration</span>(form: <span class="type">RegistrationForm</span><span class="ev-reported">~</span>) -> <span class="type">Result</span><<span class="type">ValidatedRegistration</span>> {
     <span class="comment">// All form data is reported (user input)</span>
-    <span class="keyword">≔</span> email<span class="ev-reported">~</span> = form.email;
-    <span class="keyword">≔</span> password<span class="ev-reported">~</span> = form.password;
-    <span class="keyword">≔</span> confirm<span class="ev-reported">~</span> = form.confirm_password;
+    <span class="keyword">let</span> email<span class="ev-reported">~</span> = form.email;
+    <span class="keyword">let</span> password<span class="ev-reported">~</span> = form.password;
+    <span class="keyword">let</span> confirm<span class="ev-reported">~</span> = form.confirm_password;
 
     <span class="comment">// Validate email format</span>
-    <span class="keyword">≔</span> valid_email<span class="ev-uncertain">?</span> = email |<span class="keyword">validate</span><span class="ev-uncertain">?</span>{ <span class="type">Email</span>·parse(.) };
-    <span class="keyword">≔</span> email<span class="ev-known">!</span> = valid_email.ok_or(<span class="type">Error</span>·InvalidEmail)?;
+    <span class="keyword">let</span> valid_email<span class="ev-uncertain">?</span> = email |<span class="keyword">validate</span><span class="ev-uncertain">?</span>{ <span class="type">Email</span>::parse(.) };
+    <span class="keyword">let</span> email<span class="ev-known">!</span> = valid_email.ok_or(<span class="type">Error</span>::InvalidEmail)?;
 
     <span class="comment">// Validate password requirements</span>
-    <span class="keyword">≔</span> password<span class="ev-known">!</span> = password |<span class="keyword">validate</span><span class="ev-known">!</span>{
+    <span class="keyword">let</span> password<span class="ev-known">!</span> = password |<span class="keyword">validate</span><span class="ev-known">!</span>{
         .len() >= <span class="number">12</span> &&
         .contains_uppercase() &&
         .contains_number() &&
         . == confirm
-    }.ok_or(<span class="type">Error</span>·WeakPassword)?;
+    }.ok_or(<span class="type">Error</span>::WeakPassword)?;
 
     <span class="comment">// Hash password (produces known data)</span>
-    <span class="keyword">≔</span> hash<span class="ev-known">!</span> = crypto::hash(password);
+    <span class="keyword">let</span> hash<span class="ev-known">!</span> = crypto::hash(password);
 
     <span class="type">Ok</span>(<span class="type">ValidatedRegistration</span> {
         email,
@@ -244,38 +244,38 @@
 
         <p>Processing data from multiple sources with evidence tracking:</p>
 
-        <pre class="code-block"><code><span class="keyword">sigil</span> <span class="type">SalesReport</span> {
+        <pre class="code-block"><code><span class="keyword">struct</span> <span class="type">SalesReport</span> {
     total: <span class="type">Decimal</span>,
     by_region: <span class="type">Map</span><<span class="type">Region</span>, <span class="type">Decimal</span>>,
     confidence: <span class="type">Float</span>,
 }
 
-<span class="keyword">async rite</span> <span class="function">generate_report</span>(date_range: <span class="type">DateRange</span><span class="ev-known">!</span>) → <span class="type">SalesReport</span><span class="ev-known">!</span> {
+<span class="keyword">async fn</span> <span class="function">generate_report</span>(date_range: <span class="type">DateRange</span><span class="ev-known">!</span>) -> <span class="type">SalesReport</span><span class="ev-known">!</span> {
     <span class="comment">// Fetch from multiple sources (all reported)</span>
-    <span class="keyword">≔</span> db_sales<span class="ev-reported">~</span> = database.query_sales(date_range).<span class="keyword">await</span>;
-    <span class="keyword">≔</span> api_sales<span class="ev-reported">~</span> = external_api.get_sales(date_range).<span class="keyword">await</span>;
-    <span class="keyword">≔</span> csv_sales<span class="ev-reported">~</span> = import_csv(<span class="string">"manual_entries.csv"</span>).<span class="keyword">await</span>;
+    <span class="keyword">let</span> db_sales<span class="ev-reported">~</span> = database.query_sales(date_range).<span class="keyword">await</span>;
+    <span class="keyword">let</span> api_sales<span class="ev-reported">~</span> = external_api.get_sales(date_range).<span class="keyword">await</span>;
+    <span class="keyword">let</span> csv_sales<span class="ev-reported">~</span> = import_csv(<span class="string">"manual_entries.csv"</span>).<span class="keyword">await</span>;
 
     <span class="comment">// Validate each source</span>
-    <span class="keyword">≔</span> db_validated<span class="ev-known">!</span> = db_sales |<span class="keyword">validate</span><span class="ev-known">!</span>{ verify_db_integrity(.) };
-    <span class="keyword">≔</span> api_validated<span class="ev-uncertain">?</span> = api_sales |<span class="keyword">validate</span><span class="ev-uncertain">?</span>{ verify_api_response(.) };
-    <span class="keyword">≔</span> csv_validated<span class="ev-uncertain">?</span> = csv_sales |<span class="keyword">validate</span><span class="ev-uncertain">?</span>{ verify_csv_format(.) };
+    <span class="keyword">let</span> db_validated<span class="ev-known">!</span> = db_sales |<span class="keyword">validate</span><span class="ev-known">!</span>{ verify_db_integrity(.) };
+    <span class="keyword">let</span> api_validated<span class="ev-uncertain">?</span> = api_sales |<span class="keyword">validate</span><span class="ev-uncertain">?</span>{ verify_api_response(.) };
+    <span class="keyword">let</span> csv_validated<span class="ev-uncertain">?</span> = csv_sales |<span class="keyword">validate</span><span class="ev-uncertain">?</span>{ verify_csv_format(.) };
 
     <span class="comment">// Merge with evidence-aware aggregation</span>
-    <span class="keyword">≔</span> all_sales = [db_validated, api_validated, csv_validated]
+    <span class="keyword">let</span> all_sales = [db_validated, api_validated, csv_validated]
         |<span class="morpheme">φ</span>{.is_some()}
         |<span class="morpheme">τ</span>{.unwrap()};
 
     <span class="comment">// Calculate totals</span>
-    <span class="keyword">≔</span> total<span class="ev-known">!</span> = all_sales |<span class="morpheme">τ</span>{.amount} |<span class="morpheme">Σ</span>;
+    <span class="keyword">let</span> total<span class="ev-known">!</span> = all_sales |<span class="morpheme">τ</span>{.amount} |<span class="morpheme">Σ</span>;
 
-    <span class="keyword">≔</span> by_region<span class="ev-known">!</span> = all_sales
+    <span class="keyword">let</span> by_region<span class="ev-known">!</span> = all_sales
         |<span class="keyword">group_by</span>{.region}
         |<span class="morpheme">τ</span>{(region, items) => (region, items |<span class="morpheme">τ</span>{.amount} |<span class="morpheme">Σ</span>)};
 
     <span class="comment">// Confidence based on data completeness</span>
-    <span class="keyword">≔</span> sources_valid = [api_validated.is_some(), csv_validated.is_some()];
-    <span class="keyword">≔</span> confidence<span class="ev-known">!</span> = <span class="number">0.6</span> + (sources_valid |<span class="morpheme">φ</span>{.} |<span class="keyword">count</span>) * <span class="number">0.2</span>;
+    <span class="keyword">let</span> sources_valid = [api_validated.is_some(), csv_validated.is_some()];
+    <span class="keyword">let</span> confidence<span class="ev-known">!</span> = <span class="number">0.6</span> + (sources_valid |<span class="morpheme">φ</span>{.} |<span class="keyword">count</span>) * <span class="number">0.2</span>;
 
     <span class="type">SalesReport</span> { total, by_region, confidence }
 }
@@ -287,19 +287,19 @@
 
         <p>A basic agent with tool use:</p>
 
-        <pre class="code-block"><code><span class="keyword">daemon</span> <span class="type">Calculator</span> {
+        <pre class="code-block"><code><span class="keyword">agent</span> <span class="type">Calculator</span> {
     <span class="keyword">execution</span>: <span class="type">Daemon</span> {
-        tools: [<span class="type">Tool</span>·Calculator],
+        tools: [<span class="type">Tool</span>::Calculator],
     }
 }
 
-<span class="keyword">⊢</span> <span class="type">Calculator</span> {
-    <span class="keyword">rite</span> <span class="function">process</span>(this, query: <span class="type">Str</span><span class="ev-reported">~</span>) → <span class="type">Result</span><<span class="type">Str</span><span class="ev-known">!</span>> {
+<span class="keyword">impl</span> <span class="type">Calculator</span> {
+    <span class="keyword">fn</span> <span class="function">process</span>(&self, query: <span class="type">Str</span><span class="ev-reported">~</span>) -> <span class="type">Result</span><<span class="type">Str</span><span class="ev-known">!</span>> {
         <span class="comment">// Parse expression (reported input)</span>
-        <span class="keyword">≔</span> expr<span class="ev-uncertain">?</span> = <span class="type">Expression</span>·parse(query)?;
+        <span class="keyword">let</span> expr<span class="ev-uncertain">?</span> = <span class="type">Expression</span>::parse(query)?;
 
         <span class="comment">// Evaluate (produces known result)</span>
-        <span class="keyword">≔</span> result<span class="ev-known">!</span> = self.tools.calculator.eval(expr);
+        <span class="keyword">let</span> result<span class="ev-known">!</span> = self.tools.calculator.eval(expr);
 
         <span class="type">Ok</span>(<span class="string">"Result: {result}"</span>)
     }
@@ -310,27 +310,27 @@
 
         <p>An agent that remembers past interactions:</p>
 
-        <pre class="code-block"><code><span class="keyword">daemon</span> <span class="type">PersonalAssistant</span> {
+        <pre class="code-block"><code><span class="keyword">agent</span> <span class="type">PersonalAssistant</span> {
     <span class="keyword">memory</span>: <span class="type">Engram</span> {
         instant: <span class="number">4096</span>,
-        episodic: <span class="keyword">yea</span>,
-        semantic: <span class="keyword">yea</span>,
+        episodic: <span class="keyword">true</span>,
+        semantic: <span class="keyword">true</span>,
     },
     <span class="keyword">learning</span>: <span class="type">Gnosis</span> {
         adaptation_rate: <span class="number">0.1</span>,
     }
 }
 
-<span class="keyword">⊢</span> <span class="type">PersonalAssistant</span> {
-    <span class="keyword">async rite</span> <span class="function">respond</span>(vary this, message: <span class="type">Str</span><span class="ev-reported">~</span>) → <span class="type">Str</span><span class="ev-known">!</span> {
+<span class="keyword">impl</span> <span class="type">PersonalAssistant</span> {
+    <span class="keyword">async fn</span> <span class="function">respond</span>(&mut self, message: <span class="type">Str</span><span class="ev-reported">~</span>) -> <span class="type">Str</span><span class="ev-known">!</span> {
         <span class="comment">// Check for similar past interactions</span>
-        <span class="keyword">≔</span> context<span class="ev-uncertain">?</span> = self.engram.episodic
+        <span class="keyword">let</span> context<span class="ev-uncertain">?</span> = self.engram.episodic
             |<span class="morpheme">φ</span>{.similarity(message) > <span class="number">0.7</span>}
             |<span class="morpheme">σ</span>·by{.relevance}
             |<span class="morpheme">α</span>;
 
         <span class="comment">// Generate response with context</span>
-        <span class="keyword">≔</span> response<span class="ev-known">!</span> = <span class="keyword">match</span> context {
+        <span class="keyword">let</span> response<span class="ev-known">!</span> = <span class="keyword">match</span> context {
             <span class="type">Some</span>(past) => self.generate_with_context(message, past),
             <span class="type">None</span> => self.generate_fresh(message),
         };
@@ -339,7 +339,7 @@
         self.engram.store_episode(<span class="type">Episode</span> {
             input: message,
             output: response.clone(),
-            timestamp: <span class="type">Time</span>·now(),
+            timestamp: <span class="type">Time</span>::now(),
         });
 
         response
@@ -351,42 +351,42 @@
 
         <p>Multiple agents collaborating on a research task:</p>
 
-        <pre class="code-block"><code><span class="keyword">daemon</span> <span class="type">Researcher</span> {
-    <span class="keyword">execution</span>: <span class="type">Daemon</span> { tools: [<span class="type">Tool</span>·WebSearch, <span class="type">Tool</span>·FileSystem] },
+        <pre class="code-block"><code><span class="keyword">agent</span> <span class="type">Researcher</span> {
+    <span class="keyword">execution</span>: <span class="type">Daemon</span> { tools: [<span class="type">Tool</span>::WebSearch, <span class="type">Tool</span>::FileSystem] },
     <span class="keyword">communication</span>: <span class="type">Commune</span>,
 }
 
-<span class="keyword">daemon</span> <span class="type">Analyst</span> {
-    <span class="keyword">memory</span>: <span class="type">Engram</span> { semantic: <span class="keyword">yea</span> },
+<span class="keyword">agent</span> <span class="type">Analyst</span> {
+    <span class="keyword">memory</span>: <span class="type">Engram</span> { semantic: <span class="keyword">true</span> },
     <span class="keyword">planning</span>: <span class="type">Omen</span>,
     <span class="keyword">communication</span>: <span class="type">Commune</span>,
 }
 
-<span class="keyword">daemon</span> <span class="type">Writer</span> {
+<span class="keyword">agent</span> <span class="type">Writer</span> {
     <span class="keyword">subjectivity</span>: <span class="type">Anima</span> { personality: <span class="string">"clear, concise"</span> },
     <span class="keyword">communication</span>: <span class="type">Commune</span>,
 }
 
-<span class="keyword">async rite</span> <span class="function">research_project</span>(topic: <span class="type">Str</span><span class="ev-reported">~</span>) → <span class="type">Report</span><span class="ev-known">!</span> {
+<span class="keyword">async fn</span> <span class="function">research_project</span>(topic: <span class="type">Str</span><span class="ev-reported">~</span>) -> <span class="type">Report</span><span class="ev-known">!</span> {
     <span class="comment">// Create agent swarm</span>
-    <span class="keyword">≔</span> researcher = <span class="type">Researcher</span>·new();
-    <span class="keyword">≔</span> analyst = <span class="type">Analyst</span>·new();
-    <span class="keyword">≔</span> writer = <span class="type">Writer</span>·new();
+    <span class="keyword">let</span> researcher = <span class="type">Researcher</span>::new();
+    <span class="keyword">let</span> analyst = <span class="type">Analyst</span>::new();
+    <span class="keyword">let</span> writer = <span class="type">Writer</span>::new();
 
     <span class="comment">// Research phase</span>
-    researcher ! <span class="type">Message</span>·Task { action: <span class="string">"research"</span>, topic };
-    <span class="keyword">≔</span> findings<span class="ev-reported">~</span> = researcher ? <span class="type">Message</span>·Result;
+    researcher ! <span class="type">Message</span>::Task { action: <span class="string">"research"</span>, topic };
+    <span class="keyword">let</span> findings<span class="ev-reported">~</span> = researcher ? <span class="type">Message</span>::Result;
 
     <span class="comment">// Analysis phase</span>
-    analyst ! <span class="type">Message</span>·Task { action: <span class="string">"analyze"</span>, data: findings };
-    <span class="keyword">≔</span> analysis<span class="ev-reported">~</span> = analyst ? <span class="type">Message</span>·Result;
+    analyst ! <span class="type">Message</span>::Task { action: <span class="string">"analyze"</span>, data: findings };
+    <span class="keyword">let</span> analysis<span class="ev-reported">~</span> = analyst ? <span class="type">Message</span>::Result;
 
     <span class="comment">// Writing phase</span>
-    writer ! <span class="type">Message</span>·Task { action: <span class="string">"write"</span>, content: analysis };
-    <span class="keyword">≔</span> draft<span class="ev-reported">~</span> = writer ? <span class="type">Message</span>·Result;
+    writer ! <span class="type">Message</span>::Task { action: <span class="string">"write"</span>, content: analysis };
+    <span class="keyword">let</span> draft<span class="ev-reported">~</span> = writer ? <span class="type">Message</span>::Result;
 
     <span class="comment">// Validate final output</span>
-    <span class="keyword">≔</span> report<span class="ev-known">!</span> = draft |<span class="keyword">validate</span><span class="ev-known">!</span>{
+    <span class="keyword">let</span> report<span class="ev-known">!</span> = draft |<span class="keyword">validate</span><span class="ev-known">!</span>{
         .word_count() >= <span class="number">500</span> &&
         .citations.len() > <span class="number">0</span> &&
         .has_conclusion()
@@ -416,11 +416,11 @@
     <div class="footer-container">
       <div class="footer-brand">
         <a href="/" class="footer-logo">
-          <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="20" height="20">
+          <span class="logo-icon">⛤</span>
           <span>Sigil</span>
         </a>
         <p>Infrastructure for minds that don't yet know what they are.</p>
-        <p class="footer-copyright">&copy; 2025 <acopy; 2025-2026 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
+        <p class="footer-copyright">&copy; 2025 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
       </div>
 
       <nav class="footer-nav" aria-label="Footer navigation">
@@ -429,7 +429,7 @@
           <ul>
             <li><a href="/pages/learn.html">Tutorial</a></li>
             <li><a href="/pages/docs.html">Documentation</a></li>
-            <li><a href="/playground/">Playground</a></li>
+            <li><a href="/pages/playground.html">Playground</a></li>
             <li><a href="/pages/examples.html">Examples</a></li>
           </ul>
         </div>

@@ -1,4 +1,4 @@
-// Test: While forever basic usage
+// Test: While loop basic usage
 // Spec: 02-SYNTAX.md § 4.2 Loop Expressions
 // Priority: P0
 //
@@ -8,8 +8,8 @@
 // Expected behavior:
 // Should compile and print 5
 
-rite main() {
-    ≔ vary x: !i32 = 0;
+λ main() {
+    ≔ Δ x: !i32 = 0;
     ⟳ x < 5 {
         x = x + 1;
     }

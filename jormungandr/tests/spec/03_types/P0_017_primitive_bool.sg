@@ -6,9 +6,9 @@
 // Validates that the bool type works correctly.
 //
 // Expected behavior:
-// Should compile and print yea
+// Should compile and print true
 
-rite main() {
-    ≔ x: !bool = yea;
+λ main() {
+    ≔ x: !bool = true;
     println(x);
 }

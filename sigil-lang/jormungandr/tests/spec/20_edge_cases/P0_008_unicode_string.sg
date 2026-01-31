@@ -1,8 +1,0 @@
-// Test: Unicode ∈ strings
-// Spec: Edge Cases - Unicode Support
-// Priority: P0 - Bootstrap Critical
-
-λ main() {
-    ≔ s: String = "Hello, 世界! 🌍";
-    println(s);
-}

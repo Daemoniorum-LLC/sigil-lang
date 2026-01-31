@@ -9,7 +9,7 @@
     Blue,
 }
 
-rite main() {
+λ main() {
     ≔ c = Color·Yellow;  // ERROR: no variant Yellow
     println(c);
 }

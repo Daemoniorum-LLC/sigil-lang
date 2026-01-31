@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 5.1 Comparisons
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     // Less than
     ⎇ 3 < 5 { println("3 < 5"); }
     ⎇ 5 < 3 { println("ERROR"); }

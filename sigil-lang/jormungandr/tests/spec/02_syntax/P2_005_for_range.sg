@@ -1,9 +1,0 @@
-// Test: For loop with range
-// Spec: 02-SYNTAX.md § 5.6 For
-// Priority: P2 - Enhancement
-
-λ main() {
-    ∀ i ∈ 0..5 {
-        println(i);
-    }
-}

@@ -1,13 +1,11 @@
-// Test: Constant representation (mock)
+// Test: Constant representation ∈ IR
 // Spec: 16-AI-IR.md § Top-Level Structure
 // Priority: P0 - Bootstrap Critical
-//
-// Tests constant IR representation - 2 constants defined
 
-◆ MAX_SIZE: i32 = 100;
-◆ PI: f64 = 3.14159;
+const MAX_SIZE: i32 = 100;
+const PI: f64 = 3.14159;
 
-rite main() {
-    // Mock: 2 constants of IR
-    println(2);
+λ main() {
+    ≔ ir = __export_ir();
+    println(ir.constants.len());
 }

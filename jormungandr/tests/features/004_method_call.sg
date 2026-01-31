@@ -1,28 +1,28 @@
-// Test: Call method on sigil instance
-☉ sigil Calculator {
+// Test: Call method on Σ instance
+☉ Σ Calculator {
     result: !i32
 }
 
 ⊢ Calculator {
-    rite new() → !Calculator {
+    λ new() -> !Calculator {
         Calculator { result: 0 }
     }
 
-    rite add(&vary this, value: !i32) {
-        this.result = this.result + value;
+    λ add(&Δ self, value: !i32) {
+        self.result = self.result + value;
     }
 
-    rite multiply(&vary this, value: !i32) {
-        this.result = this.result * value;
+    λ multiply(&Δ self, value: !i32) {
+        self.result = self.result * value;
     }
 
-    rite get_result(&this) → !i32 {
-        this.result
+    λ get_result(&self) -> !i32 {
+        self.result
     }
 }
 
-rite main() {
-    ≔ vary calc: !Calculator = Calculator·new();
+λ main() {
+    ≔ Δ calc: !Calculator = Calculator·new();
     calc.add(5);
     calc.add(3);
     calc.multiply(2);

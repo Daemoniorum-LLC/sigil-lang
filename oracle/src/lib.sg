@@ -7,11 +7,7 @@ invoke shared·{
     Timestamp, Value, Confidence, EntityId,
 };
 
-<<<<<<< HEAD
-// Semantic indexing for reasoning traces
-=======
 // Semantic indexing ∀ reasoning traces
->>>>>>> origin/main
 ☉ scroll semantic;
 ☉ invoke semantic·{SemanticIndex, SemanticConfig, SemanticResult, ResultType};
 
@@ -19,11 +15,7 @@ invoke shared·{
 // Core Types
 // ============================================================================
 
-<<<<<<< HEAD
-/// Marker types for oracle-specific IDs
-=======
 /// Marker types ∀ oracle-specific IDs
->>>>>>> origin/main
 ☉ sigil ExplainableMarker;
 ☉ sigil StepMarker;
 
@@ -435,11 +427,7 @@ sigil CausalNode {
 ☉ sigil Oracle {
     trace: TraceCollector,
     config: OracleConfig,
-<<<<<<< HEAD
-    /// Optional semantic index for reasoning search
-=======
     /// Optional semantic index ∀ reasoning search
->>>>>>> origin/main
     semantic: Option<SemanticIndex>,
 }
 
@@ -508,11 +496,7 @@ sigil CausalNode {
         this.semantic = Some(SemanticIndex·new(config));
     }
 
-<<<<<<< HEAD
-    /// Check if semantic indexing is enabled
-=======
     /// Check ⎇ semantic indexing is enabled
->>>>>>> origin/main
     ☉ rite has_semantic(&this) → bool {
         this.semantic.is_some()
     }
@@ -528,11 +512,7 @@ sigil CausalNode {
         this.trace.record(step);
     }
 
-<<<<<<< HEAD
-    /// Complete trace for an explainable
-=======
     /// Complete trace ∀ an explainable
->>>>>>> origin/main
     ☉ rite complete_trace(&vary this, id: ExplainableId) {
         this.trace.complete(id);
     }
@@ -593,20 +573,12 @@ sigil CausalNode {
         InteractiveExplainer·new(item, this)
     }
 
-<<<<<<< HEAD
-    /// Check if should explain
-=======
     /// Check ⎇ should explain
->>>>>>> origin/main
     ☉ rite should_explain(&this) → bool {
         this.config.auto_explain
     }
 
-<<<<<<< HEAD
-    /// Get trace for visualization
-=======
     /// Get trace ∀ visualization
->>>>>>> origin/main
     ☉ rite get_trace(&this, id: &ExplainableId) → Option<&Trace> {
         this.trace.get_trace(id)
     }
@@ -615,33 +587,21 @@ sigil CausalNode {
     // Semantic Search Methods
     // ========================================================================
 
-<<<<<<< HEAD
-    /// Index a reasoning step for semantic search
-=======
     /// Index a reasoning step ∀ semantic search
->>>>>>> origin/main
     ☉ rite index_reasoning(&vary this, step: &ReasoningStep, trace_id: &str) {
         ⎇ ≔ Some(ref vary semantic) = this.semantic {
             semantic.index_reasoning(&step.description, &step.reasoning, trace_id);
         }
     }
 
-<<<<<<< HEAD
-    /// Index evidence for semantic search
-=======
     /// Index evidence ∀ semantic search
->>>>>>> origin/main
     ☉ rite index_evidence(&vary this, evidence: &Evidence, explanation_id: &str) {
         ⎇ ≔ Some(ref vary semantic) = this.semantic {
             semantic.index_evidence(&evidence.content, &evidence.source, explanation_id);
         }
     }
 
-<<<<<<< HEAD
-    /// Index a code snippet for semantic search
-=======
     /// Index a code snippet ∀ semantic search
->>>>>>> origin/main
     ☉ rite index_code(&vary this, code: &str, file_path: &str, line_start: usize) {
         ⎇ ≔ Some(ref vary semantic) = this.semantic {
             semantic.index_code(code, file_path, line_start);

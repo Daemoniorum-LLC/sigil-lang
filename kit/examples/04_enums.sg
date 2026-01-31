@@ -1,0 +1,120 @@
+// 04_enums.sg - Enums and pattern matching
+//
+// Run: sigil run examples/04_enums.sg
+
+// Simple enum
+Σ enum Direction {
+    North,
+    South,
+    East,
+    West,
+}
+
+// Enum with associated data
+Σ enum Message {
+    Text(String),
+    Number(i32),
+    Coordinates(f64, f64),
+    Quit,
+}
+
+// Enum for error handling
+Σ enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+
+Σ enum Option<T> {
+    Some(T),
+    None,
+}
+
+// Function using enum
+λ direction_to_string(d: Direction) → String {
+    match d {
+        Direction·North => "Going North",
+        Direction·South => "Going South",
+        Direction·East => "Going East",
+        Direction·West => "Going West",
+    }
+}
+
+// Pattern matching with data extraction
+λ process_message(msg: Message) → String {
+    match msg {
+        Message·Text(s) => "Text message: " + s,
+        Message·Number(n) => "Number: " + str(n),
+        Message·Coordinates(x, y) => "Position: (" + str(x) + ", " + str(y) + ")",
+        Message·Quit => "Goodbye!",
+    }
+}
+
+// Using Option for nullable values
+λ find_even(numbers: &[i32]) → Option<i32> {
+    ∀ n ∈ numbers {
+        if n % 2 == 0 {
+            return Some(n);
+        }
+    }
+    None
+}
+
+// Using Result for error handling
+λ divide(a: f64, b: f64) → Result<f64, String> {
+    if b == 0.0 {
+        Err("Division by zero".to_string())
+    } else {
+        Ok(a / b)
+    }
+}
+
+λ main() {
+    // Simple enum
+    ≔ dir = Direction·North;
+    println(direction_to_string(dir));
+
+    // Enum with data
+    ≔ messages = [
+        Message·Text("Hello!".to_string()),
+        Message·Number(42),
+        Message·Coordinates(10.5, 20.3),
+        Message·Quit,
+    ];
+
+    println("\n=== Messages ===");
+    ∀ msg ∈ messages {
+        println(process_message(msg));
+    }
+
+    // Option handling
+    println("\n=== Option ===");
+    ≔ numbers = [1, 3, 5, 6, 7];
+    match find_even(&numbers) {
+        Some(n) => println("Found even number: " + str(n)),
+        None => println("No even number found"),
+    }
+
+    // Result handling
+    println("\n=== Result ===");
+    match divide(10.0, 3.0) {
+        Ok(result) => println("10 / 3 = " + str(result)),
+        Err(e) => println("Error: " + e),
+    }
+
+    match divide(10.0, 0.0) {
+        Ok(result) => println("10 / 0 = " + str(result)),
+        Err(e) => println("Error: " + e),
+    }
+
+    // Pattern matching with guards
+    println("\n=== Pattern Guards ===");
+    ≔ value = 42;
+    ≔ description = match value {
+        n if n < 0 => "negative",
+        0 => "zero",
+        n if n < 10 => "small positive",
+        n if n < 100 => "medium positive",
+        _ => "large positive",
+    };
+    println(str(value) + " is " + description);
+}

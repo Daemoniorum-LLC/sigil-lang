@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 4.3 Atomic Usize
 // Priority: P1 - Standard Feature
 
-rite main() {
+λ main() {
     ≔ size = AtomicUsize·new(100);
 
     println(size.load());

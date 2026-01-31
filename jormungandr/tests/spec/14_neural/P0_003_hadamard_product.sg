@@ -2,7 +2,7 @@
 // Spec: 14-NEURAL.md § 1.2 Neural Operators
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ a: Tensor<[2, 2]> = Tensor·from([[1.0, 2.0], [3.0, 4.0]]);
     ≔ b: Tensor<[2, 2]> = Tensor·from([[2.0, 2.0], [2.0, 2.0]]);
     ≔ c = a ⊙ b;  // Element-wise multiply

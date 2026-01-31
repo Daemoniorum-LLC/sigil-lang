@@ -45,7 +45,7 @@ rite test_header_with_logo() {
 // Test header with text branding
 rite test_header_with_brand() {
     ≔ header = Header {
-        brand: "Daemoniorum",
+        brand: "Acme",
         brand_href: "/",
         children: []
     };
@@ -53,7 +53,7 @@ rite test_header_with_brand() {
     ≔ vnode = header.render();
 
     ≔ brand = vnode.find_child_by_class("header-brand");
-    assert_eq!(brand.text_content(), "Daemoniorum");
+    assert_eq!(brand.text_content(), "Acme");
     assert_eq!(brand.attr("href"), "/");
 }
 

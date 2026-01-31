@@ -9257,41 +9257,41 @@ SigilValue sigil_MorphemeKind____symbol(SigilValue self) {
     if (_t0.tag == TAG_REF && _t0.v.ptr) _t0 = *((SigilValue*)_t0.v.ptr);
     SigilValue _t1;
     if ((sigil_is_struct_variant(_t0, "MorphemeKind::Transform") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_TRANSFORM))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("Ä");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Filter") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_FILTER))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("Æ");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Sort") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_SORT))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("Ã");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Reduce") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_REDUCE))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("Á");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Lambda") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_LAMBDA))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("»");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Sum") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_SUM))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("£");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Product") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_PRODUCT))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string(" ");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Min") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_MIN))) {
-        _t1 = sigil_string("ï¿½_min");
+        _t1 = sigil_string("Á_min");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Max") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_MAX))) {
-        _t1 = sigil_string("ï¿½_max");
+        _t1 = sigil_string("Á_max");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Concat") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_CONCAT))) {
-        _t1 = sigil_string("ï¿½++");
+        _t1 = sigil_string("Á++");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::All") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_ALL))) {
-        _t1 = sigil_string("ï¿½&");
+        _t1 = sigil_string("Á&");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Any") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_ANY))) {
-        _t1 = sigil_string("ï¿½|");
+        _t1 = sigil_string("Á|");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::First") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_FIRST))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("±");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Last") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_LAST))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("É");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Middle") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_MIDDLE))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("¼");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Choice") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_CHOICE))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("Ç");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Nth") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_NTH))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("½");
     } else if ((sigil_is_struct_variant(_t0, "MorphemeKind::Next") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == MORPHEMEKIND_ENUM_ID && _t0.v.e.variant == MORPHEMEKIND_NEXT))) {
-        _t1 = sigil_string("ï¿½");
+        _t1 = sigil_string("¾");
     } else {
         _t1 = sigil_unit();
     }
@@ -11955,7 +11955,7 @@ SigilValue sigil_test_lexer_basic_tokens(void) {
 
 /* Function: test_lexer_morphemes */
 SigilValue sigil_test_lexer_morphemes(void) {
-    SigilValue lexer = sigil_Lexer____new(sigil_string("ï¿½ ï¿½ ï¿½ ï¿½"));
+    SigilValue lexer = sigil_Lexer____new(sigil_string("Ä Æ Ã Á"));
     /* assert_eq!(lexer.next_token()?.0, Token::Tau) */ sigil_unit();
     /* assert_eq!(lexer.next_token()?.0, Token::Phi) */ sigil_unit();
     /* assert_eq!(lexer.next_token()?.0, Token::Sigma) */ sigil_unit();
@@ -12005,7 +12005,7 @@ SigilValue sigil_test_lexer_evidentiality(void) {
 
 /* Function: test_lexer_incorporation */
 SigilValue sigil_test_lexer_incorporation(void) {
-    SigilValue lexer = sigil_Lexer____new(sigil_string("fileï¿½openï¿½read"));
+    SigilValue lexer = sigil_Lexer____new(sigil_string("file·open·read"));
     /* assert_eq!(lexer.next_token()?.0, Token::Ident("file".to_string())) */ sigil_unit();
     /* assert_eq!(lexer.next_token()?.0, Token::MiddleDot) */ sigil_unit();
     /* assert_eq!(lexer.next_token()?.0, Token::Ident("open".to_string())) */ sigil_unit();
@@ -12015,7 +12015,7 @@ SigilValue sigil_test_lexer_incorporation(void) {
 
 /* Function: test_lexer_pipe_chain */
 SigilValue sigil_test_lexer_pipe_chain(void) {
-    SigilValue lexer = sigil_Lexer____new(sigil_string("data|ï¿½{f}|ï¿½{p}"));
+    SigilValue lexer = sigil_Lexer____new(sigil_string("data|Ä{f}|Æ{p}"));
     /* assert_eq!(lexer.next_token()?.0, Token::Ident("data".to_string())) */ sigil_unit();
     /* assert_eq!(lexer.next_token()?.0, Token::Pipe) */ sigil_unit();
     /* assert_eq!(lexer.next_token()?.0, Token::Tau) */ sigil_unit();
@@ -12028,7 +12028,7 @@ SigilValue sigil_test_lexer_pipe_chain(void) {
 
 /* Function: test_lexer_aspects */
 SigilValue sigil_test_lexer_aspects(void) {
-    SigilValue lexer = sigil_Lexer____new(sigil_string("processï¿½ing completeï¿½ed parseï¿½able resultï¿½ive"));
+    SigilValue lexer = sigil_Lexer____new(sigil_string("process·ing complete·ed parse·able result·ive"));
     /* assert_eq!(lexer.next_token()?.0, Token::Ident("process".to_string())) */ sigil_unit();
     /* assert_eq!(lexer.next_token()?.0, Token::AspectProgressive) */ sigil_unit();
     /* assert_eq!(lexer.next_token()?.0, Token::Ident("complete".to_string())) */ sigil_unit();
@@ -13302,7 +13302,7 @@ SigilValue sigil_Parser____parse_struct(SigilValue* self, SigilValue visibility,
     if (!sigil_truthy(_t6)) {
         _t7 = sigil_Parser____consume_if(self, (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____Lozenge });
     }
-    SigilValue __u1 = sigil_bool(sigil_truthy(_t6) || sigil_truthy(_t7));
+    SigilValue _ = sigil_bool(sigil_truthy(_t6) || sigil_truthy(_t7));
     SigilValue _t8 = sigil_Parser____parse_generics_opt(self);
     if (_t8.tag == TAG_RESULT_ERR) {
         return _t8;
@@ -13323,7 +13323,7 @@ SigilValue sigil_Parser____parse_struct(SigilValue* self, SigilValue visibility,
     if (!sigil_truthy(_t13)) {
         _t14 = sigil_Parser____consume_if(self, (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____Lozenge });
     }
-    SigilValue __u2 = sigil_bool(sigil_truthy(_t13) || sigil_truthy(_t14));
+    SigilValue _ = sigil_bool(sigil_truthy(_t13) || sigil_truthy(_t14));
     SigilValue struct_attrs = sigil_Parser____build_struct_attrs((*self), attrs);
     SigilValue _t15;
     if (sigil_truthy(sigil_Parser____check((*self), (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____LBrace }))) {
@@ -13826,7 +13826,7 @@ SigilValue sigil_Parser____parse_trait_item(SigilValue* self) {
     SigilValue _t1;
     if (((sigil_is_struct_variant(_t0, "Token::Fn") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_FN)) || (sigil_is_struct_variant(_t0, "Token::Async") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_ASYNC)) || (sigil_is_struct_variant(_t0, "Token::Unsafe") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_UNSAFE)))) {
         SigilValue is_async = sigil_Parser____consume_if(self, (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____Async });
-        SigilValue __u3 = sigil_Parser____consume_if(self, (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____Unsafe });
+        SigilValue _ = sigil_Parser____consume_if(self, (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____Unsafe });
         SigilValue _t2 = sigil_Parser____parse_function(self, Visibility____Private, sigil_Vec____new(), is_async);
         if (_t2.tag == TAG_RESULT_ERR) {
             return _t2;
@@ -14024,7 +14024,7 @@ SigilValue sigil_Parser____parse_impl_item(SigilValue* self) {
     SigilValue _t7;
     if (((sigil_is_struct_variant(_t6, "Token::Fn") || (_t6.tag == TAG_ENUM && _t6.v.e.enum_id == TOKEN_ENUM_ID && _t6.v.e.variant == TOKEN_FN)) || (sigil_is_struct_variant(_t6, "Token::Async") || (_t6.tag == TAG_ENUM && _t6.v.e.enum_id == TOKEN_ENUM_ID && _t6.v.e.variant == TOKEN_ASYNC)) || (sigil_is_struct_variant(_t6, "Token::Unsafe") || (_t6.tag == TAG_ENUM && _t6.v.e.enum_id == TOKEN_ENUM_ID && _t6.v.e.variant == TOKEN_UNSAFE)))) {
         SigilValue is_async = sigil_Parser____consume_if(self, (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____Async });
-        SigilValue __u4 = sigil_Parser____consume_if(self, (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____Unsafe });
+        SigilValue _ = sigil_Parser____consume_if(self, (SigilValue){ .tag = TAG_REF, .v.ptr = &Token____Unsafe });
         SigilValue _t8 = sigil_Parser____parse_function(self, visibility, sigil_Vec____new(), is_async);
         if (_t8.tag == TAG_RESULT_ERR) {
             return _t8;
@@ -15202,7 +15202,7 @@ SigilValue sigil_Parser____parse_type(SigilValue* self) {
     SigilValue _t2 = _t1;
     SigilValue _t3;
     if ((_t2.tag != TAG_NULL)) {
-        SigilValue __u5 = _t2;
+        SigilValue _ = _t2;
         return sigil_Ok(ty);
         _t3 = sigil_unit();
     } else if (_t2.tag == TAG_NULL) {
@@ -15916,7 +15916,7 @@ SigilValue sigil_Parser____parse_type_list(SigilValue* self) {
     SigilValue _t1 = _t0;
     SigilValue _t2;
     if ((_t1.tag != TAG_NULL)) {
-        SigilValue __u6 = _t1;
+        SigilValue _ = _t1;
         _t2 = sigil_bool(true);
     } else if (_t1.tag == TAG_NULL) {
         /* Pattern binding: complex = _t1 */
@@ -15960,7 +15960,7 @@ SigilValue sigil_Parser____parse_type_list(SigilValue* self) {
             SigilValue _t15 = _t14;
             SigilValue _t16;
             if ((_t15.tag != TAG_NULL)) {
-                SigilValue __u7 = _t15;
+                SigilValue _ = _t15;
                 _t16 = sigil_bool(true);
             } else if (_t15.tag == TAG_NULL) {
                 /* Pattern binding: complex = _t15 */
@@ -16457,13 +16457,13 @@ SigilValue sigil_Parser____parse_expr_bp(SigilValue* self, SigilValue min_bp) {
             SigilValue _t8 = sigil_String____as_str(name);
             if (_t8.tag == TAG_REF && _t8.v.ptr) _t8 = *((SigilValue*)_t8.v.ptr);
             SigilValue _t9;
-            if ((_t8.tag == TAG_STRING && strcmp(_t8.v.s, "ï¿½") == 0)) {
+            if ((_t8.tag == TAG_STRING && strcmp(_t8.v.s, "™") == 0)) {
                 /* Pattern binding: complex = _t8 */
                 _t9 = BinOp____Mul;
-            } else if ((_t8.tag == TAG_STRING && strcmp(_t8.v.s, "ï¿½") == 0)) {
+            } else if ((_t8.tag == TAG_STRING && strcmp(_t8.v.s, "—") == 0)) {
                 /* Pattern binding: complex = _t8 */
                 _t9 = BinOp____MatMul;
-            } else if ((_t8.tag == TAG_STRING && strcmp(_t8.v.s, "ï¿½") == 0)) {
+            } else if ((_t8.tag == TAG_STRING && strcmp(_t8.v.s, "•") == 0)) {
                 /* Pattern binding: complex = _t8 */
                 _t9 = BinOp____Add;
             } else if (1) {
@@ -20189,7 +20189,7 @@ SigilValue sigil_Parser____parse_pipe_op(SigilValue* self) {
             sigil_with_evidence((_t37.tag == TAG_RESULT_OK ? *(SigilValue*)_t37.v.ptr : _t37), SIGIL_UNCERTAIN);
             _t27 = sigil_Ok(sigil_PipeOp____Reduce(sigil_Box____new(body)));
         } else if (1) {
-            _t27 = sigil_Err(sigil_ParseError____custom(sigil_string("expected reduction variant after ï¿½")));
+            _t27 = sigil_Err(sigil_ParseError____custom(sigil_string("expected reduction variant after Á")));
         } else {
             _t27 = sigil_unit();
         }
@@ -20469,7 +20469,7 @@ SigilValue sigil_Parser____parse_pipe_op(SigilValue* self) {
                     if (_t86.tag == TAG_RESULT_ERR) {
                         return _t86;
                     }
-                    SigilValue __u8 = sigil_with_evidence((_t86.tag == TAG_RESULT_OK ? *(SigilValue*)_t86.v.ptr : _t86), SIGIL_UNCERTAIN);
+                    SigilValue _ = sigil_with_evidence((_t86.tag == TAG_RESULT_OK ? *(SigilValue*)_t86.v.ptr : _t86), SIGIL_UNCERTAIN);
                     SigilValue _t87 = sigil_Parser____expect_gt(self);
                     if (_t87.tag == TAG_RESULT_ERR) {
                         return _t87;
@@ -21310,22 +21310,22 @@ SigilValue sigil_Parser____parse_ident(SigilValue* self) {
         _t1 = sigil_Ok(sigil_Ident____new(sigil_string("\x02"), span));
     } else if ((sigil_is_struct_variant(_t0, "Token::Pi") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_PI))) {
         sigil_Parser____advance(self);
-        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("ï¿½"), span));
+        _t1 = sigil_Ok(sigil_Ident____new(sigil_string(" "), span));
     } else if ((sigil_is_struct_variant(_t0, "Token::Phi") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_PHI))) {
         sigil_Parser____advance(self);
-        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("ï¿½"), span));
+        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("Æ"), span));
     } else if ((sigil_is_struct_variant(_t0, "Token::Tau") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_TAU))) {
         sigil_Parser____advance(self);
-        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("ï¿½"), span));
+        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("Ä"), span));
     } else if ((sigil_is_struct_variant(_t0, "Token::Sigma") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_SIGMA))) {
         sigil_Parser____advance(self);
-        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("ï¿½"), span));
+        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("£"), span));
     } else if ((sigil_is_struct_variant(_t0, "Token::Mu") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_MU))) {
         sigil_Parser____advance(self);
-        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("ï¿½"), span));
+        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("¼"), span));
     } else if ((sigil_is_struct_variant(_t0, "Token::Rho") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_RHO))) {
         sigil_Parser____advance(self);
-        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("ï¿½"), span));
+        _t1 = sigil_Ok(sigil_Ident____new(sigil_string("Á"), span));
     } else if ((sigil_is_struct_variant(_t0, "Token::Parallel") || (_t0.tag == TAG_ENUM && _t0.v.e.enum_id == TOKEN_ENUM_ID && _t0.v.e.variant == TOKEN_PARALLEL))) {
         sigil_Parser____advance(self);
         _t1 = sigil_Ok(sigil_Ident____new(sigil_string("parallel"), span));
@@ -22163,7 +22163,7 @@ SigilValue sigil_test_parse_struct(void) {
 
 /* Function: test_parse_pipe_chain */
 SigilValue sigil_test_parse_pipe_chain(void) {
-    SigilValue parser = sigil_Parser____new(sigil_string("fn test() { data|ï¿½{f}|ï¿½{p}|ï¿½ }"));
+    SigilValue parser = sigil_Parser____new(sigil_string("fn test() { data|Ä{f}|Æ{p}|Ã }"));
     SigilValue _t0 = parser;
     SigilValue file = sigil_Option____unwrap(sigil_Parser____parse_file(&_t0));
     return /* assert_eq!(file.items.len(), 1) */ sigil_unit();
@@ -22179,7 +22179,7 @@ SigilValue sigil_test_parse_evidentiality(void) {
 
 /* Function: test_parse_morpheme */
 SigilValue sigil_test_parse_morpheme(void) {
-    SigilValue parser = sigil_Parser____new(sigil_string("fn test() { ï¿½{x + 1} }"));
+    SigilValue parser = sigil_Parser____new(sigil_string("fn test() { Ä{x + 1} }"));
     SigilValue _t0 = parser;
     SigilValue file = sigil_Option____unwrap(sigil_Parser____parse_file(&_t0));
     return /* assert_eq!(file.items.len(), 1) */ sigil_unit();
@@ -33570,7 +33570,7 @@ SigilValue sigil_CodeGen____has_evidential_pattern(SigilValue self, SigilValue a
             SigilValue _t8 = ev;
             SigilValue _t9;
             if ((_t8.tag != TAG_NULL)) {
-                SigilValue __u9 = _t8;
+                SigilValue _ = _t8;
                 return sigil_bool(true);
                 _t9 = sigil_unit();
             } else if (_t8.tag == TAG_NULL) {
@@ -33975,7 +33975,7 @@ SigilValue sigil_CodeGen____emit_pattern_condition(SigilValue self, SigilValue p
         SigilValue _t3 = ev;
         SigilValue _t4;
         if ((_t3.tag != TAG_NULL)) {
-            SigilValue __u10 = _t3;
+            SigilValue _ = _t3;
             _t4 = sigil_format("({}.tag != TAG_NULL)", value);
         } else if (_t3.tag == TAG_NULL) {
             /* Pattern binding: complex = _t3 */
@@ -42551,7 +42551,7 @@ SigilValue sigil_Driver____compile(SigilValue* self) {
                     SigilValue s = *(SigilValue*)_t33.v.ptr;
                     _t34 = s;
                 } else if (sigil_is_err(_t33)) {
-                    SigilValue __u11 = *(SigilValue*)_t33.v.ptr;
+                    SigilValue _ = *(SigilValue*)_t33.v.ptr;
                     continue;
                     _t34 = sigil_unit();
                 } else {
@@ -44565,7 +44565,7 @@ SigilValue sigil_Option____unwrap(SigilValue v) {
 
 SigilValue sigil_Vec____with_capacity(SigilValue cap) { return sigil_array((size_t)cap.v.i); }
 SigilValue sigil_max(SigilValue a, SigilValue b) { return a.v.i > b.v.i ? a : b; }
-/* sigil_add already defined at line 44235 */
+SigilValue sigil_add(SigilValue a, SigilValue b) { return sigil_int(a.v.i + b.v.i); }
 SigilValue sigil_as_mut_ptr(SigilValue v) { return v; }
 SigilValue sigil_Box____from_raw(SigilValue ptr) { return ptr; }
 SigilValue sigil_String____as_str(SigilValue s) { return s; }
@@ -44589,58 +44589,6 @@ SigilValue sigil_cloned(SigilValue v) {
 }
 
 SigilValue sigil_String____new(void) { return sigil_string(""); }
-
-SigilValue sigil_String____push(SigilValue s, SigilValue c) {
-    if (s.tag != TAG_STRING) return s;
-    size_t len = s.v.s ? strlen(s.v.s) : 0;
-    char* new_str = (char*)malloc(len + 2);
-    if (s.v.s) memcpy(new_str, s.v.s, len);
-    new_str[len] = (c.tag == TAG_CHAR) ? (char)c.v.c : (c.tag == TAG_INT) ? (char)c.v.i : '?';
-    new_str[len + 1] = '\0';
-    return sigil_string(new_str);
-}
-
-/* sigil_String____push_str is already defined above */
-
-/* Missing function stubs */
-SigilValue sigil_String____is_empty(SigilValue s) {
-    if (s.tag != TAG_STRING || !s.v.s) return sigil_bool(true);
-    return sigil_bool(s.v.s[0] == '\0');
-}
-
-SigilValue sigil_Vec____len(SigilValue v) {
-    if (v.tag == TAG_ARRAY) return sigil_int((int64_t)v.v.arr.len);
-    return sigil_int(0);
-}
-
-SigilValue sigil_with_note(SigilValue v, SigilValue note) {
-    (void)note;  /* Notes are ignored in WASM build */
-    return v;
-}
-
-SigilValue sigil_Interpreter____register_builtins(SigilValue* self) {
-    (void)self;  /* No-op in WASM build */
-    return sigil_unit();
-}
-
-SigilValue sigil_skip(SigilValue arr, SigilValue n) {
-    if (arr.tag != TAG_ARRAY || !arr.v.arr.data) return sigil_array(0);
-    size_t skip = (size_t)n.v.i;
-    if (skip >= arr.v.arr.len) return sigil_array(0);
-    SigilValue result = sigil_array(arr.v.arr.len - skip);
-    for (size_t i = skip; i < arr.v.arr.len; i++) {
-        result.v.arr.data[i - skip] = arr.v.arr.data[i];
-    }
-    return result;
-}
-
-SigilValue sigil_any(SigilValue iter, SigilValue pred) {
-    /* Check if any element satisfies predicate - simplified */
-    (void)pred;
-    if (iter.tag != TAG_ARRAY || !iter.v.arr.data) return sigil_bool(false);
-    return sigil_bool(iter.v.arr.len > 0);  /* Conservative approximation */
-}
-
 SigilValue sigil_String____chars(SigilValue s) {
     if (s.tag != TAG_STRING || !s.v.s) return sigil_array(0);
     size_t len = strlen(s.v.s);
@@ -44836,7 +44784,7 @@ SigilValue sigil_FunctionAttrs____default(void) {
     static const char* names[6] = { "is_pub", "is_async", "is_const", "is_unsafe", "is_extern", "extern_abi" };
     return sigil_struct("FunctionAttrs", names, vals, 6);
 }
-/* Removed orphaned #endif for SIGIL_EXTRA_STDLIB_DEFINED */
+#endif /* SIGIL_EXTRA_STDLIB_DEFINED */
 
 #endif /* SIGIL_BUILTINS_DEFINED */
 

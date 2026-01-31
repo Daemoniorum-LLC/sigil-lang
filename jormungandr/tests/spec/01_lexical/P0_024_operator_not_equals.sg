@@ -6,9 +6,9 @@
 // Validate not equals comparison operator.
 //
 // Expected behavior:
-// Should print yea (42 != 99)
+// Should print true (42 != 99)
 
-rite main() {
+λ main() {
     ≔ x: !i32 = 42;
     ≔ y: !i32 = 99;
     println(x != y);

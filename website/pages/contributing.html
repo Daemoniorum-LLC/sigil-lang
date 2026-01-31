@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Contributing - Sigil</title>
   <meta name="description" content="How to contribute to the Sigil programming language: code, documentation, and community.">
-  <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛤</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -18,15 +18,15 @@
   <nav class="nav" role="navigation" aria-label="Main navigation">
     <div class="nav-container">
       <a href="/" class="nav-logo" aria-label="Sigil home">
-        <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="24" height="24">
+        <span class="logo-icon" aria-hidden="true">⛤</span>
         <span class="logo-text">Sigil</span>
-        <span class="version-badge">0.3</span>
+        <span class="version-badge">0.2</span>
       </a>
 
       <div class="nav-links" id="nav-links">
         <a href="/pages/learn.html">Learn</a>
         <a href="/pages/docs.html">Docs</a>
-        <a href="/playground/">Playground </a>
+        <a href="/pages/playground.html" class="nav-coming-soon">Playground <span class="soon-badge">Soon</span></a>
         <a href="/pages/agents.html">Agent Infrastructure</a>
         <a href="https://github.com/Daemoniorum-LLC/sigil-lang" class="nav-github" aria-label="GitHub repository" rel="noopener noreferrer" target="_blank">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -240,7 +240,7 @@ sigil compile file.sigil -o output
 <span class="comment">///</span>
 <span class="comment">/// # Errors</span>
 <span class="comment">/// Returns `ParseError` if the tokens don't form a valid expression.</span>
-<span class="keyword">pub fn</span> <span class="function">parse_expression</span>(vary this) → <span class="type">Result</span><<span class="type">Expr</span>, <span class="type">ParseError</span>> {
+<span class="keyword">pub fn</span> <span class="function">parse_expression</span>(&mut self) -> <span class="type">Result</span><<span class="type">Expr</span>, <span class="type">ParseError</span>> {
     <span class="comment">// Implementation</span>
 }</code></pre>
 
@@ -316,11 +316,11 @@ docs(stdlib): document List morpheme operators</code></pre>
     <div class="footer-container">
       <div class="footer-brand">
         <a href="/" class="footer-logo">
-          <img src="/images/sigil-icon.svg" alt="" class="logo-icon" aria-hidden="true" width="20" height="20">
+          <span class="logo-icon">⛤</span>
           <span>Sigil</span>
         </a>
         <p>Infrastructure for minds that don't yet know what they are.</p>
-        <p class="footer-copyright">&copy; 2025 <acopy; 2025-2026 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
+        <p class="footer-copyright">&copy; 2025 <a href="https://www.daemoniorum.com" rel="noopener noreferrer" target="_blank">Daemoniorum LLC</a>. MIT License.</p>
       </div>
 
       <nav class="footer-nav" aria-label="Footer navigation">
@@ -329,7 +329,7 @@ docs(stdlib): document List morpheme operators</code></pre>
           <ul>
             <li><a href="/pages/learn.html">Tutorial</a></li>
             <li><a href="/pages/docs.html">Documentation</a></li>
-            <li><a href="/playground/">Playground</a></li>
+            <li><a href="/pages/playground.html">Playground</a></li>
             <li><a href="/pages/examples.html">Examples</a></li>
           </ul>
         </div>

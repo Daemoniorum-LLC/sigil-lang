@@ -3,7 +3,7 @@
 // Should fail with mutability error
 // Priority: P0 - Bootstrap Critical
 
-rite main() {
+λ main() {
     ≔ x = 42;
     x = 100;  // ERROR: cannot assign to immutable variable
     println(x);

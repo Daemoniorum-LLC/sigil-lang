@@ -12,7 +12,7 @@
 // Expected behavior:
 // Should print: Value is 42
 
-rite main() {
+λ main() {
     ≔ s: !String = format!("Value is {}", 42);
     println(s);
 }

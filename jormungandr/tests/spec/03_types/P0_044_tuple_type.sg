@@ -12,7 +12,7 @@
 // Expected behavior:
 // Should print 42 (first element of tuple)
 
-rite main() {
+λ main() {
     ≔ t: !(i32, i32) = (42, 99);
     println(t.0);
 }

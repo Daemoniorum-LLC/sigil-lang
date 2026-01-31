@@ -1,18 +1,37 @@
-// Test: HTTP client (mock)
+// Test: HTTP client pattern - Σ constructors and field access
 // Spec: 15-PROTOCOLS.md § 4 HTTP Support
 // Priority: P0 - Bootstrap Critical
 //
-// Tests HTTP response handling concept with mock data
+// Tests language features used ∈ HTTP client patterns:
+// - Struct constructors
+// - Static method patterns
+// - Evidential value binding and access
 
-sigil Response {
-    status: i32
+// Define HTTP types locally to test the patterns
+Σ HttpRequest {
+    method: String,
+    url: String,
 }
 
-rite mock_http_get() → Response {
-    Response { status: 200 }
+Σ HttpResponse {
+    status: i64,
+    body: String,
 }
 
-rite main() {
-    ≔ response = mock_http_get();
-    println(response.status);
+// Constructor pattern using namespace
+λ make_get_request(url: String) -> HttpRequest {
+    HttpRequest { method: "GET", url: url }
+}
+
+λ main() {
+    // Test Σ constructor pattern
+    ≔ req = make_get_request("https://api.example.com/data");
+
+    // Verify the request was constructed correctly
+    println(req.method);
+    println(req.url);
+
+    // Test evidential binding pattern
+    ≔ response~ = HttpResponse { status: 200, body: "OK" };
+    println(response~.status);
 }

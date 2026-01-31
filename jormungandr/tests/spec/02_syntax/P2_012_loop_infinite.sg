@@ -1,13 +1,13 @@
-// Test: Loop with ⊲
+// Test: Loop with ⊗
 // Spec: 02-SYNTAX.md § 5.4 Loop
 // Priority: P2 - Enhancement
 
-rite main() {
-    ≔ vary count: !i32 = 0;
-    forever {
+λ main() {
+    ≔ Δ count = 0;
+    loop {
         count = count + 1;
         ⎇ count >= 3 {
-            ⊲;
+            ⊗;
         }
     }
     println(count);

@@ -108,7 +108,7 @@ Testing: `data|τ{_ * 2}|φ{_ > 5}|τ{_ + 1}` (10k iterations on 10-element arra
 | **Rust** | ~0.5 ms | 1.0x |
 | **Sigil Interpreted** | 48 ms | ~96x slower |
 
-**Note:** The `|τ{...}|φ{...}` syntax provides functional transformations using morpheme operators. While slower in raw execution, a 43% code reduction was observed in a real application port (Infernum).
+**Note:** The `|τ{...}|φ{...}` syntax provides elegant functional transformations that aren't available in Rust. While slower in raw execution, the **43% code reduction** in real applications (see Infernum port) demonstrates the expressiveness value.
 
 ---
 

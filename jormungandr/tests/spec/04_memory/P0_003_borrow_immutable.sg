@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should compile and print 42
 
-rite read_value(x: &!i32) → !i32 {
+λ read_value(x: &!i32) -> !i32 {
     *x
 }
 
-rite main() {
+λ main() {
     ≔ val: !i32 = 42;
     println(read_value(&val));
 }

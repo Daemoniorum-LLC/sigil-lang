@@ -1,15 +1,14 @@
-// Test: Type representation (mock)
+// Test: Type representation ∈ IR
 // Spec: 16-AI-IR.md § Type Representation
 // Priority: P0 - Bootstrap Critical
-//
-// Tests type IR representation - Point has 2 fields (x, y)
 
-sigil Point {
-    x: i32,
-    y: i32
+Σ Point {
+    x: !i32,
+    y: !i32
 }
 
-rite main() {
-    // Mock: Point type has 2 fields
-    println(2);
+λ main() {
+    ≔ ir = __export_ir();
+    ≔ point_type = ir.types|find{t => t.name == "Point"};
+    println(point_type.fields.len());
 }

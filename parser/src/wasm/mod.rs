@@ -36,20 +36,19 @@ pub mod error;
 pub mod expressions;
 pub mod imports;
 pub mod literals;
+pub mod macros;
 pub mod morphemes;
 pub mod operators;
 pub mod sourcemap;
 pub mod statements;
 pub mod types;
-pub mod wasi;
 
 // Re-export main types
 pub use constants::{evidence, memory, type_tag};
 pub use error::{WasmError, WasmErrorKind, WasmResult};
 pub use imports::ImportRegistry;
-pub use sourcemap::{SourceLocation, SourceMap, SourceMapBuilder};
+pub use sourcemap::{SourceMap, SourceMapBuilder, SourceLocation};
 pub use types::*;
-pub use wasi::WasmTarget;
 
 use std::collections::HashMap;
 use wasm_encoder::ValType;
@@ -86,6 +85,9 @@ pub struct WasmCompiler {
     /// String interning map
     pub(crate) string_map: HashMap<String, u32>,
 
+    /// String constants map (name -> data segment offset)
+    pub(crate) string_consts: HashMap<String, u32>,
+
     /// Function table elements (for indirect calls)
     pub(crate) table_elements: Vec<u32>,
 
@@ -119,6 +121,18 @@ pub struct WasmCompiler {
     /// Cell pointers for mutable captures: variable name -> heap address of cell
     pub(crate) capture_cells: HashMap<String, u32>,
 
+    /// External module imports: simple_name -> (module_name, qualified_name)
+    /// Used for cross-module WASM linking
+    pub(crate) external_imports: HashMap<String, (String, String)>,
+
+    /// Current module path (for nested module compilation)
+    /// e.g., ["vdom", "element"] when compiling vdom::element module
+    pub(crate) module_path: Vec<String>,
+
+    /// All items organized by qualified path
+    /// Maps "vdom::Element" -> function/type index
+    pub(crate) qualified_items: HashMap<String, QualifiedItem>,
+
     /// Optimization level
     pub(crate) opt_level: OptLevel,
 
@@ -131,29 +145,28 @@ pub struct WasmCompiler {
     /// Source file name for source maps
     pub(crate) source_file: String,
 
-    /// Compilation target (browser or WASI)
-    pub(crate) target: WasmTarget,
+    /// Source directory for resolving file-based modules (scroll foo;)
+    pub(crate) source_dir: std::path::PathBuf,
+
+    /// Already-loaded module files to prevent circular imports
+    pub(crate) loaded_modules: std::collections::HashSet<std::path::PathBuf>,
+
+    /// Cached parsed module items (keyed by canonical path)
+    pub(crate) module_cache: std::collections::HashMap<std::path::PathBuf, Vec<crate::span::Spanned<crate::ast::Item>>>,
+
+    /// Deferred static initializers: (global_index, init_expression)
+    /// These are statics with non-constant initializers that need runtime init
+    pub(crate) deferred_static_inits: Vec<(u32, crate::ast::Expr)>,
+
+    /// Start function index (for __wasm_start if we have deferred inits)
+    pub(crate) start_function_idx: Option<u32>,
 }
 
 impl WasmCompiler {
-    /// Create a new WASM compiler for browser target.
+    /// Create a new WASM compiler.
     pub fn new() -> Self {
-        Self::with_target(WasmTarget::Browser)
-    }
-
-    /// Create a new WASM compiler with a specific target.
-    pub fn with_target(target: WasmTarget) -> Self {
-        let imports = match target {
-            WasmTarget::Browser => ImportRegistry::new(),
-            WasmTarget::Wasi => {
-                let mut registry = ImportRegistry::empty();
-                wasi::register_wasi_imports(&mut registry);
-                registry
-            }
-        };
-
         let mut compiler = Self {
-            imports,
+            imports: ImportRegistry::new(),
             functions: Vec::new(),
             func_map: HashMap::new(),
             globals: Vec::new(),
@@ -161,6 +174,7 @@ impl WasmCompiler {
             data_segments: Vec::new(),
             data_offset: memory::HEAP_START,
             string_map: HashMap::new(),
+            string_consts: HashMap::new(),
             table_elements: Vec::new(),
             closure_map: HashMap::new(),
             closure_counter: 0,
@@ -172,30 +186,25 @@ impl WasmCompiler {
             scope_vars: Vec::new(),
             mutable_captures: std::collections::HashSet::new(),
             capture_cells: HashMap::new(),
+            external_imports: HashMap::new(),
+            module_path: Vec::new(),
+            qualified_items: HashMap::new(),
             opt_level: OptLevel::Standard,
             debug_info: false,
             source_map: None,
             source_file: String::new(),
-            target,
+            source_dir: std::path::PathBuf::new(),
+            loaded_modules: std::collections::HashSet::new(),
+            module_cache: std::collections::HashMap::new(),
+            deferred_static_inits: Vec::new(),
+            start_function_idx: None,
         };
 
         // Add heap pointer global
-        compiler
-            .globals
-            .push((ValType::I32, true, memory::HEAP_START as i64));
+        compiler.globals.push((ValType::I32, true, memory::HEAP_START as i64));
         compiler.global_map.insert("__heap_ptr".to_string(), 0);
 
-        // For WASI target, add _start wrapper and WASI stdlib
-        if target.is_wasi() {
-            compiler.setup_wasi_stdlib();
-        }
-
         compiler
-    }
-
-    /// Create compiler for WASI target.
-    pub fn for_wasi() -> Self {
-        Self::with_target(WasmTarget::Wasi)
     }
 
     /// Create compiler with optimization level.
@@ -225,9 +234,7 @@ impl WasmCompiler {
 
         // Parse source
         let mut parser = Parser::new(source);
-        let ast = parser
-            .parse_file()
-            .map_err(|e| WasmError::parse(e.to_string()))?;
+        let ast = parser.parse_file().map_err(|e| WasmError::parse(e.to_string()))?;
 
         // TODO: Optimize AST if opt_level != None
         // let ast = if self.opt_level != OptLevel::None {
@@ -239,6 +246,11 @@ impl WasmCompiler {
         // Compile AST
         self.compile_file(&ast)?;
 
+        // Generate __wasm_start function if we have deferred static initializers
+        if !self.deferred_static_inits.is_empty() {
+            self.generate_start_function()?;
+        }
+
         // Generate WASM module
         self.generate_module()
     }
@@ -247,6 +259,31 @@ impl WasmCompiler {
     pub fn compile_file_named(&mut self, source: &str, file_name: &str) -> WasmResult<Vec<u8>> {
         self.source_file = file_name.to_string();
         self.compile(source)
+    }
+
+    /// Compile from a file path, enabling multi-file module resolution.
+    pub fn compile_from_path(&mut self, path: &std::path::Path) -> WasmResult<Vec<u8>> {
+        use std::fs;
+
+        // Set source directory for resolving file-based modules
+        if let Some(parent) = path.parent() {
+            self.source_dir = parent.to_path_buf();
+        }
+
+        // Track this file as loaded
+        let canonical = path.canonicalize()
+            .map_err(|e| WasmError::io(format!("cannot resolve path {}: {}", path.display(), e)))?;
+        self.loaded_modules.insert(canonical);
+
+        // Read and compile
+        let source = fs::read_to_string(path)
+            .map_err(|e| WasmError::io(format!("cannot read {}: {}", path.display(), e)))?;
+
+        self.source_file = path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "input.sigil".to_string());
+
+        self.compile(&source)
     }
 
     /// Get or create a type index.
@@ -330,149 +367,153 @@ impl WasmCompiler {
         }
     }
 
-    /// Get the compilation target.
-    pub fn target(&self) -> WasmTarget {
-        self.target
+    /// Get or add an external module import.
+    /// Returns the function index for calling the imported function.
+    pub fn get_or_add_external_import(&mut self, module: &str, name: &str, arg_count: usize) -> u32 {
+        // Check if already imported
+        let qualified = format!("{}_{}", module, name);
+        if let Some(idx) = self.imports.get_func(&qualified) {
+            return idx;
+        }
+
+        // Also check by simple name
+        if let Some(idx) = self.imports.get_func(name) {
+            return idx;
+        }
+
+        // Add as new import with generic signature:
+        // All args are i64, returns i64 (uniform type system)
+        let params: Vec<ValType> = vec![ValType::I64; arg_count];
+        let results = vec![ValType::I64];
+
+        self.imports.add_import(module, name, params, results)
     }
 
-    /// Set up WASI stdlib functions.
-    ///
-    /// This creates wrapper functions for common operations:
-    /// - `print` / `println` using fd_write to stdout
-    /// - `_start` entry point that calls `main`
-    fn setup_wasi_stdlib(&mut self) {
-        use wasm_encoder::Instruction;
-
-        // Register print function type: (i64) -> ()
-        let print_type = self.get_or_create_type(vec![ValType::I64], vec![]);
-
-        // Create __wasi_print function that writes i64 to stdout
-        // This will be called by `print` and `println`
-        let print_fn_idx = self.imports.import_count() + self.functions.len() as u32;
-        let mut print_fn = CompiledFunction::new(
-            "__wasi_print_i64".to_string(),
-            print_type,
-            print_fn_idx,
-            vec![("value".to_string(), ValType::I64)],
-            vec![],
-            false, // not exported directly
-        );
-
-        // Implementation: Convert i64 to string and write to stdout
-        // For now, this is a stub - full implementation requires string formatting
-        // We'll store the value at a scratch memory location and write it
-
-        // Allocate scratch space for iovec (8 bytes) + buffer (32 bytes)
-        let iovec_addr = memory::HEAP_START + 1024; // Use a fixed scratch area
-        let buf_addr = iovec_addr + 8;
-
-        // Store buffer address in iovec
-        print_fn.push(Instruction::I32Const(iovec_addr as i32));
-        print_fn.push(Instruction::I32Const(buf_addr as i32));
-        print_fn.push(Instruction::I32Store(wasm_encoder::MemArg {
-            offset: 0,
-            align: 2,
-            memory_index: 0,
-        }));
-
-        // For now, just write a placeholder newline (proper number formatting is complex)
-        // Store newline at buffer
-        print_fn.push(Instruction::I32Const(buf_addr as i32));
-        print_fn.push(Instruction::I32Const(10)); // newline
-        print_fn.push(Instruction::I32Store8(wasm_encoder::MemArg {
-            offset: 0,
-            align: 0,
-            memory_index: 0,
-        }));
-
-        // Store buffer length (1) in iovec
-        print_fn.push(Instruction::I32Const(iovec_addr as i32));
-        print_fn.push(Instruction::I32Const(1)); // length = 1
-        print_fn.push(Instruction::I32Store(wasm_encoder::MemArg {
-            offset: 4,
-            align: 2,
-            memory_index: 0,
-        }));
-
-        // Allocate space for nwritten result
-        let nwritten_addr = buf_addr + 32;
-
-        // Get fd_write function index - only push args if we have the function
-        if let Some(fd_write_idx) = self.imports.get_func("wasi_snapshot_preview1.fd_write") {
-            // Call fd_write(stdout=1, iovs, iovs_len=1, nwritten)
-            print_fn.push(Instruction::I32Const(1)); // fd = stdout
-            print_fn.push(Instruction::I32Const(iovec_addr as i32)); // iovs
-            print_fn.push(Instruction::I32Const(1)); // iovs_len
-            print_fn.push(Instruction::I32Const(nwritten_addr as i32)); // nwritten
-            print_fn.push(Instruction::Call(fd_write_idx));
-            print_fn.push(Instruction::Drop); // Ignore return value
-        }
-
-        print_fn.push(Instruction::End);
-        self.functions.push(print_fn);
-        self.func_map
-            .insert("__wasi_print_i64".to_string(), print_fn_idx);
-        self.func_map.insert("print".to_string(), print_fn_idx);
-        self.func_map.insert("println".to_string(), print_fn_idx);
+    /// Get the current qualified path prefix.
+    /// Returns "foo::bar" if we're currently compiling inside scroll foo { scroll bar { } }
+    pub fn current_module_prefix(&self) -> String {
+        self.module_path.join("::")
     }
 
-    /// Add WASI _start function that wraps main.
-    /// Called after compilation to wrap the user's main function.
-    pub fn finalize_wasi(&mut self) {
-        use wasm_encoder::Instruction;
-
-        if !self.target.is_wasi() {
-            return;
-        }
-
-        // Look for user's main function
-        let main_idx = match self.func_map.get("main") {
-            Some(&idx) => idx,
-            None => return, // No main function, nothing to wrap
-        };
-
-        // Create _start function type: () -> ()
-        let start_type = self.get_or_create_type(vec![], vec![]);
-        let start_fn_idx = self.imports.import_count() + self.functions.len() as u32;
-
-        let mut start_fn = CompiledFunction::new(
-            "_start".to_string(),
-            start_type,
-            start_fn_idx,
-            vec![],
-            vec![],
-            true, // exported
-        );
-
-        // Call main()
-        start_fn.push(Instruction::Call(main_idx));
-
-        // If main returns a value, use it as exit code; otherwise exit with 0
-        let main_returns = !self.func_returns_void(main_idx);
-        if main_returns {
-            // Convert return value to i32 for proc_exit
-            start_fn.push(Instruction::I32WrapI64);
+    /// Build a qualified name from the current module path and an item name.
+    pub fn qualify_name(&self, name: &str) -> String {
+        if self.module_path.is_empty() {
+            name.to_string()
         } else {
-            // Push 0 as exit code
-            start_fn.push(Instruction::I32Const(0));
+            format!("{}::{}", self.current_module_prefix(), name)
         }
+    }
 
-        // Call proc_exit to properly terminate
-        if let Some(proc_exit_idx) = self.imports.get_func("wasi_snapshot_preview1.proc_exit") {
-            start_fn.push(Instruction::Call(proc_exit_idx));
+    /// Look up a qualified item by path.
+    /// Handles paths like "foo::bar::Baz" or just "Baz".
+    pub fn lookup_qualified(&self, path: &[String]) -> Option<&QualifiedItem> {
+        let qualified = path.join("::");
+        self.qualified_items.get(&qualified)
+    }
+
+    /// Register an item with its qualified path.
+    pub fn register_qualified(&mut self, name: &str, item: QualifiedItem) {
+        let qualified = self.qualify_name(name);
+        self.qualified_items.insert(qualified, item);
+    }
+
+    /// Resolve a path that may start with "tome" (crate root).
+    /// Returns the resolved path segments.
+    pub fn resolve_path(&self, segments: &[String]) -> Vec<String> {
+        if segments.first().map(|s| s.as_str()) == Some("tome") {
+            // tome:: means crate root - skip the "tome" prefix
+            segments[1..].to_vec()
         } else {
-            // If proc_exit isn't available, just drop the exit code
-            start_fn.push(Instruction::Drop);
+            segments.to_vec()
+        }
+    }
+
+    /// Look up a function by qualified path.
+    /// Handles tome:: prefix and module-relative paths.
+    pub fn get_func_by_path(&self, segments: &[String]) -> Option<u32> {
+        let resolved = self.resolve_path(segments);
+
+        // If it's a single-segment path, check simple name first
+        if resolved.len() == 1 {
+            if let Some(idx) = self.func_map.get(&resolved[0]) {
+                return Some(*idx);
+            }
         }
 
-        start_fn.push(Instruction::End);
-        self.functions.push(start_fn);
-        self.func_map.insert("_start".to_string(), start_fn_idx);
+        // Try qualified lookup
+        let qualified = resolved.join("::");
+        if let Some(idx) = self.func_map.get(&qualified) {
+            return Some(*idx);
+        }
+
+        // Check in qualified_items
+        if let Some(QualifiedItem::Function(idx)) = self.qualified_items.get(&qualified) {
+            return Some(*idx);
+        }
+
+        // Check imports
+        self.imports.get_func(&qualified)
     }
 
     // compile_file is implemented in statements.rs
 
-    fn generate_module(&self) -> WasmResult<Vec<u8>> {
+    /// Generate the __wasm_start function for deferred static initialization.
+    /// This function runs automatically when the WASM module is instantiated.
+    fn generate_start_function(&mut self) -> WasmResult<()> {
+        use types::CompiledFunction;
+        use wasm_encoder::Instruction;
+
+        // Create __wasm_start function: () -> ()
+        let type_idx = self.get_or_create_type(vec![], vec![]);
+        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+
+        let mut start_func = CompiledFunction::new(
+            "__wasm_start".to_string(),
+            type_idx,
+            func_idx,
+            vec![],     // No params
+            vec![],     // No results
+            false,      // Not exported (internal)
+        );
+
+        // Take deferred inits to avoid borrow issues
+        let deferred_inits = std::mem::take(&mut self.deferred_static_inits);
+
+        // Set up for compilation
+        let fn_list_idx = self.functions.len();
+        self.functions.push(start_func);
+        self.current_fn_idx = Some(fn_list_idx);
+
+        // Push an empty scope for locals
+        self.scope_vars.push(std::collections::HashMap::new());
+
+        // For each deferred static init, compile the expression and store in global
+        for (global_idx, init_expr) in deferred_inits {
+            // Compile the initializer expression
+            self.compile_expr(&init_expr)?;
+
+            // Store in the global
+            let func = self.current_function_mut()
+                .ok_or_else(|| error::WasmError::internal("not in function context"))?;
+            func.push(Instruction::GlobalSet(global_idx));
+        }
+
+        // End the function
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::End);
+
+        // Pop scope
+        self.scope_vars.pop();
+        self.current_fn_idx = None;
+
+        // Record this as the start function
+        self.start_function_idx = Some(func_idx);
+        self.func_map.insert("__wasm_start".to_string(), func_idx);
+
+        Ok(())
+    }
+
+    fn generate_module(&mut self) -> WasmResult<Vec<u8>> {
         // TODO: Implement in codegen.rs
         use wasm_encoder::{
             CodeSection, DataSection, DataSegment, DataSegmentMode, ElementSection, Elements,
@@ -486,9 +527,7 @@ impl WasmCompiler {
         // Type section
         let mut types = TypeSection::new();
         for (params, results) in self.imports.types() {
-            types
-                .ty()
-                .function(params.iter().copied(), results.iter().copied());
+            types.ty().function(params.iter().copied(), results.iter().copied());
         }
         module.section(&types);
 
@@ -561,11 +600,7 @@ impl WasmCompiler {
         exports.export("memory", wasm_encoder::ExportKind::Memory, 0);
 
         if !self.table_elements.is_empty() {
-            exports.export(
-                "__indirect_function_table",
-                wasm_encoder::ExportKind::Table,
-                0,
-            );
+            exports.export("__indirect_function_table", wasm_encoder::ExportKind::Table, 0);
         }
 
         for func in &self.functions {
@@ -574,6 +609,12 @@ impl WasmCompiler {
             }
         }
         module.section(&exports);
+
+        // Start section (for deferred static initialization)
+        if let Some(start_func_idx) = self.start_function_idx {
+            use wasm_encoder::StartSection;
+            module.section(&StartSection { function_index: start_func_idx });
+        }
 
         // Element section (for table initialization)
         if !self.table_elements.is_empty() {
@@ -614,19 +655,9 @@ impl WasmCompiler {
 
         // Source map custom section (if debug info enabled)
         if self.debug_info {
-            if let Some(ref builder) = self.source_map {
-                // Build a basic source map with function info
-                let mut source_map = SourceMap::new(&self.source_file);
-                // Add function locations from compiled functions
-                for func in &self.functions {
-                    let func_map = sourcemap::FunctionSourceMap {
-                        name: func.name.clone(),
-                        start: SourceLocation::new(1, 0), // Basic placeholder
-                        end: SourceLocation::new(1, 0),
-                        mappings: Vec::new(),
-                    };
-                    source_map.add_function(func_map);
-                }
+            if let Some(builder) = self.source_map.take() {
+                // Build source map from collected function data
+                let source_map = builder.build();
                 let json = source_map.to_compact_json();
                 let custom = wasm_encoder::CustomSection {
                     name: std::borrow::Cow::Borrowed("sigil_sourcemap"),
@@ -708,7 +739,7 @@ mod tests {
 
     #[test]
     fn test_generate_empty_module() {
-        let compiler = WasmCompiler::new();
+        let mut compiler = WasmCompiler::new();
         let result = compiler.generate_module();
         assert!(result.is_ok());
 
@@ -754,49 +785,39 @@ mod validation_tests {
         let count = parser
             .parse_all(bytes)
             .filter_map(|p| p.ok())
-            .filter(|p| {
-                matches!(
-                    p,
-                    wasmparser::Payload::TypeSection { .. }
-                        | wasmparser::Payload::ImportSection { .. }
-                        | wasmparser::Payload::FunctionSection { .. }
-                        | wasmparser::Payload::TableSection { .. }
-                        | wasmparser::Payload::MemorySection { .. }
-                        | wasmparser::Payload::GlobalSection { .. }
-                        | wasmparser::Payload::ExportSection { .. }
-                        | wasmparser::Payload::ElementSection { .. }
-                        | wasmparser::Payload::CodeSectionStart { .. }
-                        | wasmparser::Payload::DataSection { .. }
-                )
-            })
+            .filter(|p| matches!(p, wasmparser::Payload::TypeSection { .. }
+                | wasmparser::Payload::ImportSection { .. }
+                | wasmparser::Payload::FunctionSection { .. }
+                | wasmparser::Payload::TableSection { .. }
+                | wasmparser::Payload::MemorySection { .. }
+                | wasmparser::Payload::GlobalSection { .. }
+                | wasmparser::Payload::ExportSection { .. }
+                | wasmparser::Payload::ElementSection { .. }
+                | wasmparser::Payload::CodeSectionStart { .. }
+                | wasmparser::Payload::DataSection { .. }
+            ))
             .count();
         Ok(count)
     }
 
     #[test]
     fn test_validate_empty_module() {
-        let compiler = WasmCompiler::new();
+        let mut compiler = WasmCompiler::new();
         let bytes = compiler.generate_module().unwrap();
 
         let result = validate_wasm(&bytes);
-        assert!(
-            result.is_ok(),
-            "Empty module validation failed: {:?}",
-            result
-        );
+        assert!(result.is_ok(), "Empty module validation failed: {:?}", result);
     }
 
     #[test]
     fn test_validate_simple_function() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn answer() -> i64 {
                 42
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -809,13 +830,11 @@ mod validation_tests {
     fn test_validate_function_with_params() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn add(a: i64, b: i64) -> i64 {
                 a + b
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -828,16 +847,14 @@ mod validation_tests {
     fn test_validate_function_with_locals() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn compute() -> i64 {
                 let x = 10;
                 let y = 20;
                 let z = x + y;
                 z * 2
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -850,13 +867,11 @@ mod validation_tests {
     fn test_validate_if_expression() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn max(a: i64, b: i64) -> i64 {
                 if a > b { a } else { b }
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -869,8 +884,7 @@ mod validation_tests {
     fn test_validate_while_loop() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn sum_to_n(n: i64) -> i64 {
                 let mut sum = 0;
                 let mut i = 1;
@@ -880,8 +894,7 @@ mod validation_tests {
                 }
                 sum
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -894,8 +907,7 @@ mod validation_tests {
     fn test_validate_multiple_functions() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn double(x: i64) -> i64 {
                 x * 2
             }
@@ -903,8 +915,7 @@ mod validation_tests {
             pub fn quadruple(x: i64) -> i64 {
                 double(double(x))
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -917,14 +928,12 @@ mod validation_tests {
     fn test_validate_string_literal() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn greeting() -> i64 {
                 let s = "Hello, World!";
                 42
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -937,8 +946,7 @@ mod validation_tests {
     fn test_validate_nested_blocks() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn nested(x: i64) -> i64 {
                 let a = {
                     let b = x + 1;
@@ -946,8 +954,7 @@ mod validation_tests {
                 };
                 a + 10
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -960,15 +967,13 @@ mod validation_tests {
     fn test_validate_comparison_operators() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn compare(a: i64, b: i64) -> i64 {
                 if a == b { 0 }
                 else if a < b { -1 }
                 else { 1 }
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -981,13 +986,11 @@ mod validation_tests {
     fn test_validate_logical_operators() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn check(a: bool, b: bool) -> bool {
                 (a && b) || (!a && !b)
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1002,8 +1005,7 @@ mod validation_tests {
 
         // Note: Using decimal literals to avoid parser issues with hex
         // Testing bitwise AND, XOR, shift operators
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn bits(x: i64) -> i64 {
                 let a = x & 255;
                 let c = x ^ 85;
@@ -1011,8 +1013,7 @@ mod validation_tests {
                 let e = x >> 2;
                 a + c + d + e
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1025,15 +1026,13 @@ mod validation_tests {
     fn test_validate_const_definition() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             const MAX: i64 = 100;
 
             pub fn get_max() -> i64 {
                 MAX
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1046,15 +1045,13 @@ mod validation_tests {
     fn test_validate_static_definition() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             static mut COUNTER: i64 = 0;
 
             pub fn get_counter() -> i64 {
                 COUNTER
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1067,16 +1064,14 @@ mod validation_tests {
     fn test_validate_early_return() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn early(x: i64) -> i64 {
                 if x < 0 {
                     return -1;
                 }
                 x * 2
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1089,8 +1084,7 @@ mod validation_tests {
     fn test_validate_break_continue() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn find_first_even(n: i64) -> i64 {
                 let mut i = 0;
                 while i < n {
@@ -1102,8 +1096,7 @@ mod validation_tests {
                 }
                 i
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1114,21 +1107,17 @@ mod validation_tests {
 
     #[test]
     fn test_module_has_required_sections() {
-        let compiler = WasmCompiler::new();
+        let mut compiler = WasmCompiler::new();
         let bytes = compiler.generate_module().unwrap();
 
         // Count sections - should have at least Type, Import, Memory, Export
         let section_count = count_sections(&bytes).unwrap();
-        assert!(
-            section_count >= 4,
-            "Module should have at least 4 sections, got {}",
-            section_count
-        );
+        assert!(section_count >= 4, "Module should have at least 4 sections, got {}", section_count);
     }
 
     #[test]
     fn test_module_exports_memory() {
-        let compiler = WasmCompiler::new();
+        let mut compiler = WasmCompiler::new();
         let bytes = compiler.generate_module().unwrap();
 
         use wasmparser::{Parser, Payload};
@@ -1156,18 +1145,14 @@ mod validation_tests {
     fn test_module_function_exports() {
         let mut compiler = WasmCompiler::new();
 
-        compiler
-            .compile(
-                r#"
+        compiler.compile(r#"
             pub fn public_fn() -> i64 { 1 }
             fn private_fn() -> i64 { 2 }
-        "#,
-            )
-            .unwrap();
+        "#).unwrap();
 
         let bytes = compiler.generate_module().unwrap();
 
-        use wasmparser::{ExternalKind, Parser, Payload};
+        use wasmparser::{Parser, Payload, ExternalKind};
 
         let parser = Parser::new(0);
         let mut exported_funcs = Vec::new();
@@ -1184,22 +1169,15 @@ mod validation_tests {
             }
         }
 
-        assert!(
-            exported_funcs.contains(&"public_fn".to_string()),
-            "public_fn should be exported"
-        );
-        assert!(
-            !exported_funcs.contains(&"private_fn".to_string()),
-            "private_fn should not be exported"
-        );
+        assert!(exported_funcs.contains(&"public_fn".to_string()), "public_fn should be exported");
+        assert!(!exported_funcs.contains(&"private_fn".to_string()), "private_fn should not be exported");
     }
 
     #[test]
     fn test_validate_unary_operators() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn negate(x: i64) -> i64 {
                 -x
             }
@@ -1207,8 +1185,7 @@ mod validation_tests {
             pub fn logical_not(x: bool) -> bool {
                 !x
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1221,13 +1198,11 @@ mod validation_tests {
     fn test_validate_complex_expression() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn complex(a: i64, b: i64, c: i64) -> i64 {
                 ((a + b) * c - a / b) % (c + 1)
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1241,8 +1216,7 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         // For loop iterates over an array
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn sum_array(arr: [i64]) -> i64 {
                 let mut sum = 0;
                 for x in arr {
@@ -1250,8 +1224,7 @@ mod validation_tests {
                 }
                 sum
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1264,8 +1237,7 @@ mod validation_tests {
     fn test_validate_match_expression() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn describe(x: i64) -> i64 {
                 match x {
                     0 => 100,
@@ -1273,8 +1245,7 @@ mod validation_tests {
                     _ => 300
                 }
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1291,13 +1262,11 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         // Test function parameter that accesses struct-like data
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn identity(x: i64) -> i64 {
                 x
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1310,8 +1279,7 @@ mod validation_tests {
     fn test_validate_recursive_function() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn factorial(n: i64) -> i64 {
                 if n <= 1 {
                     1
@@ -1319,8 +1287,7 @@ mod validation_tests {
                     n * factorial(n - 1)
                 }
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1333,8 +1300,7 @@ mod validation_tests {
     fn test_validate_nested_if() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn classify(x: i64) -> i64 {
                 if x < 0 {
                     -1
@@ -1346,8 +1312,7 @@ mod validation_tests {
                     2
                 }
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
@@ -1360,8 +1325,7 @@ mod validation_tests {
     fn test_validate_mutable_variable() {
         let mut compiler = WasmCompiler::new();
 
-        let result = compiler.compile(
-            r#"
+        let result = compiler.compile(r#"
             pub fn count_up(n: i64) -> i64 {
                 let mut count = 0;
                 let mut i = 0;
@@ -1371,13 +1335,165 @@ mod validation_tests {
                 }
                 count
             }
-        "#,
-        );
+        "#);
 
         assert!(result.is_ok(), "Compilation failed: {:?}", result);
         let bytes = result.unwrap();
 
         let validation = validate_wasm(&bytes);
         assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+    }
+
+    #[test]
+    fn test_source_map_generation() {
+        let mut compiler = WasmCompiler::new().with_debug_info();
+
+        let result = compiler.compile(r#"
+            pub fn add(a: i64, b: i64) -> i64 {
+                a + b
+            }
+
+            pub fn multiply(x: i64, y: i64) -> i64 {
+                x * y
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        // Find the source map custom section
+        use wasmparser::{Parser, Payload};
+
+        let parser = Parser::new(0);
+        let mut found_source_map = false;
+        let mut source_map_json = String::new();
+
+        for payload in parser.parse_all(&bytes) {
+            if let Ok(Payload::CustomSection(reader)) = payload {
+                if reader.name() == "sigil_sourcemap" {
+                    found_source_map = true;
+                    source_map_json = String::from_utf8_lossy(reader.data()).to_string();
+                }
+            }
+        }
+
+        assert!(found_source_map, "Source map custom section not found");
+
+        // Verify the source map contains our functions
+        assert!(source_map_json.contains("\"add\""), "Source map should contain 'add' function");
+        assert!(source_map_json.contains("\"multiply\""), "Source map should contain 'multiply' function");
+
+        // Verify it has line/column information (not just placeholder 1,0)
+        let source_map: serde_json::Value = serde_json::from_str(&source_map_json)
+            .expect("Source map should be valid JSON");
+
+        let functions = source_map.get("functions").expect("Should have functions");
+        assert!(functions.is_object());
+
+        // Check that add function has real location data
+        let add_fn = functions.get("add").expect("Should have add function");
+        let start_line = add_fn.get("start").and_then(|s| s.get("line")).and_then(|l| l.as_u64());
+        assert!(start_line.is_some() && start_line.unwrap() > 0, "Add function should have valid start line");
+    }
+
+    #[test]
+    fn test_multi_module_import() {
+        let mut compiler = WasmCompiler::new();
+
+        // Compile code that imports from an external module
+        let result = compiler.compile(r#"
+            invoke math_utils::helper;
+
+            pub fn caller() -> i64 {
+                helper(10, 20)
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        // Verify the WASM is valid
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+
+        // Verify the import was generated
+        use wasmparser::{Parser, Payload};
+
+        let parser = Parser::new(0);
+        let mut found_helper_import = false;
+
+        for payload in parser.parse_all(&bytes) {
+            if let Ok(Payload::ImportSection(reader)) = payload {
+                for import in reader {
+                    if let Ok(imp) = import {
+                        if imp.module == "math_utils" && imp.name == "helper" {
+                            found_helper_import = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(found_helper_import, "Should have imported 'helper' from 'math_utils' module");
+    }
+
+    #[test]
+    fn test_multi_module_import_with_rename() {
+        let mut compiler = WasmCompiler::new();
+
+        // Compile code that imports with a rename
+        let result = compiler.compile(r#"
+            invoke external::original as renamed;
+
+            pub fn use_renamed() -> i64 {
+                renamed(42)
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+    }
+
+    #[test]
+    fn test_multi_module_nested_path() {
+        let mut compiler = WasmCompiler::new();
+
+        // Compile code with nested module path
+        let result = compiler.compile(r#"
+            invoke deeply::nested::module::function;
+
+            pub fn call_nested() -> i64 {
+                function()
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+
+        // Verify the import uses the first path segment as module name
+        use wasmparser::{Parser, Payload};
+
+        let parser = Parser::new(0);
+        let mut found_import = false;
+
+        for payload in parser.parse_all(&bytes) {
+            if let Ok(Payload::ImportSection(reader)) = payload {
+                for import in reader {
+                    if let Ok(imp) = import {
+                        if imp.module == "deeply" && imp.name == "function" {
+                            found_import = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(found_import, "Should have imported 'function' from 'deeply' module");
     }
 }

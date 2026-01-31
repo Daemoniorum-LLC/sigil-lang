@@ -1,33 +1,33 @@
-// Test: Mutable this of method
+// Test: Mutable self ∈ method
 // Spec: 03-TYPES.md § 7.6 Mutable Methods
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate vary this methods can modify fields.
+// Validate Δ self methods can modify fields.
 //
 // Expected behavior:
 // Should print 52 (42 + 10)
 
-☉ sigil Counter {
+☉ Σ Counter {
     value: !i32
 }
 
 ⊢ Counter {
-    ☉ rite new(value: !i32) → This {
-        This { value: value }
+    ☉ λ new(value: !i32) -> Self {
+        Self { value: value }
     }
 
-    ☉ rite increment(vary this, amount: !i32) {
-        this.value = this.value + amount;
+    ☉ λ increment(Δ self, amount: !i32) {
+        self.value = self.value + amount;
     }
 
-    ☉ rite get(this) → !i32 {
-        this.value
+    ☉ λ get(self) -> !i32 {
+        self.value
     }
 }
 
-rite main() {
-    ≔ vary c: !Counter = Counter·new(42);
+λ main() {
+    ≔ Δ c: !Counter = Counter·new(42);
     c.increment(10);
     println(c.get());
 }

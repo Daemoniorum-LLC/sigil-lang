@@ -1,8 +1,0 @@
-// Test: Expression statement with semicolon
-// Spec: 02-SYNTAX.md § 3.4 Statements
-// Priority: P0
-
-λ main() {
-    40 + 2;
-    println(42);
-}

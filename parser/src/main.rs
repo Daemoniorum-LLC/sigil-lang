@@ -1,17 +1,16 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
 use sigil_parser::lower::lower_source_file;
+use sigil_parser::lsp::start_lsp;
 use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
-#[cfg(feature = "wasm")]
-use sigil_parser::WasmCompiler;
-use sigil_parser::{
-    register_stdlib, set_verbose, Diagnostic, Diagnostics, Interpreter, Lexer, Parser, Token,
-};
+use sigil_parser::{register_stdlib, set_verbose, Diagnostic, Diagnostics, Interpreter, Lexer, Parser, Token};
 #[cfg(feature = "llvm")]
 use sigil_parser::{CompileMode, LlvmCompiler, OptLevel};
+#[cfg(feature = "wasm")]
+use sigil_parser::WasmCompiler;
 use std::borrow::Cow;
 use std::env;
 use std::fs;
@@ -42,8 +41,7 @@ fn main() -> ExitCode {
     }
 
     // Filter out global flags for command processing
-    let args: Vec<String> = args
-        .into_iter()
+    let args: Vec<String> = args.into_iter()
         .filter(|a| a != "--verbose" && a != "-v")
         .collect();
 
@@ -52,37 +50,28 @@ fn main() -> ExitCode {
         eprintln!();
         eprintln!("Usage: sigil <command> [file.sigil] [options]");
         eprintln!();
-        eprintln!("Execution:");
+        eprintln!("Commands:");
         eprintln!("  run <file>      Execute a Sigil file (interpreted)");
         eprintln!("  run-dir <dir>   Execute all .sg/.sigil files in dir (multi-module)");
         eprintln!("  run-ws [bin]    Run a workspace (reads Sigil.toml, optional bin crate name)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
-        eprintln!(
-            "  compile <file>  Compile to native executable (AOT, --lto for LTO, --cuda for CUDA)"
-        );
-        eprintln!();
-        eprintln!("Analysis:");
+        eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
         eprintln!("  dump-ir <file>  Dump AI-facing IR as JSON (for agents/tooling)");
+        eprintln!("  doc-extract <file>  Extract SGDOC documentation from source file");
         eprintln!("  parse <file>    Parse and check a Sigil file");
         eprintln!("  lex <file>      Tokenize a Sigil file");
-        eprintln!();
-        eprintln!("Tooling:");
         eprintln!("  repl            Start interactive REPL");
-        eprintln!("  lsp             Start LSP server (for IDE integration)");
-        eprintln!("  fmt <path>      Format source files (--check to verify only)");
+        eprintln!("  lsp             Start Language Server Protocol server");
         eprintln!();
-        eprintln!("Tome Management (Package Manager):");
-        eprintln!("  conjure <name>  Summon a new tome into existence");
-        eprintln!("  inscribe        Mark current directory as a tome");
-        eprintln!("  summon <tome>   Call forth a binding (dependency)");
-        eprintln!("  banish <tome>   Cast out a binding");
-        eprintln!("  attune          Realign with latest binding versions");
-        eprintln!("  forge           Shape the tome into being (build)");
-        eprintln!("  rite <name>     Invoke a custom rite (script)");
-        eprintln!("  consecrate      Enshrine tome in the Grimoire registry");
+        eprintln!("Project Commands:");
+        eprintln!("  new <name>      Create a new Sigil project");
+        eprintln!("  init            Initialize a Sigil project in current directory");
+        eprintln!("  test            Run tests in the current project");
+        eprintln!("  build           Build the current project");
+        eprintln!("  migrate <file>  Convert Rust syntax to native Sigil (--dry-run, --backup)");
         eprintln!();
         eprintln!("AI Agent Options (for 'check' command):");
         eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
@@ -103,13 +92,20 @@ fn main() -> ExitCode {
                 eprintln!("Error: missing file argument");
                 return ExitCode::from(1);
             }
+            // Check for --no-typecheck flag
+            let skip_typecheck = args.iter().any(|a| a == "--no-typecheck");
+            // Get the file argument (first non-flag arg after "run")
+            let file_arg = args[2..].iter()
+                .find(|a| !a.starts_with("--") && !a.starts_with("-"))
+                .map(|s| s.as_str())
+                .unwrap_or(&args[2]);
             // Collect program args (after --)
             let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
-                args[pos + 1..].to_vec()
+                args[pos+1..].to_vec()
             } else {
                 vec![]
             };
-            run_file(&args[2], &program_args)
+            run_file(file_arg, &program_args, skip_typecheck)
         }
         "run-dir" => {
             if args.len() < 3 {
@@ -118,7 +114,7 @@ fn main() -> ExitCode {
             }
             // Collect program args (after --)
             let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
-                args[pos + 1..].to_vec()
+                args[pos+1..].to_vec()
             } else {
                 vec![]
             };
@@ -133,7 +129,7 @@ fn main() -> ExitCode {
             };
             // Collect program args (after --)
             let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
-                args[pos + 1..].to_vec()
+                args[pos+1..].to_vec()
             } else {
                 vec![]
             };
@@ -169,12 +165,27 @@ fn main() -> ExitCode {
         "compile" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--cuda]");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--tls] [--cuda] [--native-runtime] [-O0|-O1|-O2|-O3|-Os]");
                 return ExitCode::from(1);
             }
             // Parse flags
             let use_lto = args.iter().any(|a| a == "--lto");
+            let use_tls = args.iter().any(|a| a == "--tls");
             let use_cuda = args.iter().any(|a| a == "--cuda");
+            let use_native_runtime = args.iter().any(|a| a == "--native-runtime" || a == "--native");
+            // Parse optimization level
+            let opt_level = if args.iter().any(|a| a == "-O0" || a == "-Onone") {
+                OptLevel::None
+            } else if args.iter().any(|a| a == "-O1" || a == "-Obasic") {
+                OptLevel::Basic
+            } else if args.iter().any(|a| a == "-O2" || a == "-Ostandard") {
+                OptLevel::Standard
+            } else if args.iter().any(|a| a == "-Os" || a == "-Osize") {
+                OptLevel::Size
+            } else {
+                // Default: Aggressive (-O3)
+                OptLevel::Aggressive
+            };
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
                 if pos + 1 < args.len() {
                     args[pos + 1].clone()
@@ -191,7 +202,7 @@ fn main() -> ExitCode {
                     .trim_end_matches(".sg")
                     .to_string()
             };
-            compile_file(&args[2], &output, use_lto, use_cuda)
+            compile_file(&args[2], &output, use_lto, use_tls, use_cuda, use_native_runtime, opt_level)
         }
         #[cfg(not(feature = "llvm"))]
         "compile" => {
@@ -212,15 +223,13 @@ fn main() -> ExitCode {
                     args[2]
                         .trim_end_matches(".sigil")
                         .trim_end_matches(".sg")
-                        .to_string()
-                        + ".wasm"
+                        .to_string() + ".wasm"
                 }
             } else {
                 args[2]
                     .trim_end_matches(".sigil")
                     .trim_end_matches(".sg")
-                    .to_string()
-                    + ".wasm"
+                    .to_string() + ".wasm"
             };
             wasm_compile_file(&args[2], &output)
         }
@@ -276,23 +285,8 @@ fn main() -> ExitCode {
                 return lint_explain(rule);
             }
 
-            // Handle --setup-hooks to generate pre-commit hook
-            if args.iter().any(|a| a == "--setup-hooks") {
-                return lint_setup_hooks();
-            }
-
-            // Handle --changed to lint only git-changed files
-            if args.iter().any(|a| a == "--changed" || a == "--diff") {
-                return lint_changed_only(args.clone());
-            }
-
-            // Handle --since=<commit> to lint files changed since commit
-            if let Some(since_arg) = args.iter().find(|a| a.starts_with("--since=")) {
-                let commit = since_arg.strip_prefix("--since=").unwrap_or("HEAD");
-                return lint_since(commit, args.clone());
-            }
-
-            if args.len() < 3 || args[2].starts_with('-') {
+            if args.len() < 3 {
+                eprintln!("Error: missing path argument");
                 eprintln!("Usage: sigil lint <file.sigil|directory> [options]");
                 eprintln!();
                 eprintln!("Options:");
@@ -306,19 +300,7 @@ fn main() -> ExitCode {
                 eprintln!("  --init                  Generate default .sigillint.toml");
                 eprintln!("  --list                  List all available lint rules");
                 eprintln!("  --explain=<RULE>        Show detailed docs for a rule (code or name)");
-                eprintln!();
-                eprintln!("Git Integration:");
-                eprintln!("  --changed               Lint only uncommitted changes");
-                eprintln!("  --since=<commit>        Lint files changed since commit");
-                eprintln!(
-                    "  --baseline              Use .sigillint-baseline.json to filter known issues"
-                );
-                eprintln!("  --setup-hooks           Generate pre-commit hook");
-                eprintln!();
-                eprintln!("Reports:");
-                eprintln!("  --html=<path>           Generate HTML report");
-                eprintln!("  --ci=github|gitlab      Output CI annotations");
-                eprintln!("  --quiet/-q              Suppress non-error output");
+                eprintln!("  --evidentiality         Enable strict evidentiality checking");
                 return ExitCode::from(1);
             }
             let format = if args.iter().any(|a| a == "--format=json") {
@@ -332,8 +314,7 @@ fn main() -> ExitCode {
             };
 
             // Get config path if specified
-            let config_path = args
-                .iter()
+            let config_path = args.iter()
                 .find(|a| a.starts_with("--config="))
                 .map(|a| a.strip_prefix("--config=").unwrap());
 
@@ -342,36 +323,26 @@ fn main() -> ExitCode {
             let watch_mode = args.iter().any(|a| a == "--watch");
             let parallel = args.iter().any(|a| a == "--parallel");
             let show_stats = args.iter().any(|a| a == "--stats");
-            let use_baseline = args.iter().any(|a| a == "--baseline");
-            let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
+            let evidentiality_mode = args.iter().any(|a| a == "--evidentiality");
 
-            // Get HTML output path if specified
-            let html_path = args
-                .iter()
-                .find(|a| a.starts_with("--html="))
-                .map(|a| a.strip_prefix("--html=").unwrap());
+            // Find the path argument (first non-flag after "lint")
+            let path = args.iter().skip(2)
+                .find(|a| !a.starts_with("--") && !a.starts_with("-c"))
+                .map(|s| s.as_str());
 
-            // Get CI format if specified
-            let ci_format = args
-                .iter()
-                .find(|a| a.starts_with("--ci="))
-                .map(|a| a.strip_prefix("--ci=").unwrap());
+            let path = match path {
+                Some(p) => p,
+                None => {
+                    eprintln!("Error: missing file or directory argument");
+                    eprintln!("Usage: sigil lint <path> [options]");
+                    return ExitCode::from(1);
+                }
+            };
 
             if watch_mode {
-                lint_watch(&args[2], format, config_path)
+                lint_watch(path, format, config_path)
             } else {
-                lint_path(
-                    &args[2],
-                    format,
-                    config_path,
-                    apply_fix,
-                    parallel,
-                    show_stats,
-                    use_baseline,
-                    quiet,
-                    html_path,
-                    ci_format,
-                )
+                lint_path(path, format, config_path, apply_fix, parallel, show_stats, evidentiality_mode)
             }
         }
         "dump-ir" => {
@@ -394,6 +365,36 @@ fn main() -> ExitCode {
             };
             dump_ir_file(&args[2], pretty, output.as_deref())
         }
+        "doc-extract" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil doc-extract <file.sg> [--format=<json|markdown|html>] [-o output]");
+                eprintln!();
+                eprintln!("Options:");
+                eprintln!("  --format=json      Output as JSON (default)");
+                eprintln!("  --format=markdown  Output as Markdown");
+                eprintln!("  --format=html      Output as HTML");
+                eprintln!("  -o <file>          Write to file instead of stdout");
+                return ExitCode::from(1);
+            }
+            let format = if args.iter().any(|a| a == "--format=markdown" || a == "--format=md") {
+                "markdown"
+            } else if args.iter().any(|a| a == "--format=html") {
+                "html"
+            } else {
+                "json"
+            };
+            let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
+                if pos + 1 < args.len() {
+                    Some(args[pos + 1].clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            doc_extract_file(&args[2], format, output.as_deref())
+        }
         "parse" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
@@ -409,253 +410,44 @@ fn main() -> ExitCode {
             lex_file(&args[2])
         }
         "repl" => repl(),
-        #[cfg(feature = "lsp")]
-        "lsp" => sigil_parser::lsp::start_lsp(),
-        #[cfg(not(feature = "lsp"))]
-        "lsp" => {
-            eprintln!("Error: LSP server not available (compile with --features lsp)");
-            ExitCode::from(1)
-        }
-        "fmt" => {
-            let check_only = args.iter().any(|a| a == "--check");
-            let stdin_mode = args.iter().any(|a| a == "--stdin");
-
-            // Find the path argument (skip flags)
-            let path_arg = args.iter().skip(2).find(|a| !a.starts_with('-'));
-
-            let config = sigil_parser::fmt::FormatConfig::load();
-
-            if stdin_mode {
-                match sigil_parser::fmt::format_stdin(&config) {
-                    Ok(formatted) => {
-                        print!("{}", formatted);
-                        ExitCode::SUCCESS
-                    }
-                    Err(e) => {
-                        eprintln!("Error: {}", e);
-                        ExitCode::from(1)
-                    }
-                }
-            } else if path_arg.is_none() {
-                // Format current directory
-                let path = std::path::Path::new(".");
-                match sigil_parser::fmt::format_directory(path, &config, check_only) {
-                    Ok(result) => {
-                        if check_only {
-                            if result.unformatted.is_empty() && result.errors.is_empty() {
-                                println!("All {} files are properly formatted.", result.total);
-                                ExitCode::SUCCESS
-                            } else {
-                                for path in &result.unformatted {
-                                    println!("Would reformat: {}", path.display());
-                                }
-                                for (path, err) in &result.errors {
-                                    eprintln!("Error in {}: {}", path.display(), err);
-                                }
-                                ExitCode::from(1)
-                            }
-                        } else {
-                            if !result.changed.is_empty() {
-                                for path in &result.changed {
-                                    println!("Formatted: {}", path.display());
-                                }
-                            }
-                            for (path, err) in &result.errors {
-                                eprintln!("Error in {}: {}", path.display(), err);
-                            }
-                            println!(
-                                "Formatted {} of {} files.",
-                                result.changed.len(),
-                                result.total
-                            );
-                            if result.errors.is_empty() {
-                                ExitCode::SUCCESS
-                            } else {
-                                ExitCode::from(1)
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Error: {}", e);
-                        ExitCode::from(1)
-                    }
-                }
-            } else {
-                let path = std::path::Path::new(path_arg.unwrap());
-                if path.is_dir() {
-                    match sigil_parser::fmt::format_directory(path, &config, check_only) {
-                        Ok(result) => {
-                            if check_only {
-                                if result.unformatted.is_empty() && result.errors.is_empty() {
-                                    println!("All {} files are properly formatted.", result.total);
-                                    ExitCode::SUCCESS
-                                } else {
-                                    for path in &result.unformatted {
-                                        println!("Would reformat: {}", path.display());
-                                    }
-                                    for (path, err) in &result.errors {
-                                        eprintln!("Error in {}: {}", path.display(), err);
-                                    }
-                                    ExitCode::from(1)
-                                }
-                            } else {
-                                if !result.changed.is_empty() {
-                                    for path in &result.changed {
-                                        println!("Formatted: {}", path.display());
-                                    }
-                                }
-                                for (path, err) in &result.errors {
-                                    eprintln!("Error in {}: {}", path.display(), err);
-                                }
-                                println!(
-                                    "Formatted {} of {} files.",
-                                    result.changed.len(),
-                                    result.total
-                                );
-                                if result.errors.is_empty() {
-                                    ExitCode::SUCCESS
-                                } else {
-                                    ExitCode::from(1)
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error: {}", e);
-                            ExitCode::from(1)
-                        }
-                    }
-                } else {
-                    if check_only {
-                        match sigil_parser::fmt::check_file(path, &config) {
-                            Ok(true) => {
-                                println!("{}: OK", path.display());
-                                ExitCode::SUCCESS
-                            }
-                            Ok(false) => {
-                                println!("{}: needs formatting", path.display());
-                                ExitCode::from(1)
-                            }
-                            Err(e) => {
-                                eprintln!("Error: {}", e);
-                                ExitCode::from(1)
-                            }
-                        }
-                    } else {
-                        match sigil_parser::fmt::format_file(path, &config) {
-                            Ok(true) => {
-                                println!("Formatted: {}", path.display());
-                                ExitCode::SUCCESS
-                            }
-                            Ok(false) => {
-                                println!("{}: already formatted", path.display());
-                                ExitCode::SUCCESS
-                            }
-                            Err(e) => {
-                                eprintln!("Error: {}", e);
-                                ExitCode::from(1)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // Legacy aliases - redirect to tome commands
+        "lsp" => start_lsp(),
         "new" => {
-            eprintln!("Hint: 'sigil new' is now 'sigil conjure' (thematic naming)");
             if args.len() < 3 {
                 eprintln!("Error: missing project name");
-                eprintln!("Usage: sigil conjure <project-name>");
+                eprintln!("Usage: sigil new <project-name>");
                 return ExitCode::from(1);
             }
-            tome_conjure(&args[2])
+            new_project(&args[2])
         }
-        "init" => {
-            eprintln!("Hint: 'sigil init' is now 'sigil inscribe' (thematic naming)");
-            tome_inscribe()
-        }
-        "build" => {
-            eprintln!("Hint: 'sigil build' is now 'sigil forge' (thematic naming)");
-            tome_forge()
-        }
+        "init" => init_project(),
         "test" => run_tests(),
-
-        // Tome Management Commands (thematic names)
-        "conjure" => {
+        "build" => build_project(),
+        "migrate" => {
             if args.len() < 3 {
-                eprintln!("Error: missing tome name");
-                eprintln!("Usage: sigil conjure <tome-name>");
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil migrate <file.sg> [--dry-run] [--backup] [--evidentiality]");
                 eprintln!();
-                eprintln!("Summons a new tome into existence, creating:");
-                eprintln!("  <tome-name>/");
-                eprintln!("    Grimoire.toml    - Tome manifest");
-                eprintln!("    src/");
-                eprintln!("      main.sg        - Entry point");
-                eprintln!("    .gitignore");
+                eprintln!("Options:");
+                eprintln!("  --dry-run        Show changes without applying");
+                eprintln!("  --backup         Create .bak backup before modifying");
+                eprintln!("  --evidentiality  Add evidentiality markers to external data sources");
                 return ExitCode::from(1);
             }
-            tome_conjure(&args[2])
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            let backup = args.iter().any(|a| a == "--backup");
+            let evidentiality = args.iter().any(|a| a == "--evidentiality");
+            migrate_file(&args[2], dry_run, backup, evidentiality)
         }
-        "inscribe" => tome_inscribe(),
-        "summon" => {
-            if args.len() < 3 {
-                eprintln!("Error: missing binding name");
-                eprintln!("Usage: sigil summon <binding> [version|path:../local|git:url]");
-                eprintln!();
-                eprintln!("Examples:");
-                eprintln!("  sigil summon aegis 0.1.0");
-                eprintln!("  sigil summon chorus path:../chorus");
-                eprintln!("  sigil summon anima git:https://github.com/daemoniorum/anima");
-                eprintln!();
-                eprintln!("Alternative flag syntax:");
-                eprintln!("  sigil summon aegis --version 0.1.0");
-                eprintln!("  sigil summon chorus --path ../chorus");
-                eprintln!("  sigil summon anima --git https://github.com/daemoniorum/anima");
-                return ExitCode::from(1);
-            }
-            // Parse spec - support both "path:value" and "--path value" formats
-            let spec = if args.len() >= 5 {
-                match args[3].as_str() {
-                    "--version" | "-v" => args[4].clone(),
-                    "--path" | "-p" => format!("path:{}", args[4]),
-                    "--git" | "-g" => format!("git:{}", args[4]),
-                    _ => args.get(3).cloned().unwrap_or_else(|| "*".to_string()),
-                }
-            } else {
-                args.get(3).cloned().unwrap_or_else(|| "*".to_string())
-            };
-            tome_summon(&args[2], &spec)
-        }
-        "banish" => {
-            if args.len() < 3 {
-                eprintln!("Error: missing binding name");
-                eprintln!("Usage: sigil banish <binding>");
-                return ExitCode::from(1);
-            }
-            tome_banish(&args[2])
-        }
-        "attune" => tome_attune(),
-        "forge" => tome_forge(),
-        "rite" => {
-            if args.len() < 3 {
-                // List available rites
-                tome_list_rites()
-            } else {
-                tome_invoke_rite(&args[2])
-            }
-        }
-        "consecrate" => tome_consecrate(),
-
         _ => {
             // Treat as file if it ends with .sigil or .sg
             if args[1].ends_with(".sigil") || args[1].ends_with(".sg") {
                 // Collect program args (after --)
-                let program_args: Vec<String> =
-                    if let Some(pos) = args.iter().position(|a| a == "--") {
-                        args[pos + 1..].to_vec()
-                    } else {
-                        vec![]
-                    };
-                run_file(&args[1], &program_args)
+                let program_args: Vec<String> = if let Some(pos) = args.iter().position(|a| a == "--") {
+                    args[pos+1..].to_vec()
+                } else {
+                    vec![]
+                };
+                run_file(&args[1], &program_args, false)
             } else {
                 eprintln!("Unknown command: {}", args[1]);
                 ExitCode::from(1)
@@ -664,7 +456,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_file(path: &str, program_args: &[String]) -> ExitCode {
+fn run_file(path: &str, program_args: &[String], skip_typecheck: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -678,27 +470,31 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
     let ast = match parser.parse_file() {
         Ok(ast) => ast,
         Err(e) => {
-            // Use rich diagnostic output
-            let diag: Diagnostic = e.into();
-            diag.eprint(path, &source);
+            eprintln!("Parse error in '{}': {}", path, e);
             return ExitCode::from(1);
         }
     };
 
-    // Type check
-    let mut type_checker = TypeChecker::new();
-    if let Err(type_errors) = type_checker.check_file(&ast) {
-        for err in type_errors {
-            // Use rich diagnostic output
-            let diag: Diagnostic = (&err).into();
-            diag.eprint(path, &source);
+    // Type check (can be skipped with --no-typecheck for bootstrapping/testing)
+    if !skip_typecheck {
+        let mut type_checker = TypeChecker::new();
+        if let Err(type_errors) = type_checker.check_file(&ast) {
+            for err in type_errors {
+                eprintln!("Type error in '{}': {}", path, err.message);
+                for note in &err.notes {
+                    eprintln!("  note: {}", note);
+                }
+            }
+            return ExitCode::from(1);
         }
-        return ExitCode::from(1);
     }
 
     // Execute with full stdlib
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
+
+    // Set source code for span-to-line conversion in IR export
+    interpreter.set_source_code(source);
 
     // Set source directory for module resolution
     if let Some(parent) = std::path::Path::new(path).parent() {
@@ -710,7 +506,7 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
             eprintln!("Warning: failed to discover project: {}", e);
         }
     }
-
+    
     // Set program arguments (program name + actual args)
     let program_name = std::path::Path::new(path)
         .file_stem()
@@ -719,7 +515,7 @@ fn run_file(path: &str, program_args: &[String]) -> ExitCode {
     let mut full_args = vec![program_name];
     full_args.extend(program_args.iter().cloned());
     interpreter.set_program_args(full_args);
-
+    
     match interpreter.execute(&ast) {
         Ok(value) => {
             // Only print result if it's not null
@@ -750,11 +546,7 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
 
     let mut files: Vec<String> = dir
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map_or(false, |ext| ext == "sg" || ext == "sigil")
-        })
+        .filter(|e| e.path().extension().map_or(false, |ext| ext == "sg" || ext == "sigil"))
         .map(|e| e.path().to_string_lossy().to_string())
         .collect();
 
@@ -763,14 +555,8 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     // 2. Other modules in alphabetical order
     // 3. main.sigil last (uses definitions from other modules)
     files.sort_by(|a, b| {
-        let a_name = Path::new(a)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        let b_name = Path::new(b)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
         match (a_name, b_name) {
             ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
             (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
@@ -787,16 +573,44 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
 
     eprintln!("Loading {} modules from '{}':", files.len(), dir_path);
     for f in &files {
-        let name = Path::new(f)
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
+        let name = Path::new(f).file_name().unwrap_or_default().to_string_lossy();
         eprintln!("  - {}", name);
     }
 
     // Create interpreter and register stdlib
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
+
+    // Get absolute path for source directory
+    let abs_dir = match Path::new(dir_path).canonicalize() {
+        Ok(p) => p,
+        Err(_) => Path::new(dir_path).to_path_buf(),
+    };
+
+    // Derive crate name from directory name
+    // If directory is "src", use parent directory name instead
+    let dir_name = abs_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("crate");
+
+    let crate_name = if dir_name == "src" {
+        // Use parent directory name
+        abs_dir
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("crate")
+            .to_string()
+    } else {
+        dir_name.to_string()
+    };
+
+    eprintln!("Crate name: {}", crate_name);
+
+    // Set up interpreter state for multi-module project
+    interpreter.set_current_source_dir(Some(abs_dir.to_string_lossy().to_string()));
+    // Note: crate_name and crate_alias tracked in main.rs for multi-module compilation
 
     // Parse and execute each file to register its definitions
     for file_path in &files {
@@ -808,12 +622,26 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
             }
         };
 
+        // Get module name from filename (without extension)
+        let module_name = Path::new(file_path)
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+
+        // Set current module context for this file
+        // For lib.sg, use the crate name itself; for others, use the module name
+        if module_name == "lib" {
+            interpreter.set_current_module(None);
+        } else {
+            // Set module name so module-scoped items work
+            interpreter.set_current_module(Some(module_name.to_string()));
+        }
+
         let mut parser = Parser::new(&source);
         let ast = match parser.parse_file() {
             Ok(ast) => ast,
             Err(e) => {
-                let diag: Diagnostic = e.into();
-                diag.eprint(file_path, &source);
+                eprintln!("Parse error in '{}': {}", file_path, e);
                 return ExitCode::from(1);
             }
         };
@@ -826,12 +654,13 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     }
 
     // Create program args array
-    let args_value = sigil_parser::Value::Array(std::rc::Rc::new(std::cell::RefCell::new(
-        program_args
-            .iter()
-            .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
-            .collect(),
-    )));
+    let args_value = sigil_parser::Value::Array(
+        std::rc::Rc::new(std::cell::RefCell::new(
+            program_args.iter()
+                .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
+                .collect()
+        ))
+    );
 
     // Try to call main with args
     match interpreter.call_function_by_name("main", vec![args_value]) {
@@ -870,14 +699,14 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         }
     }
 
-    let manifest_content =
-        match fs::read_to_string("Sigil.toml").or_else(|_| fs::read_to_string("sigil.toml")) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("Error reading Sigil.toml: {}", e);
-                return ExitCode::from(1);
-            }
-        };
+    let manifest_content = match fs::read_to_string("Sigil.toml")
+        .or_else(|_| fs::read_to_string("sigil.toml")) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading Sigil.toml: {}", e);
+            return ExitCode::from(1);
+        }
+    };
 
     let manifest: TomlValue = match manifest_content.parse() {
         Ok(v) => v,
@@ -901,12 +730,10 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         .get("workspace")
         .and_then(|w| w.get("members"))
         .and_then(|m| m.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| s.to_string())
-                .collect()
-        })
+        .map(|arr| arr.iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| s.to_string())
+            .collect())
         .unwrap_or_default();
 
     if members.is_empty() {
@@ -919,12 +746,10 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         .get("dependencies")
         .and_then(|d| d.as_table())
         .map(|table| {
-            table
-                .iter()
+            table.iter()
                 .filter_map(|(name, value)| {
                     // Handle path dependencies: { path = "../../some/path" }
-                    value
-                        .get("path")
+                    value.get("path")
                         .and_then(|p| p.as_str())
                         .map(|path| (name.replace('-', "_"), path.to_string()))
                 })
@@ -974,24 +799,14 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
 
         let mut files: Vec<String> = src_dir
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map_or(false, |ext| ext == "sigil" || ext == "sg")
-            })
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "sigil" || ext == "sg"))
             .map(|e| e.path().to_string_lossy().to_string())
             .collect();
 
         // Sort files: lib.sigil first, main.sigil last
         files.sort_by(|a, b| {
-            let a_name = Path::new(a)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            let b_name = Path::new(b)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
             match (a_name, b_name) {
                 ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
                 (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
@@ -1001,11 +816,7 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             }
         });
 
-        eprintln!(
-            "  Loading dependency {} ({} files)...",
-            dep_name,
-            files.len()
-        );
+        eprintln!("  Loading dependency {} ({} files)...", dep_name, files.len());
 
         // Load each file in the dependency
         for file_path in &files {
@@ -1015,11 +826,8 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
                 .unwrap_or("?");
             eprintln!("    - {}", file_name);
 
-            let module_name = if file_name != "lib.sigil"
-                && file_name != "main.sigil"
-                && file_name != "lib.sg"
-                && file_name != "main.sg"
-            {
+            let module_name = if file_name != "lib.sigil" && file_name != "main.sigil"
+                && file_name != "lib.sg" && file_name != "main.sg" {
                 Path::new(file_name)
                     .file_stem()
                     .and_then(|s| s.to_str())
@@ -1084,11 +892,7 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
 
         let mut files: Vec<String> = src_dir
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map_or(false, |ext| ext == "sigil" || ext == "sg")
-            })
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "sigil" || ext == "sg"))
             .map(|e| e.path().to_string_lossy().to_string())
             .collect();
 
@@ -1097,14 +901,8 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         // 2. Other modules in alphabetical order
         // 3. main.sigil last (uses definitions from other modules)
         files.sort_by(|a, b| {
-            let a_name = Path::new(a)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            let b_name = Path::new(b)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
             match (a_name, b_name) {
                 ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
                 (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
@@ -1127,11 +925,8 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             // Set current module based on file name (for module-qualified function names)
             // e.g., "analyze.sigil" -> module name "analyze"
             // Skip for lib.sigil and main.sigil as they are the crate root
-            let module_name = if file_name != "lib.sigil"
-                && file_name != "main.sigil"
-                && file_name != "lib.sg"
-                && file_name != "main.sg"
-            {
+            let module_name = if file_name != "lib.sigil" && file_name != "main.sigil"
+                && file_name != "lib.sg" && file_name != "main.sg" {
                 Path::new(file_name)
                     .file_stem()
                     .and_then(|s| s.to_str())
@@ -1153,8 +948,7 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             let ast = match parser.parse_file() {
                 Ok(ast) => ast,
                 Err(e) => {
-                    let diag: Diagnostic = e.into();
-                    diag.eprint(file_path, &source);
+                    eprintln!("Parse error in '{}': {}", file_path, e);
                     return ExitCode::from(1);
                 }
             };
@@ -1188,34 +982,39 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
     eprintln!("Running binary: {}\n", binary_crate);
 
     // Create program args array
-    let args_value = sigil_parser::Value::Array(std::rc::Rc::new(std::cell::RefCell::new(
-        program_args
-            .iter()
-            .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
-            .collect(),
-    )));
+    let args_value = sigil_parser::Value::Array(
+        std::rc::Rc::new(std::cell::RefCell::new(
+            program_args.iter()
+                .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
+                .collect()
+        ))
+    );
 
     // Try to call main
     match interpreter.call_function_by_name("main", vec![args_value.clone()]) {
-        Ok(value) => match &value {
-            sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
-            sigil_parser::Value::Null => ExitCode::SUCCESS,
-            _ => {
-                println!("{}", value);
-                ExitCode::SUCCESS
+        Ok(value) => {
+            match &value {
+                sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
+                sigil_parser::Value::Null => ExitCode::SUCCESS,
+                _ => {
+                    println!("{}", value);
+                    ExitCode::SUCCESS
+                }
             }
-        },
+        }
         Err(e) => {
             // Try calling main with no args
             match interpreter.call_function_by_name("main", vec![]) {
-                Ok(value) => match &value {
-                    sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
-                    sigil_parser::Value::Null => ExitCode::SUCCESS,
-                    _ => {
-                        println!("{}", value);
-                        ExitCode::SUCCESS
+                Ok(value) => {
+                    match &value {
+                        sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
+                        sigil_parser::Value::Null => ExitCode::SUCCESS,
+                        _ => {
+                            println!("{}", value);
+                            ExitCode::SUCCESS
+                        }
                     }
-                },
+                }
                 Err(e2) => {
                     eprintln!("Runtime error: {}", e2);
                     ExitCode::from(1)
@@ -1314,7 +1113,7 @@ fn llvm_file(path: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> ExitCode {
+fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda: bool, use_native_runtime: bool, opt_level: OptLevel) -> ExitCode {
     use inkwell::context::Context;
     use std::path::Path;
     use std::process::Command;
@@ -1330,7 +1129,7 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> Exit
     // Create LLVM context and compiler in AOT mode
     let context = Context::create();
     let mut compiler =
-        match LlvmCompiler::with_mode(&context, OptLevel::Aggressive, CompileMode::Aot) {
+        match LlvmCompiler::with_mode(&context, opt_level, CompileMode::Aot) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("Failed to initialize LLVM compiler: {}", e);
@@ -1356,20 +1155,23 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> Exit
         return ExitCode::from(1);
     }
 
+    // Native runtime mode: link with pure assembly runtime, no libc
+    if use_native_runtime {
+        return link_native_runtime(&obj_path, output);
+    }
+
     // Find the runtime (static library or C source)
-    let runtime_result = if use_cuda {
-        find_cuda_runtime()
-    } else {
-        find_runtime(use_lto)
-    };
+    let runtime_result = find_runtime(use_lto, use_tls, use_cuda);
     if runtime_result.is_none() {
         eprintln!("Error: Could not find sigil runtime");
+        eprintln!("Expected locations:");
         if use_cuda {
-            eprintln!("Expected locations:");
-            eprintln!("  - ./runtime/libsigil_runtime_cuda.a (CUDA runtime)");
-            eprintln!("Build with: cd runtime && make cuda");
+            eprintln!("  - ./runtime/libsigil_runtime_cuda.a (CUDA-enabled runtime)");
+            eprintln!("Run 'make cuda' in the runtime directory to build.");
+        } else if use_tls {
+            eprintln!("  - ./runtime/libsigil_runtime_tls.a (TLS-enabled runtime)");
+            eprintln!("Run 'make tls' in the runtime directory to build.");
         } else {
-            eprintln!("Expected locations:");
             eprintln!("  - ./runtime/libsigil_runtime.a (pre-built, faster)");
             eprintln!("  - ./runtime/sigil_runtime.c (source, required for --lto)");
             eprintln!("Run 'make' in the runtime directory to build.");
@@ -1381,7 +1183,7 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> Exit
 
     // Link with clang/gcc
     let mode_str = if use_cuda {
-        "with CUDA"
+        "CUDA enabled"
     } else if should_use_lto {
         "with LTO"
     } else if is_static_lib {
@@ -1403,24 +1205,26 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> Exit
         args.insert(0, "-O3");
     }
 
-    // Add CUDA libraries when building with CUDA support
+    // Add TLS/OpenSSL libraries when using --tls
+    if use_tls {
+        args.push("-lssl");
+        args.push("-lcrypto");
+    }
+
+    // Add CUDA libraries when using --cuda
+    // NOTE: -L paths MUST come before -l flags for the linker to find libraries
     if use_cuda {
-        // Find CUDA library paths (add all that exist)
-        let cuda_lib_paths = [
-            "/usr/lib/wsl/lib", // WSL2 CUDA driver
-            "/usr/local/cuda/lib64",
-            "/usr/lib/x86_64-linux-gnu",
-            "/opt/cuda/lib64",
-        ];
-        for cuda_path in cuda_lib_paths {
-            if std::path::Path::new(cuda_path).exists() {
-                args.push("-L");
-                args.push(cuda_path);
-            }
-        }
+        // Search paths first
+        args.push("-L/usr/lib/wsl/lib");  // WSL2 CUDA driver (libcuda.so)
+        args.push("-L/usr/lib/x86_64-linux-gnu");  // System libs (libnvrtc.so)
+        args.push("-L/usr/local/cuda/lib64");  // CUDA toolkit (if installed)
+        // Then library names
         args.push("-lcuda");
         args.push("-lnvrtc");
-        args.push("-ldl");
+        // Set rpath for runtime library loading
+        args.push("-Wl,-rpath,/usr/lib/wsl/lib");
+        args.push("-Wl,-rpath,/usr/lib/x86_64-linux-gnu");
+        args.push("-Wl,-rpath,/usr/local/cuda/lib64");
     }
 
     let link_result = Command::new(&linker).args(&args).status();
@@ -1444,8 +1248,143 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_cuda: bool) -> Exit
     }
 }
 
+/// Link with the native assembly runtime (no libc dependency)
 #[cfg(feature = "llvm")]
-fn find_runtime(use_lto: bool) -> Option<(String, bool)> {
+fn link_native_runtime(obj_path: &str, output: &str) -> ExitCode {
+    use std::process::Command;
+
+    // Find the native runtime library
+    let native_lib = find_native_runtime();
+    if native_lib.is_none() {
+        eprintln!("Error: Could not find native runtime library");
+        eprintln!("Expected: libsigil_native.a");
+        eprintln!("Run './build_native.sh' in the runtime directory to build.");
+        let _ = std::fs::remove_file(obj_path);
+        return ExitCode::from(1);
+    }
+    let runtime = native_lib.unwrap();
+
+    println!("Compiling with native runtime (no libc) -> {}", output);
+
+    // Link with ld directly, no libc
+    let link_result = Command::new("ld")
+        .args([
+            obj_path,
+            &runtime,
+            "-o", output,
+            "-nostdlib",
+            "-static",
+        ])
+        .status();
+
+    // Clean up object file
+    let _ = std::fs::remove_file(obj_path);
+
+    match link_result {
+        Ok(status) if status.success() => {
+            println!("Successfully compiled to: {} (native runtime, no libc)", output);
+            ExitCode::SUCCESS
+        }
+        Ok(status) => {
+            eprintln!("Linker failed with status: {}", status);
+            ExitCode::from(1)
+        }
+        Err(e) => {
+            eprintln!("Failed to run linker 'ld': {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Find the native runtime library (libsigil_native.a)
+#[cfg(feature = "llvm")]
+fn find_native_runtime() -> Option<String> {
+    let candidates = [
+        "runtime/libsigil_native.a",
+        "../runtime/libsigil_native.a",
+        "parser/runtime/libsigil_native.a",
+        "../parser/runtime/libsigil_native.a",
+    ];
+
+    for candidate in candidates {
+        if std::path::Path::new(candidate).exists() {
+            return Some(candidate.to_string());
+        }
+    }
+
+    // Try relative to executable
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let lib_path = exe_dir.join("runtime/libsigil_native.a");
+            if lib_path.exists() {
+                return Some(lib_path.to_string_lossy().to_string());
+            }
+            let lib_path = exe_dir.join("../runtime/libsigil_native.a");
+            if lib_path.exists() {
+                return Some(lib_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(feature = "llvm")]
+fn find_runtime(use_lto: bool, use_tls: bool, use_cuda: bool) -> Option<(String, bool)> {
+    // For CUDA, use the CUDA-enabled runtime
+    if use_cuda {
+        let cuda_lib_candidates = [
+            "runtime/libsigil_runtime_cuda.a",
+            "../runtime/libsigil_runtime_cuda.a",
+            "sigil/parser/runtime/libsigil_runtime_cuda.a",
+        ];
+
+        for candidate in cuda_lib_candidates {
+            if std::path::Path::new(candidate).exists() {
+                return Some((candidate.to_string(), false));
+            }
+        }
+
+        // Try relative to executable
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let lib_path = dir.join("runtime/libsigil_runtime_cuda.a");
+                if lib_path.exists() {
+                    return Some((lib_path.to_string_lossy().into_owned(), false));
+                }
+            }
+        }
+
+        return None;
+    }
+
+    // For TLS, we must use the pre-compiled TLS runtime (can't compile from source easily)
+    if use_tls {
+        let tls_lib_candidates = [
+            "runtime/libsigil_runtime_tls.a",
+            "../runtime/libsigil_runtime_tls.a",
+            "sigil/parser/runtime/libsigil_runtime_tls.a",
+        ];
+
+        for candidate in tls_lib_candidates {
+            if std::path::Path::new(candidate).exists() {
+                return Some((candidate.to_string(), false));
+            }
+        }
+
+        // Try relative to executable
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let lib_path = dir.join("runtime/libsigil_runtime_tls.a");
+                if lib_path.exists() {
+                    return Some((lib_path.to_string_lossy().into_owned(), false));
+                }
+            }
+        }
+
+        return None;
+    }
+
     // For LTO, prefer C source so it can be compiled with -flto
     // This enables cross-module optimization between Sigil code and runtime
     if use_lto {
@@ -1508,34 +1447,6 @@ fn find_runtime(use_lto: bool) -> Option<(String, bool)> {
 }
 
 #[cfg(feature = "llvm")]
-fn find_cuda_runtime() -> Option<(String, bool)> {
-    // Look for CUDA-enabled runtime static library
-    let cuda_lib_candidates = [
-        "runtime/libsigil_runtime_cuda.a",
-        "../runtime/libsigil_runtime_cuda.a",
-        "sigil/parser/runtime/libsigil_runtime_cuda.a",
-    ];
-
-    for candidate in cuda_lib_candidates {
-        if std::path::Path::new(candidate).exists() {
-            return Some((candidate.to_string(), false));
-        }
-    }
-
-    // Try relative to executable
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let lib_path = dir.join("runtime/libsigil_runtime_cuda.a");
-            if lib_path.exists() {
-                return Some((lib_path.to_string_lossy().into_owned(), false));
-            }
-        }
-    }
-
-    None
-}
-
-#[cfg(feature = "llvm")]
 fn find_linker() -> String {
     // Prefer clang, fall back to gcc
     for linker in ["clang", "gcc", "cc"] {
@@ -1553,19 +1464,13 @@ fn find_linker() -> String {
 /// Compile a Sigil source file to WebAssembly.
 #[cfg(feature = "wasm")]
 fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
-    let source = match fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error reading file '{}': {}", path, e);
-            return ExitCode::from(1);
-        }
-    };
+    use std::path::Path;
 
     println!("Compiling {} -> {} (WebAssembly)", path, output);
 
-    // Create WASM compiler and compile
+    // Create WASM compiler and compile from path (enables multi-file module resolution)
     let mut compiler = WasmCompiler::new();
-    match compiler.compile(&source) {
+    match compiler.compile_from_path(Path::new(path)) {
         Ok(wasm_bytes) => {
             // Write the WASM bytes to output file
             if let Err(e) = fs::write(output, &wasm_bytes) {
@@ -1840,26 +1745,12 @@ fn lint_init() -> ExitCode {
 /// - Unreachable code (E0700)
 /// - Infinite loops (E0701)
 /// - Division by zero (E0702)
-fn lint_path(
-    path: &str,
-    format: OutputFormat,
-    config_path: Option<&str>,
-    apply_fix: bool,
-    parallel: bool,
-    show_stats: bool,
-    use_baseline: bool,
-    quiet: bool,
-    html_path: Option<&str>,
-    ci_format: Option<&str>,
-) -> ExitCode {
-    use sigil_parser::lint::{
-        apply_fixes, find_baseline, generate_ci_annotations, generate_sarif, lint_directory,
-        lint_directory_parallel, lint_source_with_config, save_html_report, CiFormat, LintConfig,
-    };
+fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_fix: bool, parallel: bool, show_stats: bool, evidentiality_mode: bool) -> ExitCode {
+    use sigil_parser::lint::{lint_source_with_config, lint_directory, lint_directory_parallel, apply_fixes, generate_sarif, LintConfig, LintLevel};
     use std::path::Path;
 
     // Load config
-    let config = if let Some(cfg_path) = config_path {
+    let mut config = if let Some(cfg_path) = config_path {
         match LintConfig::from_file(Path::new(cfg_path)) {
             Ok(cfg) => cfg,
             Err(e) => {
@@ -1871,111 +1762,67 @@ fn lint_path(
         LintConfig::find_and_load()
     };
 
+    // Enable strict evidentiality checking if requested
+    if evidentiality_mode {
+        eprintln!("Evidentiality mode enabled: enforcing data provenance markers");
+        // Set all evidentiality-related lints to Deny
+        config.levels.insert("unvalidated_external_data".to_string(), LintLevel::Deny);
+        config.levels.insert("evidentiality_violation".to_string(), LintLevel::Deny);
+        config.levels.insert("certainty_downgrade".to_string(), LintLevel::Deny);
+        config.levels.insert("evidentiality_mismatch".to_string(), LintLevel::Deny);
+        config.levels.insert("uncertainty_unhandled".to_string(), LintLevel::Warn);
+        config.levels.insert("reported_without_attribution".to_string(), LintLevel::Warn);
+        config.levels.insert("missing_evidentiality_marker".to_string(), LintLevel::Warn);
+    }
+
     let target = Path::new(path);
 
     // Directory linting (--fix not supported for directories yet)
     if target.is_dir() {
-        if apply_fix && !quiet {
+        if apply_fix {
             eprintln!("Warning: --fix is not yet supported for directory linting");
         }
-
-        // Load baseline if requested (for info message only - filtering happens at report level)
-        if use_baseline {
-            if find_baseline().is_some() {
-                if !quiet {
-                    eprintln!("Using baseline: .sigillint-baseline.json");
-                }
-            } else if !quiet {
-                eprintln!("Warning: --baseline specified but no baseline file found");
-                eprintln!("Create one with: sigil lint . --format=json > .sigillint-baseline.json");
-            }
-        }
-
-        // Run the linting
         let result = if parallel {
             lint_directory_parallel(target, config)
         } else {
             lint_directory(target, config)
         };
 
-        // Generate HTML report if requested
-        if let Some(html_file) = html_path {
-            let title = format!("Lint Report: {}", path);
-            if let Err(e) = save_html_report(&result, Path::new(html_file), &title) {
-                eprintln!("Error writing HTML report: {}", e);
-            } else if !quiet {
-                println!("HTML report written to: {}", html_file);
-            }
-        }
-
-        // Generate CI annotations if requested
-        if let Some(ci) = ci_format {
-            let ci_fmt = match ci {
-                "github" => CiFormat::GitHub,
-                "gitlab" => CiFormat::GitLab,
-                _ => {
-                    eprintln!("Unknown CI format '{}', using github", ci);
-                    CiFormat::GitHub
-                }
-            };
-            let annotations = generate_ci_annotations(&result, ci_fmt);
-            println!("{}", annotations);
-            return if result.total_errors > 0 || result.parse_errors > 0 {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
-            };
-        }
-
         match format {
             OutputFormat::Human => {
-                if !quiet {
-                    for (file_path, file_result) in &result.files {
-                        match file_result {
-                            Ok(diagnostics) => {
-                                if diagnostics.is_empty() {
-                                    println!("✓ {} - no issues", file_path);
-                                } else {
-                                    let source = fs::read_to_string(file_path).unwrap_or_default();
-                                    diagnostics.eprint_all(file_path, &source);
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("✗ {} - parse error: {}", file_path, e);
-                            }
-                        }
+                for (file_path, diagnostics) in &result.files {
+                    if diagnostics.is_empty() {
+                        println!("✓ {} - no issues", file_path);
+                    } else {
+                        let source = fs::read_to_string(file_path).unwrap_or_default();
+                        diagnostics.eprint_all(file_path, &source);
                     }
-                    println!();
-                    println!(
-                        "Linted {} file(s): {} warning(s), {} error(s), {} parse error(s)",
-                        result.files.len(),
-                        result.total_warnings,
-                        result.total_errors,
-                        result.parse_errors
-                    );
                 }
+                println!();
+                println!(
+                    "Linted {} file(s): {} warning(s), {} error(s), {} parse error(s)",
+                    result.files.len(),
+                    result.total_warnings,
+                    result.total_errors,
+                    result.parse_errors
+                );
             }
             OutputFormat::Json | OutputFormat::Compact => {
                 let json_result = serde_json::json!({
                     "directory": path,
-                    "files": result.files.iter().map(|(p, r)| {
-                        match r {
-                            Ok(diags) => serde_json::json!({
-                                "file": p,
-                                "success": true,
-                                "warning_count": diags.iter()
-                                    .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
-                                    .count(),
-                                "error_count": diags.iter()
-                                    .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
-                                    .count(),
-                            }),
-                            Err(e) => serde_json::json!({
-                                "file": p,
-                                "success": false,
-                                "error": e,
-                            }),
-                        }
+                    "files": result.files.iter().map(|(p, diags)| {
+                        let has_parse_error = diags.iter()
+                            .any(|d| d.code.as_ref().map_or(false, |c| c.starts_with("P0")));
+                        serde_json::json!({
+                            "file": p,
+                            "success": !has_parse_error,
+                            "warning_count": diags.iter()
+                                .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
+                                .count(),
+                            "error_count": diags.iter()
+                                .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
+                                .count(),
+                        })
                     }).collect::<Vec<_>>(),
                     "total_warnings": result.total_warnings,
                     "total_errors": result.total_errors,
@@ -1990,11 +1837,9 @@ fn lint_path(
             OutputFormat::Sarif => {
                 use sigil_parser::lint::SarifReport;
                 let mut sarif = SarifReport::new();
-                for (file_path, file_result) in &result.files {
-                    if let Ok(diagnostics) = file_result {
-                        if let Ok(source) = fs::read_to_string(file_path) {
-                            sarif.add_file(file_path, diagnostics, &source);
-                        }
+                for (file_path, diagnostics) in &result.files {
+                    if let Ok(source) = fs::read_to_string(file_path) {
+                        sarif.add_file(file_path, diagnostics, &source);
                     }
                 }
                 match sarif.to_json() {
@@ -2041,315 +1886,69 @@ fn lint_path(
         };
 
         // Run the linter with config
-        match lint_source_with_config(&source, path, config) {
-            Ok(diagnostics) => {
-                let warning_count = diagnostics
-                    .iter()
-                    .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
-                    .count();
-                let error_count = diagnostics
-                    .iter()
-                    .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
-                    .count();
+        let diagnostics = lint_source_with_config(&source, path, config);
+        let warning_count = diagnostics.iter()
+            .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Warning)
+            .count();
+        let error_count = diagnostics.iter()
+            .filter(|d| d.severity == sigil_parser::diagnostic::Severity::Error)
+            .count();
 
-                // Apply fixes if requested
-                if apply_fix {
-                    let fix_result = apply_fixes(&source, &diagnostics);
-                    if fix_result.fixes_applied > 0 {
-                        // Write fixed source back to file
-                        if let Err(e) = fs::write(path, &fix_result.source) {
-                            eprintln!("Error writing fixes to '{}': {}", path, e);
-                            return ExitCode::from(1);
-                        }
-                        if format == OutputFormat::Human {
-                            println!("✓ {} - applied {} fix(es)", path, fix_result.fixes_applied);
-                            if fix_result.fixes_skipped > 0 {
-                                println!(
-                                    "  ({} fix(es) skipped due to conflicts)",
-                                    fix_result.fixes_skipped
-                                );
-                            }
-                        }
-                    } else if format == OutputFormat::Human {
-                        println!("✓ {} - no fixes to apply", path);
-                    }
-                    return ExitCode::SUCCESS;
+        // Apply fixes if requested
+        if apply_fix {
+            let fix_result = apply_fixes(&source, &diagnostics);
+            if fix_result.fixes_applied > 0 {
+                // Write fixed source back to file
+                if let Err(e) = fs::write(path, &fix_result.source) {
+                    eprintln!("Error writing fixes to '{}': {}", path, e);
+                    return ExitCode::from(1);
                 }
-
-                match format {
-                    OutputFormat::Human => {
-                        if diagnostics.is_empty() {
-                            println!("✓ {} - no issues found", path);
-                        } else {
-                            diagnostics.eprint_all(path, &source);
-                            println!();
-                            println!(
-                                "Found {} warning(s), {} error(s)",
-                                warning_count, error_count
-                            );
-                        }
-                        if show_stats {
-                            println!();
-                            println!("── Statistics ──");
-                            println!("  Total: {} diagnostics", warning_count + error_count);
-                        }
-                    }
-                    OutputFormat::Json => {
-                        println!("{}", diagnostics.to_json_string(path, &source));
-                    }
-                    OutputFormat::Compact => {
-                        println!("{}", diagnostics.to_json_compact(path, &source));
-                    }
-                    OutputFormat::Sarif => {
-                        let sarif = generate_sarif(path, &diagnostics, &source);
-                        match sarif.to_json() {
-                            Ok(json) => println!("{}", json),
-                            Err(e) => eprintln!("Error generating SARIF: {}", e),
-                        }
-                    }
-                }
-
-                if error_count > 0 {
-                    ExitCode::from(1)
-                } else {
-                    ExitCode::SUCCESS
-                }
-            }
-            Err(e) => {
-                // e is a String from lint_source_with_config, convert to diagnostic
-                let diag = Diagnostic::error(&e, Span::default()).with_code("E0005");
                 if format == OutputFormat::Human {
-                    diag.eprint(path, &source);
+                    println!("✓ {} - applied {} fix(es)", path, fix_result.fixes_applied);
+                    if fix_result.fixes_skipped > 0 {
+                        println!("  ({} fix(es) skipped due to conflicts)", fix_result.fixes_skipped);
+                    }
+                }
+            } else if format == OutputFormat::Human {
+                println!("✓ {} - no fixes to apply", path);
+            }
+            return ExitCode::SUCCESS;
+        }
+
+        match format {
+            OutputFormat::Human => {
+                if diagnostics.is_empty() {
+                    println!("✓ {} - no issues found", path);
                 } else {
-                    let mut diagnostics = Diagnostics::new();
-                    diagnostics.add(diag);
-                    if format == OutputFormat::Json {
-                        println!("{}", diagnostics.to_json_string(path, &source));
-                    } else {
-                        println!("{}", diagnostics.to_json_compact(path, &source));
-                    }
+                    diagnostics.eprint_all(path, &source);
+                    println!();
+                    println!("Found {} warning(s), {} error(s)", warning_count, error_count);
                 }
-                ExitCode::from(1)
+                if show_stats {
+                    println!();
+                    println!("── Statistics ──");
+                    println!("  Total: {} diagnostics", warning_count + error_count);
+                }
+            }
+            OutputFormat::Json => {
+                println!("{}", diagnostics.to_json_string(path, &source));
+            }
+            OutputFormat::Compact => {
+                println!("{}", diagnostics.to_json_compact(path, &source));
+            }
+            OutputFormat::Sarif => {
+                let sarif = generate_sarif(path, &diagnostics, &source);
+                match sarif.to_json() {
+                    Ok(json) => println!("{}", json),
+                    Err(e) => eprintln!("Error generating SARIF: {}", e),
+                }
             }
         }
-    }
-}
 
-/// Generate pre-commit hook for git.
-fn lint_setup_hooks() -> ExitCode {
-    use sigil_parser::lint::generate_pre_commit_hook;
-
-    match generate_pre_commit_hook() {
-        Ok(path) => {
-            println!("Pre-commit hook installed: {}", path.display());
-            println!();
-            println!("The hook will lint all staged .sg and .sigil files before each commit.");
-            println!("To skip the hook temporarily, use: git commit --no-verify");
+        if error_count > 0 {
+            ExitCode::from(1)
+        } else {
             ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Error installing pre-commit hook: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Lint only files with uncommitted changes.
-fn lint_changed_only(args: Vec<String>) -> ExitCode {
-    use sigil_parser::lint::{lint_changed_files, LintConfig};
-
-    let config = LintConfig::find_and_load();
-    let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
-    let format = if args.iter().any(|a| a == "--format=json") {
-        OutputFormat::Json
-    } else if args.iter().any(|a| a == "--format=compact") {
-        OutputFormat::Compact
-    } else {
-        OutputFormat::Human
-    };
-
-    match lint_changed_files(config) {
-        Ok(result) => {
-            if result.files.is_empty() {
-                if !quiet {
-                    println!("No changed Sigil files to lint.");
-                }
-                return ExitCode::SUCCESS;
-            }
-
-            match format {
-                OutputFormat::Human => {
-                    if !quiet {
-                        for (file_path, file_result) in &result.files {
-                            match file_result {
-                                Ok(diagnostics) => {
-                                    if diagnostics.is_empty() {
-                                        println!("✓ {} - no issues", file_path);
-                                    } else {
-                                        let source =
-                                            fs::read_to_string(file_path).unwrap_or_default();
-                                        diagnostics.eprint_all(file_path, &source);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("✗ {} - parse error: {}", file_path, e);
-                                }
-                            }
-                        }
-                        println!();
-                        println!(
-                            "Linted {} changed file(s): {} warning(s), {} error(s)",
-                            result.files.len(),
-                            result.total_warnings,
-                            result.total_errors
-                        );
-                    }
-                }
-                OutputFormat::Json | OutputFormat::Compact => {
-                    let mut files_json = Vec::new();
-                    for (p, r) in &result.files {
-                        let entry = match r {
-                            Ok(diags) => serde_json::json!({
-                                "file": p,
-                                "success": true,
-                                "diagnostics": diags.iter().count(),
-                            }),
-                            Err(e) => serde_json::json!({
-                                "file": p,
-                                "success": false,
-                                "error": e,
-                            }),
-                        };
-                        files_json.push(entry);
-                    }
-                    let json_result = serde_json::json!({
-                        "mode": "changed_files",
-                        "files": files_json,
-                        "total_warnings": result.total_warnings,
-                        "total_errors": result.total_errors,
-                    });
-                    if format == OutputFormat::Json {
-                        println!("{}", serde_json::to_string_pretty(&json_result).unwrap());
-                    } else {
-                        println!("{}", serde_json::to_string(&json_result).unwrap());
-                    }
-                }
-                OutputFormat::Sarif => {
-                    eprintln!("SARIF output not supported for --changed mode");
-                }
-            }
-
-            if result.total_errors > 0 || result.parse_errors > 0 {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
-            }
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Lint files changed since a specific commit.
-fn lint_since(commit: &str, args: Vec<String>) -> ExitCode {
-    use sigil_parser::lint::{lint_changed_since, LintConfig};
-
-    let config = LintConfig::find_and_load();
-    let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
-    let format = if args.iter().any(|a| a == "--format=json") {
-        OutputFormat::Json
-    } else if args.iter().any(|a| a == "--format=compact") {
-        OutputFormat::Compact
-    } else {
-        OutputFormat::Human
-    };
-
-    match lint_changed_since(commit, config) {
-        Ok(result) => {
-            if result.files.is_empty() {
-                if !quiet {
-                    println!("No Sigil files changed since '{}'.", commit);
-                }
-                return ExitCode::SUCCESS;
-            }
-
-            match format {
-                OutputFormat::Human => {
-                    if !quiet {
-                        println!("Linting files changed since '{}':", commit);
-                        println!();
-                        for (file_path, file_result) in &result.files {
-                            match file_result {
-                                Ok(diagnostics) => {
-                                    if diagnostics.is_empty() {
-                                        println!("✓ {} - no issues", file_path);
-                                    } else {
-                                        let source =
-                                            fs::read_to_string(file_path).unwrap_or_default();
-                                        diagnostics.eprint_all(file_path, &source);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("✗ {} - parse error: {}", file_path, e);
-                                }
-                            }
-                        }
-                        println!();
-                        println!(
-                            "Linted {} file(s) changed since '{}': {} warning(s), {} error(s)",
-                            result.files.len(),
-                            commit,
-                            result.total_warnings,
-                            result.total_errors
-                        );
-                    }
-                }
-                OutputFormat::Json | OutputFormat::Compact => {
-                    let mut files_json = Vec::new();
-                    for (p, r) in &result.files {
-                        let entry = match r {
-                            Ok(diags) => serde_json::json!({
-                                "file": p,
-                                "success": true,
-                                "diagnostics": diags.iter().count(),
-                            }),
-                            Err(e) => serde_json::json!({
-                                "file": p,
-                                "success": false,
-                                "error": e,
-                            }),
-                        };
-                        files_json.push(entry);
-                    }
-                    let json_result = serde_json::json!({
-                        "mode": "since",
-                        "base_commit": commit,
-                        "files": files_json,
-                        "total_warnings": result.total_warnings,
-                        "total_errors": result.total_errors,
-                    });
-                    if format == OutputFormat::Json {
-                        println!("{}", serde_json::to_string_pretty(&json_result).unwrap());
-                    } else {
-                        println!("{}", serde_json::to_string(&json_result).unwrap());
-                    }
-                }
-                OutputFormat::Sarif => {
-                    eprintln!("SARIF output not supported for --since mode");
-                }
-            }
-
-            if result.total_errors > 0 || result.parse_errors > 0 {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
-            }
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            ExitCode::from(1)
         }
     }
 }
@@ -2395,19 +1994,12 @@ fn lint_watch(path: &str, format: OutputFormat, config_path: Option<&str>) -> Ex
 
         match format {
             OutputFormat::Human => {
-                for (file_path, file_result) in &result.files {
-                    match file_result {
-                        Ok(diagnostics) => {
-                            if diagnostics.is_empty() {
-                                println!("✓ {}", file_path);
-                            } else {
-                                let source = fs::read_to_string(file_path).unwrap_or_default();
-                                diagnostics.eprint_all(file_path, &source);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("✗ {} - {}", file_path, e);
-                        }
+                for (file_path, diagnostics) in &result.files {
+                    if diagnostics.is_empty() {
+                        println!("✓ {}", file_path);
+                    } else {
+                        let source = fs::read_to_string(file_path).unwrap_or_default();
+                        diagnostics.eprint_all(file_path, &source);
                     }
                 }
                 println!();
@@ -2438,11 +2030,9 @@ fn lint_watch(path: &str, format: OutputFormat, config_path: Option<&str>) -> Ex
             OutputFormat::Sarif => {
                 use sigil_parser::lint::SarifReport;
                 let mut sarif = SarifReport::new();
-                for (file_path, file_result) in &result.files {
-                    if let Ok(diagnostics) = file_result {
-                        if let Ok(source) = fs::read_to_string(file_path) {
-                            sarif.add_file(file_path, diagnostics, &source);
-                        }
+                for (file_path, diagnostics) in &result.files {
+                    if let Ok(source) = fs::read_to_string(file_path) {
+                        sarif.add_file(file_path, diagnostics, &source);
                     }
                 }
                 if let Ok(json) = sarif.to_json() {
@@ -2479,8 +2069,7 @@ fn dump_ir_file(path: &str, pretty: bool, output: Option<&str>) -> ExitCode {
     let ast = match parser.parse_file() {
         Ok(ast) => ast,
         Err(e) => {
-            let diag: Diagnostic = e.into();
-            diag.eprint(path, &source);
+            eprintln!("Parse error in '{}': {}", path, e);
             return ExitCode::from(1);
         }
     };
@@ -2514,6 +2103,236 @@ fn dump_ir_file(path: &str, pretty: bool, output: Option<&str>) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Extract SGDOC documentation from a Sigil source file
+fn doc_extract_file(path: &str, format: &str, output: Option<&str>) -> ExitCode {
+    use sigil_parser::ast::{DocComment, Evidentiality, Item};
+    use std::collections::HashMap;
+
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Parse the source
+    let mut parser = Parser::new(&source);
+    let ast = match parser.parse_file() {
+        Ok(ast) => ast,
+        Err(e) => {
+            eprintln!("Parse error in '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Helper to convert evidentiality to string
+    fn ev_to_str(ev: &Evidentiality) -> &'static str {
+        match ev {
+            Evidentiality::Known => "verified",
+            Evidentiality::Reported => "reported",
+            Evidentiality::Uncertain => "uncertain",
+            Evidentiality::Predicted => "predicted",
+            Evidentiality::Paradox => "paradox",
+        }
+    }
+
+    fn ev_to_badge(ev: &Evidentiality) -> &'static str {
+        match ev {
+            Evidentiality::Known => "✓",
+            Evidentiality::Reported => "○",
+            Evidentiality::Uncertain => "?",
+            Evidentiality::Predicted => "◊",
+            Evidentiality::Paradox => "‽",
+        }
+    }
+
+    fn type_expr_to_string(ty: &sigil_parser::ast::TypeExpr) -> String {
+        use sigil_parser::ast::TypeExpr;
+        match ty {
+            TypeExpr::Path(path) => path.segments.iter()
+                .map(|seg| seg.ident.name.clone())
+                .collect::<Vec<_>>()
+                .join("::"),
+            _ => "?".to_string(),
+        }
+    }
+
+    fn type_path_to_string(path: &sigil_parser::ast::TypePath) -> String {
+        path.segments.iter()
+            .map(|seg| seg.ident.name.clone())
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+
+    // Extract documented items
+    #[derive(Debug)]
+    struct DocSection {
+        name: String,
+        item_type: String,
+        claims: Vec<(String, String, bool, usize)>, // (content, evidentiality, is_inner, line)
+    }
+
+    let mut sections = Vec::new();
+
+    for spanned_item in &ast.items {
+        let item = &spanned_item.node;
+        let (doc_comments, name, item_type): (&Vec<DocComment>, String, &str) = match item {
+            Item::Function(f) => (&f.doc_comments, f.name.name.clone(), "function"),
+            Item::Struct(s) => (&s.doc_comments, s.name.name.clone(), "struct"),
+            Item::Enum(e) => (&e.doc_comments, e.name.name.clone(), "enum"),
+            Item::Trait(t) => (&t.doc_comments, t.name.name.clone(), "trait"),
+            Item::Impl(i) => {
+                let name = match &i.trait_ {
+                    Some(t) => format!("{}::{}", type_path_to_string(t), type_expr_to_string(&i.self_ty)),
+                    None => format!("impl {}", type_expr_to_string(&i.self_ty)),
+                };
+                (&i.doc_comments, name, "impl")
+            }
+            Item::Module(m) => (&m.doc_comments, m.name.name.clone(), "module"),
+            Item::Const(c) => (&c.doc_comments, c.name.name.clone(), "const"),
+            Item::Static(s) => (&s.doc_comments, s.name.name.clone(), "static"),
+            _ => continue,
+        };
+
+        if doc_comments.is_empty() {
+            continue;
+        }
+
+        let claims: Vec<(String, String, bool, usize)> = doc_comments.iter().map(|dc| {
+            (dc.content.clone(), ev_to_str(&dc.evidentiality).to_string(), dc.is_inner, dc.span.start)
+        }).collect();
+
+        sections.push(DocSection {
+            name,
+            item_type: item_type.to_string(),
+            claims,
+        });
+    }
+
+    // Format output
+    let file_name = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("untitled");
+
+    let result = match format {
+        "markdown" | "md" => {
+            let mut md = String::new();
+            md.push_str(&format!("# Documentation: {}\n\n", file_name));
+            md.push_str(&format!("Auto-extracted documentation from {}\n\n", path));
+
+            for (i, section) in sections.iter().enumerate() {
+                let section_id = format!("{}.{}", i + 1, section.item_type.chars().next().unwrap_or('x'));
+                md.push_str(&format!("## {} {}\n\n", section_id, section.name));
+
+                for (content, ev, _is_inner, _line) in &section.claims {
+                    let badge = match ev.as_str() {
+                        "verified" => "✓",
+                        "reported" => "○",
+                        "uncertain" => "?",
+                        "predicted" => "◊",
+                        "paradox" => "‽",
+                        _ => "-",
+                    };
+                    md.push_str(&format!("- {} {}\n", badge, content));
+                }
+                md.push('\n');
+            }
+            md
+        }
+        "html" => {
+            let mut html = String::new();
+            html.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+            html.push_str("<meta charset=\"UTF-8\">\n");
+            html.push_str(&format!("<title>Documentation: {}</title>\n", file_name));
+            html.push_str("<style>\n");
+            html.push_str("body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 2em; }\n");
+            html.push_str(".claim { padding: 0.5em 1em; margin: 0.25em 0; border-left: 4px solid; }\n");
+            html.push_str(".verified { border-color: #22c55e; background: #f0fdf4; }\n");
+            html.push_str(".reported { border-color: #3b82f6; background: #eff6ff; }\n");
+            html.push_str(".uncertain { border-color: #f59e0b; background: #fffbeb; }\n");
+            html.push_str(".predicted { border-color: #8b5cf6; background: #f5f3ff; }\n");
+            html.push_str(".paradox { border-color: #ef4444; background: #fef2f2; }\n");
+            html.push_str(".badge { font-weight: bold; margin-right: 0.5em; }\n");
+            html.push_str("</style>\n</head>\n<body>\n");
+            html.push_str(&format!("<h1>Documentation: {}</h1>\n", file_name));
+            html.push_str(&format!("<p>Auto-extracted documentation from {}</p>\n", path));
+
+            for (i, section) in sections.iter().enumerate() {
+                let section_id = format!("{}.{}", i + 1, section.item_type.chars().next().unwrap_or('x'));
+                html.push_str(&format!("<h2 id=\"section-{}\">{} {}</h2>\n", section_id, section_id, section.name));
+                html.push_str("<div class=\"claims\">\n");
+
+                for (content, ev, _is_inner, _line) in &section.claims {
+                    let (css_class, badge) = match ev.as_str() {
+                        "verified" => ("verified", "✓"),
+                        "reported" => ("reported", "○"),
+                        "uncertain" => ("uncertain", "?"),
+                        "predicted" => ("predicted", "◊"),
+                        "paradox" => ("paradox", "‽"),
+                        _ => ("", "-"),
+                    };
+                    html.push_str(&format!(
+                        "<div class=\"claim {}\"><span class=\"badge\">{}</span>{}</div>\n",
+                        css_class, badge, content
+                    ));
+                }
+                html.push_str("</div>\n");
+            }
+            html.push_str("</body>\n</html>");
+            html
+        }
+        _ => {
+            // JSON format (default)
+            let mut json = String::new();
+            json.push_str("{\n");
+            json.push_str(&format!("  \"title\": \"Documentation: {}\",\n", file_name));
+            json.push_str(&format!("  \"source\": \"{}\",\n", path));
+            json.push_str("  \"sections\": [\n");
+
+            for (i, section) in sections.iter().enumerate() {
+                if i > 0 { json.push_str(",\n"); }
+                json.push_str("    {\n");
+                json.push_str(&format!("      \"name\": \"{}\",\n", section.name));
+                json.push_str(&format!("      \"type\": \"{}\",\n", section.item_type));
+                json.push_str("      \"claims\": [\n");
+
+                for (j, (content, ev, is_inner, line)) in section.claims.iter().enumerate() {
+                    if j > 0 { json.push_str(",\n"); }
+                    json.push_str("        {\n");
+                    json.push_str(&format!("          \"content\": \"{}\",\n", content.replace('\\', "\\\\").replace('"', "\\\"")));
+                    json.push_str(&format!("          \"evidentiality\": \"{}\",\n", ev));
+                    json.push_str(&format!("          \"is_inner\": {},\n", is_inner));
+                    json.push_str(&format!("          \"line\": {}\n", line));
+                    json.push_str("        }");
+                }
+                json.push_str("\n      ]\n");
+                json.push_str("    }");
+            }
+            json.push_str("\n  ]\n");
+            json.push_str("}\n");
+            json
+        }
+    };
+
+    // Output
+    match output {
+        Some(output_path) => {
+            if let Err(e) = fs::write(output_path, &result) {
+                eprintln!("Error writing to '{}': {}", output_path, e);
+                return ExitCode::from(1);
+            }
+            eprintln!("Documentation written to: {}", output_path);
+        }
+        None => {
+            println!("{}", result);
+        }
+    }
+
+    ExitCode::SUCCESS
+}
+
 fn parse_file(path: &str) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
@@ -2534,8 +2353,7 @@ fn parse_file(path: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            let diag: Diagnostic = e.into();
-            diag.eprint(path, &source);
+            eprintln!("Parse error in '{}': {}", path, e);
             ExitCode::from(1)
         }
     }
@@ -2599,10 +2417,7 @@ fn print_item_summary(item: &sigil_parser::Item) {
             println!("  macro {}", m.name.name);
         }
         Item::MacroInvocation(m) => {
-            let path_str: String = m
-                .path
-                .segments
-                .iter()
+            let path_str: String = m.path.segments.iter()
                 .map(|s| s.ident.name.as_str())
                 .collect::<Vec<_>>()
                 .join("::");
@@ -2615,35 +2430,18 @@ fn print_item_summary(item: &sigil_parser::Item) {
                     println!("  alter {} ({:?})", a.name.name, a.category);
                 }
                 PluralityItem::Headspace(h) => {
-                    println!(
-                        "  headspace {} ({} locations)",
-                        h.name.name,
-                        h.locations.len()
-                    );
+                    println!("  headspace {} ({} locations)", h.name.name, h.locations.len());
                 }
                 PluralityItem::Reality(r) => {
                     println!("  reality {} ({} layers)", r.name.name, r.layers.len());
                 }
                 PluralityItem::CoConChannel(c) => {
-                    println!(
-                        "  cocon {} ({} participants)",
-                        c.name.name,
-                        c.participants.len()
-                    );
+                    println!("  cocon {} ({} participants)", c.name.name, c.participants.len());
                 }
                 PluralityItem::TriggerHandler(_) => {
                     println!("  trigger handler");
                 }
             }
-        }
-        Item::Form(f) => {
-            println!("  form {}", f.name.name);
-        }
-        Item::Translations(t) => {
-            println!("  translations {}", t.name.name);
-        }
-        Item::LocaleEnum(l) => {
-            println!("  locale_enum {}", l.name.name);
         }
     }
 }
@@ -2706,12 +2504,12 @@ impl SigilHighlighter {
             | Token::If
             | Token::Else
             | Token::While
-            | Token::For
-            | Token::In
+            | Token::ForAll
+            | Token::ElementOf
             | Token::Match
             | Token::Return
-            | Token::Break
-            | Token::Continue
+            | Token::Tensor
+            | Token::CycleArrow
             | Token::Struct
             | Token::Enum
             | Token::Impl
@@ -2764,7 +2562,7 @@ impl SigilHighlighter {
             Token::Bang | Token::Question | Token::Tilde | Token::Interrobang => colors::EVIDENCE,
 
             // Special symbols
-            Token::Hourglass
+            Token::Async
             | Token::Circle
             | Token::Empty
             | Token::Infinity
@@ -2810,7 +2608,7 @@ impl SigilHighlighter {
             | Token::Pipe
             | Token::Arrow
             | Token::FatArrow
-            | Token::ColonColon => colors::OPERATOR,
+            | Token::MiddleDot => colors::OPERATOR,
 
             // Identifiers - check for common stdlib functions
             Token::Ident(name) => {
@@ -3461,43 +3259,6 @@ fn init_project() -> ExitCode {
 }
 
 /// Run tests in the current project
-/// Collect all test functions from AST, including those in modules
-fn collect_test_functions(
-    items: &[sigil_parser::span::Spanned<sigil_parser::ast::Item>],
-    prefix: &str,
-) -> Vec<String> {
-    let mut tests = Vec::new();
-
-    for item in items {
-        match &item.node {
-            sigil_parser::ast::Item::Function(func) => {
-                if func.attrs.test {
-                    let name = if prefix.is_empty() {
-                        func.name.name.clone()
-                    } else {
-                        format!("{}·{}", prefix, func.name.name)
-                    };
-                    tests.push(name);
-                }
-            }
-            sigil_parser::ast::Item::Module(module) => {
-                // Recursively look for test functions in modules
-                if let Some(module_items) = &module.items {
-                    let new_prefix = if prefix.is_empty() {
-                        module.name.name.clone()
-                    } else {
-                        format!("{}·{}", prefix, module.name.name)
-                    };
-                    tests.extend(collect_test_functions(module_items, &new_prefix));
-                }
-            }
-            _ => {}
-        }
-    }
-
-    tests
-}
-
 fn run_tests() -> ExitCode {
     use std::path::Path;
 
@@ -3506,24 +3267,18 @@ fn run_tests() -> ExitCode {
     let mut test_files = Vec::new();
 
     if tests_dir.exists() {
-        // Recursively find all .sigil and .sg files
-        fn find_test_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
-            if let Ok(entries) = fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        find_test_files(&path, files);
-                    } else if path
-                        .extension()
-                        .map(|e| e == "sigil" || e == "sg")
-                        .unwrap_or(false)
-                    {
-                        files.push(path);
-                    }
+        if let Ok(entries) = fs::read_dir(tests_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path
+                    .extension()
+                    .map(|e| e == "sigil" || e == "sg")
+                    .unwrap_or(false)
+                {
+                    test_files.push(path);
                 }
             }
         }
-        find_test_files(tests_dir, &mut test_files);
     }
 
     if test_files.is_empty() {
@@ -3534,14 +3289,11 @@ fn run_tests() -> ExitCode {
         println!();
         println!("With test functions:");
         println!("  #[test]");
-        println!("  rite test_something() {{");
+        println!("  fn test_something() {{");
         println!("      assert_eq(1 + 1, 2);");
         println!("  }}");
         return ExitCode::SUCCESS;
     }
-
-    // Sort files for consistent output
-    test_files.sort();
 
     println!("Running tests...");
     println!();
@@ -3549,7 +3301,6 @@ fn run_tests() -> ExitCode {
     let mut total_tests = 0;
     let mut passed_tests = 0;
     let mut failed_tests = 0;
-    let mut failed_details: Vec<(String, String)> = Vec::new();
 
     for test_file in &test_files {
         // Parse file
@@ -3586,91 +3337,66 @@ fn run_tests() -> ExitCode {
             }
         };
 
-        // Type check (disabled for now - Samael uses many external types)
-        // let mut type_checker = TypeChecker::new();
-        // if let Err(errors) = type_checker.check_file(&ast) { ... }
-
-        // Collect ALL test functions, including those in modules
-        let test_names = collect_test_functions(&ast.items, "");
-
-        if test_names.is_empty() {
-            continue;
-        }
-
-        let file_stem = test_file.file_stem().unwrap_or_default().to_string_lossy();
-
-        // Execute the file to register all functions
-        let mut interpreter = Interpreter::new();
-        register_stdlib(&mut interpreter);
-
-        // Discover project root and load workspace members
-        if let Some(parent) = test_file.parent() {
-            let _ = interpreter.discover_project(&parent.to_string_lossy());
-        }
-
-        if let Err(e) = interpreter.execute(&ast) {
+        // Type check
+        let mut type_checker = TypeChecker::new();
+        if let Err(errors) = type_checker.check_file(&ast) {
             println!(
-                "  {}✗{} {} - execution error: {}",
+                "  {}✗{} {} - type error:",
                 colors::ERROR,
                 colors::RESET,
-                file_stem,
-                e
+                test_file.display()
             );
-            for test_name in &test_names {
-                failed_details.push((format!("{}::{}", file_stem, test_name), e.to_string()));
+            for err in &errors {
+                println!("      {}", err.message);
             }
-            failed_tests += test_names.len();
-            total_tests += test_names.len();
+            failed_tests += 1;
+            total_tests += 1;
             continue;
         }
 
-        // Now run each test function individually
-        for test_name in &test_names {
-            total_tests += 1;
+        // Count test functions and run the file
+        let mut file_tests = 0;
+        for item in &ast.items {
+            if let sigil_parser::ast::Item::Function(func) = &item.node {
+                // Check the test flag in FunctionAttrs
+                if func.attrs.test {
+                    file_tests += 1;
+                }
+            }
+        }
 
-            // Call the test function
-            match interpreter.call_function_by_name(test_name, vec![]) {
+        if file_tests > 0 {
+            // Execute the test file
+            let mut interpreter = Interpreter::new();
+            register_stdlib(&mut interpreter);
+
+            match interpreter.execute(&ast) {
                 Ok(_) => {
                     println!(
-                        "  {}✓{} {}::{}",
+                        "  {}✓{} {} ({} tests)",
                         colors::GREEN,
                         colors::RESET,
-                        file_stem,
-                        test_name
+                        test_file.file_stem().unwrap_or_default().to_string_lossy(),
+                        file_tests
                     );
-                    passed_tests += 1;
+                    passed_tests += file_tests;
                 }
                 Err(e) => {
                     println!(
-                        "  {}✗{} {}::{}",
+                        "  {}✗{} {} - runtime error: {}",
                         colors::ERROR,
                         colors::RESET,
-                        file_stem,
-                        test_name
+                        test_file.file_stem().unwrap_or_default().to_string_lossy(),
+                        e
                     );
-                    failed_details.push((format!("{}::{}", file_stem, test_name), e.to_string()));
-                    failed_tests += 1;
+                    failed_tests += file_tests;
                 }
             }
+            total_tests += file_tests;
         }
     }
 
     println!();
-
-    // Print failure details
-    if !failed_details.is_empty() {
-        println!("{}Failures:{}", colors::ERROR, colors::RESET);
-        for (name, error) in &failed_details {
-            println!();
-            println!("  {}:", name);
-            // Indent error message
-            for line in error.lines() {
-                println!("    {}", line);
-            }
-        }
-        println!();
-    }
-
     if total_tests == 0 {
         println!("No test functions found (functions with #[test] attribute)");
         ExitCode::SUCCESS
@@ -3751,13 +3477,11 @@ fn build_project() -> ExitCode {
     };
 
     // Parse
-    let main_file_str = main_file.to_string_lossy();
     let mut parser = Parser::new(&source);
     let ast = match parser.parse_file() {
         Ok(ast) => ast,
         Err(e) => {
-            let diag: Diagnostic = e.into();
-            diag.eprint(&main_file_str, &source);
+            eprintln!("Parse error: {}", e);
             return ExitCode::from(1);
         }
     };
@@ -3766,8 +3490,10 @@ fn build_project() -> ExitCode {
     let mut type_checker = TypeChecker::new();
     if let Err(errors) = type_checker.check_file(&ast) {
         for err in errors {
-            let diag: Diagnostic = (&err).into();
-            diag.eprint(&main_file_str, &source);
+            eprintln!("Error: {}", err.message);
+            for note in &err.notes {
+                eprintln!("  note: {}", note);
+            }
         }
         return ExitCode::from(1);
     }
@@ -3778,7 +3504,7 @@ fn build_project() -> ExitCode {
         let output_path = target_dir.join(name);
         let output_str = output_path.to_string_lossy();
         println!("Compiling to native executable...");
-        return compile_file(&main_file.to_string_lossy(), &output_str, false, false);
+        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, false, false, OptLevel::Standard);
     }
 
     #[cfg(not(feature = "llvm"))]
@@ -3791,9 +3517,306 @@ fn build_project() -> ExitCode {
     }
 }
 
+/// Migrate a file from Rust syntax to native Sigil syntax.
+///
+/// Converts deprecated Rust keywords to their Sigil equivalents:
+/// - fn → λ (lambda)
+/// - let → ≔ (definition)
+/// - mut → Δ (delta/mutable)
+/// - struct → Σ (sigma)
+/// - impl → ⊢ (turnstile)
+/// - trait → Θ (theta)
+/// - enum → ᛈ (perthro rune)
+/// - pub → ☉ (sun/public)
+/// - mod → scroll
+/// - use → invoke
+/// - if → ⎇ (branch)
+/// - else → ⎉ (alternative)
+/// - match → ⌥ (option)
+/// - while → ⟳ (cycle)
+/// - for → ∀ (forall)
+/// - in → ∈ (element-of)
+/// - return → ⤺ (return-arrow)
+/// - break → ⊗ (tensor/break)
+/// - continue → ↻ (cycle-arrow)
+/// - :: → · (middledot)
+/// - &mut → &Δ
+///
+/// With --evidentiality flag, also adds evidentiality markers to external data sources:
+/// - Http·get/post/request → ~ (Reported)
+/// - File·read/write → ~ (Reported)
+/// - Env·var → ? (Uncertain)
+/// - stdin/readline → ? (Uncertain)
+/// - Model·predict/infer → ◊ (Predicted)
+/// - rand/random → ? (Uncertain)
+/// - Time·now → ~ (Reported)
+fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Simple replacements (not keywords - always replace)
+    let simple_replacements = [
+        ("::", "·"),
+    ];
+
+    // Keyword replacements - require word boundary before (start of line, whitespace, or punctuation)
+    // Format: (keyword, replacement, suffixes_to_match)
+    let keyword_replacements: &[(&str, &str, &[&str])] = &[
+        ("&mut", "&Δ", &[" ", "\t", "("]),
+        ("fn", "λ", &[" ", "("]),
+        ("let", "≔", &[" ", "\t"]),
+        ("mut", "Δ", &[" ", ","]),
+        ("struct", "Σ", &[" "]),
+        ("impl", "⊢", &[" ", "<"]),
+        ("trait", "Θ", &[" "]),
+        ("enum", "ᛈ", &[" "]),
+        ("pub", "☉", &[" ", "("]),
+        ("mod", "scroll", &[" "]),
+        ("use", "invoke", &[" "]),
+        ("if", "⎇", &[" ", "("]),
+        ("else", "⎉", &[" ", "{"]),
+        ("match", "⌥", &[" ", "("]),
+        ("while", "⟳", &[" ", "("]),
+        ("for", "∀", &[" ", "("]),
+        ("return", "⤺", &[" ", ";", "("]),
+        ("break", "⊗", &[";", " "]),
+        ("continue", "↻", &[";", " "]),
+    ];
+
+    let mut result = source.clone();
+    let mut changes = 0;
+    let mut ev_changes = 0;
+
+    // Apply simple replacements
+    for (from, to) in &simple_replacements {
+        let count = result.matches(from).count();
+        if count > 0 {
+            changes += count;
+            result = result.replace(from, to);
+        }
+    }
+
+    // Apply keyword replacements with word boundary check
+    for (keyword, replacement, suffixes) in keyword_replacements {
+        for suffix in *suffixes {
+            let pattern = format!("{}{}", keyword, suffix);
+            let replacement_str = format!("{}{}", replacement, suffix);
+
+            // Only replace if preceded by word boundary (start, whitespace, newline, or certain punctuation)
+            let mut new_result = String::with_capacity(result.len());
+            let mut last_end = 0;
+
+            for (idx, _) in result.match_indices(&pattern) {
+                // Check if this is at a word boundary
+                let is_word_boundary = if idx == 0 {
+                    true
+                } else {
+                    let prev_char = result[..idx].chars().last().unwrap();
+                    !prev_char.is_alphanumeric() && prev_char != '_'
+                };
+
+                if is_word_boundary {
+                    new_result.push_str(&result[last_end..idx]);
+                    new_result.push_str(&replacement_str);
+                    last_end = idx + pattern.len();
+                    changes += 1;
+                }
+            }
+            new_result.push_str(&result[last_end..]);
+            result = new_result;
+        }
+    }
+
+    // Special case: " in " -> " ∈ " (always safe, has spaces on both sides)
+    let in_count = result.matches(" in ").count();
+    if in_count > 0 {
+        changes += in_count;
+        result = result.replace(" in ", " ∈ ");
+    }
+
+    // Apply evidentiality markers if requested
+    if evidentiality {
+        // External data source patterns and their markers
+        // Format: (pattern, marker_symbol, marker_name)
+        let external_data_sources: &[(&str, &str, &str)] = &[
+            // HTTP/Network - Reported (~)
+            ("Http·get", "~", "Reported"),
+            ("Http·post", "~", "Reported"),
+            ("Http·put", "~", "Reported"),
+            ("Http·delete", "~", "Reported"),
+            ("Http·request", "~", "Reported"),
+            ("fetch(", "~", "Reported"),
+            ("TcpStream·connect", "~", "Reported"),
+            ("Socket·recv", "~", "Reported"),
+            ("WebSocket·receive", "~", "Reported"),
+
+            // File I/O - Reported (~)
+            ("File·read", "~", "Reported"),
+            ("File·open", "~", "Reported"),
+            ("fs·read", "~", "Reported"),
+            ("std·fs·read", "~", "Reported"),
+
+            // User Input - Uncertain (?)
+            ("stdin", "?", "Uncertain"),
+            ("readline", "?", "Uncertain"),
+            ("Env·var", "?", "Uncertain"),
+            ("Env·get", "?", "Uncertain"),
+            ("std·env·var", "?", "Uncertain"),
+            ("args()", "?", "Uncertain"),
+
+            // Database - Reported (~)
+            ("Db·query", "~", "Reported"),
+            ("Db·execute", "~", "Reported"),
+            ("query(", "~", "Reported"),
+
+            // System - Reported (~)
+            ("Time·now", "~", "Reported"),
+            ("Instant·now", "~", "Reported"),
+            ("SystemTime·now", "~", "Reported"),
+
+            // Random - Uncertain (?)
+            ("rand·", "?", "Uncertain"),
+            ("random(", "?", "Uncertain"),
+            ("Rng·", "?", "Uncertain"),
+
+            // ML/AI - Predicted (◊)
+            ("Model·predict", "◊", "Predicted"),
+            ("Model·infer", "◊", "Predicted"),
+            ("model·forward", "◊", "Predicted"),
+            ("llm·complete", "◊", "Predicted"),
+            ("llm·chat", "◊", "Predicted"),
+            ("embed(", "◊", "Predicted"),
+
+            // JSON/Parsing - Uncertain (?)
+            ("json·parse", "?", "Uncertain"),
+            ("serde·deserialize", "?", "Uncertain"),
+            ("from_str(", "?", "Uncertain"),
+        ];
+
+        // Look for let bindings with external data sources
+        // Pattern: ≔ <varname> = <external_call>
+        // We need to add marker after varname if not present
+        for (pattern, marker, _name) in external_data_sources {
+            // Find lines with this pattern in a let binding
+            let lines: Vec<&str> = result.lines().collect();
+            let mut new_lines: Vec<String> = Vec::with_capacity(lines.len());
+
+            for line in lines {
+                let mut new_line = line.to_string();
+
+                // Check if line contains the external data pattern
+                if line.contains(pattern) {
+                    // Check if it's a let binding: ≔ varname = ...pattern...
+                    if let Some(let_pos) = line.find("≔ ") {
+                        let after_let = &line[let_pos + "≔ ".len()..];
+
+                        // Find the variable name (up to = or :)
+                        if let Some(eq_pos) = after_let.find(" = ") {
+                            let var_part = &after_let[..eq_pos];
+                            let var_name = var_part.trim();
+
+                            // Check if variable already has an evidentiality marker
+                            let has_marker = var_name.ends_with('!')
+                                || var_name.ends_with('?')
+                                || var_name.ends_with('~')
+                                || var_name.ends_with('◊')
+                                || var_name.ends_with('‽');
+
+                            if !has_marker && !var_name.contains(':') {
+                                // Add the marker after the variable name
+                                let old_pattern = format!("≔ {} = ", var_name);
+                                let new_pattern = format!("≔ {}{} = ", var_name, marker);
+
+                                if line.contains(&old_pattern) {
+                                    new_line = line.replace(&old_pattern, &new_pattern);
+                                    ev_changes += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                new_lines.push(new_line);
+            }
+
+            result = new_lines.join("\n");
+            // Preserve trailing newline if original had one
+            if source.ends_with('\n') && !result.ends_with('\n') {
+                result.push('\n');
+            }
+        }
+    }
+
+    let total_changes = changes + ev_changes;
+
+    if total_changes == 0 {
+        if evidentiality {
+            println!("✓ {} - no migrations needed (syntax and evidentiality up to date)", path);
+        } else {
+            println!("✓ {} - no Rust syntax found, already native Sigil", path);
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    if dry_run {
+        println!("=== Dry run: {} changes would be made to {} ===", total_changes, path);
+        if changes > 0 {
+            println!("  Syntax changes: {}", changes);
+        }
+        if ev_changes > 0 {
+            println!("  Evidentiality markers added: {}", ev_changes);
+        }
+        println!();
+        println!("{}", result);
+        println!();
+        println!("Run without --dry-run to apply changes.");
+        return ExitCode::SUCCESS;
+    }
+
+    // Create backup if requested
+    if backup {
+        let backup_path = format!("{}.bak", path);
+        if let Err(e) = fs::write(&backup_path, &source) {
+            eprintln!("Error creating backup '{}': {}", backup_path, e);
+            return ExitCode::from(1);
+        }
+        println!("Created backup: {}", backup_path);
+    }
+
+    // Write the migrated file
+    if let Err(e) = fs::write(path, &result) {
+        eprintln!("Error writing '{}': {}", path, e);
+        return ExitCode::from(1);
+    }
+
+    println!("✓ Migrated {} ({} replacements)", path, total_changes);
+    println!();
+    if changes > 0 {
+        println!("Converted Rust syntax to native Sigil:");
+        println!("  λ (fn), ≔ (let), Δ (mut), Σ (struct), ⊢ (impl)");
+        println!("  Θ (trait), ᛈ (enum), ☉ (pub), · (::)");
+        println!("  ⎇/⎉ (if/else), ⌥ (match), ⟳ (while), ∀/∈ (for/in)");
+        println!("  ⤺ (return), ⊗ (break), ↻ (continue)");
+    }
+    if ev_changes > 0 {
+        println!();
+        println!("Added evidentiality markers ({} variables):", ev_changes);
+        println!("  ~ (Reported) - HTTP, File I/O, Database, Time");
+        println!("  ? (Uncertain) - User input, Environment, Random, Parsing");
+        println!("  ◊ (Predicted) - ML models, LLM completions");
+    }
+
+    ExitCode::SUCCESS
+}
+
 fn repl() -> ExitCode {
     println!(
-        "{}{}Sigil REPL v0.2.0{}",
+        "{}{}Sigil REPL v0.1.0{}",
         colors::BOLD,
         colors::MORPHEME,
         colors::RESET
@@ -3801,8 +3824,14 @@ fn repl() -> ExitCode {
     println!("A polysynthetic language with evidentiality types.");
     println!();
     println!("{}Commands:{}", colors::DIM, colors::RESET);
+    println!("  {}:help{}     Show help", colors::KEYWORD, colors::RESET);
     println!(
-        "  {}:help{}     Show all commands",
+        "  {}:ast{}      Toggle AST display",
+        colors::KEYWORD,
+        colors::RESET
+    );
+    println!(
+        "  {}:clear{}    Clear screen",
         colors::KEYWORD,
         colors::RESET
     );
@@ -3839,150 +3868,51 @@ fn repl() -> ExitCode {
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);
     let mut show_ast = false;
-    let mut show_timing = false;
-    let mut multiline_buffer = String::new();
-    let mut brace_depth: i32 = 0;
 
     loop {
-        // Determine prompt based on multiline state
-        let prompt = if multiline_buffer.is_empty() {
-            format!("{}sigil>{} ", colors::MORPHEME, colors::RESET)
-        } else {
-            format!("{}...{} ", colors::DIM, colors::RESET)
-        };
-
-        let readline = rl.readline(&prompt);
+        let readline = rl.readline("");
         match readline {
             Ok(line) => {
                 let input = line.trim();
-
-                // Handle empty line in multiline mode
                 if input.is_empty() {
-                    if !multiline_buffer.is_empty() {
-                        // Empty line submits multiline buffer
-                        let full_input = std::mem::take(&mut multiline_buffer);
-                        brace_depth = 0;
-                        let _ = rl.add_history_entry(&full_input);
-                        evaluate_input_with_timing(
-                            &mut interpreter,
-                            &full_input,
-                            show_ast,
-                            show_timing,
-                        );
-                    }
                     continue;
                 }
 
-                // Handle REPL commands (only when not in multiline mode)
-                if multiline_buffer.is_empty() && input.starts_with(':') {
-                    let _ = rl.add_history_entry(input);
-                    match input {
-                        ":exit" | ":quit" | ":q" => break,
-                        ":clear" | ":cls" => {
-                            print!("\x1b[2J\x1b[H"); // Clear screen
-                            continue;
-                        }
-                        ":help" | ":h" | ":?" => {
-                            print_help();
-                            continue;
-                        }
-                        ":symbols" => {
-                            print_symbols();
-                            continue;
-                        }
-                        ":ast" => {
-                            show_ast = !show_ast;
-                            println!(
-                                "AST display: {}{}{}",
-                                colors::KEYWORD,
-                                if show_ast { "on" } else { "off" },
-                                colors::RESET
-                            );
-                            continue;
-                        }
-                        ":timing" | ":time" => {
-                            show_timing = !show_timing;
-                            println!(
-                                "Execution timing: {}{}{}",
-                                colors::KEYWORD,
-                                if show_timing { "on" } else { "off" },
-                                colors::RESET
-                            );
-                            continue;
-                        }
-                        ":reset" => {
-                            interpreter = Interpreter::new();
-                            register_stdlib(&mut interpreter);
-                            println!("{}Interpreter state reset.{}", colors::DIM, colors::RESET);
-                            continue;
-                        }
-                        ":vars" | ":env" => {
-                            print_variables(&interpreter);
-                            continue;
-                        }
-                        _ if input.starts_with(":load ") => {
-                            let file_path = input.strip_prefix(":load ").unwrap().trim();
-                            load_file_into_repl(&mut interpreter, file_path, show_ast, show_timing);
-                            continue;
-                        }
-                        _ if input.starts_with(":type ") => {
-                            let expr = input.strip_prefix(":type ").unwrap().trim();
-                            show_expression_type(&interpreter, expr);
-                            continue;
-                        }
-                        _ => {
-                            println!(
-                                "{}Unknown command: {}{}",
-                                colors::SPECIAL,
-                                input,
-                                colors::RESET
-                            );
-                            println!(
-                                "{}Type :help for available commands{}",
-                                colors::DIM,
-                                colors::RESET
-                            );
-                            continue;
-                        }
+                let _ = rl.add_history_entry(input);
+
+                // Handle REPL commands
+                match input {
+                    ":exit" | ":quit" | "exit" | "quit" => break,
+                    ":clear" => {
+                        print!("\x1b[2J\x1b[H"); // Clear screen
+                        continue;
                     }
-                }
-
-                // Track brace depth for multiline input
-                for ch in input.chars() {
-                    match ch {
-                        '{' | '(' | '[' => brace_depth += 1,
-                        '}' | ')' | ']' => brace_depth = (brace_depth - 1).max(0),
-                        _ => {}
+                    ":help" => {
+                        print_help();
+                        continue;
                     }
+                    ":symbols" => {
+                        print_symbols();
+                        continue;
+                    }
+                    ":ast" => {
+                        show_ast = !show_ast;
+                        println!(
+                            "AST display: {}{}{}",
+                            colors::KEYWORD,
+                            if show_ast { "on" } else { "off" },
+                            colors::RESET
+                        );
+                        continue;
+                    }
+                    _ => {}
                 }
 
-                // Accumulate multiline input
-                if !multiline_buffer.is_empty() {
-                    multiline_buffer.push('\n');
-                }
-                multiline_buffer.push_str(input);
-
-                // Execute if braces are balanced
-                if brace_depth == 0 {
-                    let full_input = std::mem::take(&mut multiline_buffer);
-                    let _ = rl.add_history_entry(&full_input);
-                    evaluate_input_with_timing(
-                        &mut interpreter,
-                        &full_input,
-                        show_ast,
-                        show_timing,
-                    );
-                }
+                // Try to parse and evaluate
+                evaluate_input(&mut interpreter, input, show_ast);
             }
             Err(ReadlineError::Interrupted) => {
-                if !multiline_buffer.is_empty() {
-                    // Cancel multiline input
-                    multiline_buffer.clear();
-                    brace_depth = 0;
-                    println!("{}(input cancelled){}", colors::DIM, colors::RESET);
-                } else {
-                    println!("{}^C{}", colors::DIM, colors::RESET);
-                }
+                println!("{}^C{}", colors::DIM, colors::RESET);
                 continue;
             }
             Err(ReadlineError::Eof) => {
@@ -4004,92 +3934,6 @@ fn repl() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn evaluate_input_with_timing(
-    interpreter: &mut Interpreter,
-    input: &str,
-    show_ast: bool,
-    show_timing: bool,
-) {
-    let start = std::time::Instant::now();
-    evaluate_input(interpreter, input, show_ast);
-    if show_timing {
-        let elapsed = start.elapsed();
-        println!("{}Executed in {:?}{}", colors::DIM, elapsed, colors::RESET);
-    }
-}
-
-fn print_variables(_interpreter: &Interpreter) {
-    println!(
-        "{}{}Current Variables:{}",
-        colors::BOLD,
-        colors::MORPHEME,
-        colors::RESET
-    );
-    println!();
-    println!(
-        "{}Use expressions to inspect values, e.g.: x{}",
-        colors::DIM,
-        colors::RESET
-    );
-    println!(
-        "{}Define variables with: let name = value;{}",
-        colors::DIM,
-        colors::RESET
-    );
-}
-
-fn load_file_into_repl(
-    interpreter: &mut Interpreter,
-    path: &str,
-    show_ast: bool,
-    show_timing: bool,
-) {
-    match fs::read_to_string(path) {
-        Ok(source) => {
-            println!("{}Loading {}...{}", colors::DIM, path, colors::RESET);
-            let start = std::time::Instant::now();
-            evaluate_input(interpreter, &source, show_ast);
-            if show_timing {
-                let elapsed = start.elapsed();
-                println!("{}Loaded in {:?}{}", colors::DIM, elapsed, colors::RESET);
-            }
-        }
-        Err(e) => {
-            eprintln!(
-                "{}Error loading '{}': {}{}",
-                colors::SPECIAL,
-                path,
-                e,
-                colors::RESET
-            );
-        }
-    }
-}
-
-fn show_expression_type(interpreter: &Interpreter, expr: &str) {
-    // Parse and type-check the expression
-    let mut parser = Parser::new(expr);
-    match parser.parse_file() {
-        Ok(_ast) => {
-            // For now, just show a simple type inference
-            // A full implementation would use the type checker
-            println!(
-                "{}Type inference for expressions is not fully implemented yet.{}",
-                colors::DIM,
-                colors::RESET
-            );
-            println!(
-                "{}Tip: Use 'typeof(expr)' in expressions to get runtime type.{}",
-                colors::DIM,
-                colors::RESET
-            );
-        }
-        Err(e) => {
-            eprintln!("{}Parse error: {}{}", colors::SPECIAL, e, colors::RESET);
-        }
-    }
-}
-
 fn dirs_home() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(std::path::PathBuf::from)
 }
@@ -4102,65 +3946,31 @@ fn print_help() {
         colors::RESET
     );
     println!();
-    println!("{}Basic:{}", colors::DIM, colors::RESET);
     println!(
-        "  {}:help, :h, :?{}    Show this help",
+        "  {}:help{}      Show this help",
         colors::KEYWORD,
         colors::RESET
     );
     println!(
-        "  {}:exit, :quit, :q{} Exit the REPL",
+        "  {}:symbols{}   Show all Unicode symbols",
         colors::KEYWORD,
         colors::RESET
     );
     println!(
-        "  {}:clear, :cls{}     Clear the screen",
-        colors::KEYWORD,
-        colors::RESET
-    );
-    println!();
-    println!("{}Debug:{}", colors::DIM, colors::RESET);
-    println!(
-        "  {}:ast{}             Toggle AST display",
+        "  {}:ast{}       Toggle AST display mode",
         colors::KEYWORD,
         colors::RESET
     );
     println!(
-        "  {}:timing, :time{}   Toggle execution timing",
+        "  {}:clear{}     Clear the screen",
         colors::KEYWORD,
         colors::RESET
     );
     println!(
-        "  {}:vars, :env{}      Show current variables",
+        "  {}:exit{}      Exit the REPL",
         colors::KEYWORD,
         colors::RESET
     );
-    println!(
-        "  {}:type <expr>{}     Show expression type",
-        colors::KEYWORD,
-        colors::RESET
-    );
-    println!();
-    println!("{}Session:{}", colors::DIM, colors::RESET);
-    println!(
-        "  {}:load <file>{}     Load and execute a Sigil file",
-        colors::KEYWORD,
-        colors::RESET
-    );
-    println!(
-        "  {}:reset{}           Reset interpreter state",
-        colors::KEYWORD,
-        colors::RESET
-    );
-    println!(
-        "  {}:symbols{}         Show all Unicode symbols",
-        colors::KEYWORD,
-        colors::RESET
-    );
-    println!();
-    println!("{}Multiline Input:{}", colors::DIM, colors::RESET);
-    println!("  Open braces automatically continue to next line.");
-    println!("  Press Enter on empty line to submit, Ctrl+C to cancel.");
     println!();
     println!("{}{}Examples:{}", colors::BOLD, colors::TYPE, colors::RESET);
     println!();
@@ -4702,302 +4512,5 @@ fn evaluate_input(interpreter: &mut Interpreter, input: &str, show_ast: bool) {
             }
         }
         Err(e) => eprintln!("{}Parse error: {}{}", colors::SPECIAL, e, colors::RESET),
-    }
-}
-
-// ============================================================================
-// Tome Management Commands
-// ============================================================================
-
-/// Conjure a new tome (create project)
-fn tome_conjure(name: &str) -> ExitCode {
-    use sigil_parser::tome;
-
-    println!("Conjuring tome '{}'...", name);
-
-    match tome::conjure(name, None) {
-        Ok(path) => {
-            println!();
-            println!("  Tome summoned at: {}", path.display());
-            println!();
-            println!("  Structure:");
-            println!("    {}/", name);
-            println!("      Grimoire.toml    # Tome manifest");
-            println!("      src/");
-            println!("        main.sg        # Entry point");
-            println!("      .gitignore");
-            println!();
-            println!("  Next steps:");
-            println!("    cd {}", name);
-            println!("    sigil forge        # Build the tome");
-            println!("    sigil run src/main.sg");
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Failed to conjure tome: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Inscribe current directory as a tome
-fn tome_inscribe() -> ExitCode {
-    use sigil_parser::tome;
-
-    let current_dir = match std::env::current_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("Failed to get current directory: {}", e);
-            return ExitCode::from(1);
-        }
-    };
-
-    println!("Inscribing current directory as a tome...");
-
-    match tome::inscribe(&current_dir) {
-        Ok(()) => {
-            println!();
-            println!("  Directory inscribed!");
-            println!("  Created: Grimoire.toml");
-            println!();
-            println!("  Edit Grimoire.toml to configure your tome.");
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Failed to inscribe: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Summon a binding (add dependency)
-fn tome_summon(name: &str, spec: &str) -> ExitCode {
-    use sigil_parser::tome::{self, Grimoire};
-
-    let grimoire_path = match Grimoire::find() {
-        Some(p) => p.parent().unwrap().to_path_buf(),
-        None => {
-            eprintln!("No Grimoire.toml found in current directory or ancestors.");
-            eprintln!("Run 'sigil inscribe' to create one.");
-            return ExitCode::from(1);
-        }
-    };
-
-    println!("Summoning binding '{}'...", name);
-
-    match tome::summon(&grimoire_path, name, spec) {
-        Ok(()) => {
-            println!("  Added {} to [bindings]", name);
-            println!();
-            println!("  Run 'sigil attune' to resolve bindings.");
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Failed to summon: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Banish a binding (remove dependency)
-fn tome_banish(name: &str) -> ExitCode {
-    use sigil_parser::tome::{self, Grimoire};
-
-    let grimoire_path = match Grimoire::find() {
-        Some(p) => p.parent().unwrap().to_path_buf(),
-        None => {
-            eprintln!("No Grimoire.toml found in current directory or ancestors.");
-            return ExitCode::from(1);
-        }
-    };
-
-    println!("Banishing binding '{}'...", name);
-
-    match tome::banish(&grimoire_path, name) {
-        Ok(()) => {
-            println!("  Removed {} from [bindings]", name);
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Failed to banish: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Attune bindings (resolve dependencies)
-fn tome_attune() -> ExitCode {
-    use sigil_parser::tome::{self, Grimoire};
-
-    let grimoire_path = match Grimoire::find() {
-        Some(p) => p.parent().unwrap().to_path_buf(),
-        None => {
-            eprintln!("No Grimoire.toml found in current directory or ancestors.");
-            return ExitCode::from(1);
-        }
-    };
-
-    println!("Attuning bindings...");
-
-    match tome::attune(&grimoire_path) {
-        Ok(result) => {
-            if result.resolved.is_empty() && result.errors.is_empty() {
-                println!("  No bindings to resolve.");
-            } else {
-                for binding in &result.resolved {
-                    println!("  Resolved: {} v{}", binding.name, binding.version);
-                }
-                for (name, err) in &result.errors {
-                    eprintln!("  Failed: {} - {}", name, err);
-                }
-            }
-
-            if result.errors.is_empty() {
-                println!();
-                println!("  Grimoire.lock updated.");
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(1)
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to attune: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Forge the tome (build)
-fn tome_forge() -> ExitCode {
-    use sigil_parser::tome::{self, Grimoire};
-
-    let grimoire_path = match Grimoire::find() {
-        Some(p) => p.parent().unwrap().to_path_buf(),
-        None => {
-            eprintln!("No Grimoire.toml found in current directory or ancestors.");
-            return ExitCode::from(1);
-        }
-    };
-
-    println!("Forging tome...");
-
-    match tome::forge(&grimoire_path) {
-        Ok(result) => {
-            println!("  Tome: {} v{}", result.tome_name, result.version);
-            if let Some(main_file) = &result.main_file {
-                println!("  Entry: {}", main_file.display());
-            }
-            println!();
-            println!("  Forge complete!");
-            println!();
-            println!(
-                "  Run with: sigil run {}",
-                result
-                    .main_file
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "src/main.sg".to_string())
-            );
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Failed to forge: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// List available rites
-fn tome_list_rites() -> ExitCode {
-    use sigil_parser::tome::{self, Grimoire};
-
-    let grimoire_path = match Grimoire::find() {
-        Some(p) => p.parent().unwrap().to_path_buf(),
-        None => {
-            eprintln!("No Grimoire.toml found in current directory or ancestors.");
-            return ExitCode::from(1);
-        }
-    };
-
-    match tome::list_rites(&grimoire_path) {
-        Ok(rites) => {
-            if rites.is_empty() {
-                println!("No rites defined in Grimoire.toml");
-                println!();
-                println!("Add rites to your Grimoire.toml:");
-                println!("  [rites]");
-                println!("  test = \"sigil run tests/main.sg\"");
-                println!("  bench = \"sigil run bench/main.sg\"");
-            } else {
-                println!("Available rites:");
-                for (name, command) in rites {
-                    println!("  {} = \"{}\"", name, command);
-                }
-            }
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Failed to list rites: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Invoke a rite (run script)
-fn tome_invoke_rite(name: &str) -> ExitCode {
-    use sigil_parser::tome::{self, Grimoire};
-
-    let grimoire_path = match Grimoire::find() {
-        Some(p) => p.parent().unwrap().to_path_buf(),
-        None => {
-            eprintln!("No Grimoire.toml found in current directory or ancestors.");
-            return ExitCode::from(1);
-        }
-    };
-
-    println!("Invoking rite '{}'...", name);
-    println!();
-
-    match tome::invoke_rite(&grimoire_path, name) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("Rite failed: {}", e);
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Consecrate tome (publish to registry - placeholder)
-fn tome_consecrate() -> ExitCode {
-    use sigil_parser::tome::Grimoire;
-
-    let grimoire_path = match Grimoire::find() {
-        Some(p) => p,
-        None => {
-            eprintln!("No Grimoire.toml found in current directory or ancestors.");
-            return ExitCode::from(1);
-        }
-    };
-
-    match Grimoire::load(&grimoire_path) {
-        Ok(grimoire) => {
-            println!("Preparing to consecrate '{}'...", grimoire.tome.name);
-            println!();
-            println!("  The Grimoire registry is not yet available.");
-            println!("  For now, share your tome via git:");
-            println!();
-            println!("    # Others can summon via git:");
-            println!(
-                "    sigil summon {} git:https://github.com/you/{}",
-                grimoire.tome.name, grimoire.tome.name
-            );
-            println!();
-            println!("  The Grimoire registry will be unveiled soon...");
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("Failed to read Grimoire: {}", e);
-            ExitCode::from(1)
-        }
     }
 }

@@ -3,7 +3,7 @@
 // Priority: P0
 //
 // Purpose:
-// Validates that ⊳ skips to next iteration.
+// Validates that ↻ skips to next iteration.
 //
 // Expected behavior:
 // Should print only odd numbers
@@ -13,7 +13,7 @@ rite main() {
     ⟳ i < 10 {
         i = i + 1;
         ⎇ i % 2 == 0 {
-            ⊳;
+            ↻;
         }
         println(i);
     }

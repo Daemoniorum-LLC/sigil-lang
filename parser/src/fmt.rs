@@ -122,8 +122,9 @@ impl Formatter {
             }
 
             // Adjust indent for closing braces at start of line
-            let starts_with_close =
-                trimmed.starts_with('}') || trimmed.starts_with(')') || trimmed.starts_with(']');
+            let starts_with_close = trimmed.starts_with('}')
+                || trimmed.starts_with(')')
+                || trimmed.starts_with(']');
 
             if starts_with_close && indent_level > 0 {
                 indent_level -= 1;
@@ -432,9 +433,7 @@ pub fn format_directory(
         .filter(|e| {
             let path = e.path();
             path.is_file()
-                && (path
-                    .extension()
-                    .map_or(false, |ext| ext == "sg" || ext == "sigil"))
+                && (path.extension().map_or(false, |ext| ext == "sg" || ext == "sigil"))
         })
     {
         let path = entry.path();
@@ -486,9 +485,9 @@ mod tests {
         let config = FormatConfig::default();
         let formatter = Formatter::new(config);
 
-        let input = "rite main(){≔ x=1+2;}";
+        let input = "fn main(){let x=1+2;}";
         let formatted = formatter.format_source(input).unwrap();
-        assert!(formatted.contains("rite main()"));
+        assert!(formatted.contains("fn main()"));
     }
 
     #[test]
@@ -496,9 +495,9 @@ mod tests {
         let config = FormatConfig::default();
         let formatter = Formatter::new(config);
 
-        let input = "rite main() {\n≔ x = 1;\n}";
+        let input = "fn main() {\nlet x = 1;\n}";
         let formatted = formatter.format_source(input).unwrap();
-        assert!(formatted.contains("    ≔ x")); // 4 spaces indent
+        assert!(formatted.contains("    let x")); // 4 spaces indent
     }
 
     #[test]
@@ -506,7 +505,7 @@ mod tests {
         let config = FormatConfig::default();
         let formatter = Formatter::new(config);
 
-        let input = r#"≔ s = "hello   world";"#;
+        let input = r#"let s = "hello   world";"#;
         let formatted = formatter.format_source(input).unwrap();
         assert!(formatted.contains("\"hello   world\""));
     }

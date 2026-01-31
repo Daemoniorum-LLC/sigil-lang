@@ -1,5 +1,8 @@
 # Sigil Standard Library Specification
 
+> **Status:** ! Stable (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 > *"The Grimoire contains all the spells a practitioner needs to begin their work."*
 
 ## 1. Philosophy: The Foundational Grimoire

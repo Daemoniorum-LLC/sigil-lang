@@ -1,32 +1,12 @@
 //! Commune Intent Tests - 17 tests
 
-<<<<<<< HEAD
-enum Urgency {
-=======
 ᛈ Urgency {
->>>>>>> origin/main
     Critical,
     High,
     Normal,
     Low,
 }
 
-<<<<<<< HEAD
-impl Urgency {
-    pub fn priority(&self) -> !u32 {
-        match self {
-            Urgency::Critical => 100,
-            Urgency::High => 75,
-            Urgency::Normal => 50,
-            Urgency::Low => 25,
-        }
-    }
-
-    pub fn is_urgent(&self) -> !bool {
-        match self {
-            Urgency::Critical => true,
-            Urgency::High => true,
-=======
 ⊢ Urgency {
     ☉ λ priority(&self) -> !u32 {
         ⌥ self {
@@ -41,32 +21,18 @@ impl Urgency {
         ⌥ self {
             Urgency·Critical => true,
             Urgency·High => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 }
 
-<<<<<<< HEAD
-enum Importance {
-=======
 ᛈ Importance {
->>>>>>> origin/main
     Critical,
     High,
     Normal,
     Low,
 }
 
-<<<<<<< HEAD
-impl Importance {
-    pub fn weight(&self) -> !f32 {
-        match self {
-            Importance::Critical => 1.0,
-            Importance::High => 0.75,
-            Importance::Normal => 0.5,
-            Importance::Low => 0.25,
-=======
 ⊢ Importance {
     ☉ λ weight(&self) -> !f32 {
         ⌥ self {
@@ -74,16 +40,11 @@ impl Importance {
             Importance·High => 0.75,
             Importance·Normal => 0.5,
             Importance·Low => 0.25,
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-enum TaskStatus {
-=======
 ᛈ TaskStatus {
->>>>>>> origin/main
     Pending,
     InProgress,
     Completed,
@@ -91,154 +52,79 @@ enum TaskStatus {
     Cancelled,
 }
 
-<<<<<<< HEAD
-impl TaskStatus {
-    pub fn is_active(&self) -> !bool {
-        match self {
-            TaskStatus::Pending => true,
-            TaskStatus::InProgress => true,
-=======
 ⊢ TaskStatus {
     ☉ λ is_active(&self) -> !bool {
         ⌥ self {
             TaskStatus·Pending => true,
             TaskStatus·InProgress => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 
-<<<<<<< HEAD
-    pub fn is_terminal(&self) -> !bool {
-        match self {
-            TaskStatus::Completed => true,
-            TaskStatus::Failed => true,
-            TaskStatus::Cancelled => true,
-=======
     ☉ λ is_terminal(&self) -> !bool {
         ⌥ self {
             TaskStatus·Completed => true,
             TaskStatus·Failed => true,
             TaskStatus·Cancelled => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 
-<<<<<<< HEAD
-    pub fn is_success(&self) -> !bool {
-        match self {
-            TaskStatus::Completed => true,
-=======
     ☉ λ is_success(&self) -> !bool {
         ⌥ self {
             TaskStatus·Completed => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 }
 
-<<<<<<< HEAD
-enum VoteValue {
-=======
 ᛈ VoteValue {
->>>>>>> origin/main
     Approve,
     Reject,
     Abstain,
     Block,
 }
 
-<<<<<<< HEAD
-impl VoteValue {
-    pub fn is_positive(&self) -> !bool {
-        match self {
-            VoteValue::Approve => true,
-=======
 ⊢ VoteValue {
     ☉ λ is_positive(&self) -> !bool {
         ⌥ self {
             VoteValue·Approve => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 
-<<<<<<< HEAD
-    pub fn is_negative(&self) -> !bool {
-        match self {
-            VoteValue::Reject => true,
-            VoteValue::Block => true,
-=======
     ☉ λ is_negative(&self) -> !bool {
         ⌥ self {
             VoteValue·Reject => true,
             VoteValue·Block => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 
-<<<<<<< HEAD
-    pub fn is_blocking(&self) -> !bool {
-        match self {
-            VoteValue::Block => true,
-=======
     ☉ λ is_blocking(&self) -> !bool {
         ⌥ self {
             VoteValue·Block => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 
-<<<<<<< HEAD
-    pub fn score(&self) -> !i32 {
-        match self {
-            VoteValue::Approve => 1,
-            VoteValue::Reject => -1,
-            VoteValue::Abstain => 0,
-            VoteValue::Block => -10,
-=======
     ☉ λ score(&self) -> !i32 {
         ⌥ self {
             VoteValue·Approve => 1,
             VoteValue·Reject => -1,
             VoteValue·Abstain => 0,
             VoteValue·Block => -10,
->>>>>>> origin/main
         }
     }
 }
 
-<<<<<<< HEAD
-enum Priority {
-=======
 ᛈ Priority {
->>>>>>> origin/main
     Critical,
     High,
     Normal,
     Low,
 }
 
-<<<<<<< HEAD
-impl Priority {
-    pub fn value(&self) -> !u32 {
-        match self {
-            Priority::Critical => 4,
-            Priority::High => 3,
-            Priority::Normal => 2,
-            Priority::Low => 1,
-        }
-    }
-
-    pub fn is_high(&self) -> !bool {
-        match self {
-            Priority::Critical => true,
-            Priority::High => true,
-=======
 ⊢ Priority {
     ☉ λ value(&self) -> !u32 {
         ⌥ self {
@@ -253,38 +139,16 @@ impl Priority {
         ⌥ self {
             Priority·Critical => true,
             Priority·High => true,
->>>>>>> origin/main
             _ => false,
         }
     }
 }
 
-<<<<<<< HEAD
-struct IntentInfo {
-=======
 Σ IntentInfo {
->>>>>>> origin/main
     expects_response: !bool,
     timeout_secs: !u64,
 }
 
-<<<<<<< HEAD
-impl IntentInfo {
-    pub fn query() -> Self {
-        IntentInfo { expects_response: true, timeout_secs: 30 }
-    }
-
-    pub fn inform() -> Self {
-        IntentInfo { expects_response: false, timeout_secs: 0 }
-    }
-
-    pub fn request(urgency: Urgency) -> Self {
-        let timeout = match urgency {
-            Urgency::Critical => 10,
-            Urgency::High => 30,
-            Urgency::Normal => 300,
-            Urgency::Low => 1800,
-=======
 ⊢ IntentInfo {
     ☉ λ query() -> Self {
         IntentInfo { expects_response: true, timeout_secs: 30 }
@@ -300,7 +164,6 @@ impl IntentInfo {
             Urgency·High => 30,
             Urgency·Normal => 300,
             Urgency·Low => 1800,
->>>>>>> origin/main
         };
         IntentInfo { expects_response: true, timeout_secs: timeout }
     }
@@ -311,178 +174,101 @@ impl IntentInfo {
 // ============================================================================
 
 #[test]
-<<<<<<< HEAD
-fn test_urgency_priority_critical() {
-    let u = Urgency::Critical;
-=======
 λ test_urgency_priority_critical() {
     ≔ u = Urgency·Critical;
->>>>>>> origin/main
     assert(u.priority() == 100);
     assert(u.is_urgent());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_urgency_priority_high() {
-    let u = Urgency::High;
-=======
 λ test_urgency_priority_high() {
     ≔ u = Urgency·High;
->>>>>>> origin/main
     assert(u.priority() == 75);
     assert(u.is_urgent());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_urgency_priority_normal() {
-    let u = Urgency::Normal;
-=======
 λ test_urgency_priority_normal() {
     ≔ u = Urgency·Normal;
->>>>>>> origin/main
     assert(u.priority() == 50);
     assert(!u.is_urgent());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_importance_weight() {
-    let i = Importance::Critical;
-=======
 λ test_importance_weight() {
     ≔ i = Importance·Critical;
->>>>>>> origin/main
     assert(i.weight() == 1.0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_task_status_pending() {
-    let s = TaskStatus::Pending;
-=======
 λ test_task_status_pending() {
     ≔ s = TaskStatus·Pending;
->>>>>>> origin/main
     assert(s.is_active());
     assert(!s.is_terminal());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_task_status_in_progress() {
-    let s = TaskStatus::InProgress;
-=======
 λ test_task_status_in_progress() {
     ≔ s = TaskStatus·InProgress;
->>>>>>> origin/main
     assert(s.is_active());
     assert(!s.is_terminal());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_task_status_completed() {
-    let s = TaskStatus::Completed;
-=======
 λ test_task_status_completed() {
     ≔ s = TaskStatus·Completed;
->>>>>>> origin/main
     assert(!s.is_active());
     assert(s.is_terminal());
     assert(s.is_success());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_task_status_failed() {
-    let s = TaskStatus::Failed;
-=======
 λ test_task_status_failed() {
     ≔ s = TaskStatus·Failed;
->>>>>>> origin/main
     assert(s.is_terminal());
     assert(!s.is_success());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vote_approve() {
-    let v = VoteValue::Approve;
-=======
 λ test_vote_approve() {
     ≔ v = VoteValue·Approve;
->>>>>>> origin/main
     assert(v.is_positive());
     assert(!v.is_negative());
     assert(v.score() == 1);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vote_reject() {
-    let v = VoteValue::Reject;
-=======
 λ test_vote_reject() {
     ≔ v = VoteValue·Reject;
->>>>>>> origin/main
     assert(!v.is_positive());
     assert(v.is_negative());
     assert(!v.is_blocking());
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vote_block() {
-    let v = VoteValue::Block;
-=======
 λ test_vote_block() {
     ≔ v = VoteValue·Block;
->>>>>>> origin/main
     assert(v.is_blocking());
     assert(v.score() == -10);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_vote_abstain() {
-    let v = VoteValue::Abstain;
-=======
 λ test_vote_abstain() {
     ≔ v = VoteValue·Abstain;
->>>>>>> origin/main
     assert(!v.is_positive());
     assert(!v.is_negative());
     assert(v.score() == 0);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_priority_values() {
-    let c = Priority::Critical;
-    let h = Priority::High;
-=======
 λ test_priority_values() {
     ≔ c = Priority·Critical;
     ≔ h = Priority·High;
->>>>>>> origin/main
     assert(c.value() == 4);
     assert(h.value() == 3);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_priority_is_high() {
-    assert(Priority::Critical.is_high());
-    assert(Priority::High.is_high());
-    assert(!Priority::Normal.is_high());
-}
-
-#[test]
-fn test_intent_info_query() {
-    let info = IntentInfo::query();
-=======
 λ test_priority_is_high() {
     assert(Priority·Critical.is_high());
     assert(Priority·High.is_high());
@@ -492,40 +278,24 @@ fn test_intent_info_query() {
 #[test]
 λ test_intent_info_query() {
     ≔ info = IntentInfo·query();
->>>>>>> origin/main
     assert(info.expects_response);
     assert(info.timeout_secs == 30);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_intent_info_inform() {
-    let info = IntentInfo::inform();
-=======
 λ test_intent_info_inform() {
     ≔ info = IntentInfo·inform();
->>>>>>> origin/main
     assert(!info.expects_response);
 }
 
 #[test]
-<<<<<<< HEAD
-fn test_intent_info_request() {
-    let critical = IntentInfo::request(Urgency::Critical);
-    let normal = IntentInfo::request(Urgency::Normal);
-=======
 λ test_intent_info_request() {
     ≔ critical = IntentInfo·request(Urgency·Critical);
     ≔ normal = IntentInfo·request(Urgency·Normal);
->>>>>>> origin/main
     assert(critical.timeout_secs == 10);
     assert(normal.timeout_secs == 300);
 }
 
-<<<<<<< HEAD
-fn main() {
-=======
 λ main() {
->>>>>>> origin/main
     println("Commune intent tests - 17 tests");
 }

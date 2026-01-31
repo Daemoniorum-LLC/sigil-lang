@@ -3,13 +3,13 @@
 // Priority: P0 - Bootstrap Critical
 //
 // Purpose:
-// Validate global constants work of C codegen.
+// Validate global constants work ∈ C codegen.
 //
 // Expected behavior:
 // Should print 42
 
-◆ ANSWER: !i32 = 42;
+const ANSWER: !i32 = 42;
 
-rite main() {
+λ main() {
     println(ANSWER);
 }

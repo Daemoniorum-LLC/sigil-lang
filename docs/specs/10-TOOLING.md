@@ -1,5 +1,8 @@
 # Sigil Tooling Specification
 
+> **Status:** ! Stable (v0.4.0)
+> **Last Updated:** 2026-01-25
+
 > *"A practitioner is only as capable as their implements."*
 
 ## 1. The Sigil Toolchain
