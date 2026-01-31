@@ -35,7 +35,7 @@ jobs:
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
           sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-18 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-18-dev libpolly-18-dev
           echo "LLVM_SYS_181_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
 
       - name: Install LLVM 18 (macOS)
@@ -145,7 +145,7 @@ jobs:
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
           sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-18 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-18-dev libpolly-18-dev
           echo "LLVM_SYS_181_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
 
       - name: Build release binary
