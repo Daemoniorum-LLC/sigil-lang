@@ -30,7 +30,7 @@ lsp = ["tower-lsp", "tokio"]
 # v0.5.0: gRPC, Kafka, AMQP, GraphQL (deferred - require infrastructure)
 protocols = ["protocol-core", "http-client", "websocket"]
 protocol-core = ["tokio", "url", "async-trait", "futures-util", "tower"]
-http-client = ["protocol-core", "reqwest", "hyper", "hyper-util", "http", "http-body-util", "openssl"]
+http-client = ["protocol-core", "reqwest", "hyper", "hyper-util", "http", "http-body-util"]
 websocket = ["protocol-core", "native-tls"]
 # Deferred to v0.5.0 - require external infrastructure for testing
 grpc = ["protocol-core", "tonic", "prost", "prost-types"]
@@ -143,7 +143,7 @@ prost = { version = "0.13", optional = true }
 prost-types = { version = "0.13", optional = true }
 
 # HTTP client support
-reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "multipart", "blocking"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "gzip", "brotli", "multipart", "blocking", "rustls-tls"], optional = true }
 hyper = { version = "1.4", features = ["full"], optional = true }
 hyper-util = { version = "0.1", optional = true }
 http = { version = "1.1", optional = true }
@@ -152,8 +152,6 @@ http-body-util = { version = "0.1", optional = true }
 # WebSocket support (native implementation, TLS via native-tls)
 native-tls = { version = "0.2", optional = true }
 
-# Vendored OpenSSL for cross-compilation (avoids system dependency)
-openssl = { version = "0.10", features = ["vendored"], optional = true }
 futures-util = { version = "0.3", optional = true }
 
 # Kafka support
