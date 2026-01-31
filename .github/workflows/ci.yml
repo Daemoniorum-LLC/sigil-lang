@@ -42,11 +42,11 @@ jobs:
 
       - name: Build parser
         working-directory: parser
-        run: cargo build --release --no-default-features --features jit,protocols
+        run: cargo build --release --no-default-features --features jit,wasm,lsp,protocols
 
       - name: Run tests
         working-directory: parser
-        run: cargo test --release --no-default-features --features jit,protocols
+        run: cargo test --release --no-default-features --features jit,wasm,lsp,protocols
         continue-on-error: true
 
       - name: Check formatting
@@ -56,7 +56,7 @@ jobs:
 
       - name: Run clippy
         working-directory: parser
-        run: cargo clippy --no-default-features --features jit,protocols -- -D warnings
+        run: cargo clippy --no-default-features --features jit,wasm,lsp,protocols -- -D warnings
         continue-on-error: true
 
       - name: Test example files
@@ -127,7 +127,7 @@ jobs:
 
       - name: Build release binary
         working-directory: parser
-        run: cargo build --release --no-default-features --features jit,protocols
+        run: cargo build --release --no-default-features --features jit,wasm,lsp,protocols
 
       - name: Create release archive
         run: |
