@@ -3,45 +3,102 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sigil Playground</title>
-  <meta name="description" content="Sigil Playground - Write and run Sigil code in the browser">
+  <title>Sigil Playground - Write and Run Sigil Code</title>
+  <meta name="description" content="Interactive Sigil playground. Write, edit, and run Sigil code in the browser with syntax highlighting powered by Athame.">
 
-  <!-- Fonts & Styles -->
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/playground.css">
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="/images/sigil-icon.svg">
+
+  <style>
+    /* Loading indicator */
+    #playground-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: #050507;
+      color: #e8e8ec;
+    }
+    #playground-loading .loader {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #1a1a1f;
+      border-top-color: #14A088;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    #playground-loading .loader-text {
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: #707078;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #playground-loading.hidden { display: none; }
+  </style>
 </head>
 <body>
-  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <div id="playground-loading">
+    <div class="loader"></div>
+    <div class="loader-text">Loading Sigil Playground...</div>
+  </div>
 
   <div id="app"></div>
 
   <script type="module">
     import { SigilRuntime } from './sigil_runtime.js';
+    import { initPlayground } from './js/playground.js';
 
-    async function run() {
+    async function init() {
+      const loading = document.getElementById('playground-loading');
+
       try {
+        // 1. Create runtime and load WASM
         const runtime = new SigilRuntime();
-        await runtime.loadWasm('./public/wasm/playground.wasm');
-        runtime.run();
-        console.log('Playground WASM loaded and rendered');
+        const response = await fetch('./public/wasm/playground.wasm');
+        const bytes = await response.arrayBuffer();
+        const { instance } = await WebAssembly.instantiate(bytes, runtime.getImports());
+        runtime.init(instance);
+
+        // 2. Execute main() to build and mount the VDOM layout
+        if (instance.exports.main) {
+          instance.exports.main();
+        } else {
+          throw new Error('No main() export found in WASM module');
+        }
+
+        // 3. Hide loader
+        loading.classList.add('hidden');
+
+        // 4. Initialize interactive features (tokenizer, sandbox, controls)
+        initPlayground();
+
+        console.log('[Sigil] Playground initialized (Athame + Qliphoth)');
+
       } catch (error) {
-        console.error('Failed to initialize Sigil Playground:', error);
+        console.error('[Sigil] Playground initialization failed:', error);
+        loading.style.display = 'none';
         document.getElementById('app').innerHTML = `
-          <div style="padding: 2rem; text-align: center; color: #f44;">
-            <h1>Failed to Load</h1>
-            <p>${error.message}</p>
+          <div class="error-state">
+            <h2>Failed to Load Playground</h2>
+            <p>The WebAssembly module could not be loaded.</p>
+            <p style="color: #707078; font-size: 0.875rem; margin-top: 0.5rem;">${error.message}</p>
+            <button onclick="location.reload()">Retry</button>
           </div>
         `;
       }
     }
 
-    run();
+    init();
   </script>
 </body>
 </html>
