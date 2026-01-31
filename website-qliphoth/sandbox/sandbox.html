@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Sigil Sandbox</title>
+    <!--
+        Sigil Playground Sandbox
+        Loaded inside <iframe sandbox="allow-scripts"> from the main page.
+        No allow-same-origin: this page cannot access the parent's DOM,
+        cookies, storage, or origin.
+
+        Architecture:
+        1. Parent sends { type: 'run'|'check', code: '...' } via postMessage
+        2. This page forwards to a Web Worker that runs the compiler WASM
+        3. Worker returns results, this page relays back to parent
+        4. Kill timer terminates worker after 5 seconds (infinite loop protection)
+    -->
+</head>
+<body>
+<script>
+(function() {
+    'use strict';
+
+    const EXECUTION_TIMEOUT_MS = 5000;
+    const WASM_BASE_URL = '/wasm/compiler';
+
+    let worker = null;
+    let killTimer = null;
+    let pendingCallback = null;
+    let isReady = false;
+
+    // Create and initialize the worker
+    function initWorker() {
+        if (worker) {
+            worker.terminate();
+        }
+
+        worker = new Worker('worker.js');
+
+        worker.onmessage = function(e) {
+            const msg = e.data;
+
+            switch (msg.type) {
+                case 'ready':
+                    isReady = true;
+                    // Notify parent that sandbox is ready
+                    window.parent.postMessage({
+                        type: 'sandbox-ready'
+                    }, '*');
+                    break;
+
+                case 'result':
+                    clearTimeout(killTimer);
+                    killTimer = null;
+                    // Relay result to parent
+                    window.parent.postMessage({
+                        type: 'sandbox-result',
+                        action: msg.action,
+                        data: msg.data
+                    }, '*');
+                    break;
+
+                case 'error':
+                    clearTimeout(killTimer);
+                    killTimer = null;
+                    window.parent.postMessage({
+                        type: 'sandbox-error',
+                        message: msg.message
+                    }, '*');
+                    break;
+            }
+        };
+
+        worker.onerror = function(err) {
+            clearTimeout(killTimer);
+            killTimer = null;
+            window.parent.postMessage({
+                type: 'sandbox-error',
+                message: 'Worker error: ' + (err.message || 'unknown')
+            }, '*');
+        };
+
+        // Tell worker to load the WASM module
+        worker.postMessage({ type: 'init', wasmUrl: WASM_BASE_URL });
+    }
+
+    // Listen for messages from the parent page
+    window.addEventListener('message', function(e) {
+        const msg = e.data;
+
+        if (!msg || !msg.type) return;
+
+        switch (msg.type) {
+            case 'run':
+            case 'check':
+                if (!isReady) {
+                    window.parent.postMessage({
+                        type: 'sandbox-error',
+                        message: 'Compiler not ready yet. Please wait.'
+                    }, '*');
+                    return;
+                }
+
+                // Set kill timer for execution timeout
+                clearTimeout(killTimer);
+                killTimer = setTimeout(function() {
+                    // Terminate the worker and restart it
+                    worker.terminate();
+                    isReady = false;
+
+                    window.parent.postMessage({
+                        type: 'sandbox-result',
+                        action: msg.type,
+                        data: {
+                            output: [],
+                            errors: ['Execution timed out after ' + (EXECUTION_TIMEOUT_MS / 1000) + ' seconds'],
+                            elapsed_ms: EXECUTION_TIMEOUT_MS
+                        }
+                    }, '*');
+
+                    // Restart worker for next execution
+                    initWorker();
+                }, EXECUTION_TIMEOUT_MS);
+
+                // Forward to worker
+                worker.postMessage({ type: msg.type, code: msg.code });
+                break;
+
+            case 'init':
+                // Parent requesting re-initialization
+                initWorker();
+                break;
+        }
+    });
+
+    // Auto-initialize on load
+    initWorker();
+})();
+</script>
+</body>
+</html>
