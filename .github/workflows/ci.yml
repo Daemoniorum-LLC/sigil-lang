@@ -29,6 +29,21 @@ jobs:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
 
+      - name: Install LLVM 18 (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-18 main"
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev libpolly-18-dev
+          echo "LLVM_SYS_181_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
+
+      - name: Install LLVM 18 (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install llvm@18
+          echo "LLVM_SYS_181_PREFIX=$(brew --prefix llvm@18)" >> $GITHUB_ENV
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -42,11 +57,11 @@ jobs:
 
       - name: Build parser
         working-directory: parser
-        run: cargo build --release --no-default-features --features jit,wasm,lsp,protocols
+        run: cargo build --release --no-default-features --features jit,llvm,wasm,lsp,protocols
 
       - name: Run tests
         working-directory: parser
-        run: cargo test --release --no-default-features --features jit,wasm,lsp,protocols
+        run: cargo test --release --no-default-features --features jit,llvm,wasm,lsp,protocols
         continue-on-error: true
 
       - name: Check formatting
@@ -56,7 +71,7 @@ jobs:
 
       - name: Run clippy
         working-directory: parser
-        run: cargo clippy --no-default-features --features jit,wasm,lsp,protocols -- -D warnings
+        run: cargo clippy --no-default-features --features jit,llvm,wasm,lsp,protocols -- -D warnings
         continue-on-error: true
 
       - name: Test example files
@@ -125,9 +140,17 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install LLVM 18
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-18 main"
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev libpolly-18-dev
+          echo "LLVM_SYS_181_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
+
       - name: Build release binary
         working-directory: parser
-        run: cargo build --release --no-default-features --features jit,wasm,lsp,protocols
+        run: cargo build --release --no-default-features --features jit,llvm,wasm,lsp,protocols
 
       - name: Create release archive
         run: |
