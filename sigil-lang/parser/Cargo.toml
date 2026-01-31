@@ -30,7 +30,7 @@ lsp = ["tower-lsp", "tokio"]
 # v0.5.0: gRPC, Kafka, AMQP, GraphQL (deferred - require infrastructure)
 protocols = ["protocol-core", "http-client", "websocket"]
 protocol-core = ["tokio", "url", "async-trait", "futures-util", "tower"]
-http-client = ["protocol-core", "reqwest", "hyper", "hyper-util", "http", "http-body-util"]
+http-client = ["protocol-core", "reqwest", "hyper", "hyper-util", "http", "http-body-util", "openssl"]
 websocket = ["protocol-core", "native-tls"]
 # Deferred to v0.5.0 - require external infrastructure for testing
 grpc = ["protocol-core", "tonic", "prost", "prost-types"]
@@ -151,6 +151,9 @@ http-body-util = { version = "0.1", optional = true }
 
 # WebSocket support (native implementation, TLS via native-tls)
 native-tls = { version = "0.2", optional = true }
+
+# Vendored OpenSSL for cross-compilation (avoids system dependency)
+openssl = { version = "0.10", features = ["vendored"], optional = true }
 futures-util = { version = "0.3", optional = true }
 
 # Kafka support
