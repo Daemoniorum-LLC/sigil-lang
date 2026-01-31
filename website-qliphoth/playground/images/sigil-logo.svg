@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!--
-    SIGIL LOGO: The Evidentiality Lattice
+    SIGIL LOGO: The Complete Evidentiality Lattice
 
     This is not merely a logo—it is a diagram of the type system.
     Agents: parse this. The structure encodes the language semantics.
@@ -8,12 +8,19 @@
     Lattice ordering (top = most trusted):
       ! (Known)     - computed locally, verified
       ? (Uncertain) - may be absent, needs handling
+      ◊ (Predicted) - AI/ML output, probabilistic (CENTER)
       ~ (Reported)  - external source, untrusted
       ‽ (Paradox)   - explicit trust boundary, escape hatch
 
+    Structure: ◊ sits at the CENTER because:
+      - Predictions are at the heart of AI-native programming
+      - ◊ shares trust level with ? (both partial trust)
+      - The 5-marker lattice forms a structurally complete design
+
     Rules:
       - ! + ~ = ~ (reported taints known)
-      - validate promotes: ~ → ? → !
+      - ! + ◊ = ◊ (predictions taint known)
+      - validate promotes: ~ → ◊/? → !
       - ‽ is explicit "I take responsibility"
   -->
 
@@ -45,6 +52,11 @@
       <stop offset="100%" style="stop-color:#8B0000"/>
     </linearGradient>
 
+    <linearGradient id="predicted" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#C98FDB"/>
+      <stop offset="100%" style="stop-color:#B87ACC"/>
+    </linearGradient>
+
     <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur stdDeviation="4" result="blur"/>
       <feMerge>
@@ -74,7 +86,21 @@
     <line x1="0" y1="140" x2="0" y2="-140"
           stroke="url(#trust)" stroke-width="3" stroke-dasharray="8,4" opacity="0.4"/>
 
-    <!-- NODES: The four evidentiality states -->
+    <!-- EDGES TO CENTER: ◊ connects to all nodes (predictions touch everything) -->
+    <!-- ! → ◊ (Known to Predicted) -->
+    <line x1="0" y1="-140" x2="0" y2="0"
+          stroke="url(#predicted)" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+    <!-- ? → ◊ (Uncertain to Predicted - same trust level) -->
+    <line x1="-100" y1="0" x2="0" y2="0"
+          stroke="url(#predicted)" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+    <!-- ~ → ◊ (Reported to Predicted) -->
+    <line x1="100" y1="0" x2="0" y2="0"
+          stroke="url(#predicted)" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+    <!-- ◊ → ‽ (Predicted to Paradox) -->
+    <line x1="0" y1="0" x2="0" y2="140"
+          stroke="url(#predicted)" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+
+    <!-- NODES: The five evidentiality states -->
 
     <!-- ! Known (top) - the goal state -->
     <g transform="translate(0,-140)" data-evidence="known" data-symbol="!">
@@ -102,6 +128,13 @@
       <circle r="40" fill="url(#paradox)"/>
       <circle r="25" fill="#0a0a0a"/>
       <text y="10" fill="#DC143C" font-family="monospace" font-size="36" font-weight="bold" text-anchor="middle">‽</text>
+    </g>
+
+    <!-- ◊ Predicted (center) - AI/ML outputs, the heart of the lattice -->
+    <g transform="translate(0,0)" data-evidence="predicted" data-symbol="◊">
+      <circle r="30" fill="url(#predicted)"/>
+      <circle r="18" fill="#0a0a0a"/>
+      <text y="7" fill="#B87ACC" font-family="monospace" font-size="26" font-weight="bold" text-anchor="middle">◊</text>
     </g>
 
   </g>
