@@ -2269,9 +2269,11 @@ impl Interpreter {
         });
 
         // ============================================================
-        // Tree-sitter parsing built-ins
+        // Tree-sitter parsing built-ins (native-only: requires tree-sitter C FFI)
         // ============================================================
 
+        #[cfg(feature = "native")]
+        {
         // TreeSitterParser::new - create a tree-sitter parser for a language
         self.define_builtin("TreeSitterParser·new", Some(1), |_, args| {
             use crate::tree_sitter_support::{TSLanguage, TSParser};
@@ -2441,6 +2443,7 @@ impl Interpreter {
 
             Ok(Value::Array(Rc::new(RefCell::new(languages))))
         });
+        } // end #[cfg(feature = "native")] tree-sitter block
 
         // tree_sitter_node_text - extract text from a syntax node using the source
         self.define_builtin("tree_sitter_node_text", Some(2), |_, args| {

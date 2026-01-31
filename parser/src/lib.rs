@@ -52,7 +52,6 @@ pub mod ffi;
 pub mod interpreter;
 pub mod ir;
 pub mod lexer;
-pub mod lint;
 pub mod lower;
 pub mod optimize;
 pub mod parser;
@@ -61,10 +60,16 @@ pub mod span;
 pub mod stdlib;
 pub mod typeck;
 pub mod holographic;
+
+#[cfg(feature = "native")]
+pub mod lint;
+#[cfg(feature = "native")]
 pub mod tree_sitter_support;
+#[cfg(feature = "native")]
+pub mod fmt;
 
 // New v0.4.0 features
-pub mod fmt;
+#[cfg(feature = "lsp")]
 pub mod lsp;
 pub mod tome;
 
@@ -83,11 +88,15 @@ pub mod protocol;
 #[cfg(feature = "websocket")]
 pub mod websocket;
 
+#[cfg(feature = "playground")]
+pub mod playground_api;
+
 pub use ast::*;
 pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, FixSuggestion, Severity};
 pub use interpreter::{Evidence, Function, Interpreter, RuntimeError, Value};
 pub use ir::{IrDumpOptions, IrEvidence, IrFunction, IrModule, IrOperation, IrType};
 pub use lexer::{Lexer, Token};
+#[cfg(feature = "native")]
 pub use lint::{
     lint_file, lint_source, lint_source_with_config, lint_directory, lint_directory_parallel,
     lint_and_fix, apply_fixes, watch_directory,

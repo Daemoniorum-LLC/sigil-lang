@@ -215,9 +215,12 @@ use unicode_bidi::BidiInfo;
 use unicode_script::{Script, UnicodeScript};
 use unicode_width::UnicodeWidthStr;
 
-// Text intelligence
+// Text intelligence (native-only: requires C FFI / native platform)
+#[cfg(feature = "native")]
 use rust_stemmers::{Algorithm as StemAlgorithm, Stemmer};
+#[cfg(feature = "native")]
 use tiktoken_rs::{cl100k_base, p50k_base, r50k_base};
+#[cfg(feature = "native")]
 use whatlang::{detect, Lang, Script as WhatLangScript};
 
 // Cryptographic primitives for experimental crypto
@@ -272,7 +275,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_ecs(interp);
     // Phase 10: Polycultural text processing
     register_polycultural_text(interp);
-    // Phase 11: Text intelligence (AI-native)
+    // Phase 11: Text intelligence (AI-native, native-only)
+    #[cfg(feature = "native")]
     register_text_intelligence(interp);
     // Phase 12: Emotional hologram and experimental crypto
     register_hologram(interp);
@@ -9876,29 +9880,33 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // dirs_next::config_dir - get user config directory
-    define(interp, "dirs_next·config_dir", Some(0), |_, _| {
-        match dirs::config_dir() {
-            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-            None => Ok(Value::Null),
-        }
-    });
+    // dirs_next functions (native-only: requires dirs crate)
+    #[cfg(feature = "native")]
+    {
+        // dirs_next::config_dir - get user config directory
+        define(interp, "dirs_next·config_dir", Some(0), |_, _| {
+            match dirs::config_dir() {
+                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+                None => Ok(Value::Null),
+            }
+        });
 
-    // dirs_next::data_dir - get user data directory
-    define(interp, "dirs_next·data_dir", Some(0), |_, _| {
-        match dirs::data_dir() {
-            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-            None => Ok(Value::Null),
-        }
-    });
+        // dirs_next::data_dir - get user data directory
+        define(interp, "dirs_next·data_dir", Some(0), |_, _| {
+            match dirs::data_dir() {
+                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+                None => Ok(Value::Null),
+            }
+        });
 
-    // dirs_next::home_dir - get user home directory
-    define(interp, "dirs_next·home_dir", Some(0), |_, _| {
-        match dirs::home_dir() {
-            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-            None => Ok(Value::Null),
-        }
-    });
+        // dirs_next::home_dir - get user home directory
+        define(interp, "dirs_next·home_dir", Some(0), |_, _| {
+            match dirs::home_dir() {
+                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+                None => Ok(Value::Null),
+            }
+        });
+    }
 }
 
 // ============================================================================
@@ -11219,15 +11227,19 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(std::env::consts::ARCH.to_string())))
     });
 
-    // num_cpus::get - get number of available CPUs
-    define(interp, "num_cpus·get", Some(0), |_, _| {
-        Ok(Value::Int(num_cpus::get() as i64))
-    });
+    // num_cpus functions (native-only: requires num_cpus crate)
+    #[cfg(feature = "native")]
+    {
+        // num_cpus::get - get number of available CPUs
+        define(interp, "num_cpus·get", Some(0), |_, _| {
+            Ok(Value::Int(num_cpus::get() as i64))
+        });
 
-    // num_cpus::get_physical - get number of physical CPU cores
-    define(interp, "num_cpus·get_physical", Some(0), |_, _| {
-        Ok(Value::Int(num_cpus::get_physical() as i64))
-    });
+        // num_cpus::get_physical - get number of physical CPU cores
+        define(interp, "num_cpus·get_physical", Some(0), |_, _| {
+            Ok(Value::Int(num_cpus::get_physical() as i64))
+        });
+    }
 }
 
 // ============================================================================
@@ -18764,9 +18776,10 @@ fn register_polycultural_text(interp: &mut Interpreter) {
 }
 
 // =============================================================================
-// TEXT INTELLIGENCE MODULE - AI-Native Text Analysis
+// TEXT INTELLIGENCE MODULE - AI-Native Text Analysis (native-only)
 // =============================================================================
 
+#[cfg(feature = "native")]
 fn register_text_intelligence(interp: &mut Interpreter) {
     // =========================================================================
     // STRING SIMILARITY METRICS
