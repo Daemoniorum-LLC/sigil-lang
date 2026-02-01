@@ -1145,7 +1145,7 @@ mod tests {
     fn test_parse_alter_def_basic() {
         let source = r#"
             alter Abaddon: Council {
-                archetype: Goetia::Abaddon,
+                archetype: Goetia·Abaddon,
             }
         "#;
         let result = parse_plurality(source);
@@ -1161,7 +1161,7 @@ mod tests {
         let source = r#"
             alter test {
                 switch to Beleth {
-                    reason: SwitchReason::Combat,
+                    reason: SwitchReason·Combat,
                     urgency: 0.8,
                 }
             }
