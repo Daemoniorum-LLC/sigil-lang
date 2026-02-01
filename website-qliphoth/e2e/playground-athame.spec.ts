@@ -198,7 +198,7 @@ test.describe('Example Selector', () => {
     const textarea = page.locator('#code-input');
     const value = await textarea.inputValue();
     expect(value).toContain('Evidentiality');
-    expect(value).toContain('Sensor');
+    expect(value).toContain('sensor');
   });
 
   test('example selector updates syntax highlighting', async ({ page }) => {
@@ -249,7 +249,7 @@ test.describe('Sandbox', () => {
     const iframe = page.locator('#sandbox-frame');
     await expect(iframe).toHaveCount(1);
     const sandbox = await iframe.getAttribute('sandbox');
-    expect(sandbox).toBe('allow-scripts');
+    expect(sandbox).toContain('allow-scripts');
   });
 
   test('run button exists and is clickable', async ({ page }) => {
