@@ -9487,7 +9487,7 @@ mod tests {
     #[test]
     fn test_parse_function() {
         // Simple function with semicolon-terminated statement
-        let source = "fn hello(name: str) -> str { return name; }";
+        let source = "λ hello(name: str) -> str { ⤺ name; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9495,7 +9495,7 @@ mod tests {
 
     #[test]
     fn test_parse_pipe_chain() {
-        let source = "fn main() { let result = data|τ{_ * 2}|φ{_ > 0}|σ; }";
+        let source = "λ main() { ≔ result = data|τ{_ * 2}|φ{_ > 0}|σ; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9503,7 +9503,7 @@ mod tests {
 
     #[test]
     fn test_parse_async_function() {
-        let source = "async fn fetch(url: str) -> Response~ { return client·get(url)|await; }";
+        let source = "async λ fetch(url: str) -> Response~ { ⤺ client·get(url)|await; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9523,7 +9523,7 @@ mod tests {
         let source = r#"
             actor Counter {
                 state: i64 = 0
-                on Increment(n: i64) { return self.state + n; }
+                on Increment(n: i64) { ⤺ self.state + n; }
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9533,7 +9533,7 @@ mod tests {
 
     #[test]
     fn test_parse_number_bases() {
-        let source = "fn bases() { let a = 42; let b = 0b101010; let c = 0x2A; let d = 0v22; }";
+        let source = "λ bases() { ≔ a = 42; ≔ b = 0b101010; ≔ c = 0x2A; ≔ d = 0v22; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9543,10 +9543,10 @@ mod tests {
     fn test_parse_labeled_loops() {
         // Test labeled loop with break
         let source = r#"
-            fn test() {
+            λ test() {
                 'outer: loop {
-                    'inner: while true {
-                        break 'outer;
+                    'inner: ⟳ true {
+                        ⤒ 'outer;
                     }
                 }
             }
@@ -9557,10 +9557,10 @@ mod tests {
 
         // Test labeled for with continue
         let source2 = r#"
-            fn test2() {
-                'rows: for i in 0..10 {
-                    'cols: for j in 0..10 {
-                        if j == 5 { continue 'rows; }
+            λ test2() {
+                'rows: ∀ i ∈ 0..10 {
+                    'cols: ∀ j ∈ 0..10 {
+                        ⎇ j == 5 { ↻ 'rows; }
                     }
                 }
             }
@@ -9573,10 +9573,10 @@ mod tests {
     #[test]
     fn test_parse_inline_asm() {
         let source = r#"
-            fn outb(port: u16, value: u8) {
+            λ outb(port: u16, value: u8) {
                 asm!("out dx, al",
-                    in("dx") port,
-                    in("al") value,
+                    ∈("dx") port,
+                    ∈("al") value,
                     options(nostack));
             }
         "#;
@@ -9594,13 +9594,13 @@ mod tests {
     #[test]
     fn test_parse_inline_asm_with_outputs() {
         let source = r#"
-            fn inb(port: u16) -> u8 {
-                let result: u8 = 0;
-                asm!("in al, dx",
+            λ inb(port: u16) -> u8 {
+                ≔ result: u8 = 0;
+                asm!("∈ al, dx",
                     out("al") result,
-                    in("dx") port,
+                    ∈("dx") port,
                     options(nostack, nomem));
-                return result;
+                ⤺ result;
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9611,8 +9611,8 @@ mod tests {
     #[test]
     fn test_parse_volatile_read() {
         let source = r#"
-            fn read_mmio(addr: *mut u32) -> u32 {
-                return volatile read<u32>(addr);
+            λ read_mmio(addr: *Δ u32) -> u32 {
+                ⤺ volatile read<u32>(addr);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9623,7 +9623,7 @@ mod tests {
     #[test]
     fn test_parse_volatile_write() {
         let source = r#"
-            fn write_mmio(addr: *mut u32, value: u32) {
+            λ write_mmio(addr: *Δ u32, value: u32) {
                 volatile write<u32>(addr, value);
             }
         "#;
@@ -9635,7 +9635,7 @@ mod tests {
     #[test]
     fn test_parse_naked_function() {
         let source = r#"
-            naked fn interrupt_handler() {
+            naked λ interrupt_handler() {
                 asm!("push rax; push rbx; call handler_impl; pop rbx; pop rax; iretq",
                     options(nostack));
             }
@@ -9686,7 +9686,7 @@ mod tests {
             #![no_std]
             #![no_main]
 
-            fn kernel_main() -> ! {
+            λ kernel_main() -> ! {
                 loop {}
             }
         "#;
@@ -9703,7 +9703,7 @@ mod tests {
         let source = r#"
             #![feature(asm, naked_functions)]
 
-            fn main() -> i64 { 0 }
+            λ main() -> i64 { 0 }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9722,7 +9722,7 @@ mod tests {
             #![no_std]
             #![target(arch = "x86_64", os = "none")]
 
-            fn kernel_main() { }
+            λ kernel_main() { }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9743,7 +9743,7 @@ mod tests {
             #![no_std]
 
             #[panic_handler]
-            fn panic(info: *const PanicInfo) -> ! {
+            λ panic(info: *const PanicInfo) -> ! {
                 loop {}
             }
         "#;
@@ -9769,7 +9769,7 @@ mod tests {
 
             #[entry]
             #[no_mangle]
-            fn _start() -> ! {
+            λ _start() -> ! {
                 loop {}
             }
         "#;
@@ -9789,7 +9789,7 @@ mod tests {
     fn test_parse_link_section() {
         let source = r#"
             #[link_section = ".text.boot"]
-            fn boot_code() { }
+            λ boot_code() { }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9811,7 +9811,7 @@ mod tests {
             #![base_address = 0x100000]
             #![stack_size = 0x4000]
 
-            fn kernel_main() { }
+            λ kernel_main() { }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9832,7 +9832,7 @@ mod tests {
         let source = r#"
             #[interrupt(32)]
             #[naked]
-            fn timer_handler() {
+            λ timer_handler() {
                 asm!("iretq", options(nostack));
             }
         "#;
@@ -9851,13 +9851,13 @@ mod tests {
     fn test_parse_inline_attributes() {
         let source = r#"
             #[inline]
-            fn fast() -> i64 { 0 }
+            λ fast() -> i64 { 0 }
 
             #[inline(always)]
-            fn very_fast() -> i64 { 0 }
+            λ very_fast() -> i64 { 0 }
 
             #[inline(never)]
-            fn never_inline() -> i64 { 0 }
+            λ never_inline() -> i64 { 0 }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9878,8 +9878,8 @@ mod tests {
     #[test]
     fn test_parse_simd_type() {
         let source = r#"
-            fn vec_add(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
-                return simd.add(a, b);
+            λ vec_add(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
+                ⤺ simd.add(a, b);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9905,8 +9905,8 @@ mod tests {
     #[test]
     fn test_parse_simd_literal() {
         let source = r#"
-            fn make_vec() -> simd<f32, 4> {
-                return simd[1.0, 2.0, 3.0, 4.0];
+            λ make_vec() -> simd<f32, 4> {
+                ⤺ simd[1.0, 2.0, 3.0, 4.0];
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9917,9 +9917,9 @@ mod tests {
     #[test]
     fn test_parse_simd_intrinsics() {
         let source = r#"
-            fn dot_product(a: simd<f32, 4>, b: simd<f32, 4>) -> f32 {
-                let prod = simd.mul(a, b);
-                return simd.hadd(prod);
+            λ dot_product(a: simd<f32, 4>, b: simd<f32, 4>) -> f32 {
+                ≔ prod = simd.mul(a, b);
+                ⤺ simd.hadd(prod);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9930,8 +9930,8 @@ mod tests {
     #[test]
     fn test_parse_simd_shuffle() {
         let source = r#"
-            fn interleave(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
-                return simd.shuffle(a, b, [0, 4, 1, 5]);
+            λ interleave(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
+                ⤺ simd.shuffle(a, b, [0, 4, 1, 5]);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9968,8 +9968,8 @@ mod tests {
     #[test]
     fn test_parse_atomic_operations() {
         let source = r#"
-            fn increment(ptr: *mut i64) -> i64 {
-                return atomic.fetch_add(ptr, 1, SeqCst);
+            λ increment(ptr: *Δ i64) -> i64 {
+                ⤺ atomic.fetch_add(ptr, 1, SeqCst);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9980,9 +9980,9 @@ mod tests {
     #[test]
     fn test_parse_atomic_compare_exchange() {
         let source = r#"
-            fn cas(ptr: *mut i64, expected: i64, new: i64) -> bool {
-                let result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
-                return result;
+            λ cas(ptr: *Δ i64, expected: i64, new: i64) -> bool {
+                ≔ result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
+                ⤺ result;
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9993,7 +9993,7 @@ mod tests {
     #[test]
     fn test_parse_atomic_fence() {
         let source = r#"
-            fn memory_barrier() {
+            λ memory_barrier() {
                 atomic.fence(SeqCst);
             }
         "#;
@@ -10048,11 +10048,11 @@ mod tests {
     #[test]
     fn test_parse_allocator_trait() {
         let source = r#"
-            trait Allocator {
+            Θ Allocator {
                 type Error;
 
-                fn allocate(size: usize, align: usize) -> *mut u8;
-                fn deallocate(ptr: *mut u8, size: usize, align: usize);
+                λ allocate(size: usize, align: usize) -> *Δ u8;
+                λ deallocate(ptr: *Δ u8, size: usize, align: usize);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -10071,11 +10071,11 @@ mod tests {
     #[test]
     fn test_parse_where_clause() {
         let source = r#"
-            fn alloc_array<T, A>(allocator: &mut A, count: usize) -> *mut T
+            λ alloc_array<T, A>(allocator: &Δ A, count: usize) -> *Δ T
             where
                 A: Allocator,
             {
-                return allocator.allocate(count, 8);
+                ⤺ allocator.allocate(count, 8);
             }
         "#;
         let mut parser = Parser::new(source);

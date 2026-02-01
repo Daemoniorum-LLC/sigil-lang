@@ -7514,8 +7514,8 @@ pub mod llvm {
             // Known (!) just returns the inner value
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 42!;
+                λ main() -> i64 {
+                    ≔ x = 42!;
                     x
                 }
             "#,
@@ -7528,8 +7528,8 @@ pub mod llvm {
             // Uncertain (?) wraps and unwraps correctly
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 100?;
+                λ main() -> i64 {
+                    ≔ x = 100?;
                     x
                 }
             "#,
@@ -7542,8 +7542,8 @@ pub mod llvm {
             // Reported (~) wraps and unwraps correctly
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 200~;
+                λ main() -> i64 {
+                    ≔ x = 200~;
                     x
                 }
             "#,
@@ -7556,8 +7556,8 @@ pub mod llvm {
             // Predicted (◊) wraps and unwraps correctly
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 300◊;
+                λ main() -> i64 {
+                    ≔ x = 300◊;
                     x
                 }
             "#,
@@ -7570,9 +7570,9 @@ pub mod llvm {
             // Evidential values can be used in expressions
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let a = 10?;
-                    let b = 20?;
+                λ main() -> i64 {
+                    ≔ a = 10?;
+                    ≔ b = 20?;
                     a + b
                 }
             "#,
@@ -7585,9 +7585,9 @@ pub mod llvm {
             // Chain: uncertain -> known (unwrap)
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 42?;
-                    let y = x!;
+                λ main() -> i64 {
+                    ≔ x = 42?;
+                    ≔ y = x!;
                     y
                 }
             "#,
@@ -7600,8 +7600,8 @@ pub mod llvm {
             // Nested evidential operations
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = (50?)!;
+                λ main() -> i64 {
+                    ≔ x = (50?)!;
                     x + 5
                 }
             "#,
@@ -7614,9 +7614,9 @@ pub mod llvm {
             // Evidential values with arithmetic
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let known = 100!;
-                    let uncertain = 50?;
+                λ main() -> i64 {
+                    ≔ known = 100!;
+                    ≔ uncertain = 50?;
                     known + uncertain * 2
                 }
             "#,
@@ -7629,12 +7629,12 @@ pub mod llvm {
             // Function returning evidential value
             let result = run_sigil(
                 r#"
-                fn get_uncertain() -> i64 {
+                λ get_uncertain() -> i64 {
                     42?
                 }
 
-                fn main() -> i64 {
-                    let x = get_uncertain();
+                λ main() -> i64 {
+                    ≔ x = get_uncertain();
                     x + 8
                 }
             "#,
@@ -7647,10 +7647,10 @@ pub mod llvm {
             // Mix different evidentiality markers
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let a = 10!;  // known
-                    let b = 20?;  // uncertain
-                    let c = 30~;  // reported
+                λ main() -> i64 {
+                    ≔ a = 10!;  // known
+                    ≔ b = 20?;  // uncertain
+                    ≔ c = 30~;  // reported
                     a + b + c
                 }
             "#,
@@ -7663,11 +7663,11 @@ pub mod llvm {
             // Evidential in conditional
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 1?;
-                    if x == 1 {
+                λ main() -> i64 {
+                    ≔ x = 1?;
+                    ⎇ x == 1 {
                         100?
-                    } else {
+                    } ⎉ {
                         200?
                     }
                 }
@@ -7681,8 +7681,8 @@ pub mod llvm {
             // Paradox (‽) marker - contradiction detection
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 42‽;
+                λ main() -> i64 {
+                    ≔ x = 42‽;
                     x
                 }
             "#,
@@ -7695,10 +7695,10 @@ pub mod llvm {
             // Multiple sequential unwraps
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let a = 10?;
-                    let b = a!;
-                    let c = b!;
+                λ main() -> i64 {
+                    ≔ a = 10?;
+                    ≔ b = a!;
+                    ≔ c = b!;
                     c
                 }
             "#,
@@ -7711,10 +7711,10 @@ pub mod llvm {
             // Evidential values in a loop
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let mut sum = 0?;
-                    let mut i = 0;
-                    while i < 5 {
+                λ main() -> i64 {
+                    ≔ Δ sum = 0?;
+                    ≔ Δ i = 0;
+                    ⟳ i < 5 {
                         sum = sum + i?;
                         i = i + 1;
                     }
@@ -7730,12 +7730,12 @@ pub mod llvm {
             // Comparison of evidential values
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let a = 10?;
-                    let b = 20?;
-                    if a < b {
+                λ main() -> i64 {
+                    ≔ a = 10?;
+                    ≔ b = 20?;
+                    ⎇ a < b {
                         1!
-                    } else {
+                    } ⎉ {
                         0!
                     }
                 }
@@ -7749,9 +7749,9 @@ pub mod llvm {
             // Negation with evidential values
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 42?;
-                    let y = -x;
+                λ main() -> i64 {
+                    ≔ x = 42?;
+                    ≔ y = -x;
                     y + 100
                 }
             "#,
@@ -7764,11 +7764,11 @@ pub mod llvm {
             // Chain of operations with mixed evidentiality
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 10!;
-                    let y = 20?;
-                    let z = 30~;
-                    let w = 40◊;
+                λ main() -> i64 {
+                    ≔ x = 10!;
+                    ≔ y = 20?;
+                    ≔ z = 30~;
+                    ≔ w = 40◊;
                     x + y + z + w
                 }
             "#,
@@ -7781,8 +7781,8 @@ pub mod llvm {
             // Deeply nested evidential expressions
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = ((((42?)?)?)?)?;
+                λ main() -> i64 {
+                    ≔ x = ((((42?)?)?)?)?;
                     x!
                 }
             "#,
@@ -7795,12 +7795,12 @@ pub mod llvm {
             // Evidential values as struct fields
             let result = run_sigil(
                 r#"
-                struct Data {
+                Σ Data {
                     value: i64,
                 }
 
-                fn main() -> i64 {
-                    let d = Data { value: 100? };
+                λ main() -> i64 {
+                    ≔ d = Data { value: 100? };
                     d.value + 1
                 }
             "#,
@@ -7813,12 +7813,12 @@ pub mod llvm {
             // Function with evidential parameter
             let result = run_sigil(
                 r#"
-                fn double(x: i64) -> i64 {
+                λ double(x: i64) -> i64 {
                     x * 2
                 }
 
-                fn main() -> i64 {
-                    let val = 25?;
+                λ main() -> i64 {
+                    ≔ val = 25?;
                     double(val!)
                 }
             "#,
@@ -7831,12 +7831,12 @@ pub mod llvm {
             // All 5 evidentiality markers in sequence
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let known = 1!;      // Known
-                    let uncertain = 2?;  // Uncertain
-                    let reported = 3~;   // Reported
-                    let predicted = 4◊;  // Predicted
-                    let paradox = 5‽;    // Paradox
+                λ main() -> i64 {
+                    ≔ known = 1!;      // Known
+                    ≔ uncertain = 2?;  // Uncertain
+                    ≔ reported = 3~;   // Reported
+                    ≔ predicted = 4◊;  // Predicted
+                    ≔ paradox = 5‽;    // Paradox
                     known + uncertain + reported + predicted + paradox
                 }
             "#,
@@ -7852,13 +7852,13 @@ pub mod llvm {
         fn test_generic_struct_basic() {
             let result = run_sigil(
                 r#"
-                struct Container<T> {
+                Σ Container<T> {
                     value: T,
                     count: i32,
                 }
 
-                fn main() -> i64 {
-                    let c = Container::<i32> { value: 42, count: 1 };
+                λ main() -> i64 {
+                    ≔ c = Container·<i32> { value: 42, count: 1 };
                     c.value + c.count
                 }
             "#,
@@ -7870,13 +7870,13 @@ pub mod llvm {
         fn test_generic_struct_two_params() {
             let result = run_sigil(
                 r#"
-                struct Pair<A, B> {
+                Σ Pair<A, B> {
                     first: A,
                     second: B,
                 }
 
-                fn main() -> i64 {
-                    let p = Pair::<i32, i32> { first: 10, second: 20 };
+                λ main() -> i64 {
+                    ≔ p = Pair·<i32, i32> { first: 10, second: 20 };
                     p.first + p.second
                 }
             "#,
@@ -7893,7 +7893,7 @@ pub mod llvm {
             // First element: [1, 2, 3] |α returns 1
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [10, 20, 30] |α
                 }
             "#,
@@ -7906,7 +7906,7 @@ pub mod llvm {
             // Last element: [1, 2, 3] |ω returns 3
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [10, 20, 30] |ω
                 }
             "#,
@@ -7919,7 +7919,7 @@ pub mod llvm {
             // Middle element: [1, 2, 3, 4, 5] |μ returns 3
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [10, 20, 30, 40, 50] |μ
                 }
             "#,
@@ -7932,7 +7932,7 @@ pub mod llvm {
             // Nth element: [1, 2, 3] |ν{1} returns 2
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [10, 20, 30] |ν{1}
                 }
             "#,
@@ -7949,10 +7949,10 @@ pub mod llvm {
             // Simple min of two values
             let result = run_sigil(
                 r#"
-                fn min2(a: i64, b: i64) -> i64 {
-                    if a < b { a } else { b }
+                λ min2(a: i64, b: i64) -> i64 {
+                    ⎇ a < b { a } ⎉ { b }
                 }
-                fn main() -> i64 {
+                λ main() -> i64 {
                     min2(min2(5, 2), min2(8, 1))
                 }
             "#,
@@ -7965,10 +7965,10 @@ pub mod llvm {
             // Simple max of two values
             let result = run_sigil(
                 r#"
-                fn max2(a: i64, b: i64) -> i64 {
-                    if a > b { a } else { b }
+                λ max2(a: i64, b: i64) -> i64 {
+                    ⎇ a > b { a } ⎉ { b }
                 }
-                fn main() -> i64 {
+                λ main() -> i64 {
                     max2(max2(5, 2), max2(8, 9))
                 }
             "#,
@@ -7981,7 +7981,7 @@ pub mod llvm {
             // All: [1, 2, 3] |ρ& returns 1 (all non-zero)
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [1, 2, 3] |ρ&
                 }
             "#,
@@ -7994,7 +7994,7 @@ pub mod llvm {
             // All: [1, 0, 3] |ρ& returns 0 (not all non-zero)
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [1, 0, 3] |ρ&
                 }
             "#,
@@ -8007,7 +8007,7 @@ pub mod llvm {
             // Any: [0, 0, 1] |ρ| returns 1 (at least one non-zero)
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [0, 0, 1] |ρ|
                 }
             "#,
@@ -8020,7 +8020,7 @@ pub mod llvm {
             // Any: [0, 0, 0] |ρ| returns 0 (none non-zero)
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [0, 0, 0] |ρ|
                 }
             "#,
@@ -8037,8 +8037,8 @@ pub mod llvm {
             // Transform then first: [1, 2, 3] |τ{|x| x * 10} |α returns 10
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let arr = [1, 2, 3] |τ{|x| x * 10};
+                λ main() -> i64 {
+                    ≔ arr = [1, 2, 3] |τ{|x| x * 10};
                     arr |α
                 }
             "#,
@@ -8053,7 +8053,7 @@ pub mod llvm {
             // Filter then sum: keep values > 3, sum them
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [1, 5, 2, 8, 3, 7] |φ{|x| x > 3} |ρ+
                 }
             "#,
@@ -8071,7 +8071,7 @@ pub mod llvm {
             // Sort returns minimum (first after sort): [3, 1, 2] |σ returns 1
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [3, 1, 2] |σ
                 }
             "#,
@@ -8084,7 +8084,7 @@ pub mod llvm {
             // Sort already sorted: [1, 2, 3] |σ returns 1
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [1, 2, 3] |σ
                 }
             "#,
@@ -8097,7 +8097,7 @@ pub mod llvm {
             // Sort reverse: [5, 4, 3, 2, 1] |σ returns 1
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [5, 4, 3, 2, 1] |σ
                 }
             "#,
@@ -8110,7 +8110,7 @@ pub mod llvm {
             // Sort single element: [42] |σ returns 42
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [42] |σ
                 }
             "#,
@@ -8123,7 +8123,7 @@ pub mod llvm {
             // Choice is deterministic based on array contents
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [10, 20, 30] |χ
                 }
             "#,
@@ -8138,7 +8138,7 @@ pub mod llvm {
             // Choice with single element: [42] |χ returns 42
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [42] |χ
                 }
             "#,
@@ -8151,7 +8151,7 @@ pub mod llvm {
             // Custom reduce sum: [1, 2, 3, 4] |ρ{|a, x| a + x} = 10
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [1, 2, 3, 4] |ρ{|acc, x| acc + x}
                 }
             "#,
@@ -8164,7 +8164,7 @@ pub mod llvm {
             // Custom reduce product: [1, 2, 3, 4] |ρ{|a, x| a * x} = 24
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [1, 2, 3, 4] |ρ{|acc, x| acc * x}
                 }
             "#,
@@ -8177,7 +8177,7 @@ pub mod llvm {
             // Custom reduce difference: [100, 20, 5] |ρ{|a, x| a - x} = 75
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [100, 20, 5] |ρ{|acc, x| acc - x}
                 }
             "#,
@@ -8190,7 +8190,7 @@ pub mod llvm {
             // Custom reduce single element: [42] |ρ{|a, x| a + x} = 42
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
+                λ main() -> i64 {
                     [42] |ρ{|acc, x| acc + x}
                 }
             "#,
@@ -8203,8 +8203,8 @@ pub mod llvm {
             // Await expression form: expr⌛ (postfix syntax)
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 42;
+                λ main() -> i64 {
+                    ≔ x = 42;
                     x⌛
                 }
             "#,
@@ -8218,9 +8218,9 @@ pub mod llvm {
             // Nested await expressions
             let result = run_sigil(
                 r#"
-                fn main() -> i64 {
-                    let x = 21;
-                    let y = x⌛ + x⌛;
+                λ main() -> i64 {
+                    ≔ x = 21;
+                    ≔ y = x⌛ + x⌛;
                     y
                 }
             "#,

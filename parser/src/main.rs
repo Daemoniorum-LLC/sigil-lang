@@ -3033,7 +3033,7 @@ description = ""
 [evidentiality]
 # Require explicit evidence markers on function boundaries
 strict = false
-# Default evidence level for unmarked external data
+# Default evidence level ∀ unmarked external data
 external_default = "reported"
 
 [dependencies]
@@ -3058,7 +3058,7 @@ fn default_main(name: &str) -> String {
 // Run with: sigil run src/main.sigil
 // Or: sigil build && ./{name}
 
-fn main() {{
+λ main() {{
     print("Hello from {name}!");
 
     // Sigil's evidentiality system tracks data provenance:
@@ -3071,8 +3071,8 @@ fn main() {{
     // τ (tau) = transform/map
     // φ (phi) = filter
     // σ (sigma) = sort
-    let data = [1, 2, 3, 4, 5];
-    let result = data
+    ≔ data = [1, 2, 3, 4, 5];
+    ≔ result = data
         |τ{{_ * 2}}
         |φ{{_ > 5}}
         |σ;
@@ -3080,7 +3080,7 @@ fn main() {{
     print("Processed: ");
     print(result);
 
-    return 0;
+    ⤺ 0;
 }}
 "#
     )
@@ -3088,20 +3088,20 @@ fn main() {{
 
 /// Default test file for a new project
 fn default_test() -> String {
-    r#"// Tests for the project
+    r#"// Tests ∀ the project
 //
 // Run with: sigil test
 
 #[test]
-fn test_example() {
-    let result = 2 + 2;
+λ test_example() {
+    ≔ result = 2 + 2;
     assert_eq(result, 4);
 }
 
 #[test]
-fn test_morpheme_pipeline() {
-    let data = [1, 2, 3];
-    let doubled = data|τ{_ * 2};
+λ test_morpheme_pipeline() {
+    ≔ data = [1, 2, 3];
+    ≔ doubled = data|τ{_ * 2};
     assert_eq(doubled, [2, 4, 6]);
 }
 "#
