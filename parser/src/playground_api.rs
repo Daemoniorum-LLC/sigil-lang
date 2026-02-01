@@ -36,6 +36,24 @@ pub fn playground_run(source: &str) -> String {
         }
     };
 
+    // Type check before execution - evidentiality is enforced at compile time
+    let mut type_checker = TypeChecker::new();
+    if let Err(type_errors) = type_checker.check_file(&ast) {
+        for err in type_errors {
+            let mut msg = format!("Type error: {}", err.message);
+            for note in &err.notes {
+                msg.push_str(&format!("\n  note: {}", note));
+            }
+            errors.push(msg);
+        }
+        let elapsed = js_sys::Date::now() - start;
+        return serde_json::json!({
+            "output": [],
+            "errors": errors,
+            "elapsed_ms": elapsed as u64,
+        }).to_string();
+    }
+
     // Execute with stdlib
     let mut interpreter = Interpreter::new();
     register_stdlib(&mut interpreter);

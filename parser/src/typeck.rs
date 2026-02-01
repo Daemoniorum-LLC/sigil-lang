@@ -1601,11 +1601,21 @@ impl TypeChecker {
                 let final_ty = match (&declared_ty, &init_ty) {
                     (Some(d), Some(i)) => {
                         if !self.unify(d, i) {
-                            // Report type mismatch error
+                            // Report type mismatch error with helpful hints
                             let binding_name = pattern.binding_name().unwrap_or_else(|| "<pattern>".to_string());
+
+                            // Check for common Rust-ism: using [T] slice syntax with array literal
+                            let hint = match (d, i) {
+                                (Type::Slice(_), Type::Array { .. }) => {
+                                    ". Hint: `[T]` is slice syntax in Sigil. \
+                                    For arrays, use `[T; N]` or omit the type annotation entirely"
+                                }
+                                _ => "",
+                            };
+
                             let mut err = TypeError::new(format!(
-                                "type mismatch in let binding '{}': expected {:?}, found {:?}",
-                                binding_name, d, i
+                                "type mismatch in let binding '{}': expected {:?}, found {:?}{}",
+                                binding_name, d, i, hint
                             ));
                             if let Some(span) = pattern.binding_span() {
                                 err = err.with_span(span);
@@ -3218,6 +3228,12 @@ impl TypeChecker {
                 na == nb && ga.len() == gb.len() &&
                 ga.iter().zip(gb.iter()).all(|(x, y)| self.unify(x, y))
             }
+
+            // Null (Unit) is assignable to any uncertain type (like None for Option<T>)
+            (Type::Unit, Type::Evidential { evidence, .. })
+                if *evidence == EvidenceLevel::Uncertain => true,
+            (Type::Evidential { evidence, .. }, Type::Unit)
+                if *evidence == EvidenceLevel::Uncertain => true,
 
             // Evidential types: inner must unify, evidence can differ
             (Type::Evidential { inner: a, .. }, Type::Evidential { inner: b, .. }) => {

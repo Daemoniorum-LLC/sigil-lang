@@ -7390,6 +7390,61 @@ fn register_concurrency(interp: &mut Interpreter) {
     // --- HTTP Convenience Functions ---
 
     // Http·get(url) - Simple GET request (convenience wrapper)
+    // In playground mode, returns mock data for demo purposes
+    #[cfg(feature = "playground")]
+    define(interp, "Http·get", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(raw)) = borrowed.get("raw") {
+                    raw.to_string()
+                } else {
+                    return Err(RuntimeError::new("Invalid URL object"));
+                }
+            }
+            _ => return Err(RuntimeError::new("Http·get requires URL string")),
+        };
+
+        // Mock response based on URL pattern
+        let (status, body) = if url.contains("/api/users") {
+            (200, r#"{"id": 42, "name": "Alice", "email": "alice@example.com"}"#.to_string())
+        } else if url.contains("/api/posts") {
+            (200, r#"[{"id": 1, "title": "Hello Sigil"}, {"id": 2, "title": "Async is Easy"}]"#.to_string())
+        } else if url.contains("/api/echo") {
+            (200, format!(r#"{{"echoed_url": "{}"}}"#, url))
+        } else if url.contains("/health") || url.contains("/ping") {
+            (200, r#"{"status": "ok"}"#.to_string())
+        } else {
+            (200, format!("<html><body><h1>Mock Response</h1><p>URL: {}</p></body></html>", url))
+        };
+
+        let mut resp_fields = std::collections::HashMap::new();
+        resp_fields.insert("status".to_string(), Value::Int(status));
+        resp_fields.insert("ok".to_string(), Value::Bool(true));
+        resp_fields.insert("body".to_string(), Value::String(Rc::new(body)));
+        resp_fields.insert("headers".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::Tuple(Rc::new(vec![
+                Value::String(Rc::new("Content-Type".to_string())),
+                Value::String(Rc::new("application/json".to_string())),
+            ])),
+            Value::Tuple(Rc::new(vec![
+                Value::String(Rc::new("X-Sigil-Playground".to_string())),
+                Value::String(Rc::new("mock".to_string())),
+            ])),
+        ]))));
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Struct {
+                name: "HttpResponse".to_string(),
+                fields: Rc::new(RefCell::new(resp_fields)),
+            }])),
+        })
+    });
+
+    #[cfg(not(feature = "playground"))]
     define(interp, "Http·get", Some(1), |_, args| {
         let url = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -7521,6 +7576,56 @@ fn register_concurrency(interp: &mut Interpreter) {
     });
 
     // Http·post(url, body) - Simple POST request (convenience wrapper)
+    // In playground mode, returns mock data for demo purposes
+    #[cfg(feature = "playground")]
+    define(interp, "Http·post", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(raw)) = borrowed.get("raw") {
+                    raw.to_string()
+                } else {
+                    return Err(RuntimeError::new("Invalid URL object"));
+                }
+            }
+            _ => return Err(RuntimeError::new("Http·post requires URL string")),
+        };
+
+        let body_str = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => "<binary data>".to_string(),
+        };
+
+        // Mock POST response - echo back what was sent
+        let body = format!(r#"{{"received": {}, "url": "{}"}}"#, body_str, url);
+
+        let mut resp_fields = std::collections::HashMap::new();
+        resp_fields.insert("status".to_string(), Value::Int(201));
+        resp_fields.insert("ok".to_string(), Value::Bool(true));
+        resp_fields.insert("body".to_string(), Value::String(Rc::new(body)));
+        resp_fields.insert("headers".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::Tuple(Rc::new(vec![
+                Value::String(Rc::new("Content-Type".to_string())),
+                Value::String(Rc::new("application/json".to_string())),
+            ])),
+            Value::Tuple(Rc::new(vec![
+                Value::String(Rc::new("X-Sigil-Playground".to_string())),
+                Value::String(Rc::new("mock".to_string())),
+            ])),
+        ]))));
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Struct {
+                name: "HttpResponse".to_string(),
+                fields: Rc::new(RefCell::new(resp_fields)),
+            }])),
+        })
+    });
+
+    #[cfg(not(feature = "playground"))]
     define(interp, "Http·post", Some(2), |_, args| {
         let url = match &args[0] {
             Value::String(s) => s.to_string(),

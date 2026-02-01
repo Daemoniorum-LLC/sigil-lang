@@ -235,3 +235,4 @@ path = "src/main.rs"
 [lib]
 name = "sigil_parser"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]

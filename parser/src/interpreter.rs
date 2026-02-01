@@ -4023,8 +4023,9 @@ impl Interpreter {
                     // Check if variable exists (to distinguish from first assignment vs reassignment)
                     if in_env || in_globals {
                         return Err(RuntimeError::new(format!(
-                            "cannot assign to immutable variable '{}'",
-                            name
+                            "cannot assign to immutable variable '{}'. \
+                            Hint: Use `≔ Δ {} = ...` or `vary {} = ...` to declare mutable variables",
+                            name, name, name
                         )));
                     }
                 }
@@ -6591,7 +6592,7 @@ impl Interpreter {
 
     fn bind_pattern(&mut self, pattern: &Pattern, value: Value) -> Result<(), RuntimeError> {
         match pattern {
-            Pattern::Ident { name, mutable, .. } => {
+            Pattern::Ident { name, mutable, evidentiality } => {
                 // Don't bind "_" - it's a wildcard in identifier form
                 if name.name != "_" {
                     // Debug: trace path binding
@@ -6602,9 +6603,18 @@ impl Interpreter {
                     if *mutable {
                         self.mutable_vars.borrow_mut().insert(name.name.clone());
                     }
+                    // If pattern has evidentiality, bind the inner value (evidence already matched)
+                    let bound_value = if evidentiality.is_some() {
+                        match value {
+                            Value::Evidential { value: inner, .. } => *inner,
+                            other => other,
+                        }
+                    } else {
+                        value
+                    };
                     self.environment
                         .borrow_mut()
-                        .define(name.name.clone(), value);
+                        .define(name.name.clone(), bound_value);
                 }
                 Ok(())
             }
@@ -6864,6 +6874,14 @@ impl Interpreter {
                 // No pattern matched - this shouldn't happen if pattern_matches returned true earlier
                 Err(RuntimeError::new("Or pattern didn't match any alternative"))
             }
+            Pattern::RefBinding { name, .. } => {
+                // Rust's `ref` pattern is not supported in Sigil
+                Err(RuntimeError::new(format!(
+                    "Rust's `ref {}` pattern is not supported in Sigil. \
+                    Variables bind by value. Use `≔ {} = &expr` for explicit references",
+                    name.name, name.name
+                )))
+            }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported pattern: {:?}",
                 pattern
@@ -6989,7 +7007,25 @@ impl Interpreter {
     }
 
     fn pattern_matches(&mut self, pattern: &Pattern, value: &Value) -> Result<bool, RuntimeError> {
-        // Unwrap evidential/affective/ref wrappers from value
+        // Evidence-level pattern matching: dispatch on evidence before unwrapping
+        if let Pattern::Ident { evidentiality: Some(ev), .. } = pattern {
+            return match (ev, value) {
+                // Evidential value — check level matches
+                (Evidentiality::Known, Value::Evidential { evidence: Evidence::Known, .. }) => Ok(true),
+                (Evidentiality::Uncertain, Value::Evidential { evidence: Evidence::Uncertain, .. }) => Ok(true),
+                (Evidentiality::Reported, Value::Evidential { evidence: Evidence::Reported, .. }) => Ok(true),
+                (Evidentiality::Predicted, Value::Evidential { evidence: Evidence::Predicted, .. }) => Ok(true),
+                (Evidentiality::Paradox, Value::Evidential { evidence: Evidence::Paradox, .. }) => Ok(true),
+                // Known pattern also matches bare (non-evidential) values — bare values are implicitly known
+                (Evidentiality::Known, v) if !matches!(v, Value::Evidential { .. } | Value::Null) => Ok(true),
+                // Uncertain pattern (?v) matches any non-null value (bare or evidential with compatible level)
+                // This handles the case: ≔ x: i32? = 42; ⌥ x { ?v => ..., null => ... }
+                (Evidentiality::Uncertain, v) if !matches!(v, Value::Null) => Ok(true),
+                _ => Ok(false),
+            };
+        }
+
+        // Non-evidence patterns: unwrap evidential/affective/ref wrappers as before
         let value = Self::unwrap_all(value);
 
         // Debug string pattern matching
@@ -7001,29 +7037,6 @@ impl Interpreter {
 
         match (pattern, &value) {
             (Pattern::Wildcard, _) => Ok(true),
-            // Pattern::Ident with evidentiality - ?g matches Some/non-null, !g matches Known values
-            (
-                Pattern::Ident {
-                    evidentiality: Some(Evidentiality::Uncertain),
-                    name,
-                    ..
-                },
-                val,
-            ) => {
-                // ?g pattern should match non-null values (i.e., Option::Some)
-                let matches = match val {
-                    Value::Null => false,
-                    Value::Variant { variant_name, .. } if variant_name == "None" => false,
-                    _ => true,
-                };
-                crate::sigil_debug!(
-                    "DEBUG pattern_matches ?{}: value={} => {}",
-                    name.name,
-                    self.format_value(val),
-                    matches
-                );
-                Ok(matches)
-            }
             (Pattern::Ident { .. }, _) => Ok(true),
             (Pattern::Literal(lit), val) => {
                 let lit_val = self.eval_literal(lit)?;
@@ -16713,26 +16726,26 @@ impl Interpreter {
     fn eval_evidential(&mut self, expr: &Expr, ev: &Evidentiality) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
 
-        // For Known (!) evidentiality - this is an "unwrap" or "assert known" operation
-        // If the value is null, return null (propagate nulls for graceful handling)
-        // If the value is already evidential, unwrap it
-        // Otherwise, return the value as-is (it's implicitly known)
-        if *ev == Evidentiality::Known {
-            return match value {
-                Value::Null => Ok(Value::Null), // Null propagates
-                Value::Evidential { value: inner, .. } => Ok(*inner), // Unwrap evidential
-                other => Ok(other),             // Non-null, non-evidential returns as-is
-            };
+        // All evidentiality markers wrap the value with the corresponding evidence level.
+        // If the value is already evidential, re-wrap with the new evidence level.
+        // Null propagates as-is (no evidence on null).
+        if let Value::Null = &value {
+            return Ok(Value::Null);
         }
 
+        let inner = match value {
+            Value::Evidential { value: inner, .. } => *inner, // Strip existing evidence before re-wrapping
+            other => other,
+        };
+
         let evidence = match ev {
-            Evidentiality::Known => Evidence::Known, // Won't reach here
+            Evidentiality::Known => Evidence::Known,
             Evidentiality::Uncertain | Evidentiality::Predicted => Evidence::Uncertain,
             Evidentiality::Reported => Evidence::Reported,
             Evidentiality::Paradox => Evidence::Paradox,
         };
         Ok(Value::Evidential {
-            value: Box::new(value),
+            value: Box::new(inner),
             evidence,
         })
     }

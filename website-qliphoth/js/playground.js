@@ -278,9 +278,9 @@ const EXAMPLES = {
 
     // Filter evens, double them, sum
     \u2254 result = numbers
-        |> \u03C6(|x| x % 2 == 0)    // filter evens
-        |> \u03C4(|x| x * 2)          // transform: double
-        |> \u03A3();                    // sum: 60
+        |\u03C6{x => x % 2 == 0}    // filter evens
+        |\u03C4{x => x * 2}          // transform: double
+        |\u03A3;                      // sum: 60
 
     print("Pipeline result: " + to_string(result));
 }`,
@@ -288,45 +288,66 @@ const EXAMPLES = {
     evidentiality: `// Evidentiality Types
 // Track data provenance at the type level
 
-sigil Sensor {
-    temperature: f64,
-    confidence: f64,
-}
-
-rite read_sensor() \u2192 Sensor! {
-    // ! = Known evidence (direct measurement)
-    Sensor { temperature: 23.5, confidence: 0.99 }!
-}
-
-rite estimate_weather() \u2192 String? {
-    // ? = Uncertain evidence (inference)
-    \u2254 sensor = read_sensor();
-    \u2387 sensor.temperature > 20.0 {
-        "Warm"?
-    } \u2389 {
-        "Cold"?
-    }
-}
-
 \u2609 rite main() {
-    \u2254 reading = read_sensor();
-    \u2254 weather = estimate_weather();
-    print("Temperature: " + to_string(reading.temperature));
-    print("Weather: " + weather);
+    // Evidence markers are TYPE postfixes (per spec)
+    \u2254 sensor: f64! = 23.5;       // ! = Known (verified)
+    \u2254 forecast: f64? = 18.0;     // ? = Uncertain (may be null)
+    \u2254 user_input: String~ = "30"; // ~ = Reported (external)
+
+    print("Known sensor: " + to_string(sensor));
+    print("Reported input: " + user_input);
+
+    // Uncertain values may be null - must handle both cases
+    \u2254 maybe_value: i32? = 42;
+    \u2254 nothing: i32? = null;
+
+    // Pattern match on uncertain values
+    \u2325 maybe_value {
+        ?v => print("Has value: " + to_string(v)),
+        null => print("No value"),
+    }
+
+    \u2325 nothing {
+        ?v => print("Has value: " + to_string(v)),
+        null => print("Nothing is null"),
+    }
+
+    // Extract with default via pattern matching
+    \u2254 safe = \u2325 nothing {
+        ?v => v,
+        null => 0,
+    };
+    print("With default: " + to_string(safe));
 }`,
 
-    async: `// Async/Await with Protocols
-// Sigil has native HTTP and WebSocket support
-
-async rite fetch_data(url: String) \u2192 String {
-    \u2254 response = await http_get(url);
-    response.body
-}
+    async: `// HTTP with Mock Backend
+// The playground provides mock HTTP responses
 
 \u2609 rite main() {
-    print("Sigil supports async/await");
-    print("with protocol-native HTTP and WebSocket");
-    print("Built on Tokio for production performance");
+    // Http\u00B7get returns Result<HttpResponse, String>
+    \u2254 result = Http\u00B7get("http://api.example.com/api/users/42");
+
+    \u2325 result {
+        Ok(response) => {
+            print("Status: " + to_string(response.status));
+            print("Body: " + response.body);
+        },
+        Err(e) => print("Error: " + e),
+    }
+
+    // Try the posts endpoint
+    \u2254 posts = Http\u00B7get("http://api.example.com/api/posts");
+    \u2325 posts {
+        Ok(r) => print("Posts: " + r.body),
+        Err(e) => print("Error: " + e),
+    }
+
+    // POST echoes back what you send
+    \u2254 posted = Http\u00B7post("http://api.example.com/api/echo", "{\\"message\\": \\"Hello!\\"}");
+    \u2325 posted {
+        Ok(r) => print("Posted: " + r.body),
+        Err(e) => print("Error: " + e),
+    }
 }`,
 
     todo: `// Todo App Structure
@@ -477,10 +498,14 @@ class SandboxController {
         this.statusText = document.getElementById('status-text');
 
         // Create sandbox iframe
+        // NOTE: allow-same-origin is required for the sandbox to load worker.js
+        // A future improvement would be to inline the worker as a Blob URL,
+        // which would allow removing allow-same-origin for better isolation.
+        // See PLAYGROUND-SPEC.md §5.1 for security considerations.
         this.iframe = document.createElement('iframe');
         this.iframe.id = 'sandbox-frame';
         this.iframe.src = 'sandbox/sandbox.html';
-        this.iframe.sandbox = 'allow-scripts';
+        this.iframe.sandbox = 'allow-scripts allow-same-origin';
         this.iframe.style.display = 'none';
         document.body.appendChild(this.iframe);
 

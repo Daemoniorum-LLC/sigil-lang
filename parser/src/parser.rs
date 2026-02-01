@@ -4922,7 +4922,6 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Question) => {
                     // Check if this is Type? { ... } struct literal with evidentiality
-                    // vs expr? try operator
                     if self.peek_next() == Some(&Token::LBrace) && !self.is_in_condition() {
                         if let Expr::Path(ref path) = expr {
                             let path = path.clone();
@@ -4934,9 +4933,15 @@ impl<'a> Parser<'a> {
                             continue;
                         }
                     }
-                    // Not a struct literal - treat as try operator
-                    self.advance();
-                    expr = Expr::Try(Box::new(expr));
+                    // Evidentiality marker: expr? wraps value as uncertain
+                    if let Some(ev) = self.parse_evidentiality_opt() {
+                        expr = Expr::Evidential {
+                            expr: Box::new(expr),
+                            evidentiality: ev,
+                        };
+                    } else {
+                        break;
+                    }
                 }
                 // Cast expression: expr as Type  OR  expr → Type
                 Some(Token::As) | Some(Token::Arrow) => {
