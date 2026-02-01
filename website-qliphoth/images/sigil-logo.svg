@@ -132,9 +132,9 @@
 
     <!-- ◊ Predicted (center) - AI/ML outputs, the heart of the lattice -->
     <g transform="translate(0,0)" data-evidence="predicted" data-symbol="◊">
-      <circle r="30" fill="url(#predicted)"/>
-      <circle r="18" fill="#0a0a0a"/>
-      <text y="7" fill="#B87ACC" font-family="monospace" font-size="26" font-weight="bold" text-anchor="middle">◊</text>
+      <circle r="38" fill="url(#predicted)"/>
+      <circle r="24" fill="#0a0a0a"/>
+      <text y="9" fill="#C98FDB" font-family="monospace" font-size="32" font-weight="bold" text-anchor="middle">◊</text>
     </g>
 
   </g>
