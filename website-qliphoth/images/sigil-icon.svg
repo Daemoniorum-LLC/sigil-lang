@@ -38,7 +38,8 @@
     <circle cy="22" r="6" fill="url(#p)"/>
     <text y="25" fill="#0a0a0a" font-family="'Courier New', monospace" font-size="8" font-weight="bold" text-anchor="middle">‽</text>
     <!-- ◊ node (center) -->
-    <circle r="5" fill="url(#d)"/>
-    <text y="3" fill="#0a0a0a" font-family="'Courier New', monospace" font-size="6" font-weight="bold" text-anchor="middle">◊</text>
+    <circle r="6" fill="url(#d)"/>
+    <circle r="3.5" fill="#1a1a2e"/>
+    <text y="2" fill="#C98FDB" font-family="'Courier New', monospace" font-size="5" font-weight="bold" text-anchor="middle">◊</text>
   </g>
 </svg>
