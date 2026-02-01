@@ -941,7 +941,7 @@ fn TechnicalSummarySection() -> Element! {
                             <dd style={dd_style}>"AI agent development with data provenance tracking"</dd>
 
                             <dt style={dt_style}>"Core Innovation"</dt>
-                            <dd style={dd_style}>"Evidentiality type system (!, ?, ~, ‽ markers)"</dd>
+                            <dd style={dd_style}>"Evidentiality type system (!, ?, ◊, ~, ‽ markers)"</dd>
 
                             <dt style={dt_style}>"Compilation Targets"</dt>
                             <dd style={dd_style}>"Interpreter, Cranelift JIT, LLVM AOT"</dd>

@@ -437,7 +437,7 @@ rite hero_section() → i64 {
     // Large evidentiality diamond logo (full lattice with all markers)
     ≔ logo = create_element("img");
     set_attr(logo, "src", "/images/sigil-logo.svg");
-    set_attr(logo, "alt", "Sigil evidentiality lattice: Known (!), Uncertain (?), Reported (~), Paradox (‽)");
+    set_attr(logo, "alt", "Sigil evidentiality lattice: Known (!), Uncertain (?), Predicted (◊), Reported (~), Paradox (‽)");
     set_class(logo, "hero-logo");
     set_attr(logo, "width", "280");
     set_attr(logo, "height", "280");

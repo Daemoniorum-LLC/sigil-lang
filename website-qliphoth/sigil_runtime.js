@@ -564,6 +564,32 @@ function domCloneNode(elId, deep) {
     return 0;
 }
 
+function domGetValue(elId) {
+    const el = domElements.get(Number(elId));
+    if (el && 'value' in el) {
+        return writeLengthPrefixedString(el.value);
+    }
+    return 0;
+}
+
+function domSetValue(elId, valuePtr) {
+    const el = domElements.get(Number(elId));
+    if (el && 'value' in el) {
+        const value = readLengthPrefixedString(valuePtr);
+        el.value = value;
+    }
+}
+
+function domFocus(elId) {
+    const el = domElements.get(Number(elId));
+    if (el && el.focus) el.focus();
+}
+
+function domScrollTo(elId, x, y) {
+    const el = domElements.get(Number(elId));
+    if (el) el.scrollTo(Number(x), Number(y));
+}
+
 // =============================================================================
 // Events
 // =============================================================================
@@ -1366,6 +1392,10 @@ export function createImports() {
             get_element_by_id: domGetElementById,
             query_selector: domQuerySelector,
             clone_node: domCloneNode,
+            get_value: domGetValue,
+            set_value: domSetValue,
+            focus: domFocus,
+            scroll_to: domScrollTo,
         },
         events: {
             add_listener: eventsAddListener,

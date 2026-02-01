@@ -119,7 +119,7 @@ rite header() → i64 {
     append_child(brand, logo_text);
     ≔ version = create_element("span");
     set_class(version, "version-badge");
-    ≔ vt = create_text("0.3");
+    ≔ vt = create_text("0.4");
     append_child(version, vt);
     append_child(brand, version);
     append_child(container, brand);

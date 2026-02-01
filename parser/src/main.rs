@@ -1,6 +1,7 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
 use sigil_parser::lower::lower_source_file;
+#[cfg(feature = "lsp")]
 use sigil_parser::lsp::start_lsp;
 use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
@@ -410,7 +411,13 @@ fn main() -> ExitCode {
             lex_file(&args[2])
         }
         "repl" => repl(),
+        #[cfg(feature = "lsp")]
         "lsp" => start_lsp(),
+        #[cfg(not(feature = "lsp"))]
+        "lsp" => {
+            eprintln!("Error: LSP support not enabled. Rebuild with --features lsp");
+            ExitCode::from(1)
+        }
         "new" => {
             if args.len() < 3 {
                 eprintln!("Error: missing project name");

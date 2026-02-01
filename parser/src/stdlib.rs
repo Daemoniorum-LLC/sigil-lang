@@ -215,9 +215,12 @@ use unicode_bidi::BidiInfo;
 use unicode_script::{Script, UnicodeScript};
 use unicode_width::UnicodeWidthStr;
 
-// Text intelligence
+// Text intelligence (native-only: requires C FFI / native platform)
+#[cfg(feature = "native")]
 use rust_stemmers::{Algorithm as StemAlgorithm, Stemmer};
+#[cfg(feature = "native")]
 use tiktoken_rs::{cl100k_base, p50k_base, r50k_base};
+#[cfg(feature = "native")]
 use whatlang::{detect, Lang, Script as WhatLangScript};
 
 // Cryptographic primitives for experimental crypto
@@ -272,7 +275,8 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_ecs(interp);
     // Phase 10: Polycultural text processing
     register_polycultural_text(interp);
-    // Phase 11: Text intelligence (AI-native)
+    // Phase 11: Text intelligence (AI-native, native-only)
+    #[cfg(feature = "native")]
     register_text_intelligence(interp);
     // Phase 12: Emotional hologram and experimental crypto
     register_hologram(interp);
@@ -7386,6 +7390,61 @@ fn register_concurrency(interp: &mut Interpreter) {
     // --- HTTP Convenience Functions ---
 
     // Http·get(url) - Simple GET request (convenience wrapper)
+    // In playground mode, returns mock data for demo purposes
+    #[cfg(feature = "playground")]
+    define(interp, "Http·get", Some(1), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(raw)) = borrowed.get("raw") {
+                    raw.to_string()
+                } else {
+                    return Err(RuntimeError::new("Invalid URL object"));
+                }
+            }
+            _ => return Err(RuntimeError::new("Http·get requires URL string")),
+        };
+
+        // Mock response based on URL pattern
+        let (status, body) = if url.contains("/api/users") {
+            (200, r#"{"id": 42, "name": "Alice", "email": "alice@example.com"}"#.to_string())
+        } else if url.contains("/api/posts") {
+            (200, r#"[{"id": 1, "title": "Hello Sigil"}, {"id": 2, "title": "Async is Easy"}]"#.to_string())
+        } else if url.contains("/api/echo") {
+            (200, format!(r#"{{"echoed_url": "{}"}}"#, url))
+        } else if url.contains("/health") || url.contains("/ping") {
+            (200, r#"{"status": "ok"}"#.to_string())
+        } else {
+            (200, format!("<html><body><h1>Mock Response</h1><p>URL: {}</p></body></html>", url))
+        };
+
+        let mut resp_fields = std::collections::HashMap::new();
+        resp_fields.insert("status".to_string(), Value::Int(status));
+        resp_fields.insert("ok".to_string(), Value::Bool(true));
+        resp_fields.insert("body".to_string(), Value::String(Rc::new(body)));
+        resp_fields.insert("headers".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::Tuple(Rc::new(vec![
+                Value::String(Rc::new("Content-Type".to_string())),
+                Value::String(Rc::new("application/json".to_string())),
+            ])),
+            Value::Tuple(Rc::new(vec![
+                Value::String(Rc::new("X-Sigil-Playground".to_string())),
+                Value::String(Rc::new("mock".to_string())),
+            ])),
+        ]))));
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Struct {
+                name: "HttpResponse".to_string(),
+                fields: Rc::new(RefCell::new(resp_fields)),
+            }])),
+        })
+    });
+
+    #[cfg(not(feature = "playground"))]
     define(interp, "Http·get", Some(1), |_, args| {
         let url = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -7517,6 +7576,56 @@ fn register_concurrency(interp: &mut Interpreter) {
     });
 
     // Http·post(url, body) - Simple POST request (convenience wrapper)
+    // In playground mode, returns mock data for demo purposes
+    #[cfg(feature = "playground")]
+    define(interp, "Http·post", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.to_string(),
+            Value::Map(m) => {
+                let borrowed = m.borrow();
+                if let Some(Value::String(raw)) = borrowed.get("raw") {
+                    raw.to_string()
+                } else {
+                    return Err(RuntimeError::new("Invalid URL object"));
+                }
+            }
+            _ => return Err(RuntimeError::new("Http·post requires URL string")),
+        };
+
+        let body_str = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => "<binary data>".to_string(),
+        };
+
+        // Mock POST response - echo back what was sent
+        let body = format!(r#"{{"received": {}, "url": "{}"}}"#, body_str, url);
+
+        let mut resp_fields = std::collections::HashMap::new();
+        resp_fields.insert("status".to_string(), Value::Int(201));
+        resp_fields.insert("ok".to_string(), Value::Bool(true));
+        resp_fields.insert("body".to_string(), Value::String(Rc::new(body)));
+        resp_fields.insert("headers".to_string(), Value::Array(Rc::new(RefCell::new(vec![
+            Value::Tuple(Rc::new(vec![
+                Value::String(Rc::new("Content-Type".to_string())),
+                Value::String(Rc::new("application/json".to_string())),
+            ])),
+            Value::Tuple(Rc::new(vec![
+                Value::String(Rc::new("X-Sigil-Playground".to_string())),
+                Value::String(Rc::new("mock".to_string())),
+            ])),
+        ]))));
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Struct {
+                name: "HttpResponse".to_string(),
+                fields: Rc::new(RefCell::new(resp_fields)),
+            }])),
+        })
+    });
+
+    #[cfg(not(feature = "playground"))]
     define(interp, "Http·post", Some(2), |_, args| {
         let url = match &args[0] {
             Value::String(s) => s.to_string(),
@@ -9876,29 +9985,33 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // dirs_next::config_dir - get user config directory
-    define(interp, "dirs_next·config_dir", Some(0), |_, _| {
-        match dirs::config_dir() {
-            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-            None => Ok(Value::Null),
-        }
-    });
+    // dirs_next functions (native-only: requires dirs crate)
+    #[cfg(feature = "native")]
+    {
+        // dirs_next::config_dir - get user config directory
+        define(interp, "dirs_next·config_dir", Some(0), |_, _| {
+            match dirs::config_dir() {
+                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+                None => Ok(Value::Null),
+            }
+        });
 
-    // dirs_next::data_dir - get user data directory
-    define(interp, "dirs_next·data_dir", Some(0), |_, _| {
-        match dirs::data_dir() {
-            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-            None => Ok(Value::Null),
-        }
-    });
+        // dirs_next::data_dir - get user data directory
+        define(interp, "dirs_next·data_dir", Some(0), |_, _| {
+            match dirs::data_dir() {
+                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+                None => Ok(Value::Null),
+            }
+        });
 
-    // dirs_next::home_dir - get user home directory
-    define(interp, "dirs_next·home_dir", Some(0), |_, _| {
-        match dirs::home_dir() {
-            Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-            None => Ok(Value::Null),
-        }
-    });
+        // dirs_next::home_dir - get user home directory
+        define(interp, "dirs_next·home_dir", Some(0), |_, _| {
+            match dirs::home_dir() {
+                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
+                None => Ok(Value::Null),
+            }
+        });
+    }
 }
 
 // ============================================================================
@@ -11219,15 +11332,19 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(std::env::consts::ARCH.to_string())))
     });
 
-    // num_cpus::get - get number of available CPUs
-    define(interp, "num_cpus·get", Some(0), |_, _| {
-        Ok(Value::Int(num_cpus::get() as i64))
-    });
+    // num_cpus functions (native-only: requires num_cpus crate)
+    #[cfg(feature = "native")]
+    {
+        // num_cpus::get - get number of available CPUs
+        define(interp, "num_cpus·get", Some(0), |_, _| {
+            Ok(Value::Int(num_cpus::get() as i64))
+        });
 
-    // num_cpus::get_physical - get number of physical CPU cores
-    define(interp, "num_cpus·get_physical", Some(0), |_, _| {
-        Ok(Value::Int(num_cpus::get_physical() as i64))
-    });
+        // num_cpus::get_physical - get number of physical CPU cores
+        define(interp, "num_cpus·get_physical", Some(0), |_, _| {
+            Ok(Value::Int(num_cpus::get_physical() as i64))
+        });
+    }
 }
 
 // ============================================================================
@@ -18764,9 +18881,10 @@ fn register_polycultural_text(interp: &mut Interpreter) {
 }
 
 // =============================================================================
-// TEXT INTELLIGENCE MODULE - AI-Native Text Analysis
+// TEXT INTELLIGENCE MODULE - AI-Native Text Analysis (native-only)
 // =============================================================================
 
+#[cfg(feature = "native")]
 fn register_text_intelligence(interp: &mut Interpreter) {
     // =========================================================================
     // STRING SIMILARITY METRICS

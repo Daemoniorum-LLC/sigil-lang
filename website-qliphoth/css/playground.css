@@ -395,7 +395,7 @@
     background: rgba(255, 255, 255, 0.3);
 }
 
-/* --- Syntax Highlighting Classes --- */
+/* --- Syntax Highlighting Classes (legacy) --- */
 
 .comment { color: #707078; font-style: italic; }
 .keyword { color: #C792EA; }
@@ -411,6 +411,29 @@
 .ev-reported { color: #2196F3; }
 .ev-paradox { color: #CE93D8; }
 
+/* --- Athame Syntax Highlighting (Catppuccin Dark) --- */
+
+.ath-keyword    { color: #cba6f7; }
+.ath-type       { color: #89b4fa; }
+.ath-function   { color: #89dceb; }
+.ath-variable   { color: inherit; }
+.ath-string     { color: #a6e3a1; }
+.ath-number     { color: #fab387; }
+.ath-comment    { color: #6c7086; font-style: italic; }
+.ath-operator   { color: #89ddff; }
+.ath-morpheme   { color: #f5c2e7; font-weight: 600; }
+.ath-native     { color: #94e2d5; font-weight: 600; }
+.ath-punctuation { color: #bac2de; }
+.ath-bracket    { color: #cba6f7; }
+.ath-error      { color: #f38ba8; text-decoration: wavy underline; }
+
+/* Athame evidentiality markers */
+.ath-evidence-known     { color: #a6e3a1; font-weight: 600; }
+.ath-evidence-uncertain { color: #f9e2af; font-weight: 600; }
+.ath-evidence-reported  { color: #89b4fa; font-weight: 600; }
+.ath-evidence-paradox   { color: #f38ba8; font-weight: 600; }
+.ath-bracket-match      { background: rgba(245, 194, 231, 0.2); border-radius: 2px; }
+
 /* Light theme syntax highlighting */
 [data-theme="light"] .comment { color: #6a737d; }
 [data-theme="light"] .keyword { color: #d73a49; }
@@ -424,6 +447,23 @@
 [data-theme="light"] .ev-uncertain { color: #b08800; }
 [data-theme="light"] .ev-reported { color: #005cc5; }
 [data-theme="light"] .ev-paradox { color: #6f42c1; }
+
+/* Athame light theme */
+[data-theme="light"] .ath-keyword    { color: #8839ef; }
+[data-theme="light"] .ath-type       { color: #1e66f5; }
+[data-theme="light"] .ath-function   { color: #209fb5; }
+[data-theme="light"] .ath-string     { color: #40a02b; }
+[data-theme="light"] .ath-number     { color: #fe640b; }
+[data-theme="light"] .ath-comment    { color: #9ca0b0; font-style: italic; }
+[data-theme="light"] .ath-operator   { color: #04a5e5; }
+[data-theme="light"] .ath-morpheme   { color: #ea76cb; font-weight: 600; }
+[data-theme="light"] .ath-native     { color: #179299; font-weight: 600; }
+[data-theme="light"] .ath-punctuation { color: #4c4f69; }
+[data-theme="light"] .ath-evidence-known     { color: #40a02b; }
+[data-theme="light"] .ath-evidence-uncertain { color: #df8e1d; }
+[data-theme="light"] .ath-evidence-reported  { color: #1e66f5; }
+[data-theme="light"] .ath-evidence-paradox   { color: #d20f39; }
+[data-theme="light"] .ath-bracket-match      { background: rgba(234, 118, 203, 0.15); }
 
 [data-theme="light"] .highlight-layer {
     color: #24292e;
@@ -484,10 +524,22 @@
 
 .preview-placeholder {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     height: 100%;
     color: var(--color-text-muted);
+    text-align: center;
+    gap: 0.5rem;
+}
+
+.preview-placeholder p {
+    margin: 0;
+}
+
+.placeholder-hint {
+    font-size: 0.85em;
+    opacity: 0.7;
 }
 
 /* --- Console Section --- */
