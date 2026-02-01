@@ -1517,15 +1517,19 @@ mod tests {
 
     #[test]
     fn test_morphemes() {
-        let mut lexer = Lexer::new("τ φ σ ρ λ Σ Π ⌛");
-        assert!(matches!(lexer.next_token(), Some((Token::Tau, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Phi, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Sigma, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Rho, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Lambda, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Sigma, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Pi, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Async, _))));
+        // Note: Case matters for Greek letters in Sigil:
+        // - lowercase λ = Token::Fn (function keyword), uppercase Λ = Token::Lambda (morpheme)
+        // - lowercase σ = Token::Sigma (sort morpheme), uppercase Σ = Token::Struct (keyword)
+        // - lowercase π = identifier, uppercase Π = Token::Pi (product morpheme)
+        // This test verifies uppercase morphemes that are NOT keywords
+        let mut lexer = Lexer::new("τ φ σ ρ Λ Π ⌛");
+        assert!(matches!(lexer.next_token(), Some((Token::Tau, _))));      // τ = Tau (transform)
+        assert!(matches!(lexer.next_token(), Some((Token::Phi, _))));      // φ = Phi (filter)
+        assert!(matches!(lexer.next_token(), Some((Token::Sigma, _))));    // σ = Sigma (sort/sum)
+        assert!(matches!(lexer.next_token(), Some((Token::Rho, _))));      // ρ = Rho (reduce)
+        assert!(matches!(lexer.next_token(), Some((Token::Lambda, _))));   // Λ = Lambda (uppercase)
+        assert!(matches!(lexer.next_token(), Some((Token::Pi, _))));       // Π = Pi (product)
+        assert!(matches!(lexer.next_token(), Some((Token::Async, _))));    // ⌛ = Async
     }
 
     #[test]
@@ -1642,11 +1646,13 @@ mod tests {
 
     #[test]
     fn test_parallel_morphemes() {
+        // Note: ⊛ is Token::Convolve (convolution operator), not Gpu
+        // gpu (keyword) produces Token::Gpu
         let mut lexer = Lexer::new("∥ parallel ⊛ gpu");
         assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Convolve, _))));  // ⊛ = Convolve
+        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));       // gpu = Gpu
     }
 
     #[test]
