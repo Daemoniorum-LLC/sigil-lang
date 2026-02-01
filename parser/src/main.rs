@@ -2144,16 +2144,6 @@ fn doc_extract_file(path: &str, format: &str, output: Option<&str>) -> ExitCode 
         }
     }
 
-    fn ev_to_badge(ev: &Evidentiality) -> &'static str {
-        match ev {
-            Evidentiality::Known => "✓",
-            Evidentiality::Reported => "○",
-            Evidentiality::Uncertain => "?",
-            Evidentiality::Predicted => "◊",
-            Evidentiality::Paradox => "‽",
-        }
-    }
-
     fn type_expr_to_string(ty: &sigil_parser::ast::TypeExpr) -> String {
         use sigil_parser::ast::TypeExpr;
         match ty {
@@ -2569,11 +2559,9 @@ impl SigilHighlighter {
             Token::Bang | Token::Question | Token::Tilde | Token::Interrobang => colors::EVIDENCE,
 
             // Special symbols
-            Token::Async
-            | Token::Circle
+            Token::Circle
             | Token::Empty
-            | Token::Infinity
-            | Token::MiddleDot => colors::SPECIAL,
+            | Token::Infinity => colors::SPECIAL,
 
             // Strings and chars
             Token::StringLit(_) | Token::CharLit(_) => colors::STRING,

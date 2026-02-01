@@ -1,3 +1,8 @@
+// Allow ambiguous glob re-exports for duplicate types (AlterCategory, CoConChannel, RealityLayer)
+// defined in both ast and runtime modules. These are intentionally the same types.
+// TODO(design): Consolidate duplicate type definitions to a single canonical location.
+#![allow(ambiguous_glob_reexports)]
+
 //! # Plurality Extensions for Sigil
 //!
 //! This module extends Sigil's type system to support plurality mechanics
@@ -36,26 +41,21 @@
 //! split! from Abaddon { purpose: ..., memories: ... }
 //! ```
 
+// Language extension modules (parser components)
 pub mod ast;
 pub mod codegen;
-pub mod combat;
-pub mod dialogue;
-pub mod game_loop;
 pub mod lexer;
 pub mod parser;
-pub mod perception;
 pub mod runtime;
-pub mod save_system;
 pub mod typeck;
 
+// Re-exports
 pub use ast::*;
 pub use codegen::*;
-pub use combat::*;
-pub use dialogue::*;
-pub use game_loop::*;
 pub use lexer::*;
 pub use parser::*;
-pub use perception::*;
 pub use runtime::*;
-pub use save_system::*;
 pub use typeck::*;
+
+// NOTE: Game engine modules (combat, dialogue, game_loop, perception, save_system)
+// have been extracted to aether-framework. See docs/specs/PLURALITY-EXTRACTION-SPEC.md

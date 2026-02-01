@@ -10,13 +10,13 @@
 //! - Split expressions: `split! from Alter { ... }`
 //! - Trigger handlers: `on trigger Name { ... } where condition { ... }`
 
-use crate::ast::{Block, Expr, Generics, Ident, Param, TypeExpr, Visibility, WhereClause};
+use crate::ast::{Expr, Ident, Visibility};
 use crate::lexer::Token;
 use crate::parser::{ParseError, ParseResult, Parser};
 use crate::span::Span;
 
 use super::ast::*;
-use super::lexer::{AlterSourceMarker, ForcedOperation, PluralityTokenStream};
+use super::lexer::AlterSourceMarker;
 
 // ============================================================================
 // PARSER EXTENSION TRAIT
