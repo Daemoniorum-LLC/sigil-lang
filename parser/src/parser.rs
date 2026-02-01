@@ -9542,11 +9542,12 @@ mod tests {
     #[test]
     fn test_parse_labeled_loops() {
         // Test labeled loop with break
+        // Note: ⊗ (Tensor) is the native Sigil break keyword
         let source = r#"
             λ test() {
                 'outer: loop {
                     'inner: ⟳ true {
-                        ⤒ 'outer;
+                        ⊗ 'outer;
                     }
                 }
             }
@@ -9556,6 +9557,7 @@ mod tests {
         assert_eq!(file.items.len(), 1);
 
         // Test labeled for with continue
+        // Note: ↻ (CycleArrow) is the native Sigil continue keyword
         let source2 = r#"
             λ test2() {
                 'rows: ∀ i ∈ 0..10 {

@@ -43712,7 +43712,7 @@ mod tests {
         // fn name·ing should parse with progressive aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("fn process·ing() { return 42; }");
+        let mut parser = Parser::new("λ process·ing() { ⤺ 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "process");
@@ -43727,7 +43727,7 @@ mod tests {
         // fn name·ed should parse with perfective aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("fn process·ed() { return 42; }");
+        let mut parser = Parser::new("λ process·ed() { ⤺ 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "process");
@@ -43742,7 +43742,7 @@ mod tests {
         // fn name·able should parse with potential aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("fn parse·able() { return true; }");
+        let mut parser = Parser::new("λ parse·able() { ⤺ true; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "parse");
@@ -43757,7 +43757,7 @@ mod tests {
         // fn name·ive should parse with resultative aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("fn destruct·ive() { return 42; }");
+        let mut parser = Parser::new("λ destruct·ive() { ⤺ 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "destruct");
@@ -44257,18 +44257,18 @@ mod tests {
         // Test sending 1000 messages through a channel
         let result = eval(
             r#"
-            λ main() {
+            λ main() -> i64 {
                 ≔ ch = channel_new();
                 ≔ count = 1000;
-                ≔ i = 0;
+                ≔ Δ i = 0;
                 ⟳ i < count {
                     channel_send(ch, i);
                     i = i + 1;
                 }
 
                 // Receive all and compute sum to verify no data loss
-                ≔ sum = 0;
-                ≔ j = 0;
+                ≔ Δ sum = 0;
+                ≔ Δ j = 0;
                 ⟳ j < count {
                     ≔ val = channel_recv(ch);
                     sum = sum + val;
@@ -44384,10 +44384,10 @@ mod tests {
         // Send 10000 messages to an actor rapidly
         let result = eval(
             r#"
-            λ main() {
+            λ main() -> i64 {
                 ≔ act = spawn_actor("stress_actor");
                 ≔ count = 10000;
-                ≔ i = 0;
+                ≔ Δ i = 0;
                 ⟳ i < count {
                     send_to_actor(act, "msg", i);
                     i = i + 1;
@@ -44602,10 +44602,10 @@ mod tests {
         // Interleaved sends and receives
         let result = eval(
             r#"
-            λ main() {
+            λ main() -> i64 {
                 ≔ ch = channel_new();
-                ≔ sum = 0;
-                ≔ i = 0;
+                ≔ Δ sum = 0;
+                ≔ Δ i = 0;
                 ⟳ i < 100 {
                     channel_send(ch, i);
                     channel_send(ch, i * 2);
@@ -44628,17 +44628,17 @@ mod tests {
         // Send and receive many messages
         let result = eval(
             r#"
-            λ main() {
+            λ main() -> i64 {
                 ≔ act = spawn_actor("recv_stress");
                 ≔ count = 1000;
-                ≔ i = 0;
+                ≔ Δ i = 0;
                 ⟳ i < count {
                     send_to_actor(act, "data", i);
                     i = i + 1;
                 }
 
                 // Drain all messages
-                ≔ drained = 0;
+                ≔ Δ drained = 0;
                 ⟳ get_actor_pending(act) > 0 {
                     recv_from_actor(act);
                     drained = drained + 1;
@@ -44680,7 +44680,7 @@ mod tests {
             // Deeply nested brackets shouldn't cause stack overflow
             let open: String = (0..depth).map(|_| '(').collect();
             let close: String = (0..depth).map(|_| ')').collect();
-            let code = format!("fn main() {{ return {}1{}; }}", open, close);
+            let code = format!("λ main() {{ ⤺ {}1{}; }}", open, close);
             let mut parser = Parser::new(&code);
             let _ = parser.parse_file();
         }
@@ -44689,7 +44689,7 @@ mod tests {
         fn test_parser_long_identifiers(len in 1..500usize) {
             // Long identifiers shouldn't cause issues
             let ident: String = (0..len).map(|_| 'a').collect();
-            let code = format!("fn main() {{ let {} = 1; return {}; }}", ident, ident);
+            let code = format!("λ main() {{ ≔ {} = 1; ⤺ {}; }}", ident, ident);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Int(1))));
         }
@@ -44698,7 +44698,7 @@ mod tests {
         fn test_parser_many_arguments(count in 0..50usize) {
             // Many function arguments shouldn't cause issues
             let args: String = (0..count).map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ");
-            let code = format!("fn main() {{ return len([{}]); }}", args);
+            let code = format!("λ main() {{ ⤺ len([{}]); }}", args);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Int(c)) if c == count as i64));
         }
@@ -44850,8 +44850,8 @@ mod tests {
         fn test_grad_of_constant_is_zero(c in -100.0f64..100.0, x in -100.0f64..100.0) {
             // d/dx(c) = 0
             let code = format!(r#"
-                λ main() {{
-                    λ constant(x) {{ ⤺ {}; }}
+                λ main() -> bool {{
+                    λ constant(x) -> f64 {{ ⤺ {}; }}
                     ≔ g = grad(constant, {});
                     ≔ eps = 0.001;
                     ⤺ eps > abs(g);
@@ -44865,8 +44865,8 @@ mod tests {
         fn test_grad_of_x_is_one(x in -100.0f64..100.0) {
             // d/dx(x) = 1
             let code = format!(r#"
-                λ main() {{
-                    λ identity(x) {{ ⤺ x; }}
+                λ main() -> bool {{
+                    λ identity(x) -> f64 {{ ⤺ x; }}
                     ≔ g = grad(identity, {});
                     ≔ eps = 0.001;
                     ⤺ eps > abs(g - 1.0);
@@ -44880,8 +44880,8 @@ mod tests {
         fn test_grad_of_x_squared(x in -50.0f64..50.0) {
             // d/dx(x^2) = 2x
             let code = format!(r#"
-                λ main() {{
-                    λ square(x) {{ ⤺ x * x; }}
+                λ main() -> bool {{
+                    λ square(x) -> f64 {{ ⤺ x * x; }}
                     ≔ g = grad(square, {});
                     ≔ expected = 2.0 * {};
                     ≔ eps = 0.1;
@@ -44895,10 +44895,11 @@ mod tests {
         #[test]
         fn test_grad_linearity(a in -10.0f64..10.0, b in -10.0f64..10.0, x in -10.0f64..10.0) {
             // d/dx(a*x + b) = a
+            // Note: 'linear' is a reserved keyword in Sigil, so use 'lin_fn' instead
             let code = format!(r#"
-                λ main() {{
-                    λ linear(x) {{ ⤺ {} * x + {}; }}
-                    ≔ g = grad(linear, {});
+                λ main() -> bool {{
+                    λ lin_fn(x) -> f64 {{ ⤺ {} * x + {}; }}
+                    ≔ g = grad(lin_fn, {});
                     ≔ eps = 0.1;
                     ⤺ eps > abs(g - {});
                 }}
@@ -44915,35 +44916,35 @@ mod tests {
 
         #[test]
         fn test_addition_commutative(a in -1000i64..1000, b in -1000i64..1000) {
-            let code = format!("fn main() {{ return {} + {} == {} + {}; }}", a, b, b, a);
+            let code = format!("λ main() -> bool {{ ⤺ {} + {} == {} + {}; }}", a, b, b, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_multiplication_commutative(a in -100i64..100, b in -100i64..100) {
-            let code = format!("fn main() {{ return {} * {} == {} * {}; }}", a, b, b, a);
+            let code = format!("λ main() -> bool {{ ⤺ {} * {} == {} * {}; }}", a, b, b, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_addition_identity(a in -1000i64..1000) {
-            let code = format!("fn main() {{ return {} + 0 == {}; }}", a, a);
+            let code = format!("λ main() -> bool {{ ⤺ {} + 0 == {}; }}", a, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_multiplication_identity(a in -1000i64..1000) {
-            let code = format!("fn main() {{ return {} * 1 == {}; }}", a, a);
+            let code = format!("λ main() -> bool {{ ⤺ {} * 1 == {}; }}", a, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_distributive_property(a in -20i64..20, b in -20i64..20, c in -20i64..20) {
-            let code = format!("fn main() {{ return {} * ({} + {}) == {} * {} + {} * {}; }}", a, b, c, a, b, a, c);
+            let code = format!("λ main() -> bool {{ ⤺ {} * ({} + {}) == {} * {} + {} * {}; }}", a, b, c, a, b, a, c);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -44958,7 +44959,7 @@ mod tests {
         fn test_array_len_after_push(initial_len in 0..20usize, value in -100i64..100) {
             let initial: String = (0..initial_len).map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ");
             let code = format!(r#"
-                λ main() {{
+                λ main() -> i64 {{
                     ≔ arr = [{}];
                     push(arr, {});
                     ⤺ len(arr);
@@ -44972,12 +44973,12 @@ mod tests {
         fn test_reverse_reverse_identity(elements in prop::collection::vec(-100i64..100, 0..10)) {
             let arr_str = elements.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
             let code = format!(r#"
-                λ main() {{
+                λ main() -> bool {{
                     ≔ arr = [{}];
                     ≔ rev1 = reverse(arr);
                     ≔ rev2 = reverse(rev1);
-                    ≔ same = true;
-                    ≔ i = 0;
+                    ≔ Δ same = true;
+                    ≔ Δ i = 0;
                     ⟳ i < len(arr) {{
                         ⎇ get(arr, i) != get(rev2, i) {{
                             same = false;
@@ -44995,7 +44996,7 @@ mod tests {
         fn test_sum_equals_manual_sum(elements in prop::collection::vec(-100i64..100, 0..20)) {
             let arr_str = elements.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
             let expected_sum: i64 = elements.iter().sum();
-            let code = format!("fn main() {{ return sum([{}]); }}", arr_str);
+            let code = format!("λ main() -> i64 {{ ⤺ sum([{}]); }}", arr_str);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Int(n)) if n == expected_sum));
         }
@@ -45013,8 +45014,8 @@ mod tests {
         // Create and discard arrays many times
         let result = eval(
             r#"
-            λ main() {
-                ≔ i = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
                 ⟳ i < 1000 {
                     ≔ arr = [1, 2, 3, 4, 5];
                     push(arr, 6);
@@ -45034,13 +45035,13 @@ mod tests {
         // Call functions many times to test function frame cleanup
         let result = eval(
             r#"
-            λ fib(n) {
+            λ fib(n) -> i64 {
                 ⎇ n <= 1 { ⤺ n; }
                 ⤺ fib(n - 1) + fib(n - 2);
             }
-            λ main() {
-                ≔ i = 0;
-                ≔ total = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
+                ≔ Δ total = 0;
                 ⟳ i < 100 {
                     total = total + fib(10);
                     i = i + 1;
@@ -45057,8 +45058,8 @@ mod tests {
         // Create and discard maps many times
         let result = eval(
             r#"
-            λ main() {
-                ≔ i = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
                 ⟳ i < 500 {
                     ≔ m = map_new();
                     map_set(m, "key1", 1);
@@ -45079,8 +45080,8 @@ mod tests {
         // Create and discard strings many times
         let result = eval(
             r#"
-            λ main() {
-                ≔ i = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
                 ⟳ i < 1000 {
                     ≔ s = "hello world";
                     ≔ upper_s = upper(s);
@@ -45101,9 +45102,9 @@ mod tests {
         // Create and discard ECS entities many times
         let result = eval(
             r#"
-            λ main() {
+            λ main() -> i64 {
                 ≔ world = ecs_world();
-                ≔ i = 0;
+                ≔ Δ i = 0;
                 ⟳ i < 500 {
                     ≔ entity = ecs_spawn(world);
                     ecs_attach(world, entity, "Position", vec3(1.0, 2.0, 3.0));
@@ -45123,8 +45124,8 @@ mod tests {
         // Create and use channels many times
         let result = eval(
             r#"
-            λ main() {
-                ≔ i = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
                 ⟳ i < 500 {
                     ≔ ch = channel_new();
                     channel_send(ch, i);
@@ -45145,8 +45146,8 @@ mod tests {
         // Create actors and send messages many times
         let result = eval(
             r#"
-            λ main() {
-                ≔ i = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
                 ⟳ i < 100 {
                     ≔ act = spawn_actor("leak_test_actor");
                     send_to_actor(act, "msg", i);
@@ -45166,8 +45167,8 @@ mod tests {
         // Create and compute with vec3s many times
         let result = eval(
             r#"
-            λ main() {
-                ≔ i = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
                 ⟳ i < 1000 {
                     ≔ v1 = vec3(1.0, 2.0, 3.0);
                     ≔ v2 = vec3(4.0, 5.0, 6.0);
@@ -45190,12 +45191,12 @@ mod tests {
         // Create and call closures many times
         let result = eval(
             r#"
-            λ main() {
-                ≔ i = 0;
-                ≔ total = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
+                ≔ Δ total = 0;
                 ⟳ i < 500 {
                     ≔ x = i;
-                    λ add_x(y) { ⤺ x + y; }
+                    λ add_x(y) -> i64 { ⤺ x + y; }
                     total = total + add_x(1);
                     i = i + 1;
                 }
@@ -45212,8 +45213,8 @@ mod tests {
         // Create nested arrays and maps many times
         let result = eval(
             r#"
-            λ main() {
-                ≔ i = 0;
+            λ main() -> i64 {
+                ≔ Δ i = 0;
                 ⟳ i < 200 {
                     ≔ inner1 = [1, 2, 3];
                     ≔ inner2 = [4, 5, 6];
@@ -45236,7 +45237,7 @@ mod tests {
         for _ in 0..50 {
             let result = eval(
                 r#"
-                λ main() {
+                λ main() -> i64 {
                     ≔ arr = [1, 2, 3, 4, 5];
                     ≔ total = sum(arr);
                     ⤺ total * 2;
