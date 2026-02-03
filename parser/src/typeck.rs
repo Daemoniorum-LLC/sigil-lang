@@ -505,6 +505,8 @@ pub struct TypeChecker {
     substitutions: HashMap<TypeVar, Type>,
     /// Collected errors
     errors: Vec<TypeError>,
+    /// Span of the current top-level item being checked (for error fallback)
+    current_item_span: Span,
 }
 
 impl TypeChecker {
@@ -521,6 +523,7 @@ impl TypeChecker {
             next_var: 0,
             substitutions: HashMap::new(),
             errors: Vec::new(),
+            current_item_span: Span::default(),
         };
 
         // Register built-in types and functions
@@ -1054,8 +1057,11 @@ impl TypeChecker {
         }
     }
 
-    /// Record an error
-    fn error(&mut self, err: TypeError) {
+    /// Record an error, auto-attaching current item span if no span is set
+    fn error(&mut self, mut err: TypeError) {
+        if err.span.is_none() && !self.current_item_span.is_empty() {
+            err.span = Some(self.current_item_span);
+        }
         self.errors.push(err);
     }
 
@@ -1137,6 +1143,7 @@ impl TypeChecker {
 
         // Third pass: check function bodies
         for item in &file.items {
+            self.current_item_span = item.span;
             self.check_item(&item.node);
         }
 
