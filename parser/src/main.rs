@@ -3267,15 +3267,10 @@ fn init_project() -> ExitCode {
 }
 
 /// Run tests in the current project
-fn run_tests() -> ExitCode {
-    use std::path::Path;
-
-    // Find test files in tests/ directory
-    let tests_dir = Path::new("tests");
-    let mut test_files = Vec::new();
-
-    if tests_dir.exists() {
-        if let Ok(entries) = fs::read_dir(tests_dir) {
+fn collect_test_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    if dir.exists() {
+        if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path
@@ -3283,35 +3278,24 @@ fn run_tests() -> ExitCode {
                     .map(|e| e == "sigil" || e == "sg")
                     .unwrap_or(false)
                 {
-                    test_files.push(path);
+                    files.push(path);
                 }
             }
         }
     }
+    files.sort();
+    files
+}
 
-    if test_files.is_empty() {
-        println!("No test files found in tests/");
-        println!();
-        println!("Create a test file:");
-        println!("  tests/test_main.sigil");
-        println!();
-        println!("With test functions:");
-        println!("  #[test]");
-        println!("  fn test_something() {{");
-        println!("      assert_eq(1 + 1, 2);");
-        println!("  }}");
-        return ExitCode::SUCCESS;
-    }
-
-    println!("Running tests...");
-    println!();
-
+fn run_test_files(
+    test_files: &[std::path::PathBuf],
+    label: Option<&str>,
+) -> (usize, usize, usize) {
     let mut total_tests = 0;
     let mut passed_tests = 0;
     let mut failed_tests = 0;
 
-    for test_file in &test_files {
-        // Parse file
+    for test_file in test_files {
         let source = match fs::read_to_string(test_file) {
             Ok(s) => s,
             Err(e) => {
@@ -3366,7 +3350,6 @@ fn run_tests() -> ExitCode {
         let mut file_tests = 0;
         for item in &ast.items {
             if let sigil_parser::ast::Item::Function(func) = &item.node {
-                // Check the test flag in FunctionAttrs
                 if func.attrs.test {
                     file_tests += 1;
                 }
@@ -3374,7 +3357,6 @@ fn run_tests() -> ExitCode {
         }
 
         if file_tests > 0 {
-            // Execute the test file
             let mut interpreter = Interpreter::new();
             register_stdlib(&mut interpreter);
 
@@ -3404,15 +3386,140 @@ fn run_tests() -> ExitCode {
         }
     }
 
+    (total_tests, passed_tests, failed_tests)
+}
+
+fn run_tests() -> ExitCode {
+    use std::path::Path;
+
+    // Check for workspace: if Sigil.toml exists, run workspace-level tests
+    let manifest_path = Path::new("Sigil.toml");
+    let manifest_alt = Path::new("sigil.toml");
+
+    if manifest_path.exists() || manifest_alt.exists() {
+        return run_tests_workspace();
+    }
+
+    // Single-project mode: find test files in tests/ directory
+    let test_files = collect_test_files(Path::new("tests"));
+
+    if test_files.is_empty() {
+        println!("No test files found in tests/");
+        println!();
+        println!("Create a test file:");
+        println!("  tests/test_main.sigil");
+        println!();
+        println!("With test functions:");
+        println!("  #[test]");
+        println!("  fn test_something() {{");
+        println!("      assert_eq(1 + 1, 2);");
+        println!("  }}");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("Running tests...");
     println!();
-    if total_tests == 0 {
+
+    let (total_tests, passed_tests, failed_tests) = run_test_files(&test_files, None);
+
+    println!();
+    print_test_summary(total_tests, passed_tests, failed_tests)
+}
+
+fn run_tests_workspace() -> ExitCode {
+    use std::path::Path;
+
+    // Parse Sigil.toml
+    let manifest_content = match fs::read_to_string("Sigil.toml")
+        .or_else(|_| fs::read_to_string("sigil.toml"))
+    {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading Sigil.toml: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    let manifest: toml::Value = match manifest_content.parse() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error parsing Sigil.toml: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    let project_name = manifest
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("unnamed");
+
+    let members: Vec<String> = manifest
+        .get("workspace")
+        .and_then(|w| w.get("members"))
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    println!("Testing workspace: {}", project_name);
+    println!();
+
+    let mut grand_total = 0;
+    let mut grand_passed = 0;
+    let mut grand_failed = 0;
+    let mut crates_tested = 0;
+    let mut crates_failed = 0;
+
+    for member in &members {
+        let tests_dir = Path::new(member).join("tests");
+        let test_files = collect_test_files(&tests_dir);
+
+        if test_files.is_empty() {
+            continue;
+        }
+
+        let crate_name = Path::new(member)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+
+        println!("  {} {}", crate_name, "─".repeat(40 - crate_name.len().min(39)));
+
+        let (total, passed, failed) = run_test_files(&test_files, Some(&crate_name));
+
+        grand_total += total;
+        grand_passed += passed;
+        grand_failed += failed;
+        crates_tested += 1;
+        if failed > 0 {
+            crates_failed += 1;
+        }
+        println!();
+    }
+
+    // Print workspace summary
+    println!("═══════════════════════════════════════════════");
+    println!(
+        "Workspace: {} crates tested, {} total tests",
+        crates_tested, grand_total
+    );
+    print_test_summary(grand_total, grand_passed, grand_failed)
+}
+
+fn print_test_summary(total: usize, passed: usize, failed: usize) -> ExitCode {
+    if total == 0 {
         println!("No test functions found (functions with #[test] attribute)");
         ExitCode::SUCCESS
-    } else if failed_tests == 0 {
+    } else if failed == 0 {
         println!(
             "{}All {} tests passed!{}",
             colors::GREEN,
-            total_tests,
+            total,
             colors::RESET
         );
         ExitCode::SUCCESS
@@ -3420,8 +3527,8 @@ fn run_tests() -> ExitCode {
         println!(
             "{}{} passed, {} failed{}",
             colors::ERROR,
-            passed_tests,
-            failed_tests,
+            passed,
+            failed,
             colors::RESET
         );
         ExitCode::from(1)

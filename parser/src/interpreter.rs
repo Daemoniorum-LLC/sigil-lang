@@ -10240,6 +10240,84 @@ impl Interpreter {
                         _ => {}
                     }
                 }
+                // OnceLock methods - get_or_init(), get(), set()
+                if name == "OnceLock" {
+                    match method.name.as_str() {
+                        "get_or_init" => {
+                            // get_or_init(init_fn) - initialize on first access, return value
+                            let is_initialized = {
+                                let borrowed = fields.borrow();
+                                matches!(borrowed.get("initialized"), Some(Value::Bool(true)))
+                            };
+                            if is_initialized {
+                                let borrowed = fields.borrow();
+                                return Ok(borrowed.get("value").cloned().unwrap_or(Value::Null));
+                            }
+                            // Not initialized yet - call the init function
+                            let init_val = if !arg_values.is_empty() {
+                                match &arg_values[0] {
+                                    Value::Function(f) => self.call_function(f, vec![])?,
+                                    Value::BuiltIn(b) => (b.func)(self, vec![])?,
+                                    // If not callable, use as direct value
+                                    other => other.clone(),
+                                }
+                            } else {
+                                Value::Null
+                            };
+                            // Store the initialized value
+                            {
+                                let mut borrowed = fields.borrow_mut();
+                                borrowed.insert("initialized".to_string(), Value::Bool(true));
+                                borrowed.insert("value".to_string(), init_val.clone());
+                            }
+                            return Ok(init_val);
+                        }
+                        "get" => {
+                            // get() - returns Option<&T>
+                            let borrowed = fields.borrow();
+                            if matches!(borrowed.get("initialized"), Some(Value::Bool(true))) {
+                                let val = borrowed.get("value").cloned().unwrap_or(Value::Null);
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![val])),
+                                });
+                            }
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            });
+                        }
+                        "set" => {
+                            // set(value) - initialize if not already, returns Ok(()) or Err(value)
+                            let is_initialized = {
+                                let borrowed = fields.borrow();
+                                matches!(borrowed.get("initialized"), Some(Value::Bool(true)))
+                            };
+                            if is_initialized {
+                                let err_val = if !arg_values.is_empty() { arg_values[0].clone() } else { Value::Null };
+                                return Ok(Value::Variant {
+                                    enum_name: "Result".to_string(),
+                                    variant_name: "Err".to_string(),
+                                    fields: Some(Rc::new(vec![err_val])),
+                                });
+                            }
+                            let val = if !arg_values.is_empty() { arg_values[0].clone() } else { Value::Null };
+                            {
+                                let mut borrowed = fields.borrow_mut();
+                                borrowed.insert("initialized".to_string(), Value::Bool(true));
+                                borrowed.insert("value".to_string(), val);
+                            }
+                            return Ok(Value::Variant {
+                                enum_name: "Result".to_string(),
+                                variant_name: "Ok".to_string(),
+                                fields: Some(Rc::new(vec![Value::Null])),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
                 // Barrier methods - wait() synchronization
                 if name == "Barrier" {
                     match method.name.as_str() {

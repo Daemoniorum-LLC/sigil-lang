@@ -5819,6 +5819,52 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
+    // AtomicU8::new - create atomic byte
+    let atomic_u8_new = |_: &mut crate::interpreter::Interpreter, args: Vec<Value>| -> Result<Value, RuntimeError> {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU8".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    };
+    define(interp, "AtomicU8·new", Some(1), atomic_u8_new);
+    define(interp, "std·sync·atomic·AtomicU8·new", Some(1), |_, args| {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU8".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // AtomicUsize::new - create atomic usize counter
+    let atomic_usize_new = |_: &mut crate::interpreter::Interpreter, args: Vec<Value>| -> Result<Value, RuntimeError> {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicUsize".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    };
+    define(interp, "AtomicUsize·new", Some(1), atomic_usize_new);
+    define(interp, "std·sync·atomic·AtomicUsize·new", Some(1), |_, args| {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicUsize".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
     // AtomicU64::new - create atomic counter
     define(interp, "AtomicU64·new", Some(1), |_, args| {
         let val = match &args[0] {
@@ -5878,6 +5924,24 @@ fn register_concurrency(interp: &mut Interpreter) {
         let mut map = HashMap::new();
         map.insert("__type__".to_string(), Value::String(Rc::new("Arc".to_string())));
         map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // OnceLock::new - create a lazy-init cell (empty)
+    // Returns a Map with __type__="OnceLock" and initialized=false
+    let once_lock_new = |_: &mut crate::interpreter::Interpreter, _args: Vec<Value>| -> Result<Value, RuntimeError> {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("OnceLock".to_string())));
+        map.insert("initialized".to_string(), Value::Bool(false));
+        map.insert("value".to_string(), Value::Null);
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    };
+    define(interp, "OnceLock·new", Some(0), once_lock_new);
+    define(interp, "std·sync·OnceLock·new", Some(0), |_, _args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("OnceLock".to_string())));
+        map.insert("initialized".to_string(), Value::Bool(false));
+        map.insert("value".to_string(), Value::Null);
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
