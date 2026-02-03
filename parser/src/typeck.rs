@@ -1783,11 +1783,14 @@ impl TypeChecker {
                         if !self.unify(param, arg) {
                             // Allow implicit numeric coercion: int → float
                             let is_numeric_coercion = Self::is_numeric_coercion(param, arg);
-                            // Allow reference coercions: &mut T → &T, &Box<T> → &T, &Vec<T> → &[T]
+                            // Allow reference coercions: &mut T → &T, &Box<T> → &T, &Vec<T> → &[T], &&T → &T
                             let is_reference_coercion = Self::is_reference_coercion(param, arg);
+                            // Allow auto-ref/deref: T → &T, &T → T
+                            let is_ref_value_coercion = Self::is_ref_value_coercion(param, arg);
                             // Only report error for concrete type mismatches, not type variables
                             if !matches!(param, Type::Var(_)) && !matches!(arg, Type::Var(_))
-                                && !is_numeric_coercion && !is_reference_coercion {
+                                && !is_numeric_coercion && !is_reference_coercion
+                                && !is_ref_value_coercion {
                                 self.error(TypeError::new(format!(
                                     "type mismatch in argument {}: expected {}, found {}",
                                     i + 1, param, arg
@@ -3334,6 +3337,31 @@ impl TypeChecker {
             }
         }
 
+        // 4. Auto-deref: &&T → &T (strip one layer of reference from actual)
+        if let Type::Ref { inner: act_inner_inner, .. } = act_inner {
+            if Self::types_structurally_equal(exp_inner, act_inner_inner.as_ref()) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Check if an implicit ref/deref coercion between non-reference types is valid.
+    /// Handles: T → &T (auto-ref) and &T → T (auto-deref)
+    fn is_ref_value_coercion(expected: &Type, actual: &Type) -> bool {
+        // Auto-deref: &T → T (strip reference from actual to match expected value type)
+        if let Type::Ref { inner, .. } = actual {
+            if Self::types_structurally_equal(expected, inner.as_ref()) {
+                return true;
+            }
+        }
+        // Auto-ref: T → &T (expected is a reference, actual is a value)
+        if let Type::Ref { inner, .. } = expected {
+            if Self::types_structurally_equal(inner.as_ref(), actual) {
+                return true;
+            }
+        }
         false
     }
 
