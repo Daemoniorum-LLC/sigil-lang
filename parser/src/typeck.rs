@@ -1798,10 +1798,11 @@ impl TypeChecker {
                             }
                         }
 
-                        // Check evidence compatibility only for non-polymorphic parameters.
-                        // Type variables (used in polymorphic functions like print, len, etc.)
-                        // accept arguments of any evidence level.
-                        if !matches!(param, Type::Var(_)) {
+                        // Check evidence compatibility only when the parameter has an
+                        // explicit evidence annotation (Type::Evidential). Unannotated
+                        // parameters like `x: usize` accept any evidence level.
+                        // Type variables (polymorphic) also skip evidence checking.
+                        if matches!(param, Type::Evidential { .. }) {
                             let expected_evidence = self.get_evidence(param);
                             let actual_evidence = self.get_evidence(arg);
                             self.check_evidence(
@@ -1863,7 +1864,9 @@ impl TypeChecker {
                 else_branch,
             } => {
                 let cond_ty = self.infer_expr(condition);
-                if !self.unify(&Type::Bool, &cond_ty) {
+                // Strip evidence wrapper before checking: bool? is still bool
+                let (bare_cond_ty, _) = self.strip_evidence(&cond_ty);
+                if !self.unify(&Type::Bool, &bare_cond_ty) {
                     self.error(TypeError::new("if condition must be bool"));
                 }
 
@@ -1907,7 +1910,8 @@ impl TypeChecker {
                 ..
             } => {
                 let cond_ty = self.infer_expr(condition);
-                if !self.unify(&Type::Bool, &cond_ty) {
+                let (bare_cond_ty, _) = self.strip_evidence(&cond_ty);
+                if !self.unify(&Type::Bool, &bare_cond_ty) {
                     self.error(TypeError::new("while condition must be bool"));
                 }
                 self.check_block(body);
@@ -1985,9 +1989,30 @@ impl TypeChecker {
                 evidentiality,
             } => {
                 let inner = self.infer_expr(expr);
+                let ev = EvidenceLevel::from_ast(*evidentiality);
+
+                // When ? (Uncertain) is applied to Result<T, E> or Option<T>,
+                // this is the try operator: unwrap to T
+                if ev == EvidenceLevel::Uncertain {
+                    let resolved = if let Type::Var(v) = &inner {
+                        self.substitutions.get(v).cloned().unwrap_or(inner.clone())
+                    } else {
+                        inner.clone()
+                    };
+                    match &resolved {
+                        Type::Named { name, generics } if name == "Result" && !generics.is_empty() => {
+                            return generics[0].clone();
+                        }
+                        Type::Named { name, generics } if name == "Option" && !generics.is_empty() => {
+                            return generics[0].clone();
+                        }
+                        _ => {}
+                    }
+                }
+
                 Type::Evidential {
                     inner: Box::new(inner),
-                    evidence: EvidenceLevel::from_ast(*evidentiality),
+                    evidence: ev,
                 }
             }
 
@@ -2334,6 +2359,32 @@ impl TypeChecker {
                 }
             }
 
+            Expr::Try(inner) => {
+                // expr? unwraps Result<T, E> or Option<T> to T
+                let inner_ty = self.infer_expr(inner);
+                // Resolve type variables before matching
+                let resolved = if let Type::Var(v) = &inner_ty {
+                    self.substitutions.get(v).cloned().unwrap_or(inner_ty.clone())
+                } else {
+                    inner_ty.clone()
+                };
+                match &resolved {
+                    Type::Named { name, generics } if name == "Result" && !generics.is_empty() => {
+                        // Result<T, E>? → T with uncertain evidence
+                        generics[0].clone()
+                    }
+                    Type::Named { name, generics } if name == "Option" && !generics.is_empty() => {
+                        // Option<T>? → T with uncertain evidence
+                        generics[0].clone()
+                    }
+                    _ => {
+                        // For unresolved types, ? produces a fresh type variable
+                        // (type inference will resolve it later)
+                        self.fresh_var()
+                    }
+                }
+            }
+
             _ => {
                 // Handle other expression types
                 self.fresh_var()
@@ -2486,14 +2537,19 @@ impl TypeChecker {
         let result = match op {
             UnaryOp::Neg => inner_ty,
             UnaryOp::Not => {
-                // ! operator requires bool operand
-                if !self.unify(&Type::Bool, &inner_ty) {
-                    self.error(TypeError::new(format!(
-                        "type mismatch: '!' requires bool, found {}",
-                        inner_ty
-                    )));
+                // ! operator: logical NOT for bool, bitwise NOT for integers
+                if matches!(inner_ty, Type::Int(_)) {
+                    // Bitwise NOT on integer types - returns same type
+                    inner_ty
+                } else {
+                    if !self.unify(&Type::Bool, &inner_ty) {
+                        self.error(TypeError::new(format!(
+                            "type mismatch: '!' requires bool or integer, found {}",
+                            inner_ty
+                        )));
+                    }
+                    Type::Bool
                 }
-                Type::Bool
             }
             UnaryOp::Ref => Type::Ref {
                 lifetime: None,
