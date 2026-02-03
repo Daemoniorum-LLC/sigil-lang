@@ -5365,7 +5365,7 @@ impl<'a> Parser<'a> {
                 // ∀ is contextually a for-loop: ∀ pattern ∈ iter { ... }
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
+                self.expect(Token::ElementOf)?;
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -5434,7 +5434,7 @@ impl<'a> Parser<'a> {
                     Some(Token::ForAll) | Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
-                        self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
+                        self.expect(Token::ElementOf)?;
                         let iter = self.parse_condition()?;
                         let body = self.parse_block()?;
                         Ok(Expr::For {
@@ -5480,7 +5480,7 @@ impl<'a> Parser<'a> {
             Some(Token::ForAll) | Some(Token::ForAll) => {
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
+                self.expect(Token::ElementOf)?;
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {

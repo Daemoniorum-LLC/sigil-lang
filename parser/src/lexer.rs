@@ -616,6 +616,7 @@ pub enum Token {
     Exists, // Existential quantification
 
     #[token("∈")]
+    #[token("of")]   // Prose alternative: each x of iter { }
     ElementOf, // Membership test (parser handles contextual use as `in` keyword)
 
     #[token("∉")]
