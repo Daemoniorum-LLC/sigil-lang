@@ -941,6 +941,7 @@ impl TypeChecker {
                 params.iter().any(|p| self.type_contains_var(p)) || self.type_contains_var(return_type.as_ref())
             }
             Type::Named { generics, .. } => generics.iter().any(|g| self.type_contains_var(g)),
+            Type::ImplTrait(bounds) => bounds.iter().any(|b| self.type_contains_var(b)),
             Type::Evidential { inner, .. } => self.type_contains_var(inner.as_ref()),
             Type::Atomic(inner) => self.type_contains_var(inner.as_ref()),
             Type::Simd { element, .. } => self.type_contains_var(element.as_ref()),
@@ -970,6 +971,7 @@ impl TypeChecker {
                 params.iter().any(|p| self.occurs_in(v, p)) || self.occurs_in(v, return_type)
             }
             Type::Named { generics, .. } => generics.iter().any(|g| self.occurs_in(v, g)),
+            Type::ImplTrait(bounds) => bounds.iter().any(|b| self.occurs_in(v, b)),
             Type::Evidential { inner, .. } => self.occurs_in(v, inner),
             Type::Atomic(inner) => self.occurs_in(v, inner),
             Type::Simd { element, .. } => self.occurs_in(v, element),
@@ -1652,8 +1654,12 @@ impl TypeChecker {
                             .unwrap_or(EvidenceLevel::Known)
                     });
 
+                // For simple ident patterns, use define() directly (preserves evidence wrapping).
+                // For complex patterns (tuples, structs), use bind_pattern for destructuring.
                 if let Some(name) = pattern.binding_name() {
                     self.env.borrow_mut().define(name, final_ty, evidence);
+                } else {
+                    self.bind_pattern(pattern, &final_ty, evidence);
                 }
                 Type::Unit
             }
@@ -1669,8 +1675,12 @@ impl TypeChecker {
                 let final_ty = declared_ty.unwrap_or(init_ty);
                 // Check else branch
                 self.infer_expr(else_branch);
+                // For simple ident patterns, use define() directly (preserves evidence wrapping).
+                // For complex patterns (tuples, structs), use bind_pattern for destructuring.
                 if let Some(name) = pattern.binding_name() {
                     self.env.borrow_mut().define(name, final_ty, evidence);
+                } else {
+                    self.bind_pattern(pattern, &final_ty, evidence);
                 }
                 Type::Unit
             }
@@ -2029,7 +2039,15 @@ impl TypeChecker {
                 let mut arm_types: Vec<Type> = Vec::new();
                 let mut max_evidence = EvidenceLevel::Known;
 
+                // Snapshot substitutions before match: each arm should start
+                // from the same type variable state. This prevents one arm's
+                // bindings (e.g., Device=Cuda) from conflicting with another
+                // arm's bindings (e.g., Device=Cpu) in device dispatch patterns.
+                let saved_substitutions = self.substitutions.clone();
+
                 for arm in arms {
+                    // Restore substitutions to pre-match state for each arm
+                    self.substitutions = saved_substitutions.clone();
                     self.push_scope();
 
                     // Bind pattern variables with scrutinee's evidence level
@@ -2054,6 +2072,10 @@ impl TypeChecker {
 
                     self.pop_scope();
                 }
+
+                // Restore to pre-match state, then let arm type unification
+                // establish the final bindings from the match result type
+                self.substitutions = saved_substitutions;
 
                 // Unify all arm types
                 // For bootstrapping: skip error, just try to unify
@@ -2082,23 +2104,54 @@ impl TypeChecker {
             } => {
                 let recv_ty = self.infer_expr(receiver);
                 let (recv_inner, recv_ev) = self.strip_evidence(&recv_ty);
+                // Strip references to get the underlying type for method lookup
+                let recv_derefed = match &recv_inner {
+                    Type::Ref { inner, .. } => {
+                        // Also strip evidence from inner ref
+                        let (inner_stripped, _) = self.strip_evidence(inner);
+                        // Handle &&T -> T
+                        match &inner_stripped {
+                            Type::Ref { inner: inner2, .. } => {
+                                let (i2, _) = self.strip_evidence(inner2);
+                                i2
+                            }
+                            other => other.clone(),
+                        }
+                    }
+                    other => other.clone(),
+                };
                 let _arg_types: Vec<Type> = args.iter().map(|a| self.infer_expr(a)).collect();
 
                 // FIRST: Check user-defined methods in impl_methods
                 // This takes priority over hardcoded patterns
-                let user_method_result = if let Type::Named { name: ref type_name, .. } = recv_inner {
-                    self.impl_methods.get(type_name)
-                        .and_then(|methods| methods.get(&method.name))
-                        .cloned()
-                        .and_then(|fn_type| {
+                // Try both the original recv_inner and the deref'd version
+                let user_method_result = {
+                    // Try original type first
+                    let mut result = None;
+                    if let Type::Named { name: ref type_name, .. } = recv_inner {
+                        if let Some(fn_type) = self.impl_methods.get(type_name)
+                            .and_then(|methods| methods.get(&method.name))
+                            .cloned()
+                        {
                             if let Type::Function { return_type, .. } = self.freshen(&fn_type) {
-                                Some(*return_type)
-                            } else {
-                                None
+                                result = Some(*return_type);
                             }
-                        })
-                } else {
-                    None
+                        }
+                    }
+                    // If not found, try deref'd type
+                    if result.is_none() {
+                        if let Type::Named { name: ref type_name, .. } = recv_derefed {
+                            if let Some(fn_type) = self.impl_methods.get(type_name)
+                                .and_then(|methods| methods.get(&method.name))
+                                .cloned()
+                            {
+                                if let Type::Function { return_type, .. } = self.freshen(&fn_type) {
+                                    result = Some(*return_type);
+                                }
+                            }
+                        }
+                    }
+                    result
                 };
 
                 // If user-defined method found, use it; otherwise fall back to hardcoded patterns
@@ -2186,11 +2239,30 @@ impl TypeChecker {
                         generics: vec![self.fresh_var(), self.fresh_var()],
                     },
 
+                    // Methods that remove and return an element
+                    "remove" | "swap_remove" => {
+                        // Vec::remove(index) returns T, not ()
+                        let effective_recv = if let Type::Named { .. } = &recv_inner {
+                            &recv_inner
+                        } else {
+                            &recv_derefed
+                        };
+                        if let Type::Named { generics, .. } = effective_recv {
+                            if !generics.is_empty() {
+                                generics[0].clone()
+                            } else {
+                                self.fresh_var()
+                            }
+                        } else {
+                            self.fresh_var()
+                        }
+                    }
+
                     // Push/insert/mutating methods return unit
                     "push" | "push_str" | "push_front" | "push_back" | "insert"
-                    | "remove" | "clear" | "sort" | "sort_by" | "sort_by_key"
+                    | "clear" | "sort" | "sort_by" | "sort_by_key"
                     | "sort_unstable" | "truncate" | "resize" | "extend" | "append"
-                    | "retain" | "swap" | "swap_remove" => Type::Unit,
+                    | "retain" | "swap" => Type::Unit,
 
                     // Numeric methods
                     "abs" | "floor" | "ceil" | "round" | "trunc" | "fract" | "sqrt"
@@ -3272,12 +3344,48 @@ impl TypeChecker {
                 // Allow &[T; N] to coerce to &[T] (array to slice)
                 match (a.as_ref(), b.as_ref()) {
                     (Type::Array { element: ea, .. }, Type::Slice(es)) => {
-                        ma == mb && self.unify(ea, es)
+                        (ma == mb || !ma) && self.unify(ea, es)
                     }
                     (Type::Slice(es), Type::Array { element: ea, .. }) => {
-                        ma == mb && self.unify(es, ea)
+                        (ma == mb || !mb) && self.unify(es, ea)
                     }
-                    _ => ma == mb && self.unify(a, b)
+                    _ => {
+                        let mut_ok = ma == mb || (!ma && *mb) || (!mb && *ma);
+                        if mut_ok && self.unify(a, b) {
+                            return true;
+                        }
+                        // Auto-deref: &&T → &T (strip one layer of reference)
+                        if let Type::Ref { inner: inner_b, .. } = b.as_ref() {
+                            if self.unify(a, inner_b) {
+                                return true;
+                            }
+                        }
+                        if let Type::Ref { inner: inner_a, .. } = a.as_ref() {
+                            if self.unify(inner_a, b) {
+                                return true;
+                            }
+                        }
+                        // Smart pointer deref: &Arc<T> → &T, &Rc<T> → &T, etc.
+                        if let Type::Named { name, generics, .. } = b.as_ref() {
+                            if matches!(name.as_str(), "Arc" | "Rc" | "Box" | "Cell" | "RefCell" | "Mutex")
+                                && !generics.is_empty()
+                            {
+                                if self.unify(a, &generics[0]) {
+                                    return true;
+                                }
+                            }
+                        }
+                        if let Type::Named { name, generics, .. } = a.as_ref() {
+                            if matches!(name.as_str(), "Arc" | "Rc" | "Box" | "Cell" | "RefCell" | "Mutex")
+                                && !generics.is_empty()
+                            {
+                                if self.unify(&generics[0], b) {
+                                    return true;
+                                }
+                            }
+                        }
+                        false
+                    }
                 }
             }
 
@@ -3291,8 +3399,25 @@ impl TypeChecker {
 
             // Named types
             (Type::Named { name: na, generics: ga }, Type::Named { name: nb, generics: gb }) => {
-                na == nb && ga.len() == gb.len() &&
-                ga.iter().zip(gb.iter()).all(|(x, y)| self.unify(x, y))
+                if na == nb {
+                    // Same name, same arity: unify generics pairwise
+                    if ga.len() == gb.len() {
+                        return ga.iter().zip(gb.iter()).all(|(x, y)| self.unify(x, y));
+                    }
+                    // Bare type (0 generics) is compatible with the generic version
+                    // e.g., `Tensor` (user wrote without generics) matches `Tensor<S, D, Dev>`
+                    if ga.is_empty() || gb.is_empty() {
+                        return true;
+                    }
+                    return false;
+                }
+                // Different names: check if either is a type parameter
+                // Type parameters (single uppercase letter like T, N, M) unify with any type
+                if (ga.is_empty() && Self::is_type_parameter(na))
+                    || (gb.is_empty() && Self::is_type_parameter(nb)) {
+                    return true;
+                }
+                false
             }
 
             // Null (Unit) is assignable to any uncertain type (like None for Option<T>)
@@ -3315,6 +3440,16 @@ impl TypeChecker {
             // Cycles
             (Type::Cycle { modulus: a }, Type::Cycle { modulus: b }) => a == b,
 
+            // ImplTrait: impl Trait bounds
+            // Two impl Trait types unify if their bounds match
+            (Type::ImplTrait(bounds_a), Type::ImplTrait(bounds_b)) => {
+                bounds_a.len() == bounds_b.len() &&
+                bounds_a.iter().zip(bounds_b.iter()).all(|(a, b)| self.unify(a, b))
+            }
+            // impl Trait acts as an existential type — it accepts any concrete type
+            // that satisfies the bound. For type checking purposes, unify permissively.
+            (Type::ImplTrait(_), _) | (_, Type::ImplTrait(_)) => true,
+
             // For bootstrapping: treat type parameters (single uppercase letter names like T, U, E)
             // as compatible with any type. This allows generic functions to type check without
             // full generic instantiation support.
@@ -3322,6 +3457,11 @@ impl TypeChecker {
                 if generics.is_empty() && Self::is_type_parameter(name) => {
                 true
             }
+
+            // Auto ref/deref coercion: &T ↔ T
+            // When one side is a reference and the other is not, try unifying the inner type
+            (Type::Ref { inner: a, .. }, b) => self.unify(a, b),
+            (a, Type::Ref { inner: b, .. }) => self.unify(a, b),
 
             _ => false,
         }
@@ -3373,9 +3513,11 @@ impl TypeChecker {
             }
         }
 
-        // 2. Deref coercion: &Box<T> → &T
+        // 2. Deref coercion: &Box<T> → &T, &Arc<T> → &T, &Rc<T> → &T, etc.
         if let Type::Named { name, generics, .. } = act_inner {
-            if name == "Box" && !generics.is_empty() {
+            if matches!(name.as_str(), "Box" | "Arc" | "Rc" | "Cell" | "RefCell" | "Mutex")
+                && !generics.is_empty()
+            {
                 if Self::types_structurally_equal(exp_inner, &generics[0]) {
                     return true;
                 }
