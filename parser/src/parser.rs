@@ -8765,6 +8765,10 @@ impl<'a> Parser<'a> {
             Token::Ref => Some("ref"),
             Token::Null => Some("null"),
             Token::Fn => Some("rite"),  // Allow 'rite' as identifier (Sigil prose alternative to fn)
+            // Substructural type keywords - usable as identifiers in field/variable contexts
+            Token::Linear => Some("linear"),
+            Token::Affine => Some("affine"),
+            Token::Relevant => Some("relevant"),
             _ => None,
         }
     }
