@@ -72,7 +72,8 @@ fn main() -> ExitCode {
         eprintln!("  init            Initialize a Sigil project in current directory");
         eprintln!("  test            Run tests in the current project");
         eprintln!("  build           Build the current project");
-        eprintln!("  migrate <file>  Convert Rust syntax to native Sigil (--dry-run, --backup)");
+        eprintln!("  migrate <file|dir>  Convert Rust syntax to native Sigil");
+        eprintln!("                      Options: --dry-run, --backup, --workspace");
         eprintln!();
         eprintln!("AI Agent Options (for 'check' command):");
         eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
@@ -430,20 +431,32 @@ fn main() -> ExitCode {
         "test" => run_tests(),
         "build" => build_project(),
         "migrate" => {
-            if args.len() < 3 {
-                eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil migrate <file.sg> [--dry-run] [--backup] [--evidentiality]");
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            let backup = args.iter().any(|a| a == "--backup");
+            let evidentiality = args.iter().any(|a| a == "--evidentiality");
+            let workspace = args.iter().any(|a| a == "--workspace");
+
+            if workspace {
+                // Migrate entire workspace from Sigil.toml
+                migrate_workspace(dry_run, backup, evidentiality)
+            } else if args.len() < 3 || args[2].starts_with('-') {
+                eprintln!("Usage: sigil migrate <file|directory> [options]");
+                eprintln!("       sigil migrate --workspace [options]");
                 eprintln!();
                 eprintln!("Options:");
                 eprintln!("  --dry-run        Show changes without applying");
                 eprintln!("  --backup         Create .bak backup before modifying");
                 eprintln!("  --evidentiality  Add evidentiality markers to external data sources");
+                eprintln!("  --workspace      Migrate all files in workspace (reads Sigil.toml)");
                 return ExitCode::from(1);
+            } else {
+                let path = std::path::Path::new(&args[2]);
+                if path.is_dir() {
+                    migrate_directory(&args[2], dry_run, backup, evidentiality)
+                } else {
+                    migrate_file(&args[2], dry_run, backup, evidentiality)
+                }
             }
-            let dry_run = args.iter().any(|a| a == "--dry-run");
-            let backup = args.iter().any(|a| a == "--backup");
-            let evidentiality = args.iter().any(|a| a == "--evidentiality");
-            migrate_file(&args[2], dry_run, backup, evidentiality)
         }
         _ => {
             // Treat as file if it ends with .sigil or .sg
@@ -3510,6 +3523,203 @@ fn build_project() -> ExitCode {
         println!("Run with: sigil run src/main.sigil");
         ExitCode::SUCCESS
     }
+}
+
+/// Recursively collect all .sg and .sigil files from a directory.
+fn collect_migrate_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+
+    fn visit_dir(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dir(&path, files);
+                } else if path.extension().map_or(false, |ext| ext == "sigil" || ext == "sg") {
+                    // Skip backup files
+                    if !path.to_string_lossy().ends_with(".bak") {
+                        files.push(path);
+                    }
+                }
+            }
+        }
+    }
+
+    visit_dir(dir, &mut files);
+    files.sort();
+    files
+}
+
+/// Migrate all .sg/.sigil files in a directory (recursive).
+fn migrate_directory(dir_path: &str, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+    let path = std::path::Path::new(dir_path);
+    if !path.exists() {
+        eprintln!("Error: directory '{}' does not exist", dir_path);
+        return ExitCode::from(1);
+    }
+
+    let files = collect_migrate_files(path);
+    if files.is_empty() {
+        eprintln!("No .sg or .sigil files found in '{}'", dir_path);
+        return ExitCode::from(1);
+    }
+
+    println!("Migrating {} files in '{}'...", files.len(), dir_path);
+    println!();
+
+    let mut total_files_changed = 0;
+    let mut errors = 0;
+
+    for file in &files {
+        let file_str = file.to_string_lossy();
+        // Read file to count changes before calling migrate_file
+        if let Ok(source) = fs::read_to_string(file) {
+            // Quick check: does this file have any Rust syntax?
+            let has_rust = source.contains("pub ") || source.contains("fn ") || source.contains("let ")
+                || source.contains("struct ") || source.contains("impl ") || source.contains("trait ")
+                || source.contains("enum ") || source.contains("match ") || source.contains("::");
+            if !has_rust && !evidentiality {
+                continue; // Skip already-native files silently
+            }
+        }
+
+        let result = migrate_file(&file_str, dry_run, backup, evidentiality);
+        if result == ExitCode::SUCCESS {
+            total_files_changed += 1;
+        } else {
+            errors += 1;
+        }
+    }
+
+    println!();
+    println!("=== Migration Summary ===");
+    println!("  Files scanned: {}", files.len());
+    println!("  Files migrated: {}", total_files_changed);
+    if errors > 0 {
+        println!("  Errors: {}", errors);
+    }
+
+    if errors > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS }
+}
+
+/// Migrate all files in a workspace (reads Sigil.toml).
+fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+    use toml::Value as TomlValue;
+
+    // Look for Sigil.toml
+    let manifest_content = match fs::read_to_string("Sigil.toml")
+        .or_else(|_| fs::read_to_string("sigil.toml"))
+    {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("Error: No Sigil.toml found in current directory");
+            eprintln!("Run this command from a Sigil workspace root, or use:");
+            eprintln!("  sigil migrate <directory>");
+            return ExitCode::from(1);
+        }
+    };
+
+    let manifest: TomlValue = match manifest_content.parse() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error parsing Sigil.toml: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    let project_name = manifest
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("unnamed");
+
+    // Get workspace members
+    let members: Vec<String> = manifest
+        .get("workspace")
+        .and_then(|w| w.get("members"))
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if members.is_empty() {
+        eprintln!("Error: No workspace members found in Sigil.toml");
+        return ExitCode::from(1);
+    }
+
+    println!("Migrating workspace '{}' ({} members)...", project_name, members.len());
+    println!();
+
+    // Collect all files from all workspace members
+    let mut all_files = Vec::new();
+    for member in &members {
+        let member_path = std::path::Path::new(member);
+        if member_path.exists() {
+            let files = collect_migrate_files(member_path);
+            all_files.extend(files);
+        } else {
+            eprintln!("  Warning: workspace member '{}' not found, skipping", member);
+        }
+    }
+
+    // Also check for top-level src/ and examples/
+    for extra_dir in &["src", "examples"] {
+        let extra_path = std::path::Path::new(extra_dir);
+        if extra_path.exists() {
+            all_files.extend(collect_migrate_files(extra_path));
+        }
+    }
+
+    if all_files.is_empty() {
+        println!("No .sg or .sigil files found in workspace members");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("Found {} files across {} workspace members", all_files.len(), members.len());
+    println!();
+
+    let mut files_migrated = 0;
+    let mut files_skipped = 0;
+    let mut errors = 0;
+
+    for file in &all_files {
+        let file_str = file.to_string_lossy();
+        // Quick check for Rust syntax
+        if let Ok(source) = fs::read_to_string(file) {
+            let has_rust = source.contains("pub ") || source.contains("fn ") || source.contains("let ")
+                || source.contains("struct ") || source.contains("impl ") || source.contains("trait ")
+                || source.contains("enum ") || source.contains("match ") || source.contains("::");
+            if !has_rust && !evidentiality {
+                files_skipped += 1;
+                continue;
+            }
+        }
+
+        let result = migrate_file(&file_str, dry_run, backup, evidentiality);
+        if result == ExitCode::SUCCESS {
+            files_migrated += 1;
+        } else {
+            errors += 1;
+        }
+    }
+
+    println!();
+    println!("=== Workspace Migration Summary ===");
+    println!("  Workspace: {}", project_name);
+    println!("  Files scanned: {}", all_files.len());
+    println!("  Files migrated: {}", files_migrated);
+    if files_skipped > 0 {
+        println!("  Files already native: {}", files_skipped);
+    }
+    if errors > 0 {
+        println!("  Errors: {}", errors);
+    }
+
+    if errors > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS }
 }
 
 /// Migrate a file from Rust syntax to native Sigil syntax.

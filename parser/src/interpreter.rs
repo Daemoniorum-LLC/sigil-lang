@@ -2646,8 +2646,13 @@ impl Interpreter {
         if source.is_empty() || offset >= source.len() {
             return 1; // Default if no source or out of bounds
         }
+        // Snap to nearest char boundary to avoid panicking on multi-byte UTF-8
+        let mut safe_offset = offset;
+        while safe_offset > 0 && !source.is_char_boundary(safe_offset) {
+            safe_offset -= 1;
+        }
         // Count newlines up to offset
-        let line_count = source[..offset].matches('\n').count() + 1;
+        let line_count = source[..safe_offset].matches('\n').count() + 1;
         line_count as i64
     }
 

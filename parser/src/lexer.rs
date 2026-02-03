@@ -417,6 +417,7 @@ pub enum Token {
     #[token("⌥")]  // Option key - choices
     Match,
     #[token("loop")]
+    #[token("forever")]  // Prose alternative for loop
     Loop, // Legacy - parser also handles ∞ (Infinity token) for loop
     #[token("⟳")]  // Cycle arrow
     While,
@@ -616,6 +617,7 @@ pub enum Token {
     Exists, // Existential quantification
 
     #[token("∈")]
+    #[token("of")]   // Prose alternative: each x of iter { }
     ElementOf, // Membership test (parser handles contextual use as `in` keyword)
 
     #[token("∉")]
@@ -705,6 +707,7 @@ pub enum Token {
     Rotate, // Reverse/rotate (U+233D)
 
     #[token("↻")]
+    #[token("⊳")]  // Right triangle - prose alternative for continue
     CycleArrow, // Cycle/repeat (U+21BB)
 
     #[token("⌺")]
@@ -721,7 +724,8 @@ pub enum Token {
     Compose, // Function composition
 
     #[token("⊗")]
-    Tensor, // Tensor product
+    #[token("⊲")]  // Left triangle - prose alternative for break
+    Tensor, // Tensor product (parser also handles as break keyword)
 
     #[token("⊕")]
     DirectSum, // Direct sum / XOR
