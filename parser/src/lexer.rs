@@ -1075,12 +1075,13 @@ pub enum Token {
     DuodecimalLit(String),
 
     // Float: 123.456 or 1.23e10 or 1e-15 (with or without decimal point if exponent present)
-    // Optional type suffix: f16, f32, f64, f128
-    #[regex(r"([0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?|[0-9][0-9_]*[eE][+-]?[0-9_]+)(f16|f32|f64|f128)?", |lex| lex.slice().to_string())]
+    // Optional type suffix: f16, f32, f64, f128 (with optional underscore separator, e.g. 2.0_f64)
+    #[regex(r"([0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?|[0-9][0-9_]*[eE][+-]?[0-9_]+)_?(f16|f32|f64|f128)?", |lex| lex.slice().to_string())]
     FloatLit(String),
 
     // Integer: 123 with optional type suffix (i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize)
-    #[regex(r"[0-9][0-9_]*(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize)?", |lex| lex.slice().to_string())]
+    // Optional underscore separator before suffix (e.g. 42_i32)
+    #[regex(r"[0-9][0-9_]*_?(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize)?", |lex| lex.slice().to_string())]
     IntLit(String),
 
     // === Strings ===

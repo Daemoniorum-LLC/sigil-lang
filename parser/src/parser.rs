@@ -809,11 +809,14 @@ impl<'a> Parser<'a> {
     }
 
     /// Strip float type suffix (f16, f32, f64, f128) from a literal string.
+    /// Handles both `2.0f64` and `2.0_f64` forms.
     /// Returns (numeric_value, optional_suffix).
     fn strip_float_suffix(s: &str) -> (String, Option<String>) {
         for suffix in &["f128", "f64", "f32", "f16"] {
             if s.ends_with(suffix) {
-                let value = s[..s.len() - suffix.len()].to_string();
+                let before = &s[..s.len() - suffix.len()];
+                // Strip optional underscore separator (e.g., 2.0_f64 -> 2.0)
+                let value = before.strip_suffix('_').unwrap_or(before).to_string();
                 return (value, Some(suffix.to_string()));
             }
         }
@@ -4694,6 +4697,16 @@ impl<'a> Parser<'a> {
 
             // Collect token text (approximate - this is a simplified approach)
             if let Some((token, span)) = &self.current {
+                // Skip comment tokens inside macro invocations
+                if matches!(token, Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) {
+                    self.advance();
+                    continue;
+                }
+                // Also skip doc comments inside macros
+                if token.is_doc_comment() {
+                    self.advance();
+                    continue;
+                }
                 // Get the source slice for this token
                 let token_str = match token {
                     Token::Ident(s) => s.clone(),

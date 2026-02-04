@@ -4092,6 +4092,11 @@ impl Interpreter {
                 // uses Rc<RefCell<Vec<Value>>>, modifying through the shared reference
                 // updates the original struct field in place.
                 let target = self.evaluate(expr)?;
+                // Unwrap Ref if needed to get the inner array
+                let target = match &target {
+                    Value::Ref(r) => r.borrow().clone(),
+                    other => other.clone(),
+                };
                 match target {
                     Value::Array(arr) => {
                         let mut borrowed = arr.borrow_mut();
@@ -8144,6 +8149,145 @@ impl Interpreter {
                 let found = arr.borrow().iter().any(|v| self.values_equal(v, target));
                 Ok(Value::Bool(found))
             }
+            (Value::Array(arr), "position") => {
+                // position(predicate) -> Option<usize>
+                // Returns the index of the first element matching the predicate
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("position expects 1 argument (closure)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        for (i, val) in arr.borrow().iter().enumerate() {
+                            let result = self.call_function(f, vec![val.clone()])?;
+                            if matches!(result, Value::Bool(true)) {
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![Value::Int(i as i64)])),
+                                });
+                            }
+                        }
+                        Ok(Value::Variant {
+                            enum_name: "Option".to_string(),
+                            variant_name: "None".to_string(),
+                            fields: None,
+                        })
+                    }
+                    _ => Err(RuntimeError::new("position expects closure argument")),
+                }
+            }
+            (Value::Array(arr), "remove") => {
+                // remove(index) -> Value
+                // Removes and returns the element at the given index
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("remove expects 1 argument (index)"));
+                }
+                let index = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("remove() index must be integer")),
+                };
+                let mut borrowed = arr.borrow_mut();
+                if index >= borrowed.len() {
+                    return Err(RuntimeError::new(format!(
+                        "remove index {} out of bounds for array of length {}",
+                        index,
+                        borrowed.len()
+                    )));
+                }
+                Ok(borrowed.remove(index))
+            }
+            (Value::Array(arr), "insert") => {
+                // insert(index, value) -> ()
+                // Inserts an element at the given index
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("insert expects 2 arguments (index, value)"));
+                }
+                let index = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("insert() index must be integer")),
+                };
+                let mut borrowed = arr.borrow_mut();
+                if index > borrowed.len() {
+                    return Err(RuntimeError::new(format!(
+                        "insert index {} out of bounds for array of length {}",
+                        index,
+                        borrowed.len()
+                    )));
+                }
+                borrowed.insert(index, arg_values[1].clone());
+                Ok(Value::Null)
+            }
+            (Value::Array(arr), "index_of") => {
+                // index_of(element) -> i64
+                // Returns index of first matching element, or -1
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("index_of expects 1 argument"));
+                }
+                let target = &arg_values[0];
+                let idx = arr.borrow().iter().position(|v| self.values_equal(v, target));
+                match idx {
+                    Some(i) => Ok(Value::Int(i as i64)),
+                    None => Ok(Value::Int(-1)),
+                }
+            }
+            (Value::Array(arr), "swap") => {
+                // swap(i, j) -> ()
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("swap expects 2 arguments"));
+                }
+                let i = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("swap indices must be integers")),
+                };
+                let j = match &arg_values[1] {
+                    Value::Int(j) => *j as usize,
+                    _ => return Err(RuntimeError::new("swap indices must be integers")),
+                };
+                let mut borrowed = arr.borrow_mut();
+                if i >= borrowed.len() || j >= borrowed.len() {
+                    return Err(RuntimeError::new("swap index out of bounds"));
+                }
+                borrowed.swap(i, j);
+                Ok(Value::Null)
+            }
+            (Value::Array(arr), "truncate") => {
+                // truncate(len) -> ()
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("truncate expects 1 argument"));
+                }
+                let len = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("truncate length must be integer")),
+                };
+                arr.borrow_mut().truncate(len);
+                Ok(Value::Null)
+            }
+            (Value::Array(arr), "retain") => {
+                // retain(predicate) -> ()
+                // Keeps only elements for which the predicate returns true
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("retain expects 1 argument (closure)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        let kept: Vec<Value> = arr.borrow().iter().filter(|val| {
+                            matches!(self.call_function(f, vec![(*val).clone()]), Ok(Value::Bool(true)))
+                        }).cloned().collect();
+                        *arr.borrow_mut() = kept;
+                        Ok(Value::Null)
+                    }
+                    _ => Err(RuntimeError::new("retain expects closure argument")),
+                }
+            }
+            (Value::Array(arr), "dedup") => {
+                // dedup() -> () - removes consecutive duplicate elements
+                let mut borrowed = arr.borrow_mut();
+                borrowed.dedup_by(|a, b| {
+                    // Use simple equality check
+                    format!("{}", a) == format!("{}", b)
+                });
+                Ok(Value::Null)
+            }
             // Tuple methods
             (Value::Tuple(t), "to_string") | (Value::Tuple(t), "string") => {
                 let s: Vec<String> = t.iter().map(|v| format!("{}", v)).collect();
@@ -10023,10 +10167,29 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                Err(RuntimeError::new(format!(
-                    "Cannot call method {} on Ref to non-struct",
-                    method.name
-                )))
+                // Fallback: auto-deref and dispatch method on inner value.
+                // This handles &Array, &Float, &Int, etc.
+                {
+                    static DEREF_CTR: std::sync::atomic::AtomicUsize =
+                        std::sync::atomic::AtomicUsize::new(0);
+                    let id = DEREF_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let inner_name = format!("__ref_deref_{}", id);
+                    self.environment.borrow_mut().define(inner_name.clone(), inner.clone());
+                    let deref_expr = Expr::Path(TypePath {
+                        segments: vec![PathSegment {
+                            ident: Ident {
+                                name: inner_name.clone(),
+                                span: Default::default(),
+                                evidentiality: None,
+                                affect: None,
+                            },
+                            generics: None,
+                        }],
+                    });
+                    let result = self.eval_method_call(&deref_expr, method, args);
+                    let _ = self.environment.borrow_mut().set(&inner_name, Value::Null);
+                    result
+                }
             }
             // Try struct method lookup: StructName·method
             (Value::Struct { name, fields }, _) => {
@@ -12418,6 +12581,12 @@ impl Interpreter {
             (Value::Float(n), "asin") => Ok(Value::Float(n.asin())),
             (Value::Float(n), "acos") => Ok(Value::Float(n.acos())),
             (Value::Float(n), "atan") => Ok(Value::Float(n.atan())),
+            (Value::Float(n), "sinh") => Ok(Value::Float(n.sinh())),
+            (Value::Float(n), "cosh") => Ok(Value::Float(n.cosh())),
+            (Value::Float(n), "tanh") => Ok(Value::Float(n.tanh())),
+            (Value::Float(n), "asinh") => Ok(Value::Float(n.asinh())),
+            (Value::Float(n), "acosh") => Ok(Value::Float(n.acosh())),
+            (Value::Float(n), "atanh") => Ok(Value::Float(n.atanh())),
             (Value::Float(n), "floor") => Ok(Value::Float(n.floor())),
             (Value::Float(n), "ceil") => Ok(Value::Float(n.ceil())),
             (Value::Float(n), "round") => Ok(Value::Float(n.round())),
