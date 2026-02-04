@@ -1,9 +1,11 @@
 # Parser Syntax Gaps Spec
 
-**Version:** 0.1.0
-**Status:** ! Draft
-**Date:** 2026-02-03
+**Version:** 0.2.0
+**Status:** Partially Investigated
+**Date:** 2026-02-04
 **Discovery:** Running 36 uncounted top-level test files revealed 5 parse failures on syntax constructs that should be valid Sigil.
+
+**Update (v0.2.0):** Investigation revealed that `⎉ ⎇` (else-if chains) already work correctly — the parser handles them at `parser.rs:7813-7815`. The `bootstrap_test.sg` failure is actually caused by `each ... of` loop syntax (unsupported), `yea` keyword (should be `yay`), and other issues unrelated to else-if.
 
 ---
 
@@ -27,37 +29,33 @@ Five top-level test files fail with parse errors on constructs that represent va
 
 ## 2. Gap Analysis
 
-### 2.1 `else if` Chains (`⎉ ⎇`)
+### 2.1 `else if` Chains (`⎉ ⎇`) — ✅ ALREADY WORKS
 
-**Severity:** High
-**Impact:** Blocks any non-trivial control flow with multiple branches
+**Severity:** ~~High~~ N/A
+**Status:** Already implemented at `parser.rs:7813-7815`
 
-**Current behavior:**
+**Investigation (2026-02-04):** The parser already handles `⎉ ⎇` correctly. After consuming `⎉` (else), it checks for `⎇` (if) and recursively parses an if-expression as the else branch. Verified with a test file:
+
 ```sigil
-// WORKS: simple if/else
-⎇ condition {
-    // ...
-} ⎉ {
-    // ...
+rite main() {
+    ≔ x = 3;
+    ⎇ x == 1 {
+        println("one");
+    } ⎉ ⎇ x == 2 {
+        println("two");
+    } ⎉ ⎇ x == 3 {
+        println("three");
+    } ⎉ {
+        println("other");
+    }
 }
-
-// FAILS: else-if chain
-⎇ arg == "--verbose" {
-    // ...
-} ⎉ ⎇ arg == "--base-dir" ∧ i + 1 < args.len() {  // Parse error here
-    // ...
-} ⎉ ⎇ arg == "--smoke" {
-    // ...
-} ⎉ {
-    // ...
-}
+// Output: "three" ✅
 ```
 
-**Expected behavior:** `⎉ ⎇` (else if) should parse as a chained conditional, producing the same AST as nested `else { if ... }` blocks.
-
-**Spec reference:** Section 02-SYNTAX.md should define `⎉ ⎇` as the `else if` construct. The parser currently expects `LBrace` after `⎉` but encounters `⎇` (the if token).
-
-**Implementation:** In the parser's if-expression handler, after consuming `⎉` (else), check if the next token is `⎇` (if). If so, parse another if-expression as the else branch instead of requiring `{`.
+**Misdiagnosis:** The `bootstrap_test.sg` failure (`expected LBrace, found Else`) occurs at a *different* location in the file, caused by:
+1. `each arg of args` — `each ... of` loop syntax is not implemented (use `for ... in` instead)
+2. `yea`/`nay` — `yea` is not a keyword (the correct spelling is `yay`)
+3. Other unsupported constructs earlier in the file that cause cascading parse errors
 
 ### 2.2 Sigil Symbols in Identifiers
 
@@ -121,7 +119,8 @@ expected expression, found Comma at 1803..1804
 
 | Gap | Priority | Rationale |
 |-----|----------|-----------|
-| `else if` chains | **P0** | Fundamental control flow; blocks real-world code |
+| `else if` chains | ✅ Done | Already implemented — misdiagnosis |
+| `each ... of` loop syntax | **P2** | Used in `bootstrap_test.sg`; workaround: use `for ... in` |
 | Symbols in identifiers | **P2** | Test naming convenience; workaround exists |
 | Assignment position | **P2** | Single file; needs investigation |
 | Comma expression | **P2** | Single file; needs investigation |
@@ -130,25 +129,9 @@ expected expression, found Comma at 1803..1804
 
 ## 4. Implementation Strategy
 
-### Phase 1: `else if` chains (P0)
+### Phase 1: `else if` chains — ✅ ALREADY WORKS
 
-| Component | Change |
-|-----------|--------|
-| `parser.rs` | In if-expression parsing, after consuming `⎉` (else token), check for `⎇` (if token). If found, recursively parse if-expression as the else branch. |
-| Test | `bootstrap_test.sg` should pass after this fix |
-
-**Expected AST:**
-```
-IfExpr {
-    condition: ...,
-    then_branch: ...,
-    else_branch: Some(IfExpr {    // <-- recursive, not Block
-        condition: ...,
-        then_branch: ...,
-        else_branch: Some(Block { ... })
-    })
-}
-```
+No changes needed. The parser at `parser.rs:7813-7815` already handles `⎉ ⎇` recursively. The `bootstrap_test.sg` failure has other root causes (see §2.1).
 
 ### Phase 2: Investigate remaining gaps (P2)
 
@@ -184,3 +167,4 @@ IfExpr {
 | Version | Date | Changes |
 |---------|------|---------|
 | 0.1.0 | 2026-02-03 | Initial gap discovery. 5 parse failures in uncounted test files. |
+| 0.2.0 | 2026-02-04 | else-if chains confirmed already working (misdiagnosis). Added `each...of` loop syntax as new gap. Updated priorities. |

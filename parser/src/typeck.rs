@@ -1778,8 +1778,43 @@ impl TypeChecker {
                     ..
                 } = fn_type
                 {
-                    // Check argument count
-                    if params.len() != arg_types.len() {
+                    // Extract function name for variadic builtin check
+                    let func_name = match func.as_ref() {
+                        Expr::Path(path) if path.segments.len() == 1 => {
+                            Some(path.segments[0].ident.name.as_str())
+                        }
+                        _ => None,
+                    };
+
+                    // Known variadic builtins: interpreter accepts variable args
+                    // (registered with arity: None in stdlib.rs). Allow extra
+                    // arguments beyond the minimum registered parameter count.
+                    let is_variadic_builtin = func_name.map_or(false, |name| {
+                        matches!(
+                            name,
+                            "assert"
+                                | "println"
+                                | "print"
+                                | "eprintln"
+                                | "eprint"
+                                | "panic"
+                                | "todo"
+                                | "unreachable"
+                                | "format"
+                        )
+                    });
+
+                    // Check argument count: variadic builtins require at least
+                    // params.len() args; all others require exact match.
+                    if is_variadic_builtin {
+                        if arg_types.len() < params.len() {
+                            self.error(TypeError::new(format!(
+                                "expected at least {} arguments, found {}",
+                                params.len(),
+                                arg_types.len()
+                            )));
+                        }
+                    } else if params.len() != arg_types.len() {
                         self.error(TypeError::new(format!(
                             "expected {} arguments, found {}",
                             params.len(),

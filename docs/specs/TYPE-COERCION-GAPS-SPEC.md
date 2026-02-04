@@ -209,3 +209,4 @@ test_evidentiality.sg:
 | Version | Date | Changes |
 |---------|------|---------|
 | 0.1.0 | 2026-02-03 | Initial gap discovery. 5 distinct type coercion/inference gaps identified from uncounted test files. |
+| 0.1.1 | 2026-02-04 | Note: ASSERT-API-SPEC Phase 1 (variadic arity) now complete. These type coercion gaps are the next frontier for uncounted test improvements. |

@@ -1,9 +1,11 @@
 # Assert API & Variadic Builtin Functions Spec
 
-**Version:** 0.1.0
-**Status:** ! Draft
-**Date:** 2026-02-03
+**Version:** 0.2.0
+**Status:** Phase 1 Complete
+**Date:** 2026-02-04
 **Discovery:** Running 36 uncounted top-level test files revealed 18 failures from `assert(expr, "message")` and `format!(..., arg1, arg2)` calls that the type checker rejects as wrong arity.
+
+**Phase 1 Resolution (v0.2.0):** Implemented variadic builtin arity support in `typeck.rs`. The type checker now allows extra arguments for known variadic builtins (`assert`, `println`, `print`, `eprintln`, `eprint`, `panic`, `todo`, `unreachable`, `format`). The interpreter (`stdlib.rs`) already handled variable args — the mismatch was type-checker-only. Result: 3 previously-failing top-level tests now pass (14/37 total). Remaining 23 failures are parse errors, type coercion gaps, or runtime API issues — not assert-related.
 
 ---
 
@@ -92,15 +94,15 @@ panic(/* String from format expansion */);
 
 ## 3. Implementation Strategy
 
-### Phase 1: `assert(bool, str)` overload
+### Phase 1: Variadic builtin arity support ✅ DONE
 
-| Component | Change |
-|-----------|--------|
-| `interpreter.rs` | Handle 2-arg `assert` calls, use second arg as panic message |
-| `typeck.rs` | Accept `assert` with 1 or 2 arguments |
-| `stdlib.rs` | Update `assert` intrinsic registration |
+| Component | Change | Status |
+|-----------|--------|--------|
+| `typeck.rs` | Extract function name from `Expr::Call`, skip strict arity for variadic builtins | ✅ Done |
+| `interpreter.rs` | Already handled 2-arg `assert` via `stdlib.rs` (arity: None) | ✅ Already worked |
+| `stdlib.rs` | Already registered `assert` as variadic (arity: None) | ✅ Already worked |
 
-**Unblocks:** ~8 test files that use `assert(expr, "message")` pattern
+**Result:** 3 top-level tests unblocked: `lexer_structure_test.sg`, `test_cg026_if_statement.sg`, `test_closure_capture.sg`
 
 ### Phase 2: `format!` macro expansion before typeck
 
@@ -121,12 +123,12 @@ panic(/* String from format expansion */);
 
 ## 4. Success Criteria
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| Top-level test pass rate | 10/36 (28%) | 30+/36 (83%+) |
-| Total test count (runner) | 749 | 785+ (749 + 36 top-level) |
-| `assert(x, "msg")` | Type error | Works |
-| `panic(format!(...))` | Type error | Works |
+| Metric | Before | After Phase 1 | Target |
+|--------|--------|---------------|--------|
+| Top-level test pass rate | 10/36 (28%) | 14/37 (38%) | 30+/37 (81%+) |
+| Total test count (runner) | 749 | 749 (unchanged) | 786+ (749 + 37 top-level) |
+| `assert(x, "msg")` | Type error | ✅ Works | ✅ |
+| `panic(format!(...))` | Type error | Still fails (format! expansion) | Works |
 
 ---
 
@@ -144,3 +146,4 @@ panic(/* String from format expansion */);
 | Version | Date | Changes |
 |---------|------|---------|
 | 0.1.0 | 2026-02-03 | Initial gap discovery. 18/36 uncounted tests fail on assert arity and format! expansion. |
+| 0.2.0 | 2026-02-04 | Phase 1 complete: variadic builtin arity in typeck.rs. 3 files unblocked. Interpreter already supported variable args. |
