@@ -3004,6 +3004,47 @@ impl Interpreter {
                     }
                 }
 
+                // If this is a trait impl, register default methods from the trait
+                // that aren't overridden by the impl block (e.g., `size()` from `DType`)
+                if let Some(trait_path) = &impl_block.trait_ {
+                    let t_name = trait_path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("·");
+
+                    // Collect names of methods explicitly provided in the impl block
+                    let impl_method_names: std::collections::HashSet<String> = impl_block
+                        .items
+                        .iter()
+                        .filter_map(|item| match item {
+                            ImplItem::Function(f) => Some(f.name.name.clone()),
+                            _ => None,
+                        })
+                        .collect();
+
+                    // Find the trait definition and register unoverridden default methods
+                    if let Some(trait_def) = self.trait_defs.iter().find(|td| td.name.name == t_name).cloned() {
+                        for trait_item in &trait_def.items {
+                            if let crate::ast::TraitItem::Function(f) = trait_item {
+                                if f.body.is_some() && !impl_method_names.contains(&f.name.name) {
+                                    let fn_value = self.create_function(f)?;
+                                    let qualified_name = format!("{}·{}", type_name, f.name.name);
+                                    self.globals
+                                        .borrow_mut()
+                                        .define(qualified_name.clone(), fn_value.clone());
+
+                                    if let Some(ref module) = self.current_module {
+                                        let fully_qualified = format!("{}·{}", module, qualified_name);
+                                        self.globals.borrow_mut().define(fully_qualified, fn_value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Track impl for IR export
                 let trait_name = impl_block.trait_.as_ref().map(|t| {
                     t.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·")
@@ -4347,7 +4388,15 @@ impl Interpreter {
             let full_name = path
                 .segments
                 .iter()
-                .map(|s| s.ident.name.as_str())
+                .map(|s| {
+                    // Resolve Self to concrete type name inside trait/impl methods
+                    if s.ident.name == "Self" {
+                        if let Some(ref self_type) = self.current_self_type {
+                            return self_type.clone();
+                        }
+                    }
+                    s.ident.name.clone()
+                })
                 .collect::<Vec<_>>()
                 .join("·");
 
@@ -5923,6 +5972,27 @@ impl Interpreter {
                     name: actual_type.to_string(),
                     fields: Rc::new(RefCell::new(HashMap::new())),
                 })
+            }
+            // Auto-deref Value::Ref wrapping a function/closure (e.g., &rite(f64)->f64)
+            Value::Ref(r) => {
+                let inner = r.borrow().clone();
+                match inner {
+                    Value::Function(f) => {
+                        let arg_values = Self::reorder_named_args(&f.params, arg_entries)?;
+                        self.call_function(&f, arg_values)
+                    }
+                    Value::BuiltIn(b) => {
+                        let arg_values: Vec<Value> = arg_entries.into_iter().map(|(_, v)| v).collect();
+                        self.call_builtin(&b, arg_values)
+                    }
+                    _ => {
+                        crate::sigil_debug!(
+                            "DEBUG Cannot call non-function (deref'd Ref): {:?}",
+                            inner
+                        );
+                        Err(RuntimeError::new("Cannot call non-function"))
+                    }
+                }
             }
             _ => {
                 crate::sigil_debug!(
