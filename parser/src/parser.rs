@@ -6609,7 +6609,7 @@ impl<'a> Parser<'a> {
                 Ok(PipeOp::Filter(Box::new(body)))
             }
             Some(Token::Sigma) => {
-                // Σ can be either sort morpheme OR a function call like Σ(dim: -1)
+                // σ can be sort morpheme, function call like Σ(dim: -1), or custom comparator σ{a, b => ...}
                 if self.peek_next() == Some(&Token::LParen) {
                     // Parse Σ as a function call: Σ(args)
                     let name = Ident {
@@ -6628,6 +6628,18 @@ impl<'a> Parser<'a> {
                         })),
                         args,
                     })))
+                } else if self.peek_next() == Some(&Token::LBrace) {
+                    // Custom comparator: σ{a, b => b - a}
+                    self.advance(); // consume σ
+                    self.advance(); // consume {
+                    self.skip_comments();
+                    let body = if self.looks_like_morpheme_closure() {
+                        self.parse_morpheme_closure()?
+                    } else {
+                        self.parse_expr()?
+                    };
+                    self.expect(Token::RBrace)?;
+                    Ok(PipeOp::SortBy(Box::new(body)))
                 } else {
                     self.advance();
                     let field = if self.consume_if(&Token::Dot) {
@@ -6687,17 +6699,23 @@ impl<'a> Parser<'a> {
                         }
                     }
                     Some(Token::LBrace) => {
-                        // General reduce with closure: ρ{(acc, x) => ...}
+                        // General reduce: ρ{(acc, x) => ...} or ρ{init, acc, x => acc + x}
                         self.advance();
                         self.skip_comments();
-                        // Check for closure pattern: ρ{x => expr} or ρ{(a, b) => expr}
-                        let body = if self.looks_like_morpheme_closure() {
-                            self.parse_morpheme_closure()?
+                        if self.looks_like_morpheme_closure() {
+                            // Direct closure: ρ{acc => expr} or ρ{(acc, x) => acc + x}
+                            let body = self.parse_morpheme_closure()?;
+                            self.expect(Token::RBrace)?;
+                            Ok(PipeOp::Reduce(Box::new(body)))
                         } else {
-                            self.parse_expr()?
-                        };
-                        self.expect(Token::RBrace)?;
-                        Ok(PipeOp::Reduce(Box::new(body)))
+                            // Init value + closure: ρ{0, acc, x => acc + x}
+                            let init = self.parse_expr()?;
+                            self.expect(Token::Comma)?;
+                            self.skip_comments();
+                            let closure = self.parse_morpheme_closure()?;
+                            self.expect(Token::RBrace)?;
+                            Ok(PipeOp::ReduceWithInit(Box::new(init), Box::new(closure)))
+                        }
                     }
                     _ => Err(ParseError::Custom(
                         "expected reduction variant (+, *, ++, &, |, _name) or {body} after ρ"
@@ -6770,6 +6788,11 @@ impl<'a> Parser<'a> {
             Some(Token::Xi) => {
                 self.advance();
                 Ok(PipeOp::Next)
+            }
+            // Distinct/unique morpheme: δ - remove duplicates
+            Some(Token::Delta) => {
+                self.advance();
+                Ok(PipeOp::Unique)
             }
             // Parallel morpheme: ∥τ{f} or parallel τ{f} - wraps another operation
             Some(Token::Parallel) => {
@@ -7429,6 +7452,9 @@ impl<'a> Parser<'a> {
             // Check next token - could be => directly or evidentiality marker first
             match self.peek_next() {
                 Some(Token::FatArrow) => return true,
+                // Multi-param closure: a, b => expr or a, b, c => expr
+                // In morpheme context {}, comma-separated idents before => is always a closure
+                Some(Token::Comma) => return true,
                 // Evidentiality markers: ident~ =>, ident◊ =>, ident‽ =>
                 Some(Token::Tilde) | Some(Token::Lozenge) | Some(Token::Interrobang) => {
                     // Check if => follows the evidentiality marker
@@ -7468,10 +7494,11 @@ impl<'a> Parser<'a> {
         false
     }
 
-    /// Parse a morpheme closure: x => expr or (a, b) => expr or &x => expr
+    /// Parse a morpheme closure: x => expr, (a, b) => expr, &x => expr, or a, b => expr
     /// For morphemes, (a, b) is a SINGLE tuple parameter pattern, not multiple parameters
+    /// Multi-param: a, b => expr creates multiple ClosureParam entries
     fn parse_morpheme_closure(&mut self) -> ParseResult<Expr> {
-        let pattern = if self.check(&Token::LParen) {
+        let params = if self.check(&Token::LParen) {
             // Tuple pattern: (a, b) => expr - treated as single parameter with tuple pattern
             self.advance();
             let mut patterns = Vec::new();
@@ -7484,22 +7511,39 @@ impl<'a> Parser<'a> {
             }
             self.expect(Token::RParen)?;
             // Create a single tuple pattern
-            Pattern::Tuple(patterns)
+            vec![ClosureParam { pattern: Pattern::Tuple(patterns), ty: None }]
         } else if self.check(&Token::Amp) {
             // Reference pattern: &x => expr or &mut x => expr
-            self.parse_pattern()?
+            vec![ClosureParam { pattern: self.parse_pattern()?, ty: None }]
         } else if self.check(&Token::Underscore) {
             // Wildcard pattern: _ => expr
             self.advance();
-            Pattern::Wildcard
+            vec![ClosureParam { pattern: Pattern::Wildcard, ty: None }]
         } else {
-            // Simple pattern: x => expr
+            // Simple pattern: x => expr or multi-param: a, b => expr
             let name = self.parse_ident()?;
-            Pattern::Ident {
-                mutable: false,
-                name,
-                evidentiality: None,
+            let first = ClosureParam {
+                pattern: Pattern::Ident {
+                    mutable: false,
+                    name,
+                    evidentiality: None,
+                },
+                ty: None,
+            };
+            let mut params = vec![first];
+            // Check for multi-param: a, b => expr
+            while self.consume_if(&Token::Comma) {
+                let name = self.parse_ident()?;
+                params.push(ClosureParam {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name,
+                        evidentiality: None,
+                    },
+                    ty: None,
+                });
             }
+            params
         };
         // Accept either => or | as the arrow (for closure-style syntax)
         if !self.consume_if(&Token::FatArrow) {
@@ -7542,14 +7586,14 @@ impl<'a> Parser<'a> {
                         if stmts.is_empty() {
                             // Single expression, no block needed
                             return Ok(Expr::Closure {
-                                params: vec![ClosureParam { pattern, ty: None }],
+                                params: params.clone(),
                                 return_type: None,
                                 body: Box::new(expr),
                                 is_move: false,
                             });
                         }
                         return Ok(Expr::Closure {
-                            params: vec![ClosureParam { pattern, ty: None }],
+                            params: params.clone(),
                             return_type: None,
                             body: Box::new(Expr::Block(Block {
                                 stmts,
@@ -7568,7 +7612,7 @@ impl<'a> Parser<'a> {
             Expr::Block(Block { stmts, expr: None })
         };
         Ok(Expr::Closure {
-            params: vec![ClosureParam { pattern, ty: None }],
+            params,
             return_type: None,
             body: Box::new(body),
             is_move: false,

@@ -12831,6 +12831,34 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("Sort requires array")),
                 }
             }
+            PipeOp::SortBy(body) => {
+                // σ{a, b => b - a} - sort with custom comparator closure
+                match value {
+                    Value::Array(arr) => {
+                        let mut v = arr.borrow().clone();
+                        let (params, inner_body) = match body.as_ref() {
+                            Expr::Closure { params, body, .. } => (params, body.as_ref()),
+                            _ => return Err(RuntimeError::new("SortBy requires closure")),
+                        };
+                        // Bubble sort: can't use Rust's sort_by with &mut self borrow
+                        let n = v.len();
+                        for i in 0..n {
+                            for j in 0..n.saturating_sub(1).saturating_sub(i) {
+                                if params.len() >= 2 {
+                                    self.bind_pattern(&params[0].pattern, v[j].clone())?;
+                                    self.bind_pattern(&params[1].pattern, v[j + 1].clone())?;
+                                }
+                                let cmp = self.evaluate(inner_body)?;
+                                if matches!(&cmp, Value::Int(n) if *n > 0) {
+                                    v.swap(j, j + 1);
+                                }
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(v))))
+                    }
+                    _ => Err(RuntimeError::new("SortBy requires array")),
+                }
+            }
             PipeOp::Reduce(body) => {
                 // ρ{f} - reduce collection
                 match value {
@@ -12850,6 +12878,28 @@ impl Interpreter {
                         Ok(acc)
                     }
                     _ => Err(RuntimeError::new("Reduce requires array")),
+                }
+            }
+            PipeOp::ReduceWithInit(init_expr, closure) => {
+                // ρ{0, acc, x => acc + x} - reduce with initial value
+                match value {
+                    Value::Array(arr) => {
+                        let items: Vec<Value> = arr.borrow().clone();
+                        let mut acc = self.evaluate(init_expr)?;
+                        let (params, inner_body) = match closure.as_ref() {
+                            Expr::Closure { params, body, .. } => (params, body.as_ref()),
+                            _ => return Err(RuntimeError::new("ReduceWithInit requires closure")),
+                        };
+                        for item in items.iter() {
+                            if params.len() >= 2 {
+                                self.bind_pattern(&params[0].pattern, acc)?;
+                                self.bind_pattern(&params[1].pattern, item.clone())?;
+                            }
+                            acc = self.evaluate(inner_body)?;
+                        }
+                        Ok(acc)
+                    }
+                    _ => Err(RuntimeError::new("ReduceWithInit requires array")),
                 }
             }
             PipeOp::ReduceSum => {

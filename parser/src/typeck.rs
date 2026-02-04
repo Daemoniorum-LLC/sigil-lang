@@ -2717,10 +2717,10 @@ impl TypeChecker {
             PipeOp::Filter(_pred) => inner,
 
             // Sort: [T] -> [T]
-            PipeOp::Sort(_) => inner,
+            PipeOp::Sort(_) | PipeOp::SortBy(_) => inner,
 
             // Reduce: [T] -> T (also Vec<T> -> T)
-            PipeOp::Reduce(_) => {
+            PipeOp::Reduce(_) | PipeOp::ReduceWithInit(_, _) => {
                 if let Type::Array { element, .. } | Type::Slice(element) = inner {
                     *element
                 } else if let Type::Named { name, generics } = &inner {

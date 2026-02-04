@@ -198,8 +198,8 @@ rite test_variable_operations() → !bool {
         evidence: known(),
     };
 
-    // Let-⎉ binding
-    ≔ let_⎉ = IrOperation·LetElse {
+    // Let-else binding
+    ≔ let_else_op = IrOperation·LetElse {
         pattern: IrPattern·Variant {
             enum_name: "Option".to_string(),
             variant: "Some".to_string(),

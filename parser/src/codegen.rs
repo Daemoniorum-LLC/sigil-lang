@@ -1981,6 +1981,7 @@ pub mod jit {
                         | PipeOp::Scan(_)
                         | PipeOp::Diff
                         | PipeOp::Gradient(_)
+                        | PipeOp::SortBy(_)
                         | PipeOp::SortAsc
                         | PipeOp::SortDesc
                         | PipeOp::Reverse
@@ -1990,6 +1991,7 @@ pub mod jit {
                         | PipeOp::Flatten
                         | PipeOp::Unique
                         | PipeOp::Enumerate
+                        | PipeOp::ReduceWithInit(_, _)
                         // Holographic operations (Spec 11)
                         | PipeOp::Universal
                         | PipeOp::Possibility { .. }

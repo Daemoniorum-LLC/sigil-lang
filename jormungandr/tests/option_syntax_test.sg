@@ -11,9 +11,9 @@ rite test_option_standard() {
     }
 }
 
-// Test 2: Option function ⤺
+// Test 2: Option function return
 #[test]
-rite test_option_⤺() {
+rite test_option_return() {
     rite maybe(cond: bool) -> Option<i32> {
         ⎇ cond {
             Some(42)

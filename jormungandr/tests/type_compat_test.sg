@@ -17,9 +17,9 @@ rite test_vec_creation() {
     assert_eq!(v.len(), 0);
 }
 
-// Test 3: Optional ⤺ with null
+// Test 3: Optional return with null
 #[test]
-rite test_optional_⤺() {
+rite test_optional_return() {
     rite maybe(cond: bool) -> i32? {
         ⎇ cond {
             42
