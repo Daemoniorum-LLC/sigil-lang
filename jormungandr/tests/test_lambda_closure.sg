@@ -5,12 +5,12 @@
 // λ is reserved exclusively for closure expressions.
 
 // Helper: applies a function to a value
-rite apply(f: |i32| → i32, x: i32) → i32 {
+rite apply(f: rite(i32) → i32, x: i32) → i32 {
     f(x)
 }
 
 // Helper: applies a 2-arg function
-rite apply2(f: |i32, i32| → i32, x: i32, y: i32) → i32 {
+rite apply2(f: rite(i32, i32) → i32, x: i32, y: i32) → i32 {
     f(x, y)
 }
 
