@@ -231,6 +231,8 @@ pub struct Function {
     pub params: Vec<String>,
     pub body: Expr,
     pub closure: Rc<RefCell<Environment>>,
+    /// Generic type parameter names (e.g., ["T", "U"] for fn foo<T, U>())
+    pub generic_params: Vec<String>,
 }
 
 /// Built-in function type
@@ -1249,6 +1251,8 @@ pub struct Interpreter {
     pub current_module: Option<String>,
     /// Current Self type (when inside an impl block)
     pub current_self_type: Option<String>,
+    /// Generic type parameter bindings (e.g., T -> "F16" during dtype_info·<F16>() call)
+    pub generic_type_bindings: HashMap<String, String>,
     /// Current source directory for resolving relative module paths
     pub current_source_dir: Option<String>,
     /// Loaded crates registry (crate_name -> true if loaded)
@@ -1329,6 +1333,7 @@ impl Interpreter {
             program_args: None,
             current_module: None,
             current_self_type: None,
+            generic_type_bindings: HashMap::new(),
             current_source_dir: None,
             loaded_crates: HashSet::new(),
             loading_crates: HashSet::new(),
@@ -3665,11 +3670,27 @@ impl Interpreter {
             .map(|b| Expr::Block(b.clone()))
             .unwrap_or(Expr::Literal(Literal::Bool(false)));
 
+        // Extract generic type parameter names (e.g., T, U from fn foo<T: Trait, U>())
+        let generic_params = func
+            .generics
+            .as_ref()
+            .map(|g| {
+                g.params
+                    .iter()
+                    .filter_map(|p| match p {
+                        crate::ast::GenericParam::Type { name, .. } => Some(name.name.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Ok(Value::Function(Rc::new(Function {
             name: Some(func.name.name.clone()),
             params,
             body,
             closure: self.environment.clone(),
+            generic_params,
         })))
     }
 
@@ -4394,6 +4415,10 @@ impl Interpreter {
                         if let Some(ref self_type) = self.current_self_type {
                             return self_type.clone();
                         }
+                    }
+                    // Resolve generic type parameters (e.g., T -> F16 during dtype_info·<F16>())
+                    if let Some(concrete) = self.generic_type_bindings.get(&s.ident.name) {
+                        return concrete.clone();
                     }
                     s.ident.name.clone()
                 })
@@ -5953,6 +5978,45 @@ impl Interpreter {
             self.current_self_type = Some(type_name);
         }
 
+        // Extract turbofish type arguments from the call expression's path segments
+        // e.g., dtype_info·<F16>() → type_args = ["F16"]
+        let turbofish_type_args: Vec<String> = if let Expr::Path(path) = func_expr {
+            path.segments
+                .iter()
+                .filter_map(|seg| seg.generics.as_ref())
+                .flat_map(|generics| {
+                    generics.iter().filter_map(|ty| {
+                        if let crate::ast::TypeExpr::Path(tp) = ty {
+                            Some(
+                                tp.segments
+                                    .iter()
+                                    .map(|s| s.ident.name.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join("·"),
+                            )
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Save and bind generic type parameters from turbofish (restore after call)
+        let old_generic_bindings = self.generic_type_bindings.clone();
+        if !turbofish_type_args.is_empty() {
+            if let Value::Function(ref f) = func {
+                for (param_name, concrete_type) in
+                    f.generic_params.iter().zip(turbofish_type_args.iter())
+                {
+                    self.generic_type_bindings
+                        .insert(param_name.clone(), concrete_type.clone());
+                }
+            }
+        }
+
         let result = match func {
             Value::Function(f) => {
                 // Reorder arguments based on named parameters
@@ -6011,8 +6075,9 @@ impl Interpreter {
             let _ = self.environment.borrow_mut().set(&var_name, current_value);
         }
 
-        // Restore old Self type
+        // Restore old Self type and generic type bindings
         self.current_self_type = old_self_type;
+        self.generic_type_bindings = old_generic_bindings;
 
         result
     }
@@ -17094,10 +17159,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let param_names: Vec<String> = params
             .iter()
-            .map(|p| match &p.pattern {
-                Pattern::Ident { name, .. } => name.name.clone(),
-                _ => "_".to_string(),
-            })
+            .map(|p| Self::extract_param_name(&p.pattern))
             .collect();
 
         Ok(Value::Function(Rc::new(Function {
@@ -17105,6 +17167,7 @@ impl Interpreter {
             params: param_names,
             body: body.clone(),
             closure: self.environment.clone(),
+            generic_params: Vec::new(),
         })))
     }
 

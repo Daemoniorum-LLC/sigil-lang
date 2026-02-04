@@ -381,12 +381,100 @@ contexts that require deeper investigation.
 
 ---
 
-## 8. Relationship to Other Specs
+## 8. Spec Gap D: Generic Type Parameter Resolution
+
+### 8.1 Discovery
+
+Generic functions that reference trait associated constants via type parameters fail at runtime:
+
+```sigil
+☉ Θ DType {
+    const SIZE: usize;
+    const NAME: &'static str;
+    rite size() -> usize { Self·SIZE }
+    rite name() -> &'static str { Self·NAME }
+}
+
+⊢ DType ∀ F16 {
+    const SIZE: usize = 2;
+    const NAME: &'static str = "f16";
+}
+
+rite dtype_info<T: DType>() -> String {
+    format("{} ({} bytes)", T·NAME, T·SIZE)
+}
+
+// Call:
+≔ info = dtype_info·<F16>();
+// Expected: "f16 (2 bytes)"
+// Actual:   "T::NAME (T::SIZE bytes)"
+```
+
+### 8.2 Root Cause
+
+The interpreter has no mechanism for generic type parameter scope:
+
+1. **Function values lose generic info**: `create_function()` does not preserve the generic parameter names from the AST `Function.generics` field
+2. **Turbofish type args are available but unused**: The parser correctly puts generics on `PathSegment.generics`, but `eval_call` does not extract or bind them
+3. **Path resolution is literal**: `T·NAME` resolves as the string `"T·NAME"` rather than substituting `T` with the bound concrete type `"F16"` to look up `"F16·NAME"`
+
+### 8.3 Expected Behavior
+
+When calling a generic function with turbofish syntax `func·<ConcreteType>(args)`:
+
+1. The type arguments are extracted from the call expression's path segments
+2. They are matched positionally to the function's generic parameter names
+3. During function body execution, multi-segment paths like `T·CONST` resolve `T` to the concrete type
+4. After function returns, generic bindings are restored
+
+### 8.4 Regression Test
+
+See `jormungandr/tests/spec/25_nihil_gaps/test_generic_type_params.sg`
+
+---
+
+## 9. Implementation Bug 5.5: Closure Ref Pattern Destructuring
+
+### 9.1 Discovery
+
+Closures with ref pattern parameters (`|&x|`) fail because the parameter name extraction only handles `Pattern::Ident`, discarding all other patterns as `"_"`:
+
+```sigil
+≔ items = vec![1, 2, 3];
+≔ pos = items.iter().position(|&x| x == 2);
+// ERROR: undefined variable: `x`
+// Because |&x| → param name "_", x is never bound
+```
+
+### 9.2 Root Cause
+
+In `eval_closure` (interpreter.rs:17155), closure parameter name extraction:
+```rust
+.map(|p| match &p.pattern {
+    Pattern::Ident { name, .. } => name.name.clone(),
+    _ => "_".to_string(),  // ← All non-Ident patterns become "_"
+})
+```
+
+`Pattern::Ref { pattern: Box<Pattern::Ident { name: "x" }> }` falls through to `"_"`.
+
+### 9.3 Expected Behavior
+
+Closure ref patterns should recursively extract the inner identifier name. For `|&x|`, the parameter name is `"x"` and the argument is auto-dereferenced when bound.
+
+### 9.4 Regression Test
+
+See `jormungandr/tests/spec/25_nihil_gaps/test_closure_ref_pattern.sg`
+
+---
+
+## 10. Relationship to Other Specs
 
 - **01-LEXICAL.md**: Numeric literal suffixes (Gap C)
 - **03-TYPES.md**: Trait associated constants (Gap B), numeric primitive types
+- **03B-TYPECK-GENERIC-INFERENCE.md**: Generic type parameter resolution (Gap D)
 - **09-STDLIB.md**: Numeric methods (Gap A), IndexMut trait
-- **02-SYNTAX.md**: Patterns (Bug 5.2), closures (Bug 5.3)
+- **02-SYNTAX.md**: Patterns (Bug 5.2), closures (Bug 5.3), nested variable capture (Bug 5.5)
 - **02A-PATTERN-MATCHING.md**: Ref patterns (Bug 5.2)
 - **COMPILER-ISSUES.md** (Nihil): Cross-references this spec
 
@@ -397,3 +485,4 @@ contexts that require deeper investigation.
 | Version | Date | Changes |
 |---------|------|---------|
 | 0.1.0 | 2026-02-04 | Initial gap discovery. 3 spec gaps and 3 implementation bugs identified from Nihil runtime validation. |
+| 0.2.0 | 2026-02-04 | Added Gap D (generic type parameter resolution) and Bug 5.5 (nested variable capture). Nihil at 28/41 (68%). |

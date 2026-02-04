@@ -1,0 +1,66 @@
+// Regression test: Generic type parameter resolution (Gap D)
+// When calling func·<ConcreteType>(), type params like T·CONST
+// must resolve to ConcreteType·CONST at runtime.
+
+#[derive(Copy, Clone)]
+☉ Σ F16 {
+    bits: u16,
+}
+
+#[derive(Copy, Clone)]
+☉ Σ F32Val {
+    value: f32,
+}
+
+☉ Θ DType {
+    const SIZE: usize;
+    const NAME: &'static str;
+    rite size() -> usize { Self·SIZE }
+    rite name() -> &'static str { Self·NAME }
+}
+
+⊢ DType ∀ F16 {
+    const SIZE: usize = 2;
+    const NAME: &'static str = "f16";
+}
+
+⊢ DType ∀ F32Val {
+    const SIZE: usize = 4;
+    const NAME: &'static str = "f32";
+}
+
+// Generic function using trait associated constants via type param
+rite dtype_info<T: DType>() -> String {
+    format("{} ({} bytes)", T·NAME, T·SIZE)
+}
+
+// Generic function using trait default methods via type param
+rite dtype_size<T: DType>() -> usize {
+    T·SIZE
+}
+
+rite dtype_name<T: DType>() -> &'static str {
+    T·NAME
+}
+
+☉ rite main() -> !i32 {
+    // Test 1: Generic associated constant access
+    assert_eq(dtype_size·<F16>(), 2);
+    assert_eq(dtype_size·<F32Val>(), 4);
+
+    // Test 2: Generic associated constant (string)
+    assert_eq(dtype_name·<F16>(), "f16");
+    assert_eq(dtype_name·<F32Val>(), "f32");
+
+    // Test 3: Generic function with format using multiple constants
+    assert_eq(dtype_info·<F16>(), "f16 (2 bytes)");
+    assert_eq(dtype_info·<F32Val>(), "f32 (4 bytes)");
+
+    // Test 4: Direct access still works (non-generic)
+    assert_eq(F16·SIZE, 2);
+    assert_eq(F16·NAME, "f16");
+    assert_eq(F16·size(), 2);
+    assert_eq(F16·name(), "f16");
+
+    ⤺ 0;
+}
