@@ -808,6 +808,18 @@ impl<'a> Parser<'a> {
         self.current.is_none()
     }
 
+    /// Strip float type suffix (f16, f32, f64, f128) from a literal string.
+    /// Returns (numeric_value, optional_suffix).
+    fn strip_float_suffix(s: &str) -> (String, Option<String>) {
+        for suffix in &["f128", "f64", "f32", "f16"] {
+            if s.ends_with(suffix) {
+                let value = s[..s.len() - suffix.len()].to_string();
+                return (value, Some(suffix.to_string()));
+            }
+        }
+        (s.to_string(), None)
+    }
+
     pub(crate) fn expect(&mut self, expected: Token) -> ParseResult<Span> {
         match &self.current {
             Some((token, span))
@@ -5257,10 +5269,8 @@ impl<'a> Parser<'a> {
             }
             Some(Token::FloatLit(s)) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Float {
-                    value: s,
-                    suffix: None,
-                }))
+                let (value, suffix) = Self::strip_float_suffix(&s);
+                Ok(Expr::Literal(Literal::Float { value, suffix }))
             }
             Some(Token::StringLit(s)) => {
                 self.advance();
@@ -8644,10 +8654,8 @@ impl<'a> Parser<'a> {
             }
             Some(Token::FloatLit(s)) => {
                 self.advance();
-                Ok(Literal::Float {
-                    value: s,
-                    suffix: None,
-                })
+                let (value, suffix) = Self::strip_float_suffix(&s);
+                Ok(Literal::Float { value, suffix })
             }
             Some(Token::StringLit(s)) => {
                 self.advance();

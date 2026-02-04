@@ -2970,24 +2970,37 @@ impl Interpreter {
                     }
                 }
 
-                // Register each method with qualified name TypeName·method
+                // Register each method/const with qualified name TypeName·method
                 for impl_item in &impl_block.items {
-                    if let ImplItem::Function(func) = impl_item {
-                        let fn_value = self.create_function(func)?;
-                        let qualified_name = format!("{}·{}", type_name, func.name.name);
-                        // Debug: track Lexer method registration
-                        if type_name == "Lexer" && func.name.name.contains("keyword") {
-                            crate::sigil_debug!("DEBUG registering: {}", qualified_name);
-                        }
-                        self.globals
-                            .borrow_mut()
-                            .define(qualified_name.clone(), fn_value.clone());
+                    match impl_item {
+                        ImplItem::Function(func) => {
+                            let fn_value = self.create_function(func)?;
+                            let qualified_name = format!("{}·{}", type_name, func.name.name);
+                            // Debug: track Lexer method registration
+                            if type_name == "Lexer" && func.name.name.contains("keyword") {
+                                crate::sigil_debug!("DEBUG registering: {}", qualified_name);
+                            }
+                            self.globals
+                                .borrow_mut()
+                                .define(qualified_name.clone(), fn_value.clone());
 
-                        // Also register with module prefix if in a module context
-                        if let Some(ref module) = self.current_module {
-                            let fully_qualified = format!("{}·{}", module, qualified_name);
-                            self.globals.borrow_mut().define(fully_qualified, fn_value);
+                            // Also register with module prefix if in a module context
+                            if let Some(ref module) = self.current_module {
+                                let fully_qualified = format!("{}·{}", module, qualified_name);
+                                self.globals.borrow_mut().define(fully_qualified, fn_value);
+                            }
                         }
+                        ImplItem::Const(c) => {
+                            let value = self.evaluate(&c.value)?;
+                            let qualified_name = format!("{}·{}", type_name, c.name.name);
+                            self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
+
+                            if let Some(ref module) = self.current_module {
+                                let fully_qualified = format!("{}·{}", module, qualified_name);
+                                self.globals.borrow_mut().define(fully_qualified, value);
+                            }
+                        }
+                        _ => {}
                     }
                 }
 
@@ -4073,7 +4086,27 @@ impl Interpreter {
                         }
                     }
                 }
-                Err(RuntimeError::new("Invalid index assignment target"))
+
+                // Handle complex index targets (e.g., self.data[idx], x.field[idx])
+                // Evaluate the expression to get the array value. Since Value::Array
+                // uses Rc<RefCell<Vec<Value>>>, modifying through the shared reference
+                // updates the original struct field in place.
+                let target = self.evaluate(expr)?;
+                match target {
+                    Value::Array(arr) => {
+                        let mut borrowed = arr.borrow_mut();
+                        if idx < borrowed.len() {
+                            borrowed[idx] = val.clone();
+                            return Ok(val);
+                        }
+                        Err(RuntimeError::new(format!(
+                            "Index {} out of bounds for array of length {}",
+                            idx,
+                            borrowed.len()
+                        )))
+                    }
+                    _ => Err(RuntimeError::new("Invalid index assignment target")),
+                }
             }
             Expr::Field { expr, field } => {
                 // Field assignment: struct.field = value
@@ -6887,6 +6920,14 @@ impl Interpreter {
                     name.name, name.name
                 )))
             }
+            Pattern::Ref { pattern: inner, .. } => {
+                // &var pattern: strip one level of reference and bind the inner pattern
+                let unwrapped = match &value {
+                    Value::Ref(r) => r.borrow().clone(),
+                    other => other.clone(),
+                };
+                self.bind_pattern(inner, unwrapped)
+            }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported pattern: {:?}",
                 pattern
@@ -7284,6 +7325,14 @@ impl Interpreter {
             // Literal matching against string or char
             (Pattern::Literal(Literal::String(s)), Value::String(vs)) => Ok(s == vs.as_str()),
             (Pattern::Literal(Literal::Char(c)), Value::Char(vc)) => Ok(c == vc),
+            // Ref pattern: &var matches references (strip one level)
+            (Pattern::Ref { pattern: inner, .. }, val) => {
+                let unwrapped = match val {
+                    Value::Ref(r) => r.borrow().clone(),
+                    other => other.clone(),
+                };
+                self.pattern_matches(inner, &unwrapped)
+            }
             _ => Ok(false),
         }
     }
@@ -12353,8 +12402,187 @@ impl Interpreter {
             (Value::Float(n), "to_string") | (Value::Float(n), "string") => {
                 Ok(Value::String(Rc::new(n.to_string())))
             }
-            (Value::Float(n), "abs") => Ok(Value::Float(n.abs())),
             (Value::Float(n), "to_int") | (Value::Float(n), "int") => Ok(Value::Int(*n as i64)),
+            // Float math methods (numeric primitive instance methods)
+            (Value::Float(n), "abs") => Ok(Value::Float(n.abs())),
+            (Value::Float(n), "exp") => Ok(Value::Float(n.exp())),
+            (Value::Float(n), "exp2") => Ok(Value::Float(n.exp2())),
+            (Value::Float(n), "ln") => Ok(Value::Float(n.ln())),
+            (Value::Float(n), "log2") => Ok(Value::Float(n.log2())),
+            (Value::Float(n), "log10") => Ok(Value::Float(n.log10())),
+            (Value::Float(n), "sqrt") => Ok(Value::Float(n.sqrt())),
+            (Value::Float(n), "cbrt") => Ok(Value::Float(n.cbrt())),
+            (Value::Float(n), "sin") => Ok(Value::Float(n.sin())),
+            (Value::Float(n), "cos") => Ok(Value::Float(n.cos())),
+            (Value::Float(n), "tan") => Ok(Value::Float(n.tan())),
+            (Value::Float(n), "asin") => Ok(Value::Float(n.asin())),
+            (Value::Float(n), "acos") => Ok(Value::Float(n.acos())),
+            (Value::Float(n), "atan") => Ok(Value::Float(n.atan())),
+            (Value::Float(n), "floor") => Ok(Value::Float(n.floor())),
+            (Value::Float(n), "ceil") => Ok(Value::Float(n.ceil())),
+            (Value::Float(n), "round") => Ok(Value::Float(n.round())),
+            (Value::Float(n), "trunc") => Ok(Value::Float(n.trunc())),
+            (Value::Float(n), "fract") => Ok(Value::Float(n.fract())),
+            (Value::Float(n), "signum") => Ok(Value::Float(n.signum())),
+            (Value::Float(n), "is_nan") => Ok(Value::Bool(n.is_nan())),
+            (Value::Float(n), "is_infinite") => Ok(Value::Bool(n.is_infinite())),
+            (Value::Float(n), "is_finite") => Ok(Value::Bool(n.is_finite())),
+            (Value::Float(n), "is_normal") => Ok(Value::Bool(n.is_normal())),
+            (Value::Float(n), "to_bits") => Ok(Value::Int(n.to_bits() as i64)),
+            (Value::Float(n), "powf") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("powf requires 1 argument"));
+                }
+                let exp = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("powf argument must be numeric")),
+                };
+                Ok(Value::Float(n.powf(exp)))
+            }
+            (Value::Float(n), "powi") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("powi requires 1 argument"));
+                }
+                let exp = match &arg_values[0] {
+                    Value::Int(i) => *i as i32,
+                    Value::Float(f) => *f as i32,
+                    _ => return Err(RuntimeError::new("powi argument must be integer")),
+                };
+                Ok(Value::Float(n.powi(exp)))
+            }
+            (Value::Float(n), "atan2") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("atan2 requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("atan2 argument must be numeric")),
+                };
+                Ok(Value::Float(n.atan2(other)))
+            }
+            (Value::Float(n), "copysign") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("copysign requires 1 argument"));
+                }
+                let sign = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("copysign argument must be numeric")),
+                };
+                Ok(Value::Float(n.copysign(sign)))
+            }
+            (Value::Float(n), "mul_add") => {
+                if arg_values.len() < 2 {
+                    return Err(RuntimeError::new("mul_add requires 2 arguments"));
+                }
+                let a = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("mul_add arguments must be numeric")),
+                };
+                let b = match &arg_values[1] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("mul_add arguments must be numeric")),
+                };
+                Ok(Value::Float(n.mul_add(a, b)))
+            }
+            (Value::Float(n), "max") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("max requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("max argument must be numeric")),
+                };
+                Ok(Value::Float(n.max(other)))
+            }
+            (Value::Float(n), "min") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("min requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("min argument must be numeric")),
+                };
+                Ok(Value::Float(n.min(other)))
+            }
+            (Value::Float(n), "clamp") => {
+                if arg_values.len() < 2 {
+                    return Err(RuntimeError::new("clamp requires 2 arguments"));
+                }
+                let min_val = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("clamp arguments must be numeric")),
+                };
+                let max_val = match &arg_values[1] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("clamp arguments must be numeric")),
+                };
+                Ok(Value::Float(n.clamp(min_val, max_val)))
+            }
+            (Value::Float(n), "log") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("log requires 1 argument (base)"));
+                }
+                let base = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("log argument must be numeric")),
+                };
+                Ok(Value::Float(n.log(base)))
+            }
+            // Integer math methods
+            (Value::Int(n), "pow") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("pow requires 1 argument"));
+                }
+                let exp = match &arg_values[0] {
+                    Value::Int(i) => *i as u32,
+                    _ => return Err(RuntimeError::new("pow argument must be integer")),
+                };
+                Ok(Value::Int(n.pow(exp)))
+            }
+            (Value::Int(n), "max") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("max requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Int(i) => *i,
+                    _ => return Err(RuntimeError::new("max argument must be integer")),
+                };
+                Ok(Value::Int(std::cmp::max(*n, other)))
+            }
+            (Value::Int(n), "min") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("min requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Int(i) => *i,
+                    _ => return Err(RuntimeError::new("min argument must be integer")),
+                };
+                Ok(Value::Int(std::cmp::min(*n, other)))
+            }
+            (Value::Int(n), "clamp") => {
+                if arg_values.len() < 2 {
+                    return Err(RuntimeError::new("clamp requires 2 arguments"));
+                }
+                let min_val = match &arg_values[0] {
+                    Value::Int(i) => *i,
+                    _ => return Err(RuntimeError::new("clamp arguments must be integer")),
+                };
+                let max_val = match &arg_values[1] {
+                    Value::Int(i) => *i,
+                    _ => return Err(RuntimeError::new("clamp arguments must be integer")),
+                };
+                Ok(Value::Int((*n).max(min_val).min(max_val)))
+            }
             // Bool methods
             (Value::Bool(b), "to_string") | (Value::Bool(b), "string") => {
                 Ok(Value::String(Rc::new(b.to_string())))
