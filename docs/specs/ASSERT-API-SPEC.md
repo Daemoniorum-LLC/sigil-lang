@@ -122,8 +122,8 @@ No separate format! expansion implementation was needed.
 
 | Metric | Before | After Phase 1 | Target |
 |--------|--------|---------------|--------|
-| Top-level test pass rate | 10/36 (28%) | 14/37 (38%) | 30+/37 (81%+) |
-| Total test count (runner) | 749 | 749 (unchanged) | 786+ (749 + 37 top-level) |
+| Top-level test pass rate | 10/36 (28%) | 18/37 (49%) | 30+/37 (81%+) |
+| Total test count (runner) | 749 | 745 (4 infra failures) | 786+ (749 + 37 top-level) |
 | `assert(x, "msg")` | Type error | ✅ Works | ✅ |
 | `panic(format!(...))` | Type error | Still fails (format! expansion) | Works |
 
