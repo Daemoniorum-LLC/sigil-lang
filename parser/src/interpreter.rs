@@ -16859,6 +16859,42 @@ impl Interpreter {
     fn eval_evidential(&mut self, expr: &Expr, ev: &Evidentiality) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
 
+        // When ? (Uncertain) is applied to Result or Option, act as try operator:
+        // - Result::Ok(v) / Option::Some(v) → return v (unwrap)
+        // - Result::Err(e) / Option::None / null → early return from function
+        if matches!(ev, Evidentiality::Uncertain) {
+            // Strip existing evidential wrapper first
+            let unwrapped = match &value {
+                Value::Evidential { value: inner, .. } => inner.as_ref().clone(),
+                other => other.clone(),
+            };
+            match &unwrapped {
+                Value::Variant { enum_name, variant_name, fields, .. }
+                    if (enum_name == "Result" || enum_name == "Option")
+                        && (variant_name == "Ok" || variant_name == "Some") =>
+                {
+                    // Unwrap Ok(v) or Some(v) → v
+                    let inner_val = fields.as_ref()
+                        .and_then(|f| f.first().cloned())
+                        .unwrap_or(Value::Null);
+                    return Ok(inner_val);
+                }
+                Value::Variant { enum_name, variant_name, .. }
+                    if (enum_name == "Result" && variant_name == "Err")
+                        || (enum_name == "Option" && variant_name == "None") =>
+                {
+                    // Early return with the error/none value
+                    self.return_value = Some(unwrapped);
+                    return Err(RuntimeError::new("return"));
+                }
+                Value::Null => {
+                    self.return_value = Some(Value::Null);
+                    return Err(RuntimeError::new("return"));
+                }
+                _ => {}
+            }
+        }
+
         // All evidentiality markers wrap the value with the corresponding evidence level.
         // If the value is already evidential, re-wrap with the new evidence level.
         // Null propagates as-is (no evidence on null).

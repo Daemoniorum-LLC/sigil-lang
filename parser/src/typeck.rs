@@ -2044,7 +2044,9 @@ impl TypeChecker {
                     } else {
                         inner.clone()
                     };
-                    match &resolved {
+                    // Strip evidentiality wrapper (e.g., !Result<T,E> → Result<T,E>)
+                    let (stripped, _) = self.strip_evidence(&resolved);
+                    match &stripped {
                         Type::Named { name, generics } if name == "Result" && !generics.is_empty() => {
                             return generics[0].clone();
                         }
@@ -2475,7 +2477,9 @@ impl TypeChecker {
                 } else {
                     inner_ty.clone()
                 };
-                match &resolved {
+                // Strip evidentiality wrapper (e.g., !Result<T,E> → Result<T,E>)
+                let (stripped, _ev) = self.strip_evidence(&resolved);
+                match &stripped {
                     Type::Named { name, generics } if name == "Result" && !generics.is_empty() => {
                         // Result<T, E>? → T with uncertain evidence
                         generics[0].clone()
@@ -2586,18 +2590,27 @@ impl TypeChecker {
 
             // Comparison: any -> bool
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                // Allow Option<T> == null/Unit comparisons (null-check idiom)
-                let is_option_null = |a: &Type, b: &Type| {
-                    matches!(a, Type::Named { name, .. } if name == "Option")
-                        && matches!(b, Type::Unit)
+                // Allow T == null/Unit comparisons (null-check idiom)
+                let has_unit = |a: &Type, b: &Type| {
+                    matches!(a, Type::Unit) || matches!(b, Type::Unit)
+                };
+                // Allow integer size coercion in comparisons (i32 == i64, etc.)
+                let both_int = |a: &Type, b: &Type| {
+                    matches!(a, Type::Int(_)) && matches!(b, Type::Int(_))
+                };
+                // Allow comparisons involving user-defined types where method return
+                // types may not be fully inferred (e.g., IrEvidence.symbol() == "!")
+                let has_named = |a: &Type, b: &Type| {
+                    matches!(a, Type::Named { .. }) || matches!(b, Type::Named { .. })
                 };
                 // For bootstrapping: skip error when either side is a type variable or function
                 // (indicates incomplete type inference from unhandled expressions)
                 if !self.unify(&left_inner, &right_inner)
                     && !is_var_or_fn(&left_inner)
                     && !is_var_or_fn(&right_inner)
-                    && !is_option_null(&left_inner, &right_inner)
-                    && !is_option_null(&right_inner, &left_inner)
+                    && !has_unit(&left_inner, &right_inner)
+                    && !both_int(&left_inner, &right_inner)
+                    && !has_named(&left_inner, &right_inner)
                 {
                     self.error(TypeError::new(format!(
                         "comparison operands must have same type: left={:?}, right={:?}",
