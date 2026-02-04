@@ -104,14 +104,11 @@ panic(/* String from format expansion */);
 
 **Result:** 3 top-level tests unblocked: `lexer_structure_test.sg`, `test_cg026_if_statement.sg`, `test_closure_capture.sg`
 
-### Phase 2: `format!` macro expansion before typeck
+### Phase 2: `format!` macro expansion before typeck — ✅ RESOLVED BY PHASE 1
 
-| Component | Change |
-|-----------|--------|
-| `typeck.rs` | Expand macros (especially `format!`) before argument arity checking |
-| `interpreter.rs` | Already handles `format!` at runtime; no change needed |
+Phase 1's variadic builtin fix resolved this more broadly. All 10 target files now pass typeck (the functions that wrap `format!` calls — `panic`, `assert`, etc. — are now variadic in the type checker). These files now fail at runtime for unrelated reasons (`no method 'parse_file'` on `Parser` struct — aspirational self-hosted compiler tests).
 
-**Unblocks:** ~10 test files that use `panic(format!(...))` and similar patterns
+No separate format! expansion implementation was needed.
 
 ### Phase 3: Verify and integrate
 

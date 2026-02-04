@@ -1,9 +1,11 @@
 # Type Coercion & Inference Gaps Spec
 
-**Version:** 0.1.0
-**Status:** ! Draft
-**Date:** 2026-02-03
+**Version:** 0.2.0
+**Status:** Phase 1-2 Complete, Phase 3 Investigated
+**Date:** 2026-02-04
 **Discovery:** Running uncounted top-level test files revealed type system gaps where reasonable implicit conversions are rejected by the type checker.
+
+**Phase 1-2 Resolution (v0.2.0):** Implemented Array→Slice coercion and String→str coercion in `typeck.rs` `unify()`. Integer width coercion already existed (`Int(_), Int(_) => true`). Result: `test_cg001_field_access.sg` and `test_lexer.sg` now pass typeck (fail at runtime for unrelated reasons). Remaining type errors (3 files) are deeper inference issues: Unit return type inference and Result comparison semantics.
 
 ---
 
@@ -27,9 +29,9 @@ Several test files fail with type errors that represent missing coercions or inf
 
 ## 2. Gap Analysis
 
-### 2.1 `String` to `str!` Coercion
+### 2.1 `String` to `str!` Coercion — ✅ DONE
 
-**Severity:** P0
+**Severity:** P0 → ✅ Resolved
 **Impact:** Any function taking `str!` cannot receive a `String` value
 
 **Current behavior:**
@@ -49,9 +51,9 @@ greet(s);  // ERROR: expected str!, found String
 
 This is a deref-like coercion: `String` owns string data, `str` is a reference to string data. The evidentiality marker on `str` indicates the certainty level of the *reference*, not the data.
 
-### 2.2 Array to Slice Coercion
+### 2.2 Array to Slice Coercion — ✅ DONE
 
-**Severity:** P1
+**Severity:** P1 → ✅ Resolved
 **Impact:** Fixed-size arrays cannot be passed to functions expecting slices
 
 **Current behavior:**
@@ -69,9 +71,9 @@ This is a deref-like coercion: `String` owns string data, `str` is a reference t
 - `Array { element: T, size: N }` → `Slice(T)`: always valid (array is a slice with known length)
 - Ensure element type `T` also unifies (including integer width coercion)
 
-### 2.3 Integer Literal Width Inference
+### 2.3 Integer Literal Width Inference — ✅ ALREADY WORKED
 
-**Severity:** P1
+**Severity:** P1 → ✅ Already resolved
 **Impact:** Integer literals default to `i64`, causing mismatches with `i32` contexts
 
 **Current behavior:**
@@ -130,39 +132,40 @@ assert(result == Ok(42));
 
 ## 3. Priority
 
-| Gap | Priority | Files Unblocked | Difficulty |
-|-----|----------|-----------------|------------|
-| `String` → `str!` coercion | **P0** | 1+ | Medium (typeck coercion rules) |
-| Array → Slice coercion | **P1** | 2+ | Medium (typeck unification) |
-| Integer literal width inference | **P1** | 2+ | Medium (typeck context propagation) |
-| `i32` vs `Unit` investigation | **P1** | 1+ | Low (investigation) |
-| Result comparison | **P2** | 0 (test fix) | N/A |
+| Gap | Priority | Files Unblocked | Status |
+|-----|----------|-----------------|--------|
+| `String` → `str!` coercion | **P0** | 1 | ✅ Done |
+| Array → Slice coercion | **P1** | 1 | ✅ Done |
+| Integer literal width inference | **P1** | 0 (already worked) | ✅ Already resolved |
+| `i32` vs `Unit` investigation | **P1** | 2 | Investigated — deep inference gap |
+| Result comparison | **P2** | 0 (test fix) | Test file issue, not compiler |
 
 ---
 
 ## 4. Implementation Strategy
 
-### Phase 1: String → str coercion (P0)
+### Phase 1: String → str coercion (P0) — ✅ DONE
 
-| Component | Change |
-|-----------|--------|
-| `typeck.rs` | In type unification, when expected type is `Evidential { inner: Str, evidence: _ }` and found type is `Named { name: "String" }`, allow coercion |
-| Tests | `test_cg001_field_access.sg` should pass |
+| Component | Change | Status |
+|-----------|--------|--------|
+| `typeck.rs` | Added `String ↔ str` coercion in `unify()` — `(Type::Str, Type::Named { name: "String" }) => true` | ✅ Done |
+| Tests | `test_cg001_field_access.sg` passes typeck (fails at runtime: `parse_file` method) | ✅ Type error resolved |
 
-### Phase 2: Array → Slice coercion + integer literal inference (P1)
+### Phase 2: Array → Slice coercion + integer literal inference (P1) — ✅ DONE
 
-| Component | Change |
-|-----------|--------|
-| `typeck.rs` | In type unification, when expected type is `Slice(T)` and found type is `Array { element: U, size: N }`, unify `T` with `U` and allow |
-| `typeck.rs` | When unifying integer types, if one side is a literal (inferred `I64`), coerce to the other side's concrete integer type if the value fits |
-| Tests | `test_lexer.sg` (partially), `test_try_operator.sg` (partially) |
+| Component | Change | Status |
+|-----------|--------|--------|
+| `typeck.rs` | Added `Array ↔ Slice` coercion in `unify()` — `(Type::Slice(a), Type::Array { element: b, .. }) => self.unify(a, b)` | ✅ Done |
+| `typeck.rs` | Integer width coercion already existed: `(Type::Int(_), Type::Int(_)) => true` | ✅ Already worked |
+| Tests | `test_lexer.sg` passes typeck (fails at runtime: `next_token` method) | ✅ Type error resolved |
 
-### Phase 3: Investigate Unit inference gaps (P1)
+### Phase 3: Investigate Unit inference gaps (P1) — Investigated
 
-| Component | Change |
-|-----------|--------|
-| Investigation | Read specific lines in `test_evidentiality.sg` where `i32` vs `Unit` occurs |
-| Spec update | Document findings and update this spec |
+| Finding | Detail |
+|---------|--------|
+| `test_evidentiality.sg` | Inner functions (`needs_known`, `accepts_uncertain`) have return types that typeck may not propagate for locally-defined functions. The `??` (null-coalescing) and `!` (evidential extraction) operators may return `Unit` instead of the inner type. Deeper type inference fix needed. |
+| `test_parser_expressions.sg` | `Expr vs Unit` — parsed expressions returning Unit instead of the expected `Expr` type. Same root cause: local function return type or expression inference incomplete. |
+| `test_try_operator.sg` | `Result<i32,str> == i64` — this is a **test file issue**, not a compiler gap. Tests should use `result.unwrap() == 42` or `result == Ok(42)`. No compiler change needed. |
 
 ---
 
@@ -210,3 +213,4 @@ test_evidentiality.sg:
 |---------|------|---------|
 | 0.1.0 | 2026-02-03 | Initial gap discovery. 5 distinct type coercion/inference gaps identified from uncounted test files. |
 | 0.1.1 | 2026-02-04 | Note: ASSERT-API-SPEC Phase 1 (variadic arity) now complete. These type coercion gaps are the next frontier for uncounted test improvements. |
+| 0.2.0 | 2026-02-04 | Phase 1-2 complete: String→str and Array→Slice coercion implemented in `unify()`. Integer width already worked. 2 type errors resolved (5→3). Phase 3 investigated: Unit inference is a deeper type system gap (inner function return types, `??`/`!` operators). |

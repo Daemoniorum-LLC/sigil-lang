@@ -3361,6 +3361,13 @@ impl TypeChecker {
             (Type::Ref { mutable: false, inner, .. }, Type::Named { name: n, .. })
                 if n == "String" && matches!(inner.as_ref(), Type::Str) => true,
 
+            // String to str coercion (deref-like): String ↔ str
+            // Analogous to Rust's String → &str deref coercion.
+            // String owns string data, str is a view — they're interchangeable
+            // in type checking since the interpreter uses the same representation.
+            (Type::Str, Type::Named { name, .. }) if name == "String" => true,
+            (Type::Named { name, .. }, Type::Str) if name == "String" => true,
+
             // Arrays
             (Type::Array { element: a, size: sa }, Type::Array { element: b, size: sb }) => {
                 (sa == sb || sa.is_none() || sb.is_none()) && self.unify(a, b)
@@ -3368,6 +3375,11 @@ impl TypeChecker {
 
             // Slices
             (Type::Slice(a), Type::Slice(b)) => self.unify(a, b),
+
+            // Array to Slice coercion: [T; N] → [T]
+            // A fixed-size array is always a valid slice of the same element type.
+            (Type::Slice(a), Type::Array { element: b, .. }) => self.unify(a, b),
+            (Type::Array { element: a, .. }, Type::Slice(b)) => self.unify(a, b),
 
             // Tuples
             (Type::Tuple(a), Type::Tuple(b)) if a.len() == b.len() => {
