@@ -5010,8 +5010,10 @@ impl<'a> Parser<'a> {
                     if let Expr::Path(path) = &expr {
                         let peeked = self.peek_next();
                         // Peek at next token to see if it's a macro delimiter
+                        // In condition context, don't treat !{ as macro — the { is the if-body block
                         let is_macro = match peeked {
-                            Some(Token::LParen) | Some(Token::LBracket) | Some(Token::LBrace) => true,
+                            Some(Token::LParen) | Some(Token::LBracket) => true,
+                            Some(Token::LBrace) => !self.is_in_condition(),
                             _ => false,
                         };
                         if is_macro {

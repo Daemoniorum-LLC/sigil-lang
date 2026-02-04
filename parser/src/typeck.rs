@@ -2586,11 +2586,18 @@ impl TypeChecker {
 
             // Comparison: any -> bool
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                // Allow Option<T> == null/Unit comparisons (null-check idiom)
+                let is_option_null = |a: &Type, b: &Type| {
+                    matches!(a, Type::Named { name, .. } if name == "Option")
+                        && matches!(b, Type::Unit)
+                };
                 // For bootstrapping: skip error when either side is a type variable or function
                 // (indicates incomplete type inference from unhandled expressions)
                 if !self.unify(&left_inner, &right_inner)
                     && !is_var_or_fn(&left_inner)
                     && !is_var_or_fn(&right_inner)
+                    && !is_option_null(&left_inner, &right_inner)
+                    && !is_option_null(&right_inner, &left_inner)
                 {
                     self.error(TypeError::new(format!(
                         "comparison operands must have same type: left={:?}, right={:?}",

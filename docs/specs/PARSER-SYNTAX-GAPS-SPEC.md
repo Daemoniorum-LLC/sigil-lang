@@ -1,14 +1,15 @@
 # Parser Syntax Gaps Spec
 
-**Version:** 0.3.0
-**Status:** Mostly Resolved
+**Version:** 0.4.0
+**Status:** Resolved
 **Date:** 2026-02-04
 **Discovery:** Running 37 uncounted top-level test files revealed parse failures on syntax constructs that should be valid Sigil.
 
-**Update (v0.3.0):** Resolved 4 of 5 original parse failures:
+**Update (v0.4.0):** All 5 original parse failures resolved:
 - Renamed identifiers with Sigil symbols (3 files)
 - Implemented multi-param morpheme closures (`a, b => expr`), σ{comparator}, ρ{init, closure}, δ distinct
-- Only `bootstrap_test.sg` remains (requires `each...of` loop syntax)
+- Fixed postfix `!` in if-condition right operands (bootstrap_test.sg)
+- Added `yea` as True alias, `Option<T> == null` type coercion
 
 ---
 
@@ -16,7 +17,7 @@
 
 ### 1.1 Context
 
-Five top-level test files originally failed with parse errors. Four have been fixed. One remains.
+Five top-level test files originally failed with parse errors. All five have been fixed.
 
 ### 1.2 Affected Files — Current Status
 
@@ -26,7 +27,7 @@ Five top-level test files originally failed with parse errors. Four have been fi
 | `type_compat_test.sg` | `⤺` in identifier | ✅ Resolved | Renamed `test_optional_⤺` → `test_optional_return` |
 | `test_ir_operations.sg` | `⎉` in variable name | ✅ Resolved (parse) | Renamed `let_⎉` → `let_else_op`. Now hits type errors (separate issue) |
 | `test_morphemes.sg` | Multi-param closure in morphemes | ✅ Resolved | Implemented multi-param closures, σ{}, ρ{init,...}, δ distinct |
-| `bootstrap_test.sg` | `expected LBrace, found Else` | ❌ Open | Requires `each...of` loop syntax (P2) |
+| `bootstrap_test.sg` | `expected LBrace, found Else` | ✅ Resolved | Fixed postfix `!` macro misparse in conditions + `yea` keyword + Option==null coercion |
 
 ---
 
@@ -34,7 +35,7 @@ Five top-level test files originally failed with parse errors. Four have been fi
 
 ### 2.1 `else if` Chains (`⎉ ⎇`) — ✅ ALREADY WORKS
 
-Already implemented at `parser.rs:7813-7815`. The `bootstrap_test.sg` failure is caused by `each ... of` loops, not else-if.
+Already implemented at `parser.rs:7813-7815`. The `bootstrap_test.sg` failure was caused by postfix `!` macro misparse in conditions, not else-if or `each...of`.
 
 ### 2.2 Sigil Symbols in Identifiers — ✅ RESOLVED (workaround)
 
@@ -64,43 +65,39 @@ The `test_ir_operations.sg` error was caused by `⎉` in variable name `let_⎉`
 
 ---
 
-## 3. Open Gaps
+## 3. Previously Misdiagnosed Gaps
 
-### 3.1 `each ... of` Loop Syntax (bootstrap_test.sg)
+### 3.1 `each ... of` Loop Syntax — ✅ ALREADY WORKS
 
-**Priority:** P2
-**Occurrences:** 6 in `bootstrap_test.sg`
+Previously believed to be the blocker for `bootstrap_test.sg`. Investigation revealed `each` already lexes as `Token::ForAll` and `of` as `Token::ElementOf`. The parser handles `ForAll pattern ElementOf iter { body }` at `parser.rs:5417`. Confirmed by independent test.
 
-```sigil
-each source of COMPILER_SOURCES {
-    // loop body
-}
-```
+### 3.2 Postfix `!` in If-Condition Right Operands — ✅ RESOLVED
 
-This is an alternative for-loop syntax. The parser doesn't recognize `each` as a loop keyword.
+**Root cause:** In `⎇ x == y! { ... }`, the parser saw `y` (a Path) followed by `!` followed by `{`. The macro detection in `parse_postfix_expr()` (`parser.rs:5008-5026`) interpreted this as `y!{...}` — a macro invocation. This consumed the entire if-body block as macro tokens, causing the parser to expect `{` for the if-block but finding `⎉` (else) instead.
 
-**Implementation approach:**
-1. Add `each` as keyword/contextual keyword in lexer
-2. In statement parser, handle `each <ident> of <expr> { ... }` as `Expr::ForIn`
-3. Map to existing for-in semantics
+**Fix:** Added `!self.is_in_condition()` check to the `LBrace` case in macro detection (`parser.rs:5016`). When parsing a condition, `!{` is treated as evidentiality unwrap + block start, not as a macro delimiter.
 
-**Other issues in bootstrap_test.sg:**
-- `⊳` continue symbol (6 occurrences) — not handled as continue statement
-- Various self-hosted compiler features that depend on runtime methods (`parse_file`, etc.)
+### 3.3 `yea` Keyword — ✅ RESOLVED
+
+`bootstrap_test.sg` uses `yea` as a boolean true literal (22 occurrences). Added `#[token("yea")]` as alias for `True` in `lexer.rs:521`.
+
+### 3.4 `Option<T> == null` Type Coercion — ✅ RESOLVED
+
+`bootstrap_test.sg` uses `⎇ phase1 == null` to null-check `.get()` results (which return `Option<T>`). Added coercion rule in `typeck.rs:2589-2593` to allow `Option<T>` comparison with `Unit` (null).
 
 ---
 
 ## 4. Test Results
 
-| Metric | Before (v0.1.0) | After (v0.3.0) |
+| Metric | Before (v0.1.0) | After (v0.4.0) |
 |--------|---------|--------|
-| Parse errors in uncounted tests | 5 files | 1 file |
+| Parse errors in uncounted tests | 5 files | 0 files |
 | `test_morphemes.sg` | Parse error | ✅ All tests pass |
 | `option_syntax_test.sg` | Parse error | ✅ Passes |
 | `type_compat_test.sg` | Parse error | ✅ Passes |
 | `test_ir_operations.sg` | Parse error | Promoted to type errors |
-| `bootstrap_test.sg` | Parse error | Still parse error (each...of) |
-| Uncounted pass rate | 10/36 → 14/37 | **17/37** |
+| `bootstrap_test.sg` | Parse error | ✅ Passes |
+| Uncounted pass rate | 10/36 → 14/37 | **18/37** |
 
 ---
 
@@ -120,3 +117,4 @@ This is an alternative for-loop syntax. The parser doesn't recognize `each` as a
 | 0.1.0 | 2026-02-03 | Initial gap discovery. 5 parse failures in uncounted test files. |
 | 0.2.0 | 2026-02-04 | else-if chains confirmed already working (misdiagnosis). Added `each...of` loop syntax as new gap. Updated priorities. |
 | 0.3.0 | 2026-02-04 | Resolved 4 of 5 parse failures. Implemented multi-param morpheme closures, σ{comparator}, ρ{init,closure}, δ distinct. Only bootstrap_test.sg remains. |
+| 0.4.0 | 2026-02-04 | All 5 parse failures resolved. Fixed postfix `!` macro misparse in conditions (root cause of bootstrap_test.sg). Added `yea` keyword, Option==null coercion. 18/37 uncounted tests passing. |

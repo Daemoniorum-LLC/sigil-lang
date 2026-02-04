@@ -518,6 +518,7 @@ pub enum Token {
     // Boolean literals
     #[token("true")]
     #[token("yay")]
+    #[token("yea")]
     True,
     #[token("false")]
     #[token("nay")]
