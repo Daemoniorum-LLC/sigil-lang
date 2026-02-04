@@ -611,9 +611,97 @@ mod math {
 }
 ```
 
+### 9.1 Numeric Primitive Methods
+
+In addition to the free functions above, numeric primitives support instance
+method syntax. These methods call the same underlying operations but allow
+method chaining and disambiguation with typed literals.
+
+```sigil
+// Float methods (f32 and f64)
+impl f64 {
+    // Exponential / logarithmic
+    fn exp(&self) -> f64;
+    fn exp2(&self) -> f64;
+    fn ln(&self) -> f64;
+    fn log2(&self) -> f64;
+    fn log10(&self) -> f64;
+
+    // Power / root
+    fn sqrt(&self) -> f64;
+    fn cbrt(&self) -> f64;
+    fn powf(&self, n: f64) -> f64;
+    fn powi(&self, n: i32) -> f64;
+
+    // Trigonometric
+    fn sin(&self) -> f64;
+    fn cos(&self) -> f64;
+    fn tan(&self) -> f64;
+    fn asin(&self) -> f64;
+    fn acos(&self) -> f64;
+    fn atan(&self) -> f64;
+    fn atan2(&self, other: f64) -> f64;
+
+    // Rounding
+    fn floor(&self) -> f64;
+    fn ceil(&self) -> f64;
+    fn round(&self) -> f64;
+    fn trunc(&self) -> f64;
+    fn fract(&self) -> f64;
+
+    // Absolute value / sign
+    fn abs(&self) -> f64;
+    fn signum(&self) -> f64;
+    fn copysign(&self, sign: f64) -> f64;
+
+    // Fused multiply-add
+    fn mul_add(&self, a: f64, b: f64) -> f64;
+
+    // Min / max
+    fn max(&self, other: f64) -> f64;
+    fn min(&self, other: f64) -> f64;
+    fn clamp(&self, min: f64, max: f64) -> f64;
+
+    // Classification
+    fn is_nan(&self) -> bool;
+    fn is_infinite(&self) -> bool;
+    fn is_finite(&self) -> bool;
+    fn is_normal(&self) -> bool;
+
+    // Bit conversion
+    fn to_bits(&self) -> u64;
+    fn from_bits(bits: u64) -> f64;
+}
+// f32 has the same method set with f32/u32 types.
+
+// Integer methods (i32, i64, u32, u64, usize, etc.)
+impl i64 {
+    fn abs(&self) -> i64;
+    fn pow(&self, exp: u32) -> i64;
+    fn min(&self, other: i64) -> i64;
+    fn max(&self, other: i64) -> i64;
+    fn clamp(&self, min: i64, max: i64) -> i64;
+}
+// Other integer types have the same method set with appropriate types.
+```
+
+```sigil
+// Usage examples
+≔ x: f64 = 2.0;
+≔ y = x.exp();           // e^2
+≔ z = x.sqrt();          // √2
+≔ w = x.powf(0.5);       // 2^0.5
+
+// Method chaining
+≔ result = (a - b).abs().sqrt();
+
+// Disambiguation with typed literals
+≔ scale = 2.0f32.powi(-14);
+```
+
 ---
 
-## 9.1 Polycultural Audio
+## 9.2 Polycultural Audio
 
 World tuning systems, sacred frequencies, and cultural scales:
 
@@ -664,7 +752,7 @@ mod audio {
 
 ---
 
-## 9.2 Spirituality & Divination
+## 9.3 Spirituality & Divination
 
 I Ching, sacred geometry, gematria, archetypes, astrology, and tarot:
 
@@ -711,7 +799,7 @@ mod spirituality {
 
 ---
 
-## 9.3 Polycultural Color
+## 9.4 Polycultural Color
 
 Color meaning varies radically across cultures:
 

@@ -1,0 +1,52 @@
+// Test: Reference pattern destructuring (&var)
+// Spec: 02-SYNTAX.md § line 454, 02A-PATTERN-MATCHING.md § line 32
+// Priority: P1 - Required for Nihil ML framework (3 test files blocked)
+//
+// Purpose:
+// Validates that &var patterns work in let bindings and match arms.
+// The interpreter currently errors with "Unsupported pattern: Ref".
+// This is an implementation bug — ref patterns are specced in 02-SYNTAX.md.
+//
+// Expected behavior:
+// &var binds the inner value, stripping one level of reference.
+
+rite get_ref() -> &i32 {
+    ≔ x = 42;
+    ⤺ &x;
+}
+
+rite test_ref_let_binding() {
+    ≔ data = [10, 20, 30];
+    ≔ &first = &data[0];
+    assert_eq(first, 10);
+    println("  PASS: test_ref_let_binding");
+}
+
+rite test_ref_match_pattern() {
+    ≔ values = [1, 2, 3];
+    ≔ r = &values[1];
+    ⌥ r {
+        &v => assert_eq(v, 2),
+    }
+    println("  PASS: test_ref_match_pattern");
+}
+
+rite test_ref_in_iteration() {
+    // Common Nihil pattern: iterating by reference
+    ≔ data = [10, 20, 30];
+    ≔ Δ sum = 0;
+    ∀ &val ∈ &data {
+        sum = sum + val;
+    }
+    assert_eq(sum, 60);
+    println("  PASS: test_ref_in_iteration");
+}
+
+☉ rite main() -> !i32 {
+    println("=== Bug Fix: Ref Pattern Destructuring ===");
+    test_ref_let_binding();
+    test_ref_match_pattern();
+    test_ref_in_iteration();
+    println("All ref pattern tests passed!");
+    ⤺ 0;
+}

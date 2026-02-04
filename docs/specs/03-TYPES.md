@@ -36,6 +36,10 @@ Sigil's type system combines:
 | `f32` | 32-bit | IEEE 754 single |
 | `f64` | 64-bit | IEEE 754 double |
 
+Numeric primitives support instance methods for common mathematical operations
+(e.g., `x.sqrt()`, `x.abs()`, `n.pow(e)`). See 09-STDLIB.md § 9.1 for the
+full method list.
+
 ### 2.2 Text Types
 
 | Type | Description |
@@ -443,6 +447,50 @@ impl Iterator for DatabaseCursor {
     }
 }
 ```
+
+### 7.5 Associated Constants
+
+Traits may declare associated constants using `const NAME: Type;` syntax.
+Implementations provide values with `const NAME: Type = value;`.
+Constants are accessed via `Type·NAME` or `T·NAME` in generic contexts.
+
+```sigil
+// Trait with required and defaulted constants
+trait DType {
+    const SIZE: usize;                    // Required (no default)
+    const ALIGNMENT: usize = 1;           // Default value
+    const NAME: &'static str;             // Required
+}
+
+// Implementation provides required constants
+impl DType for F16 {
+    const SIZE: usize = 2;
+    const NAME: &'static str = "f16";
+    // ALIGNMENT inherits default of 1
+}
+
+impl DType for F32 {
+    const SIZE: usize = 4;
+    const NAME: &'static str = "f32";
+    const ALIGNMENT: usize = 4;          // Override default
+}
+
+// Access via implementing type
+≔ size = F16·SIZE;        // 2
+≔ name = F32·NAME;        // "f32"
+
+// Access in generic context
+rite print_dtype_info<T: DType>() {
+    println("Size: {}", T·SIZE);
+    println("Name: {}", T·NAME);
+}
+```
+
+**Semantics:**
+- Constants must be compile-time evaluable expressions
+- Constants are monomorphized per implementing type
+- `Type·CONST` resolution order: (1) inherent impl, (2) trait impls
+- Default values can be overridden in implementations
 
 ---
 

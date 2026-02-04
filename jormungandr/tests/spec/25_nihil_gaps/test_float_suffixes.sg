@@ -1,0 +1,54 @@
+// Test: Numeric literal type suffixes
+// Spec: NIHIL-COMPILER-GAPS-SPEC.md § 4 (Spec Gap C)
+// Priority: P1 - Required for Nihil ML framework (~70 occurrences)
+//
+// Purpose:
+// Validates that numeric literals can have type suffixes (f32, f64, i32, etc.)
+// to specify their exact type. Currently the lexer rejects `0.0f32` as invalid.
+// This is critical for Nihil's numeric/SIMD code and method disambiguation.
+//
+// Expected behavior:
+// Suffixed literals parse and evaluate to the correct typed value.
+
+rite test_f32_suffix() {
+    ≔ x = 1.0f32;
+    ≔ y = 2.5f32;
+    ≔ z = x + y;
+    assert_eq(z, 3.5);
+    println("  PASS: test_f32_suffix");
+}
+
+rite test_f64_suffix() {
+    ≔ x = 1.0f64;
+    ≔ y = 2.5f64;
+    assert_eq(x + y, 3.5);
+    println("  PASS: test_f64_suffix");
+}
+
+rite test_zero_init_f32() {
+    // Common pattern in Nihil: accumulator initialization
+    ≔ Δ sum = 0.0f32;
+    sum = sum + 1.0;
+    sum = sum + 2.0;
+    assert_eq(sum, 3.0);
+    println("  PASS: test_zero_init_f32");
+}
+
+rite test_method_on_suffixed_literal() {
+    // This is the disambiguation case: 2.0f32.powi(n)
+    // Without suffix, 2.0.powi would be ambiguous
+    ≔ result = 2.0f32.powi(-14);
+    assert(result > 0.0, "2^-14 should be positive");
+    assert(result < 0.001, "2^-14 should be very small");
+    println("  PASS: test_method_on_suffixed_literal");
+}
+
+☉ rite main() -> !i32 {
+    println("=== Spec Gap C: Float Literal Type Suffixes ===");
+    test_f32_suffix();
+    test_f64_suffix();
+    test_zero_init_f32();
+    test_method_on_suffixed_literal();
+    println("All float suffix tests passed!");
+    ⤺ 0;
+}

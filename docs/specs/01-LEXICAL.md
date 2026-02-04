@@ -233,6 +233,43 @@ my·module·MyType
 1_000_000       // Separator allowed
 ```
 
+#### 4.2.1 Typed Numeric Literals
+
+Numeric literals may include a type suffix to specify their exact type.
+Without a suffix, integer literals default to `i64` and float literals to `f64`.
+
+```
+float_literal = digits "." digits? float_suffix?
+              | digits float_suffix
+              ;
+float_suffix  = "f32" | "f64" ;
+
+int_literal   = digits int_suffix?
+              | "0x" hex_digits int_suffix?
+              | "0b" bin_digits int_suffix?
+              | "0o" oct_digits int_suffix?
+              ;
+int_suffix    = "i8" | "i16" | "i32" | "i64" | "i128"
+              | "u8" | "u16" | "u32" | "u64" | "u128"
+              | "isize" | "usize"
+              ;
+```
+
+```sigil
+0.0f32          // f32 zero
+1.0f64          // f64 one
+3.14f32         // f32 pi approximation
+42i32           // i32
+255u8           // u8
+0xFF_u16        // u16 hex
+```
+
+When a float suffix is followed by `.`, the suffix binds tighter than the method call:
+
+```sigil
+2.0f32.powi(n)  // Parsed as: (2.0f32).powi(n)
+```
+
 ### 4.3 String Literals
 
 ```sigil
