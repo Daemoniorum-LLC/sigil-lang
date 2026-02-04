@@ -10,24 +10,24 @@ invoke std·collections·HashMap;
 
 ☉ Σ Duration { nanos: u64 }
 ⊢ Duration {
-    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
-    ☉ λ as_nanos(&self) -> u64 { self.nanos }
+    ☉ rite hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ rite as_nanos(&self) -> u64 { self.nanos }
 }
 ⊢ Copy ∀ Duration {}
-⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+⊢ Clone ∀ Duration { rite clone(&self) -> Self { *self } }
 
 ☉ Σ Timestamp { ☉ nanos: u64 }
 ⊢ Timestamp {
-    ☉ λ now() -> Self { Self { nanos: 10_000_000_000 } }
-    ☉ λ from_nanos(n: u64) -> Self { Self { nanos: n } }
+    ☉ rite now() -> Self { Self { nanos: 10_000_000_000 } }
+    ☉ rite from_nanos(n: u64) -> Self { Self { nanos: n } }
 }
 ⊢ PartialOrd ∀ Timestamp {
-    λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+    rite partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
         self.nanos.partial_cmp(&other.nanos)
     }
 }
 ⊢ PartialEq ∀ Timestamp {
-    λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+    rite eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -40,7 +40,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillLevel {
-    ☉ λ from_proficiency(p: f32) -> Self {
+    ☉ rite from_proficiency(p: f32) -> Self {
         ⎇ p >= 0.9 { SkillLevel·Expert }
         ⎉ ⎇ p >= 0.7 { SkillLevel·Proficient }
         ⎉ ⎇ p >= 0.5 { SkillLevel·Competent }
@@ -65,7 +65,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ ReflectionPeriod {
-    ☉ λ start_time(&self) -> Timestamp {
+    ☉ rite start_time(&self) -> Timestamp {
         ≔ now = Timestamp·now();
         ≔ offset = ⌥ self {
             ReflectionPeriod·Daily => Duration·hours(24),
@@ -75,7 +75,7 @@ invoke std·collections·HashMap;
         Timestamp·from_nanos(now.nanos.saturating_sub(offset.as_nanos()))
     }
 
-    ☉ λ hours(&self) -> u64 {
+    ☉ rite hours(&self) -> u64 {
         ⌥ self {
             ReflectionPeriod·Daily => 24,
             ReflectionPeriod·Weekly => 168,
@@ -90,19 +90,19 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Success {
-    ☉ λ new(description: &str) -> Self {
+    ☉ rite new(description: &str) -> Self {
         Self {
             description: description.to_string(),
             factors: vec![],
         }
     }
 
-    ☉ λ with_factor(Δ self, factor: &str) -> Self {
+    ☉ rite with_factor(Δ self, factor: &str) -> Self {
         self.factors.push(factor.to_string());
         self
     }
 
-    ☉ λ factor_count(&self) -> usize {
+    ☉ rite factor_count(&self) -> usize {
         self.factors.len()
     }
 }
@@ -114,7 +114,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ ImprovementArea {
-    ☉ λ new(skill: &str, suggestion: &str) -> Self {
+    ☉ rite new(skill: &str, suggestion: &str) -> Self {
         Self {
             skill: skill.to_string(),
             suggestion: suggestion.to_string(),
@@ -122,19 +122,19 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_priority(Δ self, priority: Priority) -> Self {
+    ☉ rite with_priority(Δ self, priority: Priority) -> Self {
         self.priority = priority;
         self
     }
 
-    ☉ λ is_critical(&self) -> bool {
+    ☉ rite is_critical(&self) -> bool {
         ⌥ self.priority {
             Priority·Critical => true,
             _ => false,
         }
     }
 
-    ☉ λ is_high_priority(&self) -> bool {
+    ☉ rite is_high_priority(&self) -> bool {
         ⌥ self.priority {
             Priority·Critical | Priority·High => true,
             _ => false,
@@ -149,7 +149,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Insight {
-    ☉ λ new(observation: &str, implication: &str) -> Self {
+    ☉ rite new(observation: &str, implication: &str) -> Self {
         Self {
             observation: observation.to_string(),
             implication: implication.to_string(),
@@ -157,12 +157,12 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_action(Δ self, action: &str) -> Self {
+    ☉ rite with_action(Δ self, action: &str) -> Self {
         self.action = Some(action.to_string());
         self
     }
 
-    ☉ λ is_actionable(&self) -> bool {
+    ☉ rite is_actionable(&self) -> bool {
         self.action.is_some()
     }
 }
@@ -175,7 +175,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillSnapshot {
-    ☉ λ new(name: &str, proficiency: f32, recent: usize) -> Self {
+    ☉ rite new(name: &str, proficiency: f32, recent: usize) -> Self {
         Self {
             name: name.to_string(),
             level: SkillLevel·from_proficiency(proficiency),
@@ -184,15 +184,15 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ is_active(&self) -> bool {
+    ☉ rite is_active(&self) -> bool {
         self.recent_exercises > 0
     }
 
-    ☉ λ is_expert(&self) -> bool {
+    ☉ rite is_expert(&self) -> bool {
         self.level >= SkillLevel·Proficient
     }
 
-    ☉ λ is_novice(&self) -> bool {
+    ☉ rite is_novice(&self) -> bool {
         self.level == SkillLevel·Novice
     }
 }
@@ -203,31 +203,31 @@ invoke std·collections·HashMap;
 }
 
 ⊢ GrowthMeasurement {
-    ☉ λ new(overall: f32) -> Self {
+    ☉ rite new(overall: f32) -> Self {
         Self {
             overall,
             by_skill: vec![],
         }
     }
 
-    ☉ λ with_skill(Δ self, name: &str, growth: f32) -> Self {
+    ☉ rite with_skill(Δ self, name: &str, growth: f32) -> Self {
         self.by_skill.push((name.to_string(), growth));
         self
     }
 
-    ☉ λ overall_growth(&self) -> f32 {
+    ☉ rite overall_growth(&self) -> f32 {
         self.overall
     }
 
-    ☉ λ skill_count(&self) -> usize {
+    ☉ rite skill_count(&self) -> usize {
         self.by_skill.len()
     }
 
-    ☉ λ has_growth(&self) -> bool {
+    ☉ rite has_growth(&self) -> bool {
         self.overall > 0.0
     }
 
-    ☉ λ top_skill(&self) -> Option<(&String, f32)> {
+    ☉ rite top_skill(&self) -> Option<(&String, f32)> {
         self.by_skill.iter()
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
             .map(|(name, growth)| (name, *growth))
@@ -245,7 +245,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Reflection {
-    ☉ λ new(period: ReflectionPeriod) -> Self {
+    ☉ rite new(period: ReflectionPeriod) -> Self {
         Self {
             period,
             successes: vec![],
@@ -257,50 +257,50 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_success(Δ self, success: Success) -> Self {
+    ☉ rite with_success(Δ self, success: Success) -> Self {
         self.successes.push(success);
         self
     }
 
-    ☉ λ with_improvement(Δ self, improvement: ImprovementArea) -> Self {
+    ☉ rite with_improvement(Δ self, improvement: ImprovementArea) -> Self {
         self.improvements.push(improvement);
         self
     }
 
-    ☉ λ with_pattern(Δ self, pattern: &str) -> Self {
+    ☉ rite with_pattern(Δ self, pattern: &str) -> Self {
         self.patterns.push(pattern.to_string());
         self
     }
 
-    ☉ λ with_insight(Δ self, insight: Insight) -> Self {
+    ☉ rite with_insight(Δ self, insight: Insight) -> Self {
         self.insights.push(insight);
         self
     }
 
-    ☉ λ with_growth(Δ self, growth: GrowthMeasurement) -> Self {
+    ☉ rite with_growth(Δ self, growth: GrowthMeasurement) -> Self {
         self.growth = growth;
         self
     }
 
-    ☉ λ success_count(&self) -> usize { self.successes.len() }
-    ☉ λ improvement_count(&self) -> usize { self.improvements.len() }
-    ☉ λ pattern_count(&self) -> usize { self.patterns.len() }
-    ☉ λ insight_count(&self) -> usize { self.insights.len() }
+    ☉ rite success_count(&self) -> usize { self.successes.len() }
+    ☉ rite improvement_count(&self) -> usize { self.improvements.len() }
+    ☉ rite pattern_count(&self) -> usize { self.patterns.len() }
+    ☉ rite insight_count(&self) -> usize { self.insights.len() }
 
-    ☉ λ has_successes(&self) -> bool { !self.successes.is_empty() }
-    ☉ λ has_improvements(&self) -> bool { !self.improvements.is_empty() }
-    ☉ λ has_patterns(&self) -> bool { !self.patterns.is_empty() }
-    ☉ λ has_insights(&self) -> bool { !self.insights.is_empty() }
+    ☉ rite has_successes(&self) -> bool { !self.successes.is_empty() }
+    ☉ rite has_improvements(&self) -> bool { !self.improvements.is_empty() }
+    ☉ rite has_patterns(&self) -> bool { !self.patterns.is_empty() }
+    ☉ rite has_insights(&self) -> bool { !self.insights.is_empty() }
 
-    ☉ λ actionable_insights(&self) -> Vec<&Insight> {
+    ☉ rite actionable_insights(&self) -> Vec<&Insight> {
         self.insights.iter().filter(|i| i.is_actionable()).collect()
     }
 
-    ☉ λ critical_improvements(&self) -> Vec<&ImprovementArea> {
+    ☉ rite critical_improvements(&self) -> Vec<&ImprovementArea> {
         self.improvements.iter().filter(|i| i.is_critical()).collect()
     }
 
-    ☉ λ to_summary(&self) -> String {
+    ☉ rite to_summary(&self) -> String {
         ≔ Δ output = String·new();
         output.push_str("=== Reflection Summary ===\n");
 
@@ -328,14 +328,14 @@ invoke std·collections·HashMap;
 }
 
 ⊢ ReflectionConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             min_experiences: 5,
             pattern_significance: 0.7,
         }
     }
 
-    ☉ λ with_min_experiences(Δ self, min: usize) -> Self {
+    ☉ rite with_min_experiences(Δ self, min: usize) -> Self {
         self.min_experiences = min;
         self
     }
@@ -346,25 +346,25 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_reflection_period_daily() {
+rite test_reflection_period_daily() {
     ≔ period = ReflectionPeriod·Daily;
     assert_eq(period.hours(), 24);
 }
 
 #[test]
-λ test_reflection_period_weekly() {
+rite test_reflection_period_weekly() {
     ≔ period = ReflectionPeriod·Weekly;
     assert_eq(period.hours(), 168);
 }
 
 #[test]
-λ test_reflection_period_monthly() {
+rite test_reflection_period_monthly() {
     ≔ period = ReflectionPeriod·Monthly;
     assert_eq(period.hours(), 720);
 }
 
 #[test]
-λ test_reflection_period_start_time() {
+rite test_reflection_period_start_time() {
     ≔ period = ReflectionPeriod·Daily;
     ≔ start = period.start_time();
     assert(start.nanos < Timestamp·now().nanos);
@@ -375,14 +375,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_success_new() {
+rite test_success_new() {
     ≔ s = Success·new("Completed project on time");
     assert_eq(s.description, "Completed project on time");
     assert_eq(s.factor_count(), 0);
 }
 
 #[test]
-λ test_success_with_factor() {
+rite test_success_with_factor() {
     ≔ s = Success·new("Success")
         .with_factor("good planning")
         .with_factor("team collaboration");
@@ -394,14 +394,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_improvement_area_new() {
+rite test_improvement_area_new() {
     ≔ area = ImprovementArea·new("testing", "Add more unit tests");
     assert_eq(area.skill, "testing");
     assert_eq(area.suggestion, "Add more unit tests");
 }
 
 #[test]
-λ test_improvement_area_with_priority() {
+rite test_improvement_area_with_priority() {
     ≔ area = ImprovementArea·new("security", "Review auth flow")
         .with_priority(Priority·Critical);
     assert(area.is_critical());
@@ -409,7 +409,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_improvement_area_high_priority() {
+rite test_improvement_area_high_priority() {
     ≔ area = ImprovementArea·new("perf", "Optimize queries")
         .with_priority(Priority·High);
     assert(!area.is_critical());
@@ -417,7 +417,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_improvement_area_normal_priority() {
+rite test_improvement_area_normal_priority() {
     ≔ area = ImprovementArea·new("docs", "Add examples");
     assert(!area.is_critical());
     assert(!area.is_high_priority());
@@ -428,14 +428,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_insight_new() {
+rite test_insight_new() {
     ≔ insight = Insight·new("High error rate on Mondays", "Team needs ramp-up time");
     assert_eq(insight.observation, "High error rate on Mondays");
     assert(!insight.is_actionable());
 }
 
 #[test]
-λ test_insight_with_action() {
+rite test_insight_with_action() {
     ≔ insight = Insight·new("Slow builds", "Blocking development")
         .with_action("Upgrade CI infrastructure");
     assert(insight.is_actionable());
@@ -447,7 +447,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_skill_snapshot_new() {
+rite test_skill_snapshot_new() {
     ≔ snap = SkillSnapshot·new("rust", 0.8, 10);
     assert_eq(snap.name, "rust");
     assert_eq(snap.proficiency, 0.8);
@@ -455,7 +455,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_snapshot_is_active() {
+rite test_skill_snapshot_is_active() {
     ≔ active = SkillSnapshot·new("coding", 0.5, 5);
     ≔ inactive = SkillSnapshot·new("unused", 0.5, 0);
     assert(active.is_active());
@@ -463,7 +463,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_snapshot_is_expert() {
+rite test_skill_snapshot_is_expert() {
     ≔ expert = SkillSnapshot·new("mastered", 0.9, 100);
     ≔ novice = SkillSnapshot·new("learning", 0.2, 5);
     assert(expert.is_expert());
@@ -471,7 +471,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_snapshot_is_novice() {
+rite test_skill_snapshot_is_novice() {
     ≔ novice = SkillSnapshot·new("new", 0.1, 2);
     ≔ competent = SkillSnapshot·new("practiced", 0.6, 20);
     assert(novice.is_novice());
@@ -483,14 +483,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_growth_measurement_new() {
+rite test_growth_measurement_new() {
     ≔ growth = GrowthMeasurement·new(0.5);
     assert_eq(growth.overall_growth(), 0.5);
     assert_eq(growth.skill_count(), 0);
 }
 
 #[test]
-λ test_growth_measurement_with_skill() {
+rite test_growth_measurement_with_skill() {
     ≔ growth = GrowthMeasurement·new(0.6)
         .with_skill("rust", 0.8)
         .with_skill("testing", 0.4);
@@ -498,7 +498,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_growth_measurement_has_growth() {
+rite test_growth_measurement_has_growth() {
     ≔ positive = GrowthMeasurement·new(0.3);
     ≔ zero = GrowthMeasurement·new(0.0);
     assert(positive.has_growth());
@@ -506,7 +506,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_growth_measurement_top_skill() {
+rite test_growth_measurement_top_skill() {
     ≔ growth = GrowthMeasurement·new(0.5)
         .with_skill("low", 0.2)
         .with_skill("high", 0.9)
@@ -521,14 +521,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_reflection_new() {
+rite test_reflection_new() {
     ≔ r = Reflection·new(ReflectionPeriod·Weekly);
     assert_eq(r.success_count(), 0);
     assert_eq(r.improvement_count(), 0);
 }
 
 #[test]
-λ test_reflection_with_success() {
+rite test_reflection_with_success() {
     ≔ r = Reflection·new(ReflectionPeriod·Daily)
         .with_success(Success·new("Shipped feature"));
     assert(r.has_successes());
@@ -536,7 +536,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_reflection_with_improvement() {
+rite test_reflection_with_improvement() {
     ≔ r = Reflection·new(ReflectionPeriod·Daily)
         .with_improvement(ImprovementArea·new("testing", "Add coverage"));
     assert(r.has_improvements());
@@ -544,7 +544,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_reflection_with_pattern() {
+rite test_reflection_with_pattern() {
     ≔ r = Reflection·new(ReflectionPeriod·Weekly)
         .with_pattern("Strong debugging skills");
     assert(r.has_patterns());
@@ -552,7 +552,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_reflection_with_insight() {
+rite test_reflection_with_insight() {
     ≔ r = Reflection·new(ReflectionPeriod·Monthly)
         .with_insight(Insight·new("Observation", "Implication"));
     assert(r.has_insights());
@@ -560,14 +560,14 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_reflection_with_growth() {
+rite test_reflection_with_growth() {
     ≔ r = Reflection·new(ReflectionPeriod·Weekly)
         .with_growth(GrowthMeasurement·new(0.75));
     assert_eq(r.growth.overall_growth(), 0.75);
 }
 
 #[test]
-λ test_reflection_actionable_insights() {
+rite test_reflection_actionable_insights() {
     ≔ r = Reflection·new(ReflectionPeriod·Daily)
         .with_insight(Insight·new("O1", "I1").with_action("A1"))
         .with_insight(Insight·new("O2", "I2"))
@@ -577,7 +577,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_reflection_critical_improvements() {
+rite test_reflection_critical_improvements() {
     ≔ r = Reflection·new(ReflectionPeriod·Weekly)
         .with_improvement(ImprovementArea·new("sec", "Fix").with_priority(Priority·Critical))
         .with_improvement(ImprovementArea·new("docs", "Add"))
@@ -587,7 +587,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_reflection_to_summary() {
+rite test_reflection_to_summary() {
     ≔ r = Reflection·new(ReflectionPeriod·Daily)
         .with_success(Success·new("Done"))
         .with_growth(GrowthMeasurement·new(0.5));
@@ -597,7 +597,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_reflection_comprehensive() {
+rite test_reflection_comprehensive() {
     ≔ r = Reflection·new(ReflectionPeriod·Monthly)
         .with_success(Success·new("Launched product").with_factor("teamwork"))
         .with_success(Success·new("Zero downtime"))
@@ -621,18 +621,18 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_reflection_config_default() {
+rite test_reflection_config_default() {
     ≔ config = ReflectionConfig·default_config();
     assert_eq(config.min_experiences, 5);
     assert_eq(config.pattern_significance, 0.7);
 }
 
 #[test]
-λ test_reflection_config_with_min_experiences() {
+rite test_reflection_config_with_min_experiences() {
     ≔ config = ReflectionConfig·default_config().with_min_experiences(10);
     assert_eq(config.min_experiences, 10);
 }
 
-λ main() {
+rite main() {
     print("Gnosis reflection tests");
 }

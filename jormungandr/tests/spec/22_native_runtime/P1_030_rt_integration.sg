@@ -2,7 +2,7 @@
 //
 // Comprehensive test exercising all interpreter components together.
 
-λ fabs(x: f64) -> f64 {
+rite fabs(x: f64) -> f64 {
     ⎇ x < 0.0 { -x } ⎉ { x }
 }
 
@@ -10,7 +10,7 @@
 // Test: Memory Allocation (simulated with arrays)
 // ============================================================================
 
-λ test_memory_allocation() {
+rite test_memory_allocation() {
     println("=== Memory Allocation ===");
 
     // Allocate some memory (using array)
@@ -58,7 +58,7 @@
 // Test: Vec Operations
 // ============================================================================
 
-λ test_vec_operations() {
+rite test_vec_operations() {
     println("=== Vec Operations ===");
 
     // Create and populate
@@ -113,7 +113,7 @@
 // Test: String Operations
 // ============================================================================
 
-λ test_string_operations() {
+rite test_string_operations() {
     println("=== String Operations ===");
 
     // Create from literal
@@ -139,7 +139,7 @@
 // Test: I/O Operations
 // ============================================================================
 
-λ test_io_operations() {
+rite test_io_operations() {
     println("=== I/O Operations ===");
 
     // Print functions
@@ -163,7 +163,7 @@
 // Test: Math Operations
 // ============================================================================
 
-λ test_math_operations() {
+rite test_math_operations() {
     println("=== Math Operations ===");
 
     // Basic absolute value
@@ -212,7 +212,7 @@
 // Test: Time Operations (simulated)
 // ============================================================================
 
-λ test_time_operations() {
+rite test_time_operations() {
     println("=== Time Operations ===");
 
     // Get current time (simulated)
@@ -245,7 +245,7 @@
 // Test: Syscall Layer (simulated)
 // ============================================================================
 
-λ test_syscall_layer() {
+rite test_syscall_layer() {
     println("=== Syscall Layer ===");
     println("  Direct syscall write: OK");
     println("");
@@ -255,7 +255,7 @@
 // Entry Point
 // ============================================================================
 
-λ main() {
+rite main() {
     println("╔══════════════════════════════════════════════════════════════╗");
     println("║       SIGIL NATIVE RUNTIME - INTEGRATION TEST                ║");
     println("║       Replacing C Runtime with Pure Sigil                    ║");

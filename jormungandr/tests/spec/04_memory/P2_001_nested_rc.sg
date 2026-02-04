@@ -6,7 +6,7 @@
     value: !i32,
 }
 
-λ main() {
+rite main() {
     ≔ inner = Rc·new(Node { value: 42 });
     ≔ outer = Rc·new(inner.clone());
 

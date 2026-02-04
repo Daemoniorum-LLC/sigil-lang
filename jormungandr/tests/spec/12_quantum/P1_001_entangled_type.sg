@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 4.1 Entangled Types
 // Priority: P1 - Core Feature
 
-λ main() {
+rite main() {
     // Create Bell state - maximally entangled pair
     ≔ q0: linear Qubit = Qubit·zero();
     ≔ q1: linear Qubit = Qubit·zero();

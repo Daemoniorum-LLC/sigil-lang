@@ -353,8 +353,7 @@ pub enum Token {
     DeprecatedAmpMut,
 
     // === Keywords (Native Sigil Syntax Only) ===
-    #[token("λ")]  // Lambda - function
-    #[token("rite")]  // Rite - method/ritual (Sigil alternative to fn in impl blocks)
+    #[token("rite")]  // Rite - named function declaration (canonical Sigil keyword)
     Fn,
     #[token("async")]
     #[token("⌛")]  // Hourglass - time/waiting (native symbol alternative)
@@ -545,7 +544,10 @@ pub enum Token {
     Rho, // Reduce
 
     #[token("Λ")]
-    Lambda, // Lambda morpheme (uppercase only - lowercase λ is fn keyword)
+    Lambda, // Lambda morpheme (uppercase Λ only - used in pipe morpheme contexts)
+
+    #[token("λ")]
+    LambdaExpr, // Lambda closure expression: λ(params) [→ RetType] { body }
 
     #[token("Π")]
     Pi, // Product
@@ -1522,7 +1524,7 @@ mod tests {
     #[test]
     fn test_morphemes() {
         // Note: Case matters for Greek letters in Sigil:
-        // - lowercase λ = Token::Fn (function keyword), uppercase Λ = Token::Lambda (morpheme)
+        // - lowercase λ = Token::LambdaExpr (closure expression), uppercase Λ = Token::Lambda (morpheme)
         // - lowercase σ = Token::Sigma (sort morpheme), uppercase Σ = Token::Struct (keyword)
         // - lowercase π = identifier, uppercase Π = Token::Pi (product morpheme)
         // This test verifies uppercase morphemes that are NOT keywords

@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 2.2 Floating Point
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ x: !f64 = 3.14;
     ≔ y: !f64 = 2.71;
 

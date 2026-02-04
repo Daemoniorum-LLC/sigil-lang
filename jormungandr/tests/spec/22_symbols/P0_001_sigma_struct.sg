@@ -7,7 +7,7 @@
     x: i64,
 }
 
-λ main() {
+rite main() {
     ≔ p = Point { x: 42 };
     println!("x = {}", p.x);
 }

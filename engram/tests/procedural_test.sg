@@ -9,21 +9,21 @@
 ☉ Σ SkillId(usize);
 
 ⊢ SkillId {
-    λ new(id: usize) -> Self { Self(id) }
+    rite new(id: usize) -> Self { Self(id) }
 }
 
 ⊢ PartialEq ∀ SkillId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
 
 ⊢ Clone ∀ SkillId {
-    λ clone(&self) -> Self { SkillId(self.0) }
+    rite clone(&self) -> Self { SkillId(self.0) }
 }
 
 ⊢ Hash ∀ SkillId {
-    λ hash(&self) -> usize { self.0 }
+    rite hash(&self) -> usize { self.0 }
 }
 
 ☉ Σ TriggerPattern {
@@ -33,7 +33,7 @@
 }
 
 ⊢ TriggerPattern {
-    ☉ λ new(keywords: Vec<&str>, threshold: f64) -> Self {
+    ☉ rite new(keywords: Vec<&str>, threshold: f64) -> Self {
         ≔ len = keywords.len();
         Self {
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
@@ -42,7 +42,7 @@
         }
     }
 
-    ☉ λ with_weights(keywords: Vec<&str>, weights: Vec<f64>, threshold: f64) -> Self {
+    ☉ rite with_weights(keywords: Vec<&str>, weights: Vec<f64>, threshold: f64) -> Self {
         Self {
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
             weights,
@@ -52,7 +52,7 @@
 }
 
 ⊢ Clone ∀ TriggerPattern {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         TriggerPattern {
             keywords: self.keywords.clone(),
             weights: self.weights.clone(),
@@ -69,7 +69,7 @@
 }
 
 ⊢ Clone ∀ Action {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             Action·CallTool { tool, args } => Action·CallTool {
                 tool: tool.clone(), args: args.clone()
@@ -87,7 +87,7 @@
 }
 
 ⊢ ProcedureStep {
-    ☉ λ tool_call(tool: &str, args: &str) -> Self {
+    ☉ rite tool_call(tool: &str, args: &str) -> Self {
         Self {
             description: format!("Call {}", tool),
             action: Action·CallTool {
@@ -97,14 +97,14 @@
         }
     }
 
-    ☉ λ respond(template: &str) -> Self {
+    ☉ rite respond(template: &str) -> Self {
         Self {
             description: "Respond to user".to_string(),
             action: Action·Respond { template: template.to_string() },
         }
     }
 
-    ☉ λ ask(question: &str) -> Self {
+    ☉ rite ask(question: &str) -> Self {
         Self {
             description: "Ask user".to_string(),
             action: Action·AskUser { question: question.to_string() },
@@ -113,7 +113,7 @@
 }
 
 ⊢ Clone ∀ ProcedureStep {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ProcedureStep {
             description: self.description.clone(),
             action: self.action.clone(),
@@ -127,26 +127,26 @@
 }
 
 ⊢ Procedure {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             steps: Vec·new(),
             estimated_duration_secs: None,
         }
     }
 
-    ☉ λ step(Δ self, step: ProcedureStep) -> Self {
+    ☉ rite step(Δ self, step: ProcedureStep) -> Self {
         self.steps.push(step);
         self
     }
 
-    ☉ λ with_duration(Δ self, secs: u64) -> Self {
+    ☉ rite with_duration(Δ self, secs: u64) -> Self {
         self.estimated_duration_secs = Some(secs);
         self
     }
 }
 
 ⊢ Clone ∀ Procedure {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Procedure {
             steps: self.steps.clone(),
             estimated_duration_secs: self.estimated_duration_secs,
@@ -163,7 +163,7 @@
 }
 
 ⊢ SkillStats {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             execution_count: 0,
             success_count: 0,
@@ -173,7 +173,7 @@
         }
     }
 
-    ☉ λ from_counts(successes: u32, failures: u32) -> Self {
+    ☉ rite from_counts(successes: u32, failures: u32) -> Self {
         ≔ total = successes + failures;
         ≔ rate = ⎇ total == 0 { 0.0 } ⎉ { successes as f64 / total as f64 };
         Self {
@@ -187,7 +187,7 @@
 }
 
 ⊢ Clone ∀ SkillStats {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         SkillStats {
             execution_count: self.execution_count,
             success_count: self.success_count,
@@ -206,7 +206,7 @@
 }
 
 ⊢ FailureMode {
-    ☉ λ new(context: &str, failure_type: &str) -> Self {
+    ☉ rite new(context: &str, failure_type: &str) -> Self {
         Self {
             trigger_context: context.to_string(),
             failure_type: failure_type.to_string(),
@@ -228,7 +228,7 @@
 }
 
 ⊢ Skill {
-    ☉ λ new(id: usize, name: &str) -> Self {
+    ☉ rite new(id: usize, name: &str) -> Self {
         Self {
             id: SkillId·new(id),
             name: name.to_string(),
@@ -241,29 +241,29 @@
         }
     }
 
-    ☉ λ with_description(Δ self, desc: &str) -> Self {
+    ☉ rite with_description(Δ self, desc: &str) -> Self {
         self.description = desc.to_string();
         self
     }
 
-    ☉ λ with_trigger(Δ self, trigger: TriggerPattern) -> Self {
+    ☉ rite with_trigger(Δ self, trigger: TriggerPattern) -> Self {
         self.trigger = trigger;
         self
     }
 
-    ☉ λ with_procedure(Δ self, procedure: Procedure) -> Self {
+    ☉ rite with_procedure(Δ self, procedure: Procedure) -> Self {
         self.procedure = procedure;
         self
     }
 
-    ☉ λ with_stats(Δ self, stats: SkillStats) -> Self {
+    ☉ rite with_stats(Δ self, stats: SkillStats) -> Self {
         self.stats = stats;
         self
     }
 }
 
 ⊢ Clone ∀ Skill {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Skill {
             id: self.id.clone(),
             name: self.name.clone(),
@@ -288,11 +288,11 @@
 }
 
 ⊢ Context {
-    ☉ λ new(text: &str) -> Self {
+    ☉ rite new(text: &str) -> Self {
         Self { text: text.to_string() }
     }
 
-    ☉ λ to_string(&self) -> String {
+    ☉ rite to_string(&self) -> String {
         self.text.clone()
     }
 }
@@ -304,7 +304,7 @@
 }
 
 ⊢ ProceduralConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             min_episodes_for_skill: 3,
             pattern_match_threshold: 0.5,
@@ -312,7 +312,7 @@
         }
     }
 
-    ☉ λ with_match_threshold(Δ self, threshold: f64) -> Self {
+    ☉ rite with_match_threshold(Δ self, threshold: f64) -> Self {
         self.pattern_match_threshold = threshold;
         self
     }
@@ -325,7 +325,7 @@
 }
 
 ⊢ ProceduralMemory {
-    ☉ λ new(config: ProceduralConfig) -> Self {
+    ☉ rite new(config: ProceduralConfig) -> Self {
         Self {
             skills: Vec·new(),
             config,
@@ -333,33 +333,33 @@
         }
     }
 
-    ☉ λ default_memory() -> Self {
+    ☉ rite default_memory() -> Self {
         Self·new(ProceduralConfig·default_config())
     }
 
-    ☉ λ skill_count(&self) -> usize {
+    ☉ rite skill_count(&self) -> usize {
         self.skills.len()
     }
 
-    ☉ λ register(&Δ self, skill: Skill) -> SkillId {
+    ☉ rite register(&Δ self, skill: Skill) -> SkillId {
         ≔ id = skill.id.clone();
         self.skills.push(skill);
         id
     }
 
-    ☉ λ get(&self, id: &SkillId) -> Option<&Skill> {
+    ☉ rite get(&self, id: &SkillId) -> Option<&Skill> {
         self.skills.iter().find(|s| s.id == *id)
     }
 
-    ☉ λ get_mut(&Δ self, id: &SkillId) -> Option<&Δ Skill> {
+    ☉ rite get_mut(&Δ self, id: &SkillId) -> Option<&Δ Skill> {
         self.skills.iter_mut().find(|s| s.id == *id)
     }
 
-    ☉ λ get_by_name(&self, name: &str) -> Option<&Skill> {
+    ☉ rite get_by_name(&self, name: &str) -> Option<&Skill> {
         self.skills.iter().find(|s| s.name == name)
     }
 
-    ☉ λ match_situation(&self, context: &Context) -> Vec<SkillMatch> {
+    ☉ rite match_situation(&self, context: &Context) -> Vec<SkillMatch> {
         ≔ context_text = context.to_string().to_lowercase();
 
         ≔ Δ matches: Vec<SkillMatch> = Vec·new();
@@ -403,7 +403,7 @@
         matches
     }
 
-    ☉ λ record_success(&Δ self, id: &SkillId, duration_secs: f64) {
+    ☉ rite record_success(&Δ self, id: &SkillId, duration_secs: f64) {
         ⎇ ≔ Some(skill) = self.get_mut(id) {
             skill.stats.execution_count = skill.stats.execution_count + 1;
             skill.stats.success_count = skill.stats.success_count + 1;
@@ -418,7 +418,7 @@
         }
     }
 
-    ☉ λ record_failure(&Δ self, id: &SkillId, context: &str, failure_type: &str) {
+    ☉ rite record_failure(&Δ self, id: &SkillId, context: &str, failure_type: &str) {
         ⎇ ≔ Some(skill) = self.get_mut(id) {
             skill.stats.execution_count = skill.stats.execution_count + 1;
             skill.stats.failure_count = skill.stats.failure_count + 1;
@@ -430,7 +430,7 @@
         }
     }
 
-    ☉ λ disable(&Δ self, id: &SkillId) -> bool {
+    ☉ rite disable(&Δ self, id: &SkillId) -> bool {
         ⎇ ≔ Some(skill) = self.get_mut(id) {
             skill.enabled = false;
             true
@@ -439,7 +439,7 @@
         }
     }
 
-    ☉ λ enable(&Δ self, id: &SkillId) -> bool {
+    ☉ rite enable(&Δ self, id: &SkillId) -> bool {
         ⎇ ≔ Some(skill) = self.get_mut(id) {
             skill.enabled = true;
             true
@@ -448,7 +448,7 @@
         }
     }
 
-    λ match_pattern(&self, pattern: &TriggerPattern, context: &str) -> f64 {
+    rite match_pattern(&self, pattern: &TriggerPattern, context: &str) -> f64 {
         ≔ Δ total_weight = 0.0;
         ≔ Δ matched_weight = 0.0;
 
@@ -471,21 +471,21 @@
 // ============================================================================
 
 #[test]
-λ test_skill_creation() {
+rite test_skill_creation() {
     ≔ skill = Skill·new(1, "test_skill");
     assert_eq(skill.name, "test_skill");
     assert(skill.enabled);
 }
 
 #[test]
-λ test_skill_with_description() {
+rite test_skill_with_description() {
     ≔ skill = Skill·new(1, "test")
         .with_description("A test skill");
     assert_eq(skill.description, "A test skill");
 }
 
 #[test]
-λ test_skill_with_trigger() {
+rite test_skill_with_trigger() {
     ≔ trigger = TriggerPattern·new(vec!["search", "find", "lookup"], 0.5);
     ≔ skill = Skill·new(1, "search_skill").with_trigger(trigger);
 
@@ -493,7 +493,7 @@
 }
 
 #[test]
-λ test_skill_with_procedure() {
+rite test_skill_with_procedure() {
     ≔ procedure = Procedure·new()
         .step(ProcedureStep·tool_call("search", "query"))
         .step(ProcedureStep·respond("Here are the results"));
@@ -503,7 +503,7 @@
 }
 
 #[test]
-λ test_skill_with_stats() {
+rite test_skill_with_stats() {
     ≔ stats = SkillStats·from_counts(8, 2);
     ≔ skill = Skill·new(1, "test").with_stats(stats);
 
@@ -517,14 +517,14 @@
 // ============================================================================
 
 #[test]
-λ test_trigger_pattern_simple() {
+rite test_trigger_pattern_simple() {
     ≔ pattern = TriggerPattern·new(vec!["hello", "world"], 0.5);
     assert_eq(pattern.keywords.len(), 2);
     assert_eq(pattern.threshold, 0.5);
 }
 
 #[test]
-λ test_trigger_pattern_with_weights() {
+rite test_trigger_pattern_with_weights() {
     ≔ pattern = TriggerPattern·with_weights(
         vec!["important", "less_important"],
         vec![0.8, 0.2],
@@ -540,13 +540,13 @@
 // ============================================================================
 
 #[test]
-λ test_procedure_empty() {
+rite test_procedure_empty() {
     ≔ proc = Procedure·new();
     assert_eq(proc.steps.len(), 0);
 }
 
 #[test]
-λ test_procedure_with_steps() {
+rite test_procedure_with_steps() {
     ≔ proc = Procedure·new()
         .step(ProcedureStep·tool_call("read_file", "path.txt"))
         .step(ProcedureStep·respond("File contents: ..."));
@@ -555,13 +555,13 @@
 }
 
 #[test]
-λ test_procedure_with_duration() {
+rite test_procedure_with_duration() {
     ≔ proc = Procedure·new().with_duration(30);
     assert_eq(proc.estimated_duration_secs.unwrap(), 30);
 }
 
 #[test]
-λ test_procedure_step_types() {
+rite test_procedure_step_types() {
     ≔ tool_step = ProcedureStep·tool_call("search", "query");
     ≔ respond_step = ProcedureStep·respond("Hello!");
     ≔ ask_step = ProcedureStep·ask("What do you need?");
@@ -576,7 +576,7 @@
 // ============================================================================
 
 #[test]
-λ test_skill_stats_new() {
+rite test_skill_stats_new() {
     ≔ stats = SkillStats·new();
     assert_eq(stats.execution_count, 0);
     assert_eq(stats.success_count, 0);
@@ -584,7 +584,7 @@
 }
 
 #[test]
-λ test_skill_stats_from_counts() {
+rite test_skill_stats_from_counts() {
     ≔ stats = SkillStats·from_counts(7, 3);
 
     assert_eq(stats.execution_count, 10);
@@ -596,7 +596,7 @@
 }
 
 #[test]
-λ test_skill_stats_zero_executions() {
+rite test_skill_stats_zero_executions() {
     ≔ stats = SkillStats·from_counts(0, 0);
     assert_eq(stats.success_rate, 0.0);
 }
@@ -606,13 +606,13 @@
 // ============================================================================
 
 #[test]
-λ test_procedural_memory_creation() {
+rite test_procedural_memory_creation() {
     ≔ memory = ProceduralMemory·default_memory();
     assert_eq(memory.skill_count(), 0);
 }
 
 #[test]
-λ test_register_skill() {
+rite test_register_skill() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "search_skill")
@@ -623,7 +623,7 @@
 }
 
 #[test]
-λ test_get_skill_by_id() {
+rite test_get_skill_by_id() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(42, "test_skill");
@@ -635,7 +635,7 @@
 }
 
 #[test]
-λ test_get_skill_by_name() {
+rite test_get_skill_by_name() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     memory.register(Skill·new(1, "unique_skill"));
@@ -645,7 +645,7 @@
 }
 
 #[test]
-λ test_get_nonexistent_skill() {
+rite test_get_nonexistent_skill() {
     ≔ memory = ProceduralMemory·default_memory();
     ≔ fake_id = SkillId·new(999);
     ≔ skill = memory.get(&fake_id);
@@ -657,7 +657,7 @@
 // ============================================================================
 
 #[test]
-λ test_match_situation_exact_keywords() {
+rite test_match_situation_exact_keywords() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "search_skill")
@@ -673,7 +673,7 @@
 }
 
 #[test]
-λ test_match_situation_partial_match() {
+rite test_match_situation_partial_match() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "search_skill")
@@ -691,7 +691,7 @@
 }
 
 #[test]
-λ test_match_situation_no_match() {
+rite test_match_situation_no_match() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "search_skill")
@@ -706,7 +706,7 @@
 }
 
 #[test]
-λ test_match_situation_disabled_skills() {
+rite test_match_situation_disabled_skills() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ Δ skill = Skill·new(1, "search_skill")
@@ -722,7 +722,7 @@
 }
 
 #[test]
-λ test_match_situation_ranked_by_success_rate() {
+rite test_match_situation_ranked_by_success_rate() {
     ≔ Δ memory = ProceduralMemory·new(
         ProceduralConfig·default_config().with_match_threshold(0.3)
     );
@@ -753,7 +753,7 @@
 // ============================================================================
 
 #[test]
-λ test_record_success() {
+rite test_record_success() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "test_skill")
@@ -768,7 +768,7 @@
 }
 
 #[test]
-λ test_record_success_updates_duration() {
+rite test_record_success_updates_duration() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "test_skill");
@@ -782,7 +782,7 @@
 }
 
 #[test]
-λ test_record_failure() {
+rite test_record_failure() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "test_skill")
@@ -797,7 +797,7 @@
 }
 
 #[test]
-λ test_record_failure_tracks_failure_mode() {
+rite test_record_failure_tracks_failure_mode() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "test_skill");
@@ -810,7 +810,7 @@
 }
 
 #[test]
-λ test_success_rate_ema_on_success() {
+rite test_success_rate_ema_on_success() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ Δ skill = Skill·new(1, "test_skill");
@@ -827,7 +827,7 @@
 }
 
 #[test]
-λ test_success_rate_ema_on_failure() {
+rite test_success_rate_ema_on_failure() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ Δ skill = Skill·new(1, "test_skill");
@@ -848,7 +848,7 @@
 // ============================================================================
 
 #[test]
-λ test_disable_skill() {
+rite test_disable_skill() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ skill = Skill·new(1, "test_skill");
@@ -862,7 +862,7 @@
 }
 
 #[test]
-λ test_enable_skill() {
+rite test_enable_skill() {
     ≔ Δ memory = ProceduralMemory·default_memory();
 
     ≔ Δ skill = Skill·new(1, "test_skill");
@@ -875,7 +875,7 @@
 }
 
 #[test]
-λ test_disable_nonexistent_skill() {
+rite test_disable_nonexistent_skill() {
     ≔ Δ memory = ProceduralMemory·default_memory();
     ≔ fake_id = SkillId·new(999);
     ≔ result = memory.disable(&fake_id);
@@ -887,7 +887,7 @@
 // ============================================================================
 
 #[test]
-λ test_action_call_tool() {
+rite test_action_call_tool() {
     ≔ action = Action·CallTool {
         tool: "search".to_string(),
         args: "query=test".to_string(),
@@ -901,7 +901,7 @@
 }
 
 #[test]
-λ test_action_ask_user() {
+rite test_action_ask_user() {
     ≔ action = Action·AskUser {
         question: "What would you like?".to_string(),
     };
@@ -914,7 +914,7 @@
 }
 
 #[test]
-λ test_action_respond() {
+rite test_action_respond() {
     ≔ action = Action·Respond {
         template: "Here are the results: {results}".to_string(),
     };
@@ -926,6 +926,6 @@
     assert(is_respond);
 }
 
-λ main() {
+rite main() {
     print("Engram procedural memory tests");
 }

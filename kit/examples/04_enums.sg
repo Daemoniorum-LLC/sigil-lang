@@ -30,7 +30,7 @@
 }
 
 // Function using enum
-λ direction_to_string(d: Direction) → String {
+rite direction_to_string(d: Direction) → String {
     match d {
         Direction·North => "Going North",
         Direction·South => "Going South",
@@ -40,7 +40,7 @@
 }
 
 // Pattern matching with data extraction
-λ process_message(msg: Message) → String {
+rite process_message(msg: Message) → String {
     match msg {
         Message·Text(s) => "Text message: " + s,
         Message·Number(n) => "Number: " + str(n),
@@ -50,7 +50,7 @@
 }
 
 // Using Option for nullable values
-λ find_even(numbers: &[i32]) → Option<i32> {
+rite find_even(numbers: &[i32]) → Option<i32> {
     ∀ n ∈ numbers {
         if n % 2 == 0 {
             return Some(n);
@@ -60,7 +60,7 @@
 }
 
 // Using Result for error handling
-λ divide(a: f64, b: f64) → Result<f64, String> {
+rite divide(a: f64, b: f64) → Result<f64, String> {
     if b == 0.0 {
         Err("Division by zero".to_string())
     } else {
@@ -68,7 +68,7 @@
     }
 }
 
-λ main() {
+rite main() {
     // Simple enum
     ≔ dir = Direction·North;
     println(direction_to_string(dir));

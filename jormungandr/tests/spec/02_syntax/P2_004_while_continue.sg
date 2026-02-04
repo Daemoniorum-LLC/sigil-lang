@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 5.5 While
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ Δ i: !i32 = 0;
     ⟳ i < 5 {
         i = i + 1;

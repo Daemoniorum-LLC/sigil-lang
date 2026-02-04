@@ -1,5 +1,5 @@
 // Test output register
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ result: i64 = 0;
     unsafe {
         asm!("mov rax, 42",

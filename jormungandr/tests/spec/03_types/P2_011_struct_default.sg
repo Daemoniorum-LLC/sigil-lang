@@ -7,7 +7,7 @@
     y: !i32
 }
 
-λ main() {
+rite main() {
     ≔ p: Point = Point { x: 0, y: 0 };
     println(p.x + p.y);
 }

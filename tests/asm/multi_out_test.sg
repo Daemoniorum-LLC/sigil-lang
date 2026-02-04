@@ -1,5 +1,5 @@
 // Test multiple outputs
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ a: i64 = 0;
     ≔ b: i64 = 0;
     unsafe {

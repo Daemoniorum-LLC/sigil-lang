@@ -9,18 +9,18 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 ☉ Σ GoalId { bytes: [u8; 16] }
-λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+rite uuid_v7() -> [u8; 16] { [0u8; 16] }
 
 ⊢ GoalId {
-    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+    ☉ rite new() -> Self { Self { bytes: uuid_v7() } }
 }
 
 ⊢ Clone ∀ GoalId {
-    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+    rite clone(&self) -> Self { Self { bytes: self.bytes } }
 }
 
 ⊢ PartialEq ∀ GoalId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
@@ -28,27 +28,27 @@ invoke std·collections·HashMap;
 ☉ Σ Duration { nanos: u64 }
 
 ⊢ Duration {
-    ☉ λ zero() -> Self { Self { nanos: 0 } }
-    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
-    ☉ λ days(d: u64) -> Self { Self { nanos: d * 86_400_000_000_000 } }
+    ☉ rite zero() -> Self { Self { nanos: 0 } }
+    ☉ rite seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ rite minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ rite hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ rite days(d: u64) -> Self { Self { nanos: d * 86_400_000_000_000 } }
 }
 
 ⊢ Copy ∀ Duration {}
 ⊢ Clone ∀ Duration {
-    λ clone(&self) -> Self { *self }
+    rite clone(&self) -> Self { *self }
 }
 
 ☉ Σ Timestamp { nanos: u64 }
 
 ⊢ Timestamp {
-    ☉ λ now() -> Self { Self { nanos: 1000 } }
+    ☉ rite now() -> Self { Self { nanos: 1000 } }
 }
 
 ⊢ std·ops·Add<Duration> ∀ Timestamp {
     type Output = Self;
-    λ add(self, d: Duration) -> Self {
+    rite add(self, d: Duration) -> Self {
         Self { nanos: self.nanos + d.nanos }
     }
 }
@@ -63,7 +63,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ GoalStatus {
-    ☉ λ is_terminal(&self) -> bool {
+    ☉ rite is_terminal(&self) -> bool {
         ⌥ self {
             GoalStatus·Achieved |
             GoalStatus·Failed { .. } |
@@ -72,7 +72,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ is_actionable(&self) -> bool {
+    ☉ rite is_actionable(&self) -> bool {
         ⌥ self {
             GoalStatus·Pending | GoalStatus·Active => true,
             _ => false,
@@ -83,11 +83,11 @@ invoke std·collections·HashMap;
 ☉ Σ Value { inner: Vec<u8> }
 
 ⊢ Value {
-    ☉ λ empty() -> Self { Self { inner: vec![] } }
+    ☉ rite empty() -> Self { Self { inner: vec![] } }
 }
 
 ⊢ Clone ∀ Value {
-    λ clone(&self) -> Self { Self { inner: self.inner.clone() } }
+    rite clone(&self) -> Self { Self { inner: self.inner.clone() } }
 }
 
 ☉ Σ State {
@@ -95,14 +95,14 @@ invoke std·collections·HashMap;
 }
 
 ⊢ State {
-    ☉ λ new() -> Self { Self { variables: HashMap·new() } }
+    ☉ rite new() -> Self { Self { variables: HashMap·new() } }
 
-    ☉ λ with_var(Δ self, name: &str, value: Value) -> Self {
+    ☉ rite with_var(Δ self, name: &str, value: Value) -> Self {
         self.variables.insert(name.to_string(), value);
         self
     }
 
-    ☉ λ has(&self, name: &str) -> bool {
+    ☉ rite has(&self, name: &str) -> bool {
         self.variables.contains_key(name)
     }
 }
@@ -120,23 +120,23 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Predicate {
-    ☉ λ always_true() -> Self {
+    ☉ rite always_true() -> Self {
         Self { kind: PredicateKind·AlwaysTrue }
     }
 
-    ☉ λ always_false() -> Self {
+    ☉ rite always_false() -> Self {
         Self { kind: PredicateKind·AlwaysFalse }
     }
 
-    ☉ λ has_variable(name: &str) -> Self {
+    ☉ rite has_variable(name: &str) -> Self {
         Self { kind: PredicateKind·HasVariable { name: name.to_string() } }
     }
 
-    ☉ λ custom(description: &str) -> Self {
+    ☉ rite custom(description: &str) -> Self {
         Self { kind: PredicateKind·Custom { description: description.to_string() } }
     }
 
-    ☉ λ evaluate(&self, state: &State) -> bool {
+    ☉ rite evaluate(&self, state: &State) -> bool {
         ⌥ &self.kind {
             PredicateKind·AlwaysTrue => true,
             PredicateKind·AlwaysFalse => false,
@@ -145,7 +145,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ description(&self) -> String {
+    ☉ rite description(&self) -> String {
         ⌥ &self.kind {
             PredicateKind·AlwaysTrue => "always_true".to_string(),
             PredicateKind·AlwaysFalse => "always_false".to_string(),
@@ -170,14 +170,14 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Constraint {
-    ☉ λ deadline(duration: Duration) -> Self {
+    ☉ rite deadline(duration: Duration) -> Self {
         Self {
             name: "deadline".to_string(),
             kind: ConstraintKind·Deadline { duration },
         }
     }
 
-    ☉ λ resource_limit(resource: &str, max: f32) -> Self {
+    ☉ rite resource_limit(resource: &str, max: f32) -> Self {
         Self {
             name: format!("resource_{}", resource),
             kind: ConstraintKind·ResourceLimit {
@@ -187,14 +187,14 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ no_side_effects() -> Self {
+    ☉ rite no_side_effects() -> Self {
         Self {
             name: "no_side_effects".to_string(),
             kind: ConstraintKind·NoSideEffects,
         }
     }
 
-    ☉ λ requires_capability(capability: &str) -> Self {
+    ☉ rite requires_capability(capability: &str) -> Self {
         Self {
             name: format!("requires_{}", capability),
             kind: ConstraintKind·RequiresCapability {
@@ -203,14 +203,14 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ custom(name: &str, description: &str) -> Self {
+    ☉ rite custom(name: &str, description: &str) -> Self {
         Self {
             name: name.to_string(),
             kind: ConstraintKind·Custom { description: description.to_string() },
         }
     }
 
-    ☉ λ is_deadline(&self) -> bool {
+    ☉ rite is_deadline(&self) -> bool {
         ⌥ self.kind {
             ConstraintKind·Deadline { .. } => true,
             _ => false,
@@ -230,7 +230,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Goal {
-    ☉ λ new(description: &str) -> Self {
+    ☉ rite new(description: &str) -> Self {
         Self {
             id: GoalId·new(),
             description: description.to_string(),
@@ -243,70 +243,70 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_priority(Δ self, priority: f32) -> Self {
+    ☉ rite with_priority(Δ self, priority: f32) -> Self {
         self.priority = priority.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_deadline(Δ self, duration: Duration) -> Self {
+    ☉ rite with_deadline(Δ self, duration: Duration) -> Self {
         self.deadline = Some(Timestamp·now() + duration);
         self
     }
 
-    ☉ λ with_constraint(Δ self, constraint: Constraint) -> Self {
+    ☉ rite with_constraint(Δ self, constraint: Constraint) -> Self {
         self.constraints.push(constraint);
         self
     }
 
-    ☉ λ with_success(Δ self, predicate: Predicate) -> Self {
+    ☉ rite with_success(Δ self, predicate: Predicate) -> Self {
         self.success = predicate;
         self
     }
 
-    ☉ λ with_parent(Δ self, parent: GoalId) -> Self {
+    ☉ rite with_parent(Δ self, parent: GoalId) -> Self {
         self.parent = Some(parent);
         self
     }
 
-    ☉ λ activate(&Δ self) {
+    ☉ rite activate(&Δ self) {
         self.status = GoalStatus·Active;
     }
 
-    ☉ λ block(&Δ self, reason: &str) {
+    ☉ rite block(&Δ self, reason: &str) {
         self.status = GoalStatus·Blocked { reason: reason.to_string() };
     }
 
-    ☉ λ achieve(&Δ self) {
+    ☉ rite achieve(&Δ self) {
         self.status = GoalStatus·Achieved;
     }
 
-    ☉ λ fail(&Δ self, reason: &str) {
+    ☉ rite fail(&Δ self, reason: &str) {
         self.status = GoalStatus·Failed { reason: reason.to_string() };
     }
 
-    ☉ λ abandon(&Δ self, reason: &str) {
+    ☉ rite abandon(&Δ self, reason: &str) {
         self.status = GoalStatus·Abandoned { reason: reason.to_string() };
     }
 
-    ☉ λ is_achieved(&self) -> bool {
+    ☉ rite is_achieved(&self) -> bool {
         ⌥ self.status {
             GoalStatus·Achieved => true,
             _ => false,
         }
     }
 
-    ☉ λ is_active(&self) -> bool {
+    ☉ rite is_active(&self) -> bool {
         ⌥ self.status {
             GoalStatus·Active => true,
             _ => false,
         }
     }
 
-    ☉ λ has_deadline(&self) -> bool {
+    ☉ rite has_deadline(&self) -> bool {
         self.deadline.is_some()
     }
 
-    ☉ λ is_subgoal(&self) -> bool {
+    ☉ rite is_subgoal(&self) -> bool {
         self.parent.is_some()
     }
 }
@@ -317,59 +317,59 @@ invoke std·collections·HashMap;
 }
 
 ⊢ GoalManager {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             goals: HashMap·new(),
             id_counter: 0,
         }
     }
 
-    ☉ λ add(&Δ self, goal: Goal) -> String {
+    ☉ rite add(&Δ self, goal: Goal) -> String {
         ≔ key = format!("goal_{}", self.id_counter);
         self.id_counter += 1;
         self.goals.insert(key.clone(), goal);
         key
     }
 
-    ☉ λ get(&self, key: &str) -> Option<&Goal> {
+    ☉ rite get(&self, key: &str) -> Option<&Goal> {
         self.goals.get(key)
     }
 
-    ☉ λ get_mut(&Δ self, key: &str) -> Option<&Δ Goal> {
+    ☉ rite get_mut(&Δ self, key: &str) -> Option<&Δ Goal> {
         self.goals.get_mut(key)
     }
 
-    ☉ λ current(&self) -> Option<&Goal> {
+    ☉ rite current(&self) -> Option<&Goal> {
         self.goals.values()
             .filter(|g| matches!(g.status, GoalStatus·Active))
             .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
     }
 
-    ☉ λ pending(&self) -> Vec<&Goal> {
+    ☉ rite pending(&self) -> Vec<&Goal> {
         self.goals.values()
             .filter(|g| matches!(g.status, GoalStatus·Pending))
             .collect()
     }
 
-    ☉ λ active(&self) -> Vec<&Goal> {
+    ☉ rite active(&self) -> Vec<&Goal> {
         self.goals.values()
             .filter(|g| matches!(g.status, GoalStatus·Active))
             .collect()
     }
 
-    ☉ λ count(&self) -> usize {
+    ☉ rite count(&self) -> usize {
         self.goals.len()
     }
 
-    ☉ λ count_active(&self) -> usize {
+    ☉ rite count_active(&self) -> usize {
         self.active().len()
     }
 
-    ☉ λ count_pending(&self) -> usize {
+    ☉ rite count_pending(&self) -> usize {
         self.pending().len()
     }
 
-    ☉ λ highest_priority(&self) -> Option<&Goal> {
+    ☉ rite highest_priority(&self) -> Option<&Goal> {
         self.goals.values()
             .filter(|g| g.status.is_actionable())
             .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
@@ -381,42 +381,42 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_goal_status_pending() {
+rite test_goal_status_pending() {
     ≔ status = GoalStatus·Pending;
     assert(!status.is_terminal());
     assert(status.is_actionable());
 }
 
 #[test]
-λ test_goal_status_active() {
+rite test_goal_status_active() {
     ≔ status = GoalStatus·Active;
     assert(!status.is_terminal());
     assert(status.is_actionable());
 }
 
 #[test]
-λ test_goal_status_blocked() {
+rite test_goal_status_blocked() {
     ≔ status = GoalStatus·Blocked { reason: "waiting".to_string() };
     assert(!status.is_terminal());
     assert(!status.is_actionable());
 }
 
 #[test]
-λ test_goal_status_achieved() {
+rite test_goal_status_achieved() {
     ≔ status = GoalStatus·Achieved;
     assert(status.is_terminal());
     assert(!status.is_actionable());
 }
 
 #[test]
-λ test_goal_status_failed() {
+rite test_goal_status_failed() {
     ≔ status = GoalStatus·Failed { reason: "error".to_string() };
     assert(status.is_terminal());
     assert(!status.is_actionable());
 }
 
 #[test]
-λ test_goal_status_abandoned() {
+rite test_goal_status_abandoned() {
     ≔ status = GoalStatus·Abandoned { reason: "deprioritized".to_string() };
     assert(status.is_terminal());
     assert(!status.is_actionable());
@@ -427,41 +427,41 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_predicate_always_true() {
+rite test_predicate_always_true() {
     ≔ p = Predicate·always_true();
     ≔ state = State·new();
     assert(p.evaluate(&state));
 }
 
 #[test]
-λ test_predicate_always_false() {
+rite test_predicate_always_false() {
     ≔ p = Predicate·always_false();
     ≔ state = State·new();
     assert(!p.evaluate(&state));
 }
 
 #[test]
-λ test_predicate_has_variable_present() {
+rite test_predicate_has_variable_present() {
     ≔ p = Predicate·has_variable("x");
     ≔ state = State·new().with_var("x", Value·empty());
     assert(p.evaluate(&state));
 }
 
 #[test]
-λ test_predicate_has_variable_missing() {
+rite test_predicate_has_variable_missing() {
     ≔ p = Predicate·has_variable("x");
     ≔ state = State·new();
     assert(!p.evaluate(&state));
 }
 
 #[test]
-λ test_predicate_custom() {
+rite test_predicate_custom() {
     ≔ p = Predicate·custom("user is authenticated");
     assert_eq(p.description(), "user is authenticated");
 }
 
 #[test]
-λ test_predicate_description_always_true() {
+rite test_predicate_description_always_true() {
     ≔ p = Predicate·always_true();
     assert_eq(p.description(), "always_true");
 }
@@ -471,33 +471,33 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_constraint_deadline() {
+rite test_constraint_deadline() {
     ≔ c = Constraint·deadline(Duration·hours(2));
     assert_eq(c.name, "deadline");
     assert(c.is_deadline());
 }
 
 #[test]
-λ test_constraint_resource_limit() {
+rite test_constraint_resource_limit() {
     ≔ c = Constraint·resource_limit("memory", 1024.0);
     assert_eq(c.name, "resource_memory");
     assert(!c.is_deadline());
 }
 
 #[test]
-λ test_constraint_no_side_effects() {
+rite test_constraint_no_side_effects() {
     ≔ c = Constraint·no_side_effects();
     assert_eq(c.name, "no_side_effects");
 }
 
 #[test]
-λ test_constraint_requires_capability() {
+rite test_constraint_requires_capability() {
     ≔ c = Constraint·requires_capability("network_access");
     assert_eq(c.name, "requires_network_access");
 }
 
 #[test]
-λ test_constraint_custom() {
+rite test_constraint_custom() {
     ≔ c = Constraint·custom("budget", "stay under $100");
     assert_eq(c.name, "budget");
 }
@@ -507,51 +507,51 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_goal_new() {
+rite test_goal_new() {
     ≔ g = Goal·new("complete the task");
     assert_eq(g.description, "complete the task");
     assert_eq(g.priority, 0.5);
 }
 
 #[test]
-λ test_goal_with_priority() {
+rite test_goal_with_priority() {
     ≔ g = Goal·new("urgent").with_priority(0.9);
     assert_eq(g.priority, 0.9);
 }
 
 #[test]
-λ test_goal_priority_clamped_high() {
+rite test_goal_priority_clamped_high() {
     ≔ g = Goal·new("test").with_priority(1.5);
     assert_eq(g.priority, 1.0);
 }
 
 #[test]
-λ test_goal_priority_clamped_low() {
+rite test_goal_priority_clamped_low() {
     ≔ g = Goal·new("test").with_priority(-0.5);
     assert_eq(g.priority, 0.0);
 }
 
 #[test]
-λ test_goal_with_deadline() {
+rite test_goal_with_deadline() {
     ≔ g = Goal·new("timed task").with_deadline(Duration·hours(1));
     assert(g.has_deadline());
 }
 
 #[test]
-λ test_goal_without_deadline() {
+rite test_goal_without_deadline() {
     ≔ g = Goal·new("open ended");
     assert(!g.has_deadline());
 }
 
 #[test]
-λ test_goal_with_constraint() {
+rite test_goal_with_constraint() {
     ≔ g = Goal·new("constrained")
         .with_constraint(Constraint·no_side_effects());
     assert_eq(g.constraints.len(), 1);
 }
 
 #[test]
-λ test_goal_multiple_constraints() {
+rite test_goal_multiple_constraints() {
     ≔ g = Goal·new("multi-constrained")
         .with_constraint(Constraint·deadline(Duration·hours(1)))
         .with_constraint(Constraint·resource_limit("cpu", 80.0))
@@ -560,7 +560,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_with_success_predicate() {
+rite test_goal_with_success_predicate() {
     ≔ g = Goal·new("checkable")
         .with_success(Predicate·has_variable("result"));
     ≔ state = State·new().with_var("result", Value·empty());
@@ -568,27 +568,27 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_with_parent() {
+rite test_goal_with_parent() {
     ≔ parent = GoalId·new();
     ≔ g = Goal·new("subgoal").with_parent(parent);
     assert(g.is_subgoal());
 }
 
 #[test]
-λ test_goal_not_subgoal() {
+rite test_goal_not_subgoal() {
     ≔ g = Goal·new("top level");
     assert(!g.is_subgoal());
 }
 
 #[test]
-λ test_goal_activate() {
+rite test_goal_activate() {
     ≔ Δ g = Goal·new("task");
     g.activate();
     assert(g.is_active());
 }
 
 #[test]
-λ test_goal_block() {
+rite test_goal_block() {
     ≔ Δ g = Goal·new("task");
     g.activate();
     g.block("waiting ∀ input");
@@ -600,7 +600,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_achieve() {
+rite test_goal_achieve() {
     ≔ Δ g = Goal·new("task");
     g.activate();
     g.achieve();
@@ -608,7 +608,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_fail() {
+rite test_goal_fail() {
     ≔ Δ g = Goal·new("task");
     g.activate();
     g.fail("ran out of time");
@@ -620,7 +620,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_abandon() {
+rite test_goal_abandon() {
     ≔ Δ g = Goal·new("task");
     g.abandon("no longer needed");
     ≔ is_abandoned = ⌥ g.status {
@@ -635,20 +635,20 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_goal_manager_new() {
+rite test_goal_manager_new() {
     ≔ mgr = GoalManager·new();
     assert_eq(mgr.count(), 0);
 }
 
 #[test]
-λ test_goal_manager_add() {
+rite test_goal_manager_add() {
     ≔ Δ mgr = GoalManager·new();
     mgr.add(Goal·new("first goal"));
     assert_eq(mgr.count(), 1);
 }
 
 #[test]
-λ test_goal_manager_get() {
+rite test_goal_manager_get() {
     ≔ Δ mgr = GoalManager·new();
     ≔ key = mgr.add(Goal·new("retrievable"));
     ≔ g = mgr.get(&key);
@@ -657,7 +657,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_get_mut() {
+rite test_goal_manager_get_mut() {
     ≔ Δ mgr = GoalManager·new();
     ≔ key = mgr.add(Goal·new("mutable"));
     ⎇ ≔ Some(g) = mgr.get_mut(&key) {
@@ -667,13 +667,13 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_current_none() {
+rite test_goal_manager_current_none() {
     ≔ mgr = GoalManager·new();
     assert(mgr.current().is_none());
 }
 
 #[test]
-λ test_goal_manager_current_active() {
+rite test_goal_manager_current_active() {
     ≔ Δ mgr = GoalManager·new();
     ≔ key = mgr.add(Goal·new("active goal").with_priority(0.8));
     mgr.get_mut(&key).unwrap().activate();
@@ -683,7 +683,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_current_highest_priority() {
+rite test_goal_manager_current_highest_priority() {
     ≔ Δ mgr = GoalManager·new();
     ≔ k1 = mgr.add(Goal·new("low priority").with_priority(0.3));
     ≔ k2 = mgr.add(Goal·new("high priority").with_priority(0.9));
@@ -694,7 +694,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_pending() {
+rite test_goal_manager_pending() {
     ≔ Δ mgr = GoalManager·new();
     mgr.add(Goal·new("pending 1"));
     mgr.add(Goal·new("pending 2"));
@@ -704,7 +704,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_active() {
+rite test_goal_manager_active() {
     ≔ Δ mgr = GoalManager·new();
     ≔ k1 = mgr.add(Goal·new("active 1"));
     ≔ k2 = mgr.add(Goal·new("active 2"));
@@ -715,7 +715,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_count_active() {
+rite test_goal_manager_count_active() {
     ≔ Δ mgr = GoalManager·new();
     ≔ key = mgr.add(Goal·new("the one"));
     mgr.get_mut(&key).unwrap().activate();
@@ -724,7 +724,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_count_pending() {
+rite test_goal_manager_count_pending() {
     ≔ Δ mgr = GoalManager·new();
     mgr.add(Goal·new("p1"));
     mgr.add(Goal·new("p2"));
@@ -734,7 +734,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_highest_priority() {
+rite test_goal_manager_highest_priority() {
     ≔ Δ mgr = GoalManager·new();
     mgr.add(Goal·new("low").with_priority(0.2));
     mgr.add(Goal·new("medium").with_priority(0.5));
@@ -745,7 +745,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_goal_manager_highest_priority_excludes_terminal() {
+rite test_goal_manager_highest_priority_excludes_terminal() {
     ≔ Δ mgr = GoalManager·new();
     ≔ k1 = mgr.add(Goal·new("achieved").with_priority(0.9));
     mgr.add(Goal·new("pending").with_priority(0.5));
@@ -754,6 +754,6 @@ invoke std·collections·HashMap;
     assert_eq(highest.unwrap().description, "pending");
 }
 
-λ main() {
+rite main() {
     print("Omen goals tests");
 }

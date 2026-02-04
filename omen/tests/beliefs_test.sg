@@ -9,18 +9,18 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 ☉ Σ BeliefId { bytes: [u8; 16] }
-λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+rite uuid_v7() -> [u8; 16] { [0u8; 16] }
 
 ⊢ BeliefId {
-    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+    ☉ rite new() -> Self { Self { bytes: uuid_v7() } }
 }
 
 ⊢ Clone ∀ BeliefId {
-    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+    rite clone(&self) -> Self { Self { bytes: self.bytes } }
 }
 
 ⊢ PartialEq ∀ BeliefId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
@@ -36,7 +36,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Epistemic {
-    ☉ λ rank(&self) -> u8 {
+    ☉ rite rank(&self) -> u8 {
         ⌥ self {
             Epistemic·Axiomatic => 5,
             Epistemic·Observed => 4,
@@ -51,7 +51,7 @@ invoke std·collections·HashMap;
 ☉ Σ Timestamp { nanos: u64 }
 
 ⊢ Timestamp {
-    ☉ λ now() -> Self { Self { nanos: 1000 } }
+    ☉ rite now() -> Self { Self { nanos: 1000 } }
 }
 
 ☉ Σ Proposition {
@@ -62,7 +62,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Proposition {
-    ☉ λ simple(text: &str) -> Self {
+    ☉ rite simple(text: &str) -> Self {
         Self {
             subject: text.to_string(),
             predicate: "is_true".to_string(),
@@ -71,7 +71,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_predicate(subject: &str, predicate: &str) -> Self {
+    ☉ rite with_predicate(subject: &str, predicate: &str) -> Self {
         Self {
             subject: subject.to_string(),
             predicate: predicate.to_string(),
@@ -80,7 +80,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ relation(subject: &str, predicate: &str, value: &str) -> Self {
+    ☉ rite relation(subject: &str, predicate: &str, value: &str) -> Self {
         Self {
             subject: subject.to_string(),
             predicate: predicate.to_string(),
@@ -89,18 +89,18 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ negate(Δ self) -> Self {
+    ☉ rite negate(Δ self) -> Self {
         self.negated = !self.negated;
         self
     }
 
-    ☉ λ negates(&self, other: &Proposition) -> bool {
+    ☉ rite negates(&self, other: &Proposition) -> bool {
         self.subject == other.subject &&
         self.predicate == other.predicate &&
         self.negated != other.negated
     }
 
-    ☉ λ matches(&self, other: &Proposition) -> bool {
+    ☉ rite matches(&self, other: &Proposition) -> bool {
         self.subject == other.subject &&
         self.predicate == other.predicate &&
         self.negated == other.negated
@@ -108,7 +108,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Clone ∀ Proposition {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             subject: self.subject.clone(),
             predicate: self.predicate.clone(),
@@ -125,7 +125,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Evidence {
-    ☉ λ new(content: &str, source: &str, strength: f32) -> Self {
+    ☉ rite new(content: &str, source: &str, strength: f32) -> Self {
         Self {
             content: content.to_string(),
             source: source.to_string(),
@@ -133,17 +133,17 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ strong(content: &str, source: &str) -> Self {
+    ☉ rite strong(content: &str, source: &str) -> Self {
         Self·new(content, source, 0.9)
     }
 
-    ☉ λ weak(content: &str, source: &str) -> Self {
+    ☉ rite weak(content: &str, source: &str) -> Self {
         Self·new(content, source, 0.3)
     }
 }
 
 ⊢ Clone ∀ Evidence {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             content: self.content.clone(),
             source: self.source.clone(),
@@ -161,7 +161,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Clone ∀ BeliefSource {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             BeliefSource·Observation => BeliefSource·Observation,
             BeliefSource·Inference { premises } => BeliefSource·Inference {
@@ -185,7 +185,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Belief {
-    ☉ λ observed(proposition: &str) -> Self {
+    ☉ rite observed(proposition: &str) -> Self {
         Self {
             id: BeliefId·new(),
             proposition: Proposition·simple(proposition),
@@ -197,7 +197,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ inferred(proposition: &str, confidence: f32) -> Self {
+    ☉ rite inferred(proposition: &str, confidence: f32) -> Self {
         Self {
             id: BeliefId·new(),
             proposition: Proposition·simple(proposition),
@@ -209,7 +209,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ axiom(proposition: &str) -> Self {
+    ☉ rite axiom(proposition: &str) -> Self {
         Self {
             id: BeliefId·new(),
             proposition: Proposition·simple(proposition),
@@ -221,7 +221,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ reported(proposition: &str, source: &str) -> Self {
+    ☉ rite reported(proposition: &str, source: &str) -> Self {
         Self {
             id: BeliefId·new(),
             proposition: Proposition·simple(proposition),
@@ -233,26 +233,26 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_evidence(Δ self, evidence: Evidence) -> Self {
+    ☉ rite with_evidence(Δ self, evidence: Evidence) -> Self {
         self.evidence.push(evidence);
         self
     }
 
-    ☉ λ contradicts(&self, other: &Belief) -> bool {
+    ☉ rite contradicts(&self, other: &Belief) -> bool {
         self.proposition.negates(&other.proposition)
     }
 
-    ☉ λ is_certain(&self) -> bool {
+    ☉ rite is_certain(&self) -> bool {
         self.confidence >= 0.99
     }
 
-    ☉ λ is_probable(&self) -> bool {
+    ☉ rite is_probable(&self) -> bool {
         self.confidence >= 0.5
     }
 }
 
 ⊢ Clone ∀ Belief {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             id: self.id.clone(),
             proposition: self.proposition.clone(),
@@ -272,7 +272,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ BeliefManager {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             beliefs: HashMap·new(),
             by_subject: HashMap·new(),
@@ -280,7 +280,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ add(&Δ self, belief: Belief) -> String {
+    ☉ rite add(&Δ self, belief: Belief) -> String {
         ≔ key = format!("belief_{}", self.id_counter);
         self.id_counter += 1;
 
@@ -293,16 +293,16 @@ invoke std·collections·HashMap;
         key
     }
 
-    ☉ λ get(&self, key: &str) -> Option<&Belief> {
+    ☉ rite get(&self, key: &str) -> Option<&Belief> {
         self.beliefs.get(key)
     }
 
-    ☉ λ holds(&self, proposition: &str) -> bool {
+    ☉ rite holds(&self, proposition: &str) -> bool {
         self.beliefs.values()
             .any(|b| b.proposition.subject == proposition && b.confidence > 0.5)
     }
 
-    ☉ λ about(&self, topic: &str) -> Vec<&Belief> {
+    ☉ rite about(&self, topic: &str) -> Vec<&Belief> {
         self.by_subject.get(topic)
             .map(|keys| keys.iter()
                 .filter_map(|k| self.beliefs.get(k))
@@ -310,11 +310,11 @@ invoke std·collections·HashMap;
             .unwrap_or_default()
     }
 
-    ☉ λ count(&self) -> usize {
+    ☉ rite count(&self) -> usize {
         self.beliefs.len()
     }
 
-    ☉ λ revise_with_evidence(&Δ self, evidence: Evidence) {
+    ☉ rite revise_with_evidence(&Δ self, evidence: Evidence) {
         ∀ belief ∈ self.beliefs.values_mut() {
             ⎇ belief.proposition.subject.contains(&evidence.content) {
                 belief.confidence = (belief.confidence + evidence.strength) / 2.0;
@@ -323,11 +323,11 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ remove(&Δ self, key: &str) -> Option<Belief> {
+    ☉ rite remove(&Δ self, key: &str) -> Option<Belief> {
         self.beliefs.remove(key)
     }
 
-    ☉ λ strongest_about(&self, topic: &str) -> Option<&Belief> {
+    ☉ rite strongest_about(&self, topic: &str) -> Option<&Belief> {
         self.about(topic)
             .into_iter()
             .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap())
@@ -339,7 +339,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_proposition_simple() {
+rite test_proposition_simple() {
     ≔ p = Proposition·simple("sky is blue");
     assert_eq(p.subject, "sky is blue");
     assert_eq(p.predicate, "is_true");
@@ -347,14 +347,14 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_proposition_with_predicate() {
+rite test_proposition_with_predicate() {
     ≔ p = Proposition·with_predicate("agent", "is_ready");
     assert_eq(p.subject, "agent");
     assert_eq(p.predicate, "is_ready");
 }
 
 #[test]
-λ test_proposition_relation() {
+rite test_proposition_relation() {
     ≔ p = Proposition·relation("Alice", "knows", "Bob");
     assert_eq(p.subject, "Alice");
     assert_eq(p.predicate, "knows");
@@ -362,19 +362,19 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_proposition_negate() {
+rite test_proposition_negate() {
     ≔ p = Proposition·simple("it is raining").negate();
     assert(p.negated);
 }
 
 #[test]
-λ test_proposition_double_negate() {
+rite test_proposition_double_negate() {
     ≔ p = Proposition·simple("it is raining").negate().negate();
     assert(!p.negated);
 }
 
 #[test]
-λ test_proposition_negates() {
+rite test_proposition_negates() {
     ≔ p1 = Proposition·simple("raining");
     ≔ p2 = Proposition·simple("raining").negate();
     assert(p1.negates(&p2));
@@ -382,21 +382,21 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_proposition_not_negates_different() {
+rite test_proposition_not_negates_different() {
     ≔ p1 = Proposition·simple("raining");
     ≔ p2 = Proposition·simple("sunny");
     assert(!p1.negates(&p2));
 }
 
 #[test]
-λ test_proposition_matches() {
+rite test_proposition_matches() {
     ≔ p1 = Proposition·simple("x");
     ≔ p2 = Proposition·simple("x");
     assert(p1.matches(&p2));
 }
 
 #[test]
-λ test_proposition_clone() {
+rite test_proposition_clone() {
     ≔ p1 = Proposition·relation("A", "likes", "B");
     ≔ p2 = p1.clone();
     assert_eq(p1.subject, p2.subject);
@@ -408,7 +408,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_evidence_new() {
+rite test_evidence_new() {
     ≔ e = Evidence·new("observation data", "sensor", 0.8);
     assert_eq(e.content, "observation data");
     assert_eq(e.source, "sensor");
@@ -416,25 +416,25 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_evidence_strong() {
+rite test_evidence_strong() {
     ≔ e = Evidence·strong("direct observation", "camera");
     assert_eq(e.strength, 0.9);
 }
 
 #[test]
-λ test_evidence_weak() {
+rite test_evidence_weak() {
     ≔ e = Evidence·weak("rumor", "gossip");
     assert_eq(e.strength, 0.3);
 }
 
 #[test]
-λ test_evidence_strength_clamped() {
+rite test_evidence_strength_clamped() {
     ≔ e = Evidence·new("data", "source", 1.5);
     assert_eq(e.strength, 1.0);
 }
 
 #[test]
-λ test_evidence_clone() {
+rite test_evidence_clone() {
     ≔ e1 = Evidence·new("data", "src", 0.5);
     ≔ e2 = e1.clone();
     assert_eq(e1.strength, e2.strength);
@@ -445,7 +445,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_belief_source_observation() {
+rite test_belief_source_observation() {
     ≔ src = BeliefSource·Observation;
     ≔ is_observation = ⌥ src {
         BeliefSource·Observation => true,
@@ -455,7 +455,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_source_inference() {
+rite test_belief_source_inference() {
     ≔ premise = BeliefId·new();
     ≔ src = BeliefSource·Inference { premises: vec![premise] };
     ≔ is_inference = ⌥ src {
@@ -466,7 +466,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_source_testimony() {
+rite test_belief_source_testimony() {
     ≔ src = BeliefSource·Testimony { source: "witness".to_string() };
     ≔ is_testimony = ⌥ src {
         BeliefSource·Testimony { .. } => true,
@@ -476,7 +476,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_source_assumption() {
+rite test_belief_source_assumption() {
     ≔ src = BeliefSource·Assumption;
     ≔ is_assumption = ⌥ src {
         BeliefSource·Assumption => true,
@@ -486,7 +486,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_source_axiom() {
+rite test_belief_source_axiom() {
     ≔ src = BeliefSource·Axiom;
     ≔ is_axiom = ⌥ src {
         BeliefSource·Axiom => true,
@@ -496,7 +496,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_source_clone() {
+rite test_belief_source_clone() {
     ≔ src = BeliefSource·Testimony { source: "expert".to_string() };
     ≔ cloned = src.clone();
     ≔ matches = ⌥ cloned {
@@ -511,42 +511,42 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_belief_observed() {
+rite test_belief_observed() {
     ≔ b = Belief·observed("the door is open");
     assert_eq(b.epistemic, Epistemic·Observed);
     assert_eq(b.confidence, 0.95);
 }
 
 #[test]
-λ test_belief_inferred() {
+rite test_belief_inferred() {
     ≔ b = Belief·inferred("it will rain", 0.7);
     assert_eq(b.epistemic, Epistemic·Inferred);
     assert_eq(b.confidence, 0.7);
 }
 
 #[test]
-λ test_belief_axiom() {
+rite test_belief_axiom() {
     ≔ b = Belief·axiom("1 + 1 = 2");
     assert_eq(b.epistemic, Epistemic·Axiomatic);
     assert_eq(b.confidence, 1.0);
 }
 
 #[test]
-λ test_belief_reported() {
+rite test_belief_reported() {
     ≔ b = Belief·reported("the meeting is at 3pm", "calendar");
     assert_eq(b.epistemic, Epistemic·Reported);
     assert_eq(b.confidence, 0.7);
 }
 
 #[test]
-λ test_belief_with_evidence() {
+rite test_belief_with_evidence() {
     ≔ b = Belief·observed("sensor reading high")
         .with_evidence(Evidence·strong("measurement", "thermometer"));
     assert_eq(b.evidence.len(), 1);
 }
 
 #[test]
-λ test_belief_contradicts() {
+rite test_belief_contradicts() {
     ≔ b1 = Belief·observed("door is open");
     ≔ Δ b2 = Belief·observed("door is open");
     b2.proposition = b2.proposition.negate();
@@ -554,45 +554,45 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_not_contradicts() {
+rite test_belief_not_contradicts() {
     ≔ b1 = Belief·observed("door is open");
     ≔ b2 = Belief·observed("window is open");
     assert(!b1.contradicts(&b2));
 }
 
 #[test]
-λ test_belief_is_certain() {
+rite test_belief_is_certain() {
     ≔ b = Belief·axiom("truth");
     assert(b.is_certain());
 }
 
 #[test]
-λ test_belief_not_certain() {
+rite test_belief_not_certain() {
     ≔ b = Belief·inferred("maybe", 0.6);
     assert(!b.is_certain());
 }
 
 #[test]
-λ test_belief_is_probable() {
+rite test_belief_is_probable() {
     ≔ b = Belief·inferred("likely", 0.6);
     assert(b.is_probable());
 }
 
 #[test]
-λ test_belief_not_probable() {
+rite test_belief_not_probable() {
     ≔ b = Belief·inferred("unlikely", 0.3);
     assert(!b.is_probable());
 }
 
 #[test]
-λ test_belief_clone() {
+rite test_belief_clone() {
     ≔ b1 = Belief·observed("fact");
     ≔ b2 = b1.clone();
     assert_eq(b1.confidence, b2.confidence);
 }
 
 #[test]
-λ test_belief_confidence_clamped() {
+rite test_belief_confidence_clamped() {
     ≔ b = Belief·inferred("test", 1.5);
     assert_eq(b.confidence, 1.0);
 }
@@ -602,20 +602,20 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_belief_manager_new() {
+rite test_belief_manager_new() {
     ≔ mgr = BeliefManager·new();
     assert_eq(mgr.count(), 0);
 }
 
 #[test]
-λ test_belief_manager_add() {
+rite test_belief_manager_add() {
     ≔ Δ mgr = BeliefManager·new();
     mgr.add(Belief·observed("test"));
     assert_eq(mgr.count(), 1);
 }
 
 #[test]
-λ test_belief_manager_get() {
+rite test_belief_manager_get() {
     ≔ Δ mgr = BeliefManager·new();
     ≔ key = mgr.add(Belief·observed("fact"));
     ≔ b = mgr.get(&key);
@@ -623,21 +623,21 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_manager_holds() {
+rite test_belief_manager_holds() {
     ≔ Δ mgr = BeliefManager·new();
     mgr.add(Belief·observed("the sky is blue"));
     assert(mgr.holds("the sky is blue"));
 }
 
 #[test]
-λ test_belief_manager_not_holds_low_confidence() {
+rite test_belief_manager_not_holds_low_confidence() {
     ≔ Δ mgr = BeliefManager·new();
     mgr.add(Belief·inferred("uncertain thing", 0.3));
     assert(!mgr.holds("uncertain thing"));
 }
 
 #[test]
-λ test_belief_manager_about() {
+rite test_belief_manager_about() {
     ≔ Δ mgr = BeliefManager·new();
     mgr.add(Belief·observed("weather"));
     mgr.add(Belief·observed("weather"));
@@ -646,14 +646,14 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_manager_about_empty() {
+rite test_belief_manager_about_empty() {
     ≔ mgr = BeliefManager·new();
     ≔ beliefs = mgr.about("nothing");
     assert_eq(beliefs.len(), 0);
 }
 
 #[test]
-λ test_belief_manager_revise_with_evidence() {
+rite test_belief_manager_revise_with_evidence() {
     ≔ Δ mgr = BeliefManager·new();
     mgr.add(Belief·inferred("topic evidence", 0.5));
     mgr.revise_with_evidence(Evidence·strong("evidence", "source"));
@@ -663,7 +663,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_manager_remove() {
+rite test_belief_manager_remove() {
     ≔ Δ mgr = BeliefManager·new();
     ≔ key = mgr.add(Belief·observed("temporary"));
     assert_eq(mgr.count(), 1);
@@ -672,7 +672,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_manager_strongest_about() {
+rite test_belief_manager_strongest_about() {
     ≔ Δ mgr = BeliefManager·new();
     mgr.add(Belief·inferred("topic", 0.3));
     mgr.add(Belief·observed("topic"));  // confidence 0.95
@@ -682,7 +682,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_belief_manager_multiple_topics() {
+rite test_belief_manager_multiple_topics() {
     ≔ Δ mgr = BeliefManager·new();
     mgr.add(Belief·observed("topic_a"));
     mgr.add(Belief·observed("topic_b"));
@@ -692,6 +692,6 @@ invoke std·collections·HashMap;
     assert_eq(mgr.about("topic_b").len(), 1);
 }
 
-λ main() {
+rite main() {
     print("Omen beliefs tests");
 }

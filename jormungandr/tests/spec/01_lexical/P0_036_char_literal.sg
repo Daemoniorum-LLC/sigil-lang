@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print A
 
-λ main() {
+rite main() {
     ≔ c: !char = 'A';
     println(c);
 }

@@ -2,7 +2,7 @@
 // Spec: 04-MEMORY.md § 2.3 Rc
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ a: Rc<i32> = Rc·new(42);
     println(*a);
     println(*a);

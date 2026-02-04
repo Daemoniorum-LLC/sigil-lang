@@ -29,15 +29,15 @@ invoke crate·error·BasilicaError;
 /// Middleware trait
 ☉ Θ Middleware: Send + Sync {
     /// Process request before handler
-    λ before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
+    rite before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
         MiddlewareResult·Continue
     }
 
     /// Process response after handler
-    λ after(&self, req: &Request, res: &Δ Response<Vec<u8>>, ctx: &Context) {}
+    rite after(&self, req: &Request, res: &Δ Response<Vec<u8>>, ctx: &Context) {}
 
     /// Handle errors
-    λ on_error(&self, req: &Request, err: &BasilicaError, ctx: &Context) -> Option<Response<Vec<u8>>> {
+    rite on_error(&self, req: &Request, err: &BasilicaError, ctx: &Context) -> Option<Response<Vec<u8>>> {
         None
     }
 }
@@ -48,22 +48,22 @@ invoke crate·error·BasilicaError;
 }
 
 ⊢ MiddlewareChain {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { middleware: vec![] }
     }
 
     /// Add middleware to the end
-    ☉ λ add(&Δ self, m: Box<dyn Middleware>) {
+    ☉ rite add(&Δ self, m: Box<dyn Middleware>) {
         self.middleware.push(m);
     }
 
     /// Add middleware to the beginning
-    ☉ λ add_first(&Δ self, m: Box<dyn Middleware>) {
+    ☉ rite add_first(&Δ self, m: Box<dyn Middleware>) {
         self.middleware.insert(0, m);
     }
 
     /// Run the before chain
-    ☉ λ run_before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
+    ☉ rite run_before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
         ∀ m ∈ &self.middleware {
             ⌥ m.before(req, ctx) {
                 MiddlewareResult·Continue => continue,
@@ -74,14 +74,14 @@ invoke crate·error·BasilicaError;
     }
 
     /// Run the after chain (in reverse order)
-    ☉ λ run_after(&self, req: &Request, res: &Δ Response<Vec<u8>>, ctx: &Context) {
+    ☉ rite run_after(&self, req: &Request, res: &Δ Response<Vec<u8>>, ctx: &Context) {
         ∀ m ∈ self.middleware.iter().rev() {
             m.after(req, res, ctx);
         }
     }
 
     /// Run error handlers
-    ☉ λ handle_error(&self, req: &Request, err: &BasilicaError, ctx: &Context) -> Option<Response<Vec<u8>>> {
+    ☉ rite handle_error(&self, req: &Request, err: &BasilicaError, ctx: &Context) -> Option<Response<Vec<u8>>> {
         ∀ m ∈ &self.middleware {
             ⎇ ≔ Some(res) = m.on_error(req, err, ctx) {
                 ⤺ Some(res);

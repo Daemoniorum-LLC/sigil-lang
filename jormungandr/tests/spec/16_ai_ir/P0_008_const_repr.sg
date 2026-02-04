@@ -5,7 +5,7 @@
 const MAX_SIZE: i32 = 100;
 const PI: f64 = 3.14159;
 
-λ main() {
+rite main() {
     ≔ ir = __export_ir();
     println(ir.constants.len());
 }

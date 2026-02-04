@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 120 (5! = 120)
 
-λ factorial(n: !i32) -> !i32 {
+rite factorial(n: !i32) -> !i32 {
     ⎇ n <= 1 {
         1
     } ⎉ {
@@ -16,6 +16,6 @@
     }
 }
 
-λ main() {
+rite main() {
     println(factorial(5));
 }

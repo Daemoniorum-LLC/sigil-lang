@@ -13,12 +13,12 @@
 }
 
 ⊢ Counter {
-    ☉ λ double(&self) -> !i32 {
+    ☉ rite double(&self) -> !i32 {
         self.value * 2
     }
 }
 
-λ main() {
+rite main() {
     ≔ c: !Counter = Counter { value: 42 };
     println(c.double());
 }

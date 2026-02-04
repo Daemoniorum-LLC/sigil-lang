@@ -8,9 +8,9 @@
 // Expected behavior:
 // Should print 42
 
-λ discard(_x: !i32) {}
+rite discard(_x: !i32) {}
 
-λ main() {
+rite main() {
     discard(99);
     println(42);
 }

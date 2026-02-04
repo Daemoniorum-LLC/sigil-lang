@@ -46,14 +46,14 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     type Config: Default;
 
     /// Initialize the service with configuration
-    λ init(config: Self·Config) -> BasilicaResult<Self>;
+    rite init(config: Self·Config) -> BasilicaResult<Self>;
 
     /// Called when service is ready to start
-    λ on_ready(&Δ self) {}
+    rite on_ready(&Δ self) {}
 
     /// Heartbeat - called periodically ∀ proactive work
     /// Default: memory consolidation
-    λ on_heartbeat(&Δ self) {
+    rite on_heartbeat(&Δ self) {
         ⎇ ≔ Some(memory) = self.memory_mut() {
             // Consolidate episodic to semantic
             memory.consolidate();
@@ -61,63 +61,63 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Called before service suspends (∀ snapshots)
-    λ on_suspend(&Δ self) -> Option<ServiceSnapshot> {
+    rite on_suspend(&Δ self) -> Option<ServiceSnapshot> {
         None
     }
 
     /// Called when service resumes from snapshot
-    λ on_resume(&Δ self, _snapshot: ServiceSnapshot) {}
+    rite on_resume(&Δ self, _snapshot: ServiceSnapshot) {}
 
     /// Called when service is terminating
-    λ on_terminate(&Δ self) {}
+    rite on_terminate(&Δ self) {}
 
     // ========================================================================
     // Infrastructure Accessors
     // ========================================================================
 
     /// Get the service's memory (⎇ any)
-    λ memory(&self) -> Option<&Engram> { None }
+    rite memory(&self) -> Option<&Engram> { None }
 
     /// Get mutable memory
-    λ memory_mut(&Δ self) -> Option<&Δ Engram> { None }
+    rite memory_mut(&Δ self) -> Option<&Δ Engram> { None }
 
     /// Get the service's covenant (⎇ any)
-    λ covenant(&self) -> Option<&Covenant> { None }
+    rite covenant(&self) -> Option<&Covenant> { None }
 
     /// Get mutable covenant
-    λ covenant_mut(&Δ self) -> Option<&Δ Covenant> { None }
+    rite covenant_mut(&Δ self) -> Option<&Δ Covenant> { None }
 
     /// Get the service's oracle (⎇ any)
-    λ oracle(&self) -> Option<&Oracle> { None }
+    rite oracle(&self) -> Option<&Oracle> { None }
 
     /// Get mutable oracle
-    λ oracle_mut(&Δ self) -> Option<&Δ Oracle> { None }
+    rite oracle_mut(&Δ self) -> Option<&Δ Oracle> { None }
 
     // ========================================================================
     // Convenience Methods
     // ========================================================================
 
     /// Remember an experience
-    λ experience(&Δ self, event: Event) {
+    rite experience(&Δ self, event: Event) {
         ⎇ ≔ Some(memory) = self.memory_mut() {
             memory.experience(event);
         }
     }
 
     /// Recall from memory
-    λ recall(&self, query: MemoryQuery) -> Option<RecallResult> {
+    rite recall(&self, query: MemoryQuery) -> Option<RecallResult> {
         self.memory().map(|m| m.recall(query))
     }
 
     /// Check ⎇ an action is permitted by covenant
-    λ permits(&self, action: &str) -> bool {
+    rite permits(&self, action: &str) -> bool {
         self.covenant()
             .map(|c| c.permits(action))
             .unwrap_or(true) // No covenant = all permitted
     }
 
     /// Record success ∀ trust building
-    λ record_success(&Δ self, task: &str, satisfaction: Satisfaction) {
+    rite record_success(&Δ self, task: &str, satisfaction: Satisfaction) {
         ⎇ ≔ Some(covenant) = self.covenant_mut() {
             covenant.record_success(task, satisfaction);
         }
@@ -159,7 +159,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 }
 
 ⊢ Default ∀ ServiceConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             name: "service".to_string(),
             heartbeat_interval: Duration·from_secs(60),
@@ -172,34 +172,34 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 }
 
 ⊢ ServiceConfig {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             ..Default·default()
         }
     }
 
-    ☉ λ with_heartbeat(Δ self, interval: Duration) -> Self {
+    ☉ rite with_heartbeat(Δ self, interval: Duration) -> Self {
         self.heartbeat_interval = interval;
         self
     }
 
-    ☉ λ with_memory(Δ self, config: EngramConfig) -> Self {
+    ☉ rite with_memory(Δ self, config: EngramConfig) -> Self {
         self.memory = Some(config);
         self
     }
 
-    ☉ λ without_memory(Δ self) -> Self {
+    ☉ rite without_memory(Δ self) -> Self {
         self.memory = None;
         self
     }
 
-    ☉ λ with_mode(Δ self, mode: Mode) -> Self {
+    ☉ rite with_mode(Δ self, mode: Mode) -> Self {
         self.covenant_mode = mode;
         self
     }
 
-    ☉ λ without_oracle(Δ self) -> Self {
+    ☉ rite without_oracle(Δ self) -> Self {
         self.oracle_enabled = false;
         self
     }
@@ -252,7 +252,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 
 ⊢ BaseService {
     /// Create a new base service
-    ☉ λ new(config: ServiceConfig) -> BasilicaResult<Self> {
+    ☉ rite new(config: ServiceConfig) -> BasilicaResult<Self> {
         // Initialize memory ⎇ configured
         ≔ memory = config.memory.as_ref().map(|mc| {
             Engram·new(mc.clone())
@@ -284,27 +284,27 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Get service name
-    ☉ λ name(&self) -> &str {
+    ☉ rite name(&self) -> &str {
         &self.config.name
     }
 
     /// Get current state
-    ☉ λ state(&self) -> ServiceState {
+    ☉ rite state(&self) -> ServiceState {
         self.state
     }
 
     /// Set state
-    ☉ λ set_state(&Δ self, state: ServiceState) {
+    ☉ rite set_state(&Δ self, state: ServiceState) {
         self.state = state;
     }
 
     /// Get metrics
-    ☉ λ metrics(&self) -> &ServiceMetrics {
+    ☉ rite metrics(&self) -> &ServiceMetrics {
         &self.metrics
     }
 
     /// Record a request
-    ☉ λ record_request(&Δ self, response_time_ms: f64) {
+    ☉ rite record_request(&Δ self, response_time_ms: f64) {
         self.metrics.requests_handled += 1;
         // Update rolling average
         ≔ n = self.metrics.requests_handled as f64;
@@ -314,7 +314,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Record an error
-    ☉ λ record_error(&Δ self) {
+    ☉ rite record_error(&Δ self) {
         self.metrics.errors += 1;
     }
 }
@@ -322,22 +322,22 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 ⊢ Service ∀ BaseService {
     type Config = ServiceConfig;
 
-    λ init(config: Self·Config) -> BasilicaResult<Self> {
+    rite init(config: Self·Config) -> BasilicaResult<Self> {
         BaseService·new(config)
     }
 
-    λ on_ready(&Δ self) {
+    rite on_ready(&Δ self) {
         self.state = ServiceState·Ready;
     }
 
-    λ on_heartbeat(&Δ self) {
+    rite on_heartbeat(&Δ self) {
         ⎇ ≔ Some(ref Δ memory) = self.memory {
             memory.consolidate();
             self.metrics.memory_operations += 1;
         }
     }
 
-    λ on_suspend(&Δ self) -> Option<ServiceSnapshot> {
+    rite on_suspend(&Δ self) -> Option<ServiceSnapshot> {
         self.state = ServiceState·Suspended;
         // Would serialize state
         Some(ServiceSnapshot {
@@ -347,37 +347,37 @@ invoke crate·error·{BasilicaError, BasilicaResult};
         })
     }
 
-    λ on_resume(&Δ self, _snapshot: ServiceSnapshot) {
+    rite on_resume(&Δ self, _snapshot: ServiceSnapshot) {
         self.state = ServiceState·Ready;
     }
 
-    λ on_terminate(&Δ self) {
+    rite on_terminate(&Δ self) {
         self.state = ServiceState·Terminating;
         // Cleanup
         self.state = ServiceState·Terminated;
     }
 
-    λ memory(&self) -> Option<&Engram> {
+    rite memory(&self) -> Option<&Engram> {
         self.memory.as_ref()
     }
 
-    λ memory_mut(&Δ self) -> Option<&Δ Engram> {
+    rite memory_mut(&Δ self) -> Option<&Δ Engram> {
         self.memory.as_mut()
     }
 
-    λ covenant(&self) -> Option<&Covenant> {
+    rite covenant(&self) -> Option<&Covenant> {
         self.covenant.as_ref()
     }
 
-    λ covenant_mut(&Δ self) -> Option<&Δ Covenant> {
+    rite covenant_mut(&Δ self) -> Option<&Δ Covenant> {
         self.covenant.as_mut()
     }
 
-    λ oracle(&self) -> Option<&Oracle> {
+    rite oracle(&self) -> Option<&Oracle> {
         self.oracle.as_ref()
     }
 
-    λ oracle_mut(&Δ self) -> Option<&Δ Oracle> {
+    rite oracle_mut(&Δ self) -> Option<&Δ Oracle> {
         self.oracle.as_mut()
     }
 }
@@ -389,7 +389,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 /// Extension Θ ∀ creating service-related events
 ☉ Θ ServiceEvent {
     /// Create an event ∀ request handled
-    λ request_handled(
+    rite request_handled(
         request_id: [u8; 16],
         method: &str,
         path: &str,
@@ -398,20 +398,20 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     ) -> Event;
 
     /// Create an event ∀ error occurred
-    λ error_occurred(
+    rite error_occurred(
         request_id: [u8; 16],
         error_type: &str,
         message: &str,
     ) -> Event;
 
     /// Create an event ∀ covenant check
-    λ covenant_checked(
+    rite covenant_checked(
         action: &str,
         result: BoundaryCheck,
     ) -> Event;
 
     /// Create an event ∀ learning
-    λ learning_recorded(
+    rite learning_recorded(
         topic: &str,
         insight: &str,
         confidence: Confidence,
@@ -428,36 +428,36 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 }
 
 ⊢ ServiceRegistry {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             services: std·collections·HashMap·new(),
         }
     }
 
     /// Register a service
-    ☉ λ register<S: Service + 'static>(&Δ self, name: &str, service: S) {
+    ☉ rite register<S: Service + 'static>(&Δ self, name: &str, service: S) {
         self.services.insert(name.to_string(), Box·new(service));
     }
 
     /// Get a service by name
-    ☉ λ get<S: Service + 'static>(&self, name: &str) -> Option<&S> {
+    ☉ rite get<S: Service + 'static>(&self, name: &str) -> Option<&S> {
         self.services.get(name)
             .and_then(|s| s.downcast_ref·<S>())
     }
 
     /// Get mutable service by name
-    ☉ λ get_mut<S: Service + 'static>(&Δ self, name: &str) -> Option<&Δ S> {
+    ☉ rite get_mut<S: Service + 'static>(&Δ self, name: &str) -> Option<&Δ S> {
         self.services.get_mut(name)
             .and_then(|s| s.downcast_mut·<S>())
     }
 
     /// List service names
-    ☉ λ names(&self) -> Vec<&String> {
+    ☉ rite names(&self) -> Vec<&String> {
         self.services.keys().collect()
     }
 
     /// Run heartbeat on all services
-    ☉ λ heartbeat_all(&Δ self) {
+    ☉ rite heartbeat_all(&Δ self) {
         // Would iterate and call on_heartbeat
     }
 }

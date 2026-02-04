@@ -6,7 +6,7 @@
 }
 
 ⊢ AgentId {
-    ☉ λ new(len: !usize) -> Self {
+    ☉ rite new(len: !usize) -> Self {
         ≔ valid = len > 0 && len <= 64;
         AgentId { len, valid }
     }
@@ -18,16 +18,16 @@
 }
 
 ⊢ Timestamp {
-    ☉ λ new(seconds: !u64, nanos: !u32) -> Self {
+    ☉ rite new(seconds: !u64, nanos: !u32) -> Self {
         Timestamp { seconds, nanos }
     }
 
-    ☉ λ is_before(&self, other: &Timestamp) -> !bool {
+    ☉ rite is_before(&self, other: &Timestamp) -> !bool {
         self.seconds < other.seconds ||
             (self.seconds == other.seconds && self.nanos < other.nanos)
     }
 
-    ☉ λ is_after(&self, other: &Timestamp) -> !bool {
+    ☉ rite is_after(&self, other: &Timestamp) -> !bool {
         self.seconds > other.seconds ||
             (self.seconds == other.seconds && self.nanos > other.nanos)
     }
@@ -40,11 +40,11 @@
 }
 
 ⊢ Duration {
-    ☉ λ new(secs: !u64) -> Self {
+    ☉ rite new(secs: !u64) -> Self {
         Duration { secs, millis: secs * 1000, zero: secs == 0 }
     }
 
-    ☉ λ from_millis(millis: !u64) -> Self {
+    ☉ rite from_millis(millis: !u64) -> Self {
         Duration { secs: millis / 1000, millis, zero: millis == 0 }
     }
 }
@@ -57,21 +57,21 @@
 }
 
 ⊢ SecurityLevel {
-    ☉ λ is_production_ready(&self) -> !bool {
+    ☉ rite is_production_ready(&self) -> !bool {
         ⌥ self {
             SecurityLevel·Development => false,
             _ => true,
         }
     }
 
-    ☉ λ requires_encryption(&self) -> !bool {
+    ☉ rite requires_encryption(&self) -> !bool {
         ⌥ self {
             SecurityLevel·Development => false,
             _ => true,
         }
     }
 
-    ☉ λ allows_network(&self) -> !bool {
+    ☉ rite allows_network(&self) -> !bool {
         ⌥ self {
             SecurityLevel·Paranoid => false,
             _ => true,
@@ -86,7 +86,7 @@
 }
 
 ⊢ Hash {
-    ☉ λ new(len: !usize, first: !u8) -> Self {
+    ☉ rite new(len: !usize, first: !u8) -> Self {
         Hash { len, empty: len == 0, first }
     }
 }
@@ -96,7 +96,7 @@
 }
 
 ⊢ Signature {
-    ☉ λ new(len: !usize) -> Self {
+    ☉ rite new(len: !usize) -> Self {
         Signature { len }
     }
 }
@@ -106,31 +106,31 @@
 // ============================================================================
 
 #[test]
-λ test_agent_id_creation() {
+rite test_agent_id_creation() {
     ≔ id = AgentId·new(9);
     assert(id.len == 9);
 }
 
 #[test]
-λ test_agent_id_validity_valid() {
+rite test_agent_id_validity_valid() {
     ≔ id = AgentId·new(14);
     assert(id.valid);
 }
 
 #[test]
-λ test_agent_id_validity_empty() {
+rite test_agent_id_validity_empty() {
     ≔ id = AgentId·new(0);
     assert(!id.valid);
 }
 
 #[test]
-λ test_agent_id_max_length() {
+rite test_agent_id_max_length() {
     ≔ id = AgentId·new(64);
     assert(id.valid);
 }
 
 #[test]
-λ test_agent_id_too_long() {
+rite test_agent_id_too_long() {
     ≔ id = AgentId·new(100);
     assert(!id.valid);
 }
@@ -140,21 +140,21 @@
 // ============================================================================
 
 #[test]
-λ test_timestamp_creation() {
+rite test_timestamp_creation() {
     ≔ ts = Timestamp·new(1705500000, 500);
     assert(ts.seconds == 1705500000);
     assert(ts.nanos == 500);
 }
 
 #[test]
-λ test_timestamp_seconds() {
+rite test_timestamp_seconds() {
     ≔ ts = Timestamp·new(1000, 0);
     assert(ts.seconds == 1000);
     assert(ts.nanos == 0);
 }
 
 #[test]
-λ test_timestamp_is_before() {
+rite test_timestamp_is_before() {
     ≔ earlier = Timestamp·new(1000, 0);
     ≔ later = Timestamp·new(2000, 0);
     assert(earlier.is_before(&later));
@@ -162,7 +162,7 @@
 }
 
 #[test]
-λ test_timestamp_is_after() {
+rite test_timestamp_is_after() {
     ≔ earlier = Timestamp·new(1000, 0);
     ≔ later = Timestamp·new(2000, 0);
     assert(later.is_after(&earlier));
@@ -170,7 +170,7 @@
 }
 
 #[test]
-λ test_timestamp_same_second_different_nanos() {
+rite test_timestamp_same_second_different_nanos() {
     ≔ ts1 = Timestamp·new(1000, 100);
     ≔ ts2 = Timestamp·new(1000, 200);
     assert(ts1.is_before(&ts2));
@@ -182,27 +182,27 @@
 // ============================================================================
 
 #[test]
-λ test_duration_creation() {
+rite test_duration_creation() {
     ≔ d = Duration·new(10);
     assert(d.secs == 10);
 }
 
 #[test]
-λ test_duration_from_secs() {
+rite test_duration_from_secs() {
     ≔ d = Duration·new(60);
     assert(d.secs == 60);
     assert(d.millis == 60000);
 }
 
 #[test]
-λ test_duration_from_millis() {
+rite test_duration_from_millis() {
     ≔ d = Duration·from_millis(2500);
     assert(d.secs == 2);
     assert(d.millis == 2500);
 }
 
 #[test]
-λ test_duration_is_zero() {
+rite test_duration_is_zero() {
     ≔ zero = Duration·new(0);
     ≔ nonzero = Duration·new(1);
     assert(zero.zero);
@@ -214,7 +214,7 @@
 // ============================================================================
 
 #[test]
-λ test_security_level_development() {
+rite test_security_level_development() {
     ≔ level = SecurityLevel·Development;
     assert(!level.is_production_ready());
     assert(!level.requires_encryption());
@@ -222,7 +222,7 @@
 }
 
 #[test]
-λ test_security_level_standard() {
+rite test_security_level_standard() {
     ≔ level = SecurityLevel·Standard;
     assert(level.is_production_ready());
     assert(level.requires_encryption());
@@ -230,7 +230,7 @@
 }
 
 #[test]
-λ test_security_level_hardened() {
+rite test_security_level_hardened() {
     ≔ level = SecurityLevel·Hardened;
     assert(level.is_production_ready());
     assert(level.requires_encryption());
@@ -238,7 +238,7 @@
 }
 
 #[test]
-λ test_security_level_paranoid() {
+rite test_security_level_paranoid() {
     ≔ level = SecurityLevel·Paranoid;
     assert(level.is_production_ready());
     assert(level.requires_encryption());
@@ -250,13 +250,13 @@
 // ============================================================================
 
 #[test]
-λ test_hash_creation() {
+rite test_hash_creation() {
     ≔ h = Hash·new(4, 0xde);
     assert(h.len == 4);
 }
 
 #[test]
-λ test_hash_is_empty() {
+rite test_hash_is_empty() {
     ≔ empty = Hash·new(0, 0);
     ≔ nonempty = Hash·new(1, 1);
     assert(empty.empty);
@@ -264,7 +264,7 @@
 }
 
 #[test]
-λ test_hash_first_byte() {
+rite test_hash_first_byte() {
     ≔ h = Hash·new(4, 0xde);
     assert(h.first == 0xde);
 }
@@ -274,17 +274,17 @@
 // ============================================================================
 
 #[test]
-λ test_signature_creation() {
+rite test_signature_creation() {
     ≔ sig = Signature·new(4);
     assert(sig.len == 4);
 }
 
 #[test]
-λ test_signature_64_bytes() {
+rite test_signature_64_bytes() {
     ≔ sig = Signature·new(64);
     assert(sig.len == 64);
 }
 
-λ main() {
+rite main() {
     println("Aegis core types tests - 26 tests");
 }

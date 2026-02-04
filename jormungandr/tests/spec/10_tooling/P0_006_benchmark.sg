@@ -3,14 +3,14 @@
 // Priority: P0 - Bootstrap Critical
 
 #[bench]
-λ bench_fib() {
+rite bench_fib() {
     ≔ n = fib(20);
 }
 
-λ fib(n: !i32) -> !i32 {
+rite fib(n: !i32) -> !i32 {
     ⎇ n <= 1 { n } ⎉ { fib(n-1) + fib(n-2) }
 }
 
-λ main() {
+rite main() {
     println(fib(10));
 }

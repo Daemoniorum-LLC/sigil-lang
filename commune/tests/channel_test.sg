@@ -8,7 +8,7 @@
 }
 
 ⊢ ChannelType {
-    ☉ λ supports_history(&self) -> !bool {
+    ☉ rite supports_history(&self) -> !bool {
         ⌥ self {
             ChannelType·PubSub => true,
             ChannelType·RequestResponse => false,
@@ -17,7 +17,7 @@
         }
     }
 
-    ☉ λ requires_ack(&self) -> !bool {
+    ☉ rite requires_ack(&self) -> !bool {
         ⌥ self {
             ChannelType·RequestResponse => true,
             _ => false,
@@ -33,7 +33,7 @@
 }
 
 ⊢ Permission {
-    ☉ λ allows_default(&self) -> !bool {
+    ☉ rite allows_default(&self) -> !bool {
         ⌥ self {
             Permission·Open => true,
             Permission·TrustThreshold { min_trust } => *min_trust <= 0.5,
@@ -41,7 +41,7 @@
         }
     }
 
-    ☉ λ is_restrictive(&self) -> !bool {
+    ☉ rite is_restrictive(&self) -> !bool {
         ⌥ self {
             Permission·Open => false,
             _ => true,
@@ -56,7 +56,7 @@
 }
 
 ⊢ AccessControl {
-    ☉ λ open() -> Self {
+    ☉ rite open() -> Self {
         AccessControl {
             can_publish: true,
             can_subscribe: true,
@@ -64,7 +64,7 @@
         }
     }
 
-    ☉ λ read_only() -> Self {
+    ☉ rite read_only() -> Self {
         AccessControl {
             can_publish: false,
             can_subscribe: true,
@@ -72,7 +72,7 @@
         }
     }
 
-    ☉ λ admin() -> Self {
+    ☉ rite admin() -> Self {
         AccessControl {
             can_publish: true,
             can_subscribe: true,
@@ -80,7 +80,7 @@
         }
     }
 
-    ☉ λ blocked() -> Self {
+    ☉ rite blocked() -> Self {
         AccessControl {
             can_publish: false,
             can_subscribe: false,
@@ -96,7 +96,7 @@
 }
 
 ⊢ ChannelConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         ChannelConfig {
             max_message_size: 1024 * 1024,
             retention_days: 7,
@@ -104,7 +104,7 @@
         }
     }
 
-    ☉ λ high_throughput() -> Self {
+    ☉ rite high_throughput() -> Self {
         ChannelConfig {
             max_message_size: 64 * 1024,
             retention_days: 1,
@@ -112,7 +112,7 @@
         }
     }
 
-    ☉ λ archival() -> Self {
+    ☉ rite archival() -> Self {
         ChannelConfig {
             max_message_size: 10 * 1024 * 1024,
             retention_days: 365,
@@ -128,7 +128,7 @@
 }
 
 ⊢ ChannelStats {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ChannelStats {
             subscriber_count: 0,
             message_count: 0,
@@ -136,22 +136,22 @@
         }
     }
 
-    ☉ λ record_message(&Δ self, bytes: !u64) {
+    ☉ rite record_message(&Δ self, bytes: !u64) {
         self.message_count = self.message_count + 1;
         self.bytes_transferred = self.bytes_transferred + bytes;
     }
 
-    ☉ λ add_subscriber(&Δ self) {
+    ☉ rite add_subscriber(&Δ self) {
         self.subscriber_count = self.subscriber_count + 1;
     }
 
-    ☉ λ remove_subscriber(&Δ self) {
+    ☉ rite remove_subscriber(&Δ self) {
         ⎇ self.subscriber_count > 0 {
             self.subscriber_count = self.subscriber_count - 1;
         }
     }
 
-    ☉ λ avg_message_size(&self) -> !u64 {
+    ☉ rite avg_message_size(&self) -> !u64 {
         ⎇ self.message_count == 0 {
             0
         } ⎉ {
@@ -165,41 +165,41 @@
 // ============================================================================
 
 #[test]
-λ test_channel_type_pubsub() {
+rite test_channel_type_pubsub() {
     ≔ t = ChannelType·PubSub;
     assert(t.supports_history());
     assert(!t.requires_ack());
 }
 
 #[test]
-λ test_channel_type_request_response() {
+rite test_channel_type_request_response() {
     ≔ t = ChannelType·RequestResponse;
     assert(!t.supports_history());
     assert(t.requires_ack());
 }
 
 #[test]
-λ test_channel_type_stream() {
+rite test_channel_type_stream() {
     ≔ t = ChannelType·Stream;
     assert(t.supports_history());
 }
 
 #[test]
-λ test_permission_open() {
+rite test_permission_open() {
     ≔ p = Permission·Open;
     assert(p.allows_default());
     assert(!p.is_restrictive());
 }
 
 #[test]
-λ test_permission_restricted() {
+rite test_permission_restricted() {
     ≔ p = Permission·Restricted;
     assert(!p.allows_default());
     assert(p.is_restrictive());
 }
 
 #[test]
-λ test_permission_trust_threshold() {
+rite test_permission_trust_threshold() {
     ≔ low = Permission·TrustThreshold { min_trust: 0.3 };
     ≔ high = Permission·TrustThreshold { min_trust: 0.8 };
     assert(low.allows_default());
@@ -207,7 +207,7 @@
 }
 
 #[test]
-λ test_access_control_open() {
+rite test_access_control_open() {
     ≔ ac = AccessControl·open();
     assert(ac.can_publish);
     assert(ac.can_subscribe);
@@ -215,47 +215,47 @@
 }
 
 #[test]
-λ test_access_control_read_only() {
+rite test_access_control_read_only() {
     ≔ ac = AccessControl·read_only();
     assert(!ac.can_publish);
     assert(ac.can_subscribe);
 }
 
 #[test]
-λ test_access_control_admin() {
+rite test_access_control_admin() {
     ≔ ac = AccessControl·admin();
     assert(ac.is_admin);
 }
 
 #[test]
-λ test_access_control_blocked() {
+rite test_access_control_blocked() {
     ≔ ac = AccessControl·blocked();
     assert(!ac.can_publish);
     assert(!ac.can_subscribe);
 }
 
 #[test]
-λ test_channel_config_default() {
+rite test_channel_config_default() {
     ≔ cfg = ChannelConfig·default_config();
     assert(cfg.max_message_size == 1024 * 1024);
     assert(cfg.retention_days == 7);
 }
 
 #[test]
-λ test_channel_config_high_throughput() {
+rite test_channel_config_high_throughput() {
     ≔ cfg = ChannelConfig·high_throughput();
     assert(cfg.rate_limit_per_sec == 1000);
 }
 
 #[test]
-λ test_channel_stats_new() {
+rite test_channel_stats_new() {
     ≔ stats = ChannelStats·new();
     assert(stats.subscriber_count == 0);
     assert(stats.message_count == 0);
 }
 
 #[test]
-λ test_channel_stats_record() {
+rite test_channel_stats_record() {
     ≔ Δ stats = ChannelStats·new();
     stats.record_message(1024);
     stats.record_message(2048);
@@ -264,7 +264,7 @@
 }
 
 #[test]
-λ test_channel_stats_avg_size() {
+rite test_channel_stats_avg_size() {
     ≔ Δ stats = ChannelStats·new();
     stats.record_message(1000);
     stats.record_message(2000);
@@ -272,7 +272,7 @@
 }
 
 #[test]
-λ test_channel_stats_subscribers() {
+rite test_channel_stats_subscribers() {
     ≔ Δ stats = ChannelStats·new();
     stats.add_subscriber();
     stats.add_subscriber();
@@ -280,6 +280,6 @@
     assert(stats.subscriber_count == 1);
 }
 
-λ main() {
+rite main() {
     println("Commune channel tests - 16 tests");
 }

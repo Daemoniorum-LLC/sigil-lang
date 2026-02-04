@@ -2,6 +2,6 @@
 // Spec: 17-JORMUNGANDR-BOOTSTRAP.md § 3.4 Constants
 // Priority: P0
 
-λ main() {
+rite main() {
     println(42);
 }

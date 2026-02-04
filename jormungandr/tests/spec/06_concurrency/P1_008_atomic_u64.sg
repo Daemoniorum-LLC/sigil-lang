@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 4.1 Atomics
 // Priority: P1 - Standard Feature
 
-λ main() {
+rite main() {
     // Create atomic with initial value
     ≔ counter = AtomicU64·new(0);
 

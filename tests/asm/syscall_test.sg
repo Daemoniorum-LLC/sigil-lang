@@ -1,5 +1,5 @@
 // Minimal syscall test - just getpid
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ pid: i64 = 0;
     unsafe {
         asm!("syscall",

@@ -32,7 +32,7 @@ invoke std·collections·BTreeMap
     // Construction
     // ========================================================================
 
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             tree: BTreeMap·new(),
             bucket_duration: Duration·from_secs(3600), // 1 hour buckets
@@ -40,7 +40,7 @@ invoke std·collections·BTreeMap
         }
     }
 
-    ☉ λ with_bucket_duration(duration: Duration) -> Self {
+    ☉ rite with_bucket_duration(duration: Duration) -> Self {
         Self {
             tree: BTreeMap·new(),
             bucket_duration: duration,
@@ -53,7 +53,7 @@ invoke std·collections·BTreeMap
     // ========================================================================
 
     /// Insert an item at a timestamp
-    ☉ λ insert(timestamp: Instant, item: T) {
+    ☉ rite insert(timestamp: Instant, item: T) {
         ≔ bucket = self.bucket_for(timestamp);
         self.tree.entry(bucket)
             .or_insert_with(Vec·new)
@@ -62,7 +62,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Get items ∈ a time range
-    ☉ λ range(start: Instant, end: Instant) -> Vec<&T> {
+    ☉ rite range(start: Instant, end: Instant) -> Vec<&T> {
         ≔ start_bucket = self.bucket_for(start);
         ≔ end_bucket = self.bucket_for(end);
 
@@ -72,7 +72,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Get items at a specific time (within bucket)
-    ☉ λ at(timestamp: Instant) -> Vec<&T> {
+    ☉ rite at(timestamp: Instant) -> Vec<&T> {
         ≔ bucket = self.bucket_for(timestamp);
         self.tree.get(&bucket)
             .map(|items| items.iter().collect())
@@ -80,7 +80,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Get items before a timestamp
-    ☉ λ before(timestamp: Instant, limit: usize) -> Vec<&T> {
+    ☉ rite before(timestamp: Instant, limit: usize) -> Vec<&T> {
         ≔ bucket = self.bucket_for(timestamp);
 
         self.tree.range(..bucket)
@@ -91,7 +91,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Get items after a timestamp
-    ☉ λ after(timestamp: Instant, limit: usize) -> Vec<&T> {
+    ☉ rite after(timestamp: Instant, limit: usize) -> Vec<&T> {
         ≔ bucket = self.bucket_for(timestamp);
 
         self.tree.range(bucket..)
@@ -101,7 +101,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Get most recent items
-    ☉ λ recent(limit: usize) -> Vec<&T> {
+    ☉ rite recent(limit: usize) -> Vec<&T> {
         self.tree.iter()
             .rev()
             .flat_map(|(_, items)| items.iter())
@@ -110,7 +110,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Get oldest items
-    ☉ λ oldest(limit: usize) -> Vec<&T> {
+    ☉ rite oldest(limit: usize) -> Vec<&T> {
         self.tree.iter()
             .flat_map(|(_, items)| items.iter())
             .take(limit)
@@ -118,7 +118,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Remove items matching predicate
-    ☉ λ remove_where(predicate: λ(&T) -> bool) -> usize {
+    ☉ rite remove_where(predicate: rite(&T) -> bool) -> usize {
         ≔ Δ removed = 0;
 
         ∀ (_, items) ∈ self.tree.iter_mut() {
@@ -135,7 +135,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Clear all items
-    ☉ λ clear() {
+    ☉ rite clear() {
         self.tree.clear();
         self.count = 0;
     }
@@ -145,7 +145,7 @@ invoke std·collections·BTreeMap
     // ========================================================================
 
     /// Check ⎇ any items exist ∈ time range
-    ☉ λ has_items_in_range(start: Instant, end: Instant) -> bool {
+    ☉ rite has_items_in_range(start: Instant, end: Instant) -> bool {
         ≔ start_bucket = self.bucket_for(start);
         ≔ end_bucket = self.bucket_for(end);
 
@@ -154,7 +154,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Count items ∈ time range
-    ☉ λ count_in_range(start: Instant, end: Instant) -> usize {
+    ☉ rite count_in_range(start: Instant, end: Instant) -> usize {
         ≔ start_bucket = self.bucket_for(start);
         ≔ end_bucket = self.bucket_for(end);
 
@@ -164,7 +164,7 @@ invoke std·collections·BTreeMap
     }
 
     /// Get the time bounds of indexed items
-    ☉ λ time_bounds() -> Option<(Instant, Instant)> {
+    ☉ rite time_bounds() -> Option<(Instant, Instant)> {
         ≔ first = self.tree.keys().next()?;
         ≔ last = self.tree.keys().next_back()?;
         Some((*first, *last + self.bucket_duration))
@@ -174,15 +174,15 @@ invoke std·collections·BTreeMap
     // Stats
     // ========================================================================
 
-    ☉ λ len() -> usize {
+    ☉ rite len() -> usize {
         self.count
     }
 
-    ☉ λ is_empty() -> bool {
+    ☉ rite is_empty() -> bool {
         self.count == 0
     }
 
-    ☉ λ bucket_count() -> usize {
+    ☉ rite bucket_count() -> usize {
         self.tree.len()
     }
 
@@ -190,7 +190,7 @@ invoke std·collections·BTreeMap
     // Internal
     // ========================================================================
 
-    λ bucket_for(timestamp: Instant) -> Instant {
+    rite bucket_for(timestamp: Instant) -> Instant {
         ≔ nanos = timestamp.as_nanos();
         ≔ bucket_nanos = self.bucket_duration.as_nanos();
         ≔ bucket_start = (nanos / bucket_nanos) * bucket_nanos;
@@ -204,20 +204,20 @@ invoke std·collections·BTreeMap
 
 ⊢<T> TemporalIndex<T> {
     /// Iterate over all items ∈ chronological order
-    ☉ λ iter() -> ⊢ Iterator<Item = &T> {
+    ☉ rite iter() -> ⊢ Iterator<Item = &T> {
         self.tree.iter()
             .flat_map(|(_, items)| items.iter())
     }
 
     /// Iterate over all items ∈ reverse chronological order
-    ☉ λ iter_rev() -> ⊢ Iterator<Item = &T> {
+    ☉ rite iter_rev() -> ⊢ Iterator<Item = &T> {
         self.tree.iter()
             .rev()
             .flat_map(|(_, items)| items.iter())
     }
 
     /// Iterate with timestamps
-    ☉ λ iter_with_time() -> ⊢ Iterator<Item = (Instant, &T)> {
+    ☉ rite iter_with_time() -> ⊢ Iterator<Item = (Instant, &T)> {
         self.tree.iter()
             .flat_map(|(time, items)| {
                 items.iter().map(move |item| (*time, item))
@@ -234,7 +234,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_insert_and_range() {
+    rite test_insert_and_range() {
         ≔ Δ index = TemporalIndex·new();
 
         ≔ t1 = Instant·now();
@@ -250,7 +250,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_recent() {
+    rite test_recent() {
         ≔ Δ index = TemporalIndex·with_bucket_duration(Duration·from_secs(1));
 
         ∀ i ∈ 0..10 {

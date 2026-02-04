@@ -1,5 +1,5 @@
 // Test pure input operand with local variable
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ x: i64 = 5;
     ≔ result: i64 = 0;
     unsafe {

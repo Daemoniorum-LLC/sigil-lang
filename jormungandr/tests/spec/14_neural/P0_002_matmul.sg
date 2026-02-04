@@ -2,7 +2,7 @@
 // Spec: 14-NEURAL.md § 2.2 Tensor Arithmetic
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     // Pass shapes explicitly to constructors
     ≔ a = ones([2, 3]);
     ≔ b = ones([3, 4]);

@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print true (true && true)
 
-λ main() {
+rite main() {
     ≔ x: !bool = true;
     ≔ y: !bool = true;
     println(x && y);

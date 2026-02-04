@@ -8,12 +8,12 @@
 // Expected behavior:
 // Should print 42
 
-λ get_static() -> &'static !i32 {
+rite get_static() -> &'static !i32 {
     static VAL: !i32 = 42;
     &VAL
 }
 
-λ main() {
+rite main() {
     ≔ r: &'static !i32 = get_static();
     println(*r);
 }

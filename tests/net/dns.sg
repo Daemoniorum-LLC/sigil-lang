@@ -57,7 +57,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 // Syscall Wrappers
 // ============================================================================
 
-λ syscall1(num: i64, arg1: i64) -> i64 {
+rite syscall1(num: i64, arg1: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -70,7 +70,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
     ret
 }
 
-λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -85,7 +85,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
     ret
 }
 
-λ syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+rite syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -102,7 +102,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
     ret
 }
 
-λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+rite syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -121,18 +121,18 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 }
 
 // Allocate memory via mmap
-λ alloc_mem(size: i64) -> i64 {
+rite alloc_mem(size: i64) -> i64 {
     // mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
     syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
 }
 
 // Free memory via munmap
-λ free_mem(ptr: i64, size: i64) -> i64 {
+rite free_mem(ptr: i64, size: i64) -> i64 {
     syscall3(SYS_MUNMAP, ptr, size, 0)
 }
 
 // Set socket receive timeout (seconds)
-λ set_socket_timeout(fd: i64, seconds: i64) -> i64 {
+rite set_socket_timeout(fd: i64, seconds: i64) -> i64 {
     // Σ timeval { tv_sec, tv_usec } - 16 bytes on x86_64
     ≔ timeval = alloc_mem(16);
     ⎇ timeval < 0 {
@@ -166,7 +166,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 // Memory Operations (byte-level)
 // ============================================================================
 
-λ write_byte(buf: i64, offset: i64, value: i64) -> i64 {
+rite write_byte(buf: i64, offset: i64, value: i64) -> i64 {
     unsafe {
         ≔ ptr = buf + offset;
         asm!("mov byte ptr [rdi], al",
@@ -177,7 +177,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
     offset + 1
 }
 
-λ write_u16_be(buf: i64, offset: i64, value: i64) -> i64 {
+rite write_u16_be(buf: i64, offset: i64, value: i64) -> i64 {
     ≔ hi = value >> 8 & 255;
     ≔ lo = value & 255;
     unsafe {
@@ -197,7 +197,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
     offset + 2
 }
 
-λ read_byte(buf: i64, offset: i64) -> i64 {
+rite read_byte(buf: i64, offset: i64) -> i64 {
     ≔ value: i64 = 0;
     unsafe {
         ≔ ptr = buf + offset;
@@ -209,7 +209,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
     value
 }
 
-λ read_u16_be(buf: i64, offset: i64) -> i64 {
+rite read_u16_be(buf: i64, offset: i64) -> i64 {
     ≔ u16_hi: i64 = 0;
     ≔ u16_lo: i64 = 0;
     u16_hi = read_byte(buf, offset);
@@ -217,7 +217,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
     u16_hi << 8 | u16_lo
 }
 
-λ read_u32_be(buf: i64, offset: i64) -> i64 {
+rite read_u32_be(buf: i64, offset: i64) -> i64 {
     ≔ u32_b0: i64 = 0;
     ≔ u32_b1: i64 = 0;
     ≔ u32_b2: i64 = 0;
@@ -236,7 +236,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 // Encode a domain name ∈ DNS label format
 // "example.com" -> [7]example[3]com[0]
 // Returns the new offset after writing
-λ encode_domain_name(buf: i64, offset: i64, domain: i64, domain_len: i64) -> i64 {
+rite encode_domain_name(buf: i64, offset: i64, domain: i64, domain_len: i64) -> i64 {
     ≔ out_offset: i64 = offset;
     ≔ label_start: i64 = 0;
     ≔ label_len: i64 = 0;
@@ -285,7 +285,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 
 // Build a DNS query packet ∀ an A record lookup
 // Returns the packet length
-λ build_dns_query(buf: i64, query_id: i64, domain: i64, domain_len: i64) -> i64 {
+rite build_dns_query(buf: i64, query_id: i64, domain: i64, domain_len: i64) -> i64 {
     ≔ offset: i64 = 0;
 
     // Header (12 bytes)
@@ -310,7 +310,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 
 // Skip a domain name ∈ DNS format (handles compression)
 // Returns the offset after the name
-λ skip_dns_name(buf: i64, offset: i64) -> i64 {
+rite skip_dns_name(buf: i64, offset: i64) -> i64 {
     ≔ pos: i64 = offset;
 
     ⟳ pos < offset + 256 {  // Safety limit
@@ -335,7 +335,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 
 // Parse DNS response and extract the first A record IP address
 // Returns packed IPv4 (4 bytes) or negative error code
-λ parse_dns_response(buf: i64, len: i64, expected_id: i64) -> i64 {
+rite parse_dns_response(buf: i64, len: i64, expected_id: i64) -> i64 {
     ⎇ len < 12 {
         ⤺ DNS_ERR_FORMAT;
     }
@@ -409,7 +409,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 // Socket Address Helpers
 // ============================================================================
 
-λ sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
+rite sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
     // Clear buffer
     ≔ i: i64 = 0;
     ⟳ i < 16 {
@@ -494,7 +494,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 // domain: pointer to domain string
 // domain_len: length of domain string
 // Returns: packed IPv4 address or negative error code
-λ dns_resolve(dns_server: i64, domain: i64, domain_len: i64) -> i64 {
+rite dns_resolve(dns_server: i64, domain: i64, domain_len: i64) -> i64 {
     // Allocate buffers via mmap
     ≔ buf = alloc_mem(2048);
     ⎇ buf < 0 {
@@ -560,7 +560,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 // ============================================================================
 
 // Test 1: Encode domain name
-λ test_encode_domain() -> i64 {
+rite test_encode_domain() -> i64 {
     ≔ buf = alloc_mem(256);
     ⎇ buf < 0 {
         ⤺ 99;  // mmap failed
@@ -613,7 +613,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 }
 
 // Test 2: Build DNS query
-λ test_build_query() -> i64 {
+rite test_build_query() -> i64 {
     ≔ buf = alloc_mem(512);
     ⎇ buf < 0 {
         ⤺ 99;  // mmap failed
@@ -658,7 +658,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 }
 
 // Test 3: DNS resolve (requires network - 8.8.8.8)
-λ test_dns_resolve_google() -> i64 {
+rite test_dns_resolve_google() -> i64 {
     // DNS server: 8.8.8.8 = 134744072 (0x08080808)
     ≔ dns_server: i64 = 134744072;
 
@@ -693,7 +693,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 }
 
 // Test 4: DNS resolve localhost (should work with local resolver)
-λ test_dns_resolve_localhost() -> i64 {
+rite test_dns_resolve_localhost() -> i64 {
     // Try with localhost DNS (127.0.0.1)
     // Most systems have a local resolver
     ≔ dns_server: i64 = 2130706433;  // 127.0.0.1 = 0x7F000001
@@ -733,7 +733,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 // ============================================================================
 
 // Helper to print a character
-λ print_char(c: i64) -> i64 {
+rite print_char(c: i64) -> i64 {
     ≔ buf = alloc_mem(16);
     ⎇ buf < 0 {
         ⤺ -1;
@@ -745,7 +745,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
 }
 
 // Print result ∀ a test
-λ print_test_result(test_num: i64, result: i64) -> i64 {
+rite print_test_result(test_num: i64, result: i64) -> i64 {
     print_char(84);  // T
     print_char(48 + test_num);  // test number as char
     print_char(58);  // :
@@ -758,7 +758,7 @@ const DNS_ERR_NOTFOUND: i64 = -6;
     result
 }
 
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ failed: i64 = 0;
 
     // Test 1: Domain encoding (offline)

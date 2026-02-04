@@ -4,7 +4,7 @@
 
 static Δ COUNTER: !i32 = 0;
 
-λ main() {
+rite main() {
     println(COUNTER);
     COUNTER = 10;
     println(COUNTER);

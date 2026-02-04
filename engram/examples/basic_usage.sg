@@ -7,7 +7,7 @@ invoke engram·{
     Episode, Event, Context,
 }
 
-λ main() {
+rite main() {
     println("=== Engram: Memory Infrastructure ∀ Artificial Minds ===\n")
 
     // ========================================================================
@@ -247,7 +247,7 @@ invoke engram·{
 // Advanced Example: Evidentiality
 // ============================================================================
 
-λ evidentiality_example() {
+rite evidentiality_example() {
     println("\n=== Evidentiality Example ===\n")
 
     ≔ memory = engram·new()!
@@ -324,7 +324,7 @@ invoke engram·{
 // Advanced Example: Temporal Queries
 // ============================================================================
 
-λ temporal_example() {
+rite temporal_example() {
     println("\n=== Temporal Query Example ===\n")
 
     ≔ memory = engram·new()!

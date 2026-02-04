@@ -31,7 +31,7 @@ invoke engram·config·EpisodicConfig
     // Construction
     // ========================================================================
 
-    ☉ λ new(config: EpisodicConfig) -> EngramResult<Self>! {
+    ☉ rite new(config: EpisodicConfig) -> EngramResult<Self>! {
         Ok(Self {
             episodes: vec![],
             config,
@@ -44,7 +44,7 @@ invoke engram·config·EpisodicConfig
     // ========================================================================
 
     /// Record a new episode
-    ☉ λ record(episode: Episode) -> EngramResult<EpisodeId>! {
+    ☉ rite record(episode: Episode) -> EngramResult<EpisodeId>! {
         ≔ id = episode.id.clone()
 
         // Compute embedding ∀ similarity search
@@ -59,7 +59,7 @@ invoke engram·config·EpisodicConfig
     }
 
     /// Recall episodes similar to the given context
-    ☉ λ recall_similar(context: &Context, limit: usize) -> Vec<Episode> {
+    ☉ rite recall_similar(context: &Context, limit: usize) -> Vec<Episode> {
         // Simple keyword-based similarity ∀ now
         // In production, invoke embedding similarity
         ≔ context_text = context.to_string().to_lowercase()
@@ -86,7 +86,7 @@ invoke engram·config·EpisodicConfig
     }
 
     /// Recall episodes at a specific time
-    ☉ λ recall_at(time: Instant, window: Duration) -> Vec<Episode> {
+    ☉ rite recall_at(time: Instant, window: Duration) -> Vec<Episode> {
         ≔ start = time - window
         ≔ end = time + window
 
@@ -98,7 +98,7 @@ invoke engram·config·EpisodicConfig
     }
 
     /// Recall episodes before a time point
-    ☉ λ recall_before(time: Instant, limit: usize) -> Vec<Episode> {
+    ☉ rite recall_before(time: Instant, limit: usize) -> Vec<Episode> {
         self.episodes.iter()
             .filter(|e| e.started_at < time)
             .filter(|e| e.strength > 0.1)
@@ -108,7 +108,7 @@ invoke engram·config·EpisodicConfig
     }
 
     /// Get a specific episode
-    ☉ λ get(id: EpisodeId) -> Option<&Episode> {
+    ☉ rite get(id: EpisodeId) -> Option<&Episode> {
         self.episodes.iter().find(|e| e.id == id)
     }
 
@@ -117,7 +117,7 @@ invoke engram·config·EpisodicConfig
     // ========================================================================
 
     /// Apply decay to all episodes
-    ☉ λ decay() {
+    ☉ rite decay() {
         ≔ now = Instant·now()
         ≔ hours_since_decay = (now - self.last_decay).as_secs_f64() / 3600.0
 
@@ -140,7 +140,7 @@ invoke engram·config·EpisodicConfig
     }
 
     /// Consolidate eligible episodes
-    ☉ λ consolidate() -> EpisodicConsolidationReport {
+    ☉ rite consolidate() -> EpisodicConsolidationReport {
         ≔ Δ report = EpisodicConsolidationReport {
             consolidated_count: 0,
             skills_learned: vec![],
@@ -177,7 +177,7 @@ invoke engram·config·EpisodicConfig
     }
 
     /// Archive episodes below threshold
-    ☉ λ archive(predicate: λ(&Memory) -> bool) -> usize {
+    ☉ rite archive(predicate: rite(&Memory) -> bool) -> usize {
         // In real implementation, move to cold storage
         ≔ initial_count = self.episodes.len()
 
@@ -205,7 +205,7 @@ invoke engram·config·EpisodicConfig
     // Usage Information
     // ========================================================================
 
-    ☉ λ usage() -> MemorySystemUsage {
+    ☉ rite usage() -> MemorySystemUsage {
         MemorySystemUsage {
             item_count: self.episodes.len(),
             bytes_used: self.episodes.iter()
@@ -219,7 +219,7 @@ invoke engram·config·EpisodicConfig
     // Internal Helpers
     // ========================================================================
 
-    λ enrich_episode(episode: Episode) -> Episode {
+    rite enrich_episode(episode: Episode) -> Episode {
         ≔ Δ enriched = episode
 
         // Compute significance ⎇ not set
@@ -236,7 +236,7 @@ invoke engram·config·EpisodicConfig
         enriched
     }
 
-    λ compute_similarity(context: &str, episode: &Episode) -> f64 {
+    rite compute_similarity(context: &str, episode: &Episode) -> f64 {
         ≔ episode_text = episode.summarize().to_lowercase()
 
         // Simple word overlap score
@@ -249,7 +249,7 @@ invoke engram·config·EpisodicConfig
         ⎇ union == 0 { 0.0 } ⎉ { intersection as f64 / union as f64 }
     }
 
-    λ compute_significance(episode: &Episode) -> f64 {
+    rite compute_significance(episode: &Episode) -> f64 {
         ≔ Δ score = 0.0
 
         // Outcome contributes to significance
@@ -275,7 +275,7 @@ invoke engram·config·EpisodicConfig
         score.min(1.0)
     }
 
-    λ cluster_similar(episodes: &[Episode], threshold: f64) -> Vec<Vec<Episode>> {
+    rite cluster_similar(episodes: &[Episode], threshold: f64) -> Vec<Vec<Episode>> {
         // Simple single-linkage clustering
         ≔ Δ clusters: Vec<Vec<Episode>> = vec![]
 
@@ -346,7 +346,7 @@ invoke engram·config·EpisodicConfig
 }
 
 ⊢ Episode {
-    ☉ λ new(context: Context) -> Self {
+    ☉ rite new(context: Context) -> Self {
         Self {
             id: EpisodeId·new().unwrap(),
             started_at: Instant·now(),
@@ -367,15 +367,15 @@ invoke engram·config·EpisodicConfig
         }
     }
 
-    ☉ λ duration() -> Option<Duration> {
+    ☉ rite duration() -> Option<Duration> {
         self.ended_at.map(|end| end - self.started_at)
     }
 
-    ☉ λ is_ongoing() -> bool {
+    ☉ rite is_ongoing() -> bool {
         self.ended_at.is_none()
     }
 
-    ☉ λ summarize() -> String {
+    ☉ rite summarize() -> String {
         ≔ outcome_str = self.outcome.summarize()
         ≔ event_count = self.events.len()
 
@@ -400,7 +400,7 @@ invoke engram·config·EpisodicConfig
 }
 
 ⊢ Event {
-    ☉ λ user_message(content: &str) -> Self {
+    ☉ rite user_message(content: &str) -> Self {
         Self {
             timestamp: Instant·now(),
             sequence: 0,
@@ -412,7 +412,7 @@ invoke engram·config·EpisodicConfig
         }
     }
 
-    ☉ λ agent_response(content: &str) -> Self {
+    ☉ rite agent_response(content: &str) -> Self {
         Self {
             timestamp: Instant·now(),
             sequence: 0,
@@ -424,7 +424,7 @@ invoke engram·config·EpisodicConfig
         }
     }
 
-    ☉ λ tool_call(tool: &str, args: Value) -> Self {
+    ☉ rite tool_call(tool: &str, args: Value) -> Self {
         Self {
             timestamp: Instant·now(),
             sequence: 0,
@@ -436,7 +436,7 @@ invoke engram·config·EpisodicConfig
         }
     }
 
-    ☉ λ error(error: &str, recoverable: bool) -> Self {
+    ☉ rite error(error: &str, recoverable: bool) -> Self {
         Self {
             timestamp: Instant·now(),
             sequence: 0,
@@ -484,7 +484,7 @@ invoke engram·config·EpisodicConfig
 }
 
 ⊢ Context {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             goal: None,
             task: None,
@@ -492,7 +492,7 @@ invoke engram·config·EpisodicConfig
         }
     }
 
-    ☉ λ with_goal(goal: &str) -> Self {
+    ☉ rite with_goal(goal: &str) -> Self {
         Self {
             goal: Some(goal.to_string()),
             task: None,
@@ -500,7 +500,7 @@ invoke engram·config·EpisodicConfig
         }
     }
 
-    ☉ λ to_string() -> String {
+    ☉ rite to_string() -> String {
         ≔ Δ parts = vec![]
         ⎇ ≔ Some(goal) = &self.goal {
             parts.push(format!("Goal: {}", goal))

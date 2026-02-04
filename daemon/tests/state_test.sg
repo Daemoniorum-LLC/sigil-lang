@@ -14,7 +14,7 @@
 }
 
 ⊢ LifecycleState {
-    ☉ λ is_operational(&self) -> !bool {
+    ☉ rite is_operational(&self) -> !bool {
         ⌥ self {
             LifecycleState·Ready => true,
             LifecycleState·Running => true,
@@ -22,21 +22,21 @@
         }
     }
 
-    ☉ λ is_running(&self) -> !bool {
+    ☉ rite is_running(&self) -> !bool {
         ⌥ self {
             LifecycleState·Running => true,
             _ => false,
         }
     }
 
-    ☉ λ is_terminated(&self) -> !bool {
+    ☉ rite is_terminated(&self) -> !bool {
         ⌥ self {
             LifecycleState·Terminated => true,
             _ => false,
         }
     }
 
-    ☉ λ can_accept_work(&self) -> !bool {
+    ☉ rite can_accept_work(&self) -> !bool {
         ⌥ self {
             LifecycleState·Running => true,
             _ => false,
@@ -57,7 +57,7 @@
 }
 
 ⊢ TerminateReason {
-    ☉ λ is_error(&self) -> !bool {
+    ☉ rite is_error(&self) -> !bool {
         ⌥ self {
             TerminateReason·Fatal { .. } => true,
             TerminateReason·ResourceExhaustion => true,
@@ -65,7 +65,7 @@
         }
     }
 
-    ☉ λ is_graceful(&self) -> !bool {
+    ☉ rite is_graceful(&self) -> !bool {
         ⌥ self {
             TerminateReason·GoalsComplete => true,
             TerminateReason·Shutdown => true,
@@ -89,7 +89,7 @@
 }
 
 ⊢ OperationalMetrics {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         OperationalMetrics {
             uptime_secs: 0,
             heartbeats: 0,
@@ -100,27 +100,27 @@
         }
     }
 
-    ☉ λ record_heartbeat(&Δ self) {
+    ☉ rite record_heartbeat(&Δ self) {
         self.heartbeats = self.heartbeats + 1;
     }
 
-    ☉ λ record_action(&Δ self) {
+    ☉ rite record_action(&Δ self) {
         self.actions_taken = self.actions_taken + 1;
     }
 
-    ☉ λ record_goal_completed(&Δ self) {
+    ☉ rite record_goal_completed(&Δ self) {
         self.goals_completed = self.goals_completed + 1;
     }
 
-    ☉ λ record_goal_failed(&Δ self) {
+    ☉ rite record_goal_failed(&Δ self) {
         self.goals_failed = self.goals_failed + 1;
     }
 
-    ☉ λ record_error(&Δ self) {
+    ☉ rite record_error(&Δ self) {
         self.errors = self.errors + 1;
     }
 
-    ☉ λ success_rate(&self) -> !f32 {
+    ☉ rite success_rate(&self) -> !f32 {
         ≔ total = self.goals_completed + self.goals_failed;
         ⎇ total == 0 {
             ⤺ 1.0;
@@ -128,7 +128,7 @@
         self.goals_completed as !f32 / total as !f32
     }
 
-    ☉ λ error_rate(&self) -> !f32 {
+    ☉ rite error_rate(&self) -> !f32 {
         ⎇ self.heartbeats == 0 {
             ⤺ 0.0;
         }
@@ -148,7 +148,7 @@
 }
 
 ⊢ ResourceUsage {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ResourceUsage {
             memory_bytes: 0,
             cpu_time_ms: 0,
@@ -157,23 +157,23 @@
         }
     }
 
-    ☉ λ record_memory(&Δ self, bytes: !usize) {
+    ☉ rite record_memory(&Δ self, bytes: !usize) {
         self.memory_bytes = bytes;
     }
 
-    ☉ λ record_tokens(&Δ self, tokens: !u64) {
+    ☉ rite record_tokens(&Δ self, tokens: !u64) {
         self.tokens_used = self.tokens_used + tokens;
     }
 
-    ☉ λ record_api_call(&Δ self) {
+    ☉ rite record_api_call(&Δ self) {
         self.api_calls = self.api_calls + 1;
     }
 
-    ☉ λ exceeds_memory(&self, limit: !usize) -> !bool {
+    ☉ rite exceeds_memory(&self, limit: !usize) -> !bool {
         self.memory_bytes > limit
     }
 
-    ☉ λ exceeds_tokens(&self, limit: !u64) -> !bool {
+    ☉ rite exceeds_tokens(&self, limit: !u64) -> !bool {
         self.tokens_used > limit
     }
 }
@@ -189,7 +189,7 @@
 }
 
 ⊢ AgentState {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         AgentState {
             lifecycle: LifecycleState·Initializing,
             metrics: OperationalMetrics·new(),
@@ -197,23 +197,23 @@
         }
     }
 
-    ☉ λ initialize(&Δ self) {
+    ☉ rite initialize(&Δ self) {
         self.lifecycle = LifecycleState·Ready;
     }
 
-    ☉ λ start(&Δ self) {
+    ☉ rite start(&Δ self) {
         self.lifecycle = LifecycleState·Running;
     }
 
-    ☉ λ suspend(&Δ self, reason: String) {
+    ☉ rite suspend(&Δ self, reason: String) {
         self.lifecycle = LifecycleState·Suspended { reason };
     }
 
-    ☉ λ terminate(&Δ self, reason: String) {
+    ☉ rite terminate(&Δ self, reason: String) {
         self.lifecycle = LifecycleState·Terminating { reason };
     }
 
-    ☉ λ is_healthy(&self) -> !bool {
+    ☉ rite is_healthy(&self) -> !bool {
         self.lifecycle.is_operational() && self.metrics.error_rate() < 0.1
     }
 }
@@ -223,21 +223,21 @@
 // ============================================================================
 
 #[test]
-λ test_lifecycle_initializing() {
+rite test_lifecycle_initializing() {
     ≔ state = LifecycleState·Initializing;
     assert(!state.is_operational());
     assert(!state.can_accept_work());
 }
 
 #[test]
-λ test_lifecycle_ready() {
+rite test_lifecycle_ready() {
     ≔ state = LifecycleState·Ready;
     assert(state.is_operational());
     assert(!state.is_running());
 }
 
 #[test]
-λ test_lifecycle_running() {
+rite test_lifecycle_running() {
     ≔ state = LifecycleState·Running;
     assert(state.is_operational());
     assert(state.is_running());
@@ -245,48 +245,48 @@
 }
 
 #[test]
-λ test_lifecycle_suspended() {
+rite test_lifecycle_suspended() {
     ≔ state = LifecycleState·Suspended { reason: "Maintenance".to_string() };
     assert(!state.is_operational());
     assert(!state.can_accept_work());
 }
 
 #[test]
-λ test_lifecycle_terminated() {
+rite test_lifecycle_terminated() {
     ≔ state = LifecycleState·Terminated;
     assert(state.is_terminated());
     assert(!state.is_operational());
 }
 
 #[test]
-λ test_terminate_reason_graceful() {
+rite test_terminate_reason_graceful() {
     ≔ reason = TerminateReason·GoalsComplete;
     assert(reason.is_graceful());
     assert(!reason.is_error());
 }
 
 #[test]
-λ test_terminate_reason_fatal() {
+rite test_terminate_reason_fatal() {
     ≔ reason = TerminateReason·Fatal { error: "Crash".to_string() };
     assert(reason.is_error());
     assert(!reason.is_graceful());
 }
 
 #[test]
-λ test_terminate_reason_resource() {
+rite test_terminate_reason_resource() {
     ≔ reason = TerminateReason·ResourceExhaustion;
     assert(reason.is_error());
 }
 
 #[test]
-λ test_metrics_creation() {
+rite test_metrics_creation() {
     ≔ metrics = OperationalMetrics·new();
     assert(metrics.heartbeats == 0);
     assert(metrics.errors == 0);
 }
 
 #[test]
-λ test_metrics_heartbeat() {
+rite test_metrics_heartbeat() {
     ≔ Δ metrics = OperationalMetrics·new();
     metrics.record_heartbeat();
     metrics.record_heartbeat();
@@ -294,7 +294,7 @@
 }
 
 #[test]
-λ test_metrics_actions() {
+rite test_metrics_actions() {
     ≔ Δ metrics = OperationalMetrics·new();
     metrics.record_action();
     metrics.record_action();
@@ -303,7 +303,7 @@
 }
 
 #[test]
-λ test_metrics_success_rate_perfect() {
+rite test_metrics_success_rate_perfect() {
     ≔ Δ metrics = OperationalMetrics·new();
     metrics.record_goal_completed();
     metrics.record_goal_completed();
@@ -311,7 +311,7 @@
 }
 
 #[test]
-λ test_metrics_success_rate_mixed() {
+rite test_metrics_success_rate_mixed() {
     ≔ Δ metrics = OperationalMetrics·new();
     metrics.record_goal_completed();
     metrics.record_goal_failed();
@@ -319,7 +319,7 @@
 }
 
 #[test]
-λ test_metrics_error_rate() {
+rite test_metrics_error_rate() {
     ≔ Δ metrics = OperationalMetrics·new();
     metrics.record_heartbeat();
     metrics.record_heartbeat();
@@ -330,21 +330,21 @@
 }
 
 #[test]
-λ test_resource_usage_creation() {
+rite test_resource_usage_creation() {
     ≔ usage = ResourceUsage·new();
     assert(usage.memory_bytes == 0);
     assert(usage.tokens_used == 0);
 }
 
 #[test]
-λ test_resource_usage_memory() {
+rite test_resource_usage_memory() {
     ≔ Δ usage = ResourceUsage·new();
     usage.record_memory(1024 * 1024);
     assert(usage.memory_bytes == 1024 * 1024);
 }
 
 #[test]
-λ test_resource_usage_tokens() {
+rite test_resource_usage_tokens() {
     ≔ Δ usage = ResourceUsage·new();
     usage.record_tokens(100);
     usage.record_tokens(200);
@@ -352,7 +352,7 @@
 }
 
 #[test]
-λ test_resource_exceeds_memory() {
+rite test_resource_exceeds_memory() {
     ≔ Δ usage = ResourceUsage·new();
     usage.record_memory(1000);
     assert(usage.exceeds_memory(500));
@@ -360,13 +360,13 @@
 }
 
 #[test]
-λ test_agent_state_creation() {
+rite test_agent_state_creation() {
     ≔ state = AgentState·new();
     assert(!state.lifecycle.is_operational());
 }
 
 #[test]
-λ test_agent_state_lifecycle() {
+rite test_agent_state_lifecycle() {
     ≔ Δ state = AgentState·new();
     state.initialize();
     assert(state.lifecycle.is_operational());
@@ -375,12 +375,12 @@
 }
 
 #[test]
-λ test_agent_state_healthy() {
+rite test_agent_state_healthy() {
     ≔ Δ state = AgentState·new();
     state.start();
     assert(state.is_healthy());
 }
 
-λ main() {
+rite main() {
     println("Daemon state tests - 21 tests");
 }

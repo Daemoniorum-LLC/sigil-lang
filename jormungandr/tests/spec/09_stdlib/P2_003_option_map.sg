@@ -2,7 +2,7 @@
 // Spec: 09-STDLIB.md § 3.2 Option
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ some: Option<i32> = Option·Some(21);
 
     ≔ doubled = some.map(|x| x * 2);

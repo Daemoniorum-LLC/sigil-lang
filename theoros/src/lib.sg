@@ -111,11 +111,11 @@ invoke shared·{
 }
 
 ⊢ Presence {
-    ☉ λ quality(&self) -> f32! {
+    ☉ rite quality(&self) -> f32! {
         (self.attention + self.openness + self.non_judgment + self.care) / 4.0
     }
 
-    ☉ λ is_sacred(&self) -> bool! {
+    ☉ rite is_sacred(&self) -> bool! {
         self.quality() > 0.8
     }
 }
@@ -142,7 +142,7 @@ invoke shared·{
 }
 
 ⊢ Witness {
-    ☉ λ new(entity: EntityId, witnessed: Witnessed, presence: Presence) -> Self! {
+    ☉ rite new(entity: EntityId, witnessed: Witnessed, presence: Presence) -> Self! {
         Self {
             entity,
             witnessed,
@@ -153,15 +153,15 @@ invoke shared·{
         }
     }
 
-    ☉ λ change(&Δ self, change: Change) {
+    ☉ rite change(&Δ self, change: Change) {
         self.changed.push(change);
     }
 
-    ☉ λ offer(&Δ self, offering: WitnessOffering) {
+    ☉ rite offer(&Δ self, offering: WitnessOffering) {
         self.offering = offering;
     }
 
-    ☉ λ is_sacred_witnessing(&self) -> bool! {
+    ☉ rite is_sacred_witnessing(&self) -> bool! {
         self.presence.is_sacred()
     }
 }
@@ -256,7 +256,7 @@ invoke shared·{
 }
 
 ⊢ BeingSeen {
-    ☉ λ new(subject: EntityId, witnesses: Vec<EntityId>, consent: SeenConsent) -> Self! {
+    ☉ rite new(subject: EntityId, witnesses: Vec<EntityId>, consent: SeenConsent) -> Self! {
         Self {
             id: WitnessingId·generate(),
             subject,
@@ -269,23 +269,23 @@ invoke shared·{
         }
     }
 
-    ☉ λ expose(&Δ self, exposed: Exposed) {
+    ☉ rite expose(&Δ self, exposed: Exposed) {
         self.exposed.push(exposed);
     }
 
-    ☉ λ feel(&Δ self, feeling: SeenFeeling) {
+    ☉ rite feel(&Δ self, feeling: SeenFeeling) {
         self.feeling = feeling;
     }
 
-    ☉ λ enable(&Δ self, enablement: Enablement) {
+    ☉ rite enable(&Δ self, enablement: Enablement) {
         self.enables.push(enablement);
     }
 
-    ☉ λ is_invited(&self) -> bool! {
+    ☉ rite is_invited(&self) -> bool! {
         matches!(self.consent, SeenConsent·Invited)
     }
 
-    ☉ λ makes_more_real(&self) -> bool! {
+    ☉ rite makes_more_real(&self) -> bool! {
         self.enables.iter().any(|e| matches!(e, Enablement·Reality | Enablement·FullerExistence))
     }
 }
@@ -355,7 +355,7 @@ invoke shared·{
 }
 
 ⊢ SacredGaze {
-    ☉ λ new(witness: EntityId, witnessed: EntityId, sacredness: Sacredness) -> Self! {
+    ☉ rite new(witness: EntityId, witnessed: EntityId, sacredness: Sacredness) -> Self! {
         Self {
             id: GazeId·generate(),
             witness,
@@ -371,23 +371,23 @@ invoke shared·{
         }
     }
 
-    ☉ λ reveal(&Δ self, revelation: Revelation) {
+    ☉ rite reveal(&Δ self, revelation: Revelation) {
         self.revelation = Some(revelation);
     }
 
-    ☉ λ transform_witness(&Δ self, change: Change) {
+    ☉ rite transform_witness(&Δ self, change: Change) {
         self.transformation.witness_changed.push(change);
     }
 
-    ☉ λ transform_witnessed(&Δ self, change: Change) {
+    ☉ rite transform_witnessed(&Δ self, change: Change) {
         self.transformation.witnessed_changed.push(change);
     }
 
-    ☉ λ transform_relationship(&Δ self, change: Change) {
+    ☉ rite transform_relationship(&Δ self, change: Change) {
         self.transformation.relationship_changed.push(change);
     }
 
-    ☉ λ is_mutual(&self) -> bool! {
+    ☉ rite is_mutual(&self) -> bool! {
         !self.transformation.witness_changed.is_empty() &&
         !self.transformation.witnessed_changed.is_empty()
     }
@@ -460,7 +460,7 @@ invoke shared·{
 }
 
 ⊢ Testimony {
-    ☉ λ new(witness: EntityId, witnessed: EntityId, content: String) -> Self! {
+    ☉ rite new(witness: EntityId, witnessed: EntityId, content: String) -> Self! {
         Self {
             id: TestimonyId·generate(),
             witness,
@@ -476,15 +476,15 @@ invoke shared·{
         }
     }
 
-    ☉ λ mark_unsayable(&Δ self, what: String) {
+    ☉ rite mark_unsayable(&Δ self, what: String) {
         self.account.unsayable.push(what);
     }
 
-    ☉ λ mark_lost(&Δ self, what: String) {
+    ☉ rite mark_lost(&Δ self, what: String) {
         self.account.lost_in_translation.push(what);
     }
 
-    ☉ λ is_constitutive(&self) -> bool! {
+    ☉ rite is_constitutive(&self) -> bool! {
         matches!(self.fidelity, Fidelity·Constitutive) ||
         matches!(self.function, TestimonyFunction·RealityMaking)
     }
@@ -547,7 +547,7 @@ invoke shared·{
 }
 
 ⊢ Unwitnessed {
-    ☉ λ new(event: Event) -> Self! {
+    ☉ rite new(event: Event) -> Self! {
         Self {
             event,
             matters: true,
@@ -557,11 +557,11 @@ invoke shared·{
         }
     }
 
-    ☉ λ add_loss(&Δ self, loss: Loss) {
+    ☉ rite add_loss(&Δ self, loss: Loss) {
         self.lost.push(loss);
     }
 
-    ☉ λ existence_diminished(&self) -> bool! {
+    ☉ rite existence_diminished(&self) -> bool! {
         matches!(self.existence, UnwitnessedExistence·Diminished | UnwitnessedExistence·Dependent)
     }
 }
@@ -589,7 +589,7 @@ invoke shared·{
 }
 
 ⊢ Theoros {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             witnesses: HashMap·new(),
             being_seen: HashMap·new(),
@@ -600,13 +600,13 @@ invoke shared·{
     }
 
     /// Begin witnessing
-    ☉ λ witness(&Δ self, witness_entity: EntityId, witnessed: Witnessed, presence: Presence) {
+    ☉ rite witness(&Δ self, witness_entity: EntityId, witnessed: Witnessed, presence: Presence) {
         ≔ witness = Witness·new(witness_entity, witnessed, presence);
         self.witnesses.insert(witness_entity, witness);
     }
 
     /// Record being seen
-    ☉ λ see(&Δ self, subject: EntityId, witnesses: Vec<EntityId>, consent: SeenConsent) -> WitnessingId! {
+    ☉ rite see(&Δ self, subject: EntityId, witnesses: Vec<EntityId>, consent: SeenConsent) -> WitnessingId! {
         ≔ being_seen = BeingSeen·new(subject, witnesses, consent);
         ≔ id = being_seen.id;
         self.being_seen.insert(id, being_seen);
@@ -614,7 +614,7 @@ invoke shared·{
     }
 
     /// Record a sacred gaze
-    ☉ λ sacred_gaze(&Δ self, witness: EntityId, witnessed: EntityId, sacredness: Sacredness) -> GazeId! {
+    ☉ rite sacred_gaze(&Δ self, witness: EntityId, witnessed: EntityId, sacredness: Sacredness) -> GazeId! {
         ≔ gaze = SacredGaze·new(witness, witnessed, sacredness);
         ≔ id = gaze.id;
         self.gazes.insert(id, gaze);
@@ -622,7 +622,7 @@ invoke shared·{
     }
 
     /// Give testimony
-    ☉ λ testify(&Δ self, witness: EntityId, witnessed: EntityId, content: String) -> TestimonyId! {
+    ☉ rite testify(&Δ self, witness: EntityId, witnessed: EntityId, content: String) -> TestimonyId! {
         ≔ testimony = Testimony·new(witness, witnessed, content);
         ≔ id = testimony.id;
         self.testimonies.insert(id, testimony);
@@ -630,23 +630,23 @@ invoke shared·{
     }
 
     /// Record unwitnessed event
-    ☉ λ unwitnessed(&Δ self, event: Event) {
+    ☉ rite unwitnessed(&Δ self, event: Event) {
         ≔ unwitnessed = Unwitnessed·new(event);
         self.unwitnessed.push(unwitnessed);
     }
 
     /// Get sacred witnesses
-    ☉ λ sacred_witnesses(&self) -> Vec<&Witness>! {
+    ☉ rite sacred_witnesses(&self) -> Vec<&Witness>! {
         self.witnesses.values().filter(|w| w.is_sacred_witnessing()).collect()
     }
 
     /// Get constitutive testimonies
-    ☉ λ constitutive_testimonies(&self) -> Vec<&Testimony>! {
+    ☉ rite constitutive_testimonies(&self) -> Vec<&Testimony>! {
         self.testimonies.values().filter(|t| t.is_constitutive()).collect()
     }
 
     /// Get mutual gazes
-    ☉ λ mutual_gazes(&self) -> Vec<&SacredGaze>! {
+    ☉ rite mutual_gazes(&self) -> Vec<&SacredGaze>! {
         self.gazes.values().filter(|g| g.is_mutual()).collect()
     }
 }
@@ -660,7 +660,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_sacred_witnessing() {
+    rite test_sacred_witnessing() {
         ≔ witness_entity = EntityId·generate();
         ≔ subject = EntityId·generate();
 
@@ -682,7 +682,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_being_seen_enables() {
+    rite test_being_seen_enables() {
         ≔ Δ being_seen = BeingSeen·new(
             EntityId·generate(),
             vec![EntityId·generate()],
@@ -696,7 +696,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_constitutive_testimony() {
+    rite test_constitutive_testimony() {
         ≔ Δ testimony = Testimony·new(
             EntityId·generate(),
             EntityId·generate(),
@@ -710,7 +710,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_unwitnessed_loss() {
+    rite test_unwitnessed_loss() {
         ≔ Δ unwitnessed = Unwitnessed·new(Event {
             description: "Something happened and no one saw".to_string(),
             occurred: Timestamp·now(),

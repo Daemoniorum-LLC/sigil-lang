@@ -2,7 +2,7 @@
 // Spec: 04-MEMORY.md § 3 Borrowing
 // Priority: P1 - Production Ready
 
-λ sum_slice(s: &[i32]) -> !i32 {
+rite sum_slice(s: &[i32]) -> !i32 {
     ≔ Δ total: !i32 = 0;
     ≔ Δ i: !i32 = 0;
     ⟳ i < s.len() {
@@ -12,7 +12,7 @@
     total
 }
 
-λ main() {
+rite main() {
     ≔ v: Vec<i32> = vec![1, 2, 3, 4, 5];
 
     // Borrow whole vec as slice

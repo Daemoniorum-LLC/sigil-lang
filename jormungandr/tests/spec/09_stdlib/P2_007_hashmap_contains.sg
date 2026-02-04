@@ -2,7 +2,7 @@
 // Spec: 09-STDLIB.md § 4.3 HashMap
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ Δ m: HashMap<String, i32> = HashMap·new();
     m.insert("key", 1);
 

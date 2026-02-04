@@ -9,7 +9,7 @@
 
 invoke protocol·amqp·{Connection, Channel, Queue};
 
-async λ main() {
+async rite main() {
     ≔ conn = Connection·connect("sigil:sigil@localhost:5672")|await~;
     ≔ ch = conn.create_channel()|await~;
     ≔ queue = ch.declare_queue("sigil-test")|await~;

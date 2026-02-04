@@ -13,12 +13,12 @@
 }
 
 ⊢ Clone ∀ Value {
-    λ clone(self) -> !Value {
+    rite clone(self) -> !Value {
         Value { x: self.x }
     }
 }
 
-λ main() {
+rite main() {
     ≔ v: !Value = Value { x: 42 };
     ≔ v2: !Value = v.clone();
     println(v2.x);

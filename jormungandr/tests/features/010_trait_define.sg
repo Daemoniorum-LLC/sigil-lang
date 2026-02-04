@@ -1,6 +1,6 @@
 // Test: Define Θ with method signatures
 ☉ Θ Displayable {
-    λ display(&self) -> !String;
+    rite display(&self) -> !String;
 }
 
 ☉ Σ Message {
@@ -8,12 +8,12 @@
 }
 
 ⊢ Displayable ∀ Message {
-    λ display(&self) -> !String {
+    rite display(&self) -> !String {
         self.text.clone()
     }
 }
 
-λ main() {
+rite main() {
     ≔ msg: !Message = Message { text: "Hello, Trait!" };
     println(msg.display());
 }

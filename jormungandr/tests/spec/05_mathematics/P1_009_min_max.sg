@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 3.2 Comparison
 // Priority: P1 - Standard Feature
 
-λ main() {
+rite main() {
     // min with integers
     println(min(5, 3));
     println(min(3, 5));

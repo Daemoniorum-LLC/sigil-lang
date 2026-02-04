@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 2.2 Inverse Trigonometry
 // Priority: P1 - Standard Feature
 
-λ main() {
+rite main() {
     // asin(0) = 0
     println(asin(0.0));
 

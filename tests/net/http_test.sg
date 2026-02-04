@@ -11,33 +11,33 @@ invoke stdlib·net·http·*;
 // Test Helpers
 // ============================================================================
 
-λ test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
+rite test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
     ⎇ actual != expected {
         panic(format!("[{}] FAIL: {} - expected {}, got {}", test_id, msg, expected, actual));
     }
 }
 
-λ test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
+rite test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
     ⌥ result {
         Result·Ok(v) => v,
         Result·Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
     }
 }
 
-λ test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
+rite test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
     ⌥ result {
         Result·Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
         Result·Err(e) => e,
     }
 }
 
-λ test_assert_true(cond: bool, test_id: &str, msg: &str) {
+rite test_assert_true(cond: bool, test_id: &str, msg: &str) {
     ⎇ !cond {
         panic(format!("[{}] FAIL: {}", test_id, msg));
     }
 }
 
-λ test_assert_false(cond: bool, test_id: &str, msg: &str) {
+rite test_assert_false(cond: bool, test_id: &str, msg: &str) {
     ⎇ cond {
         panic(format!("[{}] FAIL: {}", test_id, msg));
     }
@@ -47,7 +47,7 @@ invoke stdlib·net·http·*;
 // URL Parsing Tests (HTTP-001 through HTTP-008)
 // ============================================================================
 
-λ test_url_parse_http() -> bool {
+rite test_url_parse_http() -> bool {
     print("  [HTTP-001] URL parse http... ");
 
     ≔ url = test_assert_ok(Url·parse("http://example.com/path"), "HTTP-001", "parse");
@@ -62,7 +62,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_url_parse_https() -> bool {
+rite test_url_parse_https() -> bool {
     print("  [HTTP-002] URL parse https... ");
 
     ≔ url = test_assert_ok(Url·parse("https://example.com/secure"), "HTTP-002", "parse");
@@ -76,7 +76,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_url_parse_port() -> bool {
+rite test_url_parse_port() -> bool {
     print("  [HTTP-003] URL parse with port... ");
 
     ≔ url = test_assert_ok(Url·parse("http://example.com:8080/api"), "HTTP-003", "parse");
@@ -88,7 +88,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_url_parse_default_port() -> bool {
+rite test_url_parse_default_port() -> bool {
     print("  [HTTP-004] URL default port... ");
 
     ≔ http_url = test_assert_ok(Url·parse("http://example.com/"), "HTTP-004", "parse http");
@@ -101,7 +101,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_url_parse_query() -> bool {
+rite test_url_parse_query() -> bool {
     print("  [HTTP-005] URL parse query... ");
 
     ≔ url = test_assert_ok(Url·parse("http://example.com/search?q=test&page=1"), "HTTP-005", "parse");
@@ -118,7 +118,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_url_parse_fragment() -> bool {
+rite test_url_parse_fragment() -> bool {
     print("  [HTTP-006] URL parse fragment... ");
 
     ≔ url = test_assert_ok(Url·parse("http://example.com/page#section"), "HTTP-006", "parse");
@@ -133,7 +133,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_url_parse_auth() -> bool {
+rite test_url_parse_auth() -> bool {
     print("  [HTTP-007] URL parse auth... ");
 
     ≔ url = test_assert_ok(Url·parse("http://user:pass@example.com/"), "HTTP-007", "parse");
@@ -152,7 +152,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_url_parse_invalid() -> bool {
+rite test_url_parse_invalid() -> bool {
     print("  [HTTP-008] URL parse invalid... ");
 
     ≔ result = Url·parse("not a url");
@@ -170,7 +170,7 @@ invoke stdlib·net·http·*;
 // HTTP Request Tests (HTTP-009 through HTTP-014)
 // ============================================================================
 
-λ test_request_format_get() -> bool {
+rite test_request_format_get() -> bool {
     print("  [HTTP-009] Request format GET... ");
 
     ≔ client = HttpClient·new();
@@ -193,7 +193,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_request_format_post() -> bool {
+rite test_request_format_post() -> bool {
     print("  [HTTP-010] Request format POST... ");
 
     ≔ client = HttpClient·new();
@@ -217,7 +217,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_request_host_header() -> bool {
+rite test_request_host_header() -> bool {
     print("  [HTTP-011] Request Host header... ");
 
     ≔ client = HttpClient·new();
@@ -234,7 +234,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_request_user_agent() -> bool {
+rite test_request_user_agent() -> bool {
     print("  [HTTP-012] Request User-Agent... ");
 
     ≔ client = HttpClient·new();
@@ -256,7 +256,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_request_custom_headers() -> bool {
+rite test_request_custom_headers() -> bool {
     print("  [HTTP-013] Request custom headers... ");
 
     ≔ client = HttpClient·new();
@@ -283,7 +283,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_request_content_type() -> bool {
+rite test_request_content_type() -> bool {
     print("  [HTTP-014] Request Content-Type... ");
 
     ≔ client = HttpClient·new();
@@ -312,7 +312,7 @@ invoke stdlib·net·http·*;
 // HTTP Response Parsing Tests (HTTP-015 through HTTP-022)
 // ============================================================================
 
-λ test_response_parse_status() -> bool {
+rite test_response_parse_status() -> bool {
     print("  [HTTP-015] Response parse status... ");
 
     ≔ client = HttpClient·new();
@@ -328,7 +328,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_response_parse_headers() -> bool {
+rite test_response_parse_headers() -> bool {
     print("  [HTTP-016] Response parse headers... ");
 
     ≔ client = HttpClient·new();
@@ -342,7 +342,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_response_header_case() -> bool {
+rite test_response_header_case() -> bool {
     print("  [HTTP-017] Response header case insensitive... ");
 
     ≔ client = HttpClient·new();
@@ -365,7 +365,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_response_content_length() -> bool {
+rite test_response_content_length() -> bool {
     print("  [HTTP-018] Response Content-Length body... ");
 
     ≔ client = HttpClient·new();
@@ -381,7 +381,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_response_chunked() -> bool {
+rite test_response_chunked() -> bool {
     print("  [HTTP-019] Response chunked encoding... ");
 
     // Chunked encoding parsing is complex
@@ -390,14 +390,14 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_response_chunked_trailer() -> bool {
+rite test_response_chunked_trailer() -> bool {
     print("  [HTTP-020] Response chunked with trailers... ");
 
     println("SKIP (chunked trailers not implemented)");
     true
 }
 
-λ test_response_connection_close() -> bool {
+rite test_response_connection_close() -> bool {
     print("  [HTTP-021] Response connection close... ");
 
     ≔ client = HttpClient·new();
@@ -414,7 +414,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_response_malformed() -> bool {
+rite test_response_malformed() -> bool {
     print("  [HTTP-022] Response malformed... ");
 
     ≔ client = HttpClient·new();
@@ -435,7 +435,7 @@ invoke stdlib·net·http·*;
 // HTTP Client Integration Tests (HTTP-023 through HTTP-030)
 // ============================================================================
 
-λ test_http_get_httpbin() -> bool {
+rite test_http_get_httpbin() -> bool {
     print("  [HTTP-023] HTTP GET httpbin.org... ");
 
     ≔ client = HttpClient·new();
@@ -459,7 +459,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_http_post_httpbin() -> bool {
+rite test_http_post_httpbin() -> bool {
     print("  [HTTP-024] HTTP POST httpbin.org... ");
 
     ≔ client = HttpClient·new();
@@ -477,7 +477,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_https_get_google() -> bool {
+rite test_https_get_google() -> bool {
     print("  [HTTP-025] HTTPS GET google.com... ");
 
     ≔ client = HttpClient·new();
@@ -496,7 +496,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_http_redirect_follow() -> bool {
+rite test_http_redirect_follow() -> bool {
     print("  [HTTP-026] HTTP redirect follow... ");
 
     ≔ client = HttpClient·new();
@@ -515,7 +515,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_http_redirect_limit() -> bool {
+rite test_http_redirect_limit() -> bool {
     print("  [HTTP-027] HTTP redirect limit... ");
 
     ≔ Δ client = HttpClient·new();
@@ -538,7 +538,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_http_timeout() -> bool {
+rite test_http_timeout() -> bool {
     print("  [HTTP-028] HTTP timeout... ");
 
     ≔ Δ client = HttpClient·new();
@@ -562,7 +562,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_http_404() -> bool {
+rite test_http_404() -> bool {
     print("  [HTTP-029] HTTP 404... ");
 
     ≔ client = HttpClient·new();
@@ -581,7 +581,7 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_http_connection_refused() -> bool {
+rite test_http_connection_refused() -> bool {
     print("  [HTTP-030] HTTP connection refused... ");
 
     ≔ client = HttpClient·new();
@@ -607,7 +607,7 @@ invoke stdlib·net·http·*;
 // Keep-Alive Tests (HTTP-031 through HTTP-035)
 // ============================================================================
 
-λ test_keepalive_reuses_connection() -> bool {
+rite test_keepalive_reuses_connection() -> bool {
     print("  [HTTP-031] Keep-alive reuses connection... ");
 
     // Connection pooling not fully implemented
@@ -615,28 +615,28 @@ invoke stdlib·net·http·*;
     true
 }
 
-λ test_keepalive_max_per_host() -> bool {
+rite test_keepalive_max_per_host() -> bool {
     print("  [HTTP-032] Keep-alive max per host... ");
 
     println("SKIP (connection pooling not implemented)");
     true
 }
 
-λ test_keepalive_idle_timeout() -> bool {
+rite test_keepalive_idle_timeout() -> bool {
     print("  [HTTP-033] Keep-alive idle timeout... ");
 
     println("SKIP (connection pooling not implemented)");
     true
 }
 
-λ test_keepalive_different_hosts() -> bool {
+rite test_keepalive_different_hosts() -> bool {
     print("  [HTTP-034] Keep-alive different hosts... ");
 
     println("SKIP (connection pooling not implemented)");
     true
 }
 
-λ test_keepalive_connection_close() -> bool {
+rite test_keepalive_connection_close() -> bool {
     print("  [HTTP-035] Keep-alive connection close... ");
 
     println("SKIP (connection pooling not implemented)");
@@ -647,28 +647,28 @@ invoke stdlib·net·http·*;
 // Proxy Tests (HTTP-036 through HTTP-039)
 // ============================================================================
 
-λ test_http_proxy_direct() -> bool {
+rite test_http_proxy_direct() -> bool {
     print("  [HTTP-036] HTTP through proxy... ");
 
     println("SKIP (proxy not implemented)");
     true
 }
 
-λ test_https_proxy_connect() -> bool {
+rite test_https_proxy_connect() -> bool {
     print("  [HTTP-037] HTTPS through proxy (CONNECT)... ");
 
     println("SKIP (proxy not implemented)");
     true
 }
 
-λ test_proxy_auth_basic() -> bool {
+rite test_proxy_auth_basic() -> bool {
     print("  [HTTP-038] Proxy basic auth... ");
 
     println("SKIP (proxy not implemented)");
     true
 }
 
-λ test_no_proxy_bypass() -> bool {
+rite test_no_proxy_bypass() -> bool {
     print("  [HTTP-039] no_proxy bypass... ");
 
     println("SKIP (proxy not implemented)");
@@ -679,7 +679,7 @@ invoke stdlib·net·http·*;
 // Main Test Runner
 // ============================================================================
 
-☉ λ main() -> !i32 {
+☉ rite main() -> !i32 {
     println("===========================================");
     println("HTTP/1.1 Layer Tests");
     println("TDD Red Phase - Tests should FAIL");

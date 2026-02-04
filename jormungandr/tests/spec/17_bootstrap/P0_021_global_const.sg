@@ -10,6 +10,6 @@
 
 const ANSWER: !i32 = 42;
 
-λ main() {
+rite main() {
     println(ANSWER);
 }

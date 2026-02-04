@@ -6,18 +6,18 @@
 // Print Functions
 // ============================================================================
 
-λ test_print_no_newline() {
+rite test_print_no_newline() {
     // Simulated with concatenation
     ≔ result = "hello" + " world";
     println(result);
 }
 
-λ test_println_with_newline() {
+rite test_println_with_newline() {
     println("line 1");
     println("line 2");
 }
 
-λ test_print_empty_string() {
+rite test_print_empty_string() {
     println("after empty");
 }
 
@@ -25,21 +25,21 @@
 // Integer/Float Printing
 // ============================================================================
 
-λ test_print_int_positive() {
+rite test_print_int_positive() {
     println(42);
     println(12345);
 }
 
-λ test_print_int_negative() {
+rite test_print_int_negative() {
     println(-1);
     println(-99999);
 }
 
-λ test_print_int_zero() {
+rite test_print_int_zero() {
     println(0);
 }
 
-λ test_print_int_bounds() {
+rite test_print_int_bounds() {
     println(9223372036854775807);   // i64·MAX
     // Note: i64·MIN requires special handling due to parsing
     ≔ min_val = -9223372036854775807 - 1;
@@ -50,7 +50,7 @@
 // File Operations (simulated with arrays)
 // ============================================================================
 
-λ test_file_create() {
+rite test_file_create() {
     // Simulate file creation with buffer
     ≔ Δ buf = [];
     ≔ content = "test content";
@@ -62,7 +62,7 @@
     println("File create test passed");
 }
 
-λ test_file_open_read() {
+rite test_file_open_read() {
     // Simulate file with buffer
     ≔ content = "hello file";
     ≔ bytes = content.as_bytes();
@@ -70,14 +70,14 @@
     println("File open read test passed");
 }
 
-λ test_file_open_nonexistent() {
+rite test_file_open_nonexistent() {
     // Simulate error ∀ non-existent file
     ≔ error_code = 2;  // ENOENT
     assert_eq!(error_code, 2);
     println("File open nonexistent test passed");
 }
 
-λ test_file_write() {
+rite test_file_write() {
     ≔ Δ buf = [];
     ≔ line1 = "first line\n";
     ≔ line1_bytes = line1.as_bytes();
@@ -94,7 +94,7 @@
     println("File write test passed");
 }
 
-λ test_file_read() {
+rite test_file_read() {
     ≔ content = "ABCDEFGH";
     ≔ bytes = content.as_bytes();
     assert_eq!(bytes.len(), 8);
@@ -107,7 +107,7 @@
 // Entry Point
 // ============================================================================
 
-λ main() {
+rite main() {
     // Print tests
     test_print_no_newline();
     test_println_with_newline();

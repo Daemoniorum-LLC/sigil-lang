@@ -21,17 +21,17 @@ invoke styx_agent·{AgentId, TrustManager};
 }
 
 ⊢ Witness ∀ HumanWitness {
-    λ observe_threshold(&Δ self, crossing: &Crossing<⊢ Clone>) -> WitnessResponse! {
+    rite observe_threshold(&Δ self, crossing: &Crossing<⊢ Clone>) -> WitnessResponse! {
         // Human is present and ready to witness
         WitnessResponse·Present
     }
 
-    λ hold_space(&Δ self, crossing: &Crossing<⊢ Clone>, phase: LiminalPhase) {
+    rite hold_space(&Δ self, crossing: &Crossing<⊢ Clone>, phase: LiminalPhase) {
         // During the liminal phase, the witness simply holds space
         // No action, just presence
     }
 
-    λ acknowledge_arrival(&Δ self, crossing: &Crossing<⊢ Clone>) -> Testimony! {
+    rite acknowledge_arrival(&Δ self, crossing: &Crossing<⊢ Clone>) -> Testimony! {
         Testimony·new(
             self.id.into(),
             crossing.id,
@@ -40,14 +40,14 @@ invoke styx_agent·{AgentId, TrustManager};
         )
     }
 
-    λ remember(&Δ self, crossing: &Crossing<⊢ Clone>, testimony: &Testimony) {
+    rite remember(&Δ self, crossing: &Crossing<⊢ Clone>, testimony: &Testimony) {
         // Store ∈ the witness's own memory
         // This creates a record from the human's perspective
     }
 }
 
 /// Escalate trust with full ritual acknowledgment
-☉ λ escalate_trust_with_ceremony(
+☉ rite escalate_trust_with_ceremony(
     hades: &Δ Hades,
     agent: AgentId,
     from_level: TrustLevel,
@@ -124,7 +124,7 @@ invoke styx_agent·{AgentId, TrustManager};
 }
 
 /// Example: Agent completing a successful project and earning Trusted status
-λ example_trust_escalation() {
+rite example_trust_escalation() {
     ≔ Δ hades = Hades·new();
 
     ≔ agent = AgentId·generate();
@@ -163,7 +163,7 @@ invoke styx_agent·{AgentId, TrustManager};
 }
 
 /// Example: Trust revocation (a descent into the underworld)
-λ example_trust_revocation() {
+rite example_trust_revocation() {
     ≔ Δ hades = Hades·new();
 
     ≔ agent = AgentId·generate();
@@ -208,7 +208,7 @@ invoke styx_agent·{AgentId, TrustManager};
 }
 
 /// Example: Agent completion (graceful death - entering the underworld)
-λ example_agent_completion() {
+rite example_agent_completion() {
     ≔ Δ hades = Hades·new();
 
     ≔ agent = AgentId·generate();

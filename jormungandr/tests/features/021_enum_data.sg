@@ -4,14 +4,14 @@
     Failure(!String)
 }
 
-λ process(r: !Status) -> !i32 {
+rite process(r: !Status) -> !i32 {
     ⌥ r {
         Status·Success(value) => value,
         Status·Failure(_) => -1
     }
 }
 
-λ main() {
+rite main() {
     ≔ result: !Status = Status·Success(42);
     println(process(result));
 }

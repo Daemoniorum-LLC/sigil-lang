@@ -3,7 +3,7 @@
 // Should fail with undefined type error
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ x: UndefinedType = 42;  // ERROR: undefined type
     println(x);
 }

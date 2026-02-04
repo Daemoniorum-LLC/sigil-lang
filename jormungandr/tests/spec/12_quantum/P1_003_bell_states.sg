@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 4.2 Creating Entanglement
 // Priority: P1 - Core Feature
 
-λ main() {
+rite main() {
     // Test Phi+ state: (|00⟩ + |11⟩) / √2
     ≔ phi_plus = bell_state(BellState·PhiPlus());
     ≔ (a, b) = phi_plus|measure_both;
@@ -14,7 +14,7 @@
     println(c != d);  // true: always anti-correlated
 }
 
-λ bell_state(which: BellState) -> Entangled<Qubit, Qubit> {
+rite bell_state(which: BellState) -> Entangled<Qubit, Qubit> {
     ≔ q0: linear Qubit = Qubit·zero();
     ≔ q1: linear Qubit = Qubit·zero();
 

@@ -8,7 +8,7 @@ use std·http·{Client, Request, Response};
 use std·json;
 
 // Simple GET request
-λ fetch_data(url: &str) → Result<String, String> {
+rite fetch_data(url: &str) → Result<String, String> {
     ≔ client = Client·new();
     ≔ response = client.get(url)?;
 
@@ -20,7 +20,7 @@ use std·json;
 }
 
 // GET with headers
-λ fetch_with_auth(url: &str, token: &str) → Result<Response, String> {
+rite fetch_with_auth(url: &str, token: &str) → Result<Response, String> {
     ≔ client = Client·new();
 
     client
@@ -31,7 +31,7 @@ use std·json;
 }
 
 // POST with JSON body
-λ create_resource(url: &str, data: &str) → Result<Response, String> {
+rite create_resource(url: &str, data: &str) → Result<Response, String> {
     ≔ client = Client·new();
 
     client
@@ -48,7 +48,7 @@ use std·json;
     email: String,
 }
 
-λ fetch_user(id: i32) → Result<User, String> {
+rite fetch_user(id: i32) → Result<User, String> {
     ≔ url = "https://jsonplaceholder.typicode.com/users/" + str(id);
     ≔ response = fetch_data(&url)?;
 
@@ -62,7 +62,7 @@ use std·json;
     })
 }
 
-λ main() {
+rite main() {
     println("=== HTTP Client Examples ===\n");
 
     // Fetch a user from public API

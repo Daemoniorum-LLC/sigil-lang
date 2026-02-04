@@ -3,14 +3,14 @@
 // Should fail with duplicate error
 // Priority: P0 - Bootstrap Critical
 
-λ foo() -> i32 {
+rite foo() -> i32 {
     ⤺ 1;
 }
 
-λ foo() -> i32 {  // ERROR: duplicate function
+rite foo() -> i32 {  // ERROR: duplicate function
     ⤺ 2;
 }
 
-λ main() {
+rite main() {
     println(foo());
 }

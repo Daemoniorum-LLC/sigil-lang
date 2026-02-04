@@ -40,7 +40,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Commune {
-    ☉ λ new(config: CommuneConfig) -> Self {
+    ☉ rite new(config: CommuneConfig) -> Self {
         Self {
             config: config.clone(),
             agents: HashMap·new(),
@@ -55,7 +55,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Create a local commune (in-process)
-    ☉ λ local() -> Self {
+    ☉ rite local() -> Self {
         Self·new(CommuneConfig·default())
     }
 
@@ -64,13 +64,13 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Register an agent with the commune
-    ☉ λ register(&Δ self, agent_id: AgentId, info: AgentInfo) {
+    ☉ rite register(&Δ self, agent_id: AgentId, info: AgentInfo) {
         self.agents.insert(agent_id.clone(), info);
         self.trust.add_agent(agent_id);
     }
 
     /// Unregister an agent
-    ☉ λ unregister(&Δ self, agent_id: &AgentId) {
+    ☉ rite unregister(&Δ self, agent_id: &AgentId) {
         self.agents.remove(agent_id);
 
         // Remove from all channels
@@ -83,7 +83,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Check ⎇ agent is registered
-    ☉ λ is_registered(&self, agent_id: &AgentId) -> bool {
+    ☉ rite is_registered(&self, agent_id: &AgentId) -> bool {
         self.agents.contains_key(agent_id)
     }
 
@@ -92,7 +92,7 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Send a message
-    ☉ λ send(&Δ self, message: Message) -> Result<MessageId, CommuneError> {
+    ☉ rite send(&Δ self, message: Message) -> Result<MessageId, CommuneError> {
         // Validate sender
         ⎇ !self.is_registered(&message.header.from) {
             ⤺ Err(CommuneError·SenderNotRegistered);
@@ -116,7 +116,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Express an intent (higher-level API)
-    ☉ λ express(&Δ self, from: AgentId, to: Recipient, intent: Intent) -> IntentBuilder {
+    ☉ rite express(&Δ self, from: AgentId, to: Recipient, intent: Intent) -> IntentBuilder {
         IntentBuilder {
             commune: self,
             from,
@@ -128,7 +128,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    λ deliver(&Δ self, message: &Message, recipient: &AgentId) -> Result<(), CommuneError> {
+    rite deliver(&Δ self, message: &Message, recipient: &AgentId) -> Result<(), CommuneError> {
         // Apply epistemic adjustment
         ≔ (new_epistemic, new_confidence) = self.trust.adjust_epistemic(message);
 
@@ -144,7 +144,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Receive messages ∀ an agent
-    ☉ λ receive(&Δ self, agent_id: &AgentId) -> Vec<Message> {
+    ☉ rite receive(&Δ self, agent_id: &AgentId) -> Vec<Message> {
         self.queue.dequeue(agent_id)
     }
 
@@ -153,7 +153,7 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Create a channel
-    ☉ λ create_channel(&Δ self, name: &str) -> ChannelId {
+    ☉ rite create_channel(&Δ self, name: &str) -> ChannelId {
         ≔ channel = Channel·new(name);
         ≔ id = channel.id.clone();
         self.channels.insert(id.clone(), channel);
@@ -162,23 +162,23 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Get a channel
-    ☉ λ channel(&self, name: &str) -> Option<&Channel> {
+    ☉ rite channel(&self, name: &str) -> Option<&Channel> {
         ≔ id = ChannelId·new(name);
         self.channels.get(&id)
     }
 
     /// Subscribe to a channel
-    ☉ λ subscribe(&Δ self, agent_id: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
+    ☉ rite subscribe(&Δ self, agent_id: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
         self.router.subscribe(agent_id, channel_id)
     }
 
     /// Unsubscribe from a channel
-    ☉ λ unsubscribe(&Δ self, agent_id: &AgentId, channel_id: &ChannelId) {
+    ☉ rite unsubscribe(&Δ self, agent_id: &AgentId, channel_id: &ChannelId) {
         self.router.unsubscribe(agent_id, channel_id);
     }
 
     /// Broadcast to a channel
-    ☉ λ broadcast(&Δ self, channel_id: &ChannelId, from: AgentId, content: Value) -> Result<(), CommuneError> {
+    ☉ rite broadcast(&Δ self, channel_id: &ChannelId, from: AgentId, content: Value) -> Result<(), CommuneError> {
         ≔ message = Message·new(
             from,
             Recipient·Channel(channel_id.clone()),
@@ -198,22 +198,22 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Get trust score ∀ an agent
-    ☉ λ trust_score(&self, agent_id: &AgentId) -> f32 {
+    ☉ rite trust_score(&self, agent_id: &AgentId) -> f32 {
         self.trust.trust_score(agent_id, None)
     }
 
     /// Get trust score ∈ a domain
-    ☉ λ trust_score_domain(&self, agent_id: &AgentId, domain: &str) -> f32 {
+    ☉ rite trust_score_domain(&self, agent_id: &AgentId, domain: &str) -> f32 {
         self.trust.trust_score(agent_id, Some(domain))
     }
 
     /// Record accuracy ∀ an agent
-    ☉ λ record_accuracy(&Δ self, agent_id: &AgentId, accurate: bool) {
+    ☉ rite record_accuracy(&Δ self, agent_id: &AgentId, accurate: bool) {
         self.trust.record_accuracy(agent_id, accurate, None);
     }
 
     /// Vouch ∀ another agent
-    ☉ λ vouch(&Δ self, voucher: AgentId, vouchee: AgentId, strength: f32) {
+    ☉ rite vouch(&Δ self, voucher: AgentId, vouchee: AgentId, strength: f32) {
         self.trust.vouch(voucher, vouchee, None, strength);
     }
 
@@ -222,12 +222,12 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Contribute knowledge to collective
-    ☉ λ contribute(&Δ self, agent: AgentId, knowledge: Knowledge) -> FactId {
+    ☉ rite contribute(&Δ self, agent: AgentId, knowledge: Knowledge) -> FactId {
         self.collective.contribute(agent, knowledge)
     }
 
     /// Query collective knowledge
-    ☉ λ collective_recall(&self, query: &str) -> Vec<Fact> {
+    ☉ rite collective_recall(&self, query: &str) -> Vec<Fact> {
         self.collective.recall(query)
     }
 
@@ -236,22 +236,22 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Create a swarm
-    ☉ λ create_swarm(&Δ self, name: &str) -> SwarmId {
+    ☉ rite create_swarm(&Δ self, name: &str) -> SwarmId {
         self.swarms.create_swarm(name)
     }
 
     /// Join a swarm
-    ☉ λ join_swarm(&Δ self, agent_id: AgentId, swarm_id: SwarmId) {
+    ☉ rite join_swarm(&Δ self, agent_id: AgentId, swarm_id: SwarmId) {
         self.swarms.add_member(swarm_id, agent_id);
     }
 
     /// Add behavior to swarm
-    ☉ λ add_swarm_behavior(&Δ self, swarm_id: SwarmId, behavior: Behavior) {
+    ☉ rite add_swarm_behavior(&Δ self, swarm_id: SwarmId, behavior: Behavior) {
         self.swarms.add_behavior(swarm_id, behavior);
     }
 
     /// Step swarm simulation
-    ☉ λ step_swarm(&Δ self, swarm_id: &SwarmId) {
+    ☉ rite step_swarm(&Δ self, swarm_id: &SwarmId) {
         self.swarms.step(swarm_id);
     }
 
@@ -260,18 +260,18 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Create a proposal
-    ☉ λ propose(&Δ self, proposer: AgentId, proposal: Proposal) -> ProposalId {
+    ☉ rite propose(&Δ self, proposer: AgentId, proposal: Proposal) -> ProposalId {
         self.consensus.propose(proposer, proposal.content, proposal.description)
     }
 
     /// Vote on a proposal
-    ☉ λ vote(&Δ self, proposal_id: ProposalId, voter: AgentId, vote: VoteValue, rationale: Option<String>) -> Result<(), CommuneError> {
+    ☉ rite vote(&Δ self, proposal_id: ProposalId, voter: AgentId, vote: VoteValue, rationale: Option<String>) -> Result<(), CommuneError> {
         self.consensus.vote(proposal_id, voter, vote, rationale)
             .map_err(|e| CommuneError·ConsensusError(format!("{:?}", e)))
     }
 
     /// Get consensus result
-    ☉ λ consensus_result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
+    ☉ rite consensus_result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
         self.consensus.result(proposal_id)
     }
 
@@ -280,14 +280,14 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Query agents with capability
-    ☉ λ query_agents(&self, capability: &str) -> Vec<&AgentInfo> {
+    ☉ rite query_agents(&self, capability: &str) -> Vec<&AgentInfo> {
         self.agents.values()
             .filter(|a| a.capabilities.contains(&capability.to_string()))
             .collect()
     }
 
     /// Query channel members
-    ☉ λ channel_members(&self, channel_id: &ChannelId) -> Vec<AgentId> {
+    ☉ rite channel_members(&self, channel_id: &ChannelId) -> Vec<AgentId> {
         self.channels.get(channel_id)
             .map(|c| c.subscribers.iter().cloned().collect())
             .unwrap_or_default()
@@ -327,18 +327,18 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢<'a> IntentBuilder<'a> {
-    ☉ λ with_epistemic(Δ self, epistemic: Epistemic, confidence: f32) -> Self {
+    ☉ rite with_epistemic(Δ self, epistemic: Epistemic, confidence: f32) -> Self {
         self.epistemic = epistemic;
         self.confidence = confidence;
         self
     }
 
-    ☉ λ with_timeout(Δ self, timeout: Duration) -> Self {
+    ☉ rite with_timeout(Δ self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
-    ☉ λ execute(self) -> Result<MessageId, CommuneError> {
+    ☉ rite execute(self) -> Result<MessageId, CommuneError> {
         ≔ message = Message·new(self.from, self.to, self.intent)
             .with_epistemic(self.epistemic, self.confidence);
 
@@ -356,21 +356,21 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ TrustManager {
-    ☉ λ new(config: TrustModelConfig) -> Self {
+    ☉ rite new(config: TrustModelConfig) -> Self {
         Self {
             profiles: HashMap·new(),
             config,
         }
     }
 
-    ☉ λ add_agent(&Δ self, agent: AgentId) {
+    ☉ rite add_agent(&Δ self, agent: AgentId) {
         self.profiles.insert(
             agent.clone(),
             TrustProfile·new(agent, self.config.default_trust),
         );
     }
 
-    ☉ λ trust_score(&self, agent: &AgentId, domain: Option<&str>) -> f32 {
+    ☉ rite trust_score(&self, agent: &AgentId, domain: Option<&str>) -> f32 {
         ≔ profile = ⌥ self.profiles.get(agent) {
             Some(p) => p,
             None => ⤺ self.config.default_trust,
@@ -399,7 +399,7 @@ invoke std·time·{Duration, Timestamp};
         score.clamp(0.0, 1.0)
     }
 
-    ☉ λ record_accuracy(&Δ self, agent: &AgentId, accurate: bool, domain: Option<String>) {
+    ☉ rite record_accuracy(&Δ self, agent: &AgentId, accurate: bool, domain: Option<String>) {
         ⎇ ≔ Some(profile) = self.profiles.get_mut(agent) {
             profile.accuracy.record(accurate, domain);
 
@@ -409,7 +409,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ vouch(&Δ self, voucher: AgentId, vouchee: AgentId, domain: Option<String>, strength: f32) {
+    ☉ rite vouch(&Δ self, voucher: AgentId, vouchee: AgentId, domain: Option<String>, strength: f32) {
         ≔ voucher_trust = self.trust_score(&voucher, domain.as_deref());
         ⎇ voucher_trust < self.config.min_trust_to_vouch {
             ⤺;
@@ -425,7 +425,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ adjust_epistemic(&self, msg: &Message) -> (Epistemic, f32) {
+    ☉ rite adjust_epistemic(&self, msg: &Message) -> (Epistemic, f32) {
         ≔ sender_trust = self.trust_score(&msg.header.from, None);
 
         ≔ new_epistemic = ⌥ msg.header.epistemic {
@@ -449,7 +449,7 @@ invoke std·time·{Duration, Timestamp};
         (new_epistemic, new_confidence)
     }
 
-    λ calculate_decay(&self, last_seen: Timestamp) -> f32 {
+    rite calculate_decay(&self, last_seen: Timestamp) -> f32 {
         // Exponential decay based on time since last interaction
         ≔ elapsed = Timestamp·now().nanos.saturating_sub(last_seen.nanos);
         ≔ halflife_nanos = self.config.decay_halflife.as_nanos();
@@ -473,18 +473,18 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ ChannelRouter {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             channels: HashMap·new(),
             subscriptions: HashMap·new(),
         }
     }
 
-    ☉ λ add_channel(&Δ self, channel_id: ChannelId) {
+    ☉ rite add_channel(&Δ self, channel_id: ChannelId) {
         self.channels.insert(channel_id, HashSet·new());
     }
 
-    ☉ λ route(&self, msg: &Message) -> Vec<AgentId> {
+    ☉ rite route(&self, msg: &Message) -> Vec<AgentId> {
         ⌥ &msg.header.to {
             Recipient·Agent(id) => vec![id.clone()],
             Recipient·Agents(ids) => ids.clone(),
@@ -500,7 +500,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ subscribe(&Δ self, agent: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
+    ☉ rite subscribe(&Δ self, agent: AgentId, channel_id: ChannelId) -> Result<(), CommuneError> {
         self.channels.entry(channel_id.clone())
             .or_default()
             .insert(agent.clone());
@@ -512,7 +512,7 @@ invoke std·time·{Duration, Timestamp};
         Ok(())
     }
 
-    ☉ λ unsubscribe(&Δ self, agent: &AgentId, channel_id: &ChannelId) {
+    ☉ rite unsubscribe(&Δ self, agent: &AgentId, channel_id: &ChannelId) {
         ⎇ ≔ Some(subscribers) = self.channels.get_mut(channel_id) {
             subscribers.remove(agent);
         }
@@ -532,7 +532,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ FactId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { bytes: uuid_v7() }
     }
 }
@@ -552,14 +552,14 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ CollectiveMemory {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             facts: HashMap·new(),
             topic_index: HashMap·new(),
         }
     }
 
-    ☉ λ contribute(&Δ self, agent: AgentId, knowledge: Knowledge) -> FactId {
+    ☉ rite contribute(&Δ self, agent: AgentId, knowledge: Knowledge) -> FactId {
         ≔ id = FactId·new();
 
         ≔ fact = Fact {
@@ -579,7 +579,7 @@ invoke std·time·{Duration, Timestamp};
         id
     }
 
-    ☉ λ recall(&self, query: &str) -> Vec<Fact> {
+    ☉ rite recall(&self, query: &str) -> Vec<Fact> {
         // Simple topic-based recall
         self.topic_index.get(query)
             .map(|ids| ids.iter()
@@ -591,7 +591,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ Fact {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             id: FactId { bytes: self.id.bytes },
             content: Value { inner: self.content.inner.clone() },
@@ -613,14 +613,14 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ SwarmCoordinator {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             swarms: HashMap·new(),
             behaviors: HashMap·new(),
         }
     }
 
-    ☉ λ create_swarm(&Δ self, name: &str) -> SwarmId {
+    ☉ rite create_swarm(&Δ self, name: &str) -> SwarmId {
         ≔ swarm = Swarm·new(name);
         ≔ id = swarm.id.clone();
         self.swarms.insert(id.clone(), swarm);
@@ -628,25 +628,25 @@ invoke std·time·{Duration, Timestamp};
         id
     }
 
-    ☉ λ add_member(&Δ self, swarm_id: SwarmId, agent: AgentId) {
+    ☉ rite add_member(&Δ self, swarm_id: SwarmId, agent: AgentId) {
         ⎇ ≔ Some(swarm) = self.swarms.get_mut(&swarm_id) {
             swarm.add_member(agent);
         }
     }
 
-    ☉ λ remove_from_all(&Δ self, agent: &AgentId) {
+    ☉ rite remove_from_all(&Δ self, agent: &AgentId) {
         ∀ swarm ∈ self.swarms.values_mut() {
             swarm.remove_member(agent);
         }
     }
 
-    ☉ λ add_behavior(&Δ self, swarm_id: SwarmId, behavior: Behavior) {
+    ☉ rite add_behavior(&Δ self, swarm_id: SwarmId, behavior: Behavior) {
         self.behaviors.entry(swarm_id)
             .or_default()
             .push(behavior);
     }
 
-    ☉ λ step(&Δ self, swarm_id: &SwarmId) {
+    ☉ rite step(&Δ self, swarm_id: &SwarmId) {
         ≔ behaviors = self.behaviors.get(swarm_id)
             .map(|b| b.clone())
             .unwrap_or_default();
@@ -676,7 +676,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    λ compute_force(&self, behavior: &Behavior, agent: &AgentId, state: &SwarmState) -> Vector {
+    rite compute_force(&self, behavior: &Behavior, agent: &AgentId, state: &SwarmState) -> Vector {
         ≔ pos = state.positions.get(agent).cloned().unwrap_or(Vector·zero());
 
         ⌥ behavior {
@@ -720,7 +720,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ Behavior {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             Behavior·Separation { distance, weight } => Behavior·Separation { distance: *distance, weight: *weight },
             Behavior·Alignment { weight } => Behavior·Alignment { weight: *weight },
@@ -733,7 +733,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ Obstacle {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { position: self.position.clone(), radius: self.radius }
     }
 }
@@ -750,7 +750,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Default ∀ ConsensusConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             quorum: 0.5,
             threshold: 0.67,
@@ -766,14 +766,14 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ ConsensusEngine {
-    ☉ λ new(config: ConsensusConfig) -> Self {
+    ☉ rite new(config: ConsensusConfig) -> Self {
         Self {
             proposals: HashMap·new(),
             config,
         }
     }
 
-    ☉ λ propose(&Δ self, proposer: AgentId, content: Value, description: String) -> ProposalId {
+    ☉ rite propose(&Δ self, proposer: AgentId, content: Value, description: String) -> ProposalId {
         ≔ id = ProposalId·new();
 
         ≔ proposal = Proposal {
@@ -793,7 +793,7 @@ invoke std·time·{Duration, Timestamp};
         id
     }
 
-    ☉ λ vote(
+    ☉ rite vote(
         &Δ self,
         proposal_id: ProposalId,
         voter: AgentId,
@@ -829,7 +829,7 @@ invoke std·time·{Duration, Timestamp};
         Ok(())
     }
 
-    λ check_consensus(&Δ self, proposal_id: &ProposalId) {
+    rite check_consensus(&Δ self, proposal_id: &ProposalId) {
         ≔ state = ⌥ self.proposals.get_mut(proposal_id) {
             Some(s) => s,
             None => return,
@@ -861,7 +861,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
+    ☉ rite result(&self, proposal_id: &ProposalId) -> Option<ConsensusResult> {
         self.proposals.get(proposal_id).map(|state| {
             ≔ total = state.votes.len() as f32;
             ≔ approvals = state.votes.values()
@@ -893,19 +893,19 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ MessageQueue {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             queues: HashMap·new(),
         }
     }
 
-    ☉ λ enqueue(&Δ self, recipient: AgentId, message: Message) {
+    ☉ rite enqueue(&Δ self, recipient: AgentId, message: Message) {
         self.queues.entry(recipient)
             .or_default()
             .push_back(message);
     }
 
-    ☉ λ dequeue(&Δ self, agent: &AgentId) -> Vec<Message> {
+    ☉ rite dequeue(&Δ self, agent: &AgentId) -> Vec<Message> {
         self.queues.get_mut(agent)
             .map(|q| q.drain(..).collect())
             .unwrap_or_default()
@@ -929,7 +929,7 @@ invoke std·time·{Duration, Timestamp};
 
 // Clone implementations
 ⊢ Clone ∀ Message {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             id: MessageId { bytes: self.id.bytes },
             header: self.header.clone(),
@@ -940,7 +940,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ MessageHeader {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             from: AgentId { bytes: self.from.bytes },
             to: self.to.clone(),
@@ -958,7 +958,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ Recipient {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             Recipient·Agent(id) => Recipient·Agent(AgentId { bytes: id.bytes }),
             Recipient·Agents(ids) => Recipient·Agents(ids.iter().map(|id| AgentId { bytes: id.bytes }).collect()),
@@ -970,14 +970,14 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ Intent {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         // Would implement full clone
         Intent·Ping
     }
 }
 
 ⊢ Clone ∀ Payload {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             Payload·Data(v) => Payload·Data(Value { inner: v.inner.clone() }),
             Payload·Binary(b) => Payload·Binary(b.clone()),
@@ -989,7 +989,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ Priority {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             Priority·Critical => Priority·Critical,
             Priority·High => Priority·High,
@@ -1000,7 +1000,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ TraceContext {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             trace_id: self.trace_id,
             span_id: self.span_id,
@@ -1010,19 +1010,19 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ MessageId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 ⊢ Clone ∀ AgentId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 ⊢ Clone ∀ Proposal {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             id: ProposalId { bytes: self.id.bytes },
             proposer: AgentId { bytes: self.proposer.bytes },
@@ -1034,7 +1034,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ ProposalStatus {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             ProposalStatus·Open => ProposalStatus·Open,
             ProposalStatus·Achieved => ProposalStatus·Achieved,
@@ -1049,7 +1049,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ Vote {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             voter: AgentId { bytes: self.voter.bytes },
             value: self.value.clone(),
@@ -1060,7 +1060,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ VoteValue {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             VoteValue·Approve => VoteValue·Approve,
             VoteValue·Reject => VoteValue·Reject,
@@ -1070,4 +1070,4 @@ invoke std·time·{Duration, Timestamp};
     }
 }
 
-λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+rite uuid_v7() -> [u8; 16] { [0u8; 16] }

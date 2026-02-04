@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print 42 then 42
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ≔ y: !i32 = x;  // Copy, not move
     println(x);       // x still valid

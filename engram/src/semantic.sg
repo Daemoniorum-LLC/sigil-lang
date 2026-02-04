@@ -43,7 +43,7 @@ invoke engram·config·SemanticConfig
     // Construction
     // ========================================================================
 
-    ☉ λ new(config: SemanticConfig) -> EngramResult<Self>! {
+    ☉ rite new(config: SemanticConfig) -> EngramResult<Self>! {
         Ok(Self {
             nodes: HashMap·new(),
             edges: HashMap·new(),
@@ -60,7 +60,7 @@ invoke engram·config·SemanticConfig
     // ========================================================================
 
     /// Learn a new fact
-    ☉ λ learn(fact: Fact) -> EngramResult<Vec<EngramId>>! {
+    ☉ rite learn(fact: Fact) -> EngramResult<Vec<EngramId>>! {
         ≔ Δ created = vec![]
 
         // Get or create subject node
@@ -94,7 +94,7 @@ invoke engram·config·SemanticConfig
     }
 
     /// Query by semantic meaning
-    ☉ λ query(text: &str, limit: usize) -> Vec<QueryResult> {
+    ☉ rite query(text: &str, limit: usize) -> Vec<QueryResult> {
         ≔ query_lower = text.to_lowercase()
         ≔ query_words: HashSet<_> = query_lower.split_whitespace().collect()
 
@@ -125,23 +125,23 @@ invoke engram·config·SemanticConfig
     }
 
     /// Get a specific node
-    ☉ λ get_node(id: NodeId) -> Option<&Node> {
+    ☉ rite get_node(id: NodeId) -> Option<&Node> {
         self.nodes.get(&id)
     }
 
     /// Get a specific edge
-    ☉ λ get_edge(id: EdgeId) -> Option<&Edge> {
+    ☉ rite get_edge(id: EdgeId) -> Option<&Edge> {
         self.edges.get(&id)
     }
 
     /// Get or create an entity node
-    ☉ λ entity(label: &str) -> &Δ Node {
+    ☉ rite entity(label: &str) -> &Δ Node {
         ≔ id = self.get_or_create_node(label, NodeType·Concept)
         self.nodes.get_mut(&id).unwrap()
     }
 
     /// Traverse the graph from a starting node
-    ☉ λ traverse(start: NodeId, path: GraphPath) -> Vec<TraversalResult> {
+    ☉ rite traverse(start: NodeId, path: GraphPath) -> Vec<TraversalResult> {
         ≔ Δ current = vec![(start, vec![])]
 
         ∀ step ∈ &path.steps {
@@ -170,7 +170,7 @@ invoke engram·config·SemanticConfig
     }
 
     /// Get neighbors of a node
-    ☉ λ neighbors(node: NodeId, relation: Option<Relation>) -> Vec<NodeId> {
+    ☉ rite neighbors(node: NodeId, relation: Option<Relation>) -> Vec<NodeId> {
         ≔ edges = self.outgoing.get(&node).unwrap_or(&vec![]);
 
         edges.iter()
@@ -188,7 +188,7 @@ invoke engram·config·SemanticConfig
     }
 
     /// Archive nodes matching predicate
-    ☉ λ archive(predicate: λ(&Memory) -> bool) -> usize {
+    ☉ rite archive(predicate: rite(&Memory) -> bool) -> usize {
         // In real implementation, move to cold storage
         0  // Placeholder
     }
@@ -197,7 +197,7 @@ invoke engram·config·SemanticConfig
     // Usage Information
     // ========================================================================
 
-    ☉ λ usage() -> MemorySystemUsage {
+    ☉ rite usage() -> MemorySystemUsage {
         MemorySystemUsage {
             item_count: self.nodes.len() + self.edges.len(),
             bytes_used: self.nodes.len() * std·mem·size_of·<Node>()
@@ -210,7 +210,7 @@ invoke engram·config·SemanticConfig
     // Internal Helpers
     // ========================================================================
 
-    λ get_or_create_node(label: &str, node_type: NodeType) -> NodeId {
+    rite get_or_create_node(label: &str, node_type: NodeType) -> NodeId {
         // Check ⎇ exists
         ⎇ ≔ Some(id) = self.by_label.get(label) {
             ⤺ id.clone()
@@ -239,7 +239,7 @@ invoke engram·config·SemanticConfig
         id
     }
 
-    λ create_edge(
+    rite create_edge(
         source: NodeId,
         target: NodeId,
         relation: Relation,
@@ -269,7 +269,7 @@ invoke engram·config·SemanticConfig
         Ok(id)
     }
 
-    λ compute_relevance(query_words: &HashSet<&str>, node: &Node) -> f64 {
+    rite compute_relevance(query_words: &HashSet<&str>, node: &Node) -> f64 {
         ≔ label_lower = node.label.to_lowercase()
         ≔ label_words: HashSet<_> = label_lower.split_whitespace().collect()
 
@@ -294,7 +294,7 @@ invoke engram·config·SemanticConfig
         0.0
     }
 
-    λ follow_step(node: &NodeId, step: &PathStep) -> Vec<(NodeId, EdgeId)> {
+    rite follow_step(node: &NodeId, step: &PathStep) -> Vec<(NodeId, EdgeId)> {
         ≔ edges = ⌥ step.direction {
             Direction·Outgoing => self.outgoing.get(node).cloned().unwrap_or_default(),
             Direction·Incoming => self.incoming.get(node).cloned().unwrap_or_default(),
@@ -360,7 +360,7 @@ invoke engram·config·SemanticConfig
 }
 
 ⊢ Fact {
-    ☉ λ new(subject: &str) -> Self {
+    ☉ rite new(subject: &str) -> Self {
         Self {
             subject: subject.to_string(),
             subject_type: None,
@@ -371,7 +371,7 @@ invoke engram·config·SemanticConfig
         }
     }
 
-    ☉ λ claim(Δ self, relation: Relation, object: &str) -> Self {
+    ☉ rite claim(Δ self, relation: Relation, object: &str) -> Self {
         self.claims.push(Claim {
             relation,
             object: object.to_string(),
@@ -381,7 +381,7 @@ invoke engram·config·SemanticConfig
         self
     }
 
-    ☉ λ observed(Δ self) -> Self {
+    ☉ rite observed(Δ self) -> Self {
         self.epistemic = Epistemic·Observed {
             observer: "self".to_string(),
             timestamp: Instant·now(),
@@ -390,11 +390,11 @@ invoke engram·config·SemanticConfig
         self
     }
 
-    ☉ λ significance() -> f64 {
+    ☉ rite significance() -> f64 {
         self.confidence * self.epistemic.strength()
     }
 
-    ☉ λ to_value() -> Value {
+    ☉ rite to_value() -> Value {
         json!({
             "subject": self.subject,
             "claims": self.claims.iter().map(|c| {
@@ -431,11 +431,11 @@ invoke engram·config·SemanticConfig
 }
 
 ⊢ GraphPath {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { steps: vec![] }
     }
 
-    ☉ λ follow(Δ self, relation: Relation) -> Self {
+    ☉ rite follow(Δ self, relation: Relation) -> Self {
         self.steps.push(PathStep {
             relation,
             direction: Direction·Outgoing,
@@ -443,7 +443,7 @@ invoke engram·config·SemanticConfig
         self
     }
 
-    ☉ λ follow_incoming(Δ self, relation: Relation) -> Self {
+    ☉ rite follow_incoming(Δ self, relation: Relation) -> Self {
         self.steps.push(PathStep {
             relation,
             direction: Direction·Incoming,

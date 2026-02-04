@@ -5,7 +5,7 @@
 const SIZE: !i32 = 10;
 const DOUBLE: !i32 = SIZE * 2;
 
-λ main() {
+rite main() {
     println(SIZE);
     println(DOUBLE);
 }

@@ -4,7 +4,7 @@
 
 ☉ ᛈ R { A, B }
 
-λ main() {
+rite main() {
     ≔ _x: !R = R·A;
     println(42);
 }

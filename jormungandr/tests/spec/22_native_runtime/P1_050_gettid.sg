@@ -2,7 +2,7 @@
 // This tests the native runtime threading syscalls
 // Priority: P1
 
-λ main() {
+rite main() {
     // Get thread ID
     ≔ tid = Sys·gettid();
 

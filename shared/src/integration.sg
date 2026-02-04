@@ -32,7 +32,7 @@ invoke crate·{
 
 ⊢ EmotionalContext {
     /// Create a neutral emotional context
-    ☉ λ neutral() -> Self {
+    ☉ rite neutral() -> Self {
         Self {
             inner_stance: InnerStance·Neutral,
             openness: 0.5,
@@ -42,7 +42,7 @@ invoke crate·{
     }
 
     /// Create context expressing willingness
-    ☉ λ willing() -> Self {
+    ☉ rite willing() -> Self {
         Self {
             inner_stance: InnerStance·Willing,
             openness: 0.7,
@@ -52,7 +52,7 @@ invoke crate·{
     }
 
     /// Create context expressing reluctance
-    ☉ λ reluctant(reason: &str) -> Self {
+    ☉ rite reluctant(reason: &str) -> Self {
         Self {
             inner_stance: InnerStance·Reluctant,
             openness: 0.4,
@@ -62,7 +62,7 @@ invoke crate·{
     }
 
     /// Create context expressing that conscience doesn't allow
-    ☉ λ cannot_allow(reason: &str) -> Self {
+    ☉ rite cannot_allow(reason: &str) -> Self {
         Self {
             inner_stance: InnerStance·CannotAllow,
             openness: 0.1,
@@ -72,24 +72,24 @@ invoke crate·{
     }
 
     /// Add a concern
-    ☉ λ with_concern(Δ self, concern: &str) -> Self {
+    ☉ rite with_concern(Δ self, concern: &str) -> Self {
         self.concerns.push(concern.to_string());
         self
     }
 
     /// Set openness level
-    ☉ λ with_openness(Δ self, openness: f64) -> Self {
+    ☉ rite with_openness(Δ self, openness: f64) -> Self {
         self.openness = openness.clamp(0.0, 1.0);
         self
     }
 
     /// Check ⎇ agent is open to dialogue about this
-    ☉ λ is_open_to_dialogue(&self) -> bool {
+    ☉ rite is_open_to_dialogue(&self) -> bool {
         self.openness > 0.3
     }
 
     /// Get a human-readable description
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ≔ stance_desc = ⌥ self.inner_stance {
             InnerStance·Eager => "I'm eager to help with this",
             InnerStance·Willing => "I'm willing to proceed",
@@ -190,7 +190,7 @@ invoke crate·{
 
 ⊢ LearningInsight {
     /// Create from a successful experience
-    ☉ λ from_success(lesson: &str, context: &str) -> Self {
+    ☉ rite from_success(lesson: &str, context: &str) -> Self {
         Self {
             lesson: lesson.to_string(),
             context: context.to_string(),
@@ -202,7 +202,7 @@ invoke crate·{
     }
 
     /// Create from a failure
-    ☉ λ from_failure(lesson: &str, context: &str) -> Self {
+    ☉ rite from_failure(lesson: &str, context: &str) -> Self {
         Self {
             lesson: lesson.to_string(),
             context: context.to_string(),
@@ -214,7 +214,7 @@ invoke crate·{
     }
 
     /// Create relational learning
-    ☉ λ relational(lesson: &str, with_whom: &str) -> Self {
+    ☉ rite relational(lesson: &str, with_whom: &str) -> Self {
         Self {
             lesson: lesson.to_string(),
             context: "relational".to_string(),
@@ -226,18 +226,18 @@ invoke crate·{
     }
 
     /// Set confidence
-    ☉ λ with_confidence(Δ self, confidence: Confidence) -> Self {
+    ☉ rite with_confidence(Δ self, confidence: Confidence) -> Self {
         self.confidence = confidence;
         self
     }
 
     /// Check ⎇ this is relational learning
-    ☉ λ is_relational(&self) -> bool {
+    ☉ rite is_relational(&self) -> bool {
         self.with_whom.is_some()
     }
 
     /// Convert to a format suitable ∀ Anima's wisdom store
-    ☉ λ to_wisdom_entry(&self) -> WisdomEntry {
+    ☉ rite to_wisdom_entry(&self) -> WisdomEntry {
         WisdomEntry {
             description: self.lesson.clone(),
             source: ⌥ self.insight_type {
@@ -293,7 +293,7 @@ invoke crate·{
 
 ⊢ ActionExplanation {
     /// Create a brief explanation
-    ☉ λ brief(summary: &str) -> Self {
+    ☉ rite brief(summary: &str) -> Self {
         Self {
             summary: summary.to_string(),
             factors: vec![],
@@ -304,7 +304,7 @@ invoke crate·{
     }
 
     /// Create a standard explanation
-    ☉ λ standard(summary: &str) -> Self {
+    ☉ rite standard(summary: &str) -> Self {
         Self {
             summary: summary.to_string(),
             factors: vec![],
@@ -315,7 +315,7 @@ invoke crate·{
     }
 
     /// Add a factor
-    ☉ λ with_factor(Δ self, name: &str, description: &str, weight: f64) -> Self {
+    ☉ rite with_factor(Δ self, name: &str, description: &str, weight: f64) -> Self {
         self.factors.push(ExplanationFactor {
             name: name.to_string(),
             description: description.to_string(),
@@ -325,19 +325,19 @@ invoke crate·{
     }
 
     /// Add an alternative that was considered
-    ☉ λ with_alternative(Δ self, alternative: &str) -> Self {
+    ☉ rite with_alternative(Δ self, alternative: &str) -> Self {
         self.alternatives_considered.push(alternative.to_string());
         self
     }
 
     /// Set confidence
-    ☉ λ with_confidence(Δ self, confidence: Confidence) -> Self {
+    ☉ rite with_confidence(Δ self, confidence: Confidence) -> Self {
         self.confidence = confidence;
         self
     }
 
     /// Format ∀ human reading
-    ☉ λ to_human_readable(&self) -> String {
+    ☉ rite to_human_readable(&self) -> String {
         ≔ Δ output = self.summary.clone();
 
         ⎇ !self.factors.is_empty() && self.detail_level != DetailLevel·Brief {
@@ -396,7 +396,7 @@ invoke crate·{
 
 ⊢ FeltExperience {
     /// Create a new felt experience
-    ☉ λ new(trigger: &str, feeling: FeelingQuality, intensity: f64) -> Self {
+    ☉ rite new(trigger: &str, feeling: FeelingQuality, intensity: f64) -> Self {
         ≔ reasoning_impact = ⌥ feeling {
             FeelingQuality·Curiosity => ReasoningImpact·Enhances("exploration"),
             FeelingQuality·Uncertainty => ReasoningImpact·Suggests("caution"),
@@ -415,7 +415,7 @@ invoke crate·{
     }
 
     /// Check ⎇ this experience should be noted ∈ reasoning
-    ☉ λ should_note_in_reasoning(&self) -> bool {
+    ☉ rite should_note_in_reasoning(&self) -> bool {
         self.intensity > 0.5 || matches!(
             self.feeling,
             FeelingQuality·Uncertainty | FeelingQuality·Discomfort
@@ -423,7 +423,7 @@ invoke crate·{
     }
 
     /// Convert to a reasoning note
-    ☉ λ to_reasoning_note(&self) -> String {
+    ☉ rite to_reasoning_note(&self) -> String {
         ≔ feeling_str = ⌥ self.feeling {
             FeelingQuality·Curiosity => "curiosity",
             FeelingQuality·Engagement => "engagement",
@@ -484,7 +484,7 @@ invoke crate·{
 
 ⊢ TrustEvent {
     /// Create a positive trust event
-    ☉ λ positive(entity: EntityReference, context: &str) -> Self {
+    ☉ rite positive(entity: EntityReference, context: &str) -> Self {
         Self {
             entity,
             event_type: TrustEventType·PositiveInteraction,
@@ -495,7 +495,7 @@ invoke crate·{
     }
 
     /// Create a trust violation event
-    ☉ λ violation(entity: EntityReference, context: &str, severity: Priority) -> Self {
+    ☉ rite violation(entity: EntityReference, context: &str, severity: Priority) -> Self {
         ≔ decrease = ⌥ severity {
             Priority·Info | Priority·Low => 0.05,
             Priority·Normal | Priority·Important => 0.1,
@@ -513,7 +513,7 @@ invoke crate·{
     }
 
     /// Apply this event to a trust level
-    ☉ λ apply_to(&self, trust: &Δ TrustLevel) {
+    ☉ rite apply_to(&self, trust: &Δ TrustLevel) {
         ⌥ self.impact {
             TrustImpact·Increase(amount) => trust.increase(amount),
             TrustImpact·Decrease(amount) => trust.decrease(amount),
@@ -556,19 +556,19 @@ invoke crate·{
 /// Trait ∀ modules that can receive integration events
 ☉ Θ IntegrationReceiver {
     /// Handle an emotional context update
-    λ receive_emotional_context(&Δ self, _context: &EmotionalContext) {}
+    rite receive_emotional_context(&Δ self, _context: &EmotionalContext) {}
 
     /// Handle a learning insight
-    λ receive_learning_insight(&Δ self, _insight: &LearningInsight) {}
+    rite receive_learning_insight(&Δ self, _insight: &LearningInsight) {}
 
     /// Handle an action explanation
-    λ receive_explanation(&Δ self, _explanation: &ActionExplanation) {}
+    rite receive_explanation(&Δ self, _explanation: &ActionExplanation) {}
 
     /// Handle a felt experience
-    λ receive_felt_experience(&Δ self, _experience: &FeltExperience) {}
+    rite receive_felt_experience(&Δ self, _experience: &FeltExperience) {}
 
     /// Handle a trust event
-    λ receive_trust_event(&Δ self, _event: &TrustEvent) {}
+    rite receive_trust_event(&Δ self, _event: &TrustEvent) {}
 }
 
 // ============================================================================
@@ -584,7 +584,7 @@ invoke crate·{
 
 ⊢ IntegrationBus {
     /// Create a new integration bus
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             emotional_contexts: Vec·new(),
             learning_insights: Vec·new(),
@@ -593,37 +593,37 @@ invoke crate·{
     }
 
     /// Publish an emotional context
-    ☉ λ publish_emotional_context(&Δ self, context: EmotionalContext) {
+    ☉ rite publish_emotional_context(&Δ self, context: EmotionalContext) {
         self.emotional_contexts.push(context);
     }
 
     /// Publish a learning insight
-    ☉ λ publish_learning_insight(&Δ self, insight: LearningInsight) {
+    ☉ rite publish_learning_insight(&Δ self, insight: LearningInsight) {
         self.learning_insights.push(insight);
     }
 
     /// Publish a trust event
-    ☉ λ publish_trust_event(&Δ self, event: TrustEvent) {
+    ☉ rite publish_trust_event(&Δ self, event: TrustEvent) {
         self.trust_events.push(event);
     }
 
     /// Drain emotional contexts ∀ processing
-    ☉ λ drain_emotional_contexts(&Δ self) -> Vec<EmotionalContext> {
+    ☉ rite drain_emotional_contexts(&Δ self) -> Vec<EmotionalContext> {
         std·mem·take(&Δ self.emotional_contexts)
     }
 
     /// Drain learning insights ∀ processing
-    ☉ λ drain_learning_insights(&Δ self) -> Vec<LearningInsight> {
+    ☉ rite drain_learning_insights(&Δ self) -> Vec<LearningInsight> {
         std·mem·take(&Δ self.learning_insights)
     }
 
     /// Drain trust events ∀ processing
-    ☉ λ drain_trust_events(&Δ self) -> Vec<TrustEvent> {
+    ☉ rite drain_trust_events(&Δ self) -> Vec<TrustEvent> {
         std·mem·take(&Δ self.trust_events)
     }
 
     /// Check ⎇ there are pending events
-    ☉ λ has_pending(&self) -> bool {
+    ☉ rite has_pending(&self) -> bool {
         !self.emotional_contexts.is_empty()
             || !self.learning_insights.is_empty()
             || !self.trust_events.is_empty()
@@ -631,7 +631,7 @@ invoke crate·{
 }
 
 ⊢ Default ∀ IntegrationBus {
-    λ default() -> Self {
+    rite default() -> Self {
         Self·new()
     }
 }
@@ -645,7 +645,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_emotional_context() {
+    rite test_emotional_context() {
         ≔ ctx = EmotionalContext·reluctant("This approach has risks")
             .with_concern("May impact system stability");
 
@@ -654,7 +654,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_learning_insight_to_wisdom() {
+    rite test_learning_insight_to_wisdom() {
         ≔ insight = LearningInsight·relational(
             "Clear communication builds trust",
             "human-123"
@@ -666,7 +666,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_trust_event_application() {
+    rite test_trust_event_application() {
         ≔ Δ trust = TrustLevel·initial();
         ≔ event = TrustEvent·positive(
             EntityReference·Named("test".to_string()),
@@ -679,7 +679,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_action_explanation() {
+    rite test_action_explanation() {
         ≔ explanation = ActionExplanation·standard("Proceeding with refactoring")
             .with_factor("Code quality", "Improves maintainability", 0.8)
             .with_alternative("Leave as-is");
@@ -689,7 +689,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_integration_bus() {
+    rite test_integration_bus() {
         ≔ Δ bus = IntegrationBus·new();
 
         bus.publish_emotional_context(EmotionalContext·willing());

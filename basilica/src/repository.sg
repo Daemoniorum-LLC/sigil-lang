@@ -11,27 +11,27 @@ invoke shared·{Timestamp, Value};
     type Id;
 
     /// Find by ID
-    λ find(&self, id: Self·Id) -> BasilicaResult<Option<Evidenced<T>>>;
+    rite find(&self, id: Self·Id) -> BasilicaResult<Option<Evidenced<T>>>;
 
     /// Find all
-    λ find_all(&self) -> BasilicaResult<Vec<Evidenced<T>>>;
+    rite find_all(&self) -> BasilicaResult<Vec<Evidenced<T>>>;
 
     /// Save (insert or update)
-    λ save(&self, entity: &T) -> BasilicaResult<Evidenced<T>>;
+    rite save(&self, entity: &T) -> BasilicaResult<Evidenced<T>>;
 
     /// Delete by ID
-    λ delete(&self, id: Self·Id) -> BasilicaResult<bool>;
+    rite delete(&self, id: Self·Id) -> BasilicaResult<bool>;
 
     /// Execute a query
-    λ query(&self, query: Query<T>) -> BasilicaResult<QueryResult<T>>;
+    rite query(&self, query: Query<T>) -> BasilicaResult<QueryResult<T>>;
 
     /// Count all
-    λ count(&self) -> BasilicaResult<usize> {
+    rite count(&self) -> BasilicaResult<usize> {
         Ok(self.find_all()?.len())
     }
 
     /// Check ⎇ exists
-    λ exists(&self, id: Self·Id) -> BasilicaResult<bool> {
+    rite exists(&self, id: Self·Id) -> BasilicaResult<bool> {
         Ok(self.find(id)?.is_some())
     }
 }
@@ -49,7 +49,7 @@ invoke shared·{Timestamp, Value};
 }
 
 ⊢<T> PostgresRepository<T> {
-    ☉ λ new(table: &str) -> Self {
+    ☉ rite new(table: &str) -> Self {
         Self {
             table: table.to_string(),
             id_column: "id".to_string(),
@@ -57,13 +57,13 @@ invoke shared·{Timestamp, Value};
         }
     }
 
-    ☉ λ with_id_column(Δ self, column: &str) -> Self {
+    ☉ rite with_id_column(Δ self, column: &str) -> Self {
         self.id_column = column.to_string();
         self
     }
 
     /// Create a query builder ∀ this table
-    ☉ λ query_builder(&self) -> Query<T> {
+    ☉ rite query_builder(&self) -> Query<T> {
         Query·from(&self.table)
     }
 }
@@ -75,7 +75,7 @@ macro_rules! repository {
         $name:ident ∀ $entity:ty {
             table: $table:literal,
             $(
-                λ $method:ident($($arg:ident: $arg_ty:ty),*) -> $ret:ty $body:block
+                rite $method:ident($($arg:ident: $arg_ty:ty),*) -> $ret:ty $body:block
             )*
         }
     ) => {
@@ -84,14 +84,14 @@ macro_rules! repository {
         }
 
         ⊢ $name {
-            ☉ λ new() -> Self {
+            ☉ rite new() -> Self {
                 Self {
                     inner: PostgresRepository·new($table),
                 }
             }
 
             $(
-                ☉ λ $method(&self, $($arg: $arg_ty),*) -> $ret $body
+                ☉ rite $method(&self, $($arg: $arg_ty),*) -> $ret $body
             )*
         }
     };

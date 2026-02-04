@@ -16916,7 +16916,7 @@ impl Interpreter {
         }
 
         // Parse and evaluate the expanded expression
-        let expr_source = format!("λ __macro_expand__() {{ {} }}", expanded);
+        let expr_source = format!("rite __macro_expand__() {{ {} }}", expanded);
         let mut parser = crate::Parser::new(&expr_source);
         match parser.parse_file() {
             Ok(file) => {

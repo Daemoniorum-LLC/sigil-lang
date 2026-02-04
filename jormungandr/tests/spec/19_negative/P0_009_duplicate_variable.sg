@@ -2,7 +2,7 @@
 // Should fail with duplicate error
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ x = 42;
     ≔ x = "hello";  // ERROR: duplicate variable (may or may not error depending on shadowing)
     println(x);

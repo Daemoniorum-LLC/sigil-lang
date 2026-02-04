@@ -7,7 +7,7 @@
 //! - ‽ (Paradox) - Contradictory values
 
 /// Test basic known values
-☉ λ test_known() -> !bool {
+☉ rite test_known() -> !bool {
     ≔ x: !i32 = 42;
     ≔ y: !String = "hello";
     ≔ z: !bool = true;
@@ -20,7 +20,7 @@
 }
 
 /// Test uncertain/optional values
-☉ λ test_uncertain() -> !bool {
+☉ rite test_uncertain() -> !bool {
     // Uncertain values may be null
     ≔ maybe_int: ?i32 = 42;
     ≔ nothing: ?i32 = null;
@@ -39,7 +39,7 @@
 }
 
 /// Test reported values (from external sources)
-☉ λ test_reported() -> !bool {
+☉ rite test_reported() -> !bool {
     // Simulating file input
     ≔ user_input: ~String = "42";
 
@@ -56,14 +56,14 @@
 }
 
 /// Parse string to int (returns uncertain)
-λ parse_int(s: ~String) -> ?i32 {
+rite parse_int(s: ~String) -> ?i32 {
     // In a real implementation, this would parse
     // For testing, we just ⤺ 42
     ⤺ 42;
 }
 
 /// Test evidence level operations
-☉ λ test_evidence_lattice() -> !bool {
+☉ rite test_evidence_lattice() -> !bool {
     // Evidence levels form a lattice:
     // Known < Uncertain < Reported < Paradox
 
@@ -87,7 +87,7 @@
 }
 
 ⊢ UserInput {
-    ☉ λ new(id: !i32, name: ~String) -> !UserInput {
+    ☉ rite new(id: !i32, name: ~String) -> !UserInput {
         UserInput {
             id: id,
             name: name,
@@ -97,7 +97,7 @@
     }
 
     /// Promote to verified known data
-    ☉ λ verify(self) -> ?VerifiedUser {
+    ☉ rite verify(self) -> ?VerifiedUser {
         // Can only verify ⎇ email is present
         ⎇ self.email == null {
             ⤺ null;
@@ -119,17 +119,17 @@
 }
 
 /// Test function boundaries
-☉ λ test_evidence_boundaries() -> !bool {
+☉ rite test_evidence_boundaries() -> !bool {
     // Functions declare evidence requirements
-    λ needs_known(x: !i32) -> !i32 {
+    rite needs_known(x: !i32) -> !i32 {
         ⤺ x + 1;
     }
 
-    λ accepts_uncertain(x: ?i32) -> !i32 {
+    rite accepts_uncertain(x: ?i32) -> !i32 {
         ⤺ x ?? 0;
     }
 
-    λ returns_uncertain(flag: !bool) -> ?i32 {
+    rite returns_uncertain(flag: !bool) -> ?i32 {
         ⎇ flag {
             ⤺ 42;
         }
@@ -149,7 +149,7 @@
 }
 
 /// Main entry point
-☉ λ main() -> !i32 {
+☉ rite main() -> !i32 {
     assert(test_known(), "test_known failed");
     assert(test_uncertain(), "test_uncertain failed");
     assert(test_reported(), "test_reported failed");

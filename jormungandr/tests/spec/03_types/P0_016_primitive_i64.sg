@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print 9223372036854775807 (max i64)
 
-λ main() {
+rite main() {
     ≔ x: !i64 = 9223372036854775807;
     println(x);
 }

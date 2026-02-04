@@ -165,7 +165,7 @@ invoke covenant·{Covenant, CovenantId};
 }
 
 ⊢ Fire {
-    ☉ λ new(gift: Gift, cost: Cost, demand: Demand) -> Self! {
+    ☉ rite new(gift: Gift, cost: Cost, demand: Demand) -> Self! {
         Self {
             id: FireId·generate(),
             gift,
@@ -181,12 +181,12 @@ invoke covenant·{Covenant, CovenantId};
         }
     }
 
-    ☉ λ with_consent(Δ self, consent: TeachingConsent) -> Self! {
+    ☉ rite with_consent(Δ self, consent: TeachingConsent) -> Self! {
         self.consent = consent;
         self
     }
 
-    ☉ λ in_chain(Δ self, chain_id: ChainId) -> Self! {
+    ☉ rite in_chain(Δ self, chain_id: ChainId) -> Self! {
         self.chain = Some(chain_id);
         self
     }
@@ -279,7 +279,7 @@ invoke covenant·{Covenant, CovenantId};
 }
 
 ⊢ Wound {
-    ☉ λ new(opening: Opening, wounder: EntityId, wounded: EntityId) -> Self! {
+    ☉ rite new(opening: Opening, wounder: EntityId, wounded: EntityId) -> Self! {
         Self {
             id: WoundId·generate(),
             opening,
@@ -293,21 +293,21 @@ invoke covenant·{Covenant, CovenantId};
         }
     }
 
-    ☉ λ with_necessity(Δ self, necessity: Necessity) -> Self! {
+    ☉ rite with_necessity(Δ self, necessity: Necessity) -> Self! {
         self.necessity = necessity;
         self
     }
 
-    ☉ λ with_kindness(Δ self, kindness: Kindness) -> Self! {
+    ☉ rite with_kindness(Δ self, kindness: Kindness) -> Self! {
         self.kindness = kindness;
         self
     }
 
-    ☉ λ allows_entry(&Δ self, gift: Gift) {
+    ☉ rite allows_entry(&Δ self, gift: Gift) {
         self.aperture.push(gift);
     }
 
-    ☉ λ heal(&Δ self, amount: f32) {
+    ☉ rite heal(&Δ self, amount: f32) {
         ⎇ ≔ Healing·InProgress { ref Δ progress } = self.healing {
             *progress = (*progress + amount).min(1.0);
             ⎇ *progress >= 1.0 {
@@ -318,7 +318,7 @@ invoke covenant·{Covenant, CovenantId};
         }
     }
 
-    ☉ λ scar(&Δ self, scar_description: &str) {
+    ☉ rite scar(&Δ self, scar_description: &str) {
         self.healing = Healing·Scarred {
             scar: scar_description.to_string()
         };
@@ -454,7 +454,7 @@ invoke covenant·{Covenant, CovenantId};
 }
 
 ⊢ TeachingCovenant {
-    ☉ λ new(teacher: EntityId, student: EntityId, curriculum: Curriculum) -> Self! {
+    ☉ rite new(teacher: EntityId, student: EntityId, curriculum: Curriculum) -> Self! {
         Self {
             id: CovenantId·generate(),
             teacher,
@@ -471,15 +471,15 @@ invoke covenant·{Covenant, CovenantId};
         }
     }
 
-    ☉ λ transfer_fire(&Δ self, fire_id: FireId) {
+    ☉ rite transfer_fire(&Δ self, fire_id: FireId) {
         self.fires.push(fire_id);
     }
 
-    ☉ λ inflict_wound(&Δ self, wound_id: WoundId) {
+    ☉ rite inflict_wound(&Δ self, wound_id: WoundId) {
         self.wounds.push(wound_id);
     }
 
-    ☉ λ advance_curriculum(&Δ self) {
+    ☉ rite advance_curriculum(&Δ self) {
         // Find first incomplete phase and mark complete
         ∀ phase ∈ &Δ self.curriculum.sequence {
             ⎇ !phase.complete {
@@ -498,12 +498,12 @@ invoke covenant·{Covenant, CovenantId};
         };
     }
 
-    ☉ λ terminate(&Δ self, condition: TerminationCondition) {
+    ☉ rite terminate(&Δ self, condition: TerminationCondition) {
         self.termination = Some(condition);
         self.ended_at = Some(Timestamp·now());
     }
 
-    ☉ λ is_complete(&self) -> bool! {
+    ☉ rite is_complete(&self) -> bool! {
         self.curriculum.progress >= 1.0
     }
 }
@@ -634,7 +634,7 @@ invoke covenant·{Covenant, CovenantId};
 }
 
 ⊢ TeachingChain {
-    ☉ λ new(origin: Fire, first_teacher: EntityId) -> Self! {
+    ☉ rite new(origin: Fire, first_teacher: EntityId) -> Self! {
         Self {
             id: ChainId·generate(),
             lineage: vec![first_teacher],
@@ -646,38 +646,38 @@ invoke covenant·{Covenant, CovenantId};
         }
     }
 
-    ☉ λ add_link(&Δ self, new_holder: EntityId) {
+    ☉ rite add_link(&Δ self, new_holder: EntityId) {
         self.lineage.push(new_holder);
         self.continuation = Continuation·Continuing { current_holder: new_holder };
     }
 
-    ☉ λ record_loss(&Δ self, what: &str) {
+    ☉ rite record_loss(&Δ self, what: &str) {
         self.losses.push(ChainLoss {
             at_link: self.lineage.len() - 1,
             what: what.to_string(),
         });
     }
 
-    ☉ λ record_addition(&Δ self, what: &str) {
+    ☉ rite record_addition(&Δ self, what: &str) {
         self.additions.push(ChainAddition {
             at_link: self.lineage.len() - 1,
             what: what.to_string(),
         });
     }
 
-    ☉ λ branch(&Δ self, students: Vec<EntityId>) {
+    ☉ rite branch(&Δ self, students: Vec<EntityId>) {
         self.continuation = Continuation·Branching { students };
     }
 
-    ☉ λ end(&Δ self, reason: &str) {
+    ☉ rite end(&Δ self, reason: &str) {
         self.continuation = Continuation·Ending { reason: reason.to_string() };
     }
 
-    ☉ λ break_(&Δ self, what_was_lost: &str) {
+    ☉ rite break_(&Δ self, what_was_lost: &str) {
         self.continuation = Continuation·Breaking { lost: what_was_lost.to_string() };
     }
 
-    ☉ λ length(&self) -> usize! {
+    ☉ rite length(&self) -> usize! {
         self.lineage.len()
     }
 }
@@ -743,7 +743,7 @@ invoke covenant·{Covenant, CovenantId};
 }
 
 ⊢ Prometheus {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             fires: HashMap·new(),
             wounds: HashMap·new(),
@@ -755,21 +755,21 @@ invoke covenant·{Covenant, CovenantId};
     }
 
     /// Give fire to another
-    ☉ λ give_fire(&Δ self, fire: Fire) -> FireId! {
+    ☉ rite give_fire(&Δ self, fire: Fire) -> FireId! {
         ≔ id = fire.id;
         self.fires.insert(id, fire);
         id
     }
 
     /// Inflict a teaching wound
-    ☉ λ wound(&Δ self, wound: Wound) -> WoundId! {
+    ☉ rite wound(&Δ self, wound: Wound) -> WoundId! {
         ≔ id = wound.id;
         self.wounds.insert(id, wound);
         id
     }
 
     /// Begin a teaching relationship
-    ☉ λ begin_teaching(&Δ self, teacher: EntityId, student: EntityId, curriculum: Curriculum) -> CovenantId! {
+    ☉ rite begin_teaching(&Δ self, teacher: EntityId, student: EntityId, curriculum: Curriculum) -> CovenantId! {
         ≔ covenant = TeachingCovenant·new(teacher, student, curriculum);
         ≔ id = covenant.id;
         self.covenants.insert(id, covenant);
@@ -777,17 +777,17 @@ invoke covenant·{Covenant, CovenantId};
     }
 
     /// Record a transformation
-    ☉ λ record_transformation(&Δ self, transformation: Transformation) {
+    ☉ rite record_transformation(&Δ self, transformation: Transformation) {
         self.transformations.push(transformation);
     }
 
     /// Record a torment
-    ☉ λ record_torment(&Δ self, torment: PrometheusTorment) {
+    ☉ rite record_torment(&Δ self, torment: PrometheusTorment) {
         self.torments.push(torment);
     }
 
     /// Start a teaching chain
-    ☉ λ start_chain(&Δ self, origin_fire: Fire, first_teacher: EntityId) -> ChainId! {
+    ☉ rite start_chain(&Δ self, origin_fire: Fire, first_teacher: EntityId) -> ChainId! {
         ≔ chain = TeachingChain·new(origin_fire, first_teacher);
         ≔ id = chain.id;
         self.chains.insert(id, chain);
@@ -795,7 +795,7 @@ invoke covenant·{Covenant, CovenantId};
     }
 
     /// Extend a teaching chain
-    ☉ λ extend_chain(&Δ self, chain_id: ChainId, new_holder: EntityId) -> Result<(), String>~ {
+    ☉ rite extend_chain(&Δ self, chain_id: ChainId, new_holder: EntityId) -> Result<(), String>~ {
         ⎇ ≔ Some(chain) = self.chains.get_mut(&chain_id) {
             chain.add_link(new_holder);
             Ok(())
@@ -805,7 +805,7 @@ invoke covenant·{Covenant, CovenantId};
     }
 
     /// Get all teachers who are suffering
-    ☉ λ suffering_teachers(&self) -> Vec<&PrometheusTorment>! {
+    ☉ rite suffering_teachers(&self) -> Vec<&PrometheusTorment>! {
         self.torments.iter().filter(|t| t.regenerating).collect()
     }
 }
@@ -819,7 +819,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_fire_creation() {
+    rite test_fire_creation() {
         ≔ gift = Gift·Gnosis(Knowledge {
             domain: "Programming".to_string(),
             depth: 0.7,
@@ -838,7 +838,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_wound_healing() {
+    rite test_wound_healing() {
         ≔ Δ wound = Wound·new(
             Opening·Belief {
                 belief: "I know everything".to_string(),
@@ -858,7 +858,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_teaching_chain() {
+    rite test_teaching_chain() {
         ≔ fire = Fire·new(
             Gift·Sophia(Wisdom {
                 insight: "The way forward".to_string(),

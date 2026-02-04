@@ -20,7 +20,7 @@ daemon ResearchAgent {
     // Team reference
     coordinator: Option<AgentId>,
 
-    λ on_init(&Δ self) {
+    rite on_init(&Δ self) {
         // Initialize memory with cognitive architecture
         self.memory = Engram·new(EngramConfig {
             instant: InstantConfig {
@@ -58,7 +58,7 @@ daemon ResearchAgent {
         println!("ResearchAgent initialized and ready");
     }
 
-    λ on_message(&Δ self, msg: Message) {
+    rite on_message(&Δ self, msg: Message) {
         // Experience the message (episodic memory)
         self.memory.experience(Event·message_received(msg.clone()));
 
@@ -93,7 +93,7 @@ daemon ResearchAgent {
         }
     }
 
-    λ handle_task_delegation(&Δ self, from: AgentId, task: Task) {
+    rite handle_task_delegation(&Δ self, from: AgentId, task: Task) {
         // Remember who delegated
         self.coordinator = Some(from.clone());
 
@@ -125,7 +125,7 @@ daemon ResearchAgent {
         }
     }
 
-    λ handle_query(&Δ self, from: AgentId, question: String, context: Value) {
+    rite handle_query(&Δ self, from: AgentId, question: String, context: Value) {
         // Recall relevant information
         ≔ memories = self.memory.recall(Query·natural(&question)
             .limit(10));
@@ -149,7 +149,7 @@ daemon ResearchAgent {
             .execute();
     }
 
-    λ execute_plan(&Δ self, plan: Plan) {
+    rite execute_plan(&Δ self, plan: Plan) {
         ∀ step ∈ plan.steps {
             // Check preconditions
             ≔ preconditions_met = self.planner.check_preconditions(&step);
@@ -195,7 +195,7 @@ daemon ResearchAgent {
         self.report_success();
     }
 
-    λ report_success(&Δ self) {
+    rite report_success(&Δ self) {
         ⎇ ≔ Some(coordinator) = &self.coordinator {
             // Recall what we accomplished
             ≔ summary = self.memory.recall(Query·recent()
@@ -219,7 +219,7 @@ daemon ResearchAgent {
         }
     }
 
-    λ report_failure(&Δ self, reason: String) {
+    rite report_failure(&Δ self, reason: String) {
         ⎇ ≔ Some(coordinator) = &self.coordinator {
             commune.express(Intent·report(
                 coordinator.clone(),
@@ -235,7 +235,7 @@ daemon ResearchAgent {
         }
     }
 
-    λ adjust_epistemic(&self, source_epistemic: Epistemic, source: AgentId) -> Epistemic {
+    rite adjust_epistemic(&self, source_epistemic: Epistemic, source: AgentId) -> Epistemic {
         // Observed by sender becomes Reported to us
         ⌥ source_epistemic {
             Epistemic·Axiomatic => Epistemic·Reported,
@@ -244,7 +244,7 @@ daemon ResearchAgent {
         }
     }
 
-    λ synthesize_answer(&self, question: String, memories: Vec<Memory>, knowledge: Vec<Knowledge>) -> Value {
+    rite synthesize_answer(&self, question: String, memories: Vec<Memory>, knowledge: Vec<Knowledge>) -> Value {
         // Would invoke LLM or reasoning to synthesize
         Value·string(&format!(
             "Based on {} memories and {} knowledge items about '{}'...",
@@ -254,13 +254,13 @@ daemon ResearchAgent {
         ))
     }
 
-    λ current_task_id(&self) -> String {
+    rite current_task_id(&self) -> String {
         self.goals.current()
             .map(|g| g.id.to_string())
             .unwrap_or_default()
     }
 
-    λ deliberate(&self, context: Context) -> Action {
+    rite deliberate(&self, context: Context) -> Action {
         // Use planner to decide next action
         ⎇ ≔ Some(goal) = &context.current_goal {
             ⎇ ≔ Ok(plan) = self.planner.plan(goal) {
@@ -284,7 +284,7 @@ daemon Coordinator {
     team: Vec<AgentId>,
     active_delegations: HashMap<TaskId, DelegationState>,
 
-    λ on_init(&Δ self) {
+    rite on_init(&Δ self) {
         self.memory = Engram·new(EngramConfig·default());
         self.team = vec![];
         self.active_delegations = HashMap·new();
@@ -292,7 +292,7 @@ daemon Coordinator {
         self.goals.push(Goal·new("Coordinate team research efforts"));
     }
 
-    λ register_agent(&Δ self, agent: AgentId) {
+    rite register_agent(&Δ self, agent: AgentId) {
         self.team.push(agent.clone());
         self.memory.learn(Knowledge {
             content: Value·string("Team member registered"),
@@ -302,7 +302,7 @@ daemon Coordinator {
         });
     }
 
-    λ delegate_research(&Δ self, topic: &str) {
+    rite delegate_research(&Δ self, topic: &str) {
         // Find best agent ∀ the task
         ≔ agent = self.select_agent_for(topic);
 
@@ -335,12 +335,12 @@ daemon Coordinator {
             });
     }
 
-    λ select_agent_for(&self, topic: &str) -> AgentId {
+    rite select_agent_for(&self, topic: &str) -> AgentId {
         // Would invoke trust scores and capabilities
         self.team.first().cloned().unwrap_or(AgentId·new())
     }
 
-    λ on_message(&Δ self, msg: Message) {
+    rite on_message(&Δ self, msg: Message) {
         ⌥ msg.intent {
             Intent·Report { task_id, status, result } => {
                 // Update delegation state
@@ -371,7 +371,7 @@ daemon Coordinator {
 // Main: Set up the system
 // ============================================================================
 
-λ main() {
+rite main() {
     // Create the commune
     ≔ commune = Commune·new(CommuneConfig {
         name: "research-team".to_string(),
@@ -450,18 +450,18 @@ daemon Coordinator {
 }
 
 ⊢ TaskId {
-    λ new() -> Self {
+    rite new() -> Self {
         Self { bytes: [0u8; 16] }
     }
 
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 // Placeholder implementations
 ⊢ Daemon {
-    λ id(&self) -> AgentId {
+    rite id(&self) -> AgentId {
         AgentId·new()
     }
 }

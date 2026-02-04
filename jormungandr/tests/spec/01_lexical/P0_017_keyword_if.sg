@@ -2,7 +2,7 @@
 // Spec: 01-LEXICAL.md § 2.2 Keywords
 // Priority: P0
 
-λ main() {
+rite main() {
     ≔ x = ⎇ true { 42 } ⎉ { 0 };
     println(x);
 }

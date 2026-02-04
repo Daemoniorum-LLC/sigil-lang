@@ -1744,7 +1744,7 @@ fn morpheme_symbol(kind: ast::MorphemeKind) -> &'static str {
         ast::MorphemeKind::Filter => "φ",
         ast::MorphemeKind::Sort => "σ",
         ast::MorphemeKind::Reduce => "ρ",
-        ast::MorphemeKind::Lambda => "λ",
+        ast::MorphemeKind::Lambda => "Λ",
         ast::MorphemeKind::Sum => "Σ",
         ast::MorphemeKind::Product => "Π",
         ast::MorphemeKind::First => "α",

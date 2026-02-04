@@ -21,15 +21,15 @@
     broker: String,
 }
 
-λ connect_consumer(broker: String) -> Consumer {
+rite connect_consumer(broker: String) -> Consumer {
     Consumer { broker: broker }
 }
 
-λ new_topic(name: String) -> Topic {
+rite new_topic(name: String) -> Topic {
     Topic { name: name }
 }
 
-λ recv_kafka(consumer: Consumer) -> KafkaMessage {
+rite recv_kafka(consumer: Consumer) -> KafkaMessage {
     // Simulated message - ∈ real Kafka from broker
     KafkaMessage {
         key: "key",
@@ -38,7 +38,7 @@
     }
 }
 
-λ main() {
+rite main() {
     // Test: Consumer construction with evidential binding
     ≔ consumer~ = connect_consumer("localhost:9092");
 

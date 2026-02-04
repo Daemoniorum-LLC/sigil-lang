@@ -2,7 +2,7 @@
 // Spec: 16-AI-IR.md § Evidentiality Lattice
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ known: !i32 = 42;
     ≔ uncertain: ?i32 = Option·Some(1);
     ≔ reported: ~i32 = external_data();

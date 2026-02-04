@@ -249,7 +249,7 @@ rite test_type_alias_items() → !bool {
     assert_item("type Container<T> where T: Clone = Vec<T>;", "type_where");
 
     // Complex types
-    assert_item("type Callback = λ(!i32) → !i32;", "type_fn");
+    assert_item("type Callback = rite(!i32) → !i32;", "type_fn");
     assert_item("type OptionalList<T> = ?[T];", "type_optional_list");
 
     println("PASS (7 cases)");
@@ -416,7 +416,7 @@ rite test_attributes() → !bool {
     assert_item("#[cfg(feature = \"extra\")] scroll extra {}", "attr_cfg_feature");
 
     // Doc
-    assert_item("/// Documentation\nλ documented() {}", "attr_doc_line");
+    assert_item("/// Documentation\nrite documented() {}", "attr_doc_line");
     assert_item("#[doc = \"Documentation\"] rite also_documented() {}", "attr_doc_attr");
 
     // Custom attributes

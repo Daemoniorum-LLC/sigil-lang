@@ -5,16 +5,16 @@
 Σ Vec2 { x: !f64, y: !f64 }
 
 ⊢ Vec2 {
-    λ length(&self) -> !f64 {
+    rite length(&self) -> !f64 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
 
-    λ dot(&self, other: &Vec2) -> !f64 {
+    rite dot(&self, other: &Vec2) -> !f64 {
         self.x * other.x + self.y * other.y
     }
 }
 
-λ main() {
+rite main() {
     ≔ ir = __export_ir();
     println(ir.impls.len());
 }

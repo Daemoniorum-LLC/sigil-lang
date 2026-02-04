@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 3.4 Statements
 // Priority: P0
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 40;
     ≔ y: !i32 = 2;
     println(x + y);

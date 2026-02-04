@@ -1,7 +1,7 @@
 // TDD Test: Prefix ? option syntax
 // Test ⎇ -> ?T works as Option<T>
 
-λ maybe_get(cond: bool) -> ?i32 {
+rite maybe_get(cond: bool) -> ?i32 {
     ⎇ cond {
         42
     } ⎉ {
@@ -9,7 +9,7 @@
     }
 }
 
-λ main() {
+rite main() {
     ≔ result = maybe_get(true);
     println(result);
 }

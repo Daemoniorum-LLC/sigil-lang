@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 42, 100
 
-λ main() {
+rite main() {
     // → = as (type cast)
     ≔ x: !i32 = 42;
     ≔ y: !i64 = x → !i64;

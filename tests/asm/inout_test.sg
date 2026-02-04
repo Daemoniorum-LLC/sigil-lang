@@ -1,5 +1,5 @@
 // Test inout operand - just increment a value
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ value: i64 = 41;
     unsafe {
         asm!("inc rax",

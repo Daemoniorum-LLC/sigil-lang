@@ -2,7 +2,7 @@
 // This tests the native runtime async I/O syscalls
 // Priority: P1
 
-λ main() {
+rite main() {
     // Create epoll instance
     ≔ epfd = Sys·epoll_create1(0);
 

@@ -2,7 +2,7 @@
 // In Sigil, ! is logical NOT for bools, bitwise NOT for integers
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ x = 42;
     ≔ y = !x;  // Bitwise NOT: ~42 = -43 (two's complement)
     println(y);

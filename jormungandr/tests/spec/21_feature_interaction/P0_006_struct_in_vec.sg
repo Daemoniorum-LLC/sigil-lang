@@ -6,7 +6,7 @@
     value: i32,
 }
 
-λ main() {
+rite main() {
     ≔ Δ items: Vec<Item> = Vec·new();
     items.push(Item { value: 10 });
     items.push(Item { value: 20 });

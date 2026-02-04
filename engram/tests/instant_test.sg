@@ -9,9 +9,9 @@
 ☉ Σ TokenCount(☉ usize);
 
 ⊢ TokenCount {
-    ☉ λ zero() -> Self { Self(0) }
+    ☉ rite zero() -> Self { Self(0) }
 
-    ☉ λ from_text(text: &str) -> Self {
+    ☉ rite from_text(text: &str) -> Self {
         Self(text.len() / 4 + 1)
     }
 }
@@ -24,7 +24,7 @@
 }
 
 ⊢ InstantConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             capacity: TokenCount(4096),
             decay_rate: 0.1,
@@ -33,17 +33,17 @@
         }
     }
 
-    ☉ λ with_capacity(Δ self, capacity: usize) -> Self {
+    ☉ rite with_capacity(Δ self, capacity: usize) -> Self {
         self.capacity = TokenCount(capacity);
         self
     }
 
-    ☉ λ with_decay_rate(Δ self, rate: f64) -> Self {
+    ☉ rite with_decay_rate(Δ self, rate: f64) -> Self {
         self.decay_rate = rate;
         self
     }
 
-    ☉ λ with_eviction_threshold(Δ self, threshold: f64) -> Self {
+    ☉ rite with_eviction_threshold(Δ self, threshold: f64) -> Self {
         self.eviction_threshold = threshold;
         self
     }
@@ -62,11 +62,11 @@
 }
 
 ⊢ Content {
-    ☉ λ text(s: &str) -> Self {
+    ☉ rite text(s: &str) -> Self {
         Content·Text(s.to_string())
     }
 
-    ☉ λ to_string(&self) -> String {
+    ☉ rite to_string(&self) -> String {
         ⌥ self {
             Content·Text(s) => s.clone(),
             Content·Reference { summary, .. } => summary.clone(),
@@ -74,7 +74,7 @@
         }
     }
 
-    ☉ λ token_count(&self) -> TokenCount {
+    ☉ rite token_count(&self) -> TokenCount {
         TokenCount·from_text(&self.to_string())
     }
 }
@@ -82,11 +82,11 @@
 ☉ Σ ItemId(usize);
 
 ⊢ ItemId {
-    λ new(id: usize) -> Self { Self(id) }
+    rite new(id: usize) -> Self { Self(id) }
 }
 
 ⊢ PartialEq ∀ ItemId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
@@ -100,7 +100,7 @@
 }
 
 ⊢ InstantItem {
-    ☉ λ new(id: usize, content: Content, relevance: f64) -> Self {
+    ☉ rite new(id: usize, content: Content, relevance: f64) -> Self {
         ≔ tokens = content.token_count();
         Self {
             id: ItemId·new(id),
@@ -123,7 +123,7 @@
 }
 
 ⊢ InstantMemory {
-    ☉ λ new(config: InstantConfig) -> Self {
+    ☉ rite new(config: InstantConfig) -> Self {
         Self {
             capacity: config.capacity,
             items: Vec·new(),
@@ -135,11 +135,11 @@
         }
     }
 
-    ☉ λ default_memory() -> Self {
+    ☉ rite default_memory() -> Self {
         Self·new(InstantConfig·default_config())
     }
 
-    ☉ λ attend(&Δ self, content: Content, relevance: f64) -> Option<ItemId> {
+    ☉ rite attend(&Δ self, content: Content, relevance: f64) -> Option<ItemId> {
         ≔ tokens = content.token_count();
 
         // Check ⎇ content fits at all
@@ -165,7 +165,7 @@
         Some(ItemId·new(id))
     }
 
-    ☉ λ refresh(&Δ self, id: &ItemId, boost: f64) -> bool {
+    ☉ rite refresh(&Δ self, id: &ItemId, boost: f64) -> bool {
         ∀ item ∈ &Δ self.items {
             ⎇ item.id == *id {
                 item.current_priority = (item.current_priority + boost).min(1.0);
@@ -176,7 +176,7 @@
         false
     }
 
-    ☉ λ dismiss(&Δ self, id: &ItemId) -> bool {
+    ☉ rite dismiss(&Δ self, id: &ItemId) -> bool {
         ≔ Δ found_idx = None;
         ∀ i ∈ 0..self.items.len() {
             ⎇ self.items[i].id == *id {
@@ -194,32 +194,32 @@
         }
     }
 
-    ☉ λ get(&self, id: &ItemId) -> Option<&InstantItem> {
+    ☉ rite get(&self, id: &ItemId) -> Option<&InstantItem> {
         self.items.iter().find(|item| item.id == *id)
     }
 
-    ☉ λ active(&self) -> &Vec<InstantItem> {
+    ☉ rite active(&self) -> &Vec<InstantItem> {
         &self.items
     }
 
-    ☉ λ len(&self) -> usize {
+    ☉ rite len(&self) -> usize {
         self.items.len()
     }
 
-    ☉ λ is_empty(&self) -> bool {
+    ☉ rite is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    ☉ λ token_usage(&self) -> (usize, usize) {
+    ☉ rite token_usage(&self) -> (usize, usize) {
         (self.token_count.0, self.capacity.0)
     }
 
-    ☉ λ utilization(&self) -> f64 {
+    ☉ rite utilization(&self) -> f64 {
         ⎇ self.capacity.0 == 0 { ⤺ 0.0; }
         self.token_count.0 as f64 / self.capacity.0 as f64
     }
 
-    ☉ λ apply_decay(&Δ self, decay_factor: f64) {
+    ☉ rite apply_decay(&Δ self, decay_factor: f64) {
         ∀ item ∈ &Δ self.items {
             item.current_priority = item.current_priority * decay_factor;
         }
@@ -243,12 +243,12 @@
         self.sort_by_priority();
     }
 
-    ☉ λ clear(&Δ self) {
+    ☉ rite clear(&Δ self) {
         self.items.clear();
         self.token_count = TokenCount·zero();
     }
 
-    λ sort_by_priority(&Δ self) {
+    rite sort_by_priority(&Δ self) {
         // Bubble sort by priority (descending)
         ∀ i ∈ 0..self.items.len() {
             ∀ j ∈ (i + 1)..self.items.len() {
@@ -259,7 +259,7 @@
         }
     }
 
-    λ evict_lowest(&Δ self) -> bool {
+    rite evict_lowest(&Δ self) -> bool {
         ⎇ self.items.is_empty() {
             ⤺ false;
         }
@@ -276,7 +276,7 @@
     JSON,
 }
 
-☉ λ export_items(items: &Vec<InstantItem>, format: &ExportFormat) -> String {
+☉ rite export_items(items: &Vec<InstantItem>, format: &ExportFormat) -> String {
     ⌥ format {
         ExportFormat·Plain => {
             ≔ Δ result = String·new();
@@ -322,7 +322,7 @@
 // ============================================================================
 
 #[test]
-λ test_instant_memory_default_creation() {
+rite test_instant_memory_default_creation() {
     ≔ memory = InstantMemory·default_memory();
     assert_eq(memory.len(), 0);
     assert(memory.is_empty());
@@ -332,7 +332,7 @@
 }
 
 #[test]
-λ test_instant_memory_custom_capacity() {
+rite test_instant_memory_custom_capacity() {
     ≔ config = InstantConfig·default_config().with_capacity(1024);
     ≔ memory = InstantMemory·new(config);
     ≔ (_, capacity) = memory.token_usage();
@@ -340,7 +340,7 @@
 }
 
 #[test]
-λ test_instant_memory_custom_decay_rate() {
+rite test_instant_memory_custom_decay_rate() {
     ≔ config = InstantConfig·default_config().with_decay_rate(0.5);
     ≔ memory = InstantMemory·new(config);
     // Decay rate is internal, test via behavior
@@ -352,7 +352,7 @@
 // ============================================================================
 
 #[test]
-λ test_attend_single_item() {
+rite test_attend_single_item() {
     ≔ Δ memory = InstantMemory·default_memory();
     ≔ content = Content·text("Hello, this is a test message.");
     ≔ id = memory.attend(content, 0.8);
@@ -363,7 +363,7 @@
 }
 
 #[test]
-λ test_attend_multiple_items() {
+rite test_attend_multiple_items() {
     ≔ Δ memory = InstantMemory·default_memory();
 
     memory.attend(Content·text("First item"), 0.9);
@@ -374,7 +374,7 @@
 }
 
 #[test]
-λ test_attend_with_relevance_sorting() {
+rite test_attend_with_relevance_sorting() {
     ≔ Δ memory = InstantMemory·default_memory();
 
     memory.attend(Content·text("Low priority"), 0.3);
@@ -388,7 +388,7 @@
 }
 
 #[test]
-λ test_attend_respects_token_capacity() {
+rite test_attend_respects_token_capacity() {
     ≔ config = InstantConfig·default_config().with_capacity(50);
     ≔ Δ memory = InstantMemory·new(config);
 
@@ -403,7 +403,7 @@
 }
 
 #[test]
-λ test_attend_too_large_content() {
+rite test_attend_too_large_content() {
     ≔ config = InstantConfig·default_config().with_capacity(10);
     ≔ Δ memory = InstantMemory·new(config);
 
@@ -420,7 +420,7 @@
 // ============================================================================
 
 #[test]
-λ test_refresh_existing_item() {
+rite test_refresh_existing_item() {
     ≔ Δ memory = InstantMemory·default_memory();
     ≔ id = memory.attend(Content·text("Test item"), 0.5).unwrap();
 
@@ -433,7 +433,7 @@
 }
 
 #[test]
-λ test_refresh_nonexistent_item() {
+rite test_refresh_nonexistent_item() {
     ≔ Δ memory = InstantMemory·default_memory();
     memory.attend(Content·text("Test item"), 0.5);
 
@@ -444,7 +444,7 @@
 }
 
 #[test]
-λ test_refresh_caps_at_1_0() {
+rite test_refresh_caps_at_1_0() {
     ≔ Δ memory = InstantMemory·default_memory();
     ≔ id = memory.attend(Content·text("Test item"), 0.9).unwrap();
 
@@ -457,7 +457,7 @@
 }
 
 #[test]
-λ test_refresh_reorders_items() {
+rite test_refresh_reorders_items() {
     ≔ Δ memory = InstantMemory·default_memory();
 
     ≔ low_id = memory.attend(Content·text("Low priority"), 0.3).unwrap();
@@ -476,7 +476,7 @@
 // ============================================================================
 
 #[test]
-λ test_dismiss_existing_item() {
+rite test_dismiss_existing_item() {
     ≔ Δ memory = InstantMemory·default_memory();
     ≔ id = memory.attend(Content·text("Test item"), 0.5).unwrap();
 
@@ -487,7 +487,7 @@
 }
 
 #[test]
-λ test_dismiss_nonexistent_item() {
+rite test_dismiss_nonexistent_item() {
     ≔ Δ memory = InstantMemory·default_memory();
     memory.attend(Content·text("Test item"), 0.5);
 
@@ -499,7 +499,7 @@
 }
 
 #[test]
-λ test_dismiss_updates_token_count() {
+rite test_dismiss_updates_token_count() {
     ≔ Δ memory = InstantMemory·default_memory();
     ≔ id = memory.attend(Content·text("Test item with some tokens"), 0.5).unwrap();
 
@@ -515,7 +515,7 @@
 // ============================================================================
 
 #[test]
-λ test_get_existing_item() {
+rite test_get_existing_item() {
     ≔ Δ memory = InstantMemory·default_memory();
     ≔ id = memory.attend(Content·text("Test content"), 0.7).unwrap();
 
@@ -528,7 +528,7 @@
 }
 
 #[test]
-λ test_get_nonexistent_item() {
+rite test_get_nonexistent_item() {
     ≔ memory = InstantMemory·default_memory();
     ≔ fake_id = ItemId·new(999);
     ≔ item = memory.get(&fake_id);
@@ -536,7 +536,7 @@
 }
 
 #[test]
-λ test_active_returns_all_items() {
+rite test_active_returns_all_items() {
     ≔ Δ memory = InstantMemory·default_memory();
 
     memory.attend(Content·text("Item 1"), 0.9);
@@ -552,7 +552,7 @@
 // ============================================================================
 
 #[test]
-λ test_apply_decay_reduces_priority() {
+rite test_apply_decay_reduces_priority() {
     ≔ Δ memory = InstantMemory·default_memory();
     memory.attend(Content·text("Test item"), 0.8);
 
@@ -564,7 +564,7 @@
 }
 
 #[test]
-λ test_decay_evicts_below_threshold() {
+rite test_decay_evicts_below_threshold() {
     ≔ config = InstantConfig·default_config()
         .with_eviction_threshold(0.3);
     ≔ Δ memory = InstantMemory·new(config);
@@ -580,7 +580,7 @@
 }
 
 #[test]
-λ test_multiple_decay_cycles() {
+rite test_multiple_decay_cycles() {
     ≔ Δ memory = InstantMemory·default_memory();
     memory.attend(Content·text("Test item"), 1.0);
 
@@ -601,14 +601,14 @@
 // ============================================================================
 
 #[test]
-λ test_token_count_from_text() {
+rite test_token_count_from_text() {
     ≔ tokens = TokenCount·from_text("Hello world");
     // ~11 chars / 4 + 1 = 3 tokens
     assert(tokens.0 > 0);
 }
 
 #[test]
-λ test_token_usage_tracking() {
+rite test_token_usage_tracking() {
     ≔ Δ memory = InstantMemory·default_memory();
 
     ≔ (used_before, _) = memory.token_usage();
@@ -621,7 +621,7 @@
 }
 
 #[test]
-λ test_utilization_calculation() {
+rite test_utilization_calculation() {
     ≔ config = InstantConfig·default_config().with_capacity(100);
     ≔ Δ memory = InstantMemory·new(config);
 
@@ -639,7 +639,7 @@
 // ============================================================================
 
 #[test]
-λ test_clear_removes_all_items() {
+rite test_clear_removes_all_items() {
     ≔ Δ memory = InstantMemory·default_memory();
 
     memory.attend(Content·text("Item 1"), 0.9);
@@ -652,7 +652,7 @@
 }
 
 #[test]
-λ test_clear_resets_token_count() {
+rite test_clear_resets_token_count() {
     ≔ Δ memory = InstantMemory·default_memory();
 
     memory.attend(Content·text("Some content"), 0.5);
@@ -669,14 +669,14 @@
 // ============================================================================
 
 #[test]
-λ test_content_text() {
+rite test_content_text() {
     ≔ content = Content·text("Hello world");
     ≔ s = content.to_string();
     assert_eq(s, "Hello world");
 }
 
 #[test]
-λ test_content_reference() {
+rite test_content_reference() {
     ≔ content = Content·Reference {
         engram_id: "engram_123".to_string(),
         summary: "A reference to something".to_string(),
@@ -686,7 +686,7 @@
 }
 
 #[test]
-λ test_content_summary() {
+rite test_content_summary() {
     ≔ content = Content·Summary {
         original_ids: vec!["id1".to_string(), "id2".to_string()],
         text: "Combined summary".to_string(),
@@ -700,7 +700,7 @@
 // ============================================================================
 
 #[test]
-λ test_export_plain() {
+rite test_export_plain() {
     ≔ Δ memory = InstantMemory·default_memory();
     memory.attend(Content·text("First"), 0.9);
     memory.attend(Content·text("Second"), 0.7);
@@ -711,7 +711,7 @@
 }
 
 #[test]
-λ test_export_markdown() {
+rite test_export_markdown() {
     ≔ Δ memory = InstantMemory·default_memory();
     memory.attend(Content·text("Test item"), 0.75);
 
@@ -721,7 +721,7 @@
 }
 
 #[test]
-λ test_export_xml() {
+rite test_export_xml() {
     ≔ Δ memory = InstantMemory·default_memory();
     memory.attend(Content·text("Test item"), 0.8);
 
@@ -732,7 +732,7 @@
 }
 
 #[test]
-λ test_export_json() {
+rite test_export_json() {
     ≔ Δ memory = InstantMemory·default_memory();
     memory.attend(Content·text("Test"), 0.9);
 
@@ -747,7 +747,7 @@
 // ============================================================================
 
 #[test]
-λ test_empty_memory_operations() {
+rite test_empty_memory_operations() {
     ≔ memory = InstantMemory·default_memory();
 
     assert(memory.is_empty());
@@ -758,7 +758,7 @@
 }
 
 #[test]
-λ test_eviction_order_by_priority() {
+rite test_eviction_order_by_priority() {
     ≔ config = InstantConfig·default_config().with_capacity(30);
     ≔ Δ memory = InstantMemory·new(config);
 
@@ -776,7 +776,7 @@
 }
 
 #[test]
-λ test_item_id_equality() {
+rite test_item_id_equality() {
     ≔ id1 = ItemId·new(42);
     ≔ id2 = ItemId·new(42);
     ≔ id3 = ItemId·new(43);
@@ -785,6 +785,6 @@
     assert(!(id1 == id3));
 }
 
-λ main() {
+rite main() {
     print("Engram instant memory tests");
 }

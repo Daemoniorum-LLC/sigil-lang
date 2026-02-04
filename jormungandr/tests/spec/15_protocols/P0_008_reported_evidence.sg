@@ -6,7 +6,7 @@
 
 invoke protocol·http·Client;
 
-async λ main() {
+async rite main() {
     ≔ client = Client·new();
     ≔ response~ = client.get("https://api.example.com")|await;
     // response~ has reported evidence - cannot be trusted without verification

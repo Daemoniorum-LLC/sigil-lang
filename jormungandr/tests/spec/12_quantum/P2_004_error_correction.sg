@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 8.1 Logical Qubits
 // Priority: P2 - Advanced Feature
 
-λ main() {
+rite main() {
     // Encode |0⟩ using 3-qubit bit-flip code: |0⟩ → |000⟩
     ≔ logical = BitFlipCode·encode_zero();
 

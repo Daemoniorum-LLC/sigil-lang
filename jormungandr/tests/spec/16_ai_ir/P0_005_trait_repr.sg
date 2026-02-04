@@ -3,18 +3,18 @@
 // Priority: P0 - Bootstrap Critical
 
 Θ Display {
-    λ display(&self) -> String;
+    rite display(&self) -> String;
 }
 
 Σ Num { value: !i32 }
 
 ⊢ Display ∀ Num {
-    λ display(&self) -> String {
+    rite display(&self) -> String {
         self.value.to_string()
     }
 }
 
-λ main() {
+rite main() {
     ≔ ir = __export_ir();
     println(ir.traits.len());
 }

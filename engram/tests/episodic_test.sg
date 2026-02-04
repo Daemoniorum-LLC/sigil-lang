@@ -9,17 +9,17 @@
 ☉ Σ EpisodeId(usize);
 
 ⊢ EpisodeId {
-    λ new(id: usize) -> Self { Self(id) }
+    rite new(id: usize) -> Self { Self(id) }
 }
 
 ⊢ PartialEq ∀ EpisodeId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
 
 ⊢ Clone ∀ EpisodeId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         EpisodeId(self.0)
     }
 }
@@ -33,7 +33,7 @@
 }
 
 ⊢ Outcome {
-    ☉ λ confidence(&self) -> f64 {
+    ☉ rite confidence(&self) -> f64 {
         ⌥ self {
             Outcome·Success { goal_alignment, .. } => *goal_alignment,
             Outcome·Failure { .. } => 1.0,
@@ -43,7 +43,7 @@
         }
     }
 
-    ☉ λ summarize(&self) -> String {
+    ☉ rite summarize(&self) -> String {
         ⌥ self {
             Outcome·Ongoing => "ongoing".to_string(),
             Outcome·Success { .. } => "success".to_string(),
@@ -75,7 +75,7 @@
 }
 
 ⊢ Event {
-    ☉ λ user_message(content: &str) -> Self {
+    ☉ rite user_message(content: &str) -> Self {
         Self {
             timestamp: 0,
             sequence: 0,
@@ -86,7 +86,7 @@
         }
     }
 
-    ☉ λ agent_response(content: &str) -> Self {
+    ☉ rite agent_response(content: &str) -> Self {
         Self {
             timestamp: 0,
             sequence: 0,
@@ -97,7 +97,7 @@
         }
     }
 
-    ☉ λ tool_call(tool: &str) -> Self {
+    ☉ rite tool_call(tool: &str) -> Self {
         Self {
             timestamp: 0,
             sequence: 0,
@@ -108,7 +108,7 @@
         }
     }
 
-    ☉ λ error_event(error: &str) -> Self {
+    ☉ rite error_event(error: &str) -> Self {
         Self {
             timestamp: 0,
             sequence: 0,
@@ -135,7 +135,7 @@
 }
 
 ⊢ Participant {
-    ☉ λ user(id: &str) -> Self {
+    ☉ rite user(id: &str) -> Self {
         Self {
             id: id.to_string(),
             role: ParticipantRole·User,
@@ -143,7 +143,7 @@
         }
     }
 
-    ☉ λ agent(id: &str) -> Self {
+    ☉ rite agent(id: &str) -> Self {
         Self {
             id: id.to_string(),
             role: ParticipantRole·Self_,
@@ -151,7 +151,7 @@
         }
     }
 
-    ☉ λ tool(name: &str) -> Self {
+    ☉ rite tool(name: &str) -> Self {
         Self {
             id: name.to_string(),
             role: ParticipantRole·Tool,
@@ -166,23 +166,23 @@
 }
 
 ⊢ Context {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { goal: None, task: None }
     }
 
-    ☉ λ with_goal(goal: &str) -> Self {
+    ☉ rite with_goal(goal: &str) -> Self {
         Self {
             goal: Some(goal.to_string()),
             task: None,
         }
     }
 
-    ☉ λ with_task(Δ self, task: &str) -> Self {
+    ☉ rite with_task(Δ self, task: &str) -> Self {
         self.task = Some(task.to_string());
         self
     }
 
-    ☉ λ to_string(&self) -> String {
+    ☉ rite to_string(&self) -> String {
         ≔ Δ parts = Vec·new();
         ⎇ ≔ Some(goal) = &self.goal {
             parts.push(format!("Goal: {}", goal));
@@ -219,7 +219,7 @@
 }
 
 ⊢ Episode {
-    ☉ λ new(id: usize, context: Context) -> Self {
+    ☉ rite new(id: usize, context: Context) -> Self {
         Self {
             id: EpisodeId·new(id),
             started_at: 0,
@@ -240,33 +240,33 @@
         }
     }
 
-    ☉ λ with_start_time(Δ self, time: u64) -> Self {
+    ☉ rite with_start_time(Δ self, time: u64) -> Self {
         self.started_at = time;
         self
     }
 
-    ☉ λ add_event(&Δ self, event: Event) {
+    ☉ rite add_event(&Δ self, event: Event) {
         self.events.push(event);
     }
 
-    ☉ λ add_participant(&Δ self, participant: Participant) {
+    ☉ rite add_participant(&Δ self, participant: Participant) {
         self.participants.push(participant);
     }
 
-    ☉ λ complete(&Δ self, outcome: Outcome, end_time: u64) {
+    ☉ rite complete(&Δ self, outcome: Outcome, end_time: u64) {
         self.outcome = outcome;
         self.ended_at = Some(end_time);
     }
 
-    ☉ λ duration(&self) -> Option<u64> {
+    ☉ rite duration(&self) -> Option<u64> {
         self.ended_at.map(|end| end - self.started_at)
     }
 
-    ☉ λ is_ongoing(&self) -> bool {
+    ☉ rite is_ongoing(&self) -> bool {
         self.ended_at.is_none()
     }
 
-    ☉ λ summarize(&self) -> String {
+    ☉ rite summarize(&self) -> String {
         ≔ outcome_str = self.outcome.summarize();
         ≔ event_count = self.events.len();
         format!("Episode {}: {} events, {}", self.id.0, event_count, outcome_str)
@@ -274,7 +274,7 @@
 }
 
 ⊢ Clone ∀ Episode {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Episode {
             id: self.id.clone(),
             started_at: self.started_at,
@@ -307,7 +307,7 @@
 }
 
 ⊢ EpisodicConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             decay_rate: 0.1,
             consolidation_threshold: 0.3,
@@ -316,12 +316,12 @@
         }
     }
 
-    ☉ λ with_decay_rate(Δ self, rate: f64) -> Self {
+    ☉ rite with_decay_rate(Δ self, rate: f64) -> Self {
         self.decay_rate = rate;
         self
     }
 
-    ☉ λ with_consolidation_threshold(Δ self, threshold: f64) -> Self {
+    ☉ rite with_consolidation_threshold(Δ self, threshold: f64) -> Self {
         self.consolidation_threshold = threshold;
         self
     }
@@ -334,7 +334,7 @@
 }
 
 ⊢ EpisodicMemory {
-    ☉ λ new(config: EpisodicConfig) -> Self {
+    ☉ rite new(config: EpisodicConfig) -> Self {
         Self {
             episodes: Vec·new(),
             config,
@@ -342,11 +342,11 @@
         }
     }
 
-    ☉ λ default_memory() -> Self {
+    ☉ rite default_memory() -> Self {
         Self·new(EpisodicConfig·default_config())
     }
 
-    ☉ λ record(&Δ self, Δ episode: Episode) -> EpisodeId {
+    ☉ rite record(&Δ self, Δ episode: Episode) -> EpisodeId {
         // Enrich episode
         ⎇ episode.significance == 0.0 {
             episode.significance = self.compute_significance(&episode);
@@ -363,15 +363,15 @@
         id
     }
 
-    ☉ λ get(&self, id: &EpisodeId) -> Option<&Episode> {
+    ☉ rite get(&self, id: &EpisodeId) -> Option<&Episode> {
         self.episodes.iter().find(|e| e.id == *id)
     }
 
-    ☉ λ len(&self) -> usize {
+    ☉ rite len(&self) -> usize {
         self.episodes.len()
     }
 
-    ☉ λ recall_similar(&self, context: &Context, limit: usize) -> Vec<&Episode> {
+    ☉ rite recall_similar(&self, context: &Context, limit: usize) -> Vec<&Episode> {
         ≔ context_text = context.to_string().to_lowercase();
 
         ≔ Δ scored: Vec<_> = self.episodes.iter()
@@ -401,7 +401,7 @@
         result
     }
 
-    ☉ λ recall_before(&self, time: u64, limit: usize) -> Vec<&Episode> {
+    ☉ rite recall_before(&self, time: u64, limit: usize) -> Vec<&Episode> {
         ≔ Δ result = Vec·new();
         ∀ episode ∈ &self.episodes {
             ⎇ episode.started_at < time && episode.strength > 0.1 {
@@ -414,14 +414,14 @@
         result
     }
 
-    ☉ λ recall_in_range(&self, start: u64, end: u64) -> Vec<&Episode> {
+    ☉ rite recall_in_range(&self, start: u64, end: u64) -> Vec<&Episode> {
         self.episodes.iter()
             .filter(|e| e.started_at >= start && e.started_at <= end)
             .filter(|e| e.strength > 0.1)
             .collect()
     }
 
-    ☉ λ apply_decay(&Δ self, decay_factor: f64) {
+    ☉ rite apply_decay(&Δ self, decay_factor: f64) {
         ∀ episode ∈ &Δ self.episodes {
             episode.strength = episode.strength * decay_factor;
 
@@ -436,7 +436,7 @@
         self.episodes.retain(|e| e.strength > threshold);
     }
 
-    ☉ λ consolidation_candidates(&self) -> Vec<&Episode> {
+    ☉ rite consolidation_candidates(&self) -> Vec<&Episode> {
         self.episodes.iter()
             .filter(|e| !e.consolidated)
             .filter(|e| e.strength < self.config.consolidation_threshold)
@@ -444,7 +444,7 @@
             .collect()
     }
 
-    ☉ λ mark_consolidated(&Δ self, id: &EpisodeId) {
+    ☉ rite mark_consolidated(&Δ self, id: &EpisodeId) {
         ∀ episode ∈ &Δ self.episodes {
             ⎇ episode.id == *id {
                 episode.consolidated = true;
@@ -453,7 +453,7 @@
         }
     }
 
-    λ compute_significance(&self, episode: &Episode) -> f64 {
+    rite compute_significance(&self, episode: &Episode) -> f64 {
         ≔ Δ score = 0.0;
 
         // Outcome contributes to significance
@@ -481,7 +481,7 @@
         score.min(1.0)
     }
 
-    λ compute_similarity(&self, context: &str, episode: &Episode) -> f64 {
+    rite compute_similarity(&self, context: &str, episode: &Episode) -> f64 {
         ≔ episode_text = episode.summarize().to_lowercase();
 
         // Simple word overlap
@@ -508,7 +508,7 @@
 // ============================================================================
 
 #[test]
-λ test_episode_creation() {
+rite test_episode_creation() {
     ≔ context = Context·with_goal("Complete the task");
     ≔ episode = Episode·new(1, context);
 
@@ -518,7 +518,7 @@
 }
 
 #[test]
-λ test_episode_with_context() {
+rite test_episode_with_context() {
     ≔ context = Context·with_goal("Help user")
         .with_task("Answer question");
     ≔ episode = Episode·new(1, context);
@@ -529,7 +529,7 @@
 }
 
 #[test]
-λ test_episode_add_event() {
+rite test_episode_add_event() {
     ≔ Δ episode = Episode·new(1, Context·new());
 
     episode.add_event(Event·user_message("Hello"));
@@ -539,7 +539,7 @@
 }
 
 #[test]
-λ test_episode_add_participant() {
+rite test_episode_add_participant() {
     ≔ Δ episode = Episode·new(1, Context·new());
 
     episode.add_participant(Participant·user("user_123"));
@@ -549,7 +549,7 @@
 }
 
 #[test]
-λ test_episode_completion() {
+rite test_episode_completion() {
     ≔ Δ episode = Episode·new(1, Context·new())
         .with_start_time(100);
 
@@ -566,7 +566,7 @@
 }
 
 #[test]
-λ test_episode_summarize() {
+rite test_episode_summarize() {
     ≔ Δ episode = Episode·new(42, Context·with_goal("Test"));
     episode.add_event(Event·user_message("Hello"));
     episode.add_event(Event·agent_response("Hi"));
@@ -586,13 +586,13 @@
 // ============================================================================
 
 #[test]
-λ test_episodic_memory_creation() {
+rite test_episodic_memory_creation() {
     ≔ memory = EpisodicMemory·default_memory();
     assert_eq(memory.len(), 0);
 }
 
 #[test]
-λ test_record_episode() {
+rite test_record_episode() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ episode = Episode·new(1, Context·with_goal("Test goal"));
@@ -602,7 +602,7 @@
 }
 
 #[test]
-λ test_record_multiple_episodes() {
+rite test_record_multiple_episodes() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     memory.record(Episode·new(1, Context·with_goal("First")));
@@ -613,7 +613,7 @@
 }
 
 #[test]
-λ test_get_episode_by_id() {
+rite test_get_episode_by_id() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ episode = Episode·new(42, Context·with_goal("Find me"));
@@ -625,7 +625,7 @@
 }
 
 #[test]
-λ test_get_nonexistent_episode() {
+rite test_get_nonexistent_episode() {
     ≔ memory = EpisodicMemory·default_memory();
 
     ≔ fake_id = EpisodeId·new(999);
@@ -638,7 +638,7 @@
 // ============================================================================
 
 #[test]
-λ test_recall_similar_context() {
+rite test_recall_similar_context() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     // Record episodes with different goals
@@ -654,7 +654,7 @@
 }
 
 #[test]
-λ test_recall_before_time() {
+rite test_recall_before_time() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     memory.record(Episode·new(1, Context·new()).with_start_time(100));
@@ -670,7 +670,7 @@
 }
 
 #[test]
-λ test_recall_in_range() {
+rite test_recall_in_range() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     memory.record(Episode·new(1, Context·new()).with_start_time(100));
@@ -688,7 +688,7 @@
 }
 
 #[test]
-λ test_recall_respects_strength_threshold() {
+rite test_recall_respects_strength_threshold() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ Δ episode = Episode·new(1, Context·with_goal("Weak episode"));
@@ -706,7 +706,7 @@
 // ============================================================================
 
 #[test]
-λ test_apply_decay_reduces_strength() {
+rite test_apply_decay_reduces_strength() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ episode = Episode·new(1, Context·new());
@@ -720,7 +720,7 @@
 }
 
 #[test]
-λ test_decay_preserves_significant_episodes() {
+rite test_decay_preserves_significant_episodes() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ Δ episode = Episode·new(1, Context·new());
@@ -736,7 +736,7 @@
 }
 
 #[test]
-λ test_decay_removes_weak_episodes() {
+rite test_decay_removes_weak_episodes() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ Δ episode = Episode·new(1, Context·new());
@@ -751,7 +751,7 @@
 }
 
 #[test]
-λ test_consolidation_candidates() {
+rite test_consolidation_candidates() {
     ≔ Δ memory = EpisodicMemory·new(
         EpisodicConfig·default_config().with_consolidation_threshold(0.5)
     );
@@ -782,7 +782,7 @@
 }
 
 #[test]
-λ test_mark_consolidated() {
+rite test_mark_consolidated() {
     ≔ Δ memory = EpisodicMemory·default_memory();
 
     ≔ episode = Episode·new(1, Context·new());
@@ -800,7 +800,7 @@
 // ============================================================================
 
 #[test]
-λ test_outcome_success_confidence() {
+rite test_outcome_success_confidence() {
     ≔ outcome = Outcome·Success {
         goal_alignment: 0.85,
         effects: Vec·new(),
@@ -811,7 +811,7 @@
 }
 
 #[test]
-λ test_outcome_failure_confidence() {
+rite test_outcome_failure_confidence() {
     ≔ outcome = Outcome·Failure {
         reason: "Error occurred".to_string(),
         recoverable: true,
@@ -823,7 +823,7 @@
 }
 
 #[test]
-λ test_outcome_partial_confidence() {
+rite test_outcome_partial_confidence() {
     ≔ outcome = Outcome·Partial {
         achieved: 0.6,
         notes: "Partially done".to_string(),
@@ -834,7 +834,7 @@
 }
 
 #[test]
-λ test_outcome_summarize() {
+rite test_outcome_summarize() {
     ≔ success = Outcome·Success { goal_alignment: 0.9, effects: Vec·new() };
     assert_eq(success.summarize(), "success");
 
@@ -850,7 +850,7 @@
 // ============================================================================
 
 #[test]
-λ test_event_user_message() {
+rite test_event_user_message() {
     ≔ event = Event·user_message("Hello world");
     assert_eq(event.content, "Hello world");
     assert(event.actor.is_some());
@@ -858,20 +858,20 @@
 }
 
 #[test]
-λ test_event_agent_response() {
+rite test_event_agent_response() {
     ≔ event = Event·agent_response("I can help");
     assert_eq(event.content, "I can help");
     assert_eq(event.actor.unwrap(), "agent");
 }
 
 #[test]
-λ test_event_tool_call() {
+rite test_event_tool_call() {
     ≔ event = Event·tool_call("search");
     assert_eq(event.content, "search");
 }
 
 #[test]
-λ test_event_error() {
+rite test_event_error() {
     ≔ event = Event·error_event("Connection failed");
     assert_eq(event.content, "Connection failed");
     assert_eq(event.success.unwrap(), false);
@@ -882,19 +882,19 @@
 // ============================================================================
 
 #[test]
-λ test_participant_user() {
+rite test_participant_user() {
     ≔ p = Participant·user("user_123");
     assert_eq(p.id, "user_123");
 }
 
 #[test]
-λ test_participant_agent() {
+rite test_participant_agent() {
     ≔ p = Participant·agent("agent_456");
     assert_eq(p.id, "agent_456");
 }
 
 #[test]
-λ test_participant_tool() {
+rite test_participant_tool() {
     ≔ p = Participant·tool("web_search");
     assert_eq(p.id, "web_search");
     assert(p.name.is_some());
@@ -905,27 +905,27 @@
 // ============================================================================
 
 #[test]
-λ test_context_empty() {
+rite test_context_empty() {
     ≔ ctx = Context·new();
     assert(ctx.goal.is_none());
     assert(ctx.task.is_none());
 }
 
 #[test]
-λ test_context_with_goal() {
+rite test_context_with_goal() {
     ≔ ctx = Context·with_goal("Help user");
     assert_eq(ctx.goal.unwrap(), "Help user");
 }
 
 #[test]
-λ test_context_with_task() {
+rite test_context_with_task() {
     ≔ ctx = Context·with_goal("Main goal").with_task("Subtask");
     assert_eq(ctx.goal.unwrap(), "Main goal");
     assert_eq(ctx.task.unwrap(), "Subtask");
 }
 
 #[test]
-λ test_context_to_string() {
+rite test_context_to_string() {
     ≔ ctx = Context·with_goal("Goal").with_task("Task");
     ≔ s = ctx.to_string();
     assert(s.contains("Goal"));
@@ -937,7 +937,7 @@
 // ============================================================================
 
 #[test]
-λ test_significance_from_success() {
+rite test_significance_from_success() {
     ≔ memory = EpisodicMemory·default_memory();
     ≔ Δ episode = Episode·new(1, Context·new());
     episode.outcome = Outcome·Success {
@@ -950,7 +950,7 @@
 }
 
 #[test]
-λ test_significance_from_failure() {
+rite test_significance_from_failure() {
     ≔ memory = EpisodicMemory·default_memory();
     ≔ Δ episode = Episode·new(1, Context·new());
     episode.outcome = Outcome·Failure {
@@ -964,7 +964,7 @@
 }
 
 #[test]
-λ test_significance_from_events() {
+rite test_significance_from_events() {
     ≔ memory = EpisodicMemory·default_memory();
     ≔ Δ episode = Episode·new(1, Context·new());
 
@@ -978,7 +978,7 @@
 }
 
 #[test]
-λ test_significance_from_valence() {
+rite test_significance_from_valence() {
     ≔ memory = EpisodicMemory·default_memory();
     ≔ Δ episode = Episode·new(1, Context·new());
     episode.valence = 0.9;  // Strong positive emotion
@@ -987,6 +987,6 @@
     assert(sig > 0.1);
 }
 
-λ main() {
+rite main() {
     print("Engram episodic memory tests");
 }

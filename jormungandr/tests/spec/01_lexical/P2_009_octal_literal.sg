@@ -2,7 +2,7 @@
 // Spec: 01-LEXICAL.md § 4.1 Integer Literals
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 0o77;
     ≔ y: !i32 = 0o10;
     println(x);

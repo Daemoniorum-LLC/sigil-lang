@@ -2490,7 +2490,7 @@ mod colors {
 
     // Semantic colors for Sigil
     pub const KEYWORD: &str = "\x1b[38;5;198m"; // Magenta/pink for keywords
-    pub const MORPHEME: &str = "\x1b[38;5;51m"; // Cyan for morphemes (τ, φ, σ, ρ, λ)
+    pub const MORPHEME: &str = "\x1b[38;5;51m"; // Cyan for morphemes (τ, φ, σ, ρ, Λ)
     pub const EVIDENCE: &str = "\x1b[38;5;214m"; // Orange for evidentiality (!, ?, ~, ‽)
     pub const STRING: &str = "\x1b[38;5;114m"; // Green for strings
     pub const NUMBER: &str = "\x1b[38;5;141m"; // Purple for numbers
@@ -2537,7 +2537,8 @@ impl SigilHighlighter {
             | Token::SelfLower
             | Token::SelfUpper
             | Token::True
-            | Token::False => colors::KEYWORD,
+            | Token::False
+            | Token::LambdaExpr => colors::KEYWORD,
 
             // Morphemes (polysynthetic operators) - including new access morphemes
             Token::Tau
@@ -3059,7 +3060,7 @@ fn default_main(name: &str) -> String {
 // Run with: sigil run src/main.sigil
 // Or: sigil build && ./{name}
 
-λ main() {{
+rite main() {{
     print("Hello from {name}!");
 
     // Sigil's evidentiality system tracks data provenance:
@@ -3094,13 +3095,13 @@ fn default_test() -> String {
 // Run with: sigil test
 
 #[test]
-λ test_example() {
+rite test_example() {
     ≔ result = 2 + 2;
     assert_eq(result, 4);
 }
 
 #[test]
-λ test_morpheme_pipeline() {
+rite test_morpheme_pipeline() {
     ≔ data = [1, 2, 3];
     ≔ doubled = data|τ{_ * 2};
     assert_eq(doubled, [2, 4, 6]);
@@ -3832,7 +3833,7 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
 /// Migrate a file from Rust syntax to native Sigil syntax.
 ///
 /// Converts deprecated Rust keywords to their Sigil equivalents:
-/// - fn → λ (lambda)
+/// - fn → rite (function declaration)
 /// - let → ≔ (definition)
 /// - mut → Δ (delta/mutable)
 /// - struct → Σ (sigma)
@@ -3880,7 +3881,7 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) ->
     // Format: (keyword, replacement, suffixes_to_match)
     let keyword_replacements: &[(&str, &str, &[&str])] = &[
         ("&mut", "&Δ", &[" ", "\t", "("]),
-        ("fn", "λ", &[" ", "("]),
+        ("fn", "rite", &[" ", "("]),
         ("let", "≔", &[" ", "\t"]),
         ("mut", "Δ", &[" ", ","]),
         ("struct", "Σ", &[" "]),
@@ -4110,7 +4111,7 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) ->
     println!();
     if changes > 0 {
         println!("Converted Rust syntax to native Sigil:");
-        println!("  λ (fn), ≔ (let), Δ (mut), Σ (struct), ⊢ (impl)");
+        println!("  rite (fn), ≔ (let), Δ (mut), Σ (struct), ⊢ (impl)");
         println!("  Θ (trait), ᛈ (enum), ☉ (pub), · (::)");
         println!("  ⎇/⎉ (if/else), ⌥ (match), ⟳ (while), ∀/∈ (for/in)");
         println!("  ⤺ (return), ⊗ (break), ↻ (continue)");
@@ -4363,7 +4364,7 @@ fn print_help() {
         colors::RESET
     );
     println!(
-        "  {}τ{} transform  {}φ{} filter  {}σ{} sort  {}ρ{} reduce  {}λ{} lambda",
+        "  {}τ{} transform  {}φ{} filter  {}σ{} sort  {}ρ{} reduce  {}Λ{} lambda",
         colors::MORPHEME,
         colors::RESET,
         colors::MORPHEME,
@@ -4432,7 +4433,7 @@ fn print_symbols() {
         colors::RESET
     );
     println!(
-        "  {}λ{}/{}Λ{}  lambda          λ x -> x + 1",
+        "  {}λ{}/{}Λ{}  lambda/closure   λ(x) {{ x + 1 }}",
         colors::MORPHEME,
         colors::RESET,
         colors::MORPHEME,

@@ -10,7 +10,7 @@
 
 ☉ Θ Container {
     type Item;
-    λ get(self) -> Self·Item;
+    rite get(self) -> Self·Item;
 }
 
 ☉ Σ Box {
@@ -20,12 +20,12 @@
 ⊢ Container ∀ Box {
     type Item = !i32;
 
-    λ get(self) -> !i32 {
+    rite get(self) -> !i32 {
         self.value
     }
 }
 
-λ main() {
+rite main() {
     ≔ b: Box = Box { value: 42 };
     println(b.get());
 }

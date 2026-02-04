@@ -8,7 +8,7 @@
 }
 
 ⊢ Lexer {
-    λ get_token(Δ self) -> Option<(Token, Span)> {
+    rite get_token(Δ self) -> Option<(Token, Span)> {
         // Try with explicit Option
         ⎇ self.pos >= 100 {
             ⤺ None;
@@ -22,7 +22,7 @@
     }
 }
 
-λ main() {
+rite main() {
     ≔ Δ lexer = Lexer { pos: 0 };
     ⌥ lexer.get_token() {
         Some((t, s)) => println(t.value),

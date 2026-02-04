@@ -4,7 +4,7 @@
 //
 // This test makes a REAL HTTP POST request to httpbin.org
 
-λ main() {
+rite main() {
     // Create HTTP connection
     ≔ conn = "https://httpbin.org/post"|connect;
 

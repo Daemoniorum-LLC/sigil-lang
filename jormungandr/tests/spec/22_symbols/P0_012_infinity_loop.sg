@@ -4,7 +4,7 @@
 // Tests: ∞ ∀ loop
 // Expected: Program compiles and runs, printing 0, 1, 2 then "done"
 
-λ main() {
+rite main() {
     ≔ Δ i = 0;
 
     // Use ∞ ∀ infinite loop with ⊗

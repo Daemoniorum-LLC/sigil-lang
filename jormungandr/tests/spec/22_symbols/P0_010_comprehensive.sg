@@ -1,7 +1,7 @@
 // P0_010: Comprehensive native symbol test
 // Priority: P0
 // Category: Native Symbols
-// Tests: Σ (Σ), λ (λ), ≔ (≔), ⊢ (⊢), ⎇/⎉ (⎇/⎉), ⟳ (⟳), ⤺ (⤺)
+// Tests: Σ (Σ), rite (rite), ≔ (≔), ⊢ (⊢), ⎇/⎉ (⎇/⎉), ⟳ (⟳), ⤺ (⤺)
 // Expected: Program compiles and runs, printing expected output
 
 Σ Counter {
@@ -9,20 +9,20 @@
 }
 
 ⊢ Counter {
-    λ new(v: i64) -> Counter {
+    rite new(v: i64) -> Counter {
         Counter { value: v }
     }
 
-    λ increment(&Δ self) {
+    rite increment(&Δ self) {
         self.value = self.value + 1;
     }
 
-    λ get(self) -> i64 {
+    rite get(self) -> i64 {
         ⤺ self.value
     }
 }
 
-λ classify(n: i64) -> i64 {
+rite classify(n: i64) -> i64 {
     ⎇ n > 0 {
         ⤺ 1
     } ⎉ ⎇ n < 0 {
@@ -32,7 +32,7 @@
     }
 }
 
-λ main() {
+rite main() {
     // Test Σ and ⊢
     ≔ Δ counter = Counter·new(0);
     counter.increment();

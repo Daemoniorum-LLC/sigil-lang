@@ -16,7 +16,7 @@
 }
 
 ⊢ SemanticConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             embedding_dim: 384,
             pooling: "cls".to_string(),
@@ -27,7 +27,7 @@
         }
     }
 
-    ☉ λ with_threshold(Δ self, threshold: f32) -> Self {
+    ☉ rite with_threshold(Δ self, threshold: f32) -> Self {
         self.similarity_threshold = threshold;
         self
     }
@@ -40,23 +40,23 @@
 }
 
 ⊢ Embedding {
-    ☉ λ new(data: Vec<f32>, dim: usize) -> Self {
+    ☉ rite new(data: Vec<f32>, dim: usize) -> Self {
         Self { data, dim }
     }
 
-    ☉ λ zeros(dim: usize) -> Self {
+    ☉ rite zeros(dim: usize) -> Self {
         Self { data: vec![0.0; dim], dim }
     }
 
-    ☉ λ dim(&self) -> usize {
+    ☉ rite dim(&self) -> usize {
         self.dim
     }
 
-    ☉ λ at(&self, idx: usize) -> f32 {
+    ☉ rite at(&self, idx: usize) -> f32 {
         self.data[idx]
     }
 
-    ☉ λ normalize(&self) -> Self {
+    ☉ rite normalize(&self) -> Self {
         ≔ Δ sum_sq = 0.0;
         ∀ i ∈ 0..self.dim {
             sum_sq = sum_sq + self.data[i] * self.data[i];
@@ -75,7 +75,7 @@
     }
 }
 
-λ approx_sqrt(x: f32) -> f32 {
+rite approx_sqrt(x: f32) -> f32 {
     ⎇ x <= 0.0 { ⤺ 0.0; }
     ≔ Δ guess = x / 2.0;
     ∀ _ ∈ 0..10 {
@@ -84,7 +84,7 @@
     guess
 }
 
-☉ λ cosine_similarity(a: &Embedding, b: &Embedding) -> f32 {
+☉ rite cosine_similarity(a: &Embedding, b: &Embedding) -> f32 {
     ⎇ a.dim() != b.dim() { ⤺ 0.0; }
 
     ≔ Δ dot = 0.0;
@@ -110,20 +110,20 @@
 }
 
 ⊢ EmbeddingIndex {
-    ☉ λ new(dim: usize) -> Self {
+    ☉ rite new(dim: usize) -> Self {
         Self { embeddings: Vec·new(), metadata: Vec·new(), dim }
     }
 
-    ☉ λ add(&Δ self, embedding: Embedding, meta: &str) {
+    ☉ rite add(&Δ self, embedding: Embedding, meta: &str) {
         self.embeddings.push(embedding);
         self.metadata.push(meta.to_string());
     }
 
-    ☉ λ len(&self) -> usize {
+    ☉ rite len(&self) -> usize {
         self.embeddings.len()
     }
 
-    ☉ λ search(&self, query: &Embedding, k: usize) -> Vec<(usize, f32)> {
+    ☉ rite search(&self, query: &Embedding, k: usize) -> Vec<(usize, f32)> {
         ≔ Δ scores = Vec·new();
         ∀ i ∈ 0..self.embeddings.len() {
             ≔ sim = cosine_similarity(query, &self.embeddings[i]);
@@ -149,7 +149,7 @@
         result
     }
 
-    ☉ λ get_metadata(&self, idx: usize) -> &str {
+    ☉ rite get_metadata(&self, idx: usize) -> &str {
         &self.metadata[idx]
     }
 }
@@ -162,7 +162,7 @@
 }
 
 ⊢ CodeTokenizer {
-    ☉ λ new(vocab_size: usize, max_length: usize) -> Self {
+    ☉ rite new(vocab_size: usize, max_length: usize) -> Self {
         Self {
             vocab_size,
             max_length,
@@ -171,7 +171,7 @@
         }
     }
 
-    ☉ λ tokenize(&self, text: &str) -> Vec<usize> {
+    ☉ rite tokenize(&self, text: &str) -> Vec<usize> {
         ≔ Δ tokens = Vec·new();
         tokens.push(self.cls_token_id);
         ∀ c ∈ text.chars() {
@@ -211,7 +211,7 @@
 }
 
 ⊢ SemanticIndex {
-    ☉ λ new(config: SemanticConfig) -> Self {
+    ☉ rite new(config: SemanticConfig) -> Self {
         ≔ tokenizer = CodeTokenizer·new(config.vocab_size, config.max_seq_len);
         Self {
             reasoning_index: EmbeddingIndex·new(config.embedding_dim),
@@ -225,31 +225,31 @@
         }
     }
 
-    ☉ λ default_index() -> Self {
+    ☉ rite default_index() -> Self {
         Self·new(SemanticConfig·default_config())
     }
 
-    ☉ λ dim(&self) -> usize {
+    ☉ rite dim(&self) -> usize {
         self.config.embedding_dim
     }
 
-    ☉ λ len(&self) -> usize {
+    ☉ rite len(&self) -> usize {
         self.reasoning_index.len() + self.evidence_index.len() + self.code_index.len()
     }
 
-    ☉ λ reasoning_count(&self) -> usize {
+    ☉ rite reasoning_count(&self) -> usize {
         self.reasoning_index.len()
     }
 
-    ☉ λ evidence_count(&self) -> usize {
+    ☉ rite evidence_count(&self) -> usize {
         self.evidence_index.len()
     }
 
-    ☉ λ code_count(&self) -> usize {
+    ☉ rite code_count(&self) -> usize {
         self.code_index.len()
     }
 
-    λ embed_text(&self, text: &str) -> Embedding {
+    rite embed_text(&self, text: &str) -> Embedding {
         ≔ tokens = self.tokenizer.tokenize(text);
         ≔ dim = self.config.embedding_dim;
 
@@ -263,28 +263,28 @@
         embedding.normalize()
     }
 
-    ☉ λ index_reasoning(&Δ self, description: &str, reasoning: &str, trace_id: &str) {
+    ☉ rite index_reasoning(&Δ self, description: &str, reasoning: &str, trace_id: &str) {
         ≔ combined = format!("{} {}", description, reasoning);
         ≔ embedding = self.embed_text(&combined);
         self.reasoning_index.add(embedding, trace_id);
         self.reasoning_content.push(combined);
     }
 
-    ☉ λ index_evidence(&Δ self, content: &str, source: &str, explanation_id: &str) {
+    ☉ rite index_evidence(&Δ self, content: &str, source: &str, explanation_id: &str) {
         ≔ embedding = self.embed_text(content);
         ≔ meta = format!("{}:{}", explanation_id, source);
         self.evidence_index.add(embedding, &meta);
         self.evidence_content.push(content.to_string());
     }
 
-    ☉ λ index_code(&Δ self, code: &str, file_path: &str, line_start: usize) {
+    ☉ rite index_code(&Δ self, code: &str, file_path: &str, line_start: usize) {
         ≔ embedding = self.embed_text(code);
         ≔ meta = format!("{}:{}", file_path, line_start);
         self.code_index.add(embedding, &meta);
         self.code_content.push(code.to_string());
     }
 
-    ☉ λ search_reasoning(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+    ☉ rite search_reasoning(&self, query: &str, k: usize) -> Vec<SemanticResult> {
         ≔ query_embedding = self.embed_text(query);
         ≔ results = self.reasoning_index.search(&query_embedding, k);
 
@@ -307,7 +307,7 @@
         semantic_results
     }
 
-    ☉ λ search_evidence(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+    ☉ rite search_evidence(&self, query: &str, k: usize) -> Vec<SemanticResult> {
         ≔ query_embedding = self.embed_text(query);
         ≔ results = self.evidence_index.search(&query_embedding, k);
 
@@ -330,7 +330,7 @@
         semantic_results
     }
 
-    ☉ λ search_code(&self, query: &str, k: usize) -> Vec<SemanticResult> {
+    ☉ rite search_code(&self, query: &str, k: usize) -> Vec<SemanticResult> {
         ≔ query_embedding = self.embed_text(query);
         ≔ results = self.code_index.search(&query_embedding, k);
 
@@ -359,7 +359,7 @@
 // ============================================================================
 
 #[test]
-λ test_semantic_config_default() {
+rite test_semantic_config_default() {
     ≔ config = SemanticConfig·default_config();
     assert_eq(config.embedding_dim, 384);
     assert_eq(config.max_results, 10);
@@ -368,7 +368,7 @@
 }
 
 #[test]
-λ test_semantic_index_creation() {
+rite test_semantic_index_creation() {
     ≔ index = SemanticIndex·default_index();
     assert_eq(index.dim(), 384);
     assert_eq(index.len(), 0);
@@ -378,7 +378,7 @@
 }
 
 #[test]
-λ test_index_reasoning_step() {
+rite test_index_reasoning_step() {
     ≔ Δ index = SemanticIndex·default_index();
 
     index.index_reasoning(
@@ -392,7 +392,7 @@
 }
 
 #[test]
-λ test_index_evidence() {
+rite test_index_evidence() {
     ≔ Δ index = SemanticIndex·default_index();
 
     index.index_evidence(
@@ -405,11 +405,11 @@
 }
 
 #[test]
-λ test_index_code() {
+rite test_index_code() {
     ≔ Δ index = SemanticIndex·default_index();
 
     index.index_code(
-        "λ calculate_roi(investment: f64, returns: f64) -> f64 { returns / investment }",
+        "rite calculate_roi(investment: f64, returns: f64) -> f64 { returns / investment }",
         "src/finance.sg",
         42
     );
@@ -418,7 +418,7 @@
 }
 
 #[test]
-λ test_search_reasoning() {
+rite test_search_reasoning() {
     ≔ Δ index = SemanticIndex·default_index();
 
     // Index some reasoning steps
@@ -436,7 +436,7 @@
 }
 
 #[test]
-λ test_search_evidence() {
+rite test_search_evidence() {
     ≔ Δ index = SemanticIndex·default_index();
 
     index.index_evidence("Stock price increased 10%", "market_data", "exp_001");
@@ -449,12 +449,12 @@
 }
 
 #[test]
-λ test_search_code() {
+rite test_search_code() {
     ≔ Δ index = SemanticIndex·default_index();
 
-    index.index_code("λ add(a: i32, b: i32) -> i32 { a + b }", "src/math.sg", 10);
-    index.index_code("λ multiply(x: f64, y: f64) -> f64 { x * y }", "src/math.sg", 20);
-    index.index_code("λ greet(name: &str) { println(name) }", "src/utils.sg", 5);
+    index.index_code("rite add(a: i32, b: i32) -> i32 { a + b }", "src/math.sg", 10);
+    index.index_code("rite multiply(x: f64, y: f64) -> f64 { x * y }", "src/math.sg", 20);
+    index.index_code("rite greet(name: &str) { println(name) }", "src/utils.sg", 5);
 
     ≔ results = index.search_code("addition function", 2);
 
@@ -462,7 +462,7 @@
 }
 
 #[test]
-λ test_similarity_threshold() {
+rite test_similarity_threshold() {
     ≔ config = SemanticConfig·default_config().with_threshold(0.9);
     ≔ Δ index = SemanticIndex·new(config);
 
@@ -478,7 +478,7 @@
 }
 
 #[test]
-λ test_empty_index_search() {
+rite test_empty_index_search() {
     ≔ index = SemanticIndex·default_index();
 
     ≔ results = index.search_reasoning("anything", 5);
@@ -492,7 +492,7 @@
 }
 
 #[test]
-λ test_embedding_normalization() {
+rite test_embedding_normalization() {
     ≔ data = vec![3.0, 4.0];  // 3-4-5 triangle
     ≔ embedding = Embedding·new(data, 2);
     ≔ normalized = embedding.normalize();
@@ -508,7 +508,7 @@
 }
 
 #[test]
-λ test_cosine_similarity_identical() {
+rite test_cosine_similarity_identical() {
     ≔ data = vec![1.0, 2.0, 3.0];
     ≔ e1 = Embedding·new(data.clone(), 3);
     ≔ e2 = Embedding·new(data, 3);
@@ -522,13 +522,13 @@
 }
 
 #[test]
-λ test_multiple_index_types() {
+rite test_multiple_index_types() {
     ≔ Δ index = SemanticIndex·default_index();
 
     // Index all three types
     index.index_reasoning("Decision made", "Based on analysis", "trace_001");
     index.index_evidence("Supporting data", "data_source", "exp_001");
-    index.index_code("λ decide() { }", "src/logic.sg", 1);
+    index.index_code("rite decide() { }", "src/logic.sg", 1);
 
     assert_eq(index.reasoning_count(), 1);
     assert_eq(index.evidence_count(), 1);
@@ -536,6 +536,6 @@
     assert_eq(index.len(), 3);
 }
 
-λ main() {
+rite main() {
     print("Oracle semantic indexing tests");
 }

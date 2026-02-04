@@ -13,27 +13,27 @@ invoke stdlib·net·tls·TlsStream;
 // Test Helpers
 // ============================================================================
 
-λ test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
+rite test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
     ⌥ result {
         Result·Ok(v) => v,
         Result·Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
     }
 }
 
-λ test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
+rite test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
     ⌥ result {
         Result·Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
         Result·Err(e) => e,
     }
 }
 
-λ test_assert_eq<T: PartialEq + Display>(a: T, b: T, test_id: &str, msg: &str) {
+rite test_assert_eq<T: PartialEq + Display>(a: T, b: T, test_id: &str, msg: &str) {
     ⎇ a != b {
         panic(format!("[{}] FAIL: {} - expected {}, got {}", test_id, msg, b, a));
     }
 }
 
-λ test_assert_true(cond: bool, test_id: &str, msg: &str) {
+rite test_assert_true(cond: bool, test_id: &str, msg: &str) {
     ⎇ !cond {
         panic(format!("[{}] FAIL: {}", test_id, msg));
     }
@@ -43,7 +43,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-001: test_ws_url_parse_ws
 // ============================================================================
 
-λ test_ws_url_parse_ws() -> bool {
+rite test_ws_url_parse_ws() -> bool {
     print("  [WS-001] WebSocket URL parse ws://... ");
 
     // Valid ws:// URL
@@ -69,7 +69,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-002: test_ws_url_parse_wss
 // ============================================================================
 
-λ test_ws_url_parse_wss() -> bool {
+rite test_ws_url_parse_wss() -> bool {
     print("  [WS-002] WebSocket URL parse wss://... ");
 
     // Valid wss:// URL (TLS)
@@ -95,7 +95,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-003: test_ws_url_invalid_scheme
 // ============================================================================
 
-λ test_ws_url_invalid_scheme() -> bool {
+rite test_ws_url_invalid_scheme() -> bool {
     print("  [WS-003] WebSocket URL invalid scheme... ");
 
     // http:// should be rejected
@@ -121,7 +121,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-004: test_ws_url_with_path
 // ============================================================================
 
-λ test_ws_url_with_path() -> bool {
+rite test_ws_url_with_path() -> bool {
     print("  [WS-004] WebSocket URL with path... ");
 
     // URL with path component
@@ -146,7 +146,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-005: test_ws_url_with_query
 // ============================================================================
 
-λ test_ws_url_with_query() -> bool {
+rite test_ws_url_with_query() -> bool {
     print("  [WS-005] WebSocket URL with query... ");
 
     // URL with query string
@@ -171,7 +171,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-006: test_ws_url_with_port
 // ============================================================================
 
-λ test_ws_url_with_port() -> bool {
+rite test_ws_url_with_port() -> bool {
     print("  [WS-006] WebSocket URL with port... ");
 
     // URL with explicit port
@@ -196,7 +196,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-007: test_ws_handshake_success
 // ============================================================================
 
-λ test_ws_handshake_success() -> bool {
+rite test_ws_handshake_success() -> bool {
     print("  [WS-007] WebSocket handshake success... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -225,7 +225,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-008: test_ws_handshake_custom_headers
 // ============================================================================
 
-λ test_ws_handshake_custom_headers() -> bool {
+rite test_ws_handshake_custom_headers() -> bool {
     print("  [WS-008] WebSocket handshake with headers... ");
 
     ≔ headers = [
@@ -254,7 +254,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-009: test_ws_handshake_reject
 // ============================================================================
 
-λ test_ws_handshake_reject() -> bool {
+rite test_ws_handshake_reject() -> bool {
     print("  [WS-009] WebSocket handshake reject... ");
 
     // Connect to non-WebSocket endpoint
@@ -282,7 +282,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-010: test_ws_frame_encode_text
 // ============================================================================
 
-λ test_ws_frame_encode_text() -> bool {
+rite test_ws_frame_encode_text() -> bool {
     print("  [WS-010] WebSocket frame encode text... ");
 
     // This tests the internal frame encoding
@@ -318,7 +318,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-011: test_ws_frame_encode_binary
 // ============================================================================
 
-λ test_ws_frame_encode_binary() -> bool {
+rite test_ws_frame_encode_binary() -> bool {
     print("  [WS-011] WebSocket frame encode binary... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -351,7 +351,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-012: test_ws_frame_encode_ping
 // ============================================================================
 
-λ test_ws_frame_encode_ping() -> bool {
+rite test_ws_frame_encode_ping() -> bool {
     print("  [WS-012] WebSocket frame encode ping... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -384,7 +384,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-013: test_ws_frame_encode_close
 // ============================================================================
 
-λ test_ws_frame_encode_close() -> bool {
+rite test_ws_frame_encode_close() -> bool {
     print("  [WS-013] WebSocket frame encode close... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -415,7 +415,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-014: test_ws_frame_decode_text
 // ============================================================================
 
-λ test_ws_frame_decode_text() -> bool {
+rite test_ws_frame_decode_text() -> bool {
     print("  [WS-014] WebSocket frame decode text... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -456,7 +456,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-015: test_ws_frame_decode_binary
 // ============================================================================
 
-λ test_ws_frame_decode_binary() -> bool {
+rite test_ws_frame_decode_binary() -> bool {
     print("  [WS-015] WebSocket frame decode binary... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -496,7 +496,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-016: test_ws_frame_decode_ping_pong
 // ============================================================================
 
-λ test_ws_frame_decode_ping_pong() -> bool {
+rite test_ws_frame_decode_ping_pong() -> bool {
     print("  [WS-016] WebSocket frame decode ping/pong... ");
 
     // Ping frames should be auto-responded with pong
@@ -529,7 +529,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-017: test_ws_frame_decode_close
 // ============================================================================
 
-λ test_ws_frame_decode_close() -> bool {
+rite test_ws_frame_decode_close() -> bool {
     print("  [WS-017] WebSocket frame decode close... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -569,7 +569,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-018: test_ws_frame_extended_length
 // ============================================================================
 
-λ test_ws_frame_extended_length() -> bool {
+rite test_ws_frame_extended_length() -> bool {
     print("  [WS-018] WebSocket frame extended length... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -607,7 +607,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-019: test_ws_message_send_text
 // ============================================================================
 
-λ test_ws_message_send_text() -> bool {
+rite test_ws_message_send_text() -> bool {
     print("  [WS-019] WebSocket send text message... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -633,7 +633,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-020: test_ws_message_send_binary
 // ============================================================================
 
-λ test_ws_message_send_binary() -> bool {
+rite test_ws_message_send_binary() -> bool {
     print("  [WS-020] WebSocket send binary message... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -660,7 +660,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-021: test_ws_message_recv
 // ============================================================================
 
-λ test_ws_message_recv() -> bool {
+rite test_ws_message_recv() -> bool {
     print("  [WS-021] WebSocket receive message... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -696,7 +696,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-022: test_ws_close_normal
 // ============================================================================
 
-λ test_ws_close_normal() -> bool {
+rite test_ws_close_normal() -> bool {
     print("  [WS-022] WebSocket close normal... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -721,7 +721,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-023: test_ws_close_going_away
 // ============================================================================
 
-λ test_ws_close_going_away() -> bool {
+rite test_ws_close_going_away() -> bool {
     print("  [WS-023] WebSocket close going away... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -746,7 +746,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-024: test_ws_close_protocol_error
 // ============================================================================
 
-λ test_ws_close_protocol_error() -> bool {
+rite test_ws_close_protocol_error() -> bool {
     print("  [WS-024] WebSocket close protocol error... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -771,7 +771,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-025: test_ws_error_message_too_large
 // ============================================================================
 
-λ test_ws_error_message_too_large() -> bool {
+rite test_ws_error_message_too_large() -> bool {
     print("  [WS-025] WebSocket error message too large... ");
 
     // This would require receiving a message larger than max_message_size
@@ -784,7 +784,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-026: test_ws_error_invalid_frame
 // ============================================================================
 
-λ test_ws_error_invalid_frame() -> bool {
+rite test_ws_error_invalid_frame() -> bool {
     print("  [WS-026] WebSocket error invalid frame... ");
 
     // Would need to send malformed data to test
@@ -796,7 +796,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-027: test_ws_echo_roundtrip
 // ============================================================================
 
-λ test_ws_echo_roundtrip() -> bool {
+rite test_ws_echo_roundtrip() -> bool {
     print("  [WS-027] WebSocket echo roundtrip... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -836,7 +836,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-028: test_ws_secure_connection
 // ============================================================================
 
-λ test_ws_secure_connection() -> bool {
+rite test_ws_secure_connection() -> bool {
     print("  [WS-028] WebSocket secure (wss://) connection... ");
 
     ⌥ WebSocket·connect("wss://echo.websocket.org") {
@@ -871,7 +871,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-029: test_ws_recv_after_close
 // ============================================================================
 
-λ test_ws_recv_after_close() -> bool {
+rite test_ws_recv_after_close() -> bool {
     print("  [WS-029] WebSocket recv after close... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -911,7 +911,7 @@ invoke stdlib·net·tls·TlsStream;
 // WS-030: test_ws_send_after_close
 // ============================================================================
 
-λ test_ws_send_after_close() -> bool {
+rite test_ws_send_after_close() -> bool {
     print("  [WS-030] WebSocket send after close... ");
 
     ⌥ WebSocket·connect("ws://echo.websocket.org") {
@@ -948,7 +948,7 @@ invoke stdlib·net·tls·TlsStream;
 // Main Test Runner
 // ============================================================================
 
-☉ λ main() -> !i32 {
+☉ rite main() -> !i32 {
     println("===========================================");
     println("WebSocket Layer Tests");
     println("TDD Red Phase - Tests should FAIL");

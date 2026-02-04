@@ -1052,7 +1052,7 @@ impl MorphemeKind {
             MorphemeKind::Filter => "φ",
             MorphemeKind::Sort => "σ",
             MorphemeKind::Reduce => "ρ",
-            MorphemeKind::Lambda => "λ",
+            MorphemeKind::Lambda => "Λ",
             MorphemeKind::Sum => "Σ",
             MorphemeKind::Product => "Π",
             MorphemeKind::Min => "ρ_min",

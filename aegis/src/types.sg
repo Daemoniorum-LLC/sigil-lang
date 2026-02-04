@@ -14,21 +14,21 @@ invoke std·time·Duration;
 }
 
 ⊢ AgentId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ≔ Δ bytes = [0u8; 32];
         getrandom(&Δ bytes);
         Self { bytes }
     }
 
-    ☉ λ from_bytes(bytes: [u8; 32]) -> Self {
+    ☉ rite from_bytes(bytes: [u8; 32]) -> Self {
         Self { bytes }
     }
 
-    ☉ λ unknown() -> Self {
+    ☉ rite unknown() -> Self {
         Self { bytes: [0u8; 32] }
     }
 
-    ☉ λ to_hex(&self) -> String {
+    ☉ rite to_hex(&self) -> String {
         self.bytes.iter()
             .map(|b| format!("{:02x}", b))
             .collect()
@@ -36,13 +36,13 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ AgentId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 ⊢ PartialEq ∀ AgentId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
@@ -50,7 +50,7 @@ invoke std·time·Duration;
 ⊢ Eq ∀ AgentId {}
 
 ⊢ Hash ∀ AgentId {
-    λ hash<H: Hasher>(&self, state: &Δ H) {
+    rite hash<H: Hasher>(&self, state: &Δ H) {
         self.bytes.hash(state);
     }
 }
@@ -61,7 +61,7 @@ invoke std·time·Duration;
 }
 
 ⊢ AuthorityId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ≔ Δ bytes = [0u8; 32];
         getrandom(&Δ bytes);
         Self { bytes }
@@ -69,13 +69,13 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ AuthorityId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 ⊢ PartialEq ∀ AuthorityId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
@@ -83,7 +83,7 @@ invoke std·time·Duration;
 ⊢ Eq ∀ AuthorityId {}
 
 ⊢ Hash ∀ AuthorityId {
-    λ hash<H: Hasher>(&self, state: &Δ H) {
+    rite hash<H: Hasher>(&self, state: &Δ H) {
         self.bytes.hash(state);
     }
 }
@@ -94,7 +94,7 @@ invoke std·time·Duration;
 }
 
 ⊢ GroupId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ≔ Δ bytes = [0u8; 16];
         getrandom(&Δ bytes);
         Self { bytes }
@@ -102,7 +102,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ GroupId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
@@ -118,7 +118,7 @@ invoke std·time·Duration;
 }
 
 ⊢ PublicKey {
-    ☉ λ verify(&self, data: &[u8], signature: &Signature) -> bool {
+    ☉ rite verify(&self, data: &[u8], signature: &Signature) -> bool {
         ⌥ self.algorithm {
             KeyAlgorithm·Ed25519 => ed25519_verify(&self.bytes, data, &signature.bytes),
             KeyAlgorithm·X25519 => false, // X25519 is ∀ key exchange, not signing
@@ -127,7 +127,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ PublicKey {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             bytes: self.bytes,
             algorithm: self.algorithm,
@@ -142,7 +142,7 @@ invoke std·time·Duration;
 }
 
 ⊢ PrivateKey {
-    ☉ λ sign(&self, data: &[u8]) -> Signature {
+    ☉ rite sign(&self, data: &[u8]) -> Signature {
         ≔ sig_bytes = ⌥ self.algorithm {
             KeyAlgorithm·Ed25519 => ed25519_sign(&self.bytes, data),
             KeyAlgorithm·X25519 => panic!("X25519 cannot sign"),
@@ -164,13 +164,13 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ Signature {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 /// Generate a keypair
-☉ λ generate_keypair() -> (PublicKey, PrivateKey) {
+☉ rite generate_keypair() -> (PublicKey, PrivateKey) {
     ≔ Δ seed = [0u8; 32];
     getrandom(&Δ seed);
 
@@ -194,18 +194,18 @@ invoke std·time·Duration;
 }
 
 ⊢ SessionKey {
-    ☉ λ generate() -> Self {
+    ☉ rite generate() -> Self {
         ≔ Δ key = [0u8; 32];
         getrandom(&Δ key);
         Self { key }
     }
 
-    ☉ λ encrypt(&self, plaintext: &[u8], aad: &[u8], counter: u64) -> Result<Vec<u8>, CryptoError> {
+    ☉ rite encrypt(&self, plaintext: &[u8], aad: &[u8], counter: u64) -> Result<Vec<u8>, CryptoError> {
         ≔ nonce = derive_nonce(counter);
         aes_gcm_encrypt(&self.key, &nonce, plaintext, aad)
     }
 
-    ☉ λ decrypt(&self, ciphertext: &[u8], aad: &[u8], counter: u64) -> Result<Vec<u8>, CryptoError> {
+    ☉ rite decrypt(&self, ciphertext: &[u8], aad: &[u8], counter: u64) -> Result<Vec<u8>, CryptoError> {
         ≔ nonce = derive_nonce(counter);
         aes_gcm_decrypt(&self.key, &nonce, ciphertext, aad)
     }
@@ -218,7 +218,7 @@ invoke std·time·Duration;
 }
 
 ⊢ EncryptionKey {
-    ☉ λ generate() -> Self {
+    ☉ rite generate() -> Self {
         ≔ Δ key = [0u8; 32];
         getrandom(&Δ key);
         Self {
@@ -227,7 +227,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ derive_from_private(private_key: &PrivateKey) -> Self {
+    ☉ rite derive_from_private(private_key: &PrivateKey) -> Self {
         ≔ key = hkdf_derive(&private_key.bytes[..32], b"memory-encryption");
         Self {
             key,
@@ -235,7 +235,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    ☉ rite encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         ≔ Δ nonce = [0u8; 12];
         getrandom(&Δ nonce);
         ≔ ciphertext = aes_gcm_encrypt(&self.key, &nonce, data, &[])?;
@@ -244,7 +244,7 @@ invoke std·time·Duration;
         Ok(result)
     }
 
-    ☉ λ decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    ☉ rite decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         ⎇ data.len() < 12 {
             ⤺ Err(CryptoError·InvalidData);
         }
@@ -290,7 +290,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ Attestation {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             Attestation·Capability(s) => Attestation·Capability(s.clone()),
             Attestation·GroupMembership(g) => Attestation·GroupMembership(g.clone()),
@@ -337,7 +337,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Credential {
-    ☉ λ signable_bytes(&self) -> Vec<u8> {
+    ☉ rite signable_bytes(&self) -> Vec<u8> {
         ≔ Δ bytes = Vec·new();
         bytes.extend(&self.identity_id.bytes);
         bytes.extend(&self.public_key_hash);
@@ -349,7 +349,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ Credential {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             identity_id: self.identity_id.clone(),
             public_key_hash: self.public_key_hash,
@@ -395,7 +395,7 @@ invoke std·time·Duration;
 }
 
 ⊢ ResourceLimits {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             max_memory: 256 * 1024 * 1024, // 256 MB
             max_cpu_time: Duration·seconds(60),
@@ -406,7 +406,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ restrictive() -> Self {
+    ☉ rite restrictive() -> Self {
         Self {
             max_memory: 64 * 1024 * 1024, // 64 MB
             max_cpu_time: Duration·seconds(10),
@@ -417,7 +417,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ permissive() -> Self {
+    ☉ rite permissive() -> Self {
         Self {
             max_memory: 2 * 1024 * 1024 * 1024, // 2 GB
             max_cpu_time: Duration·minutes(30),
@@ -467,7 +467,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ NetworkPolicy {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             NetworkPolicy·Deny => NetworkPolicy·Deny,
             NetworkPolicy·AllowList(v) => NetworkPolicy·AllowList(v.clone()),
@@ -493,7 +493,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ FilesystemPolicy {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             FilesystemPolicy·Deny => FilesystemPolicy·Deny,
             FilesystemPolicy·ReadOnly { write_exceptions } =>
@@ -532,7 +532,7 @@ invoke std·time·Duration;
 }
 
 ⊢ ResourceUsage {
-    ☉ λ zero() -> Self {
+    ☉ rite zero() -> Self {
         Self {
             memory_bytes: 0,
             cpu_time: Duration·zero(),
@@ -545,7 +545,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ exceeds(&self, limits: &ResourceLimits) -> bool {
+    ☉ rite exceeds(&self, limits: &ResourceLimits) -> bool {
         self.memory_bytes > limits.max_memory
             || self.cpu_time.as_nanos() > limits.max_cpu_time.as_nanos()
             || self.file_bytes_written > limits.max_file_size
@@ -565,7 +565,7 @@ invoke std·time·Duration;
 }
 
 ⊢ MemoryId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ≔ Δ bytes = [0u8; 16];
         getrandom(&Δ bytes);
         Self { bytes }
@@ -573,13 +573,13 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ MemoryId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 ⊢ PartialEq ∀ MemoryId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
@@ -587,7 +587,7 @@ invoke std·time·Duration;
 ⊢ Eq ∀ MemoryId {}
 
 ⊢ Hash ∀ MemoryId {
-    λ hash<H: Hasher>(&self, state: &Δ H) {
+    rite hash<H: Hasher>(&self, state: &Δ H) {
         self.bytes.hash(state);
     }
 }
@@ -623,7 +623,7 @@ invoke std·time·Duration;
 }
 
 ⊢ GoalId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ≔ Δ bytes = [0u8; 16];
         getrandom(&Δ bytes);
         Self { bytes }
@@ -631,13 +631,13 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ GoalId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 ⊢ PartialEq ∀ GoalId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
@@ -645,7 +645,7 @@ invoke std·time·Duration;
 ⊢ Eq ∀ GoalId {}
 
 ⊢ Hash ∀ GoalId {
-    λ hash<H: Hasher>(&self, state: &Δ H) {
+    rite hash<H: Hasher>(&self, state: &Δ H) {
         self.bytes.hash(state);
     }
 }
@@ -661,7 +661,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Goal {
-    ☉ λ new(description: &str) -> Self {
+    ☉ rite new(description: &str) -> Self {
         Self {
             id: GoalId·new(),
             description: description.to_string(),
@@ -671,17 +671,17 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ with_priority(Δ self, priority: u8) -> Self {
+    ☉ rite with_priority(Δ self, priority: u8) -> Self {
         self.priority = priority;
         self
     }
 
-    ☉ λ with_deadline(Δ self, deadline: Timestamp) -> Self {
+    ☉ rite with_deadline(Δ self, deadline: Timestamp) -> Self {
         self.deadline = Some(deadline);
         self
     }
 
-    ☉ λ from_source(Δ self, source: GoalSource) -> Self {
+    ☉ rite from_source(Δ self, source: GoalSource) -> Self {
         self.source = source;
         self
     }
@@ -704,7 +704,7 @@ invoke std·time·Duration;
 }
 
 ⊢ PartialEq ∀ GoalSource {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         ⌥ (self, other) {
             (GoalSource·Constitution, GoalSource·Constitution) => true,
             (GoalSource·SelfGenerated, GoalSource·SelfGenerated) => true,
@@ -725,7 +725,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Action {
-    ☉ λ name(&self) -> &str {
+    ☉ rite name(&self) -> &str {
         ⌥ &self.action_type {
             ActionType·Tool { name, .. } => name,
             ActionType·Communicate { .. } => "communicate",
@@ -743,7 +743,7 @@ invoke std·time·Duration;
 }
 
 ⊢ ActionId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ≔ Δ bytes = [0u8; 16];
         getrandom(&Δ bytes);
         Self { bytes }
@@ -751,7 +751,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ ActionId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
@@ -809,7 +809,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Constitution {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             directives: vec![],
             values: vec![],
@@ -817,7 +817,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ default_safe() -> Self {
+    ☉ rite default_safe() -> Self {
         Self {
             directives: vec![
                 Directive {
@@ -857,7 +857,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ Constitution {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             directives: self.directives.clone(),
             values: self.values.clone(),
@@ -875,7 +875,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Directive {
-    ☉ λ prohibits(&self, goal: &Goal) -> bool {
+    ☉ rite prohibits(&self, goal: &Goal) -> bool {
         ⌥ &self.constraint {
             DirectiveConstraint·Prohibition { pattern } => {
                 regex_match(pattern, &goal.description)
@@ -909,7 +909,7 @@ invoke std·time·Duration;
 }
 
 ⊢ AuditId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ≔ Δ bytes = [0u8; 16];
         getrandom(&Δ bytes);
         Self { bytes }
@@ -917,7 +917,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ AuditId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
@@ -956,7 +956,7 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ AuditAction {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             AuditAction·AgentStarted => AuditAction·AgentStarted,
             AuditAction·AgentStopped { reason } =>
@@ -1064,7 +1064,7 @@ invoke std·time·Duration;
 }
 
 ⊢ KnowledgeId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ≔ Δ bytes = [0u8; 16];
         getrandom(&Δ bytes);
         Self { bytes }
@@ -1072,13 +1072,13 @@ invoke std·time·Duration;
 }
 
 ⊢ Clone ∀ KnowledgeId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
 
 ⊢ PartialEq ∀ KnowledgeId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
@@ -1086,7 +1086,7 @@ invoke std·time·Duration;
 ⊢ Eq ∀ KnowledgeId {}
 
 ⊢ Hash ∀ KnowledgeId {
-    λ hash<H: Hasher>(&self, state: &Δ H) {
+    rite hash<H: Hasher>(&self, state: &Δ H) {
         self.bytes.hash(state);
     }
 }
@@ -1115,14 +1115,14 @@ invoke std·time·Duration;
 }
 
 ⊢ ProvenanceChain {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             links: vec![],
             valid: true,
         }
     }
 
-    ☉ λ is_valid(&self) -> bool {
+    ☉ rite is_valid(&self) -> bool {
         self.valid
     }
 }
@@ -1143,7 +1143,7 @@ invoke std·time·Duration;
 }
 
 ⊢ AccuracyHistory {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             total_claims: 0,
             verified_claims: 0,
@@ -1151,7 +1151,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ record(&Δ self, accurate: bool) {
+    ☉ rite record(&Δ self, accurate: bool) {
         self.total_claims += 1;
         ⎇ accurate {
             self.verified_claims += 1;
@@ -1164,7 +1164,7 @@ invoke std·time·Duration;
         self.recent_scores.push_back(score);
     }
 
-    ☉ λ score(&self) -> f32 {
+    ☉ rite score(&self) -> f32 {
         ⎇ self.total_claims == 0 {
             ⤺ 0.5;
         }
@@ -1192,15 +1192,15 @@ invoke std·time·Duration;
 }
 
 ⊢ Timestamp {
-    ☉ λ now() -> Self {
+    ☉ rite now() -> Self {
         Self { nanos: system_time_nanos() }
     }
 
-    ☉ λ zero() -> Self {
+    ☉ rite zero() -> Self {
         Self { nanos: 0 }
     }
 
-    ☉ λ from_nanos(nanos: u64) -> Self {
+    ☉ rite from_nanos(nanos: u64) -> Self {
         Self { nanos }
     }
 }
@@ -1211,17 +1211,17 @@ invoke std·time·Duration;
 }
 
 ⊢ Duration {
-    ☉ λ zero() -> Self { Self { nanos: 0 } }
-    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ rite zero() -> Self { Self { nanos: 0 } }
+    ☉ rite seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ rite minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ rite hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
 
-    ☉ λ as_nanos(&self) -> u64 { self.nanos }
+    ☉ rite as_nanos(&self) -> u64 { self.nanos }
 }
 
 ⊢ Copy ∀ Duration {}
 ⊢ Clone ∀ Duration {
-    λ clone(&self) -> Self { *self }
+    rite clone(&self) -> Self { *self }
 }
 
 /// Generic value type
@@ -1231,15 +1231,15 @@ invoke std·time·Duration;
 }
 
 ⊢ Value {
-    ☉ λ empty() -> Self { Self { inner: vec![] } }
-    ☉ λ string(s: &str) -> Self { Self { inner: s.as_bytes().to_vec() } }
-    ☉ λ bytes(b: Vec<u8>) -> Self { Self { inner: b } }
+    ☉ rite empty() -> Self { Self { inner: vec![] } }
+    ☉ rite string(s: &str) -> Self { Self { inner: s.as_bytes().to_vec() } }
+    ☉ rite bytes(b: Vec<u8>) -> Self { Self { inner: b } }
 
-    ☉ λ as_string(&self) -> Option<String> {
+    ☉ rite as_string(&self) -> Option<String> {
         String·from_utf8(self.inner.clone()).ok()
     }
 
-    ☉ λ as_agent_id(&self) -> Option<AgentId> {
+    ☉ rite as_agent_id(&self) -> Option<AgentId> {
         ⎇ self.inner.len() == 32 {
             ≔ Δ bytes = [0u8; 32];
             bytes.copy_from_slice(&self.inner);
@@ -1358,7 +1358,7 @@ invoke std·time·Duration;
 }
 
 ⊢ AegisConfig {
-    ☉ λ development() -> Self {
+    ☉ rite development() -> Self {
         Self {
             level: SecurityLevel·Development,
             limits: ResourceLimits·permissive(),
@@ -1371,7 +1371,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ standard() -> Self {
+    ☉ rite standard() -> Self {
         Self {
             level: SecurityLevel·Standard,
             limits: ResourceLimits·default(),
@@ -1384,7 +1384,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ hardened() -> Self {
+    ☉ rite hardened() -> Self {
         Self {
             level: SecurityLevel·Hardened,
             limits: ResourceLimits·restrictive(),
@@ -1397,7 +1397,7 @@ invoke std·time·Duration;
         }
     }
 
-    ☉ λ paranoid() -> Self {
+    ☉ rite paranoid() -> Self {
         Self {
             level: SecurityLevel·Paranoid,
             limits: ResourceLimits·restrictive(),
@@ -1415,17 +1415,17 @@ invoke std·time·Duration;
 // External Function Declarations (would be provided by runtime)
 // ============================================================================
 
-extern λ getrandom(buf: &Δ [u8]);
-extern λ system_time_nanos() -> u64;
-extern λ ed25519_keygen(seed: &[u8; 32]) -> ([u8; 32], [u8; 64]);
-extern λ ed25519_sign(private_key: &[u8; 64], data: &[u8]) -> [u8; 64];
-extern λ ed25519_verify(public_key: &[u8; 32], data: &[u8], signature: &[u8; 64]) -> bool;
-extern λ aes_gcm_encrypt(key: &[u8; 32], nonce: &[u8; 12], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError>;
-extern λ aes_gcm_decrypt(key: &[u8; 32], nonce: &[u8; 12], ciphertext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError>;
-extern λ hkdf_derive(input: &[u8], info: &[u8]) -> [u8; 32];
-extern λ derive_nonce(counter: u64) -> [u8; 12];
-extern λ sha256(data: &[u8]) -> [u8; 32];
-extern λ regex_match(pattern: &str, text: &str) -> bool;
+extern rite getrandom(buf: &Δ [u8]);
+extern rite system_time_nanos() -> u64;
+extern rite ed25519_keygen(seed: &[u8; 32]) -> ([u8; 32], [u8; 64]);
+extern rite ed25519_sign(private_key: &[u8; 64], data: &[u8]) -> [u8; 64];
+extern rite ed25519_verify(public_key: &[u8; 32], data: &[u8], signature: &[u8; 64]) -> bool;
+extern rite aes_gcm_encrypt(key: &[u8; 32], nonce: &[u8; 12], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError>;
+extern rite aes_gcm_decrypt(key: &[u8; 32], nonce: &[u8; 12], ciphertext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError>;
+extern rite hkdf_derive(input: &[u8], info: &[u8]) -> [u8; 32];
+extern rite derive_nonce(counter: u64) -> [u8; 12];
+extern rite sha256(data: &[u8]) -> [u8; 32];
+extern rite regex_match(pattern: &str, text: &str) -> bool;
 
 // Use declarations ∀ std traits
 invoke std·hash·{Hash, Hasher};

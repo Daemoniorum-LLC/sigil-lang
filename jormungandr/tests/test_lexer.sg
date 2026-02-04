@@ -475,7 +475,7 @@ rite test_morphemes() → !bool {
     assert_token("σ", Token·Sigma, "sigma lowercase");
     assert_token("Σ", Token·Sigma, "sigma uppercase");
     assert_token("ρ", Token·Rho, "rho");
-    assert_token("λ", Token·Lambda, "lambda");
+    assert_token("Λ", Token·Lambda, "lambda morpheme uppercase");
     assert_token("Π", Token·Pi, "pi");
     assert_token("α", Token·Alpha, "alpha");
     assert_token("ω", Token·Omega, "omega lowercase");

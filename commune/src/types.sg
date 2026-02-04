@@ -14,11 +14,11 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ AgentId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { bytes: uuid_v7() }
     }
 
-    ☉ λ from_bytes(bytes: [u8; 16]) -> Self {
+    ☉ rite from_bytes(bytes: [u8; 16]) -> Self {
         Self { bytes }
     }
 }
@@ -29,7 +29,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ MessageId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { bytes: uuid_v7() }
     }
 }
@@ -40,7 +40,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ ChannelId {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self { name: name.to_string() }
     }
 }
@@ -51,7 +51,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ SwarmId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { bytes: uuid_v7() }
     }
 }
@@ -62,7 +62,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ ProposalId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { bytes: uuid_v7() }
     }
 }
@@ -87,7 +87,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Message {
-    ☉ λ new(from: AgentId, to: Recipient, intent: Intent) -> Self {
+    ☉ rite new(from: AgentId, to: Recipient, intent: Intent) -> Self {
         Self {
             id: MessageId·new(),
             header: MessageHeader {
@@ -108,28 +108,28 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ with_payload(Δ self, payload: Payload) -> Self {
+    ☉ rite with_payload(Δ self, payload: Payload) -> Self {
         self.payload = payload;
         self
     }
 
-    ☉ λ with_epistemic(Δ self, epistemic: Epistemic, confidence: f32) -> Self {
+    ☉ rite with_epistemic(Δ self, epistemic: Epistemic, confidence: f32) -> Self {
         self.header.epistemic = epistemic;
         self.header.confidence = confidence;
         self
     }
 
-    ☉ λ sign(&Δ self, private_key: &PrivateKey) {
+    ☉ rite sign(&Δ self, private_key: &PrivateKey) {
         ≔ data = self.signable_bytes();
         self.signature = private_key.sign(&data);
     }
 
-    ☉ λ verify(&self, public_key: &PublicKey) -> bool {
+    ☉ rite verify(&self, public_key: &PublicKey) -> bool {
         ≔ data = self.signable_bytes();
         public_key.verify(&data, &self.signature)
     }
 
-    λ signable_bytes(&self) -> Vec<u8> {
+    rite signable_bytes(&self) -> Vec<u8> {
         ≔ Δ bytes = Vec·new();
         bytes.extend(&self.id.bytes);
         bytes.extend(&self.header.from.bytes);
@@ -347,7 +347,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Intent {
-    ☉ λ expects_response(&self) -> bool {
+    ☉ rite expects_response(&self) -> bool {
         matches!(self,
             Intent·Request { .. } |
             Intent·Query { .. } |
@@ -357,7 +357,7 @@ invoke std·time·{Duration, Timestamp};
         )
     }
 
-    ☉ λ default_timeout(&self) -> Duration {
+    ☉ rite default_timeout(&self) -> Duration {
         ⌥ self {
             Intent·Ping => Duration·seconds(5),
             Intent·Query { .. } => Duration·seconds(30),
@@ -413,7 +413,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Proposal {
-    ☉ λ new(description: &str, content: Value, deadline: Duration) -> Self {
+    ☉ rite new(description: &str, content: Value, deadline: Duration) -> Self {
         Self {
             id: ProposalId·new(),
             proposer: AgentId·new(),  // Would be set by sender
@@ -458,7 +458,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Epistemic {
-    ☉ λ rank(&self) -> u8 {
+    ☉ rite rank(&self) -> u8 {
         ⌥ self {
             Epistemic·Axiomatic => 5,
             Epistemic·Observed => 4,
@@ -469,7 +469,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ confidence_factor(&self) -> f32 {
+    ☉ rite confidence_factor(&self) -> f32 {
         ⌥ self {
             Epistemic·Axiomatic => 1.0,
             Epistemic·Observed => 0.95,
@@ -518,7 +518,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ TrustProfile {
-    ☉ λ new(agent: AgentId, default_trust: f32) -> Self {
+    ☉ rite new(agent: AgentId, default_trust: f32) -> Self {
         Self {
             agent,
             base_trust: default_trust,
@@ -530,11 +530,11 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ recent_accuracy(&self) -> f32 {
+    ☉ rite recent_accuracy(&self) -> f32 {
         self.accuracy.score
     }
 
-    ☉ λ vouch_score(&self) -> f32 {
+    ☉ rite vouch_score(&self) -> f32 {
         self.vouches.iter()
             .map(|v| v.strength)
             .sum·<f32>()
@@ -554,7 +554,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ AccuracyTracker {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             records: VecDeque·new(),
             score: 1.0,
@@ -562,7 +562,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ record(&Δ self, accurate: bool, domain: Option<String>) {
+    ☉ rite record(&Δ self, accurate: bool, domain: Option<String>) {
         self.records.push_back(AccuracyRecord {
             accurate,
             domain: domain.clone(),
@@ -629,7 +629,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Default ∀ TrustFlags {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             verified: false,
             blocked: false,
@@ -667,7 +667,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Channel {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             id: ChannelId·new(name),
             name: name.to_string(),
@@ -679,17 +679,17 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ with_type(Δ self, channel_type: ChannelType) -> Self {
+    ☉ rite with_type(Δ self, channel_type: ChannelType) -> Self {
         self.channel_type = channel_type;
         self
     }
 
-    ☉ λ with_history(Δ self, max_messages: usize) -> Self {
+    ☉ rite with_history(Δ self, max_messages: usize) -> Self {
         self.history = Some(MessageHistory·new(max_messages));
         self
     }
 
-    ☉ λ with_access(Δ self, access: AccessControl) -> Self {
+    ☉ rite with_access(Δ self, access: AccessControl) -> Self {
         self.access = access;
         self
     }
@@ -715,21 +715,21 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ MessageHistory {
-    ☉ λ new(max_size: usize) -> Self {
+    ☉ rite new(max_size: usize) -> Self {
         Self {
             messages: VecDeque·new(),
             max_size,
         }
     }
 
-    ☉ λ push(&Δ self, msg: Message) {
+    ☉ rite push(&Δ self, msg: Message) {
         self.messages.push_back(msg);
         ⟳ self.messages.len() > self.max_size {
             self.messages.pop_front();
         }
     }
 
-    ☉ λ recent(&self, count: usize) -> Vec<&Message> {
+    ☉ rite recent(&self, count: usize) -> Vec<&Message> {
         self.messages.iter().rev().take(count).collect()
     }
 }
@@ -746,7 +746,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ AccessControl {
-    ☉ λ open() -> Self {
+    ☉ rite open() -> Self {
         Self {
             publishers: Permission·Open,
             subscribers: Permission·Open,
@@ -754,7 +754,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ restricted(admins: Vec<AgentId>) -> Self {
+    ☉ rite restricted(admins: Vec<AgentId>) -> Self {
         Self {
             publishers: Permission·Allow(admins.iter().cloned().collect()),
             subscribers: Permission·Open,
@@ -762,11 +762,11 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ can_publish(&self, agent: &AgentId) -> bool {
+    ☉ rite can_publish(&self, agent: &AgentId) -> bool {
         self.publishers.allows(agent) || self.admins.contains(agent)
     }
 
-    ☉ λ can_subscribe(&self, agent: &AgentId) -> bool {
+    ☉ rite can_subscribe(&self, agent: &AgentId) -> bool {
         self.subscribers.allows(agent) || self.admins.contains(agent)
     }
 }
@@ -786,7 +786,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Permission {
-    ☉ λ allows(&self, agent: &AgentId) -> bool {
+    ☉ rite allows(&self, agent: &AgentId) -> bool {
         ⌥ self {
             Permission·Open => true,
             Permission·Allow(set) => set.contains(agent),
@@ -808,7 +808,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Default ∀ ChannelConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             max_message_size: 1024 * 1024,  // 1 MB
             retention: Duration·days(7),
@@ -836,7 +836,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Swarm {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             id: SwarmId·new(),
             name: name.to_string(),
@@ -846,13 +846,13 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ add_member(&Δ self, agent: AgentId) {
+    ☉ rite add_member(&Δ self, agent: AgentId) {
         self.members.insert(agent.clone());
         self.state.positions.insert(agent.clone(), Vector·zero());
         self.state.velocities.insert(agent, Vector·zero());
     }
 
-    ☉ λ remove_member(&Δ self, agent: &AgentId) {
+    ☉ rite remove_member(&Δ self, agent: &AgentId) {
         self.members.remove(agent);
         self.state.positions.remove(agent);
         self.state.velocities.remove(agent);
@@ -874,7 +874,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Default ∀ SwarmState {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             positions: HashMap·new(),
             velocities: HashMap·new(),
@@ -904,7 +904,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Default ∀ SwarmConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             max_members: 100,
             max_velocity: 1.0,
@@ -1002,7 +1002,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Default ∀ CommuneConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             name: "commune".to_string(),
             topology: Topology·Mesh,
@@ -1048,7 +1048,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Default ∀ TrustModelConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             default_trust: 0.5,
             decay_halflife: Duration·days(7),
@@ -1065,7 +1065,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Default ∀ EncryptionConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             enabled: true,
             algorithm: "AES-256-GCM".to_string(),
@@ -1089,19 +1089,19 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Vector {
-    ☉ λ new(x: f32, y: f32, z: f32) -> Self {
+    ☉ rite new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
 
-    ☉ λ zero() -> Self {
+    ☉ rite zero() -> Self {
         Self { x: 0.0, y: 0.0, z: 0.0 }
     }
 
-    ☉ λ magnitude(&self) -> f32 {
+    ☉ rite magnitude(&self) -> f32 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
 
-    ☉ λ normalize(&self) -> Self {
+    ☉ rite normalize(&self) -> Self {
         ≔ mag = self.magnitude();
         ⎇ mag == 0.0 {
             Self·zero()
@@ -1114,7 +1114,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ clamp_magnitude(&self, max: f32) -> Self {
+    ☉ rite clamp_magnitude(&self, max: f32) -> Self {
         ≔ mag = self.magnitude();
         ⎇ mag > max {
             self.normalize() * max
@@ -1127,7 +1127,7 @@ invoke std·time·{Duration, Timestamp};
 ⊢ std·ops·Add ∀ Vector {
     type Output = Self;
 
-    λ add(self, other: Self) -> Self {
+    rite add(self, other: Self) -> Self {
         Self {
             x: self.x + other.x,
             y: self.y + other.y,
@@ -1139,7 +1139,7 @@ invoke std·time·{Duration, Timestamp};
 ⊢ std·ops·Sub ∀ Vector {
     type Output = Self;
 
-    λ sub(self, other: Self) -> Self {
+    rite sub(self, other: Self) -> Self {
         Self {
             x: self.x - other.x,
             y: self.y - other.y,
@@ -1151,7 +1151,7 @@ invoke std·time·{Duration, Timestamp};
 ⊢ std·ops·Mul<f32> ∀ Vector {
     type Output = Self;
 
-    λ mul(self, scalar: f32) -> Self {
+    rite mul(self, scalar: f32) -> Self {
         Self {
             x: self.x * scalar,
             y: self.y * scalar,
@@ -1161,7 +1161,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ Clone ∀ Vector {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { x: self.x, y: self.y, z: self.z }
     }
 }
@@ -1173,31 +1173,31 @@ invoke std·time·{Duration, Timestamp};
 ☉ Σ PrivateKey { bytes: Vec<u8> }
 
 ⊢ Signature {
-    ☉ λ empty() -> Self { Self { bytes: vec![] } }
+    ☉ rite empty() -> Self { Self { bytes: vec![] } }
 }
 
 ⊢ PrivateKey {
-    ☉ λ sign(&self, data: &[u8]) -> Signature {
+    ☉ rite sign(&self, data: &[u8]) -> Signature {
         Signature { bytes: vec![] }
     }
 }
 
 ⊢ PublicKey {
-    ☉ λ verify(&self, data: &[u8], sig: &Signature) -> bool {
+    ☉ rite verify(&self, data: &[u8], sig: &Signature) -> bool {
         true
     }
 }
 
 ⊢ Timestamp {
-    ☉ λ now() -> Self { Timestamp { nanos: 0 } }
-    ☉ λ to_bytes(&self) -> [u8; 8] { [0u8; 8] }
+    ☉ rite now() -> Self { Timestamp { nanos: 0 } }
+    ☉ rite to_bytes(&self) -> [u8; 8] { [0u8; 8] }
 }
 
 ⊢ std·ops·Add<Duration> ∀ Timestamp {
     type Output = Self;
-    λ add(self, _duration: Duration) -> Self { self }
+    rite add(self, _duration: Duration) -> Self { self }
 }
 
 ☉ Σ Timestamp { nanos: u64 }
 
-λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+rite uuid_v7() -> [u8; 16] { [0u8; 16] }

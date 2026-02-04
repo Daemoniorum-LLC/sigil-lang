@@ -3,12 +3,12 @@
 // Run: sigil run examples/01_functions.sg
 
 // Basic function with parameters and return type
-λ add(a: i32, b: i32) → i32 {
+rite add(a: i32, b: i32) → i32 {
     a + b  // Last expression is returned
 }
 
 // Function with explicit return
-λ absolute(x: i32) → i32 {
+rite absolute(x: i32) → i32 {
     if x < 0 {
         return -x;
     }
@@ -16,17 +16,17 @@
 }
 
 // Function without return value
-λ greet(name: &str) {
+rite greet(name: &str) {
     println("Hello, " + name + "!");
 }
 
 // Higher-order function (takes function as parameter)
-λ apply_twice(f: λ(i32) → i32, x: i32) → i32 {
+rite apply_twice(f: rite(i32) → i32, x: i32) → i32 {
     f(f(x))
 }
 
 // Closure (anonymous function)
-λ main() {
+rite main() {
     // Basic function calls
     println("add(3, 4) = " + str(add(3, 4)));
     println("absolute(-5) = " + str(absolute(-5)));

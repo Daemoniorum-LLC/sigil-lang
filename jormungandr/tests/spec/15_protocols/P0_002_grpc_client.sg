@@ -24,21 +24,21 @@
 }
 
 // Connection constructor
-λ connect_channel(endpoint: String) -> Channel {
+rite connect_channel(endpoint: String) -> Channel {
     Channel { endpoint: endpoint }
 }
 
-λ new_greeter_client(channel: Channel) -> GreeterClient {
+rite new_greeter_client(channel: Channel) -> GreeterClient {
     GreeterClient { channel: channel }
 }
 
 // Simulated RPC call
-λ say_hello(client: GreeterClient, req: HelloRequest) -> HelloResponse {
+rite say_hello(client: GreeterClient, req: HelloRequest) -> HelloResponse {
     // In real gRPC, response is reported evidence from network
     HelloResponse { message: "Hello, " + req.name + "!" }
 }
 
-λ main() {
+rite main() {
     // Test: Channel construction with evidential binding
     ≔ channel~ = connect_channel("http://localhost:50051");
 

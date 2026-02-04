@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 10 (42 >> 2 = 10)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     println(x >> 2);
 }

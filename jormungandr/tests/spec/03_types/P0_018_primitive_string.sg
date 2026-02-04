@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print "Hello, Sigil!"
 
-λ main() {
+rite main() {
     ≔ s: !String = "Hello, Sigil!";
     println(s);
 }

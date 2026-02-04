@@ -19,11 +19,11 @@
 }
 
 // Constructor pattern using namespace
-λ make_get_request(url: String) -> HttpRequest {
+rite make_get_request(url: String) -> HttpRequest {
     HttpRequest { method: "GET", url: url }
 }
 
-λ main() {
+rite main() {
     // Test Σ constructor pattern
     ≔ req = make_get_request("https://api.example.com/data");
 

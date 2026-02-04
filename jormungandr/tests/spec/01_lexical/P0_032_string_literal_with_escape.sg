@@ -8,6 +8,6 @@
 // Expected behavior:
 // Should print: Hello\nWorld (with actual newline)
 
-λ main() {
+rite main() {
     println("Hello\nWorld");
 }

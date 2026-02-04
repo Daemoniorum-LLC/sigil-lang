@@ -11,7 +11,7 @@
     label: !i32,
 }
 
-λ main() {
+rite main() {
     ≔ o = Outer {
         inner: Inner { value: 42 },
         label: 1,
