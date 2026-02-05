@@ -1,0 +1,40 @@
+// Test: Evidentiality marker translation
+// Spec: RUST-CODEGEN-SPEC.md § 6
+// Priority: P1 - Important
+//
+// Purpose: Validate evidence markers are stripped (default) or preserved
+//
+// Expected: Evidence markers stripped by default
+
+rite compute() → i32! {
+    42!
+}
+
+rite lookup(key: String) → Option<i32>? {
+    ⎇ key == "found" {
+        Some(100)?
+    } ∅ {
+        None?
+    }
+}
+
+rite external_data() → String~ {
+    "data from API"~
+}
+
+rite main() {
+    // Known evidence
+    ≔ value: i32! = compute();
+    println(value);
+
+    // Uncertain evidence
+    ≔ maybe: Option<i32>? = lookup("found"·to_string());
+    ↦ maybe {
+        Some(v) => println(v),
+        None => println("not found"),
+    }
+
+    // Reported evidence
+    ≔ data: String~ = external_data();
+    println(data);
+}

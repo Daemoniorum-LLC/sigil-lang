@@ -1,0 +1,34 @@
+// Evidence markers stripped (default mode)
+
+fn compute() -> i32 {
+    42
+}
+
+fn lookup(key: String) -> Option<i32> {
+    if key == "found" {
+        Some(100)
+    } else {
+        None
+    }
+}
+
+fn external_data() -> String {
+    "data from API".to_string()
+}
+
+fn main() {
+    // Known evidence
+    let value: i32 = compute();
+    println!("{}", value);
+
+    // Uncertain evidence
+    let maybe: Option<i32> = lookup("found".to_string());
+    match maybe {
+        Some(v) => println!("{}", v),
+        None => println!("not found"),
+    }
+
+    // Reported evidence
+    let data: String = external_data();
+    println!("{}", data);
+}

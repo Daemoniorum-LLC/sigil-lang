@@ -1,0 +1,49 @@
+// Test: Const generic translation
+// Spec: RUST-CODEGEN-SPEC.md § 5.6
+// Priority: P0 - Core
+//
+// Purpose: Validate const generic parameters translate correctly
+//
+// Expected: ◆ N: usize → const N: usize
+
+sigil FixedArray<T, ◆ N: usize> {
+    data: [T; N],
+}
+
+⊢ FixedArray<T, ◆ N> {
+    rite new(default: T) → Self
+    where T: Copy
+    {
+        Self { data: [default; N] }
+    }
+
+    rite len(&this) → usize {
+        N
+    }
+
+    rite get(&this, index: usize) → Option<&T> {
+        ⎇ index < N {
+            Some(&this·data[index])
+        } ∅ {
+            None
+        }
+    }
+}
+
+sigil Matrix<T, ◆ ROWS: usize, ◆ COLS: usize> {
+    data: [[T; COLS]; ROWS],
+}
+
+⊢ Matrix<T, ◆ ROWS, ◆ COLS> {
+    rite rows(&this) → usize { ROWS }
+    rite cols(&this) → usize { COLS }
+    rite size(&this) → usize { ROWS * COLS }
+}
+
+rite main() {
+    ≔ arr: FixedArray<i32, 5> = FixedArray·new(0);
+    println(arr·len());
+
+    ≔ mat: Matrix<f64, 3, 4> = Matrix { data: [[0.0; 4]; 3] };
+    println(mat·size());
+}

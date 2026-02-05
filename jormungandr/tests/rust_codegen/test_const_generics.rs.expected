@@ -1,0 +1,48 @@
+struct FixedArray<T, const N: usize> {
+    data: [T; N],
+}
+
+impl<T, const N: usize> FixedArray<T, N> {
+    fn new(default: T) -> Self
+    where
+        T: Copy,
+    {
+        Self { data: [default; N] }
+    }
+
+    fn len(&self) -> usize {
+        N
+    }
+
+    fn get(&self, index: usize) -> Option<&T> {
+        if index < N {
+            Some(&self.data[index])
+        } else {
+            None
+        }
+    }
+}
+
+struct Matrix<T, const ROWS: usize, const COLS: usize> {
+    data: [[T; COLS]; ROWS],
+}
+
+impl<T, const ROWS: usize, const COLS: usize> Matrix<T, ROWS, COLS> {
+    fn rows(&self) -> usize {
+        ROWS
+    }
+    fn cols(&self) -> usize {
+        COLS
+    }
+    fn size(&self) -> usize {
+        ROWS * COLS
+    }
+}
+
+fn main() {
+    let arr: FixedArray<i32, 5> = FixedArray::new(0);
+    println!("{}", arr.len());
+
+    let mat: Matrix<f64, 3, 4> = Matrix { data: [[0.0; 4]; 3] };
+    println!("{}", mat.size());
+}

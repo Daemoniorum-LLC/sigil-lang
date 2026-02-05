@@ -1,0 +1,55 @@
+// Test: Morpheme/pipe operator translation
+// Spec: RUST-CODEGEN-SPEC.md § 7
+// Priority: P0 - Core
+//
+// Purpose: Validate pipe operators translate to iterator chains
+//
+// Expected: Generates Rust iterator method chains
+
+rite main() {
+    // Basic map
+    ≔ numbers = [1, 2, 3, 4, 5];
+    ≔ doubled = numbers |τ{x => x * 2} |→[];
+    println(doubled);
+
+    // Filter
+    ≔ evens = numbers |φ{x => x % 2 == 0} |→[];
+    println(evens);
+
+    // Map + Filter + Collect
+    ≔ result = numbers |τ{x => x * 2} |φ{x => x > 5} |→[];
+    println(result);
+
+    // Sum reduction
+    ≔ total = numbers |Σ;
+    println(total);
+
+    // Product reduction
+    ≔ product = numbers |Π;
+    println(product);
+
+    // All/Any predicates
+    ≔ all_positive = numbers |∀{x => x > 0};
+    ≔ any_large = numbers |∃{x => x > 100};
+    println(all_positive);
+    println(any_large);
+
+    // Count
+    ≔ count = numbers |#;
+    println(count);
+
+    // First/Last
+    ≔ first = numbers |α;
+    ≔ last = numbers |ω;
+    println(first);
+    println(last);
+
+    // Complex chain
+    ≔ data = [10, 20, 30, 40, 50];
+    ≔ processed = data
+        |τ{x => x + 5}
+        |φ{x => x > 20}
+        |τ{x => x * 2}
+        |→[];
+    println(processed);
+}

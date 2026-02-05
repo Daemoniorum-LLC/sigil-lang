@@ -1,0 +1,64 @@
+// Test: Trait and impl translation
+// Spec: RUST-CODEGEN-SPEC.md § 9.4, 9.5, 9.6
+// Priority: P0 - Core
+//
+// Purpose: Validate trait declaration and implementations
+//
+// Expected: Generates valid Rust trait and impl blocks
+
+aspect Drawable {
+    rite draw(&this);
+    rite area(&this) → f64;
+}
+
+aspect Named {
+    rite name(&this) → String;
+}
+
+sigil Circle {
+    radius: f64,
+    label: String,
+}
+
+sigil Square {
+    side: f64,
+}
+
+⊢ Drawable ∀ Circle {
+    rite draw(&this) {
+        println("Drawing circle with radius: " + this·radius·to_string());
+    }
+
+    rite area(&this) → f64 {
+        3.14159 * this·radius * this·radius
+    }
+}
+
+⊢ Named ∀ Circle {
+    rite name(&this) → String {
+        this·label·clone()
+    }
+}
+
+⊢ Drawable ∀ Square {
+    rite draw(&this) {
+        println("Drawing square with side: " + this·side·to_string());
+    }
+
+    rite area(&this) → f64 {
+        this·side * this·side
+    }
+}
+
+rite draw_shape<T: Drawable>(shape: &T) {
+    shape·draw();
+    ≔ a = shape·area();
+    println("Area: " + a·to_string());
+}
+
+rite main() {
+    ≔ c = Circle { radius: 5.0, label: "MyCircle"·to_string() };
+    ≔ s = Square { side: 4.0 };
+    draw_shape(&c);
+    draw_shape(&s);
+}

@@ -1,0 +1,34 @@
+// Test: Primitive function translation
+// Spec: RUST-CODEGEN-SPEC.md § 3.1, 9.1
+// Priority: P0 - Core
+//
+// Purpose: Validate basic function declaration and primitive types
+//
+// Expected: Generates valid Rust fn declaration
+
+rite add(a: i32, b: i32) → i32 {
+    a + b
+}
+
+rite multiply(x: f64, y: f64) → f64 {
+    x * y
+}
+
+rite identity<T>(value: T) → T {
+    value
+}
+
+rite greet(name: String) → String {
+    "Hello, " + name
+}
+
+rite is_positive(n: i32) → bool {
+    n > 0
+}
+
+rite main() {
+    ≔ sum = add(2, 3);
+    ≔ product = multiply(2.5, 4.0);
+    println(sum);
+    println(product);
+}

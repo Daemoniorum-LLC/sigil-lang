@@ -1,0 +1,36 @@
+// Test: Async/await translation
+// Spec: RUST-CODEGEN-SPEC.md § 3.3, 8.9
+// Priority: P1 - Important
+//
+// Purpose: Validate async function and await operator translation
+//
+// Expected: async fn and .await syntax
+
+async rite fetch_data(url: String) → Result<String, Error> {
+    // Simulated async operation
+    ≔ response = http_get(url)⌛?;
+    Ok(response)
+}
+
+async rite process_urls(urls: Vec<String>) → Vec<String> {
+    ≔ Δ results = Vec·new();
+    ∀ url ∈ urls {
+        ≔ data = fetch_data(url)⌛;
+        ↦ data {
+            Ok(s) => results·push(s),
+            Err(_) => (),
+        }
+    }
+    results
+}
+
+async rite parallel_fetch(urls: Vec<String>) → Vec<Result<String, Error>> {
+    ≔ futures = urls |τ{url => fetch_data(url)} |→[];
+    join_all(futures)⌛
+}
+
+rite main() {
+    // Would run in tokio runtime
+    ≔ urls = vec!["http://example.com"·to_string()];
+    // tokio::runtime::Runtime::new().unwrap().block_on(process_urls(urls));
+}

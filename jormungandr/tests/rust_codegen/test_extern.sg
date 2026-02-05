@@ -1,0 +1,32 @@
+// Test: Extern block translation
+// Spec: RUST-CODEGEN-SPEC.md § 10
+// Priority: P1 - Important
+//
+// Purpose: Validate extern block passes through correctly
+//
+// Expected: extern "C" with fn syntax
+
+extern "C" {
+    rite malloc(size: usize) → *vary u8;
+    rite free(ptr: *vary u8);
+    rite memcpy(dst: *vary u8, src: *◆ u8, size: usize) → *vary u8;
+    static errno: i32;
+}
+
+#[export]
+rite exported_function(x: i32) → i32 {
+    x * 2
+}
+
+rite use_malloc() {
+    unsafe {
+        ≔ ptr = malloc(1024);
+        ⎇ !ptr·is_null() {
+            free(ptr);
+        }
+    }
+}
+
+rite main() {
+    use_malloc();
+}
