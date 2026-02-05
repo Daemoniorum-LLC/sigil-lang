@@ -6,7 +6,7 @@
     value: !i32
 }
 
-λ main() {
+rite main() {
     ≔ w: Wrapper = Wrapper { value: 42 };
     println(w.value);
 }

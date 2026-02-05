@@ -14,7 +14,7 @@
     uncertain: ?i32
 }
 
-λ main() {
+rite main() {
     ≔ d: !Data = Data { certain: 42, uncertain: 99 };
     println(d.certain);
     println(d.uncertain);

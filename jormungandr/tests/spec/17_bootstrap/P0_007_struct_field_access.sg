@@ -13,7 +13,7 @@
     y: !i32
 }
 
-λ main() {
+rite main() {
     ≔ p: !Point = Point { x: 42, y: 10 };
     println(p.x);
     println(p.y);

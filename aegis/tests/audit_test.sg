@@ -5,7 +5,7 @@
 }
 
 ⊢ AuditId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         AuditId { bytes: [0; 16] }
     }
 }
@@ -15,11 +15,11 @@
 }
 
 ⊢ Timestamp {
-    ☉ λ now() -> Self {
+    ☉ rite now() -> Self {
         Timestamp { nanos: 1705500000_000_000_000 }
     }
 
-    ☉ λ from_nanos(nanos: !u64) -> Self {
+    ☉ rite from_nanos(nanos: !u64) -> Self {
         Timestamp { nanos }
     }
 }
@@ -50,7 +50,7 @@
 }
 
 ⊢ AuditEntry {
-    ☉ λ new(action: AuditAction, outcome: AuditOutcome) -> Self {
+    ☉ rite new(action: AuditAction, outcome: AuditOutcome) -> Self {
         AuditEntry {
             id: AuditId·new(),
             timestamp: Timestamp·now(),
@@ -61,7 +61,7 @@
         }
     }
 
-    ☉ λ with_prev_hash(Δ self, prev: ![!u8; 32]) -> Self {
+    ☉ rite with_prev_hash(Δ self, prev: ![!u8; 32]) -> Self {
         self.prev_hash = prev;
         self
     }
@@ -81,7 +81,7 @@
 }
 
 ⊢ AuditConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         AuditConfig {
             max_entries: 10000,
             persist: true,
@@ -89,7 +89,7 @@
         }
     }
 
-    ☉ λ verbose() -> Self {
+    ☉ rite verbose() -> Self {
         AuditConfig {
             max_entries: 100000,
             persist: true,
@@ -97,7 +97,7 @@
         }
     }
 
-    ☉ λ minimal() -> Self {
+    ☉ rite minimal() -> Self {
         AuditConfig {
             max_entries: 1000,
             persist: false,
@@ -113,7 +113,7 @@
 }
 
 ⊢ AuditLog {
-    ☉ λ new(config: AuditConfig) -> Self {
+    ☉ rite new(config: AuditConfig) -> Self {
         AuditLog {
             entry_count: 0,
             config,
@@ -121,15 +121,15 @@
         }
     }
 
-    ☉ λ log(&Δ self, action: AuditAction, outcome: AuditOutcome) {
+    ☉ rite log(&Δ self, action: AuditAction, outcome: AuditOutcome) {
         self.entry_count = self.entry_count + 1;
     }
 
-    ☉ λ count(&self) -> !usize {
+    ☉ rite count(&self) -> !usize {
         self.entry_count
     }
 
-    ☉ λ is_empty(&self) -> !bool {
+    ☉ rite is_empty(&self) -> !bool {
         self.entry_count == 0
     }
 }
@@ -139,7 +139,7 @@
 // ============================================================================
 
 #[test]
-λ test_audit_action_types() {
+rite test_audit_action_types() {
     ≔ tool = AuditAction·ToolInvoked;
     ≔ proposed = AuditAction·GoalProposed;
     ≔ accepted = AuditAction·GoalAccepted;
@@ -154,7 +154,7 @@
 // ============================================================================
 
 #[test]
-λ test_audit_outcome_types() {
+rite test_audit_outcome_types() {
     ≔ success = AuditOutcome·Success;
     ≔ failure = AuditOutcome·Failure;
     ≔ blocked = AuditOutcome·Blocked;
@@ -167,13 +167,13 @@
 // ============================================================================
 
 #[test]
-λ test_audit_entry_creation() {
+rite test_audit_entry_creation() {
     ≔ entry = AuditEntry·new(AuditAction·ToolInvoked, AuditOutcome·Success);
     assert(entry.timestamp.nanos > 0);
 }
 
 #[test]
-λ test_audit_entry_with_prev_hash() {
+rite test_audit_entry_with_prev_hash() {
     ≔ prev: ![!u8; 32] = [1; 32];
     ≔ entry = AuditEntry·new(AuditAction·ToolInvoked, AuditOutcome·Success)
         .with_prev_hash(prev);
@@ -185,20 +185,20 @@
 // ============================================================================
 
 #[test]
-λ test_audit_config_default() {
+rite test_audit_config_default() {
     ≔ config = AuditConfig·default_config();
     assert(config.max_entries == 10000);
     assert(config.persist);
 }
 
 #[test]
-λ test_audit_config_verbose() {
+rite test_audit_config_verbose() {
     ≔ config = AuditConfig·verbose();
     assert(config.max_entries == 100000);
 }
 
 #[test]
-λ test_audit_config_minimal() {
+rite test_audit_config_minimal() {
     ≔ config = AuditConfig·minimal();
     assert(config.max_entries == 1000);
     assert(!config.persist);
@@ -209,14 +209,14 @@
 // ============================================================================
 
 #[test]
-λ test_audit_log_creation() {
+rite test_audit_log_creation() {
     ≔ log = AuditLog·new(AuditConfig·default_config());
     assert(log.is_empty());
     assert(log.count() == 0);
 }
 
 #[test]
-λ test_audit_log_single_entry() {
+rite test_audit_log_single_entry() {
     ≔ Δ log = AuditLog·new(AuditConfig·default_config());
     log.log(AuditAction·ToolInvoked, AuditOutcome·Success);
     assert(!log.is_empty());
@@ -224,7 +224,7 @@
 }
 
 #[test]
-λ test_audit_log_multiple_entries() {
+rite test_audit_log_multiple_entries() {
     ≔ Δ log = AuditLog·new(AuditConfig·default_config());
     log.log(AuditAction·ToolInvoked, AuditOutcome·Success);
     log.log(AuditAction·GoalProposed, AuditOutcome·Success);
@@ -233,7 +233,7 @@
 }
 
 #[test]
-λ test_audit_log_mixed_outcomes() {
+rite test_audit_log_mixed_outcomes() {
     ≔ Δ log = AuditLog·new(AuditConfig·default_config());
     log.log(AuditAction·GoalProposed, AuditOutcome·Success);
     log.log(AuditAction·GoalRejected, AuditOutcome·Blocked);
@@ -246,7 +246,7 @@
 // ============================================================================
 
 #[test]
-λ test_audit_level_types() {
+rite test_audit_level_types() {
     ≔ verbose = AuditLevel·Verbose;
     ≔ standard = AuditLevel·Standard;
     ≔ security = AuditLevel·Security;
@@ -254,6 +254,6 @@
     assert(true);
 }
 
-λ main() {
+rite main() {
     println("Aegis audit tests - 13 tests");
 }

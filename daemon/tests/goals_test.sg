@@ -5,7 +5,7 @@
 }
 
 ⊢ GoalId {
-    ☉ λ new(value: !u64) -> Self {
+    ☉ rite new(value: !u64) -> Self {
         GoalId { value }
     }
 }
@@ -21,14 +21,14 @@
 }
 
 ⊢ GoalStatus {
-    ☉ λ is_active(&self) -> !bool {
+    ☉ rite is_active(&self) -> !bool {
         ⌥ self {
             GoalStatus·Active => true,
             _ => false,
         }
     }
 
-    ☉ λ is_complete(&self) -> !bool {
+    ☉ rite is_complete(&self) -> !bool {
         ⌥ self {
             GoalStatus·Completed { .. } => true,
             GoalStatus·Failed => true,
@@ -37,7 +37,7 @@
         }
     }
 
-    ☉ λ is_blocked(&self) -> !bool {
+    ☉ rite is_blocked(&self) -> !bool {
         ⌥ self {
             GoalStatus·Blocked => true,
             _ => false,
@@ -54,7 +54,7 @@
 }
 
 ⊢ Goal {
-    ☉ λ new(id: !u64, desc_len: !usize) -> Self {
+    ☉ rite new(id: !u64, desc_len: !usize) -> Self {
         Goal {
             id: GoalId·new(id),
             desc_len,
@@ -64,46 +64,46 @@
         }
     }
 
-    ☉ λ with_priority(Δ self, priority: !f32) -> Self {
+    ☉ rite with_priority(Δ self, priority: !f32) -> Self {
         self.priority = ⎇ priority < 0.0 { 0.0 } ⎉ ⎇ priority > 1.0 { 1.0 } ⎉ { priority };
         self
     }
 
-    ☉ λ with_parent(Δ self) -> Self {
+    ☉ rite with_parent(Δ self) -> Self {
         self.has_parent = true;
         self
     }
 
-    ☉ λ activate(Δ self) -> Self {
+    ☉ rite activate(Δ self) -> Self {
         self.status = GoalStatus·Active;
         self
     }
 
-    ☉ λ block(Δ self) -> Self {
+    ☉ rite block(Δ self) -> Self {
         self.status = GoalStatus·Blocked;
         self
     }
 
-    ☉ λ complete(Δ self, success: !bool) -> Self {
+    ☉ rite complete(Δ self, success: !bool) -> Self {
         self.status = GoalStatus·Completed { success };
         self
     }
 
-    ☉ λ fail(Δ self) -> Self {
+    ☉ rite fail(Δ self) -> Self {
         self.status = GoalStatus·Failed;
         self
     }
 
-    ☉ λ abandon(Δ self) -> Self {
+    ☉ rite abandon(Δ self) -> Self {
         self.status = GoalStatus·Abandoned;
         self
     }
 
-    ☉ λ is_active(&self) -> !bool {
+    ☉ rite is_active(&self) -> !bool {
         self.status.is_active()
     }
 
-    ☉ λ is_complete(&self) -> !bool {
+    ☉ rite is_complete(&self) -> !bool {
         self.status.is_complete()
     }
 }
@@ -115,11 +115,11 @@
 }
 
 ⊢ GoalStack {
-    ☉ λ new(max_goals: !usize) -> Self {
+    ☉ rite new(max_goals: !usize) -> Self {
         GoalStack { count: 0, active_count: 0, max_goals }
     }
 
-    ☉ λ push_inactive(&Δ self) -> !bool {
+    ☉ rite push_inactive(&Δ self) -> !bool {
         ⎇ self.count >= self.max_goals {
             false
         } ⎉ {
@@ -128,7 +128,7 @@
         }
     }
 
-    ☉ λ push_active(&Δ self) -> !bool {
+    ☉ rite push_active(&Δ self) -> !bool {
         ⎇ self.count >= self.max_goals {
             false
         } ⎉ {
@@ -138,11 +138,11 @@
         }
     }
 
-    ☉ λ is_empty(&self) -> !bool {
+    ☉ rite is_empty(&self) -> !bool {
         self.count == 0
     }
 
-    ☉ λ has_active(&self) -> !bool {
+    ☉ rite has_active(&self) -> !bool {
         self.active_count > 0
     }
 }
@@ -152,111 +152,111 @@
 // ============================================================================
 
 #[test]
-λ test_goal_creation() {
+rite test_goal_creation() {
     ≔ goal = Goal·new(1, 12);
     assert(goal.priority == 0.5);
     assert(!goal.is_active());
 }
 
 #[test]
-λ test_goal_with_priority() {
+rite test_goal_with_priority() {
     ≔ goal = Goal·new(1, 13).with_priority(0.9);
     assert(goal.priority == 0.9);
 }
 
 #[test]
-λ test_goal_priority_clamped_high() {
+rite test_goal_priority_clamped_high() {
     ≔ goal = Goal·new(1, 4).with_priority(1.5);
     assert(goal.priority == 1.0);
 }
 
 #[test]
-λ test_goal_priority_clamped_low() {
+rite test_goal_priority_clamped_low() {
     ≔ goal = Goal·new(1, 4).with_priority(-0.5);
     assert(goal.priority == 0.0);
 }
 
 #[test]
-λ test_goal_activate() {
+rite test_goal_activate() {
     ≔ goal = Goal·new(1, 4).activate();
     assert(goal.is_active());
 }
 
 #[test]
-λ test_goal_complete_success() {
+rite test_goal_complete_success() {
     ≔ goal = Goal·new(1, 4).complete(true);
     assert(goal.is_complete());
     assert(!goal.is_active());
 }
 
 #[test]
-λ test_goal_complete_failure() {
+rite test_goal_complete_failure() {
     ≔ goal = Goal·new(1, 4).complete(false);
     assert(goal.is_complete());
 }
 
 #[test]
-λ test_goal_fail() {
+rite test_goal_fail() {
     ≔ goal = Goal·new(1, 4).fail();
     assert(goal.is_complete());
 }
 
 #[test]
-λ test_goal_abandon() {
+rite test_goal_abandon() {
     ≔ goal = Goal·new(1, 4).abandon();
     assert(goal.is_complete());
 }
 
 #[test]
-λ test_goal_block() {
+rite test_goal_block() {
     ≔ goal = Goal·new(1, 4).block();
     assert(!goal.is_active());
     assert(!goal.is_complete());
 }
 
 #[test]
-λ test_goal_with_parent() {
+rite test_goal_with_parent() {
     ≔ goal = Goal·new(2, 8).with_parent();
     assert(goal.has_parent);
 }
 
 #[test]
-λ test_goal_status_pending() {
+rite test_goal_status_pending() {
     ≔ status = GoalStatus·Pending;
     assert(!status.is_active());
     assert(!status.is_complete());
 }
 
 #[test]
-λ test_goal_status_active() {
+rite test_goal_status_active() {
     ≔ status = GoalStatus·Active;
     assert(status.is_active());
     assert(!status.is_complete());
 }
 
 #[test]
-λ test_goal_status_blocked() {
+rite test_goal_status_blocked() {
     ≔ status = GoalStatus·Blocked;
     assert(!status.is_active());
     assert(status.is_blocked());
 }
 
 #[test]
-λ test_goal_stack_creation() {
+rite test_goal_stack_creation() {
     ≔ stack = GoalStack·new(5);
     assert(stack.is_empty());
     assert(stack.count == 0);
 }
 
 #[test]
-λ test_goal_stack_push() {
+rite test_goal_stack_push() {
     ≔ Δ stack = GoalStack·new(5);
     assert(stack.push_inactive());
     assert(stack.count == 1);
 }
 
 #[test]
-λ test_goal_stack_max_limit() {
+rite test_goal_stack_max_limit() {
     ≔ Δ stack = GoalStack·new(2);
     ≔ _ = stack.push_inactive();
     ≔ _ = stack.push_inactive();
@@ -266,7 +266,7 @@
 }
 
 #[test]
-λ test_goal_stack_active_count() {
+rite test_goal_stack_active_count() {
     ≔ Δ stack = GoalStack·new(5);
     ≔ _ = stack.push_active();
     ≔ _ = stack.push_inactive();
@@ -275,13 +275,13 @@
 }
 
 #[test]
-λ test_goal_stack_has_active() {
+rite test_goal_stack_has_active() {
     ≔ Δ stack = GoalStack·new(5);
     assert(!stack.has_active());
     ≔ _ = stack.push_active();
     assert(stack.has_active());
 }
 
-λ main() {
+rite main() {
     println("Daemon goals tests - 19 tests");
 }

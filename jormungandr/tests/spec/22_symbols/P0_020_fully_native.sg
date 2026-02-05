@@ -6,7 +6,7 @@
 //
 // Symbols used:
 //   Σ  - Σ
-//   λ  - λ
+//   rite  - rite
 //   ≔  - ≔
 //   Δ  - Δ
 //   ⊢  - ⊢
@@ -28,25 +28,25 @@
 
 // Implement methods on Counter
 ⊢ Counter {
-    λ new(limit: i64) -> Counter {
+    rite new(limit: i64) -> Counter {
         Counter { value: 0, limit: limit }
     }
 
-    λ increment(&Δ self) {
+    rite increment(&Δ self) {
         self.value = self.value + 1;
     }
 
-    λ get(self) -> i64 {
+    rite get(self) -> i64 {
         ⤺ self.value
     }
 
-    λ at_limit(self) -> bool {
+    rite at_limit(self) -> bool {
         ⤺ self.value >= self.limit
     }
 }
 
 // Classify a number
-λ classify(n: i64) -> i64 {
+rite classify(n: i64) -> i64 {
     ⎇ n > 0 {
         ⤺ 1
     } ⎉ ⎇ n < 0 {
@@ -57,7 +57,7 @@
 }
 
 // Sum only positive numbers from a list
-λ sum_positive(numbers: &[i64]) -> i64 {
+rite sum_positive(numbers: &[i64]) -> i64 {
     ≔ Δ sum = 0;
     ∀ n ∈ numbers {
         ⎇ *n <= 0 {
@@ -69,7 +69,7 @@
 }
 
 // Find first number greater than threshold
-λ find_greater(numbers: &[i64], threshold: i64) -> i64 {
+rite find_greater(numbers: &[i64], threshold: i64) -> i64 {
     ∀ n ∈ numbers {
         ⎇ *n > threshold {
             ⤺ *n
@@ -79,7 +79,7 @@
 }
 
 // Main entry point
-λ main() {
+rite main() {
     // Test Σ and ⊢
     ≔ Δ counter = Counter·new(5);
     ⟳ !counter.at_limit() {

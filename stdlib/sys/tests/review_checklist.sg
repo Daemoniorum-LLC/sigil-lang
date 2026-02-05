@@ -9,7 +9,7 @@
 // Test Infrastructure
 // ============================================================================
 
-λ syscall1(nr: i64, a1: i64) -> isize {
+rite syscall1(nr: i64, a1: i64) -> isize {
     ≔ Δ result: isize = 0;
     unsafe {
         asm!("syscall",
@@ -22,7 +22,7 @@
     result
 }
 
-λ syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize {
+rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize {
     ≔ Δ result: isize = 0;
     unsafe {
         asm!("syscall",
@@ -37,7 +37,7 @@
     result
 }
 
-λ syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize {
+rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize {
     ≔ Δ result: isize = 0;
     unsafe {
         asm!("syscall",
@@ -70,7 +70,7 @@ const SYS_EXIT_GROUP: i64 = 231;
 // Review Tests
 // ============================================================================
 
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ Δ passed: i64 = 0;
     ≔ Δ failed: i64 = 0;
 

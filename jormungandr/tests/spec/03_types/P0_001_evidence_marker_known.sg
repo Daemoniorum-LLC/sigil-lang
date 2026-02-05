@@ -10,7 +10,7 @@
 // Expected behavior:
 // Should compile and run successfully, printing 42
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     println(x);
 }

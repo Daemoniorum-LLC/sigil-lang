@@ -16,25 +16,25 @@ invoke std·path·{Path, PathBuf}
 /// Trait ∀ storage backends
 ☉ Θ StorageBackend {
     /// Store a value
-    λ put(key: &str, value: &[u8]) -> Result<(), StorageError>;
+    rite put(key: &str, value: &[u8]) -> Result<(), StorageError>;
 
     /// Retrieve a value
-    λ get(key: &str) -> Result<Option<Vec<u8>>, StorageError>;
+    rite get(key: &str) -> Result<Option<Vec<u8>>, StorageError>;
 
     /// Delete a value
-    λ delete(key: &str) -> Result<bool, StorageError>;
+    rite delete(key: &str) -> Result<bool, StorageError>;
 
     /// Check ⎇ key exists
-    λ exists(key: &str) -> bool;
+    rite exists(key: &str) -> bool;
 
     /// List all keys with prefix
-    λ list_prefix(prefix: &str) -> Result<Vec<String>, StorageError>;
+    rite list_prefix(prefix: &str) -> Result<Vec<String>, StorageError>;
 
     /// Flush to disk
-    λ flush() -> Result<(), StorageError>;
+    rite flush() -> Result<(), StorageError>;
 
     /// Close the backend
-    λ close() -> Result<(), StorageError>;
+    rite close() -> Result<(), StorageError>;
 }
 
 #[derive(Debug)]
@@ -56,7 +56,7 @@ invoke std·path·{Path, PathBuf}
 }
 
 ⊢ MemoryBackend {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             data: HashMap·new(),
         }
@@ -64,35 +64,35 @@ invoke std·path·{Path, PathBuf}
 }
 
 ⊢ StorageBackend ∀ MemoryBackend {
-    λ put(key: &str, value: &[u8]) -> Result<(), StorageError> {
+    rite put(key: &str, value: &[u8]) -> Result<(), StorageError> {
         self.data.insert(key.to_string(), value.to_vec());
         Ok(())
     }
 
-    λ get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
+    rite get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
         Ok(self.data.get(key).cloned())
     }
 
-    λ delete(key: &str) -> Result<bool, StorageError> {
+    rite delete(key: &str) -> Result<bool, StorageError> {
         Ok(self.data.remove(key).is_some())
     }
 
-    λ exists(key: &str) -> bool {
+    rite exists(key: &str) -> bool {
         self.data.contains_key(key)
     }
 
-    λ list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
+    rite list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
         Ok(self.data.keys()
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect())
     }
 
-    λ flush() -> Result<(), StorageError> {
+    rite flush() -> Result<(), StorageError> {
         Ok(()) // No-op ∀ memory backend
     }
 
-    λ close() -> Result<(), StorageError> {
+    rite close() -> Result<(), StorageError> {
         self.data.clear();
         Ok(())
     }
@@ -113,7 +113,7 @@ invoke std·path·{Path, PathBuf}
 }
 
 ⊢ FileBackend {
-    ☉ λ new(base_path: &str) -> Result<Self, StorageError> {
+    ☉ rite new(base_path: &str) -> Result<Self, StorageError> {
         ≔ path = PathBuf·from(base_path);
 
         // Create directory ⎇ it doesn't exist
@@ -127,7 +127,7 @@ invoke std·path·{Path, PathBuf}
         })
     }
 
-    λ key_to_path(key: &str) -> PathBuf {
+    rite key_to_path(key: &str) -> PathBuf {
         // Sanitize key ∀ filesystem
         ≔ safe_key = key.replace("/", "_").replace("\\", "_");
         self.base_path.join(format!("{}.engram", safe_key))
@@ -135,7 +135,7 @@ invoke std·path·{Path, PathBuf}
 }
 
 ⊢ StorageBackend ∀ FileBackend {
-    λ put(key: &str, value: &[u8]) -> Result<(), StorageError> {
+    rite put(key: &str, value: &[u8]) -> Result<(), StorageError> {
         ≔ path = self.key_to_path(key);
 
         // Buffer small writes
@@ -150,7 +150,7 @@ invoke std·path·{Path, PathBuf}
         Ok(())
     }
 
-    λ get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
+    rite get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
         // Check buffer first
         ⎇ ≔ Some(data) = self.write_buffer.get(key) {
             ⤺ Ok(Some(data.clone()));
@@ -172,7 +172,7 @@ invoke std·path·{Path, PathBuf}
         Ok(Some(data))
     }
 
-    λ delete(key: &str) -> Result<bool, StorageError> {
+    rite delete(key: &str) -> Result<bool, StorageError> {
         self.write_buffer.remove(key);
 
         ≔ path = self.key_to_path(key);
@@ -186,11 +186,11 @@ invoke std·path·{Path, PathBuf}
         }
     }
 
-    λ exists(key: &str) -> bool {
+    rite exists(key: &str) -> bool {
         self.write_buffer.contains_key(key) || self.key_to_path(key).exists()
     }
 
-    λ list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
+    rite list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
         ≔ Δ keys = Vec·new();
 
         // From buffer
@@ -219,7 +219,7 @@ invoke std·path·{Path, PathBuf}
         Ok(keys)
     }
 
-    λ flush() -> Result<(), StorageError> {
+    rite flush() -> Result<(), StorageError> {
         ∀ (key, data) ∈ self.write_buffer.drain() {
             ≔ path = self.key_to_path(&key);
 
@@ -238,7 +238,7 @@ invoke std·path·{Path, PathBuf}
         Ok(())
     }
 
-    λ close() -> Result<(), StorageError> {
+    rite close() -> Result<(), StorageError> {
         self.flush()
     }
 }
@@ -266,7 +266,7 @@ invoke std·path·{Path, PathBuf}
 }
 
 ⊢ AppendLogBackend {
-    ☉ λ new(path: &str) -> Result<Self, StorageError> {
+    ☉ rite new(path: &str) -> Result<Self, StorageError> {
         ≔ log_path = PathBuf·from(path);
 
         // Create parent directory
@@ -300,7 +300,7 @@ invoke std·path·{Path, PathBuf}
         Ok(backend)
     }
 
-    λ rebuild_index() -> Result<(), StorageError> {
+    rite rebuild_index() -> Result<(), StorageError> {
         ≔ file = File·open(&self.log_path)
             .map_err(|e| StorageError·IoError(e.to_string()))?;
 
@@ -352,7 +352,7 @@ invoke std·path·{Path, PathBuf}
     }
 
     /// Compact the log by removing deleted entries
-    ☉ λ compact() -> Result<(), StorageError> {
+    ☉ rite compact() -> Result<(), StorageError> {
         ≔ temp_path = self.log_path.with_extension("tmp");
 
         {
@@ -398,7 +398,7 @@ invoke std·path·{Path, PathBuf}
         Ok(())
     }
 
-    λ read_value(entry: &LogEntry) -> Result<Vec<u8>, StorageError> {
+    rite read_value(entry: &LogEntry) -> Result<Vec<u8>, StorageError> {
         ≔ file = File·open(&self.log_path)
             .map_err(|e| StorageError·IoError(e.to_string()))?;
 
@@ -414,7 +414,7 @@ invoke std·path·{Path, PathBuf}
         Ok(value)
     }
 
-    λ write_record(
+    rite write_record(
         writer: &Δ BufWriter<File>,
         key: &str,
         value: &[u8],
@@ -440,7 +440,7 @@ invoke std·path·{Path, PathBuf}
 }
 
 ⊢ StorageBackend ∀ AppendLogBackend {
-    λ put(key: &str, value: &[u8]) -> Result<(), StorageError> {
+    rite put(key: &str, value: &[u8]) -> Result<(), StorageError> {
         ≔ writer = self.log_file.as_mut()
             .ok_or(StorageError·IoError("Log not open".to_string()))?;
 
@@ -459,7 +459,7 @@ invoke std·path·{Path, PathBuf}
         Ok(())
     }
 
-    λ get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
+    rite get(key: &str) -> Result<Option<Vec<u8>>, StorageError> {
         ⌥ self.index.get(key) {
             Some(entry) ⎇ !entry.deleted => {
                 ≔ value = self.read_value(entry)?;
@@ -469,7 +469,7 @@ invoke std·path·{Path, PathBuf}
         }
     }
 
-    λ delete(key: &str) -> Result<bool, StorageError> {
+    rite delete(key: &str) -> Result<bool, StorageError> {
         ⎇ ≔ Some(entry) = self.index.get_mut(key) {
             ⎇ !entry.deleted {
                 entry.deleted = true;
@@ -488,20 +488,20 @@ invoke std·path·{Path, PathBuf}
         Ok(false)
     }
 
-    λ exists(key: &str) -> bool {
+    rite exists(key: &str) -> bool {
         self.index.get(key)
             .map(|e| !e.deleted)
             .unwrap_or(false)
     }
 
-    λ list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
+    rite list_prefix(prefix: &str) -> Result<Vec<String>, StorageError> {
         Ok(self.index.iter()
             .filter(|(k, e)| k.starts_with(prefix) && !e.deleted)
             .map(|(k, _)| k.clone())
             .collect())
     }
 
-    λ flush() -> Result<(), StorageError> {
+    rite flush() -> Result<(), StorageError> {
         ⎇ ≔ Some(writer) = &Δ self.log_file {
             writer.flush()
                 .map_err(|e| StorageError·IoError(e.to_string()))?;
@@ -515,7 +515,7 @@ invoke std·path·{Path, PathBuf}
         Ok(())
     }
 
-    λ close() -> Result<(), StorageError> {
+    rite close() -> Result<(), StorageError> {
         self.flush()?;
         self.log_file = None;
         Ok(())
@@ -530,13 +530,13 @@ invoke std·path·{Path, PathBuf}
     invoke super·*;
 
     /// Serialize a value to bytes (simple JSON)
-    ☉ λ serialize<T: serde·Serialize>(value: &T) -> Result<Vec<u8>, StorageError> {
+    ☉ rite serialize<T: serde·Serialize>(value: &T) -> Result<Vec<u8>, StorageError> {
         serde_json·to_vec(value)
             .map_err(|e| StorageError·SerializationError(e.to_string()))
     }
 
     /// Deserialize bytes to a value
-    ☉ λ deserialize<T: serde·de·DeserializeOwned>(bytes: &[u8]) -> Result<T, StorageError> {
+    ☉ rite deserialize<T: serde·de·DeserializeOwned>(bytes: &[u8]) -> Result<T, StorageError> {
         serde_json·from_slice(bytes)
             .map_err(|e| StorageError·SerializationError(e.to_string()))
     }
@@ -551,7 +551,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_memory_backend() {
+    rite test_memory_backend() {
         ≔ Δ backend = MemoryBackend·new();
 
         backend.put("key1", b"value1").unwrap();
@@ -565,7 +565,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_memory_backend_list_prefix() {
+    rite test_memory_backend_list_prefix() {
         ≔ Δ backend = MemoryBackend·new();
 
         backend.put("users/1", b"alice").unwrap();

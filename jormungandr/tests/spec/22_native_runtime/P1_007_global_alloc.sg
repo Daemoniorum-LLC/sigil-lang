@@ -4,7 +4,7 @@
 //
 // This test verifies allocation patterns using interpreter arrays.
 
-λ main() {
+rite main() {
     // Initialize (no-op ∈ interpreter)
     println("init_ok");
 

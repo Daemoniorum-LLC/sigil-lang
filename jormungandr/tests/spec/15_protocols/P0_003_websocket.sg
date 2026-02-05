@@ -17,16 +17,16 @@
     url: String,
 }
 
-λ connect_ws(url: String) -> Connection {
+rite connect_ws(url: String) -> Connection {
     Connection { url: url }
 }
 
-λ recv_message(conn: Connection) -> Message {
+rite recv_message(conn: Connection) -> Message {
     // Simulated receive - ∈ real WS this would be from network
     Message·Text("hello")
 }
 
-λ main() {
+rite main() {
     // Test: Constructor with evidential binding
     ≔ ws~ = connect_ws("ws://localhost:8080");
 

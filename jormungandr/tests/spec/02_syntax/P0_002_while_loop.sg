@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print 5
 
-λ main() {
+rite main() {
     ≔ Δ x: !i32 = 0;
     ⟳ x < 5 {
         x = x + 1;

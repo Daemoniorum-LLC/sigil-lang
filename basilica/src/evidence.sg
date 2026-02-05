@@ -97,7 +97,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
 
 ⊢ HttpEvidence {
     /// Get the core Sigil evidence level this maps to
-    ☉ λ to_sigil_evidence(&self) -> EvidenceLevel {
+    ☉ rite to_sigil_evidence(&self) -> EvidenceLevel {
         ⌥ self {
             HttpEvidence·Computed => EvidenceLevel·Known,
 
@@ -144,7 +144,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Check ⎇ this evidence is trustworthy ∀ a given purpose
-    ☉ λ is_trustworthy_for(&self, purpose: &str) -> bool {
+    ☉ rite is_trustworthy_for(&self, purpose: &str) -> bool {
         ⌥ self.to_sigil_evidence() {
             EvidenceLevel·Known => true,
             EvidenceLevel·Uncertain => {
@@ -160,7 +160,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Get confidence as a numeric value
-    ☉ λ confidence(&self) -> Confidence {
+    ☉ rite confidence(&self) -> Confidence {
         ⌥ self {
             HttpEvidence·Computed => Confidence·full(),
             HttpEvidence·Authenticated { trust, .. } => Confidence·new(trust.value()),
@@ -181,7 +181,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Describe the evidence source ∀ humans
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ⌥ self {
             HttpEvidence·Computed => "Computed by service".to_string(),
             HttpEvidence·Authenticated { trust, .. } => {
@@ -238,7 +238,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
 
 ⊢ EvidenceLevel {
     /// Get the symbol ∀ this evidence level
-    ☉ λ symbol(&self) -> &'static str {
+    ☉ rite symbol(&self) -> &'static str {
         ⌥ self {
             EvidenceLevel·Known => "!",
             EvidenceLevel·Uncertain => "?",
@@ -248,7 +248,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Get numeric rank (lower = more certain)
-    ☉ λ rank(&self) -> u8 {
+    ☉ rite rank(&self) -> u8 {
         ⌥ self {
             EvidenceLevel·Known => 0,
             EvidenceLevel·Uncertain => 1,
@@ -259,18 +259,18 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
 
     /// Join two evidence levels (least upper bound)
     /// Returns the less certain of the two
-    ☉ λ join(&self, other: EvidenceLevel) -> EvidenceLevel {
+    ☉ rite join(&self, other: EvidenceLevel) -> EvidenceLevel {
         ⎇ self.rank() >= other.rank() { *self } ⎉ { other }
     }
 
     /// Meet two evidence levels (greatest lower bound)
     /// Returns the more certain of the two
-    ☉ λ meet(&self, other: EvidenceLevel) -> EvidenceLevel {
+    ☉ rite meet(&self, other: EvidenceLevel) -> EvidenceLevel {
         ⎇ self.rank() <= other.rank() { *self } ⎉ { other }
     }
 
     /// Demote to the next less certain level
-    ☉ λ demote(&self) -> EvidenceLevel {
+    ☉ rite demote(&self) -> EvidenceLevel {
         ⌥ self {
             EvidenceLevel·Known => EvidenceLevel·Uncertain,
             EvidenceLevel·Uncertain => EvidenceLevel·Reported,
@@ -280,7 +280,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Promote to the next more certain level (⎇ possible)
-    ☉ λ promote(&self) -> EvidenceLevel {
+    ☉ rite promote(&self) -> EvidenceLevel {
         ⌥ self {
             EvidenceLevel·Paradox => EvidenceLevel·Reported,
             EvidenceLevel·Reported => EvidenceLevel·Uncertain,
@@ -291,7 +291,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
 
     /// Check ⎇ this evidence satisfies a requirement
     /// More certain evidence can satisfy less certain requirements
-    ☉ λ satisfies(&self, required: EvidenceLevel) -> bool {
+    ☉ rite satisfies(&self, required: EvidenceLevel) -> bool {
         self.rank() <= required.rank()
     }
 }
@@ -310,7 +310,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
 
 ⊢<T> Evidenced<T> {
     /// Create a new evidenced value
-    ☉ λ new(value: T, evidence: HttpEvidence) -> Self {
+    ☉ rite new(value: T, evidence: HttpEvidence) -> Self {
         Self {
             value,
             evidence,
@@ -319,12 +319,12 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Create with computed evidence (highest trust)
-    ☉ λ computed(value: T) -> Self {
+    ☉ rite computed(value: T) -> Self {
         Self·new(value, HttpEvidence·Computed)
     }
 
     /// Create with external evidence
-    ☉ λ external(value: T, source: &str) -> Self {
+    ☉ rite external(value: T, source: &str) -> Self {
         Self·new(value, HttpEvidence·External {
             source: source.to_string(),
             fetched_at: Timestamp·now(),
@@ -333,7 +333,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Create with user input evidence
-    ☉ λ user_input(value: T, validated: bool) -> Self {
+    ☉ rite user_input(value: T, validated: bool) -> Self {
         Self·new(value, HttpEvidence·UserInput {
             validated,
             validation_errors: vec![],
@@ -341,7 +341,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Create with inferred evidence
-    ☉ λ inferred(value: T, confidence: Confidence, model: &str) -> Self {
+    ☉ rite inferred(value: T, confidence: Confidence, model: &str) -> Self {
         Self·new(value, HttpEvidence·Inferred {
             confidence,
             model: model.to_string(),
@@ -350,7 +350,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Map the inner value ⟳ preserving evidence
-    ☉ λ map<U, F: FnOnce(T) -> U>(self, f: F) -> Evidenced<U> {
+    ☉ rite map<U, F: FnOnce(T) -> U>(self, f: F) -> Evidenced<U> {
         Evidenced {
             value: f(self.value),
             evidence: self.evidence,
@@ -359,7 +359,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Validate and promote evidence ⎇ successful
-    ☉ λ validate<F, E>(self, f: F) -> Result<Evidenced<T>, E>
+    ☉ rite validate<F, E>(self, f: F) -> Result<Evidenced<T>, E>
     where
         F: FnOnce(&T) -> Result<(), E>,
     {
@@ -382,17 +382,17 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Get the Sigil evidence level
-    ☉ λ level(&self) -> EvidenceLevel {
+    ☉ rite level(&self) -> EvidenceLevel {
         self.evidence.to_sigil_evidence()
     }
 
     /// Check ⎇ the value is trustworthy ∀ a purpose
-    ☉ λ is_trustworthy_for(&self, purpose: &str) -> bool {
+    ☉ rite is_trustworthy_for(&self, purpose: &str) -> bool {
         self.evidence.is_trustworthy_for(purpose)
     }
 
     /// Unwrap ⎇ evidence satisfies requirement
-    ☉ λ require(self, level: EvidenceLevel) -> Result<T, EvidenceError> {
+    ☉ rite require(self, level: EvidenceLevel) -> Result<T, EvidenceError> {
         ⎇ self.level().satisfies(level) {
             Ok(self.value)
         } ⎉ {
@@ -404,7 +404,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
     }
 
     /// Unwrap only ⎇ known (!)
-    ☉ λ require_known(self) -> Result<T, EvidenceError> {
+    ☉ rite require_known(self) -> Result<T, EvidenceError> {
         self.require(EvidenceLevel·Known)
     }
 }
@@ -441,7 +441,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
 
 ⊢ EvidenceError {
     /// Describe the error ∀ humans
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ⌥ self {
             EvidenceError·InsufficientEvidence { required, actual } => {
                 format!(
@@ -471,7 +471,7 @@ invoke shared·{Timestamp, Duration, Confidence, TrustLevel, Value};
 // ============================================================================
 
 /// Combine multiple evidenced values
-☉ λ combine_evidence<T, U, V, F>(
+☉ rite combine_evidence<T, U, V, F>(
     a: Evidenced<T>,
     b: Evidenced<U>,
     f: F,
@@ -524,7 +524,7 @@ where
 
 ⊢ EvidenceContext {
     /// Create a new evidence context
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             chain: vec![],
             cumulative_confidence: Confidence·full(),
@@ -533,7 +533,7 @@ where
     }
 
     /// Record an evidence transformation
-    ☉ λ record(&Δ self, from: EvidenceLevel, to: EvidenceLevel, operation: &str) {
+    ☉ rite record(&Δ self, from: EvidenceLevel, to: EvidenceLevel, operation: &str) {
         self.chain.push(EvidenceTransformation {
             from,
             to,
@@ -551,27 +551,27 @@ where
     }
 
     /// Update cumulative confidence
-    ☉ λ update_confidence(&Δ self, confidence: Confidence) {
+    ☉ rite update_confidence(&Δ self, confidence: Confidence) {
         self.cumulative_confidence = self.cumulative_confidence.combine(&confidence);
     }
 
     /// Get the evidence chain ∀ tracing
-    ☉ λ chain(&self) -> &[EvidenceTransformation] {
+    ☉ rite chain(&self) -> &[EvidenceTransformation] {
         &self.chain
     }
 
     /// Get cumulative confidence
-    ☉ λ confidence(&self) -> Confidence {
+    ☉ rite confidence(&self) -> Confidence {
         self.cumulative_confidence
     }
 
     /// Get warnings
-    ☉ λ warnings(&self) -> &[String] {
+    ☉ rite warnings(&self) -> &[String] {
         &self.warnings
     }
 
     /// Summarize the evidence flow
-    ☉ λ summarize(&self) -> String {
+    ☉ rite summarize(&self) -> String {
         ⎇ self.chain.is_empty() {
             ⤺ "No evidence transformations".to_string();
         }

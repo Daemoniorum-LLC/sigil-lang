@@ -22,7 +22,7 @@ invoke crate·error·BasilicaResult;
 
 ⊢ Route {
     /// Create a new route
-    ☉ λ new<F>(method: Method, path: &str, handler: F) -> Self
+    ☉ rite new<F>(method: Method, path: &str, handler: F) -> Self
     where
         F: Fn(&Request, &Context) -> Response<Vec<u8>> + Send + Sync + 'static,
     {
@@ -35,20 +35,20 @@ invoke crate·error·BasilicaResult;
     }
 
     /// Add a prefix to the path
-    ☉ λ prefix(&Δ self, prefix: &str) {
+    ☉ rite prefix(&Δ self, prefix: &str) {
         self.path = format!("{}{}", prefix, self.path);
         self.name = format!("{} {}", self.method.as_str(), self.path);
     }
 
     /// Check ⎇ this route matches a request
-    ☉ λ matches(&self, req: &Request) -> bool {
+    ☉ rite matches(&self, req: &Request) -> bool {
         ⎇ self.method != req.method {
             ⤺ false;
         }
         self.match_path(&req.path)
     }
 
-    λ match_path(&self, path: &str) -> bool {
+    rite match_path(&self, path: &str) -> bool {
         // Simple matching - would need full path parameter extraction
         ≔ pattern_parts: Vec<&str> = self.path.split('/').collect();
         ≔ path_parts: Vec<&str> = path.split('/').collect();
@@ -63,7 +63,7 @@ invoke crate·error·BasilicaResult;
     }
 
     /// Handle a request
-    ☉ λ handle(&self, req: &Request, ctx: &Context) -> Response<Vec<u8>> {
+    ☉ rite handle(&self, req: &Request, ctx: &Context) -> Response<Vec<u8>> {
         (self.handler)(req, ctx)
     }
 }
@@ -74,27 +74,27 @@ invoke crate·error·BasilicaResult;
 }
 
 ⊢ RouteRegistry {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { routes: vec![] }
     }
 
     /// Register a route
-    ☉ λ register(&Δ self, route: Route) {
+    ☉ rite register(&Δ self, route: Route) {
         self.routes.push(route);
     }
 
     /// Find a matching route
-    ☉ λ find(&self, req: &Request) -> Option<&Route> {
+    ☉ rite find(&self, req: &Request) -> Option<&Route> {
         self.routes.iter().find(|r| r.matches(req))
     }
 
     /// List all routes
-    ☉ λ list(&self) -> &[Route] {
+    ☉ rite list(&self) -> &[Route] {
         &self.routes
     }
 }
 
 /// Trait ∀ types that can be converted to a route
 ☉ Θ IntoRoute {
-    λ into_route(self) -> Route;
+    rite into_route(self) -> Route;
 }

@@ -37,7 +37,7 @@ const WS_OPCODE_PONG: i64 = 10;
 // Syscall Wrappers
 // ============================================================================
 
-λ syscall1(num: i64, arg1: i64) -> i64 {
+rite syscall1(num: i64, arg1: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -50,7 +50,7 @@ const WS_OPCODE_PONG: i64 = 10;
     ret
 }
 
-λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+rite syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -64,7 +64,7 @@ const WS_OPCODE_PONG: i64 = 10;
     ret
 }
 
-λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -79,7 +79,7 @@ const WS_OPCODE_PONG: i64 = 10;
     ret
 }
 
-λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+rite syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -101,11 +101,11 @@ const WS_OPCODE_PONG: i64 = 10;
 // Memory Allocation
 // ============================================================================
 
-λ alloc_mem(size: i64) -> i64 {
+rite alloc_mem(size: i64) -> i64 {
     syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
 }
 
-λ free_mem(ptr: i64, size: i64) {
+rite free_mem(ptr: i64, size: i64) {
     syscall2(SYS_MUNMAP, ptr, size);
 }
 
@@ -113,7 +113,7 @@ const WS_OPCODE_PONG: i64 = 10;
 // String/Memory Utilities
 // ============================================================================
 
-λ mem_copy(dst: i64, src: i64, len: i64) {
+rite mem_copy(dst: i64, src: i64, len: i64) {
     ≔ i: i64 = 0;
     ⟳ i < len {
         ≔ byte: i64 = 0;
@@ -125,7 +125,7 @@ const WS_OPCODE_PONG: i64 = 10;
     }
 }
 
-λ mem_set(dst: i64, val: i8, len: i64) {
+rite mem_set(dst: i64, val: i8, len: i64) {
     ≔ i: i64 = 0;
     ⟳ i < len {
         unsafe {
@@ -135,7 +135,7 @@ const WS_OPCODE_PONG: i64 = 10;
     }
 }
 
-λ str_len(s: i64) -> i64 {
+rite str_len(s: i64) -> i64 {
     ≔ len: i64 = 0;
     ≔ byte: i64 = 1;
     ⟳ byte != 0 {
@@ -149,7 +149,7 @@ const WS_OPCODE_PONG: i64 = 10;
     len
 }
 
-λ get_random_bytes(buf: i64, len: i64) -> i64 {
+rite get_random_bytes(buf: i64, len: i64) -> i64 {
     syscall3(SYS_GETRANDOM, buf, len, 0)
 }
 
@@ -157,22 +157,22 @@ const WS_OPCODE_PONG: i64 = 10;
 // Output Utilities
 // ============================================================================
 
-λ write_stdout(s: i64, len: i64) {
+rite write_stdout(s: i64, len: i64) {
     syscall3(SYS_WRITE, 1, s, len);
 }
 
-λ write_cstr(s: i64) {
+rite write_cstr(s: i64) {
     write_stdout(s, str_len(s));
 }
 
-λ write_newline() {
+rite write_newline() {
     ≔ nl = alloc_mem(8);
     unsafe { asm!("mov byte ptr [rdi], 10", in("rdi") nl, options(nostack)); }
     write_stdout(nl, 1);
     free_mem(nl, 8);
 }
 
-λ write_int(n: i64) {
+rite write_int(n: i64) {
     ≔ buf = alloc_mem(32);
     ≔ num = n;
     ≔ neg = 0;
@@ -204,15 +204,15 @@ const WS_OPCODE_PONG: i64 = 10;
 // Socket Operations
 // ============================================================================
 
-λ socket_tcp_create() -> i64 {
+rite socket_tcp_create() -> i64 {
     syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0)
 }
 
-λ socket_close(fd: i64) {
+rite socket_close(fd: i64) {
     syscall1(SYS_CLOSE, fd);
 }
 
-λ socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
+rite socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
     ≔ pollfd = alloc_mem(16);
     ⎇ pollfd < 0 { ⤺ -1; }
     unsafe {
@@ -225,7 +225,7 @@ const WS_OPCODE_PONG: i64 = 10;
     result
 }
 
-λ socket_connect_ipv4(fd: i64, ip_packed: i64, port: i64) -> i64 {
+rite socket_connect_ipv4(fd: i64, ip_packed: i64, port: i64) -> i64 {
     ≔ addr_buf = alloc_mem(32);
     ⎇ addr_buf < 0 { ⤺ -1; }
     mem_set(addr_buf, 0, 16);
@@ -250,7 +250,7 @@ const WS_OPCODE_PONG: i64 = 10;
 
 // Simplified base64 - just invoke a fixed key ∀ WebSocket handshake
 // In production, would invoke proper random key, but ∀ test we invoke fixed
-λ generate_fixed_ws_key(key_buf: i64) -> i64 {
+rite generate_fixed_ws_key(key_buf: i64) -> i64 {
     // Fixed 24-char base64 key: "dGhlIHNhbXBsZSBub25jZQ=="
     // This is base64("the sample nonce")
     ≔ key: [i8; 24] = [
@@ -271,13 +271,13 @@ const WS_OPCODE_PONG: i64 = 10;
 // WebSocket Handshake
 // ============================================================================
 
-λ generate_ws_key(key_buf: i64) -> i64 {
+rite generate_ws_key(key_buf: i64) -> i64 {
     // Use fixed WebSocket key ∀ testing
     // In production, would invoke random key + base64 encoding
     generate_fixed_ws_key(key_buf)
 }
 
-λ build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i64, key_len: i64) -> i64 {
+rite build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key: i64, key_len: i64) -> i64 {
     // Build WebSocket upgrade request
     // GET /path HTTP/1.1\r\n
     // Host: host\r\n
@@ -385,7 +385,7 @@ const WS_OPCODE_PONG: i64 = 10;
     req
 }
 
-λ check_ws_response(data: i64, data_len: i64) -> i64 {
+rite check_ws_response(data: i64, data_len: i64) -> i64 {
     // Check ∀ "HTTP/1.1 101 " (switching protocols)
     ⎇ data_len < 12 { ⤺ 0; }
 
@@ -411,7 +411,7 @@ const WS_OPCODE_PONG: i64 = 10;
 // WebSocket Framing
 // ============================================================================
 
-λ ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
+rite ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     // Create a masked text frame
     // Byte 0: FIN=1, opcode=1 (text) = 0x81
     // Byte 1: MASK=1, length
@@ -492,7 +492,7 @@ const WS_OPCODE_PONG: i64 = 10;
     pos + payload_len
 }
 
-λ ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out: i64) -> i64 {
+rite ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out: i64) -> i64 {
     // Parse incoming WebSocket frame
     // Returns opcode, writes payload pointer and length
 
@@ -542,7 +542,7 @@ const WS_OPCODE_PONG: i64 = 10;
 // Tests
 // ============================================================================
 
-λ test_fixed_ws_key() -> i64 {
+rite test_fixed_ws_key() -> i64 {
     // "Test 1: Fixed WS key... "
     ≔ msg = alloc_mem(32);
     ≔ chars: [i8; 23] = [84, 101, 115, 116, 32, 49, 58, 32, 70, 105, 120, 101, 100, 32, 87, 83, 32, 107, 101, 121, 46, 46, 46];
@@ -603,7 +603,7 @@ const WS_OPCODE_PONG: i64 = 10;
     }
 }
 
-λ test_ws_key_generation() -> i64 {
+rite test_ws_key_generation() -> i64 {
     // "Test 2: WS key generation... "
     ≔ msg = alloc_mem(32);
     ≔ chars: [i8; 29] = [84, 101, 115, 116, 32, 50, 58, 32, 87, 83, 32, 107, 101, 121, 32, 103, 101, 110, 101, 114, 97, 116, 105, 111, 110, 46, 46, 46, 32];
@@ -654,7 +654,7 @@ const WS_OPCODE_PONG: i64 = 10;
     }
 }
 
-λ test_ws_framing() -> i64 {
+rite test_ws_framing() -> i64 {
     // "Test 3: WS framing... "
     ≔ msg = alloc_mem(32);
     ≔ chars: [i8; 21] = [84, 101, 115, 116, 32, 51, 58, 32, 87, 83, 32, 102, 114, 97, 109, 105, 110, 103, 46, 46, 46];
@@ -720,7 +720,7 @@ const WS_OPCODE_PONG: i64 = 10;
     }
 }
 
-λ test_ws_handshake_build() -> i64 {
+rite test_ws_handshake_build() -> i64 {
     // "Test 4: WS handshake... "
     ≔ msg = alloc_mem(32);
     ≔ chars: [i8; 23] = [84, 101, 115, 116, 32, 52, 58, 32, 87, 83, 32, 104, 97, 110, 100, 115, 104, 97, 107, 101, 46, 46, 46];
@@ -815,7 +815,7 @@ const WS_OPCODE_PONG: i64 = 10;
 // Main
 // ============================================================================
 
-λ main() -> i64 {
+rite main() -> i64 {
     // Print header
     ≔ header = alloc_mem(32);
     // "=== WebSocket Tests ===\n"

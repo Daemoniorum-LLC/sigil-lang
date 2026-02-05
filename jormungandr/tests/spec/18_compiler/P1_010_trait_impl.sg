@@ -3,7 +3,7 @@
 // Priority: P1 - Production Ready
 
 Θ Printable {
-    λ print(&self);
+    rite print(&self);
 }
 
 Σ Value {
@@ -11,12 +11,12 @@
 }
 
 ⊢ Printable ∀ Value {
-    λ print(&self) {
+    rite print(&self) {
         println(self.n);
     }
 }
 
-λ main() {
+rite main() {
     ≔ v = Value { n: 42 };
     v.print();
 }

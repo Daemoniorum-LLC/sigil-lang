@@ -12,11 +12,11 @@
     ☉ x: !i32
 }
 
-☉ λ get_value() -> !i32 {
+☉ rite get_value() -> !i32 {
     42
 }
 
-λ main() {
+rite main() {
     ≔ v: !Value = Value { x: get_value() };
     println(v.x);
 }

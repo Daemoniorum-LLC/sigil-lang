@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 0, 2, 4 (skips odd numbers)
 
-λ main() {
+rite main() {
     ≔ Δ i: !i32 = 0;
     ⟳ i < 5 {
         i = i + 1;

@@ -7,7 +7,7 @@
     y: !i32
 }
 
-λ main() {
+rite main() {
     ≔ ir = __export_ir();
     ≔ point_type = ir.types|find{t => t.name == "Point"};
     println(point_type.fields.len());

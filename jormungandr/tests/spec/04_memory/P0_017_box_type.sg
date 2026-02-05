@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 42
 
-λ main() {
+rite main() {
     ≔ b: !Box<!i32> = Box·new(42);
     println(*b);
 }

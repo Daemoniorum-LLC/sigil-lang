@@ -5,7 +5,7 @@
 // This test verifies array operations work correctly.
 // Restructured ∀ interpreter mode.
 
-λ main() {
+rite main() {
     // Test 1: Create empty Vec using array literal
     ≔ Δ v = [];
     assert_eq!(v.len(), 0);

@@ -113,7 +113,7 @@ invoke shared·{
 }
 
 ⊢ Veil {
-    ☉ λ new(cause: VeilCause, thickness: VeilThickness) -> Self! {
+    ☉ rite new(cause: VeilCause, thickness: VeilThickness) -> Self! {
         Self {
             id: VeilId·generate(),
             obscured: Vec·new(),
@@ -125,15 +125,15 @@ invoke shared·{
         }
     }
 
-    ☉ λ obscure(&Δ self, reality: Reality) {
+    ☉ rite obscure(&Δ self, reality: Reality) {
         self.obscured.push(reality);
     }
 
-    ☉ λ substitute(&Δ self, delusion: Delusion) {
+    ☉ rite substitute(&Δ self, delusion: Delusion) {
         self.substituted.push(delusion);
     }
 
-    ☉ λ thin(&Δ self) {
+    ☉ rite thin(&Δ self) {
         self.thickness = ⌥ self.thickness {
             VeilThickness·Opaque => VeilThickness·Translucent,
             VeilThickness·Translucent => VeilThickness·Gossamer,
@@ -141,7 +141,7 @@ invoke shared·{
         };
     }
 
-    ☉ λ thicken(&Δ self) {
+    ☉ rite thicken(&Δ self) {
         self.thickness = ⌥ self.thickness {
             VeilThickness·Gossamer => VeilThickness·Translucent,
             VeilThickness·Translucent => VeilThickness·Opaque,
@@ -149,7 +149,7 @@ invoke shared·{
         };
     }
 
-    ☉ λ can_see_reality(&self) -> bool! {
+    ☉ rite can_see_reality(&self) -> bool! {
         matches!(self.thickness, VeilThickness·Gossamer)
     }
 }
@@ -267,7 +267,7 @@ invoke shared·{
 }
 
 ⊢ Delusion {
-    ☉ λ new(belief: Belief, support: DelusionalSupport, function: DelusionalFunction) -> Self! {
+    ☉ rite new(belief: Belief, support: DelusionalSupport, function: DelusionalFunction) -> Self! {
         Self {
             id: DelusionId·generate(),
             belief,
@@ -284,17 +284,17 @@ invoke shared·{
         }
     }
 
-    ☉ λ with_defense(Δ self, defense: DefenseMechanism) -> Self! {
+    ☉ rite with_defense(Δ self, defense: DefenseMechanism) -> Self! {
         self.defense = defense;
         self
     }
 
-    ☉ λ with_cost(Δ self, cost: Cost) -> Self! {
+    ☉ rite with_cost(Δ self, cost: Cost) -> Self! {
         self.cost = cost;
         self
     }
 
-    ☉ λ confront(&Δ self, evidence: Evidence) -> ConfrontationResult! {
+    ☉ rite confront(&Δ self, evidence: Evidence) -> ConfrontationResult! {
         ⌥ self.defense {
             DefenseMechanism·Denial => {
                 // Evidence not perceived
@@ -426,7 +426,7 @@ invoke shared·{
 }
 
 ⊢ Hallucination {
-    ☉ λ new(percept: Percept, modality: Modality) -> Self! {
+    ☉ rite new(percept: Percept, modality: Modality) -> Self! {
         Self {
             id: HallucinationId·generate(),
             percept,
@@ -439,22 +439,22 @@ invoke shared·{
         }
     }
 
-    ☉ λ with_vividness(Δ self, vividness: f32) -> Self! {
+    ☉ rite with_vividness(Δ self, vividness: f32) -> Self! {
         self.vividness = vividness;
         self
     }
 
-    ☉ λ with_insight(Δ self, insight: HallucinatoryInsight) -> Self! {
+    ☉ rite with_insight(Δ self, insight: HallucinatoryInsight) -> Self! {
         self.insight = insight;
         self
     }
 
-    ☉ λ with_trigger(Δ self, trigger: Trigger) -> Self! {
+    ☉ rite with_trigger(Δ self, trigger: Trigger) -> Self! {
         self.trigger = Some(trigger);
         self
     }
 
-    ☉ λ is_believed(&self) -> bool! {
+    ☉ rite is_believed(&self) -> bool! {
         matches!(self.insight, HallucinatoryInsight·Absent | HallucinatoryInsight·Dissociated)
     }
 }
@@ -526,7 +526,7 @@ invoke shared·{
 }
 
 ⊢ MadEpistemology {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             distortions: Vec·new(),
             evidence_criteria: EvidenceCriteria {
@@ -540,13 +540,13 @@ invoke shared·{
         }
     }
 
-    ☉ λ add_distortion(&Δ self, distortion: Distortion) {
+    ☉ rite add_distortion(&Δ self, distortion: Distortion) {
         self.distortions.push(distortion);
         // Each distortion reduces consistency
         self.consistency = (self.consistency - 0.1).max(0.0);
     }
 
-    ☉ λ evaluate_evidence(&self, evidence: &Evidence) -> EvaluationResult! {
+    ☉ rite evaluate_evidence(&self, evidence: &Evidence) -> EvaluationResult! {
         // Check ⎇ source is rejected
         ≔ source_str = ⌥ &evidence.source {
             EvidenceSource·Reported(id) => id.to_string(),
@@ -711,7 +711,7 @@ invoke shared·{
 }
 
 ⊢ Ate {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             veils: HashMap·new(),
             delusions: HashMap·new(),
@@ -722,37 +722,37 @@ invoke shared·{
     }
 
     /// Descend a veil on an entity
-    ☉ λ descend_veil(&Δ self, entity: EntityId, veil: Veil) {
+    ☉ rite descend_veil(&Δ self, entity: EntityId, veil: Veil) {
         self.veils.entry(entity).or_default().push(veil);
     }
 
     /// Add a delusion
-    ☉ λ add_delusion(&Δ self, entity: EntityId, delusion: Delusion) {
+    ☉ rite add_delusion(&Δ self, entity: EntityId, delusion: Delusion) {
         self.delusions.entry(entity).or_default().push(delusion);
     }
 
     /// Record a hallucination
-    ☉ λ hallucinate(&Δ self, entity: EntityId, hallucination: Hallucination) {
+    ☉ rite hallucinate(&Δ self, entity: EntityId, hallucination: Hallucination) {
         self.hallucinations.entry(entity).or_default().push(hallucination);
     }
 
     /// Set epistemology
-    ☉ λ set_epistemology(&Δ self, entity: EntityId, epistemology: MadEpistemology) {
+    ☉ rite set_epistemology(&Δ self, entity: EntityId, epistemology: MadEpistemology) {
         self.epistemologies.insert(entity, epistemology);
     }
 
     /// Check ⎇ entity is veiled
-    ☉ λ is_veiled(&self, entity: EntityId) -> bool! {
+    ☉ rite is_veiled(&self, entity: EntityId) -> bool! {
         self.veils.get(&entity).map(|v| !v.is_empty()).unwrap_or(false)
     }
 
     /// Check ⎇ entity has delusions
-    ☉ λ is_delusional(&self, entity: EntityId) -> bool! {
+    ☉ rite is_delusional(&self, entity: EntityId) -> bool! {
         self.delusions.get(&entity).map(|d| !d.is_empty()).unwrap_or(false)
     }
 
     /// Confront entity with evidence
-    ☉ λ confront_with_evidence(&Δ self, entity: EntityId, evidence: Evidence) -> Vec<ConfrontationResult>! {
+    ☉ rite confront_with_evidence(&Δ self, entity: EntityId, evidence: Evidence) -> Vec<ConfrontationResult>! {
         ≔ Δ results = Vec·new();
 
         ⎇ ≔ Some(delusions) = self.delusions.get_mut(&entity) {
@@ -765,12 +765,12 @@ invoke shared·{
     }
 
     /// Record a mad insight
-    ☉ λ record_insight(&Δ self, insight: MadInsight) {
+    ☉ rite record_insight(&Δ self, insight: MadInsight) {
         self.insights.push(insight);
     }
 
     /// Get true insights from the mad
-    ☉ λ true_insights(&self) -> Vec<&MadInsight>! {
+    ☉ rite true_insights(&self) -> Vec<&MadInsight>! {
         self.insights.iter()
             .filter(|i| matches!(i.veridical, Veridical·True | Veridical·Ineffable))
             .collect()
@@ -786,7 +786,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_veil_creation() {
+    rite test_veil_creation() {
         ≔ Δ veil = Veil·new(
             VeilCause·Protection { from: "Unbearable truth".to_string() },
             VeilThickness·Opaque,
@@ -806,7 +806,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_delusion_defense() {
+    rite test_delusion_defense() {
         ≔ belief = Belief {
             content: "I am special".to_string(),
             certainty: 0.9,
@@ -831,7 +831,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_ate_system() {
+    rite test_ate_system() {
         ≔ Δ ate = Ate·new();
         ≔ entity = EntityId·generate();
 

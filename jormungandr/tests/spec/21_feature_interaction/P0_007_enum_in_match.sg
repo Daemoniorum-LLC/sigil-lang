@@ -8,7 +8,7 @@
     Write(String),
 }
 
-λ main() {
+rite main() {
     ≔ msg = Message·Move { x: 10, y: 20 };
     ≔ result = ⌥ msg {
         Message·Quit => 0,

@@ -64,7 +64,7 @@ invoke std·cmp·Ordering
 }
 
 ⊢ HNSWConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         ≔ m = 16;
         Self {
             dimensions: 384,
@@ -77,12 +77,12 @@ invoke std·cmp·Ordering
         }
     }
 
-    ☉ λ with_dimensions(Δ self, d: usize) -> Self {
+    ☉ rite with_dimensions(Δ self, d: usize) -> Self {
         self.dimensions = d;
         self
     }
 
-    ☉ λ with_m(Δ self, m: usize) -> Self {
+    ☉ rite with_m(Δ self, m: usize) -> Self {
         self.m = m;
         self.m0 = m * 2;
         self.ml = 1.0 / (m as f64).ln();
@@ -102,7 +102,7 @@ invoke std·cmp·Ordering
     // Construction
     // ========================================================================
 
-    ☉ λ new(config: HNSWConfig) -> Self {
+    ☉ rite new(config: HNSWConfig) -> Self {
         Self {
             nodes: HashMap·new(),
             entry_point: None,
@@ -112,7 +112,7 @@ invoke std·cmp·Ordering
         }
     }
 
-    ☉ λ with_default_config() -> Self {
+    ☉ rite with_default_config() -> Self {
         Self·new(HNSWConfig·default())
     }
 
@@ -121,7 +121,7 @@ invoke std·cmp·Ordering
     // ========================================================================
 
     /// Insert a vector into the index
-    ☉ λ insert(id: NodeId, vector: Vector<f32>) {
+    ☉ rite insert(id: NodeId, vector: Vector<f32>) {
         assert!(
             vector.dimensions() == self.config.dimensions,
             "Vector dimensions {} != index dimensions {}",
@@ -209,7 +209,7 @@ invoke std·cmp·Ordering
     }
 
     /// Search ∀ k nearest neighbors
-    ☉ λ search(query: &Vector<f32>, k: usize) -> Vec<(NodeId, f64)> {
+    ☉ rite search(query: &Vector<f32>, k: usize) -> Vec<(NodeId, f64)> {
         ⎇ self.nodes.is_empty() {
             ⤺ vec![];
         }
@@ -248,7 +248,7 @@ invoke std·cmp·Ordering
     }
 
     /// Remove a vector from the index
-    ☉ λ remove(id: &NodeId) -> bool {
+    ☉ rite remove(id: &NodeId) -> bool {
         ⎇ ≔ Some(node) = self.nodes.remove(id) {
             // Remove from all neighbors' lists
             ∀ (level, neighbors) ∈ node.neighbors.iter().enumerate() {
@@ -277,23 +277,23 @@ invoke std·cmp·Ordering
     }
 
     /// Update a vector ∈ the index
-    ☉ λ update(id: NodeId, vector: Vector<f32>) {
+    ☉ rite update(id: NodeId, vector: Vector<f32>) {
         self.remove(&id);
         self.insert(id, vector);
     }
 
     /// Check ⎇ index contains a node
-    ☉ λ contains(id: &NodeId) -> bool {
+    ☉ rite contains(id: &NodeId) -> bool {
         self.nodes.contains_key(id)
     }
 
     /// Get number of vectors ∈ index
-    ☉ λ len() -> usize {
+    ☉ rite len() -> usize {
         self.nodes.len()
     }
 
     /// Check ⎇ index is empty
-    ☉ λ is_empty() -> bool {
+    ☉ rite is_empty() -> bool {
         self.nodes.is_empty()
     }
 
@@ -302,7 +302,7 @@ invoke std·cmp·Ordering
     // ========================================================================
 
     /// Search a single layer, returning ef nearest neighbors
-    λ search_layer(
+    rite search_layer(
         query: &Vector<f32>,
         entry_points: Vec<NodeId>,
         ef: usize,
@@ -378,7 +378,7 @@ invoke std·cmp·Ordering
     }
 
     /// Greedy search ∀ single nearest neighbor at a level
-    λ search_layer_single(
+    rite search_layer_single(
         query: &Vector<f32>,
         entry: NodeId,
         level: usize,
@@ -420,7 +420,7 @@ invoke std·cmp·Ordering
     }
 
     /// Select best neighbors using simple heuristic
-    λ select_neighbors(
+    rite select_neighbors(
         query: &Vector<f32>,
         candidates: Vec<NodeId>,
         m: usize,
@@ -449,7 +449,7 @@ invoke std·cmp·Ordering
     }
 
     /// Connect two nodes at a level (with pruning ⎇ necessary)
-    λ connect_nodes(from: NodeId, to: NodeId, level: usize) {
+    rite connect_nodes(from: NodeId, to: NodeId, level: usize) {
         ⎇ ≔ Some(node) = self.nodes.get_mut(&from) {
             // Ensure level exists
             ⟳ node.neighbors.len() <= level {
@@ -476,7 +476,7 @@ invoke std·cmp·Ordering
     // Distance Functions
     // ========================================================================
 
-    λ distance(a: &Vector<f32>, b: &Vector<f32>) -> f64 {
+    rite distance(a: &Vector<f32>, b: &Vector<f32>) -> f64 {
         ⌥ self.config.metric {
             DistanceMetric·Cosine => {
                 // For normalized vectors, cosine distance = 1 - dot product
@@ -492,14 +492,14 @@ invoke std·cmp·Ordering
         }
     }
 
-    λ dot_product(a: &Vector<f32>, b: &Vector<f32>) -> f64 {
+    rite dot_product(a: &Vector<f32>, b: &Vector<f32>) -> f64 {
         a.as_slice().iter()
             .zip(b.as_slice().iter())
             .map(|(x, y)| (*x as f64) * (*y as f64))
             .sum()
     }
 
-    λ euclidean_distance(a: &Vector<f32>, b: &Vector<f32>) -> f64 {
+    rite euclidean_distance(a: &Vector<f32>, b: &Vector<f32>) -> f64 {
         a.as_slice().iter()
             .zip(b.as_slice().iter())
             .map(|(x, y)| {
@@ -514,7 +514,7 @@ invoke std·cmp·Ordering
     // Level Assignment
     // ========================================================================
 
-    λ random_level() -> usize {
+    rite random_level() -> usize {
         ≔ r: f64 = self.rng.next_f64();
         ≔ level = (-r.ln() * self.config.ml).floor() as usize;
         level.min(32)  // Cap at reasonable maximum
@@ -533,7 +533,7 @@ invoke std·cmp·Ordering
 }
 
 ⊢ PartialEq ∀ DistanceNode {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.distance == other.distance
     }
 }
@@ -541,13 +541,13 @@ invoke std·cmp·Ordering
 ⊢ Eq ∀ DistanceNode {}
 
 ⊢ PartialOrd ∀ DistanceNode {
-    λ partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    rite partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 ⊢ Ord ∀ DistanceNode {
-    λ cmp(&self, other: &Self) -> Ordering {
+    rite cmp(&self, other: &Self) -> Ordering {
         ⎇ self.is_min {
             // Min-heap: smaller distance = greater priority
             other.distance.partial_cmp(&self.distance)
@@ -566,7 +566,7 @@ invoke std·cmp·Ordering
 }
 
 ⊢ RandomState {
-    λ new() -> Self {
+    rite new() -> Self {
         // Use system time as seed
         Self {
             state: std·time·SystemTime·now()
@@ -576,7 +576,7 @@ invoke std·cmp·Ordering
         }
     }
 
-    λ next_f64(&Δ self) -> f64 {
+    rite next_f64(&Δ self) -> f64 {
         // Simple xorshift64
         self.state ^= self.state << 13;
         self.state ^= self.state >> 7;
@@ -594,7 +594,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_insert_and_search() {
+    rite test_insert_and_search() {
         ≔ Δ index = HNSWIndex·new(HNSWConfig·default().with_dimensions(3));
 
         // Insert some vectors
@@ -624,7 +624,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_remove() {
+    rite test_remove() {
         ≔ Δ index = HNSWIndex·new(HNSWConfig·default().with_dimensions(3));
 
         ≔ id = NodeId·from_bytes([1; 16]);
@@ -636,7 +636,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_empty_search() {
+    rite test_empty_search() {
         ≔ index = HNSWIndex·new(HNSWConfig·default().with_dimensions(3));
         ≔ results = index.search(&Vector·new(vec![1.0, 0.0, 0.0]), 5);
         assert!(results.is_empty());

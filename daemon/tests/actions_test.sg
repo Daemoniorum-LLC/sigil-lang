@@ -8,7 +8,7 @@
 }
 
 ⊢ InternalActionType {
-    ☉ λ name(&self) -> &str {
+    ☉ rite name(&self) -> &str {
         ⌥ self {
             InternalActionType·Think => "think",
             InternalActionType·Plan => "plan",
@@ -26,7 +26,7 @@
 }
 
 ⊢ CommunicateActionType {
-    ☉ λ name(&self) -> &str {
+    ☉ rite name(&self) -> &str {
         ⌥ self {
             CommunicateActionType·Send => "send",
             CommunicateActionType·Broadcast => "broadcast",
@@ -45,7 +45,7 @@
 }
 
 ⊢ GoalActionType {
-    ☉ λ name(&self) -> &str {
+    ☉ rite name(&self) -> &str {
         ⌥ self {
             GoalActionType·AddGoal => "add_goal",
             GoalActionType·CompleteGoal => "complete_goal",
@@ -65,14 +65,14 @@
 }
 
 ⊢ ActionType {
-    ☉ λ is_internal(&self) -> !bool {
+    ☉ rite is_internal(&self) -> !bool {
         ⌥ self {
             ActionType·Internal(_) => true,
             _ => false,
         }
     }
 
-    ☉ λ is_external(&self) -> !bool {
+    ☉ rite is_external(&self) -> !bool {
         ⌥ self {
             ActionType·Tool => true,
             ActionType·Communicate(_) => true,
@@ -90,19 +90,19 @@
 }
 
 ⊢ ActionResult {
-    ☉ λ success(action_id: !u64, output_len: !usize, duration_ms: !u64) -> Self {
+    ☉ rite success(action_id: !u64, output_len: !usize, duration_ms: !u64) -> Self {
         ActionResult { action_id, success: true, output_len, has_error: false, duration_ms }
     }
 
-    ☉ λ failure(action_id: !u64, duration_ms: !u64) -> Self {
+    ☉ rite failure(action_id: !u64, duration_ms: !u64) -> Self {
         ActionResult { action_id, success: false, output_len: 0, has_error: true, duration_ms }
     }
 
-    ☉ λ is_success(&self) -> !bool {
+    ☉ rite is_success(&self) -> !bool {
         self.success
     }
 
-    ☉ λ is_failure(&self) -> !bool {
+    ☉ rite is_failure(&self) -> !bool {
         !self.success
     }
 }
@@ -116,7 +116,7 @@
 }
 
 ⊢ ToolError {
-    ☉ λ is_retryable(&self) -> !bool {
+    ☉ rite is_retryable(&self) -> !bool {
         ⌥ self {
             ToolError·Timeout => true,
             ToolError·NotAvailable => true,
@@ -124,7 +124,7 @@
         }
     }
 
-    ☉ λ is_permanent(&self) -> !bool {
+    ☉ rite is_permanent(&self) -> !bool {
         ⌥ self {
             ToolError·InvalidParams => true,
             ToolError·PermissionDenied => true,
@@ -140,11 +140,11 @@
 }
 
 ⊢ ToolResult {
-    ☉ λ ok(output_len: !usize, duration_ms: !u64) -> Self {
+    ☉ rite ok(output_len: !usize, duration_ms: !u64) -> Self {
         ToolResult { success: true, output_len, duration_ms }
     }
 
-    ☉ λ err(duration_ms: !u64) -> Self {
+    ☉ rite err(duration_ms: !u64) -> Self {
         ToolResult { success: false, output_len: 0, duration_ms }
     }
 }
@@ -154,76 +154,76 @@
 // ============================================================================
 
 #[test]
-λ test_internal_action_think() {
+rite test_internal_action_think() {
     ≔ action = InternalActionType·Think;
     assert(action.name() == "think");
 }
 
 #[test]
-λ test_internal_action_plan() {
+rite test_internal_action_plan() {
     ≔ action = InternalActionType·Plan;
     assert(action.name() == "plan");
 }
 
 #[test]
-λ test_internal_action_reflect() {
+rite test_internal_action_reflect() {
     ≔ action = InternalActionType·Reflect;
     assert(action.name() == "reflect");
 }
 
 #[test]
-λ test_communicate_action_send() {
+rite test_communicate_action_send() {
     ≔ action = CommunicateActionType·Send;
     assert(action.name() == "send");
 }
 
 #[test]
-λ test_communicate_action_broadcast() {
+rite test_communicate_action_broadcast() {
     ≔ action = CommunicateActionType·Broadcast;
     assert(action.name() == "broadcast");
 }
 
 #[test]
-λ test_goal_action_add() {
+rite test_goal_action_add() {
     ≔ action = GoalActionType·AddGoal;
     assert(action.name() == "add_goal");
 }
 
 #[test]
-λ test_goal_action_complete() {
+rite test_goal_action_complete() {
     ≔ action = GoalActionType·CompleteGoal;
     assert(action.name() == "complete_goal");
 }
 
 #[test]
-λ test_action_internal() {
+rite test_action_internal() {
     ≔ action = ActionType·Internal(InternalActionType·Reflect);
     assert(action.is_internal());
     assert(!action.is_external());
 }
 
 #[test]
-λ test_action_tool() {
+rite test_action_tool() {
     ≔ action = ActionType·Tool;
     assert(action.is_external());
     assert(!action.is_internal());
 }
 
 #[test]
-λ test_action_communicate() {
+rite test_action_communicate() {
     ≔ action = ActionType·Communicate(CommunicateActionType·Query);
     assert(action.is_external());
 }
 
 #[test]
-λ test_action_wait() {
+rite test_action_wait() {
     ≔ action = ActionType·Wait;
     assert(!action.is_internal());
     assert(!action.is_external());
 }
 
 #[test]
-λ test_action_result_success() {
+rite test_action_result_success() {
     ≔ result = ActionResult·success(1, 10, 100);
     assert(result.is_success());
     assert(!result.is_failure());
@@ -231,7 +231,7 @@
 }
 
 #[test]
-λ test_action_result_failure() {
+rite test_action_result_failure() {
     ≔ result = ActionResult·failure(1, 50);
     assert(result.is_failure());
     assert(!result.is_success());
@@ -239,44 +239,44 @@
 }
 
 #[test]
-λ test_tool_error_retryable_timeout() {
+rite test_tool_error_retryable_timeout() {
     ≔ error = ToolError·Timeout;
     assert(error.is_retryable());
     assert(!error.is_permanent());
 }
 
 #[test]
-λ test_tool_error_retryable_unavailable() {
+rite test_tool_error_retryable_unavailable() {
     ≔ error = ToolError·NotAvailable;
     assert(error.is_retryable());
 }
 
 #[test]
-λ test_tool_error_permanent_params() {
+rite test_tool_error_permanent_params() {
     ≔ error = ToolError·InvalidParams;
     assert(error.is_permanent());
     assert(!error.is_retryable());
 }
 
 #[test]
-λ test_tool_error_permanent_permission() {
+rite test_tool_error_permanent_permission() {
     ≔ error = ToolError·PermissionDenied;
     assert(error.is_permanent());
 }
 
 #[test]
-λ test_tool_result_ok() {
+rite test_tool_result_ok() {
     ≔ result = ToolResult·ok(15, 200);
     assert(result.success);
     assert(result.duration_ms == 200);
 }
 
 #[test]
-λ test_tool_result_err() {
+rite test_tool_result_err() {
     ≔ result = ToolResult·err(50);
     assert(!result.success);
 }
 
-λ main() {
+rite main() {
     println("Daemon actions tests - 19 tests");
 }

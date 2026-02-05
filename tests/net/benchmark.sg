@@ -33,7 +33,7 @@ const MAP_ANONYMOUS: i64 = 32;
 // Syscall Wrappers
 // ============================================================================
 
-λ syscall1(num: i64, arg1: i64) -> i64 {
+rite syscall1(num: i64, arg1: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -46,7 +46,7 @@ const MAP_ANONYMOUS: i64 = 32;
     ret
 }
 
-λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+rite syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -60,7 +60,7 @@ const MAP_ANONYMOUS: i64 = 32;
     ret
 }
 
-λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -75,7 +75,7 @@ const MAP_ANONYMOUS: i64 = 32;
     ret
 }
 
-λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+rite syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -97,15 +97,15 @@ const MAP_ANONYMOUS: i64 = 32;
 // Memory
 // ============================================================================
 
-λ alloc_mem(size: i64) -> i64 {
+rite alloc_mem(size: i64) -> i64 {
     syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
 }
 
-λ free_mem(ptr: i64, size: i64) {
+rite free_mem(ptr: i64, size: i64) {
     syscall2(SYS_MUNMAP, ptr, size);
 }
 
-λ mem_set(dst: i64, val: i8, len: i64) {
+rite mem_set(dst: i64, val: i8, len: i64) {
     ≔ i: i64 = 0;
     ⟳ i < len {
         unsafe {
@@ -115,7 +115,7 @@ const MAP_ANONYMOUS: i64 = 32;
     }
 }
 
-λ mem_copy(dst: i64, src: i64, len: i64) {
+rite mem_copy(dst: i64, src: i64, len: i64) {
     ≔ i: i64 = 0;
     ⟳ i < len {
         ≔ byte: i64 = 0;
@@ -127,7 +127,7 @@ const MAP_ANONYMOUS: i64 = 32;
     }
 }
 
-λ str_len(s: i64) -> i64 {
+rite str_len(s: i64) -> i64 {
     ≔ len: i64 = 0;
     ≔ byte: i64 = 1;
     ⟳ byte != 0 {
@@ -145,7 +145,7 @@ const MAP_ANONYMOUS: i64 = 32;
 // Timing
 // ============================================================================
 
-λ get_time_ns() -> i64 {
+rite get_time_ns() -> i64 {
     ≔ ts = alloc_mem(16);
     syscall2(SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, ts);
 
@@ -160,7 +160,7 @@ const MAP_ANONYMOUS: i64 = 32;
     secs * 1000000000 + nsecs
 }
 
-λ sleep_ms(ms: i64) {
+rite sleep_ms(ms: i64) {
     ≔ ts = alloc_mem(16);
     ≔ secs = ms / 1000;
     ≔ nsecs = (ms % 1000) * 1000000;
@@ -176,22 +176,22 @@ const MAP_ANONYMOUS: i64 = 32;
 // Output
 // ============================================================================
 
-λ write_stdout(s: i64, len: i64) {
+rite write_stdout(s: i64, len: i64) {
     syscall3(SYS_WRITE, 1, s, len);
 }
 
-λ print_str(chars: i64, len: i64) {
+rite print_str(chars: i64, len: i64) {
     ≔ buf = alloc_mem(len + 1);
     mem_copy(buf, chars, len);
     write_stdout(buf, len);
     free_mem(buf, len + 1);
 }
 
-λ print_cstr(s: i64) {
+rite print_cstr(s: i64) {
     write_stdout(s, str_len(s));
 }
 
-λ print_int(n: i64) {
+rite print_int(n: i64) {
     ≔ buf = alloc_mem(32);
     ≔ num = n;
     ≔ neg = 0;
@@ -219,14 +219,14 @@ const MAP_ANONYMOUS: i64 = 32;
     free_mem(buf, 32);
 }
 
-λ print_newline() {
+rite print_newline() {
     ≔ nl = alloc_mem(8);
     unsafe { asm!("mov byte ptr [rdi], 10", in("rdi") nl, options(nostack)); }
     write_stdout(nl, 1);
     free_mem(nl, 8);
 }
 
-λ print_label(label: i64, len: i64) {
+rite print_label(label: i64, len: i64) {
     ≔ buf = alloc_mem(64);
     mem_copy(buf, label, len);
     write_stdout(buf, len);
@@ -237,15 +237,15 @@ const MAP_ANONYMOUS: i64 = 32;
 // Socket Operations
 // ============================================================================
 
-λ socket_create() -> i64 {
+rite socket_create() -> i64 {
     syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0)
 }
 
-λ socket_close(fd: i64) {
+rite socket_close(fd: i64) {
     syscall1(SYS_CLOSE, fd);
 }
 
-λ socket_connect(fd: i64, ip_packed: i64, port: i64) -> i64 {
+rite socket_connect(fd: i64, ip_packed: i64, port: i64) -> i64 {
     ≔ addr_buf = alloc_mem(32);
     mem_set(addr_buf, 0, 16);
     unsafe {
@@ -263,7 +263,7 @@ const MAP_ANONYMOUS: i64 = 32;
     result
 }
 
-λ socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
+rite socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
     ≔ pollfd = alloc_mem(16);
     unsafe {
         asm!("mov dword ptr [rdi], esi", in("rdi") pollfd, in("esi") fd as i32, options(nostack));
@@ -285,7 +285,7 @@ const MAP_ANONYMOUS: i64 = 32;
 // Statistics
 // ============================================================================
 
-λ calc_min(values: i64, count: i64) -> i64 {
+rite calc_min(values: i64, count: i64) -> i64 {
     ≔ min: i64 = 0;
     unsafe {
         asm!("mov rax, [rdi]", in("rdi") values, out("rax") min, options(nostack, readonly));
@@ -304,7 +304,7 @@ const MAP_ANONYMOUS: i64 = 32;
     min
 }
 
-λ calc_max(values: i64, count: i64) -> i64 {
+rite calc_max(values: i64, count: i64) -> i64 {
     ≔ max: i64 = 0;
     unsafe {
         asm!("mov rax, [rdi]", in("rdi") values, out("rax") max, options(nostack, readonly));
@@ -323,7 +323,7 @@ const MAP_ANONYMOUS: i64 = 32;
     max
 }
 
-λ calc_avg(values: i64, count: i64) -> i64 {
+rite calc_avg(values: i64, count: i64) -> i64 {
     ≔ sum: i64 = 0;
     ≔ i: i64 = 0;
     ⟳ i < count {
@@ -337,13 +337,13 @@ const MAP_ANONYMOUS: i64 = 32;
     sum / count
 }
 
-λ store_value(arr: i64, idx: i64, val: i64) {
+rite store_value(arr: i64, idx: i64, val: i64) {
     unsafe {
         asm!("mov [rdi], rax", in("rdi") arr + idx * 8, in("rax") val, options(nostack));
     }
 }
 
-λ print_stats(label: i64, label_len: i64, values: i64, count: i64) {
+rite print_stats(label: i64, label_len: i64, values: i64, count: i64) {
     ≔ min_us = calc_min(values, count) / 1000;
     ≔ max_us = calc_max(values, count) / 1000;
     ≔ avg_us = calc_avg(values, count) / 1000;
@@ -409,11 +409,11 @@ const MAP_ANONYMOUS: i64 = 32;
 const ITERATIONS: i64 = 3;
 
 // example.com IP: 104.18.27.120
-λ get_example_ip() -> i64 {
+rite get_example_ip() -> i64 {
     104 | (18 << 8) | (27 << 16) | (120 << 24)
 }
 
-λ bench_tcp_connect() {
+rite bench_tcp_connect() {
     ≔ label: [i8; 11] = [84, 67, 80, 32, 99, 111, 110, 110, 101, 99, 116]; // "TCP connect"
     ≔ label_ptr = alloc_mem(16);
     ≔ j: i64 = 0;
@@ -449,7 +449,7 @@ const ITERATIONS: i64 = 3;
     free_mem(label_ptr, 16);
 }
 
-λ bench_tls_handshake() {
+rite bench_tls_handshake() {
     ≔ label: [i8; 13] = [84, 76, 83, 32, 104, 97, 110, 100, 115, 104, 97, 107, 101]; // "TLS handshake"
     ≔ label_ptr = alloc_mem(16);
     ≔ j: i64 = 0;
@@ -509,7 +509,7 @@ const ITERATIONS: i64 = 3;
     free_mem(label_ptr, 16);
 }
 
-λ bench_http_get() {
+rite bench_http_get() {
     ≔ label: [i8; 8] = [72, 84, 84, 80, 32, 71, 69, 84]; // "HTTP GET"
     ≔ label_ptr = alloc_mem(16);
     ≔ j: i64 = 0;
@@ -596,7 +596,7 @@ const ITERATIONS: i64 = 3;
 // Main
 // ============================================================================
 
-λ main() -> i64 {
+rite main() -> i64 {
     // Header
     ≔ header = alloc_mem(48);
     // "=== Sigil Net Benchmarks ===\n"

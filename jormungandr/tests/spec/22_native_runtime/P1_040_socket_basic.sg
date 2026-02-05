@@ -2,7 +2,7 @@
 // This tests the native runtime networking syscalls
 // Priority: P1
 
-λ main() {
+rite main() {
     // Test: Create an IPv4 TCP socket
     // AF_INET = 2, SOCK_STREAM = 1, protocol = 0
     ≔ sock = Sys·socket(2, 1, 0);

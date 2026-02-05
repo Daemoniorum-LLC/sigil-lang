@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 4 Entanglement
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ q1: linear Qubit = Qubit·zero()|H;
     ≔ q2: linear Qubit = Qubit·zero();
     ≔ (e1, e2) = CNOT(q1, q2);  // Creates Bell state |00⟩ + |11⟩

@@ -4,7 +4,7 @@
 //
 // This test connects to a REAL WebSocket echo server
 
-λ main() {
+rite main() {
     // Connect to Postman's WebSocket echo server
     ≔ conn = "wss://ws.postman-echo.com/raw"|connect;
 

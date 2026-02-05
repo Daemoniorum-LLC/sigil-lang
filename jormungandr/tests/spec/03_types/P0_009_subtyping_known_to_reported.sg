@@ -9,7 +9,7 @@
 // Expected behavior:
 // Should compile successfully and print 42
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ≔ y: ~i32 = x;  // Subtyping: !i32 <: ~i32
     println(y);

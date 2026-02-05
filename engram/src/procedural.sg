@@ -32,7 +32,7 @@ invoke engram·episodic·Episode
     // Construction
     // ========================================================================
 
-    ☉ λ new(config: ProceduralConfig) -> EngramResult<Self>! {
+    ☉ rite new(config: ProceduralConfig) -> EngramResult<Self>! {
         Ok(Self {
             skills: HashMap·new(),
             patterns: vec![],
@@ -45,7 +45,7 @@ invoke engram·episodic·Episode
     // ========================================================================
 
     /// Learn a new skill from episodes
-    ☉ λ learn_from_episodes(episodes: Vec<Episode>) -> Option<Skill> {
+    ☉ rite learn_from_episodes(episodes: Vec<Episode>) -> Option<Skill> {
         // Need minimum episodes
         ⎇ episodes.len() < self.config.min_episodes_for_skill {
             ⤺ None
@@ -100,7 +100,7 @@ invoke engram·episodic·Episode
     }
 
     /// Register a skill directly
-    ☉ λ register(skill: Skill) -> SkillId {
+    ☉ rite register(skill: Skill) -> SkillId {
         ≔ id = skill.id.clone()
         ≔ trigger = skill.trigger.clone()
         self.skills.insert(id.clone(), skill)
@@ -109,7 +109,7 @@ invoke engram·episodic·Episode
     }
 
     /// Find skills matching the current situation
-    ☉ λ match_situation(context: &Context) -> Vec<SkillMatch> {
+    ☉ rite match_situation(context: &Context) -> Vec<SkillMatch> {
         ≔ context_text = context.to_string().to_lowercase()
 
         ≔ Δ matches: Vec<_> = self.patterns.iter()
@@ -143,12 +143,12 @@ invoke engram·episodic·Episode
     }
 
     /// Get a specific skill
-    ☉ λ get(id: SkillId) -> Option<&Skill> {
+    ☉ rite get(id: SkillId) -> Option<&Skill> {
         self.skills.get(&id)
     }
 
     /// Record feedback from skill execution
-    ☉ λ feedback(skill_id: SkillId, episode: Episode) {
+    ☉ rite feedback(skill_id: SkillId, episode: Episode) {
         ⎇ ≔ Some(skill) = self.skills.get_mut(&skill_id) {
             skill.stats.execution_count += 1
             skill.last_used = Some(Instant·now())
@@ -192,7 +192,7 @@ invoke engram·episodic·Episode
     }
 
     /// Disable a skill
-    ☉ λ disable(skill_id: SkillId) -> EngramResult<()>! {
+    ☉ rite disable(skill_id: SkillId) -> EngramResult<()>! {
         ⎇ ≔ Some(skill) = self.skills.get_mut(&skill_id) {
             skill.enabled = false
             Ok(())
@@ -208,7 +208,7 @@ invoke engram·episodic·Episode
     // Usage Information
     // ========================================================================
 
-    ☉ λ usage() -> MemorySystemUsage {
+    ☉ rite usage() -> MemorySystemUsage {
         MemorySystemUsage {
             item_count: self.skills.len(),
             bytes_used: self.skills.len() * std·mem·size_of·<Skill>(),
@@ -220,7 +220,7 @@ invoke engram·episodic·Episode
     // Internal Helpers
     // ========================================================================
 
-    λ extract_trigger_pattern(episodes: &[&Episode]) -> Option<TriggerPattern> {
+    rite extract_trigger_pattern(episodes: &[&Episode]) -> Option<TriggerPattern> {
         // Extract common keywords from contexts
         ≔ Δ word_counts: HashMap<String, usize> = HashMap·new()
 
@@ -251,7 +251,7 @@ invoke engram·episodic·Episode
         })
     }
 
-    λ extract_procedure(episodes: &[&Episode]) -> Option<Procedure> {
+    rite extract_procedure(episodes: &[&Episode]) -> Option<Procedure> {
         // Extract common event sequences
         // Simplified: just invoke events from first episode as template
         ≔ first = episodes.first()?;
@@ -279,7 +279,7 @@ invoke engram·episodic·Episode
         })
     }
 
-    λ match_pattern(pattern: &TriggerPattern, context: &str) -> f64 {
+    rite match_pattern(pattern: &TriggerPattern, context: &str) -> f64 {
         ≔ Δ total_weight = 0.0
         ≔ Δ matched_weight = 0.0
 
@@ -293,7 +293,7 @@ invoke engram·episodic·Episode
         ⎇ total_weight == 0.0 { 0.0 } ⎉ { matched_weight / total_weight }
     }
 
-    λ generate_skill_name(trigger: &TriggerPattern, procedure: &Procedure) -> String {
+    rite generate_skill_name(trigger: &TriggerPattern, procedure: &Procedure) -> String {
         ≔ keywords = trigger.keywords.iter()
             .take(3)
             .cloned()
@@ -303,7 +303,7 @@ invoke engram·episodic·Episode
         format!("skill_{}", keywords)
     }
 
-    λ generate_description(episodes: &[&Episode]) -> String {
+    rite generate_description(episodes: &[&Episode]) -> String {
         format!(
             "Skill learned from {} successful episodes",
             episodes.len()

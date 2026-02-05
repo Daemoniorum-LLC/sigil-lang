@@ -2,7 +2,7 @@
 // Spec: 16-AI-IR.md § Pipeline Operations
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ result = [1, 2, 3]
         |τ{x => x * 2}
         |φ{x => x > 2}

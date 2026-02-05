@@ -4,24 +4,24 @@
 }
 
 ⊢ Calculator {
-    λ new() -> !Calculator {
+    rite new() -> !Calculator {
         Calculator { result: 0 }
     }
 
-    λ add(&Δ self, value: !i32) {
+    rite add(&Δ self, value: !i32) {
         self.result = self.result + value;
     }
 
-    λ multiply(&Δ self, value: !i32) {
+    rite multiply(&Δ self, value: !i32) {
         self.result = self.result * value;
     }
 
-    λ get_result(&self) -> !i32 {
+    rite get_result(&self) -> !i32 {
         self.result
     }
 }
 
-λ main() {
+rite main() {
     ≔ Δ calc: !Calculator = Calculator·new();
     calc.add(5);
     calc.add(3);

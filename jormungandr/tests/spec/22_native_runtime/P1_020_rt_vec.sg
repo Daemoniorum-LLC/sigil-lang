@@ -7,13 +7,13 @@
 // Construction
 // ============================================================================
 
-λ test_vec_new_is_empty() {
+rite test_vec_new_is_empty() {
     ≔ v = [];
     assert_eq!(v.len(), 0);
     assert!(v.is_empty());
 }
 
-λ test_vec_with_capacity_has_capacity() {
+rite test_vec_with_capacity_has_capacity() {
     ≔ v = [1, 2, 3];
     assert!(v.capacity() >= 3);
 }
@@ -22,14 +22,14 @@
 // Push / Pop
 // ============================================================================
 
-λ test_vec_push_increases_len() {
+rite test_vec_push_increases_len() {
     ≔ Δ v = [];
     v.push(42);
     assert_eq!(v.len(), 1);
     assert!(!v.is_empty());
 }
 
-λ test_vec_push_stores_value() {
+rite test_vec_push_stores_value() {
     ≔ Δ v = [];
     v.push(10);
     v.push(20);
@@ -39,7 +39,7 @@
     assert_eq!(v[2], 30);
 }
 
-λ test_vec_pop_returns_last() {
+rite test_vec_pop_returns_last() {
     ≔ Δ v = [];
     v.push(10);
     v.push(20);
@@ -51,7 +51,7 @@
     assert_eq!(v.len(), 1);
 }
 
-λ test_vec_pop_empty_returns_none() {
+rite test_vec_pop_empty_returns_none() {
     ≔ Δ v = [];
     ⌥ v.pop() {
         Option·Some(_) => assert!(false),
@@ -64,7 +64,7 @@
 // Indexing / Get
 // ============================================================================
 
-λ test_vec_get_valid_index() {
+rite test_vec_get_valid_index() {
     ≔ Δ v = [];
     v.push(100);
     v.push(200);
@@ -73,7 +73,7 @@
     assert_eq!(v[1], 200);
 }
 
-λ test_vec_get_mut_allows_modification() {
+rite test_vec_get_mut_allows_modification() {
     ≔ Δ v = [];
     v.push(10);
 
@@ -82,7 +82,7 @@
     assert_eq!(v[0], 999);
 }
 
-λ test_vec_index_operator() {
+rite test_vec_index_operator() {
     ≔ Δ v = [];
     v.push(42);
     v.push(84);
@@ -95,7 +95,7 @@
 // Capacity / Growth
 // ============================================================================
 
-λ test_vec_grows_automatically() {
+rite test_vec_grows_automatically() {
     ≔ Δ v = [];
     v.push(1);
     v.push(2);
@@ -106,7 +106,7 @@
     assert_eq!(v[2], 3);
 }
 
-λ test_vec_growth_doubles_capacity() {
+rite test_vec_growth_doubles_capacity() {
     ≔ Δ v = [];
     ∀ i ∈ 0..10 {
         v.push(i);
@@ -118,7 +118,7 @@
 // Clear
 // ============================================================================
 
-λ test_vec_clear_preserves_capacity() {
+rite test_vec_clear_preserves_capacity() {
     ≔ Δ v = [];
     v.push(1);
     v.push(2);
@@ -134,7 +134,7 @@
 // Slice Views
 // ============================================================================
 
-λ test_vec_as_slice() {
+rite test_vec_as_slice() {
     ≔ Δ v = [];
     v.push(1);
     v.push(2);
@@ -151,7 +151,7 @@
 // Drop
 // ============================================================================
 
-λ test_vec_drops_elements() {
+rite test_vec_drops_elements() {
     {
         ≔ Δ v = [];
         ∀ i ∈ 0..1000 {
@@ -165,7 +165,7 @@
 // Entry Point
 // ============================================================================
 
-λ main() {
+rite main() {
     // Construction
     test_vec_new_is_empty();
     test_vec_with_capacity_has_capacity();

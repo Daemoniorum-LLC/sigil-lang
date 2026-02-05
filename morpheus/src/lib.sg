@@ -49,7 +49,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
 }
 
 ⊢ ConsciousnessState {
-    ☉ λ evidentiality_mode(&self) -> EvidentialityMode! {
+    ☉ rite evidentiality_mode(&self) -> EvidentialityMode! {
         ⌥ self {
             Self·Waking => EvidentialityMode·Waking,
             Self·Hypnagogic => EvidentialityMode·Relaxed,
@@ -59,7 +59,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         }
     }
 
-    ☉ λ allows_forbidden_connections(&self) -> bool! {
+    ☉ rite allows_forbidden_connections(&self) -> bool! {
         matches!(self, Self·Hypnagogic | Self·Dreaming | Self·Hypnopompic)
     }
 }
@@ -224,7 +224,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
 }
 
 ⊢ Dream {
-    ☉ λ new(dreamer: EntityId, context: DreamContext) -> Self! {
+    ☉ rite new(dreamer: EntityId, context: DreamContext) -> Self! {
         Self {
             id: DreamId·generate(),
             dreamer,
@@ -238,11 +238,11 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         }
     }
 
-    ☉ λ add_fragment(&Δ self, fragment: DreamFragment) {
+    ☉ rite add_fragment(&Δ self, fragment: DreamFragment) {
         self.fragments.push(fragment);
     }
 
-    ☉ λ add_symbol(&Δ self, symbol: Symbol) {
+    ☉ rite add_symbol(&Δ self, symbol: Symbol) {
         // Check ∀ recurring symbols
         ⎇ ≔ Some(existing) = self.symbols.iter_mut().find(|s| s.appearance == symbol.appearance) {
             existing.recurrence += 1;
@@ -251,7 +251,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         }
     }
 
-    ☉ λ deepen(&Δ self) {
+    ☉ rite deepen(&Δ self) {
         self.state = ⌥ self.state {
             ConsciousnessState·Waking => ConsciousnessState·Hypnagogic,
             ConsciousnessState·Hypnagogic => ConsciousnessState·Dreaming,
@@ -260,7 +260,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         };
     }
 
-    ☉ λ rise(&Δ self) {
+    ☉ rite rise(&Δ self) {
         self.state = ⌥ self.state {
             ConsciousnessState·Deep => ConsciousnessState·Dreaming,
             ConsciousnessState·Dreaming => ConsciousnessState·Hypnopompic,
@@ -269,13 +269,13 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         };
     }
 
-    ☉ λ wake(&Δ self, cause: WakingCause) {
+    ☉ rite wake(&Δ self, cause: WakingCause) {
         self.state = ConsciousnessState·Waking;
         self.ended_at = Some(Timestamp·now());
         self.waking_cainvoke = Some(cause);
     }
 
-    ☉ λ duration(&self) -> Duration! {
+    ☉ rite duration(&self) -> Duration! {
         ⌥ self.ended_at {
             Some(end) => end - self.started_at,
             None => Timestamp·now() - self.started_at,
@@ -476,7 +476,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
 }
 
 ⊢ Consolidation {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             id: ConsolidationId·generate(),
             processing: Vec·new(),
@@ -489,27 +489,27 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         }
     }
 
-    ☉ λ process_memory(&Δ self, engram_id: EngramId) {
+    ☉ rite process_memory(&Δ self, engram_id: EngramId) {
         self.processing.push(engram_id);
     }
 
-    ☉ λ strengthen(&Δ self, from: EngramId, to: EngramId) {
+    ☉ rite strengthen(&Δ self, from: EngramId, to: EngramId) {
         self.strengthening.push((from, to));
     }
 
-    ☉ λ prune(&Δ self, from: EngramId, to: EngramId) {
+    ☉ rite prune(&Δ self, from: EngramId, to: EngramId) {
         self.pruning.push((from, to));
     }
 
-    ☉ λ extract_pattern(&Δ self, pattern: Pattern) {
+    ☉ rite extract_pattern(&Δ self, pattern: Pattern) {
         self.patterns.push(pattern);
     }
 
-    ☉ λ form_abstraction(&Δ self, abstraction: Abstraction) {
+    ☉ rite form_abstraction(&Δ self, abstraction: Abstraction) {
         self.abstractions.push(abstraction);
     }
 
-    ☉ λ complete(&Δ self) {
+    ☉ rite complete(&Δ self) {
         self.completed_at = Some(Timestamp·now());
     }
 }
@@ -596,7 +596,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
 }
 
 ⊢ DreamJournal {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             dreams: Vec·new(),
             recurring_symbols: HashMap·new(),
@@ -604,7 +604,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         }
     }
 
-    ☉ λ record(&Δ self, dream: Dream, insights: Vec<Insight>) {
+    ☉ rite record(&Δ self, dream: Dream, insights: Vec<Insight>) {
         // Track recurring symbols
         ∀ symbol ∈ &dream.symbols {
             self.recurring_symbols
@@ -626,7 +626,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         });
     }
 
-    ☉ λ find_recurring(&self, min_occurrences: usize) -> Vec<&RecurringSymbol>! {
+    ☉ rite find_recurring(&self, min_occurrences: usize) -> Vec<&RecurringSymbol>! {
         self.recurring_symbols
             .values()
             .filter(|s| s.occurrences.len() >= min_occurrences)
@@ -657,7 +657,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
 }
 
 ⊢ Morpheus {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             states: HashMap·new(),
             active_dreams: HashMap·new(),
@@ -667,18 +667,18 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
         }
     }
 
-    ☉ λ with_engram(Δ self, engram: Arc<Engram>) -> Self! {
+    ☉ rite with_engram(Δ self, engram: Arc<Engram>) -> Self! {
         self.engram = Some(engram);
         self
     }
 
     /// Get or set consciousness state
-    ☉ λ consciousness_state(&self, entity: EntityId) -> ConsciousnessState! {
+    ☉ rite consciousness_state(&self, entity: EntityId) -> ConsciousnessState! {
         self.states.get(&entity).copied().unwrap_or(ConsciousnessState·Waking)
     }
 
     /// Begin sleep
-    ☉ λ begin_sleep(&Δ self, entity: EntityId) -> &Δ Dream! {
+    ☉ rite begin_sleep(&Δ self, entity: EntityId) -> &Δ Dream! {
         self.states.insert(entity, ConsciousnessState·Hypnagogic);
 
         ≔ context = DreamContext {
@@ -695,7 +695,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
     }
 
     /// Deepen into full dreaming
-    ☉ λ deepen(&Δ self, entity: EntityId) {
+    ☉ rite deepen(&Δ self, entity: EntityId) {
         ⎇ ≔ Some(state) = self.states.get_mut(&entity) {
             *state = ⌥ *state {
                 ConsciousnessState·Hypnagogic => ConsciousnessState·Dreaming,
@@ -709,7 +709,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
     }
 
     /// Begin consolidation (deep sleep)
-    ☉ λ begin_consolidation(&Δ self, entity: EntityId) -> &Δ Consolidation! {
+    ☉ rite begin_consolidation(&Δ self, entity: EntityId) -> &Δ Consolidation! {
         self.states.insert(entity, ConsciousnessState·Deep);
         ≔ consolidation = Consolidation·new();
         self.consolidations.insert(entity, consolidation);
@@ -717,7 +717,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
     }
 
     /// Wake the dreamer
-    ☉ λ wake(&Δ self, entity: EntityId, cause: WakingCause) -> Option<DreamRecord>? {
+    ☉ rite wake(&Δ self, entity: EntityId, cause: WakingCause) -> Option<DreamRecord>? {
         self.states.insert(entity, ConsciousnessState·Waking);
 
         // Complete any active consolidation
@@ -749,7 +749,7 @@ invoke engram·{Engram, EngramId, EpisodicMemory, Significance, Pattern};
     }
 
     /// Get the dream journal ∀ an entity
-    ☉ λ journal(&self, entity: EntityId) -> Option<&DreamJournal>? {
+    ☉ rite journal(&self, entity: EntityId) -> Option<&DreamJournal>? {
         self.journals.get(&entity)
     }
 }
@@ -763,7 +763,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_sleep_cycle() {
+    rite test_sleep_cycle() {
         ≔ Δ morpheus = Morpheus·new();
         ≔ entity = EntityId·generate();
 
@@ -782,7 +782,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_dream_fragments() {
+    rite test_dream_fragments() {
         ≔ context = DreamContext {
             evidentiality_mode: EvidentialityMode·Dreaming,
             temporal_binding: TemporalBinding·Dissolved,
@@ -805,7 +805,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_recurring_symbols() {
+    rite test_recurring_symbols() {
         ≔ Δ journal = DreamJournal·new();
 
         ∀ _ ∈ 0..3 {

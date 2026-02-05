@@ -13,21 +13,21 @@
 }
 
 ⊢ Value {
-    ☉ λ new(x: !i32) -> Self {
+    ☉ rite new(x: !i32) -> Self {
         Self { x: x }
     }
 
-    ☉ λ add(Δ self, y: !i32) -> Self {
+    ☉ rite add(Δ self, y: !i32) -> Self {
         self.x = self.x + y;
         self
     }
 
-    ☉ λ get(self) -> !i32 {
+    ☉ rite get(self) -> !i32 {
         self.x
     }
 }
 
-λ main() {
+rite main() {
     ≔ result: !i32 = Value·new(42).add(10).get();
     println(result);
 }

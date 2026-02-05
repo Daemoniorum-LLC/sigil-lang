@@ -1,0 +1,73 @@
+// Test: Float primitive instance methods
+// Spec: NIHIL-COMPILER-GAPS-SPEC.md § 2 (Spec Gap A)
+// Priority: P1 - Required for Nihil ML framework
+//
+// Purpose:
+// Validates that f32/f64 primitive types support instance methods
+// for common mathematical operations (.exp, .sqrt, .abs, .powf, etc.)
+// Currently these are only available as free functions in std·math.
+// Nihil and Rust convention expect method syntax on float values.
+//
+// Expected behavior:
+// All assertions pass. Float methods return correct mathematical results.
+
+rite test_exp() {
+    ≔ x: f64 = 1.0;
+    ≔ result = x.exp();
+    // e^1 ≈ 2.718281828
+    assert(result > 2.71, "exp(1.0) should be > 2.71");
+    assert(result < 2.72, "exp(1.0) should be < 2.72");
+    println("  PASS: test_exp");
+}
+
+rite test_sqrt() {
+    ≔ x: f64 = 9.0;
+    ≔ result = x.sqrt();
+    assert_eq(result, 3.0);
+    println("  PASS: test_sqrt");
+}
+
+rite test_abs() {
+    ≔ x: f64 = -5.0;
+    assert_eq(x.abs(), 5.0);
+    ≔ y: f64 = 5.0;
+    assert_eq(y.abs(), 5.0);
+    println("  PASS: test_abs");
+}
+
+rite test_powf() {
+    ≔ x: f64 = 2.0;
+    ≔ result = x.powf(3.0);
+    assert_eq(result, 8.0);
+    println("  PASS: test_powf");
+}
+
+rite test_powi() {
+    ≔ x: f64 = 2.0;
+    ≔ result = x.powi(10);
+    assert_eq(result, 1024.0);
+    println("  PASS: test_powi");
+}
+
+rite test_floor_ceil_round() {
+    ≔ x: f64 = 3.7;
+    assert_eq(x.floor(), 3.0);
+    assert_eq(x.ceil(), 4.0);
+    assert_eq(x.round(), 4.0);
+
+    ≔ y: f64 = 3.2;
+    assert_eq(y.round(), 3.0);
+    println("  PASS: test_floor_ceil_round");
+}
+
+☉ rite main() -> !i32 {
+    println("=== Spec Gap A: Float Primitive Methods ===");
+    test_exp();
+    test_sqrt();
+    test_abs();
+    test_powf();
+    test_powi();
+    test_floor_ceil_round();
+    println("All float method tests passed!");
+    ⤺ 0;
+}

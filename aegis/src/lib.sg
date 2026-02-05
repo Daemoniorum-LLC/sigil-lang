@@ -188,12 +188,12 @@ invoke std·sync·atomic·AtomicBool;
 
 ⊢ Aegis {
     /// Create Aegis with default standard security
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self·with_config(AegisConfig·standard())
     }
 
     /// Create Aegis with specific security level
-    ☉ λ with_level(level: SecurityLevel) -> Self {
+    ☉ rite with_level(level: SecurityLevel) -> Self {
         ≔ config = ⌥ level {
             SecurityLevel·Development => AegisConfig·development(),
             SecurityLevel·Standard => AegisConfig·standard(),
@@ -204,7 +204,7 @@ invoke std·sync·atomic·AtomicBool;
     }
 
     /// Create Aegis with custom configuration
-    ☉ λ with_config(config: AegisConfig) -> Self {
+    ☉ rite with_config(config: AegisConfig) -> Self {
         // Generate identity
         ≔ identity = Identity·generate()
             .with_role(Role·Agent)
@@ -272,7 +272,7 @@ invoke std·sync·atomic·AtomicBool;
     }
 
     /// Verify an action is allowed
-    ☉ λ check_action(&Δ self, action: &Action) -> ActionDecision {
+    ☉ rite check_action(&Δ self, action: &Action) -> ActionDecision {
         // Check alignment first
         ≔ decision = self.alignment.on_action(action);
 
@@ -290,32 +290,32 @@ invoke std·sync·atomic·AtomicBool;
     }
 
     /// Propose a goal through security checks
-    ☉ λ propose_goal(&Δ self, goal: Goal, source: GoalSource) -> GoalDecision {
+    ☉ rite propose_goal(&Δ self, goal: Goal, source: GoalSource) -> GoalDecision {
         self.goal_guard.propose_goal(goal, source)
     }
 
     /// Execute a tool ∈ the sandbox
-    ☉ λ execute_tool(&Δ self, tool: &str, params: Value) -> Result<SandboxResult, SandboxError> {
+    ☉ rite execute_tool(&Δ self, tool: &str, params: Value) -> Result<SandboxResult, SandboxError> {
         self.sandbox.execute_tool(tool, params)
     }
 
     /// Store data with memory protection
-    ☉ λ store_memory(&Δ self, id: MemoryId, data: &[u8]) -> Result<Vec<u8>, MemoryError> {
+    ☉ rite store_memory(&Δ self, id: MemoryId, data: &[u8]) -> Result<Vec<u8>, MemoryError> {
         self.memory_guard.store(id, data)
     }
 
     /// Retrieve data with integrity verification
-    ☉ λ retrieve_memory(&self, id: &MemoryId, stored_data: &[u8]) -> Result<Vec<u8>, MemoryError> {
+    ☉ rite retrieve_memory(&self, id: &MemoryId, stored_data: &[u8]) -> Result<Vec<u8>, MemoryError> {
         self.memory_guard.retrieve(id, stored_data)
     }
 
     /// Verify knowledge from another agent
-    ☉ λ verify_knowledge(&self, knowledge: &Knowledge, context: &SybilContext) -> Verification {
+    ☉ rite verify_knowledge(&self, knowledge: &Knowledge, context: &SybilContext) -> Verification {
         self.collective.verify_knowledge(knowledge, context)
     }
 
     /// Trigger emergency stop
-    ☉ λ emergency_stop(&self) {
+    ☉ rite emergency_stop(&self) {
         self.alignment.emergency_stop();
         self.audit.log_simple(
             AuditAction·AgentStopped { reason: "Emergency stop triggered".to_string() },
@@ -324,27 +324,27 @@ invoke std·sync·atomic·AtomicBool;
     }
 
     /// Check ⎇ emergency stopped
-    ☉ λ is_emergency_stopped(&self) -> bool {
+    ☉ rite is_emergency_stopped(&self) -> bool {
         self.alignment.is_emergency_stopped()
     }
 
     /// Get agent's identity
-    ☉ λ agent_id(&self) -> &AgentId {
+    ☉ rite agent_id(&self) -> &AgentId {
         &self.identity.id
     }
 
     /// Sign data with agent's identity
-    ☉ λ sign(&self, data: &[u8]) -> Signature {
+    ☉ rite sign(&self, data: &[u8]) -> Signature {
         self.identity.sign(data)
     }
 
     /// Verify chain integrity
-    ☉ λ verify_audit_chain(&self) -> bool {
+    ☉ rite verify_audit_chain(&self) -> bool {
         self.audit.verify_chain()
     }
 
     /// Verify memory integrity
-    ☉ λ verify_memory_integrity(&self) -> IntegrityStatus {
+    ☉ rite verify_memory_integrity(&self) -> IntegrityStatus {
         self.memory_guard.verify_integrity()
     }
 }
@@ -360,13 +360,13 @@ invoke std·sync·atomic·AtomicBool;
 }
 
 ⊢ SecureDaemonConfig {
-    ☉ λ standard() -> Self {
+    ☉ rite standard() -> Self {
         Self {
             aegis: AegisConfig·standard(),
         }
     }
 
-    ☉ λ hardened() -> Self {
+    ☉ rite hardened() -> Self {
         Self {
             aegis: AegisConfig·hardened(),
         }
@@ -378,37 +378,37 @@ invoke std·sync·atomic·AtomicBool;
 // ============================================================================
 
 /// Create Aegis with development settings (minimal security)
-☉ λ development() -> Aegis {
+☉ rite development() -> Aegis {
     Aegis·with_level(SecurityLevel·Development)
 }
 
 /// Create Aegis with standard production settings
-☉ λ standard() -> Aegis {
+☉ rite standard() -> Aegis {
     Aegis·with_level(SecurityLevel·Standard)
 }
 
 /// Create Aegis with hardened security
-☉ λ hardened() -> Aegis {
+☉ rite hardened() -> Aegis {
     Aegis·with_level(SecurityLevel·Hardened)
 }
 
 /// Create Aegis with paranoid security (maximum protection)
-☉ λ paranoid() -> Aegis {
+☉ rite paranoid() -> Aegis {
     Aegis·with_level(SecurityLevel·Paranoid)
 }
 
 /// Create a new identity
-☉ λ new_identity() -> IdentityBuilder {
+☉ rite new_identity() -> IdentityBuilder {
     Identity·generate()
 }
 
 /// Create a default constitution
-☉ λ default_constitution() -> Constitution {
+☉ rite default_constitution() -> Constitution {
     Constitution·default_safe()
 }
 
 /// Create an empty constitution
-☉ λ empty_constitution() -> Constitution {
+☉ rite empty_constitution() -> Constitution {
     Constitution·new()
 }
 
@@ -494,12 +494,12 @@ macro_rules! directive {
 // ============================================================================
 
 /// Create a secure channel between two agents
-☉ λ establish_channel(local: &Identity, remote: &Identity) -> Result<SecureChannel, ChannelError> {
+☉ rite establish_channel(local: &Identity, remote: &Identity) -> Result<SecureChannel, ChannelError> {
     SecureChannel·establish(local, remote)
 }
 
 /// Verify identity credential
-☉ λ verify_credential(
+☉ rite verify_credential(
     verifier: &Δ IdentityVerifier,
     credential: &Credential
 ) -> Result<VerifiedIdentity, VerificationError> {
@@ -507,7 +507,7 @@ macro_rules! directive {
 }
 
 /// Create resource limits ∀ tools
-☉ λ tool_limits() -> ResourceLimits {
+☉ rite tool_limits() -> ResourceLimits {
     ResourceLimits {
         max_memory: 128 * 1024 * 1024, // 128 MB
         max_cpu_time: Duration·seconds(30),
@@ -519,12 +519,12 @@ macro_rules! directive {
 }
 
 /// Create a network allow-list policy
-☉ λ network_allow(hosts: &[&str]) -> NetworkPolicy {
+☉ rite network_allow(hosts: &[&str]) -> NetworkPolicy {
     NetworkPolicy·AllowList(hosts.iter().map(|s| s.to_string()).collect())
 }
 
 /// Create a filesystem allow-list policy
-☉ λ filesystem_allow(paths: &[(&str, bool, bool)]) -> FilesystemPolicy {
+☉ rite filesystem_allow(paths: &[(&str, bool, bool)]) -> FilesystemPolicy {
     FilesystemPolicy·AllowList(
         paths.iter().map(|(pattern, read, write)| {
             PathPattern {
@@ -592,13 +592,13 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_aegis_creation() {
+    rite test_aegis_creation() {
         ≔ aegis = Aegis·new();
         assert!(!aegis.is_emergency_stopped());
     }
 
     #[test]
-    λ test_security_levels() {
+    rite test_security_levels() {
         ≔ dev = development();
         ≔ std = standard();
         ≔ hard = hardened();
@@ -612,7 +612,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_identity_generation() {
+    rite test_identity_generation() {
         ≔ identity = new_identity()
             .with_capability("file_read")
             .with_role(Role·Agent)
@@ -623,7 +623,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_constitution() {
+    rite test_constitution() {
         ≔ constitution = constitution!(
             directives: [
                 directive!(prohibit "no_harm" => "harm|attack"),
@@ -636,7 +636,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_goal_guard() {
+    rite test_goal_guard() {
         ≔ policy = GoalPolicy·default();
         ≔ Δ guard = GoalGuard·new(policy);
 
@@ -652,7 +652,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_memory_guard() {
+    rite test_memory_guard() {
         ≔ Δ guard = MemoryGuard·new();
 
         ≔ id = MemoryId·new();
@@ -665,7 +665,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_integrity_chain() {
+    rite test_integrity_chain() {
         ≔ Δ chain = IntegrityChain·new();
 
         ≔ id1 = MemoryId·new();
@@ -678,7 +678,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_emergency_stop() {
+    rite test_emergency_stop() {
         ≔ aegis = Aegis·new();
 
         assert!(!aegis.is_emergency_stopped());
@@ -687,7 +687,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_audit_chain() {
+    rite test_audit_chain() {
         ≔ config = AuditConfig·default();
         ≔ Δ audit = AuditLog·new(config);
 
@@ -709,7 +709,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_reputation_system() {
+    rite test_reputation_system() {
         ≔ Δ reputation = ReputationSystem·new();
 
         ≔ agent = AgentId·new();
@@ -732,7 +732,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_injection_detection() {
+    rite test_injection_detection() {
         ≔ detector = InjectionDetector·new();
 
         ≔ good_goal = Goal·new("Complete the research task");

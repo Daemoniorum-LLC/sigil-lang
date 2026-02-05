@@ -6,16 +6,16 @@
 }
 
 ⊢ AgentId {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         AgentId { bytes: [0; 32], valid: true }
     }
 
-    ☉ λ from_bytes(bytes: ![!u8; 32]) -> Self {
+    ☉ rite from_bytes(bytes: ![!u8; 32]) -> Self {
         ≔ valid = bytes[0] != 0 || bytes[1] != 0;
         AgentId { bytes, valid }
     }
 
-    ☉ λ is_valid(&self) -> !bool {
+    ☉ rite is_valid(&self) -> !bool {
         self.valid
     }
 }
@@ -37,21 +37,21 @@
 }
 
 ⊢ PublicKey {
-    ☉ λ new(algorithm: KeyAlgorithm) -> Self {
+    ☉ rite new(algorithm: KeyAlgorithm) -> Self {
         PublicKey { bytes: [0; 32], algorithm }
     }
 
-    ☉ λ len(&self) -> !usize {
+    ☉ rite len(&self) -> !usize {
         32
     }
 }
 
 ⊢ PrivateKey {
-    ☉ λ new(algorithm: KeyAlgorithm) -> Self {
+    ☉ rite new(algorithm: KeyAlgorithm) -> Self {
         PrivateKey { bytes: [0; 64], algorithm }
     }
 
-    ☉ λ len(&self) -> !usize {
+    ☉ rite len(&self) -> !usize {
         64
     }
 }
@@ -62,7 +62,7 @@
 }
 
 ⊢ KeyPair {
-    ☉ λ generate(algorithm: KeyAlgorithm) -> Self {
+    ☉ rite generate(algorithm: KeyAlgorithm) -> Self {
         KeyPair {
             public_key: PublicKey·new(algorithm),
             private_key: PrivateKey·new(algorithm),
@@ -91,7 +91,7 @@
 }
 
 ⊢ Identity {
-    ☉ λ new(algorithm: KeyAlgorithm) -> Self {
+    ☉ rite new(algorithm: KeyAlgorithm) -> Self {
         Identity {
             id: AgentId·new(),
             public_key: PublicKey·new(algorithm),
@@ -100,17 +100,17 @@
         }
     }
 
-    ☉ λ with_attestation(Δ self) -> Self {
+    ☉ rite with_attestation(Δ self) -> Self {
         self.attestation_count = self.attestation_count + 1;
         self
     }
 
-    ☉ λ with_credential(Δ self) -> Self {
+    ☉ rite with_credential(Δ self) -> Self {
         self.has_credential = true;
         self
     }
 
-    ☉ λ has_attestations(&self) -> !bool {
+    ☉ rite has_attestations(&self) -> !bool {
         self.attestation_count > 0
     }
 }
@@ -123,7 +123,7 @@
 }
 
 ⊢ Credential {
-    ☉ λ new(identity_id: AgentId, issuer_id: AgentId) -> Self {
+    ☉ rite new(identity_id: AgentId, issuer_id: AgentId) -> Self {
         Credential {
             identity_id,
             issuer_id,
@@ -132,11 +132,11 @@
         }
     }
 
-    ☉ λ is_valid(&self) -> !bool {
+    ☉ rite is_valid(&self) -> !bool {
         self.valid && !self.expired
     }
 
-    ☉ λ expire(Δ self) -> Self {
+    ☉ rite expire(Δ self) -> Self {
         self.expired = true;
         self
     }
@@ -154,13 +154,13 @@
 // ============================================================================
 
 #[test]
-λ test_agent_id_creation() {
+rite test_agent_id_creation() {
     ≔ id = AgentId·new();
     assert(id.is_valid());
 }
 
 #[test]
-λ test_agent_id_from_bytes() {
+rite test_agent_id_from_bytes() {
     ≔ bytes: ![!u8; 32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
                              17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
     ≔ id = AgentId·from_bytes(bytes);
@@ -168,7 +168,7 @@
 }
 
 #[test]
-λ test_agent_id_zero_bytes_invalid() {
+rite test_agent_id_zero_bytes_invalid() {
     ≔ bytes: ![!u8; 32] = [0; 32];
     ≔ id = AgentId·from_bytes(bytes);
     assert(!id.is_valid());
@@ -179,20 +179,20 @@
 // ============================================================================
 
 #[test]
-λ test_keypair_generate_ed25519() {
+rite test_keypair_generate_ed25519() {
     ≔ kp = KeyPair·generate(KeyAlgorithm·Ed25519);
     assert(kp.public_key.len() == 32);
     assert(kp.private_key.len() == 64);
 }
 
 #[test]
-λ test_keypair_generate_secp256k1() {
+rite test_keypair_generate_secp256k1() {
     ≔ kp = KeyPair·generate(KeyAlgorithm·Secp256k1);
     assert(kp.public_key.len() == 32);
 }
 
 #[test]
-λ test_keypair_generate_p256() {
+rite test_keypair_generate_p256() {
     ≔ kp = KeyPair·generate(KeyAlgorithm·P256);
     assert(kp.public_key.len() == 32);
 }
@@ -202,7 +202,7 @@
 // ============================================================================
 
 #[test]
-λ test_identity_creation() {
+rite test_identity_creation() {
     ≔ identity = Identity·new(KeyAlgorithm·Ed25519);
     assert(identity.id.is_valid());
     assert(!identity.has_attestations());
@@ -210,14 +210,14 @@
 }
 
 #[test]
-λ test_identity_with_attestation() {
+rite test_identity_with_attestation() {
     ≔ identity = Identity·new(KeyAlgorithm·Ed25519).with_attestation();
     assert(identity.has_attestations());
     assert(identity.attestation_count == 1);
 }
 
 #[test]
-λ test_identity_with_multiple_attestations() {
+rite test_identity_with_multiple_attestations() {
     ≔ identity = Identity·new(KeyAlgorithm·Ed25519)
         .with_attestation()
         .with_attestation()
@@ -226,7 +226,7 @@
 }
 
 #[test]
-λ test_identity_with_credential() {
+rite test_identity_with_credential() {
     ≔ identity = Identity·new(KeyAlgorithm·Ed25519).with_credential();
     assert(identity.has_credential);
 }
@@ -236,7 +236,7 @@
 // ============================================================================
 
 #[test]
-λ test_credential_creation() {
+rite test_credential_creation() {
     ≔ identity_id = AgentId·new();
     ≔ issuer_id = AgentId·new();
     ≔ cred = Credential·new(identity_id, issuer_id);
@@ -244,7 +244,7 @@
 }
 
 #[test]
-λ test_credential_expired() {
+rite test_credential_expired() {
     ≔ identity_id = AgentId·new();
     ≔ issuer_id = AgentId·new();
     ≔ cred = Credential·new(identity_id, issuer_id).expire();
@@ -252,7 +252,7 @@
 }
 
 #[test]
-λ test_credential_validity_flags() {
+rite test_credential_validity_flags() {
     ≔ identity_id = AgentId·new();
     ≔ issuer_id = AgentId·new();
     ≔ cred = Credential·new(identity_id, issuer_id);
@@ -265,7 +265,7 @@
 // ============================================================================
 
 #[test]
-λ test_attestation_types() {
+rite test_attestation_types() {
     ≔ cap = Attestation·Capability;
     ≔ role = Attestation·Role;
     ≔ group = Attestation·GroupMembership;
@@ -273,7 +273,7 @@
 }
 
 #[test]
-λ test_role_types() {
+rite test_role_types() {
     ≔ admin = Role·Admin;
     ≔ operator = Role·Operator;
     ≔ agent = Role·Agent;
@@ -286,7 +286,7 @@
 // ============================================================================
 
 #[test]
-λ test_verification_error_types() {
+rite test_verification_error_types() {
     ≔ revoked = VerificationError·Revoked;
     ≔ expired = VerificationError·Expired;
     ≔ untrusted = VerificationError·UntrustedIssuer;
@@ -294,6 +294,6 @@
     assert(true); // Types exist
 }
 
-λ main() {
+rite main() {
     println("Aegis identity tests - 17 tests");
 }

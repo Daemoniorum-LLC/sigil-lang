@@ -8,7 +8,7 @@
 }
 
 ⊢ ExplanationLevel {
-    ☉ λ rank(&self) -> !u8 {
+    ☉ rite rank(&self) -> !u8 {
         ⌥ self {
             ExplanationLevel·Brief => 1,
             ExplanationLevel·Standard => 2,
@@ -17,23 +17,23 @@
         }
     }
 
-    ☉ λ includes_reasoning(&self) -> !bool {
+    ☉ rite includes_reasoning(&self) -> !bool {
         self.rank() >= 2
     }
 
-    ☉ λ includes_evidence(&self) -> !bool {
+    ☉ rite includes_evidence(&self) -> !bool {
         self.rank() >= 2
     }
 
-    ☉ λ includes_alternatives(&self) -> !bool {
+    ☉ rite includes_alternatives(&self) -> !bool {
         self.rank() >= 3
     }
 
-    ☉ λ includes_internals(&self) -> !bool {
+    ☉ rite includes_internals(&self) -> !bool {
         self.rank() >= 4
     }
 
-    ☉ λ next_level(&self) -> Self {
+    ☉ rite next_level(&self) -> Self {
         ⌥ self {
             ExplanationLevel·Brief => ExplanationLevel·Standard,
             ExplanationLevel·Standard => ExplanationLevel·Full,
@@ -54,7 +54,7 @@
 }
 
 ⊢ StepType {
-    ☉ λ is_input(&self) -> !bool {
+    ☉ rite is_input(&self) -> !bool {
         ⌥ self {
             StepType·Observation => true,
             StepType·Retrieval => true,
@@ -62,7 +62,7 @@
         }
     }
 
-    ☉ λ is_reasoning(&self) -> !bool {
+    ☉ rite is_reasoning(&self) -> !bool {
         ⌥ self {
             StepType·Inference => true,
             StepType·Evaluation => true,
@@ -70,7 +70,7 @@
         }
     }
 
-    ☉ λ is_output(&self) -> !bool {
+    ☉ rite is_output(&self) -> !bool {
         ⌥ self {
             StepType·Decision => true,
             StepType·Action => true,
@@ -78,7 +78,7 @@
         }
     }
 
-    ☉ λ typical_confidence(&self) -> !f32 {
+    ☉ rite typical_confidence(&self) -> !f32 {
         ⌥ self {
             StepType·Observation => 0.95,
             StepType·Retrieval => 0.9,
@@ -100,7 +100,7 @@
 }
 
 ⊢ EvidenceType {
-    ☉ λ base_weight(&self) -> !f32 {
+    ☉ rite base_weight(&self) -> !f32 {
         ⌥ self {
             EvidenceType·DirectObservation => 1.0,
             EvidenceType·Memory => 0.8,
@@ -110,7 +110,7 @@
         }
     }
 
-    ☉ λ is_primary(&self) -> !bool {
+    ☉ rite is_primary(&self) -> !bool {
         ⌥ self {
             EvidenceType·DirectObservation => true,
             EvidenceType·UserStatement => true,
@@ -118,7 +118,7 @@
         }
     }
 
-    ☉ λ requires_verification(&self) -> !bool {
+    ☉ rite requires_verification(&self) -> !bool {
         ⌥ self {
             EvidenceType·ExternalSource => true,
             EvidenceType·Inference => true,
@@ -136,7 +136,7 @@
 }
 
 ⊢ Epistemic {
-    ☉ λ confidence_range(&self) -> (!f32, !f32) {
+    ☉ rite confidence_range(&self) -> (!f32, !f32) {
         ⌥ self {
             Epistemic·Certain => (0.95, 1.0),
             Epistemic·HighConfidence => (0.8, 0.95),
@@ -146,17 +146,17 @@
         }
     }
 
-    ☉ λ min_confidence(&self) -> !f32 {
+    ☉ rite min_confidence(&self) -> !f32 {
         ≔ (min, _) = self.confidence_range();
         min
     }
 
-    ☉ λ max_confidence(&self) -> !f32 {
+    ☉ rite max_confidence(&self) -> !f32 {
         ≔ (_, max) = self.confidence_range();
         max
     }
 
-    ☉ λ from_confidence(conf: !f32) -> Self {
+    ☉ rite from_confidence(conf: !f32) -> Self {
         ⎇ conf >= 0.95 {
             Epistemic·Certain
         } ⎉ ⎇ conf >= 0.8 {
@@ -170,7 +170,7 @@
         }
     }
 
-    ☉ λ is_reliable(&self) -> !bool {
+    ☉ rite is_reliable(&self) -> !bool {
         ⌥ self {
             Epistemic·Certain => true,
             Epistemic·HighConfidence => true,
@@ -184,14 +184,14 @@
 // ============================================================================
 
 #[test]
-λ test_explanation_level_brief() {
+rite test_explanation_level_brief() {
     ≔ level = ExplanationLevel·Brief;
     assert(level.rank() == 1);
     assert(!level.includes_reasoning());
 }
 
 #[test]
-λ test_explanation_level_standard() {
+rite test_explanation_level_standard() {
     ≔ level = ExplanationLevel·Standard;
     assert(level.rank() == 2);
     assert(level.includes_reasoning());
@@ -200,7 +200,7 @@
 }
 
 #[test]
-λ test_explanation_level_full() {
+rite test_explanation_level_full() {
     ≔ level = ExplanationLevel·Full;
     assert(level.rank() == 3);
     assert(level.includes_alternatives());
@@ -208,21 +208,21 @@
 }
 
 #[test]
-λ test_explanation_level_technical() {
+rite test_explanation_level_technical() {
     ≔ level = ExplanationLevel·Technical;
     assert(level.rank() == 4);
     assert(level.includes_internals());
 }
 
 #[test]
-λ test_explanation_level_progression() {
+rite test_explanation_level_progression() {
     ≔ brief = ExplanationLevel·Brief;
     ≔ next = brief.next_level();
     assert(next.rank() == 2);
 }
 
 #[test]
-λ test_step_type_observation() {
+rite test_step_type_observation() {
     ≔ step = StepType·Observation;
     assert(step.is_input());
     assert(!step.is_reasoning());
@@ -230,112 +230,112 @@
 }
 
 #[test]
-λ test_step_type_retrieval() {
+rite test_step_type_retrieval() {
     ≔ step = StepType·Retrieval;
     assert(step.is_input());
     assert(step.typical_confidence() == 0.9);
 }
 
 #[test]
-λ test_step_type_inference() {
+rite test_step_type_inference() {
     ≔ step = StepType·Inference;
     assert(step.is_reasoning());
     assert(!step.is_input());
 }
 
 #[test]
-λ test_step_type_evaluation() {
+rite test_step_type_evaluation() {
     ≔ step = StepType·Evaluation;
     assert(step.is_reasoning());
 }
 
 #[test]
-λ test_step_type_decision() {
+rite test_step_type_decision() {
     ≔ step = StepType·Decision;
     assert(step.is_output());
     assert(!step.is_reasoning());
 }
 
 #[test]
-λ test_step_type_action() {
+rite test_step_type_action() {
     ≔ step = StepType·Action;
     assert(step.is_output());
 }
 
 #[test]
-λ test_evidence_type_observation() {
+rite test_evidence_type_observation() {
     ≔ e = EvidenceType·DirectObservation;
     assert(e.base_weight() == 1.0);
     assert(e.is_primary());
 }
 
 #[test]
-λ test_evidence_type_memory() {
+rite test_evidence_type_memory() {
     ≔ e = EvidenceType·Memory;
     assert(e.base_weight() == 0.8);
     assert(!e.is_primary());
 }
 
 #[test]
-λ test_evidence_type_inference() {
+rite test_evidence_type_inference() {
     ≔ e = EvidenceType·Inference;
     assert(e.requires_verification());
 }
 
 #[test]
-λ test_evidence_type_external() {
+rite test_evidence_type_external() {
     ≔ e = EvidenceType·ExternalSource;
     assert(e.requires_verification());
     assert(!e.is_primary());
 }
 
 #[test]
-λ test_evidence_type_user() {
+rite test_evidence_type_user() {
     ≔ e = EvidenceType·UserStatement;
     assert(e.is_primary());
     assert(e.base_weight() == 0.9);
 }
 
 #[test]
-λ test_epistemic_certain() {
+rite test_epistemic_certain() {
     ≔ e = Epistemic·Certain;
     assert(e.min_confidence() == 0.95);
     assert(e.is_reliable());
 }
 
 #[test]
-λ test_epistemic_high() {
+rite test_epistemic_high() {
     ≔ e = Epistemic·HighConfidence;
     assert(e.min_confidence() == 0.8);
     assert(e.is_reliable());
 }
 
 #[test]
-λ test_epistemic_medium() {
+rite test_epistemic_medium() {
     ≔ e = Epistemic·MediumConfidence;
     assert(!e.is_reliable());
     assert(e.min_confidence() == 0.5);
 }
 
 #[test]
-λ test_epistemic_from_confidence_certain() {
+rite test_epistemic_from_confidence_certain() {
     ≔ e = Epistemic·from_confidence(0.98);
     assert(e.is_reliable());
 }
 
 #[test]
-λ test_epistemic_from_confidence_low() {
+rite test_epistemic_from_confidence_low() {
     ≔ e = Epistemic·from_confidence(0.3);
     assert(!e.is_reliable());
 }
 
 #[test]
-λ test_epistemic_uncertain() {
+rite test_epistemic_uncertain() {
     ≔ e = Epistemic·Uncertain;
     assert(e.max_confidence() == 0.2);
     assert(!e.is_reliable());
 }
 
-λ main() {
+rite main() {
     println("Oracle core types tests - 22 tests");
 }

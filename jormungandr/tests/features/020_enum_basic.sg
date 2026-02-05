@@ -5,7 +5,7 @@
     Blue
 }
 
-λ color_value(c: !Color) -> !i32 {
+rite color_value(c: !Color) -> !i32 {
     ⌥ c {
         Color·Red => 1,
         Color·Green => 2,
@@ -13,7 +13,7 @@
     }
 }
 
-λ main() {
+rite main() {
     ≔ c: !Color = Color·Green;
     println(color_value(c));
 }

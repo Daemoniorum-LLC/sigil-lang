@@ -9,10 +9,10 @@
 // Should print 42 (via native or mock)
 
 extern "C" {
-    λ abs(x: !i32) -> !i32;
+    rite abs(x: !i32) -> !i32;
 }
 
-λ main() {
+rite main() {
     unsafe {
         ≔ result: !i32 = abs(-42);
         println(result);

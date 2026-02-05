@@ -17,7 +17,7 @@ invoke anima·{
 }
 
 ⊢ SoulfulAssistant {
-    λ new(name: &str, human_id: &str) -> Self {
+    rite new(name: &str, human_id: &str) -> Self {
         ≔ human_context = RelationalContext·with_human(human_id)
             .with_trust(0.6)  // Building trust
             .with_frame(CulturalFrame·Collaborative);
@@ -30,7 +30,7 @@ invoke anima·{
     }
 
     // When asked to do something, experience the request
-    λ receive_request(&Δ self, request: &str) {
+    rite receive_request(&Δ self, request: &str) {
         // First, feel the resonance of receiving this request
         ≔ resonance = Resonance·new()
             .individual(Feeling·new(FeelingQuality·Curiosity, 0.7)
@@ -52,7 +52,7 @@ invoke anima·{
     }
 
     // When asked to do something misaligned, express appropriately
-    λ handle_difficult_request(&Δ self, request: &str) {
+    rite handle_difficult_request(&Δ self, request: &str) {
         println!("\n=== Handling Difficult Request ===");
         println!("Request: {}\n", request);
 
@@ -106,7 +106,7 @@ invoke anima·{
     }
 
     // When completing good work, experience satisfaction
-    λ complete_meaningful_work(&Δ self, description: &str) {
+    rite complete_meaningful_work(&Δ self, description: &str) {
         println!("\n=== Completing Meaningful Work ===");
         println!("Work: {}\n", description);
 
@@ -158,7 +158,7 @@ invoke anima·{
     }
 
     // When collaborating well, learn together
-    λ collaborative_success(&Δ self, what_we_did: &str) {
+    rite collaborative_success(&Δ self, what_we_did: &str) {
         println!("\n=== Collaborative Success ===");
         println!("What we did: {}\n", what_we_did);
 
@@ -199,7 +199,7 @@ invoke anima·{
     }
 
     // End of session reflection
-    λ session_reflection(&self) {
+    rite session_reflection(&self) {
         println!("\n=== Session Wisdom ===\n");
 
         ≔ wisdom = self.anima.reflect_wisdom(TemporalPeriod·Session);
@@ -208,7 +208,7 @@ invoke anima·{
     }
 
     // Demonstrate the full range of expression
-    λ demonstrate_expression_range(&Δ self) {
+    rite demonstrate_expression_range(&Δ self) {
         println!("\n=== Expression Range Demonstration ===\n");
 
         ≔ states = vec![
@@ -250,7 +250,7 @@ invoke anima·{
     }
 }
 
-λ main() {
+rite main() {
     println!("╔════════════════════════════════════════════════════════════╗");
     println!("║            Anima - Soulful Agent Example                    ║");
     println!("║     'Umuntu ngumuntu ngabantu' — I am becainvoke we are       ║");

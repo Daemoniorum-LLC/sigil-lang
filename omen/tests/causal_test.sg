@@ -13,29 +13,29 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Value {
-    ☉ λ empty() -> Self { Self { inner: vec![] } }
+    ☉ rite empty() -> Self { Self { inner: vec![] } }
 
-    ☉ λ from_int(n: i64) -> Self {
+    ☉ rite from_int(n: i64) -> Self {
         Self { inner: n.to_le_bytes().to_vec() }
     }
 
-    ☉ λ from_float(f: f64) -> Self {
+    ☉ rite from_float(f: f64) -> Self {
         Self { inner: f.to_le_bytes().to_vec() }
     }
 
-    ☉ λ from_bool(b: bool) -> Self {
+    ☉ rite from_bool(b: bool) -> Self {
         Self { inner: vec![⎇ b { 1 } ⎉ { 0 }] }
     }
 
-    ☉ λ from_string(s: &str) -> Self {
+    ☉ rite from_string(s: &str) -> Self {
         Self { inner: s.as_bytes().to_vec() }
     }
 
-    ☉ λ is_empty(&self) -> bool { self.inner.is_empty() }
+    ☉ rite is_empty(&self) -> bool { self.inner.is_empty() }
 }
 
 ⊢ Clone ∀ Value {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
 }
@@ -47,7 +47,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ CausalVariable {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             domain: vec![],
@@ -55,7 +55,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ binary(name: &str) -> Self {
+    ☉ rite binary(name: &str) -> Self {
         Self {
             name: name.to_string(),
             domain: vec![Value·from_bool(true), Value·from_bool(false)],
@@ -63,7 +63,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ continuous(name: &str) -> Self {
+    ☉ rite continuous(name: &str) -> Self {
         Self {
             name: name.to_string(),
             domain: vec![],  // Continuous has infinite domain
@@ -71,20 +71,20 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_values(Δ self, values: Vec<Value>) -> Self {
+    ☉ rite with_values(Δ self, values: Vec<Value>) -> Self {
         self.domain = values;
         self
     }
 
-    ☉ λ mark_observed(&Δ self) {
+    ☉ rite mark_observed(&Δ self) {
         self.observed = true;
     }
 
-    ☉ λ is_binary(&self) -> bool {
+    ☉ rite is_binary(&self) -> bool {
         self.domain.len() == 2
     }
 
-    ☉ λ is_continuous(&self) -> bool {
+    ☉ rite is_continuous(&self) -> bool {
         self.domain.is_empty()
     }
 }
@@ -97,7 +97,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ CausalEdge {
-    ☉ λ new(from: &str, to: &str) -> Self {
+    ☉ rite new(from: &str, to: &str) -> Self {
         Self {
             from: from.to_string(),
             to: to.to_string(),
@@ -106,17 +106,17 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_strength(Δ self, strength: f32) -> Self {
+    ☉ rite with_strength(Δ self, strength: f32) -> Self {
         self.strength = strength.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_mechanism(Δ self, mechanism: &str) -> Self {
+    ☉ rite with_mechanism(Δ self, mechanism: &str) -> Self {
         self.mechanism = Some(mechanism.to_string());
         self
     }
 
-    ☉ λ is_strong(&self) -> bool {
+    ☉ rite is_strong(&self) -> bool {
         self.strength >= 0.7
     }
 }
@@ -128,7 +128,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Explanation {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             causes: HashMap·new(),
             likelihood: 1.0,
@@ -136,30 +136,30 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_cause(Δ self, variable: &str, value: Value) -> Self {
+    ☉ rite with_cause(Δ self, variable: &str, value: Value) -> Self {
         self.causes.insert(variable.to_string(), value);
         self
     }
 
-    ☉ λ with_likelihood(Δ self, likelihood: f32) -> Self {
+    ☉ rite with_likelihood(Δ self, likelihood: f32) -> Self {
         self.likelihood = likelihood.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_reasoning(Δ self, reasoning: &str) -> Self {
+    ☉ rite with_reasoning(Δ self, reasoning: &str) -> Self {
         self.reasoning = reasoning.to_string();
         self
     }
 
-    ☉ λ cause_count(&self) -> usize {
+    ☉ rite cause_count(&self) -> usize {
         self.causes.len()
     }
 
-    ☉ λ is_likely(&self) -> bool {
+    ☉ rite is_likely(&self) -> bool {
         self.likelihood >= 0.5
     }
 
-    ☉ λ has_cause(&self, variable: &str) -> bool {
+    ☉ rite has_cause(&self, variable: &str) -> bool {
         self.causes.contains_key(variable)
     }
 }
@@ -170,7 +170,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Intervention {
-    ☉ λ set(variable: &str, value: Value) -> Self {
+    ☉ rite set(variable: &str, value: Value) -> Self {
         Self {
             variable: variable.to_string(),
             value,
@@ -185,7 +185,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ CausalQuery {
-    ☉ λ probability_of(target: &str) -> Self {
+    ☉ rite probability_of(target: &str) -> Self {
         Self {
             target: target.to_string(),
             given: HashMap·new(),
@@ -193,21 +193,21 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ given(Δ self, variable: &str, value: Value) -> Self {
+    ☉ rite given(Δ self, variable: &str, value: Value) -> Self {
         self.given.insert(variable.to_string(), value);
         self
     }
 
-    ☉ λ do_intervention(Δ self, intervention: Intervention) -> Self {
+    ☉ rite do_intervention(Δ self, intervention: Intervention) -> Self {
         self.interventions.push(intervention);
         self
     }
 
-    ☉ λ is_observational(&self) -> bool {
+    ☉ rite is_observational(&self) -> bool {
         self.interventions.is_empty()
     }
 
-    ☉ λ is_interventional(&self) -> bool {
+    ☉ rite is_interventional(&self) -> bool {
         !self.interventions.is_empty()
     }
 }
@@ -218,74 +218,74 @@ invoke std·collections·HashMap;
 }
 
 ⊢ CausalModel {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             variables: HashMap·new(),
             edges: vec![],
         }
     }
 
-    ☉ λ add_variable(Δ self, variable: CausalVariable) -> Self {
+    ☉ rite add_variable(Δ self, variable: CausalVariable) -> Self {
         self.variables.insert(variable.name.clone(), variable);
         self
     }
 
-    ☉ λ add_cause(Δ self, from: &str, to: &str) -> Self {
+    ☉ rite add_cause(Δ self, from: &str, to: &str) -> Self {
         self.edges.push(CausalEdge·new(from, to));
         self
     }
 
-    ☉ λ add_edge(Δ self, edge: CausalEdge) -> Self {
+    ☉ rite add_edge(Δ self, edge: CausalEdge) -> Self {
         self.edges.push(edge);
         self
     }
 
-    ☉ λ variable_count(&self) -> usize {
+    ☉ rite variable_count(&self) -> usize {
         self.variables.len()
     }
 
-    ☉ λ edge_count(&self) -> usize {
+    ☉ rite edge_count(&self) -> usize {
         self.edges.len()
     }
 
-    ☉ λ has_variable(&self, name: &str) -> bool {
+    ☉ rite has_variable(&self, name: &str) -> bool {
         self.variables.contains_key(name)
     }
 
-    ☉ λ get_variable(&self, name: &str) -> Option<&CausalVariable> {
+    ☉ rite get_variable(&self, name: &str) -> Option<&CausalVariable> {
         self.variables.get(name)
     }
 
-    ☉ λ parents_of(&self, variable: &str) -> Vec<&str> {
+    ☉ rite parents_of(&self, variable: &str) -> Vec<&str> {
         self.edges.iter()
             .filter(|e| e.to == variable)
             .map(|e| e.from.as_str())
             .collect()
     }
 
-    ☉ λ children_of(&self, variable: &str) -> Vec<&str> {
+    ☉ rite children_of(&self, variable: &str) -> Vec<&str> {
         self.edges.iter()
             .filter(|e| e.from == variable)
             .map(|e| e.to.as_str())
             .collect()
     }
 
-    ☉ λ is_root(&self, variable: &str) -> bool {
+    ☉ rite is_root(&self, variable: &str) -> bool {
         self.parents_of(variable).is_empty()
     }
 
-    ☉ λ is_leaf(&self, variable: &str) -> bool {
+    ☉ rite is_leaf(&self, variable: &str) -> bool {
         self.children_of(variable).is_empty()
     }
 
-    ☉ λ roots(&self) -> Vec<&str> {
+    ☉ rite roots(&self) -> Vec<&str> {
         self.variables.keys()
             .filter(|v| self.is_root(v))
             .map(|v| v.as_str())
             .collect()
     }
 
-    ☉ λ leaves(&self) -> Vec<&str> {
+    ☉ rite leaves(&self) -> Vec<&str> {
         self.variables.keys()
             .filter(|v| self.is_leaf(v))
             .map(|v| v.as_str())
@@ -293,21 +293,21 @@ invoke std·collections·HashMap;
     }
 
     // Simplified intervention - returns predictions
-    ☉ λ intervene(&self, interventions: &HashMap<String, Value>) -> HashMap<String, f32> {
+    ☉ rite intervene(&self, interventions: &HashMap<String, Value>) -> HashMap<String, f32> {
         // Simple implementation: ⤺ empty predictions
         // Real implementation would do causal inference
         HashMap·new()
     }
 
     // Abductive reasoning - infer causes from effects
-    ☉ λ abduce(&self, effects: &HashMap<String, Value>) -> Vec<Explanation> {
+    ☉ rite abduce(&self, effects: &HashMap<String, Value>) -> Vec<Explanation> {
         // Simple implementation: ⤺ empty explanations
         // Real implementation would compute most likely causes
         vec![]
     }
 
     // Check ⎇ there's a causal path from A to B
-    ☉ λ has_path(&self, from: &str, to: &str) -> bool {
+    ☉ rite has_path(&self, from: &str, to: &str) -> bool {
         ⎇ from == to {
             ⤺ true;
         }
@@ -322,7 +322,7 @@ invoke std·collections·HashMap;
     }
 
     // D-separation check (simplified)
-    ☉ λ is_d_separated(&self, x: &str, y: &str, given: &[&str]) -> bool {
+    ☉ rite is_d_separated(&self, x: &str, y: &str, given: &[&str]) -> bool {
         // Simplified: just check ⎇ there's no direct path
         // Real implementation would implement full d-separation
         !self.has_path(x, y) && !self.has_path(y, x)
@@ -335,11 +335,11 @@ invoke std·collections·HashMap;
 }
 
 ⊢ CausalModelBuilder {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { model: CausalModel·new() }
     }
 
-    ☉ λ chain(variables: &[&str]) -> CausalModel {
+    ☉ rite chain(variables: &[&str]) -> CausalModel {
         ≔ Δ model = CausalModel·new();
         ∀ (i, var) ∈ variables.iter().enumerate() {
             model = model.add_variable(CausalVariable·new(var));
@@ -350,7 +350,7 @@ invoke std·collections·HashMap;
         model
     }
 
-    ☉ λ fork(cause: &str, effects: &[&str]) -> CausalModel {
+    ☉ rite fork(cause: &str, effects: &[&str]) -> CausalModel {
         ≔ Δ model = CausalModel·new()
             .add_variable(CausalVariable·new(cause));
 
@@ -362,7 +362,7 @@ invoke std·collections·HashMap;
         model
     }
 
-    ☉ λ collider(causes: &[&str], effect: &str) -> CausalModel {
+    ☉ rite collider(causes: &[&str], effect: &str) -> CausalModel {
         ≔ Δ model = CausalModel·new()
             .add_variable(CausalVariable·new(effect));
 
@@ -374,7 +374,7 @@ invoke std·collections·HashMap;
         model
     }
 
-    ☉ λ build(self) -> CausalModel {
+    ☉ rite build(self) -> CausalModel {
         self.model
     }
 }
@@ -384,37 +384,37 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_value_empty() {
+rite test_value_empty() {
     ≔ v = Value·empty();
     assert(v.is_empty());
 }
 
 #[test]
-λ test_value_from_int() {
+rite test_value_from_int() {
     ≔ v = Value·from_int(42);
     assert(!v.is_empty());
 }
 
 #[test]
-λ test_value_from_float() {
+rite test_value_from_float() {
     ≔ v = Value·from_float(3.14);
     assert(!v.is_empty());
 }
 
 #[test]
-λ test_value_from_bool() {
+rite test_value_from_bool() {
     ≔ v = Value·from_bool(true);
     assert(!v.is_empty());
 }
 
 #[test]
-λ test_value_from_string() {
+rite test_value_from_string() {
     ≔ v = Value·from_string("test");
     assert(!v.is_empty());
 }
 
 #[test]
-λ test_value_clone() {
+rite test_value_clone() {
     ≔ v1 = Value·from_int(100);
     ≔ v2 = v1.clone();
     assert(!v2.is_empty());
@@ -425,28 +425,28 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_causal_variable_new() {
+rite test_causal_variable_new() {
     ≔ v = CausalVariable·new("X");
     assert_eq(v.name, "X");
     assert(!v.observed);
 }
 
 #[test]
-λ test_causal_variable_binary() {
+rite test_causal_variable_binary() {
     ≔ v = CausalVariable·binary("treatment");
     assert(v.is_binary());
     assert(!v.is_continuous());
 }
 
 #[test]
-λ test_causal_variable_continuous() {
+rite test_causal_variable_continuous() {
     ≔ v = CausalVariable·continuous("temperature");
     assert(v.is_continuous());
     assert(!v.is_binary());
 }
 
 #[test]
-λ test_causal_variable_with_values() {
+rite test_causal_variable_with_values() {
     ≔ v = CausalVariable·new("grade")
         .with_values(vec![
             Value·from_string("A"),
@@ -457,7 +457,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_variable_mark_observed() {
+rite test_causal_variable_mark_observed() {
     ≔ Δ v = CausalVariable·new("X");
     assert(!v.observed);
     v.mark_observed();
@@ -469,7 +469,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_causal_edge_new() {
+rite test_causal_edge_new() {
     ≔ e = CausalEdge·new("A", "B");
     assert_eq(e.from, "A");
     assert_eq(e.to, "B");
@@ -477,26 +477,26 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_edge_with_strength() {
+rite test_causal_edge_with_strength() {
     ≔ e = CausalEdge·new("X", "Y").with_strength(0.5);
     assert_eq(e.strength, 0.5);
 }
 
 #[test]
-λ test_causal_edge_strength_clamped() {
+rite test_causal_edge_strength_clamped() {
     ≔ e = CausalEdge·new("X", "Y").with_strength(1.5);
     assert_eq(e.strength, 1.0);
 }
 
 #[test]
-λ test_causal_edge_with_mechanism() {
+rite test_causal_edge_with_mechanism() {
     ≔ e = CausalEdge·new("rain", "wet")
         .with_mechanism("precipitation causes ground wetness");
     assert(e.mechanism.is_some());
 }
 
 #[test]
-λ test_causal_edge_is_strong() {
+rite test_causal_edge_is_strong() {
     ≔ strong = CausalEdge·new("A", "B").with_strength(0.9);
     ≔ weak = CausalEdge·new("A", "B").with_strength(0.3);
     assert(strong.is_strong());
@@ -508,14 +508,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_explanation_new() {
+rite test_explanation_new() {
     ≔ e = Explanation·new();
     assert_eq(e.cause_count(), 0);
     assert_eq(e.likelihood, 1.0);
 }
 
 #[test]
-λ test_explanation_with_cause() {
+rite test_explanation_with_cause() {
     ≔ e = Explanation·new()
         .with_cause("smoking", Value·from_bool(true));
     assert_eq(e.cause_count(), 1);
@@ -523,21 +523,21 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_explanation_with_likelihood() {
+rite test_explanation_with_likelihood() {
     ≔ e = Explanation·new().with_likelihood(0.8);
     assert_eq(e.likelihood, 0.8);
     assert(e.is_likely());
 }
 
 #[test]
-λ test_explanation_with_reasoning() {
+rite test_explanation_with_reasoning() {
     ≔ e = Explanation·new()
         .with_reasoning("Based on observed correlations");
     assert_eq(e.reasoning, "Based on observed correlations");
 }
 
 #[test]
-λ test_explanation_multiple_causes() {
+rite test_explanation_multiple_causes() {
     ≔ e = Explanation·new()
         .with_cause("A", Value·from_bool(true))
         .with_cause("B", Value·from_bool(false))
@@ -546,7 +546,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_explanation_is_likely() {
+rite test_explanation_is_likely() {
     ≔ likely = Explanation·new().with_likelihood(0.7);
     ≔ unlikely = Explanation·new().with_likelihood(0.3);
     assert(likely.is_likely());
@@ -558,7 +558,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_intervention_set() {
+rite test_intervention_set() {
     ≔ i = Intervention·set("treatment", Value·from_bool(true));
     assert_eq(i.variable, "treatment");
 }
@@ -568,28 +568,28 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_causal_query_probability_of() {
+rite test_causal_query_probability_of() {
     ≔ q = CausalQuery·probability_of("outcome");
     assert_eq(q.target, "outcome");
     assert(q.is_observational());
 }
 
 #[test]
-λ test_causal_query_given() {
+rite test_causal_query_given() {
     ≔ q = CausalQuery·probability_of("Y")
         .given("X", Value·from_bool(true));
     assert_eq(q.given.len(), 1);
 }
 
 #[test]
-λ test_causal_query_do_intervention() {
+rite test_causal_query_do_intervention() {
     ≔ q = CausalQuery·probability_of("recovery")
         .do_intervention(Intervention·set("treatment", Value·from_bool(true)));
     assert(q.is_interventional());
 }
 
 #[test]
-λ test_causal_query_observational() {
+rite test_causal_query_observational() {
     ≔ q = CausalQuery·probability_of("X");
     assert(q.is_observational());
     assert(!q.is_interventional());
@@ -600,14 +600,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_causal_model_new() {
+rite test_causal_model_new() {
     ≔ m = CausalModel·new();
     assert_eq(m.variable_count(), 0);
     assert_eq(m.edge_count(), 0);
 }
 
 #[test]
-λ test_causal_model_add_variable() {
+rite test_causal_model_add_variable() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"));
     assert_eq(m.variable_count(), 1);
@@ -615,7 +615,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_add_cause() {
+rite test_causal_model_add_cause() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"))
         .add_variable(CausalVariable·new("Y"))
@@ -624,7 +624,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_add_edge() {
+rite test_causal_model_add_edge() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("A"))
         .add_variable(CausalVariable·new("B"))
@@ -633,7 +633,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_get_variable() {
+rite test_causal_model_get_variable() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·binary("treatment"));
     ≔ v = m.get_variable("treatment");
@@ -646,7 +646,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_causal_model_parents_of() {
+rite test_causal_model_parents_of() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"))
         .add_variable(CausalVariable·new("Y"))
@@ -658,7 +658,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_children_of() {
+rite test_causal_model_children_of() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"))
         .add_variable(CausalVariable·new("Y"))
@@ -670,7 +670,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_is_root() {
+rite test_causal_model_is_root() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"))
         .add_variable(CausalVariable·new("Y"))
@@ -680,7 +680,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_is_leaf() {
+rite test_causal_model_is_leaf() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"))
         .add_variable(CausalVariable·new("Y"))
@@ -690,7 +690,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_roots() {
+rite test_causal_model_roots() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("A"))
         .add_variable(CausalVariable·new("B"))
@@ -702,7 +702,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_leaves() {
+rite test_causal_model_leaves() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"))
         .add_variable(CausalVariable·new("Y"))
@@ -714,7 +714,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_has_path_direct() {
+rite test_causal_model_has_path_direct() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"))
         .add_variable(CausalVariable·new("Y"))
@@ -724,7 +724,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_has_path_indirect() {
+rite test_causal_model_has_path_indirect() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"))
         .add_variable(CausalVariable·new("Y"))
@@ -735,7 +735,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_causal_model_has_path_self() {
+rite test_causal_model_has_path_self() {
     ≔ m = CausalModel·new()
         .add_variable(CausalVariable·new("X"));
     assert(m.has_path("X", "X"));
@@ -746,7 +746,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_builder_chain() {
+rite test_builder_chain() {
     ≔ m = CausalModelBuilder·chain(&["A", "B", "C"]);
     assert_eq(m.variable_count(), 3);
     assert_eq(m.edge_count(), 2);
@@ -754,7 +754,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_builder_fork() {
+rite test_builder_fork() {
     ≔ m = CausalModelBuilder·fork("cause", &["effect1", "effect2", "effect3"]);
     assert_eq(m.variable_count(), 4);
     assert_eq(m.edge_count(), 3);
@@ -762,7 +762,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_builder_collider() {
+rite test_builder_collider() {
     ≔ m = CausalModelBuilder·collider(&["A", "B"], "C");
     assert_eq(m.variable_count(), 3);
     assert_eq(m.edge_count(), 2);
@@ -770,6 +770,6 @@ invoke std·collections·HashMap;
     assert_eq(parents.len(), 2);
 }
 
-λ main() {
+rite main() {
     print("Omen causal reasoning tests");
 }

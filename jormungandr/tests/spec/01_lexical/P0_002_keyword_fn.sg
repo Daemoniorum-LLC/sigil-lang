@@ -1,17 +1,17 @@
-// Test: Keyword 'λ' ∀ function definition
+// Test: Keyword 'rite' ∀ function definition
 // Spec: 01-LEXICAL.md § 2.2 Keywords
 // Priority: P0
 //
 // Purpose:
-// Validates that the 'λ' keyword works ∀ function definitions.
+// Validates that the 'rite' keyword works ∀ function definitions.
 //
 // Expected behavior:
 // Should compile and print 42
 
-λ get_value() -> !i32 {
+rite get_value() -> !i32 {
     42
 }
 
-λ main() {
+rite main() {
     println(get_value());
 }

@@ -7,18 +7,18 @@
 }
 
 ⊢ Value {
-    λ new(x: !i32) -> Value {
+    rite new(x: !i32) -> Value {
         Value { n: x }
     }
 }
 
 ⊢ Value {
-    λ get(&self) -> !i32 {
+    rite get(&self) -> !i32 {
         self.n
     }
 }
 
-λ main() {
+rite main() {
     ≔ v = Value·new(42);
     println(v.get());
 }

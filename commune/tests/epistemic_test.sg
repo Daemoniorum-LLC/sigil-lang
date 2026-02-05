@@ -10,7 +10,7 @@
 }
 
 ⊢ Epistemic {
-    ☉ λ rank(&self) -> !u8 {
+    ☉ rite rank(&self) -> !u8 {
         ⌥ self {
             Epistemic·Axiomatic => 5,
             Epistemic·Observed => 4,
@@ -21,7 +21,7 @@
         }
     }
 
-    ☉ λ confidence_factor(&self) -> !f32 {
+    ☉ rite confidence_factor(&self) -> !f32 {
         ⌥ self {
             Epistemic·Axiomatic => 1.0,
             Epistemic·Observed => 0.95,
@@ -32,11 +32,11 @@
         }
     }
 
-    ☉ λ is_trustworthy(&self) -> !bool {
+    ☉ rite is_trustworthy(&self) -> !bool {
         self.rank() >= 3
     }
 
-    ☉ λ is_uncertain(&self) -> !bool {
+    ☉ rite is_uncertain(&self) -> !bool {
         ⌥ self {
             Epistemic·Contested => true,
             Epistemic·Unknown => true,
@@ -52,7 +52,7 @@
 }
 
 ⊢ EpistemicState {
-    ☉ λ axiomatic() -> Self {
+    ☉ rite axiomatic() -> Self {
         EpistemicState {
             status: Epistemic·Axiomatic,
             confidence: 1.0,
@@ -60,7 +60,7 @@
         }
     }
 
-    ☉ λ observed(confidence: !f32) -> Self {
+    ☉ rite observed(confidence: !f32) -> Self {
         EpistemicState {
             status: Epistemic·Observed,
             confidence,
@@ -68,7 +68,7 @@
         }
     }
 
-    ☉ λ reported(confidence: !f32, sources: !usize) -> Self {
+    ☉ rite reported(confidence: !f32, sources: !usize) -> Self {
         EpistemicState {
             status: Epistemic·Reported,
             confidence,
@@ -76,7 +76,7 @@
         }
     }
 
-    ☉ λ contested(sources: !usize) -> Self {
+    ☉ rite contested(sources: !usize) -> Self {
         EpistemicState {
             status: Epistemic·Contested,
             confidence: 0.3,
@@ -84,11 +84,11 @@
         }
     }
 
-    ☉ λ effective_confidence(&self) -> !f32 {
+    ☉ rite effective_confidence(&self) -> !f32 {
         self.confidence * self.status.confidence_factor()
     }
 
-    ☉ λ is_reliable(&self) -> !bool {
+    ☉ rite is_reliable(&self) -> !bool {
         self.effective_confidence() >= 0.6
     }
 }
@@ -100,7 +100,7 @@
 }
 
 ⊢ BeliefStrength {
-    ☉ λ new(raw: !f32, epistemic: Epistemic) -> Self {
+    ☉ rite new(raw: !f32, epistemic: Epistemic) -> Self {
         ≔ adjusted = raw * epistemic.confidence_factor();
         BeliefStrength {
             raw,
@@ -109,16 +109,16 @@
         }
     }
 
-    ☉ λ with_decay(Δ self, factor: !f32) -> Self {
+    ☉ rite with_decay(Δ self, factor: !f32) -> Self {
         self.decay_factor = factor;
         self
     }
 
-    ☉ λ current(&self) -> !f32 {
+    ☉ rite current(&self) -> !f32 {
         self.epistemic_adjusted * self.decay_factor
     }
 
-    ☉ λ is_strong(&self) -> !bool {
+    ☉ rite is_strong(&self) -> !bool {
         self.current() >= 0.7
     }
 }
@@ -128,37 +128,37 @@
 // ============================================================================
 
 #[test]
-λ test_epistemic_rank_axiomatic() {
+rite test_epistemic_rank_axiomatic() {
     ≔ e = Epistemic·Axiomatic;
     assert(e.rank() == 5);
 }
 
 #[test]
-λ test_epistemic_rank_observed() {
+rite test_epistemic_rank_observed() {
     ≔ e = Epistemic·Observed;
     assert(e.rank() == 4);
 }
 
 #[test]
-λ test_epistemic_rank_reported() {
+rite test_epistemic_rank_reported() {
     ≔ e = Epistemic·Reported;
     assert(e.rank() == 3);
 }
 
 #[test]
-λ test_epistemic_confidence_axiomatic() {
+rite test_epistemic_confidence_axiomatic() {
     ≔ e = Epistemic·Axiomatic;
     assert(e.confidence_factor() == 1.0);
 }
 
 #[test]
-λ test_epistemic_confidence_observed() {
+rite test_epistemic_confidence_observed() {
     ≔ e = Epistemic·Observed;
     assert(e.confidence_factor() == 0.95);
 }
 
 #[test]
-λ test_epistemic_trustworthy() {
+rite test_epistemic_trustworthy() {
     assert(Epistemic·Axiomatic.is_trustworthy());
     assert(Epistemic·Observed.is_trustworthy());
     assert(Epistemic·Reported.is_trustworthy());
@@ -166,27 +166,27 @@
 }
 
 #[test]
-λ test_epistemic_uncertain() {
+rite test_epistemic_uncertain() {
     assert(Epistemic·Contested.is_uncertain());
     assert(Epistemic·Unknown.is_uncertain());
     assert(!Epistemic·Observed.is_uncertain());
 }
 
 #[test]
-λ test_epistemic_state_axiomatic() {
+rite test_epistemic_state_axiomatic() {
     ≔ state = EpistemicState·axiomatic();
     assert(state.confidence == 1.0);
     assert(state.is_reliable());
 }
 
 #[test]
-λ test_epistemic_state_observed() {
+rite test_epistemic_state_observed() {
     ≔ state = EpistemicState·observed(0.9);
     assert(state.confidence == 0.9);
 }
 
 #[test]
-λ test_epistemic_state_effective_confidence() {
+rite test_epistemic_state_effective_confidence() {
     ≔ state = EpistemicState·reported(0.8, 3);
     ≔ effective = state.effective_confidence();
     // 0.8 * 0.8 = 0.64
@@ -195,32 +195,32 @@
 }
 
 #[test]
-λ test_epistemic_state_contested() {
+rite test_epistemic_state_contested() {
     ≔ state = EpistemicState·contested(5);
     assert(!state.is_reliable());
 }
 
 #[test]
-λ test_belief_strength_creation() {
+rite test_belief_strength_creation() {
     ≔ belief = BeliefStrength·new(0.9, Epistemic·Observed);
     // 0.9 * 0.95 = 0.855
     assert(belief.current() > 0.8);
 }
 
 #[test]
-λ test_belief_strength_decay() {
+rite test_belief_strength_decay() {
     ≔ belief = BeliefStrength·new(1.0, Epistemic·Axiomatic).with_decay(0.5);
     assert(belief.current() == 0.5);
 }
 
 #[test]
-λ test_belief_strength_strong() {
+rite test_belief_strength_strong() {
     ≔ strong = BeliefStrength·new(0.9, Epistemic·Axiomatic);
     ≔ weak = BeliefStrength·new(0.5, Epistemic·Inferred);
     assert(strong.is_strong());
     assert(!weak.is_strong());
 }
 
-λ main() {
+rite main() {
     println("Commune epistemic tests - 14 tests");
 }

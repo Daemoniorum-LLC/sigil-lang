@@ -4,16 +4,16 @@
 
 // Define a trait
 trait Drawable {
-    λ draw(&this) → String;
-    λ area(&this) → f64;
+    rite draw(&this) → String;
+    rite area(&this) → f64;
 }
 
 // Define a trait with default implementation
 trait Describable {
-    λ name(&this) → String;
+    rite name(&this) → String;
 
     // Default implementation
-    λ describe(&this) → String {
+    rite describe(&this) → String {
         "A " + this.name()
     }
 }
@@ -29,56 +29,56 @@ trait Describable {
 
 // Implement Drawable for Circle
 ⊢ Drawable for Circle {
-    λ draw(&this) → String {
+    rite draw(&this) → String {
         "○ (circle with radius " + str(this.radius) + ")"
     }
 
-    λ area(&this) → f64 {
+    rite area(&this) → f64 {
         3.14159 * this.radius * this.radius
     }
 }
 
 // Implement Drawable for Square
 ⊢ Drawable for Square {
-    λ draw(&this) → String {
+    rite draw(&this) → String {
         "□ (square with side " + str(this.side) + ")"
     }
 
-    λ area(&this) → f64 {
+    rite area(&this) → f64 {
         this.side * this.side
     }
 }
 
 // Implement Describable for both
 ⊢ Describable for Circle {
-    λ name(&this) → String {
+    rite name(&this) → String {
         "circle"
     }
 }
 
 ⊢ Describable for Square {
-    λ name(&this) → String {
+    rite name(&this) → String {
         "square"
     }
 
     // Override default describe
-    λ describe(&this) → String {
+    rite describe(&this) → String {
         "A perfect square with side " + str(this.side)
     }
 }
 
 // Generic function constrained by trait
-λ print_shape<T: Drawable>(shape: &T) {
+rite print_shape<T: Drawable>(shape: &T) {
     println("Shape: " + shape.draw());
     println("Area: " + str(shape.area()));
 }
 
 // Function taking multiple trait bounds
-λ full_description<T: Drawable + Describable>(shape: &T) → String {
+rite full_description<T: Drawable + Describable>(shape: &T) → String {
     shape.describe() + " - " + shape.draw()
 }
 
-λ main() {
+rite main() {
     ≔ circle = Circle { radius: 5.0 };
     ≔ square = Square { side: 4.0 };
 

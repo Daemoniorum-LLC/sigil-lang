@@ -12,7 +12,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     type Error;
 
     /// Validate the value, returning errors ⎇ invalid
-    λ validate(&self) -> Result<(), Self·Error>;
+    rite validate(&self) -> Result<(), Self·Error>;
 }
 
 /// A validation gate that promotes evidence on success
@@ -20,7 +20,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 
 ⊢ ValidationGate {
     /// Validate an evidenced value, promoting ~ to ! on success
-    ☉ λ validate<T: Validate>(
+    ☉ rite validate<T: Validate>(
         evidenced: Evidenced<T>,
     ) -> Result<Evidenced<T>, BasilicaError>
     where
@@ -51,7 +51,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Require a specific evidence level
-    ☉ λ require<T>(
+    ☉ rite require<T>(
         evidenced: Evidenced<T>,
         level: EvidenceLevel,
     ) -> Result<T, BasilicaError> {
@@ -67,7 +67,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Require known (!) evidence
-    ☉ λ require_known<T>(evidenced: Evidenced<T>) -> Result<T, BasilicaError> {
+    ☉ rite require_known<T>(evidenced: Evidenced<T>) -> Result<T, BasilicaError> {
         Self·require(evidenced, EvidenceLevel·Known)
     }
 }
@@ -79,7 +79,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 }
 
 ⊢<T> ValidationBuilder<T> {
-    ☉ λ new(value: T) -> Self {
+    ☉ rite new(value: T) -> Self {
         Self {
             value,
             errors: vec![],
@@ -87,7 +87,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Add a validation rule
-    ☉ λ check<F: FnOnce(&T) -> bool>(Δ self, predicate: F, error: &str) -> Self {
+    ☉ rite check<F: FnOnce(&T) -> bool>(Δ self, predicate: F, error: &str) -> Self {
         ⎇ !predicate(&self.value) {
             self.errors.push(error.to_string());
         }
@@ -95,7 +95,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Validate a field
-    ☉ λ field<F, V: Validate>(Δ self, extractor: F, field_name: &str) -> Self
+    ☉ rite field<F, V: Validate>(Δ self, extractor: F, field_name: &str) -> Self
     where
         F: FnOnce(&T) -> &V,
         V·Error: Into<Vec<String>>,
@@ -111,7 +111,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Complete validation
-    ☉ λ finish(self) -> Result<T, Vec<String>> {
+    ☉ rite finish(self) -> Result<T, Vec<String>> {
         ⎇ self.errors.is_empty() {
             Ok(self.value)
         } ⎉ {
@@ -123,37 +123,37 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 // Common validation functions
 ☉ scroll rules {
     /// Check that a string is not empty
-    ☉ λ not_empty(s: &str) -> bool {
+    ☉ rite not_empty(s: &str) -> bool {
         !s.trim().is_empty()
     }
 
     /// Check string length
-    ☉ λ max_length(s: &str, max: usize) -> bool {
+    ☉ rite max_length(s: &str, max: usize) -> bool {
         s.len() <= max
     }
 
     /// Check string length
-    ☉ λ min_length(s: &str, min: usize) -> bool {
+    ☉ rite min_length(s: &str, min: usize) -> bool {
         s.len() >= min
     }
 
     /// Check that a value is positive
-    ☉ λ positive<N: PartialOrd + Default>(n: &N) -> bool {
+    ☉ rite positive<N: PartialOrd + Default>(n: &N) -> bool {
         *n > N·default()
     }
 
     /// Check that a value is ∈ range
-    ☉ λ in_range<N: PartialOrd>(n: &N, min: N, max: N) -> bool {
+    ☉ rite in_range<N: PartialOrd>(n: &N, min: N, max: N) -> bool {
         *n >= min && *n <= max
     }
 
     /// Simple email check (not comprehensive)
-    ☉ λ looks_like_email(s: &str) -> bool {
+    ☉ rite looks_like_email(s: &str) -> bool {
         s.contains('@') && s.contains('.')
     }
 
     /// UUID format check
-    ☉ λ is_uuid(s: &str) -> bool {
+    ☉ rite is_uuid(s: &str) -> bool {
         s.len() == 36 &&
         s.chars().enumerate().all(|(i, c)| {
             ⌥ i {

@@ -24,7 +24,7 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
 }
 
 ⊢ Method {
-    ☉ λ from_str(s: &str) -> Option<Self> {
+    ☉ rite from_str(s: &str) -> Option<Self> {
         ⌥ s.to_uppercase().as_str() {
             "GET" => Some(Method·GET),
             "POST" => Some(Method·POST),
@@ -39,7 +39,7 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
         }
     }
 
-    ☉ λ as_str(&self) -> &'static str {
+    ☉ rite as_str(&self) -> &'static str {
         ⌥ self {
             Method·GET => "GET",
             Method·POST => "POST",
@@ -54,12 +54,12 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
     }
 
     /// Check ⎇ this method is considered "safe" (no side effects)
-    ☉ λ is_safe(&self) -> bool {
+    ☉ rite is_safe(&self) -> bool {
         matches!(self, Method·GET | Method·HEAD | Method·OPTIONS | Method·TRACE)
     }
 
     /// Check ⎇ this method is idempotent
-    ☉ λ is_idempotent(&self) -> bool {
+    ☉ rite is_idempotent(&self) -> bool {
         matches!(self,
             Method·GET | Method·HEAD | Method·PUT |
             Method·DELETE | Method·OPTIONS | Method·TRACE
@@ -117,27 +117,27 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
 }
 
 ⊢ QueryParams {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { params: std·collections·HashMap·new() }
     }
 
-    ☉ λ get(&self, key: &str) -> Option<&String> {
+    ☉ rite get(&self, key: &str) -> Option<&String> {
         self.params.get(key).and_then(|v| v.first())
     }
 
-    ☉ λ get_all(&self, key: &str) -> Option<&Vec<String>> {
+    ☉ rite get_all(&self, key: &str) -> Option<&Vec<String>> {
         self.params.get(key)
     }
 
-    ☉ λ set(&Δ self, key: String, value: String) {
+    ☉ rite set(&Δ self, key: String, value: String) {
         self.params.entry(key).or_default().push(value);
     }
 
-    ☉ λ contains(&self, key: &str) -> bool {
+    ☉ rite contains(&self, key: &str) -> bool {
         self.params.contains_key(key)
     }
 
-    ☉ λ keys(&self) -> ⊢ Iterator<Item = &String> {
+    ☉ rite keys(&self) -> ⊢ Iterator<Item = &String> {
         self.params.keys()
     }
 }
@@ -149,31 +149,31 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
 }
 
 ⊢ Headers {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { headers: std·collections·HashMap·new() }
     }
 
-    ☉ λ get(&self, key: &str) -> Option<&String> {
+    ☉ rite get(&self, key: &str) -> Option<&String> {
         self.headers.get(&key.to_lowercase()).and_then(|v| v.first())
     }
 
-    ☉ λ get_all(&self, key: &str) -> Option<&Vec<String>> {
+    ☉ rite get_all(&self, key: &str) -> Option<&Vec<String>> {
         self.headers.get(&key.to_lowercase())
     }
 
-    ☉ λ set(&Δ self, key: String, value: String) {
+    ☉ rite set(&Δ self, key: String, value: String) {
         self.headers.entry(key.to_lowercase()).or_default().push(value);
     }
 
-    ☉ λ contains(&self, key: &str) -> bool {
+    ☉ rite contains(&self, key: &str) -> bool {
         self.headers.contains_key(&key.to_lowercase())
     }
 
-    ☉ λ content_type(&self) -> Option<&String> {
+    ☉ rite content_type(&self) -> Option<&String> {
         self.get("content-type")
     }
 
-    ☉ λ authorization(&self) -> Option<&String> {
+    ☉ rite authorization(&self) -> Option<&String> {
         self.get("authorization")
     }
 }
@@ -243,7 +243,7 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
 
 ⊢ Request {
     /// Create a new request (typically done by the framework)
-    ☉ λ new(
+    ☉ rite new(
         method: Method,
         path: String,
         query: QueryParams,
@@ -277,37 +277,37 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
     // ========================================================================
 
     /// Get query parameters with evidence (~ by default)
-    ☉ λ query(&self) -> &Evidenced<QueryParams> {
+    ☉ rite query(&self) -> &Evidenced<QueryParams> {
         &self.query
     }
 
     /// Get a specific query parameter
     /// Returns ~ (reported) evidence
-    ☉ λ query_param(&self, key: &str) -> Option<Evidenced<String>> {
+    ☉ rite query_param(&self, key: &str) -> Option<Evidenced<String>> {
         self.query.value.get(key).map(|v| {
             Evidenced·new(v.clone(), self.query.evidence.clone())
         })
     }
 
     /// Get headers with evidence (~ by default)
-    ☉ λ headers(&self) -> &Evidenced<Headers> {
+    ☉ rite headers(&self) -> &Evidenced<Headers> {
         &self.headers
     }
 
     /// Get a specific header
-    ☉ λ header(&self, key: &str) -> Option<Evidenced<String>> {
+    ☉ rite header(&self, key: &str) -> Option<Evidenced<String>> {
         self.headers.value.get(key).map(|v| {
             Evidenced·new(v.clone(), self.headers.evidence.clone())
         })
     }
 
     /// Get body with evidence (~ by default)
-    ☉ λ body(&self) -> Option<&Evidenced<Vec<u8>>> {
+    ☉ rite body(&self) -> Option<&Evidenced<Vec<u8>>> {
         self.body.as_ref()
     }
 
     /// Get body as bytes (raw, still ~)
-    ☉ λ body_bytes(&self) -> Option<&[u8]> {
+    ☉ rite body_bytes(&self) -> Option<&[u8]> {
         self.body.as_ref().map(|b| b.value.as_slice())
     }
 
@@ -316,17 +316,17 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
     // ========================================================================
 
     /// Check ⎇ request is authenticated
-    ☉ λ is_authenticated(&self) -> bool {
+    ☉ rite is_authenticated(&self) -> bool {
         self.auth.is_some() && !matches!(self.auth.as_ref().unwrap().identity, Identity·Anonymous)
     }
 
     /// Get authentication info
-    ☉ λ auth(&self) -> Option<&AuthInfo> {
+    ☉ rite auth(&self) -> Option<&AuthInfo> {
         self.auth.as_ref()
     }
 
     /// Set authentication info (called by auth middleware)
-    ☉ λ set_auth(&Δ self, auth: AuthInfo) {
+    ☉ rite set_auth(&Δ self, auth: AuthInfo) {
         // Record evidence transformation
         self.evidence_ctx.record(
             EvidenceLevel·Reported,
@@ -337,7 +337,7 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
     }
 
     /// Get the identity ⎇ authenticated
-    ☉ λ identity(&self) -> Option<&Identity> {
+    ☉ rite identity(&self) -> Option<&Identity> {
         self.auth.as_ref().map(|a| &a.identity)
     }
 
@@ -346,12 +346,12 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
     // ========================================================================
 
     /// Get the evidence context ∀ this request
-    ☉ λ evidence_context(&self) -> &EvidenceContext {
+    ☉ rite evidence_context(&self) -> &EvidenceContext {
         &self.evidence_ctx
     }
 
     /// Get mutable evidence context
-    ☉ λ evidence_context_mut(&Δ self) -> &Δ EvidenceContext {
+    ☉ rite evidence_context_mut(&Δ self) -> &Δ EvidenceContext {
         &Δ self.evidence_ctx
     }
 
@@ -361,7 +361,7 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
 
     /// Extract a path parameter by name
     /// These are parsed from the route definition
-    ☉ λ path_param(&self, _name: &str) -> Option<Evidenced<String>> {
+    ☉ rite path_param(&self, _name: &str) -> Option<Evidenced<String>> {
         // Path parameters are extracted by the router
         // They're still ~ becainvoke they come from the client
         None // Router populates this
@@ -372,21 +372,21 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
     // ========================================================================
 
     /// Get the accepted content types
-    ☉ λ accepts(&self) -> Vec<String> {
+    ☉ rite accepts(&self) -> Vec<String> {
         self.headers.value.get("accept")
             .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
             .unwrap_or_default()
     }
 
     /// Check ⎇ the request accepts a specific content type
-    ☉ λ accepts_type(&self, content_type: &str) -> bool {
+    ☉ rite accepts_type(&self, content_type: &str) -> bool {
         ≔ accepts = self.accepts();
         accepts.is_empty() ||
         accepts.iter().any(|a| a == "*/*" || a == content_type || a.starts_with(&format!("{}/", content_type.split('/').next().unwrap_or(""))))
     }
 
     /// Get the content type of the request body
-    ☉ λ content_type(&self) -> Option<String> {
+    ☉ rite content_type(&self) -> Option<String> {
         self.headers.value.content_type().cloned()
     }
 }
@@ -400,7 +400,7 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
     type Error;
 
     /// Extract from request, returning evidenced value
-    λ from_request(req: &Request) -> Result<Evidenced<Self>, Self·Error>;
+    rite from_request(req: &Request) -> Result<Evidenced<Self>, Self·Error>;
 }
 
 /// JSON body extractor
@@ -409,7 +409,7 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
 ⊢<T: serde·de·DeserializeOwned> FromRequest ∀ Json<T> {
     type Error = JsonError;
 
-    λ from_request(req: &Request) -> Result<Evidenced<Self>, Self·Error> {
+    rite from_request(req: &Request) -> Result<Evidenced<Self>, Self·Error> {
         ≔ body = req.body()
             .ok_or(JsonError·NoBody)?;
 
@@ -454,7 +454,7 @@ invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced, EvidenceContext
 }
 
 ☉ scroll serde_json {
-    ☉ λ from_slice<T>(_bytes: &[u8]) -> Result<T, String> {
+    ☉ rite from_slice<T>(_bytes: &[u8]) -> Result<T, String> {
         Err("Not implemented".to_string())
     }
 }

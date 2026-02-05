@@ -4,7 +4,7 @@
     height: !i32
 }
 
-λ main() {
+rite main() {
     ≔ r: !Rectangle = Rectangle { width: 30, height: 50 };
     ≔ area: !i32 = r.width * r.height;
     println(area);

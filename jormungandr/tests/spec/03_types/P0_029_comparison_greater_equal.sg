@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print true
 
-λ main() {
+rite main() {
     ≔ x: !bool = 20 >= 20;
     println(x);
 }

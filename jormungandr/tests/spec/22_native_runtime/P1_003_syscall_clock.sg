@@ -5,7 +5,7 @@
 // This test verifies counting and timing patterns that would
 // invoke clock syscalls ∈ compiled mode.
 
-λ main() {
+rite main() {
     // Test 1: Simulate getting a timestamp value
     ≔ ts_sec = 1704067201;  // Some time after 2024-01-01
     ≔ ts_nsec = 500000000;  // 0.5 seconds

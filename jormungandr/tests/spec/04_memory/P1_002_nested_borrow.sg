@@ -10,7 +10,7 @@
     inner: Inner,
 }
 
-λ main() {
+rite main() {
     ≔ outer = Outer { inner: Inner { value: 42 } };
 
     // Borrow nested field

@@ -1981,6 +1981,7 @@ pub mod jit {
                         | PipeOp::Scan(_)
                         | PipeOp::Diff
                         | PipeOp::Gradient(_)
+                        | PipeOp::SortBy(_)
                         | PipeOp::SortAsc
                         | PipeOp::SortDesc
                         | PipeOp::Reverse
@@ -1990,6 +1991,7 @@ pub mod jit {
                         | PipeOp::Flatten
                         | PipeOp::Unique
                         | PipeOp::Enumerate
+                        | PipeOp::ReduceWithInit(_, _)
                         // Holographic operations (Spec 11)
                         | PipeOp::Universal
                         | PipeOp::Possibility { .. }
@@ -3956,11 +3958,11 @@ pub mod jit {
         fn test_extern_block_parsing_and_declaration() {
             let source = r#"
                 extern "C" {
-                    λ abs(x: c_int) -> c_int;
-                    λ strlen(s: *const c_char) -> usize;
+                    rite abs(x: c_int) -> c_int;
+                    rite strlen(s: *const c_char) -> usize;
                 }
 
-                λ main() -> i64 {
+                rite main() -> i64 {
                     42
                 }
             "#;
@@ -4000,10 +4002,10 @@ pub mod jit {
         fn test_extern_variadic_function() {
             let source = r#"
                 extern "C" {
-                    λ printf(fmt: *const c_char, ...) -> c_int;
+                    rite printf(fmt: *const c_char, ...) -> c_int;
                 }
 
-                λ main() -> i64 {
+                rite main() -> i64 {
                     0
                 }
             "#;
@@ -4024,10 +4026,10 @@ pub mod jit {
         fn test_extern_c_abi_only() {
             let source = r#"
                 extern "Rust" {
-                    λ some_func(x: i32) -> i32;
+                    rite some_func(x: i32) -> i32;
                 }
 
-                λ main() -> i64 {
+                rite main() -> i64 {
                     0
                 }
             "#;
@@ -4056,10 +4058,10 @@ pub mod jit {
                 let source = format!(
                     r#"
                     extern "C" {{
-                        λ test_func(x: {}) -> {};
+                        rite test_func(x: {}) -> {};
                     }}
 
-                    λ main() -> i64 {{ 0 }}
+                    rite main() -> i64 {{ 0 }}
                 "#,
                     type_name, type_name
                 );

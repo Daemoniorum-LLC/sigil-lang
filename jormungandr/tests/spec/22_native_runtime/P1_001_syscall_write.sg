@@ -4,7 +4,7 @@
 //
 // This test verifies the Sys·write syscall abstraction.
 
-λ main() {
+rite main() {
     // Test 1: Write to stdout using Sys·write
     ≔ msg = "Hello from syscall\n";
     ≔ n = Sys·write(STDOUT_FILENO(), msg, 19);

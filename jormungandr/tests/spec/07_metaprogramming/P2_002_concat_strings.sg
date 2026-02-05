@@ -2,7 +2,7 @@
 // Spec: 07-METAPROGRAMMING.md § 3.1 Format
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ a: String = "Hello";
     ≔ b: String = "World";
     ≔ c = format!("{} {}", a, b);

@@ -10,20 +10,20 @@ invoke std·collections·HashMap;
 
 ☉ Σ Duration { nanos: u64 }
 ⊢ Duration {
-    ☉ λ zero() -> Self { Self { nanos: 0 } }
-    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ rite zero() -> Self { Self { nanos: 0 } }
+    ☉ rite minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
 }
 ⊢ Copy ∀ Duration {}
-⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+⊢ Clone ∀ Duration { rite clone(&self) -> Self { *self } }
 
 ☉ Σ Timestamp { nanos: u64 }
 ⊢ Timestamp {
-    ☉ λ now() -> Self { Self { nanos: 1000 } }
+    ☉ rite now() -> Self { Self { nanos: 1000 } }
 }
 
 ☉ Σ ExperienceId { id: String }
-⊢ ExperienceId { ☉ λ generate() -> Self { Self { id: "exp".to_string() } } }
-⊢ Clone ∀ ExperienceId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+⊢ ExperienceId { ☉ rite generate() -> Self { Self { id: "exp".to_string() } } }
+⊢ Clone ∀ ExperienceId { rite clone(&self) -> Self { Self { id: self.id.clone() } } }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 ☉ ᛈ SkillLevel {
@@ -35,7 +35,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillLevel {
-    ☉ λ from_proficiency(p: f32) -> Self {
+    ☉ rite from_proficiency(p: f32) -> Self {
         ⎇ p >= 0.9 { SkillLevel·Expert }
         ⎉ ⎇ p >= 0.7 { SkillLevel·Proficient }
         ⎉ ⎇ p >= 0.5 { SkillLevel·Competent }
@@ -43,7 +43,7 @@ invoke std·collections·HashMap;
         ⎉ { SkillLevel·Novice }
     }
 
-    ☉ λ to_string(&self) -> &'static str {
+    ☉ rite to_string(&self) -> &'static str {
         ⌥ self {
             SkillLevel·Novice => "Novice",
             SkillLevel·AdvancedBeginner => "Advanced Beginner",
@@ -53,7 +53,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ numeric_level(&self) -> u8 {
+    ☉ rite numeric_level(&self) -> u8 {
         ⌥ self {
             SkillLevel·Novice => 1,
             SkillLevel·AdvancedBeginner => 2,
@@ -74,7 +74,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Performance {
-    ☉ λ from_quality(quality: f32) -> Self {
+    ☉ rite from_quality(quality: f32) -> Self {
         ⎇ quality >= 0.9 { Performance·Excellent }
         ⎉ ⎇ quality >= 0.7 { Performance·Good }
         ⎉ ⎇ quality >= 0.5 { Performance·Adequate }
@@ -82,7 +82,7 @@ invoke std·collections·HashMap;
         ⎉ { Performance·Failed }
     }
 
-    ☉ λ to_quality(&self) -> f32 {
+    ☉ rite to_quality(&self) -> f32 {
         ⌥ self {
             Performance·Excellent => 0.95,
             Performance·Good => 0.8,
@@ -102,7 +102,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Exercise {
-    ☉ λ new(quality: f32) -> Self {
+    ☉ rite new(quality: f32) -> Self {
         Self {
             task_id: ExperienceId·generate(),
             performance: Performance·from_quality(quality),
@@ -112,18 +112,18 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_performance(Δ self, performance: Performance) -> Self {
+    ☉ rite with_performance(Δ self, performance: Performance) -> Self {
         self.performance = performance;
         self.quality = performance.to_quality();
         self
     }
 
-    ☉ λ with_duration(Δ self, duration: Duration) -> Self {
+    ☉ rite with_duration(Δ self, duration: Duration) -> Self {
         self.duration = duration;
         self
     }
 
-    ☉ λ was_successful(&self) -> bool {
+    ☉ rite was_successful(&self) -> bool {
         self.quality >= 0.5
     }
 }
@@ -138,7 +138,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillProfile {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             level: SkillLevel·Novice,
@@ -149,12 +149,12 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ proficiency(&self) -> f32 { self.proficiency }
-    ☉ λ level(&self) -> SkillLevel { self.level }
-    ☉ λ experience_count(&self) -> u32 { self.experience_count }
-    ☉ λ exercise_count(&self) -> usize { self.exercises.len() }
+    ☉ rite proficiency(&self) -> f32 { self.proficiency }
+    ☉ rite level(&self) -> SkillLevel { self.level }
+    ☉ rite experience_count(&self) -> u32 { self.experience_count }
+    ☉ rite exercise_count(&self) -> usize { self.exercises.len() }
 
-    ☉ λ record_exercise(&Δ self, exercise: Exercise) {
+    ☉ rite record_exercise(&Δ self, exercise: Exercise) {
         self.experience_count += 1;
         self.last_practiced = Timestamp·now();
 
@@ -168,29 +168,29 @@ invoke std·collections·HashMap;
         self.exercises.push(exercise);
     }
 
-    ☉ λ record_transfer(&Δ self, quality: f32) {
+    ☉ rite record_transfer(&Δ self, quality: f32) {
         ≔ alpha = 0.05;
         self.proficiency = self.proficiency * (1.0 - alpha) + quality * alpha;
         self.level = SkillLevel·from_proficiency(self.proficiency);
     }
 
-    ☉ λ recent_accuracy(&self) -> f32 {
+    ☉ rite recent_accuracy(&self) -> f32 {
         ≔ recent: Vec<_> = self.exercises.iter().rev().take(10).collect();
         ⎇ recent.is_empty() { ⤺ 0.0; }
         recent.iter().map(|e| e.quality).sum·<f32>() / recent.len() as f32
     }
 
-    ☉ λ success_rate(&self) -> f32 {
+    ☉ rite success_rate(&self) -> f32 {
         ⎇ self.exercises.is_empty() { ⤺ 0.0; }
         ≔ successes = self.exercises.iter().filter(|e| e.was_successful()).count();
         successes as f32 / self.exercises.len() as f32
     }
 
-    ☉ λ is_expert(&self) -> bool {
+    ☉ rite is_expert(&self) -> bool {
         self.level == SkillLevel·Expert
     }
 
-    ☉ λ is_novice(&self) -> bool {
+    ☉ rite is_novice(&self) -> bool {
         self.level == SkillLevel·Novice
     }
 }
@@ -202,7 +202,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillDefinition {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             subskills: vec![],
@@ -210,17 +210,17 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_subskill(Δ self, name: &str) -> Self {
+    ☉ rite with_subskill(Δ self, name: &str) -> Self {
         self.subskills.push(name.to_string());
         self
     }
 
-    ☉ λ with_category(Δ self, category: &str) -> Self {
+    ☉ rite with_category(Δ self, category: &str) -> Self {
         self.category = Some(category.to_string());
         self
     }
 
-    ☉ λ has_subskills(&self) -> bool {
+    ☉ rite has_subskills(&self) -> bool {
         !self.subskills.is_empty()
     }
 }
@@ -233,7 +233,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillTransfer {
-    ☉ λ new(source: &str, target: &str, rate: f32) -> Self {
+    ☉ rite new(source: &str, target: &str, rate: f32) -> Self {
         Self {
             source: source.to_string(),
             target: target.to_string(),
@@ -242,7 +242,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_aspect(Δ self, aspect: &str) -> Self {
+    ☉ rite with_aspect(Δ self, aspect: &str) -> Self {
         self.aspects.push(aspect.to_string());
         self
     }
@@ -254,14 +254,14 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillHierarchy {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             parent: HashMap·new(),
             children: HashMap·new(),
         }
     }
 
-    ☉ λ add_child(&Δ self, parent: &str, child: &str) {
+    ☉ rite add_child(&Δ self, parent: &str, child: &str) {
         self.parent.insert(child.to_string(), parent.to_string());
         self.children
             .entry(parent.to_string())
@@ -269,19 +269,19 @@ invoke std·collections·HashMap;
             .push(child.to_string());
     }
 
-    ☉ λ get_children(&self, skill: &str) -> Option<&Vec<String>> {
+    ☉ rite get_children(&self, skill: &str) -> Option<&Vec<String>> {
         self.children.get(skill)
     }
 
-    ☉ λ get_parent(&self, skill: &str) -> Option<&String> {
+    ☉ rite get_parent(&self, skill: &str) -> Option<&String> {
         self.parent.get(skill)
     }
 
-    ☉ λ is_child_of(&self, child: &str, parent: &str) -> bool {
+    ☉ rite is_child_of(&self, child: &str, parent: &str) -> bool {
         self.parent.get(child).map(|p| p == parent).unwrap_or(false)
     }
 
-    ☉ λ has_children(&self, skill: &str) -> bool {
+    ☉ rite has_children(&self, skill: &str) -> bool {
         self.children.get(skill).map(|c| !c.is_empty()).unwrap_or(false)
     }
 }
@@ -293,7 +293,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             experience_per_level: 10,
             decay_rate: 0.01,
@@ -310,7 +310,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillSystem {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             skills: HashMap·new(),
             hierarchy: SkillHierarchy·new(),
@@ -319,7 +319,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ define(&Δ self, skill: SkillDefinition) {
+    ☉ rite define(&Δ self, skill: SkillDefinition) {
         ≔ profile = SkillProfile·new(&skill.name);
         self.skills.insert(skill.name.clone(), profile);
 
@@ -329,15 +329,15 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ get(&self, name: &str) -> Option<&SkillProfile> {
+    ☉ rite get(&self, name: &str) -> Option<&SkillProfile> {
         self.skills.get(name)
     }
 
-    ☉ λ get_mut(&Δ self, name: &str) -> Option<&Δ SkillProfile> {
+    ☉ rite get_mut(&Δ self, name: &str) -> Option<&Δ SkillProfile> {
         self.skills.get_mut(name)
     }
 
-    ☉ λ record_exercise(&Δ self, skill_name: &str, quality: f32) {
+    ☉ rite record_exercise(&Δ self, skill_name: &str, quality: f32) {
         // Get transfer targets first
         ≔ transfer_targets: Vec<(String, f32)> = self.transfers.iter()
             .filter(|t| t.source == skill_name)
@@ -356,27 +356,27 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ register_transfer(&Δ self, transfer: SkillTransfer) {
+    ☉ rite register_transfer(&Δ self, transfer: SkillTransfer) {
         self.transfers.push(transfer);
     }
 
-    ☉ λ skill_count(&self) -> usize {
+    ☉ rite skill_count(&self) -> usize {
         self.skills.len()
     }
 
-    ☉ λ all_skills(&self) -> Vec<&SkillProfile> {
+    ☉ rite all_skills(&self) -> Vec<&SkillProfile> {
         self.skills.values().collect()
     }
 
-    ☉ λ skills_at_level(&self, level: SkillLevel) -> Vec<&SkillProfile> {
+    ☉ rite skills_at_level(&self, level: SkillLevel) -> Vec<&SkillProfile> {
         self.skills.values().filter(|s| s.level == level).collect()
     }
 
-    ☉ λ expert_skills(&self) -> Vec<&SkillProfile> {
+    ☉ rite expert_skills(&self) -> Vec<&SkillProfile> {
         self.skills_at_level(SkillLevel·Expert)
     }
 
-    ☉ λ novice_skills(&self) -> Vec<&SkillProfile> {
+    ☉ rite novice_skills(&self) -> Vec<&SkillProfile> {
         self.skills_at_level(SkillLevel·Novice)
     }
 }
@@ -386,49 +386,49 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_skill_level_from_proficiency_novice() {
+rite test_skill_level_from_proficiency_novice() {
     assert_eq(SkillLevel·from_proficiency(0.1), SkillLevel·Novice);
     assert_eq(SkillLevel·from_proficiency(0.0), SkillLevel·Novice);
 }
 
 #[test]
-λ test_skill_level_from_proficiency_advanced_beginner() {
+rite test_skill_level_from_proficiency_advanced_beginner() {
     assert_eq(SkillLevel·from_proficiency(0.3), SkillLevel·AdvancedBeginner);
     assert_eq(SkillLevel·from_proficiency(0.4), SkillLevel·AdvancedBeginner);
 }
 
 #[test]
-λ test_skill_level_from_proficiency_competent() {
+rite test_skill_level_from_proficiency_competent() {
     assert_eq(SkillLevel·from_proficiency(0.5), SkillLevel·Competent);
     assert_eq(SkillLevel·from_proficiency(0.6), SkillLevel·Competent);
 }
 
 #[test]
-λ test_skill_level_from_proficiency_proficient() {
+rite test_skill_level_from_proficiency_proficient() {
     assert_eq(SkillLevel·from_proficiency(0.7), SkillLevel·Proficient);
     assert_eq(SkillLevel·from_proficiency(0.8), SkillLevel·Proficient);
 }
 
 #[test]
-λ test_skill_level_from_proficiency_expert() {
+rite test_skill_level_from_proficiency_expert() {
     assert_eq(SkillLevel·from_proficiency(0.9), SkillLevel·Expert);
     assert_eq(SkillLevel·from_proficiency(1.0), SkillLevel·Expert);
 }
 
 #[test]
-λ test_skill_level_to_string() {
+rite test_skill_level_to_string() {
     assert_eq(SkillLevel·Novice.to_string(), "Novice");
     assert_eq(SkillLevel·Expert.to_string(), "Expert");
 }
 
 #[test]
-λ test_skill_level_numeric() {
+rite test_skill_level_numeric() {
     assert_eq(SkillLevel·Novice.numeric_level(), 1);
     assert_eq(SkillLevel·Expert.numeric_level(), 5);
 }
 
 #[test]
-λ test_skill_level_ordering() {
+rite test_skill_level_ordering() {
     assert(SkillLevel·Expert > SkillLevel·Novice);
     assert(SkillLevel·Proficient > SkillLevel·Competent);
 }
@@ -438,42 +438,42 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_performance_from_quality_excellent() {
+rite test_performance_from_quality_excellent() {
     ≔ perf = Performance·from_quality(0.95);
     ≔ is_excellent = ⌥ perf { Performance·Excellent => true, _ => false };
     assert(is_excellent);
 }
 
 #[test]
-λ test_performance_from_quality_good() {
+rite test_performance_from_quality_good() {
     ≔ perf = Performance·from_quality(0.75);
     ≔ is_good = ⌥ perf { Performance·Good => true, _ => false };
     assert(is_good);
 }
 
 #[test]
-λ test_performance_from_quality_adequate() {
+rite test_performance_from_quality_adequate() {
     ≔ perf = Performance·from_quality(0.55);
     ≔ is_adequate = ⌥ perf { Performance·Adequate => true, _ => false };
     assert(is_adequate);
 }
 
 #[test]
-λ test_performance_from_quality_poor() {
+rite test_performance_from_quality_poor() {
     ≔ perf = Performance·from_quality(0.2);
     ≔ is_poor = ⌥ perf { Performance·Poor => true, _ => false };
     assert(is_poor);
 }
 
 #[test]
-λ test_performance_from_quality_failed() {
+rite test_performance_from_quality_failed() {
     ≔ perf = Performance·from_quality(0.0);
     ≔ is_failed = ⌥ perf { Performance·Failed => true, _ => false };
     assert(is_failed);
 }
 
 #[test]
-λ test_performance_to_quality() {
+rite test_performance_to_quality() {
     assert_eq(Performance·Excellent.to_quality(), 0.95);
     assert_eq(Performance·Failed.to_quality(), 0.0);
 }
@@ -483,20 +483,20 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_exercise_new() {
+rite test_exercise_new() {
     ≔ ex = Exercise·new(0.8);
     assert_eq(ex.quality, 0.8);
     assert(ex.was_successful());
 }
 
 #[test]
-λ test_exercise_quality_clamped() {
+rite test_exercise_quality_clamped() {
     ≔ ex = Exercise·new(1.5);
     assert_eq(ex.quality, 1.0);
 }
 
 #[test]
-λ test_exercise_was_successful() {
+rite test_exercise_was_successful() {
     ≔ success = Exercise·new(0.6);
     ≔ failure = Exercise·new(0.3);
     assert(success.was_successful());
@@ -504,13 +504,13 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_exercise_with_performance() {
+rite test_exercise_with_performance() {
     ≔ ex = Exercise·new(0.5).with_performance(Performance·Excellent);
     assert_eq(ex.quality, 0.95);
 }
 
 #[test]
-λ test_exercise_with_duration() {
+rite test_exercise_with_duration() {
     ≔ ex = Exercise·new(0.8).with_duration(Duration·minutes(30));
     assert_eq(ex.duration.nanos, Duration·minutes(30).nanos);
 }
@@ -520,7 +520,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_skill_profile_new() {
+rite test_skill_profile_new() {
     ≔ profile = SkillProfile·new("rust");
     assert_eq(profile.name, "rust");
     assert_eq(profile.level, SkillLevel·Novice);
@@ -528,7 +528,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_profile_record_exercise() {
+rite test_skill_profile_record_exercise() {
     ≔ Δ profile = SkillProfile·new("testing");
     profile.record_exercise(Exercise·new(0.8));
     assert_eq(profile.experience_count(), 1);
@@ -536,7 +536,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_profile_level_progression() {
+rite test_skill_profile_level_progression() {
     ≔ Δ profile = SkillProfile·new("skill");
     // Many high-quality exercises should increase level
     ∀ _ ∈ 0..50 {
@@ -546,14 +546,14 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_profile_record_transfer() {
+rite test_skill_profile_record_transfer() {
     ≔ Δ profile = SkillProfile·new("related");
     profile.record_transfer(0.8);
     assert(profile.proficiency() > 0.0);
 }
 
 #[test]
-λ test_skill_profile_recent_accuracy() {
+rite test_skill_profile_recent_accuracy() {
     ≔ Δ profile = SkillProfile·new("skill");
     profile.record_exercise(Exercise·new(0.8));
     profile.record_exercise(Exercise·new(0.9));
@@ -563,7 +563,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_profile_success_rate() {
+rite test_skill_profile_success_rate() {
     ≔ Δ profile = SkillProfile·new("skill");
     profile.record_exercise(Exercise·new(0.8));  // success
     profile.record_exercise(Exercise·new(0.6));  // success
@@ -574,7 +574,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_profile_is_expert() {
+rite test_skill_profile_is_expert() {
     ≔ Δ profile = SkillProfile·new("mastered");
     ∀ _ ∈ 0..100 {
         profile.record_exercise(Exercise·new(0.99));
@@ -583,7 +583,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_profile_is_novice() {
+rite test_skill_profile_is_novice() {
     ≔ profile = SkillProfile·new("new_skill");
     assert(profile.is_novice());
 }
@@ -593,14 +593,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_skill_definition_new() {
+rite test_skill_definition_new() {
     ≔ def = SkillDefinition·new("programming");
     assert_eq(def.name, "programming");
     assert(!def.has_subskills());
 }
 
 #[test]
-λ test_skill_definition_with_subskill() {
+rite test_skill_definition_with_subskill() {
     ≔ def = SkillDefinition·new("programming")
         .with_subskill("rust")
         .with_subskill("python");
@@ -609,7 +609,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_definition_with_category() {
+rite test_skill_definition_with_category() {
     ≔ def = SkillDefinition·new("rust")
         .with_category("programming");
     assert_eq(def.category.unwrap(), "programming");
@@ -620,7 +620,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_skill_transfer_new() {
+rite test_skill_transfer_new() {
     ≔ transfer = SkillTransfer·new("python", "ruby", 0.5);
     assert_eq(transfer.source, "python");
     assert_eq(transfer.target, "ruby");
@@ -628,13 +628,13 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_transfer_rate_clamped() {
+rite test_skill_transfer_rate_clamped() {
     ≔ transfer = SkillTransfer·new("a", "b", 1.5);
     assert_eq(transfer.rate, 1.0);
 }
 
 #[test]
-λ test_skill_transfer_with_aspect() {
+rite test_skill_transfer_with_aspect() {
     ≔ transfer = SkillTransfer·new("java", "kotlin", 0.7)
         .with_aspect("syntax")
         .with_aspect("oop");
@@ -646,20 +646,20 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_skill_hierarchy_new() {
+rite test_skill_hierarchy_new() {
     ≔ h = SkillHierarchy·new();
     assert(h.get_children("anything").is_none());
 }
 
 #[test]
-λ test_skill_hierarchy_add_child() {
+rite test_skill_hierarchy_add_child() {
     ≔ Δ h = SkillHierarchy·new();
     h.add_child("programming", "rust");
     assert(h.has_children("programming"));
 }
 
 #[test]
-λ test_skill_hierarchy_get_children() {
+rite test_skill_hierarchy_get_children() {
     ≔ Δ h = SkillHierarchy·new();
     h.add_child("programming", "rust");
     h.add_child("programming", "python");
@@ -669,7 +669,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_hierarchy_get_parent() {
+rite test_skill_hierarchy_get_parent() {
     ≔ Δ h = SkillHierarchy·new();
     h.add_child("programming", "rust");
     ≔ parent = h.get_parent("rust");
@@ -678,7 +678,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_hierarchy_is_child_of() {
+rite test_skill_hierarchy_is_child_of() {
     ≔ Δ h = SkillHierarchy·new();
     h.add_child("programming", "rust");
     assert(h.is_child_of("rust", "programming"));
@@ -690,20 +690,20 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_skill_system_new() {
+rite test_skill_system_new() {
     ≔ system = SkillSystem·new();
     assert_eq(system.skill_count(), 0);
 }
 
 #[test]
-λ test_skill_system_define() {
+rite test_skill_system_define() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("rust"));
     assert_eq(system.skill_count(), 1);
 }
 
 #[test]
-λ test_skill_system_define_with_subskills() {
+rite test_skill_system_define_with_subskills() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("programming")
         .with_subskill("rust")
@@ -712,7 +712,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_system_get() {
+rite test_skill_system_get() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("testing"));
     ≔ skill = system.get("testing");
@@ -721,7 +721,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_system_record_exercise() {
+rite test_skill_system_record_exercise() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("coding"));
     system.record_exercise("coding", 0.8);
@@ -730,7 +730,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_system_transfer_learning() {
+rite test_skill_system_transfer_learning() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("python"));
     system.define(SkillDefinition·new("ruby"));
@@ -743,7 +743,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_system_all_skills() {
+rite test_skill_system_all_skills() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("a"));
     system.define(SkillDefinition·new("b"));
@@ -752,7 +752,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_system_skills_at_level() {
+rite test_skill_system_skills_at_level() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("novice1"));
     system.define(SkillDefinition·new("novice2"));
@@ -761,7 +761,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_skill_system_expert_skills() {
+rite test_skill_system_expert_skills() {
     ≔ Δ system = SkillSystem·new();
     system.define(SkillDefinition·new("mastered"));
     // Exercise many times with high quality
@@ -772,6 +772,6 @@ invoke std·collections·HashMap;
     assert_eq(experts.len(), 1);
 }
 
-λ main() {
+rite main() {
     print("Gnosis skills tests");
 }

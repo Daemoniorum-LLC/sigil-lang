@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 5.1 If
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 15;
 
     ⎇ x < 10 {

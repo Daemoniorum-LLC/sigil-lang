@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 99
 
-λ main() {
+rite main() {
     ≔ Δ x: !i32 = 42;
     x = 99;
     println(x);

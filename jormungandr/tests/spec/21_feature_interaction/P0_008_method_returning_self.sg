@@ -7,16 +7,16 @@
 }
 
 ⊢ Builder {
-    λ new() -> Builder {
+    rite new() -> Builder {
         ⤺ Builder { value: 0 };
     }
 
-    λ with_value(self, v: i32) -> Builder {
+    rite with_value(self, v: i32) -> Builder {
         ⤺ Builder { value: v };
     }
 }
 
-λ main() {
+rite main() {
     ≔ b = Builder·new().with_value(42);
     println(b.value);
 }

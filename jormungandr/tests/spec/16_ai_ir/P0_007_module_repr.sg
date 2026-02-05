@@ -3,12 +3,12 @@
 // Priority: P0 - Bootstrap Critical
 
 scroll math {
-    ☉ λ square(x: !i32) -> !i32 {
+    ☉ rite square(x: !i32) -> !i32 {
         x * x
     }
 }
 
-λ main() {
+rite main() {
     ≔ ir = __export_ir();
     println(ir.modules.len());
 }

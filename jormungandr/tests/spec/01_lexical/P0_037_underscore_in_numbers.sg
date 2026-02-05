@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 1000000 (1_000_000)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 1_000_000;
     println(x);
 }

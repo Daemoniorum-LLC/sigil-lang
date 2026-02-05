@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print: C:\path\to\file
 
-λ main() {
+rite main() {
     ≔ s: !String = r"C:\path\to\file";
     println(s);
 }

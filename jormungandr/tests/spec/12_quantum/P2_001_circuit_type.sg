@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 6.1 Circuit DSL
 // Priority: P2 - Advanced Feature
 
-λ main() {
+rite main() {
     // Create a simple circuit: H then measure
     ≔ c = Circuit·new();
     ≔ c = Circuit·add_gate(c, "H", [0]);

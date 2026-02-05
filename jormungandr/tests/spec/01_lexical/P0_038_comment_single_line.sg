@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 42 (comment is ignored)
 
-λ main() {
+rite main() {
     // This is a comment
     ≔ x: !i32 = 42; // Another comment
     println(x);

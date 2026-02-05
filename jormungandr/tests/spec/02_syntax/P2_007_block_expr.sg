@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 6.2 Block Expressions
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ x = {
         ≔ a: !i32 = 10;
         ≔ b: !i32 = 20;

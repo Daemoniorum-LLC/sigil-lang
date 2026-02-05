@@ -22,11 +22,11 @@ invoke oracle·{
 }
 
 ⊢ Explainable ∀ InvestmentRecommendation {
-    λ id(&self) -> ExplainableId {
+    rite id(&self) -> ExplainableId {
         self.id.clone()
     }
 
-    λ description(&self) -> String {
+    rite description(&self) -> String {
         ≔ action = ⌥ self.action {
             InvestmentAction·Buy => "Buy",
             InvestmentAction·Hold => "Hold",
@@ -35,7 +35,7 @@ invoke oracle·{
         format!("{} {} (confidence: {:.0}%)", action, self.asset, self.confidence * 100.0)
     }
 
-    λ factors(&self) -> Vec<Factor> {
+    rite factors(&self) -> Vec<Factor> {
         vec![
             Factor {
                 name: "market_trend".to_string(),
@@ -62,13 +62,13 @@ invoke oracle·{
 }
 
 ⊢ InvestmentAdvisor {
-    λ new() -> Self {
+    rite new() -> Self {
         ≔ Δ oracle = Oracle·new();
         oracle.trace_on(); // Enable tracing ∀ explainability
         Self { oracle }
     }
 
-    λ analyze(&Δ self, asset: &str) -> InvestmentRecommendation {
+    rite analyze(&Δ self, asset: &str) -> InvestmentRecommendation {
         ≔ decision_id = ExplainableId·new();
 
         // Step 1: Observe market conditions
@@ -148,12 +148,12 @@ invoke oracle·{
         }
     }
 
-    λ explain(&self, recommendation: &InvestmentRecommendation, level: ExplanationLevel) {
+    rite explain(&self, recommendation: &InvestmentRecommendation, level: ExplanationLevel) {
         ≔ explanation = self.oracle.explain(recommendation, level);
         println!("{}", explanation.to_human_readable());
     }
 
-    λ show_reasoning_graph(&self, recommendation: &InvestmentRecommendation) {
+    rite show_reasoning_graph(&self, recommendation: &InvestmentRecommendation) {
         ⎇ ≔ Some(trace) = self.oracle.get_trace(&recommendation.id()) {
             // Could generate visualization
             println!("Reasoning steps: {}", trace.steps().len());
@@ -167,7 +167,7 @@ invoke oracle·{
         }
     }
 
-    λ counterfactual_analysis(&self, recommendation: &InvestmentRecommendation) {
+    rite counterfactual_analysis(&self, recommendation: &InvestmentRecommendation) {
         // Why this recommendation instead of alternatives?
         ≔ cf = self.oracle.counterfactual("Buy", "Hold");
         println!("{}", cf.to_prose());
@@ -176,7 +176,7 @@ invoke oracle·{
         println!("{}", cf2.to_prose());
     }
 
-    λ interactive_exploration(&self, recommendation: &InvestmentRecommendation) {
+    rite interactive_exploration(&self, recommendation: &InvestmentRecommendation) {
         ≔ Δ explainer = self.oracle.interactive_explainer(recommendation);
 
         // Start with standard level
@@ -204,7 +204,7 @@ invoke oracle·{
     }
 }
 
-λ main() {
+rite main() {
     ≔ Δ advisor = InvestmentAdvisor·new();
 
     // Make a decision with full tracing

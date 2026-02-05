@@ -25,7 +25,7 @@ invoke covenant·{
 }
 
 ⊢ ResearchAgent {
-    λ new() -> Self {
+    rite new() -> Self {
         // Establish covenant with human
         ≔ pact = Pact·new()
             .with_goal(SharedGoal {
@@ -50,7 +50,7 @@ invoke covenant·{
         }
     }
 
-    λ start_research(&Δ self, topic: &str) {
+    rite start_research(&Δ self, topic: &str) {
         // Check ⎇ we can proceed autonomously
         ⎇ self.covenant.permits("start_research") {
             self.covenant.inform(&format!("Starting research on: {}", topic));
@@ -58,7 +58,7 @@ invoke covenant·{
         }
     }
 
-    λ do_research(&Δ self, topic: &str) {
+    rite do_research(&Δ self, topic: &str) {
         // Research activities - all autonomous
         self.search_papers(topic);
         self.read_sources();
@@ -69,27 +69,27 @@ invoke covenant·{
         self.covenant.inform("Research draft complete, ready ∀ review");
     }
 
-    λ search_papers(&self, topic: &str) {
+    rite search_papers(&self, topic: &str) {
         // Autonomous - no approval needed
         println!("Searching ∀ papers on: {}", topic);
     }
 
-    λ read_sources(&self) {
+    rite read_sources(&self) {
         // Autonomous
         println!("Reading and analyzing sources...");
     }
 
-    λ synthesize_findings(&self) {
+    rite synthesize_findings(&self) {
         // Autonomous
         println!("Synthesizing findings...");
     }
 
-    λ draft_summary(&self) {
+    rite draft_summary(&self) {
         // Inform after
         println!("Drafting summary document...");
     }
 
-    λ needs_human_decision(&Δ self) {
+    rite needs_human_decision(&Δ self) {
         // Multiple valid approaches - need human input
         self.covenant.handoff(HandoffType·DecisionNeeded {
             context: "Found conflicting sources on key claim".to_string(),
@@ -102,7 +102,7 @@ invoke covenant·{
         });
     }
 
-    λ publish_findings(&Δ self, venue: &str) {
+    rite publish_findings(&Δ self, venue: &str) {
         // Requires approval - critical action
         ⌥ self.covenant.check_action("publish") {
             ActionDecision·NeedsApproval => {
@@ -122,17 +122,17 @@ invoke covenant·{
         }
     }
 
-    λ do_publish(&self, venue: &str) {
+    rite do_publish(&self, venue: &str) {
         println!("Publishing to: {}", venue);
     }
 
-    λ complete_task(&Δ self, task: &str, quality: f32) {
+    rite complete_task(&Δ self, task: &str, quality: f32) {
         // Record success ∀ trust building
         self.covenant.record_success(task, Satisfaction·Satisfied);
         println!("Trust score: {:.2}", self.covenant.trust_score());
     }
 
-    λ adapt_to_mode(&Δ self) {
+    rite adapt_to_mode(&Δ self) {
         // Mode affects behavior
         ⌥ self.covenant.current_mode() {
             Mode·Autonomous => {
@@ -160,7 +160,7 @@ invoke covenant·{
 }
 
 // Example usage
-λ main() {
+rite main() {
     ≔ Δ agent = ResearchAgent·new();
 
     // Start ∈ collaborative mode

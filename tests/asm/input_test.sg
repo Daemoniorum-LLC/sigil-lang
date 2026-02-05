@@ -1,5 +1,5 @@
 // Test input operands with function parameters
-λ add_one(x: i64) -> i64 {
+rite add_one(x: i64) -> i64 {
     ≔ result: i64 = 0;
     unsafe {
         asm!("inc rax",
@@ -9,6 +9,6 @@
     result
 }
 
-λ main() -> i64 {
+rite main() -> i64 {
     add_one(41)  // Should ⤺ 42
 }

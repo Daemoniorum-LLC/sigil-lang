@@ -8,7 +8,7 @@
 
 invoke protocol·kafka·{Producer, Consumer, Topic};
 
-async λ main() {
+async rite main() {
     // First, produce a message to consume
     ≔ producer = Producer·connect("localhost:9092")|await~;
     ≔ topic = Topic·new("sigil-consumer-test");

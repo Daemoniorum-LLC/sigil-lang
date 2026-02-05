@@ -10,7 +10,7 @@
     inner: Inner,
 }
 
-λ main() {
+rite main() {
     ≔ o = Outer { inner: Inner { value: 42 } };
     println(o.inner.value);
 }

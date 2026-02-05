@@ -56,7 +56,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 }
 
 ⊢ Default ∀ NaveConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             name: "basilica".to_string(),
             bind_addr: "0.0.0.0:8080".to_string(),
@@ -120,12 +120,12 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 
 ⊢ Nave {
     /// Create a new Nave with default configuration
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self·with_config(NaveConfig·default())
     }
 
     /// Create with custom configuration
-    ☉ λ with_config(config: NaveConfig) -> Self {
+    ☉ rite with_config(config: NaveConfig) -> Self {
         Self {
             config,
             routes: RouteRegistry·new(),
@@ -144,25 +144,25 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     // ========================================================================
 
     /// Set application name
-    ☉ λ name(Δ self, name: &str) -> Self {
+    ☉ rite name(Δ self, name: &str) -> Self {
         self.config.name = name.to_string();
         self
     }
 
     /// Configure memory
-    ☉ λ with_memory(Δ self, config: EngramConfig) -> Self {
+    ☉ rite with_memory(Δ self, config: EngramConfig) -> Self {
         self.config.memory = Some(config);
         self
     }
 
     /// Disable memory
-    ☉ λ without_memory(Δ self) -> Self {
+    ☉ rite without_memory(Δ self) -> Self {
         self.config.memory = None;
         self
     }
 
     /// Configure covenant
-    ☉ λ with_covenant(Δ self, pact: Pact) -> Self {
+    ☉ rite with_covenant(Δ self, pact: Pact) -> Self {
         self.covenant = Covenant·new()
             .with_pact(pact)
             .with_mode(self.config.covenant_mode)
@@ -172,31 +172,31 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Set covenant mode
-    ☉ λ with_mode(Δ self, mode: Mode) -> Self {
+    ☉ rite with_mode(Δ self, mode: Mode) -> Self {
         self.config.covenant_mode = mode;
         self
     }
 
     /// Configure oracle
-    ☉ λ with_oracle(Δ self, config: OracleConfig) -> Self {
+    ☉ rite with_oracle(Δ self, config: OracleConfig) -> Self {
         self.config.oracle = Some(config);
         self
     }
 
     /// Disable oracle
-    ☉ λ without_oracle(Δ self) -> Self {
+    ☉ rite without_oracle(Δ self) -> Self {
         self.config.oracle = None;
         self
     }
 
     /// Enable evidence headers
-    ☉ λ with_evidence_headers(Δ self) -> Self {
+    ☉ rite with_evidence_headers(Δ self) -> Self {
         self.config.evidence_headers = true;
         self
     }
 
     /// Disable evidence headers
-    ☉ λ without_evidence_headers(Δ self) -> Self {
+    ☉ rite without_evidence_headers(Δ self) -> Self {
         self.config.evidence_headers = false;
         self
     }
@@ -206,13 +206,13 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     // ========================================================================
 
     /// Register a single route
-    ☉ λ route(Δ self, route: Route) -> Self {
+    ☉ rite route(Δ self, route: Route) -> Self {
         self.routes.register(route);
         self
     }
 
     /// Register multiple routes
-    ☉ λ routes(Δ self, routes: Vec<Route>) -> Self {
+    ☉ rite routes(Δ self, routes: Vec<Route>) -> Self {
         ∀ route ∈ routes {
             self.routes.register(route);
         }
@@ -220,7 +220,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Mount routes under a prefix
-    ☉ λ mount(Δ self, prefix: &str, routes: Vec<Route>) -> Self {
+    ☉ rite mount(Δ self, prefix: &str, routes: Vec<Route>) -> Self {
         ∀ Δ route ∈ routes {
             route.prefix(prefix);
             self.routes.register(route);
@@ -233,13 +233,13 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     // ========================================================================
 
     /// Add middleware
-    ☉ λ middleware<M: Middleware + 'static>(Δ self, middleware: M) -> Self {
+    ☉ rite middleware<M: Middleware + 'static>(Δ self, middleware: M) -> Self {
         self.middleware.add(Box·new(middleware));
         self
     }
 
     /// Add middleware at the beginning
-    ☉ λ middleware_first<M: Middleware + 'static>(Δ self, middleware: M) -> Self {
+    ☉ rite middleware_first<M: Middleware + 'static>(Δ self, middleware: M) -> Self {
         self.middleware.add_first(Box·new(middleware));
         self
     }
@@ -249,14 +249,14 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     // ========================================================================
 
     /// Register a daemon service
-    ☉ λ daemon<S: Service + 'static>(Δ self, service: S) -> Self {
+    ☉ rite daemon<S: Service + 'static>(Δ self, service: S) -> Self {
         ≔ name = std·any·type_name·<S>().to_string();
         self.services.register(&name, service);
         self
     }
 
     /// Register a named service
-    ☉ λ daemon_named<S: Service + 'static>(Δ self, name: &str, service: S) -> Self {
+    ☉ rite daemon_named<S: Service + 'static>(Δ self, name: &str, service: S) -> Self {
         self.services.register(name, service);
         self
     }
@@ -266,13 +266,13 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     // ========================================================================
 
     /// Set bind address
-    ☉ λ listen(Δ self, addr: &str) -> Self {
+    ☉ rite listen(Δ self, addr: &str) -> Self {
         self.config.bind_addr = addr.to_string();
         self
     }
 
     /// Initialize and run the application
-    ☉ λ run(Δ self) -> BasilicaResult<()> {
+    ☉ rite run(Δ self) -> BasilicaResult<()> {
         self.state = NaveState·Starting;
 
         // Initialize shared memory ⎇ configured
@@ -305,7 +305,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Handle a request (called by HTTP server)
-    ☉ λ handle(&self, request: Request) -> Response<Vec<u8>> {
+    ☉ rite handle(&self, request: Request) -> Response<Vec<u8>> {
         // Create context
         ≔ ctx = Context·new(
             request.request_id,
@@ -325,7 +325,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     }
 
     /// Graceful shutdown
-    ☉ λ shutdown(&Δ self) {
+    ☉ rite shutdown(&Δ self) {
         self.state = NaveState·ShuttingDown;
 
         // Stop accepting new requests
@@ -341,32 +341,32 @@ invoke crate·error·{BasilicaError, BasilicaResult};
     // ========================================================================
 
     /// Get application state
-    ☉ λ state(&self) -> NaveState {
+    ☉ rite state(&self) -> NaveState {
         self.state
     }
 
     /// Get configuration
-    ☉ λ config(&self) -> &NaveConfig {
+    ☉ rite config(&self) -> &NaveConfig {
         &self.config
     }
 
     /// Get shared memory
-    ☉ λ memory(&self) -> Option<&Engram> {
+    ☉ rite memory(&self) -> Option<&Engram> {
         self.memory.as_ref()
     }
 
     /// Get shared covenant
-    ☉ λ covenant(&self) -> Option<&Covenant> {
+    ☉ rite covenant(&self) -> Option<&Covenant> {
         self.covenant.as_ref()
     }
 
     /// Get shared oracle
-    ☉ λ oracle(&self) -> Option<&Oracle> {
+    ☉ rite oracle(&self) -> Option<&Oracle> {
         self.oracle.as_ref()
     }
 
     /// Get uptime
-    ☉ λ uptime(&self) -> Option<Duration> {
+    ☉ rite uptime(&self) -> Option<Duration> {
         self.started_at.map(|t| t.elapsed())
     }
 }
@@ -376,7 +376,7 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 // ============================================================================
 
 /// Standard middleware stack
-☉ λ default_middleware() -> Vec<Box<dyn Middleware>> {
+☉ rite default_middleware() -> Vec<Box<dyn Middleware>> {
     vec![
         // Request ID generation
         // Logging

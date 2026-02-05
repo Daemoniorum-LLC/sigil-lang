@@ -115,7 +115,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 }
 
 ⊢ CompareOp {
-    ☉ λ as_sql(&self) -> &'static str {
+    ☉ rite as_sql(&self) -> &'static str {
         ⌥ self {
             CompareOp·Eq => "=",
             CompareOp·Ne => "!=",
@@ -142,7 +142,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
 ⊢ QueryParam {
     /// Create a known (!) parameter
-    ☉ λ known(value: Value) -> Self {
+    ☉ rite known(value: Value) -> Self {
         Self {
             value,
             evidence: EvidenceLevel·Known,
@@ -151,7 +151,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     }
 
     /// Create from an evidenced value - will fail ⎇ not !
-    ☉ λ from_evidenced<T: Into<Value>>(evidenced: Evidenced<T>) -> Result<Self, QueryError> {
+    ☉ rite from_evidenced<T: Into<Value>>(evidenced: Evidenced<T>) -> Result<Self, QueryError> {
         ⎇ evidenced.level() != EvidenceLevel·Known {
             ⤺ Err(QueryError·EvidenceRequired {
                 actual: evidenced.level(),
@@ -167,7 +167,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     }
 
     /// Named parameter
-    ☉ λ named(name: &str, value: Value) -> Self {
+    ☉ rite named(name: &str, value: Value) -> Self {
         Self {
             value,
             evidence: EvidenceLevel·Known,
@@ -259,7 +259,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
 ⊢<T> Query<T> {
     /// Start a query on a table
-    ☉ λ from(table: &str) -> Self {
+    ☉ rite from(table: &str) -> Self {
         Self {
             table: table.to_string(),
             filters: vec![],
@@ -279,13 +279,13 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
     /// Add a filter (WHERE clause)
     /// Symbol: φ
-    ☉ λ phi(Δ self, filter: Filter) -> Self {
+    ☉ rite phi(Δ self, filter: Filter) -> Self {
         self.filters.push(filter);
         self
     }
 
     /// Convenience: filter by field equals value
-    ☉ λ where_eq(self, field: &str, value: QueryParam) -> Self {
+    ☉ rite where_eq(self, field: &str, value: QueryParam) -> Self {
         self.phi(Filter·Compare {
             field: field.to_string(),
             op: CompareOp·Eq,
@@ -294,7 +294,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     }
 
     /// Convenience: filter by field greater than value
-    ☉ λ where_gt(self, field: &str, value: QueryParam) -> Self {
+    ☉ rite where_gt(self, field: &str, value: QueryParam) -> Self {
         self.phi(Filter·Compare {
             field: field.to_string(),
             op: CompareOp·Gt,
@@ -303,7 +303,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     }
 
     /// Convenience: filter where field is null
-    ☉ λ where_null(self, field: &str) -> Self {
+    ☉ rite where_null(self, field: &str) -> Self {
         self.phi(Filter·IsNull {
             field: field.to_string(),
             is_null: true,
@@ -311,7 +311,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     }
 
     /// Convenience: filter where field is not null
-    ☉ λ where_not_null(self, field: &str) -> Self {
+    ☉ rite where_not_null(self, field: &str) -> Self {
         self.phi(Filter·IsNull {
             field: field.to_string(),
             is_null: false,
@@ -324,13 +324,13 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
     /// Add ordering (ORDER BY)
     /// Symbol: σ
-    ☉ λ sigma(Δ self, ordering: Ordering) -> Self {
+    ☉ rite sigma(Δ self, ordering: Ordering) -> Self {
         self.ordering.push(ordering);
         self
     }
 
     /// Convenience: order by field ascending
-    ☉ λ order_by(self, field: &str) -> Self {
+    ☉ rite order_by(self, field: &str) -> Self {
         self.sigma(Ordering {
             field: field.to_string(),
             direction: OrderDirection·Asc,
@@ -339,7 +339,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     }
 
     /// Convenience: order by field descending
-    ☉ λ order_by_desc(self, field: &str) -> Self {
+    ☉ rite order_by_desc(self, field: &str) -> Self {
         self.sigma(Ordering {
             field: field.to_string(),
             direction: OrderDirection·Desc,
@@ -353,18 +353,18 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
     /// Set pagination (LIMIT/OFFSET)
     /// Symbol: ν
-    ☉ λ nu(Δ self, limit: usize, offset: usize) -> Self {
+    ☉ rite nu(Δ self, limit: usize, offset: usize) -> Self {
         self.pagination = Some(Pagination { limit, offset });
         self
     }
 
     /// Convenience: limit results
-    ☉ λ limit(self, n: usize) -> Self {
+    ☉ rite limit(self, n: usize) -> Self {
         self.nu(n, 0)
     }
 
     /// Convenience: skip first n results
-    ☉ λ offset(Δ self, n: usize) -> Self {
+    ☉ rite offset(Δ self, n: usize) -> Self {
         ⎇ ≔ Some(ref Δ p) = self.pagination {
             p.offset = n;
         } ⎉ {
@@ -379,13 +379,13 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
     /// Set projections (SELECT)
     /// Symbol: τ
-    ☉ λ tau(Δ self, projections: Vec<Projection>) -> Self {
+    ☉ rite tau(Δ self, projections: Vec<Projection>) -> Self {
         self.projections = projections;
         self
     }
 
     /// Convenience: select specific columns
-    ☉ λ select(self, columns: &[&str]) -> Self {
+    ☉ rite select(self, columns: &[&str]) -> Self {
         self.tau(columns.iter().map(|c| Projection·Column(c.to_string())).collect())
     }
 
@@ -394,13 +394,13 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     // ========================================================================
 
     /// Add grouping (GROUP BY)
-    ☉ λ group_by(Δ self, field: &str) -> Self {
+    ☉ rite group_by(Δ self, field: &str) -> Self {
         self.grouping.push(field.to_string());
         self
     }
 
     /// Add aggregate projection
-    ☉ λ aggregate(Δ self, func: AggregateFunc, column: &str, alias: Option<&str>) -> Self {
+    ☉ rite aggregate(Δ self, func: AggregateFunc, column: &str, alias: Option<&str>) -> Self {
         self.projections.push(Projection·Aggregate {
             func,
             column: column.to_string(),
@@ -415,13 +415,13 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
     /// Add a join
     /// Symbol: ζ
-    ☉ λ zeta(Δ self, join: Join) -> Self {
+    ☉ rite zeta(Δ self, join: Join) -> Self {
         self.joins.push(join);
         self
     }
 
     /// Convenience: inner join
-    ☉ λ inner_join(self, table: &str, on: Filter) -> Self {
+    ☉ rite inner_join(self, table: &str, on: Filter) -> Self {
         self.zeta(Join {
             join_type: JoinType·Inner,
             table: table.to_string(),
@@ -431,7 +431,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     }
 
     /// Convenience: left join
-    ☉ λ left_join(self, table: &str, on: Filter) -> Self {
+    ☉ rite left_join(self, table: &str, on: Filter) -> Self {
         self.zeta(Join {
             join_type: JoinType·Left,
             table: table.to_string(),
@@ -445,7 +445,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     // ========================================================================
 
     /// Generate SQL and parameters
-    ☉ λ to_sql(&self) -> (String, Vec<Value>) {
+    ☉ rite to_sql(&self) -> (String, Vec<Value>) {
         ≔ Δ sql = String·new();
         ≔ Δ params: Vec<Value> = vec![];
         ≔ Δ param_idx = 1;
@@ -544,7 +544,7 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
         (sql, params)
     }
 
-    λ filter_to_sql(&self, filter: &Filter, param_idx: &Δ usize) -> (String, Vec<Value>) {
+    rite filter_to_sql(&self, filter: &Filter, param_idx: &Δ usize) -> (String, Vec<Value>) {
         ≔ Δ params = vec![];
 
         ≔ sql = ⌥ filter {
@@ -656,17 +656,17 @@ invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
 ⊢<T> QueryResult<T> {
     /// Check ⎇ empty
-    ☉ λ is_empty(&self) -> bool {
+    ☉ rite is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 
     /// Get first row
-    ☉ λ first(&self) -> Option<&Evidenced<T>> {
+    ☉ rite first(&self) -> Option<&Evidenced<T>> {
         self.rows.first()
     }
 
     /// Get first row, consuming result
-    ☉ λ into_first(Δ self) -> Option<Evidenced<T>> {
+    ☉ rite into_first(Δ self) -> Option<Evidenced<T>> {
         ⎇ self.rows.is_empty() {
             None
         } ⎉ {

@@ -8,11 +8,11 @@
 // Expected behavior:
 // Should print 42 twice
 
-λ print_value(x: &!i32) {
+rite print_value(x: &!i32) {
     println(*x);
 }
 
-λ main() {
+rite main() {
     ≔ val: !i32 = 42;
     ≔ r1: &!i32 = &val;
     ≔ r2: &!i32 = &val;

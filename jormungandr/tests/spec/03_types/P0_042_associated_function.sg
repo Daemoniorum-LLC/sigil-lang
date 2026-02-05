@@ -3,8 +3,8 @@
 // Priority: P0
 
 ☉ Σ Math {}
-⊢ Math { ☉ λ answer() -> !i32 { 42 } }
+⊢ Math { ☉ rite answer() -> !i32 { 42 } }
 
-λ main() {
+rite main() {
     println(Math·answer());
 }

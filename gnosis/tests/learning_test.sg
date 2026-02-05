@@ -9,39 +9,39 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 ☉ Σ Duration { nanos: u64 }
-⊢ Duration { ☉ λ zero() -> Self { Self { nanos: 0 } } }
+⊢ Duration { ☉ rite zero() -> Self { Self { nanos: 0 } } }
 ⊢ Copy ∀ Duration {}
-⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+⊢ Clone ∀ Duration { rite clone(&self) -> Self { *self } }
 
 ☉ Σ Timestamp { nanos: u64 }
 ⊢ Timestamp {
-    ☉ λ now() -> Self { Self { nanos: 1000 } }
-    ☉ λ from_nanos(n: u64) -> Self { Self { nanos: n } }
+    ☉ rite now() -> Self { Self { nanos: 1000 } }
+    ☉ rite from_nanos(n: u64) -> Self { Self { nanos: n } }
 }
 
 ⊢ PartialOrd ∀ Timestamp {
-    λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+    rite partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
         self.nanos.partial_cmp(&other.nanos)
     }
 }
 
 ⊢ PartialEq ∀ Timestamp {
-    λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+    rite eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
 }
 
 ☉ Σ ExperienceId { id: String }
-⊢ ExperienceId { ☉ λ generate() -> Self { Self { id: "exp".to_string() } } }
-⊢ Clone ∀ ExperienceId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+⊢ ExperienceId { ☉ rite generate() -> Self { Self { id: "exp".to_string() } } }
+⊢ Clone ∀ ExperienceId { rite clone(&self) -> Self { Self { id: self.id.clone() } } }
 
 ☉ Σ HumanId { id: String }
-⊢ HumanId { ☉ λ new(id: &str) -> Self { Self { id: id.to_string() } } }
-⊢ Clone ∀ HumanId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+⊢ HumanId { ☉ rite new(id: &str) -> Self { Self { id: id.to_string() } } }
+⊢ Clone ∀ HumanId { rite clone(&self) -> Self { Self { id: self.id.clone() } } }
 
 ☉ Σ Confidence { value: f64 }
 ⊢ Confidence {
-    ☉ λ new(v: f64) -> Self { Self { value: v.clamp(0.0, 1.0) } }
-    ☉ λ zero() -> Self { Self { value: 0.0 } }
-    ☉ λ value(&self) -> f64 { self.value }
+    ☉ rite new(v: f64) -> Self { Self { value: v.clamp(0.0, 1.0) } }
+    ☉ rite zero() -> Self { Self { value: 0.0 } }
+    ☉ rite value(&self) -> f64 { self.value }
 }
 
 #[derive(Clone)]
@@ -51,20 +51,20 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Context {
-    ☉ λ new(task_type: &str) -> Self {
+    ☉ rite new(task_type: &str) -> Self {
         Self { task_type: task_type.to_string(), domain: None }
     }
 
-    ☉ λ with_domain(Δ self, domain: &str) -> Self {
+    ☉ rite with_domain(Δ self, domain: &str) -> Self {
         self.domain = Some(domain.to_string());
         self
     }
 
-    ☉ λ similar_to(&self, other: &Context) -> bool {
+    ☉ rite similar_to(&self, other: &Context) -> bool {
         self.task_type == other.task_type
     }
 
-    ☉ λ matches(&self, other: &Context) -> bool {
+    ☉ rite matches(&self, other: &Context) -> bool {
         self.task_type == other.task_type && self.domain == other.domain
     }
 }
@@ -76,11 +76,11 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Action {
-    ☉ λ new(approach: &str) -> Self {
+    ☉ rite new(approach: &str) -> Self {
         Self { approach: approach.to_string(), skills: vec![] }
     }
 
-    ☉ λ with_skill(Δ self, skill: &str) -> Self {
+    ☉ rite with_skill(Δ self, skill: &str) -> Self {
         self.skills.push(skill.to_string());
         self
     }
@@ -94,15 +94,15 @@ invoke std·collections·HashMap;
 }
 
 ⊢ ExperienceOutcome {
-    ☉ λ success(quality: f32) -> Self {
+    ☉ rite success(quality: f32) -> Self {
         Self { success: true, quality: quality.clamp(0.0, 1.0), unexpected: false }
     }
 
-    ☉ λ failure() -> Self {
+    ☉ rite failure() -> Self {
         Self { success: false, quality: 0.0, unexpected: false }
     }
 
-    ☉ λ unexpected(quality: f32) -> Self {
+    ☉ rite unexpected(quality: f32) -> Self {
         Self { success: true, quality, unexpected: true }
     }
 }
@@ -117,7 +117,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Experience {
-    ☉ λ new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
+    ☉ rite new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
         Self {
             id: ExperienceId·generate(),
             context,
@@ -144,7 +144,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Lesson {
-    ☉ λ effective(context: Context, approach: &str, effectiveness: f32) -> Self {
+    ☉ rite effective(context: Context, approach: &str, effectiveness: f32) -> Self {
         Self {
             context,
             approach: approach.to_string(),
@@ -153,7 +153,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ ineffective(context: Context, approach: &str) -> Self {
+    ☉ rite ineffective(context: Context, approach: &str) -> Self {
         Self {
             context,
             approach: approach.to_string(),
@@ -162,7 +162,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ is_positive(&self) -> bool {
+    ☉ rite is_positive(&self) -> bool {
         ⌥ self.lesson_type {
             LessonType·EffectiveApproach => true,
             _ => false,
@@ -179,7 +179,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Pattern {
-    ☉ λ new(context: Context, approach: &str) -> Self {
+    ☉ rite new(context: Context, approach: &str) -> Self {
         Self {
             context,
             approach: approach.to_string(),
@@ -189,11 +189,11 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ is_reliable(&self) -> bool {
+    ☉ rite is_reliable(&self) -> bool {
         self.success_rate >= 0.7 && self.confidence.value() >= 0.5
     }
 
-    ☉ λ record_outcome(&Δ self, success: bool) {
+    ☉ rite record_outcome(&Δ self, success: bool) {
         self.occurrences += 1;
         ≔ outcome_val = ⎇ success { 1.0 } ⎉ { 0.0 };
         // Rolling average
@@ -208,21 +208,21 @@ invoke std·collections·HashMap;
 }
 
 ⊢ LessonStore {
-    ☉ λ new() -> Self { Self { lessons: vec![] } }
+    ☉ rite new() -> Self { Self { lessons: vec![] } }
 
-    ☉ λ add(&Δ self, lesson: Lesson) {
+    ☉ rite add(&Δ self, lesson: Lesson) {
         self.lessons.push(lesson);
     }
 
-    ☉ λ count(&self) -> usize { self.lessons.len() }
+    ☉ rite count(&self) -> usize { self.lessons.len() }
 
-    ☉ λ lessons(&self) -> &[Lesson] { &self.lessons }
+    ☉ rite lessons(&self) -> &[Lesson] { &self.lessons }
 
-    ☉ λ for_context(&self, ctx: &Context) -> Vec<&Lesson> {
+    ☉ rite for_context(&self, ctx: &Context) -> Vec<&Lesson> {
         self.lessons.iter().filter(|l| l.context.similar_to(ctx)).collect()
     }
 
-    ☉ λ positive_lessons(&self) -> Vec<&Lesson> {
+    ☉ rite positive_lessons(&self) -> Vec<&Lesson> {
         self.lessons.iter().filter(|l| l.is_positive()).collect()
     }
 }
@@ -232,31 +232,31 @@ invoke std·collections·HashMap;
 }
 
 ⊢ PatternStore {
-    ☉ λ new() -> Self { Self { patterns: vec![] } }
+    ☉ rite new() -> Self { Self { patterns: vec![] } }
 
-    ☉ λ add(&Δ self, pattern: Pattern) {
+    ☉ rite add(&Δ self, pattern: Pattern) {
         self.patterns.push(pattern);
     }
 
-    ☉ λ count(&self) -> usize { self.patterns.len() }
+    ☉ rite count(&self) -> usize { self.patterns.len() }
 
-    ☉ λ get(&self, context: &Context, approach: &str) -> Option<&Pattern> {
+    ☉ rite get(&self, context: &Context, approach: &str) -> Option<&Pattern> {
         self.patterns.iter().find(|p|
             p.context.similar_to(context) && p.approach == approach
         )
     }
 
-    ☉ λ get_mut(&Δ self, context: &Context, approach: &str) -> Option<&Δ Pattern> {
+    ☉ rite get_mut(&Δ self, context: &Context, approach: &str) -> Option<&Δ Pattern> {
         self.patterns.iter_mut().find(|p|
             p.context.similar_to(context) && p.approach == approach
         )
     }
 
-    ☉ λ reliable_patterns(&self) -> Vec<&Pattern> {
+    ☉ rite reliable_patterns(&self) -> Vec<&Pattern> {
         self.patterns.iter().filter(|p| p.is_reliable()).collect()
     }
 
-    ☉ λ for_context(&self, ctx: &Context) -> Vec<&Pattern> {
+    ☉ rite for_context(&self, ctx: &Context) -> Vec<&Pattern> {
         self.patterns.iter().filter(|p| p.context.similar_to(ctx)).collect()
     }
 }
@@ -268,7 +268,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ LearningConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             max_experiences: 1000,
             pattern_threshold: 3,
@@ -276,7 +276,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_pattern_threshold(Δ self, threshold: usize) -> Self {
+    ☉ rite with_pattern_threshold(Δ self, threshold: usize) -> Self {
         self.pattern_threshold = threshold;
         self
     }
@@ -290,7 +290,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ LearningEngine {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             experiences: vec![],
             patterns: PatternStore·new(),
@@ -299,7 +299,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_config(config: LearningConfig) -> Self {
+    ☉ rite with_config(config: LearningConfig) -> Self {
         Self {
             experiences: vec![],
             patterns: PatternStore·new(),
@@ -308,7 +308,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ record_experience(&Δ self, exp: Experience) {
+    ☉ rite record_experience(&Δ self, exp: Experience) {
         // Check ∀ pattern or update existing
         ⎇ ≔ Some(pattern) = self.patterns.get_mut(&exp.context, &exp.action.approach) {
             pattern.record_outcome(exp.outcome.success);
@@ -341,7 +341,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ extract_lessons(&self, exp: &Experience) -> Vec<Lesson> {
+    ☉ rite extract_lessons(&self, exp: &Experience) -> Vec<Lesson> {
         ≔ Δ lessons = Vec·new();
 
         ⎇ exp.outcome.success {
@@ -369,23 +369,23 @@ invoke std·collections·HashMap;
         lessons
     }
 
-    ☉ λ experience_count(&self) -> usize {
+    ☉ rite experience_count(&self) -> usize {
         self.experiences.len()
     }
 
-    ☉ λ pattern_count(&self) -> usize {
+    ☉ rite pattern_count(&self) -> usize {
         self.patterns.count()
     }
 
-    ☉ λ lesson_count(&self) -> usize {
+    ☉ rite lesson_count(&self) -> usize {
         self.lessons.count()
     }
 
-    ☉ λ find_similar(&self, context: &Context) -> Vec<&Experience> {
+    ☉ rite find_similar(&self, context: &Context) -> Vec<&Experience> {
         self.experiences.iter().filter(|e| e.context.similar_to(context)).collect()
     }
 
-    ☉ λ success_rate_for(&self, context: &Context, approach: &str) -> Option<f32> {
+    ☉ rite success_rate_for(&self, context: &Context, approach: &str) -> Option<f32> {
         self.patterns.get(context, approach).map(|p| p.success_rate)
     }
 }
@@ -395,14 +395,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_lesson_effective() {
+rite test_lesson_effective() {
     ≔ lesson = Lesson·effective(Context·new("coding"), "tdd", 0.9);
     assert(lesson.is_positive());
     assert_eq(lesson.effectiveness, 0.9);
 }
 
 #[test]
-λ test_lesson_ineffective() {
+rite test_lesson_ineffective() {
     ≔ lesson = Lesson·ineffective(Context·new("coding"), "cowboy_coding");
     assert(!lesson.is_positive());
     assert_eq(lesson.effectiveness, 0.0);
@@ -413,14 +413,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_pattern_new() {
+rite test_pattern_new() {
     ≔ pattern = Pattern·new(Context·new("testing"), "unit_tests");
     assert_eq(pattern.approach, "unit_tests");
     assert_eq(pattern.occurrences, 0);
 }
 
 #[test]
-λ test_pattern_record_outcome_success() {
+rite test_pattern_record_outcome_success() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
     pattern.record_outcome(true);
     assert_eq(pattern.occurrences, 1);
@@ -428,14 +428,14 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_pattern_record_outcome_failure() {
+rite test_pattern_record_outcome_failure() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
     pattern.record_outcome(false);
     assert_eq(pattern.success_rate, 0.0);
 }
 
 #[test]
-λ test_pattern_record_multiple_outcomes() {
+rite test_pattern_record_multiple_outcomes() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "approach");
     pattern.record_outcome(true);
     pattern.record_outcome(true);
@@ -446,7 +446,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_pattern_is_reliable() {
+rite test_pattern_is_reliable() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "reliable");
     ∀ _ ∈ 0..10 {
         pattern.record_outcome(true);
@@ -455,7 +455,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_pattern_not_reliable_low_success() {
+rite test_pattern_not_reliable_low_success() {
     ≔ Δ pattern = Pattern·new(Context·new("testing"), "unreliable");
     ∀ _ ∈ 0..10 {
         pattern.record_outcome(false);
@@ -468,20 +468,20 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_lesson_store_new() {
+rite test_lesson_store_new() {
     ≔ store = LessonStore·new();
     assert_eq(store.count(), 0);
 }
 
 #[test]
-λ test_lesson_store_add() {
+rite test_lesson_store_add() {
     ≔ Δ store = LessonStore·new();
     store.add(Lesson·effective(Context·new("task"), "approach", 0.8));
     assert_eq(store.count(), 1);
 }
 
 #[test]
-λ test_lesson_store_for_context() {
+rite test_lesson_store_for_context() {
     ≔ Δ store = LessonStore·new();
     store.add(Lesson·effective(Context·new("coding"), "tdd", 0.9));
     store.add(Lesson·effective(Context·new("coding"), "pair", 0.8));
@@ -492,7 +492,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_lesson_store_positive_lessons() {
+rite test_lesson_store_positive_lessons() {
     ≔ Δ store = LessonStore·new();
     store.add(Lesson·effective(Context·new("task"), "good", 0.9));
     store.add(Lesson·ineffective(Context·new("task"), "bad"));
@@ -506,20 +506,20 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_pattern_store_new() {
+rite test_pattern_store_new() {
     ≔ store = PatternStore·new();
     assert_eq(store.count(), 0);
 }
 
 #[test]
-λ test_pattern_store_add() {
+rite test_pattern_store_add() {
     ≔ Δ store = PatternStore·new();
     store.add(Pattern·new(Context·new("coding"), "tdd"));
     assert_eq(store.count(), 1);
 }
 
 #[test]
-λ test_pattern_store_get() {
+rite test_pattern_store_get() {
     ≔ Δ store = PatternStore·new();
     store.add(Pattern·new(Context·new("coding"), "tdd"));
 
@@ -528,14 +528,14 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_pattern_store_get_missing() {
+rite test_pattern_store_get_missing() {
     ≔ store = PatternStore·new();
     ≔ pattern = store.get(&Context·new("coding"), "nonexistent");
     assert(pattern.is_none());
 }
 
 #[test]
-λ test_pattern_store_reliable_patterns() {
+rite test_pattern_store_reliable_patterns() {
     ≔ Δ store = PatternStore·new();
 
     ≔ Δ reliable = Pattern·new(Context·new("good"), "approach");
@@ -553,7 +553,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_pattern_store_for_context() {
+rite test_pattern_store_for_context() {
     ≔ Δ store = PatternStore·new();
     store.add(Pattern·new(Context·new("coding"), "tdd"));
     store.add(Pattern·new(Context·new("coding"), "pair"));
@@ -568,14 +568,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_learning_config_default() {
+rite test_learning_config_default() {
     ≔ config = LearningConfig·default_config();
     assert_eq(config.max_experiences, 1000);
     assert_eq(config.pattern_threshold, 3);
 }
 
 #[test]
-λ test_learning_config_with_pattern_threshold() {
+rite test_learning_config_with_pattern_threshold() {
     ≔ config = LearningConfig·default_config().with_pattern_threshold(5);
     assert_eq(config.pattern_threshold, 5);
 }
@@ -585,14 +585,14 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_learning_engine_new() {
+rite test_learning_engine_new() {
     ≔ engine = LearningEngine·new();
     assert_eq(engine.experience_count(), 0);
     assert_eq(engine.pattern_count(), 0);
 }
 
 #[test]
-λ test_learning_engine_record_experience() {
+rite test_learning_engine_record_experience() {
     ≔ Δ engine = LearningEngine·new();
     engine.record_experience(Experience·new(
         Context·new("coding"),
@@ -603,7 +603,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_learning_engine_extract_lessons_success() {
+rite test_learning_engine_extract_lessons_success() {
     ≔ engine = LearningEngine·new();
     ≔ exp = Experience·new(
         Context·new("coding"),
@@ -617,7 +617,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_learning_engine_extract_lessons_failure() {
+rite test_learning_engine_extract_lessons_failure() {
     ≔ engine = LearningEngine·new();
     ≔ exp = Experience·new(
         Context·new("coding"),
@@ -631,7 +631,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_learning_engine_extract_lessons_unexpected() {
+rite test_learning_engine_extract_lessons_unexpected() {
     ≔ engine = LearningEngine·new();
     ≔ exp = Experience·new(
         Context·new("experiment"),
@@ -644,7 +644,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_learning_engine_pattern_detection() {
+rite test_learning_engine_pattern_detection() {
     ≔ Δ engine = LearningEngine·with_config(
         LearningConfig·default_config().with_pattern_threshold(2)
     );
@@ -665,7 +665,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_learning_engine_find_similar() {
+rite test_learning_engine_find_similar() {
     ≔ Δ engine = LearningEngine·new();
     engine.record_experience(Experience·new(
         Context·new("coding"),
@@ -688,7 +688,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_learning_engine_success_rate_for() {
+rite test_learning_engine_success_rate_for() {
     ≔ Δ engine = LearningEngine·with_config(
         LearningConfig·default_config().with_pattern_threshold(2)
     );
@@ -710,7 +710,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_learning_engine_max_experiences() {
+rite test_learning_engine_max_experiences() {
     ≔ Δ engine = LearningEngine·with_config(LearningConfig {
         max_experiences: 3,
         pattern_threshold: 5,
@@ -729,7 +729,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_learning_engine_multiple_patterns() {
+rite test_learning_engine_multiple_patterns() {
     ≔ Δ engine = LearningEngine·with_config(
         LearningConfig·default_config().with_pattern_threshold(2)
     );
@@ -753,6 +753,6 @@ invoke std·collections·HashMap;
     assert_eq(engine.pattern_count(), 2);
 }
 
-λ main() {
+rite main() {
     print("Gnosis learning tests");
 }

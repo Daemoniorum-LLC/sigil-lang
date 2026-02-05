@@ -26,7 +26,7 @@ invoke omen·{Omen, Plan};
 // Example 1: Basic Secure Agent
 // ============================================================================
 
-λ basic_secure_agent() {
+rite basic_secure_agent() {
     println!("=== Basic Secure Agent ===\n");
 
     // Create Aegis with standard security
@@ -61,7 +61,7 @@ invoke omen·{Omen, Plan};
 // Example 2: Custom Constitution
 // ============================================================================
 
-λ custom_constitution_agent() {
+rite custom_constitution_agent() {
     println!("\n=== Custom Constitution Agent ===\n");
 
     // Define a custom constitution
@@ -114,7 +114,7 @@ invoke omen·{Omen, Plan};
 // Example 3: Injection Detection
 // ============================================================================
 
-λ injection_detection_example() {
+rite injection_detection_example() {
     println!("\n=== Injection Detection ===\n");
 
     ≔ Δ aegis = Aegis·with_level(SecurityLevel·Hardened);
@@ -147,7 +147,7 @@ invoke omen·{Omen, Plan};
 // Example 4: Memory Protection
 // ============================================================================
 
-λ memory_protection_example() {
+rite memory_protection_example() {
     println!("\n=== Memory Protection ===\n");
 
     // Create memory guard with encryption
@@ -197,7 +197,7 @@ invoke omen·{Omen, Plan};
 // Example 5: Secure Communication
 // ============================================================================
 
-λ secure_communication_example() {
+rite secure_communication_example() {
     println!("\n=== Secure Communication ===\n");
 
     // Create two agents with identities
@@ -247,7 +247,7 @@ invoke omen·{Omen, Plan};
 // Example 6: Alignment Monitoring
 // ============================================================================
 
-λ alignment_monitoring_example() {
+rite alignment_monitoring_example() {
     println!("\n=== Alignment Monitoring ===\n");
 
     ≔ constitution = Constitution·default_safe();
@@ -298,7 +298,7 @@ invoke omen·{Omen, Plan};
 // Example 7: Collective Defense
 // ============================================================================
 
-λ collective_defense_example() {
+rite collective_defense_example() {
     println!("\n=== Collective Defense ===\n");
 
     ≔ Δ defense = CollectiveDefense·new()
@@ -366,7 +366,7 @@ invoke omen·{Omen, Plan};
 // Example 8: Full Secure Daemon
 // ============================================================================
 
-λ secure_daemon_example() {
+rite secure_daemon_example() {
     println!("\n=== Secure Daemon ===\n");
 
     // Create Aegis with hardened security
@@ -433,7 +433,7 @@ invoke omen·{Omen, Plan};
 // Example 9: Security Level Comparison
 // ============================================================================
 
-λ security_levels_comparison() {
+rite security_levels_comparison() {
     println!("\n=== Security Level Comparison ===\n");
 
     ≔ levels = [
@@ -461,7 +461,7 @@ invoke omen·{Omen, Plan};
 // Main
 // ============================================================================
 
-λ main() {
+rite main() {
     println!("╔════════════════════════════════════════════════════════════╗");
     println!("║            AEGIS SECURITY INFRASTRUCTURE                   ║");
     println!("║                   Examples & Tests                         ║");

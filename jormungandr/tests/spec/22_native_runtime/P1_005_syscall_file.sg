@@ -5,7 +5,7 @@
 // This test verifies data operations that would be used
 // ∀ file syscalls ∈ compiled mode.
 
-λ main() {
+rite main() {
     ≔ test_content = "Hello, Native Runtime!";
 
     // Test 1: Create and write (simulated with array)

@@ -45,14 +45,14 @@ invoke crate·request·Headers;
     // Custom
     ☉ const APPROVAL_REQUIRED: StatusCode = StatusCode(499); // Custom: Covenant handoff
 
-    ☉ λ as_u16(&self) -> u16 { self.0 }
+    ☉ rite as_u16(&self) -> u16 { self.0 }
 
-    ☉ λ is_success(&self) -> bool { self.0 >= 200 && self.0 < 300 }
-    ☉ λ is_redirect(&self) -> bool { self.0 >= 300 && self.0 < 400 }
-    ☉ λ is_client_error(&self) -> bool { self.0 >= 400 && self.0 < 500 }
-    ☉ λ is_server_error(&self) -> bool { self.0 >= 500 && self.0 < 600 }
+    ☉ rite is_success(&self) -> bool { self.0 >= 200 && self.0 < 300 }
+    ☉ rite is_redirect(&self) -> bool { self.0 >= 300 && self.0 < 400 }
+    ☉ rite is_client_error(&self) -> bool { self.0 >= 400 && self.0 < 500 }
+    ☉ rite is_server_error(&self) -> bool { self.0 >= 500 && self.0 < 600 }
 
-    ☉ λ reason_phrase(&self) -> &'static str {
+    ☉ rite reason_phrase(&self) -> &'static str {
         ⌥ self.0 {
             200 => "OK",
             201 => "Created",
@@ -117,7 +117,7 @@ invoke crate·request·Headers;
 
 ⊢ ResponseEvidence {
     /// Create a computed response (highest trust)
-    ☉ λ computed() -> Self {
+    ☉ rite computed() -> Self {
         Self {
             level: EvidenceLevel·Known,
             confidence: Confidence·full(),
@@ -128,7 +128,7 @@ invoke crate·request·Headers;
     }
 
     /// Create from an evidenced value
-    ☉ λ from_evidenced<T>(evidenced: &Evidenced<T>) -> Self {
+    ☉ rite from_evidenced<T>(evidenced: &Evidenced<T>) -> Self {
         Self {
             level: evidenced.level(),
             confidence: evidenced.evidence.confidence(),
@@ -139,7 +139,7 @@ invoke crate·request·Headers;
     }
 
     /// Create from evidence context
-    ☉ λ from_context(ctx: &EvidenceContext) -> Self {
+    ☉ rite from_context(ctx: &EvidenceContext) -> Self {
         Self {
             level: ctx.chain().last()
                 .map(|t| t.to)
@@ -154,13 +154,13 @@ invoke crate·request·Headers;
     }
 
     /// Add to evidence chain
-    ☉ λ with_chain(Δ self, step: &str) -> Self {
+    ☉ rite with_chain(Δ self, step: &str) -> Self {
         self.chain.push(step.to_string());
         self
     }
 
     /// Add warning
-    ☉ λ with_warning(Δ self, warning: &str) -> Self {
+    ☉ rite with_warning(Δ self, warning: &str) -> Self {
         self.warnings.push(warning.to_string());
         self
     }
@@ -168,7 +168,7 @@ invoke crate·request·Headers;
 
 ⊢<T> Response<T> {
     /// Create a new response with status and body
-    ☉ λ new(status: StatusCode, body: T) -> Self {
+    ☉ rite new(status: StatusCode, body: T) -> Self {
         Self {
             status,
             headers: Headers·new(),
@@ -179,7 +179,7 @@ invoke crate·request·Headers;
     }
 
     /// Create a response with evidenced body
-    ☉ λ with_evidence(status: StatusCode, body: Evidenced<T>) -> Self {
+    ☉ rite with_evidence(status: StatusCode, body: Evidenced<T>) -> Self {
         ≔ evidence_summary = ResponseEvidence·from_evidenced(&body);
         Self {
             status,
@@ -195,17 +195,17 @@ invoke crate·request·Headers;
     // ========================================================================
 
     /// 200 OK response
-    ☉ λ ok(body: T) -> Self {
+    ☉ rite ok(body: T) -> Self {
         Self·new(StatusCode·OK, body)
     }
 
     /// 201 Created response
-    ☉ λ created(body: T) -> Self {
+    ☉ rite created(body: T) -> Self {
         Self·new(StatusCode·CREATED, body)
     }
 
     /// 202 Accepted response
-    ☉ λ accepted(body: T) -> Self {
+    ☉ rite accepted(body: T) -> Self {
         Self·new(StatusCode·ACCEPTED, body)
     }
 
@@ -214,29 +214,29 @@ invoke crate·request·Headers;
     // ========================================================================
 
     /// Set a header
-    ☉ λ header(Δ self, key: &str, value: &str) -> Self {
+    ☉ rite header(Δ self, key: &str, value: &str) -> Self {
         self.headers.set(key.to_string(), value.to_string());
         self
     }
 
     /// Set content type
-    ☉ λ content_type(self, content_type: &str) -> Self {
+    ☉ rite content_type(self, content_type: &str) -> Self {
         self.header("content-type", content_type)
     }
 
     /// Set JSON content type
-    ☉ λ json(self) -> Self {
+    ☉ rite json(self) -> Self {
         self.content_type("application/json")
     }
 
     /// Set the evidence summary
-    ☉ λ with_evidence_summary(Δ self, evidence: ResponseEvidence) -> Self {
+    ☉ rite with_evidence_summary(Δ self, evidence: ResponseEvidence) -> Self {
         self.evidence_summary = evidence;
         self
     }
 
     /// Add evidence headers to response
-    ☉ λ with_evidence_headers(Δ self) -> Self {
+    ☉ rite with_evidence_headers(Δ self) -> Self {
         // Add evidence metadata as headers
         self.headers.set(
             "x-evidence-level".to_string(),
@@ -260,22 +260,22 @@ invoke crate·request·Headers;
     // ========================================================================
 
     /// Get the response body
-    ☉ λ body(&self) -> Option<&Evidenced<T>> {
+    ☉ rite body(&self) -> Option<&Evidenced<T>> {
         self.body.as_ref()
     }
 
     /// Get headers
-    ☉ λ headers(&self) -> &Headers {
+    ☉ rite headers(&self) -> &Headers {
         &self.headers
     }
 
     /// Get evidence summary
-    ☉ λ evidence(&self) -> &ResponseEvidence {
+    ☉ rite evidence(&self) -> &ResponseEvidence {
         &self.evidence_summary
     }
 
     /// Unwrap the body value, discarding evidence
-    ☉ λ into_body(self) -> Option<T> {
+    ☉ rite into_body(self) -> Option<T> {
         self.body.map(|b| b.value)
     }
 }
@@ -286,7 +286,7 @@ invoke crate·request·Headers;
 
 ⊢ Response<()> {
     /// 204 No Content response
-    ☉ λ no_content() -> Self {
+    ☉ rite no_content() -> Self {
         Self {
             status: StatusCode·NO_CONTENT,
             headers: Headers·new(),
@@ -312,7 +312,7 @@ invoke crate·request·Headers;
 
 ⊢ Response<ErrorBody> {
     /// 400 Bad Request
-    ☉ λ bad_request(message: &str) -> Self {
+    ☉ rite bad_request(message: &str) -> Self {
         Self·new(StatusCode·BAD_REQUEST, ErrorBody {
             error: "bad_request".to_string(),
             message: message.to_string(),
@@ -322,7 +322,7 @@ invoke crate·request·Headers;
     }
 
     /// 401 Unauthorized
-    ☉ λ unauthorized(message: &str) -> Self {
+    ☉ rite unauthorized(message: &str) -> Self {
         Self·new(StatusCode·UNAUTHORIZED, ErrorBody {
             error: "unauthorized".to_string(),
             message: message.to_string(),
@@ -332,7 +332,7 @@ invoke crate·request·Headers;
     }
 
     /// 403 Forbidden
-    ☉ λ forbidden(message: &str) -> Self {
+    ☉ rite forbidden(message: &str) -> Self {
         Self·new(StatusCode·FORBIDDEN, ErrorBody {
             error: "forbidden".to_string(),
             message: message.to_string(),
@@ -342,7 +342,7 @@ invoke crate·request·Headers;
     }
 
     /// 404 Not Found
-    ☉ λ not_found(message: &str) -> Self {
+    ☉ rite not_found(message: &str) -> Self {
         Self·new(StatusCode·NOT_FOUND, ErrorBody {
             error: "not_found".to_string(),
             message: message.to_string(),
@@ -352,7 +352,7 @@ invoke crate·request·Headers;
     }
 
     /// 422 Unprocessable Entity (validation errors)
-    ☉ λ validation_error(errors: Vec<String>) -> Self {
+    ☉ rite validation_error(errors: Vec<String>) -> Self {
         Self·new(StatusCode·UNPROCESSABLE_ENTITY, ErrorBody {
             error: "validation_error".to_string(),
             message: "Validation failed".to_string(),
@@ -362,7 +362,7 @@ invoke crate·request·Headers;
     }
 
     /// 500 Internal Server Error
-    ☉ λ internal_error(message: &str) -> Self {
+    ☉ rite internal_error(message: &str) -> Self {
         Self·new(StatusCode·INTERNAL_SERVER_ERROR, ErrorBody {
             error: "internal_error".to_string(),
             message: message.to_string(),
@@ -372,7 +372,7 @@ invoke crate·request·Headers;
     }
 
     /// 499 Approval Required (custom Covenant status)
-    ☉ λ approval_required(action: &str, handoff_id: &str) -> Self {
+    ☉ rite approval_required(action: &str, handoff_id: &str) -> Self {
         Self·new(StatusCode·APPROVAL_REQUIRED, ErrorBody {
             error: "approval_required".to_string(),
             message: format!("Action '{}' requires human approval", action),
@@ -388,25 +388,25 @@ invoke crate·request·Headers;
 
 /// Trait ∀ types that can be converted into a response
 ☉ Θ IntoResponse {
-    λ into_response(self) -> Response<Vec<u8>>;
+    rite into_response(self) -> Response<Vec<u8>>;
 }
 
 ⊢ IntoResponse ∀ String {
-    λ into_response(self) -> Response<Vec<u8>> {
+    rite into_response(self) -> Response<Vec<u8>> {
         Response·ok(self.into_bytes())
             .content_type("text/plain; charset=utf-8")
     }
 }
 
 ⊢ IntoResponse ∀ &str {
-    λ into_response(self) -> Response<Vec<u8>> {
+    rite into_response(self) -> Response<Vec<u8>> {
         Response·ok(self.as_bytes().to_vec())
             .content_type("text/plain; charset=utf-8")
     }
 }
 
 ⊢ IntoResponse ∀ Vec<u8> {
-    λ into_response(self) -> Response<Vec<u8>> {
+    rite into_response(self) -> Response<Vec<u8>> {
         Response·ok(self)
             .content_type("application/octet-stream")
     }
@@ -416,7 +416,7 @@ invoke crate·request·Headers;
 where
     T: Into<Vec<u8>>,
 {
-    λ into_response(self) -> Response<Vec<u8>> {
+    rite into_response(self) -> Response<Vec<u8>> {
         Response {
             status: self.status,
             headers: self.headers,
@@ -437,13 +437,13 @@ where
 
 ⊢<T> Response<T> {
     /// Add an explanation to the response (from Oracle)
-    ☉ λ with_explanation(Δ self, explanation: &str) -> Self {
+    ☉ rite with_explanation(Δ self, explanation: &str) -> Self {
         self.headers.set("x-explanation".to_string(), explanation.to_string());
         self
     }
 
     /// Add reasoning trace
-    ☉ λ with_reasoning(Δ self, steps: &[String]) -> Self {
+    ☉ rite with_reasoning(Δ self, steps: &[String]) -> Self {
         self.headers.set(
             "x-reasoning-steps".to_string(),
             steps.len().to_string()
@@ -453,7 +453,7 @@ where
     }
 
     /// Add confidence to response
-    ☉ λ with_confidence(Δ self, confidence: Confidence) -> Self {
+    ☉ rite with_confidence(Δ self, confidence: Confidence) -> Self {
         self.evidence_summary.confidence = confidence;
         self.headers.set(
             "x-confidence".to_string(),

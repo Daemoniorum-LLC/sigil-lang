@@ -12,7 +12,7 @@
     x: !i32
 }
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ≔ v: !Value = Value { x };
     println(v.x);

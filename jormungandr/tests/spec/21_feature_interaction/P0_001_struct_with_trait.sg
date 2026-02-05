@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 
 Θ Displayable {
-    λ display(&self) -> String;
+    rite display(&self) -> String;
 }
 
 Σ Point {
@@ -12,12 +12,12 @@
 }
 
 ⊢ Displayable ∀ Point {
-    λ display(&self) -> String {
+    rite display(&self) -> String {
         ⤺ "Point";
     }
 }
 
-λ main() {
+rite main() {
     ≔ p = Point { x: 3, y: 4 };
     println(p.display());
 }

@@ -44,7 +44,7 @@ invoke engram·types·*
 
 ⊢ EngramConfig {
     /// Default configuration suitable ∀ most invoke cases
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             agent_id: None,
             instant: InstantConfig·default(),
@@ -60,7 +60,7 @@ invoke engram·types·*
     }
 
     /// Configuration ∀ agents with large context windows
-    ☉ λ high_memory() -> Self {
+    ☉ rite high_memory() -> Self {
         Self {
             instant: InstantConfig {
                 capacity: TokenCount(128000),
@@ -71,7 +71,7 @@ invoke engram·types·*
     }
 
     /// Configuration ∀ resource-constrained environments
-    ☉ λ low_memory() -> Self {
+    ☉ rite low_memory() -> Self {
         Self {
             instant: InstantConfig {
                 capacity: TokenCount(2000),
@@ -87,7 +87,7 @@ invoke engram·types·*
     }
 
     /// Configuration ∀ multi-agent deployments
-    ☉ λ distributed() -> Self {
+    ☉ rite distributed() -> Self {
         Self {
             distribution: DistributionConfig {
                 enabled: true,
@@ -104,7 +104,7 @@ invoke engram·types·*
     }
 
     /// Configuration with no persistence (memory only)
-    ☉ λ ephemeral() -> Self {
+    ☉ rite ephemeral() -> Self {
         Self {
             storage: StorageConfig {
                 backend: StorageBackend·Memory,
@@ -138,7 +138,7 @@ invoke engram·types·*
 }
 
 ⊢ InstantConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             capacity: TokenCount(8000),
             decay_rate: 0.05,
@@ -171,7 +171,7 @@ invoke engram·types·*
     Tiktoken { model: String },
 
     /// Custom counter function
-    Custom { counter: λ(&str) -> usize },
+    Custom { counter: rite(&str) -> usize },
 }
 
 // ============================================================================
@@ -197,7 +197,7 @@ invoke engram·types·*
 }
 
 ⊢ EpisodicConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             decay_function: DecayFunction·Exponential { lambda: 0.1 },
             consolidation_threshold: 0.3,
@@ -209,7 +209,7 @@ invoke engram·types·*
 }
 
 ☉ ᛈ DecayFunction {
-    /// Exponential decay: strength *= e^(-λt)
+    /// Exponential decay: strength *= e^(-ritet)
     Exponential { lambda: f64 },
 
     /// Linear decay: strength -= rate * t
@@ -223,7 +223,7 @@ invoke engram·types·*
 }
 
 ⊢ DecayFunction {
-    ☉ λ apply(strength: f64, elapsed_hours: f64) -> f64 {
+    ☉ rite apply(strength: f64, elapsed_hours: f64) -> f64 {
         ⌥ self {
             DecayFunction·Exponential { lambda } => {
                 strength * (-lambda * elapsed_hours).exp()
@@ -259,7 +259,7 @@ invoke engram·types·*
 }
 
 ⊢ SemanticConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             max_nodes: None,
             max_edges_per_node: 100,
@@ -283,7 +283,7 @@ invoke engram·types·*
     Merge,
 
     /// Custom resolution function
-    Custom { resolver: λ(old: &Node, new: &Node) -> Node },
+    Custom { resolver: rite(old: &Node, new: &Node) -> Node },
 }
 
 // ============================================================================
@@ -306,7 +306,7 @@ invoke engram·types·*
 }
 
 ⊢ ProceduralConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             min_episodes_for_skill: 3,
             skill_success_threshold: 0.5,
@@ -339,7 +339,7 @@ invoke engram·types·*
 }
 
 ⊢ VectorConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             dimensions: 384,  // MiniLM-L6 default
             m: 16,
@@ -376,7 +376,7 @@ invoke engram·types·*
 }
 
 ⊢ StorageConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             backend: StorageBackend·File { path: "./engram_data".to_string() },
             hot: HotStoreConfig·default(),
@@ -409,7 +409,7 @@ invoke engram·types·*
 }
 
 ⊢ HotStoreConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             capacity: ByteSize·mb(256),
             eviction_policy: EvictionPolicy·LRU,
@@ -424,7 +424,7 @@ invoke engram·types·*
 }
 
 ⊢ WarmStoreConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             memtable_size: ByteSize·mb(64),
             level_size_multiplier: 10,
@@ -440,7 +440,7 @@ invoke engram·types·*
 }
 
 ⊢ ColdStoreConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             segment_size: ByteSize·mb(256),
             compression_level: 19,  // Max zstd
@@ -458,9 +458,9 @@ invoke engram·types·*
 ☉ Σ ByteSize(☉ usize)
 
 ⊢ ByteSize {
-    ☉ λ kb(n: usize) -> Self { ByteSize(n * 1024) }
-    ☉ λ mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
-    ☉ λ gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
+    ☉ rite kb(n: usize) -> Self { ByteSize(n * 1024) }
+    ☉ rite mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
+    ☉ rite gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
 }
 
 // ============================================================================
@@ -483,7 +483,7 @@ invoke engram·types·*
 }
 
 ⊢ EmbeddingConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             model: EmbeddingModel·MiniLM_L6,
             dimensions: 384,
@@ -533,7 +533,7 @@ invoke engram·types·*
 }
 
 ⊢ DistributionConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             enabled: false,
             scope_defaults: ScopeDefaults·default(),
@@ -552,7 +552,7 @@ invoke engram·types·*
 }
 
 ⊢ ScopeDefaults {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             instant: Scope·Instance { instance_id: "".to_string() },
             episodic: Scope·Instance { instance_id: "".to_string() },
@@ -561,7 +561,7 @@ invoke engram·types·*
         }
     }
 
-    ☉ λ agent_shared() -> Self {
+    ☉ rite agent_shared() -> Self {
         Self {
             instant: Scope·Instance { instance_id: "".to_string() },
             episodic: Scope·Instance { instance_id: "".to_string() },
@@ -578,7 +578,7 @@ invoke engram·types·*
 }
 
 ⊢ SyncSettings {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             strategy: SyncStrategy·CRDT,
             interval: Duration·from_secs(300),
@@ -630,7 +630,7 @@ invoke engram·types·*
 }
 
 ⊢ ConsolidationConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             enabled: true,
             interval: Duration·from_hours(6),

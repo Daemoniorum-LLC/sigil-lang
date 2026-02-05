@@ -13,15 +13,15 @@ module engram·types
 }
 
 ⊢ EngramId {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self { bytes: ulid·generate()! }
     }
 
-    ☉ λ from_bytes(bytes: [u8; 16]) -> Self {
+    ☉ rite from_bytes(bytes: [u8; 16]) -> Self {
         Self { bytes }
     }
 
-    ☉ λ timestamp() -> Instant {
+    ☉ rite timestamp() -> Instant {
         ulid·extract_timestamp(self.bytes)
     }
 }
@@ -101,7 +101,7 @@ module engram·types
 
 ⊢ Epistemic {
     /// Check ⎇ this is directly observed knowledge
-    ☉ λ is_observed!() -> bool {
+    ☉ rite is_observed!() -> bool {
         ⌥ self {
             Epistemic·Observed { .. } => true,
             _ => false,
@@ -109,7 +109,7 @@ module engram·types
     }
 
     /// Check ⎇ this is reported (external) knowledge
-    ☉ λ is_reported~() -> bool {
+    ☉ rite is_reported~() -> bool {
         ⌥ self {
             Epistemic·Reported { .. } => true,
             Epistemic·Hearsay { .. } => true,
@@ -118,7 +118,7 @@ module engram·types
     }
 
     /// Check ⎇ this is inferred knowledge
-    ☉ λ is_inferred~() -> bool {
+    ☉ rite is_inferred~() -> bool {
         ⌥ self {
             Epistemic·Inferred { .. } => true,
             Epistemic·Computed { .. } => true,
@@ -127,7 +127,7 @@ module engram·types
     }
 
     /// Check ⎇ this belief is contested
-    ☉ λ is_contested() -> bool {
+    ☉ rite is_contested() -> bool {
         ⌥ self {
             Epistemic·Contested { .. } => true,
             _ => false,
@@ -135,17 +135,17 @@ module engram·types
     }
 
     /// Check ⎇ this is high-confidence knowledge
-    ☉ λ is_certain() -> bool {
+    ☉ rite is_certain() -> bool {
         self.strength() > 0.9
     }
 
     /// Check ⎇ this is low-confidence knowledge
-    ☉ λ is_uncertain() -> bool {
+    ☉ rite is_uncertain() -> bool {
         self.strength() < 0.5
     }
 
     /// Compute epistemic strength (0.0 - 1.0)
-    ☉ λ strength() -> f64 {
+    ☉ rite strength() -> f64 {
         ⌥ self {
             Epistemic·Axiomatic => 1.0,
             Epistemic·Observed { .. } => 0.95,
@@ -162,7 +162,7 @@ module engram·types
     }
 
     /// Get the source of this knowledge, ⎇ available
-    ☉ λ source() -> Option<Source> {
+    ☉ rite source() -> Option<Source> {
         ⌥ self {
             Epistemic·Observed { observer, .. } => Some(Source·Agent(observer)),
             Epistemic·Reported { source, .. } => Some(source.clone()),
@@ -232,7 +232,7 @@ module engram·types
 
 ⊢ TimeRange {
     /// Convert to absolute time bounds
-    ☉ λ to_bounds() -> (Instant, Instant) {
+    ☉ rite to_bounds() -> (Instant, Instant) {
         ≔ now = Instant·now()
         ⌥ self {
             TimeRange·LastHour => (now - 1h, now),
@@ -295,14 +295,14 @@ module engram·types
 }
 
 ⊢ Scope {
-    ☉ λ is_local() -> bool {
+    ☉ rite is_local() -> bool {
         ⌥ self {
             Scope·Instance { .. } => true,
             _ => false,
         }
     }
 
-    ☉ λ is_shared() -> bool {
+    ☉ rite is_shared() -> bool {
         !self.is_local()
     }
 }
@@ -411,28 +411,28 @@ module engram·types
 }
 
 ⊢ Outcome {
-    ☉ λ is_success() -> bool {
+    ☉ rite is_success() -> bool {
         ⌥ self {
             Outcome·Success { .. } => true,
             _ => false,
         }
     }
 
-    ☉ λ is_failure() -> bool {
+    ☉ rite is_failure() -> bool {
         ⌥ self {
             Outcome·Failure { .. } => true,
             _ => false,
         }
     }
 
-    ☉ λ is_partial() -> bool {
+    ☉ rite is_partial() -> bool {
         ⌥ self {
             Outcome·Partial { .. } => true,
             _ => false,
         }
     }
 
-    ☉ λ is_ongoing() -> bool {
+    ☉ rite is_ongoing() -> bool {
         ⌥ self {
             Outcome·Ongoing => true,
             _ => false,
@@ -440,7 +440,7 @@ module engram·types
     }
 
     /// Confidence ∈ the outcome (∀ scoring)
-    ☉ λ confidence() -> f64 {
+    ☉ rite confidence() -> f64 {
         ⌥ self {
             Outcome·Success { goal_alignment, .. } => goal_alignment,
             Outcome·Failure { recoverable, .. } => ⎇ recoverable { 0.2 } ⎉ { 0.0 },
@@ -452,7 +452,7 @@ module engram·types
         }
     }
 
-    ☉ λ summarize() -> String {
+    ☉ rite summarize() -> String {
         ⌥ self {
             Outcome·Success { result, .. } => format!("Success: {}", result),
             Outcome·Failure { error, .. } => format!("Failed: {}", error),
@@ -475,26 +475,26 @@ module engram·types
 }
 
 ⊢<T> Vector<T> {
-    ☉ λ new(data: Vec<T>) -> Self {
+    ☉ rite new(data: Vec<T>) -> Self {
         Self { data }
     }
 
-    ☉ λ zeros(dimensions: usize) -> Self where T: Default + Clone {
+    ☉ rite zeros(dimensions: usize) -> Self where T: Default + Clone {
         Self { data: vec![T·default(); dimensions] }
     }
 
-    ☉ λ dimensions() -> usize {
+    ☉ rite dimensions() -> usize {
         self.data.len()
     }
 
-    ☉ λ as_slice() -> &[T] {
+    ☉ rite as_slice() -> &[T] {
         &self.data
     }
 }
 
 ⊢ Vector<f32> {
     /// Cosine similarity between two vectors
-    ☉ λ cosine_similarity(other: &Vector<f32>) -> f64 {
+    ☉ rite cosine_similarity(other: &Vector<f32>) -> f64 {
         assert!(self.dimensions() == other.dimensions(), "Vector dimensions must match")
 
         ≔ dot: f32 = self.data.iter()
@@ -513,7 +513,7 @@ module engram·types
     }
 
     /// Euclidean distance
-    ☉ λ euclidean_distance(other: &Vector<f32>) -> f64 {
+    ☉ rite euclidean_distance(other: &Vector<f32>) -> f64 {
         assert!(self.dimensions() == other.dimensions(), "Vector dimensions must match")
 
         ≔ sum: f32 = self.data.iter()
@@ -525,7 +525,7 @@ module engram·types
     }
 
     /// Normalize to unit vector
-    ☉ λ normalize() -> Vector<f32> {
+    ☉ rite normalize() -> Vector<f32> {
         ≔ norm: f32 = self.data.iter().map(|x| x * x).sum·<f32>().sqrt()
         ⎇ norm == 0.0 {
             self.clone()
@@ -550,7 +550,7 @@ module engram·types
 }
 
 ⊢ ConfidenceDistribution {
-    ☉ λ from_values(values: Vec<f64>) -> Self {
+    ☉ rite from_values(values: Vec<f64>) -> Self {
         ⎇ values.is_empty() {
             ⤺ Self {
                 mean: 0.0,
@@ -597,9 +597,9 @@ module engram·types
 ☉ Σ TokenCount(☉ usize)
 
 ⊢ TokenCount {
-    ☉ λ zero() -> Self { TokenCount(0) }
+    ☉ rite zero() -> Self { TokenCount(0) }
 
-    ☉ λ from_text(text: &str) -> Self {
+    ☉ rite from_text(text: &str) -> Self {
         // Approximate: ~4 characters per token ∀ English
         TokenCount(text.len() / 4 + 1)
     }
@@ -607,14 +607,14 @@ module engram·types
 
 ⊢ std·ops·Add ∀ TokenCount {
     type Output = Self;
-    λ add(self, other: Self) -> Self {
+    rite add(self, other: Self) -> Self {
         TokenCount(self.0 + other.0)
     }
 }
 
 ⊢ std·ops·Sub ∀ TokenCount {
     type Output = Self;
-    λ sub(self, other: Self) -> Self {
+    rite sub(self, other: Self) -> Self {
         TokenCount(self.0.saturating_sub(other.0))
     }
 }

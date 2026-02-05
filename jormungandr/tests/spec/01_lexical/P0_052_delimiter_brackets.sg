@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 42
 
-λ main() {
+rite main() {
     ≔ arr: ![i32; 2] = [42, 99];
     println(arr[0]);
 }

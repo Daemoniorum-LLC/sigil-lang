@@ -27,7 +27,7 @@
 }
 
 ⊢ ResourceLimits {
-    ☉ λ default_limits() -> Self {
+    ☉ rite default_limits() -> Self {
         ResourceLimits {
             max_memory: 1024 * 1024 * 512,  // 512 MB
             max_cpu_percent: 50,
@@ -36,7 +36,7 @@
         }
     }
 
-    ☉ λ restrictive() -> Self {
+    ☉ rite restrictive() -> Self {
         ResourceLimits {
             max_memory: 1024 * 1024 * 64,   // 64 MB
             max_cpu_percent: 10,
@@ -45,7 +45,7 @@
         }
     }
 
-    ☉ λ permissive() -> Self {
+    ☉ rite permissive() -> Self {
         ResourceLimits {
             max_memory: 1024 * 1024 * 1024 * 4,  // 4 GB
             max_cpu_percent: 100,
@@ -64,7 +64,7 @@
 }
 
 ⊢ SandboxConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         SandboxConfig {
             isolation: IsolationLevel·Process,
             network: NetworkPolicy·Deny,
@@ -74,7 +74,7 @@
         }
     }
 
-    ☉ λ restrictive() -> Self {
+    ☉ rite restrictive() -> Self {
         SandboxConfig {
             isolation: IsolationLevel·Container,
             network: NetworkPolicy·Deny,
@@ -84,7 +84,7 @@
         }
     }
 
-    ☉ λ permissive() -> Self {
+    ☉ rite permissive() -> Self {
         SandboxConfig {
             isolation: IsolationLevel·Process,
             network: NetworkPolicy·Allow,
@@ -106,22 +106,22 @@
 }
 
 ⊢ SyscallFilter {
-    ☉ λ restrictive() -> Self {
+    ☉ rite restrictive() -> Self {
         SyscallFilter { mode: FilterMode·AllowList, count: 12 }
     }
 
-    ☉ λ permissive() -> Self {
+    ☉ rite permissive() -> Self {
         SyscallFilter { mode: FilterMode·DenyList, count: 5 }
     }
 
-    ☉ λ is_allow_list(&self) -> !bool {
+    ☉ rite is_allow_list(&self) -> !bool {
         ⌥ self.mode {
             FilterMode·AllowList => true,
             FilterMode·DenyList => false,
         }
     }
 
-    ☉ λ is_deny_list(&self) -> !bool {
+    ☉ rite is_deny_list(&self) -> !bool {
         ⌥ self.mode {
             FilterMode·AllowList => false,
             FilterMode·DenyList => true,
@@ -136,11 +136,11 @@
 }
 
 ⊢ ResourceUsage {
-    ☉ λ zero() -> Self {
+    ☉ rite zero() -> Self {
         ResourceUsage { memory_bytes: 0, cpu_time_ms: 0, open_files: 0 }
     }
 
-    ☉ λ exceeds(&self, limits: &ResourceLimits) -> !bool {
+    ☉ rite exceeds(&self, limits: &ResourceLimits) -> !bool {
         self.memory_bytes > limits.max_memory ||
         self.open_files > limits.max_files
     }
@@ -151,7 +151,7 @@
 // ============================================================================
 
 #[test]
-λ test_resource_limits_default() {
+rite test_resource_limits_default() {
     ≔ limits = ResourceLimits·default_limits();
     assert(limits.max_memory == 1024 * 1024 * 512);
     assert(limits.max_cpu_percent == 50);
@@ -160,7 +160,7 @@
 }
 
 #[test]
-λ test_resource_limits_restrictive() {
+rite test_resource_limits_restrictive() {
     ≔ limits = ResourceLimits·restrictive();
     assert(limits.max_memory == 1024 * 1024 * 64);
     assert(limits.max_cpu_percent == 10);
@@ -169,7 +169,7 @@
 }
 
 #[test]
-λ test_resource_limits_permissive() {
+rite test_resource_limits_permissive() {
     ≔ limits = ResourceLimits·permissive();
     assert(limits.max_cpu_percent == 100);
     assert(limits.max_files == 10000);
@@ -181,25 +181,25 @@
 // ============================================================================
 
 #[test]
-λ test_sandbox_config_default() {
+rite test_sandbox_config_default() {
     ≔ config = SandboxConfig·default_config();
     assert(config.timeout_secs == 300);
 }
 
 #[test]
-λ test_sandbox_config_restrictive() {
+rite test_sandbox_config_restrictive() {
     ≔ config = SandboxConfig·restrictive();
     assert(config.timeout_secs == 30);
 }
 
 #[test]
-λ test_sandbox_config_permissive() {
+rite test_sandbox_config_permissive() {
     ≔ config = SandboxConfig·permissive();
     assert(config.timeout_secs == 1800);
 }
 
 #[test]
-λ test_sandbox_isolation_levels() {
+rite test_sandbox_isolation_levels() {
     ≔ none = IsolationLevel·None;
     ≔ process = IsolationLevel·Process;
     ≔ container = IsolationLevel·Container;
@@ -208,7 +208,7 @@
 }
 
 #[test]
-λ test_sandbox_network_policies() {
+rite test_sandbox_network_policies() {
     ≔ deny = NetworkPolicy·Deny;
     ≔ allow = NetworkPolicy·Allow;
     ≔ allowlist = NetworkPolicy·AllowList;
@@ -216,7 +216,7 @@
 }
 
 #[test]
-λ test_sandbox_filesystem_policies() {
+rite test_sandbox_filesystem_policies() {
     ≔ deny = FilesystemPolicy·Deny;
     ≔ allow = FilesystemPolicy·Allow;
     ≔ readonly = FilesystemPolicy·ReadOnly;
@@ -228,7 +228,7 @@
 // ============================================================================
 
 #[test]
-λ test_syscall_filter_restrictive() {
+rite test_syscall_filter_restrictive() {
     ≔ filter = SyscallFilter·restrictive();
     assert(filter.is_allow_list());
     assert(!filter.is_deny_list());
@@ -236,7 +236,7 @@
 }
 
 #[test]
-λ test_syscall_filter_permissive() {
+rite test_syscall_filter_permissive() {
     ≔ filter = SyscallFilter·permissive();
     assert(!filter.is_allow_list());
     assert(filter.is_deny_list());
@@ -248,7 +248,7 @@
 // ============================================================================
 
 #[test]
-λ test_resource_usage_zero() {
+rite test_resource_usage_zero() {
     ≔ usage = ResourceUsage·zero();
     assert(usage.memory_bytes == 0);
     assert(usage.cpu_time_ms == 0);
@@ -256,7 +256,7 @@
 }
 
 #[test]
-λ test_resource_usage_exceeds_memory() {
+rite test_resource_usage_exceeds_memory() {
     ≔ limits = ResourceLimits·restrictive();
     ≔ usage = ResourceUsage {
         memory_bytes: 1024 * 1024 * 100, // 100 MB > 64 MB limit
@@ -267,7 +267,7 @@
 }
 
 #[test]
-λ test_resource_usage_exceeds_files() {
+rite test_resource_usage_exceeds_files() {
     ≔ limits = ResourceLimits·restrictive();
     ≔ usage = ResourceUsage {
         memory_bytes: 0,
@@ -278,7 +278,7 @@
 }
 
 #[test]
-λ test_resource_usage_within_limits() {
+rite test_resource_usage_within_limits() {
     ≔ limits = ResourceLimits·default_limits();
     ≔ usage = ResourceUsage {
         memory_bytes: 1024 * 1024 * 100, // 100 MB < 512 MB limit
@@ -289,7 +289,7 @@
 }
 
 #[test]
-λ test_resource_usage_at_exact_limits() {
+rite test_resource_usage_at_exact_limits() {
     ≔ limits = ResourceLimits {
         max_memory: 1000,
         max_cpu_percent: 50,
@@ -304,6 +304,6 @@
     assert(!usage.exceeds(&limits)); // at limit is not exceeding
 }
 
-λ main() {
+rite main() {
     println("Aegis sandbox tests - 17 tests");
 }

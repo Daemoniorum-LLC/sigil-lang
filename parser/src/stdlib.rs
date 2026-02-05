@@ -5819,6 +5819,52 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
+    // AtomicU8::new - create atomic byte
+    let atomic_u8_new = |_: &mut crate::interpreter::Interpreter, args: Vec<Value>| -> Result<Value, RuntimeError> {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU8".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    };
+    define(interp, "AtomicU8·new", Some(1), atomic_u8_new);
+    define(interp, "std·sync·atomic·AtomicU8·new", Some(1), |_, args| {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU8".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // AtomicUsize::new - create atomic usize counter
+    let atomic_usize_new = |_: &mut crate::interpreter::Interpreter, args: Vec<Value>| -> Result<Value, RuntimeError> {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicUsize".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    };
+    define(interp, "AtomicUsize·new", Some(1), atomic_usize_new);
+    define(interp, "std·sync·atomic·AtomicUsize·new", Some(1), |_, args| {
+        let val = match &args[0] {
+            Value::Int(i) => *i,
+            _ => 0,
+        };
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicUsize".to_string())));
+        map.insert("value".to_string(), Value::Int(val));
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
     // AtomicU64::new - create atomic counter
     define(interp, "AtomicU64·new", Some(1), |_, args| {
         let val = match &args[0] {
@@ -5878,6 +5924,24 @@ fn register_concurrency(interp: &mut Interpreter) {
         let mut map = HashMap::new();
         map.insert("__type__".to_string(), Value::String(Rc::new("Arc".to_string())));
         map.insert("inner".to_string(), args[0].clone());
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
+    // OnceLock::new - create a lazy-init cell (empty)
+    // Returns a Map with __type__="OnceLock" and initialized=false
+    let once_lock_new = |_: &mut crate::interpreter::Interpreter, _args: Vec<Value>| -> Result<Value, RuntimeError> {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("OnceLock".to_string())));
+        map.insert("initialized".to_string(), Value::Bool(false));
+        map.insert("value".to_string(), Value::Null);
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    };
+    define(interp, "OnceLock·new", Some(0), once_lock_new);
+    define(interp, "std·sync·OnceLock·new", Some(0), |_, _args| {
+        let mut map = HashMap::new();
+        map.insert("__type__".to_string(), Value::String(Rc::new("OnceLock".to_string())));
+        map.insert("initialized".to_string(), Value::Bool(false));
+        map.insert("value".to_string(), Value::Null);
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
@@ -14060,6 +14124,13 @@ fn register_pattern(interp: &mut Interpreter) {
 
 // Deep value equality for nested structures
 fn deep_value_eq(a: &Value, b: &Value) -> bool {
+    // Unwrap Ref wrappers before comparison
+    if let Value::Ref(r) = a {
+        return deep_value_eq(&r.borrow(), b);
+    }
+    if let Value::Ref(r) = b {
+        return deep_value_eq(a, &r.borrow());
+    }
     match (a, b) {
         (Value::Null, Value::Null) => true,
         (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -42183,39 +42254,39 @@ mod tests {
     #[test]
     fn test_math_functions() {
         assert!(matches!(
-            eval("λ main() { ⤺ abs(-5); }"),
+            eval("rite main() { ⤺ abs(-5); }"),
             Ok(Value::Int(5))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ floor(3.7); }"),
+            eval("rite main() { ⤺ floor(3.7); }"),
             Ok(Value::Int(3))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ ceil(3.2); }"),
+            eval("rite main() { ⤺ ceil(3.2); }"),
             Ok(Value::Int(4))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ max(3, 7); }"),
+            eval("rite main() { ⤺ max(3, 7); }"),
             Ok(Value::Int(7))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ min(3, 7); }"),
+            eval("rite main() { ⤺ min(3, 7); }"),
             Ok(Value::Int(3))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ round(3.5); }"),
+            eval("rite main() { ⤺ round(3.5); }"),
             Ok(Value::Int(4))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ sign(-5); }"),
+            eval("rite main() { ⤺ sign(-5); }"),
             Ok(Value::Int(-1))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ sign(0); }"),
+            eval("rite main() { ⤺ sign(0); }"),
             Ok(Value::Int(0))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ sign(5); }"),
+            eval("rite main() { ⤺ sign(5); }"),
             Ok(Value::Int(1))
         ));
     }
@@ -42223,49 +42294,49 @@ mod tests {
     #[test]
     fn test_math_advanced() {
         assert!(matches!(
-            eval("λ main() { ⤺ pow(2, 10); }"),
+            eval("rite main() { ⤺ pow(2, 10); }"),
             Ok(Value::Int(1024))
         ));
         assert!(
-            matches!(eval("λ main() { ⤺ sqrt(16.0); }"), Ok(Value::Float(f)) if (f - 4.0).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ sqrt(16.0); }"), Ok(Value::Float(f)) if (f - 4.0).abs() < 0.001)
         );
         assert!(
-            matches!(eval("λ main() { ⤺ log(2.718281828, 2.718281828); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.01)
+            matches!(eval("rite main() { ⤺ log(2.718281828, 2.718281828); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.01)
         );
         assert!(
-            matches!(eval("λ main() { ⤺ exp(0.0); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ exp(0.0); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.001)
         );
     }
 
     #[test]
     fn test_trig_functions() {
         assert!(
-            matches!(eval("λ main() { ⤺ sin(0.0); }"), Ok(Value::Float(f)) if f.abs() < 0.001)
+            matches!(eval("rite main() { ⤺ sin(0.0); }"), Ok(Value::Float(f)) if f.abs() < 0.001)
         );
         assert!(
-            matches!(eval("λ main() { ⤺ cos(0.0); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ cos(0.0); }"), Ok(Value::Float(f)) if (f - 1.0).abs() < 0.001)
         );
         assert!(
-            matches!(eval("λ main() { ⤺ tan(0.0); }"), Ok(Value::Float(f)) if f.abs() < 0.001)
+            matches!(eval("rite main() { ⤺ tan(0.0); }"), Ok(Value::Float(f)) if f.abs() < 0.001)
         );
     }
 
     #[test]
     fn test_collection_functions() {
         assert!(matches!(
-            eval("λ main() { ⤺ len([1, 2, 3]); }"),
+            eval("rite main() { ⤺ len([1, 2, 3]); }"),
             Ok(Value::Int(3))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ first([1, 2, 3]); }"),
+            eval("rite main() { ⤺ first([1, 2, 3]); }"),
             Ok(Value::Int(1))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ last([1, 2, 3]); }"),
+            eval("rite main() { ⤺ last([1, 2, 3]); }"),
             Ok(Value::Int(3))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ len([]); }"),
+            eval("rite main() { ⤺ len([]); }"),
             Ok(Value::Int(0))
         ));
     }
@@ -42273,59 +42344,59 @@ mod tests {
     #[test]
     fn test_collection_nth() {
         assert!(matches!(
-            eval("λ main() { ⤺ get([10, 20, 30], 1); }"),
+            eval("rite main() { ⤺ get([10, 20, 30], 1); }"),
             Ok(Value::Int(20))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ get([10, 20, 30], 0); }"),
+            eval("rite main() { ⤺ get([10, 20, 30], 0); }"),
             Ok(Value::Int(10))
         ));
     }
 
     #[test]
     fn test_collection_slice() {
-        let result = eval("λ main() { ⤺ slice([1, 2, 3, 4, 5], 1, 3); }");
+        let result = eval("rite main() { ⤺ slice([1, 2, 3, 4, 5], 1, 3); }");
         assert!(matches!(result, Ok(Value::Array(_))));
     }
 
     #[test]
     fn test_collection_concat() {
-        let result = eval("λ main() { ⤺ len(concat([1, 2], [3, 4])); }");
+        let result = eval("rite main() { ⤺ len(concat([1, 2], [3, 4])); }");
         assert!(matches!(result, Ok(Value::Int(4))));
     }
 
     #[test]
     fn test_string_functions() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ upper("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "HELLO")
+            matches!(eval(r#"rite main() { ⤺ upper("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "HELLO")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ lower("HELLO"); }"#), Ok(Value::String(s)) if s.as_str() == "hello")
+            matches!(eval(r#"rite main() { ⤺ lower("HELLO"); }"#), Ok(Value::String(s)) if s.as_str() == "hello")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ trim("  hi  "); }"#), Ok(Value::String(s)) if s.as_str() == "hi")
+            matches!(eval(r#"rite main() { ⤺ trim("  hi  "); }"#), Ok(Value::String(s)) if s.as_str() == "hi")
         );
     }
 
     #[test]
     fn test_string_split_join() {
         assert!(matches!(
-            eval(r#"λ main() { ⤺ len(split("a,b,c", ",")); }"#),
+            eval(r#"rite main() { ⤺ len(split("a,b,c", ",")); }"#),
             Ok(Value::Int(3))
         ));
         assert!(
-            matches!(eval(r#"λ main() { ⤺ join(["a", "b"], "-"); }"#), Ok(Value::String(s)) if s.as_str() == "a-b")
+            matches!(eval(r#"rite main() { ⤺ join(["a", "b"], "-"); }"#), Ok(Value::String(s)) if s.as_str() == "a-b")
         );
     }
 
     #[test]
     fn test_string_contains() {
         assert!(matches!(
-            eval(r#"λ main() { ⤺ contains("hello", "ell"); }"#),
+            eval(r#"rite main() { ⤺ contains("hello", "ell"); }"#),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval(r#"λ main() { ⤺ contains("hello", "xyz"); }"#),
+            eval(r#"rite main() { ⤺ contains("hello", "xyz"); }"#),
             Ok(Value::Bool(false))
         ));
     }
@@ -42333,21 +42404,21 @@ mod tests {
     #[test]
     fn test_string_replace() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ replace("hello", "l", "L"); }"#), Ok(Value::String(s)) if s.as_str() == "heLLo")
+            matches!(eval(r#"rite main() { ⤺ replace("hello", "l", "L"); }"#), Ok(Value::String(s)) if s.as_str() == "heLLo")
         );
     }
 
     #[test]
     fn test_string_chars() {
         assert!(matches!(
-            eval(r#"λ main() { ⤺ len(chars("hello")); }"#),
+            eval(r#"rite main() { ⤺ len(chars("hello")); }"#),
             Ok(Value::Int(5))
         ));
     }
 
     #[test]
     fn test_evidence_functions() {
-        let result = eval("λ main() { ⤺ evidence_of(uncertain(42)); }");
+        let result = eval("rite main() { ⤺ evidence_of(uncertain(42)); }");
         assert!(matches!(result, Ok(Value::String(s)) if s.as_str() == "uncertain"));
     }
 
@@ -42358,7 +42429,7 @@ mod tests {
         // Sarcastic values should make the interpolated string uncertain
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ s = sarcastic("totally fine");
                 ≔ msg = f"Status: {s}";
                 ⤺ msg;
@@ -42381,7 +42452,7 @@ mod tests {
         // Test the affect_to_evidence builtin function
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ s = sarcastic("sure");
                 ⤺ affect_to_evidence(s);
             }
@@ -42400,7 +42471,7 @@ mod tests {
         // Test converting affective to evidential
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ s = sarcastic(42);
                 ≔ ev = affect_as_evidence(s);
                 ⤺ ev;
@@ -42423,7 +42494,7 @@ mod tests {
         // Test checking if affect implies uncertainty
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ s = sarcastic("yes");
                 ⤺ is_affect_uncertain(s);
             }
@@ -42438,7 +42509,7 @@ mod tests {
         // High confidence should imply known evidence
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ v = high_confidence(42);
                 ⤺ affect_to_evidence(v);
             }
@@ -42457,7 +42528,7 @@ mod tests {
         // Low confidence should imply uncertain evidence
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ v = low_confidence(42);
                 ⤺ affect_to_evidence(v);
             }
@@ -42474,11 +42545,11 @@ mod tests {
     #[test]
     fn test_iter_functions() {
         assert!(matches!(
-            eval("λ main() { ⤺ sum([1, 2, 3, 4]); }"),
+            eval("rite main() { ⤺ sum([1, 2, 3, 4]); }"),
             Ok(Value::Int(10))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ product([1, 2, 3, 4]); }"),
+            eval("rite main() { ⤺ product([1, 2, 3, 4]); }"),
             Ok(Value::Int(24))
         ));
     }
@@ -42487,15 +42558,15 @@ mod tests {
     fn test_iter_any_all() {
         // any/all take only array, check truthiness of elements
         assert!(matches!(
-            eval("λ main() { ⤺ any([false, true, false]); }"),
+            eval("rite main() { ⤺ any([false, true, false]); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ all([true, true, true]); }"),
+            eval("rite main() { ⤺ all([true, true, true]); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ all([true, false, true]); }"),
+            eval("rite main() { ⤺ all([true, false, true]); }"),
             Ok(Value::Bool(false))
         ));
     }
@@ -42503,20 +42574,20 @@ mod tests {
     #[test]
     fn test_iter_enumerate() {
         // enumerate() adds indices
-        let result = eval("λ main() { ⤺ len(enumerate([10, 20, 30])); }");
+        let result = eval("rite main() { ⤺ len(enumerate([10, 20, 30])); }");
         assert!(matches!(result, Ok(Value::Int(3))));
     }
 
     #[test]
     fn test_iter_zip() {
-        let result = eval("λ main() { ⤺ len(zip([1, 2], [3, 4])); }");
+        let result = eval("rite main() { ⤺ len(zip([1, 2], [3, 4])); }");
         assert!(matches!(result, Ok(Value::Int(2))));
     }
 
     #[test]
     fn test_iter_flatten() {
         assert!(matches!(
-            eval("λ main() { ⤺ len(flatten([[1, 2], [3, 4]])); }"),
+            eval("rite main() { ⤺ len(flatten([[1, 2], [3, 4]])); }"),
             Ok(Value::Int(4))
         ));
     }
@@ -42524,11 +42595,11 @@ mod tests {
     #[test]
     fn test_cycle_functions() {
         assert!(matches!(
-            eval("λ main() { ⤺ mod_add(7, 8, 12); }"),
+            eval("rite main() { ⤺ mod_add(7, 8, 12); }"),
             Ok(Value::Int(3))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ mod_pow(2, 10, 1000); }"),
+            eval("rite main() { ⤺ mod_pow(2, 10, 1000); }"),
             Ok(Value::Int(24))
         ));
     }
@@ -42536,11 +42607,11 @@ mod tests {
     #[test]
     fn test_gcd_lcm() {
         assert!(matches!(
-            eval("λ main() { ⤺ gcd(12, 8); }"),
+            eval("rite main() { ⤺ gcd(12, 8); }"),
             Ok(Value::Int(4))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ lcm(4, 6); }"),
+            eval("rite main() { ⤺ lcm(4, 6); }"),
             Ok(Value::Int(12))
         ));
     }
@@ -42550,7 +42621,7 @@ mod tests {
     #[test]
     fn test_json_parse() {
         // Test parsing JSON array (simpler)
-        let result = eval(r#"λ main() { ⤺ len(json_parse("[1, 2, 3]")); }"#);
+        let result = eval(r#"rite main() { ⤺ len(json_parse("[1, 2, 3]")); }"#);
         assert!(
             matches!(result, Ok(Value::Int(3))),
             "json_parse got: {:?}",
@@ -42560,35 +42631,35 @@ mod tests {
 
     #[test]
     fn test_json_stringify() {
-        let result = eval(r#"λ main() { ⤺ json_stringify([1, 2, 3]); }"#);
+        let result = eval(r#"rite main() { ⤺ json_stringify([1, 2, 3]); }"#);
         assert!(matches!(result, Ok(Value::String(s)) if s.contains("1")));
     }
 
     #[test]
     fn test_crypto_sha256() {
-        let result = eval(r#"λ main() { ⤺ len(sha256("hello")); }"#);
+        let result = eval(r#"rite main() { ⤺ len(sha256("hello")); }"#);
         assert!(matches!(result, Ok(Value::Int(64)))); // SHA256 hex is 64 chars
     }
 
     #[test]
     fn test_crypto_sha512() {
-        let result = eval(r#"λ main() { ⤺ len(sha512("hello")); }"#);
+        let result = eval(r#"rite main() { ⤺ len(sha512("hello")); }"#);
         assert!(matches!(result, Ok(Value::Int(128)))); // SHA512 hex is 128 chars
     }
 
     #[test]
     fn test_crypto_md5() {
-        let result = eval(r#"λ main() { ⤺ len(md5("hello")); }"#);
+        let result = eval(r#"rite main() { ⤺ len(md5("hello")); }"#);
         assert!(matches!(result, Ok(Value::Int(32)))); // MD5 hex is 32 chars
     }
 
     #[test]
     fn test_crypto_base64() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ base64_encode("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "aGVsbG8=")
+            matches!(eval(r#"rite main() { ⤺ base64_encode("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "aGVsbG8=")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ base64_decode("aGVsbG8="); }"#), Ok(Value::String(s)) if s.as_str() == "hello")
+            matches!(eval(r#"rite main() { ⤺ base64_decode("aGVsbG8="); }"#), Ok(Value::String(s)) if s.as_str() == "hello")
         );
     }
 
@@ -42596,11 +42667,11 @@ mod tests {
     fn test_regex_match() {
         // regex_match(pattern, text) - pattern first
         assert!(matches!(
-            eval(r#"λ main() { ⤺ regex_match("[a-z]+[0-9]+", "hello123"); }"#),
+            eval(r#"rite main() { ⤺ regex_match("[a-z]+[0-9]+", "hello123"); }"#),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval(r#"λ main() { ⤺ regex_match("[0-9]+", "hello"); }"#),
+            eval(r#"rite main() { ⤺ regex_match("[0-9]+", "hello"); }"#),
             Ok(Value::Bool(false))
         ));
     }
@@ -42609,7 +42680,7 @@ mod tests {
     fn test_regex_replace() {
         // regex_replace(pattern, text, replacement) - pattern first
         assert!(
-            matches!(eval(r#"λ main() { ⤺ regex_replace("[0-9]+", "hello123", "XXX"); }"#), Ok(Value::String(s)) if s.as_str() == "helloXXX")
+            matches!(eval(r#"rite main() { ⤺ regex_replace("[0-9]+", "hello123", "XXX"); }"#), Ok(Value::String(s)) if s.as_str() == "helloXXX")
         );
     }
 
@@ -42617,79 +42688,79 @@ mod tests {
     fn test_regex_split() {
         // regex_split(pattern, text) - pattern first
         assert!(matches!(
-            eval(r#"λ main() { ⤺ len(regex_split("[0-9]", "a1b2c3")); }"#),
+            eval(r#"rite main() { ⤺ len(regex_split("[0-9]", "a1b2c3")); }"#),
             Ok(Value::Int(4))
         ));
     }
 
     #[test]
     fn test_uuid() {
-        let result = eval(r#"λ main() { ⤺ len(uuid_v4()); }"#);
+        let result = eval(r#"rite main() { ⤺ len(uuid_v4()); }"#);
         assert!(matches!(result, Ok(Value::Int(36)))); // UUID with hyphens
     }
 
     #[test]
     fn test_stats_mean() {
         assert!(
-            matches!(eval("λ main() { ⤺ mean([1.0, 2.0, 3.0, 4.0, 5.0]); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ mean([1.0, 2.0, 3.0, 4.0, 5.0]); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
         );
     }
 
     #[test]
     fn test_stats_median() {
         assert!(
-            matches!(eval("λ main() { ⤺ median([1.0, 2.0, 3.0, 4.0, 5.0]); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ median([1.0, 2.0, 3.0, 4.0, 5.0]); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
         );
     }
 
     #[test]
     fn test_stats_stddev() {
-        let result = eval("λ main() { ⤺ stddev([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]); }");
+        let result = eval("rite main() { ⤺ stddev([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]); }");
         assert!(matches!(result, Ok(Value::Float(_))));
     }
 
     #[test]
     fn test_stats_variance() {
-        let result = eval("λ main() { ⤺ variance([1.0, 2.0, 3.0, 4.0, 5.0]); }");
+        let result = eval("rite main() { ⤺ variance([1.0, 2.0, 3.0, 4.0, 5.0]); }");
         assert!(matches!(result, Ok(Value::Float(_))));
     }
 
     #[test]
     fn test_stats_percentile() {
         assert!(
-            matches!(eval("λ main() { ⤺ percentile([1.0, 2.0, 3.0, 4.0, 5.0], 50.0); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ percentile([1.0, 2.0, 3.0, 4.0, 5.0], 50.0); }"), Ok(Value::Float(f)) if (f - 3.0).abs() < 0.001)
         );
     }
 
     #[test]
     fn test_matrix_new() {
         // matrix_new(rows, cols, fill_value)
-        let result = eval("λ main() { ⤺ len(matrix_new(3, 3, 0)); }");
+        let result = eval("rite main() { ⤺ len(matrix_new(3, 3, 0)); }");
         assert!(matches!(result, Ok(Value::Int(3))));
     }
 
     #[test]
     fn test_matrix_identity() {
-        let result = eval("λ main() { ⤺ len(matrix_identity(3)); }");
+        let result = eval("rite main() { ⤺ len(matrix_identity(3)); }");
         assert!(matches!(result, Ok(Value::Int(3))));
     }
 
     #[test]
     fn test_matrix_transpose() {
         let result =
-            eval("λ main() { ≔ m = [[1, 2], [3, 4]]; ⤺ len(matrix_transpose(m)); }");
+            eval("rite main() { ≔ m = [[1, 2], [3, 4]]; ⤺ len(matrix_transpose(m)); }");
         assert!(matches!(result, Ok(Value::Int(2))));
     }
 
     #[test]
     fn test_matrix_add() {
-        let result = eval("λ main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 1], [1, 1]]; ⤺ matrix_add(a, b); }");
+        let result = eval("rite main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 1], [1, 1]]; ⤺ matrix_add(a, b); }");
         assert!(matches!(result, Ok(Value::Array(_))));
     }
 
     #[test]
     fn test_matrix_multiply() {
-        let result = eval("λ main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 0], [0, 1]]; ⤺ matrix_mul(a, b); }");
+        let result = eval("rite main() { ≔ a = [[1, 2], [3, 4]]; ≔ b = [[1, 0], [0, 1]]; ⤺ matrix_mul(a, b); }");
         assert!(matches!(result, Ok(Value::Array(_))));
     }
 
@@ -42697,7 +42768,7 @@ mod tests {
     fn test_matrix_dot() {
         // Returns float, not int
         assert!(
-            matches!(eval("λ main() { ⤺ matrix_dot([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]); }"), Ok(Value::Float(f)) if (f - 14.0).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ matrix_dot([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]); }"), Ok(Value::Float(f)) if (f - 14.0).abs() < 0.001)
         );
     }
 
@@ -42706,7 +42777,7 @@ mod tests {
     #[test]
     fn test_functional_identity() {
         assert!(matches!(
-            eval("λ main() { ⤺ identity(42); }"),
+            eval("rite main() { ⤺ identity(42); }"),
             Ok(Value::Int(42))
         ));
     }
@@ -42715,7 +42786,7 @@ mod tests {
     fn test_functional_const_fn() {
         // const_fn just returns the value directly (not a function)
         assert!(matches!(
-            eval("λ main() { ⤺ const_fn(42); }"),
+            eval("rite main() { ⤺ const_fn(42); }"),
             Ok(Value::Int(42))
         ));
     }
@@ -42724,7 +42795,7 @@ mod tests {
     fn test_functional_apply() {
         // apply takes a function and array of args - use closure syntax {x => ...}
         assert!(matches!(
-            eval("λ main() { ⤺ apply({x => x * 2}, [5]); }"),
+            eval("rite main() { ⤺ apply({x => x * 2}, [5]); }"),
             Ok(Value::Int(10))
         ));
     }
@@ -42732,7 +42803,7 @@ mod tests {
     #[test]
     fn test_functional_flip() {
         // flip() swaps argument order - test with simple function
-        let result = eval("λ main() { ⤺ identity(42); }");
+        let result = eval("rite main() { ⤺ identity(42); }");
         assert!(matches!(result, Ok(Value::Int(42))));
     }
 
@@ -42741,7 +42812,7 @@ mod tests {
         // partial applies some args to a function - skip for now, complex syntax
         // Just test identity instead
         assert!(matches!(
-            eval("λ main() { ⤺ identity(15); }"),
+            eval("rite main() { ⤺ identity(15); }"),
             Ok(Value::Int(15))
         ));
     }
@@ -42750,7 +42821,7 @@ mod tests {
     fn test_functional_tap() {
         // tap(value, func) - calls func(value) for side effects, returns value
         assert!(matches!(
-            eval("λ main() { ⤺ tap(42, {x => x * 2}); }"),
+            eval("rite main() { ⤺ tap(42, {x => x * 2}); }"),
             Ok(Value::Int(42))
         ));
     }
@@ -42759,11 +42830,11 @@ mod tests {
     fn test_functional_negate() {
         // negate(func, value) - applies func to value and negates result
         assert!(matches!(
-            eval("λ main() { ⤺ negate({x => x > 0}, 5); }"),
+            eval("rite main() { ⤺ negate({x => x > 0}, 5); }"),
             Ok(Value::Bool(false))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ negate({x => x > 0}, -5); }"),
+            eval("rite main() { ⤺ negate({x => x > 0}, -5); }"),
             Ok(Value::Bool(true))
         ));
     }
@@ -42772,7 +42843,7 @@ mod tests {
     fn test_itertools_cycle() {
         // cycle(arr, n) returns first n elements cycling through arr
         assert!(matches!(
-            eval("λ main() { ⤺ len(cycle([1, 2, 3], 6)); }"),
+            eval("rite main() { ⤺ len(cycle([1, 2, 3], 6)); }"),
             Ok(Value::Int(6))
         ));
     }
@@ -42780,7 +42851,7 @@ mod tests {
     #[test]
     fn test_itertools_repeat_val() {
         assert!(matches!(
-            eval("λ main() { ⤺ len(repeat_val(42, 5)); }"),
+            eval("rite main() { ⤺ len(repeat_val(42, 5)); }"),
             Ok(Value::Int(5))
         ));
     }
@@ -42788,28 +42859,28 @@ mod tests {
     #[test]
     fn test_itertools_take() {
         // take(arr, n) returns first n elements
-        let result = eval("λ main() { ⤺ len(take([1, 2, 3, 4, 5], 3)); }");
+        let result = eval("rite main() { ⤺ len(take([1, 2, 3, 4, 5], 3)); }");
         assert!(matches!(result, Ok(Value::Int(3))));
     }
 
     #[test]
     fn test_itertools_concat() {
         // concat combines arrays
-        let result = eval("λ main() { ⤺ len(concat([1, 2], [3, 4])); }");
+        let result = eval("rite main() { ⤺ len(concat([1, 2], [3, 4])); }");
         assert!(matches!(result, Ok(Value::Int(4))));
     }
 
     #[test]
     fn test_itertools_interleave() {
         // interleave alternates elements from arrays
-        let result = eval("λ main() { ⤺ len(interleave([1, 2, 3], [4, 5, 6])); }");
+        let result = eval("rite main() { ⤺ len(interleave([1, 2, 3], [4, 5, 6])); }");
         assert!(matches!(result, Ok(Value::Int(6))));
     }
 
     #[test]
     fn test_itertools_chunks() {
         assert!(matches!(
-            eval("λ main() { ⤺ len(chunks([1, 2, 3, 4, 5], 2)); }"),
+            eval("rite main() { ⤺ len(chunks([1, 2, 3, 4, 5], 2)); }"),
             Ok(Value::Int(3))
         ));
     }
@@ -42817,21 +42888,21 @@ mod tests {
     #[test]
     fn test_itertools_windows() {
         assert!(matches!(
-            eval("λ main() { ⤺ len(windows([1, 2, 3, 4, 5], 3)); }"),
+            eval("rite main() { ⤺ len(windows([1, 2, 3, 4, 5], 3)); }"),
             Ok(Value::Int(3))
         ));
     }
 
     #[test]
     fn test_itertools_frequencies() {
-        let result = eval(r#"λ main() { ⤺ frequencies(["a", "b", "a", "c", "a"]); }"#);
+        let result = eval(r#"rite main() { ⤺ frequencies(["a", "b", "a", "c", "a"]); }"#);
         assert!(matches!(result, Ok(Value::Map(_))));
     }
 
     #[test]
     fn test_itertools_dedupe() {
         assert!(matches!(
-            eval("λ main() { ⤺ len(dedupe([1, 1, 2, 2, 3, 3])); }"),
+            eval("rite main() { ⤺ len(dedupe([1, 1, 2, 2, 3, 3])); }"),
             Ok(Value::Int(3))
         ));
     }
@@ -42839,7 +42910,7 @@ mod tests {
     #[test]
     fn test_itertools_unique() {
         assert!(matches!(
-            eval("λ main() { ⤺ len(unique([1, 2, 1, 3, 2, 1])); }"),
+            eval("rite main() { ⤺ len(unique([1, 2, 1, 3, 2, 1])); }"),
             Ok(Value::Int(3))
         ));
     }
@@ -42847,7 +42918,7 @@ mod tests {
     #[test]
     fn test_ranges_range_step() {
         assert!(matches!(
-            eval("λ main() { ⤺ len(range_step(0, 10, 2)); }"),
+            eval("rite main() { ⤺ len(range_step(0, 10, 2)); }"),
             Ok(Value::Int(5))
         ));
     }
@@ -42855,7 +42926,7 @@ mod tests {
     #[test]
     fn test_ranges_linspace() {
         assert!(matches!(
-            eval("λ main() { ⤺ len(linspace(0.0, 1.0, 5)); }"),
+            eval("rite main() { ⤺ len(linspace(0.0, 1.0, 5)); }"),
             Ok(Value::Int(5))
         ));
     }
@@ -42863,7 +42934,7 @@ mod tests {
     #[test]
     fn test_bitwise_and() {
         assert!(matches!(
-            eval("λ main() { ⤺ bit_and(0b1100, 0b1010); }"),
+            eval("rite main() { ⤺ bit_and(0b1100, 0b1010); }"),
             Ok(Value::Int(0b1000))
         ));
     }
@@ -42871,7 +42942,7 @@ mod tests {
     #[test]
     fn test_bitwise_or() {
         assert!(matches!(
-            eval("λ main() { ⤺ bit_or(0b1100, 0b1010); }"),
+            eval("rite main() { ⤺ bit_or(0b1100, 0b1010); }"),
             Ok(Value::Int(0b1110))
         ));
     }
@@ -42879,25 +42950,25 @@ mod tests {
     #[test]
     fn test_bitwise_xor() {
         assert!(matches!(
-            eval("λ main() { ⤺ bit_xor(0b1100, 0b1010); }"),
+            eval("rite main() { ⤺ bit_xor(0b1100, 0b1010); }"),
             Ok(Value::Int(0b0110))
         ));
     }
 
     #[test]
     fn test_bitwise_not() {
-        let result = eval("λ main() { ⤺ bit_not(0); }");
+        let result = eval("rite main() { ⤺ bit_not(0); }");
         assert!(matches!(result, Ok(Value::Int(-1))));
     }
 
     #[test]
     fn test_bitwise_shift() {
         assert!(matches!(
-            eval("λ main() { ⤺ bit_shl(1, 4); }"),
+            eval("rite main() { ⤺ bit_shl(1, 4); }"),
             Ok(Value::Int(16))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ bit_shr(16, 4); }"),
+            eval("rite main() { ⤺ bit_shr(16, 4); }"),
             Ok(Value::Int(1))
         ));
     }
@@ -42905,7 +42976,7 @@ mod tests {
     #[test]
     fn test_bitwise_popcount() {
         assert!(matches!(
-            eval("λ main() { ⤺ popcount(0b11011); }"),
+            eval("rite main() { ⤺ popcount(0b11011); }"),
             Ok(Value::Int(4))
         ));
     }
@@ -42913,14 +42984,14 @@ mod tests {
     #[test]
     fn test_bitwise_to_binary() {
         assert!(
-            matches!(eval("λ main() { ⤺ to_binary(42); }"), Ok(Value::String(s)) if s.as_str() == "101010")
+            matches!(eval("rite main() { ⤺ to_binary(42); }"), Ok(Value::String(s)) if s.as_str() == "101010")
         );
     }
 
     #[test]
     fn test_bitwise_from_binary() {
         assert!(matches!(
-            eval(r#"λ main() { ⤺ from_binary("101010"); }"#),
+            eval(r#"rite main() { ⤺ from_binary("101010"); }"#),
             Ok(Value::Int(42))
         ));
     }
@@ -42928,14 +42999,14 @@ mod tests {
     #[test]
     fn test_bitwise_to_hex() {
         assert!(
-            matches!(eval("λ main() { ⤺ to_hex(255); }"), Ok(Value::String(s)) if s.as_str() == "ff")
+            matches!(eval("rite main() { ⤺ to_hex(255); }"), Ok(Value::String(s)) if s.as_str() == "ff")
         );
     }
 
     #[test]
     fn test_bitwise_from_hex() {
         assert!(matches!(
-            eval(r#"λ main() { ⤺ from_hex("ff"); }"#),
+            eval(r#"rite main() { ⤺ from_hex("ff"); }"#),
             Ok(Value::Int(255))
         ));
     }
@@ -42943,33 +43014,33 @@ mod tests {
     #[test]
     fn test_format_pad() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ pad_left("hi", 5, " "); }"#), Ok(Value::String(s)) if s.as_str() == "   hi")
+            matches!(eval(r#"rite main() { ⤺ pad_left("hi", 5, " "); }"#), Ok(Value::String(s)) if s.as_str() == "   hi")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ pad_right("hi", 5, " "); }"#), Ok(Value::String(s)) if s.as_str() == "hi   ")
+            matches!(eval(r#"rite main() { ⤺ pad_right("hi", 5, " "); }"#), Ok(Value::String(s)) if s.as_str() == "hi   ")
         );
     }
 
     #[test]
     fn test_format_center() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ center("hi", 6, "-"); }"#), Ok(Value::String(s)) if s.as_str() == "--hi--")
+            matches!(eval(r#"rite main() { ⤺ center("hi", 6, "-"); }"#), Ok(Value::String(s)) if s.as_str() == "--hi--")
         );
     }
 
     #[test]
     fn test_format_ordinal() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ ordinal(1); }"#), Ok(Value::String(s)) if s.as_str() == "1st")
+            matches!(eval(r#"rite main() { ⤺ ordinal(1); }"#), Ok(Value::String(s)) if s.as_str() == "1st")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ ordinal(2); }"#), Ok(Value::String(s)) if s.as_str() == "2nd")
+            matches!(eval(r#"rite main() { ⤺ ordinal(2); }"#), Ok(Value::String(s)) if s.as_str() == "2nd")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ ordinal(3); }"#), Ok(Value::String(s)) if s.as_str() == "3rd")
+            matches!(eval(r#"rite main() { ⤺ ordinal(3); }"#), Ok(Value::String(s)) if s.as_str() == "3rd")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ ordinal(4); }"#), Ok(Value::String(s)) if s.as_str() == "4th")
+            matches!(eval(r#"rite main() { ⤺ ordinal(4); }"#), Ok(Value::String(s)) if s.as_str() == "4th")
         );
     }
 
@@ -42977,33 +43048,33 @@ mod tests {
     fn test_format_pluralize() {
         // pluralize(count, singular, plural) - 3 arguments
         assert!(
-            matches!(eval(r#"λ main() { ⤺ pluralize(1, "cat", "cats"); }"#), Ok(Value::String(s)) if s.as_str() == "cat")
+            matches!(eval(r#"rite main() { ⤺ pluralize(1, "cat", "cats"); }"#), Ok(Value::String(s)) if s.as_str() == "cat")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ pluralize(2, "cat", "cats"); }"#), Ok(Value::String(s)) if s.as_str() == "cats")
+            matches!(eval(r#"rite main() { ⤺ pluralize(2, "cat", "cats"); }"#), Ok(Value::String(s)) if s.as_str() == "cats")
         );
     }
 
     #[test]
     fn test_format_truncate() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ truncate("hello world", 8); }"#), Ok(Value::String(s)) if s.as_str() == "hello...")
+            matches!(eval(r#"rite main() { ⤺ truncate("hello world", 8); }"#), Ok(Value::String(s)) if s.as_str() == "hello...")
         );
     }
 
     #[test]
     fn test_format_case_conversions() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ snake_case("helloWorld"); }"#), Ok(Value::String(s)) if s.as_str() == "hello_world")
+            matches!(eval(r#"rite main() { ⤺ snake_case("helloWorld"); }"#), Ok(Value::String(s)) if s.as_str() == "hello_world")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ camel_case("hello_world"); }"#), Ok(Value::String(s)) if s.as_str() == "helloWorld")
+            matches!(eval(r#"rite main() { ⤺ camel_case("hello_world"); }"#), Ok(Value::String(s)) if s.as_str() == "helloWorld")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ kebab_case("helloWorld"); }"#), Ok(Value::String(s)) if s.as_str() == "hello-world")
+            matches!(eval(r#"rite main() { ⤺ kebab_case("helloWorld"); }"#), Ok(Value::String(s)) if s.as_str() == "hello-world")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ title_case("hello world"); }"#), Ok(Value::String(s)) if s.as_str() == "Hello World")
+            matches!(eval(r#"rite main() { ⤺ title_case("hello world"); }"#), Ok(Value::String(s)) if s.as_str() == "Hello World")
         );
     }
 
@@ -43012,31 +43083,31 @@ mod tests {
     #[test]
     fn test_type_of() {
         assert!(
-            matches!(eval(r#"λ main() { ⤺ type_of(42); }"#), Ok(Value::String(s)) if s.as_str() == "int")
+            matches!(eval(r#"rite main() { ⤺ type_of(42); }"#), Ok(Value::String(s)) if s.as_str() == "int")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ type_of("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "string")
+            matches!(eval(r#"rite main() { ⤺ type_of("hello"); }"#), Ok(Value::String(s)) if s.as_str() == "string")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ type_of([1, 2, 3]); }"#), Ok(Value::String(s)) if s.as_str() == "array")
+            matches!(eval(r#"rite main() { ⤺ type_of([1, 2, 3]); }"#), Ok(Value::String(s)) if s.as_str() == "array")
         );
         assert!(
-            matches!(eval(r#"λ main() { ⤺ type_of(null); }"#), Ok(Value::String(s)) if s.as_str() == "null")
+            matches!(eval(r#"rite main() { ⤺ type_of(null); }"#), Ok(Value::String(s)) if s.as_str() == "null")
         );
     }
 
     #[test]
     fn test_is_type() {
         assert!(matches!(
-            eval(r#"λ main() { ⤺ is_type(42, "int"); }"#),
+            eval(r#"rite main() { ⤺ is_type(42, "int"); }"#),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval(r#"λ main() { ⤺ is_type(42, "string"); }"#),
+            eval(r#"rite main() { ⤺ is_type(42, "string"); }"#),
             Ok(Value::Bool(false))
         ));
         assert!(matches!(
-            eval(r#"λ main() { ⤺ is_type(3.14, "number"); }"#),
+            eval(r#"rite main() { ⤺ is_type(3.14, "number"); }"#),
             Ok(Value::Bool(true))
         ));
     }
@@ -43044,39 +43115,39 @@ mod tests {
     #[test]
     fn test_type_predicates() {
         assert!(matches!(
-            eval("λ main() { ⤺ is_null(null); }"),
+            eval("rite main() { ⤺ is_null(null); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_null(42); }"),
+            eval("rite main() { ⤺ is_null(42); }"),
             Ok(Value::Bool(false))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_bool(true); }"),
+            eval("rite main() { ⤺ is_bool(true); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_int(42); }"),
+            eval("rite main() { ⤺ is_int(42); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_float(3.14); }"),
+            eval("rite main() { ⤺ is_float(3.14); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_number(42); }"),
+            eval("rite main() { ⤺ is_number(42); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_number(3.14); }"),
+            eval("rite main() { ⤺ is_number(3.14); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval(r#"λ main() { ⤺ is_string("hi"); }"#),
+            eval(r#"rite main() { ⤺ is_string("hi"); }"#),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_array([1, 2]); }"),
+            eval("rite main() { ⤺ is_array([1, 2]); }"),
             Ok(Value::Bool(true))
         ));
     }
@@ -43084,43 +43155,43 @@ mod tests {
     #[test]
     fn test_is_empty() {
         assert!(matches!(
-            eval("λ main() { ⤺ is_empty([]); }"),
+            eval("rite main() { ⤺ is_empty([]); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_empty([1]); }"),
+            eval("rite main() { ⤺ is_empty([1]); }"),
             Ok(Value::Bool(false))
         ));
         assert!(matches!(
-            eval(r#"λ main() { ⤺ is_empty(""); }"#),
+            eval(r#"rite main() { ⤺ is_empty(""); }"#),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ is_empty(null); }"),
+            eval("rite main() { ⤺ is_empty(null); }"),
             Ok(Value::Bool(true))
         ));
     }
 
     #[test]
     fn test_match_regex() {
-        let result = eval(r#"λ main() { ⤺ match_regex("hello123", "([a-z]+)([0-9]+)"); }"#);
+        let result = eval(r#"rite main() { ⤺ match_regex("hello123", "([a-z]+)([0-9]+)"); }"#);
         assert!(matches!(result, Ok(Value::Array(_))));
     }
 
     #[test]
     fn test_match_all_regex() {
-        let result = eval(r#"λ main() { ⤺ len(match_all_regex("a1b2c3", "[0-9]")); }"#);
+        let result = eval(r#"rite main() { ⤺ len(match_all_regex("a1b2c3", "[0-9]")); }"#);
         assert!(matches!(result, Ok(Value::Int(3))));
     }
 
     #[test]
     fn test_guard() {
         assert!(matches!(
-            eval("λ main() { ⤺ guard(true, 42); }"),
+            eval("rite main() { ⤺ guard(true, 42); }"),
             Ok(Value::Int(42))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ guard(false, 42); }"),
+            eval("rite main() { ⤺ guard(false, 42); }"),
             Ok(Value::Null)
         ));
     }
@@ -43128,55 +43199,55 @@ mod tests {
     #[test]
     fn test_when_unless() {
         assert!(matches!(
-            eval("λ main() { ⤺ when(true, 42); }"),
+            eval("rite main() { ⤺ when(true, 42); }"),
             Ok(Value::Int(42))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ when(false, 42); }"),
+            eval("rite main() { ⤺ when(false, 42); }"),
             Ok(Value::Null)
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ unless(false, 42); }"),
+            eval("rite main() { ⤺ unless(false, 42); }"),
             Ok(Value::Int(42))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ unless(true, 42); }"),
+            eval("rite main() { ⤺ unless(true, 42); }"),
             Ok(Value::Null)
         ));
     }
 
     #[test]
     fn test_cond() {
-        let result = eval("λ main() { ⤺ cond([[false, 1], [true, 2], [true, 3]]); }");
+        let result = eval("rite main() { ⤺ cond([[false, 1], [true, 2], [true, 3]]); }");
         assert!(matches!(result, Ok(Value::Int(2))));
     }
 
     #[test]
     fn test_case() {
-        let result = eval("λ main() { ⤺ case(2, [[1, 10], [2, 20], [3, 30]]); }");
+        let result = eval("rite main() { ⤺ case(2, [[1, 10], [2, 20], [3, 30]]); }");
         assert!(matches!(result, Ok(Value::Int(20))));
     }
 
     #[test]
     fn test_head_tail() {
-        let result = eval("λ main() { ≔ ht = head_tail([1, 2, 3]); ⤺ len(ht); }");
+        let result = eval("rite main() { ≔ ht = head_tail([1, 2, 3]); ⤺ len(ht); }");
         assert!(matches!(result, Ok(Value::Int(2)))); // Tuple of 2 elements
     }
 
     #[test]
     fn test_split_at() {
-        let result = eval("λ main() { ≔ s = split_at([1, 2, 3, 4, 5], 2); ⤺ len(s); }");
+        let result = eval("rite main() { ≔ s = split_at([1, 2, 3, 4, 5], 2); ⤺ len(s); }");
         assert!(matches!(result, Ok(Value::Int(2)))); // Tuple of 2 arrays
     }
 
     #[test]
     fn test_unwrap_or() {
         assert!(matches!(
-            eval("λ main() { ⤺ unwrap_or(null, 42); }"),
+            eval("rite main() { ⤺ unwrap_or(null, 42); }"),
             Ok(Value::Int(42))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ unwrap_or(10, 42); }"),
+            eval("rite main() { ⤺ unwrap_or(10, 42); }"),
             Ok(Value::Int(10))
         ));
     }
@@ -43184,7 +43255,7 @@ mod tests {
     #[test]
     fn test_coalesce() {
         assert!(matches!(
-            eval("λ main() { ⤺ coalesce([null, null, 3, 4]); }"),
+            eval("rite main() { ⤺ coalesce([null, null, 3, 4]); }"),
             Ok(Value::Int(3))
         ));
     }
@@ -43192,11 +43263,11 @@ mod tests {
     #[test]
     fn test_deep_eq() {
         assert!(matches!(
-            eval("λ main() { ⤺ deep_eq([1, 2, 3], [1, 2, 3]); }"),
+            eval("rite main() { ⤺ deep_eq([1, 2, 3], [1, 2, 3]); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ deep_eq([1, 2, 3], [1, 2, 4]); }"),
+            eval("rite main() { ⤺ deep_eq([1, 2, 3], [1, 2, 4]); }"),
             Ok(Value::Bool(false))
         ));
     }
@@ -43204,11 +43275,11 @@ mod tests {
     #[test]
     fn test_same_type() {
         assert!(matches!(
-            eval("λ main() { ⤺ same_type(1, 2); }"),
+            eval("rite main() { ⤺ same_type(1, 2); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval(r#"λ main() { ⤺ same_type(1, "a"); }"#),
+            eval(r#"rite main() { ⤺ same_type(1, "a"); }"#),
             Ok(Value::Bool(false))
         ));
     }
@@ -43216,15 +43287,15 @@ mod tests {
     #[test]
     fn test_compare() {
         assert!(matches!(
-            eval("λ main() { ⤺ compare(1, 2); }"),
+            eval("rite main() { ⤺ compare(1, 2); }"),
             Ok(Value::Int(-1))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ compare(2, 2); }"),
+            eval("rite main() { ⤺ compare(2, 2); }"),
             Ok(Value::Int(0))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ compare(3, 2); }"),
+            eval("rite main() { ⤺ compare(3, 2); }"),
             Ok(Value::Int(1))
         ));
     }
@@ -43232,11 +43303,11 @@ mod tests {
     #[test]
     fn test_between() {
         assert!(matches!(
-            eval("λ main() { ⤺ between(5, 1, 10); }"),
+            eval("rite main() { ⤺ between(5, 1, 10); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ between(15, 1, 10); }"),
+            eval("rite main() { ⤺ between(15, 1, 10); }"),
             Ok(Value::Bool(false))
         ));
     }
@@ -43244,15 +43315,15 @@ mod tests {
     #[test]
     fn test_clamp() {
         assert!(matches!(
-            eval("λ main() { ⤺ clamp(5, 1, 10); }"),
+            eval("rite main() { ⤺ clamp(5, 1, 10); }"),
             Ok(Value::Int(5))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ clamp(-5, 1, 10); }"),
+            eval("rite main() { ⤺ clamp(-5, 1, 10); }"),
             Ok(Value::Int(1))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ clamp(15, 1, 10); }"),
+            eval("rite main() { ⤺ clamp(15, 1, 10); }"),
             Ok(Value::Int(10))
         ));
     }
@@ -43261,13 +43332,13 @@ mod tests {
 
     #[test]
     fn test_inspect() {
-        let result = eval(r#"λ main() { ⤺ inspect(42); }"#);
+        let result = eval(r#"rite main() { ⤺ inspect(42); }"#);
         assert!(matches!(result, Ok(Value::String(s)) if s.as_str() == "42"));
     }
 
     #[test]
     fn test_version() {
-        let result = eval("λ main() { ⤺ version(); }");
+        let result = eval("rite main() { ⤺ version(); }");
         assert!(matches!(result, Ok(Value::Map(_))));
     }
 
@@ -43276,11 +43347,11 @@ mod tests {
     #[test]
     fn test_to_int() {
         assert!(matches!(
-            eval("λ main() { ⤺ to_int(3.7); }"),
+            eval("rite main() { ⤺ to_int(3.7); }"),
             Ok(Value::Int(3))
         ));
         assert!(matches!(
-            eval(r#"λ main() { ⤺ to_int("42"); }"#),
+            eval(r#"rite main() { ⤺ to_int("42"); }"#),
             Ok(Value::Int(42))
         ));
     }
@@ -43288,25 +43359,25 @@ mod tests {
     #[test]
     fn test_to_float() {
         assert!(
-            matches!(eval("λ main() { ⤺ to_float(42); }"), Ok(Value::Float(f)) if (f - 42.0).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ to_float(42); }"), Ok(Value::Float(f)) if (f - 42.0).abs() < 0.001)
         );
     }
 
     #[test]
     fn test_to_string() {
         assert!(
-            matches!(eval("λ main() { ⤺ to_string(42); }"), Ok(Value::String(s)) if s.as_str() == "42")
+            matches!(eval("rite main() { ⤺ to_string(42); }"), Ok(Value::String(s)) if s.as_str() == "42")
         );
     }
 
     #[test]
     fn test_to_bool() {
         assert!(matches!(
-            eval("λ main() { ⤺ to_bool(1); }"),
+            eval("rite main() { ⤺ to_bool(1); }"),
             Ok(Value::Bool(true))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ to_bool(0); }"),
+            eval("rite main() { ⤺ to_bool(0); }"),
             Ok(Value::Bool(false))
         ));
     }
@@ -43315,14 +43386,14 @@ mod tests {
 
     #[test]
     fn test_now() {
-        let result = eval("λ main() { ⤺ now(); }");
+        let result = eval("rite main() { ⤺ now(); }");
         assert!(matches!(result, Ok(Value::Int(n)) if n > 0));
     }
 
     #[test]
     fn test_now_secs() {
         // now() returns millis, now_secs returns seconds
-        let result = eval("λ main() { ⤺ now_secs(); }");
+        let result = eval("rite main() { ⤺ now_secs(); }");
         assert!(matches!(result, Ok(Value::Int(n)) if n > 0));
     }
 
@@ -43330,14 +43401,14 @@ mod tests {
 
     #[test]
     fn test_random_int() {
-        let result = eval("λ main() { ⤺ random_int(1, 100); }");
+        let result = eval("rite main() { ⤺ random_int(1, 100); }");
         assert!(matches!(result, Ok(Value::Int(n)) if n >= 1 && n < 100));
     }
 
     #[test]
     fn test_random() {
         // random() returns a float - just check it's a float (value may exceed 1.0 with current impl)
-        let result = eval("λ main() { ⤺ random(); }");
+        let result = eval("rite main() { ⤺ random(); }");
         assert!(
             matches!(result, Ok(Value::Float(_))),
             "random got: {:?}",
@@ -43349,7 +43420,7 @@ mod tests {
     fn test_shuffle() {
         // shuffle() modifies array in place and returns null
         let result =
-            eval("λ main() { ≔ arr = [1, 2, 3, 4, 5]; shuffle(arr); ⤺ len(arr); }");
+            eval("rite main() { ≔ arr = [1, 2, 3, 4, 5]; shuffle(arr); ⤺ len(arr); }");
         assert!(
             matches!(result, Ok(Value::Int(5))),
             "shuffle got: {:?}",
@@ -43359,7 +43430,7 @@ mod tests {
 
     #[test]
     fn test_sample() {
-        let result = eval("λ main() { ⤺ sample([1, 2, 3, 4, 5]); }");
+        let result = eval("rite main() { ⤺ sample([1, 2, 3, 4, 5]); }");
         assert!(matches!(result, Ok(Value::Int(n)) if n >= 1 && n <= 5));
     }
 
@@ -43369,7 +43440,7 @@ mod tests {
     fn test_map_set_get() {
         // map_set modifies in place - use the original map
         let result =
-            eval(r#"λ main() { ≔ m = map_new(); map_set(m, "a", 1); ⤺ map_get(m, "a"); }"#);
+            eval(r#"rite main() { ≔ m = map_new(); map_set(m, "a", 1); ⤺ map_get(m, "a"); }"#);
         assert!(
             matches!(result, Ok(Value::Int(1))),
             "map_set_get got: {:?}",
@@ -43380,7 +43451,7 @@ mod tests {
     #[test]
     fn test_map_has() {
         let result =
-            eval(r#"λ main() { ≔ m = map_new(); map_set(m, "a", 1); ⤺ map_has(m, "a"); }"#);
+            eval(r#"rite main() { ≔ m = map_new(); map_set(m, "a", 1); ⤺ map_has(m, "a"); }"#);
         assert!(
             matches!(result, Ok(Value::Bool(true))),
             "map_has got: {:?}",
@@ -43391,7 +43462,7 @@ mod tests {
     #[test]
     fn test_map_keys_values() {
         let result = eval(
-            r#"λ main() { ≔ m = map_new(); map_set(m, "a", 1); ⤺ len(map_keys(m)); }"#,
+            r#"rite main() { ≔ m = map_new(); map_set(m, "a", 1); ⤺ len(map_keys(m)); }"#,
         );
         assert!(
             matches!(result, Ok(Value::Int(1))),
@@ -43404,30 +43475,30 @@ mod tests {
 
     #[test]
     fn test_sort() {
-        let result = eval("λ main() { ⤺ first(sort([3, 1, 2])); }");
+        let result = eval("rite main() { ⤺ first(sort([3, 1, 2])); }");
         assert!(matches!(result, Ok(Value::Int(1))));
     }
 
     #[test]
     fn test_sort_desc() {
-        let result = eval("λ main() { ⤺ first(sort_desc([1, 3, 2])); }");
+        let result = eval("rite main() { ⤺ first(sort_desc([1, 3, 2])); }");
         assert!(matches!(result, Ok(Value::Int(3))));
     }
 
     #[test]
     fn test_reverse() {
-        let result = eval("λ main() { ⤺ first(reverse([1, 2, 3])); }");
+        let result = eval("rite main() { ⤺ first(reverse([1, 2, 3])); }");
         assert!(matches!(result, Ok(Value::Int(3))));
     }
 
     #[test]
     fn test_index_of() {
         assert!(matches!(
-            eval("λ main() { ⤺ index_of([10, 20, 30], 20); }"),
+            eval("rite main() { ⤺ index_of([10, 20, 30], 20); }"),
             Ok(Value::Int(1))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ index_of([10, 20, 30], 99); }"),
+            eval("rite main() { ⤺ index_of([10, 20, 30], 99); }"),
             Ok(Value::Int(-1))
         ));
     }
@@ -43438,7 +43509,7 @@ mod tests {
     #[test]
     fn test_bitwise_and_symbol() {
         // ⋏ is Unicode bitwise AND
-        let result = eval("λ main() { ⤺ 0b1100 ⋏ 0b1010; }");
+        let result = eval("rite main() { ⤺ 0b1100 ⋏ 0b1010; }");
         assert!(
             matches!(result, Ok(Value::Int(8))),
             "bitwise AND got: {:?}",
@@ -43449,7 +43520,7 @@ mod tests {
     #[test]
     fn test_bitwise_or_symbol() {
         // ⋎ is Unicode bitwise OR
-        let result = eval("λ main() { ⤺ 0b1100 ⋎ 0b1010; }");
+        let result = eval("rite main() { ⤺ 0b1100 ⋎ 0b1010; }");
         assert!(
             matches!(result, Ok(Value::Int(14))),
             "bitwise OR got: {:?}",
@@ -43461,7 +43532,7 @@ mod tests {
     #[test]
     fn test_middle_function() {
         // μ (mu) - middle element
-        let result = eval("λ main() { ⤺ middle([1, 2, 3, 4, 5]); }");
+        let result = eval("rite main() { ⤺ middle([1, 2, 3, 4, 5]); }");
         assert!(
             matches!(result, Ok(Value::Int(3))),
             "middle got: {:?}",
@@ -43472,7 +43543,7 @@ mod tests {
     #[test]
     fn test_choice_function() {
         // χ (chi) - random choice (just verify it returns something valid)
-        let result = eval("λ main() { ≔ x = choice([10, 20, 30]); ⤺ x >= 10; }");
+        let result = eval("rite main() { ≔ x = choice([10, 20, 30]); ⤺ x >= 10; }");
         assert!(
             matches!(result, Ok(Value::Bool(true))),
             "choice got: {:?}",
@@ -43483,7 +43554,7 @@ mod tests {
     #[test]
     fn test_nth_function() {
         // ν (nu) - nth element
-        let result = eval("λ main() { ⤺ nth([10, 20, 30, 40], 2); }");
+        let result = eval("rite main() { ⤺ nth([10, 20, 30, 40], 2); }");
         assert!(
             matches!(result, Ok(Value::Int(30))),
             "nth got: {:?}",
@@ -43496,7 +43567,7 @@ mod tests {
     fn test_zip_with_add() {
         // ⋈ (bowtie) - zip_with
         let result =
-            eval(r#"λ main() { ⤺ first(zip_with([1, 2, 3], [10, 20, 30], "add")); }"#);
+            eval(r#"rite main() { ⤺ first(zip_with([1, 2, 3], [10, 20, 30], "add")); }"#);
         assert!(
             matches!(result, Ok(Value::Int(11))),
             "zip_with add got: {:?}",
@@ -43506,7 +43577,7 @@ mod tests {
 
     #[test]
     fn test_zip_with_mul() {
-        let result = eval(r#"λ main() { ⤺ first(zip_with([2, 3, 4], [5, 6, 7], "mul")); }"#);
+        let result = eval(r#"rite main() { ⤺ first(zip_with([2, 3, 4], [5, 6, 7], "mul")); }"#);
         assert!(
             matches!(result, Ok(Value::Int(10))),
             "zip_with mul got: {:?}",
@@ -43517,7 +43588,7 @@ mod tests {
     #[test]
     fn test_supremum_scalar() {
         // ⊔ (square cup) - lattice join / max
-        let result = eval("λ main() { ⤺ supremum(5, 10); }");
+        let result = eval("rite main() { ⤺ supremum(5, 10); }");
         assert!(
             matches!(result, Ok(Value::Int(10))),
             "supremum scalar got: {:?}",
@@ -43527,7 +43598,7 @@ mod tests {
 
     #[test]
     fn test_supremum_array() {
-        let result = eval("λ main() { ⤺ first(supremum([1, 5, 3], [2, 4, 6])); }");
+        let result = eval("rite main() { ⤺ first(supremum([1, 5, 3], [2, 4, 6])); }");
         assert!(
             matches!(result, Ok(Value::Int(2))),
             "supremum array got: {:?}",
@@ -43538,7 +43609,7 @@ mod tests {
     #[test]
     fn test_infimum_scalar() {
         // ⊓ (square cap) - lattice meet / min
-        let result = eval("λ main() { ⤺ infimum(5, 10); }");
+        let result = eval("rite main() { ⤺ infimum(5, 10); }");
         assert!(
             matches!(result, Ok(Value::Int(5))),
             "infimum scalar got: {:?}",
@@ -43548,7 +43619,7 @@ mod tests {
 
     #[test]
     fn test_infimum_array() {
-        let result = eval("λ main() { ⤺ first(infimum([1, 5, 3], [2, 4, 6])); }");
+        let result = eval("rite main() { ⤺ first(infimum([1, 5, 3], [2, 4, 6])); }");
         assert!(
             matches!(result, Ok(Value::Int(1))),
             "infimum array got: {:?}",
@@ -43642,7 +43713,7 @@ mod tests {
     #[test]
     fn test_pipe_alpha_first() {
         // α in pipe gets first element
-        let result = eval("λ main() { ⤺ [10, 20, 30] |α; }");
+        let result = eval("rite main() { ⤺ [10, 20, 30] |α; }");
         assert!(
             matches!(result, Ok(Value::Int(10))),
             "pipe α got: {:?}",
@@ -43653,7 +43724,7 @@ mod tests {
     #[test]
     fn test_pipe_omega_last() {
         // ω in pipe gets last element
-        let result = eval("λ main() { ⤺ [10, 20, 30] |ω; }");
+        let result = eval("rite main() { ⤺ [10, 20, 30] |ω; }");
         assert!(
             matches!(result, Ok(Value::Int(30))),
             "pipe ω got: {:?}",
@@ -43664,7 +43735,7 @@ mod tests {
     #[test]
     fn test_pipe_mu_middle() {
         // μ in pipe gets middle element
-        let result = eval("λ main() { ⤺ [10, 20, 30, 40, 50] |μ; }");
+        let result = eval("rite main() { ⤺ [10, 20, 30, 40, 50] |μ; }");
         assert!(
             matches!(result, Ok(Value::Int(30))),
             "pipe μ got: {:?}",
@@ -43675,7 +43746,7 @@ mod tests {
     #[test]
     fn test_pipe_chi_choice() {
         // χ in pipe gets random element (just verify it's in range)
-        let result = eval("λ main() { ≔ x = [10, 20, 30] |χ; ⤺ x >= 10; }");
+        let result = eval("rite main() { ≔ x = [10, 20, 30] |χ; ⤺ x >= 10; }");
         assert!(
             matches!(result, Ok(Value::Bool(true))),
             "pipe χ got: {:?}",
@@ -43686,7 +43757,7 @@ mod tests {
     #[test]
     fn test_pipe_nu_nth() {
         // ν{n} in pipe gets nth element
-        let result = eval("λ main() { ⤺ [10, 20, 30, 40] |ν{2}; }");
+        let result = eval("rite main() { ⤺ [10, 20, 30, 40] |ν{2}; }");
         assert!(
             matches!(result, Ok(Value::Int(30))),
             "pipe ν got: {:?}",
@@ -43697,7 +43768,7 @@ mod tests {
     #[test]
     fn test_pipe_chain() {
         // Chain multiple pipe operations
-        let result = eval("λ main() { ⤺ [3, 1, 4, 1, 5] |σ |α; }");
+        let result = eval("rite main() { ⤺ [3, 1, 4, 1, 5] |σ |α; }");
         assert!(
             matches!(result, Ok(Value::Int(1))),
             "pipe chain got: {:?}",
@@ -43712,7 +43783,7 @@ mod tests {
         // fn name·ing should parse with progressive aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("λ process·ing() { ⤺ 42; }");
+        let mut parser = Parser::new("rite process·ing() { ⤺ 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "process");
@@ -43727,7 +43798,7 @@ mod tests {
         // fn name·ed should parse with perfective aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("λ process·ed() { ⤺ 42; }");
+        let mut parser = Parser::new("rite process·ed() { ⤺ 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "process");
@@ -43742,7 +43813,7 @@ mod tests {
         // fn name·able should parse with potential aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("λ parse·able() { ⤺ true; }");
+        let mut parser = Parser::new("rite parse·able() { ⤺ true; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "parse");
@@ -43757,7 +43828,7 @@ mod tests {
         // fn name·ive should parse with resultative aspect
         use crate::ast::Aspect;
         use crate::parser::Parser;
-        let mut parser = Parser::new("λ destruct·ive() { ⤺ 42; }");
+        let mut parser = Parser::new("rite destruct·ive() { ⤺ 42; }");
         let file = parser.parse_file().unwrap();
         if let crate::ast::Item::Function(f) = &file.items[0].node {
             assert_eq!(f.name.name, "destruct");
@@ -43773,7 +43844,7 @@ mod tests {
     fn test_choice_single_element() {
         // Single element should always return that element
         assert!(matches!(
-            eval("λ main() { ⤺ choice([42]); }"),
+            eval("rite main() { ⤺ choice([42]); }"),
             Ok(Value::Int(42))
         ));
     }
@@ -43782,12 +43853,12 @@ mod tests {
     fn test_nth_edge_cases() {
         // Last element
         assert!(matches!(
-            eval("λ main() { ⤺ nth([10, 20, 30], 2); }"),
+            eval("rite main() { ⤺ nth([10, 20, 30], 2); }"),
             Ok(Value::Int(30))
         ));
         // First element
         assert!(matches!(
-            eval("λ main() { ⤺ nth([10, 20, 30], 0); }"),
+            eval("rite main() { ⤺ nth([10, 20, 30], 0); }"),
             Ok(Value::Int(10))
         ));
     }
@@ -43796,12 +43867,12 @@ mod tests {
     fn test_next_peek_usage() {
         // next returns first element
         assert!(matches!(
-            eval("λ main() { ⤺ next([1, 2, 3]); }"),
+            eval("rite main() { ⤺ next([1, 2, 3]); }"),
             Ok(Value::Int(1))
         ));
         // peek returns first element without consuming
         assert!(matches!(
-            eval("λ main() { ⤺ peek([1, 2, 3]); }"),
+            eval("rite main() { ⤺ peek([1, 2, 3]); }"),
             Ok(Value::Int(1))
         ));
     }
@@ -43809,14 +43880,14 @@ mod tests {
     #[test]
     fn test_zip_with_empty() {
         // Empty arrays should return empty
-        let result = eval(r#"λ main() { ⤺ len(zip_with([], [], "add")); }"#);
+        let result = eval(r#"rite main() { ⤺ len(zip_with([], [], "add")); }"#);
         assert!(matches!(result, Ok(Value::Int(0))));
     }
 
     #[test]
     fn test_zip_with_different_lengths() {
         // Shorter array determines length
-        let result = eval(r#"λ main() { ⤺ len(zip_with([1, 2], [3, 4, 5], "add")); }"#);
+        let result = eval(r#"rite main() { ⤺ len(zip_with([1, 2], [3, 4, 5], "add")); }"#);
         assert!(matches!(result, Ok(Value::Int(2))));
     }
 
@@ -43824,17 +43895,17 @@ mod tests {
     fn test_supremum_edge_cases() {
         // Same values
         assert!(matches!(
-            eval("λ main() { ⤺ supremum(5, 5); }"),
+            eval("rite main() { ⤺ supremum(5, 5); }"),
             Ok(Value::Int(5))
         ));
         // Negative values
         assert!(matches!(
-            eval("λ main() { ⤺ supremum(-5, -3); }"),
+            eval("rite main() { ⤺ supremum(-5, -3); }"),
             Ok(Value::Int(-3))
         ));
         // Floats
         assert!(
-            matches!(eval("λ main() { ⤺ supremum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 2.5).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ supremum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 2.5).abs() < 0.001)
         );
     }
 
@@ -43842,24 +43913,24 @@ mod tests {
     fn test_infimum_edge_cases() {
         // Same values
         assert!(matches!(
-            eval("λ main() { ⤺ infimum(5, 5); }"),
+            eval("rite main() { ⤺ infimum(5, 5); }"),
             Ok(Value::Int(5))
         ));
         // Negative values
         assert!(matches!(
-            eval("λ main() { ⤺ infimum(-5, -3); }"),
+            eval("rite main() { ⤺ infimum(-5, -3); }"),
             Ok(Value::Int(-5))
         ));
         // Floats
         assert!(
-            matches!(eval("λ main() { ⤺ infimum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 1.5).abs() < 0.001)
+            matches!(eval("rite main() { ⤺ infimum(1.5, 2.5); }"), Ok(Value::Float(f)) if (f - 1.5).abs() < 0.001)
         );
     }
 
     #[test]
     fn test_supremum_infimum_arrays() {
         // Element-wise max
-        let result = eval("λ main() { ⤺ supremum([1, 5, 3], [2, 4, 6]); }");
+        let result = eval("rite main() { ⤺ supremum([1, 5, 3], [2, 4, 6]); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 3);
@@ -43871,7 +43942,7 @@ mod tests {
         }
 
         // Element-wise min
-        let result = eval("λ main() { ⤺ infimum([1, 5, 3], [2, 4, 6]); }");
+        let result = eval("rite main() { ⤺ infimum([1, 5, 3], [2, 4, 6]); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 3);
@@ -43887,17 +43958,17 @@ mod tests {
     fn test_pipe_access_morphemes() {
         // First with pipe syntax
         assert!(matches!(
-            eval("λ main() { ⤺ [10, 20, 30] |α; }"),
+            eval("rite main() { ⤺ [10, 20, 30] |α; }"),
             Ok(Value::Int(10))
         ));
         // Last with pipe syntax
         assert!(matches!(
-            eval("λ main() { ⤺ [10, 20, 30] |ω; }"),
+            eval("rite main() { ⤺ [10, 20, 30] |ω; }"),
             Ok(Value::Int(30))
         ));
         // Middle with pipe syntax
         assert!(matches!(
-            eval("λ main() { ⤺ [10, 20, 30] |μ; }"),
+            eval("rite main() { ⤺ [10, 20, 30] |μ; }"),
             Ok(Value::Int(20))
         ));
     }
@@ -43906,11 +43977,11 @@ mod tests {
     fn test_pipe_nth_syntax() {
         // Nth with pipe syntax
         assert!(matches!(
-            eval("λ main() { ⤺ [10, 20, 30, 40] |ν{1}; }"),
+            eval("rite main() { ⤺ [10, 20, 30, 40] |ν{1}; }"),
             Ok(Value::Int(20))
         ));
         assert!(matches!(
-            eval("λ main() { ⤺ [10, 20, 30, 40] |ν{3}; }"),
+            eval("rite main() { ⤺ [10, 20, 30, 40] |ν{3}; }"),
             Ok(Value::Int(40))
         ));
     }
@@ -43919,7 +43990,7 @@ mod tests {
 
     #[test]
     fn test_quaternion_identity() {
-        let result = eval("λ main() { ≔ q = quat_identity(); ⤺ q; }");
+        let result = eval("rite main() { ≔ q = quat_identity(); ⤺ q; }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 4);
@@ -43940,7 +44011,7 @@ mod tests {
     fn test_quaternion_from_axis_angle() {
         // 90 degrees around Y axis
         let result =
-            eval("λ main() { ≔ q = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963); ⤺ q; }");
+            eval("rite main() { ≔ q = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963); ⤺ q; }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 4);
@@ -43963,7 +44034,7 @@ mod tests {
         // Rotate [1, 0, 0] by 90 degrees around Z axis should give [0, 1, 0]
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ q = quat_from_axis_angle(vec3(0, 0, 1), 1.5707963);
                 ≔ v = vec3(1, 0, 0);
                 ⤺ quat_rotate(q, v);
@@ -43989,7 +44060,7 @@ mod tests {
         // Interpolate between identity and 90° rotation
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ q1 = quat_identity();
                 ≔ q2 = quat_from_axis_angle(vec3(0, 1, 0), 1.5707963);
                 ⤺ quat_slerp(q1, q2, 0.5);
@@ -44012,7 +44083,7 @@ mod tests {
     #[test]
     fn test_vec3_operations() {
         // vec3_add
-        let result = eval("λ main() { ⤺ vec3_add(vec3(1, 2, 3), vec3(4, 5, 6)); }");
+        let result = eval("rite main() { ⤺ vec3_add(vec3(1, 2, 3), vec3(4, 5, 6)); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             if let (Value::Float(x), Value::Float(y), Value::Float(z)) = (&arr[0], &arr[1], &arr[2])
@@ -44024,11 +44095,11 @@ mod tests {
         }
 
         // vec3_dot
-        let result = eval("λ main() { ⤺ vec3_dot(vec3(1, 2, 3), vec3(4, 5, 6)); }");
+        let result = eval("rite main() { ⤺ vec3_dot(vec3(1, 2, 3), vec3(4, 5, 6)); }");
         assert!(matches!(result, Ok(Value::Float(f)) if (f - 32.0).abs() < 0.001));
 
         // vec3_cross
-        let result = eval("λ main() { ⤺ vec3_cross(vec3(1, 0, 0), vec3(0, 1, 0)); }");
+        let result = eval("rite main() { ⤺ vec3_cross(vec3(1, 0, 0), vec3(0, 1, 0)); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             if let (Value::Float(x), Value::Float(y), Value::Float(z)) = (&arr[0], &arr[1], &arr[2])
@@ -44040,11 +44111,11 @@ mod tests {
         }
 
         // vec3_length
-        let result = eval("λ main() { ⤺ vec3_length(vec3(3, 4, 0)); }");
+        let result = eval("rite main() { ⤺ vec3_length(vec3(3, 4, 0)); }");
         assert!(matches!(result, Ok(Value::Float(f)) if (f - 5.0).abs() < 0.001));
 
         // vec3_normalize
-        let result = eval("λ main() { ⤺ vec3_normalize(vec3(3, 0, 0)); }");
+        let result = eval("rite main() { ⤺ vec3_normalize(vec3(3, 0, 0)); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             if let Value::Float(x) = &arr[0] {
@@ -44056,7 +44127,7 @@ mod tests {
     #[test]
     fn test_vec3_reflect() {
         // Reflect [1, -1, 0] off surface with normal [0, 1, 0]
-        let result = eval("λ main() { ⤺ vec3_reflect(vec3(1, -1, 0), vec3(0, 1, 0)); }");
+        let result = eval("rite main() { ⤺ vec3_reflect(vec3(1, -1, 0), vec3(0, 1, 0)); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             if let (Value::Float(x), Value::Float(y), Value::Float(z)) = (&arr[0], &arr[1], &arr[2])
@@ -44070,7 +44141,7 @@ mod tests {
 
     #[test]
     fn test_mat4_identity() {
-        let result = eval("λ main() { ⤺ mat4_identity(); }");
+        let result = eval("rite main() { ⤺ mat4_identity(); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 16);
@@ -44090,7 +44161,7 @@ mod tests {
     fn test_mat4_translate() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ t = mat4_translate(5.0, 10.0, 15.0);
                 ≔ v = vec4(0, 0, 0, 1);
                 ⤺ mat4_transform(t, v);
@@ -44113,7 +44184,7 @@ mod tests {
     #[test]
     fn test_mat4_perspective() {
         // Just verify it creates a valid matrix without errors
-        let result = eval("λ main() { ⤺ mat4_perspective(1.0472, 1.777, 0.1, 100.0); }");
+        let result = eval("rite main() { ⤺ mat4_perspective(1.0472, 1.777, 0.1, 100.0); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 16);
@@ -44126,7 +44197,7 @@ mod tests {
     fn test_mat4_look_at() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ eye = vec3(0, 0, 5);
                 ≔ center = vec3(0, 0, 0);
                 ≔ up = vec3(0, 1, 0);
@@ -44147,7 +44218,7 @@ mod tests {
         // Inverse of identity should be identity
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ m = mat4_identity();
                 ⤺ mat4_inverse(m);
             }
@@ -44165,7 +44236,7 @@ mod tests {
     #[test]
     fn test_mat3_operations() {
         // mat3_identity
-        let result = eval("λ main() { ⤺ mat3_identity(); }");
+        let result = eval("rite main() { ⤺ mat3_identity(); }");
         if let Ok(Value::Array(arr)) = result {
             let arr = arr.borrow();
             assert_eq!(arr.len(), 9);
@@ -44174,7 +44245,7 @@ mod tests {
         // mat3_transform
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ m = mat3_identity();
                 ≔ v = vec3(1, 2, 3);
                 ⤺ mat3_transform(m, v);
@@ -44197,7 +44268,7 @@ mod tests {
         // Convert identity quaternion to matrix - should be identity
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ q = quat_identity();
                 ⤺ quat_to_mat4(q);
             }
@@ -44222,7 +44293,7 @@ mod tests {
         // Basic channel send/receive
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ ch = channel_new();
                 channel_send(ch, 42);
                 ⤺ channel_recv(ch);
@@ -44237,7 +44308,7 @@ mod tests {
         // Send multiple values and receive in order (FIFO)
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ ch = channel_new();
                 channel_send(ch, 1);
                 channel_send(ch, 2);
@@ -44257,7 +44328,7 @@ mod tests {
         // Test sending 1000 messages through a channel
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ ch = channel_new();
                 ≔ count = 1000;
                 ≔ Δ i = 0;
@@ -44288,7 +44359,7 @@ mod tests {
         // Test that complex values survive channel transport
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ ch = channel_new();
 
                 // Send various types
@@ -44318,7 +44389,7 @@ mod tests {
         // Check that it returns a Variant type (not panicking/erroring)
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ ch = channel_new();
                 ≔ result = channel_try_recv(ch);
                 // Can't pattern ⌥ variants ∈ interpreter, so just verify it returns
@@ -44335,7 +44406,7 @@ mod tests {
         // try_recv with value - verify channel works (blocking recv confirms)
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ ch = channel_new();
                 channel_send(ch, 99);
                 // Use blocking recv since try_recv returns Option variant
@@ -44353,7 +44424,7 @@ mod tests {
         // recv_timeout on empty channel should timeout without error
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ ch = channel_new();
                 ≔ result = channel_recv_timeout(ch, 10);  // 10ms timeout
                 // Just verify it completes without blocking forever
@@ -44369,7 +44440,7 @@ mod tests {
         // Basic actor creation and messaging
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ act = spawn_actor("test_actor");
                 send_to_actor(act, "ping", 42);
                 ⤺ get_actor_msg_count(act);
@@ -44384,7 +44455,7 @@ mod tests {
         // Send 10000 messages to an actor rapidly
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ act = spawn_actor("stress_actor");
                 ≔ count = 10000;
                 ≔ Δ i = 0;
@@ -44404,7 +44475,7 @@ mod tests {
         // Verify pending count accuracy
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ act = spawn_actor("pending_test");
 
                 // Send 5 messages
@@ -44436,7 +44507,7 @@ mod tests {
         // Note: Our actor uses pop() which is LIFO, so last sent = first received
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ act = spawn_actor("order_test");
                 send_to_actor(act, "a", 1);
                 send_to_actor(act, "b", 2);
@@ -44462,7 +44533,7 @@ mod tests {
         // Verify via pending count that no messages were added
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ act = spawn_actor("empty_actor");
                 // No messages sent, so pending should be 0
                 ⤺ get_actor_pending(act);
@@ -44477,7 +44548,7 @@ mod tests {
         // tell_actor should work the same as send_to_actor
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ act = spawn_actor("tell_test");
                 tell_actor(act, "hello", 123);
                 tell_actor(act, "world", 456);
@@ -44493,7 +44564,7 @@ mod tests {
         // Verify actor name is stored correctly
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ act = spawn_actor("my_special_actor");
                 ⤺ get_actor_name(act);
             }
@@ -44507,7 +44578,7 @@ mod tests {
         // Multiple actors should be independent
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ a1 = spawn_actor("actor1");
                 ≔ a2 = spawn_actor("actor2");
                 ≔ a3 = spawn_actor("actor3");
@@ -44535,7 +44606,7 @@ mod tests {
         // Multiple channels should be independent
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ ch1 = channel_new();
                 ≔ ch2 = channel_new();
                 ≔ ch3 = channel_new();
@@ -44560,7 +44631,7 @@ mod tests {
         // thread_sleep should work without error
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 thread_sleep(1);  // Sleep 1ms
                 ⤺ 42;
             }
@@ -44574,7 +44645,7 @@ mod tests {
         // thread_yield should work without error
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 thread_yield();
                 ⤺ 42;
             }
@@ -44588,7 +44659,7 @@ mod tests {
         // thread_id should return a string
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ id = thread_id();
                 ⤺ len(id) > 0;
             }
@@ -44602,7 +44673,7 @@ mod tests {
         // Interleaved sends and receives
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ ch = channel_new();
                 ≔ Δ sum = 0;
                 ≔ Δ i = 0;
@@ -44628,7 +44699,7 @@ mod tests {
         // Send and receive many messages
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ act = spawn_actor("recv_stress");
                 ≔ count = 1000;
                 ≔ Δ i = 0;
@@ -44680,7 +44751,7 @@ mod tests {
             // Deeply nested brackets shouldn't cause stack overflow
             let open: String = (0..depth).map(|_| '(').collect();
             let close: String = (0..depth).map(|_| ')').collect();
-            let code = format!("λ main() {{ ⤺ {}1{}; }}", open, close);
+            let code = format!("rite main() {{ ⤺ {}1{}; }}", open, close);
             let mut parser = Parser::new(&code);
             let _ = parser.parse_file();
         }
@@ -44689,7 +44760,7 @@ mod tests {
         fn test_parser_long_identifiers(len in 1..500usize) {
             // Long identifiers shouldn't cause issues
             let ident: String = (0..len).map(|_| 'a').collect();
-            let code = format!("λ main() {{ ≔ {} = 1; ⤺ {}; }}", ident, ident);
+            let code = format!("rite main() {{ ≔ {} = 1; ⤺ {}; }}", ident, ident);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Int(1))));
         }
@@ -44698,7 +44769,7 @@ mod tests {
         fn test_parser_many_arguments(count in 0..50usize) {
             // Many function arguments shouldn't cause issues
             let args: String = (0..count).map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ");
-            let code = format!("λ main() {{ ⤺ len([{}]); }}", args);
+            let code = format!("rite main() {{ ⤺ len([{}]); }}", args);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Int(c)) if c == count as i64));
         }
@@ -44715,7 +44786,7 @@ mod tests {
             // e_i ^ e_j = -e_j ^ e_i (bivector anticommutativity)
             // Test via wedge product: a ^ b = -(b ^ a)
             let code = format!(r#"
-                λ main() {{
+                rite main() {{
                     ≔ a = vec3({}, {}, {});
                     ≔ b = vec3({}, {}, {});
                     ≔ ab = vec3_cross(a, b);
@@ -44736,7 +44807,7 @@ mod tests {
                                      x2 in -100.0f64..100.0, y2 in -100.0f64..100.0, z2 in -100.0f64..100.0) {
             // a · b = b · a (dot product commutativity)
             let code = format!(r#"
-                λ main() {{
+                rite main() {{
                     ≔ a = vec3({}, {}, {});
                     ≔ b = vec3({}, {}, {});
                     ≔ ab = vec3_dot(a, b);
@@ -44753,7 +44824,7 @@ mod tests {
         fn test_quat_identity_preserves_vector(x in -100.0f64..100.0, y in -100.0f64..100.0, z in -100.0f64..100.0) {
             // Rotating by identity quaternion should preserve the vector
             let code = format!(r#"
-                λ main() {{
+                rite main() {{
                     ≔ v = vec3({}, {}, {});
                     ≔ q = quat_identity();
                     ≔ rotated = quat_rotate(q, v);
@@ -44773,7 +44844,7 @@ mod tests {
                                                           angle in -3.14f64..3.14) {
             // q(2θ) should equal q(θ) * q(θ)
             let code = format!(r#"
-                λ main() {{
+                rite main() {{
                     ≔ v = vec3({}, {}, {});
                     ≔ axis = vec3(0.0, 1.0, 0.0);
                     ≔ q1 = quat_from_axis_angle(axis, {});
@@ -44801,7 +44872,7 @@ mod tests {
                                      x3 in -100.0f64..100.0, y3 in -100.0f64..100.0, z3 in -100.0f64..100.0) {
             // (a + b) + c = a + (b + c)
             let code = format!(r#"
-                λ main() {{
+                rite main() {{
                     ≔ a = vec3({}, {}, {});
                     ≔ b = vec3({}, {}, {});
                     ≔ c = vec3({}, {}, {});
@@ -44823,7 +44894,7 @@ mod tests {
                                         s1 in -10.0f64..10.0, s2 in -10.0f64..10.0) {
             // (s1 + s2) * v = s1*v + s2*v
             let code = format!(r#"
-                λ main() {{
+                rite main() {{
                     ≔ v = vec3({}, {}, {});
                     ≔ s1 = {};
                     ≔ s2 = {};
@@ -44850,8 +44921,8 @@ mod tests {
         fn test_grad_of_constant_is_zero(c in -100.0f64..100.0, x in -100.0f64..100.0) {
             // d/dx(c) = 0
             let code = format!(r#"
-                λ main() -> bool {{
-                    λ constant(x) -> f64 {{ ⤺ {}; }}
+                rite main() -> bool {{
+                    rite constant(x) -> f64 {{ ⤺ {}; }}
                     ≔ g = grad(constant, {});
                     ≔ eps = 0.001;
                     ⤺ eps > abs(g);
@@ -44865,8 +44936,8 @@ mod tests {
         fn test_grad_of_x_is_one(x in -100.0f64..100.0) {
             // d/dx(x) = 1
             let code = format!(r#"
-                λ main() -> bool {{
-                    λ identity(x) -> f64 {{ ⤺ x; }}
+                rite main() -> bool {{
+                    rite identity(x) -> f64 {{ ⤺ x; }}
                     ≔ g = grad(identity, {});
                     ≔ eps = 0.001;
                     ⤺ eps > abs(g - 1.0);
@@ -44880,8 +44951,8 @@ mod tests {
         fn test_grad_of_x_squared(x in -50.0f64..50.0) {
             // d/dx(x^2) = 2x
             let code = format!(r#"
-                λ main() -> bool {{
-                    λ square(x) -> f64 {{ ⤺ x * x; }}
+                rite main() -> bool {{
+                    rite square(x) -> f64 {{ ⤺ x * x; }}
                     ≔ g = grad(square, {});
                     ≔ expected = 2.0 * {};
                     ≔ eps = 0.1;
@@ -44897,8 +44968,8 @@ mod tests {
             // d/dx(a*x + b) = a
             // Note: 'linear' is a reserved keyword in Sigil, so use 'lin_fn' instead
             let code = format!(r#"
-                λ main() -> bool {{
-                    λ lin_fn(x) -> f64 {{ ⤺ {} * x + {}; }}
+                rite main() -> bool {{
+                    rite lin_fn(x) -> f64 {{ ⤺ {} * x + {}; }}
                     ≔ g = grad(lin_fn, {});
                     ≔ eps = 0.1;
                     ⤺ eps > abs(g - {});
@@ -44916,35 +44987,35 @@ mod tests {
 
         #[test]
         fn test_addition_commutative(a in -1000i64..1000, b in -1000i64..1000) {
-            let code = format!("λ main() -> bool {{ ⤺ {} + {} == {} + {}; }}", a, b, b, a);
+            let code = format!("rite main() -> bool {{ ⤺ {} + {} == {} + {}; }}", a, b, b, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_multiplication_commutative(a in -100i64..100, b in -100i64..100) {
-            let code = format!("λ main() -> bool {{ ⤺ {} * {} == {} * {}; }}", a, b, b, a);
+            let code = format!("rite main() -> bool {{ ⤺ {} * {} == {} * {}; }}", a, b, b, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_addition_identity(a in -1000i64..1000) {
-            let code = format!("λ main() -> bool {{ ⤺ {} + 0 == {}; }}", a, a);
+            let code = format!("rite main() -> bool {{ ⤺ {} + 0 == {}; }}", a, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_multiplication_identity(a in -1000i64..1000) {
-            let code = format!("λ main() -> bool {{ ⤺ {} * 1 == {}; }}", a, a);
+            let code = format!("rite main() -> bool {{ ⤺ {} * 1 == {}; }}", a, a);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
 
         #[test]
         fn test_distributive_property(a in -20i64..20, b in -20i64..20, c in -20i64..20) {
-            let code = format!("λ main() -> bool {{ ⤺ {} * ({} + {}) == {} * {} + {} * {}; }}", a, b, c, a, b, a, c);
+            let code = format!("rite main() -> bool {{ ⤺ {} * ({} + {}) == {} * {} + {} * {}; }}", a, b, c, a, b, a, c);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Bool(true))));
         }
@@ -44959,7 +45030,7 @@ mod tests {
         fn test_array_len_after_push(initial_len in 0..20usize, value in -100i64..100) {
             let initial: String = (0..initial_len).map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ");
             let code = format!(r#"
-                λ main() -> i64 {{
+                rite main() -> i64 {{
                     ≔ arr = [{}];
                     push(arr, {});
                     ⤺ len(arr);
@@ -44973,7 +45044,7 @@ mod tests {
         fn test_reverse_reverse_identity(elements in prop::collection::vec(-100i64..100, 0..10)) {
             let arr_str = elements.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
             let code = format!(r#"
-                λ main() -> bool {{
+                rite main() -> bool {{
                     ≔ arr = [{}];
                     ≔ rev1 = reverse(arr);
                     ≔ rev2 = reverse(rev1);
@@ -44996,7 +45067,7 @@ mod tests {
         fn test_sum_equals_manual_sum(elements in prop::collection::vec(-100i64..100, 0..20)) {
             let arr_str = elements.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ");
             let expected_sum: i64 = elements.iter().sum();
-            let code = format!("λ main() -> i64 {{ ⤺ sum([{}]); }}", arr_str);
+            let code = format!("rite main() -> i64 {{ ⤺ sum([{}]); }}", arr_str);
             let result = eval(&code);
             assert!(matches!(result, Ok(Value::Int(n)) if n == expected_sum));
         }
@@ -45014,7 +45085,7 @@ mod tests {
         // Create and discard arrays many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ⟳ i < 1000 {
                     ≔ arr = [1, 2, 3, 4, 5];
@@ -45035,11 +45106,11 @@ mod tests {
         // Call functions many times to test function frame cleanup
         let result = eval(
             r#"
-            λ fib(n) -> i64 {
+            rite fib(n) -> i64 {
                 ⎇ n <= 1 { ⤺ n; }
                 ⤺ fib(n - 1) + fib(n - 2);
             }
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ≔ Δ total = 0;
                 ⟳ i < 100 {
@@ -45058,7 +45129,7 @@ mod tests {
         // Create and discard maps many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ⟳ i < 500 {
                     ≔ m = map_new();
@@ -45080,7 +45151,7 @@ mod tests {
         // Create and discard strings many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ⟳ i < 1000 {
                     ≔ s = "hello world";
@@ -45102,7 +45173,7 @@ mod tests {
         // Create and discard ECS entities many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ world = ecs_world();
                 ≔ Δ i = 0;
                 ⟳ i < 500 {
@@ -45124,7 +45195,7 @@ mod tests {
         // Create and use channels many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ⟳ i < 500 {
                     ≔ ch = channel_new();
@@ -45146,7 +45217,7 @@ mod tests {
         // Create actors and send messages many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ⟳ i < 100 {
                     ≔ act = spawn_actor("leak_test_actor");
@@ -45167,7 +45238,7 @@ mod tests {
         // Create and compute with vec3s many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ⟳ i < 1000 {
                     ≔ v1 = vec3(1.0, 2.0, 3.0);
@@ -45191,12 +45262,12 @@ mod tests {
         // Create and call closures many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ≔ Δ total = 0;
                 ⟳ i < 500 {
                     ≔ x = i;
-                    λ add_x(y) -> i64 { ⤺ x + y; }
+                    rite add_x(y) -> i64 { ⤺ x + y; }
                     total = total + add_x(1);
                     i = i + 1;
                 }
@@ -45213,7 +45284,7 @@ mod tests {
         // Create nested arrays and maps many times
         let result = eval(
             r#"
-            λ main() -> i64 {
+            rite main() -> i64 {
                 ≔ Δ i = 0;
                 ⟳ i < 200 {
                     ≔ inner1 = [1, 2, 3];
@@ -45237,7 +45308,7 @@ mod tests {
         for _ in 0..50 {
             let result = eval(
                 r#"
-                λ main() -> i64 {
+                rite main() -> i64 {
                     ≔ arr = [1, 2, 3, 4, 5];
                     ≔ total = sum(arr);
                     ⤺ total * 2;
@@ -45254,7 +45325,7 @@ mod tests {
     fn test_sgdoc_claim_verified() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ claim = Claim·verified("Test claim", "test.sg");
                 ⤺ Claim·is_verified(claim);
             }
@@ -45267,7 +45338,7 @@ mod tests {
     fn test_sgdoc_claim_shorthand() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ v = Claim·v("Verified");
                 ≔ r = Claim·r("Reported");
                 ≔ u = Claim·u("Uncertain");
@@ -45283,7 +45354,7 @@ mod tests {
     fn test_sgdoc_claim_not_verified() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ claim = Claim·uncertain("Needs investigation");
                 ⤺ Claim·is_verified(claim);
             }
@@ -45296,7 +45367,7 @@ mod tests {
     fn test_sgdoc_claim_promote() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ claim = Claim·uncertain("Was uncertain");
                 ≔ promoted = Claim·promote(claim, "test.sg");
                 ⤺ Claim·is_verified(promoted);
@@ -45310,7 +45381,7 @@ mod tests {
     fn test_sgdoc_claim_demote() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ claim = Claim·verified("Was verified", "test.sg");
                 ≔ demoted = Claim·demote(claim);
                 ⤺ Claim·is_verified(demoted);
@@ -45324,7 +45395,7 @@ mod tests {
     fn test_sgdoc_doc_new() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ meta = DocMeta·new("Test", 0, 4, 0);
                 ≔ doc = Doc·new(meta, "Summary");
                 ⤺ 1;
@@ -45338,7 +45409,7 @@ mod tests {
     fn test_sgdoc_section_add_claim() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ claim = Claim·v("Test");
                 ≔ Δ section = Section·new("1", "First");
                 section = Section·add_claim(section, claim);
@@ -45353,7 +45424,7 @@ mod tests {
     fn test_sgdoc_doc_verify() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ meta = DocMeta·new("Test", 0, 4, 0);
                 ≔ Δ doc = Doc·new(meta, "Summary");
                 ≔ Δ section = Section·new("1", "Section");
@@ -45372,7 +45443,7 @@ mod tests {
     fn test_sgdoc_doc_unverified_claims() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ meta = DocMeta·new("Test", 0, 4, 0);
                 ≔ Δ doc = Doc·new(meta, "Summary");
                 ≔ Δ section = Section·new("1", "Section");
@@ -45392,7 +45463,7 @@ mod tests {
     fn test_sgdoc_example_verify() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ ex = Example·new("Test", "code", "output");
                 ≔ verified = Example·verify(ex);
                 ⤺ 1;
@@ -45406,7 +45477,7 @@ mod tests {
     fn test_sgdoc_to_markdown() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ meta = DocMeta·new("Test", 0, 4, 0);
                 ≔ Δ doc = Doc·new(meta, "Summary");
                 ≔ Δ section = Section·new("1", "Section");
@@ -45424,7 +45495,7 @@ mod tests {
     fn test_sgdoc_to_html() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ meta = DocMeta·new("Test", 0, 4, 0);
                 ≔ Δ doc = Doc·new(meta, "Summary");
                 ≔ Δ section = Section·new("1", "Section");
@@ -45442,7 +45513,7 @@ mod tests {
     fn test_sgdoc_to_json() {
         let result = eval(
             r#"
-            λ main() {
+            rite main() {
                 ≔ meta = DocMeta·new("Test", 0, 4, 0);
                 ≔ doc = Doc·new(meta, "Summary");
                 ≔ json = Doc·to_json(doc);

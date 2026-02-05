@@ -13,12 +13,12 @@
 }
 
 ⊢ Counter {
-    ☉ λ increment(self, amount: !i32) -> !i32 {
+    ☉ rite increment(self, amount: !i32) -> !i32 {
         self.value + amount
     }
 }
 
-λ main() {
+rite main() {
     ≔ c: !Counter = Counter { value: 42 };
     ≔ result: !i32 = c.increment(10);
     println(result);

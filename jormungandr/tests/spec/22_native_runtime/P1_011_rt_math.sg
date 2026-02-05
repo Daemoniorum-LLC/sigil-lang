@@ -14,11 +14,11 @@ invoke tome·rt·math·{
 };
 invoke tome·rt·alloc·init_allocator;
 
-λ approx_eq(a: f64, b: f64, epsilon: f64) -> bool {
+rite approx_eq(a: f64, b: f64, epsilon: f64) -> bool {
     fabs(a - b) < epsilon
 }
 
-λ main() {
+rite main() {
     init_allocator();
 
     ≔ eps = 0.0001;

@@ -7,12 +7,12 @@
 }
 
 ⊢ Drop ∀ Dropper {
-    λ drop(&Δ self) {
+    rite drop(&Δ self) {
         println(self.id);
     }
 }
 
-λ main() {
+rite main() {
     ≔ a = Dropper { id: 100 };
 
     println(0);

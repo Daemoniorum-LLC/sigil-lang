@@ -8,7 +8,7 @@
 
 invoke protocol·kafka·{Producer, Topic};
 
-async λ main() {
+async rite main() {
     ≔ producer = Producer·connect("localhost:9092")|await~;
     ≔ topic = Topic·new("sigil-test");
     producer.send(topic, "key", "hello kafka from sigil")|await;

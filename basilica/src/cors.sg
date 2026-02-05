@@ -56,7 +56,7 @@ invoke crate·context·Context;
 }
 
 ⊢ Default ∀ CorsConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             allowed_origins: vec![],
             allow_any_origin: false,
@@ -90,24 +90,24 @@ invoke crate·context·Context;
 
 ⊢ CorsConfig {
     /// Create a new CORS configuration
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self·default()
     }
 
     /// Allow any origin (∀ development)
-    ☉ λ allow_any(Δ self) -> Self {
+    ☉ rite allow_any(Δ self) -> Self {
         self.allow_any_origin = true;
         self
     }
 
     /// Add an allowed origin
-    ☉ λ allow_origin(Δ self, origin: &str) -> Self {
+    ☉ rite allow_origin(Δ self, origin: &str) -> Self {
         self.allowed_origins.push(origin.to_string());
         self
     }
 
     /// Add multiple allowed origins
-    ☉ λ allow_origins(Δ self, origins: &[&str]) -> Self {
+    ☉ rite allow_origins(Δ self, origins: &[&str]) -> Self {
         ∀ origin ∈ origins {
             self.allowed_origins.push(origin.to_string());
         }
@@ -115,13 +115,13 @@ invoke crate·context·Context;
     }
 
     /// Set allowed methods
-    ☉ λ allow_methods(Δ self, methods: &[&str]) -> Self {
+    ☉ rite allow_methods(Δ self, methods: &[&str]) -> Self {
         self.allowed_methods = methods.iter().map(|s| s.to_string()).collect();
         self
     }
 
     /// Add allowed headers
-    ☉ λ allow_headers(Δ self, headers: &[&str]) -> Self {
+    ☉ rite allow_headers(Δ self, headers: &[&str]) -> Self {
         ∀ header ∈ headers {
             self.allowed_headers.push(header.to_lowercase());
         }
@@ -129,7 +129,7 @@ invoke crate·context·Context;
     }
 
     /// Add exposed headers
-    ☉ λ expose_headers(Δ self, headers: &[&str]) -> Self {
+    ☉ rite expose_headers(Δ self, headers: &[&str]) -> Self {
         ∀ header ∈ headers {
             self.exposed_headers.push(header.to_lowercase());
         }
@@ -137,26 +137,26 @@ invoke crate·context·Context;
     }
 
     /// Enable credentials
-    ☉ λ allow_credentials(Δ self, allow: bool) -> Self {
+    ☉ rite allow_credentials(Δ self, allow: bool) -> Self {
         self.allow_credentials = allow;
         self
     }
 
     /// Set max age ∀ preflight cache
-    ☉ λ max_age(Δ self, seconds: u32) -> Self {
+    ☉ rite max_age(Δ self, seconds: u32) -> Self {
         self.max_age = Some(seconds);
         self
     }
 
     /// Development configuration (allow all)
-    ☉ λ development() -> Self {
+    ☉ rite development() -> Self {
         Self·new()
             .allow_any()
             .allow_credentials(true)
     }
 
     /// Production configuration with specific origins
-    ☉ λ production(origins: &[&str]) -> Self {
+    ☉ rite production(origins: &[&str]) -> Self {
         Self·new()
             .allow_origins(origins)
             .allow_credentials(true)
@@ -174,22 +174,22 @@ invoke crate·context·Context;
 
 ⊢ CorsMiddleware {
     /// Create a new CORS middleware with configuration
-    ☉ λ new(config: CorsConfig) -> Self {
+    ☉ rite new(config: CorsConfig) -> Self {
         Self { config }
     }
 
     /// Create with default configuration
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self·new(CorsConfig·default())
     }
 
     /// Create ∀ development (allow all origins)
-    ☉ λ development() -> Self {
+    ☉ rite development() -> Self {
         Self·new(CorsConfig·development())
     }
 
     /// Check ⎇ origin is allowed
-    λ is_origin_allowed(&self, origin: &str) -> bool {
+    rite is_origin_allowed(&self, origin: &str) -> bool {
         ⎇ self.config.allow_any_origin {
             ⤺ true;
         }
@@ -213,7 +213,7 @@ invoke crate·context·Context;
     }
 
     /// Build CORS headers ∀ a response
-    λ build_cors_headers(&self, origin: &str) -> Headers {
+    rite build_cors_headers(&self, origin: &str) -> Headers {
         ≔ Δ headers = Headers·new();
 
         // Origin
@@ -268,7 +268,7 @@ invoke crate·context·Context;
     }
 
     /// Handle OPTIONS preflight request
-    λ handle_preflight(&self, req: &Request) -> Response<Vec<u8>> {
+    rite handle_preflight(&self, req: &Request) -> Response<Vec<u8>> {
         ≔ origin = req.headers().get("origin").unwrap_or("");
 
         ⎇ !self.is_origin_allowed(origin) {
@@ -290,7 +290,7 @@ invoke crate·context·Context;
 }
 
 ⊢ Middleware ∀ CorsMiddleware {
-    λ before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
+    rite before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
         // Get origin header
         ≔ origin = req.headers().get("origin");
 
@@ -319,7 +319,7 @@ invoke crate·context·Context;
         MiddlewareResult·Continue
     }
 
-    λ after(&self, req: &Request, res: &Δ Response<Vec<u8>>, ctx: &Context) {
+    rite after(&self, req: &Request, res: &Δ Response<Vec<u8>>, ctx: &Context) {
         // Get origin from context (set ∈ before())
         ⎇ ≔ Some(origin) = ctx.get·<String>("cors_origin") {
             ≔ cors_headers = self.build_cors_headers(origin);
@@ -337,17 +337,17 @@ invoke crate·context·Context;
 // ============================================================================
 
 /// Create a CORS middleware that allows any origin (development only)
-☉ λ cors_any() -> CorsMiddleware {
+☉ rite cors_any() -> CorsMiddleware {
     CorsMiddleware·development()
 }
 
 /// Create a CORS middleware ∀ specific origins
-☉ λ cors_origins(origins: &[&str]) -> CorsMiddleware {
+☉ rite cors_origins(origins: &[&str]) -> CorsMiddleware {
     CorsMiddleware·new(CorsConfig·production(origins))
 }
 
 /// Create a CORS middleware ∀ Sanctum
-☉ λ cors_sanctum() -> CorsMiddleware {
+☉ rite cors_sanctum() -> CorsMiddleware {
     CorsMiddleware·new(
         CorsConfig·new()
             .allow_origins(&[

@@ -3,7 +3,7 @@
 // Priority: P0 - Bootstrap Critical
 // Verifies H·H = I (Hadamard is self-inverse)
 
-λ main() {
+rite main() {
     // H applied twice returns qubit to original state
     ≔ q: linear Qubit = Qubit·zero();
     ≔ q2: linear Qubit = q|H;     // |0⟩ → |+⟩

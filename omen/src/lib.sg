@@ -21,10 +21,10 @@ invoke engram·{Engram, Query};
 ☉ Σ PlanId { bytes: [u8; 16] }
 ☉ Σ StepId { bytes: [u8; 16] }
 
-⊢ BeliefId { ☉ λ new() -> Self { Self { bytes: uuid_v7() } } }
-⊢ GoalId { ☉ λ new() -> Self { Self { bytes: uuid_v7() } } }
-⊢ PlanId { ☉ λ new() -> Self { Self { bytes: uuid_v7() } } }
-⊢ StepId { ☉ λ new() -> Self { Self { bytes: uuid_v7() } } }
+⊢ BeliefId { ☉ rite new() -> Self { Self { bytes: uuid_v7() } } }
+⊢ GoalId { ☉ rite new() -> Self { Self { bytes: uuid_v7() } } }
+⊢ PlanId { ☉ rite new() -> Self { Self { bytes: uuid_v7() } } }
+⊢ StepId { ☉ rite new() -> Self { Self { bytes: uuid_v7() } } }
 
 /// Epistemic status
 #[derive(Clone, Copy, PartialEq)]
@@ -38,7 +38,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Epistemic {
-    ☉ λ rank(&self) -> u8 {
+    ☉ rite rank(&self) -> u8 {
         ⌥ self {
             Epistemic·Axiomatic => 5,
             Epistemic·Observed => 4,
@@ -66,7 +66,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Belief {
-    ☉ λ observed(proposition: &str) -> Self {
+    ☉ rite observed(proposition: &str) -> Self {
         Self {
             id: BeliefId·new(),
             proposition: Proposition·simple(proposition),
@@ -78,7 +78,7 @@ invoke engram·{Engram, Query};
         }
     }
 
-    ☉ λ inferred(proposition: &str, confidence: f32) -> Self {
+    ☉ rite inferred(proposition: &str, confidence: f32) -> Self {
         Self {
             id: BeliefId·new(),
             proposition: Proposition·simple(proposition),
@@ -90,7 +90,7 @@ invoke engram·{Engram, Query};
         }
     }
 
-    ☉ λ axiom(proposition: &str) -> Self {
+    ☉ rite axiom(proposition: &str) -> Self {
         Self {
             id: BeliefId·new(),
             proposition: Proposition·simple(proposition),
@@ -102,7 +102,7 @@ invoke engram·{Engram, Query};
         }
     }
 
-    ☉ λ contradicts(&self, other: &Belief) -> bool {
+    ☉ rite contradicts(&self, other: &Belief) -> bool {
         self.proposition.negates(&other.proposition)
     }
 }
@@ -115,7 +115,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Proposition {
-    ☉ λ simple(text: &str) -> Self {
+    ☉ rite simple(text: &str) -> Self {
         Self {
             subject: text.to_string(),
             predicate: "is_true".to_string(),
@@ -124,7 +124,7 @@ invoke engram·{Engram, Query};
         }
     }
 
-    ☉ λ negates(&self, other: &Proposition) -> bool {
+    ☉ rite negates(&self, other: &Proposition) -> bool {
         self.subject == other.subject &&
         self.predicate == other.predicate &&
         self.negated != other.negated
@@ -162,7 +162,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Goal {
-    ☉ λ new(description: &str) -> Self {
+    ☉ rite new(description: &str) -> Self {
         Self {
             id: GoalId·new(),
             description: description.to_string(),
@@ -175,17 +175,17 @@ invoke engram·{Engram, Query};
         }
     }
 
-    ☉ λ with_priority(Δ self, priority: f32) -> Self {
+    ☉ rite with_priority(Δ self, priority: f32) -> Self {
         self.priority = priority.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_deadline(Δ self, duration: Duration) -> Self {
+    ☉ rite with_deadline(Δ self, duration: Duration) -> Self {
         self.deadline = Some(Timestamp·now() + duration);
         self
     }
 
-    ☉ λ with_constraint(Δ self, constraint: Constraint) -> Self {
+    ☉ rite with_constraint(Δ self, constraint: Constraint) -> Self {
         self.constraints.push(constraint);
         self
     }
@@ -205,15 +205,15 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Predicate {
-    ☉ λ always_true() -> Self {
+    ☉ rite always_true() -> Self {
         Self { check: Box·new(|_| true) }
     }
 
-    ☉ λ always_false() -> Self {
+    ☉ rite always_false() -> Self {
         Self { check: Box·new(|_| false) }
     }
 
-    ☉ λ evaluate(&self, state: &State) -> bool {
+    ☉ rite evaluate(&self, state: &State) -> bool {
         (self.check)(state)
     }
 }
@@ -224,14 +224,14 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Constraint {
-    ☉ λ deadline(duration: Duration) -> Self {
+    ☉ rite deadline(duration: Duration) -> Self {
         Self {
             name: "deadline".to_string(),
             check: Box·new(move |_| true),
         }
     }
 
-    ☉ λ no_breaking_changes() -> Self {
+    ☉ rite no_breaking_changes() -> Self {
         Self {
             name: "no_breaking_changes".to_string(),
             check: Box·new(|_| true),
@@ -277,7 +277,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Action {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             params: HashMap·new(),
@@ -289,7 +289,7 @@ invoke engram·{Engram, Query};
         }
     }
 
-    ☉ λ name(&self) -> &str {
+    ☉ rite name(&self) -> &str {
         &self.name
     }
 }
@@ -307,7 +307,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Default ∀ ResourceCost {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             time: Duration·zero(),
             compute: 0.0,
@@ -327,7 +327,7 @@ invoke engram·{Engram, Query};
 }
 
 ☉ Σ RiskId { bytes: [u8; 16] }
-⊢ RiskId { ☉ λ new() -> Self { Self { bytes: uuid_v7() } } }
+⊢ RiskId { ☉ rite new() -> Self { Self { bytes: uuid_v7() } } }
 
 ☉ ᛈ Impact {
     PlanFailure,
@@ -374,7 +374,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Omen {
-    ☉ λ new(config: OmenConfig) -> Self {
+    ☉ rite new(config: OmenConfig) -> Self {
         Self {
             config,
             beliefs: BeliefManager·new(),
@@ -390,7 +390,7 @@ invoke engram·{Engram, Query};
         }
     }
 
-    ☉ λ with_memory(Δ self, memory: Engram) -> Self {
+    ☉ rite with_memory(Δ self, memory: Engram) -> Self {
         self.memory = Some(memory);
         self
     }
@@ -400,27 +400,27 @@ invoke engram·{Engram, Query};
     // ========================================================================
 
     /// Add a belief
-    ☉ λ believe(&Δ self, belief: Belief) {
+    ☉ rite believe(&Δ self, belief: Belief) {
         self.beliefs.add(belief);
     }
 
     /// Observe something (create Observed belief)
-    ☉ λ observe(&Δ self, observation: &str) {
+    ☉ rite observe(&Δ self, observation: &str) {
         self.beliefs.add(Belief·observed(observation));
     }
 
     /// Integrate new evidence
-    ☉ λ integrate_evidence(&Δ self, evidence: Evidence) {
+    ☉ rite integrate_evidence(&Δ self, evidence: Evidence) {
         self.beliefs.revise_with_evidence(evidence);
     }
 
     /// Check ⎇ a proposition is believed
-    ☉ λ believes(&self, proposition: &str) -> bool {
+    ☉ rite believes(&self, proposition: &str) -> bool {
         self.beliefs.holds(proposition)
     }
 
     /// Get beliefs about a topic
-    ☉ λ beliefs_about(&self, topic: &str) -> Vec<&Belief> {
+    ☉ rite beliefs_about(&self, topic: &str) -> Vec<&Belief> {
         self.beliefs.about(topic)
     }
 
@@ -429,12 +429,12 @@ invoke engram·{Engram, Query};
     // ========================================================================
 
     /// Add a goal
-    ☉ λ add_goal(&Δ self, goal: Goal) -> GoalId {
+    ☉ rite add_goal(&Δ self, goal: Goal) -> GoalId {
         self.goals.add(goal)
     }
 
     /// Get current highest-priority goal
-    ☉ λ current_goal(&self) -> Option<&Goal> {
+    ☉ rite current_goal(&self) -> Option<&Goal> {
         self.goals.current()
     }
 
@@ -443,7 +443,7 @@ invoke engram·{Engram, Query};
     // ========================================================================
 
     /// Plan to achieve a goal
-    ☉ λ plan(&self, goal: &Goal) -> Result<Plan, PlanningError> {
+    ☉ rite plan(&self, goal: &Goal) -> Result<Plan, PlanningError> {
         // Select strategy
         ≔ strategy = self.select_strategy(goal)?;
 
@@ -460,19 +460,19 @@ invoke engram·{Engram, Query};
     }
 
     /// Plan using HTN decomposition
-    ☉ λ plan_htn(&self, goal: &Goal) -> Result<Plan, PlanningError> {
+    ☉ rite plan_htn(&self, goal: &Goal) -> Result<Plan, PlanningError> {
         ≔ htn = HTNPlanner·new();
         htn.plan(goal, &self.beliefs, &self.actions, &self.config)
     }
 
     /// Reactive planning ∀ immediate decisions
-    ☉ λ react(&self, situation: &str) -> Option<Action> {
+    ☉ rite react(&self, situation: &str) -> Option<Action> {
         // Simple rule-based reaction
         self.actions.best_for(situation)
     }
 
     /// Replan when a step fails
-    ☉ λ replan(&self, goal: &Goal, failed_step: &PlanStep) -> Result<Plan, PlanningError> {
+    ☉ rite replan(&self, goal: &Goal, failed_step: &PlanStep) -> Result<Plan, PlanningError> {
         // Update beliefs based on failure
         ≔ Δ beliefs = self.beliefs.clone();
         beliefs.add(Belief·observed(&format!("Action {} failed", failed_step.action.name)));
@@ -482,14 +482,14 @@ invoke engram·{Engram, Query};
         strategy.plan(goal, &beliefs, &self.actions, &self.config)
     }
 
-    λ select_strategy(&self, goal: &Goal) -> Result<&dyn PlanningStrategy, PlanningError> {
+    rite select_strategy(&self, goal: &Goal) -> Result<&dyn PlanningStrategy, PlanningError> {
         self.strategies.iter()
             .find(|s| s.is_applicable(goal, &self.beliefs))
             .map(|s| s.as_ref())
             .ok_or(PlanningError·NoApplicableStrategy)
     }
 
-    λ assess_risks(&self, plan: &Plan) -> Vec<Risk> {
+    rite assess_risks(&self, plan: &Plan) -> Vec<Risk> {
         ≔ Δ risks = Vec·new();
 
         ∀ step ∈ &plan.steps {
@@ -508,7 +508,7 @@ invoke engram·{Engram, Query};
         risks
     }
 
-    λ add_contingencies(&self, plan: &Δ Plan) {
+    rite add_contingencies(&self, plan: &Δ Plan) {
         // Would add contingency plans ∀ risky steps
     }
 
@@ -517,12 +517,12 @@ invoke engram·{Engram, Query};
     // ========================================================================
 
     /// Set causal model
-    ☉ λ set_causal_model(&Δ self, model: CausalModel) {
+    ☉ rite set_causal_model(&Δ self, model: CausalModel) {
         self.causal = Some(model);
     }
 
     /// Predict with intervention
-    ☉ λ predict_with_intervention(&self, intervention: &HashMap<String, Value>) -> HashMap<String, f32> {
+    ☉ rite predict_with_intervention(&self, intervention: &HashMap<String, Value>) -> HashMap<String, f32> {
         ⎇ ≔ Some(model) = &self.causal {
             model.intervene(intervention)
         } ⎉ {
@@ -531,7 +531,7 @@ invoke engram·{Engram, Query};
     }
 
     /// Abductive reasoning: infer causes from effects
-    ☉ λ abduce(&self, effects: &HashMap<String, Value>) -> Vec<Explanation> {
+    ☉ rite abduce(&self, effects: &HashMap<String, Value>) -> Vec<Explanation> {
         ⎇ ≔ Some(model) = &self.causal {
             model.abduce(effects)
         } ⎉ {
@@ -544,7 +544,7 @@ invoke engram·{Engram, Query};
     // ========================================================================
 
     /// Learn from plan execution
-    ☉ λ learn_from_execution(&Δ self, plan: &Plan, outcome: PlanOutcome) {
+    ☉ rite learn_from_execution(&Δ self, plan: &Plan, outcome: PlanOutcome) {
         self.learner.record(plan, outcome);
 
         // Update action success rates
@@ -570,14 +570,14 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ BeliefManager {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             beliefs: HashMap·new(),
             by_subject: HashMap·new(),
         }
     }
 
-    ☉ λ add(&Δ self, belief: Belief) {
+    ☉ rite add(&Δ self, belief: Belief) {
         // Check ∀ contradictions
         ≔ contradictions: Vec<_> = self.beliefs.values()
             .filter(|b| b.contradicts(&belief))
@@ -607,7 +607,7 @@ invoke engram·{Engram, Query};
         self.beliefs.insert(id, belief);
     }
 
-    ☉ λ revise_with_evidence(&Δ self, evidence: Evidence) {
+    ☉ rite revise_with_evidence(&Δ self, evidence: Evidence) {
         // Update beliefs based on evidence
         ∀ belief ∈ self.beliefs.values_mut() {
             ⎇ belief.proposition.subject.contains(&evidence.content) {
@@ -617,12 +617,12 @@ invoke engram·{Engram, Query};
         }
     }
 
-    ☉ λ holds(&self, proposition: &str) -> bool {
+    ☉ rite holds(&self, proposition: &str) -> bool {
         self.beliefs.values()
             .any(|b| b.proposition.subject == proposition && b.confidence > 0.5)
     }
 
-    ☉ λ about(&self, topic: &str) -> Vec<&Belief> {
+    ☉ rite about(&self, topic: &str) -> Vec<&Belief> {
         self.by_subject.get(topic)
             .map(|ids| ids.iter()
                 .filter_map(|id| self.beliefs.get(id))
@@ -630,7 +630,7 @@ invoke engram·{Engram, Query};
             .unwrap_or_default()
     }
 
-    ☉ λ clone(&self) -> Self {
+    ☉ rite clone(&self) -> Self {
         Self {
             beliefs: self.beliefs.clone(),
             by_subject: self.by_subject.clone(),
@@ -639,7 +639,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ Belief {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             id: BeliefId { bytes: self.id.bytes },
             proposition: self.proposition.clone(),
@@ -653,7 +653,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ Proposition {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             subject: self.subject.clone(),
             predicate: self.predicate.clone(),
@@ -664,7 +664,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ Evidence {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             content: self.content.clone(),
             source: self.source.clone(),
@@ -674,7 +674,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ BeliefSource {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             BeliefSource·Observation => BeliefSource·Observation,
             BeliefSource·Inference { premises } => BeliefSource·Inference {
@@ -688,7 +688,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ BeliefId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
@@ -702,19 +702,19 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ GoalManager {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             goals: HashMap·new(),
         }
     }
 
-    ☉ λ add(&Δ self, goal: Goal) -> GoalId {
+    ☉ rite add(&Δ self, goal: Goal) -> GoalId {
         ≔ id = goal.id.clone();
         self.goals.insert(id.clone(), goal);
         id
     }
 
-    ☉ λ current(&self) -> Option<&Goal> {
+    ☉ rite current(&self) -> Option<&Goal> {
         self.goals.values()
             .filter(|g| matches!(g.status, GoalStatus·Active))
             .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
@@ -722,7 +722,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ GoalId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
@@ -737,29 +737,29 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ ActionLibrary {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             actions: HashMap·new(),
             success_counts: HashMap·new(),
         }
     }
 
-    ☉ λ register(&Δ self, action: Action) {
+    ☉ rite register(&Δ self, action: Action) {
         self.actions.insert(action.name.clone(), action);
     }
 
-    ☉ λ get(&self, name: &str) -> Option<&Action> {
+    ☉ rite get(&self, name: &str) -> Option<&Action> {
         self.actions.get(name)
     }
 
-    ☉ λ best_for(&self, situation: &str) -> Option<Action> {
+    ☉ rite best_for(&self, situation: &str) -> Option<Action> {
         // Simple matching
         self.actions.values()
             .find(|a| a.name.contains(situation))
             .cloned()
     }
 
-    ☉ λ update_success_rate(&Δ self, name: &str, succeeded: bool) {
+    ☉ rite update_success_rate(&Δ self, name: &str, succeeded: bool) {
         ≔ counts = self.success_counts.entry(name.to_string())
             .or_insert((0, 0));
 
@@ -776,7 +776,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ Action {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             name: self.name.clone(),
             params: self.params.clone(),
@@ -790,7 +790,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ Effect {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             description: self.description.clone(),
             probability: self.probability,
@@ -799,7 +799,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ ResourceCost {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             time: self.time,
             compute: self.compute,
@@ -814,25 +814,25 @@ invoke engram·{Engram, Query};
 // ============================================================================
 
 ☉ Θ PlanningStrategy: Send + Sync {
-    λ name(&self) -> &str;
-    λ is_applicable(&self, goal: &Goal, beliefs: &BeliefManager) -> bool;
-    λ plan(&self, goal: &Goal, beliefs: &BeliefManager, actions: &ActionLibrary, config: &OmenConfig) -> Result<Plan, PlanningError>;
+    rite name(&self) -> &str;
+    rite is_applicable(&self, goal: &Goal, beliefs: &BeliefManager) -> bool;
+    rite plan(&self, goal: &Goal, beliefs: &BeliefManager, actions: &ActionLibrary, config: &OmenConfig) -> Result<Plan, PlanningError>;
 }
 
 ☉ Σ HTNPlanner;
 
 ⊢ HTNPlanner {
-    ☉ λ new() -> Self { Self }
+    ☉ rite new() -> Self { Self }
 }
 
 ⊢ PlanningStrategy ∀ HTNPlanner {
-    λ name(&self) -> &str { "HTN" }
+    rite name(&self) -> &str { "HTN" }
 
-    λ is_applicable(&self, _goal: &Goal, _beliefs: &BeliefManager) -> bool {
+    rite is_applicable(&self, _goal: &Goal, _beliefs: &BeliefManager) -> bool {
         true
     }
 
-    λ plan(&self, goal: &Goal, _beliefs: &BeliefManager, actions: &ActionLibrary, _config: &OmenConfig) -> Result<Plan, PlanningError> {
+    rite plan(&self, goal: &Goal, _beliefs: &BeliefManager, actions: &ActionLibrary, _config: &OmenConfig) -> Result<Plan, PlanningError> {
         // Simple HTN: create linear plan
         ≔ step = PlanStep {
             id: StepId·new(),
@@ -861,17 +861,17 @@ invoke engram·{Engram, Query};
 ☉ Σ MeansEndsPlanner;
 
 ⊢ MeansEndsPlanner {
-    ☉ λ new() -> Self { Self }
+    ☉ rite new() -> Self { Self }
 }
 
 ⊢ PlanningStrategy ∀ MeansEndsPlanner {
-    λ name(&self) -> &str { "MeansEnds" }
+    rite name(&self) -> &str { "MeansEnds" }
 
-    λ is_applicable(&self, _goal: &Goal, _beliefs: &BeliefManager) -> bool {
+    rite is_applicable(&self, _goal: &Goal, _beliefs: &BeliefManager) -> bool {
         true
     }
 
-    λ plan(&self, goal: &Goal, _beliefs: &BeliefManager, _actions: &ActionLibrary, _config: &OmenConfig) -> Result<Plan, PlanningError> {
+    rite plan(&self, goal: &Goal, _beliefs: &BeliefManager, _actions: &ActionLibrary, _config: &OmenConfig) -> Result<Plan, PlanningError> {
         Ok(Plan {
             id: PlanId·new(),
             goal: goal.id.clone(),
@@ -886,7 +886,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Clone ∀ StepId {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { bytes: self.bytes }
     }
 }
@@ -906,14 +906,14 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ CausalModel {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             variables: HashMap·new(),
             edges: vec![],
         }
     }
 
-    ☉ λ add_variable(Δ self, name: &str) -> Self {
+    ☉ rite add_variable(Δ self, name: &str) -> Self {
         self.variables.insert(name.to_string(), CausalVariable {
             name: name.to_string(),
             domain: vec![],
@@ -921,17 +921,17 @@ invoke engram·{Engram, Query};
         self
     }
 
-    ☉ λ add_cause(Δ self, from: &str, to: &str) -> Self {
+    ☉ rite add_cause(Δ self, from: &str, to: &str) -> Self {
         self.edges.push((from.to_string(), to.to_string()));
         self
     }
 
-    ☉ λ intervene(&self, intervention: &HashMap<String, Value>) -> HashMap<String, f32> {
+    ☉ rite intervene(&self, intervention: &HashMap<String, Value>) -> HashMap<String, f32> {
         // Simple intervention logic
         HashMap·new()
     }
 
-    ☉ λ abduce(&self, effects: &HashMap<String, Value>) -> Vec<Explanation> {
+    ☉ rite abduce(&self, effects: &HashMap<String, Value>) -> Vec<Explanation> {
         vec![]
     }
 }
@@ -968,11 +968,11 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ PlanLearner {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { history: vec![] }
     }
 
-    ☉ λ record(&Δ self, plan: &Plan, outcome: PlanOutcome) {
+    ☉ rite record(&Δ self, plan: &Plan, outcome: PlanOutcome) {
         self.history.push(PlanRecord {
             plan: PlanSummary {
                 goal: format!("{:?}", plan.goal),
@@ -1007,7 +1007,7 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Default ∀ OmenConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             horizon: 10,
             uncertainty_tolerance: 0.3,
@@ -1043,11 +1043,11 @@ invoke engram·{Engram, Query};
 }
 
 ⊢ Value {
-    ☉ λ empty() -> Self { Self { inner: vec![] } }
+    ☉ rite empty() -> Self { Self { inner: vec![] } }
 }
 
 ⊢ Clone ∀ Value {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
 }
@@ -1055,26 +1055,26 @@ invoke engram·{Engram, Query};
 ☉ Σ Timestamp { nanos: u64 }
 
 ⊢ Timestamp {
-    ☉ λ now() -> Self { Self { nanos: 0 } }
+    ☉ rite now() -> Self { Self { nanos: 0 } }
 }
 
 ⊢ std·ops·Add<Duration> ∀ Timestamp {
     type Output = Self;
-    λ add(self, _d: Duration) -> Self { self }
+    rite add(self, _d: Duration) -> Self { self }
 }
 
 ☉ Σ Duration { nanos: u64 }
 
 ⊢ Duration {
-    ☉ λ zero() -> Self { Self { nanos: 0 } }
-    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ rite zero() -> Self { Self { nanos: 0 } }
+    ☉ rite seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ rite minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ rite hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
 }
 
 ⊢ Copy ∀ Duration {}
 ⊢ Clone ∀ Duration {
-    λ clone(&self) -> Self { *self }
+    rite clone(&self) -> Self { *self }
 }
 
-λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+rite uuid_v7() -> [u8; 16] { [0u8; 16] }

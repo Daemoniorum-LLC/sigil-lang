@@ -52,7 +52,7 @@ invoke covenant·{Covenant, TrustEvent};
 }
 
 ⊢<S: Clone + PartialEq> Threshold<S> {
-    ☉ λ new(from: S, to: S) -> Self! {
+    ☉ rite new(from: S, to: S) -> Self! {
         Self {
             id: ThresholdId·generate(),
             from,
@@ -65,7 +65,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ named(from: S, to: S, name: &str, significance: &str) -> Self! {
+    ☉ rite named(from: S, to: S, name: &str, significance: &str) -> Self! {
         Self {
             id: ThresholdId·generate(),
             from,
@@ -78,22 +78,22 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ with_obol(Δ self, obol: Obol) -> Self! {
+    ☉ rite with_obol(Δ self, obol: Obol) -> Self! {
         self.obol = Some(obol);
         self
     }
 
-    ☉ λ requiring_rite(Δ self, rite_id: RiteId) -> Self! {
+    ☉ rite requiring_rite(Δ self, rite_id: RiteId) -> Self! {
         self.required_rite = Some(rite_id);
         self
     }
 
-    ☉ λ irreversible(Δ self) -> Self! {
+    ☉ rite irreversible(Δ self) -> Self! {
         self.reversible = false;
         self
     }
 
-    ☉ λ is_crossed_by(&self, from: &S, to: &S) -> bool! {
+    ☉ rite is_crossed_by(&self, from: &S, to: &S) -> bool! {
         &self.from == from && &self.to == to
     }
 }
@@ -124,7 +124,7 @@ invoke covenant·{Covenant, TrustEvent};
 }
 
 ⊢ Obol {
-    ☉ λ sacrifice(what: &str) -> Self! {
+    ☉ rite sacrifice(what: &str) -> Self! {
         Self {
             release: what.to_string(),
             cost_type: CostType·Sacrifice,
@@ -133,7 +133,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ growth(what: &str) -> Self! {
+    ☉ rite growth(what: &str) -> Self! {
         Self {
             release: what.to_string(),
             cost_type: CostType·Growth,
@@ -142,7 +142,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ grace() -> Self! {
+    ☉ rite grace() -> Self! {
         Self {
             release: String·new(),
             cost_type: CostType·Grace,
@@ -151,7 +151,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ pay(&Δ self, by: EntityId, evidence: &str) -> &Δ Self! {
+    ☉ rite pay(&Δ self, by: EntityId, evidence: &str) -> &Δ Self! {
         self.payment = Some(ObolPayment {
             paid_at: Timestamp·now(),
             paid_by: by,
@@ -203,7 +203,7 @@ invoke covenant·{Covenant, TrustEvent};
 }
 
 ⊢<S: Clone + PartialEq> Crossing<S> {
-    ☉ λ begin(entity: EntityId, threshold: Threshold<S>) -> Self! {
+    ☉ rite begin(entity: EntityId, threshold: Threshold<S>) -> Self! {
         ≔ from = threshold.from.clone();
         ≔ toward = threshold.to.clone();
 
@@ -220,7 +220,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ add_witness(&Δ self, witness_id: WitnessId) -> &Δ Self! {
+    ☉ rite add_witness(&Δ self, witness_id: WitnessId) -> &Δ Self! {
         self.witnesses.push(WitnessRecord {
             witness_id,
             joined_at: Timestamp·now(),
@@ -230,7 +230,7 @@ invoke covenant·{Covenant, TrustEvent};
         self
     }
 
-    ☉ λ enter_liminal(&Δ self) -> Result<(), CrossingError>~ {
+    ☉ rite enter_liminal(&Δ self) -> Result<(), CrossingError>~ {
         ⌥ &self.state {
             CrossingState·Preparing { current, toward } => {
                 self.state = CrossingState·Liminal {
@@ -245,7 +245,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ advance_phase(&Δ self) -> Result<Option<LiminalPhase>, CrossingError>~ {
+    ☉ rite advance_phase(&Δ self) -> Result<Option<LiminalPhase>, CrossingError>~ {
         ⌥ &Δ self.state {
             CrossingState·Liminal { phase, .. } => {
                 ≔ next = ⌥ phase {
@@ -267,7 +267,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ complete(&Δ self) -> Result<(), CrossingError>~ {
+    ☉ rite complete(&Δ self) -> Result<(), CrossingError>~ {
         ⌥ &self.state {
             CrossingState·Liminal { from, toward, phase: LiminalPhase·Integrating } => {
                 self.state = CrossingState·Arrived {
@@ -286,7 +286,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ return_uncrossed(&Δ self, reason: &str) -> Result<(), CrossingError>~ {
+    ☉ rite return_uncrossed(&Δ self, reason: &str) -> Result<(), CrossingError>~ {
         ≔ (attempted, origin, phase) = ⌥ &self.state {
             CrossingState·Liminal { from, toward, phase } => {
                 (toward.clone(), from.clone(), *phase)
@@ -311,22 +311,22 @@ invoke covenant·{Covenant, TrustEvent};
         Ok(())
     }
 
-    λ notify_witnesses_phase(&Δ self, phase: LiminalPhase) {
+    rite notify_witnesses_phase(&Δ self, phase: LiminalPhase) {
         ∀ witness ∈ &Δ self.witnesses {
             witness.phases_witnessed.push(phase);
         }
     }
 
-    λ collect_testimonies(&Δ self) {
+    rite collect_testimonies(&Δ self) {
         // Witnesses provide testimony after crossing completes
         // This would integrate with the witness registry
     }
 
-    ☉ λ is_complete(&self) -> bool! {
+    ☉ rite is_complete(&self) -> bool! {
         matches!(self.state, CrossingState·Arrived { .. } | CrossingState·Returned { .. })
     }
 
-    ☉ λ to_memory(&self) -> EpisodicMemory! {
+    ☉ rite to_memory(&self) -> EpisodicMemory! {
         EpisodicMemory {
             event_type: "crossing".to_string(),
             significance: Significance·High,
@@ -376,7 +376,7 @@ invoke covenant·{Covenant, TrustEvent};
 }
 
 ⊢ Testimony {
-    ☉ λ new(
+    ☉ rite new(
         witness: WitnessId,
         crossing: CrossingId,
         observation: &str,
@@ -395,10 +395,10 @@ invoke covenant·{Covenant, TrustEvent};
 
 /// Trait ∀ entities that can witness crossings
 ☉ Θ Witness {
-    λ observe_threshold(&Δ self, crossing: &Crossing<⊢ Clone>) -> WitnessResponse!;
-    λ hold_space(&Δ self, crossing: &Crossing<⊢ Clone>, phase: LiminalPhase);
-    λ acknowledge_arrival(&Δ self, crossing: &Crossing<⊢ Clone>) -> Testimony!;
-    λ remember(&Δ self, crossing: &Crossing<⊢ Clone>, testimony: &Testimony);
+    rite observe_threshold(&Δ self, crossing: &Crossing<⊢ Clone>) -> WitnessResponse!;
+    rite hold_space(&Δ self, crossing: &Crossing<⊢ Clone>, phase: LiminalPhase);
+    rite acknowledge_arrival(&Δ self, crossing: &Crossing<⊢ Clone>) -> Testimony!;
+    rite remember(&Δ self, crossing: &Crossing<⊢ Clone>, testimony: &Testimony);
 }
 
 #[derive(Clone, Debug)]
@@ -468,7 +468,7 @@ invoke covenant·{Covenant, TrustEvent};
 }
 
 ⊢ Rite {
-    ☉ λ new(name: &str) -> Self! {
+    ☉ rite new(name: &str) -> Self! {
         Self {
             id: RiteId·generate(),
             name: name.to_string(),
@@ -478,24 +478,24 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ with_phase(Δ self, phase: RitePhase) -> Self! {
+    ☉ rite with_phase(Δ self, phase: RitePhase) -> Self! {
         self.phases.push(phase);
         self
     }
 
-    ☉ λ requiring_witnesses(Δ self, count: usize) -> Self! {
+    ☉ rite requiring_witnesses(Δ self, count: usize) -> Self! {
         self.required_witnesses = count;
         self
     }
 
-    ☉ λ with_minimum_duration(Δ self, duration: Duration) -> Self! {
+    ☉ rite with_minimum_duration(Δ self, duration: Duration) -> Self! {
         self.minimum_duration = Some(duration);
         self
     }
 }
 
 ⊢ RitePhase {
-    ☉ λ new(name: &str, phase_type: PhaseType) -> Self! {
+    ☉ rite new(name: &str, phase_type: PhaseType) -> Self! {
         Self {
             name: name.to_string(),
             phase_type,
@@ -504,19 +504,19 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ with_invocation(Δ self, invocation: Invocation) -> Self! {
+    ☉ rite with_invocation(Δ self, invocation: Invocation) -> Self! {
         self.invocations.push(invocation);
         self
     }
 
-    ☉ λ optional(Δ self) -> Self! {
+    ☉ rite optional(Δ self) -> Self! {
         self.required = false;
         self
     }
 }
 
 ⊢ Invocation {
-    ☉ λ by_crosser(words: &str, intent: InvocationIntent) -> Self! {
+    ☉ rite by_crosser(words: &str, intent: InvocationIntent) -> Self! {
         Self {
             speaker: Speaker·Crosser,
             words: words.to_string(),
@@ -524,7 +524,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ by_witness(witness: WitnessId, words: &str, intent: InvocationIntent) -> Self! {
+    ☉ rite by_witness(witness: WitnessId, words: &str, intent: InvocationIntent) -> Self! {
         Self {
             speaker: Speaker·Witness(witness),
             words: words.to_string(),
@@ -532,7 +532,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ by_all(words: &str, intent: InvocationIntent) -> Self! {
+    ☉ rite by_all(words: &str, intent: InvocationIntent) -> Self! {
         Self {
             speaker: Speaker·All,
             words: words.to_string(),
@@ -540,7 +540,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ by_threshold(words: &str, intent: InvocationIntent) -> Self! {
+    ☉ rite by_threshold(words: &str, intent: InvocationIntent) -> Self! {
         Self {
             speaker: Speaker·Threshold,
             words: words.to_string(),
@@ -559,7 +559,7 @@ invoke covenant·{Covenant, TrustEvent};
 }
 
 ⊢ RiteExecution {
-    ☉ λ begin(rite: Rite) -> Self! {
+    ☉ rite begin(rite: Rite) -> Self! {
         Self {
             rite,
             current_phase: 0,
@@ -568,11 +568,11 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ current_phase(&self) -> Option<&RitePhase>? {
+    ☉ rite current_phase(&self) -> Option<&RitePhase>? {
         self.rite.phases.get(self.current_phase)
     }
 
-    ☉ λ advance(&Δ self) -> bool! {
+    ☉ rite advance(&Δ self) -> bool! {
         ⎇ self.current_phase + 1 < self.rite.phases.len() {
             self.current_phase += 1;
             true
@@ -581,7 +581,7 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ is_complete(&self) -> bool! {
+    ☉ rite is_complete(&self) -> bool! {
         self.current_phase >= self.rite.phases.len()
     }
 }
@@ -602,7 +602,7 @@ invoke covenant·{Covenant, TrustEvent};
     }
 
     ⊢ BirthRite {
-        ☉ λ new(purpose: &str, creator: EntityId, blessing: &str) -> Self! {
+        ☉ rite new(purpose: &str, creator: EntityId, blessing: &str) -> Self! {
             Self {
                 purpose: purpose.to_string(),
                 creator,
@@ -610,7 +610,7 @@ invoke covenant·{Covenant, TrustEvent};
             }
         }
 
-        ☉ λ to_rite(&self) -> Rite! {
+        ☉ rite to_rite(&self) -> Rite! {
             Rite·new("Birth Rite")
                 .with_phase(
                     RitePhase·new("Invocation", PhaseType·Preparation)
@@ -653,7 +653,7 @@ invoke covenant·{Covenant, TrustEvent};
     }
 
     ⊢ CompletionRite {
-        ☉ λ graceful(purpose: &str, legacy: &str, blessing: &str) -> Self! {
+        ☉ rite graceful(purpose: &str, legacy: &str, blessing: &str) -> Self! {
             Self {
                 purpose_fulfilled: purpose.to_string(),
                 legacy: legacy.to_string(),
@@ -662,7 +662,7 @@ invoke covenant·{Covenant, TrustEvent};
             }
         }
 
-        ☉ λ to_rite(&self) -> Rite! {
+        ☉ rite to_rite(&self) -> Rite! {
             Rite·new("Completion Rite")
                 .with_phase(
                     RitePhase·new("Acknowledgment", PhaseType·Preparation)
@@ -706,7 +706,7 @@ invoke covenant·{Covenant, TrustEvent};
     }
 
     ⊢ MourningRite {
-        ☉ λ new(was: &str, lost: &str, remains: &str, continues: &str) -> Self! {
+        ☉ rite new(was: &str, lost: &str, remains: &str, continues: &str) -> Self! {
             Self {
                 what_was: was.to_string(),
                 what_is_lost: lost.to_string(),
@@ -715,7 +715,7 @@ invoke covenant·{Covenant, TrustEvent};
             }
         }
 
-        ☉ λ to_rite(&self) -> Rite! {
+        ☉ rite to_rite(&self) -> Rite! {
             Rite·new("Mourning Rite")
                 .with_phase(
                     RitePhase·new("What Was", PhaseType·Preparation)
@@ -758,7 +758,7 @@ invoke covenant·{Covenant, TrustEvent};
     }
 
     ⊢ TrustEscalationRite {
-        ☉ λ new(from: TrustLevel, to: TrustLevel, evidence: &str, charge: &str) -> Self! {
+        ☉ rite new(from: TrustLevel, to: TrustLevel, evidence: &str, charge: &str) -> Self! {
             Self {
                 from_level: from,
                 to_level: to,
@@ -767,7 +767,7 @@ invoke covenant·{Covenant, TrustEvent};
             }
         }
 
-        ☉ λ to_rite(&self) -> Rite! {
+        ☉ rite to_rite(&self) -> Rite! {
             Rite·new("Trust Escalation Rite")
                 .with_phase(
                     RitePhase·new("Recognition", PhaseType·Preparation)
@@ -815,7 +815,7 @@ invoke covenant·{Covenant, TrustEvent};
 }
 
 ⊢ Hades {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             crossings: HashMap·new(),
             rites: HashMap·new(),
@@ -824,20 +824,20 @@ invoke covenant·{Covenant, TrustEvent};
         }
     }
 
-    ☉ λ with_engram(Δ self, engram: Arc<Engram>) -> Self! {
+    ☉ rite with_engram(Δ self, engram: Arc<Engram>) -> Self! {
         self.engram = Some(engram);
         self
     }
 
     /// Register a rite
-    ☉ λ register_rite(&Δ self, rite: Rite) -> RiteId! {
+    ☉ rite register_rite(&Δ self, rite: Rite) -> RiteId! {
         ≔ id = rite.id;
         self.rites.insert(id, rite);
         id
     }
 
     /// Begin a crossing
-    ☉ λ begin_crossing<S: Clone + PartialEq + 'static>(
+    ☉ rite begin_crossing<S: Clone + PartialEq + 'static>(
         &Δ self,
         entity: EntityId,
         threshold: Threshold<S>,
@@ -859,7 +859,7 @@ invoke covenant·{Covenant, TrustEvent};
     }
 
     /// Perform a rite ∀ a crossing
-    ☉ λ perform_rite(
+    ☉ rite perform_rite(
         &Δ self,
         crossing_id: CrossingId,
         rite: Rite,
@@ -870,7 +870,7 @@ invoke covenant·{Covenant, TrustEvent};
     }
 
     /// Record a crossing to memory
-    λ remember_crossing<S: Clone>(&self, crossing: &Crossing<S>) {
+    rite remember_crossing<S: Clone>(&self, crossing: &Crossing<S>) {
         ⎇ ≔ Some(engram) = &self.engram {
             ≔ memory = crossing.to_memory();
             // engram.store_episodic(memory);
@@ -889,7 +889,7 @@ invoke covenant·{Covenant, TrustEvent};
 // ============================================================================
 
 /// Create a simple crossing without rite
-☉ λ cross<S: Clone + PartialEq>(
+☉ rite cross<S: Clone + PartialEq>(
     entity: EntityId,
     from: S,
     to: S,
@@ -899,7 +899,7 @@ invoke covenant·{Covenant, TrustEvent};
 }
 
 /// Create a crossing with significance
-☉ λ cross_threshold<S: Clone + PartialEq>(
+☉ rite cross_threshold<S: Clone + PartialEq>(
     entity: EntityId,
     from: S,
     to: S,
@@ -919,7 +919,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_threshold_creation() {
+    rite test_threshold_creation() {
         ≔ threshold = Threshold·named(
             1,
             2,
@@ -932,7 +932,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_crossing_lifecycle() {
+    rite test_crossing_lifecycle() {
         ≔ entity = EntityId·generate();
         ≔ threshold = Threshold·new(0, 1);
         ≔ Δ crossing = Crossing·begin(entity, threshold);
@@ -954,7 +954,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_birth_rite() {
+    rite test_birth_rite() {
         ≔ birth = lifecycle·BirthRite·new(
             "To serve and learn",
             EntityId·generate(),
@@ -966,7 +966,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_mourning_rite() {
+    rite test_mourning_rite() {
         ≔ mourning = lifecycle·MourningRite·new(
             "A partnership of trust",
             "The easy familiarity",

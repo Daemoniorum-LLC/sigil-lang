@@ -1778,8 +1778,43 @@ impl TypeChecker {
                     ..
                 } = fn_type
                 {
-                    // Check argument count
-                    if params.len() != arg_types.len() {
+                    // Extract function name for variadic builtin check
+                    let func_name = match func.as_ref() {
+                        Expr::Path(path) if path.segments.len() == 1 => {
+                            Some(path.segments[0].ident.name.as_str())
+                        }
+                        _ => None,
+                    };
+
+                    // Known variadic builtins: interpreter accepts variable args
+                    // (registered with arity: None in stdlib.rs). Allow extra
+                    // arguments beyond the minimum registered parameter count.
+                    let is_variadic_builtin = func_name.map_or(false, |name| {
+                        matches!(
+                            name,
+                            "assert"
+                                | "println"
+                                | "print"
+                                | "eprintln"
+                                | "eprint"
+                                | "panic"
+                                | "todo"
+                                | "unreachable"
+                                | "format"
+                        )
+                    });
+
+                    // Check argument count: variadic builtins require at least
+                    // params.len() args; all others require exact match.
+                    if is_variadic_builtin {
+                        if arg_types.len() < params.len() {
+                            self.error(TypeError::new(format!(
+                                "expected at least {} arguments, found {}",
+                                params.len(),
+                                arg_types.len()
+                            )));
+                        }
+                    } else if params.len() != arg_types.len() {
                         self.error(TypeError::new(format!(
                             "expected {} arguments, found {}",
                             params.len(),
@@ -2009,7 +2044,9 @@ impl TypeChecker {
                     } else {
                         inner.clone()
                     };
-                    match &resolved {
+                    // Strip evidentiality wrapper (e.g., !Result<T,E> → Result<T,E>)
+                    let (stripped, _) = self.strip_evidence(&resolved);
+                    match &stripped {
                         Type::Named { name, generics } if name == "Result" && !generics.is_empty() => {
                             return generics[0].clone();
                         }
@@ -2440,7 +2477,9 @@ impl TypeChecker {
                 } else {
                     inner_ty.clone()
                 };
-                match &resolved {
+                // Strip evidentiality wrapper (e.g., !Result<T,E> → Result<T,E>)
+                let (stripped, _ev) = self.strip_evidence(&resolved);
+                match &stripped {
                     Type::Named { name, generics } if name == "Result" && !generics.is_empty() => {
                         // Result<T, E>? → T with uncertain evidence
                         generics[0].clone()
@@ -2551,11 +2590,27 @@ impl TypeChecker {
 
             // Comparison: any -> bool
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                // Allow T == null/Unit comparisons (null-check idiom)
+                let has_unit = |a: &Type, b: &Type| {
+                    matches!(a, Type::Unit) || matches!(b, Type::Unit)
+                };
+                // Allow integer size coercion in comparisons (i32 == i64, etc.)
+                let both_int = |a: &Type, b: &Type| {
+                    matches!(a, Type::Int(_)) && matches!(b, Type::Int(_))
+                };
+                // Allow comparisons involving user-defined types where method return
+                // types may not be fully inferred (e.g., IrEvidence.symbol() == "!")
+                let has_named = |a: &Type, b: &Type| {
+                    matches!(a, Type::Named { .. }) || matches!(b, Type::Named { .. })
+                };
                 // For bootstrapping: skip error when either side is a type variable or function
                 // (indicates incomplete type inference from unhandled expressions)
                 if !self.unify(&left_inner, &right_inner)
                     && !is_var_or_fn(&left_inner)
                     && !is_var_or_fn(&right_inner)
+                    && !has_unit(&left_inner, &right_inner)
+                    && !both_int(&left_inner, &right_inner)
+                    && !has_named(&left_inner, &right_inner)
                 {
                     self.error(TypeError::new(format!(
                         "comparison operands must have same type: left={:?}, right={:?}",
@@ -2682,10 +2737,10 @@ impl TypeChecker {
             PipeOp::Filter(_pred) => inner,
 
             // Sort: [T] -> [T]
-            PipeOp::Sort(_) => inner,
+            PipeOp::Sort(_) | PipeOp::SortBy(_) => inner,
 
             // Reduce: [T] -> T (also Vec<T> -> T)
-            PipeOp::Reduce(_) => {
+            PipeOp::Reduce(_) | PipeOp::ReduceWithInit(_, _) => {
                 if let Type::Array { element, .. } | Type::Slice(element) = inner {
                     *element
                 } else if let Type::Named { name, generics } = &inner {
@@ -3326,6 +3381,13 @@ impl TypeChecker {
             (Type::Ref { mutable: false, inner, .. }, Type::Named { name: n, .. })
                 if n == "String" && matches!(inner.as_ref(), Type::Str) => true,
 
+            // String to str coercion (deref-like): String ↔ str
+            // Analogous to Rust's String → &str deref coercion.
+            // String owns string data, str is a view — they're interchangeable
+            // in type checking since the interpreter uses the same representation.
+            (Type::Str, Type::Named { name, .. }) if name == "String" => true,
+            (Type::Named { name, .. }, Type::Str) if name == "String" => true,
+
             // Arrays
             (Type::Array { element: a, size: sa }, Type::Array { element: b, size: sb }) => {
                 (sa == sb || sa.is_none() || sb.is_none()) && self.unify(a, b)
@@ -3333,6 +3395,11 @@ impl TypeChecker {
 
             // Slices
             (Type::Slice(a), Type::Slice(b)) => self.unify(a, b),
+
+            // Array to Slice coercion: [T; N] → [T]
+            // A fixed-size array is always a valid slice of the same element type.
+            (Type::Slice(a), Type::Array { element: b, .. }) => self.unify(a, b),
+            (Type::Array { element: a, .. }, Type::Slice(b)) => self.unify(a, b),
 
             // Tuples
             (Type::Tuple(a), Type::Tuple(b)) if a.len() == b.len() => {
@@ -3966,14 +4033,14 @@ mod tests {
 
     #[test]
     fn test_basic_types() {
-        assert!(check("λ main() { ≔ x: i64 = 42; }").is_ok());
-        assert!(check("λ main() { ≔ x: bool = true; }").is_ok());
-        assert!(check("λ main() { ≔ x: f64 = 3.14; }").is_ok());
+        assert!(check("rite main() { ≔ x: i64 = 42; }").is_ok());
+        assert!(check("rite main() { ≔ x: bool = true; }").is_ok());
+        assert!(check("rite main() { ≔ x: f64 = 3.14; }").is_ok());
     }
 
     #[test]
     fn test_type_mismatch() {
-        assert!(check("λ main() { ≔ x: bool = 42; }").is_err());
+        assert!(check("rite main() { ≔ x: bool = 42; }").is_err());
     }
 
     #[test]
@@ -3981,7 +4048,7 @@ mod tests {
         // Evidence should propagate through operations
         assert!(check(
             r#"
-            λ main() {
+            rite main() {
                 ≔ known: i64! = 42;
                 ≔ uncertain: i64? = 10;
                 ≔ result = known + uncertain;
@@ -3995,10 +4062,10 @@ mod tests {
     fn test_function_return() {
         let result = check(
             r#"
-            λ add(a: i64, b: i64) -> i64 {
+            rite add(a: i64, b: i64) -> i64 {
                 ⤺ a + b;
             }
-            λ main() {
+            rite main() {
                 ≔ x = add(1, 2);
             }
         "#,
@@ -4015,7 +4082,7 @@ mod tests {
     fn test_array_types() {
         assert!(check(
             r#"
-            λ main() {
+            rite main() {
                 ≔ arr = [1, 2, 3];
                 ≔ x = arr[0];
             }
@@ -4033,7 +4100,7 @@ mod tests {
         // Evidence should be inferred from initializer when not explicitly annotated
         assert!(check(
             r#"
-            λ main() {
+            rite main() {
                 ≔ reported_val: i64~ = 42;
                 // x should inherit ~ evidence from reported_val
                 ≔ x = reported_val + 1;
@@ -4048,7 +4115,7 @@ mod tests {
         // Explicit annotation should override inference
         assert!(check(
             r#"
-            λ main() {
+            rite main() {
                 ≔ reported_val: i64~ = 42;
                 // Explicit ! annotation - this would fail ⎇ we checked evidence properly
                 // but the type system allows it as an override
@@ -4064,7 +4131,7 @@ mod tests {
         // Evidence from both branches should be joined
         assert!(check(
             r#"
-            λ main() {
+            rite main() {
                 ≔ known_val: i64! = 1;
                 ≔ reported_val: i64~ = 2;
                 ≔ cond: bool = true;
@@ -4081,7 +4148,7 @@ mod tests {
         // Binary operations should join evidence levels
         assert!(check(
             r#"
-            λ main() {
+            rite main() {
                 ≔ known: i64! = 1;
                 ≔ reported: i64~ = 2;
                 // Result should have ~ evidence (max of ! and ~)
@@ -4098,7 +4165,7 @@ mod tests {
         // Note: This test is structural - the type checker should handle it
         assert!(check(
             r#"
-            λ main() {
+            rite main() {
                 ≔ x: i64 = 1;
             }
         "#
