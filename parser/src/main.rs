@@ -3347,43 +3347,79 @@ fn run_test_files(
             continue;
         }
 
-        // Count test functions and run the file
-        let mut file_tests = 0;
+        // Collect test function names
+        let mut test_fn_names: Vec<String> = Vec::new();
         for item in &ast.items {
             if let sigil_parser::ast::Item::Function(func) = &item.node {
                 if func.attrs.test {
-                    file_tests += 1;
+                    test_fn_names.push(func.name.name.clone());
                 }
             }
         }
 
-        if file_tests > 0 {
+        if !test_fn_names.is_empty() {
             let mut interpreter = Interpreter::new();
             register_stdlib(&mut interpreter);
 
-            match interpreter.execute(&ast) {
+            // Register all definitions (structs, impls, functions) without calling main
+            match interpreter.execute_definitions(&ast) {
                 Ok(_) => {
-                    println!(
-                        "  {}✓{} {} ({} tests)",
-                        colors::GREEN,
-                        colors::RESET,
-                        test_file.file_stem().unwrap_or_default().to_string_lossy(),
-                        file_tests
-                    );
-                    passed_tests += file_tests;
+                    // Now invoke each #[test] function individually
+                    let mut file_passed = 0;
+                    let mut file_failed = 0;
+                    let mut fail_messages: Vec<(String, String)> = Vec::new();
+
+                    for test_name in &test_fn_names {
+                        match interpreter.call_function_by_name(test_name, vec![]) {
+                            Ok(_) => {
+                                file_passed += 1;
+                            }
+                            Err(e) => {
+                                file_failed += 1;
+                                fail_messages.push((test_name.clone(), e.to_string()));
+                            }
+                        }
+                    }
+
+                    let file_label = test_file.file_stem().unwrap_or_default().to_string_lossy();
+                    if file_failed == 0 {
+                        println!(
+                            "  {}✓{} {} ({} tests)",
+                            colors::GREEN,
+                            colors::RESET,
+                            file_label,
+                            file_passed
+                        );
+                    } else {
+                        println!(
+                            "  {}✗{} {} ({} passed, {} failed)",
+                            colors::ERROR,
+                            colors::RESET,
+                            file_label,
+                            file_passed,
+                            file_failed
+                        );
+                        for (name, msg) in &fail_messages {
+                            println!("      {} - {}", name, msg);
+                        }
+                    }
+                    passed_tests += file_passed;
+                    failed_tests += file_failed;
+                    total_tests += file_passed + file_failed;
                 }
                 Err(e) => {
+                    // File-level registration error (e.g., impl block fails)
                     println!(
-                        "  {}✗{} {} - runtime error: {}",
+                        "  {}✗{} {} - registration error: {}",
                         colors::ERROR,
                         colors::RESET,
                         test_file.file_stem().unwrap_or_default().to_string_lossy(),
                         e
                     );
-                    failed_tests += file_tests;
+                    failed_tests += test_fn_names.len();
+                    total_tests += test_fn_names.len();
                 }
             }
-            total_tests += file_tests;
         }
     }
 
