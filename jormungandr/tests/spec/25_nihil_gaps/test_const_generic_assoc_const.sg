@@ -1,0 +1,26 @@
+// TDD Test: Associated constants in const generic impl blocks
+// RANK doesn't depend on N (should evaluate eagerly)
+// NUMEL depends on N (should be deferred and resolved per-instantiation)
+
+☉ sigil Shape1<◆ N: usize>;
+
+⊢<◆ N: usize> Shape1<N> {
+    ◆ RANK: usize = 1;
+
+    rite numel(&this) → usize { N }
+}
+
+☉ rite main() → !i32 {
+    // Eagerly evaluated constant (no const generic dependency)
+    assert_eq(Shape1·RANK, 1);
+
+    // Method using const generic
+    ≔ s = Shape1<7> {};
+    assert_eq(s.numel(), 7);
+
+    ≔ s2 = Shape1<42> {};
+    assert_eq(s2.numel(), 42);
+
+    println("const_generic_assoc_const: PASS");
+    ⤺ 0;
+}

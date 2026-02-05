@@ -1,0 +1,55 @@
+// TDD Test: Nihil Shape pattern - the actual pattern from nihil-core
+// This tests the full Shape1/Shape2 pattern with trait, const generic methods,
+// and associated constants.
+
+☉ sigil Scalar;
+☉ sigil Shape1<◆ N: usize>;
+☉ sigil Shape2<◆ M: usize, ◆ N: usize>;
+
+⊢ Scalar {
+    ◆ RANK: usize = 0;
+
+    rite numel(&this) → usize { 1 }
+}
+
+⊢<◆ N: usize> Shape1<N> {
+    ◆ RANK: usize = 1;
+
+    rite numel(&this) → usize { N }
+    rite dims_product(&this) → usize { N }
+}
+
+⊢<◆ M: usize, ◆ N: usize> Shape2<M, N> {
+    ◆ RANK: usize = 2;
+
+    rite numel(&this) → usize { M * N }
+    rite rows(&this) → usize { M }
+    rite cols(&this) → usize { N }
+}
+
+☉ rite main() → !i32 {
+    // Scalar
+    ≔ s = Scalar {};
+    assert_eq(Scalar·RANK, 0);
+    assert_eq(s.numel(), 1);
+
+    // Shape1
+    assert_eq(Shape1·RANK, 1);
+    ≔ s1 = Shape1<10> {};
+    assert_eq(s1.numel(), 10);
+    assert_eq(s1.dims_product(), 10);
+
+    // Shape2
+    assert_eq(Shape2·RANK, 2);
+    ≔ s2 = Shape2<3, 4> {};
+    assert_eq(s2.numel(), 12);
+    assert_eq(s2.rows(), 3);
+    assert_eq(s2.cols(), 4);
+
+    // Different instantiations
+    ≔ s3 = Shape2<100, 200> {};
+    assert_eq(s3.numel(), 20000);
+
+    println("const_generic_shape: PASS");
+    ⤺ 0;
+}

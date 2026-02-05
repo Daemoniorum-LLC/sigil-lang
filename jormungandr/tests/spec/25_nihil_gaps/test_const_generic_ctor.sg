@@ -1,0 +1,37 @@
+// TDD Test: Const generics in constructors
+// A struct with fields and a const generic, constructor uses N for initialization.
+
+☉ sigil FixedVec<◆ N: usize> {
+    data: Vec<f64>,
+}
+
+⊢<◆ N: usize> FixedVec<N> {
+    ☉ rite new() → This {
+        ≔ Δ v = Vec·new();
+        ∀ _ ∈ 0..N {
+            v.push(0.0);
+        }
+        FixedVec { data: v }
+    }
+
+    rite len(&this) → usize {
+        this.data.len()
+    }
+
+    rite capacity(&this) → usize {
+        N
+    }
+}
+
+☉ rite main() → !i32 {
+    ≔ v = FixedVec·<5>·new();
+    assert_eq(v.len(), 5);
+    assert_eq(v.capacity(), 5);
+
+    ≔ v2 = FixedVec·<3>·new();
+    assert_eq(v2.len(), 3);
+    assert_eq(v2.capacity(), 3);
+
+    println("const_generic_ctor: PASS");
+    ⤺ 0;
+}

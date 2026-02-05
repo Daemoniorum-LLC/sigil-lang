@@ -1308,6 +1308,12 @@ pub struct Interpreter {
     pub crate_name: Option<String>,
     /// Alias for current crate (e.g., "tome" for tome commands)
     pub crate_alias: Option<String>,
+    /// Maps type name → const generic parameter names
+    /// e.g., "Shape1" → ["N"], "Shape2" → ["M", "N"]
+    pub const_generic_params: HashMap<String, Vec<String>>,
+    /// Deferred associated constants for const-generic impl blocks
+    /// Maps "TypeName·ConstName" → unevaluated AST expression
+    pub const_generic_deferred_consts: HashMap<String, crate::ast::Expr>,
 }
 
 /// Type definition for structs/enums
@@ -1360,6 +1366,8 @@ impl Interpreter {
             crate_modules: HashSet::new(),
             crate_name: None,
             crate_alias: None,
+            const_generic_params: HashMap::new(),
+            const_generic_deferred_consts: HashMap::new(),
         };
 
         // Register built-in functions
@@ -2962,6 +2970,18 @@ impl Interpreter {
                     _ => return Ok(Value::Null), // Can't handle complex types
                 };
 
+                // Extract const generic param names from impl block generics
+                let const_params: Vec<String> = impl_block.generics.as_ref()
+                    .map(|g| g.params.iter().filter_map(|p| match p {
+                        crate::ast::GenericParam::Const { name, .. } => Some(name.name.clone()),
+                        _ => None,
+                    }).collect())
+                    .unwrap_or_default();
+
+                if !const_params.is_empty() {
+                    self.const_generic_params.insert(type_name.clone(), const_params.clone());
+                }
+
                 // Check if this is `impl Drop for X` - register for automatic drop calls
                 if let Some(trait_path) = &impl_block.trait_ {
                     let trait_name = trait_path
@@ -2996,13 +3016,35 @@ impl Interpreter {
                             }
                         }
                         ImplItem::Const(c) => {
-                            let value = self.evaluate(&c.value)?;
-                            let qualified_name = format!("{}·{}", type_name, c.name.name);
-                            self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
+                            if const_params.is_empty() {
+                                // No const generics: evaluate normally
+                                let value = self.evaluate(&c.value)?;
+                                let qualified_name = format!("{}·{}", type_name, c.name.name);
+                                self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
 
-                            if let Some(ref module) = self.current_module {
-                                let fully_qualified = format!("{}·{}", module, qualified_name);
-                                self.globals.borrow_mut().define(fully_qualified, value);
+                                if let Some(ref module) = self.current_module {
+                                    let fully_qualified = format!("{}·{}", module, qualified_name);
+                                    self.globals.borrow_mut().define(fully_qualified, value);
+                                }
+                            } else {
+                                // Try to evaluate; defer if it references a const param
+                                match self.evaluate(&c.value) {
+                                    Ok(value) => {
+                                        let qualified_name = format!("{}·{}", type_name, c.name.name);
+                                        self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
+
+                                        if let Some(ref module) = self.current_module {
+                                            let fully_qualified = format!("{}·{}", module, qualified_name);
+                                            self.globals.borrow_mut().define(fully_qualified, value);
+                                        }
+                                    }
+                                    Err(e) if const_params.iter().any(|p| e.message.contains(p)) => {
+                                        // Deferred: depends on const generic params
+                                        let key = format!("{}·{}", type_name, c.name.name);
+                                        self.const_generic_deferred_consts.insert(key, c.value.clone());
+                                    }
+                                    Err(e) => return Err(e),
+                                }
                             }
                         }
                         _ => {}
@@ -6029,6 +6071,42 @@ impl Interpreter {
             Vec::new()
         };
 
+        // Extract turbofish CONST generic values from the call expression's path segments
+        // e.g., FixedVec·<5>·new() → const_args = [("N", 5)] using const_generic_params
+        let turbofish_const_bindings: Vec<(String, Value)> = if let Expr::Path(path) = func_expr {
+            let mut bindings = Vec::new();
+            for seg in &path.segments {
+                if let Some(generics) = &seg.generics {
+                    if let Some(param_names) = self.const_generic_params.get(seg.ident.name.as_str()).cloned() {
+                        let mut idx = 0;
+                        for generic in generics {
+                            if idx >= param_names.len() { break; }
+                            let val = match generic {
+                                crate::ast::TypeExpr::ConstExpr(expr) => {
+                                    if let crate::ast::Expr::Literal(crate::ast::Literal::Int { value, .. }) = expr.as_ref() {
+                                        value.parse::<i64>().ok()
+                                    } else { None }
+                                }
+                                crate::ast::TypeExpr::Path(inner_path) => {
+                                    if let Some(inner_seg) = inner_path.segments.first() {
+                                        inner_seg.ident.name.parse::<i64>().ok()
+                                    } else { None }
+                                }
+                                _ => None,
+                            };
+                            if let Some(v) = val {
+                                bindings.push((param_names[idx].clone(), Value::Int(v)));
+                                idx += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            bindings
+        } else {
+            Vec::new()
+        };
+
         // Save and bind generic type parameters from turbofish (restore after call)
         let old_generic_bindings = self.generic_type_bindings.clone();
         if !turbofish_type_args.is_empty() {
@@ -6042,8 +6120,44 @@ impl Interpreter {
             }
         }
 
+        // If turbofish has const generic bindings, also set type_context.struct_generics
+        // so that struct literals inside constructors (e.g., FixedVec { data: v }) get
+        // the const generic hidden fields injected
+        let prev_struct_generics = self.type_context.struct_generics.borrow().clone();
+        if !turbofish_const_bindings.is_empty() {
+            if let Expr::Path(path) = func_expr {
+                if let Some(seg) = path.segments.first() {
+                    let type_name = seg.ident.name.clone();
+                    let const_values: Vec<i64> = turbofish_const_bindings.iter()
+                        .filter_map(|(_, v)| if let Value::Int(n) = v { Some(*n) } else { None })
+                        .collect();
+                    if !const_values.is_empty() {
+                        *self.type_context.struct_generics.borrow_mut() = Some((type_name, const_values));
+                    }
+                }
+            }
+        }
+
         let result = match func {
             Value::Function(f) => {
+                // Wrap with const generic bindings from turbofish if present
+                let f = if turbofish_const_bindings.is_empty() {
+                    f
+                } else {
+                    let wrapper_env = Rc::new(RefCell::new(
+                        Environment::with_parent(f.closure.clone())
+                    ));
+                    for (name, value) in &turbofish_const_bindings {
+                        wrapper_env.borrow_mut().define(name.clone(), value.clone());
+                    }
+                    Rc::new(Function {
+                        name: f.name.clone(),
+                        params: f.params.clone(),
+                        body: f.body.clone(),
+                        closure: wrapper_env,
+                        generic_params: f.generic_params.clone(),
+                    })
+                };
                 // Reorder arguments based on named parameters
                 let arg_values = Self::reorder_named_args(&f.params, arg_entries)?;
                 self.call_function(&f, arg_values)
@@ -6100,9 +6214,10 @@ impl Interpreter {
             let _ = self.environment.borrow_mut().set(&var_name, current_value);
         }
 
-        // Restore old Self type and generic type bindings
+        // Restore old Self type, generic type bindings, and struct generics context
         self.current_self_type = old_self_type;
         self.generic_type_bindings = old_generic_bindings;
+        *self.type_context.struct_generics.borrow_mut() = prev_struct_generics;
 
         result
     }
@@ -6791,6 +6906,46 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    /// Create a wrapper Function with const generic values pre-bound in its closure.
+    /// Extracts `__const_X__` hidden fields from struct fields and injects them into
+    /// a new closure environment that wraps the original function's closure.
+    fn wrap_with_const_generics(
+        func: &Rc<Function>,
+        fields: &Rc<RefCell<HashMap<String, Value>>>,
+    ) -> Rc<Function> {
+        let const_bindings: Vec<(String, Value)> = fields.borrow()
+            .iter()
+            .filter_map(|(k, v)| {
+                if k.starts_with("__const_") && k.ends_with("__") {
+                    let param_name = k.strip_prefix("__const_")
+                        .and_then(|s| s.strip_suffix("__"));
+                    param_name.map(|name| (name.to_string(), v.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if const_bindings.is_empty() {
+            return func.clone();
+        }
+
+        // Create wrapper with const generics pre-bound in closure
+        let wrapper_env = Rc::new(RefCell::new(
+            Environment::with_parent(func.closure.clone())
+        ));
+        for (name, value) in &const_bindings {
+            wrapper_env.borrow_mut().define(name.clone(), value.clone());
+        }
+        Rc::new(Function {
+            name: func.name.clone(),
+            params: func.params.clone(),
+            body: func.body.clone(),
+            closure: wrapper_env,
+            generic_params: func.generic_params.clone(),
+        })
     }
 
     fn bind_pattern(&mut self, pattern: &Pattern, value: Value) -> Result<(), RuntimeError> {
@@ -9749,6 +9904,7 @@ impl Interpreter {
                         .map(|v| v.clone());
                     if let Some(func) = func {
                         if let Value::Function(f) = func {
+                            let f = Self::wrap_with_const_generics(&f, fields);
                             // Set current Self type for Self { ... } resolution
                             let old_self_type = self.current_self_type.take();
                             self.current_self_type = Some(name.clone());
@@ -9802,6 +9958,7 @@ impl Interpreter {
                                         .map(|v| v.clone());
                                     if let Some(func) = func {
                                         if let Value::Function(f) = func {
+                                            let f = Self::wrap_with_const_generics(&f, fields);
                                             // Set current Self type for Self { ... } resolution
                                             let old_self_type = self.current_self_type.take();
                                             self.current_self_type = Some(type_name.clone());
@@ -11868,6 +12025,7 @@ impl Interpreter {
                     let user_method_name = format!("{}·{}", name, method.name);
                     let user_fn = self.globals.borrow().get(&user_method_name).map(|v| v.clone());
                     if let Some(Value::Function(func)) = user_fn {
+                        let func = Self::wrap_with_const_generics(&func, fields);
                         let old_self_type = self.current_self_type.take();
                         self.current_self_type = Some(name.clone());
 
@@ -12201,6 +12359,7 @@ impl Interpreter {
                     .map(|v| v.clone());
                 if let Some(func) = func {
                     if let Value::Function(f) = func {
+                        let f = Self::wrap_with_const_generics(&f, fields);
                         // Set current Self type for Self { ... } resolution
                         let old_self_type = self.current_self_type.take();
                         self.current_self_type = Some(name.clone());
@@ -12253,6 +12412,7 @@ impl Interpreter {
                                     .map(|v| v.clone());
                                 if let Some(func) = func {
                                     if let Value::Function(f) = func {
+                                        let f = Self::wrap_with_const_generics(&f, fields);
                                         // Set current Self type for Self { ... } resolution
                                         let old_self_type = self.current_self_type.take();
                                         self.current_self_type = Some(type_name.clone());
@@ -17342,6 +17502,70 @@ impl Interpreter {
                             "missing field '{}' in struct '{}'",
                             def_field.name.name, name
                         )));
+                    }
+                }
+            }
+        }
+
+        // Inject const generic values as hidden fields from path generics
+        // e.g., Shape1<3> {} → __const_N__ = 3
+        if let Some(segment) = path.segments.first() {
+            if let Some(generics) = &segment.generics {
+                let base_name = &segment.ident.name;
+                if let Some(param_names) = self.const_generic_params.get(base_name.as_str()).cloned() {
+                    let mut idx = 0;
+                    for generic in generics {
+                        if idx >= param_names.len() { break; }
+                        let val = match generic {
+                            crate::ast::TypeExpr::ConstExpr(expr) => {
+                                if let crate::ast::Expr::Literal(crate::ast::Literal::Int { value, .. }) = expr.as_ref() {
+                                    value.parse::<i64>().ok()
+                                } else { None }
+                            }
+                            crate::ast::TypeExpr::Path(inner_path) => {
+                                if let Some(inner_seg) = inner_path.segments.first() {
+                                    inner_seg.ident.name.parse::<i64>().ok()
+                                } else { None }
+                            }
+                            _ => None,
+                        };
+                        if let Some(v) = val {
+                            field_values.insert(
+                                format!("__const_{}__", param_names[idx]),
+                                Value::Int(v),
+                            );
+                            idx += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also inject from type_context.struct_generics (type annotation path)
+        if let Some((ctx_name, ctx_values)) = self.type_context.struct_generics.borrow().clone() {
+            if ctx_name == name {
+                if let Some(param_names) = self.const_generic_params.get(&name).cloned() {
+                    for (param_name, value) in param_names.iter().zip(ctx_values.iter()) {
+                        let key = format!("__const_{}__", param_name);
+                        if !field_values.contains_key(&key) {
+                            field_values.insert(key, Value::Int(*value));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also inject from current scope: if the struct type has const generic params,
+        // check if those param names are defined as variables in the current environment.
+        // This handles constructors like FixedVec·<5>·new() where N=5 is in scope.
+        if let Some(param_names) = self.const_generic_params.get(&name).cloned() {
+            for param_name in &param_names {
+                let key = format!("__const_{}__", param_name);
+                if !field_values.contains_key(&key) {
+                    if let Some(val) = self.environment.borrow().get(param_name) {
+                        if let Value::Int(_) = &val {
+                            field_values.insert(key, val);
+                        }
                     }
                 }
             }
