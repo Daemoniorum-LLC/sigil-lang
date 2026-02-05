@@ -1,0 +1,24 @@
+// Regression test: Vec.reverse() must mutate in place
+// Previously returned a new reversed array, making the call a no-op
+
+☉ rite main() -> !i32 {
+    // Test 1: reverse mutates in place
+    ≔ Δ v = vec![1, 2, 3, 4];
+    v.reverse();
+    assert_eq(v[0], 4);
+    assert_eq(v[1], 3);
+    assert_eq(v[2], 2);
+    assert_eq(v[3], 1);
+
+    // Test 2: reverse of single element
+    ≔ Δ single = vec![42];
+    single.reverse();
+    assert_eq(single[0], 42);
+
+    // Test 3: reverse of empty
+    ≔ Δ empty: Vec<i32> = vec![];
+    empty.reverse();
+    assert_eq(empty.len(), 0);
+
+    ⤺ 0;
+}

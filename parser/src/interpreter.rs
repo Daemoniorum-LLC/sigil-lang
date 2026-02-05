@@ -4792,8 +4792,24 @@ impl Interpreter {
                         Ok(Value::Array(Rc::new(RefCell::new(result))))
                     }
                 }
-                BinOp::Eq => Ok(Value::Bool(Rc::ptr_eq(&a, &b))),
-                BinOp::Ne => Ok(Value::Bool(!Rc::ptr_eq(&a, &b))),
+                BinOp::Eq => {
+                    let arr_a = a.borrow();
+                    let arr_b = b.borrow();
+                    let equal = arr_a.len() == arr_b.len()
+                        && arr_a.iter().zip(arr_b.iter()).all(|(x, y)| {
+                            self.values_equal(x, y)
+                        });
+                    Ok(Value::Bool(equal))
+                }
+                BinOp::Ne => {
+                    let arr_a = a.borrow();
+                    let arr_b = b.borrow();
+                    let equal = arr_a.len() == arr_b.len()
+                        && arr_a.iter().zip(arr_b.iter()).all(|(x, y)| {
+                            self.values_equal(x, y)
+                        });
+                    Ok(Value::Bool(!equal))
+                }
                 _ => Err(RuntimeError::new("Invalid array operation")),
             },
             // Null equality
@@ -5251,8 +5267,8 @@ impl Interpreter {
             BinOp::Div => Value::Float(a / b),
             BinOp::Rem => Value::Float(a % b),
             BinOp::Pow => Value::Float(a.powf(b)),
-            BinOp::Eq => Value::Bool((a - b).abs() < f64::EPSILON),
-            BinOp::Ne => Value::Bool((a - b).abs() >= f64::EPSILON),
+            BinOp::Eq => Value::Bool(a == b),
+            BinOp::Ne => Value::Bool(a != b),
             BinOp::Lt => Value::Bool(a < b),
             BinOp::Le => Value::Bool(a <= b),
             BinOp::Gt => Value::Bool(a > b),
@@ -8243,9 +8259,8 @@ impl Interpreter {
                 }
             }
             (Value::Array(arr), "reverse") => {
-                let mut v = arr.borrow().clone();
-                v.reverse();
-                Ok(Value::Array(Rc::new(RefCell::new(v))))
+                arr.borrow_mut().reverse();
+                Ok(Value::Array(arr.clone()))
             }
             (Value::Array(arr), "↓")
             | (Value::Array(arr), "skip")
@@ -9236,9 +9251,8 @@ impl Interpreter {
             | (Value::Array(arr), "reverse") => {
                 // ⟲() -> reversed sequence
                 // Symbolic: rotation/reversal arrow
-                let mut v = arr.borrow().clone();
-                v.reverse();
-                Ok(Value::Array(Rc::new(RefCell::new(v))))
+                arr.borrow_mut().reverse();
+                Ok(Value::Array(arr.clone()))
             }
             (Value::Array(arr), "⧢")
             | (Value::Array(arr), "shuffled")
@@ -10038,9 +10052,8 @@ impl Interpreter {
                             return Ok(Value::Array(arr.clone()));
                         }
                         "reverse" => {
-                            let mut v = arr.borrow().clone();
-                            v.reverse();
-                            return Ok(Value::Array(Rc::new(RefCell::new(v))));
+                            arr.borrow_mut().reverse();
+                            return Ok(Value::Array(arr.clone()));
                         }
                         "skip" => {
                             let n = match arg_values.first() {
@@ -10920,6 +10933,16 @@ impl Interpreter {
                     }
                 }
                 if method.name == "to_string" {
+                    // Check for user-defined to_string() method first
+                    let user_method_name = format!("{}·to_string", name);
+                    let user_fn = self.globals.borrow().get(&user_method_name).map(|v| v.clone());
+                    if let Some(Value::Function(func)) = user_fn {
+                        let self_val = Value::Struct {
+                            name: name.clone(),
+                            fields: fields.clone(),
+                        };
+                        return self.call_function(&func, vec![self_val]);
+                    }
                     // Generic to_string for structs - returns a debug representation
                     let field_str = fields
                         .borrow()
@@ -11830,7 +11853,35 @@ impl Interpreter {
                     }
                 }
 
-                // ReLU forward method
+                // Check for user-defined method before hardcoded struct handlers
+                // This ensures user impls take priority over stdlib defaults
+                {
+                    let user_method_name = format!("{}·{}", name, method.name);
+                    let user_fn = self.globals.borrow().get(&user_method_name).map(|v| v.clone());
+                    if let Some(Value::Function(func)) = user_fn {
+                        let old_self_type = self.current_self_type.take();
+                        self.current_self_type = Some(name.clone());
+
+                        // Reorder named args to match function params (skip first param which is self)
+                        let reordered = if func.params.len() > 1 {
+                            Self::reorder_named_args(&func.params[1..].to_vec(), arg_entries.clone())?
+                        } else {
+                            arg_values.clone()
+                        };
+                        let self_val = Value::Struct {
+                            name: name.clone(),
+                            fields: fields.clone(),
+                        };
+                        let mut all_args = vec![self_val];
+                        all_args.extend(reordered);
+                        let result = self.call_function(&func, all_args);
+
+                        self.current_self_type = old_self_type;
+                        return result;
+                    }
+                }
+
+                // ReLU forward method (stdlib fallback)
                 if name == "ReLU" && method.name == "forward" {
                     if let Some(input) = arg_values.first() {
                         // Apply ReLU: max(0, x) for each element
@@ -13121,9 +13172,8 @@ impl Interpreter {
                 .cloned()
                 .ok_or_else(|| RuntimeError::new("empty array")),
             (Value::Array(arr), "reverse") | (Value::Array(arr), "rev") => {
-                let mut v = arr.borrow().clone();
-                v.reverse();
-                Ok(Value::Array(Rc::new(RefCell::new(v))))
+                arr.borrow_mut().reverse();
+                Ok(Value::Array(arr.clone()))
             }
             (Value::Array(arr), "join") => {
                 let sep = args
@@ -13639,9 +13689,8 @@ impl Interpreter {
                     },
                     "reverse" => match value {
                         Value::Array(arr) => {
-                            let mut v = arr.borrow().clone();
-                            v.reverse();
-                            Ok(Value::Array(Rc::new(RefCell::new(v))))
+                            arr.borrow_mut().reverse();
+                            Ok(Value::Array(arr.clone()))
                         }
                         _ => Err(RuntimeError::new("reverse requires array")),
                     },
